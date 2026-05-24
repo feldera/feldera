@@ -91,6 +91,20 @@ use utoipa::ToSchema;
 /// There are separate counters for parse and transport errors and for every tag.
 pub(crate) const MAX_CONNECTOR_ERRORS: usize = 100;
 
+/// Kind of input buffered by an endpoint.
+///
+/// Used by [ControllerStatus::input_batch_global] to decide whether input
+/// buffering should wake the circuit thread.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(super) enum BufferedInput {
+    /// Regular input buffering, with no special wakeup reason.
+    Normal,
+
+    /// Input was buffered for an endpoint currently blocking checkpoint or
+    /// suspend on a barrier.
+    Barrier,
+}
+
 /// Completion token.
 ///
 /// A completion token associated with an endpoint identifies a position in the endpoint's
@@ -957,9 +971,14 @@ impl ControllerStatus {
 
     /// Update the global counters after receiving a new input batch.
     ///
-    /// This method is used for inserts that don't belong to an endpoint, e.g.,
-    /// happen by executing an ad-hoc INSERT query.
-    pub(super) fn input_batch_global(&self, amt: BufferSize, circuit_thread_unparker: &Unparker) {
+    /// This method is used for all input batches, including inserts that don't
+    /// belong to an endpoint, e.g., happen by executing an ad-hoc INSERT query.
+    pub(super) fn input_batch_global(
+        &self,
+        amt: BufferSize,
+        buffered_input: BufferedInput,
+        circuit_thread_unparker: &Unparker,
+    ) {
         let num_records = amt.records as u64;
         // Increment buffered_records; unpark circuit thread once
         // `min_batch_size_records` is exceeded.
@@ -968,6 +987,7 @@ impl ControllerStatus {
         if old == 0
             || (old <= self.pipeline_config.global.min_batch_size_records
                 && old + num_records > self.pipeline_config.global.min_batch_size_records)
+            || buffered_input == BufferedInput::Barrier
         {
             circuit_thread_unparker.unpark();
         }
@@ -978,32 +998,38 @@ impl ControllerStatus {
     /// # Arguments
     ///
     /// * `endpoint_id` - id of the input endpoint.
-    /// * `num_bytes` - number of bytes received.
-    /// * `num_records` - number of records in the deserialized batch.
-    /// * `global_config` - global controller config.
-    /// * `circuit_thread_unparker` - unparker used to wake up the circuit
-    ///   thread if the total number of buffered records exceeds
-    ///   `min_batch_size_records`.
+    /// * `amt` - number of bytes and records in the batch.
     /// * `backpressure_thread_unparker` - unparker used to wake up the
     ///   backpressure thread if the endpoint is full.
+    ///
+    /// Returns the kind of input that was buffered, used by
+    /// [Self::input_batch_global] to decide whether to wake the circuit thread.
     pub(super) fn input_batch_from_endpoint(
         &self,
         endpoint_id: EndpointId,
         amt: BufferSize,
         backpressure_thread_unparker: &Unparker,
-    ) {
+    ) -> BufferedInput {
         // There is a potential race condition if the endpoint is currently
         // being removed. In this case, it's safe to ignore this operation.
         if !amt.is_empty() {
             let inputs = self.input_status();
             if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
                 let old = endpoint_stats.add_buffered(amt);
+                let buffered_input = if old == 0 && endpoint_stats.is_barrier() {
+                    BufferedInput::Barrier
+                } else {
+                    BufferedInput::Normal
+                };
                 let threshold = endpoint_stats.config.connector_config.max_queued_records;
                 if old < threshold && old + amt.records as u64 >= threshold {
                     backpressure_thread_unparker.unpark();
                 }
+                return buffered_input;
             }
         }
+
+        BufferedInput::Normal
     }
 
     /// Update counters after receiving an end-of-input event on an input

@@ -68,7 +68,6 @@ use dbsp::{
     profile::{DbspProfile, GraphProfile},
 };
 use dbsp::{Runtime, WeakRuntime};
-use enum_map::EnumMap;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{
@@ -108,7 +107,7 @@ use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
 use size_of::HumanBytes;
-use stats::StepResults;
+use stats::{BufferedInput, StepResults};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -4454,10 +4453,10 @@ impl StepTrigger {
         } else {
             // Count buffered records.
             //
-            // If any input endpoints are blocking suspend, then those are the
-            // only ones that we count; otherwise, count all of them.  An input
-            // endpoint is blocking suspend if it has a barrier and a checkpoint
-            // has been requested.
+            // Count only the inputs that the next input step is allowed to poll.
+            // During checkpoint barrier handling, non-barrier inputs are
+            // deliberately ignored; counting them would trigger empty steps
+            // because input_step() will not consume them.
             //
             // If we're running under a coordinator, then we only consider input
             // endpoints that the coordinator told us to.
@@ -4468,17 +4467,18 @@ impl StepTrigger {
             } else {
                 StepInputs::All
             };
-            let mut buffered_records = EnumMap::<bool, u64>::default();
-            for status in self.controller.status.input_status().values() {
-                buffered_records
-                    [inputs == StepInputs::CheckpointBarriers && status.is_barrier()] +=
-                    status.metrics.buffered_records.load(Ordering::Relaxed);
-            }
-            let buffered_records = if buffered_records[true] > 0 {
-                buffered_records[true]
-            } else {
-                buffered_records[false]
-            };
+            let buffered_records = self
+                .controller
+                .status
+                .input_status()
+                .values()
+                .filter(|status| match inputs {
+                    StepInputs::All => true,
+                    StepInputs::CheckpointBarriers => status.is_barrier(),
+                    StepInputs::None => false,
+                })
+                .map(|status| status.metrics.buffered_records.load(Ordering::Relaxed))
+                .sum::<u64>();
 
             if buffered_records > self.min_batch_size_records
                 || timer_expired(self.buffer_timeout, now)
@@ -7246,17 +7246,19 @@ impl ControllerInner {
         // circuit thread, and the circuit thread reads the endpoint metrics.
         // Updating in the wrong order can cause the circuit thread to park
         // itself indefinitely.
-        if let Some(endpoint_id) = endpoint_id {
+        let buffered_input = if let Some(endpoint_id) = endpoint_id {
             self.status.input_batch_from_endpoint(
                 endpoint_id,
                 amt,
                 &self.backpressure_thread_unparker,
             )
-        }
+        } else {
+            BufferedInput::Normal
+        };
 
         if !amt.is_empty() {
             self.status
-                .input_batch_global(amt, &self.circuit_thread_unparker);
+                .input_batch_global(amt, buffered_input, &self.circuit_thread_unparker);
         }
     }
 
