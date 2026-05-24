@@ -1902,9 +1902,14 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return VisitDecision.STOP;
         } else if (expression.opcode == DBSPOpcode.INTEGER_TO_SHORT_INTERVAL ||
                 expression.opcode == DBSPOpcode.SHORT_INTERVAL_TO_INTEGER ||
+                expression.opcode == DBSPOpcode.INTEGER_TO_LONG_INTERVAL ||
+                expression.opcode == DBSPOpcode.LONG_INTERVAL_TO_INTEGER ||
                 expression.opcode == DBSPOpcode.INTEGER_TO_UUID ||
-                expression.opcode == DBSPOpcode.UUID_TO_INTEGER) {
+                expression.opcode == DBSPOpcode.UUID_TO_INTEGER ||
+                expression.opcode == DBSPOpcode.BOOL_TO_INTEGER ||
+                expression.opcode == DBSPOpcode.INTEGER_TO_BOOL) {
             this.builder.append(expression.opcode.toString())
+                    .append(expression.getType().nullableUnderlineSuffix())
                     .append("(");
             expression.source.accept(this);
             this.builder.append(")");

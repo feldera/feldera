@@ -46,6 +46,7 @@ import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
@@ -196,6 +197,10 @@ public class RangeAggregates extends WindowAggregates {
                 sortType = DBSPTypeInteger.getType(node, INT64, originalSortType.mayBeNull);
                 convertToSigned = new DBSPUnaryExpression(
                         this.node, sortType, DBSPOpcode.SHORT_INTERVAL_TO_INTEGER, var).closure(var);
+            } else if (originalSortType.is(DBSPTypeLongInterval.class)) {
+                sortType = DBSPTypeInteger.getType(node, INT32, originalSortType.mayBeNull);
+                convertToSigned = new DBSPUnaryExpression(
+                        this.node, sortType, DBSPOpcode.LONG_INTERVAL_TO_INTEGER, var).closure(var);
             } else if (originalSortType.is(DBSPTypeUuid.class)) {
                 if (originalSortType.mayBeNull) {
                     // This is 128 bits, but we need one more to represent the NULL value.
@@ -204,6 +209,10 @@ public class RangeAggregates extends WindowAggregates {
                 sortType = DBSPTypeInteger.getType(node, UINT128, originalSortType.mayBeNull);
                 convertToSigned = new DBSPUnaryExpression(
                         this.node, sortType, DBSPOpcode.UUID_TO_INTEGER, var.applyClone()).closure(var);
+            } else if (originalSortType.is(DBSPTypeBool.class)) {
+                sortType = DBSPTypeInteger.getType(node, INT8, originalSortType.mayBeNull);
+                convertToSigned = new DBSPUnaryExpression(
+                        this.node, sortType, DBSPOpcode.BOOL_TO_INTEGER, var.applyClone()).closure(var);
             } else {
                 sortType = originalSortType;
             }
@@ -311,12 +320,18 @@ public class RangeAggregates extends WindowAggregates {
                 unwrap = unwrap.cast(this.node, i128, DBSPCastExpression.CastType.SqlUnsafe);
                 unwrap = new DBSPUnaryExpression(this.node, originalSortType,
                         DBSPOpcode.INTEGER_TO_DECIMAL, unwrap);
+            } else if (originalSortType.is(DBSPTypeLongInterval.class)) {
+                unwrap = new DBSPUnaryExpression(this.node, originalSortType,
+                        DBSPOpcode.INTEGER_TO_LONG_INTERVAL, unwrap);
             } else if (originalSortType.is(DBSPTypeShortInterval.class)) {
                 unwrap = new DBSPUnaryExpression(this.node, originalSortType,
                         DBSPOpcode.INTEGER_TO_SHORT_INTERVAL, unwrap);
             } else if (originalSortType.is(DBSPTypeUuid.class)) {
                 unwrap = new DBSPUnaryExpression(this.node, originalSortType,
                         DBSPOpcode.INTEGER_TO_UUID, unwrap);
+            } else if (originalSortType.is(DBSPTypeBool.class)) {
+                unwrap = new DBSPUnaryExpression(this.node, originalSortType,
+                        DBSPOpcode.INTEGER_TO_BOOL, unwrap);
             }
 
             DBSPExpression ixKey = var.field(0).deref();

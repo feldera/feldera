@@ -4,8 +4,8 @@
 use crate::{
     Date, SqlDecimal, finite_or_null,
     operators::{eq, gt, gte, lt, lte, neq},
-    plus_Date_Date_LongInterval__, sign, some_existing_operator, some_function2, some_operator,
-    some_polymorphic_function1, some_polymorphic_function2,
+    plus_Date_Date_LongInterval__, sign, some_existing_operator, some_function1, some_function2,
+    some_operator, some_polymorphic_function1, some_polymorphic_function2,
     timestamp::{extract_epoch_Date, extract_quarter_Date},
 };
 use dbsp::{algebra::F64, num_entries_scalar};
@@ -1121,17 +1121,35 @@ pub fn extract_hour_LongInterval(_value: LongInterval) -> i64 {
     0
 }
 
+#[doc(hidden)]
+pub fn long_interval_to_integer_(value: LongInterval) -> i32 {
+    value.months
+}
+
+some_function1!(long_interval_to_integer, LongInterval, i32);
+
+#[doc(hidden)]
+pub fn integer_to_long_interval_(value: i32) -> LongInterval {
+    LongInterval::from_months(value)
+}
+
+some_function1!(integer_to_long_interval, i32, LongInterval);
+
 ///////////
 
 #[doc(hidden)]
-pub fn short_interval_to_integer(value: ShortInterval) -> i64 {
+pub fn short_interval_to_integer_(value: ShortInterval) -> i64 {
     value.microseconds
 }
 
+some_function1!(short_interval_to_integer, ShortInterval, i64);
+
 #[doc(hidden)]
-pub fn integer_to_short_interval(value: i64) -> ShortInterval {
+pub fn integer_to_short_interval_(value: i64) -> ShortInterval {
     ShortInterval::from_microseconds(value)
 }
+
+some_function1!(integer_to_short_interval, i64, ShortInterval);
 
 #[doc(hidden)]
 pub fn extract_day_ShortInterval(value: ShortInterval) -> i64 {
