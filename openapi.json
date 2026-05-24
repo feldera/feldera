@@ -8818,6 +8818,12 @@
             "default": null,
             "nullable": true,
             "minimum": 0
+          },
+          "streaming_exchange": {
+            "type": "boolean",
+            "description": "Enable streaming exchange.\n\n`false`",
+            "default": null,
+            "nullable": true
           }
         },
         "additionalProperties": {

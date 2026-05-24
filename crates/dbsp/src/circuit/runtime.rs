@@ -484,6 +484,12 @@ impl RuntimeInner {
             );
         }
 
+        if config.dev_tweaks.streaming_exchange() {
+            info!("dev_tweaks.streaming_exchange enabled");
+        } else {
+            info!("dev_tweaks.streaming_exchange disabled");
+        }
+
         Ok(Self {
             pin_cpus_fg,
             pin_cpus_bg,

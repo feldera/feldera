@@ -502,6 +502,11 @@ impl CircuitConfig {
         self
     }
 
+    pub fn with_streaming_exchange(mut self, enabled: bool) -> Self {
+        self.dev_tweaks.streaming_exchange = Some(enabled);
+        self
+    }
+
     pub fn with_splitter_chunk_size_records(mut self, records: u64) -> Self {
         self.dev_tweaks.splitter_chunk_size_records = Some(records);
         self

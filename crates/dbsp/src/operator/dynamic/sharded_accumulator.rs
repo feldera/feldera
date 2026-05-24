@@ -55,6 +55,8 @@ where
             sharded.dyn_accumulate(factories)
         } else if Runtime::num_workers() == 1 {
             self.dyn_accumulate(factories)
+        } else if Runtime::with_dev_tweaks(|d| !d.streaming_exchange()) {
+            self.dyn_shard(factories).dyn_accumulate(factories)
         } else {
             self.circuit()
                 .cache_get_or_insert_with(ShardedAccumulatorId::new(self.stream_id()), || {
@@ -677,12 +679,17 @@ mod tests {
     /// `n` steps and exchanges `O(n**2)` data.
     const STREAMING_ROUNDS: usize = 64;
 
+    fn test_config(workers: usize) -> CircuitConfig {
+        CircuitConfig::with_workers(workers).with_streaming_exchange(true)
+    }
+
     fn test_circuit(workers: usize, hosts: usize) {
         let (mut dbsp_handles, input_handles, output_handles) = match hosts {
             0 => unreachable!(),
             1 => {
                 let (dbsp_handle, (input_handle, output_handle)) =
-                    Runtime::init_circuit(workers, circuit).expect("failed to start runtime");
+                    Runtime::init_circuit(test_config(workers), circuit)
+                        .expect("failed to start runtime");
                 (vec![dbsp_handle], vec![input_handle], vec![output_handle])
             }
             _ => {
@@ -719,7 +726,8 @@ mod tests {
                     let cconf = CircuitConfig::from(
                         Layout::new_multihost(&params, *local_address).unwrap(),
                     )
-                    .with_exchange_listener(exchange_listener);
+                    .with_exchange_listener(exchange_listener)
+                    .with_streaming_exchange(true);
 
                     let (dbsp_handle, (input_handle, output_handle)) =
                         Runtime::init_circuit(cconf, circuit).expect("failed to start runtime");

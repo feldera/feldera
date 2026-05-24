@@ -262,6 +262,12 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub now_http_driven: Option<bool>,
 
+    /// Enable streaming exchange.
+    ///
+    /// `false`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub streaming_exchange: Option<bool>,
+
     /// Options not understood by this particular version.
     ///
     /// This allows the pipeline manager to take options that a custom or old
@@ -340,6 +346,10 @@ impl DevTweaks {
 
     pub fn now_http_driven(&self) -> bool {
         self.now_http_driven.unwrap_or(false)
+    }
+
+    pub fn streaming_exchange(&self) -> bool {
+        self.streaming_exchange.unwrap_or(true)
     }
 }
 
