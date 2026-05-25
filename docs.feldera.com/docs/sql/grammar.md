@@ -321,6 +321,8 @@ query
   |   {
           select
       |   selectWithoutFrom
+      |   selectWithExclude
+      |   selectWithReplace
       |   query UNION [ ALL | DISTINCT ] query
       |   query EXCEPT [ DISTINCT ] query
       |   query MINUS [ DISTINCT ] query
@@ -378,6 +380,13 @@ groupItem:
 selectWithoutFrom
   :   SELECT [ ALL | DISTINCT ]
           { * | projectItem [, projectItem ]* }
+
+selectWithExclude
+  :   SELECT [ tableName '.' ] '*' [ [ 'EXCLUDE' | 'EXCEPT' ] parensColumnList ]
+
+selectWithReplace
+  :   SELECT  '*' 'REPLACE' '(' expression 'AS' column [ ',' expression 'AS' column ]* ')'
+
 ```
 
 <a id="order"></a>
@@ -390,10 +399,19 @@ orderItem
 ```
 projectItem
   :   expression [ [ AS ] columnAlias ]
-  | [ tableName '.' ] '*' [ 'EXCLUDE' parensColumnList ]
   |   ROW(*) [ [ AS ] columnAlias ]
   |   tableAlias . *
 ```
+
+The following forms of `SELECT` are supported:
+
+- `SELECT expr`: No `FROM` clause; implicitly assumes that the `SELECT` selects from a fixed table with 1 row
+- `SELECT * EXCLUDE a, b FROM T`: select all columns of table `T` except the ones named `a` and `b`
+- `SELECT * EXCEPT a, b FROM T`: `EXCEPT` is a synonym for `EXCLUDE`; this statement is equivalent to the previous statement
+- `SELECT * REPLACE (a+b AS a) FROM T`: Select all columns of table `T` and replace column `a` with the expression `a+b`
+- `SELECT` supports [lateral column aliasing](identifiers.md#lateral-column-aliasing), where
+  an identifier defined in a `SELECT` statement can be immediately used in the same statement
+  or in the associated `GROUP BY` and `HAVING` statements.
 
 <a id="join"></a>
 ```

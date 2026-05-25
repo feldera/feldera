@@ -23,15 +23,15 @@ See [#3918](https://github.com/feldera/feldera/issues/3918).
 ### No `STRING` or `DOUBLE` types in `OVER` ordering
 
 Window functions using `ORDER BY` on `VARCHAR`/`STRING` or
-`DOUBLE`/`FLOAT` columns are not yet supported.  This limitation
-affects TPC-DS queries q35, q47, q49, q51, q57, q70, and q86.
+`DOUBLE`/`FLOAT` columns are not yet supported.
 See [#457](https://github.com/feldera/feldera/issues/457).
 
 ### `ROWS` frame type not supported
 
 The `ROWS` frame specification in window functions is not yet
-supported.  Only `RANGE` frames are currently accepted.
-See [#457](https://github.com/feldera/feldera/issues/457).
+supported.  Only `RANGE` frames are currently accepted.  See
+[#457](https://github.com/feldera/feldera/issues/457).  This
+limitation affects TPC-DS query q51.
 
 ### `EXCLUDE` clause not supported
 
@@ -45,7 +45,11 @@ supported.
 See [#457](https://github.com/feldera/feldera/issues/457).
 
 ### Constant Window Boundaries
-Window boundaries must be constant expressions. For example, `RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW` is valid. But `RANGE BETWEEN INTERVAL 1 MONTH PRECEDING AND CURRENT ROW` is not, because a month is a not a constant time interval.
+
+Window boundaries must be constant expressions. For example, `RANGE
+BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW` is valid. But `RANGE
+BETWEEN INTERVAL 1 MONTH PRECEDING AND CURRENT ROW` is not, because a
+month is a not a constant time interval.
 
 ## Correlated subqueries
 
@@ -64,7 +68,8 @@ SELECT s.id, ARRAY(
 FROM spreadsheet s;
 ```
 
-In some instances, Feldera cannot decorrelate complex nested subqueries. In these cases, we recommend users refactor the query.
+In some instances, Feldera cannot decorrelate complex nested
+subqueries. In these cases, we recommend users refactor the query.
 
 See [#2555](https://github.com/feldera/feldera/issues/2555).
 
@@ -90,7 +95,11 @@ The `MATCH_RECOGNIZE` clause for pattern matching over rows is not yet
 supported.
 
 ## `PIVOT` & `UNPIVOT`
-`PIVOT` is supported if the user provides a fixed set of columns. Refer to [PIVOT documentation](./aggregates.md#pivots) for example usage. Dynamic `PIVOT` is not yet supported. `UNPIVOT` is not yet supported.
+
+`PIVOT` is supported if the user provides a fixed set of
+columns. Refer to [PIVOT documentation](./aggregates.md#pivots) for
+example usage. Dynamic `PIVOT` is not yet supported. `UNPIVOT` is not
+yet supported.
 
 
 ## `INTERSECT ALL` and `EXCEPT ALL`
