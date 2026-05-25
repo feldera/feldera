@@ -297,6 +297,9 @@ where
             RecordFormat::Avro => {
                 todo!()
             }
+            RecordFormat::DynamoDB => {
+                unreachable!("DynamoDB is an output-only format")
+            }
         }
     }
 }
@@ -427,6 +430,9 @@ where
                         (config, column_name.clone()),
                     ),
                 ))
+            }
+            RecordFormat::DynamoDB => {
+                unreachable!("DynamoDB is an output-only format")
             }
         }
     }
@@ -922,6 +928,9 @@ where
                         (raw_serde_config(), column_name.clone()),
                     ),
                 ))
+            }
+            RecordFormat::DynamoDB => {
+                unreachable!("DynamoDB is an output-only format")
             }
         }
     }
@@ -1437,6 +1446,9 @@ where
                 self.update_key_func.clone(),
                 (raw_serde_config(), column_name.clone()),
             ))),
+            RecordFormat::DynamoDB => {
+                unreachable!("DynamoDB is an output-only format")
+            }
         }
     }
 

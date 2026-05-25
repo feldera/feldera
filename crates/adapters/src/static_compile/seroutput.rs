@@ -12,6 +12,7 @@ use apache_avro::Schema as AvroSchema;
 use apache_avro::schema::NamesRef;
 #[cfg(feature = "with-avro")]
 use apache_avro::types::Value as AvroValue;
+use aws_sdk_dynamodb::types::AttributeValue;
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
 use dbsp::{
     Batch, BatchReader, OutputHandle, Trace,
@@ -38,12 +39,20 @@ use feldera_types::serde_with_context::serialize::{
 };
 use feldera_types::{
     format::csv::CsvParserConfig,
-    serde_with_context::{SerializeWithContext, SqlSerdeConfig},
+    serde_with_context::{
+        SerializeWithContext, SqlSerdeConfig,
+        serde_config::{BinaryFormat, VariantFormat},
+    },
 };
 use rand::thread_rng;
 use serde::Serialize;
 use serde_arrow::ArrayBuilder;
-use std::{any::Any, collections::HashSet, fmt::Debug, iter::once};
+use std::{
+    any::Any,
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    iter::once,
+};
 use std::{cell::RefCell, io, io::Write, marker::PhantomData, ops::DerefMut, sync::Arc};
 
 pub trait ErasedSerializeWithContext {
@@ -359,6 +368,52 @@ where
     }
 }
 
+fn to_dynamodb_item<T>(value: T, description: &str) -> AnyResult<HashMap<String, AttributeValue>>
+where
+    T: Serialize,
+{
+    let item = serde_dynamo::aws_sdk_dynamodb_1::to_item(value)
+        .map_err(|e| anyhow!("Failed to serialize {description} to DynamoDB item: {e}"))?;
+    item.into_iter()
+        .map(|(k, v)| Ok((k, fix_number_attribute(v)?)))
+        .collect()
+}
+
+/// The token used by `serde_json` (with `arbitrary_precision`) and by `fxp::Fixed` to serialize
+/// decimal numbers as a single-field struct, which non-JSON serializers see as a map.
+const SERDE_JSON_NUMBER_TOKEN: &str = "$serde_json::private::Number";
+
+/// Recursively convert any `M({"$serde_json::private::Number": S(n)})` produced by
+/// `serde_dynamo` back into the intended `N(n)`.  This arises because `SqlDecimal` and
+/// `serde_json::Value::Number` (used by `VARIANT`) serialize using the same internal struct
+/// format that `serde_json` uses for arbitrary-precision numbers.
+///
+/// `serde_dynamo` does not handle this case (see https://github.com/zenlist/serde_dynamo/issues/90);
+/// remove this function if that is ever fixed.
+fn fix_number_attribute(value: AttributeValue) -> AnyResult<AttributeValue> {
+    match value {
+        AttributeValue::M(mut map)
+            if map.len() == 1 && map.contains_key(SERDE_JSON_NUMBER_TOKEN) =>
+        {
+            match map.remove(SERDE_JSON_NUMBER_TOKEN) {
+                Some(AttributeValue::S(n)) => Ok(AttributeValue::N(n)),
+                _ => Err(anyhow!("unable to serialize arbitrary-precision number")),
+            }
+        }
+        AttributeValue::M(map) => Ok(AttributeValue::M(
+            map.into_iter()
+                .map(|(k, v)| Ok((k, fix_number_attribute(v)?)))
+                .collect::<AnyResult<_>>()?,
+        )),
+        AttributeValue::L(list) => Ok(AttributeValue::L(
+            list.into_iter()
+                .map(fix_number_attribute)
+                .collect::<AnyResult<_>>()?,
+        )),
+        other => Ok(other),
+    }
+}
+
 /// [`SerBatch`] implementation that wraps a `BatchReader`.
 #[repr(transparent)]
 pub struct SerBatchImpl<B, KD, VD>
@@ -446,6 +501,16 @@ where
                 AvroSerializer::create(),
             )),
             RecordFormat::Raw(_) => todo!(),
+            RecordFormat::DynamoDB => {
+                let serde_config = SqlSerdeConfig::default()
+                    .with_variant_format(VariantFormat::Json)
+                    .with_binary_format(BinaryFormat::Bytes);
+                Box::new(<SerCursorImpl<'a, JsonSerializer, B, KD, VD>>::new(
+                    &self.batch,
+                    serde_config,
+                    JsonSerializer::create(),
+                ))
+            }
         })
     }
 
@@ -695,6 +760,13 @@ where
         .map_err(|e| anyhow!("Failed to serialize key to JSON: {}", e))
     }
 
+    fn key_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>> {
+        to_dynamodb_item(
+            SerializeWithContextWrapper::new(self.key.as_ref().unwrap(), &self.serde_config),
+            "key",
+        )
+    }
+
     fn serialize_key_fields(
         &mut self,
         fields: &HashSet<String>,
@@ -802,6 +874,13 @@ where
             &self.serde_config,
         ))
         .map_err(|e| anyhow!("Failed to serialize value to JSON: {}", e))
+    }
+
+    fn val_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>> {
+        to_dynamodb_item(
+            SerializeWithContextWrapper::new(self.val.as_ref().unwrap(), &self.serde_config),
+            "value",
+        )
     }
 
     #[cfg(feature = "with-avro")]

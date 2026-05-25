@@ -760,6 +760,7 @@ pub fn generate_program_info(
                 | TransportConfig::PostgresOutput(_)
                 | TransportConfig::KafkaOutput(_)
                 | TransportConfig::DeltaTableOutput(_)
+                | TransportConfig::DynamoDBOutput(_)
                 | TransportConfig::RedisOutput(_)
                 | TransportConfig::NullOutput => {}
                 _ => {

@@ -1888,8 +1888,7 @@ impl Controller {
             },
         );
 
-        // Export connector-specific (custom) metrics registered via
-        // `InputConsumer::set_custom_metrics`.
+        // Export connector-specific metrics.
         write_custom_metrics(status, metrics, labels);
 
         fn write_output_metric<F, M>(
@@ -2258,8 +2257,7 @@ fn write_fbuf_slab_metrics<F>(
     );
 }
 
-/// Write connector-specific (custom) metrics registered via
-/// [`InputConsumer::set_custom_metrics`] into `metrics`.
+/// Write connector-specific metrics into `metrics`.
 ///
 /// Groups values by `(name, help, ValueType)` so that all endpoints' values
 /// for the same metric are emitted in a single Prometheus block (the
@@ -2283,6 +2281,16 @@ pub(crate) fn write_custom_metrics<F>(
                     .entry((name, help, vtype))
                     .or_default()
                     .push((input.endpoint_name.clone(), value));
+            }
+        }
+    }
+    for output in status.output_status().values() {
+        if let Some(cm) = &output.custom_metrics {
+            for (name, help, vtype, value) in cm.metrics() {
+                grouped
+                    .entry((name, help, vtype))
+                    .or_default()
+                    .push((output.endpoint_name.clone(), value));
             }
         }
     }
