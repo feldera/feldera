@@ -53,10 +53,11 @@ The following operations are available on dates:
 
 | Function | Arguments | Result | Description                                                                                                           | Example |
 |----------|-----------|--------|-----------------------------------------------------------------------------------------------------------------------|---------|
+| <a id="date_ceil"></a>`CEIL(date TO *unit*)`, | `*unit*` is a time unit | `DATE` | Round date up to the specified unit                                                                                   | `CEIL('2020-01-10' TO MONTH)` => `2020-02-01` |
 | <a id="date_trunc"></a> `DATE_TRUNC(date, *unit*)` | `*unit*` is a time unit, as described above, between `MILLENNIUM` and `DAY` | `DATE` | Rounds down the date to the specified time unit.                                                                      | `DATE_TRUNC('2020-01-10', MONTH)` => `2020-01-01`. |
 | <a id="date_extract"></a>`EXTRACT(*unit* FROM date)` | `*unit*` is a time unit, as described above | `BIGINT` | `DATE_PART` is a synonym for `EXTRACT`                                                                                | |
 | <a id="date_floor"></a>`FLOOR(date TO *unit*)`, | `*unit*` is a time unit | `DATE` | Round date down to the specified unit                                                                                 | `FLOOR('2020-01-10' TO MONTH)` => `2020-01-01` |
-| <a id="date_ceil"></a>`CEIL(date TO *unit*)`, | `*unit*` is a time unit | `DATE` | Round date up to the specified unit                                                                                   | `CEIL('2020-01-10' TO MONTH)` => `2020-02-01` |
+| <a id="make_date"></a>`MAKE_DATE(year, month, day)` | Three integer arguments | `DATE` | Creates a `DATE` from a year, month, and day; returns `NULL` if the result is not a valid date. | `MAKE_DATE(2020, 2, 1)` => `2020-02-01` |
 | <a id="date_timestampdiff"></a>`TIMESTAMPDIFF(*unit*, left, right)` | *unit*, `DATE`, `DATE` | `INTEGER` | Computes the difference (right - left) between two dates values and expresses the result in the specified time units. | `TIMESTAMPDIFF(HOUR, '2020-01-01', '2020-02-01')` => `24` |
 
 The following abbreviations can be used as well:
@@ -95,11 +96,12 @@ not allowed between quotes.
 
 | Function | Arguments | Result | Description | Example |
 |----------|-----------|--------|-------------|---------|
-|<a id="time_trunc"></a>`TIME_TRUNC(time, *unit*)` | `*unit*` is a time unit, as described above, between `HOUR` and `SECOND` | `TIME` |  Rounds down the time to the specified time unit | `TIME_TRUNC('12:34:56.78', MINUTE)` => `12:34:00` |
-|<a id="time_extract"></a>`EXTRACT(*unit* FROM time)` | `*unit*` is a time unit from `HOUR`, `MINUTE`, `SECOND`, `MILLISECOND` | `BIGINT` | Extracts the specified part | `EXTRACT(HOUR FROM '17:23:59')` => `17` |
-|<a id="timestamp_timestampdiff"></a>`TIMESTAMPDIFF(*unit*, left, right)` | *unit* is a time unit | `INT` | Computes the difference (right - left) between two time values and expresses the result in the specified time units. | |
-|<a id="time_floor"></a>`FLOOR(time TO *unit*)` | `*unit*` is a time unit between `HOUR` and `MICROSECOND` | `TIME` | It rounds a time downward to the start of the next unit boundary unless the value is already exactly on that boundary. | `FLOOR('17:23:59' TO MINUTE)` => `17:23:00` |
 |<a id="time_ceil"></a> `CEIL(time TO *unit*)` | `*unit*` is a time unit between `HOUR` and `MICROSECOND` | `TIME` | It rounds a time upward to the start of the next unit boundary unless the value is already exactly on that boundary. | `CEIL('17:01:00' TO HOUR)` => `18:00:00` |
+|<a id="time_floor"></a>`FLOOR(time TO *unit*)` | `*unit*` is a time unit between `HOUR` and `MICROSECOND` | `TIME` | It rounds a time downward to the start of the next unit boundary unless the value is already exactly on that boundary. | `FLOOR('17:23:59' TO MINUTE)` => `17:23:00` |
+|<a id="time_extract"></a>`EXTRACT(*unit* FROM time)` | `*unit*` is a time unit from `HOUR`, `MINUTE`, `SECOND`, `MILLISECOND` | `BIGINT` | Extracts the specified part | `EXTRACT(HOUR FROM '17:23:59')` => `17` |
+| <a id="make_time"></a>`MAKE_TIME(hour, minute, second)` | Any numeric type; last argument can be fractional | `TIME` | Creates a `TIME` from a hour, minute, second; returns `NULL` if the `TIME` is invalid. | `MAKE_TIME(20, 1, 1)` => `20:01:01` |
+|<a id="time_trunc"></a>`TIME_TRUNC(time, *unit*)` | `*unit*` is a time unit, as described above, between `HOUR` and `SECOND` | `TIME` |  Rounds down the time to the specified time unit | `TIME_TRUNC('12:34:56.78', MINUTE)` => `12:34:00` |
+|<a id="timestamp_timestampdiff"></a>`TIMESTAMPDIFF(*unit*, left, right)` | *unit* is a time unit | `INT` | Computes the difference (right - left) between two time values and expresses the result in the specified time units. | |
 
  The following abbreviations can be used as well:
 
@@ -147,18 +149,18 @@ number of milliseconds since the Unix epoch from the timestamp.
     <th>Examples</th>
   </tr>
   <tr>
+    <td><a id="timestamp_ceil"></a><code>CEIL</code>(timestamp TO <em>unit</em>)</td>
+    <td><em>unit</em> is a time unit</td>
+    <td><code>TIMESTAMP</code></td>
+    <td>Rounds a timestamp upward to the start of the next unit boundary unless the value is already exactly on that boundary.</td>
+    <td><code>CEIL('2024-05-04 17:23:01' TO MINUTE)</code> => <code>2024-05-04 17:24:00</code></td>
+  </tr>
+  <tr>
     <td><a id="convert_timezone"></a><code>CONVERT_TIMEZONE</code>(tz1, tz2, timestamp).</td>
     <td></td>
     <td><code>TIMESTAMP</code></td>
     <td>Converts the value of a timestamp from timezone tz1 to timezone tz2. The timezones are specified as <code>CHAR</code> values.  If the conversion fails, or if a timezone cannot be parsed as as IANA timezone or as a fixed offset timezone (e.g, <code>+08:00</code>), the result is <code>NULL</code></td>
     <td><code>CONVERT_TIMEZONE('America/New_York', 'America/Los_Angeles', TIMESTAMP '2008-03-05 12:25:29')</code> => <code>2008-03-05 09:25:29</code></td>
-  </tr>
-  <tr>
-    <td><a id="timestamp_trunc"></a><code>TIMESTAMP_TRUNC</code>(timestamp, <em>unit</em>)</td>
-    <td><em>unit</em> is a time unit, as described above, between <code>MILLENNIUM</code> and <code>SECOND</code></td>
-    <td><code>TIMESTAMP</code></td>
-    <td>Rounds down the timestamp to the specified time unit</td>
-    <td><code>TIMESTAMP_TRUNC('2020-01-10 10:00:00', MONTH)</code> => <code>2020-01-01 00:00:00</code></td>
   </tr>
   <tr>
     <td><a id="timestamp_extract"></a><code>EXTRACT</code>(<em>unit</em> FROM timestamp)</td>
@@ -175,19 +177,18 @@ number of milliseconds since the Unix epoch from the timestamp.
     <td><code>FLOOR('2024-05-04 17:23:59' TO MONTH)</code> => <code>2024-05-01 00:00:00</code></td>
   </tr>
   <tr>
-    <td><a id="timestamp_ceil"></a><code>CEIL</code>(timestamp TO <em>unit</em>)</td>
-    <td><em>unit</em> is a time unit</td>
+    <td><a id="make_timestamp"></a><code>MAKE_TIMESTAMP</code>(year, month, day, hour, minute, second)</td>
+    <td>Five integers and any numeric type for seconds.</td>
     <td><code>TIMESTAMP</code></td>
-    <td>Rounds a timestamp upward to the start of the next unit boundary unless the value is already exactly on that boundary.</td>
-    <td><code>CEIL('2024-05-04 17:23:01' TO MINUTE)</code> => <code>2024-05-04 17:24:00</code></td>
+    <td>Creates a <code>TIMESTAMP</code> from parts; returns <code>NULL</code> if the result is not a valid timestamp.</td>
+    <td><code>MAKE_TIMESTAMP(2020, 1, 1, 10, 0, 0.5)</code> => <code>2020-01-01 10:00:00.5</code></td>
   </tr>
   <tr>
-    <td><a id="timestamp_timestampdiff"></a><code>TIMESTAMPDIFF</code>(<em>unit</em>, left, right)</td>
-    <td><em>unit</em> is a time unit, as described above</td>
-    <td><code>INTEGER</code></td>
-    <td>Computes the difference (right - left) between two timestamps and expresses the result in the specified time units.  One month is considered elapsed when the calendar
-month has increased and the calendar day and time is greater than or equal to the start. Weeks, quarters, and years follow from that.</td>
-    <td></td>
+    <td><a id="timestamp_trunc"></a><code>TIMESTAMP_TRUNC</code>(timestamp, <em>unit</em>)</td>
+    <td><em>unit</em> is a time unit, as described above, between <code>MILLENNIUM</code> and <code>SECOND</code></td>
+    <td><code>TIMESTAMP</code></td>
+    <td>Rounds down the timestamp to the specified time unit</td>
+    <td><code>TIMESTAMP_TRUNC('2020-01-10 10:00:00', MONTH)</code> => <code>2020-01-01 00:00:00</code></td>
   </tr>
   <tr>
     <td><a id="timestampadd"></a><code>TIMESTAMPADD</code>(<em>unit</em>, integer, timestamp)</td>
@@ -196,6 +197,14 @@ month has increased and the calendar day and time is greater than or equal to th
      <td>Adds an interval in the specified unit to a timestamp or date/time literal. The added value can be negative.</td>
      <td></td>
    </tr>
+  <tr>
+    <td><a id="timestamp_timestampdiff"></a><code>TIMESTAMPDIFF</code>(<em>unit</em>, left, right)</td>
+    <td><em>unit</em> is a time unit, as described above</td>
+    <td><code>INTEGER</code></td>
+    <td>Computes the difference (right - left) between two timestamps and expresses the result in the specified time units.  One month is considered elapsed when the calendar
+month has increased and the calendar day and time is greater than or equal to the start. Weeks, quarters, and years follow from that.</td>
+    <td></td>
+  </tr>
 </table>
 
 The following abbreviations can be used as well:
@@ -217,11 +226,11 @@ Values of type `TIMESTAMP` can be compared using `=`, `<>`, `!=`, `<`,
 
 To create a timestamp using the Unix EPOCH in seconds as a base, you
 can use the `TIMESTAMPADD` function.  The following code creates a
-MAKE_TIMESTAMP function which creates a `TIMESTAMP` given a number of
+CREATE_TIMESTAMP function which creates a `TIMESTAMP` given a number of
 seconds:
 
 ```sql
-CREATE FUNCTION MAKE_TIMESTAMP(SECONDS BIGINT) RETURNS TIMESTAMP AS
+CREATE FUNCTION CREATE_TIMESTAMP(SECONDS BIGINT) RETURNS TIMESTAMP AS
 TIMESTAMPADD(SECOND, SECONDS, DATE '1970-01-01');
 ```
 

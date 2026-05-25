@@ -103,6 +103,9 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.IHasPrecision;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -1396,11 +1399,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             this.ensureDouble(node, ops, i);
                         return compilePolymorphicFunction(true, call, node, type, ops, 2);
                     }
-                    case "split":
+                    case "split": {
                         // Calcite should be doing this, but it doesn't.
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureString(ops, i);
                         return compileFunction(call, node, type, ops, 1, 2);
+                    }
                     case "split_part": {
                         this.ensureString(ops, 0);
                         this.ensureString(ops, 1);
@@ -1433,10 +1437,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "lower":
                     case "upper":
                     case "initcap":
-                    case "initcap_spaces":
+                    case "initcap_spaces": {
                         validateArgCount(node, opName, ops.size(), 1);
                         this.ensureString(ops, 0);
-                        // fall through
+                        return compileStrictFunction(call, node, type, ops, 1);
+                    }
                     case "to_hex":
                     case "bin2utf8":
                     case "octet_length": {
@@ -1477,9 +1482,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "format_date":
                     case "format_timestamp":
-                    case "format_time":
+                    case "format_time": {
                         this.checkFormatArg(ops, 0);
                         return compileFunction(call, node, type, ops, 2);
+                    }
                     case "bround": {
                         validateArgCount(node, opName, ops.size(), 2);
                         this.ensureInteger(node, ops, 1);
@@ -1490,11 +1496,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         }
                         return compilePolymorphicFunction(false, call, node, type, ops, 2);
                     }
-                    case "replace":
+                    case "replace": {
                         validateArgCount(node, opName, ops.size(), 3);
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureString(ops, i);
                         return compileStrictFunction(call, node, type, ops, 3);
+                    }
                     case "division":
                         return makeBinaryExpression(node, type, DBSPOpcode.DIV, ops);
                     case "element": {
@@ -1549,28 +1556,32 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "variantnull":
                     case "connector_metadata":
                         return compileFunction(call, node, type, ops, 0);
-                    case "gunzip":
+                    case "gunzip": {
                         DBSPExpression arg = ops.get(0);
                         ops.set(0, arg.cast(node, new DBSPTypeBinary(arg.getNode(), false, arg.type.mayBeNull),
                                 DBSPCastExpression.CastType.SqlUnsafe));
                         return compileStrictFunction(call, node, type, ops, 1);
+                    }
                     case "to_int":
                     case "typeof":
                         return compileFunction(call, node, type, ops, 1);
                     case "parse_json":
-                    case "to_json":
+                    case "to_json": {
                         DBSPExpression expr = this.strictnessCheck(ops, type);
                         if (expr != null)
                             return expr;
                         return compilePolymorphicFunction(false, call, node, type, ops, 1);
-                    case "sequence":
+                    }
+                    case "sequence": {
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureInteger(node, ops, i);
                         return compileFunction(call, node, type, ops, 2);
-                    case "blackbox":
+                    }
+                    case "blackbox": {
                         Utilities.enforce(ops.size() == 1,
                                 () -> "expected one argument for blackbox function");
                         return new DBSPApplyExpression(node, "blackbox", ops.get(0).type, ops.toArray(new DBSPExpression[0]));
+                    }
                     case "regexp_replace": {
                         validateArgCount(node, operationName, ops.size(), 2, 3);
                         for (int i = 0; i < ops.size(); i++) {
@@ -1685,6 +1696,57 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         ops.set(0, this.makeTimezone(ops.get(0)));
                         ops.set(1, this.makeTimezone(ops.get(1)));
                         return compileStrictFunction(call, node, type, ops, 3);
+                    }
+                    case "make_date": {
+                        validateArgCount(node, operationName, ops.size(), 3);
+                        this.ensureInteger(node, ops, 0);
+                        this.ensureInteger(node, ops, 1);
+                        this.ensureInteger(node, ops, 2);
+                        return compileFunction(call, node, type, ops, 3);
+                    }
+                    case "make_time": {
+                        validateArgCount(node, operationName, ops.size(), 3);
+                        DBSPExpression expr = this.strictnessCheck(ops, type);
+                        if (expr != null)
+                            return expr;
+                        this.ensureInteger(node, ops, 0);
+                        this.ensureInteger(node, ops, 1);
+                        DBSPType secType = ops.get(2).getType();
+                        if (secType.is(DBSPTypeFP.class)) {
+                            this.ensureDouble(node, ops, 2);
+                        } else if (secType.is(DBSPTypeInteger.class)) {
+                            this.ensureInteger(node, ops, 2);
+                        } else if (!secType.is(DBSPTypeDecimal.class)) {
+                            this.compiler.reportError(node.getPositionRange(),
+                                    "Illegal type",
+                                    "Illegal type for 'seconds' argument to MAKE_TIME: " + secType.asSqlString());
+                        }
+                        return compilePolymorphicFunction(false, call, node, type, ops, 3);
+                    }
+                    case "make_timestamp": {
+                        validateArgCount(node, operationName, ops.size(), 6);
+                        this.ensureInteger(node, ops, 0);
+                        this.ensureInteger(node, ops, 1);
+                        this.ensureInteger(node, ops, 2);
+                        this.ensureInteger(node, ops, 3);
+                        this.ensureInteger(node, ops, 4);
+                        DBSPType secType = ops.get(5).getType();
+                        if (secType.is(DBSPTypeNull.class)) {
+                            return type.none();
+                        } else if (secType.is(DBSPTypeFP.class)) {
+                            this.ensureDouble(node, ops, 5);
+                        } else if (secType.is(DBSPTypeInteger.class)) {
+                            this.ensureInteger(node, ops, 5);
+                        } else if (!secType.is(DBSPTypeDecimal.class)) {
+                            this.compiler.reportError(node.getPositionRange(),
+                                    "Illegal type",
+                                    "Illegal type for 'seconds' argument to MAKE_TIMESTAMP: " + secType.asSqlString());
+                        }
+                        var date = compileFunction("make_date", node,
+                                DBSPTypeDate.NULLABLE_INSTANCE, Linq.list(ops.get(0), ops.get(1), ops.get(2)), 3);
+                        var time = compilePolymorphicFunction(false, "make_time", node,
+                                DBSPTypeTime.NULLABLE_INSTANCE, Linq.list(ops.get(3), ops.get(4), ops.get(5)), 3);
+                        return compileFunction("make_timestamp", node, type, Linq.list(date, time), 2);
                     }
                 }
                 return this.compileUdfOrConstructor(node, call, type, ops);

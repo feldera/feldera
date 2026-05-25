@@ -25,10 +25,10 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
+import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -43,7 +43,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.junit.Test;
 
-public class TimeTests extends BaseSQLTests {
+public class TimeTests extends SqlIoTest {
     public DBSPCompiler compileQuery(String query) {
         DBSPCompiler compiler = this.testCompiler();
         String ddl = "CREATE TABLE T (\n" +
@@ -249,5 +249,54 @@ public class TimeTests extends BaseSQLTests {
         this.testQuery(query,
                 new DBSPI32Literal(0), new DBSPI32Literal(1), new DBSPI32Literal(-120)
                 );
+    }
+
+    @Test
+    public void testMakeTime() {
+        this.qs("""
+                SELECT MAKE_TIME(1, 2, 3);
+                 r
+                ---
+                 01:02:03
+                (1 row)
+                
+                SELECT MAKE_TIME(1, 2, CAST(3 AS UNSIGNED));
+                 r
+                ---
+                 01:02:03
+                (1 row)
+                
+                SELECT MAKE_TIME(-1, 2, 3);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT MAKE_TIME(1, 2, 3.5);
+                 r
+                ---
+                 01:02:03.5
+                (1 row)
+                
+                SELECT MAKE_TIME(CAST(1 AS TINYINT UNSIGNED), 2, 3.5);
+                 r
+                ---
+                 01:02:03.5
+                (1 row)
+                
+                SELECT MAKE_TIME(1, 2, NULL);
+                 r
+                ---
+                NULL
+                (1 row)
+
+                SELECT MAKE_TIME(1, 2, 35e-1);
+                 r
+                ---
+                 01:02:03.5
+                (1 row)""");
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT MAKE_TIME(1.2, 2, 3);",
+                "Cannot apply 'make_time' to arguments of type 'make_time(<DECIMAL(2, 1)>, <INTEGER>, <INTEGER>)'." +
+                        " Supported form(s): MAKE_TIME(<INTEGER>, <INTEGER>, <NUMERIC>)");
     }
 }

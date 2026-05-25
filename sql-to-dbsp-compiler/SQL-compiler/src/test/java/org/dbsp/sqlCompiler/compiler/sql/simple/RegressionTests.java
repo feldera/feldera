@@ -1017,11 +1017,11 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void timestamp() {
         String sql = """
-                CREATE FUNCTION MAKE_TIMESTAMP(SECONDS BIGINT) RETURNS TIMESTAMP AS
+                CREATE FUNCTION CREATE_TIMESTAMP(SECONDS BIGINT) RETURNS TIMESTAMP AS
                 TIMESTAMPADD(SECOND, SECONDS, DATE '1970-01-01');
 
                 CREATE TABLE T(c1 BIGINT);
-                CREATE VIEW sum_view AS SELECT MAKE_TIMESTAMP(c1) FROM T;
+                CREATE VIEW sum_view AS SELECT CREATE_TIMESTAMP(c1) FROM T;
                 """;
         CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.step("INSERT INTO T VALUES (10000000);",

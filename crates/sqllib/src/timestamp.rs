@@ -2,7 +2,7 @@
 
 use crate::error::{SqlResult, SqlRuntimeError};
 use crate::{
-    FromInteger, SqlString, ToInteger,
+    DynamicDecimal, F64, FromInteger, SqlDecimal, SqlString, ToInteger,
     array::Array,
     casts::*,
     interval::{LongInterval, ShortInterval},
@@ -15,7 +15,7 @@ use chrono::{
 };
 use chrono_tz::Tz;
 use core::fmt::Formatter;
-use dbsp::num_entries_scalar;
+use dbsp::{algebra::HasZero, num_entries_scalar};
 use feldera_macros::IsNone;
 use feldera_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
@@ -33,7 +33,7 @@ use std::{
 use crate::{
     operators::{eq, gt, gte, lt, lte, neq},
     some_existing_operator, some_function2, some_operator, some_polymorphic_function1,
-    some_polymorphic_function2, some_polymorphic_function3,
+    some_polymorphic_function2, some_polymorphic_function3, some_polymorphic_null_function3,
 };
 
 /// Represents a date and a time without timezone information.
@@ -602,6 +602,15 @@ pub fn convert_timezoneNNN(
 #[doc(hidden)]
 pub fn now() -> Timestamp {
     Timestamp::from_dateTime(Utc::now())
+}
+
+#[doc(hidden)]
+pub fn make_timestampNN(date: Option<Date>, time: Option<Time>) -> Option<Timestamp> {
+    // Only one variant of this function is needed
+    let date = date?;
+    let time = time?;
+    let dt = date.to_date().and_time(time.to_time());
+    Some(Timestamp::from_naiveDateTime(dt))
 }
 
 #[doc(hidden)]
@@ -1641,6 +1650,65 @@ pub fn floor_millennium_Date(value: Date) -> Date {
 some_polymorphic_function1!(floor_millennium, Date, Date, Date);
 
 #[doc(hidden)]
+pub fn make_date___(year: i32, month: i32, day: i32) -> Option<Date> {
+    if !(1..=9999).contains(&year) {
+        return None;
+    }
+    if month < 1 || day < 1 {
+        return None;
+    }
+    let naive = NaiveDate::from_ymd_opt(year, month as u32, day as u32)?;
+    Some(Date::from_date(naive))
+}
+
+#[doc(hidden)]
+pub fn make_dateN__(year: Option<i32>, month: i32, day: i32) -> Option<Date> {
+    let year = year?;
+    make_date___(year, month, day)
+}
+
+#[doc(hidden)]
+pub fn make_date_N_(year: i32, month: Option<i32>, day: i32) -> Option<Date> {
+    let month = month?;
+    make_date___(year, month, day)
+}
+
+#[doc(hidden)]
+pub fn make_date__N(year: i32, month: i32, day: Option<i32>) -> Option<Date> {
+    let day = day?;
+    make_date___(year, month, day)
+}
+
+#[doc(hidden)]
+pub fn make_dateNN_(year: Option<i32>, month: Option<i32>, day: i32) -> Option<Date> {
+    let year = year?;
+    let month = month?;
+    make_date___(year, month, day)
+}
+
+#[doc(hidden)]
+pub fn make_date_NN(year: i32, month: Option<i32>, day: Option<i32>) -> Option<Date> {
+    let month = month?;
+    let day = day?;
+    make_date___(year, month, day)
+}
+
+#[doc(hidden)]
+pub fn make_dateN_N(year: Option<i32>, month: i32, day: Option<i32>) -> Option<Date> {
+    let year = year?;
+    let day = day?;
+    make_date___(year, month, day)
+}
+
+#[doc(hidden)]
+pub fn make_dateNNN(year: Option<i32>, month: Option<i32>, day: Option<i32>) -> Option<Date> {
+    let year = year?;
+    let month = month?;
+    let day = day?;
+    make_date___(year, month, day)
+}
+
+#[doc(hidden)]
 pub fn floor_century_Date(value: Date) -> Date {
     let d = value.to_date();
     let naive = NaiveDate::from_ymd_opt((d.year() / 100) * 100, 1, 1).unwrap();
@@ -2559,6 +2627,69 @@ some_operator!(eq, Time, Time, bool);
 some_operator!(neq, Time, Time, bool);
 some_operator!(gte, Time, Time, bool);
 some_operator!(lte, Time, Time, bool);
+
+#[doc(hidden)]
+pub fn make_time_i32_i32_i32(hour: i32, minute: i32, second: i32) -> Option<Time> {
+    if hour < 0 || minute < 0 || second < 0 {
+        return None;
+    }
+    let result = NaiveTime::from_hms_opt(hour as u32, minute as u32, second as u32)?;
+    Some(Time::from_time(result))
+}
+
+some_polymorphic_null_function3!(make_time, i32, i32, i32, i32, i32, i32, Time);
+
+#[doc(hidden)]
+pub fn make_time_i32_i32_d(hour: i32, minute: i32, second: F64) -> Option<Time> {
+    let second = second.into_inner();
+    if !(0..=23).contains(&hour) {
+        return None;
+    }
+    if !(0..=59).contains(&minute) {
+        return None;
+    }
+    if !(0.0..60.0).contains(&second) {
+        return None;
+    }
+
+    // Split seconds into integer + fractional nanoseconds
+    let sec_int = second.trunc() as u32;
+    let nanos = ((second - second.trunc()) * 1_000_000_000.0).trunc() as u32;
+
+    let result = NaiveTime::from_hms_nano_opt(hour as u32, minute as u32, sec_int, nanos)?;
+    Some(Time::from_time(result))
+}
+
+some_polymorphic_null_function3!(make_time, i32, i32, i32, i32, d, F64, Time);
+
+#[doc(hidden)]
+pub fn make_time_i32_i32_SqlDecimal<const P: usize, const S: usize>(
+    hour: i32,
+    minute: i32,
+    second: SqlDecimal<P, S>,
+) -> Option<Time> {
+    if !(0..=23).contains(&hour) {
+        return None;
+    }
+    if !(0..=59).contains(&minute) {
+        return None;
+    }
+    if second < SqlDecimal::<P, S>::zero() {
+        return None;
+    }
+
+    // Split seconds into integer + fractional nanoseconds
+    let sec_int: u32 = second.trunc().try_into().ok()?;
+    let nanos: DynamicDecimal = (second - second.trunc()).into();
+    let bil = DynamicDecimal::new(1_000_000_000, 0);
+    let nanos = nanos * bil;
+    let nanos: u32 = nanos.try_into().ok()?;
+
+    let result = NaiveTime::from_hms_nano_opt(hour as u32, minute as u32, sec_int, nanos)?;
+    Some(Time::from_time(result))
+}
+
+some_polymorphic_null_function3!(make_time <const P: usize, const S: usize>, i32, i32, i32, i32, SqlDecimal, SqlDecimal<P, S>, Time);
 
 #[doc(hidden)]
 pub fn floor_millennium_Time(value: Time) -> Time {

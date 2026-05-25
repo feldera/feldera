@@ -80,6 +80,9 @@ public class CustomFunctions {
         this.functions.add(new GunzipFunction());
         this.functions.add(new InitcapSpacesFunction());
         this.functions.add(new LeastNonNullsFunction());
+        this.functions.add(new MakeDateFunction());
+        this.functions.add(new MakeTimeFunction());
+        this.functions.add(new MakeTimestampFunction());
         this.functions.add(new NowFunction());
         this.functions.add(new ParseDateFunction());
         this.functions.add(new ParseJsonFunction());
@@ -166,6 +169,9 @@ public class CustomFunctions {
         }
     }
 
+    public static final SqlSingleOperandTypeChecker ALL_INTEGERS =
+            family(SqlTypeFamily.INTEGER).or(family(SqlTypeFamily.UNSIGNED_NUMERIC));
+
     /** A clone of a Calcite SqlLibraryOperator function, but which is non-optimized */
     static abstract class CalciteFunctionClone extends NonOptimizedFunction {
         public CalciteFunctionClone(String name, SqlFunction calciteFunction, String documentationFile, String testedBy) {
@@ -193,6 +199,45 @@ public class CustomFunctions {
                             OperandTypes.CHARACTER, OperandTypes.TIMESTAMP),
                     SqlFunctionCategory.USER_DEFINED_FUNCTION,
                     "datetime#format_timestamp",
+                    FunctionDocumentation.NO_FILE
+            );
+        }
+    }
+
+    static class MakeDateFunction extends NonOptimizedFunction {
+        private MakeDateFunction() {
+            super("MAKE_DATE",
+                    ReturnTypes.DATE.andThen(SqlTypeTransforms.FORCE_NULLABLE),
+                    OperandTypes.sequence("MAKE_DATE(<INTEGER>, <INTEGER>, <INTEGER>)",
+                            ALL_INTEGERS, ALL_INTEGERS, ALL_INTEGERS),
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION,
+                    "datetime#make_date",
+                    FunctionDocumentation.NO_FILE
+            );
+        }
+    }
+
+    static class MakeTimeFunction extends NonOptimizedFunction {
+        private MakeTimeFunction() {
+            super("MAKE_TIME",
+                    ReturnTypes.TIME.andThen(SqlTypeTransforms.FORCE_NULLABLE),
+                    OperandTypes.sequence("MAKE_TIME(<INTEGER>, <INTEGER>, <NUMERIC>)",
+                            ALL_INTEGERS, ALL_INTEGERS, NUMERIC),
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION,
+                    "datetime#make_time",
+                    FunctionDocumentation.NO_FILE
+            );
+        }
+    }
+
+    static class MakeTimestampFunction extends NonOptimizedFunction {
+        private MakeTimestampFunction() {
+            super("MAKE_TIMESTAMP",
+                    ReturnTypes.TIMESTAMP.andThen(SqlTypeTransforms.FORCE_NULLABLE),
+                    OperandTypes.sequence("MAKE_TIMESTAMP(<INTEGER>, <INTEGER>, <INTEGER>, <INTEGER>, <INTEGER>, <NUMERIC>)",
+                            ALL_INTEGERS, ALL_INTEGERS, ALL_INTEGERS, ALL_INTEGERS, ALL_INTEGERS, NUMERIC),
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION,
+                    "datetime#make_timestamp",
                     FunctionDocumentation.NO_FILE
             );
         }
