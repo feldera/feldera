@@ -1223,7 +1223,6 @@ public class PostgresTimestampTests extends SqlIoTest {
                  Mon Jan 01 17:32:01 2001    |      1000000 |     1000     |  1        |    978370321""");
     }
 
-    // Postgres supports the ::timestamp syntax for casts
     // Calcite only supports 4 digit year for timestamps.
     // SELECT date_part('epoch', '294270-01-01 00:00:00'::timestamp);
 
@@ -1242,8 +1241,14 @@ public class PostgresTimestampTests extends SqlIoTest {
     //SELECT to_char(d1, 'DAY Day day DY Dy dy MONTH Month month RM MON Mon mon')
     //   FROM TIMESTAMP_TBL;
 
-    // select make_timestamp(0, 7, 15, 12, 30, 15);
-    // Calcite does not support make_timestamp
+    @Test
+    public void testMakeTimestamp() {
+        this.q("""
+                SELECT make_timestamp(2014, 12, 28, 6, 30, 45.887);
+                        make_timestamp
+                ------------------------------
+                 Sun Dec 28 06:30:45.887 2014""");
+    }
 
     // select * from generate_series('2020-01-01 00:00'::timestamp,
     //                              '2020-01-02 03:00'::timestamp,

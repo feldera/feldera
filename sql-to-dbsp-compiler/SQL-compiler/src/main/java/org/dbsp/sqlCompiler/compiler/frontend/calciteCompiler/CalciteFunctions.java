@@ -436,10 +436,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     runtime_aggtest/illarg_tests2/test_{date_time_fn,numeric_type_fn}.py|
                     runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
             new Func(SqlStdOperatorTable.TIMESTAMP_ADD, "TIMESTAMPADD", SqlLibrary.STANDARD,
-                    "datetime#timestampadd",
-                    """
-                    runtime_aggtest/illarg_tests2/test_date_time_fn.py|
-                    runtime_aggtest/illarg_tests2/test_date_time_fn.py""", false),
+                    "datetime#timestampadd","runtime_aggtest/illarg_tests2/test_date_time_fn.py", false),
             new Func(SqlStdOperatorTable.TIMESTAMP_DIFF, "TIMESTAMPDIFF", SqlLibrary.STANDARD,
                     "datetime#date_timestampdiff,datetime#timestamp_timestampdiff",
                     "runtime_aggtest/illarg_tests2/test_date_time_fn.py", false),

@@ -401,4 +401,114 @@ public class DateArithmeticTests extends SqlIoTest {
                  11 months ago
                 (1 row)""");
     }
+
+    @Test
+    public void makeDateTests() {
+        this.qs("""
+                SELECT MAKE_DATE(2020, 1, 1);
+                 r
+                ---
+                 2020-01-01
+                (1 row)
+                
+                SELECT MAKE_DATE(CAST(2020 AS UNSIGNED), 1, 1);
+                 r
+                ---
+                 2020-01-01
+                (1 row)
+                
+                SELECT MAKE_DATE(1, 1, 1);
+                 r
+                ---
+                 0001-01-01
+                (1 row)
+                
+                SELECT MAKE_DATE(NULL, 1, 1);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT MAKE_DATE(2020, 0, 1);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT MAKE_DATE(0, 1, 1);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT MAKE_DATE(20202, 10, 10);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT MAKE_DATE(2023, 2, 29);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT MAKE_DATE(9999, 12, 31);
+                 r
+                ---
+                 9999-12-31
+                (1 row)""");
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT MAKE_DATE('a', 1.2, 3);",
+                "Cannot apply 'make_date' to arguments of type 'make_date(<CHAR(1)>, <DECIMAL(2, 1)>, <INTEGER>)'. " +
+                        "Supported form(s): MAKE_DATE(<INTEGER>, <INTEGER>, <INTEGER>)");
+    }
+
+    @Test
+    public void makeTimestampTests() {
+        this.qs("""
+                SELECT MAKE_TIMESTAMP(2020, 1, 1, 10, 0, 0);
+                 r
+                ---
+                 2020-01-01 10:00:00
+                (1 row)
+                
+                SELECT MAKE_TIMESTAMP(2020, 1, 1, 22, 58, 59);
+                 r
+                ---
+                 2020-01-01 22:58:59
+                (1 row)
+                
+                SELECT MAKE_TIMESTAMP(2020, 1, 1, 22, 58, 59.99999);
+                 r
+                ---
+                 2020-01-01 22:58:59.99999
+                (1 row)
+                
+                SELECT MAKE_TIMESTAMP(2020, 0, 1, 10, 0, 0);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT MAKE_TIMESTAMP(2020, 1, 1, 10, 0, -1);
+                 r
+                ---
+                NULL
+                (1 row)
+
+                SELECT MAKE_TIMESTAMP(2023, 2, 29, 10, 1, 1);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT MAKE_TIMESTAMP(2023, 2, 29, 10, 1, NULL);
+                 r
+                ---
+                NULL
+                (1 row)""");
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT MAKE_TIMESTAMP('a', 1.2, 3, 1, 2, 3);",
+                "Cannot apply 'make_timestamp' to arguments of type 'make_timestamp(<CHAR(1)>, <DECIMAL(2, 1)>, <INTEGER>, <INTEGER>, <INTEGER>, <INTEGER>)'. " +
+                        "Supported form(s): MAKE_TIMESTAMP(<INTEGER>, <INTEGER>, <INTEGER>, <INTEGER>, <INTEGER>, <NUMERIC>)");
+    }
 }
