@@ -439,7 +439,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "datetime#timestampadd",
                     """
                     runtime_aggtest/illarg_tests2/test_date_time_fn.py|
-                    runtime_aggtest/lateness_tests/test_check.py""", false),
+                    runtime_aggtest/illarg_tests2/test_date_time_fn.py""", false),
             new Func(SqlStdOperatorTable.TIMESTAMP_DIFF, "TIMESTAMPDIFF", SqlLibrary.STANDARD,
                     "datetime#date_timestampdiff,datetime#timestamp_timestampdiff",
                     "runtime_aggtest/illarg_tests2/test_date_time_fn.py", false),
@@ -501,6 +501,8 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                      runtime_aggtest/illarg_tests2/test_date_time_fn.py|
                      runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py
                      """, false),
+            new Func(SqlLibraryOperators.REVERSE, "REVERSE", SqlLibrary.MYSQL, "string#reverse",
+                    FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.LENGTH, "LENGTH", SqlLibrary.POSTGRESQL, "string#char_length",
                     "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn,arr_map_type_fn}.py|",false),
             new Func(SqlLibraryOperators.SUBSTR_BIG_QUERY, "SUBSTR", SqlLibrary.BIG_QUERY, "string#substr",

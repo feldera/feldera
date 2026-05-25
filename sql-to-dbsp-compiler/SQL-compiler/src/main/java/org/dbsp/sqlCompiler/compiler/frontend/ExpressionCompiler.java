@@ -1846,11 +1846,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 }
                 return new DBSPBinaryExpression(node, type, opcode, op0, index);
             }
+            case REVERSE:
+                validateArgCount(node, operationName, ops.size(), 1);
+                this.ensureString(ops, 0);
+                return compileFunction(call, node, type, ops, 1);
             case TRIM:
                 validateArgCount(node, operationName, ops.size(), 3);
                 this.ensureString(ops, 1);
                 this.ensureString(ops, 2);
-                // fall through
+                return compileKeywordFunction(call, node, null, type, ops, 0, 3);
             case TIMESTAMP_DIFF:
                 return compileKeywordFunction(call, node, null, type, ops, 0, 3);
             case TUMBLE: {
