@@ -69,4 +69,15 @@ public class Regression3Tests extends SqlIoTest {
             }
         });
     }
+
+    @Test
+    public void testReplace() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT, y INT);
+                CREATE VIEW V AS SELECT * REPLACE(x+y AS y) FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1, 2)", """
+                 x | y
+                -------
+                 1 | 3""");
+    }
 }
