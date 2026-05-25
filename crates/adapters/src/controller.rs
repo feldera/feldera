@@ -145,6 +145,8 @@ mod checkpoint;
 mod error;
 mod journal;
 mod pipeline_diff;
+#[cfg(target_os = "macos")]
+mod samply_spawn;
 mod stats;
 mod sync;
 mod validate;
@@ -1148,8 +1150,6 @@ impl Controller {
             .to_str()
             .context("failed to convert path to samply profile to str")?;
 
-        let mut cmd = tokio::process::Command::new("samply");
-
         // Calculate a maximum memory consumption for markers.
         //
         // In experiments, a busy worker thread can emit over 1,000 markers per
@@ -1164,57 +1164,66 @@ impl Controller {
             .with_memory_limit(Some(memory_limit))
             .start()
             .await;
-        let mut child = cmd
-            .args([
-                "record",
-                "-p",
-                &std::process::id().to_string(),
-                "-o",
-                profile_file,
-                "--save-only",
-                "--presymbolicate",
-            ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .context("failed to spawn samply process")?;
 
-        let child_pid = child.id().context("failed to get samply process id")?;
+        #[cfg(target_os = "macos")]
+        samply_spawn::run_detached_samply_record(std::process::id(), profile_file, duration)
+            .await?;
 
-        // Workaround as samply's `--duration` flag doesn't seem to work.
-        // See: https://github.com/mstange/samply/issues/716
-        //
-        // As the duration flag doesn't work, we have to send a SIGINT to
-        // tell samply to stop recording.
-        //
-        // If samply returns before the specified duration, it is likely due
-        // to an error, and in such cases, we want to report it immediately.
-        tokio::select! {
-                _ = child.wait() => {}
-                _ = tokio::time::sleep(Duration::from_secs(duration)) => {
-                    // Send SIGINT to the samply process to stop recording.
-                    nix::sys::signal::kill(
-                        nix::unistd::Pid::from_raw(child_pid as i32),
-                        nix::sys::signal::Signal::SIGINT,
-                    )
-                        .context("failed to send SIGINT to samply process")?;
-                }
+        #[cfg(all(unix, not(target_os = "macos")))]
+        {
+            let mut cmd = tokio::process::Command::new("samply");
+            let mut child = cmd
+                .args([
+                    "record",
+                    "-p",
+                    &std::process::id().to_string(),
+                    "-o",
+                    profile_file,
+                    "--save-only",
+                    "--presymbolicate",
+                ])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .context("failed to spawn samply process")?;
+
+            let child_pid = child.id().context("failed to get samply process id")?;
+
+            // Workaround as samply's `--duration` flag doesn't seem to work.
+            // See: https://github.com/mstange/samply/issues/716
+            //
+            // As the duration flag doesn't work, we have to send a SIGINT to
+            // tell samply to stop recording.
+            //
+            // If samply returns before the specified duration, it is likely due
+            // to an error, and in such cases, we want to report it immediately.
+            tokio::select! {
+                    _ = child.wait() => {}
+                    _ = tokio::time::sleep(Duration::from_secs(duration)) => {
+                        // Send SIGINT to the samply process to stop recording.
+                        nix::sys::signal::kill(
+                            nix::unistd::Pid::from_raw(child_pid as i32),
+                            nix::sys::signal::Signal::SIGINT,
+                        )
+                            .context("failed to send SIGINT to samply process")?;
+                    }
+            }
+            let output = child
+                .wait_with_output()
+                .await
+                .context("failed when waiting for samply process")?;
+
+            if !output.status.success() {
+                anyhow::bail!(
+                    "samply process failed with status: `{}`, samply stdout: `{}`, samply stderr: `{}`",
+                    output.status,
+                    String::from_utf8_lossy(&output.stdout).trim(),
+                    String::from_utf8_lossy(&output.stderr).trim(),
+                );
+            }
         }
+
         let annotations = capture.finish();
-        let output = child
-            .wait_with_output()
-            .await
-            .context("failed when waiting for samply process")?;
-
-        if !output.status.success() {
-            anyhow::bail!(
-                "samply process failed with status: `{}`, samply stdout: `{}`, samply stderr: `{}`",
-                output.status,
-                String::from_utf8_lossy(&output.stdout).trim(),
-                String::from_utf8_lossy(&output.stderr).trim(),
-            );
-        }
-
         let buf = tokio::fs::read(profile_file)
             .await
             .with_context(|| format!("failed to read samply profile file `{profile_file}`"))?;
