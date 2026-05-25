@@ -80,4 +80,36 @@ public class Regression3Tests extends SqlIoTest {
                 -------
                  1 | 3""");
     }
+
+    @Test
+    public void issue5858() {
+        this.getCC("""
+                CREATE TABLE purchase (
+                ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,
+                amount BIGINT
+                ) WITH (
+                'append_only' = 'true'
+                );
+                
+                
+                CREATE MATERIALIZED VIEW v1
+                WITH ('emit_final' = 'a_ts')
+                AS
+                SELECT
+                a.ts AS a_ts,
+                a.amount + b.amount AS total
+                FROM purchase a
+                JOIN purchase b
+                ON a.ts = b.ts;
+                
+                CREATE MATERIALIZED VIEW v2
+                WITH ('emit_final' = 'a_ts')
+                AS
+                SELECT
+                a.ts AS a_ts,
+                a.amount + b.amount AS total
+                FROM purchase a
+                JOIN purchase b
+                ON a.ts = b.ts + INTERVAL '0' SECOND;""");
+    }
 }
