@@ -736,6 +736,7 @@ metrics"""
         transaction_id: Optional[int] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        poll_interval_s: float = 0.5,
     ):
         """
         Commit the currently active transaction.
@@ -749,13 +750,22 @@ metrics"""
         :param timeout_s: Maximum time (in seconds) to wait for the transaction to commit when `wait` is True.
             If None, the function will wait indefinitely.
 
+        :param poll_interval_s: Polling interval at which to check while waiting for the
+            transaction to commit (default is every 0.5 seconds). Not used if `wait=False`.
+
         :raises RuntimeError: If there is currently no transaction in progress.
         :raises ValueError: If the provided `transaction_id` does not match the current transaction.
         :raises TimeoutError: If the transaction does not commit within the specified timeout (when `wait` is True).
         :raises FelderaAPIError: If the pipeline fails to commit a transaction.
         """
 
-        self.client.commit_transaction(self.name, transaction_id, wait, timeout_s)
+        self.client.commit_transaction(
+            self.name,
+            transaction_id,
+            wait,
+            timeout_s,
+            poll_interval_s=poll_interval_s,
+        )
 
     def transaction_status(self) -> TransactionStatus:
         """

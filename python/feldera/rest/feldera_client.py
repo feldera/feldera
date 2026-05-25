@@ -853,6 +853,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         transaction_id: Optional[int] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
+        poll_interval_s: float = 0.5,
     ):
         """
         Commits the currently active transaction.
@@ -867,6 +868,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         :param timeout_s: Maximum time (in seconds) to wait for the transaction to commit when `wait` is True.
             If None, the function will wait indefinitely.
+
+        :param poll_interval_s: Polling interval at which to check while waiting for the
+            transaction to commit (default is every 0.5 seconds). Not used if `wait=False`.
 
         :raises RuntimeError: If there is currently no transaction in progress.
         :raises ValueError: If the provided `transaction_id` does not match the current transaction.
@@ -909,8 +913,11 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             if stats["global_metrics"]["transaction_id"] != transaction_id:
                 return
 
-            logging.debug("commit hasn't completed, waiting for 1 more second")
-            time.sleep(1.0)
+            logging.debug(
+                "commit hasn't completed, waiting for %.1f more seconds",
+                poll_interval_s,
+            )
+            time.sleep(poll_interval_s)
 
     def checkpoint_pipeline(self, pipeline_name: str) -> int:
         """
