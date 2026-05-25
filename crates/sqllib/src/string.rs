@@ -586,6 +586,14 @@ pub fn split1_(source: SqlString) -> Array<SqlString> {
 some_function1!(split1, SqlString, Array<SqlString>);
 
 #[doc(hidden)]
+pub fn reverse_(s: SqlString) -> SqlString {
+    let r: String = s.str().chars().rev().collect();
+    SqlString::from(r)
+}
+
+some_function1!(reverse, SqlString, SqlString);
+
+#[doc(hidden)]
 pub fn split_part___(s: SqlString, delimiter: SqlString, n: i32) -> SqlString {
     let parts: Array<SqlString> = split2__(s, delimiter);
     let part_count = parts.len() as i32;

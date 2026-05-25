@@ -187,17 +187,22 @@ example.
     <td></td>
   </tr>
   <tr>
-    <td><a id="repeat"></a><code>REPEAT ( string, count )</code></td>
+    <td><a id="repeat"></a><code>REPEAT(string, count)</code></td>
     <td>Repeats <code>string</code> the specified number of times.  The result is an empty string for a negative or 0 count.</td>
     <td><code>repeat('Pg', 4)</code> => <code>PgPgPgPg</code></td>
   </tr>
   <tr>
-    <td><a id="replace"></a><code>REPLACE ( haystack, needle, replacement )</code></td>
+    <td><a id="replace"></a><code>REPLACE(haystack, needle, replacement)</code></td>
     <td>Replaces all occurrences of `needle` in `haystack` with `replacement`.</td>
     <td><code>replace('abcdefabcdef', 'cd', 'XX')</code> => <code>abXXefabXXef</code></td>
   </tr>
   <tr>
-    <td><a id="right"></a><code>RIGHT ( string, count )</code></td>
+    <td><a id="reverse"></a><code>REVERSE(string)</code></td>
+    <td>Returns a new string with the characters of 'string' in reverse order.</td>
+    <td><code>reverse('Feldera')</code> => <code>aredleF</code></td>
+  </tr>
+  <tr>
+    <td><a id="right"></a><code>RIGHT(string, count)</code></td>
     <td>Returns last <code>count</code> characters in the string.  If any argument is <code>NULL</code>, return <code>NULL</code>.</td>
     <td><code>right('abcde', 2)</code> => <code>de</code></td>
   </tr>
