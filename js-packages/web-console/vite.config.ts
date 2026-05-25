@@ -104,6 +104,13 @@ const browserTestProject = ({
   }
 })
 
+// Optional injection point for closed-source triage plugins. When set, must be
+// an absolute filesystem path to a module exporting { default, createBundle,
+// TriageResults }. Resolved via a `resolve.alias` entry below so the OSS tree's
+// node_modules is never touched. When unset, the virtual module emits a stub
+// and the alias is omitted entirely.
+const pluginsEntry = process.env.FELDERA_PLUGINS_ENTRY
+
 // TODO: remove Prettier
 export default defineConfig(async () => {
   return {
@@ -141,9 +148,8 @@ export default defineConfig(async () => {
       }),
       virtual({
         'virtual:felderaApiJsonSchemas.json': JSON.stringify(felderaApiJsonSchemas),
-        // The plugins module is loaded from the cloud repo via package name
-        'virtual:feldera-triage-plugins': process.env.FELDERA_PLUGINS_MODULE
-          ? `export { default, createBundle, TriageResults } from '${process.env.FELDERA_PLUGINS_MODULE}'`
+        'virtual:feldera-triage-plugins': pluginsEntry
+          ? `export { default, createBundle, TriageResults } from 'feldera-triage-plugins-impl'`
           : `export default []; export async function createBundle() { return {} }; export class TriageResults { constructor() { this.results = [] } }`
       }),
       devtoolsJson()
@@ -171,12 +177,21 @@ export default defineConfig(async () => {
         : {})
     },
     resolve: {
-      // When support-bundle-triage is symlinked into node_modules, vite dereferences
-      // the symlink and resolves its imports from the real path outside this workspace.
-      // dedupe forces these packages to always resolve from this workspace root.
-      dedupe: ['profiler-lib', 'triage-types', 'but-unzip']
+      // The plugins module (when present) lives outside this workspace and
+      // re-imports profiler-lib/triage-types/but-unzip. dedupe forces those to
+      // resolve from web-console's node_modules so we don't end up with two
+      // copies in the bundle.
+      dedupe: ['profiler-lib', 'triage-types', 'but-unzip'],
+      alias: pluginsEntry
+        ? [{ find: 'feldera-triage-plugins-impl', replacement: pluginsEntry }]
+        : []
     },
     server: {
+      // When pluginsEntry is set, it points outside this workspace. Allow
+      // vite-dev to read from its directory; build mode is unaffected.
+      fs: pluginsEntry
+        ? { allow: ['..', path.dirname(pluginsEntry)] }
+        : undefined,
       watch: {
         // Bun hoists deps to repo-root node_modules/.bun, causing vite to
         // resolve paths outside web-console and watch the entire monorepo,
