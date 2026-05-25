@@ -272,6 +272,7 @@ pub fn nstruct2nstruct(i: Tup2<Option<i32>, Option<SqlString>>) -> Result<Tup2<O
                     "s": "foobar",
                 }
             ],
+            wait=True,
         )
 
         output = out.to_dict()
