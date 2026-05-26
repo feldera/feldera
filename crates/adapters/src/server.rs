@@ -3,6 +3,7 @@ use crate::controller::{CompletionToken, ConsistentSnapshot, ControllerBuilder};
 use crate::format::csv::CsvOutputFormat;
 use crate::format::get_input_format;
 use crate::format::json::JsonOutputFormat;
+use crate::panic::enable_counting_panics;
 use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
 };
@@ -569,6 +570,7 @@ pub fn run_server(
     circuit_factory: CircuitFactoryFunc,
 ) -> Result<(), ControllerError> {
     ensure_default_crypto_provider();
+    enable_counting_panics();
 
     let bind_address = args.bind_address.clone();
     let port = args.default_port.unwrap_or(0);

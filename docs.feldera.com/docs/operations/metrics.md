@@ -40,6 +40,7 @@ definitions].
 | <a name='process_cpu_seconds_total'>`process_cpu_seconds_total`</a> |counter | Total user and system CPU time spent in seconds. |
 | <a name='process_max_fds'>`process_max_fds`</a> |gauge | Maximum number of open file descriptors. |
 | <a name='process_open_fds'>`process_open_fds`</a> |gauge | Number of open file descriptors. |
+| <a name='process_panics_total'>`process_panics_total`</a> |counter | Number of times the process has panicked.  Panics do not necessarily indicate a bug or a crash but they can indicate that it is worth examining the log for details. |
 | <a name='process_resident_memory_bytes'>`process_resident_memory_bytes`</a> |gauge | Resident set size in bytes. |
 | <a name='process_start_time_seconds'>`process_start_time_seconds`</a> |counter | Start time of the process in seconds since the Unix epoch. |
 | <a name='process_threads'>`process_threads`</a> |gauge | Number of OS threads in the process. |
@@ -71,6 +72,9 @@ which Feldera is built.
 | <a name='dbsp_runtime_elapsed_seconds_total'>`dbsp_runtime_elapsed_seconds_total`</a> |counter | Time elapsed while the pipeline is executing a step, multiplied by the number of foreground and background threads, in seconds. |
 | <a name='dbsp_step_latency_seconds'>`dbsp_step_latency_seconds`</a> |histogram | Latency of DBSP steps over the last 60 seconds or 1000 steps, whichever is less, in seconds |
 | <a name='dbsp_steps_total'>`dbsp_steps_total`</a> |counter | Total number of DBSP steps executed. |
+| <a name='max_rss_bytes'>`max_rss_bytes`</a> |gauge | Configured maximum process RSS in bytes. A value of 0 means no limit is configured. |
+| <a name='memory_pressure'>`memory_pressure`</a> |gauge | Current memory pressure level in [0..3]: low=0, moderate=1, high=2, critical=3. |
+| <a name='memory_pressure_epoch'>`memory_pressure_epoch`</a> |gauge | Monotonic counter incremented whenever memory pressure transitions to high/critical. |
 | <a name='output_stall_seconds'>`output_stall_seconds`</a> |gauge | If the pipeline is currently stalled because one or more output connectors' output buffers were full, this is the time in seconds for which it has been stalled.<br/><br/>If the pipeline is not currently stalled, this is zero.<br/><br/>If this is nonzero, then the output connectors causing the stall can be identified by observing which values of `output_connector_queued_records` are greater than or equal to the configured maximum (which defaults to 1,000,000). |
 | <a name='output_stall_seconds_total'>`output_stall_seconds_total`</a> |counter | Time in seconds that the pipeline was stalled because one or more output connectors' output buffers were full.<br/><br/>This value is greater than or equal to `output_stall_seconds`. |
 
