@@ -221,13 +221,11 @@ def _run_catchup_rounds(
     next_row_id: int,
     next_ts_us: int,
     cdc: bool,
-    pause_before_first_round: bool,
 ) -> tuple[int, int, int]:
     """Pause, append, resume for each round; return final version, row id, and ts."""
     for round_idx, num_versions in enumerate(FOLLOW_ROUNDS):
-        if pause_before_first_round or round_idx > 0:
-            pipeline.pause_connector(TABLE, CONNECTOR)
-            _wait_for_connector_paused(pipeline, paused=True)
+        pipeline.pause_connector(TABLE, CONNECTOR)
+        _wait_for_connector_paused(pipeline, paused=True)
 
         follow_at_round_start = _delta_counter(
             pipeline_name, "input_connector_delta_follow_transaction_starts"
@@ -317,7 +315,6 @@ def test_delta_input_catchup_snapshot_and_follow(pipeline_name):
             next_row_id=INITIAL_VERSIONS * 2,
             next_ts_us=0,
             cdc=False,
-            pause_before_first_round=False,
         )
 
         expected_rows = INITIAL_VERSIONS + sum(FOLLOW_ROUNDS)
@@ -378,7 +375,6 @@ def test_delta_input_catchup_cdc(pipeline_name):
             next_row_id=INITIAL_VERSIONS * 2,
             next_ts_us=(INITIAL_VERSIONS + 1) * 1_000,
             cdc=True,
-            pause_before_first_round=False,
         )
 
         expected_rows = sum(FOLLOW_ROUNDS)
