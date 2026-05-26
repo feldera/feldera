@@ -24,6 +24,7 @@ pub enum ApiError {
     UnableToConnect { reason: String },
     LockTimeout { value: String, timeout: Duration },
     UnableToCreateSupportBundle { reason: String },
+    InvalidSupportBundleParameter { reason: String },
     UnableToFetchCircuitProfile { reason: String },
     ProgramInfoMissesDataflow { pipeline_name: String },
     InvalidProgramInfo { error: String },
@@ -43,6 +44,9 @@ impl DetailedError for ApiError {
             Self::UnableToConnect { .. } => Cow::from("UnableToConnect"),
             Self::LockTimeout { .. } => Cow::from("LockTimeout"),
             Self::UnableToCreateSupportBundle { .. } => Cow::from("UnableToCreateSupportBundle"),
+            Self::InvalidSupportBundleParameter { .. } => {
+                Cow::from("InvalidSupportBundleParameter")
+            }
             Self::UnableToFetchCircuitProfile { .. } => Cow::from("UnableToFetchCircuitProfile"),
             Self::ProgramInfoMissesDataflow { .. } => Cow::from("ProgramInfoMissesDataflow"),
             Self::InvalidProgramInfo { .. } => Cow::from("InvalidProgramInfo"),
@@ -91,6 +95,9 @@ impl Display for ApiError {
             Self::UnableToCreateSupportBundle { reason } => {
                 write!(f, "Unable to create support bundle: {reason}")
             }
+            Self::InvalidSupportBundleParameter { reason } => {
+                write!(f, "Invalid support bundle parameter: {reason}")
+            }
             Self::UnableToFetchCircuitProfile { reason } => {
                 write!(f, "Unable to fetch circuit profile: {reason}")
             }
@@ -134,6 +141,7 @@ impl ResponseError for ApiError {
             Self::UnableToConnect { .. } => StatusCode::BAD_REQUEST,
             Self::LockTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UnableToCreateSupportBundle { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidSupportBundleParameter { .. } => StatusCode::BAD_REQUEST,
             Self::UnableToFetchCircuitProfile { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::ProgramInfoMissesDataflow { .. } => StatusCode::NOT_FOUND,
             Self::InvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,

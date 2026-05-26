@@ -5626,6 +5626,18 @@
             }
           },
           {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of collections to include in the bundle, counted from\nthe most recent. Must be at least 1; `limit=0` is rejected with HTTP 400.\nOmit the parameter to include every retained collection (which is capped\nserver-side by `--support-data-retention`, default 3).\n\nWith the default `collect=true`, `limit=1` returns only the collection\ngathered by this request. Combine with `collect=false` to return the\nmost recent previously stored collections instead.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true,
+              "minimum": 0
+            }
+          },
+          {
             "name": "circuit_profile",
             "in": "query",
             "description": "Whether to collect circuit profile data (default: true)",
@@ -5696,6 +5708,15 @@
             "schema": {
               "type": "boolean"
             }
+          },
+          {
+            "name": "pipeline_events",
+            "in": "query",
+            "description": "Whether to collect the pipeline monitor event history (default: true)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -5706,6 +5727,16 @@
                 "schema": {
                   "type": "string",
                   "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter was invalid (e.g., `limit=0`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

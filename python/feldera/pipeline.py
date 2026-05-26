@@ -1543,6 +1543,8 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         self,
         output_path: Optional[str] = None,
         *,
+        collect: bool = True,
+        limit: Optional[int] = None,
         circuit_profile: bool = True,
         heap_profile: bool = True,
         metrics: bool = True,
@@ -1551,6 +1553,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         pipeline_config: bool = True,
         system_config: bool = True,
         dataflow_graph: bool = True,
+        pipeline_events: bool = True,
     ) -> bytes:
         """
         Generate a support bundle containing diagnostic information from this pipeline.
@@ -1561,6 +1564,9 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         :param output_path: Optional path to save the support bundle file. If None,
             the support bundle is only returned as bytes.
+        :param collect: Whether to collect fresh data from the pipeline (default: True).
+            Set to False to download only previously stored collections.
+        :param limit: If set, include only the N most recent collections.
         :param circuit_profile: Whether to collect circuit profile data (default: True)
         :param heap_profile: Whether to collect heap profile data (default: True)
         :param metrics: Whether to collect metrics data (default: True)
@@ -1569,12 +1575,17 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         :param pipeline_config: Whether to collect pipeline configuration data (default: True)
         :param system_config: Whether to collect system configuration data (default: True)
         :param dataflow_graph: Whether to collect dataflow graph (default: True)
+        :param pipeline_events: Whether to collect pipeline monitor events (default: True)
         :return: The support bundle as bytes (ZIP archive)
         :raises FelderaAPIError: If the pipeline does not exist or if there's an error
         """
 
         # Build query parameters
         params = {}
+        if not collect:
+            params["collect"] = "false"
+        if limit is not None:
+            params["limit"] = str(limit)
         if not circuit_profile:
             params["circuit_profile"] = "false"
         if not heap_profile:
@@ -1591,6 +1602,8 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             params["system_config"] = "false"
         if not dataflow_graph:
             params["dataflow_graph"] = "false"
+        if not pipeline_events:
+            params["pipeline_events"] = "false"
 
         support_bundle_bytes = self.client.get_pipeline_support_bundle(
             self.name, params=params

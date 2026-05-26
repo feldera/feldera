@@ -583,6 +583,15 @@ pub enum PipelineAction {
         /// The ZIP file to write the bundle to.
         #[arg(value_hint = ValueHint::FilePath, long, short = 'o')]
         output: Option<PathBuf>,
+        /// Include at most N collections, starting with the most recent.
+        /// With the default `collect=true`, `--limit 1` returns only the
+        /// bundle gathered just now. Add `--no-collect` to instead return
+        /// the N most recent previously stored collections.
+        #[arg(long, short = 'n')]
+        limit: Option<u64>,
+        /// Do not collect fresh data; return only previously stored collections.
+        #[arg(long)]
+        no_collect: bool,
         /// Skip circuit profile collection.
         #[arg(long)]
         no_circuit_profile: bool,
@@ -607,6 +616,9 @@ pub enum PipelineAction {
         /// Skip dataflow graph collection.
         #[arg(long)]
         no_dataflow_graph: bool,
+        /// Skip pipeline monitor event collection.
+        #[arg(long)]
+        no_pipeline_events: bool,
     },
     /// Enter the ad-hoc SQL shell for a pipeline.
     Shell {

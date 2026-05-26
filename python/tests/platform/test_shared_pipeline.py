@@ -713,10 +713,11 @@ class TestPipeline(SharedTestPipeline):
         # Test that it's a valid ZIP file
         try:
             with zipfile.ZipFile(io.BytesIO(support_bundle_bytes), "r") as zip_file:
-                # Check that the ZIP file contains some files
                 file_list = zip_file.namelist()
-                assert any("circuit_profile.json" in item for item in file_list)
-                assert len(file_list) > 0
+                # Files now live inside per-collection timestamp directories.
+                assert any(item.endswith("/circuit_profile.json") for item in file_list)
+                assert "metadata.txt" in file_list
+                assert "metadata.json" in file_list
         except zipfile.BadZipFile:
             self.fail("Support bundle is not a valid ZIP file")
 
@@ -733,6 +734,7 @@ class TestPipeline(SharedTestPipeline):
             with zipfile.ZipFile(temp_path, "r") as zip_file:
                 file_list = zip_file.namelist()
                 assert len(file_list) > 0
+                assert "metadata.json" in file_list
         finally:
             # Clean up
             if os.path.exists(temp_path):
@@ -751,6 +753,7 @@ class TestPipeline(SharedTestPipeline):
             pipeline_config=False,
             system_config=False,
             dataflow_graph=False,
+            pipeline_events=False,
         )
 
         assert isinstance(support_bundle_bytes, bytes)
@@ -759,9 +762,8 @@ class TestPipeline(SharedTestPipeline):
         # Verify it's a valid ZIP file
         with zipfile.ZipFile(io.BytesIO(support_bundle_bytes), "r") as zip_file:
             file_list = zip_file.namelist()
-            # Should only contain manifest.txt when all collections are disabled
-            assert len(file_list) == 1
-            assert "manifest.txt" in file_list
+            # Only the two metadata files survive when every collection is disabled.
+            assert sorted(file_list) == ["metadata.json", "metadata.txt"]
 
         # Test with partial collections enabled
         support_bundle_bytes = self.pipeline.support_bundle(
@@ -772,6 +774,7 @@ class TestPipeline(SharedTestPipeline):
             stats=True,
             pipeline_config=False,
             system_config=True,
+            pipeline_events=False,
         )
 
         assert isinstance(support_bundle_bytes, bytes)
@@ -780,8 +783,24 @@ class TestPipeline(SharedTestPipeline):
         # Verify it's a valid ZIP file
         with zipfile.ZipFile(io.BytesIO(support_bundle_bytes), "r") as zip_file:
             file_list = zip_file.namelist()
-            assert len(file_list) >= 2
-            assert "manifest.txt" in file_list
+            assert len(file_list) >= 3
+            assert "metadata.txt" in file_list
+            assert "metadata.json" in file_list
+
+    def test_support_bundle_limit(self):
+        """`limit=1` together with `collect=True` should yield exactly one collection
+        directory in the resulting bundle."""
+        self.pipeline.start()
+
+        support_bundle_bytes = self.pipeline.support_bundle(limit=1)
+        assert isinstance(support_bundle_bytes, bytes)
+
+        with zipfile.ZipFile(io.BytesIO(support_bundle_bytes), "r") as zip_file:
+            file_list = zip_file.namelist()
+            collection_dirs = {
+                item.split("/", 1)[0] for item in file_list if "/" in item
+            }
+            assert len(collection_dirs) == 1
 
     def test_url_encoding_ingress_egress_table_name(self):
         """
