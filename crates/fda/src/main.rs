@@ -1583,6 +1583,8 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
         PipelineAction::SupportBundle {
             name,
             output,
+            limit,
+            no_collect,
             no_circuit_profile,
             no_heap_profile,
             no_metrics,
@@ -1591,10 +1593,17 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             no_pipeline_config,
             no_system_config,
             no_dataflow_graph,
+            no_pipeline_events,
         } => {
             let mut request = client.get_pipeline_support_bundle().pipeline_name(&name);
 
             // Add query parameters for disabled collections
+            if let Some(limit) = limit {
+                request = request.limit(limit);
+            }
+            if no_collect {
+                request = request.collect(false);
+            }
             if no_circuit_profile {
                 request = request.circuit_profile(false);
             }
@@ -1618,6 +1627,9 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             }
             if no_dataflow_graph {
                 request = request.dataflow_graph(false);
+            }
+            if no_pipeline_events {
+                request = request.pipeline_events(false);
             }
 
             let response = request

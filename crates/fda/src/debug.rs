@@ -200,7 +200,8 @@ async fn unbundle_support_bundle(
     let zip_file = File::open(zip_path)?;
     let mut archive = ZipArchive::new(zip_file)?;
 
-    // Find all pipeline config files and their corresponding platform versions
+    // Each collection sits in its own directory named after the collection
+    // timestamp (e.g., `2026-05-25T12-34-56.789Z/pipeline_config.json`).
     let mut pipeline_configs = Vec::new();
 
     for i in 0..archive.len() {
@@ -208,11 +209,13 @@ async fn unbundle_support_bundle(
         let filename = file.name().to_string();
         drop(file); // Drop the file reference before getting it again
 
-        if filename.ends_with("_pipeline_config.json") {
+        if let Some((_, base)) = filename.rsplit_once('/')
+            && base == "pipeline_config.json"
+        {
             pipeline_configs.push(filename);
         }
     }
-    // Make sure latest config taken comes first
+    // Sort descending by directory name (timestamp) so the latest comes first.
     pipeline_configs.sort_unstable_by(|a, b| b.cmp(a));
 
     if pipeline_configs.is_empty() {
@@ -245,10 +248,11 @@ async fn unbundle_support_bundle(
         let name = config["name"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Pipeline name not found in config"))?;
-        // Extract timestamp from config file name to make pipeline name unique
+        // The directory name carries the collection timestamp, which we mix
+        // into the new pipeline name to keep it unique across collections.
         let timestamp = config_file
-            .split('_')
-            .next()
+            .rsplit_once('/')
+            .map(|(dir, _)| dir)
             .unwrap_or("unknown")
             .replace([':', '.', '+'], "-");
         let pipeline_name = format!("{}_unbundled_{}", name, timestamp);
