@@ -244,6 +244,7 @@ fda support-bundle p1 \
   --no-pipeline-config \
   --no-system-config \
   --no-dataflow-graph \
+  --no-pipeline-events \
   -o test-support-bundle-none.zip
 
 # Verify the ZIP file exists and check its contents
@@ -251,11 +252,11 @@ if [ ! -f test-support-bundle-none.zip ]; then
     echo "Support bundle file was not created"
     exit 1
 fi
-# Count files in the ZIP and verify only manifest.txt exists
-# this counts one more than what is in the archive
+# With every collection disabled only metadata.txt and metadata.json remain.
+# grep matches each file row plus the trailing totals line, so 2 files => 3.
 file_count=$(unzip -l test-support-bundle-none.zip | grep -E "^\s*[0-9]+" | wc -l)
-if [ "$file_count" -ne 2 ]; then
-    echo "Expected 1 file in support bundle (manifest.txt), found $file_count"
+if [ "$file_count" -ne 3 ]; then
+    echo "Expected 2 files in support bundle (metadata.txt, metadata.json), found $file_count"
     unzip -l test-support-bundle-none.zip
     exit 1
 fi
