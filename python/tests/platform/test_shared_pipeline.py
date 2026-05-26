@@ -788,8 +788,8 @@ class TestPipeline(SharedTestPipeline):
             assert "metadata.json" in file_list
 
     def test_support_bundle_limit(self):
-        """`limit=1` together with `collect=True` should yield exactly one collection
-        directory in the resulting bundle."""
+        # limit=1 together with collect=True should yield exactly one
+        # collection directory in the resulting bundle.
         self.pipeline.start()
 
         support_bundle_bytes = self.pipeline.support_bundle(limit=1)

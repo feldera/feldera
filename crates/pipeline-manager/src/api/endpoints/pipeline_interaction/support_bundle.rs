@@ -57,10 +57,10 @@ struct CollectionMetadata {
 const METADATA_VERSION: u32 = 1;
 
 /// Format `DateTime<Utc>` for use as a directory name. Colons are problematic
-/// on some filesystems and inside ZIP tooling, so we keep the rfc3339 layout
-/// but swap `:` for `-` (e.g., `2026-05-25T12-34-56.789Z`).
+/// on some filesystems and inside ZIP tooling, so we use a hyphen-separated
+/// layout (e.g., `2026-05-25T12-34-56.789Z`).
 fn timestamp_dir(time: &DateTime<Utc>) -> String {
-    time.to_rfc3339().replace(':', "-")
+    time.format("%Y-%m-%dT%H-%M-%S%.fZ").to_string()
 }
 
 /// Reserve a unique directory name inside the ZIP. If `candidate` was already
