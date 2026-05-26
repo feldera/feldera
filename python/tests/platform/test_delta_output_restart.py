@@ -27,7 +27,7 @@ from feldera.testutils import (
     FELDERA_TEST_NUM_HOSTS,
     FELDERA_TEST_NUM_WORKERS,
 )
-from tests import TEST_CLIENT, enterprise_only, skip_on_arm64
+from tests import TEST_CLIENT, enterprise_only
 from tests.utils import DeltaTestLocation
 
 # ─── helpers ───────────────────────────────────────────────────────────
@@ -89,7 +89,6 @@ def _seed_50_rows_and_suspend(name: str, loc: DeltaTestLocation):
 
 
 @enterprise_only
-@skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
 def test_clean_resume_preserves_table(pipeline_name):
     """Restarting an unchanged pipeline keeps the delta table contents."""
     loc = DeltaTestLocation.create(pipeline_name)
@@ -107,7 +106,6 @@ def test_clean_resume_preserves_table(pipeline_name):
 
 
 @enterprise_only
-@skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
 def test_modified_connector_re_truncates_on_resume(pipeline_name):
     """Changing the connector config on resume makes it a new incarnation that re-truncates."""
     loc = DeltaTestLocation.create(pipeline_name)
@@ -129,7 +127,6 @@ def test_modified_connector_re_truncates_on_resume(pipeline_name):
 
 
 @enterprise_only
-@skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
 def test_log_retention_properties_land_in_metadata(pipeline_name):
     """Setting `log_retention_duration`, `enable_expired_log_cleanup`, and
     `checkpoint_interval` on a fresh table persists the corresponding `delta.*`
@@ -173,7 +170,6 @@ def test_log_retention_properties_land_in_metadata(pipeline_name):
 
 
 @enterprise_only
-@skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
 def test_modified_view_re_truncates_on_resume(pipeline_name):
     """Changing the view's schema on resume forces a rebuild from scratch."""
     loc = DeltaTestLocation.create(pipeline_name)

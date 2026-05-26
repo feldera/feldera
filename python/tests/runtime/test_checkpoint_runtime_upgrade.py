@@ -66,7 +66,7 @@ from feldera.testutils import (
     FELDERA_TEST_NUM_WORKERS,
     single_host_only,
 )
-from tests import TEST_CLIENT, enterprise_only, skip_on_arm64
+from tests import TEST_CLIENT, enterprise_only
 from tests.platform.helper import gen_pipeline_name
 from tests.platform.test_checkpoint_sync import storage_cfg
 from tests.utils import DeltaTestLocation
@@ -506,7 +506,6 @@ CREATE MATERIALIZED VIEW closure AS
 
 @enterprise_only
 @single_host_only
-@skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
 @gen_pipeline_name
 def test_runtime_upgrade_round_trip(pipeline_name: str) -> None:
     """Round-trip a checkpoint across a runtime upgrade.
