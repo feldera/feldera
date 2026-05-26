@@ -149,6 +149,9 @@ mod stats;
 mod sync;
 mod validate;
 
+#[cfg(test)]
+mod test;
+
 use crate::adhoc::execute_sql;
 use crate::adhoc::table::AdHocTable;
 use crate::catalog::{SerBatch, SerBatchReader, SerTrace};
