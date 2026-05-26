@@ -1663,13 +1663,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_watcher_strict_mode_does_not_fire_on_completed_steps_only() {
-        let (completion_tx, completion_rx) = tokio::sync::watch::channel(make_completion(0));
         let (checkpoint_tx, checkpoint_rx) = tokio::sync::watch::channel(0u64);
         let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
-
-        // completion_rx is only used to read step_at_flush in Queue; the task
-        // uses checkpoint_rx for the strict-mode frontier.
-        let _ = completion_tx;
 
         tokio::spawn(completion_watcher_task(
             WatcherReceiver::Strict(checkpoint_rx),
