@@ -3751,7 +3751,8 @@ mod test_with_kafka {
         controller::MAX_API_CONNECTIONS,
         ensure_default_crypto_provider,
         server::test_http_helpers::{
-            pause_input_endpoint, pause_pipeline, send_input, start_input_endpoint, start_pipeline,
+            pause_input_endpoint, pause_pipeline, send_input_no_wait, start_input_endpoint,
+            start_pipeline, wait_for_completion,
         },
         test::{
             async_wait, generate_test_batches,
@@ -3915,7 +3916,7 @@ outputs:
             .unwrap();
 
         println!("Streaming test");
-        send_input(&server, &data).await;
+        let token = send_input_no_wait(&server, &data).await;
         println!("data sent");
 
         buffer_consumer.wait_for_output_unordered(&data);
@@ -3923,6 +3924,7 @@ outputs:
 
         TestHttpReceiver::wait_for_output_unordered(&mut resp1, &data).await;
         TestHttpReceiver::wait_for_output_unordered(&mut resp2, &data).await;
+        wait_for_completion(&server, &token).await;
 
         // Force-push data in paused state.
         pause_pipeline(&server).await;
