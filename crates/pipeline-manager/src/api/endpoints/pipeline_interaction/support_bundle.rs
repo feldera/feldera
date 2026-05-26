@@ -111,13 +111,12 @@ impl SupportBundleZip {
             pipeline.deployment_initial,
             pipeline.deployment_runtime_desired_status,
         );
-        let desired_status = if format!("{:?}", combined_status)
-            != format!("{:?}", combined_desired_status)
-        {
-            Some(format!("{:?}", combined_desired_status))
-        } else {
-            None
-        };
+        let desired_status =
+            if format!("{:?}", combined_status) != format!("{:?}", combined_desired_status) {
+                Some(format!("{:?}", combined_desired_status))
+            } else {
+                None
+            };
 
         let mut collection_meta = Vec::with_capacity(bundles.len());
         let mut used_dirs: HashSet<String> = HashSet::with_capacity(bundles.len());
@@ -133,11 +132,14 @@ impl SupportBundleZip {
                     Ok(())
                 };
 
-            let summary = data.push_to_zip(&mut add_to_zip, params).await.map_err(|e| {
-                ManagerError::from(ApiError::UnableToCreateSupportBundle {
-                    reason: format!("Failed to add data to zip: {}", e),
-                })
-            })?;
+            let summary = data
+                .push_to_zip(&mut add_to_zip, params)
+                .await
+                .map_err(|e| {
+                    ManagerError::from(ApiError::UnableToCreateSupportBundle {
+                        reason: format!("Failed to add data to zip: {}", e),
+                    })
+                })?;
 
             collection_meta.push(CollectionMetadata {
                 directory,
@@ -202,7 +204,10 @@ fn render_metadata_text(meta: &BundleMetadata<'_>) -> String {
     let mut out = String::with_capacity(8 * 1024);
     out.push_str("\n# Support Bundle Table of Contents\n\n");
     out.push_str(&format!("Pipeline: {}\n", meta.pipeline.name));
-    out.push_str(&format!("Requested at: {}\n", meta.requested_at.to_rfc3339()));
+    out.push_str(&format!(
+        "Requested at: {}\n",
+        meta.requested_at.to_rfc3339()
+    ));
     out.push_str(&format!(
         "Pipeline Status: {} (since {})\n",
         meta.pipeline.status,
@@ -399,7 +404,9 @@ mod tests {
             SupportBundleData::test_data(),
         ];
 
-        let bundle = SupportBundleZip::create(&descr, bundles, &params).await.unwrap();
+        let bundle = SupportBundleZip::create(&descr, bundles, &params)
+            .await
+            .unwrap();
         let mut archive = read_zip(&bundle.buffer);
 
         let names: Vec<String> = (0..archive.len())
@@ -424,11 +431,15 @@ mod tests {
         );
         for dir in &dirs {
             assert!(
-                names.iter().any(|n| n == &format!("{dir}/circuit_profile.zip")),
+                names
+                    .iter()
+                    .any(|n| n == &format!("{dir}/circuit_profile.zip")),
                 "missing circuit_profile.zip in {dir}"
             );
             assert!(
-                names.iter().any(|n| n == &format!("{dir}/pipeline_events.json")),
+                names
+                    .iter()
+                    .any(|n| n == &format!("{dir}/pipeline_events.json")),
                 "missing pipeline_events.json in {dir}"
             );
         }
@@ -446,7 +457,11 @@ mod tests {
         assert_eq!(collections.len(), 2);
         for c in collections {
             assert!(dirs.contains(c["directory"].as_str().unwrap()));
-            assert!(c["collected"].as_array().unwrap().iter().any(|f| f == "pipeline_events.json"));
+            assert!(c["collected"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|f| f == "pipeline_events.json"));
         }
     }
 
@@ -454,7 +469,9 @@ mod tests {
     async fn create_with_no_bundles_still_emits_metadata() {
         let descr = fake_pipeline("empty");
         let params = SupportBundleParameters::default();
-        let bundle = SupportBundleZip::create(&descr, vec![], &params).await.unwrap();
+        let bundle = SupportBundleZip::create(&descr, vec![], &params)
+            .await
+            .unwrap();
         let mut archive = read_zip(&bundle.buffer);
         let names: Vec<String> = (0..archive.len())
             .map(|i| archive.by_index(i).unwrap().name().to_string())
@@ -474,7 +491,9 @@ mod tests {
         a.time = shared_time;
         b.time = shared_time;
 
-        let bundle = SupportBundleZip::create(&descr, vec![a, b], &params).await.unwrap();
+        let bundle = SupportBundleZip::create(&descr, vec![a, b], &params)
+            .await
+            .unwrap();
         let mut archive = read_zip(&bundle.buffer);
         let names: Vec<String> = (0..archive.len())
             .map(|i| archive.by_index(i).unwrap().name().to_string())
@@ -503,12 +522,17 @@ mod tests {
     async fn metadata_text_lists_pipeline_name_and_collections() {
         let descr = fake_pipeline("supportbundle-test");
         let params = SupportBundleParameters::default();
-        let bundle = SupportBundleZip::create(&descr, vec![SupportBundleData::test_data()], &params)
-            .await
-            .unwrap();
+        let bundle =
+            SupportBundleZip::create(&descr, vec![SupportBundleData::test_data()], &params)
+                .await
+                .unwrap();
         let mut archive = read_zip(&bundle.buffer);
         let mut text = String::new();
-        archive.by_name("metadata.txt").unwrap().read_to_string(&mut text).unwrap();
+        archive
+            .by_name("metadata.txt")
+            .unwrap()
+            .read_to_string(&mut text)
+            .unwrap();
         assert!(text.contains("Pipeline: supportbundle-test"));
         assert!(text.contains("Collection 0"));
         assert!(text.contains("Directory:"));
