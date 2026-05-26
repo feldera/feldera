@@ -672,6 +672,10 @@ metrics"""
         `bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL` and is currently in the
         AWAITINGAPPROVAL state. The pipeline will wait for explicit user approval
         before proceeding with the bootstrapping process.
+
+        :param silent_bootstrap: Set True to bootstrap with output connectors
+            disabled, so no records are emitted during the bootstrap phase.
+            False by default.
         """
 
         self.client.approve_pipeline(self.name, silent_bootstrap=silent_bootstrap)
