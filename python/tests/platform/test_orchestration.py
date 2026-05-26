@@ -1,7 +1,7 @@
 from feldera.enums import PipelineStatus
 from http import HTTPStatus
 
-from .helper import (
+from tests.helper import (
     create_pipeline,
     post_no_body,
     api_url,

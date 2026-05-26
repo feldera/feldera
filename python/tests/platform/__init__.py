@@ -1,7 +1,6 @@
 """
 Platform tests package.
 
-This file makes the `tests.platform` directory a proper Python package so that
-relative imports like `from .helper import ...` work when running pytest with
-`PYTHONPATH` pointing at the repository `python` directory.
+Marks `tests.platform` as a Python package so pytest discovers tests when
+`PYTHONPATH` points at the repository `python` directory.
 """

@@ -8,7 +8,7 @@ from confluent_kafka.admin import AdminClient, NewTopic
 from feldera import Pipeline, PipelineBuilder
 from feldera.stats import InputEndpointStatus, OutputEndpointStatus
 from tests import KAFKA_BOOTSTRAP, TEST_CLIENT
-from tests.platform.helper import gen_pipeline_name, wait_for_condition
+from tests.helper import gen_pipeline_name, wait_for_condition
 
 
 def _random_topic(prefix: str) -> str:

@@ -7,19 +7,19 @@ import pytest
 
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
 from tests import TEST_CLIENT, enterprise_only
-from tests.platform.test_ingress_formats import create_pipeline
-from .helper import (
-    get,
+from tests.helper import (
     api_url,
+    connector_action,
+    connector_paused,
+    create_pipeline,
+    gen_pipeline_name,
+    get,
+    patch_json,
     post_no_body,
     start_pipeline,
     start_pipeline_as_paused,
     stop_pipeline,
-    connector_paused,
-    connector_action,
     wait_for_condition,
-    gen_pipeline_name,
-    patch_json,
 )
 
 

@@ -3,7 +3,7 @@ import unittest
 import math
 from feldera import PipelineBuilder
 from tests import TEST_CLIENT
-from tests.platform.helper import PipelineTestCase
+from tests.helper import PipelineTestCase
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 

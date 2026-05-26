@@ -6,7 +6,7 @@ from feldera.enums import BootstrapPolicy, PipelineStatus
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT, enterprise_only
-from .helper import (
+from tests.helper import (
     gen_pipeline_name,
     wait_for_condition,
 )

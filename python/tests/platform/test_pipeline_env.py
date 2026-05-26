@@ -2,7 +2,7 @@ from feldera import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT
 
-from .helper import cleanup_pipeline, gen_pipeline_name
+from tests.helper import cleanup_pipeline, gen_pipeline_name
 
 
 @gen_pipeline_name

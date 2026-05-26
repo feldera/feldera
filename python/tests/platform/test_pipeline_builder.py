@@ -4,7 +4,7 @@ from feldera.testutils import (
     FELDERA_TEST_NUM_HOSTS,
 )
 from tests import TEST_CLIENT
-from tests.platform.helper import PipelineTestCase
+from tests.helper import PipelineTestCase
 from feldera import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 

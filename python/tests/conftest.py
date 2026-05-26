@@ -1,6 +1,6 @@
 import pytest
 from feldera.testutils import unique_pipeline_name
-from tests.platform.helper import cleanup_pipeline, reset_pipeline
+from tests.helper import cleanup_pipeline, reset_pipeline
 
 
 @pytest.fixture(name="pipeline_name")

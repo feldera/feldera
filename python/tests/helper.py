@@ -1,13 +1,15 @@
 """
-Helper utilities for platform tests.
+Shared test helper utilities.
 
 Provides:
 
 - Lightweight REST wrappers (no SDK abstraction where raw status codes matter)
+- Pipeline lifecycle helpers (create, start, stop, clear, cleanup)
 - Polling helpers (compilation, generic condition)
-- Simple selector/object helpers
+- `gen_pipeline_name` decorator and `PipelineTestCase` base class that
+  handle cleanup automatically.
 
-No automatic cleanup; pipelines are left in place for inspection after failures.
+Used by both platform and runtime tests.
 """
 
 from __future__ import annotations

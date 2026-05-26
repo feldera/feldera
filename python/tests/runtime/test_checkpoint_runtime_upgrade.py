@@ -67,7 +67,7 @@ from feldera.testutils import (
     single_host_only,
 )
 from tests import TEST_CLIENT, enterprise_only
-from tests.platform.helper import gen_pipeline_name
+from tests.helper import gen_pipeline_name
 from tests.platform.test_checkpoint_sync import storage_cfg
 from tests.utils import DeltaTestLocation
 

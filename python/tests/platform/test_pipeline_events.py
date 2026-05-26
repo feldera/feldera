@@ -1,7 +1,7 @@
 from datetime import datetime
 from feldera import PipelineBuilder
 from tests import TEST_CLIENT
-from .helper import gen_pipeline_name
+from tests.helper import gen_pipeline_name
 import time
 
 

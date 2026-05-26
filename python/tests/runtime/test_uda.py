@@ -1,7 +1,7 @@
 import unittest
 
 from feldera import PipelineBuilder
-from tests.platform.helper import gen_pipeline_name
+from tests.helper import gen_pipeline_name
 from tests import TEST_CLIENT
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS

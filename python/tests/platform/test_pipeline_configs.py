@@ -1,6 +1,6 @@
 from http import HTTPStatus
 
-from .helper import (
+from tests.helper import (
     API_PREFIX,
     cleanup_pipeline,
     gen_pipeline_name,

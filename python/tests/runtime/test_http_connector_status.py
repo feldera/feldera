@@ -7,7 +7,7 @@ from feldera.pipeline_builder import PipelineBuilder
 from feldera.rest.errors import FelderaAPIError
 from tests import TEST_CLIENT, enterprise_only
 
-from .helper import api_url, gen_pipeline_name, get, wait_for_condition
+from tests.helper import api_url, gen_pipeline_name, get, wait_for_condition
 
 
 def _http_connector_stats(pipeline: Pipeline) -> tuple[list[Any], list[Any]]:

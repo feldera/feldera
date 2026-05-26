@@ -1,7 +1,7 @@
 from http import HTTPStatus
 import time
 
-from .helper import get, API_PREFIX
+from tests.helper import get, API_PREFIX
 
 
 def test_cluster_health_check():

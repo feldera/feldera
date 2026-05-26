@@ -11,7 +11,7 @@ Environment Variables Required:
 - OIDC_TEST_PASSWORD: Password for test user
 """
 
-from .helper import (
+from tests.helper import (
     API_PREFIX,
     HTTPStatus,
     get,

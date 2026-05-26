@@ -1,11 +1,9 @@
-# TODO: these tests should be part of runtime tests
-
 import os
 import json
 import uuid
 from http import HTTPStatus
 
-from .helper import (
+from tests.helper import (
     create_pipeline,
     get,
     post_json,
