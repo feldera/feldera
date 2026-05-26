@@ -17,7 +17,6 @@ from datetime import datetime, timezone
 
 import pyarrow as pa
 import pytest
-from deltalake import DeltaTable, write_deltalake
 
 from feldera import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
@@ -44,12 +43,16 @@ def _writer_storage_options(loc: DeltaTestLocation) -> dict | None:
 
 
 def _delta_version(loc: DeltaTestLocation) -> int:
+    from deltalake import DeltaTable
+
     dt = DeltaTable(loc.uri, storage_options=_writer_storage_options(loc))
     return dt.version()
 
 
 def _append_version(loc: DeltaTestLocation, row_id: int) -> None:
     """Append one row, producing exactly one new Delta table version."""
+    from deltalake import write_deltalake
+
     write_deltalake(
         loc.uri,
         pa.Table.from_pylist([{"id": row_id}]),
@@ -61,6 +64,8 @@ def _append_version(loc: DeltaTestLocation, row_id: int) -> None:
 
 def _seed_delta_table(loc: DeltaTestLocation, num_versions: int) -> None:
     """Create a Delta table and append ``num_versions`` commits (one row each)."""
+    from deltalake import write_deltalake
+
     write_deltalake(
         loc.uri,
         pa.Table.from_pylist([{"id": 0}]),
@@ -181,6 +186,8 @@ def _append_cdc_insert(
     *,
     mode: str = "append",
 ) -> None:
+    from deltalake import write_deltalake
+
     ts = datetime.fromtimestamp(ts_us / 1_000_000, tz=timezone.utc)
     write_deltalake(
         loc.uri,
