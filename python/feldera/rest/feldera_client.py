@@ -672,9 +672,22 @@ Reason: The pipeline is in a STOPPED state due to the following error:
     def approve_pipeline(
         self,
         pipeline_name: str,
+        silent_bootstrap: bool = False,
     ):
+        """
+        Approve a pipeline awaiting approval to proceed with bootstrapping.
+
+        :param pipeline_name: The name of the pipeline to approve.
+        :param silent_bootstrap: Set True to bootstrap with output connectors
+            disabled, so no records are emitted during the bootstrap phase.
+            False by default.
+        """
+
+        params = {"silent_bootstrap": "true"} if silent_bootstrap else {}
+
         self.http.post(
             path=f"/pipelines/{pipeline_name}/approve",
+            params=params,
         )
 
     def stop_pipeline(
