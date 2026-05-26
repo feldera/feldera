@@ -2,7 +2,7 @@ from feldera.enums import PipelineStatus
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT
-from .helper import gen_pipeline_name
+from tests.helper import gen_pipeline_name
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 

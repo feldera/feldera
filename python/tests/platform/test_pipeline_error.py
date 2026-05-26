@@ -2,7 +2,7 @@ import time
 from feldera import PipelineBuilder
 from feldera.rest.errors import FelderaAPIError
 from feldera.enums import PipelineStatus
-from .helper import (
+from tests.helper import (
     gen_pipeline_name,
     post_json,
     api_url,

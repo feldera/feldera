@@ -14,7 +14,7 @@ from feldera.enums import BootstrapPolicy
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 from tests import TEST_CLIENT, unique_pipeline_name
-from tests.platform.helper import (
+from tests.helper import (
     API_PREFIX,
     http_request,
     wait_for_condition,

@@ -1,4 +1,4 @@
-from .helper import (
+from tests.helper import (
     API_PREFIX,
     HTTPStatus,
     get,

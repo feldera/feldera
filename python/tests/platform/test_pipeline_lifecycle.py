@@ -6,7 +6,7 @@ from http import HTTPStatus
 from feldera import PipelineBuilder, Pipeline
 from feldera.enums import BootstrapPolicy
 from tests import TEST_CLIENT
-from .helper import (
+from tests.helper import (
     wait_for_condition,
     create_pipeline,
     post_json,

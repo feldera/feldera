@@ -47,7 +47,7 @@ To run tests from a specific file:
 To run a specific test:
 
 ```bash
-uv run python -m pytest tests/platform/test_shared_pipeline.py::TestPipeline::test_adhoc_query_hash -v
+uv run python -m pytest tests/runtime/test_shared_pipeline_types.py::TestPipelineRuntime::test_adhoc_query_hash -v
 ```
 
 ### Reducing Compilation Cycles

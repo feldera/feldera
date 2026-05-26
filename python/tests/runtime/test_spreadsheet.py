@@ -5,7 +5,7 @@ import unittest
 import time
 from feldera import PipelineBuilder
 from tests import TEST_CLIENT
-from tests.platform.helper import PipelineTestCase
+from tests.helper import PipelineTestCase
 
 
 def make_value(id: int, raw: str, computed: str) -> dict:

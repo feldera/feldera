@@ -1,11 +1,9 @@
-# TODO: these tests should be part of runtime tests
-
 import json
 import time
 from http import HTTPStatus
 from urllib.parse import quote
 
-from .helper import (
+from tests.helper import (
     http_request,
     api_url,
     start_pipeline,

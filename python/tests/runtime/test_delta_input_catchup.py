@@ -22,7 +22,7 @@ from feldera import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
 from tests import TEST_CLIENT, enterprise_only
-from tests.platform.helper import api_url, get
+from tests.helper import api_url, get
 from tests.utils import DeltaTestLocation, wait_for_condition
 
 TABLE = "t"

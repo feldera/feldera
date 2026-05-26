@@ -3,7 +3,7 @@ import time
 from http import HTTPStatus
 from urllib.parse import quote_plus
 
-from .helper import (
+from tests.helper import (
     create_pipeline,
     get,
     post_no_body,

@@ -12,7 +12,7 @@ from feldera.testutils import (
     single_host_only,
 )
 from tests import enterprise_only
-from tests.shared_test_pipeline import SharedTestPipeline
+from tests.shared_test_pipeline import SharedTestPipeline, sql
 from tests.utils import (
     MINIO_BUCKET,
     MINIO_ENDPOINT,
@@ -20,7 +20,13 @@ from tests.utils import (
     required_env,
 )
 
-from .helper import wait_for_condition
+from tests.helper import wait_for_condition
+
+
+T0_V0_SQL = """
+CREATE TABLE t0 (c0 INT, c1 VARCHAR);
+CREATE MATERIALIZED VIEW v0 AS SELECT * FROM t0;
+"""
 
 
 def storage_cfg(
@@ -69,6 +75,7 @@ def storage_cfg(
 
 
 class TestCheckpointSync(SharedTestPipeline):
+    @sql(T0_V0_SQL)
     @enterprise_only
     @single_host_only
     def test_checkpoint_sync(
@@ -84,11 +91,6 @@ class TestCheckpointSync(SharedTestPipeline):
         automated_checkpoint: bool = False,
         automated_sync_interval: Optional[int] = None,
     ):
-        """
-        CREATE TABLE t0 (c0 INT, c1 VARCHAR);
-        CREATE MATERIALIZED VIEW v0 AS SELECT * FROM t0;
-        """
-
         storage_config = storage_cfg(
             self.pipeline.name,
             push_interval=automated_sync_interval,
@@ -291,10 +293,6 @@ class TestCheckpointSync(SharedTestPipeline):
     @enterprise_only
     @single_host_only
     def test_automated_sync_auth_error(self):
-        """
-        CREATE TABLE t0 (c0 INT, c1 VARCHAR);
-        CREATE MATERIALIZED VIEW v0 AS SELECT * FROM t0;
-        """
         # Configure pipeline with automatic periodic sync and bad credentials.
         # The periodic sync should fail, and `periodic` in the sync status
         # should remain None (not report a UUID for a failed sync).

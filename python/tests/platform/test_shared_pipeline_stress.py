@@ -1,16 +1,13 @@
 import unittest
 
-from tests.shared_test_pipeline import SharedTestPipeline
+from tests.shared_test_pipeline import SharedTestPipeline, sql
 
 
 class TestPipeline(SharedTestPipeline):
-    def test_create_pipeline(self):
-        """
-        CREATE TABLE tbl(id INT) WITH ('materialized' = 'true');
-        CREATE MATERIALIZED VIEW v0 AS SELECT * FROM tbl;
-        """
-        pass
-
+    @sql("""
+    CREATE TABLE tbl(id INT) WITH ('materialized' = 'true');
+    CREATE MATERIALIZED VIEW v0 AS SELECT * FROM tbl;
+    """)
     def test_get_pipeline_logs(self):
         self.pipeline.start()
         # regression test for https://github.com/feldera/feldera/issues/4394
