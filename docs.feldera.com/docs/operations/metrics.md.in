@@ -56,7 +56,7 @@ which Feldera is built.
 
 [DBSP]: https://docs.rs/dbsp/latest/dbsp/
 
-{{dbsp_|compaction_|output_stall_}}
+{{dbsp_|compaction_|output_stall_|memory_pressure|max_rss_bytes}}
 
 ## Record Processing
 

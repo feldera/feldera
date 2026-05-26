@@ -30,6 +30,7 @@ use crate::controller::sync::{
     CHECKPOINT_SYNC_PUSH_FAILURES, CHECKPOINT_SYNC_PUSH_SUCCESS,
     CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED, CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES, SYNCHRONIZER,
 };
+use crate::panic::N_PANICS;
 use crate::server::metrics::{HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, Value};
 use crate::server::{InitializationState, ServerState};
 use crate::transport::Step;
@@ -1373,6 +1374,12 @@ impl Controller {
     {
         metrics.process_metrics(labels);
 
+        metrics.counter(
+            "process_panics_total",
+            "Number of times the process has panicked.  Panics do not necessarily indicate a bug or a crash but they can indicate that it is worth examining the log for details.",
+            labels,
+            &N_PANICS,
+        );
         metrics.gauge(
             "records_input_buffered",
             "Total amount of data currently buffered by all endpoints, in records.",
