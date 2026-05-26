@@ -21,7 +21,7 @@ import pytest
 from feldera import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
-from tests import TEST_CLIENT, enterprise_only, skip_on_arm64
+from tests import TEST_CLIENT, enterprise_only
 from tests.platform.helper import api_url, get
 from tests.utils import DeltaTestLocation, wait_for_condition
 
@@ -271,7 +271,6 @@ def _run_catchup_rounds(
 
 
 @enterprise_only
-@skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
 def test_delta_input_catchup_snapshot_and_follow(pipeline_name):
     """
     Catchup mode batches snapshot ingest and each follow burst into one Feldera
@@ -331,7 +330,6 @@ def test_delta_input_catchup_snapshot_and_follow(pipeline_name):
 
 
 @enterprise_only
-@skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
 def test_delta_input_catchup_cdc(pipeline_name):
     """
     CDC catchup skips pre-existing commits (no snapshot ingest), then batches

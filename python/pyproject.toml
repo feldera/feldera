@@ -47,7 +47,7 @@ dev = [
     "sphinx==7.3.7",
     "simplejson==3.20.1",
     "confluent-kafka>=2.2.0",
-    "deltalake>=1.5.0",
+    "deltalake>=1.6.0",
 ]
 
 [tool.pytest.ini_options]

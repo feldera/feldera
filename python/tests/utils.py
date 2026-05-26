@@ -220,12 +220,9 @@ class DeltaTestLocation:
         """Return the row count of the current Delta snapshot.
 
         Uses the per-file `numRecords` stats recorded in the delta log, so
-        we never need to scan parquet (and never need pyarrow).
-
-        The `deltalake` import is deferred to here so that module-level
-        test collection does not crash on aarch64 hosts where the wheel
-        aborts on import; tests that need this method gate themselves
-        with `@skip_on_arm64`.
+        we never need to scan parquet (and never need pyarrow). The
+        `deltalake` import is deferred to keep module-level test collection
+        cheap on hosts that don't read delta tables.
 
         :param missing_ok: When True, return ``-1`` if the table does not
             exist instead of raising. Useful when probing a cache.

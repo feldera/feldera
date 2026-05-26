@@ -4,7 +4,7 @@ from feldera import PipelineBuilder
 from feldera.enums import BootstrapPolicy
 from feldera.pipeline import Pipeline
 from feldera.runtime_config import RuntimeConfig, Storage
-from feldera.testutils import FELDERA_TEST_NUM_WORKERS, skip_on_arm64
+from feldera.testutils import FELDERA_TEST_NUM_WORKERS
 from tests import TEST_CLIENT
 from tests.utils import DeltaTestLocation, wait_for_condition
 
@@ -237,7 +237,6 @@ def _build_sql_round3(
     return "\n\n".join(parts)
 
 
-@skip_on_arm64  # https://github.com/delta-io/delta-rs/issues/4413
 def test_delta_output_send_snapshot_after_flag_flip(pipeline_name):
     """Verify snapshot delivery to delta sinks across a connector
     modification (`send_snapshot: false` → `send_snapshot: true`).
