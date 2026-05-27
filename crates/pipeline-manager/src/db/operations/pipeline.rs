@@ -844,7 +844,9 @@ fn check_precondition(condition: bool, info: &str) -> Result<(), DBError> {
     if condition {
         Ok(())
     } else {
-        Err(DBError::PreconditionViolation(info.to_string()))
+        Err(DBError::PreconditionViolation {
+            precondition: info.to_string(),
+        })
     }
 }
 
