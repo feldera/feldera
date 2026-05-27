@@ -7,6 +7,38 @@ const circuitProfileRegex = /circuit_profile\.json$/
 const dataflowGraphRegex = /dataflow_graph\.json$/
 const pipelineConfigRegex = /pipeline_config\.json$/
 
+// New bundle layout (since support-bundle metadata_version 1): each collection
+// lives under a directory named after its timestamp, e.g.
+// "2026-05-25T12-34-56.789Z/circuit_profile.json". Collisions get a "-N" suffix
+// on the directory.
+const collectionDirRegex =
+  /^(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:\.\d+)?Z(?:-\d+)?)\//
+
+// Legacy layout: files were named "<ISO_TIMESTAMP>_<file>", optionally inside
+// a sub-path, e.g. "2026-01-19T12:55:54.152834443+00:00_logs.txt".
+const legacyTimestampPrefixRegex = /(?:^|\/)(\d{4}-\d{2}-\d{2}T[^/_]+)_/
+
+/** Group key identifying one collection. Empty string means "not a collection file". */
+function collectionKey(filename: string): string {
+  return (
+    filename.match(collectionDirRegex)?.[1] ??
+    filename.match(legacyTimestampPrefixRegex)?.[1] ??
+    ''
+  )
+}
+
+/** Parse a collection key back into a Date for sorting and display. */
+function collectionDate(key: string): Date {
+  // New keys use '-' between hours/minutes/seconds; JavaScript's Date parser
+  // wants ':', so rewrite the time portion. The trailing "-N" collision suffix
+  // (if any) is dropped — it carries no temporal information.
+  const m = key.match(/^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})(\.\d+)?Z/)
+  if (m) {
+    return new Date(`${m[1]}T${m[2]}:${m[3]}:${m[4]}${m[5] ?? ''}Z`)
+  }
+  return new Date(key)
+}
+
 export interface ProcessedProfile {
   profile: JsonProfiles
   dataflow?: Dataflow
@@ -30,20 +62,14 @@ export function getSuitableProfiles(zipData: Uint8Array): [Date, ZipItem[]][] {
     )
   }
 
-  const profileTimestamps = groupBy(
-    profileFiles,
-    // group by file timestamp; all files in a bundle are named with names like TIMESTAMP_FILENAME
-    // where TIMESTAMP is an ISO 8601 timestamp
-    // Examples: "2026-01-19T12:55:54.152834443+00:00_logs.txt", "some/path/2026-01-19T12:55:54.152834443+00:00_logs.txt"
-    (file) => file.filename.match(/(?:^|\/)(\d{4}-\d{2}-\d{2}T[^/_]+)_/)?.[1] ?? ''
-  ).filter(
+  const profileTimestamps = groupBy(profileFiles, (file) => collectionKey(file.filename)).filter(
     (group) => group[0] && group[1].some((file) => circuitProfileRegex.test(file.filename))
     // Pipeline config and dataflow graph are not required
   )
 
   return sortOn(
     profileTimestamps.map(
-      ([timestamp, files]) => [new Date(timestamp), files] as [Date, ZipItem[]]
+      ([key, files]) => [collectionDate(key), files] as [Date, ZipItem[]]
     ),
     (p) => p[0]
   )
