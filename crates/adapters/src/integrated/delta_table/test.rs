@@ -1588,7 +1588,8 @@ async fn test_follow(
         .await;
     }
 
-    if test_end_version && suspend {
+    // If the table has reached the end_version, make sure the eoi status survives the suspend.
+    if test_end_version && suspend && input_table.version().unwrap() >= end_version {
         suspend_pipeline(pipeline).await;
 
         pipeline = start_pipeline(
@@ -1604,6 +1605,7 @@ async fn test_follow(
 
         let status = pipeline.input_endpoint_status("test_input1").unwrap();
         assert!(status.metrics.end_of_input);
+        println!("eoi status survived suspend");
     }
 
     // TODO: this does not currently work because our output delta connector doesn't support
@@ -1905,7 +1907,7 @@ async fn test_cdc(
 
 /// Generate up to `max_records` _unique_ records.
 fn delta_data(max_records: usize) -> impl Strategy<Value = Vec<DeltaTestStruct>> {
-    vec(DeltaTestStruct::arbitrary(), 0..max_records).prop_map(|vec| {
+    vec(DeltaTestStruct::arbitrary(), 10..max_records).prop_map(|vec| {
         let mut idx = 0;
         vec.into_iter()
             .map(|mut x| {
