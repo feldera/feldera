@@ -14,6 +14,7 @@
 pub mod api_key;
 pub mod cluster_monitor;
 pub mod connectivity;
+pub mod oidc_trust;
 pub mod pipeline;
 pub mod pipeline_monitor;
 mod pipeline_parsing;

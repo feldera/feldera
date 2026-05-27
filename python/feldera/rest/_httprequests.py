@@ -62,8 +62,27 @@ class HttpRequests:
         if isinstance(self.requests_verify, bool) and not self.requests_verify:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-        if self.config.api_key:
-            self.headers["Authorization"] = f"Bearer {self.config.api_key}"
+    def _resolve_bearer(self) -> Optional[str]:
+        """Return the bearer token to use for this request, or None."""
+        key = self.config.api_key
+        if key is None:
+            return None
+        if callable(key):
+            token = key()
+            if not isinstance(token, str):
+                raise TypeError(
+                    f"api_key callable returned {type(token).__name__}, expected str"
+                )
+            return token.strip()
+        return key
+
+    def _headers_with_auth(self) -> dict:
+        """Headers for the next request, with a freshly-resolved bearer."""
+        headers = dict(self.headers)
+        token = self._resolve_bearer()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return headers
 
     def _check_cluster_health(self) -> bool:
         """Check `/cluster_healthz`; return True iff `all_healthy` is reported."""
@@ -140,12 +159,13 @@ class HttpRequests:
         data: Any,
         params: Optional[Mapping[str, Any]],
         stream: bool,
+        headers: Optional[dict] = None,
     ) -> Any:
         response = http_method(
             request_path,
             data=data,
             timeout=(self.config.connection_timeout, self.config.timeout),
-            headers=self.headers,
+            headers=headers if headers is not None else self.headers,
             params=params,
             stream=stream,
             verify=self.requests_verify,
@@ -200,11 +220,14 @@ class HttpRequests:
         else:
             data = json_serialize(body)
 
+        headers = self._headers_with_auth()
+        headers["Content-Type"] = content_type
+
         logging.debug(
             "sending %s request to: %s with headers: %s, and params: %s",
             http_method.__name__,
             request_path,
-            _redact_headers(self.headers),
+            _redact_headers(headers),
             str(params),
         )
 
@@ -220,8 +243,25 @@ class HttpRequests:
             for attempt in retryer:
                 with attempt:
                     return self._do_single_request(
-                        http_method, request_path, data, params, stream
+                        http_method, request_path, data, params, stream, headers
                     )
+        except FelderaAPIError as err:
+            # On 401, if the bearer is a callable, re-resolve once and retry.
+            # Covers tokens that expire mid-flight in long-running scripts
+            # without forcing every caller to wrap calls in their own retry.
+            # One-shot is enforced by scope: this except runs at most once
+            # per `send_request` call.
+            if err.status_code == 401 and callable(self.config.api_key):
+                logging.info(
+                    "401 from %s; re-resolving api_key callable and retrying once",
+                    request_path,
+                )
+                headers = self._headers_with_auth()
+                headers["Content-Type"] = content_type
+                return self._do_single_request(
+                    http_method, request_path, data, params, stream, headers
+                )
+            raise
         except requests.exceptions.Timeout as err:
             raise FelderaTimeoutError(str(err)) from err
         except requests.exceptions.ConnectionError as err:
