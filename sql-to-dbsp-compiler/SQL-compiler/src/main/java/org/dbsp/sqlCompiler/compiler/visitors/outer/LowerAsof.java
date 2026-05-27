@@ -192,7 +192,7 @@ public class LowerAsof implements CircuitTransform {
                 Map<IGCOperator, DBSPConcreteAsofJoinOperator> leftGces,
                 Map<IGCOperator, DBSPConcreteAsofJoinOperator> rightGces,
                 Map<IGCOperator, IGCOperator> original) {
-            super(compiler, graphs, false);
+            super(compiler, graphs);
             this.leftGces = leftGces;
             this.rightGces = rightGces;
             this.original = original;

@@ -13,7 +13,7 @@ import java.util.List;
  * This is mostly useful when they get moved after Constants */
 public class PushDifferentialsUp extends CircuitCloneWithGraphsVisitor {
     public PushDifferentialsUp(DBSPCompiler compiler, CircuitGraphs graphs) {
-        super(compiler, graphs, false);
+        super(compiler, graphs);
     }
 
     @Override

@@ -10,8 +10,8 @@ public abstract class CircuitCloneWithGraphsVisitor extends CircuitCloneVisitor 
         return this.graphs.getGraph(this.getParent());
     }
 
-    protected CircuitCloneWithGraphsVisitor(DBSPCompiler compiler, CircuitGraphs graphs, boolean force) {
-        super(compiler, force);
+    protected CircuitCloneWithGraphsVisitor(DBSPCompiler compiler, CircuitGraphs graphs) {
+        super(compiler, false);
         this.graphs = graphs;
     }
 }

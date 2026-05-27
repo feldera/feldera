@@ -48,7 +48,7 @@ class BuildNestedOperators extends CircuitCloneWithGraphsVisitor {
     final Map<DBSPNestedOperator, Map<OutputPort, DBSPDeltaOperator>> deltasCreated;
 
     BuildNestedOperators(DBSPCompiler compiler, CircuitGraphs graphs) {
-        super(compiler, graphs, false);
+        super(compiler, graphs);
         this.components = new HashMap<>();
         this.toAdd = new HashSet<>();
         this.viewPort = new HashMap<>();
@@ -135,7 +135,6 @@ class BuildNestedOperators extends CircuitCloneWithGraphsVisitor {
 
         DBSPSimpleOperator result = operator.withInputs(sources, this.force)
                 .to(DBSPSimpleOperator.class);
-        result.setDerivedFrom(operator);
         block.addOperator(result);
         DBSPViewOperator view = result.as(DBSPViewOperator.class);
         OutputPort port = result.outputPort();

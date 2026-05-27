@@ -269,9 +269,7 @@ public abstract class FilterJoinRule extends RelRule<DefaultOptRuleConfig<Filter
             if (rexNode.isA(SqlKind.EQUALS)) {
                 final RexNode op1 = ((RexCall) rexNode).getOperands().get(0);
                 final RexNode op2 = ((RexCall) rexNode).getOperands().get(1);
-                if (op1 instanceof RexInputRef && op2 instanceof RexInputRef) {
-                    final RexInputRef in1 = (RexInputRef) op1;
-                    final RexInputRef in2 = (RexInputRef) op2;
+                if (op1 instanceof RexInputRef in1 && op2 instanceof RexInputRef in2) {
                     Set<RexInputRef> set = null;
                     for (Set<RexInputRef> s : equalSets) {
                         if (s.contains(in1) || s.contains(in2)) {

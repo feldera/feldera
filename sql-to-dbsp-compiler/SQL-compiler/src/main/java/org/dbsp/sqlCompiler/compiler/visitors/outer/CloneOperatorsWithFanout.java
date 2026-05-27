@@ -19,7 +19,7 @@ import org.dbsp.util.Linq;
  * then we just make a clone of the operator. */
 public class CloneOperatorsWithFanout extends CircuitCloneWithGraphsVisitor {
     public CloneOperatorsWithFanout(DBSPCompiler compiler, CircuitGraphs graphs) {
-        super(compiler, graphs, false);
+        super(compiler, graphs);
     }
 
     boolean shouldCloneInput(DBSPUnaryOperator operator) {

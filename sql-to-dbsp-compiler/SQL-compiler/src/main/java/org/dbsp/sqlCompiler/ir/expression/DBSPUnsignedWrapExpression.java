@@ -54,10 +54,10 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
         // How each SQL type that may be used in a sorting key is converted into a signed value
         static DBSPTypeInteger getInitialIntegerType(DBSPType sourceType) {
             return switch (sourceType.code) {
-                case INT8, INT16, INT32, INT64, INT128 -> sourceType.withMayBeNull(false).to(DBSPTypeInteger.class);
+                case INT8, INT16, INT32, INT64, INT128, UINT8, UINT16, UINT32, UINT64, UINT128 ->
+                        sourceType.withMayBeNull(false).to(DBSPTypeInteger.class);
                 case DATE -> DBSPTypeInteger.getType(sourceType.getNode(), DBSPTypeCode.INT32, false);
                 case TIMESTAMP, TIME -> DBSPTypeInteger.getType(sourceType.getNode(), DBSPTypeCode.INT64, false);
-                case UINT8, UINT16, UINT32, UINT64, UINT128 -> sourceType.withMayBeNull(false).to(DBSPTypeInteger.class);
                 default -> throw new UnimplementedException("OVER sorting over " + sourceType, sourceType.getNode());
             };
         }

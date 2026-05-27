@@ -300,7 +300,7 @@ public class CompilerMain {
         return compiler.messages;
     }
 
-    public static Pair<CompilerMessages, CompilerOptions> run(String... argv) throws SQLException {
+    public static Pair<CompilerMessages, CompilerOptions> run(String... argv) {
         CompilerMain main = new CompilerMain();
         var parseResult = main.parseOptions(argv);
         CompilerOptions options = main.options;

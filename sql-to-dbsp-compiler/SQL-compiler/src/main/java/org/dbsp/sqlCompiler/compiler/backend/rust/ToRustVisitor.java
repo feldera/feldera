@@ -1988,7 +1988,7 @@ public class ToRustVisitor extends CircuitVisitor {
     /** A view and all its indexes */
     static class ViewAndIndexes {
         @Nullable DBSPSinkOperator view;
-        List<DBSPSinkOperator> indexes = new ArrayList<>();
+        final List<DBSPSinkOperator> indexes = new ArrayList<>();
 
         ViewAndIndexes() {
             this.view = null;

@@ -40,15 +40,7 @@ public class Linq {
         return new HashSet<>(Linq.list(value));
     }
 
-    static class MapIterator<T, S> implements Iterator<S> {
-        final Iterator<T> data;
-        final Function<T, S> map;
-
-        MapIterator(Iterator<T> data, Function<T, S> function) {
-            this.data = data;
-            this.map = function;
-        }
-
+    record MapIterator<T, S>(Iterator<T> data, Function<T, S> map) implements Iterator<S> {
         @Override
         public boolean hasNext() {
             return this.data.hasNext();

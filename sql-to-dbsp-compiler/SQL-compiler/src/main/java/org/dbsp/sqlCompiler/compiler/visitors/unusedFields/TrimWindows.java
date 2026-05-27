@@ -14,7 +14,7 @@ import org.dbsp.util.Utilities;
 /** Trim unused fields from {@link org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator}. */
 public class TrimWindows extends CircuitCloneWithGraphsVisitor {
     public TrimWindows(DBSPCompiler compiler, CircuitGraphs graphs) {
-        super(compiler, graphs, false);
+        super(compiler, graphs);
     }
 
     @Override
@@ -45,7 +45,6 @@ public class TrimWindows extends CircuitCloneWithGraphsVisitor {
 
                 DBSPWindowOperator newWindow = new DBSPWindowOperator(
                         window.getRelNode(), window.lowerInclusive, window.upperInclusive, pre.outputPort(), window.right());
-                newWindow.setDerivedFrom(window);
                 this.addOperator(newWindow);
 
                 DBSPUnaryOperator postProj = new DBSPMapIndexOperator(

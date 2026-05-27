@@ -16,7 +16,7 @@ import javax.annotation.Nullable;
 /** Combine chains of Map/MapIndex/Filter into Chain operators */
 public class ChainVisitor extends CircuitCloneWithGraphsVisitor {
     public ChainVisitor(DBSPCompiler compiler, CircuitGraphs graphs) {
-        super(compiler, graphs, false);
+        super(compiler, graphs);
     }
 
     @Nullable

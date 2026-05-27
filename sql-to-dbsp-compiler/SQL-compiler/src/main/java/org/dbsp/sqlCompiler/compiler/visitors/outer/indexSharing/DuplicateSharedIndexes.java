@@ -25,7 +25,7 @@ import javax.annotation.Nullable;
  */
 class DuplicateSharedIndexes extends CircuitCloneWithGraphsVisitor {
     public DuplicateSharedIndexes(DBSPCompiler compiler, CircuitGraphs graph) {
-        super(compiler, graph, false);
+        super(compiler, graph);
     }
 
     /**

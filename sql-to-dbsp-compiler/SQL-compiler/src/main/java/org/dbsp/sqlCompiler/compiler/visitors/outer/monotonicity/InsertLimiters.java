@@ -180,7 +180,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPExpression cond = new DBSPTupleExpression(v0,
                 new DBSPIfExpression(source.node().getNode(), v0, call, min));
         DBSPApplyOperator result = new DBSPApplyOperator(source.node().getRelNode(), cond.closure(var),
-                source.simpleNode().outputPort(), "(" + source.node().getDerivedFrom() + ")");
+                source.simpleNode().outputPort(), null);
         this.addOperator(result);
         result.addAnnotation(Waterline.INSTANCE, DBSPApplyOperator.class);
         return result.outputPort();
@@ -1142,7 +1142,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         // Compute the min of the timestamps
         DBSPVariablePath leftVar = this.getLimiterDataOutputType(extractLeftTS).ref().var();
         DBSPVariablePath rightVar = this.getLimiterDataOutputType(extractRightTS).ref().var();
-        DBSPExpression minValue = new DBSPTupleExpression(this.min(leftVar.deref(), rightVar.deref()));
+        DBSPExpression minValue = new DBSPTupleExpression(min(leftVar.deref(), rightVar.deref()));
         OutputPort minOperator = this.createApply2(extractLeftTS, extractRightTS, minValue.closure(leftVar, rightVar));
 
         DBSPTypeTuple keyType = join.getKeyType().to(DBSPTypeTuple.class);
@@ -1613,7 +1613,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
         List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
         DBSPSimpleOperator replacement = operator.withInputs(sources, this.force)
                 .to(DBSPSimpleOperator.class);
-        replacement.setDerivedFrom(operator);
         if (!replaceIndexedInput)
             this.addOperator(replacement);
 
@@ -1799,8 +1798,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     DBSPTypeTypedBox.wrapTypedBox(minimums.get(0), false),
                     DBSPTypeTypedBox.wrapTypedBox(var.deref().field(0), false));
             DBSPApplyOperator apply = new DBSPApplyOperator(
-                    operator.getRelNode(), makePair.closure(var), waterline.outputPort(),
-                    "(" + operator.getDerivedFrom() + ")");
+                    operator.getRelNode(), makePair.closure(var), waterline.outputPort(), null);
             this.addOperator(apply);
 
             // Window requires data to be indexed
@@ -2091,8 +2089,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             DBSPTypeTypedBox.wrapTypedBox(minimum, false),
                             DBSPTypeTypedBox.wrapTypedBox(var.deref().field(1).field(controlFieldIndex), false));
                     DBSPApplyOperator apply = new DBSPApplyOperator(
-                            operator.getRelNode(), makePair.closure(var.asParameter()), boundSource,
-                            "(" + operator.getDerivedFrom() + ")");
+                            operator.getRelNode(), makePair.closure(var.asParameter()), boundSource,null);
                     this.addOperator(apply);
 
                     // Window requires data to be indexed

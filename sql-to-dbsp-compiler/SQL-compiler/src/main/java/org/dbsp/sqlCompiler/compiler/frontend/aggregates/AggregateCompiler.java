@@ -855,7 +855,7 @@ public class AggregateCompiler implements ICompilerComponent {
 
     /** An expression which computes the standard deviation given the sum of squares, sum, and count:
      * denom = if (sampl) { n - 1 } else { n };
-     * sqrt ( max(0, (sumSq - (sum^2 / n) ) / denom) }
+     * sqrt ( max(0, (sumSq - (sum^2 / n) ) / denom)
      * Division uses the special operator which returns NULL when the denominator is NULL.
      * The max is used because FP computations can sometimes produce a negative result. */
     DBSPExpression stddev(boolean isSamp, DBSPType intermediateResultType,

@@ -16,7 +16,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
  * {@link DBSPJoinFilterMapOperator}.  Similar expansion for {@link DBSPLeftJoinOperator}. */
 public class FilterJoinVisitor extends CircuitCloneWithGraphsVisitor {
     public FilterJoinVisitor(DBSPCompiler compiler, CircuitGraphs graphs) {
-        super(compiler, graphs, false);
+        super(compiler, graphs);
     }
 
     @Override

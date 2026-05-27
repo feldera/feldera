@@ -31,7 +31,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** Recognize patterns of trees of joins that can be converted into a single @{link DBSPStarJoinOperator}
- * (or {@link DBSPStarJoinIndexOperator}.
+ * (or {@link DBSPStarJoinIndexOperator}).
  * This pass runs before incrementalization, so it looks for {@link DBSPStreamJoinOperator} and other
  * non-incremental operators.
  *

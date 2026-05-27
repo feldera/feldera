@@ -22,7 +22,7 @@ import java.util.List;
 /** Choose for each join whether it is dynamically balanced or just a hash join */
 public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
     protected BalancedJoins(DBSPCompiler compiler, CircuitGraphs graphs) {
-        super(compiler, graphs, false);
+        super(compiler, graphs);
     }
 
     private boolean hasGcSuccessor(DBSPOperator operator) {
