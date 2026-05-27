@@ -460,6 +460,17 @@ fn wait_for_records(controller: &Controller, expect_n: &[usize]) {
     assert_eq!(&collect_endpoint_records(controller, n), expect_n);
 }
 
+fn assert_bounded_suspend_steps(controller: &Controller, suspend_request_step: u64) {
+    let suspend_complete_step = controller.status().global_metrics.total_initiated_steps();
+    let suspend_steps = suspend_complete_step.saturating_sub(suspend_request_step);
+
+    assert!(
+        suspend_steps <= 1000,
+        "suspend advanced {suspend_steps} steps while waiting for barriers \
+         ({suspend_request_step}..{suspend_complete_step})"
+    );
+}
+
 /// Runs a basic test of fault tolerance.
 ///
 /// The test proceeds in multiple rounds. For each element of `rounds`, the
@@ -1986,6 +1997,7 @@ fn suspend_barrier() {
     // Suspend.
     let (sender, receiver) = mpsc::channel();
     println!("start suspend");
+    let suspend_request_step = controller.status().global_metrics.total_initiated_steps();
     controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
 
     // Suspend should not succeed, because of the barrier.
@@ -2003,6 +2015,7 @@ fn suspend_barrier() {
         .recv_timeout(Duration::from_millis(10000))
         .unwrap()
         .unwrap();
+    assert_bounded_suspend_steps(&controller, suspend_request_step);
 
     // Stop controller.
     println!("stop controller");
@@ -2125,6 +2138,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
     // barriers, since each input only has 1000 records so far.
     let (sender, receiver) = mpsc::channel();
     println!("start suspend");
+    let suspend_request_step = controller.status().global_metrics.total_initiated_steps();
     controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
 
     // Iterate as long as we shouldn't have reached the barrier, adding records
@@ -2177,6 +2191,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
         .recv_timeout(Duration::from_millis(10000))
         .unwrap()
         .unwrap();
+    assert_bounded_suspend_steps(&controller, suspend_request_step);
 
     // Stop controller.
     println!("stop controller");
