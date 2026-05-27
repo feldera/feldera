@@ -31,7 +31,7 @@ impl TryFrom<String> for MonitorStatus {
             "initial_unhealthy" => Ok(Self::InitialUnhealthy),
             "unhealthy" => Ok(Self::Unhealthy),
             "healthy" => Ok(Self::Healthy),
-            _ => Err(DBError::InvalidMonitorStatus(value)),
+            _ => Err(DBError::InvalidMonitorStatus { value }),
         }
     }
 }

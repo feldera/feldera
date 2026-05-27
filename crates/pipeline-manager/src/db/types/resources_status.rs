@@ -108,7 +108,7 @@ impl TryFrom<String> for ResourcesStatus {
             "provisioning" => Ok(Self::Provisioning),
             "provisioned" => Ok(Self::Provisioned),
             "stopping" => Ok(Self::Stopping),
-            _ => Err(DBError::InvalidResourcesStatus(value)),
+            _ => Err(DBError::InvalidResourcesStatus { value }),
         }
     }
 }
@@ -144,7 +144,7 @@ impl TryFrom<String> for ResourcesDesiredStatus {
         match value.as_str() {
             "stopped" => Ok(Self::Stopped),
             "provisioned" => Ok(Self::Provisioned),
-            _ => Err(DBError::InvalidResourcesDesiredStatus(value)),
+            _ => Err(DBError::InvalidResourcesDesiredStatus { value }),
         }
     }
 }

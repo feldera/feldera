@@ -61,7 +61,7 @@ pub fn parse_string_as_runtime_status(s: String) -> Result<RuntimeStatus, DBErro
         "paused" => Ok(RuntimeStatus::Paused),
         "running" => Ok(RuntimeStatus::Running),
         "suspended" => Ok(RuntimeStatus::Suspended),
-        _ => Err(DBError::InvalidRuntimeStatus(s)),
+        _ => Err(DBError::InvalidRuntimeStatus { value: s }),
     }
 }
 
@@ -88,7 +88,7 @@ pub fn parse_string_as_runtime_desired_status(s: String) -> Result<RuntimeDesire
         "paused" => Ok(RuntimeDesiredStatus::Paused),
         "running" => Ok(RuntimeDesiredStatus::Running),
         "suspended" => Ok(RuntimeDesiredStatus::Suspended),
-        _ => Err(DBError::InvalidRuntimeDesiredStatus(s)),
+        _ => Err(DBError::InvalidRuntimeDesiredStatus { value: s }),
     }
 }
 
@@ -116,7 +116,7 @@ pub fn parse_string_as_bootstrap_config(s: String) -> Result<BootstrapConfig, DB
         "reject" => Ok(BootstrapConfig::from(BootstrapPolicy::Reject)),
         "await_approval" => Ok(BootstrapConfig::from(BootstrapPolicy::AwaitApproval)),
         _ => serde_json::from_str::<BootstrapConfig>(&s)
-            .map_err(|_| DBError::InvalidBootstrap(s.clone())),
+            .map_err(|_| DBError::InvalidBootstrap { value: s.clone() }),
     }
 }
 

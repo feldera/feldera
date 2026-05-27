@@ -196,20 +196,34 @@ pub enum DBError {
     },
     PauseWhileNotProvisioned,
     ResumeWhileNotProvisioned,
-    InvalidResourcesStatus(String),
-    InvalidResourcesDesiredStatus(String),
-    InvalidRuntimeStatus(String),
-    InvalidRuntimeDesiredStatus(String),
-    InvalidBootstrap(String),
+    InvalidResourcesStatus {
+        value: String,
+    },
+    InvalidResourcesDesiredStatus {
+        value: String,
+    },
+    InvalidRuntimeStatus {
+        value: String,
+    },
+    InvalidRuntimeDesiredStatus {
+        value: String,
+    },
+    InvalidBootstrap {
+        value: String,
+    },
     NoRuntimeStatusWhileProvisioned,
-    PreconditionViolation(String),
+    PreconditionViolation {
+        precondition: String,
+    },
     CannotStartWithUndismissedError,
     CannotStartWhileClearingStorage,
     DismissErrorRestrictedToFullyStopped,
     InitialImmutableUnlessStopped,
     BootstrapPolicyImmutableUnlessStopped,
     InitialStandbyNotAllowed,
-    InvalidMonitorStatus(String),
+    InvalidMonitorStatus {
+        value: String,
+    },
     UnknownClusterMonitorEvent {
         event_id: ClusterMonitorEventId,
     },
@@ -642,20 +656,20 @@ impl Display for DBError {
                     "You can only call /resume when the pipeline is not Stopped, Provisioning or Stopping."
                 )
             }
-            DBError::InvalidResourcesStatus(s) => {
-                write!(f, "Invalid resources status: '{s}'")
+            DBError::InvalidResourcesStatus { value } => {
+                write!(f, "Invalid resources status: '{value}'")
             }
-            DBError::InvalidResourcesDesiredStatus(s) => {
-                write!(f, "Invalid resources desired status: '{s}'")
+            DBError::InvalidResourcesDesiredStatus { value } => {
+                write!(f, "Invalid resources desired status: '{value}'")
             }
-            DBError::InvalidRuntimeStatus(s) => {
-                write!(f, "Invalid runtime status: '{s}'")
+            DBError::InvalidRuntimeStatus { value } => {
+                write!(f, "Invalid runtime status: '{value}'")
             }
-            DBError::InvalidRuntimeDesiredStatus(s) => {
-                write!(f, "Invalid runtime desired status: '{s}'")
+            DBError::InvalidRuntimeDesiredStatus { value } => {
+                write!(f, "Invalid runtime desired status: '{value}'")
             }
-            DBError::InvalidBootstrap(s) => {
-                write!(f, "Invalid bootstrap policy: '{s}'")
+            DBError::InvalidBootstrap { value } => {
+                write!(f, "Invalid bootstrap configuration: '{value}'")
             }
             DBError::NoRuntimeStatusWhileProvisioned => {
                 write!(
@@ -663,8 +677,8 @@ impl Display for DBError {
                     "Runtime status is not set while the resources status is Provisioned"
                 )
             }
-            DBError::PreconditionViolation(s) => {
-                write!(f, "Operation precondition not met: '{s}'")
+            DBError::PreconditionViolation { precondition } => {
+                write!(f, "Operation precondition not met: '{precondition}'")
             }
             DBError::TlsConnection { hint, .. } => {
                 write!(f, "Unable to setup TLS connection to the database: {hint}")
@@ -716,8 +730,8 @@ impl Display for DBError {
                     (2) `runtime_config.storage.backend.config.sync` is configured."
                 )
             }
-            DBError::InvalidMonitorStatus(s) => {
-                write!(f, "Invalid monitor status: '{s}'")
+            DBError::InvalidMonitorStatus { value } => {
+                write!(f, "Invalid monitor status: '{value}'")
             }
             DBError::UnknownClusterMonitorEvent { event_id } => {
                 write!(f, "Cluster monitor event with identifier '{event_id}' does not exist -- it might have been deleted as monitor events are only retained for {}h and at most {}", MONITOR_RETENTION_HOURS, MONITOR_RETENTION_NUM)
@@ -825,13 +839,15 @@ impl DetailedError for DBError {
             Self::TlsConnection { .. } => Cow::from("TlsConnection"),
             Self::DeleteRestrictedToClearedStorage => Cow::from("DeleteRestrictedToClearedStorage"),
             Self::PauseWhileNotProvisioned => Cow::from("PauseWhileNotProvisioned"),
-            Self::InvalidResourcesStatus(..) => Cow::from("InvalidResourcesStatus"),
-            Self::InvalidResourcesDesiredStatus(..) => Cow::from("InvalidResourcesDesiredStatus"),
-            Self::InvalidRuntimeStatus(..) => Cow::from("InvalidRuntimeStatus"),
-            Self::InvalidRuntimeDesiredStatus(..) => Cow::from("InvalidRuntimeDesiredStatus"),
-            Self::InvalidBootstrap(..) => Cow::from("InvalidBootstrap"),
+            Self::InvalidResourcesStatus { .. } => Cow::from("InvalidResourcesStatus"),
+            Self::InvalidResourcesDesiredStatus { .. } => {
+                Cow::from("InvalidResourcesDesiredStatus")
+            }
+            Self::InvalidRuntimeStatus { .. } => Cow::from("InvalidRuntimeStatus"),
+            Self::InvalidRuntimeDesiredStatus { .. } => Cow::from("InvalidRuntimeDesiredStatus"),
+            Self::InvalidBootstrap { .. } => Cow::from("InvalidBootstrap"),
             Self::NoRuntimeStatusWhileProvisioned => Cow::from("NoRuntimeStatusWhileProvisioned"),
-            Self::PreconditionViolation(..) => Cow::from("PreconditionViolation"),
+            Self::PreconditionViolation { .. } => Cow::from("PreconditionViolation"),
             Self::ResumeWhileNotProvisioned => Cow::from("ResumeWhileNotProvisioned"),
             Self::CannotStartWithUndismissedError => Cow::from("CannotStartWithUndismissedError"),
             Self::CannotStartWhileClearingStorage => Cow::from("CannotStartWhileClearingStorage"),
@@ -843,7 +859,7 @@ impl DetailedError for DBError {
                 Cow::from("BootstrapPolicyImmutableUnlessStopped")
             }
             Self::InitialStandbyNotAllowed => Cow::from("InitialStandbyNotAllowed"),
-            Self::InvalidMonitorStatus(..) => Cow::from("InvalidMonitorStatus"),
+            Self::InvalidMonitorStatus { .. } => Cow::from("InvalidMonitorStatus"),
             Self::UnknownClusterMonitorEvent { .. } => Cow::from("UnknownClusterMonitorEvent"),
             Self::NoClusterMonitorEventsAvailable => Cow::from("NoClusterMonitorEventsAvailable"),
             Self::UnnecessaryResourcesStatusTransition { .. } => {
@@ -910,20 +926,20 @@ impl ResponseError for DBError {
             Self::InvalidStorageStatusTransition { .. } => StatusCode::BAD_REQUEST,
             Self::PauseWhileNotProvisioned => StatusCode::BAD_REQUEST,
             Self::ResumeWhileNotProvisioned => StatusCode::BAD_REQUEST,
-            Self::InvalidResourcesStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::InvalidResourcesDesiredStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::InvalidRuntimeStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::InvalidRuntimeDesiredStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::InvalidBootstrap(..) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidResourcesStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidResourcesDesiredStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidRuntimeStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidRuntimeDesiredStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidBootstrap { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::NoRuntimeStatusWhileProvisioned => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PreconditionViolation(..) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PreconditionViolation { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::CannotStartWithUndismissedError => StatusCode::BAD_REQUEST,
             Self::CannotStartWhileClearingStorage => StatusCode::BAD_REQUEST,
             Self::DismissErrorRestrictedToFullyStopped => StatusCode::BAD_REQUEST,
             Self::InitialImmutableUnlessStopped => StatusCode::BAD_REQUEST,
             Self::BootstrapPolicyImmutableUnlessStopped => StatusCode::BAD_REQUEST,
             Self::InitialStandbyNotAllowed => StatusCode::BAD_REQUEST,
-            Self::InvalidMonitorStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidMonitorStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UnknownClusterMonitorEvent { .. } => StatusCode::NOT_FOUND,
             Self::NoClusterMonitorEventsAvailable => StatusCode::NOT_FOUND,
             Self::UnnecessaryResourcesStatusTransition { .. } => StatusCode::BAD_REQUEST,
@@ -940,5 +956,40 @@ impl ResponseError for DBError {
 impl From<DBError> for ErrorResponse {
     fn from(val: DBError) -> Self {
         ErrorResponse::from_error_nolog(&val)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::db::error::DBError;
+    use crate::error::ManagerError;
+
+    #[test]
+    fn invalid_bootstrap_error_serialization() {
+        for db_error in [
+            DBError::InvalidResourcesStatus {
+                value: "abc".to_string(),
+            },
+            DBError::InvalidResourcesDesiredStatus {
+                value: "abc".to_string(),
+            },
+            DBError::InvalidRuntimeStatus {
+                value: "abc".to_string(),
+            },
+            DBError::InvalidRuntimeDesiredStatus {
+                value: "abc".to_string(),
+            },
+            DBError::InvalidBootstrap {
+                value: "abc".to_string(),
+            },
+            DBError::PreconditionViolation {
+                precondition: "abc".to_string(),
+            },
+            DBError::InvalidMonitorStatus {
+                value: "abc".to_string(),
+            },
+        ] {
+            serde_json::to_string_pretty(&ManagerError::DBError { db_error }).unwrap();
+        }
     }
 }
