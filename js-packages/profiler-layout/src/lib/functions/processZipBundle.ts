@@ -10,9 +10,11 @@ const pipelineConfigRegex = /pipeline_config\.json$/
 // New bundle layout (since support-bundle metadata_version 1): each collection
 // lives under a directory named after its timestamp, e.g.
 // "2026-05-25T12-34-56.789Z/circuit_profile.json". Collisions get a "-N" suffix
-// on the directory.
+// on the directory. The directory may be placed in a nested directory
+// (e.g. "support/2026-05-25T12-34-56.789Z/circuit_profile.json"),
+// so we match the timestamp segment anywhere in the path, not only at the start.
 const collectionDirRegex =
-  /^(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:\.\d+)?Z(?:-\d+)?)\//
+  /(?:^|\/)(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:\.\d+)?Z(?:-\d+)?)\//
 
 // Legacy layout: files were named "<ISO_TIMESTAMP>_<file>", optionally inside
 // a sub-path, e.g. "2026-01-19T12:55:54.152834443+00:00_logs.txt".
