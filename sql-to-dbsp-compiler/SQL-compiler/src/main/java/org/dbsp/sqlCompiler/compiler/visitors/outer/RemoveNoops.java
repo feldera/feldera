@@ -13,7 +13,7 @@ import java.util.List;
 /** Removes noops that are not followed by a GC operator */
 public class RemoveNoops extends CircuitCloneWithGraphsVisitor {
     public RemoveNoops(DBSPCompiler compiler, CircuitGraphs graphs) {
-        super(compiler, graphs,  false);
+        super(compiler, graphs);
     }
 
     @Override

@@ -7,7 +7,6 @@ import org.apache.calcite.rel.hint.RelHint;
 import org.apache.calcite.rel.logical.LogicalJoin;
 import org.apache.calcite.rel.logical.LogicalProject;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.util.Utilities;
 
@@ -43,7 +42,7 @@ public class RewriteJoinAnnotations extends RelShuttleImpl {
 
     static class HintAndCount {
         public final RelHint hint;
-        public List<SourcePositionRange> from;
+        public final List<SourcePositionRange> from;
 
         HintAndCount(RelHint hint) {
             this.hint = hint;

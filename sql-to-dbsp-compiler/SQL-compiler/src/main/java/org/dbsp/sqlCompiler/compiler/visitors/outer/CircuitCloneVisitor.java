@@ -121,9 +121,6 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     protected void map(OutputPort old, OutputPort newOp) {
         this.map(old, newOp, true);
         Utilities.enforce(old.node() == this.getCurrent());
-        if (!old.equals(newOp)) {
-            newOp.node().setDerivedFrom(old.node());
-        }
     }
 
     protected void map(DBSPSimpleOperator old, DBSPSimpleOperator newOp) {
@@ -147,15 +144,6 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
                 .newline();
         ICircuit parent = this.getUnderConstruction();
         parent.addOperator(operator);
-        if (!this.context.isEmpty()) {
-            // Current can be empty when operators are inserted in startVisit, for example.
-            // Such operators are not derived from the "current" operator.
-            IDBSPOuterNode node = this.getCurrent();
-            if (node.is(ICircuit.class))
-                return;
-            if (operator != node && operator.derivedFrom == 0)
-                operator.setDerivedFrom(node.getDerivedFrom());
-        }
     }
 
     /**
@@ -212,7 +200,6 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
                     .decrease();
         }
         DBSPOperator result = operator.asOperator().withInputs(sources, this.force);
-        result.setDerivedFrom(op);
         for (int i = 0; i < operator.outputCount(); i++) {
             boolean add = i == operator.outputCount() - 1;
             this.map(operator.getOutput(i), result.getOutput(i), add);
@@ -573,7 +560,6 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     @Override
     public void postorder(DBSPNestedOperator operator) {
         DBSPNestedOperator result = Utilities.removeLast(this.underConstruction).to(DBSPNestedOperator.class);
-        result.setDerivedFrom(operator);
         result.copyAnnotations(operator);
         if (result.sameCircuit(operator))
             result = operator;

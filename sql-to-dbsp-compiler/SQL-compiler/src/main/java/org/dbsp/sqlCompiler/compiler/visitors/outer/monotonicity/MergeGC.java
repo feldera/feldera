@@ -115,8 +115,8 @@ public class MergeGC extends Passes {
     }
 
     static class FindMultipleRetainKeys extends CircuitWithGraphsVisitor {
-        List<List<DBSPIntegrateTraceRetainKeysOperator>> toMerge;
-        Set<DBSPIntegrateTraceRetainKeysOperator> visited;
+        final List<List<DBSPIntegrateTraceRetainKeysOperator>> toMerge;
+        final Set<DBSPIntegrateTraceRetainKeysOperator> visited;
 
         FindMultipleRetainKeys(DBSPCompiler compiler, CircuitGraphs graphs) {
             super(compiler, graphs);
@@ -163,7 +163,7 @@ public class MergeGC extends Passes {
             }
         }
 
-        Map<DBSPIntegrateTraceRetainKeysOperator, ListCounter<DBSPIntegrateTraceRetainKeysOperator>> toMerge;
+        final Map<DBSPIntegrateTraceRetainKeysOperator, ListCounter<DBSPIntegrateTraceRetainKeysOperator>> toMerge;
         final FindMultipleRetainKeys fmk;
 
         DBSPIntegrateTraceRetainKeysOperator merge(List<DBSPIntegrateTraceRetainKeysOperator> operators) {

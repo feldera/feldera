@@ -29,7 +29,7 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
 
     public TrimFilters(DBSPCompiler compiler, CircuitGraphs graphs,
                        AnalyzedSet<DBSPOperator> mapAfterFilter) {
-        super(compiler, graphs, false);
+        super(compiler, graphs);
         this.mapAfterFilter = mapAfterFilter;
     }
 
@@ -84,7 +84,6 @@ public class TrimFilters extends CircuitCloneWithGraphsVisitor {
 
                         DBSPFilterOperator newFilter = new DBSPFilterOperator(
                                 filter.getRelNode(), newFilterFunc, pre.outputPort());
-                        newFilter.setDerivedFrom(filter);
                         this.addOperator(newFilter);
 
                         DBSPUnaryOperator postProj = constructor.apply(

@@ -12,10 +12,10 @@ import org.dbsp.util.Utilities;
 
 /** Abstract type representing an interned string representation.  Always nullable. */
 public class DBSPTypeInterned extends DBSPTypeBaseType {
-    public static final DBSPTypeInterned INSTANCE = new DBSPTypeInterned(true);
+    public static final DBSPTypeInterned INSTANCE = new DBSPTypeInterned();
 
-    protected DBSPTypeInterned(boolean mayBeNull) {
-        super(CalciteObject.EMPTY, DBSPTypeCode.INTERNED_STRING, mayBeNull);
+    protected DBSPTypeInterned() {
+        super(CalciteObject.EMPTY, DBSPTypeCode.INTERNED_STRING, true);
     }
 
     @Override

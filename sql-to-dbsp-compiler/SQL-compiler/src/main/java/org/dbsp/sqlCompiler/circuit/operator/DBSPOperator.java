@@ -39,7 +39,6 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -51,8 +50,6 @@ import java.util.function.Predicate;
 public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
     public final List<OutputPort> inputs;
     public final Annotations annotations;
-    /** id of the operator this one is derived from. */
-    public long derivedFrom;
     @Nullable
     public final String comment;
 
@@ -60,7 +57,6 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
         super(node);
         this.inputs = new ArrayList<>();
         this.annotations = new Annotations();
-        this.derivedFrom = this.id;
         this.comment = comment;
     }
 
@@ -83,22 +79,6 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
         if (source != this)
             this.annotations.replace(source.annotations);
         return this;
-    }
-
-    public long getDerivedFrom() {
-        return this.derivedFrom;
-    }
-
-    /** Explicitly set the origin of this operator. */
-    public void setDerivedFrom(long id) {
-        if (id != this.id && this.derivedFrom > id) {
-            this.derivedFrom = id;
-            Utilities.enforce(id < this.id);
-        }
-    }
-
-    public void setDerivedFrom(DBSPOperator operator) {
-        this.setDerivedFrom(operator.getDerivedFrom());
     }
 
     protected void addInput(OutputPort port) {
@@ -158,10 +138,7 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
         String name = CompactName.getCompactName(this);
         if (name != null)
             return name;
-        String result = Long.toString(this.id);
-        if (this.derivedFrom >= 0 && this.derivedFrom != this.id)
-            result += "(" + this.derivedFrom + ")";
-        return result;
+        return Long.toString(this.id);
     }
 
     /** True if this is equivalent with the other operator,

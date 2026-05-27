@@ -448,7 +448,7 @@ public class Utilities {
         runProcess(directory, new HashMap<>(), commands);
     }
 
-    static HashMap<String, String> STACK = new HashMap<>() {{ put("RUST_MIN_STACK", "8388608"); }};
+    static final HashMap<String, String> STACK = new HashMap<>() {{ put("RUST_MIN_STACK", "8388608"); }};
 
     static void compileAndTest(String directory, boolean quiet, String... extraArgs) throws IOException, InterruptedException {
         List<String> args = new ArrayList<>();

@@ -290,7 +290,6 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
 
         // The rest is a copy of super.postorder, with the added integrators
         DBSPNestedOperator result = Utilities.removeLast(this.underConstruction).to(DBSPNestedOperator.class);
-        result.setDerivedFrom(operator);
         result.copyAnnotations(operator);
 
         if (result.sameCircuit(operator))

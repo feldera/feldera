@@ -88,7 +88,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
 
     public OptimizeProjections(DBSPCompiler compiler, boolean onlyProjections,
                                CircuitGraphs graphs, AnalyzedSet<DBSPOperator> operatorsAnalyzed) {
-        super(compiler, graphs, false);
+        super(compiler, graphs);
         this.onlyProjections = onlyProjections;
         this.operatorsAnalyzed = operatorsAnalyzed;
     }

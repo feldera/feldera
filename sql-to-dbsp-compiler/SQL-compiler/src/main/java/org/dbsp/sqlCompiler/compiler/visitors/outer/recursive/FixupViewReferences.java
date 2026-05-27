@@ -115,7 +115,6 @@ class FixupViewReferences extends CircuitCloneVisitor {
                     DBSPViewDeclarationOperator view = result.to(DBSPViewDeclarationOperator.class);
                     Utilities.putNew(declByName, view.originalViewName(), view);
                 }
-                result.setDerivedFrom(operator);
                 this.map(simple, result, true);
             }
         }

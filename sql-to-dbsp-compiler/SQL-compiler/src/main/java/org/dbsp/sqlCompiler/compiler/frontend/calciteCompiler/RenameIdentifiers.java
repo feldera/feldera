@@ -77,7 +77,7 @@ public class RenameIdentifiers extends SqlShuttle {
         // It strips out the connectors altogether
         // It renames the property for emit_final.
         if (properties == null)
-            return properties;
+            return null;
         List<SqlNode> result = new ArrayList<>();
         int index = 0;
         boolean skipValue = false;

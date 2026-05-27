@@ -34,7 +34,7 @@ public class LinearPostprocessRetainKeys implements CircuitTransform, IWritesLog
     /** Does the actual replacement work */
     static class ReplaceLinear extends CircuitCloneWithGraphsVisitor {
         ReplaceLinear(DBSPCompiler compiler, CircuitGraphs graphs) {
-            super(compiler, graphs, false);
+            super(compiler, graphs);
         }
 
         @Override
