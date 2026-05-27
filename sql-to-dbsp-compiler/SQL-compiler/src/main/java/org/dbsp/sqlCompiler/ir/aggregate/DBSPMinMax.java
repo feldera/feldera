@@ -40,7 +40,10 @@ public class DBSPMinMax extends DBSPAggregator {
 
     @Override
     public DBSPExpression deepCopy() {
-        return this;
+        if (this.postProcessing == null)
+            return this;
+        return new DBSPMinMax(this.node, this.type,
+                this.postProcessing.deepCopy().to(DBSPClosureExpression.class), this.aggregation);
     }
 
     @Override

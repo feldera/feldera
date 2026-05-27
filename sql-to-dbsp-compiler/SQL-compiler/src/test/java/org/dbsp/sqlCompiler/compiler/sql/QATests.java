@@ -91,7 +91,7 @@ public class QATests {
     }
 
     @Test
-    public void qaTests() throws SQLException {
+    public void qaTests() throws SQLException, IOException {
         // BaseSQLTests.showPlan();
         for (File c : getQATests()) {
             // This program cannot be compiled because it contains a udf

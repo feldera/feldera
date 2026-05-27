@@ -148,6 +148,9 @@ public class Simplify extends ExpressionTranslator {
                     ifExp.condition,
                     ifExp.positive.is_null(),
                     ifExp.negative.is_null());
+        } else if (source.is(DBSPBaseTupleExpression.class)) {
+            // An explicit tuple constructor is never null
+            result = new DBSPBoolLiteral(false);
         }
         this.map(expression, result);
     }

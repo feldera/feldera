@@ -173,8 +173,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             Utilities.enforce(this.circuit.contains(represented));
         }
         DBSPVariablePath var = source.outputType().ref().var();
-        DBSPExpression v0 = var.deref().field(0);
-        DBSPExpression v1 = var.deref().field(1);
+        DBSPExpression v0 = var.deepCopy().deref().field(0);
+        DBSPExpression v1 = var.deepCopy().deref().field(1);
         DBSPExpression min = function.getResultType().minimumValue();
         DBSPExpression call = function.call(v1.borrow()).reduce(this.compiler);
         DBSPExpression cond = new DBSPTupleExpression(v0,
@@ -1713,7 +1713,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         // that is not 'minimum'.
         DBSPVariablePath var = waterlineOutputPort.outputType().ref().var();
         // If the v is &TypedBox<T>, v.deref().deref() has type T
-        DBSPExpression unwrapped = replaceIndexedInput ? var.deref().deref() : var.deref();
+        DBSPExpression unwrapped = replaceIndexedInput ? var.deepCopy().deref().deref() : var.deepCopy().deref();
         DBSPExpression eq = eq(minValue, unwrapped);
         DBSPSimpleOperator extend = new DBSPApplyOperator(operator.getRelNode(),
                 new DBSPTupleExpression(
