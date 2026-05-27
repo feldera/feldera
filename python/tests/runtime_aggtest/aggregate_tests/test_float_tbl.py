@@ -8,7 +8,7 @@ class aggtst_real_table(TstTable):
         self.sql = """CREATE TABLE real_tbl(
                         id INT,
                         c1 REAL,
-                        c2 REAL NOT NULL);"""
+                        c2 REAL NOT NULL)"""
         self.data = [
             {"id": 0, "c1": None, "c2": 2231.791},
             {"id": 0, "c1": 57681.18, "c2": -38.27112},

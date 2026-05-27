@@ -69,14 +69,13 @@ public class ResolveReferences extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPLetExpression expression) {
+        // Initializer variables resolved in outer context
+        expression.initializer.accept(this);
         this.substitutionContext.newContext();
         this.substitutionContext.substitute(expression.variable.variable, expression);
-        return VisitDecision.CONTINUE;
-    }
-
-    @Override
-    public void postorder(DBSPLetExpression expression) {
+        expression.consumer.accept(this);
         this.substitutionContext.popContext();
+        return VisitDecision.STOP;
     }
 
     @Override

@@ -83,7 +83,7 @@ public class TranslateVisitor<T> extends InnerVisitor {
     protected void set(IDBSPInnerNode node, T translation) {
         if (this.translationMap.containsKey(node)) {
             T old = this.translationMap.get(node);
-            if (old != translation)
+            if (!old.equals(translation))
                 throw new InternalCompilerError("Changing value of " + node + " from\n" +
                         old + " to\n" + translation, node.getNode());
             return;
