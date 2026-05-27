@@ -60,9 +60,9 @@ public final class DBSPIntegrateTraceRetainValuesOperator
                 .to(PartiallyMonotoneTuple.class)
                 .getField(1)
                 .projectExpression(dataArg.deref());
-        DBSPExpression compare0 = controlArg.deref().field(0).not();
+        DBSPExpression compare0 = controlArg.deepCopy().deref().field(0).not();
         DBSPExpression compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
-                project, controlArg.deref().field(1), DBSPOpcode.CONTROLLED_FILTER_GTE);
+                project, controlArg.deepCopy().deref().field(1), DBSPOpcode.CONTROLLED_FILTER_GTE);
         compare = ExpressionCompiler.makeBinaryExpression(
                 node, compare.getType(), DBSPOpcode.OR, compare0, compare);
         DBSPExpression closure = compare.closure(param, controlArg.asParameter());

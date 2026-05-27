@@ -74,19 +74,6 @@ public class MultiCrateTests extends BaseSQLTests {
         compileToMultiCrate(file.getAbsolutePath(), check);
     }
 
-    @Test @Ignore("These tests are slow")
-    public void qaTests() throws IOException, SQLException, InterruptedException {
-        for (File c : getQATests()) {
-            String sql = Utilities.readFile(c.getPath());
-            try {
-                compileProgramToMultiCrate(sql, true);
-            } catch (UnsupportedException ex) {
-                // This is probably a file containing an ad-hoc query
-                System.out.println(c.getName() + " skipped due to unsupported features.");
-            }
-        }
-    }
-
     @Test
     public void issue4049() throws SQLException, IOException, InterruptedException {
         String sql = """

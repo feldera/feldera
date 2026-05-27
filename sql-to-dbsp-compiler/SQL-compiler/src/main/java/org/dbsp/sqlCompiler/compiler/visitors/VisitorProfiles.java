@@ -57,7 +57,7 @@ public class VisitorProfiles {
     void stop(String visitor) {
         long end = System.currentTimeMillis();
         var pair = Utilities.removeLast(this.running);
-        Utilities.enforce(pair.left.equals(visitor));
+        Utilities.enforce(pair.left.equals(visitor), () -> "Expected to finish " + pair.left + " but it is " + visitor);
         Long started = pair.right;
         Profile previous = this.profiles.getOrDefault(visitor, new Profile(0, 0));
         this.profiles.put(visitor, previous.add(end - started));

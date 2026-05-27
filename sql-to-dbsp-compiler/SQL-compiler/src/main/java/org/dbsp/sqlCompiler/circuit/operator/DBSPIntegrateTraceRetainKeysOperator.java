@@ -54,7 +54,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
         DBSPParameter param;
         DBSPExpression compare;
         DBSPVariablePath controlArg = controlType.ref().var();
-        DBSPExpression compare0 = controlArg.deref().field(0).not();
+        DBSPExpression compare0 = controlArg.deepCopy().deref().field(0).not();
         if (data.outputType().is(DBSPTypeIndexedZSet.class)) {
             DBSPType keyType = data.getOutputIndexedZSetType().keyType;
             if (keyType.sameType(DBSPTypeTuple.EMPTY))
@@ -69,7 +69,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
             DBSPExpression project = dataField0
                     .projectExpression(dataArg.deref());
             compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
-                    project, controlArg.deref().field(1).field(0), DBSPOpcode.CONTROLLED_FILTER_GTE);
+                    project, controlArg.deepCopy().deref().field(1).field(0), DBSPOpcode.CONTROLLED_FILTER_GTE);
         } else {
             DBSPType keyType = data.getOutputZSetElementType();
             DBSPVariablePath dataArg = keyType.ref().var();
@@ -78,7 +78,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
                 return null;
             DBSPExpression project = dataProjection.projectExpression(dataArg.deref());
             compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
-                    project, controlArg.deref().field(1), DBSPOpcode.CONTROLLED_FILTER_GTE);
+                    project, controlArg.deepCopy().deref().field(1), DBSPOpcode.CONTROLLED_FILTER_GTE);
         }
         compare = ExpressionCompiler.makeBinaryExpression(
                 node, compare.getType(), DBSPOpcode.OR, compare0, compare);
