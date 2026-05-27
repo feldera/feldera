@@ -347,6 +347,7 @@ AS SELECT {view_expr} AS x FROM t1;
 
     pipeline.start()
     pipeline.input_json("t1", [{"x": 1}, {"x": 2}, {"x": 3}])
+    # Three records ingested, three records sent.
     wait_for_output_progress(min_processed_records=3, expected_transmitted_records=3)
     expected_processed_records = 3
     pipeline.checkpoint(True)
@@ -358,16 +359,19 @@ AS SELECT {view_expr} AS x FROM t1;
         silent_bootstrap=True,
         timeout_s=300,
     )
+    # Modified connector keeps its transmitted record count and doesn't send any new records
+    # in silent mode.
     wait_for_output_progress(
         min_processed_records=expected_processed_records,
-        expected_transmitted_records=0,
+        expected_transmitted_records=expected_processed_records,
     )
 
     pipeline.input_json("t1", [{"x": 5}])
+    # One more record ingested, and one more record sent.
     expected_processed_records += 1
     wait_for_output_progress(
         min_processed_records=expected_processed_records,
-        expected_transmitted_records=1,
+        expected_transmitted_records=expected_processed_records,
     )
     assert list(pipeline.query("SELECT COUNT(*) AS c FROM v1;")) == [{"c": 4}]
     pipeline.checkpoint(True)
@@ -379,16 +383,17 @@ AS SELECT {view_expr} AS x FROM t1;
         silent_bootstrap=True,
         timeout_s=300,
     )
+    # Modified connector keeps its transmitted record count and doesn't send any new records
     wait_for_output_progress(
         min_processed_records=expected_processed_records,
-        expected_transmitted_records=0,
+        expected_transmitted_records=expected_processed_records,
     )
-
     pipeline.input_json("t1", [{"x": 6}])
     expected_processed_records += 1
+    # One more record ingested, and one more record sent.
     wait_for_output_progress(
         min_processed_records=expected_processed_records,
-        expected_transmitted_records=1,
+        expected_transmitted_records=expected_processed_records,
     )
     assert list(pipeline.query("SELECT COUNT(*) AS c FROM v1;")) == [{"c": 5}]
     pipeline.checkpoint(True)
@@ -401,16 +406,21 @@ AS SELECT {view_expr} AS x FROM t1;
         silent_bootstrap=False,
         timeout_s=300,
     )
+
+    # Non-silent bootstrap should send all accumulated records again.
+    expected_transmitted_records = 2 * expected_processed_records
     wait_for_output_progress(
         min_processed_records=expected_processed_records,
-        expected_transmitted_records=expected_processed_records,
+        expected_transmitted_records=expected_transmitted_records,
     )
 
     pipeline.input_json("t1", [{"x": 7}])
     expected_processed_records += 1
+    expected_transmitted_records += 1
+    # One more record ingested, and one more record sent.
     wait_for_output_progress(
         min_processed_records=expected_processed_records,
-        expected_transmitted_records=expected_processed_records,
+        expected_transmitted_records=expected_transmitted_records,
     )
     assert list(pipeline.query("SELECT COUNT(*) AS c FROM v1;")) == [{"c": 6}]
     pipeline.checkpoint(True)
