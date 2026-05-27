@@ -4,7 +4,7 @@ import pathlib
 import time
 import warnings
 from decimal import Decimal
-from typing import Any, Dict, Generator, Mapping, Optional
+from typing import Any, Dict, Generator, List, Mapping, Optional
 from urllib.parse import quote
 
 import pyarrow as pa
@@ -14,7 +14,7 @@ import requests
 from feldera.enums import BootstrapPolicy, PipelineFieldSelector, PipelineStatus
 from feldera.rest._helpers import determine_client_version
 from feldera.rest._httprequests import HttpRequests
-from feldera.rest.config import Config
+from feldera.rest.config import ApiKey, Config  # noqa: F401 — re-exported
 from feldera.rest.errors import FelderaAPIError, FelderaTimeoutError
 from feldera.rest.feldera_config import FelderaConfig
 from feldera.rest.pipeline import Pipeline
@@ -56,7 +56,7 @@ class FelderaClient:
     def __init__(
         self,
         url: Optional[str] = None,
-        api_key: Optional[str] = None,
+        api_key: Optional[ApiKey] = None,
         timeout: Optional[float] = None,
         connection_timeout: Optional[float] = None,
         requests_verify: Optional[bool | str] = None,
@@ -68,7 +68,15 @@ class FelderaClient:
         :param url: (Optional) URL to the Feldera API.
             The default is read from the `FELDERA_HOST` environment variable;
             if the variable is not set, the default is `"http://localhost:8080"`.
-        :param api_key: (Optional) API key to access Feldera (format: `"apikey:..."`).
+        :param api_key: (Optional) Bearer credential. Either:
+            - a string — a Feldera API key (`"apikey:..."`) or a long-lived JWT;
+            - a zero-arg callable returning a string — resolved before every
+              request, suitable for short-lived OIDC tokens (Kubernetes
+              projected SA token, GitHub Actions OIDC, Tailscale tsidp, ...).
+              On HTTP 401 the callable is re-invoked once and the request
+              retried, so a token expiring mid-flight in a long-running
+              script self-heals.
+
             The default is read from the `FELDERA_API_KEY` environment variable;
             if the variable is not set, the default is `None` (no API key is provided).
         :param timeout: (Optional) Duration in seconds that the client will wait to receive
@@ -1483,6 +1491,73 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             path="/api_keys",
             body={"name": name},
         )
+
+    def list_oidc_trust(self) -> List[dict]:
+        """
+        List the OIDC trust relationships configured for the current tenant.
+
+        :returns: A list of dicts each describing a trust relationship
+                  (`id`, `name`, `description`, `issuer`, `subject`,
+                  `audience`, `scopes`).
+        """
+        return self.http.get(path="/oidc_trust")
+
+    def get_oidc_trust(self, name: str) -> dict:
+        """
+        Retrieve a single OIDC trust relationship by name.
+
+        :param name: Trust relationship name.
+        """
+        return self.http.get(path=f"/oidc_trust/{name}")
+
+    def create_oidc_trust(
+        self,
+        name: str,
+        issuer: str,
+        subject: str,
+        audience: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> dict:
+        """
+        Register a new OIDC trust relationship.
+
+        Any JWT signed by `issuer` whose `sub` claim matches `subject`
+        (and, if specified, `aud` claim matches `audience`) is authorized
+        as the current tenant with read/write scopes. `*` is a wildcard
+        in `subject` and `audience`.
+
+        :param name: Unique name within the tenant.
+        :param issuer: Issuer URL exactly as it appears in the `iss` claim.
+        :param subject: Pattern matched against the JWT `sub` claim.
+        :param audience: Pattern matched against the JWT `aud` claim. Omit
+                         to skip audience matching.
+        :param description: Free-text description.
+        :returns: A dict with keys `id` and `name`.
+        :raises FelderaAPIError: If `name` is already in use or fields are
+                                 invalid.
+        """
+        if not name:
+            raise ValueError("Trust relationship name must be a non-empty string")
+        if not issuer:
+            raise ValueError("`issuer` must be a non-empty string")
+        if not subject:
+            raise ValueError("`subject` must be a non-empty string")
+        body: Dict[str, Any] = {
+            "name": name,
+            "issuer": issuer,
+            "subject": subject,
+        }
+        if audience is not None:
+            body["audience"] = audience
+        if description is not None:
+            body["description"] = description
+        return self.http.post(path="/oidc_trust", body=body)
+
+    def delete_oidc_trust(self, name: str) -> None:
+        """
+        Delete an OIDC trust relationship by name.
+        """
+        self.http.delete(path=f"/oidc_trust/{name}")
 
     def get_pipeline_support_bundle(
         self, pipeline_name: str, params: Optional[Dict[str, Any]] = None

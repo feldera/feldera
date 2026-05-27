@@ -94,16 +94,157 @@ fn create_authz_json_error(message: &str) -> actix_web::Error {
 /// Authorization using a bearer token. Expects to find either a typical
 /// OAuth2/OIDC JWT token or an API key. JWT tokens are expected to be available
 /// as is, whereas API keys are prefix with the string "apikey:".
+///
+/// A JWT may come from either:
+///   1. The configured OIDC login provider (existing browser-driven flow).
+///   2. A foreign issuer authorized by an OIDC trust relationship — the
+///      workload-identity-federation path.
+/// We dispatch on the `iss` claim, peeked unverified, then sign-verify in
+/// the corresponding handler.
 pub(crate) async fn auth_validator(
     req: ServiceRequest,
     credentials: BearerAuth,
 ) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
     let token = credentials.token();
-    // Check if we are using an API key first.
     if token.starts_with(API_KEY_PREFIX) {
         return api_key_auth(req, token).await;
     }
-    bearer_auth(req, token).await
+    let configuration = req.app_data::<AuthConfiguration>().unwrap();
+    match peek_unverified_iss(token) {
+        Some(iss) if iss == configuration.provider.issuer() => bearer_auth(req, token).await,
+        Some(_) => oidc_trust_auth(req, token).await,
+        None => {
+            let config = req.app_data::<Config>().cloned().unwrap_or_default();
+            Err((
+                AuthenticationError::from(config)
+                    .with_error_description("Malformed JWT: missing iss claim")
+                    .into(),
+                req,
+            ))
+        }
+    }
+}
+
+/// Decode the JWT payload without verifying the signature and return the
+/// `iss` claim, if present. Used only to route the token to the right
+/// verification path; the chosen handler performs full signature checks.
+fn peek_unverified_iss(token: &str) -> Option<String> {
+    use base64::Engine;
+    let mut parts = token.split('.');
+    let _header = parts.next()?;
+    let payload_b64 = parts.next()?;
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload_b64.as_bytes())
+        .ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&payload).ok()?;
+    v.get("iss")?.as_str().map(String::from)
+}
+
+/// Extract audiences from an `aud` claim that may be a string or an array.
+fn audiences_from_claim(aud: Option<&serde_json::Value>) -> Vec<String> {
+    match aud {
+        Some(serde_json::Value::String(s)) => vec![s.clone()],
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect(),
+        _ => vec![],
+    }
+}
+
+/// Verify a JWT against the issuer named in its `iss` claim, then resolve
+/// the request to a tenant via a registered trust relationship.
+async fn oidc_trust_auth(
+    req: ServiceRequest,
+    token: &str,
+) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
+    let unauthorized = |msg: String, req: ServiceRequest| {
+        let config = req.app_data::<Config>().cloned().unwrap_or_default();
+        Err((
+            AuthenticationError::from(config)
+                .with_error_description(msg)
+                .into(),
+            req,
+        ))
+    };
+
+    let header = match decode_header(token) {
+        Ok(h) => h,
+        Err(e) => {
+            debug!("Federated token: bad header: {:?}", e);
+            return unauthorized("Malformed JWT header".to_string(), req);
+        }
+    };
+    if header.alg != Algorithm::RS256 {
+        return unauthorized(format!("Unsupported JWT algorithm {:?}", header.alg), req);
+    }
+    let Some(kid) = header.kid else {
+        return unauthorized("JWT header missing kid".to_string(), req);
+    };
+    let Some(iss) = peek_unverified_iss(token) else {
+        return unauthorized("JWT missing iss".to_string(), req);
+    };
+
+    let state = req.app_data::<Data<ServerState>>().unwrap().clone();
+    let jwk = {
+        let mut cache = state.issuer_jwk_cache.lock().await;
+        match cache.get(&iss, &kid).await {
+            Ok(k) => k,
+            Err(e) => {
+                error!("Federated JWKS fetch for issuer '{iss}' failed: {e}");
+                return unauthorized(format!("JWKS lookup failed: {e}"), req);
+            }
+        }
+    };
+
+    // Verify signature + exp. Issuer/audience are checked against the trust
+    // relationship below, not by the JWT validator itself.
+    let mut validation = Validation::new(Algorithm::RS256);
+    validation.validate_exp = true;
+    validation.validate_aud = false;
+    validation.set_required_spec_claims(&["exp"]);
+    let token_data = match decode::<OidcClaim>(token, &jwk, &validation) {
+        Ok(td) => td,
+        Err(e) => {
+            debug!("Federated token verification failed: {:?}", e.kind());
+            return unauthorized(format!("JWT verification failed: {}", e), req);
+        }
+    };
+    if token_data.claims.iss != iss {
+        return unauthorized("iss mismatch between header peek and body".to_string(), req);
+    }
+
+    let audiences = audiences_from_claim(token_data.claims.aud.as_ref());
+    let lookup = {
+        let db = state.db.lock().await;
+        db.match_oidc_trust(&iss, &token_data.claims.sub, &audiences)
+            .await
+    };
+    match lookup {
+        Ok(Some((tenant_id, scopes))) => {
+            req.extensions_mut().insert(tenant_id);
+            req.extensions_mut().insert(scopes);
+            Ok(req)
+        }
+        Ok(None) => {
+            let ip = req
+                .peer_addr()
+                .map(|a| a.ip().to_string())
+                .unwrap_or_else(|| "<unknown IP>".to_string());
+            error!(
+                "Federated JWT rejected: no trust relationship matches iss='{iss}' sub='{}' from {ip}",
+                token_data.claims.sub
+            );
+            unauthorized(
+                "No OIDC trust relationship matches this token".to_string(),
+                req,
+            )
+        }
+        Err(e) => {
+            error!("Federated trust lookup failed: {e}");
+            unauthorized(format!("Database error: {e}"), req)
+        }
+    }
 }
 
 async fn bearer_auth(
@@ -445,6 +586,17 @@ pub(crate) enum AuthProvider {
     GenericOidc(ProviderGenericOidc),
 }
 
+impl AuthProvider {
+    /// The configured login provider's issuer URL.
+    /// Used to distinguish login JWTs from workload-federation JWTs.
+    pub fn issuer(&self) -> &str {
+        match self {
+            AuthProvider::AwsCognito(p) => &p.issuer,
+            AuthProvider::GenericOidc(p) => &p.issuer,
+        }
+    }
+}
+
 pub(crate) fn aws_auth_config() -> AuthConfiguration {
     let mut validation = Validation::new(Algorithm::RS256);
     let client_id = env::var("FELDERA_AUTH_CLIENT_ID")
@@ -719,8 +871,44 @@ pub struct JwkCache {
     cache: TimedCache<String, DecodingKey>,
 }
 
+/// JWKS cache keyed by (issuer, kid) for federated tokens whose issuer is
+/// dynamically discovered from a registered trust relationship.
+pub struct IssuerJwkCache {
+    cache: TimedCache<(String, String), DecodingKey>,
+}
+
 const DEFAULT_JWK_CACHE_LIFETIME_SECONDS: u64 = 120;
 const DEFAULT_JWK_CACHE_CAPACITY: usize = 10;
+const ISSUER_JWK_CACHE_CAPACITY: usize = 64;
+
+impl IssuerJwkCache {
+    pub(crate) fn new() -> Self {
+        Self {
+            cache: TimedCache::with_lifespan_and_capacity(
+                DEFAULT_JWK_CACHE_LIFETIME_SECONDS,
+                ISSUER_JWK_CACHE_CAPACITY,
+            ),
+        }
+    }
+
+    async fn get(&mut self, issuer: &str, kid: &str) -> Result<DecodingKey, AuthError> {
+        let key = (issuer.to_string(), kid.to_string());
+        if let Some(dk) = self.cache.cache_get(&key) {
+            return Ok(dk.clone());
+        }
+        let jwks_uri = fetch_jwks_uri_from_discovery(issuer)
+            .await
+            .map_err(|e| AuthError::JwkShape(format!("OIDC discovery failed: {e}")))?;
+        let fetched = fetch_jwk_oidc_keys(&jwks_uri).await?;
+        for (k, dk) in fetched {
+            self.cache.cache_set((issuer.to_string(), k), dk);
+        }
+        self.cache
+            .cache_get(&key)
+            .cloned()
+            .ok_or_else(|| AuthError::JwkShape("kid not present in issuer JWKS".to_string()))
+    }
+}
 
 impl JwkCache {
     pub(crate) fn new() -> JwkCache {

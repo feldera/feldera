@@ -133,6 +133,17 @@ pub enum DBError {
         name: String,
     },
     InvalidApiKey,
+    // OIDC trust relationship errors
+    UnknownOidcTrust {
+        name: String,
+    },
+    EmptyOidcTrustField {
+        field: String,
+    },
+    InvalidOidcToken {
+        reason: String,
+    },
+    UnauthorizedOidcToken,
     // Pipeline-related errors
     UnknownPipeline {
         pipeline_id: PipelineId,
@@ -538,6 +549,21 @@ impl Display for DBError {
             DBError::InvalidApiKey => {
                 write!(f, "Invalid API key")
             }
+            DBError::UnknownOidcTrust { name } => {
+                write!(f, "Unknown OIDC trust relationship '{name}'")
+            }
+            DBError::EmptyOidcTrustField { field } => {
+                write!(
+                    f,
+                    "OIDC trust relationship field '{field}' must not be empty"
+                )
+            }
+            DBError::InvalidOidcToken { reason } => {
+                write!(f, "Invalid OIDC token: {reason}")
+            }
+            DBError::UnauthorizedOidcToken => {
+                write!(f, "No OIDC trust relationship matches this token")
+            }
             DBError::UnknownPipeline { pipeline_id } => {
                 write!(f, "Unknown pipeline id '{pipeline_id}'")
             }
@@ -823,6 +849,10 @@ impl DetailedError for DBError {
             Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
             Self::UnknownApiKey { .. } => Cow::from("UnknownApiKey"),
             Self::InvalidApiKey => Cow::from("InvalidApiKey"),
+            Self::UnknownOidcTrust { .. } => Cow::from("UnknownOidcTrust"),
+            Self::EmptyOidcTrustField { .. } => Cow::from("EmptyOidcTrustField"),
+            Self::InvalidOidcToken { .. } => Cow::from("InvalidOidcToken"),
+            Self::UnauthorizedOidcToken => Cow::from("UnauthorizedOidcToken"),
             Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
             Self::UnknownPipelineName { .. } => Cow::from("UnknownPipelineName"),
             Self::UpdateRestrictedToStopped { .. } => Cow::from("UpdateRestrictedToStopped"),
@@ -931,6 +961,10 @@ impl ResponseError for DBError {
             Self::UnknownTenant { .. } => StatusCode::UNAUTHORIZED, // TODO: should we report not found instead?
             Self::UnknownApiKey { .. } => StatusCode::NOT_FOUND,
             Self::InvalidApiKey => StatusCode::UNAUTHORIZED,
+            Self::UnknownOidcTrust { .. } => StatusCode::NOT_FOUND,
+            Self::EmptyOidcTrustField { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidOidcToken { .. } => StatusCode::UNAUTHORIZED,
+            Self::UnauthorizedOidcToken => StatusCode::UNAUTHORIZED,
             Self::UnknownPipeline { .. } => StatusCode::NOT_FOUND,
             Self::UnknownPipelineName { .. } => StatusCode::NOT_FOUND,
             Self::UpdateRestrictedToStopped { .. } => StatusCode::BAD_REQUEST,

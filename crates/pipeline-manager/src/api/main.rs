@@ -1,7 +1,7 @@
 use crate::api::demo::{read_demos_from_directories, Demo};
 use crate::api::endpoints;
 use crate::api::support_data_collector::SupportDataCollector;
-use crate::auth::JwkCache;
+use crate::auth::{IssuerJwkCache, JwkCache};
 use crate::config::{ApiServerConfig, CommonConfig};
 use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
@@ -241,6 +241,12 @@ It contains the following fields:
         endpoints::api_key::post_api_key,
         endpoints::api_key::delete_api_key,
 
+        // OIDC trust relationships
+        endpoints::oidc_trust::list_oidc_trust,
+        endpoints::oidc_trust::get_oidc_trust,
+        endpoints::oidc_trust::post_oidc_trust,
+        endpoints::oidc_trust::delete_oidc_trust,
+
         // Configuration
         endpoints::config::get_config_authentication,
         endpoints::config::get_config_demos,
@@ -329,6 +335,10 @@ It contains the following fields:
         crate::db::types::api_key::ApiKeyDescr,
         crate::api::endpoints::api_key::NewApiKeyRequest,
         crate::api::endpoints::api_key::NewApiKeyResponse,
+        crate::db::types::oidc_trust::OidcTrustId,
+        crate::db::types::oidc_trust::OidcTrustDescr,
+        crate::api::endpoints::oidc_trust::NewOidcTrustRequest,
+        crate::api::endpoints::oidc_trust::NewOidcTrustResponse,
 
         // Monitor
         crate::db::types::monitor::MonitorStatus,
@@ -686,6 +696,11 @@ fn api_scope() -> Scope {
         .service(endpoints::api_key::get_api_key)
         .service(endpoints::api_key::post_api_key)
         .service(endpoints::api_key::delete_api_key)
+        // OIDC trust relationship endpoints
+        .service(endpoints::oidc_trust::list_oidc_trust)
+        .service(endpoints::oidc_trust::get_oidc_trust)
+        .service(endpoints::oidc_trust::post_oidc_trust)
+        .service(endpoints::oidc_trust::delete_oidc_trust)
         // Configuration endpoints
         .service(endpoints::config::get_config)
         .service(endpoints::config::get_config_demos)
@@ -731,6 +746,7 @@ pub(crate) struct ServerState {
     pub common_config: CommonConfig,
     pub config: ApiServerConfig,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
+    pub issuer_jwk_cache: Arc<Mutex<IssuerJwkCache>>,
     probe: Arc<Mutex<DbProbe>>,
     pub demos: Vec<Demo>,
     pub license_check: Arc<RwLock<Option<LicenseCheck>>>,
@@ -752,6 +768,7 @@ impl ServerState {
             common_config,
             config,
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
+            issuer_jwk_cache: Arc::new(Mutex::new(IssuerJwkCache::new())),
             probe: DbProbe::new(db_copy).await,
             demos,
             license_check,

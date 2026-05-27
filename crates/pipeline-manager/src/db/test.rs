@@ -4289,6 +4289,53 @@ impl Storage for Mutex<DbModel> {
         }
     }
 
+    // OIDC trust relationships are not exercised by the proptest model.
+    async fn list_oidc_trust(
+        &self,
+        _tenant_id: TenantId,
+    ) -> DBResult<Vec<crate::db::types::oidc_trust::OidcTrustDescr>> {
+        Ok(vec![])
+    }
+
+    async fn get_oidc_trust(
+        &self,
+        _tenant_id: TenantId,
+        name: &str,
+    ) -> DBResult<crate::db::types::oidc_trust::OidcTrustDescr> {
+        Err(DBError::UnknownOidcTrust {
+            name: name.to_string(),
+        })
+    }
+
+    async fn delete_oidc_trust(&self, _tenant_id: TenantId, name: &str) -> DBResult<()> {
+        Err(DBError::UnknownOidcTrust {
+            name: name.to_string(),
+        })
+    }
+
+    async fn create_oidc_trust(
+        &self,
+        _tenant_id: TenantId,
+        _id: Uuid,
+        _name: &str,
+        _description: Option<&str>,
+        _issuer: &str,
+        _subject: &str,
+        _audience: Option<&str>,
+        _scopes: Vec<ApiPermission>,
+    ) -> DBResult<()> {
+        Ok(())
+    }
+
+    async fn match_oidc_trust(
+        &self,
+        _issuer: &str,
+        _subject: &str,
+        _audiences: &[String],
+    ) -> DBResult<Option<(TenantId, Vec<ApiPermission>)>> {
+        Ok(None)
+    }
+
     async fn list_pipelines(
         &self,
         tenant_id: TenantId,

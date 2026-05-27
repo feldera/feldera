@@ -12,6 +12,7 @@ use crate::db::types::monitor::{
     ExtendedPipelineMonitorEvent, NewClusterMonitorEvent, PipelineMonitorEvent,
     PipelineMonitorEventId,
 };
+use crate::db::types::oidc_trust::OidcTrustDescr;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
 };
@@ -154,6 +155,77 @@ impl Storage for StoragePostgres {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let result = operations::api_key::validate_api_key(&txn, key).await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    async fn list_oidc_trust(&self, tenant_id: TenantId) -> Result<Vec<OidcTrustDescr>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let result = operations::oidc_trust::list_oidc_trust(&txn, tenant_id).await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    async fn get_oidc_trust(
+        &self,
+        tenant_id: TenantId,
+        name: &str,
+    ) -> Result<OidcTrustDescr, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let result = operations::oidc_trust::get_oidc_trust(&txn, tenant_id, name).await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    async fn delete_oidc_trust(&self, tenant_id: TenantId, name: &str) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let result = operations::oidc_trust::delete_oidc_trust(&txn, tenant_id, name).await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    async fn create_oidc_trust(
+        &self,
+        tenant_id: TenantId,
+        id: Uuid,
+        name: &str,
+        description: Option<&str>,
+        issuer: &str,
+        subject: &str,
+        audience: Option<&str>,
+        scopes: Vec<ApiPermission>,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::oidc_trust::create_oidc_trust(
+            &txn,
+            tenant_id,
+            id,
+            name,
+            description,
+            issuer,
+            subject,
+            audience,
+            &scopes,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn match_oidc_trust(
+        &self,
+        issuer: &str,
+        subject: &str,
+        audiences: &[String],
+    ) -> Result<Option<(TenantId, Vec<ApiPermission>)>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let result =
+            operations::oidc_trust::match_oidc_trust(&txn, issuer, subject, audiences).await?;
         txn.commit().await?;
         Ok(result)
     }

@@ -1,0 +1,185 @@
+use crate::db::error::DBError;
+use crate::db::operations::utils::{
+    maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
+};
+use crate::db::types::api_key::{ApiPermission, API_PERMISSION_READ, API_PERMISSION_WRITE};
+use crate::db::types::oidc_trust::{claim_matches, OidcTrustDescr, OidcTrustId};
+use crate::db::types::tenant::TenantId;
+use crate::db::types::utils::validate_name;
+use deadpool_postgres::Transaction;
+use std::str::FromStr;
+use uuid::Uuid;
+
+fn row_to_descr(row: &tokio_postgres::Row) -> OidcTrustDescr {
+    let id: Uuid = row.get(0);
+    let name: String = row.get(1);
+    let description: Option<String> = row.get(2);
+    let issuer: String = row.get(3);
+    let subject: String = row.get(4);
+    let audience: Option<String> = row.get(5);
+    let scopes_raw: Vec<String> = row.get(6);
+    let scopes = scopes_raw
+        .iter()
+        .map(|s| ApiPermission::from_str(s).expect("unexpected ApiPermission string in DB"))
+        .collect();
+    OidcTrustDescr {
+        id: OidcTrustId(id),
+        name,
+        description,
+        issuer,
+        subject,
+        audience,
+        scopes,
+    }
+}
+
+pub async fn list_oidc_trust(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+) -> Result<Vec<OidcTrustDescr>, DBError> {
+    let stmt = txn
+        .prepare_cached(
+            "SELECT id, name, description, issuer, subject, audience, scopes \
+             FROM oidc_trust_relationship WHERE tenant_id = $1",
+        )
+        .await?;
+    let rows = txn.query(&stmt, &[&tenant_id.0]).await?;
+    Ok(rows.iter().map(row_to_descr).collect())
+}
+
+pub async fn get_oidc_trust(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    name: &str,
+) -> Result<OidcTrustDescr, DBError> {
+    let stmt = txn
+        .prepare_cached(
+            "SELECT id, name, description, issuer, subject, audience, scopes \
+             FROM oidc_trust_relationship WHERE tenant_id = $1 AND name = $2",
+        )
+        .await?;
+    let maybe_row = txn.query_opt(&stmt, &[&tenant_id.0, &name]).await?;
+    maybe_row
+        .map(|row| row_to_descr(&row))
+        .ok_or(DBError::UnknownOidcTrust {
+            name: name.to_string(),
+        })
+}
+
+pub async fn delete_oidc_trust(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    name: &str,
+) -> Result<(), DBError> {
+    let stmt = txn
+        .prepare_cached("DELETE FROM oidc_trust_relationship WHERE tenant_id = $1 AND name = $2")
+        .await?;
+    let res = txn.execute(&stmt, &[&tenant_id.0, &name]).await?;
+    if res > 0 {
+        Ok(())
+    } else {
+        Err(DBError::UnknownOidcTrust {
+            name: name.to_string(),
+        })
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn create_oidc_trust(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    id: Uuid,
+    name: &str,
+    description: Option<&str>,
+    issuer: &str,
+    subject: &str,
+    audience: Option<&str>,
+    scopes: &[ApiPermission],
+) -> Result<(), DBError> {
+    validate_name(name)?;
+    if issuer.is_empty() {
+        return Err(DBError::EmptyOidcTrustField {
+            field: "issuer".to_string(),
+        });
+    }
+    if subject.is_empty() {
+        return Err(DBError::EmptyOidcTrustField {
+            field: "subject".to_string(),
+        });
+    }
+    let stmt = txn
+        .prepare_cached(
+            "INSERT INTO oidc_trust_relationship \
+             (id, tenant_id, name, description, issuer, subject, audience, scopes) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        )
+        .await?;
+    let scopes_str: Vec<&str> = scopes
+        .iter()
+        .map(|s| match s {
+            ApiPermission::Read => API_PERMISSION_READ,
+            ApiPermission::Write => API_PERMISSION_WRITE,
+        })
+        .collect();
+    let res = txn
+        .execute(
+            &stmt,
+            &[
+                &id,
+                &tenant_id.0,
+                &name,
+                &description,
+                &issuer,
+                &subject,
+                &audience,
+                &scopes_str,
+            ],
+        )
+        .await
+        .map_err(maybe_unique_violation)
+        .map_err(|e| maybe_tenant_id_foreign_key_constraint_err(e, tenant_id))?;
+    if res > 0 {
+        Ok(())
+    } else {
+        Err(DBError::duplicate_key())
+    }
+}
+
+/// Look up the trust relationships registered for an `issuer` and return the
+/// first one whose subject pattern matches `sub` and (if present) audience
+/// pattern matches `aud`.
+pub async fn match_oidc_trust(
+    txn: &Transaction<'_>,
+    issuer: &str,
+    subject: &str,
+    audiences: &[String],
+) -> Result<Option<(TenantId, Vec<ApiPermission>)>, DBError> {
+    let stmt = txn
+        .prepare_cached(
+            "SELECT tenant_id, subject, audience, scopes \
+             FROM oidc_trust_relationship WHERE issuer = $1",
+        )
+        .await?;
+    let rows = txn.query(&stmt, &[&issuer]).await?;
+    for row in rows {
+        let tenant_uuid: Uuid = row.get(0);
+        let pattern_subject: String = row.get(1);
+        let pattern_audience: Option<String> = row.get(2);
+        let scopes_raw: Vec<String> = row.get(3);
+
+        if !claim_matches(&pattern_subject, subject) {
+            continue;
+        }
+        if let Some(aud_pattern) = &pattern_audience {
+            if !audiences.iter().any(|a| claim_matches(aud_pattern, a)) {
+                continue;
+            }
+        }
+        let scopes = scopes_raw
+            .iter()
+            .map(|s| ApiPermission::from_str(s).expect("unexpected ApiPermission string in DB"))
+            .collect();
+        return Ok(Some((TenantId(tenant_uuid), scopes)));
+    }
+    Ok(None)
+}

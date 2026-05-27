@@ -5,6 +5,7 @@
   import Popup from '$lib/components/common/Popup.svelte'
   import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
   import ApiKeyMenu from '$lib/components/other/ApiKeyMenu.svelte'
+  import OidcTrustMenu from '$lib/components/other/OidcTrustMenu.svelte'
   import VersionDisplay from '$lib/components/version/VersionDisplay.svelte'
   import type { ClusterHealthStatus } from '$lib/compositions/health/useClusterHealth.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
@@ -77,10 +78,16 @@
         {#snippet apiKeysIcon()}
           <div class="fd fd-key text-[20px]"></div>
         {/snippet}
+        {#snippet oidcTrustIcon()}
+          <div class="fd fd-user text-[20px]"></div>
+        {/snippet}
 
         {#if typeof auth === 'object' && 'logout' in auth}
           {@render profileItemButton('Manage API keys', apiKeysIcon, {
             onclick: () => (globalDialog.dialog = apiKeyDialog)
+          })}
+          {@render profileItemButton('Manage OIDC trust', oidcTrustIcon, {
+            onclick: () => (globalDialog.dialog = oidcTrustDialog)
           })}
 
           <div class="hr"></div>
@@ -139,4 +146,8 @@
 
 {#snippet apiKeyDialog()}
   <ApiKeyMenu></ApiKeyMenu>
+{/snippet}
+
+{#snippet oidcTrustDialog()}
+  <OidcTrustMenu></OidcTrustMenu>
 {/snippet}

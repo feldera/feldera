@@ -15,8 +15,15 @@ fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     // using the `try_parse_from` method.
     let cli = Cli::try_parse_from(["fda", "pipelines"]);
     if let Ok(cli) = cli {
-        let client =
-            make_client(cli.host, cli.insecure, cli.tls_cert, cli.auth, cli.timeout).unwrap();
+        let client = make_client(
+            cli.host,
+            cli.insecure,
+            cli.tls_cert,
+            cli.auth,
+            cli.auth_token_command,
+            cli.timeout,
+        )
+        .unwrap();
 
         let r = futures::executor::block_on(async {
             client
@@ -109,6 +116,20 @@ pub struct Cli {
         help_heading = "Global Options"
     )]
     pub auth: Option<String>,
+    /// Shell command that prints a bearer token on stdout.
+    ///
+    /// Run before every request; the trimmed stdout becomes the
+    /// `Authorization: Bearer <token>` header. Use for OIDC workload-identity
+    /// flows with short-lived tokens — pair with `tsidp-token`,
+    /// `gcloud auth print-access-token`, etc. Conflicts with `--auth`.
+    #[arg(
+        long,
+        env = "FELDERA_AUTH_TOKEN_COMMAND",
+        global = true,
+        help_heading = "Global Options",
+        conflicts_with = "auth"
+    )]
+    pub auth_token_command: Option<String>,
     /// The client timeout for requests in seconds.
     ///
     /// In almost all cases you should not need to set this value, but it can
@@ -182,6 +203,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: ApiKeyActions,
     },
+    /// Manage OIDC trust relationships (workload identity federation).
+    OidcTrust {
+        #[command(subcommand)]
+        action: OidcTrustActions,
+    },
     /// Cluster information and status.
     Cluster {
         #[command(subcommand)]
@@ -207,6 +233,39 @@ pub enum ApiKeyActions {
     #[clap(aliases = &["del"])]
     Delete {
         /// The name of the API key to delete
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum OidcTrustActions {
+    /// List configured OIDC trust relationships.
+    List,
+    /// Register a new OIDC trust relationship.
+    ///
+    /// JWTs from `--issuer` whose `sub` claim matches `--subject` and (if
+    /// specified) `aud` claim matches `--audience` are authorized as the
+    /// current tenant. `*` is a wildcard.
+    Create {
+        /// Unique name for the trust relationship.
+        name: String,
+        /// OIDC issuer URL (must match the `iss` claim exactly).
+        #[arg(long)]
+        issuer: String,
+        /// Pattern for the `sub` claim. `*` matches any sequence.
+        #[arg(long)]
+        subject: String,
+        /// Pattern for the `aud` claim. `*` matches any sequence. Optional.
+        #[arg(long)]
+        audience: Option<String>,
+        /// Free-text description.
+        #[arg(long)]
+        description: Option<String>,
+    },
+    /// Delete an OIDC trust relationship.
+    #[clap(aliases = &["del"])]
+    Delete {
+        /// Name of the trust relationship to delete.
         name: String,
     },
 }

@@ -82,6 +82,7 @@ pub(crate) fn make_client(
     insecure: bool,
     tls_cert: Option<std::path::PathBuf>,
     auth: Option<String>,
+    auth_token_command: Option<String>,
     timeout: Option<u64>,
 ) -> Result<Client, Box<dyn std::error::Error>> {
     let mut client_builder = reqwest::ClientBuilder::new().danger_accept_invalid_certs(insecure);
@@ -115,9 +116,14 @@ pub(crate) fn make_client(
         }
     }
 
+    let resolved_auth = match auth_token_command {
+        Some(cmd) => Some(run_auth_token_command(&cmd)?),
+        None => auth,
+    };
+
     if host.starts_with("https://") {
-        client_builder = client_builder.default_headers(make_auth_headers(&auth)?);
-    } else if host.starts_with("http://") && auth.is_some() {
+        client_builder = client_builder.default_headers(make_auth_headers(&resolved_auth)?);
+    } else if host.starts_with("http://") && resolved_auth.is_some() {
         warn!(
             "The provided API key is not added to the request because {host} does not use `https`."
         );
@@ -125,6 +131,33 @@ pub(crate) fn make_client(
 
     let client = client_builder.build()?;
     Ok(Client::new_with_client(host.as_str(), client))
+}
+
+/// Execute the user-supplied auth-token command via `sh -c` and return
+/// trimmed stdout. Errors if the command fails or prints nothing.
+fn run_auth_token_command(cmd: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let output = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .output()
+        .map_err(|e| format!("failed to spawn auth-token-command `{cmd}`: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "auth-token-command `{cmd}` exited with {}: {}",
+            output.status,
+            stderr.trim()
+        )
+        .into());
+    }
+    let token = String::from_utf8(output.stdout)
+        .map_err(|e| format!("auth-token-command `{cmd}` produced non-UTF-8 output: {e}"))?
+        .trim()
+        .to_string();
+    if token.is_empty() {
+        return Err(format!("auth-token-command `{cmd}` produced empty output").into());
+    }
+    Ok(token)
 }
 
 /// A helper struct that disables the cache for a pipeline.
@@ -364,6 +397,119 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
                         "{}",
                         serde_json::to_string_pretty(&response.into_inner())
                             .expect("Failed to serialize API key list")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+}
+
+async fn oidc_trust_commands(format: OutputFormat, action: OidcTrustActions, client: Client) {
+    match action {
+        OidcTrustActions::Create {
+            name,
+            issuer,
+            subject,
+            audience,
+            description,
+        } => {
+            debug!("Creating OIDC trust relationship: {name}");
+            let body = NewOidcTrustRequest::builder()
+                .name(name.clone())
+                .issuer(issuer)
+                .subject(subject)
+                .audience(audience)
+                .description(description);
+            let response = client
+                .post_oidc_trust()
+                .body(body)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to create OIDC trust relationship",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    println!(
+                        "OIDC trust '{}' created (id: {})",
+                        response.name, response.id.0
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize OIDC trust response")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+        OidcTrustActions::Delete { name } => {
+            debug!("Deleting OIDC trust relationship: {name}");
+            client
+                .delete_oidc_trust()
+                .name(name.as_str())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to delete OIDC trust relationship",
+                    1,
+                ))
+                .unwrap();
+            println!("OIDC trust '{name}' deleted");
+        }
+        OidcTrustActions::List => {
+            debug!("Listing OIDC trust relationships");
+            let response = client
+                .list_oidc_trust()
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to list OIDC trust relationships",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    let mut rows = vec![[
+                        "name".to_string(),
+                        "issuer".to_string(),
+                        "subject".to_string(),
+                        "audience".to_string(),
+                        "id".to_string(),
+                    ]];
+                    for t in response.iter() {
+                        rows.push([
+                            t.name.clone(),
+                            t.issuer.clone(),
+                            t.subject.clone(),
+                            t.audience.clone().unwrap_or_default(),
+                            t.id.0.to_string(),
+                        ]);
+                    }
+                    println!(
+                        "{}",
+                        Builder::from_iter(rows).build().with(Style::rounded())
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize OIDC trust list")
                     );
                 }
                 _ => {
@@ -2796,16 +2942,26 @@ fn main() {
             }
 
             let client = || {
-                make_client(cli.host, cli.insecure, cli.tls_cert, cli.auth, cli.timeout)
-                    .map_err(|e| {
-                        eprintln!("Failed to create HTTP client: {}", e);
-                        std::process::exit(1);
-                    })
-                    .unwrap()
+                make_client(
+                    cli.host,
+                    cli.insecure,
+                    cli.tls_cert,
+                    cli.auth,
+                    cli.auth_token_command,
+                    cli.timeout,
+                )
+                .map_err(|e| {
+                    eprintln!("Failed to create HTTP client: {}", e);
+                    std::process::exit(1);
+                })
+                .unwrap()
             };
 
             match cli.command {
                 Commands::Apikey { action } => api_key_commands(cli.format, action, client()).await,
+                Commands::OidcTrust { action } => {
+                    oidc_trust_commands(cli.format, action, client()).await
+                }
                 Commands::Pipelines => pipelines(cli.format, client()).await,
                 Commands::Pipeline(action) => pipeline(cli.format, action, client()).await,
                 Commands::Cluster { action } => cluster(cli.format, action, client()).await,
@@ -2860,6 +3016,7 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
             Some(missing),
             None,
             None,
+            None,
         )
         .expect_err("non-existent cert path must produce an error");
         let msg = err.to_string();
@@ -2878,6 +3035,7 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
             "https://example.invalid".to_string(),
             false,
             Some(file.path().to_path_buf()),
+            None,
             None,
             None,
         )
@@ -2904,6 +3062,7 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
             "https://example.invalid".to_string(),
             false,
             Some(file.path().to_path_buf()),
+            None,
             None,
             None,
         );

@@ -6,6 +6,7 @@ use crate::db::types::monitor::{
     ExtendedPipelineMonitorEvent, NewClusterMonitorEvent, PipelineMonitorEvent,
     PipelineMonitorEventId,
 };
+use crate::db::types::oidc_trust::OidcTrustDescr;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
 };
@@ -111,6 +112,42 @@ pub(crate) trait Storage {
     /// Validates an API key against the database by comparing its SHA-256 hash
     /// against the stored value.
     async fn validate_api_key(&self, key: &str) -> Result<(TenantId, Vec<ApiPermission>), DBError>;
+
+    /// Lists all OIDC trust relationships for the tenant.
+    async fn list_oidc_trust(&self, tenant_id: TenantId) -> Result<Vec<OidcTrustDescr>, DBError>;
+
+    /// Retrieves a trust relationship by name.
+    async fn get_oidc_trust(
+        &self,
+        tenant_id: TenantId,
+        name: &str,
+    ) -> Result<OidcTrustDescr, DBError>;
+
+    /// Deletes a trust relationship by name.
+    async fn delete_oidc_trust(&self, tenant_id: TenantId, name: &str) -> Result<(), DBError>;
+
+    /// Persists a new trust relationship.
+    #[allow(clippy::too_many_arguments)]
+    async fn create_oidc_trust(
+        &self,
+        tenant_id: TenantId,
+        id: Uuid,
+        name: &str,
+        description: Option<&str>,
+        issuer: &str,
+        subject: &str,
+        audience: Option<&str>,
+        scopes: Vec<ApiPermission>,
+    ) -> Result<(), DBError>;
+
+    /// Finds the first trust relationship matching the given issuer + claims.
+    /// Returns the owning tenant and scopes if a match is found.
+    async fn match_oidc_trust(
+        &self,
+        issuer: &str,
+        subject: &str,
+        audiences: &[String],
+    ) -> Result<Option<(TenantId, Vec<ApiPermission>)>, DBError>;
 
     /// Retrieves a list of pipelines as extended descriptors.
     async fn list_pipelines(

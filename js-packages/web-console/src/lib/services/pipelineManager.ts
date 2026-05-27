@@ -596,6 +596,73 @@ export const deleteApiKey = (name: string, options?: FetchOptions) =>
     }
   )
 
+// OIDC trust relationships
+//
+// These wrappers talk to the manager directly instead of going through the
+// generated client because the SDK has not yet been regenerated against the
+// new endpoints. After running `bun run generate-openapi`, these can be
+// replaced with calls to the generated `listOidcTrust` / `postOidcTrust` /
+// `deleteOidcTrust` functions.
+import { getAuthorizationHeaders } from '$lib/services/auth'
+
+export type OidcTrustDescr = {
+  id: string
+  name: string
+  description?: string | null
+  issuer: string
+  subject: string
+  audience?: string | null
+  scopes: ('Read' | 'Write')[]
+}
+
+export type NewOidcTrustRequest = {
+  name: string
+  issuer: string
+  subject: string
+  audience?: string
+  description?: string
+}
+
+const oidcTrustFetch = async (path: string, init?: RequestInit) => {
+  const authHeaders = await getAuthorizationHeaders()
+  const res = await fetch(`${felderaEndpoint}/v0${path}`, {
+    ...init,
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      ...authHeaders,
+      ...(init?.headers ?? {})
+    }
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    let message = `Request to ${path} failed: ${res.status}`
+    try {
+      const parsed = JSON.parse(body)
+      if (parsed?.message) message = parsed.message
+    } catch {
+      // ignore
+    }
+    throw new Error(message)
+  }
+  if (res.status === 204 || res.headers.get('content-length') === '0') return null
+  return res.json()
+}
+
+export const getOidcTrustList = (): Promise<OidcTrustDescr[]> =>
+  oidcTrustFetch('/oidc_trust').then((v) => (v as OidcTrustDescr[]) ?? [])
+
+export const postOidcTrust = (
+  body: NewOidcTrustRequest
+): Promise<{ id: string; name: string }> =>
+  oidcTrustFetch('/oidc_trust', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+
+export const deleteOidcTrust = (name: string): Promise<unknown> =>
+  oidcTrustFetch(`/oidc_trust/${encodeURIComponent(name)}`, { method: 'DELETE' })
+
 export const dismissDeploymentError = (pipeline_name: string) =>
   mapResponse(postPipelineDismissError({ path: { pipeline_name } }), (v) => v)
 
