@@ -126,9 +126,10 @@ pub(crate) async fn http_input(
 /// table or view.  The stream is configurable two ways:
 ///
 /// - Simple configuration of the format may be provided using query parameters.
-///   Use `format` to specify `csv` or `json` output and, for `json` only, `array`
-///   to specify whether to group updates into JSON arrays.  Specify
-///   `backpressure` to specify behavior when the HTTP client cannot keep up.
+///   Specify `backpressure` to specify behavior when the HTTP client cannot
+///   keep up.  Use `format` to specify `csv` or `json` output.  For `json`
+///   output format, `update_format` and `json_flavor` may be provided (with the
+///   same possible values as in JSON format configuration for connectors).
 ///
 /// - Comprehensive configuration may be provided by providing a connector
 ///   configuration as a JSON body.  In this case, no query parameters are

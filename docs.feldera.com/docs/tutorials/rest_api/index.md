@@ -259,7 +259,7 @@ output of data can directly be performed using HTTP requests as well.
 We can retrieve a snapshot of the `preferred\_vendor` view using `curl`:
 
 ```
-curl -X POST 'http://127.0.0.1:8080/v0/pipelines/supply-chain/egress/PREFERRED_VENDOR?format=json&mode=snapshot&query=quantiles' | jq
+curl -X POST 'http://127.0.0.1:8080/v0/pipelines/supply-chain/egress/PREFERRED_VENDOR?format=json&send_snapshot=true' | jq
 ```
 
 ... which for each of the parts will show the preferred vendor:
@@ -306,7 +306,7 @@ It is also possible to actively monitor a view for changes rather than
 retrieving a snapshot:
 
 ```
-curl -s -N -X POST 'http://127.0.0.1:8080/v0/pipelines/supply-chain/egress/PREFERRED_VENDOR?format=json&mode=watch' | jq
+curl -s -N -X POST 'http://127.0.0.1:8080/v0/pipelines/supply-chain/egress/PREFERRED_VENDOR?format=json' | jq
 ```
 
 Keep this open in a separate terminal for the next step.
