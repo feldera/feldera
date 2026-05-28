@@ -872,6 +872,7 @@ mod tests {
         let total_size = SizeOf::size_of(&s);
 
         // The exact size may depend on the architecture's pointer size.
+        dbg!(&total_size);
         assert!(total_size.total_bytes() > 26);
         assert!(total_size.shared_bytes() >= 26);
     }
