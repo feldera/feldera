@@ -12,6 +12,12 @@ env:
   SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
   AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
   AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
+  # sccache cannot cache rustc invocations when incremental is on; without
+  # this the prior run showed 0% Rust cache hit rate and 11k write errors.
+  CARGO_INCREMENTAL: 0
+  # Pin Maven's local repo so it matches the cache path regardless of the
+  # container runner's $HOME.
+  MAVEN_OPTS: -Dmaven.repo.local=/home/ubuntu/.m2/repository
   RUST_MIN_STACK: 8388608
   # Cap cargo parallelism at the k8s runner core budget. Java tests drive a
   # Rust build via mvn → sql-to-dbsp; without this cap arm64 runners OOM from
@@ -50,17 +56,43 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      # Rotate the Rust cache once per calendar month to keep target/ from
+      # accumulating stale artifacts indefinitely. Bucket lifecycle on
+      # gha-cache reclaims the bytes; restore-keys stay scoped to the same
+      # month so we never restore last month's stale cache.
+      - name: Compute monthly cache prefix
+        id: cache-month
+        run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      - name: Cache Rust dependencies and target
+        uses: ./.github/actions/feldera-minio-cache
+        with:
+          # registry/src is excluded — cargo regenerates it from registry/cache
+          # archives (same trick Swatinem/rust-cache used). The test framework
+          # writes generated pipelines to sql-to-dbsp-compiler/temp and multi,
+          # which are excluded from the workspace per Cargo.toml — their target
+          # dirs must be cached explicitly.
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+            target
+            sql-to-dbsp-compiler/temp/target
+            sql-to-dbsp-compiler/multi/target
+          key: test-java-cargo-${{ steps.cache-month.outputs.month }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.shard.name }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            test-java-cargo-${{ steps.cache-month.outputs.month }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.shard.name }}-
+
+      - name: Cache JVM build dependencies
+        uses: ./.github/actions/feldera-minio-cache
         with:
           path: |
             /home/ubuntu/.gradle
+            /home/ubuntu/.m2/repository
             ./sql-to-dbsp-compiler/calcite
-          key: sql2dbsp-java-cache2-${{ runner.os }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env') }}
+          key: test-java-jvm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env', 'sql-to-dbsp-compiler/**/pom.xml') }}
           restore-keys: |
-            sql2dbsp-java-cache2-${{ runner.os }}-
+            test-java-jvm-${{ runner.os }}-${{ runner.arch }}-
 
       # TODO: Avoid doing this twice and ideally download & reuse the JAR from build-java.yml workflow
       - name: Run build.sh

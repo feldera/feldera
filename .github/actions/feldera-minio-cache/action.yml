@@ -1,0 +1,40 @@
+name: 'Feldera MinIO cache'
+description: |
+  Wrapper around runs-on/cache that targets the in-cluster MinIO bucket used
+  for GitHub Actions caches (default: gha-cache). The caller is responsible
+  for providing AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, SCCACHE_REGION,
+  and SCCACHE_ENDPOINT in the job or workflow env — they double as sccache
+  config in every workflow that uses this action.
+
+inputs:
+  path:
+    description: 'Newline-separated list of paths to cache'
+    required: true
+  key:
+    description: 'Primary cache key'
+    required: true
+  restore-keys:
+    description: 'Newline-separated fallback restore keys'
+    required: false
+    default: ''
+  bucket:
+    description: 'MinIO bucket name'
+    required: false
+    default: 'gha-cache'
+
+runs:
+  using: composite
+  steps:
+    - uses: runs-on/cache@88d90644011a3a9957fd141a106f5a94f9794203 # v5.0.7
+      env:
+        AWS_REGION: ${{ env.SCCACHE_REGION }}
+        AWS_ENDPOINT_URL: http://${{ env.SCCACHE_ENDPOINT }}
+        AWS_S3_FORCE_PATH_STYLE: "true"
+        RUNS_ON_S3_BUCKET_CACHE: ${{ inputs.bucket }}
+        # Defend against AWS_SESSION_TOKEN leaking from a configure-aws-credentials
+        # step run earlier in the job — MinIO rejects requests carrying it.
+        AWS_SESSION_TOKEN: ""
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key }}
+        restore-keys: ${{ inputs.restore-keys }}

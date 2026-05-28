@@ -15,6 +15,9 @@ env:
   SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
   AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
   AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
+  # sccache cannot cache incremental rustc invocations; release already
+  # disables incremental, but doc tests run in debug mode.
+  CARGO_INCREMENTAL: 0
   # Cap cargo parallelism at the k8s runner core budget so arm64 pods don't
   # OOM from too many parallel linkers. Override via the CI_RUNNER_CORES repo
   # variable; the fallback matches the current 20-core pod.
@@ -49,14 +52,16 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Cache Cargo registry and index
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: ./.github/actions/feldera-minio-cache
         with:
+          # registry/src excluded — cargo regenerates it from registry/cache.
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-registry-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+          key: build-rust-cargo-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ matrix.target }}-
+            build-rust-cargo-${{ runner.os }}-${{ matrix.target }}-
 
       # Doc tests invoke the linker per test; cap concurrency at the runner
       # core budget so arm64 pods don't OOM. See rust-lang/cargo#10702.
@@ -168,12 +173,14 @@ jobs:
       - name: Cache Cargo registry and index
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
+          # registry/src excluded — cargo regenerates it from registry/cache.
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-registry-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+          key: build-rust-fda-native-cargo-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ matrix.target }}-
+            build-rust-fda-native-cargo-${{ runner.os }}-${{ matrix.target }}-
 
       - name: Build fda
         run: cargo build --release --locked -p fda --target=${{ matrix.target }}
