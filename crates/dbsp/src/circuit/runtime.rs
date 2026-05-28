@@ -1523,17 +1523,22 @@ impl RuntimeHandle {
             });
 
         // Terminate the tokio merger runtime.
-        if let Some(tokio_merger_runtime) = self
+        //
+        // The `MutexGuard` returned by `lock()` must be dropped before the
+        // tokio runtime: dropping the runtime blocks until every blocking-pool
+        // task yields, and those tasks may call `tokio_merger_runtime()`, which
+        // re-locks this same mutex. Holding the guard across the runtime drop
+        // would deadlock. Binding `take()` to a `let` releases the guard at the
+        // `;`, leaving an owned `Option<TokioRuntime>` whose drop runs without
+        // the mutex held.
+        let tokio_merger_runtime = self
             .runtime
             .inner()
             .tokio_merger_runtime
             .lock()
             .unwrap()
-            .take()
-        {
-            // Block until all running merger tasks have yielded. At this point, the tokio runtime will have shut down automatically.
-            drop(tokio_merger_runtime);
-        }
+            .take();
+        drop(tokio_merger_runtime);
 
         // This must happen after we wait for the background threads, because
         // they might try to initiate another merge before they exit, which
