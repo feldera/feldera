@@ -18,12 +18,21 @@ env:
 jobs:
   java-tests:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'java-tests') }}
-    name: Execute Java Tests
+    name: Execute Java Tests (${{ matrix.shard.name }})
+    # fail-fast: false so a failure in one shard still lets the others finish
+    # and report. Workflow-level cancellation of sibling CI jobs is handled by
+    # the cancel-if-tests-java-failed sentinel in ci.yml.
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - runner: [k8s-runners-amd64]
-          - runner: [k8s-runners-arm64]
+        runner:
+          - [k8s-runners-amd64]
+          - [k8s-runners-arm64]
+        shard:
+          - name: A-M
+            pattern: "A*,B*,C*,D*,E*,F*,G*,H*,I*,J*,K*,L*,M*"
+          - name: N-Z
+            pattern: "N*,O*,P*,Q*,R*,S*,T*,U*,V*,W*,X*,Y*,Z*"
     runs-on: ${{ matrix.runner }}
 
     container:
@@ -62,12 +71,15 @@ jobs:
         run: gradle --stop
 
       - name: Run mvn test
-        run: mvn test --no-transfer-progress -B -pl SQL-compiler -Dsurefire.failIfNoSpecifiedTests=false
+        run: mvn test --no-transfer-progress -B -pl SQL-compiler -Dsurefire.failIfNoSpecifiedTests=false -Dtest='${{ matrix.shard.pattern }}'
         working-directory: ./sql-to-dbsp-compiler
         if: ${{ vars.CI_DRY_RUN != 'true' }}
 
+      # Quick SLT smoke check; runs once per arch on the A-M shard so it isn't
+      # duplicated across shards (the explicit -Dtest selector is independent
+      # of the shard pattern).
       - name: Run one quick SLT test
-        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        if: ${{ vars.CI_DRY_RUN != 'true' && matrix.shard.name == 'A-M' }}
         run: mvn test --no-transfer-progress -B -Dsurefire.failIfNoSpecifiedTests=false -Dtest=RotateTests#quick
         working-directory: ./sql-to-dbsp-compiler
 
