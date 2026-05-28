@@ -27,7 +27,7 @@ default = [
     "with-postgres-cdc",
 ]
 with-kafka = ["rdkafka"]
-with-deltalake = ["deltalake", "deltalake-catalog-unity"]
+with-deltalake = ["deltalake", "deltalake-catalog-unity", "roaring"]
 with-iceberg = ["feldera-iceberg"]
 with-pubsub = ["google-cloud-pubsub", "google-cloud-gax"]
 with-avro = [
@@ -120,7 +120,7 @@ rand = { workspace = true, features = ["small_rng"] }
 tempfile = { workspace = true }
 async-trait = { workspace = true }
 arrow = { workspace = true, features = ["chrono-tz"] }
-parquet = { workspace = true, features = ["json"] }
+parquet = { workspace = true, features = ["json", "async", "object_store"] }
 serde_arrow = { workspace = true }
 arrow-json = { workspace = true }
 bytes = { workspace = true }
@@ -202,6 +202,7 @@ sentry = { workspace = true }
 zip = { workspace = true }
 smallvec = { workspace = true }
 delta_kernel = { workspace = true }
+roaring = { workspace = true, optional = true }
 flate2 = { workspace = true }
 etl = { workspace = true, optional = true }
 etl-config = { workspace = true, optional = true }
@@ -242,6 +243,11 @@ pretty_assertions = { workspace = true }
 google-cloud-googleapis = { workspace = true }
 postgres-types = { version = "0.2.9", features = ["derive"] }
 criterion = { workspace = true }
+# Used to hand-craft deletion-vector fixtures in the Delta connector tests
+# (delta-rs cannot write deletion vectors). Versions match `delta_kernel`'s
+# own deletion-vector codec so the fixtures round-trip.
+z85 = "3.0.6"
+crc = "3.3.0"
 
 [[bench]]
 name = "avro_encoder"

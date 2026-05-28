@@ -1,5 +1,8 @@
 use crate::catalog::{ArrowStream, InputCollectionHandle};
 use crate::format::InputBuffer;
+use crate::integrated::delta_table::deletion_vector::{
+    masked_parquet_table, read_deletion_vector,
+};
 use crate::integrated::delta_table::{delta_input_serde_config, register_storage_handlers};
 use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint};
 use crate::util::JobQueue;
@@ -19,10 +22,10 @@ use dbsp::circuit::tokio::TOKIO;
 use deltalake::datafusion::dataframe::DataFrame;
 use deltalake::datafusion::execution::context::SQLOptions;
 use deltalake::datafusion::prelude::SessionContext;
-use deltalake::kernel::Action;
+use deltalake::kernel::{Action, DeletionVectorDescriptor};
 use deltalake::logstore::{self, IORuntime};
 use deltalake::table::builder::ensure_table_uri;
-use deltalake::{DeltaTable, DeltaTableBuilder, datafusion};
+use deltalake::{DeltaTable, DeltaTableBuilder, Path, datafusion};
 use feldera_adapterlib::format::{ParseError, StagedInputBuffer};
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{InputQueueEntry, Resume, Watermark, parse_resume_info};
@@ -2609,6 +2612,15 @@ impl DeltaTableInputEndpointInner {
         receiver: &mut Receiver<PipelineState>,
         start_transaction: Option<Option<String>>,
     ) -> AnyResult<()> {
+        // TODO(#6038): CDC mode does not yet apply deletion vectors carried by
+        // `add`/`remove` actions; the file is read in full via
+        // `create_parquet_table`. If a CDC source table has DVs enabled, rows
+        // that the action marks as soft-deleted will be ingested anyway.
+        // `add_with_polarity` (used by the follow path) does apply DVs; the
+        // same plumbing needs to flow into the CDC adds/removes tables before
+        // we can advertise DV support for `mode = cdc`. Until then, callers
+        // running CDC against DV-enabled tables will see incorrect results.
+
         // Collect Add and Remove file paths separately. The query below
         // subtracts Removes from Adds via `EXCEPT ALL` to cancel rewrites
         // that don't change logical data.
@@ -2746,6 +2758,7 @@ impl DeltaTableInputEndpointInner {
                 self.add_with_polarity(
                     &add.path,
                     true,
+                    add.deletion_vector.as_ref(),
                     table,
                     used_columns,
                     input_stream,
@@ -2760,6 +2773,7 @@ impl DeltaTableInputEndpointInner {
                 self.add_with_polarity(
                     &remove.path,
                     false,
+                    remove.deletion_vector.as_ref(),
                     table,
                     used_columns,
                     input_stream,
@@ -2787,6 +2801,7 @@ impl DeltaTableInputEndpointInner {
         &self,
         path: &str,
         polarity: bool,
+        deletion_vector: Option<&DeletionVectorDescriptor>,
         table: &DeltaTable,
         used_columns: &[String],
         input_stream: &mut dyn ArrowStream,
@@ -2795,18 +2810,64 @@ impl DeltaTableInputEndpointInner {
     ) -> AnyResult<()> {
         let description = format!("file '{path}'");
 
-        // See comment about `object_store_url` above.
-        let full_path = format!("{}{}", table.log_store().object_store_url().as_str(), path);
+        // Register the file's rows as `tmp_table`. When the action carries a
+        // non-empty deletion vector, stream the Parquet file through a
+        // [`StreamingTable`] that drops the DV-flagged rows on the fly. A
+        // DV with `cardinality == 0` is a no-op and falls through to the
+        // regular `ListingTable` path.
+        let active_dv = deletion_vector.filter(|dv| dv.cardinality > 0);
+        if let Some(dv) = active_dv {
+            // Both the sidecar fetch and the Parquet probe go through object
+            // storage and can hit transient failures; run them under the
+            // standard retry envelope. `read_deletion_vector` is idempotent
+            // (it re-decodes the same descriptor) and `masked_parquet_table`
+            // does not register anything on the session context, so repeating
+            // either on backoff is safe.
+            let logical_schema = table
+                .snapshot()
+                .map_err(|e| anyhow!("error accessing Delta table snapshot for {description}: {e}"))?
+                .snapshot()
+                .arrow_schema();
+            let path_owned = path.to_string();
+            let provider = self
+                .retry(
+                    &format!("preparing deletion vector for {description}"),
+                    None,
+                    || async {
+                        let bitmap = read_deletion_vector(dv, table).await.map_err(|e| {
+                            anyhow!(
+                                "decoding deletion vector for {description} at table version {:?}: {e}",
+                                table.version(),
+                            )
+                        })?;
+                        let store = table.log_store().object_store(None);
+                        masked_parquet_table(
+                            store,
+                            Path::from(path_owned.as_str()),
+                            bitmap,
+                            Arc::clone(&logical_schema),
+                        )
+                        .await
+                    },
+                )
+                .await?;
+            self.datafusion.register_table("tmp_table", provider).map_err(|e| {
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error registering masked table: {e}")
+            })?;
+        } else {
+            // See comment about `object_store_url` above.
+            let full_path = format!("{}{}", table.log_store().object_store_url().as_str(), path);
 
-        // Create a datafusion table backed by these files.
-        let parquet_table = Arc::new(
-            self.create_parquet_table(table, vec![full_path.clone()], &description)
-                .await?,
-        );
+            // Create a datafusion table backed by these files.
+            let parquet_table = Arc::new(
+                self.create_parquet_table(table, vec![full_path.clone()], &description)
+                    .await?,
+            );
 
-        self.datafusion.register_table("tmp_table", parquet_table).map_err(|e| {
-            anyhow!("internal error processing file {full_path}; {REPORT_ERROR}; error registering Parquet table: {e}")
-        })?;
+            self.datafusion.register_table("tmp_table", parquet_table).map_err(|e| {
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error registering Parquet table: {e}")
+            })?;
+        }
 
         let columns: Vec<&str> = used_columns.iter().map(String::as_str).collect();
         let df = self
@@ -2814,11 +2875,11 @@ impl DeltaTableInputEndpointInner {
             .table("tmp_table")
             .await
             .map_err(|e| {
-                anyhow!("internal error processing file {full_path}; {REPORT_ERROR}; error reading 'tmp_table': {e}")
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading 'tmp_table': {e}")
             })?
             .select_columns(&columns)
             .map_err(|e| {
-                anyhow!("internal error processing file {full_path}; {REPORT_ERROR}; error selecting columns: {e}")
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error selecting columns: {e}")
             })?;
 
         let df = if let Some(filter) = &self.config.filter {
@@ -2826,7 +2887,7 @@ impl DeltaTableInputEndpointInner {
                 .parse_sql_expr(filter)
                 .map_err(|e| anyhow!("invalid 'filter' expression '{filter}': {e}"))?;
             df.filter(expr).map_err(|e| {
-                anyhow!("internal error processing file {full_path}; {REPORT_ERROR}; error applying 'filter': {e}")
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error applying 'filter': {e}")
             })?
         } else {
             df

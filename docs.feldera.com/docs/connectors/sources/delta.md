@@ -20,6 +20,11 @@ The Delta Lake input connector supports checkpoint and resume and
 at-least-once [fault tolerance](/pipelines/fault-tolerance), but not
 exactly once fault tolerance.
 
+Tables that use [deletion vectors](https://docs.delta.io/latest/delta-deletion-vectors.html)
+(soft deletes) are supported in the `snapshot`, `snapshot_and_follow`, and
+`follow` modes: rows masked by a deletion vector are excluded from the ingested
+stream.
+
 ## Delta Lake input connector configuration
 
 | Property                    | Type   | Default    | Description   |

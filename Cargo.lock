@@ -3956,6 +3956,7 @@ dependencies = [
  "colored",
  "comfy-table",
  "cpu-time",
+ "crc",
  "criterion",
  "crossbeam",
  "csv",
@@ -4026,6 +4027,7 @@ dependencies = [
  "rkyv",
  "rmp-serde",
  "rmpv",
+ "roaring",
  "rustls",
  "schema_registry_converter",
  "semver",
@@ -4056,6 +4058,7 @@ dependencies = [
  "uuid",
  "vergen-gitcl",
  "xxhash-rust",
+ "z85",
  "zip 6.0.0",
 ]
 

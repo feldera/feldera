@@ -3389,3 +3389,637 @@ fn delta_table_unity_people_2m() {
 
     forget(json_file);
 }
+
+/// Helpers for hand-crafting deletion-vector (DV) fixtures.
+///
+/// delta-rs cannot *write* deletion vectors (its `DELETE`/`write` paths are
+/// copy-on-write), so the tests build a real DV table by writing the data file
+/// with delta-rs and then appending a commit that soft-deletes rows via a DV
+/// sidecar. The sidecar uses the on-disk format defined by the Delta protocol
+/// and decoded by `delta_kernel`, so the fixtures round-trip through both
+/// `delta_kernel` and delta-rs snapshot reads.
+mod dv_fixtures {
+    use super::*;
+    use crate::integrated::delta_table::deletion_vector::storage_type_str;
+    use crc::{CRC_32_ISO_HDLC, Crc};
+    use deltalake::kernel::{DeletionVectorDescriptor, StorageType};
+    use roaring::RoaringTreemap;
+    use uuid::Uuid;
+
+    /// Magic number for the portable RoaringBitmap serialization used by Delta.
+    const ROARING_BITMAP_PORTABLE_MAGIC: u32 = 1681511377;
+
+    /// Serialize `positions` (physical row indices to delete) into a deletion
+    /// vector `.bin` sidecar written under `table_dir`, returning the matching
+    /// descriptor (`storageType = "u"`).
+    pub(super) fn write_sidecar_dv(
+        table_dir: &std::path::Path,
+        positions: &[u64],
+    ) -> DeletionVectorDescriptor {
+        let mut bitmap = RoaringTreemap::new();
+        for &p in positions {
+            bitmap.insert(p);
+        }
+        let mut serialized_bitmap = Vec::new();
+        bitmap.serialize_into(&mut serialized_bitmap).unwrap();
+
+        // `size_in_bytes` covers the magic value plus the serialized bitmap.
+        // Delta's protocol stores this as a 32-bit signed integer.
+        let payload_size = 4usize + serialized_bitmap.len();
+        let size_in_bytes = i32::try_from(payload_size)
+            .expect("deletion-vector payload exceeds i32::MAX");
+
+        // File layout: version(1, BE) | dv_size(4, BE) | magic(4, LE) | bitmap | crc(4, BE).
+        // The DV starts at offset 1 (right after the version byte).
+        let mut file = Vec::new();
+        file.push(1u8);
+        file.extend_from_slice(&(size_in_bytes as u32).to_be_bytes());
+        file.extend_from_slice(&ROARING_BITMAP_PORTABLE_MAGIC.to_le_bytes());
+        file.extend_from_slice(&serialized_bitmap);
+        // CRC-32/ISO-HDLC over the magic value and bitmap (offset 5 to end).
+        let checksum = Crc::<u32>::new(&CRC_32_ISO_HDLC).checksum(&file[5..]);
+        file.extend_from_slice(&checksum.to_be_bytes());
+
+        let uuid = Uuid::new_v4();
+        std::fs::write(table_dir.join(format!("deletion_vector_{uuid}.bin")), &file).unwrap();
+
+        DeletionVectorDescriptor {
+            storage_type: StorageType::UuidRelativePath,
+            path_or_inline_dv: z85::encode(uuid.as_bytes()),
+            offset: Some(1),
+            size_in_bytes,
+            cardinality: bitmap.len() as i64,
+        }
+    }
+
+    /// Build an inline deletion-vector descriptor (`storageType = "i"`).
+    /// The inline body is `magic(4 LE) | serialized_bitmap`, z85-encoded into
+    /// `path_or_inline_dv` (no version byte, no CRC — that framing belongs to
+    /// the sidecar layout).
+    pub(super) fn inline_dv(positions: &[u64]) -> DeletionVectorDescriptor {
+        let mut bitmap = RoaringTreemap::new();
+        for &p in positions {
+            bitmap.insert(p);
+        }
+        let mut serialized_bitmap = Vec::new();
+        bitmap.serialize_into(&mut serialized_bitmap).unwrap();
+
+        let mut body = Vec::with_capacity(4 + serialized_bitmap.len());
+        body.extend_from_slice(&ROARING_BITMAP_PORTABLE_MAGIC.to_le_bytes());
+        body.extend_from_slice(&serialized_bitmap);
+
+        let size_in_bytes = i32::try_from(body.len())
+            .expect("inline deletion-vector payload exceeds i32::MAX");
+
+        DeletionVectorDescriptor {
+            storage_type: StorageType::Inline,
+            path_or_inline_dv: z85::encode(&body),
+            offset: None,
+            size_in_bytes,
+            cardinality: bitmap.len() as i64,
+        }
+    }
+
+    /// Write a sidecar `.bin` for `positions` under `sidecar_dir` (which need
+    /// not be the table directory) and return a `storageType = "p"` descriptor
+    /// whose `pathOrInlineDv` is a `file://` URL to the sidecar.
+    pub(super) fn write_absolute_sidecar_dv(
+        sidecar_dir: &std::path::Path,
+        positions: &[u64],
+    ) -> DeletionVectorDescriptor {
+        let mut bitmap = RoaringTreemap::new();
+        for &p in positions {
+            bitmap.insert(p);
+        }
+        let mut serialized_bitmap = Vec::new();
+        bitmap.serialize_into(&mut serialized_bitmap).unwrap();
+
+        let payload_size = 4usize + serialized_bitmap.len();
+        let size_in_bytes = i32::try_from(payload_size)
+            .expect("deletion-vector payload exceeds i32::MAX");
+
+        let mut file = Vec::new();
+        file.push(1u8);
+        file.extend_from_slice(&(size_in_bytes as u32).to_be_bytes());
+        file.extend_from_slice(&ROARING_BITMAP_PORTABLE_MAGIC.to_le_bytes());
+        file.extend_from_slice(&serialized_bitmap);
+        let checksum = Crc::<u32>::new(&CRC_32_ISO_HDLC).checksum(&file[5..]);
+        file.extend_from_slice(&checksum.to_be_bytes());
+
+        let sidecar_path = sidecar_dir.join(format!("dv_absolute_{}.bin", Uuid::new_v4()));
+        std::fs::write(&sidecar_path, &file).unwrap();
+        let url = url::Url::from_file_path(&sidecar_path)
+            .expect("sidecar path must be absolute");
+
+        DeletionVectorDescriptor {
+            storage_type: StorageType::AbsolutePath,
+            path_or_inline_dv: url.to_string(),
+            offset: Some(1),
+            size_in_bytes,
+            cardinality: bitmap.len() as i64,
+        }
+    }
+
+    /// Return the `add` action of the most recent commit (as JSON).
+    fn latest_add(table_dir: &std::path::Path) -> Value {
+        let log_dir = table_dir.join("_delta_log");
+        let mut adds: Vec<(u64, Value)> = Vec::new();
+        for entry in std::fs::read_dir(&log_dir).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let Some(stem) = name.strip_suffix(".json") else {
+                continue;
+            };
+            let Ok(version) = stem.parse::<u64>() else {
+                continue;
+            };
+            let content = std::fs::read_to_string(entry.path()).unwrap();
+            for line in content.lines() {
+                let action: Value = serde_json::from_str(line).unwrap();
+                if let Some(add) = action.get("add") {
+                    adds.push((version, add.clone()));
+                }
+            }
+        }
+        adds.sort_by_key(|(version, _)| *version);
+        adds.last().expect("table has no `add` action").1.clone()
+    }
+
+    /// Relative path of the (single) data file in the table.
+    pub(super) fn data_file_path(table_dir: &std::path::Path) -> String {
+        latest_add(table_dir)["path"].as_str().unwrap().to_string()
+    }
+
+    /// Write `data` to a Parquet file under `table_dir` (outside the Delta
+    /// commit machinery) and return its file name and size in bytes.
+    pub(super) fn write_parquet_file(
+        table_dir: &std::path::Path,
+        arrow_schema: &ArrowSchema,
+        data: &[DeltaTestStruct],
+    ) -> (String, i64) {
+        use parquet::arrow::ArrowWriter;
+
+        let batch = serde_arrow::to_record_batch(
+            arrow_schema.fields(),
+            &SerializeWithContextWrapper::new(&data.to_vec(), &delta_output_serde_config()),
+        )
+        .unwrap();
+
+        let file_name = format!("part-{}.parquet", Uuid::new_v4());
+        let file = std::fs::File::create(table_dir.join(&file_name)).unwrap();
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let size = std::fs::metadata(table_dir.join(&file_name)).unwrap().len() as i64;
+        (file_name, size)
+    }
+
+    /// Append a commit that adds a brand-new data file carrying the deletion
+    /// vector `dv` (so the connector must apply the DV when first reading it).
+    pub(super) fn append_dv_add_commit(
+        table_dir: &std::path::Path,
+        current_version: i64,
+        file_name: &str,
+        file_size: i64,
+        dv: &DeletionVectorDescriptor,
+    ) {
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let storage_type = storage_type_str(dv.storage_type);
+        let add = json!({
+            "path": file_name,
+            "partitionValues": {},
+            "size": file_size,
+            "modificationTime": now_ms,
+            "dataChange": true,
+            "deletionVector": {
+                "storageType": storage_type,
+                "pathOrInlineDv": dv.path_or_inline_dv,
+                "offset": dv.offset,
+                "sizeInBytes": dv.size_in_bytes,
+                "cardinality": dv.cardinality,
+            },
+        });
+        let commit = format!(
+            "{}\n{}\n",
+            json!({"commitInfo": {"timestamp": now_ms, "operation": "WRITE"}}),
+            json!({ "add": add }),
+        );
+        let new_version = current_version + 1;
+        let commit_path = table_dir
+            .join("_delta_log")
+            .join(format!("{new_version:020}.json"));
+        std::fs::write(commit_path, commit).unwrap();
+    }
+
+    /// Append a commit that soft-deletes rows from the single data file by
+    /// removing it and re-adding it with the deletion vector `dv`.
+    pub(super) fn append_dv_delete_commit(
+        table_dir: &std::path::Path,
+        current_version: i64,
+        dv: &DeletionVectorDescriptor,
+    ) {
+        let add = latest_add(table_dir);
+        let path = add["path"].as_str().unwrap().to_string();
+        let now_ms = chrono::Utc::now().timestamp_millis();
+
+        let storage_type = storage_type_str(dv.storage_type);
+        let mut add_with_dv = add.clone();
+        add_with_dv["deletionVector"] = json!({
+            "storageType": storage_type,
+            "pathOrInlineDv": dv.path_or_inline_dv,
+            "offset": dv.offset,
+            "sizeInBytes": dv.size_in_bytes,
+            "cardinality": dv.cardinality,
+        });
+
+        // Per the Delta protocol, `extendedFileMetadata: true` requires
+        // `partitionValues`, `size`, and `tags` to be present together. Omit
+        // the flag and the spec-paired fields to keep the fixture minimal.
+        let remove = json!({
+            "path": path,
+            "deletionTimestamp": now_ms,
+            "dataChange": true,
+        });
+
+        let commit = format!(
+            "{}\n{}\n{}\n",
+            json!({"commitInfo": {"timestamp": now_ms, "operation": "DELETE"}}),
+            json!({ "remove": remove }),
+            json!({ "add": add_with_dv }),
+        );
+
+        let new_version = current_version + 1;
+        let commit_path = table_dir
+            .join("_delta_log")
+            .join(format!("{new_version:020}.json"));
+        std::fs::write(commit_path, commit).unwrap();
+    }
+}
+
+/// Generate exactly `n` `DeltaTestStruct` rows with `bigint` set to the row's
+/// physical index, so a deletion vector over positions maps directly to the
+/// `bigint` values it removes.
+fn fixed_delta_data(n: usize) -> Vec<DeltaTestStruct> {
+    let mut runner = TestRunner::deterministic();
+    let mut data: Vec<DeltaTestStruct> = vec(DeltaTestStruct::arbitrary(), n..=n)
+        .new_tree(&mut runner)
+        .unwrap()
+        .current();
+    for (idx, row) in data.iter_mut().enumerate() {
+        row.bigint = idx as i64;
+    }
+    data
+}
+
+/// Create a delta table with deletion vectors enabled and write `data` to it as
+/// a single data file.
+async fn create_dv_table(
+    table_uri: &str,
+    arrow_schema: &ArrowSchema,
+    data: &[DeltaTestStruct],
+) -> DeltaTable {
+    let struct_fields: Vec<StructField> = arrow_schema
+        .fields
+        .iter()
+        .map(|f| {
+            StructField::new(
+                f.name(),
+                DataType::try_from_arrow(f.data_type()).unwrap(),
+                f.is_nullable(),
+            )
+        })
+        .collect();
+
+    let table = CreateBuilder::new()
+        .with_location(table_uri)
+        .with_save_mode(SaveMode::Ignore)
+        .with_columns(struct_fields)
+        .with_configuration([("delta.enableDeletionVectors", Some("true"))])
+        .await
+        .unwrap();
+
+    write_data_to_table(table, arrow_schema, data).await
+}
+
+/// Validate the deletion-vector helpers directly: the hand-crafted sidecar must
+/// decode through `delta_kernel`, the positional mask must drop exactly the
+/// deleted rows, and a delta-rs snapshot read must agree.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deletion_vector_decode_and_mask_test() {
+    use crate::integrated::delta_table::deletion_vector::{
+        masked_parquet_table, read_deletion_vector,
+    };
+
+    init_logging();
+
+    let n = 200usize;
+    let data = fixed_delta_data(n);
+    let arrow_schema = Arc::new(ArrowSchema::new(relation_to_arrow_fields(
+        &DeltaTestStruct::schema(),
+        true,
+    )));
+
+    let dir = TempDir::new().unwrap();
+    let uri = dir.path().display().to_string();
+    let table = create_dv_table(&uri, &arrow_schema, &data).await;
+    let data_version = table.version().unwrap();
+
+    // Soft-delete every even `bigint` (== even physical position).
+    let deleted: Vec<u64> = (0..n as u64).filter(|i| i % 2 == 0).collect();
+    let dv = dv_fixtures::write_sidecar_dv(dir.path(), &deleted);
+    dv_fixtures::append_dv_delete_commit(dir.path(), data_version, &dv);
+
+    // (1) Our decode wrapper must recover exactly the deleted positions.
+    let reloaded = DeltaTableBuilder::from_url(ensure_table_uri(&uri).unwrap())
+        .unwrap()
+        .load()
+        .await
+        .unwrap();
+    let bitmap = read_deletion_vector(&dv, &reloaded).await.unwrap();
+    let decoded: Vec<u64> = bitmap.iter().collect();
+    assert_eq!(decoded, deleted, "decoded deletion vector mismatch");
+
+    // (2) The streaming masked-Parquet provider must keep exactly the
+    // surviving rows.
+    let store = reloaded.log_store().object_store(None);
+    let data_path = dv_fixtures::data_file_path(dir.path());
+    let provider = masked_parquet_table(
+        store,
+        deltalake::Path::from(data_path),
+        bitmap.clone(),
+        Arc::clone(&arrow_schema),
+    )
+    .await
+    .unwrap();
+    let datafusion_mask = SessionContext::new();
+    datafusion_mask
+        .register_table("masked", provider)
+        .unwrap();
+    let batches = datafusion_mask
+        .table("masked")
+        .await
+        .unwrap()
+        .collect()
+        .await
+        .unwrap();
+    let mut survivors = Vec::new();
+    for batch in &batches {
+        let deserializer = serde_arrow::Deserializer::from_record_batch(batch).unwrap();
+        survivors.extend(
+            Vec::<DeltaTestStruct>::deserialize_with_context(
+                deserializer,
+                &delta_input_serde_config(),
+            )
+            .unwrap(),
+        );
+    }
+    let mut got: Vec<i64> = survivors.iter().map(|x| x.bigint).collect();
+    got.sort();
+    let expected: Vec<i64> = (0..n as i64).filter(|i| i % 2 != 0).collect();
+    assert_eq!(got, expected, "masked rows mismatch");
+
+    // (3) A delta-rs snapshot read of the same table must agree (this proves the
+    // fixture is a genuine DV table that delta-rs itself applies).
+    let datafusion = SessionContext::new();
+    let snapshot = DeltaTableBuilder::from_url(ensure_table_uri(&uri).unwrap())
+        .unwrap()
+        .load()
+        .await
+        .unwrap();
+    register_delta_table_object_stores(&datafusion, &snapshot);
+    let provider = snapshot.table_provider().await.unwrap();
+    let snapshot_batches = datafusion
+        .read_table(provider)
+        .unwrap()
+        .collect()
+        .await
+        .unwrap();
+    let snapshot_rows: usize = snapshot_batches.iter().map(|b| b.num_rows()).sum();
+    assert_eq!(
+        snapshot_rows,
+        n - deleted.len(),
+        "snapshot row count mismatch"
+    );
+}
+
+/// Exercise the inline-DV (`storageType = "i"`) decode path: the bitmap lives
+/// base85-encoded in the action itself, no sidecar file. We commit an inline
+/// DV against an existing data file and verify both `delta_kernel`'s decode
+/// and a delta-rs snapshot read agree on the surviving rows.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deletion_vector_inline_decode_test() {
+    use crate::integrated::delta_table::deletion_vector::read_deletion_vector;
+
+    init_logging();
+
+    let n = 200usize;
+    let data = fixed_delta_data(n);
+    let arrow_schema = Arc::new(ArrowSchema::new(relation_to_arrow_fields(
+        &DeltaTestStruct::schema(),
+        true,
+    )));
+
+    let dir = TempDir::new().unwrap();
+    let uri = dir.path().display().to_string();
+    let table = create_dv_table(&uri, &arrow_schema, &data).await;
+    let data_version = table.version().unwrap();
+
+    let deleted: Vec<u64> = (0..n as u64).filter(|i| i % 3 == 0).collect();
+    let dv = dv_fixtures::inline_dv(&deleted);
+    dv_fixtures::append_dv_delete_commit(dir.path(), data_version, &dv);
+
+    let reloaded = DeltaTableBuilder::from_url(ensure_table_uri(&uri).unwrap())
+        .unwrap()
+        .load()
+        .await
+        .unwrap();
+    let bitmap = read_deletion_vector(&dv, &reloaded).await.unwrap();
+    let decoded: Vec<u64> = bitmap.iter().collect();
+    assert_eq!(decoded, deleted, "decoded inline deletion vector mismatch");
+
+    // Snapshot read confirms the fixture is a genuine DV table that delta-rs
+    // can apply on its own.
+    let datafusion = SessionContext::new();
+    let snapshot = DeltaTableBuilder::from_url(ensure_table_uri(&uri).unwrap())
+        .unwrap()
+        .load()
+        .await
+        .unwrap();
+    register_delta_table_object_stores(&datafusion, &snapshot);
+    let provider = snapshot.table_provider().await.unwrap();
+    let snapshot_batches = datafusion
+        .read_table(provider)
+        .unwrap()
+        .collect()
+        .await
+        .unwrap();
+    let snapshot_rows: usize = snapshot_batches.iter().map(|b| b.num_rows()).sum();
+    assert_eq!(
+        snapshot_rows,
+        n - deleted.len(),
+        "snapshot row count mismatch"
+    );
+}
+
+/// Exercise the absolute-sidecar DV decode path (`storageType = "p"`).
+///
+/// The sidecar lives outside the table directory and `pathOrInlineDv` is a
+/// fully-qualified `file://` URL. This variant is rarely produced by writers
+/// but is part of the spec, so the kernel decode + a delta-rs snapshot read
+/// must agree on the surviving rows.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deletion_vector_absolute_decode_test() {
+    use crate::integrated::delta_table::deletion_vector::read_deletion_vector;
+
+    init_logging();
+
+    let n = 200usize;
+    let data = fixed_delta_data(n);
+    let arrow_schema = Arc::new(ArrowSchema::new(relation_to_arrow_fields(
+        &DeltaTestStruct::schema(),
+        true,
+    )));
+
+    let dir = TempDir::new().unwrap();
+    let sidecar_dir = TempDir::new().unwrap();
+    let uri = dir.path().display().to_string();
+    let table = create_dv_table(&uri, &arrow_schema, &data).await;
+    let data_version = table.version().unwrap();
+
+    let deleted: Vec<u64> = (0..n as u64).filter(|i| i % 5 == 0).collect();
+    let dv = dv_fixtures::write_absolute_sidecar_dv(sidecar_dir.path(), &deleted);
+    dv_fixtures::append_dv_delete_commit(dir.path(), data_version, &dv);
+
+    let reloaded = DeltaTableBuilder::from_url(ensure_table_uri(&uri).unwrap())
+        .unwrap()
+        .load()
+        .await
+        .unwrap();
+    let bitmap = read_deletion_vector(&dv, &reloaded).await.unwrap();
+    let decoded: Vec<u64> = bitmap.iter().collect();
+    assert_eq!(decoded, deleted, "decoded absolute deletion vector mismatch");
+
+    let datafusion = SessionContext::new();
+    let snapshot = DeltaTableBuilder::from_url(ensure_table_uri(&uri).unwrap())
+        .unwrap()
+        .load()
+        .await
+        .unwrap();
+    register_delta_table_object_stores(&datafusion, &snapshot);
+    let provider = snapshot.table_provider().await.unwrap();
+    let snapshot_batches = datafusion
+        .read_table(provider)
+        .unwrap()
+        .collect()
+        .await
+        .unwrap();
+    let snapshot_rows: usize = snapshot_batches.iter().map(|b| b.num_rows()).sum();
+    assert_eq!(
+        snapshot_rows,
+        n - deleted.len(),
+        "snapshot row count mismatch"
+    );
+}
+
+/// End-to-end regression test for the follow path (the bug): the connector must
+/// apply a deletion vector carried by an `Add` action it reads in follow mode.
+///
+/// A brand-new data file is added (in a follow-mode commit) together with a
+/// deletion vector that masks half its rows. Before the fix the connector
+/// ingested every row in the file, ignoring the deletion vector.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn deletion_vector_follow_test() {
+    init_logging();
+
+    let n = 200usize;
+    let data = fixed_delta_data(n);
+    let arrow_schema = Arc::new(ArrowSchema::new(relation_to_arrow_fields(
+        &DeltaTestStruct::schema(),
+        true,
+    )));
+
+    let input_dir = TempDir::new().unwrap();
+    let input_uri = input_dir.path().display().to_string();
+    let output_dir = TempDir::new().unwrap();
+    let output_uri = output_dir.path().display().to_string();
+    let storage_dir = TempDir::new().unwrap();
+
+    // Create the table empty (v0), with deletion vectors enabled.
+    let struct_fields: Vec<StructField> = arrow_schema
+        .fields
+        .iter()
+        .map(|f| {
+            StructField::new(
+                f.name(),
+                DataType::try_from_arrow(f.data_type()).unwrap(),
+                f.is_nullable(),
+            )
+        })
+        .collect();
+    let _ = CreateBuilder::new()
+        .with_location(&input_uri)
+        .with_save_mode(SaveMode::Ignore)
+        .with_columns(struct_fields)
+        .with_configuration([("delta.enableDeletionVectors", Some("true"))])
+        .await
+        .unwrap();
+
+    let mut input_config: HashMap<String, Value> = HashMap::new();
+    input_config.insert("mode".into(), "follow".into());
+
+    let pipeline = {
+        let input_uri = input_uri.clone();
+        let output_uri = output_uri.clone();
+        let input_config = input_config.clone();
+        let storage_path = storage_dir.path().to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            delta_to_delta_pipeline::<DeltaTestStruct>(
+                &input_uri,
+                true,
+                &input_config,
+                &output_uri,
+                &HashMap::new(),
+                1000,
+                100,
+                &storage_path,
+                true,
+            )
+        })
+        .await
+        .unwrap()
+    };
+    pipeline.start();
+    pipeline.start_input_endpoint("test_input1").unwrap();
+
+    let datafusion = SessionContext::new();
+    let mut output_table = Arc::new(
+        DeltaTableBuilder::from_url(ensure_table_uri(&output_uri).unwrap())
+            .unwrap()
+            .load()
+            .await
+            .unwrap(),
+    );
+
+    // Commit v1: add a new data file carrying a deletion vector that masks every
+    // even `bigint`. The follow connector must emit only the surviving rows.
+    let deleted: Vec<u64> = (0..n as u64).filter(|i| i % 2 == 0).collect();
+    let dv = dv_fixtures::write_sidecar_dv(input_dir.path(), &deleted);
+    let (file_name, file_size) =
+        dv_fixtures::write_parquet_file(input_dir.path(), &arrow_schema, &data);
+    dv_fixtures::append_dv_add_commit(input_dir.path(), 0, &file_name, file_size, &dv);
+
+    // `skip_unused_columns` drops the `unused` column, so it comes back as NULL.
+    let survivors: Vec<DeltaTestStruct> = data
+        .iter()
+        .filter(|x| x.bigint % 2 != 0)
+        .cloned()
+        .map(|mut x| {
+            x.unused = None;
+            x
+        })
+        .collect();
+    wait_for_output_records(&mut output_table, &survivors, &datafusion, 60_000, false).await;
+
+    pipeline.stop().unwrap();
+}
