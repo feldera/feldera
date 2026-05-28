@@ -43,7 +43,7 @@ ryu = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 # `serde-with-arbitrary-precision` is needed because we enable `arbitrary_precision` in `serde_json`.
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
-size-of = { workspace = true }
+size-of = { workspace = true, features = ["arcstr"] }
 smallstr = { workspace = true }
 smallvec = { workspace = true }
 thiserror = { workspace = true }
