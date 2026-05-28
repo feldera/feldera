@@ -1,4 +1,4 @@
-use super::OutputEndpointControl;
+use super::{OutputEndpointControl, stats::BufferedInput};
 use crate::{
     Controller, PipelineConfig,
     controller::{ControllerStatusContext, TransactionInfo},
@@ -9,7 +9,9 @@ use crate::{
     transport::set_barrier,
 };
 use anyhow::anyhow;
+use crossbeam::sync::Parker;
 use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
+use feldera_adapterlib::format::BufferSize;
 use feldera_types::{
     config::{InputEndpointConfig, OutputEndpointConfig},
     constants::STATE_FILE,
@@ -458,6 +460,17 @@ fn wait_for_records(controller: &Controller, expect_n: &[usize]) {
 
     // Then verify that the number is as expected.
     assert_eq!(&collect_endpoint_records(controller, n), expect_n);
+}
+
+fn assert_bounded_suspend_steps(controller: &Controller, suspend_request_step: u64) {
+    let suspend_complete_step = controller.status().global_metrics.total_initiated_steps();
+    let suspend_steps = suspend_complete_step.saturating_sub(suspend_request_step);
+
+    assert!(
+        suspend_steps <= 1000,
+        "suspend advanced {suspend_steps} steps while waiting for barriers \
+         ({suspend_request_step}..{suspend_complete_step})"
+    );
 }
 
 /// Runs a basic test of fault tolerance.
@@ -1852,6 +1865,54 @@ fn output_path(storage_dir: &Path, i: usize) -> PathBuf {
     storage_dir.join(format!("output{}.csv", i + 1))
 }
 
+#[test]
+fn barrier_input_batch_wakes_when_endpoint_already_has_buffered_input() {
+    init_test_logger();
+
+    // During suspend, every new batch from a barrier endpoint can be the batch
+    // that clears the barrier.
+    //
+    // https://github.com/feldera/feldera/actions/runs/26535433930/job/78166265316
+    // That test likely failed because the endpoint already had buffered
+    // barrier input, so the old > 0 condition was not enough to wake the
+    // circuit thread.
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    File::create(input_path(&storage_dir, 0)).unwrap();
+
+    let controller = start_controller(&storage_dir, &[0]);
+
+    let endpoint_id = {
+        let input_status = controller.status().input_status();
+        *input_status.keys().next().unwrap()
+    };
+    {
+        let input_status = controller.status().input_status();
+        let endpoint = input_status.get(&endpoint_id).unwrap();
+        endpoint.set_barrier(true);
+        endpoint
+            .metrics
+            .buffered_records
+            .store(1, Ordering::Relaxed);
+    }
+
+    let parker = Parker::new();
+    let unparker = parker.unparker().clone();
+    let buffered_input = controller.status().input_batch_from_endpoint(
+        endpoint_id,
+        BufferSize {
+            records: 1,
+            bytes: 1,
+        },
+        &unparker,
+    );
+
+    controller.stop().unwrap();
+
+    assert_eq!(buffered_input, BufferedInput::Barrier);
+}
+
 fn start_controller(storage_dir: &Path, barriers: &[usize]) -> Controller {
     let n = barriers.len();
     for (i, barrier) in barriers.iter().copied().enumerate() {
@@ -1986,6 +2047,7 @@ fn suspend_barrier() {
     // Suspend.
     let (sender, receiver) = mpsc::channel();
     println!("start suspend");
+    let suspend_request_step = controller.status().global_metrics.total_initiated_steps();
     controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
 
     // Suspend should not succeed, because of the barrier.
@@ -2003,6 +2065,7 @@ fn suspend_barrier() {
         .recv_timeout(Duration::from_millis(10000))
         .unwrap()
         .unwrap();
+    assert_bounded_suspend_steps(&controller, suspend_request_step);
 
     // Stop controller.
     println!("stop controller");
@@ -2125,6 +2188,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
     // barriers, since each input only has 1000 records so far.
     let (sender, receiver) = mpsc::channel();
     println!("start suspend");
+    let suspend_request_step = controller.status().global_metrics.total_initiated_steps();
     controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
 
     // Iterate as long as we shouldn't have reached the barrier, adding records
@@ -2177,6 +2241,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
         .recv_timeout(Duration::from_millis(10000))
         .unwrap()
         .unwrap();
+    assert_bounded_suspend_steps(&controller, suspend_request_step);
 
     // Stop controller.
     println!("stop controller");
