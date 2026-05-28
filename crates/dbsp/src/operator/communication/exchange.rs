@@ -1027,7 +1027,9 @@ where
     T: Clone + Debug + Send + 'static,
 {
     fn name(&self) -> &str {
-        self.receiver_global_node_id.get().unwrap()
+        self.receiver_global_node_id
+            .get()
+            .map_or("Exchange", |node_id| &**node_id)
     }
 
     fn received<'a>(
