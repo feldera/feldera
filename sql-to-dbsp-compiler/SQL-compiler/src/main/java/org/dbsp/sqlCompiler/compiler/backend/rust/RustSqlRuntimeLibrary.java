@@ -67,6 +67,8 @@ public class RustSqlRuntimeLibrary {
         this.universalFunctions.put(DBSPOpcode.AGG_MAX, DBSPOpcode.AGG_MAX.toString());
         this.universalFunctions.put(DBSPOpcode.AGG_MIN1, DBSPOpcode.AGG_MIN1.toString());
         this.universalFunctions.put(DBSPOpcode.AGG_MAX1, DBSPOpcode.AGG_MAX1.toString());
+        this.universalFunctions.put(DBSPOpcode.U64_TO_BINARY, DBSPOpcode.U64_TO_BINARY.toString());
+        this.universalFunctions.put(DBSPOpcode.U128_TO_BINARY, DBSPOpcode.U128_TO_BINARY.toString());
 
         this.arithmeticFunctions.put(DBSPOpcode.ADD, "plus");
         this.arithmeticFunctions.put(DBSPOpcode.SUB, "minus");
@@ -146,14 +148,7 @@ public class RustSqlRuntimeLibrary {
         HashMap<DBSPOpcode, String> map = null;
 
         String separator = "_";
-        if (opcode.isComparison() ||
-            opcode == DBSPOpcode.MAX || opcode == DBSPOpcode.MIN ||
-            opcode == DBSPOpcode.MAX_IGNORE_NULLS || opcode == DBSPOpcode.MIN_IGNORE_NULLS ||
-            opcode == DBSPOpcode.MAX_NULL_WINS ||
-            opcode == DBSPOpcode.AGG_GTE || opcode == DBSPOpcode.AGG_LTE ||
-            opcode == DBSPOpcode.AGG_MIN || opcode == DBSPOpcode.AGG_MAX ||
-            opcode == DBSPOpcode.AGG_MIN1 || opcode == DBSPOpcode.AGG_MAX1 ||
-            opcode == DBSPOpcode.IS_DISTINCT) {
+        if (opcode.isComparison() || this.universalFunctions.containsKey(opcode)) {
             map = this.universalFunctions;
         } else if (ltype.as(DBSPTypeBool.class) != null) {
             map = this.booleanFunctions;

@@ -114,7 +114,7 @@ public class Regression3Tests extends SqlIoTest {
     }
 
     @Test
-    public void issue457a() {
+    public void issue457_bool() {
         String program = """
                 CREATE TABLE T (
                   payment_id INT,
@@ -189,7 +189,7 @@ public class Regression3Tests extends SqlIoTest {
     }
 
     @Test
-    public void issue457b() {
+    public void issue457_interval_short_nullable() {
         String program = """
                 CREATE TABLE T (
                   payment_id INT,
@@ -265,7 +265,7 @@ public class Regression3Tests extends SqlIoTest {
     }
 
     @Test
-    public void issue457c() {
+    public void issue457_interval_long() {
         String program = """
                 CREATE TABLE T (
                   payment_id INT,
@@ -341,7 +341,7 @@ public class Regression3Tests extends SqlIoTest {
     }
 
     @Test
-    public void issue457d() {
+    public void issue457_interval_short() {
         // Test that programs sorting on non-nullable intervals and booleans compile
         String root = """
                 CREATE TABLE T (
@@ -382,5 +382,182 @@ public class Regression3Tests extends SqlIoTest {
                  -Infinity | NULL
                  0         | -Infinity
                  Infinity  | 0""");
+    }
+
+    @Test
+    public void issue457_binary_nullable() {
+        String program = """
+                CREATE TABLE T (
+                  payment_id INT,
+                  customer_id INT,
+                  amount INT,
+                  seq BINARY(1)
+                );
+                
+                CREATE VIEW V AS SELECT
+                  customer_id,
+                  SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous
+                FROM T;""";
+        // Validated on postgres, which is NULLS LAST, so this needs explicit NULLS FIRST;
+        // replacing BINARY(1) with BYTEA
+        String data = """
+                INSERT INTO T VALUES
+                  -- Customer 1: clean increasing
+                   (1, 1, 10, x'01'),
+                   (2, 1, 20, x'02'),
+                   (3, 1, -5, x'03'),
+                   -- Customer 2: out‑of‑order
+                   (4, 2, 7,  x'02'),
+                   (5, 2, 0,  x'01'),
+                   (6, 2, 3,  x'03'),
+                   -- Customer 3: single row partition
+                   (7, 3, 100, x'03'),
+                   -- Customer 4: duplicate values
+                   (8, 4, 1,  x'01'),
+                   (9, 4, 2,  x'01'),
+                   (10,4, 3,  x'02'),
+                   -- Null seq
+                   (11,1, 3, NULL);
+                """;
+        String expected = """
+                 customer_id | previous
+                ------------------------
+                 1 	         | 3
+                 1 	         | 13
+                 1 	         | 33
+                 1 	         | 28
+                 2 	         | 0
+                 2 	         | 7
+                 2 	         | 10
+                 3 	         | 100
+                 4 	         | 3
+                 4 	         | 3
+                 4 	         | 6""";
+
+        var ccs = this.getCCS(program);
+        ccs.stepWeightOne(data, expected);
+
+        var program1 = program.replace("ORDER BY seq", "ORDER BY seq NULLS FIRST");
+        ccs = this.getCCS(program1);
+        ccs.stepWeightOne(data, expected);
+
+        var program2 = program.replace("ORDER BY seq", "ORDER BY seq NULLS LAST");
+        ccs = this.getCCS(program2);
+        String expected2 = """
+                 customer_id | previous
+                ------------------------
+                 1 	         | 10
+                 1 	         | 30
+                 1 	         | 25
+                 1 	         | 28
+                 2 	         | 0
+                 2 	         | 7
+                 2 	         | 10
+                 3 	         | 100
+                 4 	         | 3
+                 4 	         | 3
+                 4 	         | 6""";
+        ccs.stepWeightOne(data, expected2);
+    }
+
+    @Test
+    public void issue457_binary() {
+        // Like the previous, but BINARY not nullable
+        String program = """
+                CREATE TABLE T (
+                  payment_id INT,
+                  customer_id INT,
+                  amount INT,
+                  seq BINARY(1) NOT NULL
+                );
+                
+                CREATE VIEW V AS SELECT
+                  customer_id,
+                  SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous
+                FROM T;""";
+        // Validated on postgres, which is NULLS LAST, so this needs explicit NULLS FIRST;
+        // replacing BINARY(1) with BYTEA
+        String data = """
+                INSERT INTO T VALUES
+                  -- Customer 1: clean increasing
+                   (1, 1, 10, x'01'),
+                   (2, 1, 20, x'02'),
+                   (3, 1, -5, x'03'),
+                   -- Customer 2: out‑of‑order
+                   (4, 2, 7,  x'02'),
+                   (5, 2, 0,  x'01'),
+                   (6, 2, 3,  x'03'),
+                   -- Customer 3: single row partition
+                   (7, 3, 100, x'03'),
+                   -- Customer 4: duplicate values
+                   (8, 4, 1,  x'01'),
+                   (9, 4, 2,  x'01'),
+                   (10,4, 3,  x'02');
+                """;
+        String expected = """
+                 customer_id | previous
+                ------------------------
+                 1 	         | 10
+                 1 	         | 30
+                 1 	         | 25
+                 2 	         | 0
+                 2 	         | 7
+                 2 	         | 10
+                 3 	         | 100
+                 4 	         | 3
+                 4 	         | 3
+                 4 	         | 6""";
+
+        var ccs = this.getCCS(program);
+        ccs.stepWeightOne(data, expected);
+
+        var program1 = program.replace("ORDER BY seq", "ORDER BY seq NULLS FIRST");
+        ccs = this.getCCS(program1);
+        ccs.stepWeightOne(data, expected);
+
+        var program2 = program.replace("ORDER BY seq", "ORDER BY seq NULLS LAST");
+        ccs = this.getCCS(program2);
+        String expected2 = """
+                 customer_id | previous
+                ------------------------
+                 1 	         | 10
+                 1 	         | 30
+                 1 	         | 25
+                 2 	         | 0
+                 2 	         | 7
+                 2 	         | 10
+                 3 	         | 100
+                 4 	         | 3
+                 4 	         | 3
+                 4 	         | 6""";
+        ccs.stepWeightOne(data, expected2);
+    }
+
+    @Test
+    public void issue457_unsupported_binary() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T (
+                  payment_id INT,
+                  customer_id INT,
+                  amount INT,
+                  seq BINARY(16)
+                );
+                
+                CREATE VIEW V AS SELECT
+                  customer_id,
+                  SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous
+                FROM T;""", "Not yet implemented: OVER currently cannot sort on columns with type 'BINARY(16)'");
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T (
+                  payment_id INT,
+                  customer_id INT,
+                  amount INT,
+                  seq VARBINARY
+                );
+                
+                CREATE VIEW V AS SELECT
+                  customer_id,
+                  SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous
+                FROM T;""", "Not yet implemented: OVER currently cannot sort on columns with type 'VARBINARY'");
     }
 }

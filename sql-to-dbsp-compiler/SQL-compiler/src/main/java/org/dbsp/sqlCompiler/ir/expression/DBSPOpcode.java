@@ -34,6 +34,11 @@ public enum DBSPOpcode {
     // Lossless, order-preserving conversion between Bool and INTEGER, used for range aggregates
     BOOL_TO_INTEGER("bool_to_i8", false),
     INTEGER_TO_BOOL("i8_to_bool", false),
+    // Lossless, order-preserving conversion between BINARY(N) and INTEGER, used for range aggregates
+    BINARY_TO_U64("bytes_to_u64", false),
+    U64_TO_BINARY("u64_to_bytes", false), // This is a binary expression
+    BINARY_TO_U128("bytes_to_u128", false),
+    U128_TO_BINARY("u128_to_bytes", false), // This is a binary expression
 
     // Binary operations
     ADD("+", false),
@@ -143,8 +148,8 @@ public enum DBSPOpcode {
                  AGG_MAX1, AGG_MIN1, INDICATOR -> false;
             case NEG, DIV_INTERVAL, DIV_INTERVAL_NULL, MUL_INTERVAL, DECIMAL_TO_INTEGER, INTEGER_TO_DECIMAL,
                  SHORT_INTERVAL_TO_INTEGER, INTEGER_TO_SHORT_INTERVAL, INTEGER_TO_UUID, UUID_TO_INTEGER,
-                 LONG_INTERVAL_TO_INTEGER, INTEGER_TO_LONG_INTERVAL,
-                 BOOL_TO_INTEGER, INTEGER_TO_BOOL, RUST_INDEX, VARIANT_INDEX, MAP_INDEX,
+                 LONG_INTERVAL_TO_INTEGER, INTEGER_TO_LONG_INTERVAL, BINARY_TO_U64, U64_TO_BINARY,
+                 BINARY_TO_U128, U128_TO_BINARY, BOOL_TO_INTEGER, INTEGER_TO_BOOL, RUST_INDEX, VARIANT_INDEX, MAP_INDEX,
                  SQL_INDEX, XOR, BW_OR, MUL_WEIGHT, BW_AND, GTE, LTE, GT, LT, NEQ, EQ, MOD, DIV_NULL, DIV, MUL, SUB,
                  ADD, TYPEDBOX, IS_TRUE, IS_FALSE, NOT, UNARY_PLUS -> true;
             default -> throw new UnimplementedException();

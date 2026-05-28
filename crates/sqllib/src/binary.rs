@@ -574,3 +574,65 @@ pub fn testBinaryToInteger() {
     assert_eq!(0x1234, binary_to_u64(bin.clone()));
     assert_eq!(0x1234, binary_to_u128(bin));
 }
+
+// Used in range aggregates; the compiler guarantees that the ByteArray fits in 64 bits
+#[doc(hidden)]
+pub fn bytes_to_u64_(b: ByteArray) -> u64 {
+    binary_to_u64(b)
+}
+
+some_function1!(bytes_to_u64, ByteArray, u64);
+
+// Used in range aggregates; the compiler guarantees that the ByteArray fits in 128 bits
+#[doc(hidden)]
+pub fn bytes_to_u128_(b: ByteArray) -> u128 {
+    binary_to_u128(b)
+}
+
+some_function1!(bytes_to_u128, ByteArray, u128);
+
+// Used in range aggregates
+#[doc(hidden)]
+pub fn u64_to_bytes__(u: u64, precision: i32) -> ByteArray {
+    ByteArray::with_size_truncate_left(&u.to_be_bytes(), precision, true)
+}
+
+// precision can never be Option<i32>, it's a compile-time constant
+#[doc(hidden)]
+pub fn u64_to_bytes_N_(u: Option<u64>, precision: i32) -> Option<ByteArray> {
+    let u = u?;
+    Some(u64_to_bytes__(u, precision))
+}
+
+#[doc(hidden)]
+pub fn u128_to_bytes__(u: u128, precision: i32) -> ByteArray {
+    ByteArray::with_size_truncate_left(&u.to_be_bytes(), precision, true)
+}
+
+// precision can never be Option<i32>, it's a compile-time constant
+#[doc(hidden)]
+pub fn u128_to_bytes_N_(u: Option<u128>, precision: i32) -> Option<ByteArray> {
+    let u = u?;
+    Some(u128_to_bytes__(u, precision))
+}
+
+#[test]
+pub fn test_binary_to_range_key() {
+    for bin in [ByteArray::new(&[0x12, 0x34]), ByteArray::new(&[0x00, 0x00])] {
+        let u = bytes_to_u64_(bin.clone());
+        let inv = u64_to_bytes__(u, 2);
+        assert_eq!(inv, bin);
+
+        let u = bytes_to_u128_(bin.clone());
+        let inv = u128_to_bytes__(u, 2);
+        assert_eq!(inv, bin);
+
+        let u = bytes_to_u64N(Some(bin.clone()));
+        let inv = u64_to_bytes_N_(u, 2).unwrap();
+        assert_eq!(inv, bin);
+
+        let u = bytes_to_u128N(Some(bin.clone()));
+        let inv = u128_to_bytes_N_(u, 2).unwrap();
+        assert_eq!(inv, bin);
+    }
+}

@@ -91,6 +91,7 @@ pub fn create_integrated_output_endpoint(
     Ok(ep)
 }
 
+#[allow(unused_variables)]
 pub fn create_integrated_input_endpoint(
     endpoint_name: &str,
     config: &ConnectorConfig,

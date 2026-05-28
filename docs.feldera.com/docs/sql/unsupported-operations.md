@@ -22,8 +22,8 @@ See [#3918](https://github.com/feldera/feldera/issues/3918).
 
 ### No `STRING` or `DOUBLE` types in `OVER` ordering
 
-Window functions using `ORDER BY` on `VARCHAR`/`STRING` or
-`DOUBLE`/`FLOAT` columns are not yet supported.
+Window functions using `ORDER BY` on `VARCHAR`/`STRING`,
+`DOUBLE`/`FLOAT` or `VARBINARY` columns are not yet supported.
 See [#457](https://github.com/feldera/feldera/issues/457).
 
 ### `ROWS` frame type not supported
