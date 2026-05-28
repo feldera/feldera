@@ -473,7 +473,9 @@ impl ProgramConfig {
         if has_unstable_feature("runtime_version") {
             rt
         } else if !has_unstable_feature("runtime_version") && !rt.is_platform() {
-            warn!("Runtime version {rt} specified but argument is ignored because the platform does not have the unstable feature `runtime_version` enabled.");
+            warn!(
+                "Runtime version {rt} specified but argument is ignored because the platform does not have the unstable feature `runtime_version` enabled."
+            );
             RuntimeSelector::default()
         } else {
             RuntimeSelector::default()
@@ -511,19 +513,25 @@ pub enum ConnectorGenerationError {
         value: String,
         reason: Box<String>, // Put into a Box because else the error type becomes too large according to clippy
     },
-    #[error("relation '{relation}': expected an input variant but got an output variant for connector '{connector_name}'")]
+    #[error(
+        "relation '{relation}': expected an input variant but got an output variant for connector '{connector_name}'"
+    )]
     ExpectedInputConnector {
         position: SourcePosition,
         relation: String,
         connector_name: String,
     },
-    #[error("relation '{relation}': expected an output variant but got an input variant for connector '{connector_name}'")]
+    #[error(
+        "relation '{relation}': expected an output variant but got an input variant for connector '{connector_name}'"
+    )]
     ExpectedOutputConnector {
         position: SourcePosition,
         relation: String,
         connector_name: String,
     },
-    #[error("relation '{relation}': encountered collision when using {{relation}}.{{connector_name}} as unique name: '{relation}.{connector_name}' is not unique")]
+    #[error(
+        "relation '{relation}': encountered collision when using {{relation}}.{{connector_name}} as unique name: '{relation}.{connector_name}' is not unique"
+    )]
     RelationConnectorNameCollision {
         position: SourcePosition,
         relation: String,
@@ -830,7 +838,7 @@ pub fn generate_pipeline_config(
 
 #[cfg(test)]
 mod tests {
-    use super::{determine_connector_endpoint_names, RuntimeSelector};
+    use super::{RuntimeSelector, determine_connector_endpoint_names};
     use crate::db::types::program::ConnectorGenerationError::RelationConnectorNameCollision;
     use feldera_types::config::{ConnectorConfig, TransportConfig};
     use feldera_types::program_schema::{PropertyValue, SourcePosition};
@@ -873,7 +881,8 @@ mod tests {
             output_buffer_config: Default::default(),
             max_batch_size: Some(0),
             max_worker_batch_size: None,
-            max_queued_records: 0,
+            max_queued_records: Some(0),
+            max_queued_bytes: None,
             paused: false,
             labels: vec![],
             start_after: None,

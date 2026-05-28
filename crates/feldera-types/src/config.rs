@@ -44,9 +44,7 @@ pub use dev_tweaks::DevTweaks;
 const DEFAULT_MAX_PARALLEL_CONNECTOR_INIT: u64 = 10;
 
 /// Default value of `ConnectorConfig::max_queued_records`.
-pub const fn default_max_queued_records() -> u64 {
-    1_000_000
-}
+pub const DEFAULT_MAX_QUEUED_RECORDS: u64 = 1_000_000;
 
 pub const DEFAULT_MAX_WORKER_BATCH_SIZE: u64 = 10_000;
 
@@ -1600,15 +1598,14 @@ pub struct ConnectorConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_worker_batch_size: Option<u64>,
 
-    /// Backpressure threshold.
+    /// Backpressure threshold, in records.
     ///
     /// Maximal number of records queued by the endpoint before the endpoint
     /// is paused by the backpressure mechanism.
     ///
     /// For input endpoints, this setting bounds the number of records that have
     /// been received from the input transport but haven't yet been consumed by
-    /// the circuit since the circuit, since the circuit is still busy processing
-    /// previous inputs.
+    /// the circuit, since the circuit is still busy processing previous inputs.
     ///
     /// For output endpoints, this setting bounds the number of records that have
     /// been produced by the circuit but not yet sent via the output transport endpoint
@@ -1619,8 +1616,28 @@ pub struct ConnectorConfig {
     /// which more data may be queued.
     ///
     /// The default is 1 million.
-    #[serde(default = "default_max_queued_records")]
-    pub max_queued_records: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_queued_records: Option<u64>,
+
+    /// Backpressure threshold, in bytes.
+    ///
+    /// Maximal number of bytes queued by the endpoint before the endpoint
+    /// is paused by the backpressure mechanism.
+    ///
+    /// For input endpoints, this setting bounds the number of bytes that have
+    /// been received from the input transport but haven't yet been consumed by
+    /// the circuit since the circuit, since the circuit is still busy processing
+    /// previous inputs.
+    ///
+    /// This setting is not yet implemented for output endpoints.
+    ///
+    /// Note that this is not a hard bound: there can be a small delay between
+    /// the backpressure mechanism is triggered and the endpoint is paused, during
+    /// which more data may be queued.
+    ///
+    /// When this is unspecified, it defaults to `1000 * max_queued_records`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_queued_bytes: Option<u64>,
 
     /// Create connector in paused state.
     ///
@@ -1656,7 +1673,8 @@ impl ConnectorConfig {
             output_buffer_config: Default::default(),
             max_batch_size: None,
             max_worker_batch_size: None,
-            max_queued_records: default_max_queued_records(),
+            max_queued_records: None,
+            max_queued_bytes: None,
             paused: false,
             labels: Vec::new(),
             start_after: None,
@@ -1669,7 +1687,7 @@ impl ConnectorConfig {
     }
 
     pub fn with_max_queued_records(mut self, max_queued_records: u64) -> Self {
-        self.max_queued_records = max_queued_records;
+        self.max_queued_records = Some(max_queued_records);
         self
     }
 
@@ -1682,6 +1700,19 @@ impl ConnectorConfig {
         a.paused = false;
         b.paused = false;
         a == b
+    }
+
+    /// Returns `max_queued_records` or, if it is not set, the default.
+    pub fn max_queued_records(&self) -> u64 {
+        self.max_queued_records
+            .unwrap_or(DEFAULT_MAX_QUEUED_RECORDS)
+    }
+
+    /// Returns `max_queued_bytes` or, if it is not set, the default based on
+    /// `max_queued_records`.
+    pub fn max_queued_bytes(&self) -> u64 {
+        self.max_queued_bytes
+            .unwrap_or_else(|| self.max_queued_records().saturating_mul(1000))
     }
 }
 

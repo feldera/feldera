@@ -19,6 +19,13 @@ import TabItem from '@theme/TabItem';
         - Calling `/start` on a pipeline that already failed to compile will directly return an error instead of
           the runner later on setting the `deployment_error` during its check whether to proceed to provisioning.
 
+        - New `max_queued_bytes` setting for input connectors.  The default is 1,000 times
+          `max_queued_records`, whether that is explicitly set or the default of 1,000,000.
+          This is a change in behavior, since previously there was no byte limit.  We
+          believe that the new behavior is generally an improvement that will prevent using
+          excessive memory or even running out of memory but, to restore the previous
+          behavior, specify a large number for `max_queued_bytes`.
+
         - Delta Lake output connector:
 
         `log_retention_duration` and

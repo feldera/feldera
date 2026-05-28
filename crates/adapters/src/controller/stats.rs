@@ -1025,8 +1025,18 @@ impl ControllerStatus {
                 } else {
                     BufferedInput::Normal
                 };
-                let threshold = endpoint_stats.config.connector_config.max_queued_records;
-                if old < threshold && old + amt.records as u64 >= threshold {
+                let threshold = BufferSize {
+                    records: endpoint_stats.config.connector_config.max_queued_records() as usize,
+                    bytes: endpoint_stats.config.connector_config.max_queued_bytes() as usize,
+                };
+
+                fn crossed(old: usize, increment: usize, threshold: usize) -> bool {
+                    old < threshold && old + increment >= threshold
+                }
+
+                if crossed(old.records, amt.records, threshold.records)
+                    || crossed(old.bytes, amt.bytes, threshold.bytes)
+                {
                     backpressure_thread_unparker.unpark();
                 }
                 return buffered_input;
@@ -1123,11 +1133,9 @@ impl ControllerStatus {
         circuit_thread_unparker: &Unparker,
     ) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
+            let max = endpoint_stats.config.connector_config.max_queued_records();
             let old = endpoint_stats.buffer_batch(num_records);
-            if old - (num_records as u64)
-                <= endpoint_stats.config.connector_config.max_queued_records
-                && old >= endpoint_stats.config.connector_config.max_queued_records
-            {
+            if old - (num_records as u64) <= max && old >= max {
                 circuit_thread_unparker.unpark();
             }
         };
@@ -1144,7 +1152,7 @@ impl ControllerStatus {
         circuit_thread_unparker: &Unparker,
     ) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
-            let threshold = endpoint_stats.config.connector_config.max_queued_records;
+            let threshold = endpoint_stats.config.connector_config.max_queued_records();
 
             let old = endpoint_stats.output_batch(processed, num_records);
 
@@ -2103,9 +2111,9 @@ impl InputEndpointStatus {
         }
     }
 
-    /// Increment the number of buffered bytes and records; return
-    /// the previous number of buffered records.
-    fn add_buffered(&self, amt: BufferSize) -> u64 {
+    /// Adds `amt` to the number of buffered bytes and records, and returns the
+    /// previous counts.
+    fn add_buffered(&self, amt: BufferSize) -> BufferSize {
         // We are only updating statistics here, so no need to pay for
         // strong consistency.
         self.metrics
@@ -2114,12 +2122,17 @@ impl InputEndpointStatus {
         self.metrics
             .total_records
             .fetch_add(amt.records as u64, Ordering::Relaxed);
-        self.metrics
-            .buffered_bytes
-            .fetch_add(amt.bytes as u64, Ordering::Relaxed);
-        self.metrics
-            .buffered_records
-            .fetch_add(amt.records as u64, Ordering::AcqRel)
+
+        BufferSize {
+            bytes: self
+                .metrics
+                .buffered_bytes
+                .fetch_add(amt.bytes as u64, Ordering::Relaxed) as usize,
+            records: self
+                .metrics
+                .buffered_records
+                .fetch_add(amt.records as u64, Ordering::AcqRel) as usize,
+        }
     }
 
     fn eoi(&self) {
@@ -2182,12 +2195,22 @@ impl InputEndpointStatus {
         self.paused.swap(paused, Ordering::Release)
     }
 
-    /// True if the number of records buffered by the endpoint exceeds
-    /// its `max_queued_records` config parameter.
-    pub fn is_full(&self) -> bool {
+    fn is_full_of_records(&self) -> bool {
         let buffered_records = self.metrics.buffered_records.load(Ordering::Acquire);
-        let max_queued_records = self.config.connector_config.max_queued_records;
+        let max_queued_records = self.config.connector_config.max_queued_records();
         buffered_records >= max_queued_records
+    }
+
+    fn is_full_of_bytes(&self) -> bool {
+        let buffered_bytes = self.metrics.buffered_bytes.load(Ordering::Acquire);
+        let max_queued_bytes = self.config.connector_config.max_queued_bytes();
+        buffered_bytes >= max_queued_bytes
+    }
+
+    /// True if the number of records or bytes buffered by the endpoint exceeds
+    /// the configured maximum.
+    pub fn is_full(&self) -> bool {
+        self.is_full_of_records() || self.is_full_of_bytes()
     }
 
     /// Endpoint pushed additional records to the circuit.
@@ -2595,7 +2618,7 @@ impl OutputEndpointStatus {
 
     pub fn is_buffer_full(&self) -> bool {
         self.metrics.queued_records.load(Ordering::Acquire)
-            >= self.config.connector_config.max_queued_records
+            >= self.config.connector_config.max_queued_records()
     }
 
     pub fn is_busy(&self) -> bool {

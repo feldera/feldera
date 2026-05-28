@@ -3912,3 +3912,291 @@ fn send_snapshot_true_starts_pending_then_delivered() {
     assert!(control.initial_snapshot_sent());
     assert!(!control.is_snapshot_pending());
 }
+
+// Tests for max_queued_records and max_queued_bytes backpressure limits.
+mod queue_limit_tests {
+    use super::*;
+    use crate::ControllerStatus;
+    use crate::controller::stats::InputEndpointStatus;
+    use feldera_types::config::InputEndpointConfig;
+    use std::sync::mpsc;
+    use std::thread;
+    use uuid::Uuid;
+
+    fn make_endpoint(
+        max_queued_records: u64,
+        max_queued_bytes: Option<u64>,
+    ) -> InputEndpointStatus {
+        let mut config = json!({
+            "stream": "test_stream",
+            "transport": {
+                "name": "file_input",
+                "config": { "path": "/dev/null" }
+            },
+            "format": { "name": "csv" },
+            "max_queued_records": max_queued_records,
+        });
+        if let Some(bytes) = max_queued_bytes {
+            config["max_queued_bytes"] = json!(bytes);
+        }
+        let config: InputEndpointConfig = serde_json::from_value(config).unwrap();
+        InputEndpointStatus::new("test_endpoint", config, None, None)
+    }
+
+    fn make_status_with_endpoint(
+        max_queued_records: u64,
+        max_queued_bytes: Option<u64>,
+    ) -> (ControllerStatus, u64) {
+        let pipeline_config = serde_json::from_value(json!({
+            "name": "test",
+            "workers": 1,
+        }))
+        .unwrap();
+        let status = ControllerStatus::new(pipeline_config, 0, None, Uuid::nil());
+        let endpoint = make_endpoint(max_queued_records, max_queued_bytes);
+        let endpoint_id: u64 = 0;
+        status.inputs.write().insert(endpoint_id, endpoint);
+        (status, endpoint_id)
+    }
+
+    // --- ConnectorConfig::max_queued_bytes() ---
+
+    /// When `max_queued_bytes` is unset, it defaults to `max_queued_records * 1000`.
+    #[test]
+    fn max_queued_bytes_defaults_to_1000x_records() {
+        let endpoint = make_endpoint(100, None);
+        assert_eq!(endpoint.config.connector_config.max_queued_bytes(), 100_000);
+    }
+
+    /// When `max_queued_bytes` is explicitly set, that value is used directly.
+    #[test]
+    fn max_queued_bytes_explicit_value() {
+        let endpoint = make_endpoint(100, Some(50_000));
+        assert_eq!(endpoint.config.connector_config.max_queued_bytes(), 50_000);
+    }
+
+    /// Saturation: very large `max_queued_records` must not overflow the default.
+    #[test]
+    fn max_queued_bytes_default_saturates() {
+        let endpoint = make_endpoint(u64::MAX / 500, None);
+        assert_eq!(
+            endpoint.config.connector_config.max_queued_bytes(),
+            u64::MAX
+        );
+    }
+
+    // --- InputEndpointStatus::is_full() for records ---
+
+    /// Below the records threshold the endpoint is not full.
+    #[test]
+    fn is_full_records_below_threshold() {
+        // Use a very high bytes limit so only the records limit matters.
+        let endpoint = make_endpoint(10, Some(u64::MAX));
+        endpoint
+            .metrics
+            .buffered_records
+            .store(9, Ordering::Relaxed);
+        assert!(!endpoint.is_full());
+    }
+
+    /// At exactly the records threshold the endpoint is full.
+    #[test]
+    fn is_full_records_at_threshold() {
+        let endpoint = make_endpoint(10, Some(u64::MAX));
+        endpoint
+            .metrics
+            .buffered_records
+            .store(10, Ordering::Relaxed);
+        assert!(endpoint.is_full());
+    }
+
+    /// Above the records threshold the endpoint remains full.
+    #[test]
+    fn is_full_records_above_threshold() {
+        let endpoint = make_endpoint(10, Some(u64::MAX));
+        endpoint
+            .metrics
+            .buffered_records
+            .store(11, Ordering::Relaxed);
+        assert!(endpoint.is_full());
+    }
+
+    // --- InputEndpointStatus::is_full() for bytes ---
+
+    /// Below the bytes threshold the endpoint is not full.
+    #[test]
+    fn is_full_bytes_below_threshold() {
+        // Use a very high records limit so only the bytes limit matters.
+        let endpoint = make_endpoint(u64::MAX, Some(500));
+        endpoint
+            .metrics
+            .buffered_bytes
+            .store(499, Ordering::Relaxed);
+        assert!(!endpoint.is_full());
+    }
+
+    /// At exactly the bytes threshold the endpoint is full.
+    #[test]
+    fn is_full_bytes_at_threshold() {
+        let endpoint = make_endpoint(u64::MAX, Some(500));
+        endpoint
+            .metrics
+            .buffered_bytes
+            .store(500, Ordering::Relaxed);
+        assert!(endpoint.is_full());
+    }
+
+    /// Exceeding the bytes limit makes the endpoint full even when the
+    /// records count is far below `max_queued_records`.
+    #[test]
+    fn is_full_bytes_triggers_independently_of_records() {
+        let endpoint = make_endpoint(1_000_000, Some(100));
+        endpoint
+            .metrics
+            .buffered_records
+            .store(1, Ordering::Relaxed);
+        endpoint
+            .metrics
+            .buffered_bytes
+            .store(100, Ordering::Relaxed);
+        assert!(endpoint.is_full());
+    }
+
+    /// With no explicit `max_queued_bytes`, the default byte threshold
+    /// (`max_queued_records * 1000`) is used for the `is_full` check.
+    #[test]
+    fn is_full_uses_default_bytes_threshold() {
+        // max_queued_records=10 → default byte threshold = 10_000.
+        let endpoint = make_endpoint(10, None);
+        endpoint
+            .metrics
+            .buffered_records
+            .store(1, Ordering::Relaxed);
+        endpoint
+            .metrics
+            .buffered_bytes
+            .store(9_999, Ordering::Relaxed);
+        assert!(!endpoint.is_full());
+
+        endpoint
+            .metrics
+            .buffered_bytes
+            .store(10_000, Ordering::Relaxed);
+        assert!(endpoint.is_full());
+    }
+
+    // --- ControllerStatus::input_batch_from_endpoint backpressure signaling ---
+
+    /// The backpressure thread is unparked when a batch causes the buffered
+    /// record count to cross `max_queued_records`.
+    #[test]
+    fn backpressure_unparked_when_records_threshold_crossed() {
+        let (status, endpoint_id) = make_status_with_endpoint(10, Some(u64::MAX));
+
+        let parker = Parker::new();
+        let unparker = parker.unparker().clone();
+        let (tx, rx) = mpsc::channel::<()>();
+
+        // Park a thread so we can observe the unpark signal.
+        thread::spawn(move || {
+            parker.park();
+            let _ = tx.send(());
+        });
+
+        // Add exactly the threshold number of records in one batch.
+        status.input_batch_from_endpoint(
+            endpoint_id,
+            BufferSize {
+                records: 10,
+                bytes: 1,
+            },
+            &unparker,
+        );
+
+        assert!(
+            rx.recv_timeout(Duration::from_millis(100)).is_ok(),
+            "backpressure thread was not unparked when records threshold was crossed"
+        );
+    }
+
+    /// The backpressure thread is unparked when a batch causes the buffered
+    /// byte count to cross `max_queued_bytes`, even when the records count
+    /// remains well below `max_queued_records`.
+    #[test]
+    fn backpressure_unparked_when_bytes_threshold_crossed() {
+        let (status, endpoint_id) = make_status_with_endpoint(1_000_000, Some(500));
+
+        let parker = Parker::new();
+        let unparker = parker.unparker().clone();
+        let (tx, rx) = mpsc::channel::<()>();
+
+        thread::spawn(move || {
+            parker.park();
+            let _ = tx.send(());
+        });
+
+        // One record + exactly the byte threshold; records stays far below limit.
+        status.input_batch_from_endpoint(
+            endpoint_id,
+            BufferSize {
+                records: 1,
+                bytes: 500,
+            },
+            &unparker,
+        );
+
+        assert!(
+            rx.recv_timeout(Duration::from_millis(100)).is_ok(),
+            "backpressure thread was not unparked when bytes threshold was crossed"
+        );
+    }
+
+    /// The backpressure thread is unparked only when a threshold is *crossed*,
+    /// not on every subsequent batch once already above the threshold.
+    #[test]
+    fn backpressure_unparked_only_on_threshold_crossing() {
+        let (status, endpoint_id) = make_status_with_endpoint(10, Some(u64::MAX));
+
+        // First batch: crosses the records threshold → unpark.
+        let parker1 = Parker::new();
+        let unparker1 = parker1.unparker().clone();
+        let (tx1, rx1) = mpsc::channel::<()>();
+        thread::spawn(move || {
+            parker1.park();
+            let _ = tx1.send(());
+        });
+        status.input_batch_from_endpoint(
+            endpoint_id,
+            BufferSize {
+                records: 10,
+                bytes: 0,
+            },
+            &unparker1,
+        );
+        assert!(
+            rx1.recv_timeout(Duration::from_millis(100)).is_ok(),
+            "first batch crossing threshold should unpark"
+        );
+
+        // Second batch: already above threshold, no new crossing → no unpark.
+        let parker2 = Parker::new();
+        let unparker2 = parker2.unparker().clone();
+        let (tx2, rx2) = mpsc::channel::<()>();
+        thread::spawn(move || {
+            parker2.park();
+            let _ = tx2.send(());
+        });
+        status.input_batch_from_endpoint(
+            endpoint_id,
+            BufferSize {
+                records: 5,
+                bytes: 0,
+            },
+            &unparker2,
+        );
+        assert!(
+            rx2.recv_timeout(Duration::from_millis(50)).is_err(),
+            "second batch above threshold should not unpark again"
+        );
+    }
+}
