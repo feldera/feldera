@@ -27,13 +27,11 @@ This section breaks down pipelines' memory usage in more detail.
   the circuit.
 
   The maximum queue length is controlled by the per-connector
-  [`max_queued_records`] property.  This should be large enough to
-  hide the latency of communication, but small enough to avoid wasting
-  memory.  The default of 1,000,000 limits the memory used by a
-  connector to 1 GB for input records that average 1 kB in size.  This
-  is ordinarily a good compromise, but it can be too high if records
-  are very large or if there are many input connectors.  In those
-  cases, reduce the values.
+  [`max_queued_records`] and [`max_queued_bytes`] properties.  These
+  should be large enough to hide the latency of communication, but
+  small enough to avoid wasting memory.  The defaults of 1,000,000
+  records and 1,000,000,000 bytes limit the memory used by a connector
+  to 1 GB.
 
   The web console shows the total number of records buffered across
   all connectors, which is also exposed as the
@@ -50,6 +48,7 @@ This section breaks down pipelines' memory usage in more detail.
   [`input_connector_extra_memory_bytes`].
 
   [`max_queued_records`]: /connectors#max_queued_records
+  [`max_queued_bytes`]: /connectors#max_queued_bytes
   [Kafka input connector]: /connectors/sources/kafka.md
   [`records_input_buffered`]: metrics.md#records_input_buffered
   [`records_input_buffered_bytes`]: metrics.md#records_input_buffered_bytes
@@ -64,6 +63,8 @@ This section breaks down pipelines' memory usage in more detail.
   number of records buffered.  This should be large enough to avoid
   stalling the pipeline.  The value applies to output records whether
   in memory or on storage.  The default is 1,000,000.
+
+  [`max_queued_bytes`] is not yet implemented for output connectors.
 
   The number of batches of buffered output records is exposed as
   [`output_buffered_batches`], but since each batch contains a
@@ -157,7 +158,7 @@ This section breaks down pipelines' memory usage in more detail.
 
 | Component | Description | Metrics | Control knobs |
 | --- | --- | --- | --- |
-| Input buffering | Records ingested by input connectors but not yet processed by the circuit. | [`records_input_buffered`], [`records_input_buffered_bytes`], [`input_connector_buffered_records`], [`input_connector_buffered_records_bytes`], [`input_connector_extra_memory_bytes`] | Connector [`max_queued_records`] |
+| Input buffering | Records ingested by input connectors but not yet processed by the circuit. | [`records_input_buffered`], [`records_input_buffered_bytes`], [`input_connector_buffered_records`], [`input_connector_buffered_records_bytes`], [`input_connector_extra_memory_bytes`] | Connector [`max_queued_records`], [`max_queued_bytes`] |
 | Output buffering | Records produced by the circuit but not yet consumed by output connectors; can be buffered in memory or storage. | [`output_buffered_batches`], [`output_connector_buffered_records`] | Connector [`max_queued_records`] |
 | Index batches in memory | Index batches kept in memory before background merges and eventual flush to storage. |  | Runtime config `storage.min_storage_bytes`, [`max_rss_mb`](#max_rss) |
 | Storage cache | In-memory cache of index batches stored on disk; decouples working memory from total state size. | [`storage_cache_usage_bytes`], [`storage_cache_usage_limit_bytes_total`] | Runtime config `storage.cache_mib` |

@@ -30,7 +30,7 @@ create table VENDOR (
 create view VENDOR_VIEW
 WITH (
     'connectors' = '[{
-        "max_queued_records": 1000,
+        "max_queued_bytes": 1000000,
         "format": {
             "name": "json",
             "config": {
@@ -106,15 +106,27 @@ The following attributes are common to all connectors:
   of the specified labels have finished ingesting data.  This property is used in conjunction with the `labels` property
   to implement [automatic connector orchestration](/connectors/orchestration#automatic-connector-orchestration).
 
-* <a name="max_queued_records">`max_queued_records`</a> - The
-  approximate maximum number of records to keep in memory.  For an
-  input connector, this is the maximum number that the endpoint will
-  read into memory, before the endpoint pauses further reading until
-  the pipeline has consumed some of the backlog.  For an output
-  connector, this is the maximum number that the endpoint will hold in
-  memory waiting for the output endpoint to send them, before the
-  circuit pauses execution until the backlog subsides.  By default,
-  this is 1,000,000.
+* <a name="max_queued_records">`max_queued_records`</a> and <a
+  name="max_queued_bytes">`max_queued_bytes`</a> - The approximate
+  maximum number of records or bytes to keep in memory.
+
+  For an input connector, these are maximum amounts that the endpoint
+  will read into memory, before the endpoint pauses further reading
+  until the pipeline has consumed some of the backlog.  We recommend
+  setting `max_queued_bytes` rather than `max_queued_records` to limit
+  memory consumption, since records can be any size.
+
+  For an output connector, `max_queued_records` is the maximum number
+  that the endpoint will hold in memory waiting for the output
+  endpoint to send them, before the circuit pauses execution until the
+  backlog subsides.  Output connectors do not yet honor `max_queued_bytes`.
+
+  These values are approximate: the pipeline pauses input or execution
+  soon after they are exceeded, but not always instantly.
+
+  By default, `max_queued_records` is 1,000,000.  If
+  `max_queued_bytes` is unspecified, then it defaults to `1000 *
+  max_queued_records`.
 
 * <a name="max_batch_size">`max_batch_size`</a> - Maximum number of records from this connector to process in a single batch.
 
