@@ -1965,7 +1965,7 @@ pub(crate) mod tests {
             if Runtime::worker_index() == 0 {
                 let runtime = Runtime::runtime().unwrap();
                 let panic_tx = panic_tx.clone();
-                runtime.tokio_merger_runtime().spawn(async move {
+                runtime.tokio_merger_runtime().unwrap().spawn(async move {
                     TOKIO_WORKER_INDEX
                         .scope(0, async move {
                             let _ = std::panic::catch_unwind(|| {

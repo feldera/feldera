@@ -1316,16 +1316,19 @@ impl Runtime {
         self.inner().panicked.store(true, Ordering::Release);
     }
 
-    /// Tokio merger runtime associated with this DBSP runtime.
-    pub(crate) fn tokio_merger_runtime(&self) -> tokio::runtime::Handle {
+    /// Handle to the tokio merger runtime associated with this DBSP runtime.
+    ///
+    /// Returns `None` if the runtime has already been torn down. Callers may
+    /// race `RuntimeHandle::join`, which takes the runtime out of its slot
+    /// before dropping it; an in-flight merger task that reaches this accessor
+    /// after the take observes `None` and should bail out of its work.
+    pub(crate) fn tokio_merger_runtime(&self) -> Option<tokio::runtime::Handle> {
         self.inner()
             .tokio_merger_runtime
             .lock()
             .unwrap()
             .as_ref()
-            .expect("tokio merger runtime has been shut down")
-            .handle()
-            .clone()
+            .map(|rt| rt.handle().clone())
     }
 
     /// Takes and returns the TCP listener socket configured via

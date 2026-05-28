@@ -82,6 +82,7 @@ use tokio::{
     sync::{Notify, futures::OwnedNotified},
     task::yield_now,
 };
+use tracing::trace;
 mod index_set;
 mod list_merger;
 mod push_merger;
@@ -1115,7 +1116,15 @@ where
 
     fn run(self: Arc<Self>, level: usize) {
         let local_worker_offset = self.worker_index - self.runtime.layout().local_workers().start;
-        self.runtime.tokio_merger_runtime().spawn(async move {
+        // The merger runtime may have been torn down already if a concurrent
+        // `RuntimeHandle::join` reached the take of its slot first. In that case
+        // there is no work to do: workers exiting will set `request_exit` and
+        // any new spawn would just observe it and quit.
+        let Some(handle) = self.runtime.tokio_merger_runtime() else {
+            trace!(level, "merger spawn skipped: runtime torn down");
+            return;
+        };
+        handle.spawn(async move {
             let buffer_cache = self
                 .runtime
                 .get_buffer_cache(local_worker_offset, ThreadType::Background);
