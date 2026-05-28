@@ -41,7 +41,7 @@ Stream incremental updates (default):
 
 ```bash
 curl -i -X 'POST' \
-  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/egress/average_price?query=table\&mode=watch\&format=json
+  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/egress/average_price?format=json
 ```
 
 Receive a full snapshot followed by incremental updates:
