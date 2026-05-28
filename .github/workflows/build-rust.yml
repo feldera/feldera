@@ -15,6 +15,10 @@ env:
   SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
   AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
   AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
+  # Cap cargo parallelism at the k8s runner core budget so arm64 pods don't
+  # OOM from too many parallel linkers. Override via the CI_RUNNER_CORES repo
+  # variable; the fallback matches the current 20-core pod.
+  CARGO_BUILD_JOBS: ${{ vars.CI_RUNNER_CORES || 20 }}
 
 jobs:
   build-rust:
@@ -54,18 +58,15 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-${{ matrix.target }}-
 
-      # Thanks to rust cargo non-sense it's too hard to split this into test job
-      #
-      # limiting jobs with --test-threads 18: doc test call the linker for every test, on arm machines
-      # this can lead up to 128 parallel linkers being used OOM'ing the pod
-      # https://github.com/rust-lang/cargo/issues/10702
+      # Doc tests invoke the linker per test; cap concurrency at the runner
+      # core budget so arm64 pods don't OOM. See rust-lang/cargo#10702.
       - name: Run Rust doc tests
         if: matrix.arch == 'x86_64'
         run: |
           # Don't build the webconsole again for rust tests
           export WEBCONSOLE_BUILD_DIR="$(mktemp -d)"
           touch $WEBCONSOLE_BUILD_DIR/index.html
-          cargo test --locked --doc --workspace -- --test-threads 18
+          cargo test --locked --doc --workspace -- --test-threads ${{ vars.CI_RUNNER_CORES || 20 }}
 
       - name: Build Rust binaries
         run: |
