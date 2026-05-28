@@ -1016,7 +1016,11 @@ impl ControllerStatus {
             let inputs = self.input_status();
             if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
                 let old = endpoint_stats.add_buffered(amt);
-                let buffered_input = if old == 0 && endpoint_stats.is_barrier() {
+                // Barrier endpoints must wake the circuit thread even if they
+                // already had buffered input. Otherwise the generic wake rules
+                // can ignore an old > 0 batch, leaving a suspend request parked
+                // even though this batch may make the endpoint checkpointable.
+                let buffered_input = if endpoint_stats.is_barrier() {
                     BufferedInput::Barrier
                 } else {
                     BufferedInput::Normal

@@ -2975,6 +2975,7 @@ impl CircuitThread {
                 self.controller.status.bootstrap_in_progress(),
                 self.checkpoint_requested(),
                 self.sync_checkpoint_requested(),
+                self.next_step_inputs(coordination_request.as_ref()),
                 coordination_request,
                 self.step,
             ) {
@@ -3525,6 +3526,27 @@ impl CircuitThread {
         }
     }
 
+    fn next_step_inputs(&self, coordination_request: Option<&StepRequest>) -> StepInputs {
+        if let Some(coordination_request) = coordination_request {
+            coordination_request.inputs
+        } else if self.checkpoint_requested()
+            && self.ft.is_none()
+            && (self
+                .checkpoint_requests
+                .iter()
+                .any(|x| matches!(x, CheckpointRequest::SuspendCommand(_)))
+                || self.running_checkpoint.is_none())
+            && self.controller.get_transaction_state() == TransactionState::None
+        {
+            tracing::debug!(
+                "checkpoint requested: only CheckpointBarrier inputs will be processed"
+            );
+            StepInputs::CheckpointBarriers
+        } else {
+            StepInputs::All
+        }
+    }
+
     /// Requests all of the input adapters to flush their input to the circuit,
     /// and waits for them to finish doing it.
     ///
@@ -3606,24 +3628,7 @@ impl CircuitThread {
         // in the future is to remove the notion of barriers altogether, making input
         // connectors always checkpointable.
         let coordination_request = self.controller.coordination_request.lock().unwrap().clone();
-        let inputs = if self.checkpoint_requested()
-            && self.ft.is_none()
-            && (self
-                .checkpoint_requests
-                .iter()
-                .any(|x| matches!(x, CheckpointRequest::SuspendCommand(_)))
-                || self.running_checkpoint.is_none())
-            && self.controller.get_transaction_state() == TransactionState::None
-        {
-            tracing::debug!(
-                "checkpoint requested: only CheckpointBarrier inputs will be processed"
-            );
-            StepInputs::CheckpointBarriers
-        } else if let Some(coordination_request) = &coordination_request {
-            coordination_request.inputs
-        } else {
-            StepInputs::All
-        };
+        let inputs = self.next_step_inputs(coordination_request.as_ref());
 
         // Collect the ids of the endpoints that we'll flush to the circuit.
         //
@@ -4390,6 +4395,7 @@ impl StepTrigger {
         bootstrapping: bool,
         checkpoint_requested: bool,
         sync_checkpoint_requested: bool,
+        step_inputs: StepInputs,
         coordination_request: Option<StepRequest>,
         step: Step,
     ) -> Action {
@@ -4458,21 +4464,14 @@ impl StepTrigger {
             // deliberately ignored; counting them would trigger empty steps
             // because input_step() will not consume them.
             //
-            // If we're running under a coordinator, then we only consider input
-            // endpoints that the coordinator told us to.
-            let inputs = if let Some(coordination_request) = &coordination_request {
-                coordination_request.inputs
-            } else if checkpoint_requested {
-                StepInputs::CheckpointBarriers
-            } else {
-                StepInputs::All
-            };
+            // `step_inputs` matches the input selection that input_step() will
+            // use if this trigger decides to run a step.
             let buffered_records = self
                 .controller
                 .status
                 .input_status()
                 .values()
-                .filter(|status| match inputs {
+                .filter(|status| match step_inputs {
                     StepInputs::All => true,
                     StepInputs::CheckpointBarriers => status.is_barrier(),
                     StepInputs::None => false,
