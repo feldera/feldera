@@ -2004,6 +2004,75 @@ pub(crate) mod tests {
         }
     }
 
+    /// Regression test for the deadlock in `RuntimeHandle::join` (commit 1 of
+    /// PR #6331) where the `MutexGuard` from `tokio_merger_runtime.lock()` was
+    /// held across the `drop` of the runtime, and for the panic on
+    /// `.expect("tokio merger runtime has been shut down")` (commit 2 of the
+    /// same PR) that the early-return in `MergeJob::run` replaced.
+    ///
+    /// Spawns a tokio merger task that hammers `Runtime::tokio_merger_runtime`
+    /// in a tight loop, then drops the `DBSPHandle` on a side thread and
+    /// asserts that:
+    /// - the drop completes within a timeout (regressing commit 1 would deadlock
+    ///   the blocking pool against the held mutex), and
+    /// - the task exits cleanly via the `None` arm (regressing commit 2 would
+    ///   panic on `.expect()` and the clean-exit signal would never arrive).
+    #[test]
+    fn test_drop_does_not_deadlock_with_active_merger_lookup() {
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (task_done_tx, task_done_rx) = std::sync::mpsc::channel();
+        let (handle, _) = Runtime::init_circuit(1, move |circuit| {
+            let (_stream, _input_handle) = circuit.add_input_map::<u64, u64, i64, _>(|v, u| {
+                *v = ((*v as i64) + *u) as u64;
+            });
+            if Runtime::worker_index() == 0 {
+                let runtime = Runtime::runtime().unwrap();
+                let ready_tx = ready_tx.clone();
+                let task_done_tx = task_done_tx.clone();
+                runtime.tokio_merger_runtime().unwrap().spawn(async move {
+                    TOKIO_WORKER_INDEX
+                        .scope(0, async move {
+                            let _ = ready_tx.send(());
+                            // Hammer the accessor. Each batch of sync calls
+                            // maximizes the chance of landing inside `lock()`
+                            // when `RuntimeHandle::join` would (with the bug)
+                            // hold the mutex across the runtime drop. Exits
+                            // when the accessor returns `None` after `take()`.
+                            'outer: loop {
+                                for _ in 0..1000 {
+                                    if runtime.tokio_merger_runtime().is_none() {
+                                        break 'outer;
+                                    }
+                                }
+                                tokio::task::yield_now().await;
+                            }
+                            let _ = task_done_tx.send(());
+                        })
+                        .await;
+                });
+            }
+            Ok(())
+        })
+        .unwrap();
+
+        ready_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("merger task did not start");
+
+        let (drop_done_tx, drop_done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            drop(handle);
+            let _ = drop_done_tx.send(());
+        });
+
+        drop_done_rx
+            .recv_timeout(Duration::from_secs(30))
+            .expect("DBSPHandle::drop deadlocked");
+        task_done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("merger task did not exit cleanly via the None arm");
+    }
+
     // Kill the runtime.
     #[test]
     fn test_kill1() {
