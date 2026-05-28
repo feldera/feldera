@@ -2,6 +2,7 @@ name: Test Java Sources
 
 on:
   workflow_call:
+  workflow_dispatch:
 
 env:
   RUSTC_WRAPPER: sccache
