@@ -620,7 +620,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
         // Assume type is not monotone
         IMaybeMonotoneType resultType = NonMonotoneType.nonMonotone(expression.type);
-        if ((expression.opcode == DBSPOpcode.ADD) && lm && rm) {
+        if ((expression.opcode == DBSPOpcode.ADD ||
+                expression.opcode == DBSPOpcode.U64_TO_BINARY ||
+                expression.opcode == DBSPOpcode.U128_TO_BINARY) && lm && rm) {
             // The addition of two monotone expressions is monotone
             resultType = new MonotoneType(expression.type);
             reduced = expression.replaceSources(
@@ -746,7 +748,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             DBSPOpcode.SHORT_INTERVAL_TO_INTEGER, DBSPOpcode.INTEGER_TO_SHORT_INTERVAL,
             DBSPOpcode.LONG_INTERVAL_TO_INTEGER, DBSPOpcode.INTEGER_TO_LONG_INTERVAL,
             DBSPOpcode.UUID_TO_INTEGER, DBSPOpcode.INTEGER_TO_UUID,
-            DBSPOpcode.BOOL_TO_INTEGER, DBSPOpcode.INTEGER_TO_BOOL
+            DBSPOpcode.BOOL_TO_INTEGER, DBSPOpcode.INTEGER_TO_BOOL,
+            DBSPOpcode.BINARY_TO_U64, DBSPOpcode.BINARY_TO_U128
     );
 
     @Override

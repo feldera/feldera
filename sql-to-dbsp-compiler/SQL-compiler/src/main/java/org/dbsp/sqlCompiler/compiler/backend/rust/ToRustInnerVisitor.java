@@ -1906,6 +1906,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 expression.opcode == DBSPOpcode.LONG_INTERVAL_TO_INTEGER ||
                 expression.opcode == DBSPOpcode.INTEGER_TO_UUID ||
                 expression.opcode == DBSPOpcode.UUID_TO_INTEGER ||
+                expression.opcode == DBSPOpcode.BINARY_TO_U128 ||
+                expression.opcode == DBSPOpcode.BINARY_TO_U64 ||
                 expression.opcode == DBSPOpcode.BOOL_TO_INTEGER ||
                 expression.opcode == DBSPOpcode.INTEGER_TO_BOOL) {
             this.builder.append(expression.opcode.toString())

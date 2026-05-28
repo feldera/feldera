@@ -85,6 +85,8 @@ public final class DBSPUnaryExpression extends DBSPExpression {
                 this.opcode == DBSPOpcode.REINTERPRET ||
                 this.opcode == DBSPOpcode.INTEGER_TO_UUID ||
                 this.opcode == DBSPOpcode.UUID_TO_INTEGER ||
+                this.opcode == DBSPOpcode.BINARY_TO_U64 ||
+                this.opcode == DBSPOpcode.BINARY_TO_U128 ||
                 this.opcode == DBSPOpcode.INTEGER_TO_BOOL ||
                 this.opcode == DBSPOpcode.BOOL_TO_INTEGER) {
             return builder.append(this.opcode.toString())
