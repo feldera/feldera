@@ -46,6 +46,10 @@ class DeltaTestLocation:
     connector_config: dict[str, object]
     root_path: str
     local_dir: pathlib.Path | None = None
+    # True when ``stable_subpath`` was used at construction time. ``cleanup()``
+    # honors this by leaving the directory in place so the next run reuses the
+    # cached fixture instead of paying to rebuild it.
+    stable: bool = False
 
     @classmethod
     def create(
@@ -60,18 +64,22 @@ class DeltaTestLocation:
         :param mode: Value of the connector's ``mode`` field. Output
             connectors use ``"truncate"`` (the default); input connectors
             should pass ``"snapshot"``.
-        :param stable_subpath: When set, locates the table at a fixed
-            path so cached data persists across test runs. When unset,
-            a fresh random subpath is used (the original behavior). Use
-            a stable path only when the table contents are deterministic
-            and idempotent across runs.
+        :param stable_subpath: When set, locates the table at a fixed,
+            shared path (``_fixtures/<stable_subpath>``) that is *not*
+            namespaced by the pipeline name or commit SHA, so a fixture
+            built once is reused by every later run and every commit.
+            When unset, a fresh random subpath under ``pipeline_name`` is
+            used (the original behavior). Use a stable path only for
+            fixtures whose contents are deterministic across runs.
         """
 
         if runs_in_ci():
             access_key = required_env("CI_K8S_MINIO_ACCESS_KEY_ID")
             secret_key = required_env("CI_K8S_MINIO_SECRET_ACCESS_KEY")
-            tail = stable_subpath if stable_subpath is not None else uuid.uuid4().hex
-            prefix = f"{pipeline_name}/{tail}"
+            if stable_subpath is not None:
+                prefix = f"_fixtures/{stable_subpath}"
+            else:
+                prefix = f"{pipeline_name}/{uuid.uuid4().hex}"
             root_path = f"{MINIO_BUCKET}/{prefix}"
             minio_endpoint = MINIO_ENDPOINT.rstrip("/")
             parsed_endpoint = urlparse(minio_endpoint)
@@ -96,10 +104,11 @@ class DeltaTestLocation:
                     "aws_allow_http": str(parsed_endpoint.scheme == "http").lower(),
                 },
                 root_path=root_path,
+                stable=stable_subpath is not None,
             )
 
         if stable_subpath is not None:
-            local_dir = pathlib.Path("/tmp") / f"{pipeline_name}_{stable_subpath}"
+            local_dir = pathlib.Path("/tmp/feldera_fixtures") / stable_subpath
             local_dir.mkdir(parents=True, exist_ok=True)
         else:
             local_dir = pathlib.Path(
@@ -113,6 +122,7 @@ class DeltaTestLocation:
             },
             root_path=str(local_dir),
             local_dir=local_dir,
+            stable=stable_subpath is not None,
         )
 
     def delta_storage_options(self) -> dict[str, str]:
@@ -241,10 +251,17 @@ class DeltaTestLocation:
     def cleanup(self) -> None:
         """Remove the local temp directory, if any.
 
-        No-op on the CI/MinIO path: the bucket is ephemeral and the uuid
-        prefix prevents collisions, so leaked keys are acceptable.
+        No-op when ``stable_subpath`` was used at construction time:
+        the whole point of a stable path is to cache contents across
+        runs, so deleting it would defeat the cache. Also a no-op on
+        the CI/MinIO path: there is no local directory to remove, so any
+        objects this run wrote to the bucket are simply left in place.
+        The shared MinIO bucket is long-lived and these tests never delete
+        from it, so those objects accumulate; non-stable runs each use a
+        unique uuid prefix so they never collide, and the leftover volume
+        for this internal CI bucket is accepted rather than swept here.
         """
-        if self.local_dir is not None:
+        if self.local_dir is not None and not self.stable:
             shutil.rmtree(self.local_dir, ignore_errors=True)
             self.local_dir = None
 

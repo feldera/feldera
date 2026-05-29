@@ -227,6 +227,11 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
+          # MinIO test-bucket credentials, surfaced under the standard env
+          # names the Delta tests read (see python/tests/utils.py). These are
+          # the only MinIO secrets available to the OSS platform job.
+          CI_K8S_MINIO_ACCESS_KEY_ID: ${{ secrets.CI_K8S_MINIO_TEST_BUCKET_ACCESS_KEY_ID }}
+          CI_K8S_MINIO_SECRET_ACCESS_KEY: ${{ secrets.CI_K8S_MINIO_TEST_BUCKET_SECRET_ACCESS_KEY }}
 
       - name: Download fda binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
