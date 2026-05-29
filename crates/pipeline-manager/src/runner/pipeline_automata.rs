@@ -1777,11 +1777,22 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Action {
         if let Err(e) = self.pipeline_handle.stop(&pipeline.runtime_config).await {
+            let message = format!("Pipeline could not be stopped (will retry): {e}");
             error!(
                 pipeline_id = %pipeline.id,
                 pipeline = %pipeline.name,
-                "Pipeline could not be stopped (will retry): {e}"
+                message
             );
+            self.logs_sender
+                .send(LogMessage::new_from_control_plane(
+                    module_path!(),
+                    "runner",
+                    pipeline.name.clone(),
+                    pipeline.id.to_string(),
+                    Level::ERROR,
+                    &message,
+                ))
+                .await;
             let latest_details = json!(format!("Unable to stop (will retry) due to: {e}"));
             if (Some(&latest_details) != self.prev_resources_status_details.as_ref()
                 && self
