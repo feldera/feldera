@@ -45,28 +45,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      # Rotate the Rust cache once per calendar month; bucket lifecycle on
-      # gha-cache reclaims old bytes.
-      - name: Compute monthly cache prefix
-        id: cache-month
-        run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Rust dependencies and target
+      - name: Cache Cargo registry
         uses: ./.github/actions/feldera-minio-cache
         with:
-          # registry/src is excluded — cargo regenerates it from registry/cache
-          # archives. temp and multi are excluded from the workspace per
-          # Cargo.toml, so their target/ dirs need explicit caching.
+          # Only the crate downloads, NOT target/ (see test-java.yml for why).
+          # registry/src is excluded, cargo regenerates it from registry/cache.
           path: |
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
             ~/.cargo/git/db
-            target
-            sql-to-dbsp-compiler/temp/target
-            sql-to-dbsp-compiler/multi/target
-          key: test-java-nightly-cargo-${{ steps.cache-month.outputs.month }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
+          key: test-java-nightly-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            test-java-nightly-cargo-${{ steps.cache-month.outputs.month }}-${{ runner.os }}-${{ runner.arch }}-
+            test-java-nightly-cargo-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Cache JVM build dependencies
         uses: ./.github/actions/feldera-minio-cache

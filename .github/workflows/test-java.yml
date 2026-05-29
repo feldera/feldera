@@ -56,32 +56,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      # Rotate the Rust cache once per calendar month to keep target/ from
-      # accumulating stale artifacts indefinitely. Bucket lifecycle on
-      # gha-cache reclaims the bytes; restore-keys stay scoped to the same
-      # month so we never restore last month's stale cache.
-      - name: Compute monthly cache prefix
-        id: cache-month
-        run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Rust dependencies and target
+      - name: Cache Cargo registry
         uses: ./.github/actions/feldera-minio-cache
         with:
-          # registry/src is excluded — cargo regenerates it from registry/cache
-          # archives (same trick Swatinem/rust-cache used). The test framework
-          # writes generated pipelines to sql-to-dbsp-compiler/temp and multi,
-          # which are excluded from the workspace per Cargo.toml — their target
-          # dirs must be cached explicitly.
+          # Only the crate downloads, NOT target/. The SQL test suite compiles
+          # a unique Rust pipeline per test into sql-to-dbsp-compiler/temp/target,
+          # which balloons to 20-45 GB; gzipping that on save cost ~1h of wall
+          # clock and the artifacts are single-use anyway. Per-crate compile
+          # caching is sccache's job. registry/src is excluded — cargo
+          # regenerates it from registry/cache archives.
           path: |
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
             ~/.cargo/git/db
-            target
-            sql-to-dbsp-compiler/temp/target
-            sql-to-dbsp-compiler/multi/target
-          key: test-java-cargo-${{ steps.cache-month.outputs.month }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.shard.name }}-${{ hashFiles('**/Cargo.lock') }}
+          key: test-java-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            test-java-cargo-${{ steps.cache-month.outputs.month }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.shard.name }}-
+            test-java-cargo-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Cache JVM build dependencies
         uses: ./.github/actions/feldera-minio-cache
