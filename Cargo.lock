@@ -5301,6 +5301,7 @@ dependencies = [
  "flate2",
  "itertools 0.14.0",
  "libc",
+ "mach2 0.6.0",
  "memory-stats",
  "nix 0.29.0",
  "serde",
@@ -7281,6 +7282,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "mach2"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dae608c151f68243f2b000364e1f7b186d9c29845f7d2d85bd31b9ad77ad552b"
+
+[[package]]
 name = "mappings"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7386,7 +7393,7 @@ checksum = "4a82c8add4382f29a122fa64fff1891453ed0f6b2867d971e7d60cb8dfa322ff"
 dependencies = [
  "libc",
  "libproc",
- "mach2",
+ "mach2 0.4.3",
  "once_cell",
  "procfs",
  "rlimit",

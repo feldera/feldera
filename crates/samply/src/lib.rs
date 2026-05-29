@@ -49,8 +49,11 @@ use std::{
         atomic::{AtomicBool, AtomicI64, Ordering},
     },
     thread::JoinHandle,
-    time::{Duration, Instant},
+    time::{Duration, Instant, UNIX_EPOCH},
 };
+
+#[cfg(target_os = "macos")]
+use std::time::SystemTime;
 
 use crossbeam::sync::{Parker, Unparker};
 use flate2::{
@@ -59,6 +62,7 @@ use flate2::{
 };
 use itertools::Itertools;
 use memory_stats::memory_stats;
+#[cfg(not(target_os = "macos"))]
 use nix::time::{ClockId, clock_gettime};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -100,15 +104,60 @@ impl AtomicOptionTimestamp {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 struct Timestamp(
-    /// In nanoseconds in terms of `CLOCK_MONOTONIC`.
+    /// Monotonic time in nanoseconds.
+    ///
+    /// On macOS this is [`mach_absolute_time`] converted to nanoseconds via
+    /// [`mach_timebase_info`].  On other Unix platforms this is
+    /// `CLOCK_MONOTONIC`.
+    ///
+    /// [`mach_absolute_time`]: https://developer.apple.com/documentation/kernel/1462446-mach_absolute_time
+    /// [`mach_timebase_info`]: https://developer.apple.com/documentation/kernel/1462447-mach_timebase_info
     i64,
 );
 
+#[cfg(target_os = "macos")]
+fn mach_absolute_time_nanos() -> i64 {
+    use mach2::mach_time::{mach_absolute_time, mach_timebase_info, mach_timebase_info_data_t};
+    use std::sync::OnceLock;
+
+    static NANOS_PER_TICK: OnceLock<(u32, u32)> = OnceLock::new();
+    let (numer, denom) = *NANOS_PER_TICK.get_or_init(|| {
+        let mut info = mach_timebase_info_data_t { numer: 0, denom: 0 };
+        unsafe {
+            mach_timebase_info(&mut info);
+        }
+        if info.denom == 0 {
+            (1, 1)
+        } else {
+            (info.numer, info.denom)
+        }
+    });
+    let ticks = unsafe { mach_absolute_time() };
+    (ticks * u64::from(numer) / u64::from(denom)) as i64
+}
+
 impl Timestamp {
     fn now() -> Self {
-        let now = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
-        Self(now.tv_sec() as i64 * 1_000_000_000 + now.tv_nsec() as i64)
+        #[cfg(target_os = "macos")]
+        {
+            Self(mach_absolute_time_nanos())
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let now = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
+            Self(now.tv_sec() as i64 * 1_000_000_000 + now.tv_nsec() as i64)
+        }
     }
+}
+
+/// Nanoseconds since the Unix epoch.
+#[cfg(target_os = "macos")]
+fn unix_epoch_nanos() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock is before Unix epoch")
+        .as_nanos() as i64
 }
 
 impl From<Instant> for Timestamp {
@@ -558,6 +607,8 @@ pub struct Capture {
     unparker: Unparker,
     request_exit: Arc<AtomicBool>,
     block_limit: i64,
+    #[cfg(target_os = "macos")]
+    anchor: (Timestamp, i64),
 }
 
 impl Capture {
@@ -599,6 +650,8 @@ impl Capture {
             memory,
             unparker,
             request_exit,
+            #[cfg(target_os = "macos")]
+            anchor: (Timestamp::now(), unix_epoch_nanos()),
             _guard: guard,
         }
     }
@@ -634,6 +687,8 @@ impl Capture {
             end_time,
             markers,
             memory: self.take_memory(),
+            #[cfg(target_os = "macos")]
+            anchor: self.anchor,
         }
     }
 
@@ -736,6 +791,8 @@ pub struct Annotations {
     end_time: Timestamp,
     markers: HashMap<usize, (Option<String>, Blocks)>,
     memory: Vec<(Timestamp, usize)>,
+    #[cfg(target_os = "macos")]
+    anchor: (Timestamp, i64),
 }
 
 impl Annotations {
@@ -759,6 +816,40 @@ impl Annotations {
 
         // Deserialize.
         let mut profile = serde_json_path_to_error::from_slice::<Profile>(json)?;
+
+        // On macOS, timestamps in the samply profile are nanoseconds relative to `startTime`
+        // recorded in the profile's metadata. startTime is measured using wall-clock time,
+        // _not_ the monotonic clock time.
+        //
+        // Below `anchor_monotonic_ns` and `anchor_wall_clock_ns` represent the same point in time expressed
+        // in monotonic clock units and wall clock units respectively.
+        //
+        // `profile_start_wall_clock_ms` is the wall clock time when the profile started, extracted
+        // from the profile's metadata.
+        //
+        // `timestamp` is the event timestamp to convert to profile time.
+        //
+        // ```text
+        // -----------------|---------------------------------------|--------------------------|----------> time
+        //  (anchor_monotonic_ns, anchor_wall_clock_ns)      profile_start_wall_clock_ms   timestamp
+        // ```
+        //
+        // To convert a timestamp to relative nanoseconds expected by samply, we need to:
+        // 1. Calculate elapsed since the Timestamp recorded in anchor.
+        // 2. Add adjustment - the difference between the anchor wall-clock time and the profile start wall-clock time.
+        #[cfg(target_os = "macos")]
+        let to_profile_time = {
+            let profile_start_time_ms = profile.meta.start_time;
+            let (anchor_monotonic_ns, anchor_wall_clock_ns) = self.anchor;
+            let profile_start_wall_clock_ns = (profile_start_time_ms * 1_000_000.0) as i64;
+            let adjustment_ns = anchor_wall_clock_ns - profile_start_wall_clock_ns;
+            move |timestamp: Timestamp| {
+                Timestamp(timestamp.0 - anchor_monotonic_ns.0 + adjustment_ns)
+            }
+        };
+        #[cfg(not(target_os = "macos"))]
+        let to_profile_time = |timestamp: Timestamp| timestamp;
+
         if let Some(product) = options.product {
             profile.meta.product = product;
         }
@@ -839,11 +930,13 @@ impl Annotations {
                         type_: Cow::from("FelderaMarker"),
                         name: profile.shared.add_name(&marker.tooltip),
                     });
-                    thread.markers.start_time.push(marker.start);
                     thread
                         .markers
-                        .end_time
-                        .push(marker.end.timestamp().unwrap_or(self.end_time));
+                        .start_time
+                        .push(to_profile_time(marker.start));
+                    thread.markers.end_time.push(to_profile_time(
+                        marker.end.timestamp().unwrap_or(self.end_time),
+                    ));
                     thread
                         .markers
                         .name
@@ -865,8 +958,7 @@ impl Annotations {
                         time: self
                             .memory
                             .iter()
-                            .copied()
-                            .map(|(time, _rss)| time)
+                            .map(|(time, _rss)| to_profile_time(*time))
                             .collect(),
                         time_deltas: Vec::new(),
                         number: repeat_n(0, self.memory.len()).collect(),
@@ -922,6 +1014,7 @@ impl Annotations {
             product: String,
             #[serde(rename = "oscpu")]
             os_cpu: String,
+            start_time: f64,
             categories: Vec<Category>,
             marker_schema: Vec<Value>,
             #[serde(flatten)]
