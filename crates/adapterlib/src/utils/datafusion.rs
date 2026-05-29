@@ -10,6 +10,7 @@ use datafusion::logical_expr::sqlparser::parser::ParserError;
 use datafusion::prelude::{SQLOptions, SessionConfig, SessionContext};
 use datafusion::sql::sqlparser::dialect::GenericDialect;
 use datafusion::sql::sqlparser::parser::Parser;
+use datafusion::sql::sqlparser::tokenizer::Token;
 use feldera_types::config::PipelineConfig;
 use feldera_types::constants::DATAFUSION_TEMP_DIR;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
@@ -290,6 +291,20 @@ pub fn array_to_string(array: &dyn Array) -> Option<String> {
 pub fn validate_sql_expression(expr: &str) -> Result<(), ParserError> {
     let mut parser = Parser::new(&GenericDialect).try_with_sql(expr)?;
     parser.parse_expr()?;
+
+    Ok(())
+}
+
+/// Validate the body of an ORDER BY clause (e.g. "ts asc, lsn desc").
+///
+/// Unlike [`validate_sql_expression`], this accepts the comma-separated,
+/// ASC/DESC/NULLS annotated key list a real ORDER BY allows, and
+/// requires the whole string to parse so a malformed clause fails here rather
+/// than silently dropping every key after the first.
+pub fn validate_sql_order_by(order_by: &str) -> Result<(), ParserError> {
+    let mut parser = Parser::new(&GenericDialect).try_with_sql(order_by)?;
+    parser.parse_comma_separated(Parser::parse_order_by_expr)?;
+    parser.expect_token(&Token::EOF)?;
 
     Ok(())
 }
@@ -663,5 +678,107 @@ mod tests {
         assert_eq!(min_pool_mb_for_adhoc_sort(1), 68);
         assert_eq!(min_pool_mb_for_adhoc_sort(2), 135);
         assert_eq!(min_pool_mb_for_adhoc_sort(8), 537);
+    }
+
+    /// Make sure random shapes for `filter`, `cdc_delete_filter`, and `cdc_order_by`
+    /// are parsed correctly by our connector.
+    #[test]
+    fn cdc_connector_expr_shapes_validate() {
+        use super::{validate_sql_expression, validate_sql_order_by};
+
+        // Set as `filter` or `cdc_delete_filter`; validated as a scalar predicate.
+        const FILTER_SHAPES: &[&str] = &[
+            "0=0",
+            "0=0 AND (a = 's0' AND b = 's1')",
+            "0=0 AND (a = 's0')",
+            "0=0 AND (a IN ('s0'))",
+            "0=0 AND (a IN ('s0','s1'))",
+            "0=0 AND (a IN (1,2) OR a IS NULL)",
+            "0=0 AND (a IN (1,2) OR a IS NULL) AND (b = false)",
+            "0=0 AND (a IN (1,2) OR a IS NULL) AND (b IN ('s0'))",
+            "0=0 AND (a IN (1,2) OR a IS NULL) AND (b IN ('s0','s1'))",
+            "0=0 AND (a IN (1,2) OR a IS NULL) AND (b IS NOT NULL)",
+            "0=0 AND (a IN (1,2) OR a IS NULL) AND (b IS NULL AND c IS NULL)",
+            "0=0 AND (a IN (1,2) OR a IS NULL) AND (b IS NULL)",
+            "0=0 AND (a IN (1,2) OR a IS NULL) AND (b NOT IN ('s0','s1') AND c IS NOT NULL)",
+            "0=0 AND (a IN('s0','s1'))",
+            "0=0 AND (a IS NOT NULL AND b IS NOT NULL)",
+            "0=0 AND a = false",
+            "0=0 AND a = false AND (b = 's0' AND c = 's1')",
+            "0=0 AND a = false AND (b = 's0')",
+            "0=0 AND a = false AND (b IN ('s0'))",
+            "0=0 AND a = false AND (b IN ('s0','s1'))",
+            "0=0 AND a = false AND (b IN (1,2) OR b IS NULL)",
+            "0=0 AND a = false AND (b IN (1,2) OR b IS NULL) AND (c = false)",
+            "0=0 AND a = false AND (b IN (1,2) OR b IS NULL) AND (c IS NOT NULL)",
+            "0=0 AND a = false AND (b IS NOT NULL AND c IS NOT NULL)",
+            "0=0 AND a = false AND b is null",
+            "0=0 AND a = false AND b is null AND (c = 's0')",
+            "0=0 AND a = false AND b is null AND (c IN ('s0','s1'))",
+            "0=0 AND a = false AND b is null AND (c IN (1,2) OR c IS NULL)",
+            "0=0 AND a = false AND b is null AND (c IN (1,2) OR c IS NULL) AND (d NOT IN ('s0','s1') AND e IS NOT NULL)",
+            "a > 0",
+            "a >= 0 AND a <= 9",
+            "a <> 's0'",
+            "a != 's0'",
+            "a BETWEEN 0 AND 9",
+            "a LIKE 's0'",
+            "a IS NULL OR b IS NOT NULL",
+            "NOT (a = false)",
+            "lower(a) = 's0'",
+            "cast(a AS bigint) = 0",
+            "a + b > 0",
+            "coalesce(a, b) = 's0'",
+            "a > timestamp '2020-01-02 03:04:05'",
+            "a = 's0''s1'",
+        ];
+        const CDC_DELETE_FILTER_SHAPES: &[&str] = &[
+            "a = true",
+            "a = true OR b is not null",
+            "a = true AND b = false",
+            "a IN ('s0','s1')",
+            "a IS NOT NULL",
+            "NOT a",
+        ];
+        const CDC_ORDER_BY_SHAPES: &[&str] = &[
+            "a",
+            "a, b",
+            "a asc, b asc",
+            "a ASC",
+            "a desc",
+            "a ASC, b DESC",
+            "a NULLS FIRST",
+            "a ASC NULLS LAST",
+            "a DESC NULLS FIRST",
+            "a asc nulls last, b desc nulls first",
+            "a asc, b desc, c asc nulls last",
+            "a + b asc",
+            "a % 2 asc, b desc",
+            "lower(a) asc",
+            "abs(a) desc, b asc",
+            "cast(a AS bigint) asc",
+            "coalesce(a, b) asc, c desc",
+            "case when a then 0 else 1 end desc",
+            // Quoted identifier containing a space.
+            "\"a b\" asc",
+        ];
+
+        let mut failures = Vec::new();
+        for expr in FILTER_SHAPES.iter().chain(CDC_DELETE_FILTER_SHAPES) {
+            if let Err(e) = validate_sql_expression(expr) {
+                failures.push(format!("predicate '{expr}' failed: {e}"));
+            }
+        }
+        for order_by in CDC_ORDER_BY_SHAPES {
+            if let Err(e) = validate_sql_order_by(order_by) {
+                failures.push(format!("cdc_order_by '{order_by}' failed: {e}"));
+            }
+        }
+
+        assert!(
+            failures.is_empty(),
+            "validation failures:\n{}",
+            failures.join("\n")
+        );
     }
 }

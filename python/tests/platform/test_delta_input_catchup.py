@@ -11,9 +11,8 @@ from __future__ import annotations
 
 import json
 import re
-from http import HTTPStatus
-
 from datetime import datetime, timezone
+from http import HTTPStatus
 
 import pyarrow as pa
 import pytest
@@ -91,7 +90,7 @@ def _connector_config(
         config.update(
             {
                 "cdc_delete_filter": "__feldera_op = 'd'",
-                "cdc_order_by": "__feldera_ts",
+                "cdc_order_by": "__feldera_ts asc, lsn asc",
             }
         )
     connector = {
@@ -175,8 +174,13 @@ _CDC_SCHEMA = pa.schema(
         pa.field("id", pa.int64()),
         pa.field("__feldera_op", pa.string()),
         pa.field("__feldera_ts", pa.timestamp("us")),
+        pa.field("lsn", pa.int64()),
     ]
 )
+
+
+def _cdc_ts(ts_us: int) -> datetime:
+    return datetime.fromtimestamp(ts_us / 1_000_000, tz=timezone.utc)
 
 
 def _append_cdc_insert(
@@ -188,11 +192,18 @@ def _append_cdc_insert(
 ) -> None:
     from deltalake import write_deltalake
 
-    ts = datetime.fromtimestamp(ts_us / 1_000_000, tz=timezone.utc)
+    # `lsn` mirrors `__feldera_ts` here; the catchup test never ties on ts.
     write_deltalake(
         loc.uri,
         pa.Table.from_pylist(
-            [{"id": row_id, "__feldera_op": "i", "__feldera_ts": ts}],
+            [
+                {
+                    "id": row_id,
+                    "__feldera_op": "i",
+                    "__feldera_ts": _cdc_ts(ts_us),
+                    "lsn": ts_us,
+                }
+            ],
             schema=_CDC_SCHEMA,
         ),
         mode=mode,
@@ -380,6 +391,96 @@ def test_delta_input_catchup_cdc(pipeline_name):
         expected_rows = sum(FOLLOW_ROUNDS)
         assert _materialized_row_count(pipeline) == expected_rows
         assert _completed_version(pipeline) == table_version
+
+        pipeline.stop(force=True)
+    finally:
+        loc.cleanup()
+
+
+_CDC_VAL_SCHEMA = pa.schema(
+    [
+        pa.field("id", pa.int64()),
+        pa.field("val", pa.int64()),
+        pa.field("__feldera_op", pa.string()),
+        pa.field("__feldera_ts", pa.timestamp("us")),
+        pa.field("lsn", pa.int64()),
+    ]
+)
+
+
+@enterprise_only
+def test_delta_input_cdc_multi_key_order_by(pipeline_name):
+    """A multi-key `"cdc_order_by": "__feldera_ts asc, lsn asc"` parses and
+    honors the second key as a tiebreaker.
+
+    The table has a primary key, so two inserts of the same key in one
+    transaction collapse to a last-writer-wins upsert. Both carry the same
+    `__feldera_ts`; only the `lsn asc` tiebreak makes the larger `lsn`
+    the last writer. The losing row is written to the file first, so a
+    single-key sort would let it win instead.
+    """
+    from deltalake import write_deltalake
+
+    loc = DeltaTestLocation.create(pipeline_name)
+
+    def append(rows: list[dict], *, mode: str = "append") -> None:
+        write_deltalake(
+            loc.uri,
+            pa.Table.from_pylist(
+                [
+                    {
+                        "id": r["id"],
+                        "val": r["val"],
+                        "__feldera_op": "i",
+                        "__feldera_ts": _cdc_ts(r["ts_us"]),
+                        "lsn": r["lsn"],
+                    }
+                    for r in rows
+                ],
+                schema=_CDC_VAL_SCHEMA,
+            ),
+            mode=mode,
+            schema_mode="merge",
+            storage_options=_writer_storage_options(loc),
+        )
+
+    try:
+        # CDC mode skips pre-existing commits; seed (not ingested) and follow.
+        append([{"id": 0, "val": 0, "ts_us": 1_000, "lsn": 0}], mode="overwrite")
+
+        connectors = _connector_config(loc, mode="cdc").replace("'", "''")
+        sql = (
+            f"CREATE TABLE {TABLE} (id BIGINT NOT NULL PRIMARY KEY, val BIGINT) "
+            f"WITH ('materialized' = 'true', 'connectors' = '{connectors}');"
+        )
+        pipeline = PipelineBuilder(
+            TEST_CLIENT,
+            pipeline_name,
+            sql=sql,
+            runtime_config=RuntimeConfig(
+                workers=1,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                logging="debug",
+            ),
+        ).create_or_replace()
+        pipeline.start()
+        _wait_for_completed_version(pipeline, _delta_version(loc))
+        assert _materialized_row_count(pipeline) == 0
+
+        # One transaction, two upserts of id 0 at the same `__feldera_ts`. The
+        # winner (lsn 2, val 200) is written to the file first, so a sort that
+        # ignored `lsn` would leave the loser (lsn 1) last and let val 100 win.
+        append(
+            [
+                {"id": 0, "val": 200, "ts_us": 2_000, "lsn": 2},
+                {"id": 0, "val": 100, "ts_us": 2_000, "lsn": 1},
+            ]
+        )
+        _wait_for_completed_version(pipeline, _delta_version(loc))
+        rows = list(pipeline.query(f"SELECT val FROM {TABLE} WHERE id = 0"))
+        assert rows and rows[0]["val"] == 200, (
+            f"lsn asc must make the lsn=2 upsert the last writer; got {rows}"
+        )
 
         pipeline.stop(force=True)
     finally:

@@ -2378,6 +2378,157 @@ async fn delta_table_cdc_rewrite_test() {
     read_pipeline.stop().unwrap();
 }
 
+/// A multi-key `cdc_order_by`: "__feldera_ts asc, lsn asc`
+///
+/// One transaction deletes the old value and inserts a new one for the same id,
+/// and the connector applies both, leaving the updated row.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_cdc_multi_key_order_by_test() {
+    use crate::test::TestStruct;
+    use arrow::array::{
+        Array, BooleanArray, Int64Array, RecordBatch, StringArray, TimestampMicrosecondArray,
+    };
+    use arrow::datatypes::{
+        DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema, TimeUnit,
+    };
+    use deltalake::kernel::{DataType as KernelDataType, PrimitiveType, StructField};
+
+    init_logging();
+
+    let expect = |id: u32, label: &str| TestStruct {
+        id,
+        b: false,
+        i: None,
+        s: label.to_string(),
+    };
+
+    // TestStruct columns + CDC bookkeeping columns. `lsn` is the order
+    // tiebreaker; it is not a TestStruct field, so it never reaches the table.
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("id", ArrowDataType::Int64, false),
+        ArrowField::new("b", ArrowDataType::Boolean, false),
+        ArrowField::new("s", ArrowDataType::Utf8, false),
+        ArrowField::new("__feldera_op", ArrowDataType::Utf8, false),
+        ArrowField::new(
+            "__feldera_ts",
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
+            false,
+        ),
+        ArrowField::new("lsn", ArrowDataType::Int64, false),
+    ]));
+    let struct_fields = vec![
+        StructField::new("id", KernelDataType::Primitive(PrimitiveType::Long), false),
+        StructField::new(
+            "b",
+            KernelDataType::Primitive(PrimitiveType::Boolean),
+            false,
+        ),
+        StructField::new("s", KernelDataType::Primitive(PrimitiveType::String), false),
+        StructField::new(
+            "__feldera_op",
+            KernelDataType::Primitive(PrimitiveType::String),
+            false,
+        ),
+        StructField::new(
+            "__feldera_ts",
+            KernelDataType::Primitive(PrimitiveType::TimestampNtz),
+            false,
+        ),
+        StructField::new("lsn", KernelDataType::Primitive(PrimitiveType::Long), false),
+    ];
+
+    // Each tuple is (id, op, ts, lsn, s).
+    let make_batch = |rows: &[(i64, &str, i64, i64, &str)]| -> RecordBatch {
+        RecordBatch::try_new(
+            arrow_schema.clone(),
+            vec![
+                Arc::new(Int64Array::from_iter_values(rows.iter().map(|r| r.0))) as Arc<dyn Array>,
+                Arc::new(rows.iter().map(|_| Some(false)).collect::<BooleanArray>()),
+                Arc::new(StringArray::from_iter_values(rows.iter().map(|r| r.4))),
+                Arc::new(StringArray::from_iter_values(rows.iter().map(|r| r.1))),
+                Arc::new(TimestampMicrosecondArray::from_iter_values(
+                    rows.iter().map(|r| r.2),
+                )),
+                Arc::new(Int64Array::from_iter_values(rows.iter().map(|r| r.3))),
+            ],
+        )
+        .unwrap()
+    };
+
+    async fn append(delta: DeltaTable, batch: RecordBatch) -> DeltaTable {
+        delta
+            .write(vec![batch])
+            .with_save_mode(SaveMode::Append)
+            .await
+            .unwrap()
+    }
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let mut delta = create_table(&table_uri, &HashMap::new(), &struct_fields).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let read_pipeline = {
+        let table_uri = table_uri.clone();
+        let storage_dir = storage_dir.path().to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let pipeline_config: PipelineConfig = serde_json::from_value(json!({
+                "name": "test",
+                "workers": 4,
+                "storage_config": { "path": storage_dir },
+                "inputs": {
+                    "test_input1": {
+                        "stream": "test_input1",
+                        "transport": {
+                            "name": "delta_table_input",
+                            "config": {
+                                "uri": table_uri,
+                                "mode": "cdc",
+                                "filter": "id % 2 = 0",
+                                "cdc_delete_filter": "__feldera_op = 'd'",
+                                "cdc_order_by": "__feldera_ts asc, lsn asc",
+                            }
+                        }
+                    }
+                }
+            }))
+            .unwrap();
+            Controller::with_test_config(
+                move |workers| {
+                    Ok(test_circuit::<TestStruct>(
+                        workers,
+                        &TestStruct::schema(),
+                        &[Some("output")],
+                    ))
+                },
+                &pipeline_config,
+                Box::new(move |e, _| panic!("cdc multi-key order_by test: {e}")),
+            )
+            .unwrap()
+        })
+        .await
+        .unwrap()
+    };
+    read_pipeline.start();
+    let output = SqlIdentifier::from("test_output1");
+
+    // Seed id 0 (kept by `id % 2 = 0`).
+    delta = append(delta, make_batch(&[(0, "i", 1_000, 0, "orig")])).await;
+    wait_for_records_materialized(&read_pipeline, &output, &[expect(0, "orig")]).await;
+
+    // One transaction updates id 0: delete the old value, insert the new one.
+    // The multi-key `cdc_order_by` must parse for this transaction to run.
+    delta = append(
+        delta,
+        make_batch(&[(0, "d", 2_000, 1, "orig"), (0, "i", 2_000, 2, "updated")]),
+    )
+    .await;
+    wait_for_records_materialized(&read_pipeline, &output, &[expect(0, "updated")]).await;
+
+    let _ = delta;
+    read_pipeline.stop().unwrap();
+}
+
 /// `cdc_delete_filter` is parsed against the snapshot schema at
 /// connector startup, so an expression that references a column that
 /// does not exist on the Delta table must fail before any row flows
@@ -2601,6 +2752,101 @@ async fn build_cdc_dataframe_plan_structure() {
         err.contains("cdc_order_by"),
         "expected error to mention 'cdc_order_by'; got: {err}"
     );
+}
+
+/// A `cdc_order_by` with several keys and explicit ASC/DESC directions
+/// (a real ORDER BY clause body) must build a multi-key Sort. Guards a
+/// regression where the clause was parsed as a single scalar expression.
+#[tokio::test]
+async fn build_cdc_dataframe_multi_key_order_by() {
+    use crate::integrated::delta_table::input::build_cdc_dataframe;
+    use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, TimeUnit};
+    use datafusion::datasource::MemTable;
+    use feldera_adapterlib::utils::datafusion::validate_sql_order_by;
+
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("id", ArrowDataType::Int64, false),
+        ArrowField::new(
+            "__feldera_ts",
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
+            false,
+        ),
+    ]));
+
+    let ctx = SessionContext::new();
+    ctx.register_table(
+        "cdc_adds",
+        Arc::new(MemTable::try_new(arrow_schema.clone(), vec![vec![]]).unwrap()),
+    )
+    .unwrap();
+
+    let df = build_cdc_dataframe(
+        ctx.table("cdc_adds").await.unwrap(),
+        None,
+        None,
+        "__feldera_ts asc, id desc",
+        "unit-test",
+    )
+    .unwrap();
+    let plan = format!("{}", df.logical_plan().display_indent());
+
+    // One Sort node carrying both keys with their directions.
+    assert!(
+        plan.contains("__feldera_ts ASC") && plan.contains("id DESC"),
+        "expected both sort keys with directions; plan was:\n{plan}"
+    );
+
+    // The validator accepts the same multi-key clause and rejects garbage.
+    assert!(validate_sql_order_by("__feldera_ts asc, id desc").is_ok());
+    assert!(validate_sql_order_by("ts asc !! lsn").is_err());
+}
+
+/// `parse_cdc_order_by` applies DataFusion's SQL planner defaults: a missing
+/// direction is `ASC`, a missing `NULLS` placement is nulls-last for `ASC` and
+/// nulls-first for `DESC` (the `nulls_max` convention), and explicit `ASC` /
+/// `DESC` / `NULLS FIRST` / `NULLS LAST` override those defaults.
+#[tokio::test]
+async fn parse_cdc_order_by_defaults() {
+    use crate::integrated::delta_table::input::parse_cdc_order_by;
+    use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField};
+    use datafusion::datasource::MemTable;
+
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("a", ArrowDataType::Int64, false),
+        ArrowField::new("b", ArrowDataType::Int64, false),
+    ]));
+    let ctx = SessionContext::new();
+    ctx.register_table(
+        "t",
+        Arc::new(MemTable::try_new(arrow_schema.clone(), vec![vec![]]).unwrap()),
+    )
+    .unwrap();
+    let df = ctx.table("t").await.unwrap();
+
+    // (clause, expected [(asc, nulls_first), ...] per key).
+    let cases: &[(&str, &[(bool, bool)])] = &[
+        // No direction => ASC; ASC default nulls placement is last.
+        ("a", &[(true, false)]),
+        ("a asc", &[(true, false)]),
+        // DESC default nulls placement is first.
+        ("a desc", &[(false, true)]),
+        // Explicit NULLS overrides the default for either direction.
+        ("a nulls first", &[(true, true)]),
+        ("a asc nulls first", &[(true, true)]),
+        ("a desc nulls last", &[(false, false)]),
+        // Each key carries its own direction and default.
+        ("a asc, b desc", &[(true, false), (false, true)]),
+    ];
+
+    for (clause, expected) in cases {
+        let sort_exprs = parse_cdc_order_by(&df, clause).unwrap();
+        let got: Vec<(bool, bool)> = sort_exprs.iter().map(|s| (s.asc, s.nulls_first)).collect();
+        assert_eq!(
+            got.as_slice(),
+            *expected,
+            "clause '{clause}': expected {expected:?}, got {got:?}"
+        );
+    }
 }
 
 /// Pin the exact set of arrow types that the `EXCEPT ALL` cancellation
