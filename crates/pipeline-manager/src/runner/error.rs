@@ -67,6 +67,9 @@ pub enum RunnerError {
     RunnerClearError {
         error: String,
     },
+    RunnerConfigError {
+        error: String,
+    },
 
     // Interaction with the pipeline runner
     RunnerInteractionUnreachable {
@@ -157,6 +160,7 @@ impl DetailedError for RunnerError {
             RunnerError::RunnerCheckError { .. } => Cow::from("RunnerCheckError"),
             RunnerError::RunnerStopError { .. } => Cow::from("RunnerStopError"),
             RunnerError::RunnerClearError { .. } => Cow::from("RunnerClearError"),
+            RunnerError::RunnerConfigError { .. } => Cow::from("RunnerConfigError"),
             RunnerError::RunnerInteractionUnreachable { .. } => {
                 Cow::from("RunnerInteractionUnreachable")
             }
@@ -314,6 +318,9 @@ impl Display for RunnerError {
             Self::RunnerClearError { error } => {
                 write!(f, "Pipeline storage clear failed (will retry): {error}")
             }
+            Self::RunnerConfigError { error } => {
+                write!(f, "Pipeline runner configuration error: {error}")
+            }
             Self::RunnerInteractionUnreachable { error } => {
                 write!(
                     f,
@@ -423,6 +430,7 @@ impl ResponseError for RunnerError {
             Self::RunnerCheckError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerStopError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerClearError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::RunnerConfigError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerInteractionUnreachable { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::RunnerInteractionLogFollowRequestChannelFull { .. } => {
                 StatusCode::SERVICE_UNAVAILABLE

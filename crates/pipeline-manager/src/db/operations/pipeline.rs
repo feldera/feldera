@@ -441,6 +441,14 @@ pub(crate) async fn update_pipeline(
             {
                 not_allowed.push("`runtime_config.resources.storage_mb_max`");
             }
+            if runtime_config.get("resources").map(|v| v.get("namespace"))
+                != current
+                    .runtime_config
+                    .get("resources")
+                    .map(|v| v.get("namespace"))
+            {
+                not_allowed.push("`runtime_config.resources.namespace`");
+            }
         }
 
         if !not_allowed.is_empty() {
@@ -908,6 +916,7 @@ pub(crate) async fn set_deployment_resources_desired_status(
         current.storage_status,
         current.deployment_resources_status,
         current.deployment_resources_desired_status,
+        current.program_status,
         final_deployment_error.clone(),
         new_desired_status,
     )?;
@@ -1052,9 +1061,15 @@ async fn check_version_guard_and_transition_deployment_resources_status(
         new_deployment_resources_status,
     )?;
 
-    // If the resources status should remain the same
+    // If the resources status should remain the same or not
     if remain && current.deployment_resources_status != new_deployment_resources_status {
         return Err(DBError::InvalidResourcesStatusRemain {
+            current_status: current.deployment_resources_status,
+            new_status: new_deployment_resources_status,
+        });
+    }
+    if !remain && current.deployment_resources_status == new_deployment_resources_status {
+        return Err(DBError::InvalidResourcesStatusNotRemain {
             current_status: current.deployment_resources_status,
             new_status: new_deployment_resources_status,
         });
@@ -1066,16 +1081,13 @@ async fn check_version_guard_and_transition_deployment_resources_status(
     // triggered again.
     //
     // As such either (a) the pipeline is successfully compiled, or (b) the resources status
-    // transition is one of:
-    // (1) Stopped -> Stopping
-    // (2) Stopping -> Stopped
+    // transition is Stopped -> Stopped.
     if !matches!(
         (
             current.deployment_resources_status,
             new_deployment_resources_status
         ),
-        (ResourcesStatus::Stopped, ResourcesStatus::Stopping)
-            | (ResourcesStatus::Stopping, ResourcesStatus::Stopped)
+        (ResourcesStatus::Stopped, ResourcesStatus::Stopped)
     ) && current.program_status != ProgramStatus::Success
     {
         return Err(DBError::TransitionRequiresCompiledProgram {
@@ -1114,6 +1126,43 @@ pub(crate) async fn set_deployment_resources_status_stopped(
         None,
         None,
         current.deployment_error,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn remain_deployment_resources_status_stopped(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    version_guard: Version,
+    deployment_error: ErrorResponse,
+) -> Result<(), DBError> {
+    check_version_guard_and_transition_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        version_guard,
+        ResourcesStatus::Stopped,
+        true,
+    )
+    .await?;
+
+    set_deployment_resources_status(
+        txn,
+        tenant_id,
+        pipeline_id,
+        ResourcesStatus::Stopped,
+        None,
+        None,
+        None,
+        None,
+        Some(deployment_error),
         None,
         None,
         None,

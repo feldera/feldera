@@ -1,4 +1,5 @@
 use crate::db::error::DBError;
+use crate::db::types::program::ProgramStatus;
 use crate::db::types::storage::StorageStatus;
 use feldera_types::error::ErrorResponse;
 use serde::{Deserialize, Serialize};
@@ -10,9 +11,9 @@ use utoipa::ToSchema;
 /// Pipeline resources status.
 ///
 /// ```text
-///          /start (early start failed)
-///          ┌───────────────────┐
-///          │                   ▼
+///        /start (early start or provision check failed)
+///        ┌───┐
+///        │   ▼
 ///       Stopped ◄────────── Stopping
 ///   /start │                   ▲
 ///          │                   │ /stop?force=true
@@ -57,8 +58,11 @@ pub enum ResourcesStatus {
     /// 1. The user triggers a start by invoking the `/start` endpoint.
     ///    It transitions to `Provisioning`.
     ///
-    /// 2. If applicable, early start fails (e.g., pipeline fails to compile).
-    ///    It transitions to `Stopping`.
+    /// 2. If applicable, early start fails (e.g., pipeline fails to compile), or it fails the
+    ///    provision check that it would be able to manage the compute and storage resources that
+    ///    could be provisioned.
+    ///    It remains `Stopped` with `deployment_error` set.
+    ///    Desired is set to `Stopped` by system.
     Stopped,
 
     /// The compute and (optionally) storage resources needed for the running the pipeline process
@@ -73,6 +77,7 @@ pub enum ResourcesStatus {
     ///
     /// 2. Resource provisioning fails or takes too long (timeout exceeded).
     ///    It transitions to `Stopping` with `deployment_error` set.
+    ///    Desired is set to `Stopped` by system.
     ///
     /// 3. The user stops the pipeline by invoking the `/stop` endpoint.
     ///    It transitions to `Stopping`.
@@ -85,9 +90,11 @@ pub enum ResourcesStatus {
     ///
     /// 1. Resource error or runtime error is encountered.
     ///    It transitions to `Stopping` with `deployment_error` set.
+    ///    Desired is set to `Stopped` by system.
     ///
     /// 2. The runtime status is observed to be `Suspended` (caused by `/stop?force=false`).
     ///    It transitions to `Stopping`.
+    ///    Desired is set to `Stopped` by system.
     ///
     /// 3. The user stops the pipeline by invoking the `/stop?force=true` endpoint.
     ///    It transitions to `Stopping`.
@@ -176,7 +183,7 @@ pub fn validate_resources_status_transition(
     if matches!(
         (storage_status, current_status, new_status),
         (StorageStatus::Cleared | StorageStatus::InUse, ResourcesStatus::Stopped, ResourcesStatus::Provisioning)
-        | (StorageStatus::Cleared | StorageStatus::InUse, ResourcesStatus::Stopped, ResourcesStatus::Stopping)
+        | (StorageStatus::Cleared | StorageStatus::InUse, ResourcesStatus::Stopped, ResourcesStatus::Stopped)
         | (StorageStatus::InUse, ResourcesStatus::Provisioning, ResourcesStatus::Provisioning)
         | (StorageStatus::InUse, ResourcesStatus::Provisioning, ResourcesStatus::Provisioned)
         | (StorageStatus::InUse, ResourcesStatus::Provisioned, ResourcesStatus::Provisioned)
@@ -187,12 +194,12 @@ pub fn validate_resources_status_transition(
         Ok(())
     } else if matches!(
         (storage_status, current_status, new_status),
-        (_, ResourcesStatus::Stopped | ResourcesStatus::Provisioning | ResourcesStatus::Provisioned, ResourcesStatus::Stopping)
+        (_, ResourcesStatus::Provisioning | ResourcesStatus::Provisioned, ResourcesStatus::Stopping)
         | (_, ResourcesStatus::Stopping, ResourcesStatus::Stopped)
     ) {
-        // As a fail-safe, it's always possible to transition from any other status to Stopping and
-        // from Stopping to Stopped. This however should not occur (instead the first matches should
-        // have already caught them).
+        // As a fail-safe, it's always possible to transition from any other status (that is not
+        // Stopped or Stopping) to Stopping and from Stopping to Stopped. This however should not
+        // occur (instead the first matches should have already caught them).
         error!("The resources status transition {current_status:?} -> {new_status:?} (storage status: {storage_status:?}) is taking place. This is due to an internal error, and is permitted only in order to recover from an invalid status. Please file a bug report.");
         Ok(())
     } else {
@@ -209,6 +216,7 @@ pub fn validate_resources_desired_status_transition(
     storage_status: StorageStatus,
     status: ResourcesStatus,
     current_desired_status: ResourcesDesiredStatus,
+    current_program_status: ProgramStatus,
     new_deployment_error: Option<ErrorResponse>,
     new_desired_status: ResourcesDesiredStatus,
 ) -> Result<(), DBError> {
@@ -237,6 +245,14 @@ pub fn validate_resources_desired_status_transition(
             if storage_status == StorageStatus::Clearing {
                 // If it is still clearing storage, wait for that to complete
                 return Err(DBError::CannotStartWhileClearingStorage);
+            }
+            if matches!(
+                current_program_status,
+                ProgramStatus::SqlError | ProgramStatus::RustError | ProgramStatus::SystemError
+            ) {
+                // If the pipeline has already failed to compile, we know provisioning won't work
+                // ahead of time
+                return Err(DBError::CannotStartWithCompilationError);
             }
             Ok(())
         }

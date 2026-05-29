@@ -314,6 +314,7 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub created_at: DateTime<Utc>,
     pub version: Version,
     pub platform_version: String,
+    pub runtime_config: serde_json::Value,
     pub program_config: serde_json::Value,
     pub program_version: Version,
     pub program_status: ProgramStatus,

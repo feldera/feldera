@@ -1,5 +1,7 @@
 from datetime import datetime
 from feldera import PipelineBuilder
+from feldera.enums import PipelineStatus, BootstrapPolicy
+from feldera.rest.errors import FelderaAPIError
 from tests import TEST_CLIENT
 from .helper import gen_pipeline_name
 import time
@@ -99,12 +101,22 @@ def test_events(pipeline_name):
     start_error = None
     try:
         pipeline.start()
-    except RuntimeError as e:
+    except FelderaAPIError as e:
         start_error = e
-    assert start_error is not None
     assert (
-        pipeline.deployment_error()["error_code"] == "StartFailedDueToFailedCompilation"
+        start_error is not None
+        and start_error.error_code == "CannotStartWithCompilationError"
     )
+
+    # Trigger a runtime error
+    pipeline.modify(
+        sql="CREATE TABLE t1(c1 INTEGER); CREATE VIEW v1 AS SELECT ELEMENT(ARRAY [2, 3]) FROM t1;"
+    )
+    TEST_CLIENT._wait_for_compilation(pipeline_name, None)
+    pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW)
+    pipeline.input_json("t1", [{"c1": 1}], wait=False)
+    pipeline.wait_for_status(PipelineStatus.STOPPED, timeout=60)
+    assert pipeline.deployment_error()["error_code"] == "RuntimeError.WorkerPanic"
     pipeline.dismiss_error()
 
     ###############################
@@ -186,12 +198,22 @@ def test_events(pipeline_name):
     )
 
     # fmt: off
-    assert remove_consecutive_duplicates(events_status_limited) == [
-        ("Stopped", "Stopped", None, None, False, "SqlError", "Cleared"),
-        ("Stopped", "Stopped", None, None, True, "SqlError", "Cleared"),
-        ("Stopping", "Stopped", None, None, True, "SqlError", "Cleared"),
-        ("Stopped", "Stopped", None, None, False, "SqlError", "Cleared"),
-        ("Stopped", "Provisioned", None, None, False, "SqlError", "Cleared"),
+    actual = remove_consecutive_duplicates(events_status_limited)
+    assert actual == [
+        ("Stopped", "Stopped", None, None, False, "Success", "InUse"),
+        ("Stopped", "Stopped", None, None, True, "Success", "InUse"),
+        ("Stopping", "Stopped", None, None, True, "Success", "InUse"),
+        ("Provisioned", "Stopped", "Running", "Running", False, "Success", "InUse"),
+        ("Provisioned", "Provisioned", "Running", "Running", False, "Success", "InUse"),
+        ("Provisioned", "Provisioned", "Initializing", "Running", False, "Success", "InUse"),
+        ("Provisioning", "Provisioned", None, None, False, "Success", "InUse"),
+        ("Stopped", "Provisioned", None, None, False, "Success", "InUse"),
+        ("Stopped", "Provisioned", None, None, False, "Success", "Cleared"),
+        ("Stopped", "Stopped", None, None, False, "Success", "Cleared"),
+        ("Stopped", "Stopped", None, None, False, "CompilingRust", "Cleared"),
+        ("Stopped", "Stopped", None, None, False, "SqlCompiled", "Cleared"),
+        ("Stopped", "Stopped", None, None, False, "CompilingSql", "Cleared"),
+        ("Stopped", "Stopped", None, None, False, "Pending", "Cleared"),
         ("Stopped", "Stopped", None, None, False, "SqlError", "Cleared"),
         ("Stopped", "Stopped", None, None, False, "CompilingSql", "Cleared"),
         ("Stopped", "Stopped", None, None, False, "Pending", "Cleared"),

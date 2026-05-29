@@ -47,7 +47,7 @@ state is tracked by the storage status.
 **Relevant API fields:**
 - `deployment_id` (set becoming `Provisioning`, unset becoming `Stopping`)
 - `deployment_config` (set becoming `Provisioning`, unset becoming `Stopping`)
-- `deployment_error` (set becoming `Stopping` (if error), must be unset to have desired status
+- `deployment_error` (set becoming `Stopping` or `Stopped` (if error), must be unset to have desired status
    become `Provisioned` (either via `/start?dismiss_error=true` (default) or `/dismiss_error`))
 - `deployment_initial` (set when desired status becomes `Provisioned`, unset becoming `Stopping`
   or desired status becomes `Stopped` while status is still `Stopped`)
@@ -77,7 +77,8 @@ state is tracked by the storage status.
 
 - **Compilation requirement:** A pipeline must be compiled (program status `Success`) before it can move
   from `Stopped` → `Provisioning`. If `/start` is called before compilation ("early start"), it waits until
-  compilation succeeds (then goes to `Provisioning`) or fails (then goes to `Stopping`).
+  compilation succeeds (then goes to `Provisioning`) or fails (remains `Stopped` but with an error).
+  If the pipeline already failed to compile, `/start` will directly return an error.
 - **Provisioning timeout:** **Provisioning** has a max time limit (e.g., waiting for Kubernetes objects to
   become healthy). If it times out, the pipeline automatically stops.
   - _Example:_ Pods in a StatefulSet take too long to schedule.

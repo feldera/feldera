@@ -37,6 +37,7 @@ impl ExtendedPipelineDescrRunner {
                 created_at: pipeline.created_at,
                 version: pipeline.version,
                 platform_version: pipeline.platform_version.clone(),
+                runtime_config: pipeline.runtime_config.clone(),
                 program_config: pipeline.program_config.clone(),
                 program_version: pipeline.program_version,
                 program_status: pipeline.program_status,
@@ -409,6 +410,15 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
+    ) -> Result<(), DBError>;
+
+    /// Remain resources status `Stopped`, but set a new error.
+    async fn remain_deployment_resources_status_stopped(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_error: ErrorResponse,
     ) -> Result<(), DBError>;
 
     /// Transitions storage status to `Clearing`.
