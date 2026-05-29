@@ -82,21 +82,22 @@ impl Default for AtomicOptionTimestamp {
 }
 
 impl AtomicOptionTimestamp {
-    fn new(value: Option<Timestamp>) -> Self {
-        Self(AtomicI64::new(
-            value.map_or(i64::MIN, |timestamp| timestamp.0),
-        ))
+    const fn new(value: Option<Timestamp>) -> Self {
+        Self(AtomicI64::new(match value {
+            Some(timestamp) => timestamp.0,
+            None => i64::MIN,
+        }))
     }
 
     fn load(&self) -> Option<Timestamp> {
-        let value = self.0.load(Ordering::Relaxed);
+        let value = self.0.load(Ordering::Acquire);
         (value != i64::MIN).then_some(Timestamp(value))
     }
 
     fn store(&self, value: Option<Timestamp>) {
         self.0.store(
             value.map_or(i64::MIN, |timestamp| timestamp.0),
-            Ordering::Relaxed,
+            Ordering::Release,
         )
     }
 }
@@ -147,6 +148,15 @@ impl Timestamp {
         {
             let now = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
             Self(now.tv_sec() as i64 * 1_000_000_000 + now.tv_nsec() as i64)
+        }
+    }
+
+    /// Computes `self - other`, returning zero if `self < other`.
+    fn saturating_sub(self, other: Self) -> Duration {
+        if self.0 >= other.0 {
+            Duration::from_nanos(self.0.abs_diff(other.0))
+        } else {
+            Duration::ZERO
         }
     }
 }
@@ -603,6 +613,7 @@ static CAPTURE_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(())
 /// Only one `Capture` may exist at one time.
 pub struct Capture {
     _guard: tokio::sync::MutexGuard<'static, ()>,
+    start_time: Timestamp,
     memory: Option<JoinHandle<Vec<(Timestamp, usize)>>>,
     unparker: Unparker,
     request_exit: Arc<AtomicBool>,
@@ -613,6 +624,7 @@ pub struct Capture {
 
 impl Capture {
     fn new(params: CaptureOptions, guard: tokio::sync::MutexGuard<'static, ()>) -> Self {
+        let start = Timestamp::now();
         if let Some(memory_limit) = params.memory_limit {
             tracing::info!(
                 "marker capture limited to {}",
@@ -644,8 +656,10 @@ impl Capture {
                 .expect("should be able to start a capture thread")
         });
         FREE_BLOCKS.store(block_limit, Ordering::Relaxed);
+        MARKERS_EXHAUSTED.store(None);
         CAPTURING.store(true, Ordering::Release);
         Self {
+            start_time: start,
             block_limit,
             memory,
             unparker,
@@ -660,15 +674,16 @@ impl Capture {
     pub fn finish(mut self) -> Annotations {
         let end_time = Timestamp::now();
         CAPTURING.store(false, Ordering::Release);
-        let remaining_blocks = FREE_BLOCKS.load(Ordering::Relaxed);
-        if remaining_blocks <= 0 {
-            tracing::info!("marker capture exceeded the limit");
+        let markers_exhausted = MARKERS_EXHAUSTED.load();
+        let free_blocks = FREE_BLOCKS.load(Ordering::Relaxed);
+        let used =
+            HumanBytes::from((self.block_limit - free_blocks.max(0)) as usize * BYTES_PER_BLOCK);
+        if free_blocks < 0 {
         } else {
-            let used_bytes = (self.block_limit - remaining_blocks) as usize * BYTES_PER_BLOCK;
-            tracing::info!("marker capture used {}", HumanBytes::from(used_bytes));
+            tracing::info!("marker capture used {used}");
         }
 
-        let markers = self
+        let mut markers: HashMap<usize, (Option<String>, Blocks)> = self
             .all_threads()
             .into_iter()
             .map(|thread| {
@@ -682,6 +697,28 @@ impl Capture {
                 (thread.tid, (thread.name, blocks))
             })
             .collect();
+
+        if let Some(markers_exhausted) = markers_exhausted {
+            let elapsed = markers_exhausted.saturating_sub(self.start_time);
+            let tooltip = format!(
+                "marker capture exceeded the limit ({used}) after {:.1} s",
+                elapsed.as_secs_f64()
+            );
+            tracing::info!("{tooltip}");
+            let marker = Marker {
+                start: self.start_time,
+                end: MarkerEnd::At(markers_exhausted),
+                category: "profiling",
+                name: "Profiling",
+                tooltip,
+            };
+            markers
+                .entry(nix::unistd::getpid().as_raw() as usize)
+                .or_default()
+                .1
+                .0
+                .push(Block::new(marker));
+        }
 
         Annotations {
             end_time,
@@ -1216,9 +1253,19 @@ impl ThreadMarkers {
 /// [ThreadMarkers] for every thread that has recorded a marker.
 static ALL_THREAD_MARKERS: std::sync::Mutex<Vec<ThreadMarkers>> = std::sync::Mutex::new(Vec::new());
 
+/// Number of blocks of capacity left for allocation before we stop allocating.
+///
+/// If this is below zero, then we ran out and tried to allocate more anyhow.
 static FREE_BLOCKS: AtomicI64 = AtomicI64::new(0);
+
+/// Number of [Marker]s we allocate in each [Block].
 const MARKERS_PER_BLOCK: usize = 32;
+
+/// Number of bytes we account for each [Block].
 const BYTES_PER_BLOCK: usize = MARKERS_PER_BLOCK * Span::BYTES;
+
+/// The time at which [FREE_BLOCKS] dropped below zero.
+static MARKERS_EXHAUSTED: AtomicOptionTimestamp = AtomicOptionTimestamp::new(None);
 
 struct Block(Vec<Marker>);
 impl Block {
@@ -1252,7 +1299,14 @@ impl Blocks {
         } else {
             match FREE_BLOCKS.fetch_sub(1, Ordering::Relaxed) {
                 1.. => self.0.push(Block::new(marker)),
-                0 => warn!("marker capture space exhausted"),
+                0 => {
+                    // Record when marker space was exhausted.  The combination
+                    // of `load` and `store` is not an atomic transaction, but
+                    // it's good enough.
+                    if MARKERS_EXHAUSTED.load().is_none() {
+                        MARKERS_EXHAUSTED.store(Some(Timestamp::now()));
+                    }
+                }
                 _ => (),
             }
         }
