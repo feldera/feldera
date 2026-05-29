@@ -179,6 +179,7 @@ like = "0.3.1"
 log = "0.4.20"
 md-5 = "0.10.6"
 memory-stats = { version = "1.2.0", features = ["always_use_statm"] }
+mach2 = "0.6.0"
 metrics = "0.23.0"
 metrics-exporter-prometheus = "0.15.3"
 metrics-util = "0.17.0"
