@@ -1,7 +1,7 @@
 <script lang="ts">
+  import { ANSIDecoratedText } from 'common-ui'
   import stripANSI from 'strip-ansi'
   import { Virtualizer, type VirtualizerHandle } from 'virtua/svelte'
-  import AnsiDecoratedText from '$lib/components/logs/ANSIDecoratedText.svelte'
   import ScrollDownFab from '$lib/components/other/ScrollDownFab.svelte'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
   import { useReverseScrollContainer } from '$lib/compositions/common/useReverseScrollContainer.svelte'
@@ -52,7 +52,7 @@
   <Virtualizer data={logs.rows} getKey={(_, i) => i + logs.firstRowIndex} bind:this={virtualizer}>
     {#snippet children(value, index)}
       <div data-rowindex={index}>
-        <AnsiDecoratedText {value}></AnsiDecoratedText>
+        <ANSIDecoratedText {value}></ANSIDecoratedText>
       </div>
     {/snippet}
   </Virtualizer>

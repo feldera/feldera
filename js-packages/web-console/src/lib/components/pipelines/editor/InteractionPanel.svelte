@@ -1,8 +1,7 @@
 <script lang="ts">
+  import { TabsPanel } from 'common-ui'
   import PanelAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
-  import * as TabProfileVisualizer from '$lib/components/pipelines/editor/TabProfileVisualizer.svelte'
   import * as TabSamplyProfile from '$lib/components/pipelines/editor/TabSamplyProfile.svelte'
-  import TabsPanel from '$lib/components/pipelines/editor/TabsPanel.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
@@ -28,13 +27,6 @@
       label: TabControlAdhoc,
       panel: PanelAdHocQuery,
       keepAlive: false,
-      tabBarEnd: TabBarEndClose
-    },
-    {
-      id: TabProfileVisualizer.id,
-      label: TabProfileVisualizer.Label,
-      panel: TabProfileVisualizer.default,
-      keepAlive: true,
       tabBarEnd: TabBarEndClose
     },
     {

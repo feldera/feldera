@@ -2,14 +2,17 @@
   "name": "feldera-js",
   "dependencies": {
     "@sveltejs/kit": "^2.49.5",
-    "svelte": "^5.46.4"
+    "svelte": "5.55.7"
   },
   "private": true,
   "scripts": {
     "split-claude": "bun scripts/claude.js split",
     "merge-claude": "bun scripts/claude.js merge",
     "clean": "rm -rf node_modules js-packages/*/node_modules js-packages/*/dist js-packages/*/build js-packages/*/.svelte-kit target/debug/build/pipeline-manager-* target/release/build/pipeline-manager-*",
-    "check": "cd js-packages/profiler-lib && bun run check && cd ../profiler-layout && bun run check && cd ../profiler-app && bun run check && cd ../web-console && bun run check"
+    "check": "cd js-packages/common-ui && bun run check && cd ../profiler-lib && bun run check && cd ../profiler-layout && bun run check && cd ../profiler-app && bun run check && cd ../web-console && bun run check",
+    "build:deps:profiler-layout": "bun --cwd=js-packages/triage-types run build && bun --cwd=js-packages/profiler-lib run build && bun --cwd=js-packages/common-ui run build",
+    "build:deps:profiler-app": "bun run build:deps:profiler-layout && bun --cwd=js-packages/profiler-layout run build:self",
+    "build:deps:web-console": "bun run build:deps:profiler-app && bun --cwd=js-packages/vite-plugin-monaco-editor run build"
   },
   "workspaces": ["js-packages/*"]
 }

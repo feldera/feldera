@@ -14,28 +14,17 @@
     (a, b) => a.localeCompare(b)
   )
 
-  import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
-  import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
-
-  self.MonacoEnvironment = {
-    getWorker(_: any, label: string) {
-      if (label === 'json') {
-        return new jsonWorker()
-      }
-      return new editorWorker()
-    }
-  }
+  // Worker setup is owned by `@feldera/vite-plugin-monaco-editor`: the plugin
+  // generates a `MonacoEnvironment.getWorker` whose worker imports honor its
+  // selected languages and `inlineWorkers` option. Consumers MUST configure
+  // that plugin in their Vite config; this component does not bundle workers.
 </script>
 
 <script lang="ts">
   import type Monaco from 'monaco-editor'
   import * as monacoImport from 'monaco-editor'
-  import * as monacoJson from 'monaco-editor/esm/vs/language/json/monaco.contribution.js'
-  import 'monaco-editor/esm/vs/language/json/jsonMode'
   import { onDestroy, onMount } from 'svelte'
   import loader from '@monaco-editor/loader'
-  import { felderaCompilerMarkerSource } from '$lib/functions/pipelines/monaco'
-  import felderaApiJsonSchemas from 'virtual:felderaApiJsonSchemas.json'
 
   let monaco: typeof Monaco
 
@@ -45,6 +34,8 @@
     model,
     options,
     markers,
+    markerSource,
+    jsonSchemas,
     onready,
     extras
   }: {
@@ -55,6 +46,10 @@
       'model' | 'value' | 'language'
     >
     markers?: Record<string, Monaco.editor.IMarkerData[]> | undefined
+    /** When `markers` is cleared, markers owned by this source are removed. */
+    markerSource?: string
+    /** Optional JSON schemas to register for `json`-language validation. */
+    jsonSchemas?: Monaco.json.DiagnosticsOptions['schemas']
     onready: (event: Monaco.editor.IStandaloneCodeEditor) => void
     extras?: {
       isDarkMode?: boolean
@@ -84,7 +79,9 @@
       return
     }
     if (!markers) {
-      monaco.editor.removeAllMarkers(felderaCompilerMarkerSource)
+      if (markerSource) {
+        monaco.editor.removeAllMarkers(markerSource)
+      }
       return
     }
     setTimeout(() => {
@@ -95,14 +92,30 @@
   })
 
   onMount(async () => {
-    const jsonDefaults: Monaco.json.LanguageServiceDefaults = (monacoJson as any).jsonDefaults
-    if (!jsonDefaults.diagnosticsOptions.schemas?.length) {
-      jsonDefaults.setDiagnosticsOptions({
-        validate: true,
-        schemas: felderaApiJsonSchemas
-      })
-    }
     monaco = await loader.init()
+    if (jsonSchemas) {
+      // `jsonDefaults` is a named export of the json `monaco.contribution`,
+      // NOT a property of the runtime `monaco` object — monaco only publishes
+      // the `editor` and `languages` namespaces on the aggregate. We dynamic-
+      // import it here; when the consumer enabled `'json'` in
+      // `@feldera/vite-plugin-monaco-editor`, this is a cache hit on the
+      // module that the plugin already statically loaded, and when they
+      // didn't, the plugin suppresses the import (the returned module is
+      // empty) and we warn instead of silently shipping a broken validator.
+      const { jsonDefaults } = (await import(
+        'monaco-editor/esm/vs/language/json/monaco.contribution.js'
+      )) as { jsonDefaults?: Monaco.json.LanguageServiceDefaults }
+      if (jsonDefaults && !jsonDefaults.diagnosticsOptions.schemas?.length) {
+        jsonDefaults.setDiagnosticsOptions({
+          validate: true,
+          schemas: jsonSchemas
+        })
+      } else if (!jsonDefaults) {
+        console.warn(
+          "[MonacoEditor] `jsonSchemas` was provided but the `json` language isn't enabled in @feldera/vite-plugin-monaco-editor — schemas ignored."
+        )
+      }
+    }
     editor = monaco.editor.create(container, {
       // TODO: Workaround for Windows-only cursor mis-positioning on mouse click
       // (cursor lands progressively further off the clicked glyph along the line;
@@ -130,7 +143,7 @@
 </script>
 
 <div
-  class="monaco-container {options?.readOnly
+  class="h-full w-full p-0 m-0 {options?.readOnly
     ? extras?.isDarkMode
       ? 'monaco-readonly-dark'
       : 'monaco-readonly'
@@ -141,22 +154,13 @@
 <style>
   .monaco-readonly {
     :global(.sticky-line-content, .sticky-widget-line-numbers, .margin, .monaco-editor-background) {
-      /* @apply bg-surface-50; */
       background-color: var(--color-surface-50);
     }
   }
   .monaco-readonly-dark {
     :global(.sticky-line-content, .sticky-widget-line-numbers, .margin, .monaco-editor-background) {
-      /* @apply bg-surface-950; */
       background-color: var(--color-surface-950);
     }
-  }
-
-  div.monaco-container {
-    width: 100%;
-    height: 100%;
-    padding: 0;
-    margin: 0;
   }
 
   div :global(.monaco-editor .monaco-inputbox .input) {

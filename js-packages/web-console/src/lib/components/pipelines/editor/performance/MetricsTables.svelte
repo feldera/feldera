@@ -1,8 +1,6 @@
 <script lang="ts">
-  import { SegmentedControl } from '@skeletonlabs/skeleton-svelte'
+  import { Popover, SegmentedControl, Tooltip } from 'common-ui'
   import type { HTMLAttributes } from 'svelte/elements'
-  import Popover from '$lib/components/common/Popover.svelte'
-  import Tooltip from '$lib/components/common/Tooltip.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { count } from '$lib/functions/common/array'
   import { humanSize } from '$lib/functions/common/string'
@@ -321,27 +319,20 @@
 )}
   <SegmentedControl
     value={filter}
-    onValueChange={(e) => setFilter(e.value as HealthFilter)}
+    onValueChange={setFilter}
+    items={healthFilterModes.map((value) => ({
+      value,
+      label: value,
+      testid: `btn-select-${value}`
+    }))}
     class="-mt-2"
+    itemTextClass="capitalize"
   >
-    <SegmentedControl.Label />
-    <SegmentedControl.Control class="w-fit flex-none rounded preset-filled-surface-50-950 p-1">
-      <SegmentedControl.Indicator class="bg-white-dark shadow" />
-      {#each healthFilterModes as mode}
-        <SegmentedControl.Item
-          value={mode}
-          class="btn h-6 cursor-pointer px-3"
-          data-testid="btn-select-{mode}"
-        >
-          <SegmentedControl.ItemText class="text-surface-950-50 capitalize">
-            {mode}{#if mode === 'unhealthy' && unhealthyCount > 0}<span
-                class="ml-2 rounded bg-error-50-950 px-2">{unhealthyCount}</span
-              >{/if}
-          </SegmentedControl.ItemText>
-          <SegmentedControl.ItemHiddenInput />
-        </SegmentedControl.Item>
-      {/each}
-    </SegmentedControl.Control>
+    {#snippet label(item)}
+      {item.value}{#if item.value === 'unhealthy' && unhealthyCount > 0}<span
+          class="ml-2 rounded bg-error-50-950 px-2">{unhealthyCount}</span
+        >{/if}
+    {/snippet}
   </SegmentedControl>
 {/snippet}
 

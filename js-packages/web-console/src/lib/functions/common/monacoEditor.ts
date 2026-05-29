@@ -1,4 +1,4 @@
-import { exportedThemes, nativeThemes, themeNames } from '$lib/components/MonacoEditorRunes.svelte'
+import { exportedThemes, nativeThemes, themeNames } from 'common-ui'
 
 export const isMonacoEditorDisabled = (disabled?: boolean) => ({
   // domReadOnly: disabled,

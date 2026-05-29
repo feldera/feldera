@@ -48,7 +48,6 @@ import TabAdHocQuery from './TabAdHocQuery.svelte'
 import TabChangeStream from './TabChangeStream.svelte'
 import TabLogs from './TabLogs.svelte'
 import TabPerformance from './TabPerformance.svelte'
-import TabProfileVisualizer from './TabProfileVisualizer.svelte'
 import TabSamplyProfile from './TabSamplyProfile.svelte'
 
 const PIPELINE_NAME = 'test-deleted-pipeline-state'
@@ -250,28 +249,6 @@ describe('Deleted pipeline state', () => {
       })
       const warning = page.getByText('Start the pipeline to collect the profile')
       await expect.element(warning).toBeInTheDocument()
-      unmount()
-    })
-  })
-
-  describe('TabProfileVisualizer', () => {
-    it('disables download button when deleted', async () => {
-      const { unmount } = render(TabProfileVisualizer, {
-        pipeline: pipelineProp(),
-        deleted: true
-      })
-      const btn = page.getByText('Download pipeline profile')
-      await expect.element(btn).toBeDisabled()
-      unmount()
-    })
-
-    it('enables download button when not deleted', async () => {
-      const { unmount } = render(TabProfileVisualizer, {
-        pipeline: pipelineProp(),
-        deleted: false
-      })
-      const btn = page.getByText('Download pipeline profile')
-      await expect.element(btn).not.toBeDisabled()
       unmount()
     })
   })

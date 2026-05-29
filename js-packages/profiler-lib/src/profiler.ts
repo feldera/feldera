@@ -58,7 +58,7 @@ export interface ProfilerCallbacks {
     onMetricsChanged: (metrics: MetricOption[], selectedMetric: string) => void;
 
     /** Called when the workers state changes */
-    onWorkersChanged: (workers: WorkerOption[]) => void;
+    onWorkersChanged?: (workers: WorkerOption[]) => void;
 
     /** Called when a status message should be displayed; if the message is None, the messages are cleared */
     displayMessage: (message: Option<string>) => void;

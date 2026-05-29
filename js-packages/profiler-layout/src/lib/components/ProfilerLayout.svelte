@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Select } from 'common-ui'
   import type {
     Dataflow,
     JsonProfiles,
@@ -175,11 +176,11 @@
     <!-- Metric Selector -->
     <label class="flex items-center gap-2 text-sm">
       <span class="text-surface-600-400">Metric:</span>
-      <select bind:value={selectedMetricId} class="select text-sm">
+      <Select bind:value={selectedMetricId}>
         {#each metrics as metric (metric.id)}
           <option value={metric.id}>{metric.label}</option>
         {/each}
-      </select>
+      </Select>
     </label>
 
     {@render pseudoNode({
@@ -284,64 +285,3 @@
     </div>
   </div>
 </div>
-
-<style>
-  .profiler-layout {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .profiler-diagram-container {
-    flex: 1;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .error-banner {
-    background-color: #fee;
-    color: #c00;
-    padding: 1rem;
-    border: 1px solid #fcc;
-    border-radius: 4px;
-    margin-bottom: 1rem;
-    font-family: monospace;
-    white-space: pre-wrap;
-  }
-
-  .profiler-menus {
-    position: absolute;
-    top: 0.5rem;
-    left: 0.5rem;
-    z-index: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: start;
-    gap: 0.5rem;
-  }
-
-  .profiler-message {
-    display: block;
-    font-family: monospace;
-    background-color: rgba(255, 255, 255, 0.9);
-    padding: 0.5rem;
-    font-size: 14px;
-    border-radius: 4px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
-  .profiler-error {
-    background-color: white;
-    color: red;
-    display: block;
-    font-family: monospace;
-    border: 1px solid red;
-    border-radius: 4px;
-    text-align: center;
-    max-width: 350px;
-    white-space: pre-wrap;
-    padding: 0.5rem;
-    box-shadow: 0 2px 4px rgba(255, 0, 0, 0.2);
-  }
-</style>

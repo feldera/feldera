@@ -1,4 +1,4 @@
-<!-- Render text decorated by ANSI escape sequences -->
+<!-- Render text decorated by ANSI escape sequences. -->
 <script lang="ts" module>
   import { FancyAnsi } from 'fancy-ansi'
 

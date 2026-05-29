@@ -1,9 +1,8 @@
 <script lang="ts">
   import { Datatable, TableHandler } from '@vincjo/datatables'
+  import { Popover, Select, Tooltip } from 'common-ui'
   import { match } from 'ts-pattern'
   import { page } from '$app/state'
-  import { Popover } from '$lib/components/common/Popover.svelte'
-  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import ThSort from '$lib/components/pipelines/table/ThSort.svelte'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
@@ -87,14 +86,14 @@
   const td = 'py-1 text-base border-t-[0.5px]'
 </script>
 
-<div class="pipeline-table-wrapper bg-white-dark">
+<div class="pipeline-table-wrapper bg-white-dark w-fit min-w-full">
   <div class="bg-white-dark sticky top-0 z-10 pb-2" bind:clientHeight={controlsHeight}>
     <div class="sticky left-0 max-w-[100cqi] px-2 md:px-8">
       {#if header}
         {@render header()}
       {/if}
       <div
-        class="relative mt-2 flex flex-row items-stretch gap-2 sm:items-end sm:justify-end sm:gap-4"
+        class="relative mt-2 flex flex-row items-center gap-2 sm:justify-end sm:gap-4"
         class:lg:-mt-7={!!header}
         class:lg:mb-0={!!header}
       >
@@ -107,9 +106,9 @@
             nameSearch = e.currentTarget.value
           }}
         />
-        <select
+        <Select
           data-testid="select-pipeline-status"
-          class="h_-9 select sm:w-40"
+          class="h-9 text-base! sm:w-40"
           onchange={(e) => {
             statusFilter.value = filterStatuses.find((v) => e.currentTarget.value === v[0])![0]
             statusFilter.set()
@@ -118,13 +117,13 @@
           {#each filterStatuses as filter (filter[0])}
             <option value={filter[0]}>{filter[0]}</option>
           {/each}
-        </select>
+        </Select>
         {@render preHeaderEnd?.()}
       </div>
     </div>
   </div>
   <Datatable headless {table}>
-    <table class="md:px-6">
+    <table class="bg-inherit md:px-6">
       <thead style="top: {controlsHeight}px; z-index: 1;">
         <tr>
           <th class="w-10 px-2 text-left"
@@ -264,14 +263,9 @@
 </div>
 
 <style>
-  .pipeline-table-wrapper {
-    width: fit-content;
-    min-width: 100%;
-  }
+  /* Datatable wraps our <table> in an <article class="thin-scrollbar"> whose default
+     overflow:auto would clip the sticky header. Reach in via :global to override. */
   .pipeline-table-wrapper :global(article.thin-scrollbar) {
     overflow: visible !important;
-  }
-  .pipeline-table-wrapper :global(table) {
-    background: inherit;
   }
 </style>

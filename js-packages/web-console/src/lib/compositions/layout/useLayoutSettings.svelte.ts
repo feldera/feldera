@@ -11,12 +11,14 @@ export const useLayoutSettings = () => {
   const showInteractionPanel = useLocalStorage('layout/pipelines/interactionPanel', false)
   const hideWarnings = useLocalStorage('layout/pipelines/logs/hideWarnings', false)
   const verbatimErrors = useLocalStorage('layout/pipelines/logs/verbatimErrors', false)
+  const sqlPanelFullHeight = useLocalStorage('layout/profile-bundle/sqlPanelFullHeight', false)
 
   return {
     showPipelinesPanel,
     showMonitoringPanel,
     showInteractionPanel,
     hideWarnings,
-    verbatimErrors
+    verbatimErrors,
+    sqlPanelFullHeight
   }
 }

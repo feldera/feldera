@@ -48,7 +48,7 @@
   import { DecoupledStateProxy } from '$lib/compositions/decoupledState.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
-  import MonacoEditor from '$lib/components/MonacoEditorRunes.svelte'
+  import { MonacoEditor, setSelections as setEditorSelections } from 'common-ui'
   import * as MonacoImports from 'monaco-editor'
   import { editor, KeyCode, KeyMod } from 'monaco-editor'
   import type { EditorLanguage } from 'monaco-editor/esm/metadata.js'
@@ -57,6 +57,7 @@
   import { GenericOverlayWidget } from '$lib/components/monacoEditor/GenericOverlayWidget'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
   import { getThemeColor } from '$lib/functions/common/color'
+  import { felderaCompilerMarkerSource } from '$lib/functions/pipelines/monaco'
   import type { Snippet } from '$lib/types/svelte'
 
   void MonacoImports // Explicitly import all monaco-editor esm modules
@@ -134,24 +135,7 @@
   }
 
   export function setSelections(ranges: { start: CodePosition; end: CodePosition }[]) {
-    if (!editorRef || ranges.length === 0) {
-      return
-    }
-    editorRef.setSelections(
-      ranges.map((range) => ({
-        selectionStartLineNumber: range.start.line,
-        selectionStartColumn: range.start.column,
-        positionLineNumber: range.end.line,
-        positionColumn: range.end.column
-      }))
-    )
-    // Reveal the first selection in the center of the screen
-    editorRef.revealRangeInCenter({
-      startLineNumber: ranges[0].start.line,
-      startColumn: ranges[0].start.column,
-      endLineNumber: ranges[0].end.line,
-      endColumn: ranges[0].end.column
-    })
+    setEditorSelections(editorRef, ranges)
   }
 
   let editorRef: editor.IStandaloneCodeEditor = $state()!
@@ -378,6 +362,7 @@
       >
         <MonacoEditor
           markers={file.markers}
+          markerSource={felderaCompilerMarkerSource}
           onready={(editorRef) => {
             editorRef.addCommand(KeyMod.CtrlCmd | KeyCode.KeyS, () => {
               openFiles[filePath].sync.push()

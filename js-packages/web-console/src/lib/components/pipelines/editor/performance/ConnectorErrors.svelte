@@ -1,9 +1,8 @@
 <script lang="ts">
-  import { SegmentedControl } from '@skeletonlabs/skeleton-svelte'
+  import { SegmentedControl, Tooltip } from 'common-ui'
   import Dayjs from 'dayjs'
   import { fade, slide } from 'svelte/transition'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
-  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import { getCaseDependentName } from '$lib/functions/felderaRelation'
   import { formatDateTime } from '$lib/functions/format'
   import {
@@ -44,6 +43,9 @@
   } = $props()
 
   const filterOptions = $derived(direction === 'input' ? inputFilterOptions : outputFilterOptions)
+  const filterItems = $derived(
+    filterOptions.map((value) => ({ value, label: filterOptionLabels[value] ?? value }))
+  )
 
   let status: InputEndpointStatus | OutputEndpointStatus | null = $state(null)
   let loading = $state(false)
@@ -140,23 +142,10 @@
   <div class="flex flex-nowrap items-center gap-2">
     <SegmentedControl
       value={tagsFilter}
-      onValueChange={(e) => (tagsFilter = e.value as ConnectorErrorFilter)}
-    >
-      <SegmentedControl.Label />
-      <SegmentedControl.Control
-        class="-mt-2 w-fit flex-none rounded preset-filled-surface-50-950 p-1"
-      >
-        <SegmentedControl.Indicator class="bg-white-dark shadow" />
-        {#each filterOptions as filter}
-          <SegmentedControl.Item value={filter} class="btn h-6 cursor-pointer px-5 text-sm">
-            <SegmentedControl.ItemText class="text-surface-950-50">
-              {filterOptionLabels[filter]}
-            </SegmentedControl.ItemText>
-            <SegmentedControl.ItemHiddenInput />
-          </SegmentedControl.Item>
-        {/each}
-      </SegmentedControl.Control>
-    </SegmentedControl>
+      onValueChange={(v) => (tagsFilter = v as ConnectorErrorFilter)}
+      items={filterItems}
+      class="-mt-2"
+    />
     <span class="text-surface-500">errors</span>
   </div>
   <div class="-mr-4 scrollbar flex-1 overflow-y-auto pr-4">
