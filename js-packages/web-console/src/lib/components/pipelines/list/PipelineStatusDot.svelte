@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
+  import { Tooltip } from 'common-ui'
   import { pipelineStatusColor } from '$lib/functions/pipelineStatusColor'
   import { getPipelineStatusLabel } from '$lib/functions/pipelines/status'
   import type { PipelineStatus } from '$lib/services/pipelineManager'

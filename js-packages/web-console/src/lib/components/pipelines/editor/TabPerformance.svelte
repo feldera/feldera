@@ -5,7 +5,7 @@
 </script>
 
 <script lang="ts">
-  import { SegmentedControl } from '@skeletonlabs/skeleton-svelte'
+  import { SegmentedControl } from 'common-ui'
   import Dayjs from 'dayjs'
   import PipelineMemoryGraph from '$lib/components/layout/pipelines/PipelineMemoryGraph.svelte'
   import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
@@ -279,30 +279,13 @@
               <div>
                 <SegmentedControl
                   value={statusTab}
-                  onValueChange={(e) => (statusTab = e.value as typeof statusTab)}
-                >
-                  <SegmentedControl.Label />
-                  <SegmentedControl.Control
-                    class="-mt-3 w-fit flex-none overflow-visible rounded preset-filled-surface-50-950 p-1"
-                  >
-                    <SegmentedControl.Indicator class="bg-white-dark shadow" />
-                    <SegmentedControl.Item value="age" class="z-1 btn h-6 cursor-pointer px-5 py-4">
-                      <SegmentedControl.ItemText class="text-surface-950-50">
-                        <div class="text-start text-sm">Age</div>
-                      </SegmentedControl.ItemText>
-                      <SegmentedControl.ItemHiddenInput />
-                    </SegmentedControl.Item>
-                    <SegmentedControl.Item
-                      value="updated"
-                      class="z-1 btn h-6 cursor-pointer px-5 py-4"
-                    >
-                      <SegmentedControl.ItemText class="text-surface-950-50">
-                        <div class="text-start text-sm">Last status update</div>
-                      </SegmentedControl.ItemText>
-                      <SegmentedControl.ItemHiddenInput />
-                    </SegmentedControl.Item>
-                  </SegmentedControl.Control>
-                </SegmentedControl>
+                  onValueChange={(v) => (statusTab = v)}
+                  items={[
+                    { value: 'age', label: 'Age' },
+                    { value: 'updated', label: 'Last status update' }
+                  ]}
+                  class="-mt-3"
+                />
                 {#if statusTab === 'age'}
                   {@render age()}
                 {:else if statusTab === 'updated'}

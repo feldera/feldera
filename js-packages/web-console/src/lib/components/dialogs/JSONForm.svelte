@@ -1,7 +1,8 @@
 <script lang="ts">
+  import felderaApiJsonSchemas from 'virtual:felderaApiJsonSchemas.json'
+  import { MonacoEditor } from 'common-ui'
   import * as MonacoImports from 'monaco-editor'
   import { editor } from 'monaco-editor'
-  import MonacoEditor from '$lib/components/MonacoEditorRunes.svelte'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
@@ -65,6 +66,7 @@
 
 <MonacoEditor
   model={currentModel}
+  jsonSchemas={felderaApiJsonSchemas}
   onready={(ref) => {
     ref.onKeyDown((e) => {
       if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {

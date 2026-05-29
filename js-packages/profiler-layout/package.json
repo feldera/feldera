@@ -3,8 +3,10 @@
   "version": "0.0.1",
   "scripts": {
     "dev": "vite dev",
-    "prebuild": "cd ../profiler-lib && bun run build",
-    "build": "svelte-kit sync && vite build && npm run prepack",
+    "prebuild": "bun --cwd=../.. run build:deps:profiler-layout",
+    "build": "bun run build:self",
+    "build:self": "svelte-kit sync && vite build && npm run prepack",
+    "build:pure": "vite build",
     "preview": "vite preview",
     "prepare": "bun run prepack",
     "prepack": "svelte-kit sync && svelte-package && publint",
@@ -25,10 +27,15 @@
   },
   "dependencies": {
     "but-unzip": "^0.1.7",
-    "sort-on": "^7.0.0"
+    "common-ui": "workspace:*",
+    "paneforge": "1.0.2",
+    "sort-on": "^7.0.0",
+    "triage-types": "workspace:*"
   },
   "peerDependencies": {
-    "svelte": "^5.33.3"
+    "@monaco-editor/loader": "1.7.0",
+    "monaco-editor": "0.55.1",
+    "svelte": "5.55.7"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.8",
@@ -38,11 +45,13 @@
     "@sveltejs/kit": "^2.49.5",
     "@sveltejs/package": "^2.5.7",
     "@sveltejs/vite-plugin-svelte": "7.0.0",
+    "@monaco-editor/loader": "1.7.0",
     "@tailwindcss/vite": "^4.1.17",
     "feldera-theme": "workspace:*",
+    "monaco-editor": "0.55.1",
     "profiler-lib": "workspace:*",
     "publint": "^0.3.15",
-    "svelte": "^5.46.4",
+    "svelte": "5.55.7",
     "svelte-check": "^4.3.5",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",

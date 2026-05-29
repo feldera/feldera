@@ -6,6 +6,7 @@
 
 /* Scan profiler packages for Tailwind classes */
 @source "../../node_modules/profiler-layout/**/*.{svelte}";
+@source "../../node_modules/common-ui/**/*.{svelte}";
 
 @import "@skeletonlabs/skeleton";
 @import "@skeletonlabs/skeleton-svelte";
@@ -85,25 +86,6 @@
 
 .preset-grayout-surface {
   @apply text-surface-700 hover:text-surface-950 dark:text-surface-300 dark:hover:text-surface-50;
-}
-
-.pane-divider-horizontal {
-  @apply z-1 h-0.5 transition-colors before:-mt-0.75 before:flex before:h-2 before:w-full hover:bg-primary-500 active:bg-primary-500;
-}
-
-.pane-divider-vertical {
-  @apply z-1 w-0.5 transition-colors before:-ml-0.75 before:flex before:h-full before:w-2 hover:bg-primary-500 active:bg-primary-500;
-}
-
-.bg-white-dark {
-  @apply bg-white;
-  &:where(.dark, .dark *) {
-    @apply bg-dark;
-  }
-}
-
-.bg-dark-white {
-  @apply bg-dark dark:bg-white;
 }
 
 /* Skeleton UI overrides */

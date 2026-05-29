@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
+  import { Tooltip } from 'common-ui'
   import {
     type GlobalDialogContent,
     useGlobalDialog
@@ -44,7 +44,7 @@
     {/if}
   </div>
   <div
-    class="-mr-4 scrollbar flex max-h-[calc(90vh-96px)] flex-col gap-4 overflow-auto pr-4 sm:-mr-8"
+    class="-mr-4 scrollbar flex max-h-[calc(90vh-96px)] flex-col gap-4 overflow-visible pr-4 sm:-mr-8"
   >
     {#if content.description}
       <span class="whitespace-pre-wrap" data-testid="box-dialog-description">

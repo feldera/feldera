@@ -146,7 +146,7 @@ export const usePipelineManager = (options?: FetchOptions) => {
 
   const downloadPipelineSupportBundle = (
     pipelineName: string,
-    options: SupportBundleOptions,
+    options: Partial<SupportBundleOptions>,
     onProgress?: (bytesDownloaded: number, bytesTotal: number) => void
   ) => {
     const { dataPromise, cancel } = getPipelineSupportBundle(pipelineName, options, onProgress)

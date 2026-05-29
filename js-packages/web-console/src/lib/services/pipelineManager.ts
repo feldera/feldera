@@ -529,17 +529,11 @@ export const getCheckpointStatus = (pipeline_name: string, options?: FetchOption
 }
 
 export const syncCheckpoint = (pipeline_name: string, options?: FetchOptions) => {
-  return mapResponse(
-    _syncCheckpoint({ path: { pipeline_name }, ...options }),
-    (v) => v
-  )
+  return mapResponse(_syncCheckpoint({ path: { pipeline_name }, ...options }), (v) => v)
 }
 
 export const getCheckpointSyncStatus = (pipeline_name: string, options?: FetchOptions) => {
-  return mapResponse(
-    _getCheckpointSyncStatus({ path: { pipeline_name }, ...options }),
-    (v) => v
-  )
+  return mapResponse(_getCheckpointSyncStatus({ path: { pipeline_name }, ...options }), (v) => v)
 }
 
 export const deletePipeline = async (pipeline_name: string, options?: FetchOptions) => {

@@ -39,14 +39,13 @@ groups related actions into multi-action dropdowns when multiple options are ava
 -->
 
 <script lang="ts">
+  import { Popover, Tooltip } from 'common-ui'
   import { slide } from 'svelte/transition'
   import JSONbig from 'true-json-bigint'
   import { match, P } from 'ts-pattern'
   import { goto } from '$app/navigation'
   import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
-  import { Popover } from '$lib/components/common/Popover.svelte'
   import Popup from '$lib/components/common/Popup.svelte'
-  import Tooltip from '$lib/components/common/Tooltip.svelte'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
   import JSONDialog from '$lib/components/dialogs/JSONDialog.svelte'
   import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'

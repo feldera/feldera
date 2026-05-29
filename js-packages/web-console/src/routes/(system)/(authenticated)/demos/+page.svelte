@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SegmentedControl } from '@skeletonlabs/skeleton-svelte'
+  import { SegmentedControl } from 'common-ui'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import Footer from '$lib/components/layout/Footer.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
@@ -35,6 +35,7 @@
     Tutorial: 'Tutorials',
     Example: 'Examples'
   }
+  const items = $derived(types.map((type) => ({ value: type, label: plurals[type] ?? type })))
 </script>
 
 <AppHeader>
@@ -60,20 +61,7 @@
   {/snippet}
 </AppHeader>
 <div class="flex px-2 pb-5 md:px-8">
-  <SegmentedControl value={demosType} onValueChange={(e) => e.value && (demosType = e.value)}>
-    <SegmentedControl.Label />
-    <SegmentedControl.Control class="rounded preset-filled-surface-50-950 p-1 sm:gap-2">
-      <SegmentedControl.Indicator class="bg-white-dark shadow" />
-      {#each types as type}
-        <SegmentedControl.Item value={type} class="z-1 btn h-6 cursor-pointer px-5 text-sm sm:px-8">
-          <SegmentedControl.ItemText class="text-surface-950-50">
-            {plurals[type] ?? type}
-          </SegmentedControl.ItemText>
-          <SegmentedControl.ItemHiddenInput />
-        </SegmentedControl.Item>
-      {/each}
-    </SegmentedControl.Control>
-  </SegmentedControl>
+  <SegmentedControl value={demosType} onValueChange={(v) => (demosType = v)} {items} />
 </div>
 <div class="scrollbar flex h-full flex-col justify-between overflow-y-auto">
   <div

@@ -52,7 +52,8 @@ const testOptimizeDepsInclude = [
   'echarts/components',
   'echarts/core',
   'echarts/renderers',
-  'fancy-ansi',
+  'common-ui > fancy-ansi',
+  'common-ui > fancy-ansi > escape-html',
   'formsnap',
   'jwt-decode',
   'nprogress',
@@ -190,9 +191,7 @@ export default defineConfig(async () => {
     server: {
       // When pluginsEntry is set, it points outside this workspace. Allow
       // vite-dev to read from its directory; build mode is unaffected.
-      fs: pluginsEntry
-        ? { allow: ['..', path.dirname(pluginsEntry)] }
-        : undefined,
+      fs: pluginsEntry ? { allow: ['..', path.dirname(pluginsEntry)] } : undefined,
       watch: {
         // Bun hoists deps to repo-root node_modules/.bun, causing vite to
         // resolve paths outside web-console and watch the entire monorepo,

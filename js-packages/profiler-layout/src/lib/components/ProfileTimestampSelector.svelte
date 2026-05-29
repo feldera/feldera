@@ -1,13 +1,16 @@
 <script lang="ts">
   import type { ZipItem } from 'but-unzip'
+  import { Select } from 'common-ui'
 
   let {
     profileFiles,
-    selectedTimestamp = $bindable(),
+    selectedTimestamp,
+    onSelectTimestamp,
     class: className = ''
   }: {
     profileFiles: [Date, ZipItem[]][]
     selectedTimestamp: Date | null
+    onSelectTimestamp: (timestamp: Date) => void
     class?: string
   } = $props()
 
@@ -16,15 +19,15 @@
 
 <label class="flex items-center gap-2 text-sm {className}">
   <span class="text-surface-600-400">Snapshot:</span>
-  <select
-    class="select w-36"
+  <Select
+    class="w-36"
     value={selectedTimestamp?.getTime()}
     onchange={(e) => {
-      selectedTimestamp = new Date(parseInt(e.currentTarget.value))
+      onSelectTimestamp(new Date(parseInt(e.currentTarget.value)))
     }}
   >
     {#each timestamps as timestamp (timestamp)}
       <option value={timestamp.getTime()}>{timestamp.toLocaleTimeString()}</option>
     {/each}
-  </select>
+  </Select>
 </label>

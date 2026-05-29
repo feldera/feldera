@@ -6,6 +6,7 @@ import { groupBy } from './array'
 const circuitProfileRegex = /circuit_profile\.json$/
 const dataflowGraphRegex = /dataflow_graph\.json$/
 const pipelineConfigRegex = /pipeline_config\.json$/
+const logsRegex = /logs\.txt$/
 
 // New bundle layout (since support-bundle metadata_version 1): each collection
 // lives under a directory named after its timestamp, e.g.
@@ -13,8 +14,7 @@ const pipelineConfigRegex = /pipeline_config\.json$/
 // on the directory. The directory may be placed in a nested directory
 // (e.g. "support/2026-05-25T12-34-56.789Z/circuit_profile.json"),
 // so we match the timestamp segment anywhere in the path, not only at the start.
-const collectionDirRegex =
-  /(?:^|\/)(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:\.\d+)?Z(?:-\d+)?)\//
+const collectionDirRegex = /(?:^|\/)(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:\.\d+)?Z(?:-\d+)?)\//
 
 // Legacy layout: files were named "<ISO_TIMESTAMP>_<file>", optionally inside
 // a sub-path, e.g. "2026-01-19T12:55:54.152834443+00:00_logs.txt".
@@ -23,9 +23,7 @@ const legacyTimestampPrefixRegex = /(?:^|\/)(\d{4}-\d{2}-\d{2}T[^/_]+)_/
 /** Group key identifying one collection. Empty string means "not a collection file". */
 function collectionKey(filename: string): string {
   return (
-    filename.match(collectionDirRegex)?.[1] ??
-    filename.match(legacyTimestampPrefixRegex)?.[1] ??
-    ''
+    filename.match(collectionDirRegex)?.[1] ?? filename.match(legacyTimestampPrefixRegex)?.[1] ?? ''
   )
 }
 
@@ -45,6 +43,8 @@ export interface ProcessedProfile {
   profile: JsonProfiles
   dataflow?: Dataflow
   sources?: string[]
+  logText?: string
+  pipelineName?: string
 }
 
 /**
@@ -70,9 +70,7 @@ export function getSuitableProfiles(zipData: Uint8Array): [Date, ZipItem[]][] {
   )
 
   return sortOn(
-    profileTimestamps.map(
-      ([key, files]) => [collectionDate(key), files] as [Date, ZipItem[]]
-    ),
+    profileTimestamps.map(([key, files]) => [collectionDate(key), files] as [Date, ZipItem[]]),
     (p) => p[0]
   )
 }
@@ -98,16 +96,27 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
 
   const configFile = files.find((file) => pipelineConfigRegex.test(file.filename))
   let sources: string[] | undefined
+  let pipelineName: string | undefined
   if (configFile) {
     const pipelineConfig = JSON.parse(decoder.decode(await configFile.read())) as unknown as {
       program_code: string
+      name?: string
     }
     sources = pipelineConfig.program_code.split('\n')
+    pipelineName = pipelineConfig.name || undefined
+  }
+
+  const logsFile = files.find((file) => logsRegex.test(file.filename))
+  let logText: string | undefined
+  if (logsFile) {
+    logText = decoder.decode(await logsFile.read())
   }
 
   return {
     profile,
     dataflow,
-    sources
+    sources,
+    logText,
+    pipelineName
   }
 }

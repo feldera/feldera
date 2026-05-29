@@ -74,6 +74,9 @@ export class MetadataSelector {
      * Notify callbacks about current worker state
      */
     private notifyWorkersChanged(): void {
+        if (!this.callbacks.onWorkersChanged) {
+            return
+        }
         const workers: WorkerOption[] = this.circuit.getWorkerNames().map((_name, index) => ({
             id: String(index),
             label: `Worker ${index}`,

@@ -4,7 +4,6 @@
     | 'Performance'
     | 'Ad-Hoc Queries'
     | 'Changes Stream'
-    | 'Profile Visualizer'
     | 'Samply'
     | 'Health'
     | 'Logs'
@@ -19,7 +18,6 @@
   import PanelChangeStream from '$lib/components/pipelines/editor/TabChangeStream.svelte'
   import * as TabPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
   import PanelPipelineErrors from '$lib/components/pipelines/editor/TabPipelineErrors.svelte'
-  import * as TabProfileVisualizer from '$lib/components/pipelines/editor/TabProfileVisualizer.svelte'
   import * as TabSamplyProfile from '$lib/components/pipelines/editor/TabSamplyProfile.svelte'
   import PanelHealth from '$lib/components/pipelines/editor/TabHealth.svelte'
   import PanelLogs from '$lib/components/pipelines/editor/TabLogs.svelte'
@@ -29,13 +27,13 @@
   import { untrack } from 'svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
-  import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import { Tooltip } from 'common-ui'
   import DownloadSupportBundle from '$lib/components/pipelines/editor/DownloadSupportBundle.svelte'
   import {
     extractProgramErrors,
     numConnectorsWithProblems
   } from '$lib/compositions/health/systemErrors'
-  import TabsPanel from './TabsPanel.svelte'
+  import { TabsPanel } from 'common-ui'
 
   let {
     pipeline,
@@ -81,13 +79,6 @@
         id: 'Changes Stream' as const,
         label: TabControlChangeStream,
         panel: PanelChangeStream,
-        keepAlive: true,
-        tabBarEnd: TabBarEndPipelineInfo
-      },
-      {
-        id: TabProfileVisualizer.id,
-        label: TabProfileVisualizer.Label,
-        panel: TabProfileVisualizer.default,
         keepAlive: true,
         tabBarEnd: TabBarEndPipelineInfo
       },
@@ -209,10 +200,10 @@
 {/snippet}
 
 {#snippet TabBarEndPipelineInfo()}
-  <div class="ml-auto flex">
+  <div class="ml-auto flex gap-2">
     <ClipboardCopyButton
       value={pipeline.current.id}
-      class="h-8 w-auto! gap-2 preset-tonal-surface px-4"
+      class="h-4! w-auto! gap-2 preset-tonal-surface px-4"
     >
       <span class="text-base font-normal text-surface-950-50"> Pipeline ID </span>
     </ClipboardCopyButton>

@@ -22,6 +22,14 @@ export interface MonacoOptions {
   languages?: Languages
   customLanguages?: IFeatureDefinition[]
   globalAPI?: boolean
+  /**
+   * Emit worker imports as `?worker&inline` so workers are bundled as base64
+   * data URIs in the main chunk instead of separate sibling files. Use this for
+   * single-file builds (e.g. `vite-plugin-singlefile`) that need a self-contained
+   * artifact. Default `false` — separate worker files are preferable for normal
+   * apps since they can be loaded lazily per language.
+   */
+  inlineWorkers?: boolean
 }
 
 interface ResolvedWorker {
@@ -33,12 +41,27 @@ interface ResolvedWorker {
 const EDITOR_MAIN_RE = /monaco-editor[/\\]esm[/\\]vs[/\\]editor[/\\]editor\.main\.js$/
 const EDITOR_ALL_RE = /monaco-editor[/\\]esm[/\\]vs[/\\]editor[/\\]editor\.all\.js$/
 const EDCORE_MAIN_RE = /monaco-editor[/\\]esm[/\\]vs[/\\]editor[/\\]edcore\.main\.js$/
-// Files inside monaco-editor that contain bare side-effect imports of every
-// editor contribution, defeating the selection emitted by the editor.main.js
-// replacement. Rather than enumerating each (the list grows per monaco
-// version), strip contrib/standalone side-effect imports from any monaco-editor
-// source file that has them.
-const MONACO_SRC_RE = /monaco-editor[/\\]esm[/\\]vs[/\\].+\.js$/
+// Advanced-language-service modules live under `vs/language/<dir>/`, where
+// `<dir>` matches one of the language entries declared in monaco's metadata
+// (json, typescript, css, html). Each is a self-contained bundle (worker,
+// monaco.contribution, mode) that is only useful when the consumer enables
+// that language. Consumer code that dynamic-imports one of these (e.g. for
+// JSON-schema validation) must be neutered when the language is not in the
+// configured set; otherwise rollup's `inlineDynamicImports` drags the entire
+// dir — and its ~400 KB worker — into the bundle. Subdirs like
+// `vs/language/common/` are shared infrastructure, NOT languages, and must
+// pass through (gated below by `allLanguageDirs`).
+const LANGUAGE_DIR_RE = /monaco-editor[/\\]esm[/\\]vs[/\\]language[/\\]([^/\\]+)[/\\]/
+// Basic-language files (`vs/basic-languages/<x>/`) are tokenizer-only monarch
+// grammars — they don't depend on editor contributions to function. Monaco
+// nonetheless ships them with bare `import "../editor/contrib/.../X.js"`
+// side-effect imports that pull every contrib into the bundle, defeating the
+// `features` selection emitted by the editor.main.js replacement. Strip those
+// here. LSP languages (`vs/language/<x>/`) get the opposite treatment: their
+// modes legitimately need the contribs they import (snippet, semanticTokens,
+// documentSymbols, codeAction, inlineCompletions, …) for schema-based
+// IntelliSense to work, so we leave their imports untouched.
+const BASIC_LANGUAGE_SRC_RE = /monaco-editor[/\\]esm[/\\]vs[/\\]basic-languages[/\\].+\.js$/
 
 const require_ = createRequire(import.meta.url)
 
@@ -198,15 +221,17 @@ function generateEditorMainSource(
   languageDefs: IFeatureDefinition[],
   featureDefs: IFeatureDefinition[],
   workers: ResolvedWorker[],
-  globalAPI: boolean
+  globalAPI: boolean,
+  inlineWorkers: boolean
 ): string {
   const lines: string[] = []
 
+  const workerQuery = inlineWorkers ? '?worker&inline' : '?worker'
   const workerBindings: Array<{ label: string; binding: string }> = []
   workers.forEach((w, i) => {
     const binding = `worker_${i}_${w.label.replace(/[^A-Za-z0-9_]/g, '_')}`
     const abs = resolveMonacoPath(w.entry)
-    lines.push(`import ${binding} from ${JSON.stringify(abs + '?worker')};`)
+    lines.push(`import ${binding} from ${JSON.stringify(abs + workerQuery)};`)
     workerBindings.push({ label: w.label, binding })
   })
 
@@ -253,9 +278,8 @@ function generateEditorMainSource(
 }
 
 // Paths inside bare side-effect imports that represent editor contribs and
-// standalone add-ons. These are the ones we want to gate through the user's
-// `features` selection rather than have every language/worker file pull them
-// in unconditionally.
+// standalone add-ons. These get stripped from basic-language source files
+// (see BASIC_LANGUAGE_SRC_RE); LSP languages retain their contrib imports.
 const CONTRIB_IMPORT_RE =
   /(?:\.\.[/\\])+editor[/\\](?:contrib|standalone[/\\]browser)[/\\][^'"]+/
 
@@ -295,13 +319,40 @@ throw new Error(
 `
 
 export function monaco(options: MonacoOptions = {}): Plugin {
-  const { features, languages, customLanguages = [], globalAPI = false } = options
+  const {
+    features,
+    languages,
+    customLanguages = [],
+    globalAPI = false,
+    inlineWorkers = false
+  } = options
 
   const allFeatures = buildFeatureRegistry()
 
   const resolvedLanguages = resolveLanguages(languages, customLanguages)
   const resolvedFeatures = resolveFeatures(features, allFeatures)
   const resolvedWorkers = collectWorkers([...resolvedLanguages, ...resolvedFeatures])
+
+  // Every `vs/language/<dir>/` subdir referenced by any monaco language in the
+  // full metadata. This is the universe of "advanced language services" the
+  // plugin might suppress — anything outside this set (e.g. `vs/language/common/`,
+  // which is shared infrastructure used by typescript/json/css/html) must pass
+  // through untouched.
+  const allLanguageDirs = new Set<string>()
+  for (const def of metadata.languages as IFeatureDefinition[]) {
+    for (const entry of flattenEntry(def.entry)) {
+      const m = entry.match(/vs[/\\]language[/\\]([^/\\]+)[/\\]/)
+      if (m) allLanguageDirs.add(m[1])
+    }
+  }
+  const enabledLanguageDirs = new Set<string>()
+  for (const def of resolvedLanguages) {
+    for (const entry of flattenEntry(def.entry)) {
+      const m = entry.match(/vs[/\\]language[/\\]([^/\\]+)[/\\]/)
+      if (m) enabledLanguageDirs.add(m[1])
+    }
+  }
+  const warnedLanguageDirs = new Set<string>()
 
   const trimCounters = { files: 0, imports: 0 }
 
@@ -317,7 +368,7 @@ export function monaco(options: MonacoOptions = {}): Plugin {
     buildEnd() {
       if (trimCounters.imports > 0) {
         console.log(
-          `\n[@feldera/vite-plugin-monaco-editor] trimmed ${trimCounters.imports} unwanted contrib import${trimCounters.imports === 1 ? '' : 's'} across ${trimCounters.files} monaco-editor file${trimCounters.files === 1 ? '' : 's'}`
+          `\n[@feldera/vite-plugin-monaco-editor] trimmed ${trimCounters.imports} unwanted contrib import${trimCounters.imports === 1 ? '' : 's'} across ${trimCounters.files} basic-language file${trimCounters.files === 1 ? '' : 's'}`
         )
       }
     },
@@ -346,15 +397,28 @@ export function monaco(options: MonacoOptions = {}): Plugin {
           resolvedLanguages,
           resolvedFeatures,
           resolvedWorkers,
-          globalAPI
+          globalAPI,
+          inlineWorkers
         )
       }
       if (EDITOR_ALL_RE.test(id) || EDCORE_MAIN_RE.test(id)) {
         return THROW_STUB
       }
-      if (EDITOR_MAIN_RE.test(id)) {
-        // handled above
-      } else if (MONACO_SRC_RE.test(id)) {
+      const langMatch = id.match(LANGUAGE_DIR_RE)
+      if (
+        langMatch &&
+        allLanguageDirs.has(langMatch[1]) &&
+        !enabledLanguageDirs.has(langMatch[1])
+      ) {
+        if (!warnedLanguageDirs.has(langMatch[1])) {
+          warnedLanguageDirs.add(langMatch[1])
+          console.warn(
+            `[@feldera/vite-plugin-monaco-editor] Suppressed import of disabled language "${langMatch[1]}" — add it to the plugin's \`languages\` option to enable.`
+          )
+        }
+        return 'export {}'
+      }
+      if (BASIC_LANGUAGE_SRC_RE.test(id)) {
         return stripContribSideEffectImports(id, trimCounters)
       }
       return undefined

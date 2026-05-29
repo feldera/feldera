@@ -10,8 +10,7 @@
 <GenericDialog
   content={{
     title: 'Create a checkpoint?',
-    description:
-      'This may delete the oldest checkpoint and briefly increase pipeline load.',
+    description: 'This may delete the oldest checkpoint and briefly increase pipeline load.',
     onSuccess: {
       name: 'Checkpoint',
       'data-testid': 'btn-confirm-checkpoint',

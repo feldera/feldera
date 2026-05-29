@@ -1,10 +1,10 @@
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
+  import { Tooltip } from 'common-ui'
   import { Pane, type PaneAPI, PaneGroup, PaneResizer } from 'paneforge'
   import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
-  import Tooltip from '$lib/components/common/Tooltip.svelte'
   import DoubleClickInput from '$lib/components/input/DoubleClickInput.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'

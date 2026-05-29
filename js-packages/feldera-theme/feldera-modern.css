@@ -204,3 +204,65 @@
   --color-surface-contrast-900: var(--color-surface-contrast-light);
   --color-surface-contrast-950: var(--color-surface-contrast-light);
 }
+
+/* ── Light/dark background helpers ───────────────────────────────────────── */
+
+.bg-white-dark {
+  background-color: #ffffff;
+}
+.bg-white-dark:where(.dark, .dark *) {
+  background-color: var(--color-dark);
+}
+
+.bg-dark-white {
+  background-color: var(--color-dark);
+}
+.bg-dark-white:where(.dark, .dark *) {
+  background-color: #ffffff;
+}
+
+/* ── Resizable pane divider handles ──────────────────────────────────────────
+   Used by paneforge PaneResizer elements in both web-console and profiler-app.
+   Apply in addition to margin utilities (my-2 / mx-1.5) for spacing.         */
+
+.pane-divider-horizontal {
+  z-index: 1;
+  height: 2px; /* 0.5 * 4 px spacing unit */
+  transition-property: color, background-color, border-color;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+.pane-divider-horizontal::before {
+  content: '';
+  display: flex;
+  margin-top: -3px; /* -0.75 * 4 px */
+  height: 8px; /* 2 * 4 px */
+  width: 100%;
+}
+
+.pane-divider-horizontal:hover,
+.pane-divider-horizontal:active {
+  background-color: var(--color-primary-500);
+}
+
+.pane-divider-vertical {
+  z-index: 1;
+  width: 2px;
+  transition-property: color, background-color, border-color;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+.pane-divider-vertical::before {
+  content: '';
+  display: flex;
+  margin-left: -3px;
+  height: 100%;
+  width: 8px;
+}
+
+.pane-divider-vertical:hover,
+.pane-divider-vertical:active {
+  background-color: var(--color-primary-500);
+}

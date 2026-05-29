@@ -251,13 +251,12 @@
   import { untrack } from 'svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
-  import { SegmentedControl } from '@skeletonlabs/skeleton-svelte'
   import {
     usePipelineManager,
     type PipelineManagerApi
   } from '$lib/compositions/usePipelineManager.svelte'
   import { useProtocol } from '$lib/compositions/useProtocol'
-  import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import { SegmentedControl, Tooltip } from 'common-ui'
   import { getSelectedTenant } from '$lib/services/auth'
   import { isPipelineInteractive } from '$lib/functions/pipelines/status'
   import { Ref } from '$lib/compositions/ref.svelte'
@@ -410,7 +409,11 @@
 
   const isMobile = useIsMobile()
   const mobileDisplayModes = ['Tables and Views', 'Data stream'] as const
-  let mobileDisplayMode = $state<(typeof mobileDisplayModes)[number]>('Tables and Views')
+  type MobileDisplayMode = (typeof mobileDisplayModes)[number]
+  let mobileDisplayMode = $state<MobileDisplayMode>('Tables and Views')
+  const mobileDisplayItems: { value: MobileDisplayMode; label: string }[] = mobileDisplayModes.map(
+    (value) => ({ value, label: value })
+  )
 </script>
 
 {#snippet relationView()}
@@ -517,21 +520,9 @@
     >
       <SegmentedControl
         value={mobileDisplayMode}
-        onValueChange={(e) => (mobileDisplayMode = e.value as typeof mobileDisplayMode)}
-      >
-        <SegmentedControl.Label />
-        <SegmentedControl.Control class="w-fit flex-none rounded preset-filled-surface-50-950 p-1">
-          <SegmentedControl.Indicator class="bg-white-dark shadow" />
-          {#each mobileDisplayModes as mode}
-            <SegmentedControl.Item value={mode} class="z-1 btn h-6 cursor-pointer px-5">
-              <SegmentedControl.ItemText class="text-surface-950-50">
-                {mode}
-              </SegmentedControl.ItemText>
-              <SegmentedControl.ItemHiddenInput />
-            </SegmentedControl.Item>
-          {/each}
-        </SegmentedControl.Control>
-      </SegmentedControl>
+        onValueChange={(v) => (mobileDisplayMode = v)}
+        items={mobileDisplayItems}
+      />
       {#if mobileDisplayMode === mobileDisplayModes[0]}
         {@render relationView()}
       {:else}

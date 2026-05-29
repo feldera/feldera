@@ -1,10 +1,9 @@
 <script lang="ts">
+  import { Tooltip } from 'common-ui'
   import { Control, Field, FieldErrors, Label } from 'formsnap'
   import { setError, superForm } from 'sveltekit-superforms'
   import { valibot } from 'sveltekit-superforms/adapters'
-
   import * as va from 'valibot'
-  import Tooltip from '$lib/components/common/Tooltip.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
