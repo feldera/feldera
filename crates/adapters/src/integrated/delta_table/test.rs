@@ -102,17 +102,6 @@ where
     json_file
 }
 
-/// Register the object stores required by delta-rs 0.31.x `TableProvider` scans.
-fn register_delta_table_object_stores(datafusion: &SessionContext, table: &DeltaTable) {
-    let log_store = table.log_store();
-    let runtime_env = datafusion.runtime_env();
-    runtime_env.register_object_store(
-        log_store.object_store_url().as_ref(),
-        log_store.object_store(None),
-    );
-    runtime_env.register_object_store(log_store.root_url(), log_store.root_object_store(None));
-}
-
 const DELTA_TEST_INPUT_ENDPOINT: &str = "test_input1";
 
 /// Completed Delta table version reported by the input connector waterline.
@@ -425,7 +414,7 @@ async fn run_catchup_lag_experiment(
         );
         assert_eq!(
             delta_last_ingested_version(&pipeline),
-            Some(table.version().unwrap()),
+            Some(table.version().unwrap() as i64),
             "last_ingested_version must reflect the snapshot version"
         );
         assert_eq!(
@@ -464,13 +453,13 @@ async fn run_catchup_lag_experiment(
         }
 
         let metric_at_round_start = delta_follow_transaction_starts(&pipeline);
-        let version_before_burst = table.version().unwrap();
+        let version_before_burst = table.version().unwrap() as i64;
 
         for _ in 0..num_versions {
             let record = delta_test_record(record_index * 2);
             record_index += 1;
             table = append_table_version(table, &arrow_schema, &record).await;
-            let new_version = table.version().unwrap();
+            let new_version = table.version().unwrap() as i64;
             if end_version.is_none() || new_version <= end_version.unwrap() {
                 let mut record = record;
                 record.unused = None;
@@ -478,7 +467,7 @@ async fn run_catchup_lag_experiment(
             }
         }
 
-        let version_after_burst = table.version().unwrap();
+        let version_after_burst = table.version().unwrap() as i64;
         assert_eq!(
             version_after_burst,
             version_before_burst + num_versions,
@@ -630,7 +619,12 @@ async fn wait_for_output_records<T>(
     T: for<'a> DeserializeWithContext<'a, SqlSerdeConfig, Variant> + DBData,
 {
     let start = Instant::now();
-    register_delta_table_object_stores(datafusion, table);
+    // Scans address files by the table's `root_url()`, so register that store
+    // before querying. Same as `register_snapshot_table` in input.rs.
+    let log_store = table.log_store();
+    datafusion
+        .runtime_env()
+        .register_object_store(log_store.root_url(), log_store.root_object_store(None));
     loop {
         // select count() output_table == len().
         Arc::get_mut(table)
@@ -1364,7 +1358,7 @@ async fn test_follow(
         serde_json::to_value(transaction_mode).unwrap(),
     );
 
-    let end_version = 5;
+    let end_version: i64 = 5;
     if test_end_version {
         input_config.insert("end_version".to_string(), end_version.into());
     }
@@ -1442,7 +1436,7 @@ async fn test_follow(
     wait(
         || {
             if let Some(version) = completed_version(&pipeline) {
-                let expected = input_table.version().unwrap();
+                let expected = input_table.version().unwrap() as i64;
                 debug!(
                     "pipeline completed version {version}, expected (initial version) {expected}, waterlines: {:?}",
                     pipeline
@@ -1469,7 +1463,7 @@ async fn test_follow(
         total_count += chunk.len();
         input_table = write_data_to_table(input_table, &arrow_schema, chunk).await;
 
-        if !test_end_version || input_table.version().unwrap() <= end_version {
+        if !test_end_version || input_table.version().unwrap() as i64 <= end_version {
             expected_output = data[0..total_count]
                 .iter()
                 .filter_map(|x| {
@@ -1556,9 +1550,9 @@ async fn test_follow(
                 || {
                     if let Some(version) = completed_version(&pipeline) {
                         let expected = if test_end_version {
-                            min(input_table.version().unwrap(), end_version)
+                            min(input_table.version().unwrap() as i64, end_version)
                         } else {
-                            input_table.version().unwrap()
+                            input_table.version().unwrap() as i64
                         };
                         debug!("pipeline completed version {version}, expected {expected}, waterlines: {:?}", pipeline.status().input_status().values().next().unwrap().completed_frontier.debug());
                         version == expected
@@ -1572,7 +1566,7 @@ async fn test_follow(
             .unwrap();
 
         // Wait a bit to make sure the pipeline doesn't process data beyond end_version.
-        if test_end_version && input_table.version().unwrap() > end_version {
+        if test_end_version && input_table.version().unwrap() as i64 > end_version {
             sleep(Duration::from_millis(1000)).await;
         }
 
@@ -1589,7 +1583,7 @@ async fn test_follow(
     }
 
     // If the table has reached the end_version, make sure the eoi status survives the suspend.
-    if test_end_version && suspend && input_table.version().unwrap() >= end_version {
+    if test_end_version && suspend && input_table.version().unwrap() as i64 >= end_version {
         suspend_pipeline(pipeline).await;
 
         pipeline = start_pipeline(

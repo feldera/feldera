@@ -56,9 +56,9 @@ anyhow = "1.0.91"
 apache-avro = "0.18.0"
 arc-swap = "1.5.1"
 arcstr = "1.2.0"
-arrow = "57"
-arrow-json = "57"
-arrow-schema = "57"
+arrow = "58"
+arrow-json = "58"
+arrow-schema = "58"
 ascii_table = "=4.0.2"
 async-channel = "2.3.1"
 async-nats = "0.47.0"
@@ -102,26 +102,23 @@ crossbeam-utils = "0.8.6"
 csv = "1.2.2"
 csv-core = "0.1.10"
 dashmap = "6.1.0"
-datafusion = "52.2"
+datafusion = "53.1"
 dbsp = { path = "crates/dbsp", version = "0.305.0" }
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.14.1"
-# Feldera fork of delta-rs: upstream tag `rust-v0.31.1` + 3 patches, on branch
-# `v0.31.1-feldera`. When bumping the pinned revision, preserve these patches:
-#   - 71d185e5 "Initialize unity from environment." — let the unity catalog
-#     pick up credentials/host from process env, matching how we configure
-#     other connectors.
-#   - d2c12edd "Disable unsupported feature check." — relax the writer-side
+# Feldera fork of delta-rs: upstream tag `rust-v0.32.3` + 2 patches, on branch
+# `v0.32.3-feldera`. When bumping the pinned revision, preserve these patches:
+#   - 7f8bb445 "Disable unsupported feature check." — relax the writer-side
 #     protocol-feature gate so we can write tables produced by newer clients.
-#   - 93d94dc6 "delta-rs: round-robin pre-split unpartitioned scans into
+#   - 5b35c098 "delta-rs: round-robin pre-split unpartitioned scans into
 #     target_partitions FileGroups" — improves snapshot read parallelism for
 #     unpartitioned tables; pairs with the DataFusion knobs we tune in adapters.
 # Diff vs. upstream:
-#   https://github.com/delta-io/delta-rs/compare/rust-v0.31.1...feldera:delta-rs:v0.31.1-feldera
-deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "93d94dc66976788a378313af7eff3312ad0d294c" }
-deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "93d94dc66976788a378313af7eff3312ad0d294c" }
+#   https://github.com/delta-io/delta-rs/compare/rust-v0.32.3...feldera:delta-rs:v0.32.3-feldera
+deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "5b35c0988b07ab921d5eee5b8da8da55e4d65945" }
+deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "5b35c0988b07ab921d5eee5b8da8da55e4d65945" }
 
-delta_kernel = "0.19.0"
+delta_kernel = { package = "buoyant_kernel", version = "0.22" }
 derive_more = { version = "1.0.0" }
 directories = "6.0"
 dirs = "5.0"
@@ -159,11 +156,12 @@ hashbrown = "0.14.2"
 hdrhist = "0.5"
 hex = "0.4.3"
 home = "=0.5.9"
-iceberg = { version = "0.9.1" }
-iceberg-catalog-glue = "0.9.1"
-iceberg-catalog-rest = "0.9.1"
-iceberg-datafusion = "0.9.1"
-iceberg-storage-opendal = { version = "0.9.1", features = ["opendal-s3", "opendal-gcs", "opendal-fs", "opendal-memory"] }
+# TODO: Use iceberg v0.10.0 when released
+iceberg = { git = "https://github.com/feldera/iceberg-rust.git", rev = "28c4800f198686f306bd80d11d03f232670feec3" }
+iceberg-catalog-glue = { git = "https://github.com/feldera/iceberg-rust.git", rev = "28c4800f198686f306bd80d11d03f232670feec3" }
+iceberg-catalog-rest = { git = "https://github.com/feldera/iceberg-rust.git", rev = "28c4800f198686f306bd80d11d03f232670feec3" }
+iceberg-datafusion = { git = "https://github.com/feldera/iceberg-rust.git", rev = "28c4800f198686f306bd80d11d03f232670feec3" }
+iceberg-storage-opendal = { git = "https://github.com/feldera/iceberg-rust.git", rev = "28c4800f198686f306bd80d11d03f232670feec3", features = ["opendal-s3", "opendal-gcs", "opendal-fs", "opendal-memory"] }
 impl-trait-for-tuples = "0.2"
 indexmap = "2.7.1"
 indicatif = "0.17.0-rc.11"
@@ -172,7 +170,7 @@ inventory = "0.3"
 itertools = "0.14.0"
 jemalloc_pprof = "0.7.0"
 json_to_table = "0.9.0"
-jsonwebtoken = { version = "10.3.0", features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "10.4.0", features = ["aws_lc_rs"] }
 lexical-core = "1.0.5"
 libc = "0.2.153"
 like = "0.3.1"
@@ -198,7 +196,7 @@ once_cell = "1.20.2"
 openssl = "0.10.80"
 ordered-float = { version = "4.2.0", features = ["serde"] }
 ouroboros = "0.18.4"
-parquet = "57"
+parquet = "58"
 paste = "1.0.12"
 petgraph = "0.6.0"
 pg-client-config = "0.1.2"
@@ -244,7 +242,7 @@ ryu = "1.0.20"
 schema_registry_converter = "4.2.0"
 semver = "1.0.27"
 serde = "1.0.213"
-serde_arrow = { version = "0.13.7", features = ["arrow-57"] }
+serde_arrow = { version = "0.14.1", features = ["arrow-58"] }
 serde_bytes = "0.11.15"
 serde_json = { version = "1.0.132", features = ["arbitrary_precision"] }
 serde_json_path_to_error = "0.1.5"
