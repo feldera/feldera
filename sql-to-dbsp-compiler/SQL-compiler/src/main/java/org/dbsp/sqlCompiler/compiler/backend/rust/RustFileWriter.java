@@ -133,6 +133,7 @@ public class RustFileWriter extends RustWriter {
                     // If it's a struct item, it is part of the list above
                     inner.accept(innerVisitor);
             } else {
+                this.materializations.clearRegions();
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
                 ToRustVisitor visitor = new ToRustVisitor(
                         compiler, this.builder(), outer.metadata, declarationsDone, this.materializations);
