@@ -448,6 +448,9 @@ public class Utilities {
         runProcess(directory, new HashMap<>(), commands);
     }
 
+    /** Number of cargo jobs to use when testing locally */
+    static final int LOCAL_CARGO_JOBS = 6;
+
     static final HashMap<String, String> STACK = new HashMap<>() {{ put("RUST_MIN_STACK", "8388608"); }};
 
     static void compileAndTest(String directory, boolean quiet, String... extraArgs) throws IOException, InterruptedException {
@@ -456,7 +459,7 @@ public class Utilities {
         args.add("test");
         if (!Utilities.inCI()) {
             args.add("--jobs");
-            args.add("20");
+            args.add(Integer.toString(LOCAL_CARGO_JOBS));
         }
         args.addAll(Arrays.asList(extraArgs));
         if (quiet) {
@@ -498,9 +501,9 @@ public class Utilities {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("check");
-        if (Utilities.inCI()) {
+        if (!Utilities.inCI()) {
             args.add("--jobs");
-            args.add("6");
+            args.add(Integer.toString(LOCAL_CARGO_JOBS));
         }
         if (quiet)
             args.add("--quiet");
