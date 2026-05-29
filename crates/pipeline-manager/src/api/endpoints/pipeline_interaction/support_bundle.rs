@@ -367,6 +367,7 @@ mod tests {
             created_at: Default::default(),
             version: Version(1),
             platform_version: String::new(),
+            runtime_config: Default::default(),
             program_config: Default::default(),
             program_version: Version(1),
             program_status: ProgramStatus::Pending,

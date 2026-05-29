@@ -1679,15 +1679,17 @@ mod tests {
             .unwrap();
         db.lock()
             .await
-            .transit_deployment_resources_status_to_provisioned(
+            .remain_deployment_resources_status_provisioned(
                 tenant_id,
                 pipeline_id,
                 Version(1),
-                "test-location",
                 json!({}),
                 RuntimeStatus::Running,
                 json!(""),
                 RuntimeDesiredStatus::Running,
+                Some(json!({
+                    "checkpoints": []
+                })),
             )
             .await
             .unwrap();
@@ -1876,15 +1878,17 @@ mod tests {
             .unwrap();
         db.lock()
             .await
-            .transit_deployment_resources_status_to_provisioned(
+            .remain_deployment_resources_status_provisioned(
                 tenant_id,
                 pipeline_id,
                 Version(1),
-                "test-location",
                 json!({}),
                 RuntimeStatus::Running,
                 json!(""),
                 RuntimeDesiredStatus::Running,
+                Some(json!({
+                    "checkpoints": []
+                })),
             )
             .await
             .unwrap();
@@ -2069,15 +2073,17 @@ mod tests {
 
         db.lock()
             .await
-            .transit_deployment_resources_status_to_provisioned(
+            .remain_deployment_resources_status_provisioned(
                 tenant_id,
                 pipeline_id,
                 Version(1),
-                "test-location",
                 json!({}),
                 RuntimeStatus::Running,
                 json!(""),
                 RuntimeDesiredStatus::Running,
+                Some(json!({
+                    "checkpoints": []
+                })),
             )
             .await
             .unwrap();
@@ -2162,15 +2168,15 @@ mod tests {
             .unwrap();
         db.lock()
             .await
-            .transit_deployment_resources_status_to_provisioned(
+            .remain_deployment_resources_status_provisioned(
                 tenant_id,
                 pipeline_id,
                 Version(1),
-                "test-location",
                 json!({}),
                 RuntimeStatus::Running,
                 json!(""),
                 RuntimeDesiredStatus::Running,
+                None,
             )
             .await
             .unwrap();

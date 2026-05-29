@@ -36,7 +36,7 @@ pub const PIPELINE_COLUMNS_ALL: &str =
      ";
 
 pub const PIPELINE_COLUMNS_MONITORING: &str =
-    "p.id, p.name, p.description, p.created_at, p.version, p.platform_version,
+    "p.id, p.name, p.description, p.created_at, p.version, p.platform_version, p.runtime_config,
      p.program_config, p.program_version, p.program_status, p.program_status_since,
      p.deployment_error, p.deployment_location, p.refresh_version,
      p.storage_status, p.storage_status_details, p.deployment_id, p.deployment_initial,
@@ -112,6 +112,7 @@ pub fn parse_pipeline_row_monitoring(row: &Row) -> Result<ExtendedPipelineDescrM
         created_at: parse_from_row_created_at(row),
         version: parse_from_row_version(row),
         platform_version: parse_from_row_platform_version(row),
+        runtime_config: parse_from_row_runtime_config(row)?,
         program_config: parse_from_row_program_config(row)?,
         program_version: parse_from_row_program_version(row),
         program_status: parse_from_row_program_status(row)?,
@@ -641,6 +642,7 @@ mod tests {
             created_at: Default::default(),
             version: Version(1),
             platform_version: "".to_string(),
+            runtime_config: Default::default(),
             program_config: Default::default(),
             program_version: Version(2),
             program_status: ProgramStatus::Pending,

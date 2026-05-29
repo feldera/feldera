@@ -173,6 +173,10 @@ pub enum DBError {
         current_status: ResourcesStatus,
         new_status: ResourcesStatus,
     },
+    InvalidResourcesStatusNotRemain {
+        current_status: ResourcesStatus,
+        new_status: ResourcesStatus,
+    },
     InvalidStorageStatusTransition {
         current_status: StorageStatus,
         new_status: StorageStatus,
@@ -217,6 +221,7 @@ pub enum DBError {
     },
     CannotStartWithUndismissedError,
     CannotStartWhileClearingStorage,
+    CannotStartWithCompilationError,
     DismissErrorRestrictedToFullyStopped,
     InitialImmutableUnlessStopped,
     BootstrapPolicyImmutableUnlessStopped,
@@ -612,6 +617,15 @@ impl Display for DBError {
                     "Invalid remain as current status '{current_status}' is not equal to '{new_status}'"
                 )
             }
+            DBError::InvalidResourcesStatusNotRemain {
+                current_status,
+                new_status,
+            } => {
+                write!(
+                    f,
+                    "Invalid not remain as current status '{current_status}' is equal to '{new_status}'"
+                )
+            }
             DBError::InvalidStorageStatusTransition {
                 current_status,
                 new_status,
@@ -702,6 +716,13 @@ impl Display for DBError {
                     f,
                     "Cannot process `/start` if the `storage_status` is `Clearing`. \
                     Wait for the storage to become cleared before trying again."
+                )
+            }
+            DBError::CannotStartWithCompilationError => {
+                write!(
+                    f,
+                    "Cannot process `/start` if the `program_status` is `SqlError`, `RustError` or `SystemError`. \
+                    Make changes to fix the error, which will trigger recompilation."
                 )
             }
             DBError::DismissErrorRestrictedToFullyStopped => {
@@ -829,6 +850,9 @@ impl DetailedError for DBError {
                 Cow::from("InvalidResourcesStatusTransition")
             }
             Self::InvalidResourcesStatusRemain { .. } => Cow::from("InvalidResourcesStatusRemain"),
+            Self::InvalidResourcesStatusNotRemain { .. } => {
+                Cow::from("InvalidResourcesStatusNotRemain")
+            }
             Self::InvalidStorageStatusTransition { .. } => {
                 Cow::from("InvalidStorageStatusTransition")
             }
@@ -851,6 +875,7 @@ impl DetailedError for DBError {
             Self::ResumeWhileNotProvisioned => Cow::from("ResumeWhileNotProvisioned"),
             Self::CannotStartWithUndismissedError => Cow::from("CannotStartWithUndismissedError"),
             Self::CannotStartWhileClearingStorage => Cow::from("CannotStartWhileClearingStorage"),
+            Self::CannotStartWithCompilationError => Cow::from("CannotStartWithCompilationError"),
             Self::DismissErrorRestrictedToFullyStopped => {
                 Cow::from("DismissErrorRestrictedToFullyStopped")
             }
@@ -919,6 +944,7 @@ impl ResponseError for DBError {
             Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error
             Self::InvalidResourcesStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
             Self::InvalidResourcesStatusRemain { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidResourcesStatusNotRemain { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::StorageStatusImmutableUnlessStopped { .. } => StatusCode::BAD_REQUEST,
             Self::IllegalPipelineAction { .. } => StatusCode::BAD_REQUEST, // User trying to set a deployment desired status which cannot be performed currently
             Self::TlsConnection { .. } => StatusCode::INTERNAL_SERVER_ERROR,
@@ -935,6 +961,7 @@ impl ResponseError for DBError {
             Self::PreconditionViolation { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::CannotStartWithUndismissedError => StatusCode::BAD_REQUEST,
             Self::CannotStartWhileClearingStorage => StatusCode::BAD_REQUEST,
+            Self::CannotStartWithCompilationError => StatusCode::BAD_REQUEST,
             Self::DismissErrorRestrictedToFullyStopped => StatusCode::BAD_REQUEST,
             Self::InitialImmutableUnlessStopped => StatusCode::BAD_REQUEST,
             Self::BootstrapPolicyImmutableUnlessStopped => StatusCode::BAD_REQUEST,

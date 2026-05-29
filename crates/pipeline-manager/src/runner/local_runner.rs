@@ -414,6 +414,16 @@ impl PipelineExecutor for LocalRunner {
         }
     }
 
+    /// The local runner should always be able to manage local processes and the pipeline working
+    /// directory irrespective of configuration, hence no checks are performed here.
+    async fn can_provision(
+        &self,
+        _deployment_config: &PipelineConfig,
+        _runtime_config: &serde_json::Value,
+    ) -> Result<(), ManagerError> {
+        Ok(())
+    }
+
     /// Provisions the process deployment.
     /// - Creates pipeline working directory
     /// - Creates pipeline storage directory
@@ -431,6 +441,7 @@ impl PipelineExecutor for LocalRunner {
         program_binary_url: &str,
         program_info_url: Option<&str>,
         program_version: Version,
+        _runtime_config: &serde_json::Value,
     ) -> Result<(), ManagerError> {
         // Local runner does not support multihost.
         if deployment_config.multihost.is_some() {
@@ -652,7 +663,10 @@ impl PipelineExecutor for LocalRunner {
     }
 
     /// Process deployment provisioning is completed when the port file is found and read.
-    async fn is_provisioned(&mut self) -> Result<ProvisionStatus, ManagerError> {
+    async fn is_provisioned(
+        &mut self,
+        _runtime_config: &serde_json::Value,
+    ) -> Result<ProvisionStatus, ManagerError> {
         let details = self
             .inner_check()
             .await
@@ -683,14 +697,17 @@ impl PipelineExecutor for LocalRunner {
     /// Checks the process and working directory is healthy.
     /// - Pipeline working directory must exist
     /// - Process status must be checkable and not be exited
-    async fn check(&mut self) -> Result<serde_json::Value, ManagerError> {
+    async fn check(
+        &mut self,
+        _runtime_config: &serde_json::Value,
+    ) -> Result<serde_json::Value, ManagerError> {
         self.inner_check()
             .await
             .map_err(|error| ManagerError::from(RunnerError::RunnerCheckError { error }))
     }
 
     /// Kills the pipeline process and terminates the thread which follows its stdout and stderr.
-    async fn stop(&mut self) -> Result<(), ManagerError> {
+    async fn stop(&mut self, _runtime_config: &serde_json::Value) -> Result<(), ManagerError> {
         // Kill pipeline process
         if let Some(mut p) = self.process.take() {
             let _ = p.kill().await;
@@ -709,7 +726,7 @@ impl PipelineExecutor for LocalRunner {
     }
 
     /// Removes the pipeline working directory.
-    async fn clear(&mut self) -> Result<(), ManagerError> {
+    async fn clear(&mut self, _runtime_config: &serde_json::Value) -> Result<(), ManagerError> {
         if self.config.pipeline_dir(self.pipeline_id).exists() {
             match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
                 Ok(_) => (),

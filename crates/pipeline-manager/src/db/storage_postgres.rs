@@ -995,6 +995,40 @@ impl Storage for StoragePostgres {
         Ok(())
     }
 
+    async fn remain_deployment_resources_status_stopped(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        version_guard: Version,
+        deployment_error: ErrorResponse,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let pipeline =
+            operations::pipeline::get_pipeline_by_id_for_monitoring(&txn, tenant_id, pipeline_id)
+                .await?;
+        operations::pipeline::set_deployment_resources_desired_status(
+            &txn,
+            tenant_id,
+            &pipeline.name,
+            ResourcesDesiredStatus::Stopped,
+            None,
+            None,
+            false,
+        )
+        .await?;
+        operations::pipeline::remain_deployment_resources_status_stopped(
+            &txn,
+            tenant_id,
+            pipeline_id,
+            version_guard,
+            deployment_error,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
     async fn transit_storage_status_to_clearing_if_not_cleared(
         &self,
         tenant_id: TenantId,

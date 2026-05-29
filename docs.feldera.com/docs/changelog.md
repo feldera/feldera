@@ -14,6 +14,9 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - Calling `/start` on a pipeline that already failed to compile will directly return an error instead of
+          the runner later on setting the `deployment_error` during its check whether to proceed to provisioning.
+
         - Delta Lake output connector:
 
         `log_retention_duration` and

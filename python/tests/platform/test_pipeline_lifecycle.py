@@ -138,8 +138,10 @@ def test_pipeline_start_without_compiling(pipeline_name):
     pipeline = Pipeline.get(pipeline_name, TEST_CLIENT)
     wait_for_condition(
         "program status moves past Pending/CompilingSql",
-        lambda: pipeline.program_status()
-        not in (ProgramStatus.Pending, ProgramStatus.CompilingSql),
+        lambda: (
+            pipeline.program_status()
+            not in (ProgramStatus.Pending, ProgramStatus.CompilingSql)
+        ),
         timeout_s=1800.0,
         poll_interval_s=1.0,
     )
@@ -687,3 +689,65 @@ def test_refresh_version_due_to_status_changes(pipeline_name):
         ]
         <= 15
     )
+
+
+@gen_pipeline_name
+def test_cannot_edit_runtime_config_resources_namespace_if_not_cleared(pipeline_name):
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+    pipeline.start()
+    pipeline.stop(force=True)
+
+    # Attempt to patch without cleared storage will fail
+    runtime_config = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=all")[
+        "runtime_config"
+    ]
+    runtime_config["resources"]["namespace"] = "example"
+    error = None
+    try:
+        TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config=runtime_config)
+    except FelderaAPIError as e:
+        error = e
+    assert (
+        error is not None
+        and error.error_code == "EditRestrictedToClearedStorage"
+        and error.details["not_allowed"] == ["`runtime_config.resources.namespace`"]
+    )
+    assert (
+        TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=all")[
+            "runtime_config"
+        ]["resources"]["namespace"]
+        is None
+    )
+
+    # Clear storage
+    pipeline.clear_storage()
+
+    # After clearing storage, it should work
+    TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config=runtime_config)
+    assert (
+        TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=all")[
+            "runtime_config"
+        ]["resources"]["namespace"]
+        == "example"
+    )
+
+
+@gen_pipeline_name
+def test_start_failed_compilation(pipeline_name):
+    """
+    A pipeline that failed to compile should immediately return an error when `/start` is called on it.
+    """
+    pipeline = PipelineBuilder(
+        TEST_CLIENT, pipeline_name, "INVALID SQL"
+    ).create_or_replace(wait=False)
+    try:
+        TEST_CLIENT._wait_for_compilation(pipeline_name)
+    except RuntimeError:
+        pass
+    assert pipeline.program_status() == ProgramStatus.SqlError
+    error = None
+    try:
+        pipeline.start()
+    except FelderaAPIError as e:
+        error = e
+    assert error is not None and error.error_code == "CannotStartWithCompilationError"

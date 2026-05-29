@@ -1914,5 +1914,7 @@ pub struct ResourceConfig {
     /// for the pipeline.
     /// If not set, the pipeline will be deployed in the same namespace
     /// as the control-plane.
+    // The type of this field should not be backward incompatibly changed, and its location in the
+    // runtime configuration JSON (`runtime_config.resources.namespace`) should not be changed.
     pub namespace: Option<String>,
 }
