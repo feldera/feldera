@@ -324,7 +324,7 @@ struct AdHocQueryExecution {
     projected_schema: Arc<Schema>,
     readers: Vec<Arc<dyn SerBatchReader>>,
     projection: Option<Vec<usize>>,
-    plan_properties: PlanProperties,
+    plan_properties: Arc<PlanProperties>,
     children: Vec<Arc<dyn ExecutionPlan>>,
 }
 
@@ -344,12 +344,12 @@ impl AdHocQueryExecution {
         let num_partitions = readers.as_ref().map(|r| r.len()).unwrap_or(1);
         let eq_props = EquivalenceProperties::new(projected_schema.clone());
         let partitioning = Partitioning::UnknownPartitioning(num_partitions);
-        let plan_properties = PlanProperties::new(
+        let plan_properties = Arc::new(PlanProperties::new(
             eq_props,
             partitioning,
             EmissionType::Both,
             Boundedness::Bounded,
-        );
+        ));
 
         Self {
             name,
@@ -393,7 +393,7 @@ impl ExecutionPlan for AdHocQueryExecution {
         self
     }
 
-    fn properties(&self) -> &PlanProperties {
+    fn properties(&self) -> &Arc<PlanProperties> {
         &self.plan_properties
     }
 

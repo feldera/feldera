@@ -25,9 +25,8 @@ use feldera_types::{
 use futures_util::StreamExt;
 use iceberg::CatalogBuilder;
 use iceberg::{
-    io::{FileIOBuilder, StorageFactory},
-    spec::TableMetadata,
-    table::Table as IcebergTable,
+    io::{FileIO, FileIOBuilder, StorageFactory},
+    table::{StaticTable, Table as IcebergTable},
     Catalog, TableIdent,
 };
 use iceberg_catalog_glue::{
@@ -39,7 +38,7 @@ use iceberg_catalog_rest::{
     RestCatalogBuilder, REST_CATALOG_PROP_URI, REST_CATALOG_PROP_WAREHOUSE,
 };
 use iceberg_datafusion::IcebergStaticTableProvider;
-use iceberg_storage_opendal::OpenDalStorageFactory;
+use iceberg_storage_opendal::OpenDalResolvingStorageFactory;
 use log::{debug, info, trace};
 use std::{sync::Arc, thread};
 use tokio::{
@@ -49,62 +48,12 @@ use tokio::{
         watch::{channel, Receiver, Sender},
     },
 };
+use url::Url;
 
-/// Stable discriminant for the storage backend a location URL maps to.
-///
-/// Kept separate from `iceberg_storage_opendal::OpenDalStorageFactory` because
-/// that type is `#[non_exhaustive]` and erased behind `Arc<dyn StorageFactory>`
-/// at the call sites, so its variants are not a reliable assertion target. This
-/// enum is our own, internal contract: callers (and tests) can match on it
-/// without depending on the upstream Debug formatting or variant set.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StorageKind {
-    Fs,
-    Memory,
-    S3,
-    Gcs,
-}
-
-/// Map a location URL's scheme to a `StorageKind`.
-///
-/// Iceberg 0.9 removed scheme-aware FileIO construction from the core crate;
-/// callers must now inject a `StorageFactory` explicitly. Splitting "which
-/// backend" from "build the factory" lets tests assert on a stable discriminant
-/// while production code still gets the trait object.
-fn storage_kind_for_url(location: &str) -> AnyResult<StorageKind> {
-    // `url::Url::parse` returns a scheme that is already lowercased per RFC 3986,
-    // so no extra normalization is needed. A parse failure (e.g. a bare local
-    // path with no scheme) falls through to the local-filesystem default.
-    let scheme = url::Url::parse(location)
-        .map(|u| u.scheme().to_string())
-        .unwrap_or_else(|_| "file".to_string());
-    match scheme.as_str() {
-        "file" => Ok(StorageKind::Fs),
-        "memory" => Ok(StorageKind::Memory),
-        "s3" | "s3a" => Ok(StorageKind::S3),
-        "gs" | "gcs" => Ok(StorageKind::Gcs),
-        other => bail!("unsupported storage scheme '{other}' in location '{location}'"),
-    }
-}
-
-fn storage_factory_for_kind(kind: StorageKind, scheme: &str) -> Arc<dyn StorageFactory> {
-    match kind {
-        StorageKind::Fs => Arc::new(OpenDalStorageFactory::Fs),
-        StorageKind::Memory => Arc::new(OpenDalStorageFactory::Memory),
-        StorageKind::S3 => Arc::new(OpenDalStorageFactory::S3 {
-            configured_scheme: scheme.to_string(),
-            customized_credential_load: None,
-        }),
-        StorageKind::Gcs => Arc::new(OpenDalStorageFactory::Gcs),
-    }
-}
-
-fn storage_factory_for_url(location: &str) -> AnyResult<Arc<dyn StorageFactory>> {
-    let kind = storage_kind_for_url(location)?;
-    let scheme = url::Url::parse(location)
-        .map(|u| u.scheme().to_string())
-        .unwrap_or_else(|_| "file".to_string());
-    Ok(storage_factory_for_kind(kind, &scheme))
+/// Storage backend for object stores, picked per path from its scheme
+/// (`s3`/`s3a`/`gs`/`memory`/...). Used for catalogs and remote tables.
+fn storage_factory() -> Arc<dyn StorageFactory> {
+    Arc::new(OpenDalResolvingStorageFactory::new())
 }
 
 enum SnapshotDescr {
@@ -539,49 +488,32 @@ impl IcebergInputEndpointInner {
         // Safe due to checks in 'validate_catalog_config'.
         let metadata_location = self.config.metadata_location.as_ref().unwrap();
 
-        let factory = storage_factory_for_url(metadata_location).map_err(|e| {
-            ControllerError::invalid_transport_configuration(
-                &self.endpoint_name,
-                &format!("invalid 'metadata_location' value: {e}"),
-            )
-        })?;
-        let file_io = FileIOBuilder::new(factory)
-            .with_props(&self.config.fileio_config)
-            .build();
+        // Object stores (a URL with a non-`file` scheme) need the
+        // scheme-resolving factory and its props (credentials, region).
+        let file_io = match Url::parse(metadata_location) {
+            Ok(url) if url.scheme() != "file" => FileIOBuilder::new(storage_factory())
+                .with_props(&self.config.fileio_config)
+                .build(),
+            // Local table: a `file://` URL or a bare path. The factory can't
+            // read a bare path (it URL-parses every path, and e.g.
+            // `/tmp/t/metadata.json` has no scheme), so use the plain
+            // filesystem reader, which takes the string as a file path.
+            _ => FileIO::new_with_fs(),
+        };
 
-        let metadata_file = file_io.new_input(metadata_location).map_err(|e| {
-            ControllerError::invalid_transport_configuration(
-                &self.endpoint_name,
-                &format!("error opening metadata file at '{metadata_location}': {e}"),
-            )
-        })?;
-        let metadata_content = metadata_file.read().await.map_err(|e| {
-            ControllerError::invalid_transport_configuration(
-                &self.endpoint_name,
-                &format!("error reading metadatafile '{metadata_location}': {e}"),
-            )
-        })?;
-        let metadata = serde_json::from_slice::<TableMetadata>(&metadata_content).map_err(|e| {
-            ControllerError::invalid_transport_configuration(
-                &self.endpoint_name,
-                &format!("error parsing table metadata: {e}"),
-            )
-        })?;
-
+        // `StaticTable` loads the metadata read-only and wires up the current
+        // tokio runtime for us. (Glue/REST get their table from the catalog.)
         let table_ident = TableIdent::from_strs(["default", "table"]).unwrap();
-
-        IcebergTable::builder()
-            .file_io(file_io)
-            .metadata_location(metadata_location)
-            .metadata(metadata)
-            .identifier(table_ident)
-            .build()
+        let table = StaticTable::from_metadata_file(metadata_location, table_ident, file_io)
+            .await
             .map_err(|e| {
                 ControllerError::invalid_transport_configuration(
                     &self.endpoint_name,
-                    &format!("error configuring Iceberg table: {e}"),
+                    &format!("error opening Iceberg table at '{metadata_location}': {e}"),
                 )
-            })
+            })?;
+
+        Ok(table.into_table())
     }
 
     async fn open_table_glue(&self) -> Result<IcebergTable, ControllerError> {
@@ -644,25 +576,8 @@ impl IcebergInputEndpointInner {
             .as_ref()
             .map(|region_name| props.insert(AWS_REGION_NAME.to_string(), region_name.clone()));
 
-        // Override iceberg-catalog-glue 0.9's `s3a` FileIO default: Glue stores
-        // `metadata_location` as `s3://...` and opendal 0.9.1 rejects the
-        // mismatch. Match scheme from the warehouse URL.
-        let factory: Arc<dyn StorageFactory> =
-            match self.config.glue_catalog_config.warehouse.as_deref() {
-                Some(warehouse) => storage_factory_for_url(warehouse).map_err(|e| {
-                    ControllerError::invalid_transport_configuration(
-                        &self.endpoint_name,
-                        &format!("invalid 'warehouse' value: {e}"),
-                    )
-                })?,
-                None => Arc::new(OpenDalStorageFactory::S3 {
-                    configured_scheme: "s3".to_string(),
-                    customized_credential_load: None,
-                }),
-            };
-
         let catalog = GlueCatalogBuilder::default()
-            .with_storage_factory(factory)
+            .with_storage_factory(storage_factory())
             .load("glue".to_string(), props)
             .await
             .map_err(|e| {
@@ -751,25 +666,8 @@ impl IcebergInputEndpointInner {
             }
         };
 
-        // iceberg 0.9.x's REST catalog requires an explicit StorageFactory.
-        // Pick one from the configured warehouse URL when available; fall
-        // back to the same S3 default that iceberg-catalog-glue uses.
-        let factory: Arc<dyn StorageFactory> =
-            match self.config.rest_catalog_config.warehouse.as_deref() {
-                Some(warehouse) => storage_factory_for_url(warehouse).map_err(|e| {
-                    ControllerError::invalid_transport_configuration(
-                        &self.endpoint_name,
-                        &format!("invalid 'warehouse' value: {e}"),
-                    )
-                })?,
-                None => Arc::new(OpenDalStorageFactory::S3 {
-                    configured_scheme: "s3".to_string(),
-                    customized_credential_load: None,
-                }),
-            };
-
         let catalog = RestCatalogBuilder::default()
-            .with_storage_factory(factory)
+            .with_storage_factory(storage_factory())
             .load("rest".to_string(), props)
             .await
             .map_err(|e| {
@@ -1005,118 +903,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn storage_kind_for_url_picks_expected_backend() {
-        for (location, expected) in [
-            ("file:///tmp/warehouse/metadata.json", StorageKind::Fs),
-            ("memory://warehouse/metadata.json", StorageKind::Memory),
-            ("s3://bucket/path/metadata.json", StorageKind::S3),
-            ("s3a://bucket/path/metadata.json", StorageKind::S3),
-            ("gs://bucket/path/metadata.json", StorageKind::Gcs),
-            ("gcs://bucket/path/metadata.json", StorageKind::Gcs),
-        ] {
-            let kind = storage_kind_for_url(location)
-                .unwrap_or_else(|e| panic!("expected ok for {location}, got: {e}"));
-            assert_eq!(kind, expected, "wrong storage kind for {location}");
-        }
-    }
-
-    #[test]
-    fn storage_kind_for_url_falls_back_to_fs_when_url_is_unparseable() {
-        // No scheme — `url::Url::parse` fails, so we land on the local-fs default.
-        assert_eq!(
-            storage_kind_for_url("/tmp/warehouse/metadata.json").unwrap(),
-            StorageKind::Fs
-        );
-    }
-
-    #[test]
-    fn storage_kind_for_url_rejects_unsupported_scheme() {
-        let err = storage_kind_for_url("abfss://container/path").unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("unsupported storage scheme") && msg.contains("abfss"),
-            "unexpected error message: {msg}"
-        );
-    }
-
-    #[test]
-    fn storage_factory_for_url_builds_a_factory_for_every_supported_scheme() {
-        // Smoke-test the trait-object path so a refactor that breaks
-        // kind -> factory mapping fails here rather than at runtime.
-        for location in [
-            "file:///tmp/warehouse/metadata.json",
-            "memory://warehouse/metadata.json",
-            "s3://bucket/path/metadata.json",
-            "gs://bucket/path/metadata.json",
-        ] {
-            storage_factory_for_url(location)
-                .unwrap_or_else(|e| panic!("expected factory for {location}, got: {e}"));
-        }
-    }
-
-    /// `s3://` must map to `configured_scheme="s3"`, `s3a://` to `"s3a"`.
-    /// Asserted via `Debug` since `Arc<dyn StorageFactory>` is opaque.
-    #[test]
-    fn storage_factory_for_url_preserves_s3_scheme_distinctly_from_s3a() {
-        let s3_factory = storage_factory_for_url("s3://bucket/path/metadata.json").unwrap();
-        let s3_debug = format!("{s3_factory:?}");
-        assert!(
-            s3_debug.contains("configured_scheme: \"s3\""),
-            "s3:// should map to configured_scheme=\"s3\", got: {s3_debug}"
-        );
-
-        let s3a_factory = storage_factory_for_url("s3a://bucket/path/metadata.json").unwrap();
-        let s3a_debug = format!("{s3a_factory:?}");
-        assert!(
-            s3a_debug.contains("configured_scheme: \"s3a\""),
-            "s3a:// should map to configured_scheme=\"s3a\", got: {s3a_debug}"
-        );
-    }
-
-    /// Reproduces the pre-fix Glue scenario: an `s3a`-configured factory
-    /// rejects `s3://` URLs at read time. A scheme-matched factory must clear
-    /// the same URL validation.
-    #[tokio::test]
-    async fn s3_scheme_mismatch_is_rejected_at_read_time() {
-        // Region required by opendal's s3 builder, else config validation
-        // fails before the scheme check.
-        let props = [("s3.region".to_string(), "us-east-1".to_string())];
-
-        let mismatched: Arc<dyn StorageFactory> = Arc::new(OpenDalStorageFactory::S3 {
-            configured_scheme: "s3a".to_string(),
-            customized_credential_load: None,
-        });
-        let file_io = FileIOBuilder::new(mismatched)
-            .with_props(props.clone())
-            .build();
-        let input = file_io
-            .new_input("s3://bucket/path/metadata.json")
-            .expect("new_input should construct lazily");
-        let err = input
-            .read()
-            .await
-            .expect_err("read with mismatched scheme must fail");
-        let msg = err.to_string();
-        assert!(
-            msg.contains("Invalid s3 url") && msg.contains("s3a://"),
-            "expected scheme-mismatch error, got: {msg}"
-        );
-
-        // Scheme-matched factory must clear URL validation (later failures OK).
-        let matched: Arc<dyn StorageFactory> =
-            storage_factory_for_url("s3://bucket/path/metadata.json").unwrap();
-        let file_io = FileIOBuilder::new(matched)
-            .with_props(props.clone())
-            .build();
-        let input = file_io
-            .new_input("s3://bucket/path/metadata.json")
-            .expect("new_input should construct lazily");
-        if let Err(err) = input.read().await {
-            let msg = err.to_string();
-            assert!(
-                !msg.contains("Invalid s3 url"),
-                "scheme-matched factory must not produce a URL-validation error, got: {msg}"
-            );
-        }
+    fn storage_factory_constructs() {
+        // Smoke test; scheme dispatch is covered upstream in iceberg-rust.
+        let _factory = storage_factory();
     }
 }

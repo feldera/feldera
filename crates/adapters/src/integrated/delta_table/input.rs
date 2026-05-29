@@ -1040,6 +1040,7 @@ impl DeltaTableInputEndpointInner {
                 },
             )
             .await?;
+        let latest = latest as i64;
         Ok(match self.config.end_version {
             Some(end_version) => min(latest, end_version),
             None => latest,
@@ -1220,7 +1221,7 @@ impl DeltaTableInputEndpointInner {
             .snapshot_records_total
             .fetch_add(record_count as u64, Ordering::Relaxed);
         self.metrics
-            .set_last_ingested_version(table.version().unwrap());
+            .set_last_ingested_version(table.version().unwrap() as i64);
 
         // Empty buffer to indicate checkpointable state.
         self.queue.push_entry(
@@ -1228,7 +1229,7 @@ impl DeltaTableInputEndpointInner {
                 timestamp,
                 QueueEntry::ResumeInfo(Some(DeltaResumeInfo::follow_mode(
                     // We verified that the table version is not None in the open_table method.
-                    table.version().unwrap(),
+                    table.version().unwrap() as i64,
                     !self.config.follow(),
                 ))),
             )
@@ -1242,7 +1243,7 @@ impl DeltaTableInputEndpointInner {
             "delta_table {}: snapshot load completed (records: {}, version: {})",
             &self.endpoint_name,
             record_count,
-            table.version().unwrap()
+            table.version().unwrap() as i64
         );
         Ok(record_count)
     }
@@ -1266,7 +1267,7 @@ impl DeltaTableInputEndpointInner {
             .read_ordered_snapshot_inner(table, input_stream, receiver)
             .await?;
         self.metrics
-            .set_last_ingested_version(table.version().unwrap());
+            .set_last_ingested_version(table.version().unwrap() as i64);
 
         // Empty buffer to indicate checkpointable state.
         self.queue.push_entry(
@@ -1274,7 +1275,7 @@ impl DeltaTableInputEndpointInner {
                 timestamp,
                 QueueEntry::ResumeInfo(Some(DeltaResumeInfo::follow_mode(
                     // We verified that the table version is not None in the open_table method.
-                    table.version().unwrap(),
+                    table.version().unwrap() as i64,
                     !self.config.follow(),
                 ))),
             )
@@ -1287,7 +1288,7 @@ impl DeltaTableInputEndpointInner {
             "delta_table {}: snapshot load completed (records: {}, version: {})",
             &self.endpoint_name,
             total_records,
-            table.version().unwrap()
+            table.version().unwrap() as i64
         );
         Ok(total_records)
     }
@@ -1428,7 +1429,7 @@ impl DeltaTableInputEndpointInner {
                     Utc::now(),
                     QueueEntry::ResumeInfo(Some(DeltaResumeInfo::snapshot_mode(
                         // We verified that the table version is not None in the open_table method.
-                        table.version().unwrap(),
+                        table.version().unwrap() as i64,
                         &start,
                     ))),
                 )
@@ -1437,7 +1438,7 @@ impl DeltaTableInputEndpointInner {
                 Vec::new(),
             );
             self.metrics
-                .set_last_ingested_version(table.version().unwrap());
+                .set_last_ingested_version(table.version().unwrap() as i64);
         }
 
         Ok(total_records)
@@ -1540,7 +1541,7 @@ impl DeltaTableInputEndpointInner {
         }
 
         // We verified that the table version is not None in the open_table method.
-        let mut version = table.version().unwrap();
+        let mut version = table.version().unwrap() as i64;
 
         // We haven't completed a snapshot before the checkpoint was taken if
         // - there is no checkpoint
@@ -1630,7 +1631,12 @@ impl DeltaTableInputEndpointInner {
                         Some("delta-next-log"),
                         move || {
                             let table = Arc::clone(&table_for_retry);
-                            async move { table.log_store().read_commit_entry(new_version).await }
+                            async move {
+                                table
+                                    .log_store()
+                                    .read_commit_entry(new_version as u64)
+                                    .await
+                            }
                         },
                     )
                     .await
@@ -1645,7 +1651,7 @@ impl DeltaTableInputEndpointInner {
                         if self.config.end_version.is_none()
                             || self.config.end_version.unwrap() >= new_version =>
                     {
-                        let actions = match logstore::get_actions(new_version, &bytes) {
+                        let actions = match logstore::get_actions(new_version as u64, &bytes) {
                             Ok(actions) => actions,
                             Err(e) => {
                                 self.consumer.error(
@@ -1814,7 +1820,7 @@ impl DeltaTableInputEndpointInner {
                 }) = self.last_resume_status.lock().unwrap().clone()
                 {
                     // If we are resuming from a checkpoint, use the version specified in the checkpoint.
-                    table_builder.with_version(version)
+                    table_builder.with_version(version as u64)
                 } else {
                     match &self.config {
                         DeltaTableReaderConfig {
@@ -1836,7 +1842,7 @@ impl DeltaTableInputEndpointInner {
                             version: Some(version),
                             datetime: None,
                             ..
-                        } => table_builder.with_version(*version),
+                        } => table_builder.with_version(*version as u64),
                         DeltaTableReaderConfig {
                             version: None,
                             datetime: Some(datetime),
@@ -1907,7 +1913,7 @@ impl DeltaTableInputEndpointInner {
                 &self.endpoint_name,
                 "internal error: table version is not available",
             )
-        })?;
+        })? as i64;
 
         // If we are about to follow the table, set resume state to the current table version, otherwise
         // the connector will remain in the barrier state until at least one transaction is added to the log.
@@ -1918,22 +1924,13 @@ impl DeltaTableInputEndpointInner {
                 DeltaResumeInfo::follow_mode(version, false);
         }
 
-        // Register object store & url pairs with datafusion.
-        //
-        // - Synthetic `delta-rs://...` URL + table-prefixed store: used when
-        //   we build parquet URIs from `Add.path` entries in the transaction
-        //   log (see `process_actions` and the listing-table path).
-        // - Table root URL + bucket-root store: used by the snapshot
-        //   `TableProvider` since delta-rs 0.31.x, which plans scans against
-        //   the root URL via datafusion's standard parquet `FileSource`.
-        //   Without this second registration, `select ... from snapshot` fails
-        //   with "No suitable object store found for <root>".
+        // Our snapshot scans and CDC listing tables both address files by the
+        // table's `root_url()`, so register that store with datafusion.
+        // Without it, `select ... from snapshot` fails with "No suitable object
+        // store found for <root>". (delta-rs 0.32.x no longer uses the old
+        // synthetic `delta-rs://` URL, so we don't register it anymore.)
         let log_store = delta_table.log_store();
         let runtime_env = self.datafusion.runtime_env();
-        runtime_env.register_object_store(
-            log_store.object_store_url().as_ref(),
-            log_store.object_store(None),
-        );
         runtime_env.register_object_store(log_store.root_url(), log_store.root_object_store(None));
 
         // if let Some(schema) = delta_table.schema() {
@@ -2652,7 +2649,18 @@ impl DeltaTableInputEndpointInner {
         // Collect Add and Remove file paths separately. The query below
         // subtracts Removes from Adds via `EXCEPT ALL` to cancel rewrites
         // that don't change logical data.
-        let url = table.log_store().object_store_url();
+        //
+        // We address files via the table's `root_url()` (e.g. `file:///...` or
+        // `s3://bucket/prefix/`) rather than the synthetic `delta-rs://...`
+        // URL returned by `object_store_url()`. The synthetic URL encodes the
+        // entire table filesystem path into the URL host (slashes become
+        // dashes), which works for DataFusion's `register_object_store`
+        // routing keyed by scheme+host but produces a malformed listing URL
+        // when concatenated with `Add.path`. Using `root_url()` keeps the
+        // listing path real, and `register_object_store(root_url, root_store)`
+        // (done in `start_input_endpoint`) provides the matching store.
+        let log_store = table.log_store();
+        let url = log_store.root_url();
         let path_of = |p: &str| format!("{}{}", url.as_str(), p);
         let adds: Vec<String> = actions
             .iter()
@@ -2732,7 +2740,7 @@ impl DeltaTableInputEndpointInner {
                 receiver,
                 start_transaction,
                 self.config.max_retries(),
-                table.version(),
+                table.version().map(|v| v as i64),
             )
             .await?;
 
@@ -2835,8 +2843,10 @@ impl DeltaTableInputEndpointInner {
     ) -> AnyResult<()> {
         let description = format!("file '{path}'");
 
-        // See comment about `object_store_url` above.
-        let full_path = format!("{}{}", table.log_store().object_store_url().as_str(), path);
+        // Address files via the table's real `root_url()` (e.g. `file:///...`
+        // or `s3://bucket/prefix/`). See `do_process_cdc_transaction` for the
+        // full reasoning on why we don't use `object_store_url()` here.
+        let full_path = format!("{}{}", table.log_store().root_url().as_str(), path);
 
         // Create a datafusion table backed by these files.
         let parquet_table = Arc::new(
@@ -2882,7 +2892,7 @@ impl DeltaTableInputEndpointInner {
                 receiver,
                 start_transaction,
                 self.config.max_retries(),
-                table.version(),
+                table.version().map(|v| v as i64),
             )
             .await?;
 

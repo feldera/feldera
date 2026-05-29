@@ -1080,7 +1080,7 @@ fn get_env_filter(config: &PipelineConfig) -> EnvFilter {
     }
 
     // Otherwise, fall back to `INFO`
-    EnvFilter::try_new("object_store=warn,info").unwrap()
+    EnvFilter::try_new("object_store=warn,buoyant_kernel=warn,info").unwrap()
 }
 
 fn do_bootstrap(
