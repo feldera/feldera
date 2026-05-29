@@ -5,6 +5,7 @@
 
 #![allow(async_fn_in_trait)]
 
+use arc_swap::ArcSwap;
 use feldera_storage::{FileCommitter, StoragePath};
 
 use crate::Error;
@@ -16,6 +17,7 @@ use crate::{
     trace::cursor::Position,
 };
 use std::borrow::Cow;
+use std::fmt::Display;
 use std::sync::Arc;
 
 use super::GlobalNodeId;
@@ -626,5 +628,75 @@ pub trait ImportOperator<I, O>: Operator {
     /// (see [`OwnershipPreference`]).
     fn input_preference(&self) -> OwnershipPreference {
         OwnershipPreference::INDIFFERENT
+    }
+}
+
+/// The name of an operator, primarily for use in CPU profiles.
+///
+/// An operator doesn't initially know its global node ID, but the global node
+/// ID is useful for debugging and profiling.  This type allows the name to
+/// initially omit the ID but adds it when it becomes available.
+pub struct OperatorName(ArcSwap<String>);
+
+impl OperatorName {
+    /// Creates a new `OperatorName` that doesn't initially know the global node
+    /// ID, since an operator doesn't know this until [Operator::init] is
+    /// called.
+    ///
+    /// If the name is fetched, with [OperatorName::get], before
+    /// [OperatorName::init], then it will just returned as simply `(base)`.
+    pub fn new(base: &str) -> Self {
+        Self(ArcSwap::new(Arc::new(format!("({base})"))))
+    }
+
+    /// Updates the name to include `global_id`.  This should normally be called
+    /// once, from the implementation of [Operator::init].  If it is called more
+    /// than once then later calls are ignored.
+    ///
+    /// After this function is called, the name will have the format `base
+    /// nodeid` where `nodeid` is in the format used by the circuit profiler so
+    /// that it's easy to find by searching.
+    pub fn init(&self, global_id: &GlobalNodeId) {
+        let s = self.0.load();
+        if let Some(rest) = s.strip_prefix('(')
+            && let Some(base) = rest.strip_suffix(')')
+        {
+            self.0
+                .store(Arc::new(format!("{base} {}", global_id.node_identifier())));
+        }
+    }
+
+    /// Returns a copy of the operator name string.
+    pub fn get(&self) -> Arc<String> {
+        self.0.load_full()
+    }
+}
+
+impl Display for OperatorName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0.load())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::circuit::{GlobalNodeId, NodeId, operator_traits::OperatorName};
+
+    #[test]
+    fn operator_name() {
+        let name = OperatorName::new("Name");
+        assert_eq!(name.to_string(), "(Name)");
+        name.init(&GlobalNodeId::from_path(&[
+            NodeId::new(1),
+            NodeId::new(2),
+            NodeId::new(3),
+        ]));
+        assert_eq!(name.to_string(), "Name nn1_n2_n3");
+        name.init(&GlobalNodeId::from_path(&[
+            NodeId::new(4),
+            NodeId::new(5),
+            NodeId::new(6),
+        ]));
+        assert_eq!(name.to_string(), "Name nn1_n2_n3");
     }
 }

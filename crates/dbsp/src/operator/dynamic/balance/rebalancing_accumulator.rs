@@ -5,6 +5,7 @@ use size_of::SizeOf;
 use crate::{
     Circuit, Error, NumEntries, Scope, Stream,
     circuit::{
+        GlobalNodeId,
         checkpointer::EmptyCheckpoint,
         circuit_builder::RefStreamValue,
         metadata::{
@@ -12,7 +13,7 @@ use crate::{
             MetaItem, OUTPUT_BATCHES_STATS, OperatorLocation, OperatorMeta, SHARED_MEMORY_BYTES,
             STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
         },
-        operator_traits::{Operator, UnaryOperator},
+        operator_traits::{Operator, OperatorName, UnaryOperator},
     },
     trace::{Batch, BatchReader, Spine, Trace},
 };
@@ -51,6 +52,7 @@ where
     B: Batch,
 {
     factories: B::Factories,
+    name: OperatorName,
     state: Spine<B>,
     flush: bool,
     location: &'static Location<'static>,
@@ -69,9 +71,11 @@ where
     B: Batch,
 {
     pub fn new(factories: &B::Factories, location: &'static Location<'static>) -> Self {
+        let name = OperatorName::new("RebalancingAccumulator");
         Self {
             factories: factories.clone(),
-            state: Spine::new(factories),
+            state: Spine::new(factories, name.get()),
+            name,
             flush: false,
             location,
             input_batch_stats: BatchSizeStats::new(),
@@ -81,7 +85,7 @@ where
     }
 
     pub fn clear_state(&mut self) {
-        self.state = Spine::new(&self.factories);
+        self.state = Spine::new(&self.factories, self.name.get());
         self.flush = false;
     }
 
@@ -111,7 +115,14 @@ where
     B: Batch,
 {
     fn name(&self) -> std::borrow::Cow<'static, str> {
-        Cow::Borrowed("BalancingAccumulator")
+        Cow::Borrowed("Balancing Accumulator")
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        let mut inner = self.0.borrow_mut();
+        inner.name.init(global_id);
+        let name = inner.name.get();
+        inner.state.set_name(name);
     }
 
     fn location(&self) -> OperatorLocation {
@@ -151,9 +162,10 @@ where
 
     /// Clear the operator's state.
     fn clear_state(&mut self) -> Result<(), Error> {
-        let state = Spine::new(&self.0.borrow().factories);
-        self.0.borrow_mut().state = state;
-        self.0.borrow_mut().flush = false;
+        let mut inner = self.0.borrow_mut();
+        let state = Spine::new(&inner.factories, inner.name.get());
+        inner.state = state;
+        inner.flush = false;
         Ok(())
     }
 
@@ -186,7 +198,7 @@ where
         let result = if inner.flush {
             inner.flush = false;
 
-            let mut spine = Spine::<B>::new(&inner.factories);
+            let mut spine = Spine::<B>::new(&inner.factories, inner.name.get());
             std::mem::swap(&mut inner.state, &mut spine);
 
             inner.output_batch_stats.add_batch(spine.len());
@@ -220,7 +232,7 @@ where
         let result = if inner.flush {
             inner.flush = false;
 
-            let mut spine = Spine::<B>::new(&inner.factories);
+            let mut spine = Spine::<B>::new(&inner.factories, inner.name.get());
             std::mem::swap(&mut inner.state, &mut spine);
 
             inner.output_batch_stats.add_batch(spine.len());

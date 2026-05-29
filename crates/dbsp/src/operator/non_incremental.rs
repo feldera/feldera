@@ -3,7 +3,7 @@ use crate::{
     circuit::{
         OwnershipPreference,
         circuit_builder::{CircuitBase, NonIterativeCircuit},
-        operator_traits::{ImportOperator, Operator},
+        operator_traits::{ImportOperator, Operator, OperatorName},
         runtime::Consensus,
         schedule::{CommitProgress, DynamicScheduler, Executor, Scheduler},
     },
@@ -173,6 +173,7 @@ where
     B: DynBatch,
 {
     factories: B::Factories,
+    name: OperatorName,
     spine: DynSpine<B>,
 }
 
@@ -181,9 +182,11 @@ where
     B: DynBatch,
 {
     pub fn new(factories: &B::Factories) -> Self {
+        let name = OperatorName::new("ImportAccumulator");
         Self {
             factories: factories.clone(),
-            spine: DynSpine::<B>::new(factories),
+            spine: DynSpine::<B>::new(factories, name.get()),
+            name,
         }
     }
 }
@@ -194,6 +197,11 @@ where
 {
     fn name(&self) -> std::borrow::Cow<'static, str> {
         Cow::Borrowed("ImportAccumulator")
+    }
+
+    fn init(&mut self, global_id: &crate::circuit::GlobalNodeId) {
+        self.name.init(global_id);
+        self.spine.set_name(self.name.get());
     }
 
     fn fixedpoint(&self, _scope: crate::circuit::Scope) -> bool {
@@ -214,7 +222,7 @@ where
     }
 
     async fn eval(&mut self) -> DynSpine<B> {
-        let mut spine = DynSpine::<B>::new(&self.factories);
+        let mut spine = DynSpine::<B>::new(&self.factories, self.name.get());
         std::mem::swap(&mut self.spine, &mut spine);
         spine
     }

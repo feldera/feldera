@@ -13,14 +13,14 @@ use typedmap::TypedMapKey;
 use crate::{
     Circuit, Error, NumEntries, Runtime, Scope, Stream,
     circuit::{
-        LocalStoreMarker,
+        GlobalNodeId, LocalStoreMarker,
         circuit_builder::StreamId,
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT,
             MetaItem, OUTPUT_BATCHES_STATS, OperatorLocation, OperatorMeta, SHARED_MEMORY_BYTES,
             STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
         },
-        operator_traits::{Operator, UnaryOperator},
+        operator_traits::{Operator, OperatorName, UnaryOperator},
     },
     circuit_cache_key,
     trace::{Batch, BatchReader, Spine, Trace},
@@ -83,6 +83,7 @@ where
     B: Batch,
 {
     factories: B::Factories,
+    name: OperatorName,
     state: Spine<B>,
     flush: bool,
     location: &'static Location<'static>,
@@ -135,9 +136,11 @@ where
             }
         };
 
+        let name = OperatorName::new("Accumulator");
         Self {
             factories: factories.clone(),
-            state: Spine::new(factories),
+            state: Spine::new(factories, name.get()),
+            name,
             flush: false,
             location,
             input_batch_stats: BatchSizeStats::new(),
@@ -154,6 +157,11 @@ where
 {
     fn name(&self) -> std::borrow::Cow<'static, str> {
         Cow::Borrowed("Accumulator")
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.name.init(global_id);
+        self.state.set_name(self.name.get());
     }
 
     fn location(&self) -> OperatorLocation {
@@ -193,7 +201,7 @@ where
 
     /// Clear the operator's state.
     fn clear_state(&mut self) -> Result<(), Error> {
-        self.state = Spine::new(&self.factories);
+        self.state = Spine::new(&self.factories, self.name.get());
         self.flush = false;
         Ok(())
     }
@@ -239,7 +247,7 @@ where
             self.flush = false;
             self.enabled_during_current_transaction = None;
 
-            let mut spine = Spine::<B>::new(&self.factories);
+            let mut spine = Spine::<B>::new(&self.factories, self.name.get());
             std::mem::swap(&mut self.state, &mut spine);
 
             self.output_batch_stats.add_batch(spine.len());
