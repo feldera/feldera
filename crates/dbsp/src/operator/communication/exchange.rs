@@ -14,7 +14,7 @@ use crate::{
             EXCHANGE_WAIT_TIME_SECONDS, INPUT_BATCHES_STATS, MetaItem, OUTPUT_BATCHES_STATS,
             OperatorLocation, OperatorMeta,
         },
-        operator_traits::{Operator, SinkOperator, SourceOperator},
+        operator_traits::{Operator, OperatorName, SinkOperator, SourceOperator},
         runtime::{WorkerLocation, WorkerLocations},
         tokio::TOKIO,
     },
@@ -40,7 +40,7 @@ use std::{
     ops::Range,
     pin::Pin,
     sync::{
-        Arc, Mutex, MutexGuard, OnceLock, RwLock,
+        Arc, Mutex, MutexGuard, RwLock,
         atomic::{AtomicIsize, AtomicPtr, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant, SystemTime},
@@ -331,7 +331,7 @@ impl ExchangeClient {
 pub type ExchangeId = u32;
 
 pub trait ExchangeDelivery {
-    fn name(&self) -> &str;
+    fn name(&self) -> Arc<String>;
 
     fn received<'a>(
         &'a self,
@@ -618,7 +618,7 @@ pub(crate) struct Exchange<T> {
     exchange_id: ExchangeId,
 
     /// Identifies the `ExchangeReceiver` operator for use in profile data.
-    receiver_global_node_id: OnceLock<Arc<String>>,
+    name: OperatorName,
 
     /// The number of communicating peers.
     npeers: usize,
@@ -756,7 +756,7 @@ where
 
         let exchange = Arc::new(Self {
             exchange_id,
-            receiver_global_node_id: Default::default(),
+            name: OperatorName::new("ExchangeReceiver"),
             npeers,
             local_workers: layout.local_workers(),
             clients,
@@ -1026,10 +1026,8 @@ impl<T> ExchangeDelivery for Exchange<T>
 where
     T: Clone + Debug + Send + 'static,
 {
-    fn name(&self) -> &str {
-        self.receiver_global_node_id
-            .get()
-            .map_or("Exchange", |node_id| &**node_id)
+    fn name(&self) -> Arc<String> {
+        self.name.get()
     }
 
     fn received<'a>(
@@ -1433,10 +1431,7 @@ where
     }
 
     fn init(&mut self, global_id: &GlobalNodeId) {
-        let _ = self.exchange.receiver_global_node_id.set(Arc::new(format!(
-            "ExchangeReceiver {}",
-            global_id.node_identifier()
-        )));
+        self.exchange.name.init(global_id);
     }
 
     fn location(&self) -> OperatorLocation {

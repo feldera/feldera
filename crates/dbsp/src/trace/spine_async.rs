@@ -343,6 +343,7 @@ where
 {
     #[size_of(skip)]
     factories: B::Factories,
+    name: Arc<String>,
     #[size_of(skip)]
     key_filter: Option<Filter<B::Key>>,
     #[size_of(skip)]
@@ -360,9 +361,10 @@ impl<B> SharedState<B>
 where
     B: Batch,
 {
-    pub fn new(factories: &B::Factories) -> Self {
+    pub fn new(factories: &B::Factories, name: Arc<String>) -> Self {
         Self {
             factories: factories.clone(),
+            name,
             key_filter: None,
             value_filter: None,
             frontier: B::Time::minimum(),
@@ -391,22 +393,13 @@ where
         self.slots[level].notify.notify_one();
     }
 
-    fn should_apply_backpressure(&self) -> bool {
-        const HIGH_THRESHOLD: usize = 128;
-        self.slots
-            .iter()
-            .map(|s| s.loose_batches.len())
-            .sum::<usize>()
-            >= HIGH_THRESHOLD
-    }
-
-    fn should_relieve_backpressure(&self) -> bool {
-        const LOWER_THRESHOLD: usize = 127;
-        self.slots
-            .iter()
-            .map(|s| s.loose_batches.len())
-            .sum::<usize>()
-            <= LOWER_THRESHOLD
+    fn batch_count(&self) -> BatchCount {
+        BatchCount(
+            self.slots
+                .iter()
+                .map(|s| s.loose_batches.len())
+                .sum::<usize>(),
+        )
     }
 
     fn get_filters(&self) -> (Option<Filter<B::Key>>, Option<GroupFilter<B::Val>>) {
@@ -475,7 +468,9 @@ where
             .with_start(start)
             .with_tooltip(|| {
                 format!(
-                    "Merged {} batches ({pre_len} -> {post_len}) in {n_steps} steps using {:.1} ms CPU",
+                    "{} in worker {} merged {} batches ({pre_len} -> {post_len}) in {n_steps} steps using {:.1} ms CPU",
+                    &self.name,
+                    Runtime::worker_index(),
                     batches.len(),
                     elapsed.as_secs_f64() * 1000.0
                 )
@@ -557,6 +552,21 @@ where
         // Effectively, we are merging the two compaction sweeps into one.
         slot.compaction_status = CompactionStatus::Requested;
         slot.notify.notify_one();
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+struct BatchCount(usize);
+
+impl BatchCount {
+    const HIGH_THRESHOLD: usize = 128;
+
+    fn should_apply_backpressure(&self) -> bool {
+        self.0 >= Self::HIGH_THRESHOLD
+    }
+
+    fn should_relieve_backpressure(&self) -> bool {
+        !self.should_apply_backpressure()
     }
 }
 
@@ -646,10 +656,15 @@ impl<B> AsyncMerger<B>
 where
     B: Batch,
 {
-    pub fn new(runtime: Runtime, worker_index: usize, factories: &B::Factories) -> Self {
+    pub fn new(
+        runtime: Runtime,
+        worker_index: usize,
+        factories: &B::Factories,
+        name: Arc<String>,
+    ) -> Self {
         let idle = Arc::new(Condvar::new());
         let no_backpressure = Arc::new(Notify::new());
-        let state = Arc::new(Mutex::new(SharedState::new(factories)));
+        let state = Arc::new(Mutex::new(SharedState::new(factories, name)));
 
         let max_level0_batch_size_records = max_level0_batch_size_records() as usize;
         assert!(
@@ -706,23 +721,45 @@ where
     /// Blocks until the number of batches in the spine has declined below the
     /// backpressure threshold.
     async fn backpressure_wait(&self) {
-        let start = Instant::now();
-        loop {
+        let start_time = Instant::now();
+
+        // Do an initial check of the batch count.  If it's already dropped,
+        // exit early, otherwise save the name and the initial number of
+        // batches for later recording.
+        let (name, initial_batches);
+        {
+            let state = self.state.lock().unwrap();
+            let batch_count = state.batch_count();
+            if batch_count.should_relieve_backpressure() {
+                return;
+            }
+            name = state.name.clone();
+            initial_batches = batch_count.0;
+        }
+
+        // Wait for the batch count to drop below the threshold.
+        let final_batches = loop {
             let notify = self.no_backpressure.notified();
             {
                 let mut state = self.state.lock().unwrap();
-                if state.should_relieve_backpressure() {
-                    state.spine_stats.backpressure_wait += start.elapsed();
-                    break;
+                let batch_count = state.batch_count();
+                if batch_count.should_relieve_backpressure() {
+                    state.spine_stats.backpressure_wait += start_time.elapsed();
+                    break batch_count.0;
                 }
             }
             notify.await;
-        }
+        };
+
+        // Record the wait.
         COMPACTION_STALL_TIME_NANOSECONDS
-            .fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+            .fetch_add(start_time.elapsed().as_nanos() as u64, Ordering::Relaxed);
         Span::new("backpressure-wait")
             .with_category("Spine")
-            .with_start(start)
+            .with_start(start_time)
+            .with_tooltip(|| {
+                format!("{name} wait for drop from {initial_batches} to {final_batches} batches")
+            })
             .record();
     }
 
@@ -731,6 +768,7 @@ where
         self.state
             .lock()
             .unwrap()
+            .batch_count()
             .should_apply_backpressure()
             .then_some(notify)
     }
@@ -1152,7 +1190,7 @@ where
                                 self.no_backpressure.notify_waiters();
                                 break;
                             }
-                            if state.should_relieve_backpressure() {
+                            if state.batch_count().should_relieve_backpressure() {
                                 self.no_backpressure.notify_waiters();
                             }
                         }
@@ -1860,13 +1898,18 @@ where
 {
     type Batch = B;
 
-    fn new(factories: &B::Factories) -> Self {
+    fn new(factories: &B::Factories, name: Arc<String>) -> Self {
         Self::with_runtime(
             Runtime::runtime()
                 .expect("Attempting to create a spine merger outside of a DBSP runtime"),
             Runtime::worker_index(),
             factories,
+            name,
         )
+    }
+
+    fn set_name(&mut self, name: Arc<String>) {
+        self.merger.state.lock().unwrap().name = name;
     }
 
     fn set_frontier(&mut self, frontier: &B::Time) {
@@ -1903,6 +1946,7 @@ where
             if self
                 .merger
                 .add_batch(batch, false)
+                .batch_count()
                 .should_apply_backpressure()
             {
                 self.merger.backpressure_wait().await;
@@ -2099,13 +2143,18 @@ where
     ///
     /// In the common case, [Spine::new] uses the current thread's runtime and
     /// worker index.
-    pub fn with_runtime(runtime: Runtime, worker_index: usize, factories: &B::Factories) -> Self {
+    pub fn with_runtime(
+        runtime: Runtime,
+        worker_index: usize,
+        factories: &B::Factories,
+        name: Arc<String>,
+    ) -> Self {
         Spine {
             factories: factories.clone(),
             dirty: false,
             key_filter: None,
             value_filter: None,
-            merger: AsyncMerger::new(runtime, worker_index, factories),
+            merger: AsyncMerger::new(runtime, worker_index, factories, name),
         }
     }
 
@@ -2139,7 +2188,7 @@ where
                 .with_category("Spine")
                 .with_tooltip(|| {
                     format!(
-                        "Eagerly spilling {} batch with {} keys and {} values",
+                        "Eagerly spill {} batch with {} keys and {} values",
                         HumanBytes::from(batch.approximate_byte_size()),
                         batch.key_count(),
                         batch.len()
@@ -2188,6 +2237,7 @@ where
             self.dirty = true;
             self.merger
                 .add_batch(batch, false)
+                .batch_count()
                 .should_apply_backpressure()
         } else {
             false

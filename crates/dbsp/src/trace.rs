@@ -232,8 +232,12 @@ pub trait Trace: BatchReader {
             Factories = Self::Factories,
         >;
 
-    /// Allocates a new empty trace.
-    fn new(factories: &Self::Factories) -> Self;
+    /// Allocates a new empty trace associated with `name`, which should
+    /// identify the operator or other origin of the trace.
+    fn new(factories: &Self::Factories, name: Arc<String>) -> Self;
+
+    /// Updates the name of the trace to `name`.
+    fn set_name(&mut self, name: Arc<String>);
 
     /// Sets a compaction frontier, i.e., a timestamp such that timestamps
     /// below the frontier are indistinguishable to DBSP, therefore any `ts`

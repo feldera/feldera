@@ -1196,7 +1196,7 @@ impl NodeId {
         self.0
     }
 
-    pub(super) fn root() -> Self {
+    pub fn root() -> Self {
         Self(0)
     }
 }

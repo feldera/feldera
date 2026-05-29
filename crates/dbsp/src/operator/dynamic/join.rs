@@ -4,6 +4,7 @@ use crate::circuit::metadata::{
     BatchSizeStats, COMPUTED_OUTPUT_RECORDS_COUNT, LEFT_INPUT_RECORDS_COUNT, OUTPUT_BATCHES_STATS,
     OUTPUT_REDUNDANCY_PERCENT, RIGHT_INPUT_INTEGRAL_RECORDS_COUNT,
 };
+use crate::circuit::operator_traits::OperatorName;
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::DynData;
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
@@ -1262,6 +1263,7 @@ where
     T: ZBatchReader,
     Z: IndexedZSet,
 {
+    name: OperatorName,
     right_factories: T::Factories,
     output_factories: Z::Factories,
     timed_item_factory:
@@ -1322,6 +1324,7 @@ where
         clock: Clk,
     ) -> Self {
         Self {
+            name: OperatorName::new("JoinTrace"),
             right_factories: right_factories.clone(),
             output_factories: output_factories.clone(),
             timed_item_factory,
@@ -1351,6 +1354,10 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("JoinTrace")
+    }
+
+    fn init(&mut self, global_id: &crate::circuit::GlobalNodeId) {
+        self.name.init(global_id);
     }
 
     fn location(&self) -> OperatorLocation {
@@ -1685,7 +1692,7 @@ where
                     start += run_length;
 
                     if let Entry::Vacant(vacant) = self.future_outputs.borrow_mut().entry(batch_time) {
-                        let mut spine = <Spine<Z> as Trace>::new(&self.output_factories);
+                        let mut spine = <Spine<Z> as Trace>::new(&self.output_factories, self.name.get());
                         spine.insert(Z::dyn_from_tuples(&self.output_factories, (), &mut batch)).await;
                         vacant.insert(spine);
                     };

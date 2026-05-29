@@ -240,9 +240,7 @@ where
     }
 
     pub fn build(self) -> Match<C, I, O, F> {
-        let id = self.global_id.local_node_id().unwrap();
         Match {
-            global_id: self.global_id,
             labels: BTreeMap::new(),
             prefix: None,
             prefix_stream: self.prefix_stream,
@@ -252,11 +250,12 @@ where
             flush: Cell::new(false),
             async_stream: None,
             inner: Rc::new(MatchInternal::new(
-                id,
+                &self.global_id,
                 self.factories,
                 self.join_func,
                 self.circuit,
             )),
+            global_id: self.global_id,
         }
     }
 }
@@ -424,9 +423,8 @@ where
     O: IndexedZSet,
     F: MatchFunc<C, I, O::Key, O::Val>,
 {
-    // Used in debug prints.
-    #[allow(dead_code)]
-    id: NodeId,
+    /// For profiling and debug prints.
+    name: Arc<String>,
     key_factory: &'static dyn Factory<I::Key>,
     output_factories: O::Factories,
     timed_item_factory:
@@ -455,9 +453,14 @@ where
     O: IndexedZSet,
     F: MatchFunc<C, I, O::Key, O::Val>,
 {
-    fn new(id: NodeId, factories: MatchFactories<I, C::Time, O>, join_func: F, circuit: C) -> Self {
+    fn new(
+        global_id: &GlobalNodeId,
+        factories: MatchFactories<I, C::Time, O>,
+        join_func: F,
+        circuit: C,
+    ) -> Self {
         Self {
-            id,
+            name: Arc::new(format!("Match {}", global_id.node_identifier())),
             key_factory: factories.prefix_factories.key_factory(),
             output_factories: factories.output_factories,
             timed_item_factory: factories.timed_item_factory,
@@ -468,7 +471,7 @@ where
             future_outputs: RefCell::new(HashMap::new()),
             stats: RefCell::new(MatchStats::new()),
             circuit: circuit.clone(),
-            output_stream: Stream::new(circuit, id),
+            output_stream: Stream::new(circuit, global_id.local_node_id().unwrap()),
             phantom: PhantomData,
         }
     }
@@ -556,7 +559,7 @@ where
                     start += run_length;
 
                     if let Entry::Vacant(vacant) = self.future_outputs.borrow_mut().entry(batch_time) {
-                        let mut spine = <Spine<O> as Trace>::new(&self.output_factories);
+                        let mut spine = <Spine<O> as Trace>::new(&self.output_factories, self.name.clone());
                         spine.insert(O::dyn_from_tuples(&self.output_factories, (), &mut batch)).await;
                         vacant.insert(spine);
                     }

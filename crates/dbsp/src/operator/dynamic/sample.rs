@@ -349,7 +349,7 @@ mod test {
     use anyhow::Result as AnyResult;
     use feldera_storage::tokio::TOKIO;
     use proptest::{collection::vec, prelude::*};
-    use std::{cmp::Ordering, collections::BTreeSet};
+    use std::{cmp::Ordering, collections::BTreeSet, sync::Arc};
 
     fn test_circuit(
         circuit: &mut RootCircuit,
@@ -454,7 +454,7 @@ mod test {
             let (mut dbsp, (sample_size_handle, input_handle, output_sample_handle, output_quantile_handle)) =
                 Runtime::init_circuit(4, test_circuit).unwrap();
 
-            let mut ref_trace: TestBatch<DynData/*<i32>*/, DynData/*<i32>*/, (), DynZWeight> = TestBatch::new(&TestBatchFactories::new());
+            let mut ref_trace: TestBatch<DynData/*<i32>*/, DynData/*<i32>*/, (), DynZWeight> = TestBatch::new(&TestBatchFactories::new(), Arc::new(String::from("Test")));
 
             for (batch, sample_size) in trace.into_iter() {
 

@@ -817,7 +817,7 @@ where
     fn new_batcher(factories: &TestBatchFactories<K, V, T, R>, time: T) -> Self {
         Self {
             time,
-            result: TestBatch::new(factories),
+            result: TestBatch::new(factories, Arc::new(String::from("Test"))),
         }
     }
 
@@ -881,7 +881,7 @@ where
         _location: Option<BatchLocation>,
     ) -> Self {
         Self {
-            result: TestBatch::new(factories),
+            result: TestBatch::new(factories, Arc::new(String::from("Test"))),
             time_diffs: Vec::new(),
             vals: BTreeMap::new(),
             num_keys: 0,
@@ -1314,7 +1314,7 @@ where
 {
     type Batch = Self;
 
-    fn new(_factories: &Self::Factories) -> Self {
+    fn new(_factories: &Self::Factories, _name: Arc<String>) -> Self {
         Self {
             data: BTreeMap::new(),
             lower_key_bound: None,
@@ -1322,6 +1322,8 @@ where
             value_filter: None,
         }
     }
+
+    fn set_name(&mut self, _name: Arc<String>) {}
 
     fn set_frontier(&mut self, _frontier: &Self::Time) {
         // Ok to do nothing here, since frontiers are an optimization and are meant to be applied lazily during merging.

@@ -1,6 +1,6 @@
 #![allow(clippy::type_complexity)]
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, sync::Arc};
 
 use crate::{
     DBData, DynZWeight, RootCircuit, Runtime, ZWeight,
@@ -380,7 +380,7 @@ fn lead_test(trace: Vec<Vec<(i32, i32, ZWeight)>>, transaction: bool) {
     )
     .unwrap();
 
-    let mut ref_trace = TestBatch::new(&TestBatchFactories::new());
+    let mut ref_trace = TestBatch::new(&TestBatchFactories::new(), Arc::new(String::from("Test")));
 
     if transaction {
         dbsp.start_transaction().unwrap();
@@ -435,7 +435,7 @@ fn lag_test(trace: Vec<Vec<(i32, i32, ZWeight)>>, transaction: bool) {
     )
     .unwrap();
 
-    let mut ref_trace = TestBatch::new(&TestBatchFactories::new());
+    let mut ref_trace = TestBatch::new(&TestBatchFactories::new(), Arc::new(String::from("Test")));
 
     if transaction {
         dbsp.start_transaction().unwrap();
@@ -821,7 +821,7 @@ fn test_topk(trace: Vec<Vec<(i32, i32, ZWeight)>>, transaction: bool) {
     )
     .unwrap();
 
-    let mut ref_trace = TestBatch::new(&TestBatchFactories::new());
+    let mut ref_trace = TestBatch::new(&TestBatchFactories::new(), Arc::new(String::from("Test")));
 
     if transaction {
         dbsp.start_transaction().unwrap();
