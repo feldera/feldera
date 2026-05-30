@@ -111,9 +111,16 @@ public final class MultiCratesWriter extends RustWriter {
         if (!options.ioOptions.runtimePath.isEmpty())
             relativePath = options.ioOptions.runtimePath;
         deps = deps.replace("$ROOT", relativePath);
-        String enterpriseFeatures = options.ioOptions.enterprise ?
-                ", features = [\"feldera-enterprise\"] " : "";
-        deps = deps.replace("$FEATURES", enterpriseFeatures);
+        StringBuilder adaptersOptions = new StringBuilder();
+        if (options.ioOptions.testing)
+            // Tests don't exercise the /heap_profile endpoint. Dropping the
+            // adapters default features excludes jemalloc_pprof, whose
+            // non-deterministic build fingerprint forced a recompile on every
+            // test invocation. Production pipelines keep the default features.
+            adaptersOptions.append(", default-features = false");
+        if (options.ioOptions.enterprise)
+            adaptersOptions.append(", features = [\"feldera-enterprise\"]");
+        deps = deps.replace("$FEATURES", adaptersOptions.toString());
         cargoStream.println(deps);
 
         if (options.ioOptions.enterprise) {
