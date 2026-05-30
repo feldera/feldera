@@ -174,7 +174,14 @@ def unique_pipeline_name(base_name: str) -> str:
     of the commit SHA or 'local' if not in CI.
     """
     ci_tag = os.getenv("GITHUB_SHA", "local")[:5]
-    return f"{ci_tag}_{base_name}"
+    name = f"{ci_tag}_{base_name}"
+    # The pipeline name becomes a Kubernetes label value (max 63 chars). Fail here
+    # with a clear message rather than letting provisioning hit a cryptic 422.
+    assert len(name) <= 62, (
+        f"Generated pipeline name '{name}' is {len(name)} chars, exceeding the 62-char "
+        f"limit; shorten the test name '{base_name}' to at most {62 - len(ci_tag) - 1} chars."
+    )
+    return name
 
 
 def enterprise_only(fn):
