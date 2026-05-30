@@ -1504,7 +1504,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             if (isLast) {
                 // Since we need to mark the node as final, insert a noop
                 this.addOperator(operator);
-                return new DBSPNoopOperator(node, operator.outputPort(), null);
+                return new DBSPNoopOperator(node, operator.outputPort());
             }
             return operator;
         }
