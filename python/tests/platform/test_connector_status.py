@@ -56,7 +56,7 @@ def _start_with_bootstrap_approval(pipeline: Pipeline) -> None:
 
 @enterprise_only
 @gen_pipeline_name
-def test_http_connector_status_across_restart_and_sql_changes(pipeline_name):
+def test_http_connector_status_across_restart_sql_changes(pipeline_name):
     """
     HTTP status lifecycle test. HTTP connectors are ephemeral and require special care
     to ensure they survive pipeline restarts.

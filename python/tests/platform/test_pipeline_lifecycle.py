@@ -692,7 +692,7 @@ def test_refresh_version_due_to_status_changes(pipeline_name):
 
 
 @gen_pipeline_name
-def test_cannot_edit_runtime_config_resources_namespace_if_not_cleared(pipeline_name):
+def test_resources_namespace_edit_needs_cleared_storage(pipeline_name):
     pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
     pipeline.start()
     pipeline.stop(force=True)
