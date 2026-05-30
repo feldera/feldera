@@ -61,10 +61,9 @@ public final class DBSPNoopOperator extends DBSPUnaryOperator implements ILinear
         }
     }
 
-    public DBSPNoopOperator(CalciteRelNode node, OutputPort source,
-                            @Nullable String comment) {
+    public DBSPNoopOperator(CalciteRelNode node, OutputPort source) {
         super(node, "noop", getClosure(source.outputType()),
-                source.outputType(), source.isMultiset(), source, comment);
+                source.outputType(), source.isMultiset(), source);
     }
 
     @Override
@@ -81,7 +80,7 @@ public final class DBSPNoopOperator extends DBSPUnaryOperator implements ILinear
             @Nullable DBSPExpression function, DBSPType outputType,
             List<OutputPort> newInputs, boolean force) {
         if (this.mustReplace(force, function, newInputs, outputType)) {
-            return new DBSPNoopOperator(this.getRelNode(), newInputs.get(0), this.comment)
+            return new DBSPNoopOperator(this.getRelNode(), newInputs.get(0))
                     .copyAnnotations(this);
         }
         return this;
@@ -92,7 +91,7 @@ public final class DBSPNoopOperator extends DBSPUnaryOperator implements ILinear
     @SuppressWarnings("unused")
     public static DBSPNoopOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        return new DBSPNoopOperator(CalciteEmptyRel.INSTANCE, info.getInput(0), null)
+        return new DBSPNoopOperator(CalciteEmptyRel.INSTANCE, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPNoopOperator.class);
     }
 }

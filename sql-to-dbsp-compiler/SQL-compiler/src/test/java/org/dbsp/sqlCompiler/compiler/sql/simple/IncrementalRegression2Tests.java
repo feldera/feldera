@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -724,5 +725,81 @@ public class IncrementalRegression2Tests extends SqlIoTest {
                  id | bid | sum | weight
                 -------------------------
                  0  | 0   | 0 | -1""");
+    }
+
+
+    @Test
+    public void issue6350a() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T (
+                   id UUID,
+                   ts TIMESTAMP NOT NULL LATENESS INTERVAL 3 DAYS,
+                   ea VARCHAR
+                );
+                
+                CREATE VIEW V AS
+                SELECT
+                  me.id,
+                  me.ts,
+                  ARRAY_TO_STRING(ARRAY_AGG(prev.ea), ' '),
+                  COUNT(prev.ea),
+                  MAX(prev.ts)
+                FROM T AS me
+                JOIN T AS prev
+                  ON prev.id = me.id
+                 AND prev.ts BETWEEN me.ts - INTERVAL '3' HOURS AND me.ts
+                GROUP BY me.id, me.ts;""");
+        // There should be two retain_values operators
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int retains = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainValuesOperator node) {
+                this.retains++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(2, this.retains);
+            }
+        });
+    }
+
+    @Test
+    public void issue6350b() {
+        // swap two fields in the table compared with issue6350a; this used to cause a crash in the compiler
+        var ccs = this.getCCS("""
+                CREATE TABLE T (
+                   id UUID,
+                   ea VARCHAR,
+                   ts TIMESTAMP NOT NULL LATENESS INTERVAL 3 DAYS
+                );
+                
+                CREATE VIEW V AS
+                SELECT
+                  me.id,
+                  me.ts,
+                  ARRAY_TO_STRING(ARRAY_AGG(prev.ea), ' '),
+                  COUNT(prev.ea),
+                  MAX(prev.ts)
+                FROM T AS me
+                JOIN T AS prev
+                  ON prev.id = me.id
+                 AND prev.ts BETWEEN me.ts - INTERVAL '3' HOURS AND me.ts
+                GROUP BY me.id, me.ts;""");
+        // There should be two retain_values operators
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int retains = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainValuesOperator node) {
+                this.retains++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(2, this.retains);
+            }
+        });
     }
 }

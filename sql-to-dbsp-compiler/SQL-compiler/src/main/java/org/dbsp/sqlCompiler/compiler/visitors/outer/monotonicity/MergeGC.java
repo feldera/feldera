@@ -114,13 +114,15 @@ public class MergeGC extends Passes {
         }
     }
 
+    /** Find multiple {@link DBSPIntegrateTraceRetainKeysOperator} that apply to the same
+     * operator (on their LHS input) and place them in a list. */
     static class FindMultipleRetainKeys extends CircuitWithGraphsVisitor {
-        final List<List<DBSPIntegrateTraceRetainKeysOperator>> toMerge;
+        final List<List<DBSPIntegrateTraceRetainKeysOperator>> shareLeftInput;
         final Set<DBSPIntegrateTraceRetainKeysOperator> visited;
 
         FindMultipleRetainKeys(DBSPCompiler compiler, CircuitGraphs graphs) {
             super(compiler, graphs);
-            this.toMerge = new ArrayList<>();
+            this.shareLeftInput = new ArrayList<>();
             this.visited = new HashSet<>();
         }
 
@@ -141,11 +143,12 @@ public class MergeGC extends Passes {
                 }
             }
             if (common.size() > 1) {
-                this.toMerge.add(common);
+                this.shareLeftInput.add(common);
             }
         }
     }
 
+    /** Merge multiple {@link DBSPIntegrateTraceRetainKeysOperator}s which share their left input */
     static class MergeRetain extends CircuitCloneVisitor {
         /** Keep a counter and a list; offer a method to decrement counter */
         static class ListCounter<T> {
@@ -194,7 +197,7 @@ public class MergeGC extends Passes {
 
         @Override
         public Token startVisit(IDBSPOuterNode circuit) {
-            for (var l: this.fmk.toMerge) {
+            for (var l: this.fmk.shareLeftInput) {
                 ListCounter<DBSPIntegrateTraceRetainKeysOperator> list = new ListCounter<>(l);
                 for (var e: l) {
                     Utilities.putNew(this.toMerge, e, list);
