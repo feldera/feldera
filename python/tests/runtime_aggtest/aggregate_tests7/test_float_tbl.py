@@ -45,7 +45,7 @@ class aggtst_float_table(TstTable):
 
 
 class aggtst_float_view(TstView):
-    """The result of SELECT * on float table"""
+    """The result of SELECT * on float table to showcase the precision loss in the table's FP values"""
 
     def __init__(self):
         self.sql = """CREATE MATERIALIZED VIEW float_view AS SELECT

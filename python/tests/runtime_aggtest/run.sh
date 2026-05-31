@@ -9,6 +9,7 @@ TESTS=(
     "aggregate_tests4/main.py"
     "aggregate_tests5/main.py"
     "aggregate_tests6/main.py"
+    "aggregate_tests7/main.py"
     "arithmetic_tests/main.py"
     "asof_tests/main.py"
     "complex_type_tests/main.py"
