@@ -560,4 +560,81 @@ public class Regression3Tests extends SqlIoTest {
                   SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous
                 FROM T;""", "Not yet implemented: OVER currently cannot sort on columns with type 'VARBINARY'");
     }
+
+    @Test
+    public void issue6352() {
+        this.qs("""
+                 SELECT SAFE_CAST('true' AS BOOL);
+                 r
+                ---
+                 t
+                (1 row)
+                
+                SELECT SAFE_CAST('false' AS BOOL);
+                 r
+                ---
+                 f
+                (1 row)
+                
+                SELECT SAFE_CAST('blah' AS BOOL);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT SAFE_CAST('t' AS BOOL);
+                 r
+                ---
+                NULL
+                (1 row)""");
+
+        this.qs("""
+                 SELECT SAFE_CAST('0.0' AS DOUBLE);
+                 r
+                ---
+                 0
+                (1 row)
+                
+                SELECT SAFE_CAST('false' AS DOUBLE);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT SAFE_CAST(NULL AS DOUBLE);
+                 r
+                ---
+                NULL
+                (1 row)""");
+
+        this.qs("""
+                 SELECT SAFE_CAST('0.0' AS REAL);
+                 r
+                ---
+                 0
+                (1 row)
+                
+                SELECT SAFE_CAST('false' AS REAL);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT SAFE_CAST('Infinity' AS REAL);
+                 r
+                ---
+                 Infinity
+                (1 row)
+                
+                SELECT SAFE_CAST(NULL AS REAL);
+                 r
+                ---
+                NULL
+                (1 row)""");
+
+        this.qf("SELECT CAST('blah' AS DOUBLE)",
+                "Parse error during conversion of 'blah' to DOUBLE: invalid float literal");
+        this.qf("SELECT CAST('blah' AS BOOLEAN)",
+                "Cannot convert string 'blah' to BOOLEAN");
+    }
 }

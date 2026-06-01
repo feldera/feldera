@@ -1651,47 +1651,79 @@ public class Regression1Tests extends SqlIoTest {
               true
              (1 row)
              
-             SELECT 't'::BOOLEAN;
-              r
-             ---
-              false
-             (1 row)
-             
-             SELECT '1'::BOOLEAN;
-              r
-             ---
-              false
-             (1 row)
-             
-             SELECT '0'::BOOLEAN;
-              r
-             ---
-              false
-             (1 row)
-             
-             SELECT 'yes'::BOOLEAN;
-              r
-             ---
-              false
-             (1 row)
-             
-             SELECT ''::BOOLEAN;
-              r
-             ---
-              false
-             (1 row)
-             
-             SELECT 'NULL'::BOOLEAN;
-              r
-             ---
-              false
-             (1 row)
-             
              SELECT NULL::BOOLEAN;
               r
              ---
              NULL
+             (1 row)
+             
+             SELECT SAFE_CAST('TRUE' AS BOOLEAN);
+              r
+             ---
+              true
+             (1 row)
+             
+             SELECT SAFE_CAST('true' AS BOOLEAN);
+              r
+             ---
+              true
+             (1 row)
+             
+             SELECT SAFE_CAST('TrUe' AS BOOLEAN);
+              r
+             ---
+              true
+             (1 row)
+             
+             SELECT SAFE_CAST('t' AS BOOLEAN);
+              r
+             ---
+             NULL
+             (1 row)
+             
+             SELECT SAFE_CAST('no' AS BOOLEAN);
+              r
+             ---
+             NULL
+             (1 row)
+             
+             SELECT SAFE_CAST('N' AS BOOLEAN);
+              r
+             ---
+             NULL
+             (1 row)
+             
+             SELECT SAFE_CAST('1' AS BOOLEAN);
+              r
+             ---
+             NULL
+             (1 row)
+             
+             SELECT SAFE_CAST('0' AS BOOLEAN);
+              r
+             ---
+             NULL
+             (1 row)
+             
+             SELECT SAFE_CAST('yes' AS BOOLEAN);
+              r
+             ---
+             NULL
+             (1 row)
+             
+             SELECT SAFE_CAST(NULL AS BOOLEAN);
+              r
+             ---
+             NULL
              (1 row)""");
+
+        this.qf("SELECT 't'::BOOLEAN", "Cannot convert string");
+        this.qf("SELECT 'no'::BOOLEAN", "Cannot convert string");
+        this.qf("SELECT '1'::BOOLEAN", "Cannot convert string");
+        this.qf("SELECT '0'::BOOLEAN", "Cannot convert string");
+        this.qf("SELECT 'yes'::BOOLEAN", "Cannot convert string");
+        this.qf("SELECT ''::BOOLEAN", "Cannot convert string '' to BOOLEAN");
+        this.qf("SELECT 'NULL'::BOOLEAN", "Cannot convert string 'NULL' to BOOLEAN");
     }
 
     @Test

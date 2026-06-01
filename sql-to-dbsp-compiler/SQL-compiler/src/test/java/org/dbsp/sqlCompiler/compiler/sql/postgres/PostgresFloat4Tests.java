@@ -61,12 +61,8 @@ public class PostgresFloat4Tests extends SqlIoTest {
 
     @Test
     public void testParseError() {
-        // This one fails in Postgres
-        this.q("""
-                SELECT 'xyz' :: FLOAT4;
-                result
-                ------
-                0""");
+        this.qf("SELECT 'xyz' :: FLOAT4",
+                "Parse error during conversion of 'xyz' to REAL: invalid float literal");
         this.queryFailingInCompilation("SELECT 5.0.0",
                 "Error parsing SQL");
         this.queryFailingInCompilation("SELECT 5.  0",
