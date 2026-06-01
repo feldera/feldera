@@ -14,6 +14,8 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - No longer allowed to edit `runtime_config.resources.storage_class` if the pipeline storage is not cleared.
+
         - Calling `/start` on a pipeline that already failed to compile will directly return an error instead of
           the runner later on setting the `deployment_error` during its check whether to proceed to provisioning.
 

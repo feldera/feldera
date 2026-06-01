@@ -691,33 +691,37 @@ def test_refresh_version_due_to_status_changes(pipeline_name):
     )
 
 
-@gen_pipeline_name
-def test_resources_namespace_edit_needs_cleared_storage(pipeline_name):
-    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+def helper_test_restricted_runtime_config_edit(
+    pipeline_name, pipeline, field, edit, retrieve, new_value
+):
     pipeline.start()
     pipeline.stop(force=True)
 
     # Attempt to patch without cleared storage will fail
-    runtime_config = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=all")[
-        "runtime_config"
-    ]
-    runtime_config["resources"]["namespace"] = "example"
+    runtime_config: dict = TEST_CLIENT.http.get(
+        f"/pipelines/{pipeline_name}?selector=all"
+    )["runtime_config"]
+    runtime_config.update(edit)
     error = None
     try:
         TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config=runtime_config)
     except FelderaAPIError as e:
         error = e
-    assert (
-        error is not None
-        and error.error_code == "EditRestrictedToClearedStorage"
-        and error.details["not_allowed"] == ["`runtime_config.resources.namespace`"]
+    assert error is not None, f"assert failed for: {field} -- error was: {error}"
+    assert error.error_code == "EditRestrictedToClearedStorage", (
+        f"assert failed for: {field} -- error was: {error}"
+    )
+    assert error.details["not_allowed"] == [field], (
+        f"assert failed for: {field} -- error was: {error}"
     )
     assert (
-        TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=all")[
-            "runtime_config"
-        ]["resources"]["namespace"]
-        is None
-    )
+        retrieve(
+            TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=all")[
+                "runtime_config"
+            ]
+        )
+        != new_value
+    ), f"assert failed for: {field}"
 
     # Clear storage
     pipeline.clear_storage()
@@ -725,10 +729,86 @@ def test_resources_namespace_edit_needs_cleared_storage(pipeline_name):
     # After clearing storage, it should work
     TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config=runtime_config)
     assert (
-        TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=all")[
-            "runtime_config"
-        ]["resources"]["namespace"]
-        == "example"
+        retrieve(
+            TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=all")[
+                "runtime_config"
+            ]
+        )
+        == new_value
+    ), f"assert failed for: {field}"
+
+    # Clear runtime config for the next field to test
+    TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config={})
+
+
+@gen_pipeline_name
+def test_runtime_config_edit_restricted(pipeline_name):
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+
+    # runtime_config.workers
+    helper_test_restricted_runtime_config_edit(
+        pipeline_name,
+        pipeline,
+        "`runtime_config.workers`",
+        {"workers": 16},
+        lambda r: r["workers"],
+        16,
+    )
+
+    # runtime_config.resources.storage_mb_max
+    helper_test_restricted_runtime_config_edit(
+        pipeline_name,
+        pipeline,
+        "`runtime_config.resources.storage_mb_max`",
+        {"resources": {"storage_mb_max": 10000}},
+        lambda r: r["resources"]["storage_mb_max"],
+        10000,
+    )
+
+    # runtime_config.resources.namespace
+    helper_test_restricted_runtime_config_edit(
+        pipeline_name,
+        pipeline,
+        "`runtime_config.resources.namespace`",
+        {"resources": {"namespace": "example"}},
+        lambda r: r["resources"]["namespace"],
+        "example",
+    )
+
+    # runtime_config.resources.storage_class
+    helper_test_restricted_runtime_config_edit(
+        pipeline_name,
+        pipeline,
+        "`runtime_config.resources.storage_class`",
+        {"resources": {"storage_class": "example"}},
+        lambda r: r["resources"]["storage_class"],
+        "example",
+    )
+
+
+@gen_pipeline_name
+@enterprise_only
+def test_runtime_config_edit_restricted_enterprise(pipeline_name):
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+
+    # runtime_config.hosts
+    helper_test_restricted_runtime_config_edit(
+        pipeline_name,
+        pipeline,
+        "`runtime_config.hosts`",
+        {"hosts": 2},
+        lambda r: r["hosts"],
+        2,
+    )
+
+    # runtime_config.fault_tolerance
+    helper_test_restricted_runtime_config_edit(
+        pipeline_name,
+        pipeline,
+        "`runtime_config.fault_tolerance`",
+        {"fault_tolerance": {"model": "exactly_once", "checkpoint_interval_secs": 60}},
+        lambda r: r["fault_tolerance"],
+        {"model": "exactly_once", "checkpoint_interval_secs": 60},
     )
 
 
