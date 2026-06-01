@@ -94,13 +94,11 @@ See [#1907](https://github.com/feldera/feldera/issues/1907).
 The `MATCH_RECOGNIZE` clause for pattern matching over rows is not yet
 supported.
 
-## `PIVOT` & `UNPIVOT`
+## `PIVOT`
 
 `PIVOT` is supported if the user provides a fixed set of
 columns. Refer to [PIVOT documentation](./aggregates.md#pivots) for
-example usage. Dynamic `PIVOT` is not yet supported. `UNPIVOT` is not
-yet supported.
-
+example usage.  Dynamic `PIVOT` is not yet supported.
 
 ## `INTERSECT ALL` and `EXCEPT ALL`
 `INTERSECT ALL` and `EXCEPT ALL` operations are not yet supported.

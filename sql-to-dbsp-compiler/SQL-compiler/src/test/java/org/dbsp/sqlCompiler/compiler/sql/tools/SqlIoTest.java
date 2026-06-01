@@ -174,7 +174,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         ccs.addChange(iochange);
     }
 
-    public void compare(String query, String expected, boolean optimize, int rowCount) {
+    public void compare(String query, String expected, boolean optimize, int rowCount, boolean trimTrailingSpaces) {
         this.setOptimize(optimize);
         DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
@@ -184,7 +184,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         if (!compiler.options.languageOptions.throwOnError)
             compiler.throwIfErrorsOccurred();
         DBSPType outputType = ccs.circuit.getSingleOutputType();
-        Change result = TableParser.parseTable(expected, outputType, rowCount);
+        Change result = TableParser.parseTable(expected, outputType, rowCount, trimTrailingSpaces);
         InputOutputChange change = new InputOutputChange(
                 this.getPreparedInputs(compiler),
                 result
@@ -226,7 +226,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
      *
      * @param rowCount Expected row count.  -1 if unknown.
      */
-    public void q(String queryAndOutput, TestOptimizations to, int rowCount) {
+    public void q(String queryAndOutput, TestOptimizations to, int rowCount, boolean trimTrailingSpaces) {
         queryAndOutput = this.removeComments(queryAndOutput);
         int semicolon = queryAndOutput.indexOf(';');
         if (semicolon < 0)
@@ -234,18 +234,20 @@ public abstract class SqlIoTest extends BaseSQLTests {
         String query = queryAndOutput.substring(0, semicolon);
         String expected = queryAndOutput.substring(semicolon + 1);
         if (to == TestOptimizations.Both || to == TestOptimizations.Optimized)
-            this.compare(query, expected, true, rowCount);
+            this.compare(query, expected, true, rowCount, trimTrailingSpaces);
         if (to == TestOptimizations.Both || to == TestOptimizations.Unoptimized)
-            this.compare(query, expected, false, rowCount);
+            this.compare(query, expected, false, rowCount, trimTrailingSpaces);
     }
 
     public void q(String queryAndOutput) {
-        this.q(queryAndOutput, TestOptimizations.Both, -1);
+        this.q(queryAndOutput, TestOptimizations.Both, -1, false);
     }
 
     /**
      * Test a sequence of queries, each followed by its expected output.
      * Two queries are separated by a whitespace line.
+     * @param to Optimization to use
+     * @param trimTrailingSpaces String literals never have trailing spaces; trim them from expected outputs.
      * Here is an example legal input:
      * SELECT f.* FROM FLOAT4_TBL f WHERE f.f1 = '1004.3';
      *    f1
@@ -261,7 +263,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
      *  1.2345679e-20
      * (3 rows)
      */
-    protected void qs(String queriesWithOutputs, TestOptimizations to) {
+    protected void qs(String queriesWithOutputs, TestOptimizations to, boolean trimTrailingSpaces) {
         String[] parts = queriesWithOutputs.split("\n\n");
         // From each part drop the last line (N rows) *and* its last newline.
         Pattern regex = Pattern.compile("^(.*)\\n\\((\\d+) rows?\\)$", Pattern.DOTALL);
@@ -272,16 +274,24 @@ public abstract class SqlIoTest extends BaseSQLTests {
                 String queryAndOutput = regexMatcher.group(1);
                 String rows = regexMatcher.group(2);
                 int rowCount = Integer.parseInt(rows);
-                this.q(queryAndOutput, to, rowCount);
+                this.q(queryAndOutput, to, rowCount, trimTrailingSpaces);
             } else {
-                throw new RuntimeException("Could not understand test #" + index + ": " + part);
+                throw new RuntimeException("Could not understand test #" + index + ":\n" + part);
             }
             index++;
         }
     }
 
+    protected void qs(String queriesWithOutputs, TestOptimizations to) {
+        this.qs(queriesWithOutputs, to, false);
+    }
+
+    public void qst(String queriesWithOutputs) {
+        this.qs(queriesWithOutputs, TestOptimizations.Both, true);
+    }
+
     public void qs(String queriesWithOutputs) {
-        this.qs(queriesWithOutputs, TestOptimizations.Both);
+        this.qs(queriesWithOutputs, TestOptimizations.Both, false);
     }
 
     /**
