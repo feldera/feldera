@@ -1,12 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.sql.quidem;
 
-import org.junit.Ignore;
 import org.junit.Test;
 
-public class FoodmartPivotTests extends FoodmartBaseTests {
+// From Calcite's ./core/src/test/resources/sql/pivot.iq
+public class PivotTests extends ScottBaseTests {
     @Test
     public void testPivot() {
-        this.qs("""
+        this.qst("""
                 SELECT *
                 FROM   (SELECT deptno, job, sal
                         FROM   emp)
@@ -27,11 +27,11 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 +-----------+----------+----------+----------+
                 | JOB       | 10_COUNT | 50_COUNT | 20_COUNT |
                 +-----------+----------+----------+----------+
-                | ANALYST|           0 |        0 |        2 |
-                | CLERK|             1 |        0 |        2 |
-                | MANAGER|           1 |        0 |        1 |
-                | PRESIDENT|         1 |        0 |        0 |
-                | SALESMAN|          0 |        0 |        0 |
+                | ANALYST   |        0 |        0 |        2 |
+                | CLERK     |        1 |        0 |        2 |
+                | MANAGER   |        1 |        0 |        1 |
+                | PRESIDENT |        1 |        0 |        0 |
+                | SALESMAN  |        0 |        0 |        0 |
                 +-----------+----------+----------+----------+
                 (5 rows)
 
@@ -42,10 +42,10 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 +-----------+----------+----------+----------+
                 | JOB       | 10_COUNT | 50_COUNT | 20_COUNT |
                 +-----------+----------+----------+----------+
-                | ANALYST|           0 |        0 |        2 |
-                | CLERK|             1 |        0 |        2 |
-                | PRESIDENT|         1 |        0 |        0 |
-                | SALESMAN|          0 |        0 |        0 |
+                | ANALYST   |        0 |        0 |        2 |
+                | CLERK     |        1 |        0 |        2 |
+                | PRESIDENT |        1 |        0 |        0 |
+                | SALESMAN  |        0 |        0 |        0 |
                 +-----------+----------+----------+----------+
                 (4 rows)
 
@@ -57,10 +57,10 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 +-----------+-------+-------+
                 | JOB       | SUM10 | SUM20 |
                 +-----------+-------+-------+
-                | ANALYST|        0 |     2 |
-                | CLERK|          1 |     2 |
-                | PRESIDENT|      1 |     0 |
-                | SALESMAN|       0 |     0 |
+                | ANALYST   |     0 |     2 |
+                | CLERK     |     1 |     2 |
+                | PRESIDENT |     1 |     0 |
+                | SALESMAN  |     0 |     0 |
                 +-----------+-------+-------+
                 (4 rows)
 
@@ -148,11 +148,11 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 +-----------+---------+---------+
                 | JOB       | 10_10_C | 30_20_C |
                 +-----------+---------+---------+
-                | ANALYST|          0 |       0 |
-                | CLERK|            1 |       0 |
-                | MANAGER|          1 |       0 |
-                | PRESIDENT|        1 |       0 |
-                | SALESMAN|         0 |       0 |
+                | ANALYST   |       0 |       0 |
+                | CLERK     |       1 |       0 |
+                | MANAGER   |       1 |       0 |
+                | PRESIDENT |       1 |       0 |
+                | SALESMAN  |       0 |       0 |
                 +-----------+---------+---------+
                 (5 rows)
 
@@ -234,8 +234,8 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 +--------+---------+-------+---------+-------+---------+-------+
                 | GENDER | C10_SS  | C10_C | C20_SS  | C20_C | A20_SS  | A20_C |
                 +--------+---------+-------+---------+-------+---------+-------+
-                | F|               |     0 | 1100.00 |     1 |         |     0 |
-                | M|       1300.00 |     1 |  800.00 |     1 | 6000.00 |     2 |
+                | F      |         |     0 | 1100.00 |     1 |         |     0 |
+                | M      | 1300.00 |     1 |  800.00 |     1 | 6000.00 |     2 |
                 +--------+---------+-------+---------+-------+---------+-------+
                 (2 rows)
 
@@ -248,18 +248,18 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 +--------+--------+---------+---------+
                 | GENDER | DEPTNO | JOB     | SAL     |
                 +--------+--------+---------+---------+
-                | F|           20 | CLERK|    1100.00 |
-                | M|           10 | CLERK|    1300.00 |
-                | M|           20 | ANALYST|  3000.00 |
-                | M|           20 | ANALYST|  3000.00 |
-                | M|           20 | CLERK|     800.00 |
+                | F      |     20 | CLERK   | 1100.00 |
+                | M      |     10 | CLERK   | 1300.00 |
+                | M      |     20 | ANALYST | 3000.00 |
+                | M      |     20 | ANALYST | 3000.00 |
+                | M      |     20 | CLERK   |  800.00 |
                 +--------+--------+---------+---------+
                 (5 rows)""");
     }
 
-    @Test @Ignore("UNPIVOT not yet implemented")
+    @Test
     public void unpivotTests() {
-        this.qs("""
+        this.qst("""
                 SELECT *
                 FROM (
                   SELECT *
@@ -422,82 +422,82 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 SELECT *
                 FROM emp
                 UNPIVOT (remuneration
-                  FOR remuneration_type IN (comm, sal));
+                  FOR remuneration_type IN (comm, SAL));
                 +-------+--------+-----------+------+------------+--------+-------------------+--------------+
                 | EMPNO | ENAME  | JOB       | MGR  | HIREDATE   | DEPTNO | REMUNERATION_TYPE | REMUNERATION |
                 +-------+--------+-----------+------+------------+--------+-------------------+--------------+
-                |  7369 | SMITH  | CLERK     | 7902 | 1980-12-17 |     20 | SAL               |       800.00 |
-                |  7499 | ALLEN  | SALESMAN  | 7698 | 1981-02-20 |     30 | COMM              |       300.00 |
-                |  7499 | ALLEN  | SALESMAN  | 7698 | 1981-02-20 |     30 | SAL               |      1600.00 |
-                |  7521 | WARD   | SALESMAN  | 7698 | 1981-02-22 |     30 | COMM              |       500.00 |
-                |  7521 | WARD   | SALESMAN  | 7698 | 1981-02-22 |     30 | SAL               |      1250.00 |
-                |  7566 | JONES  | MANAGER   | 7839 | 1981-02-04 |     20 | SAL               |      2975.00 |
-                |  7654 | MARTIN | SALESMAN  | 7698 | 1981-09-28 |     30 | COMM              |      1400.00 |
-                |  7654 | MARTIN | SALESMAN  | 7698 | 1981-09-28 |     30 | SAL               |      1250.00 |
-                |  7698 | BLAKE  | MANAGER   | 7839 | 1981-01-05 |     30 | SAL               |      2850.00 |
-                |  7782 | CLARK  | MANAGER   | 7839 | 1981-06-09 |     10 | SAL               |      2450.00 |
-                |  7788 | SCOTT  | ANALYST   | 7566 | 1987-04-19 |     20 | SAL               |      3000.00 |
-                |  7839 | KING   | PRESIDENT |      | 1981-11-17 |     10 | SAL               |      5000.00 |
-                |  7844 | TURNER | SALESMAN  | 7698 | 1981-09-08 |     30 | COMM              |         0.00 |
-                |  7844 | TURNER | SALESMAN  | 7698 | 1981-09-08 |     30 | SAL               |      1500.00 |
-                |  7876 | ADAMS  | CLERK     | 7788 | 1987-05-23 |     20 | SAL               |      1100.00 |
-                |  7900 | JAMES  | CLERK     | 7698 | 1981-12-03 |     30 | SAL               |       950.00 |
-                |  7902 | FORD   | ANALYST   | 7566 | 1981-12-03 |     20 | SAL               |      3000.00 |
-                |  7934 | MILLER | CLERK     | 7782 | 1982-01-23 |     10 | SAL               |      1300.00 |
+                |  7369 | SMITH  | CLERK     | 7902 | 1980-12-17 |     20 | sal               |       800.00 |
+                |  7499 | ALLEN  | SALESMAN  | 7698 | 1981-02-20 |     30 | comm              |       300.00 |
+                |  7499 | ALLEN  | SALESMAN  | 7698 | 1981-02-20 |     30 | sal               |      1600.00 |
+                |  7521 | WARD   | SALESMAN  | 7698 | 1981-02-22 |     30 | comm              |       500.00 |
+                |  7521 | WARD   | SALESMAN  | 7698 | 1981-02-22 |     30 | sal               |      1250.00 |
+                |  7566 | JONES  | MANAGER   | 7839 | 1981-02-04 |     20 | sal               |      2975.00 |
+                |  7654 | MARTIN | SALESMAN  | 7698 | 1981-09-28 |     30 | comm              |      1400.00 |
+                |  7654 | MARTIN | SALESMAN  | 7698 | 1981-09-28 |     30 | sal               |      1250.00 |
+                |  7698 | BLAKE  | MANAGER   | 7839 | 1981-01-05 |     30 | sal               |      2850.00 |
+                |  7782 | CLARK  | MANAGER   | 7839 | 1981-06-09 |     10 | sal               |      2450.00 |
+                |  7788 | SCOTT  | ANALYST   | 7566 | 1987-04-19 |     20 | sal               |      3000.00 |
+                |  7839 | KING   | PRESIDENT |      | 1981-11-17 |     10 | sal               |      5000.00 |
+                |  7844 | TURNER | SALESMAN  | 7698 | 1981-09-08 |     30 | comm              |         0.00 |
+                |  7844 | TURNER | SALESMAN  | 7698 | 1981-09-08 |     30 | sal               |      1500.00 |
+                |  7876 | ADAMS  | CLERK     | 7788 | 1987-05-23 |     20 | sal               |      1100.00 |
+                |  7900 | JAMES  | CLERK     | 7698 | 1981-12-03 |     30 | sal               |       950.00 |
+                |  7902 | FORD   | ANALYST   | 7566 | 1981-12-03 |     20 | sal               |      3000.00 |
+                |  7934 | MILLER | CLERK     | 7782 | 1982-01-23 |     10 | sal               |      1300.00 |
                 +-------+--------+-----------+------+------------+--------+-------------------+--------------+
                 (18 rows)
 
                 SELECT *
                 FROM emp
                 UNPIVOT INCLUDE NULLS (remuneration
-                  FOR remuneration_type IN (comm, sal));
+                  FOR remuneration_type IN (comm, SAL));
                 +-------+--------+-----------+------+------------+--------+-------------------+--------------+
                 | EMPNO | ENAME  | JOB       | MGR  | HIREDATE   | DEPTNO | REMUNERATION_TYPE | REMUNERATION |
                 +-------+--------+-----------+------+------------+--------+-------------------+--------------+
-                |  7369 | SMITH  | CLERK     | 7902 | 1980-12-17 |     20 | COMM              |              |
-                |  7369 | SMITH  | CLERK     | 7902 | 1980-12-17 |     20 | SAL               |       800.00 |
-                |  7499 | ALLEN  | SALESMAN  | 7698 | 1981-02-20 |     30 | COMM              |       300.00 |
-                |  7499 | ALLEN  | SALESMAN  | 7698 | 1981-02-20 |     30 | SAL               |      1600.00 |
-                |  7521 | WARD   | SALESMAN  | 7698 | 1981-02-22 |     30 | COMM              |       500.00 |
-                |  7521 | WARD   | SALESMAN  | 7698 | 1981-02-22 |     30 | SAL               |      1250.00 |
-                |  7566 | JONES  | MANAGER   | 7839 | 1981-02-04 |     20 | COMM              |              |
-                |  7566 | JONES  | MANAGER   | 7839 | 1981-02-04 |     20 | SAL               |      2975.00 |
-                |  7654 | MARTIN | SALESMAN  | 7698 | 1981-09-28 |     30 | COMM              |      1400.00 |
-                |  7654 | MARTIN | SALESMAN  | 7698 | 1981-09-28 |     30 | SAL               |      1250.00 |
-                |  7698 | BLAKE  | MANAGER   | 7839 | 1981-01-05 |     30 | COMM              |              |
-                |  7698 | BLAKE  | MANAGER   | 7839 | 1981-01-05 |     30 | SAL               |      2850.00 |
-                |  7782 | CLARK  | MANAGER   | 7839 | 1981-06-09 |     10 | COMM              |              |
-                |  7782 | CLARK  | MANAGER   | 7839 | 1981-06-09 |     10 | SAL               |      2450.00 |
-                |  7788 | SCOTT  | ANALYST   | 7566 | 1987-04-19 |     20 | COMM              |              |
-                |  7788 | SCOTT  | ANALYST   | 7566 | 1987-04-19 |     20 | SAL               |      3000.00 |
-                |  7839 | KING   | PRESIDENT |      | 1981-11-17 |     10 | COMM              |              |
-                |  7839 | KING   | PRESIDENT |      | 1981-11-17 |     10 | SAL               |      5000.00 |
-                |  7844 | TURNER | SALESMAN  | 7698 | 1981-09-08 |     30 | COMM              |         0.00 |
-                |  7844 | TURNER | SALESMAN  | 7698 | 1981-09-08 |     30 | SAL               |      1500.00 |
-                |  7876 | ADAMS  | CLERK     | 7788 | 1987-05-23 |     20 | COMM              |              |
-                |  7876 | ADAMS  | CLERK     | 7788 | 1987-05-23 |     20 | SAL               |      1100.00 |
-                |  7900 | JAMES  | CLERK     | 7698 | 1981-12-03 |     30 | COMM              |              |
-                |  7900 | JAMES  | CLERK     | 7698 | 1981-12-03 |     30 | SAL               |       950.00 |
-                |  7902 | FORD   | ANALYST   | 7566 | 1981-12-03 |     20 | COMM              |              |
-                |  7902 | FORD   | ANALYST   | 7566 | 1981-12-03 |     20 | SAL               |      3000.00 |
-                |  7934 | MILLER | CLERK     | 7782 | 1982-01-23 |     10 | COMM              |              |
-                |  7934 | MILLER | CLERK     | 7782 | 1982-01-23 |     10 | SAL               |      1300.00 |
+                |  7369 | SMITH  | CLERK     | 7902 | 1980-12-17 |     20 | comm              |              |
+                |  7369 | SMITH  | CLERK     | 7902 | 1980-12-17 |     20 | sal               |       800.00 |
+                |  7499 | ALLEN  | SALESMAN  | 7698 | 1981-02-20 |     30 | comm              |       300.00 |
+                |  7499 | ALLEN  | SALESMAN  | 7698 | 1981-02-20 |     30 | sal               |      1600.00 |
+                |  7521 | WARD   | SALESMAN  | 7698 | 1981-02-22 |     30 | comm              |       500.00 |
+                |  7521 | WARD   | SALESMAN  | 7698 | 1981-02-22 |     30 | sal               |      1250.00 |
+                |  7566 | JONES  | MANAGER   | 7839 | 1981-02-04 |     20 | comm              |              |
+                |  7566 | JONES  | MANAGER   | 7839 | 1981-02-04 |     20 | sal               |      2975.00 |
+                |  7654 | MARTIN | SALESMAN  | 7698 | 1981-09-28 |     30 | comm              |      1400.00 |
+                |  7654 | MARTIN | SALESMAN  | 7698 | 1981-09-28 |     30 | sal               |      1250.00 |
+                |  7698 | BLAKE  | MANAGER   | 7839 | 1981-01-05 |     30 | comm              |              |
+                |  7698 | BLAKE  | MANAGER   | 7839 | 1981-01-05 |     30 | sal               |      2850.00 |
+                |  7782 | CLARK  | MANAGER   | 7839 | 1981-06-09 |     10 | comm              |              |
+                |  7782 | CLARK  | MANAGER   | 7839 | 1981-06-09 |     10 | sal               |      2450.00 |
+                |  7788 | SCOTT  | ANALYST   | 7566 | 1987-04-19 |     20 | comm              |              |
+                |  7788 | SCOTT  | ANALYST   | 7566 | 1987-04-19 |     20 | sal               |      3000.00 |
+                |  7839 | KING   | PRESIDENT |      | 1981-11-17 |     10 | comm              |              |
+                |  7839 | KING   | PRESIDENT |      | 1981-11-17 |     10 | sal               |      5000.00 |
+                |  7844 | TURNER | SALESMAN  | 7698 | 1981-09-08 |     30 | comm              |         0.00 |
+                |  7844 | TURNER | SALESMAN  | 7698 | 1981-09-08 |     30 | sal               |      1500.00 |
+                |  7876 | ADAMS  | CLERK     | 7788 | 1987-05-23 |     20 | comm              |              |
+                |  7876 | ADAMS  | CLERK     | 7788 | 1987-05-23 |     20 | sal               |      1100.00 |
+                |  7900 | JAMES  | CLERK     | 7698 | 1981-12-03 |     30 | comm              |              |
+                |  7900 | JAMES  | CLERK     | 7698 | 1981-12-03 |     30 | sal               |       950.00 |
+                |  7902 | FORD   | ANALYST   | 7566 | 1981-12-03 |     20 | comm              |              |
+                |  7902 | FORD   | ANALYST   | 7566 | 1981-12-03 |     20 | sal               |      3000.00 |
+                |  7934 | MILLER | CLERK     | 7782 | 1982-01-23 |     10 | comm              |              |
+                |  7934 | MILLER | CLERK     | 7782 | 1982-01-23 |     10 | sal               |      1300.00 |
                 +-------+--------+-----------+------+------------+--------+-------------------+--------------+
                 (28 rows)
 
                 SELECT *
                 FROM emp
                 UNPIVOT INCLUDE NULLS (remuneration
-                  FOR remuneration_type IN (comm, sal))
+                  FOR remuneration_type IN (comm, SAL))
                 WHERE deptno = 20 AND remuneration > 500;
                 +-------+-------+---------+------+------------+--------+-------------------+--------------+
                 | EMPNO | ENAME | JOB     | MGR  | HIREDATE   | DEPTNO | REMUNERATION_TYPE | REMUNERATION |
                 +-------+-------+---------+------+------------+--------+-------------------+--------------+
-                |  7369 | SMITH | CLERK   | 7902 | 1980-12-17 |     20 | SAL               |       800.00 |
-                |  7566 | JONES | MANAGER | 7839 | 1981-02-04 |     20 | SAL               |      2975.00 |
-                |  7788 | SCOTT | ANALYST | 7566 | 1987-04-19 |     20 | SAL               |      3000.00 |
-                |  7876 | ADAMS | CLERK   | 7788 | 1987-05-23 |     20 | SAL               |      1100.00 |
-                |  7902 | FORD  | ANALYST | 7566 | 1981-12-03 |     20 | SAL               |      3000.00 |
+                |  7369 | SMITH | CLERK   | 7902 | 1980-12-17 |     20 | sal               |       800.00 |
+                |  7566 | JONES | MANAGER | 7839 | 1981-02-04 |     20 | sal               |      2975.00 |
+                |  7788 | SCOTT | ANALYST | 7566 | 1987-04-19 |     20 | sal               |      3000.00 |
+                |  7876 | ADAMS | CLERK   | 7788 | 1987-05-23 |     20 | sal               |      1100.00 |
+                |  7902 | FORD  | ANALYST | 7566 | 1981-12-03 |     20 | sal               |      3000.00 |
                 +-------+-------+---------+------+------------+--------+-------------------+--------------+
                 (5 rows)
 
@@ -506,10 +506,10 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                   SUM(remuneration) FILTER (WHERE job = 'CLERK') AS cr
                 FROM emp
                 UNPIVOT INCLUDE NULLS (remuneration
-                  FOR remuneration_type IN (comm, sal))
+                  FOR remuneration_type IN (comm, SAL))
                 GROUP BY deptno
                 HAVING COUNT(*) > 6
-                -- ORDER BY deptno;
+                ORDER BY deptno;
                 +--------+----------+---------+
                 | DEPTNO | R        | CR      |
                 +--------+----------+---------+
@@ -522,7 +522,7 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 FROM emp
                 UNPIVOT (remuneration
                   FOR sal IN (comm AS 'commission',
-                                sal as 'salary'));
+                               sal as 'salary'));
                 +-------+--------+-----------+------+------------+--------+------------+--------------+
                 | EMPNO | ENAME  | JOB       | MGR  | HIREDATE   | DEPTNO | SAL        | REMUNERATION |
                 +-------+--------+-----------+------+------------+--------+------------+--------------+
@@ -561,9 +561,9 @@ public class FoodmartPivotTests extends FoodmartBaseTests {
                 | C0 | A0       | A1       | M0 | M1 | M2 |
                 +----+----------+----------+----+----+----+
                 |  0 | col1     | col2     |  1 |  2 |  3 |
-                |  0 | C2_C3_C4 | C2_C3_C4 |  2 |  3 |  4 |
+                |  0 | c2_c3_c4 | c2_c3_c4 |  2 |  3 |  4 |
                 | 10 | col1     | col2     | 11 | 12 | 13 |
-                | 10 | C2_C3_C4 | C2_C3_C4 | 12 | 13 | 14 |
+                | 10 | c2_c3_c4 | c2_c3_c4 | 12 | 13 | 14 |
                 +----+----------+----------+----+----+----+
                 (4 rows)""");
     }
