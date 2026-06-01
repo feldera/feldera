@@ -29,7 +29,6 @@ use chrono::{DateTime, Utc};
 use feldera_types::adapter_stats::PipelineStatsErrorsResponse;
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
-use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
     BootstrapConfig, BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus,
 };
@@ -50,7 +49,7 @@ pub mod pipeline_events;
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 pub struct PartialProgramInfo {
     /// Schema of the compiled SQL.
-    pub schema: ProgramSchema,
+    pub schema: serde_json::Value,
 
     /// Generated user defined function (UDF) stubs Rust code: stubs.rs
     pub udf_stubs: String,

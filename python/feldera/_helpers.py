@@ -81,7 +81,11 @@ def dataframe_from_response(
         column_name = column["name"]
         if not column["case_sensitive"]:
             column_name = column_name.lower()
-        column_type = column["columntype"]["type"]
+        if "type" in column["columntype"]:
+            column_type = column["columntype"]["type"]
+        else:
+            # default column type
+            column_type = "struct"
         if column_type == "DECIMAL":
             decimal_col.append(column_name)
         elif column_type == "UUID":

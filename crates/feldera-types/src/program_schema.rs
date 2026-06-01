@@ -180,6 +180,18 @@ impl ProgramSchema {
     }
 }
 
+/// A version of `ProgramSchema` that contains only the name and properties of the relations
+/// by making use of `RelationPropertiesOnly` instead of `Relation` for its inputs and outputs.
+/// This is used to avoid parsing the entire `Relation` object, including SQL schema,
+/// which can change across runtime versions.
+#[derive(Debug, Deserialize)]
+pub struct ProgramSchemaPropertiesOnly {
+    #[serde(default)]
+    pub inputs: Vec<RelationPropertiesOnly>,
+    #[serde(default)]
+    pub outputs: Vec<RelationPropertiesOnly>,
+}
+
 #[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]
 #[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub struct PropertyValue {
@@ -252,6 +264,17 @@ impl Relation {
         self.primary_key = Some(primary_key.into_iter().map(|id| id.name()).collect());
         self
     }
+}
+
+/// A version of `Relation` that only contains the name and properties.
+/// This is used to avoid parsing the entire `Relation` object, including
+/// SQL schema, which can change across runtime versions.
+#[derive(Debug, Deserialize)]
+pub struct RelationPropertiesOnly {
+    #[serde(flatten)]
+    pub name: SqlIdentifier,
+    #[serde(default)]
+    pub properties: BTreeMap<String, PropertyValue>,
 }
 
 /// A SQL field.

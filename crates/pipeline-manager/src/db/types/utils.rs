@@ -271,10 +271,11 @@ mod tests {
     fn program_info_validation() {
         // ProgramInfo -> JSON -> ProgramInfo is the same as original
         let program_info = ProgramInfo {
-            schema: ProgramSchema {
+            schema: serde_json::to_value(ProgramSchema {
                 inputs: vec![],
                 outputs: vec![],
-            },
+            })
+            .unwrap(),
             main_rust: "".to_string(),
             udf_stubs: "".to_string(),
             input_connectors: Default::default(),

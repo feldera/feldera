@@ -951,8 +951,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
         };
 
-        // Input and output connectors from required program_info
-        let program_info = match &pipeline.program_info {
+        // Validate the required program_info which includes input and output connectors
+        let _program_info = match &pipeline.program_info {
             None => {
                 return Action::RemainStoppedUpdateError {
                     error: RunnerError::AutomatonMissingProgramInfo.into(),
@@ -976,16 +976,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         let deployment_id = Uuid::now_v7();
 
         // Deployment configuration
-        let mut deployment_config = generate_pipeline_config(
-            pipeline.id,
-            &pipeline.name,
-            &runtime_config,
-            if pipeline.program_info_integrity_checksum.is_none() {
-                Some(&program_info)
-            } else {
-                None
-            },
-        );
+        let mut deployment_config =
+            generate_pipeline_config(pipeline.id, &pipeline.name, &runtime_config);
         deployment_config.storage_config =
             Some(self.pipeline_handle.generate_storage_config().await);
         let deployment_config_json = match serde_json::to_value(&deployment_config) {
@@ -1295,26 +1287,35 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             },
         );
 
-        let program_info_url = if let Some(program_info_integrity_checksum) =
+        let Some(program_info_integrity_checksum) =
             pipeline.program_info_integrity_checksum.as_ref()
-        {
-            Some(format!(
-                "{}://{}:{}/program_info/{}/{}/{}/{}",
-                if self.common_config.enable_https {
-                    "https"
-                } else {
-                    "http"
-                },
-                self.common_config.compiler_host,
-                self.common_config.compiler_port,
-                self.pipeline_id,
-                pipeline.program_version,
-                source_checksum,
-                program_info_integrity_checksum,
-            ))
-        } else {
-            None
+        else {
+            return Action::TransitionToStopping {
+                error: Some(
+                    RunnerError::AutomatonCannotConstructProgramInfoUrl {
+                        error: "integrity checksum is missing".to_string(),
+                    }
+                    .into(),
+                ),
+                storage_status_details: None,
+            };
         };
+
+        // URL where the program info can be downloaded from
+        let program_info_url = format!(
+            "{}://{}:{}/program_info/{}/{}/{}/{}",
+            if self.common_config.enable_https {
+                "https"
+            } else {
+                "http"
+            },
+            self.common_config.compiler_host,
+            self.common_config.compiler_port,
+            self.pipeline_id,
+            pipeline.program_version,
+            source_checksum,
+            program_info_integrity_checksum,
+        );
 
         let bootstrap_config =
             if Self::platform_version_requires_bootstrap_policy(&pipeline.platform_version) {
@@ -1342,7 +1343,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 &deployment_config,
                 program_info,
                 &program_binary_url,
-                program_info_url.as_deref(),
+                &program_info_url,
                 pipeline.program_version,
                 &pipeline.runtime_config,
             )
@@ -1916,7 +1917,7 @@ mod test {
             _: &PipelineConfig,
             _: &serde_json::Value,
             _: &str,
-            _: Option<&str>,
+            _: &str,
             _: Version,
             _: &serde_json::Value,
         ) -> Result<(), ManagerError> {
@@ -2081,10 +2082,11 @@ mod test {
                     messages: vec![],
                 },
                 &serde_json::to_value(ProgramInfo {
-                    schema: ProgramSchema {
+                    schema: serde_json::to_value(ProgramSchema {
                         inputs: vec![],
                         outputs: vec![],
-                    },
+                    })
+                    .unwrap(),
                     main_rust: "".to_string(),
                     udf_stubs: "".to_string(),
                     input_connectors: Default::default(),
