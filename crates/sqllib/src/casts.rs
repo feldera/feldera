@@ -309,7 +309,13 @@ cast_to_b!(u, usize);
 
 #[doc(hidden)]
 pub fn cast_to_b_s(value: SqlString) -> SqlResult<bool> {
-    Ok(value.str().to_lowercase().trim().parse().unwrap_or(false))
+    match value.str().to_lowercase().trim() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(SqlRuntimeError::from_string(format!(
+            "Cannot convert string '{value}' to BOOLEAN",
+        ))),
+    }
 }
 
 #[doc(hidden)]
@@ -848,7 +854,10 @@ cast_function!(d, F64, f, F32);
 #[doc(hidden)]
 pub fn cast_to_d_s(value: SqlString) -> SqlResult<F64> {
     match value.str().trim().parse::<f64>() {
-        Err(_) => Ok(F64::zero()),
+        Err(e) => Err(SqlRuntimeError::from_string(format!(
+            "Parse error during conversion of '{value}' to DOUBLE: {}",
+            e
+        ))),
         Ok(x) => Ok(F64::from(x)),
     }
 }
@@ -919,7 +928,10 @@ cast_function!(f, F32, f, F32);
 #[doc(hidden)]
 pub fn cast_to_f_s(value: SqlString) -> SqlResult<F32> {
     match value.str().trim().parse::<f32>() {
-        Err(_) => Ok(F32::zero()),
+        Err(e) => Err(SqlRuntimeError::from_string(format!(
+            "Parse error during conversion of '{value}' to REAL: {}",
+            e
+        ))),
         Ok(x) => Ok(F32::from(x)),
     }
 }
@@ -2404,7 +2416,7 @@ cast_function!(LongInterval_MONTHS <const P: usize, const S: usize>, LongInterva
 pub fn cast_to_LongInterval_YEARS_s(value: SqlString) -> SqlResult<LongInterval> {
     match value.str().parse::<i32>() {
         Err(e) => Err(SqlRuntimeError::from_string(format!(
-            "Error converting {value} to INTERVAL YEARS: {}",
+            "Error converting '{value}' to INTERVAL YEARS: {}",
             e
         ))),
         Ok(years) => cast_to_LongInterval_YEARS_i32(years),
@@ -2421,7 +2433,7 @@ pub fn cast_to_LongInterval_YEARS_TO_MONTHS_s(value: SqlString) -> SqlResult<Lon
         let mut years = match yearcap.parse::<i32>() {
             Err(e) => {
                 return Err(SqlRuntimeError::from_string(format!(
-                    "Error converting {value} to INTERVAL YEARS TO MONTHS: {}",
+                    "Error converting '{value}' to INTERVAL YEARS TO MONTHS: {}",
                     e
                 )));
             }
@@ -2439,7 +2451,7 @@ pub fn cast_to_LongInterval_YEARS_TO_MONTHS_s(value: SqlString) -> SqlResult<Lon
                     Ok(months) => months,
                     Err(e) => {
                         return Err(SqlRuntimeError::from_string(format!(
-                            "Error converting {value} to INTERVAL YEARS TO MONTHS: {}",
+                            "Error converting '{value}' to INTERVAL YEARS TO MONTHS: {}",
                             e
                         )));
                     }
@@ -2464,7 +2476,7 @@ pub fn cast_to_LongInterval_MONTHS_s(value: SqlString) -> SqlResult<LongInterval
     match value.str().parse::<i32>() {
         Ok(months) => cast_to_LongInterval_MONTHS_i32(months),
         Err(e) => Err(SqlRuntimeError::from_string(format!(
-            "Error converting {value} to INTERVAL MONTHS: {}",
+            "Error converting '{value}' to INTERVAL MONTHS: {}",
             e
         ))),
     }
@@ -2528,7 +2540,7 @@ pub fn cast_to_ShortInterval_DAYS_s(value: SqlString) -> SqlResult<ShortInterval
     match value.str().parse::<i64>() {
         Ok(value) => cast_to_ShortInterval_DAYS_i64(value),
         Err(e) => Err(SqlRuntimeError::from_string(format!(
-            "Error converting {value} to INTERVAL DAYS: {}",
+            "Error converting '{value}' to INTERVAL DAYS: {}",
             e
         ))),
     }
@@ -2539,7 +2551,7 @@ pub fn cast_to_ShortInterval_HOURS_s(value: SqlString) -> SqlResult<ShortInterva
     match value.str().parse::<i64>() {
         Ok(value) => cast_to_ShortInterval_HOURS_i64(value),
         Err(e) => Err(SqlRuntimeError::from_string(format!(
-            "Error converting {value} to INTERVAL HOURS: {}",
+            "Error converting '{value}' to INTERVAL HOURS: {}",
             e
         ))),
     }
@@ -2558,7 +2570,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_HOURS_s(value: SqlString) -> SqlResult<Shor
         let days = match daycap.parse::<i64>() {
             Err(e) => {
                 return Err(SqlRuntimeError::from_string(format!(
-                    "Error converting {value} to INTERVAL DAYS TO HOURS: {}",
+                    "Error converting '{value}' to INTERVAL DAYS TO HOURS: {}",
                     e
                 )));
             }
@@ -2568,7 +2580,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_HOURS_s(value: SqlString) -> SqlResult<Shor
         let hours = match hourcap.parse::<i64>() {
             Err(e) => {
                 return Err(SqlRuntimeError::from_string(format!(
-                    "Error converting {value} to INTERVAL DAYS TO HOURS: {}",
+                    "Error converting '{value}' to INTERVAL DAYS TO HOURS: {}",
                     e
                 )));
             }
@@ -2644,10 +2656,10 @@ pub fn cast_to_ShortInterval_DAYS_TO_MINUTES_s(value: SqlString) -> SqlResult<Sh
 }
 
 #[doc(hidden)]
-pub fn cast_to_GeoPoint_s(_value: SqlString) -> SqlResult<GeoPoint> {
-    Err(SqlRuntimeError::from_strng(
-        "String cannot be cast to ST_POINT",
-    ))
+pub fn cast_to_GeoPoint_s(value: SqlString) -> SqlResult<GeoPoint> {
+    Err(SqlRuntimeError::from_string(format!(
+        "String '{value}' cannot be cast to ST_POINT"
+    )))
 }
 
 cast_function!(GeoPoint, GeoPoint, s, SqlString);

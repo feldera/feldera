@@ -146,7 +146,7 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
-    public void issue4626() throws SQLException {
+    public void issue4626() {
         PrintStream savedOut = System.out;
         ByteArrayOutputStream capture = new ByteArrayOutputStream();
         System.setOut(new PrintStream(capture));
