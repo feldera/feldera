@@ -37,7 +37,7 @@
     "@sveltejs/adapter-auto": "^7.0.0",
     "@sveltejs/kit": "^2.49.5",
     "@sveltejs/package": "^2.5.7",
-    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "@sveltejs/vite-plugin-svelte": "7.0.0",
     "@tailwindcss/vite": "^4.1.17",
     "feldera-theme": "workspace:*",
     "profiler-lib": "workspace:*",
@@ -46,10 +46,9 @@
     "svelte-check": "^4.3.5",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",
-    "vite": "npm:rolldown-vite@7.3.1"
+    "vite": "^8.0.0"
   },
   "overrides": {
-    "vite": "npm:rolldown-vite@7.3.1",
     "devalue": "^5.6.2"
   },
   "keywords": ["svelte"]
