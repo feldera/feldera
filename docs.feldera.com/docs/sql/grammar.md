@@ -426,7 +426,7 @@ joinCondition
   |   USING '(' column [, column ]* ')'
 
 tableReference
-  :   tablePrimary [ pivot ] [ [ AS ] alias [ '(' columnAlias [, columnAlias ]* ')' ] ]
+  :   tablePrimary [ pivot ] [ unpivot ] [ [ AS ] alias [ '(' columnAlias [, columnAlias ]* ')' ] ]
 
 pivot
   :   PIVOT '('
@@ -444,6 +444,23 @@ pivotList
 
 pivotExpr
   :   exprOrList [ [ AS ] alias ]
+
+unpivot
+  :   UNPIVOT [ INCLUDING NULLS | EXCLUDING NULLS ] '('
+      unpivotMeasureList
+      FOR unpivotAxisList
+      IN '(' unpivotValue [, unpivotValue ]* ')'
+      ')'
+
+unpivotMeasureList
+  :   columnOrList
+
+unpivotAxisList
+  :   columnOrList
+
+unpivotValue
+  :   column [ AS literal ]
+  |   '(' column [, column ]* ')' [ AS '(' literal [, literal ]* ')' ]
 
 columnOrList
   :   column
