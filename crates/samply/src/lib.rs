@@ -53,7 +53,7 @@ use std::{
 };
 
 #[cfg(target_os = "macos")]
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crossbeam::sync::{Parker, Unparker};
 use flate2::{
