@@ -691,6 +691,22 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue6369() {
+        DBSPCompiler compiler = this.chattyCompiler();
+        // The warning is not produced when testing
+        compiler.options.ioOptions.testing = false;
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE T(x INT, y INT);
+                CREATE VIEW V as SELECT * FROM T;
+                """);
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        Assert.assertNotNull(circuit);
+        TestUtil.assertMessagesContain(compiler.messages, """
+                View without connectors: 'v' is a non-materialized view without declared connectors.
+                Retrieving data reliably from such view is difficult; this may be an omission.""");
+    }
+
+    @Test
     public void nullKey() {
         String ddl = """
                CREATE TABLE T (

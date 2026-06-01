@@ -2137,6 +2137,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         @Nullable PropertyList viewProperties = this.createProperties(cv.viewProperties);
         int emitFinal = -1;
         Properties props = null;
+
+        boolean hasConnector = false;
         if (viewProperties != null) {
             viewProperties.checkDuplicates(this.errorReporter);
             SqlFragment materialized = viewProperties.getPropertyValue(CreateViewStatement.MATERIALIZED);
@@ -2178,12 +2180,22 @@ public class SqlToRelCompiler implements IWritesLogs {
             }
 
             for (var prop: viewProperties) {
+                String keyString = prop.getKey().getString();
+                if (keyString.equals("connectors"))
+                    hasConnector = true;
                 this.validateViewProperty(viewName, prop.getKey(), prop.getValue());
             }
+
             props = new Properties(viewProperties);
         }
 
-        // System.out.println(getPlan(relRoot.rel));
+        if (cv.viewKind == SqlCreateView.ViewKind.STANDARD && !hasConnector && !options.ioOptions.testing) {
+            this.errorReporter.reportWarning(new SourcePositionRange(node.statement().getParserPosition()),
+                    "View without connectors", viewName.singleQuote() +
+                    " is a non-materialized view without declared connectors.\n" +
+                            "Retrieving data reliably from such view is difficult; this may be an omission.");
+        }
+
         RewriteJoinAnnotations joinConverter = new RewriteJoinAnnotations(this.errorReporter);
         RelNode converted = joinConverter.visit(relRoot.rel);
         joinConverter.done();
