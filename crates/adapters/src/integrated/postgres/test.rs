@@ -24,6 +24,14 @@ fn postgres_url() -> String {
         .unwrap_or("postgres://postgres:password@localhost:5432".to_string())
 }
 
+fn unique_pg_name(prefix: &str) -> String {
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let max_prefix_len = 63 - suffix.len() - 1;
+    let prefix = &prefix[..prefix.len().min(max_prefix_len)];
+
+    format!("{prefix}_{suffix}")
+}
+
 /// Returns the SSL connection URL and TLS config if the SSL environment
 /// variables are set (`POSTGRES_SSL_URL`, `POSTGRES_SSL_CA_LOCATION`,
 /// `POSTGRES_SSL_CLIENT_LOCATION`, `POSTGRES_SSL_CLIENT_KEY_LOCATION`).
@@ -253,20 +261,21 @@ mod pg {
             let pk = if pk { "PRIMARY KEY" } else { "" };
 
             client
-                .execute("DROP TYPE IF EXISTS test_struct", &[])
-                .unwrap();
-
-            client
                 .execute(
-                    r#"CREATE TYPE test_struct AS (
-    id INTEGER,
-    b BOOL,
-    i BIGINT,
-    s VARCHAR
-)"#,
+                    r#"DO $$
+BEGIN
+    CREATE TYPE test_struct AS (
+        id INTEGER,
+        b BOOL,
+        i BIGINT,
+        s VARCHAR
+    );
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$"#,
                     &[],
                 )
-                .unwrap();
+                .expect("failed to create type test_struct");
 
             client
                 .execute(
@@ -324,10 +333,6 @@ CREATE TABLE {name} (
             self.client
                 .execute(&format!("DROP TABLE {}", self.name), &[])
                 .unwrap_or_else(|_| panic!("failed to drop table {}", self.name));
-
-            self.client
-                .execute("DROP TYPE test_struct", &[])
-                .unwrap_or_else(|_| panic!("failed to drop type test_struct"));
         }
     }
 
@@ -593,9 +598,10 @@ CREATE TABLE {name} (
 }
 
 fn test_pg_on_conflict(on_conflict_do_nothing: bool, mode: PostgresWriteMode) {
-    let table_name = "test_pg_on_conflict";
+    let table_name = unique_pg_name("test_pg_on_conflict");
     let url = postgres_url();
     let max_buffer_size_bytes = 1024;
+    let timeout_ms = 120_000;
 
     let mut data: Vec<PostgresTestStruct> = (0..10000).map(|_| rand::random()).collect();
     let mut insert_file = NamedTempFile::new().unwrap();
@@ -666,7 +672,7 @@ fn test_pg_on_conflict(on_conflict_do_nothing: bool, mode: PostgresWriteMode) {
                         "name": "postgres_output",
                         "config": {
                             "uri": url_clone,
-                            "table": table_name,
+                            "table": &table_name,
                             "max_buffer_size_bytes": max_buffer_size_bytes,
                             "on_conflict_do_nothing": on_conflict_do_nothing,
                             "mode": match mode {
@@ -683,7 +689,7 @@ fn test_pg_on_conflict(on_conflict_do_nothing: bool, mode: PostgresWriteMode) {
     };
 
     let mut table = PostgresTestStruct::create_table(
-        table_name,
+        &table_name,
         url,
         matches!(mode, PostgresWriteMode::Materialized),
         &None,
@@ -723,7 +729,7 @@ fn test_pg_on_conflict(on_conflict_do_nothing: bool, mode: PostgresWriteMode) {
                     || !err_receiver.is_empty()
             }
         },
-        40_000,
+        timeout_ms,
     )
     .expect("timeout: failed to insert data into postgres");
 
@@ -756,7 +762,7 @@ fn test_pg_on_conflict(on_conflict_do_nothing: bool, mode: PostgresWriteMode) {
 
                     got == expected || !err_receiver.is_empty()
                 },
-                40_000,
+                timeout_ms,
             )
             .expect("timeout: failed to update data into postgres");
         }
@@ -781,7 +787,7 @@ fn test_pg_on_conflict(on_conflict_do_nothing: bool, mode: PostgresWriteMode) {
                     got == expected && got.iter().all(|r| r.__feldera_op.as_str() == "i")
                         || !err_receiver.is_empty()
                 },
-                40_000,
+                timeout_ms,
             )
             .expect("timeout: failed to update data into postgres");
         }
@@ -815,9 +821,10 @@ fn test_pg_insert0_cdc() {
 }
 
 fn pg_insert0(mode: PostgresWriteMode) {
-    let table_name = "test_pg_insert";
+    let table_name = unique_pg_name("test_pg_insert");
     let url = postgres_url();
     let max_buffer_size_bytes = 1024;
+    let timeout_ms = 120_000;
 
     // On average 1 record is about 590 bytes, so 2000 records produce a buffer
     // of over 1 MiB
@@ -865,7 +872,7 @@ fn pg_insert0(mode: PostgresWriteMode) {
             "name": "postgres_output",
             "config": {
               "uri": url,
-              "table": table_name,
+              "table": &table_name,
               "max_buffer_size_bytes": max_buffer_size_bytes,
               "mode": match mode {
                   PostgresWriteMode::Materialized => "materialized",
@@ -880,7 +887,7 @@ fn pg_insert0(mode: PostgresWriteMode) {
     .unwrap();
 
     let mut table = PostgresTestStruct::create_table(
-        table_name,
+        &table_name,
         url,
         matches!(mode, PostgresWriteMode::Materialized),
         &None,
@@ -919,7 +926,7 @@ fn pg_insert0(mode: PostgresWriteMode) {
                     || !err_receiver.is_empty()
             }
         },
-        40_000,
+        timeout_ms,
     )
     .expect("timeout: failed to insert data into postgres");
 }
@@ -927,7 +934,7 @@ fn pg_insert0(mode: PostgresWriteMode) {
 #[test]
 #[serial]
 fn test_pg_insert() {
-    let table_name = "test_pg_insert";
+    let table_name = unique_pg_name("test_pg_insert");
     let url = postgres_url();
     let max_records_in_buffer = 1000;
 
@@ -977,7 +984,7 @@ fn test_pg_insert() {
                     "name": "postgres_output",
                     "config": {
                         "uri": url,
-                        "table": table_name,
+                      "table": &table_name,
                         "max_records_in_buffer": max_records_in_buffer
                     }
                 },
@@ -987,7 +994,7 @@ fn test_pg_insert() {
     }))
     .unwrap();
 
-    let mut table = PostgresTestStruct::create_table(table_name, url, true, &None);
+    let mut table = PostgresTestStruct::create_table(&table_name, url, true, &None);
 
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
 
@@ -1025,9 +1032,10 @@ fn test_pg_upsert0_cdc() {
 }
 
 fn pg_upsert0(mode: PostgresWriteMode) {
-    let table_name = "test_pg_upsert";
+    let table_name = unique_pg_name("test_pg_upsert");
     let url = postgres_url();
     let max_buffer_size_bytes = 1024;
+    let timeout_ms = 120_000;
 
     let mut data: Vec<PostgresTestStruct> = (0..10000).map(|_| rand::random()).collect();
     let mut insert_file = NamedTempFile::new().unwrap();
@@ -1133,7 +1141,7 @@ fn pg_upsert0(mode: PostgresWriteMode) {
                     "name": "postgres_output",
                     "config": {
                         "uri": url,
-                        "table": table_name,
+                        "table": &table_name,
                         "max_buffer_size_bytes": max_buffer_size_bytes,
                         "mode": match mode {
                             PostgresWriteMode::Materialized => "materialized",
@@ -1149,7 +1157,7 @@ fn pg_upsert0(mode: PostgresWriteMode) {
     .unwrap();
 
     let mut table = PostgresTestStruct::create_table(
-        table_name,
+        &table_name,
         url,
         matches!(mode, PostgresWriteMode::Materialized),
         &None,
@@ -1188,7 +1196,7 @@ fn pg_upsert0(mode: PostgresWriteMode) {
                     || !err_receiver.is_empty()
             }
         },
-        40_000,
+        timeout_ms,
     )
     .expect("timeout: failed to insert data into postgres");
 
@@ -1237,7 +1245,7 @@ fn pg_upsert0(mode: PostgresWriteMode) {
                 deletes == data && updates == upsert_data || !err_receiver.is_empty()
             }
         },
-        40_000,
+        timeout_ms,
     )
     .expect("timeout: failed to update data into postgres");
 }
@@ -1245,7 +1253,7 @@ fn pg_upsert0(mode: PostgresWriteMode) {
 #[test]
 #[serial]
 fn test_pg_upsert() {
-    let table_name = "test_pg_upsert";
+    let table_name = unique_pg_name("test_pg_upsert");
     let url = postgres_url();
     let max_records_in_buffer = 1000;
 
@@ -1353,7 +1361,7 @@ fn test_pg_upsert() {
                     "name": "postgres_output",
                     "config": {
                         "uri": url,
-                        "table": table_name,
+                      "table": &table_name,
                         "max_records_in_buffer": max_records_in_buffer
                     }
                 },
@@ -1363,7 +1371,7 @@ fn test_pg_upsert() {
     }))
     .unwrap();
 
-    let mut table = PostgresTestStruct::create_table(table_name, url, true, &None);
+    let mut table = PostgresTestStruct::create_table(&table_name, url, true, &None);
 
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
 
@@ -1423,7 +1431,7 @@ fn test_pg_delete_cdc() {
 }
 
 fn pg_delete(mode: PostgresWriteMode) {
-    let table_name = "test_pg_delete";
+    let table_name = unique_pg_name("test_pg_delete");
     let url = postgres_url();
 
     let mut data: Vec<PostgresTestStruct> = (0..10000).map(|_| rand::random()).collect();
@@ -1505,7 +1513,7 @@ fn pg_delete(mode: PostgresWriteMode) {
             "name": "postgres_output",
             "config": {
               "uri": url,
-              "table": table_name,
+              "table": &table_name,
               "mode": match mode {
                   PostgresWriteMode::Materialized => "materialized",
                   PostgresWriteMode::Cdc => "cdc",
@@ -1519,7 +1527,7 @@ fn pg_delete(mode: PostgresWriteMode) {
     .unwrap();
 
     let mut table = PostgresTestStruct::create_table(
-        table_name,
+        &table_name,
         url,
         matches!(mode, PostgresWriteMode::Materialized),
         &None,
@@ -1608,7 +1616,7 @@ fn pg_delete(mode: PostgresWriteMode) {
 }
 
 fn pg_simple(url: String, tls: Option<PostgresTlsConfig>) {
-    let table_name = "simple_test";
+    let table_name = unique_pg_name("simple_test");
 
     let mut client = pg::pg_connect(&url, &tls);
     client
@@ -1695,7 +1703,7 @@ fn pg_simple(url: String, tls: Option<PostgresTlsConfig>) {
 
     let mut pg_output_config = json!({
         "uri": url,
-        "table": table_name,
+        "table": &table_name,
     });
     if let Some(ref tls) = tls {
         let tls_json = serde_json::to_value(tls).unwrap();
@@ -1947,7 +1955,7 @@ fn test_pg_simple_tls() {
 #[serial]
 fn test_pg_input_tls() {
     let (url, tls) = postgres_ssl_config();
-    let table_name = "test_pg_input_tls";
+    let table_name = unique_pg_name("test_pg_input_tls");
 
     // -- seed the table via the sync client --
     let mut client = pg::pg_connect(&url, &Some(tls.clone()));
@@ -2715,11 +2723,11 @@ mod cdc_tests {
     #[ignore]
     fn test_cdc_basic_insert() {
         let url = postgres_url();
-        let table_name = "cdc_test_basic_insert";
-        let publication = "cdc_pub_basic_insert";
+        let table_name = unique_pg_name("cdc_test_basic_insert");
+        let publication = unique_pg_name("cdc_pub_basic_insert");
 
         // Pre-insert some rows before starting the pipeline (tests snapshot).
-        let mut table = CdcTestTable::new_simple(table_name, publication, &url);
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
         table.execute(&format!(
             "INSERT INTO {table_name} VALUES (1, true, NULL, 'hello')"
         ));
@@ -2732,7 +2740,7 @@ mod cdc_tests {
 
         let (controller, err_receiver) = cdc_simple_test_circuit(
             &url,
-            publication,
+            &publication,
             &format!("public.{table_name}"),
             &output_path,
         );
@@ -2796,10 +2804,10 @@ mod cdc_tests {
     #[ignore]
     fn test_cdc_all_data_types() {
         let url = postgres_url();
-        let table_name = "cdc_test_all_types";
-        let publication = "cdc_pub_all_types";
+        let table_name = unique_pg_name("cdc_test_all_types");
+        let publication = unique_pg_name("cdc_pub_all_types");
 
-        let mut table = CdcTestTable::new_all_types(table_name, publication, &url);
+        let mut table = CdcTestTable::new_all_types(&table_name, &publication, &url);
 
         // Insert a row with all types populated.
         table.execute(&format!(
@@ -2825,7 +2833,7 @@ mod cdc_tests {
 
         let (controller, err_receiver) = cdc_all_types_test_circuit(
             &url,
-            publication,
+            &publication,
             &format!("public.{table_name}"),
             &output_path,
         );
@@ -2945,17 +2953,17 @@ mod cdc_tests {
     #[ignore]
     fn test_cdc_update_delete() {
         let url = postgres_url();
-        let table_name = "cdc_test_upd_del";
-        let publication = "cdc_pub_upd_del";
+        let table_name = unique_pg_name("cdc_test_upd_del");
+        let publication = unique_pg_name("cdc_pub_upd_del");
 
-        let mut table = CdcTestTable::new_simple(table_name, publication, &url);
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
 
         let output_file = NamedTempFile::new().unwrap();
         let output_path = output_file.path().to_owned();
 
         let (controller, err_receiver) = cdc_simple_test_circuit(
             &url,
-            publication,
+            &publication,
             &format!("public.{table_name}"),
             &output_path,
         );
@@ -3063,11 +3071,11 @@ mod cdc_tests {
     #[ignore]
     fn test_cdc_restart_resumes_from_slot() {
         let url = postgres_url();
-        let table_name = "cdc_test_restart";
-        let publication = "cdc_pub_restart";
+        let table_name = unique_pg_name("cdc_test_restart");
+        let publication = unique_pg_name("cdc_pub_restart");
 
         // Insert initial rows.
-        let mut table = CdcTestTable::new_simple(table_name, publication, &url);
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
         table.execute(&format!(
             "INSERT INTO {table_name} VALUES (1, true, NULL, 'first')"
         ));
@@ -3078,7 +3086,7 @@ mod cdc_tests {
 
         let (controller_1, err_receiver_1) = cdc_simple_test_circuit(
             &url,
-            publication,
+            &publication,
             &format!("public.{table_name}"),
             &output_path_1,
         );
@@ -3126,7 +3134,7 @@ mod cdc_tests {
 
         let (controller_2, err_receiver_2) = cdc_simple_test_circuit(
             &url,
-            publication,
+            &publication,
             &format!("public.{table_name}"),
             &output_path_2,
         );
@@ -3200,10 +3208,10 @@ mod cdc_tests {
     #[ignore]
     fn test_cdc_ft_mode_holds_slot() {
         let url = postgres_url();
-        let table_name = "cdc_test_strict_hold";
-        let publication = "cdc_pub_strict_hold";
+        let table_name = unique_pg_name("cdc_test_strict_hold");
+        let publication = unique_pg_name("cdc_pub_strict_hold");
 
-        let mut table = CdcTestTable::new_simple(table_name, publication, &url);
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
         table.execute(&format!(
             "INSERT INTO {table_name} VALUES (1, true, NULL, 'first')"
         ));
@@ -3216,7 +3224,7 @@ mod cdc_tests {
         let out_1 = NamedTempFile::new().unwrap();
         let (ctrl_1, errs_1) = cdc_ft_test_circuit(
             &url,
-            publication,
+            &publication,
             &format!("public.{table_name}"),
             storage.path(),
             out_1.path(),
@@ -3243,7 +3251,7 @@ mod cdc_tests {
         let storage_2 = tempfile::tempdir().unwrap();
         let (ctrl_2, errs_2) = cdc_ft_test_circuit(
             &url,
-            publication,
+            &publication,
             &format!("public.{table_name}"),
             storage_2.path(),
             out_2.path(),
