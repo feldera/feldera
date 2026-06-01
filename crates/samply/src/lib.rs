@@ -49,7 +49,7 @@ use std::{
         atomic::{AtomicBool, AtomicI64, Ordering},
     },
     thread::JoinHandle,
-    time::{Duration, Instant, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 #[cfg(target_os = "macos")]
