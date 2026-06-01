@@ -340,10 +340,6 @@ describe('formatPipelineEventDescription', () => {
     expect(out).toContain('recorded_at: 2026-05-01T12:00:00Z')
     expect(out).toContain('program_status: Success')
     expect(out).toContain('storage_status: InUse')
-    expect(out).toContain('deployment_resources_status: Provisioned')
-    expect(out).toContain('deployment_resources_desired_status: Provisioned')
-    expect(out).toContain('deployment_runtime_status: (none)')
-    expect(out).toContain('deployment_runtime_desired_status: Running')
     expect(out).toContain('deployment_has_error: false')
     expect(out).toContain('deployment_error.message: (none)')
     expect(out).toContain('deployment_error.error_code: (none)')
@@ -352,17 +348,44 @@ describe('formatPipelineEventDescription', () => {
     expect(out).toContain('deployment_runtime_status_details: (none)')
   })
 
-  it('substitutes (none) for nullish desired-status and storage fields', () => {
+  it('omits the desired suffix when desired matches the current status', () => {
+    const out = formatPipelineEventDescription(
+      makeEvent({
+        deployment_resources_status: 'Provisioned',
+        deployment_resources_desired_status: 'Provisioned'
+      })
+    )
+    expect(out).toContain('deployment_resources_status: Provisioned')
+    expect(out).not.toContain('desired is')
+  })
+
+  it('appends "(desired is X)" when desired differs from the current status', () => {
+    const out = formatPipelineEventDescription(
+      makeEvent({
+        deployment_resources_status: 'Provisioned',
+        deployment_resources_desired_status: 'Stopped',
+        deployment_runtime_status: 'Running',
+        deployment_runtime_desired_status: 'Suspended'
+      })
+    )
+    expect(out).toContain('deployment_resources_status: Provisioned (desired is Stopped)')
+    expect(out).toContain('deployment_runtime_status: Running (desired is Suspended)')
+  })
+
+  it('omits the desired suffix when the desired status is nullish', () => {
     const out = formatPipelineEventDescription(
       makeEvent({
         storage_status: undefined,
+        deployment_resources_status: 'Stopped',
         deployment_resources_desired_status: undefined,
+        deployment_runtime_status: null,
         deployment_runtime_desired_status: null
       })
     )
     expect(out).toContain('storage_status: (none)')
-    expect(out).toContain('deployment_resources_desired_status: (none)')
-    expect(out).toContain('deployment_runtime_desired_status: (none)')
+    expect(out).toContain('deployment_resources_status: Stopped')
+    expect(out).toContain('deployment_runtime_status: (none)')
+    expect(out).not.toContain('desired is')
   })
 
   it('renders deployment_error fields when present', () => {
