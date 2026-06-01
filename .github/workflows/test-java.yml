@@ -5,16 +5,16 @@ on:
   workflow_dispatch:
 
 env:
-  RUSTC_WRAPPER: sccache
-  SCCACHE_CACHE_SIZE: ${{ vars.SCCACHE_CACHE_SIZE }}
-  SCCACHE_BUCKET: ${{ vars.SCCACHE_BUCKET }}
+  # EXPERIMENT: sccache is disabled here on purpose (no RUSTC_WRAPPER). Instead
+  # of per-crate compile caching we cache the whole target/ trees (see the
+  # cache step below) and let cargo incremental rebuilds do the work. Comparing
+  # wall-clock against the sccache setup tells us which is faster for this job.
+  # SCCACHE_ENDPOINT/REGION + AWS creds stay because feldera-minio-cache reuses
+  # them as its S3 config.
   SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
   SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
   AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
   AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
-  # sccache cannot cache rustc invocations when incremental is on; without
-  # this the prior run showed 0% Rust cache hit rate and 11k write errors.
-  CARGO_INCREMENTAL: 0
   # Pin Maven's local repo so it matches the cache path regardless of the
   # container runner's $HOME.
   MAVEN_OPTS: -Dmaven.repo.local=/home/ubuntu/.m2/repository
@@ -56,22 +56,32 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Cache Cargo registry
+      # Rotate the Rust cache once per calendar month to keep target/ from
+      # accumulating stale artifacts indefinitely. Bucket lifecycle on
+      # gha-cache reclaims the bytes; restore-keys stay scoped to the same
+      # month so we never restore last month's stale cache.
+      - name: Compute monthly cache prefix
+        id: cache-month
+        run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Rust dependencies and target
         uses: ./.github/actions/feldera-minio-cache
         with:
-          # Only the crate downloads, NOT target/. The SQL test suite compiles
-          # a unique Rust pipeline per test into sql-to-dbsp-compiler/temp/target,
-          # which balloons to 20-45 GB; gzipping that on save cost ~1h of wall
-          # clock and the artifacts are single-use anyway. Per-crate compile
-          # caching is sccache's job. registry/src is excluded — cargo
-          # regenerates it from registry/cache archives.
+          # EXPERIMENT: cache target/ in place of sccache. registry/src is
+          # excluded — cargo regenerates it from registry/cache archives. The
+          # test framework writes generated pipelines to sql-to-dbsp-compiler/
+          # temp and multi, excluded from the workspace per Cargo.toml, so
+          # their target dirs must be cached explicitly.
           path: |
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
             ~/.cargo/git/db
-          key: test-java-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
+            target
+            sql-to-dbsp-compiler/temp/target
+            sql-to-dbsp-compiler/multi/target
+          key: test-java-cargo-${{ steps.cache-month.outputs.month }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.shard.name }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            test-java-cargo-${{ runner.os }}-${{ runner.arch }}-
+            test-java-cargo-${{ steps.cache-month.outputs.month }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.shard.name }}-
 
       - name: Cache JVM build dependencies
         uses: ./.github/actions/feldera-minio-cache
@@ -108,8 +118,3 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' && matrix.shard.name == 'A-M' }}
         run: mvn test --no-transfer-progress -B -Dsurefire.failIfNoSpecifiedTests=false -Dtest=RotateTests#quick
         working-directory: ./sql-to-dbsp-compiler
-
-      - name: Print sccache stats
-        run: |
-          sccache --show-stats
-        if: ${{ vars.CI_DRY_RUN != 'true' }}
