@@ -20,7 +20,6 @@ use crate::error::source_error;
 use crate::has_unstable_feature;
 use feldera_ir::Dataflow;
 use feldera_observability::ReqwestTracingExt;
-use feldera_types::program_schema::ProgramSchema;
 use futures_util::StreamExt;
 use indoc::formatdoc;
 use std::fs::Metadata;
@@ -732,10 +731,10 @@ pub(crate) async fn perform_sql_compilation(
     if exit_status.success() {
         // Read schema.json
         let schema_str = read_file_content(&output_json_schema_file_path).await?;
-        let schema: ProgramSchema = serde_json::from_str(&schema_str).map_err(|e| {
+        let schema: serde_json::Value = serde_json::from_str(&schema_str).map_err(|e| {
             SqlCompilationError::SystemError(
                 CommonError::json_deserialization_error(
-                    "schema.json from SQL compiler into ProgramSchema".to_string(),
+                    "schema.json from SQL compiler".to_string(),
                     e,
                 )
                 .to_string(),
@@ -916,7 +915,9 @@ mod test {
     use crate::db::types::utils::validate_program_info;
     use crate::db::types::version::Version;
     use feldera_types::config::TransportConfig;
-    use feldera_types::program_schema::{SqlIdentifier, SqlType};
+    use feldera_types::program_schema::{
+        ProgramSchema, ProgramSchemaPropertiesOnly, SqlIdentifier, SqlType,
+    };
     use indoc::formatdoc;
 
     /// Tests the compilation of several of the most basic SQL programs succeeds.
@@ -1001,9 +1002,13 @@ mod test {
 
         // Check the types of the table and view
         let program_info = validate_program_info(&pipeline_descr.program_info.unwrap()).unwrap();
-        let table = program_info.schema.inputs.first().unwrap();
+
+        let program_schema: ProgramSchema =
+            serde_json::from_value(program_info.schema.clone()).unwrap();
+
+        let table = program_schema.inputs.first().unwrap();
         assert_eq!(table.name, SqlIdentifier::new("t_all", false));
-        let view = program_info.schema.outputs.get(1).unwrap();
+        let view = program_schema.outputs.get(1).unwrap();
         assert_eq!(view.name, SqlIdentifier::new("v_all", false));
         for relation in [table, view] {
             assert!(!relation.materialized);
@@ -1135,6 +1140,20 @@ mod test {
             assert!(subfields[1].columntype.nullable);
         }
 
+        // Program schema only with properties
+        let program_schema_properties_only: ProgramSchemaPropertiesOnly =
+            serde_json::from_value(program_info.schema.clone()).unwrap();
+
+        // Table
+        let table_properties_only = program_schema_properties_only.inputs.first().unwrap();
+        assert_eq!(table_properties_only.name, table.name);
+        assert_eq!(table_properties_only.properties, table.properties);
+
+        // View
+        let view_properties_only = program_schema_properties_only.outputs.get(1).unwrap();
+        assert_eq!(view_properties_only.name, view.name);
+        assert_eq!(view_properties_only.properties, view.properties);
+
         // Clean up
         test.delete_pipeline(tenant_id, pipeline_id, "p1").await;
         test.sql_compiler_tick().await;
@@ -1167,8 +1186,10 @@ mod test {
 
         // Check materialized outcome
         let program_info = validate_program_info(&pipeline_descr.program_info.unwrap()).unwrap();
-        assert_eq!(program_info.schema.inputs.len(), 3);
-        for table in program_info.schema.inputs {
+        let program_schema: ProgramSchema =
+            serde_json::from_value(program_info.schema.clone()).unwrap();
+        assert_eq!(program_schema.inputs.len(), 3);
+        for table in program_schema.inputs {
             match table.name.name().as_str() {
                 "t1" => assert!(!table.materialized),
                 "t2" => assert!(table.materialized),
@@ -1176,8 +1197,8 @@ mod test {
                 t => panic!("Unknown table: {t}"),
             }
         }
-        assert_eq!(program_info.schema.outputs.len(), 3);
-        for view in program_info.schema.outputs {
+        assert_eq!(program_schema.outputs.len(), 3);
+        for view in program_schema.outputs {
             match view.name.name().as_str() {
                 "v1" => assert!(!view.materialized),
                 // v2 is a LOCAL VIEW and should not be an output
@@ -1227,7 +1248,7 @@ mod test {
         let pipeline_descr = test
             .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code)
             .await;
-        let input_connectors = validate_program_info(&pipeline_descr.program_info.unwrap())
+        let input_connectors = validate_program_info(&pipeline_descr.program_info.clone().unwrap())
             .unwrap()
             .clone()
             .input_connectors;
@@ -1241,6 +1262,17 @@ mod test {
             connector_config.transport,
             TransportConfig::Datagen(_)
         ));
+
+        // Program schema only with properties: check properties
+        let program_schema_properties_only: ProgramSchemaPropertiesOnly =
+            serde_json::from_value(pipeline_descr.program_info.unwrap()["schema"].clone()).unwrap();
+        let table_properties_only = program_schema_properties_only.inputs.first().unwrap();
+        assert_eq!(table_properties_only.name, "t1");
+        assert_eq!(table_properties_only.properties.len(), 1);
+        assert!(table_properties_only.properties.contains_key("connectors"));
+        assert!(table_properties_only.properties["connectors"]
+            .value
+            .contains("\"name\": \"c1\""));
     }
 
     /// Tests that SQL compiler recovers from an incorrect platform version.
