@@ -3912,8 +3912,11 @@ impl ModelHelpers for Mutex<DbModel> {
                 if runtime_config.get("workers") != pipeline.runtime_config.get("workers") {
                     not_allowed.push("`runtime_config.workers`");
                 }
-                if runtime_config.get("storage") != pipeline.runtime_config.get("storage") {
-                    not_allowed.push("`runtime_config.storage`");
+                let one = json!(1);
+                if runtime_config.get("hosts").unwrap_or(&one)
+                    != pipeline.runtime_config.get("hosts").unwrap_or(&one)
+                {
+                    not_allowed.push("`runtime_config.hosts`");
                 }
                 if runtime_config.get("fault_tolerance")
                     != pipeline.runtime_config.get("fault_tolerance")
@@ -3930,24 +3933,24 @@ impl ModelHelpers for Mutex<DbModel> {
                 {
                     not_allowed.push("`runtime_config.resources.storage_mb_max`");
                 }
-            }
-            if program_code
-                .as_ref()
-                .is_some_and(|v| *v != pipeline.program_code)
-            {
-                not_allowed.push("`program_code`")
-            }
-            if udf_rust.as_ref().is_some_and(|v| *v != pipeline.udf_rust) {
-                not_allowed.push("`udf_rust`")
-            }
-            if udf_toml.as_ref().is_some_and(|v| *v != pipeline.udf_toml) {
-                not_allowed.push("`udf_toml`")
-            }
-            if program_config
-                .as_ref()
-                .is_some_and(|v| *v != pipeline.program_config)
-            {
-                not_allowed.push("`program_config`")
+                if runtime_config.get("resources").map(|v| v.get("namespace"))
+                    != pipeline
+                        .runtime_config
+                        .get("resources")
+                        .map(|v| v.get("namespace"))
+                {
+                    not_allowed.push("`runtime_config.resources.namespace`");
+                }
+                if runtime_config
+                    .get("resources")
+                    .map(|v| v.get("storage_class"))
+                    != pipeline
+                        .runtime_config
+                        .get("resources")
+                        .map(|v| v.get("storage_class"))
+                {
+                    not_allowed.push("`runtime_config.resources.storage_class`");
+                }
             }
             if !not_allowed.is_empty() {
                 return Err(DBError::EditRestrictedToClearedStorage {

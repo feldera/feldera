@@ -51,6 +51,19 @@ Make sure to appropriately size resource limits (memory and storage), the number
 <ApiSchema pointer="#/components/schemas/RuntimeConfig"/>
 </div>
 
+#### Runtime configuration edit restrictions
+
+The runtime configuration cannot be edited at all if the pipeline is not stopped.
+
+If the pipeline is stopped, but its storage has not been cleared, the following runtime configuration fields cannot be
+edited:
+- `workers`
+- `hosts`
+- `fault_tolerance`
+- `resources.storage_mb_max`
+- `resources.namespace`
+- `resources.storage_class`
+
 ### Program configuration
 
 The "optimized" compilation profile (default) should be used when running production pipelines where performance is important.

@@ -449,6 +449,16 @@ pub(crate) async fn update_pipeline(
             {
                 not_allowed.push("`runtime_config.resources.namespace`");
             }
+            if runtime_config
+                .get("resources")
+                .map(|v| v.get("storage_class"))
+                != current
+                    .runtime_config
+                    .get("resources")
+                    .map(|v| v.get("storage_class"))
+            {
+                not_allowed.push("`runtime_config.resources.storage_class`");
+            }
         }
 
         if !not_allowed.is_empty() {
