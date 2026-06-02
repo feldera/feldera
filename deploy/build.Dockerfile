@@ -23,6 +23,10 @@ RUN apt-get update --fix-missing && apt-get install -y \
     golang-go \
     # rdkafka dependency needs libsasl2-dev and a CXX compiler
     libsasl2-dev libzstd-dev zlib1g-dev build-essential \
+    # zstd CLI: @actions/cache (runs-on/cache) auto-uses it for cache
+    # compression when on PATH, else falls back to slow gzip. Big win for the
+    # multi-GB target/ caches in test-java.yml.
+    zstd \
     # bindgen needs this (at least the dec crate uses bindgen)
     libclang-dev \
     # To download tools
