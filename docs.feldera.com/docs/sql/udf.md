@@ -700,9 +700,9 @@ pub struct PreprocessorConfig {
     /// All preprocessors with the same name will perform the same task.
     pub name: String,
     /// True if the preprocessor is message-oriented: true if each preprocessor
-    /// output record corresponds to a whole number of of parser records.
+    /// output record corresponds to a whole number of parser records.
     pub message_oriented: bool,
-    /// Arbitrary additional configuration.
+    /// Arbitrary additional configuration as a JSON Value.
     pub config: Value,
 }
 ```
@@ -797,8 +797,6 @@ trait implementations in the udf.rs file:
 - `ExamplePreprocessor` that implements the `Preprocessor` trait
 - `ExamplePreprocessorFactory` that implements the `PreprocessorFactory` trait
 
-You will need to add `feldera-adapterlib` to the `udf.toml` file.
-
 ### Example: logging preprocessor
 
 The following example shows a minimal preprocessor that returns its
@@ -880,6 +878,280 @@ Each entry has
 :::note
 
 Currently exactly one preprocessor may be specified per connector.
+
+:::
+
+## User-defined postprocessors
+
+:::warning Experimental feature
+
+Postprocessor support is currently experimental and may undergo significant changes, including
+non-backward-compatible modifications, in future releases of Feldera.
+
+:::
+
+:::danger
+
+* Postprocessors are compiled into native binary code and executed directly within the address
+  space of the pipeline. Therefore, only trusted code should be included in postprocessors. They
+  should not contain panics or invoke undefined behaviors.
+
+:::
+
+A **postprocessor** is a user-defined Rust component that transforms encoded records produced by the
+format encoder before they are delivered to an output transport endpoint:
+
+```text
+Circuit -> [stream of records] -> Encoder -> [encoded records] -> Postprocessor -> [encoded records] -> Transport
+```
+
+Postprocessors are the output-side counterpart of preprocessors. They are useful for:
+
+- Encrypting or compressing data before delivery
+- Adding protocol-specific framing or headers
+- Re-encoding data from the standard encoder format to a different wire format
+
+Encoded records are delivered to the postprocessor in one of two forms:
+
+- **Buffer mode**: a stream of buffers, where each buffer can contain an encoded
+  representation of one or more output records
+- **Keyed mode**: encoders designed to work with message-based transports such as
+  Kafka where every message can have key, value, and header components.
+
+### Implementing a postprocessor
+
+To add a custom postprocessor, implement two Rust traits:
+
+- `feldera_adapterlib::postprocess::Postprocessor`
+- `feldera_adapterlib::postprocess::PostprocessorFactory`
+
+Postprocessors can be used with output connectors that deliver raw
+byte buffers, such as file and Kafka output connectors.  Postprocessors
+are not supported for output connectors that work with fixed data formats,
+such as the Delta Lake and PostgresSQL connectors.
+
+#### `Postprocessor` trait
+
+The postprocessor sits between the encoder and the transport.  It receives data in one of
+two forms depending on whether the output view has a primary key:
+
+- **Buffer mode** (`push_buffer`): the encoder produces a single serialized byte buffer per
+  record.  Used for views without a primary key.
+- **Keyed mode** (`push_key`): the encoder produces a separate key, value, and a list of
+  headers per record.  Used for views with a primary key (declared with `CREATE INDEX`).
+
+A postprocessor implementation must override exactly one of `push_buffer` or `push_key`,
+depending on which mode applies to the output connector it will be used with.
+
+```rust
+use feldera_adapterlib::transport::{OutputBatchType, Step};
+use anyhow::Result;
+
+pub trait Postprocessor: Send + Sync {
+    /// Called once for every output batch produced by the pipeline before any
+    /// records are pushed to the preprocessor.
+    ///
+    /// # Arguments
+    ///
+    /// * `step` — a monotonically-increasing sequence number assigned to this
+    ///   batch.  Fault-tolerant endpoints use this to detect and discard
+    ///   duplicate output.  Non-fault-tolerant postprocessors may ignore it.
+    ///
+    /// * `batch_type` — indicates whether this batch is:
+    ///   - `OutputBatchType::Delta`: an incremental update (inserts and
+    ///     deletes since the last step).
+    ///   - `OutputBatchType::Snapshot`: a full snapshot of the materialized
+    ///     view at this point in time.
+    ///
+    /// The default implementation is a no-op.
+    fn batch_start(&mut self, step: Step, batch_type: OutputBatchType);
+
+    /// Transform a serialized buffer (buffer mode).
+    ///
+    /// Called for each output chunk produced by the encoder. There can be many
+    /// calls to this method between `batch_start` and `batch_end` notifications.
+    ///
+    /// # Arguments
+    ///
+    /// * `buffer` — the raw bytes produced by the encoder.
+    ///
+    /// # Returns
+    ///
+    /// The transformed byte buffer on success.  On error the affected records
+    /// are dropped and the error is reported to the controller; processing of
+    /// subsequent records continues normally.
+    ///
+    /// The default implementation returns the data unchanged.
+    fn push_buffer(&mut self, buffer: &[u8]) -> Result<Vec<u8>>;
+
+    /// Transform a key/value/headers record (keyed mode).
+    ///
+    /// Called for each key/value update generated by the encoder.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` — serialized key component of the message, or `None` if the key is absent.
+    ///
+    /// * `val` — serialized value bytes, or `None` if the value is absent.
+    ///
+    /// * `headers` — a slice of `(name, value)` pairs.  Each header value is
+    ///   an optional byte slice; `None` means the header is present but has no
+    ///   value.
+    ///
+    /// # Returns
+    ///
+    /// A tuple `(key, val, headers)` with the same shape as the arguments but
+    /// owning the transformed bytes.  On error the affected records are dropped
+    /// and the error is reported to the controller; processing continues.
+    ///
+    /// The default implementation returns the data unchanged.
+    fn push_key(
+        &mut self,
+        key: Option<&[u8]>,
+        val: Option<&[u8]>,
+        headers: &[(&str, Option<&[u8]>)],
+    ) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>, Vec<(String, Option<Vec<u8>>)>)>;
+
+    /// Called once after all records for the current batch have been pushed.
+    ///
+    /// The default implementation is a no-op.
+    fn batch_end(&mut self);
+
+    /// Returns the approximate number of bytes of heap memory owned by this
+    /// postprocessor.
+    ///
+    /// Override this when the implementation holds a significant internal
+    /// buffer.  The controller uses the returned value for memory accounting.
+    /// The default returns `0`.
+    fn memory(&self) -> usize;
+
+    /// Create an independent copy of this postprocessor with the same configuration.
+    ///
+    /// Called when multiple parallel output pipelines are needed.
+    /// Only called once, before data processing begins.
+    fn fork(&self) -> Box<dyn Postprocessor>;
+}
+```
+
+#### `PostprocessorFactory` trait
+
+A factory is responsible for constructing `Postprocessor` instances from a JSON configuration
+object.
+
+```rust
+pub trait PostprocessorFactory: Send + Sync {
+    /// Construct a `Postprocessor` from the supplied configuration.
+    fn create(
+        &self,
+        config: &PostprocessorConfig,
+    ) -> Result<Box<dyn Postprocessor>, PostprocessorCreateError>;
+}
+```
+
+#### `PostprocessorConfig`
+
+The configuration for a postprocessor has the following structure in Rust:
+
+```
+pub struct PostprocessorConfig {
+    /// Name of the postprocessor.
+    /// All postprocessors with the same name will perform the same task.
+    pub name: String,
+    /// Arbitrary additional configuration expected by the postprocessor as a JSON Value.
+    pub config: Value,
+}
+```
+
+#### Usage in SQL programs
+
+By declaring a postprocessor in the connector configuration
+the user indicates that a user-defined postprocessor will
+be used for that specific connector.  When declaring a postprocessor with name "example", the user has to provide two
+trait implementations in the `udf.rs` file:
+
+- `ExamplePostprocessor` that implements the `Postprocessor` trait
+- `ExamplePostprocessorFactory` that implements the `PostprocessorFactory` trait
+
+### Example: logging postprocessor
+
+The following example shows a minimal postprocessor that returns its
+input unchanged but logs a message for every 1M data bytes produced.
+It uses buffer mode (`push_buffer`), which is appropriate for output
+views without a primary key.
+
+This is the content of the `udf.rs` file:
+
+```rust
+use tracing::info;
+use std::sync::{Arc, Mutex};
+use feldera_adapterlib::postprocess::{
+    Postprocessor, PostprocessorCreateError, PostprocessorFactory,
+};
+use feldera_types::postprocess::PostprocessorConfig;
+
+pub struct LoggerPostprocessor {
+   count: Arc<Mutex<u64>>,
+}
+
+impl Postprocessor for LoggerPostprocessor {
+    /// Pass the buffer through unchanged and log a message every 1 MB.
+    fn push_buffer(&mut self, data: &[u8]) -> anyhow::Result<Vec<u8>> {
+        let mut count = self.count.lock().unwrap();
+        *count += data.len() as u64;
+        // Log a message if the counter has crossed a Megabyte boundary
+        if *count / (1024 * 1024) > (*count - data.len() as u64) / (1024 * 1024) {
+            info!("Produced {} bytes of data", *count);
+        }
+        Ok(data.to_vec())
+    }
+
+    fn fork(&self) -> Box<dyn Postprocessor> {
+        Box::new(LoggerPostprocessor { count: Arc::clone(&self.count) })
+    }
+}
+
+pub struct LoggerPostprocessorFactory;
+
+impl PostprocessorFactory for LoggerPostprocessorFactory {
+    fn create(
+        &self,
+        _config: &PostprocessorConfig,
+    ) -> Result<Box<dyn Postprocessor>, PostprocessorCreateError> {
+        Ok(Box::new(LoggerPostprocessor { count: Arc::new(Mutex::new(0)) }))
+    }
+}
+```
+
+### Configuring a postprocessor in a connector
+
+Postprocessors are enabled by adding a `postprocessor` field to the output connector configuration.
+Each entry has
+- a string `name` (matching a registered factory)
+- a `config` object, passed verbatim to `PostprocessorFactory::create`.
+
+Here is a possible example of a view with a logger postprocessor attached to file
+output connector:
+
+```
+CREATE VIEW v WITH (
+    'connectors' = '[{
+       "name": "v",
+       "transport": {
+          "name": "file_output",
+          "config": { "path": "/output/o.json" }
+       },
+       "format": { "name": "json" },
+       "postprocessor": [{
+          "name": "logger",
+          "config": {}
+       }]
+    }]'
+) AS ...
+```
+
+:::note
+
+Currently exactly one postprocessor may be specified per connector.
 
 :::
 

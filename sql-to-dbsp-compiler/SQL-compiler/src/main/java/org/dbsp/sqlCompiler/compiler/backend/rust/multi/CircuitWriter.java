@@ -171,7 +171,7 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
         if (!useHandles)
             this.builder().append("let mut catalog = Catalog::new();").newline();
 
-        ToRustVisitor.registerPreprocessors(compiler, this.builder());
+        ToRustVisitor.registerPreAndPostprocessors(compiler, this.builder());
 
         SourcePositionResource sourcePositionResource = new SourcePositionResource();
         CircuitVisitor collector = new CollectSourcePositions(compiler, sourcePositionResource)

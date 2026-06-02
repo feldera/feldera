@@ -7997,11 +7997,20 @@
                 "type": "boolean",
                 "description": "Create connector in paused state.\n\nThe default is `false`."
               },
+              "postprocessor": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PostprocessorConfig"
+                },
+                "description": "Optional postprocessor configuration",
+                "nullable": true
+              },
               "preprocessor": {
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/PreprocessorConfig"
                 },
+                "description": "Optional preprocessor configuration",
                 "nullable": true
               },
               "send_snapshot": {
@@ -11866,6 +11875,23 @@
           }
         ],
         "description": "Postgres output connector configuration."
+      },
+      "PostprocessorConfig": {
+        "type": "object",
+        "description": "Configuration for describing a postprocessor",
+        "required": [
+          "name",
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "description": "Arbitrary additional configuration expected by the postprocessor\nencoded as a JSON Value."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the postprocessor.\nAll postprocessors with the same name will perform the same task."
+          }
+        }
       },
       "PreprocessorConfig": {
         "type": "object",

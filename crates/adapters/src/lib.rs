@@ -155,6 +155,8 @@ mod catalog;
 mod controller;
 pub mod format;
 pub mod integrated;
+#[cfg(test)]
+pub mod postprocess;
 pub mod preprocess;
 pub mod server;
 pub mod static_compile;

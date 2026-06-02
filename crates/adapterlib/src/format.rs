@@ -21,6 +21,7 @@ use serde::de::StdError;
 use crate::ConnectorMetadata;
 use crate::catalog::{InputCollectionHandle, SerBatchReader};
 use crate::errors::controller::ControllerError;
+use crate::postprocess::Postprocessor;
 use crate::preprocess::Preprocessor;
 use crate::transport::{OutputBatchType, Step};
 
@@ -679,8 +680,14 @@ pub trait Encoder: Send {
     /// Returns a reference to the consumer that the encoder is connected to.
     fn consumer(&mut self) -> &mut dyn OutputConsumer;
 
-    /// Encode a batch of updates, push encoded buffers to the consumer
-    /// using [`OutputConsumer::push_buffer`].
+    /// Encode a batch of updates and push the results to the consumer.
+    ///
+    /// The encoder calls [`OutputConsumer::batch_start`] before emitting any
+    /// data, then delivers encoded records via [`OutputConsumer::push_buffer`]
+    /// or [`OutputConsumer::push_key`], and finally calls
+    /// [`OutputConsumer::batch_end`].
+    ///
+    /// Which of `push_buffer` or `push_key` is used depends on the kind of encoder used.
     fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()>;
 }
 
@@ -711,6 +718,84 @@ pub trait OutputConsumer: Send {
     /// substantial amount of memory, so the default implementation returns 0.
     fn memory(&self) -> usize {
         0
+    }
+}
+
+/// Callback invoked when a [`Postprocessor`] returns an error.
+///
+/// The argument is the error returned by the postprocessor.  The callback
+/// is responsible for reporting or logging the error; the record that
+/// triggered the error is dropped and processing continues.
+pub type PostprocessorErrorCallback = Box<dyn Fn(anyhow::Error) + Send + Sync>;
+
+/// Bridges a [`Postprocessor`] into the [`OutputConsumer`] interface.
+///
+/// Each [`OutputConsumer`] method calls the corresponding [`Postprocessor`]
+/// method, then forwards its return value to the inner consumer.
+/// When the postprocessor returns an error, `error_cb` is invoked and the
+/// affected record is dropped.
+pub struct PostprocessedConsumer {
+    inner: Box<dyn OutputConsumer>,
+    postprocessor: Box<dyn Postprocessor>,
+    error_cb: PostprocessorErrorCallback,
+}
+
+impl PostprocessedConsumer {
+    pub fn new(
+        inner: Box<dyn OutputConsumer>,
+        postprocessor: Box<dyn Postprocessor>,
+        error_cb: PostprocessorErrorCallback,
+    ) -> Self {
+        Self {
+            inner,
+            postprocessor,
+            error_cb,
+        }
+    }
+}
+
+impl OutputConsumer for PostprocessedConsumer {
+    fn max_buffer_size_bytes(&self) -> usize {
+        self.inner.max_buffer_size_bytes()
+    }
+
+    fn batch_start(&mut self, step: Step, batch_type: OutputBatchType) {
+        self.postprocessor.batch_start(step, batch_type);
+        self.inner.batch_start(step, batch_type);
+    }
+
+    fn push_buffer(&mut self, buffer: &[u8], num_records: usize) {
+        match self.postprocessor.push_buffer(buffer) {
+            Ok(transformed) => self.inner.push_buffer(&transformed, num_records),
+            Err(e) => (self.error_cb)(e),
+        }
+    }
+
+    fn push_key(
+        &mut self,
+        key: Option<&[u8]>,
+        val: Option<&[u8]>,
+        headers: &[(&str, Option<&[u8]>)],
+        num_records: usize,
+    ) {
+        match self.postprocessor.push_key(key, val, headers) {
+            Ok((k, v, h)) => {
+                let h_refs: Vec<(&str, Option<&[u8]>)> =
+                    h.iter().map(|(k, v)| (k.as_str(), v.as_deref())).collect();
+                self.inner
+                    .push_key(k.as_deref(), v.as_deref(), &h_refs, num_records);
+            }
+            Err(e) => (self.error_cb)(e),
+        }
+    }
+
+    fn batch_end(&mut self) {
+        self.postprocessor.batch_end();
+        self.inner.batch_end();
+    }
+
+    fn memory(&self) -> usize {
+        self.inner.memory() + self.postprocessor.memory()
     }
 }
 

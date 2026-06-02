@@ -198,4 +198,13 @@ public class ProgramMetadata implements IJson {
         }
         return result;
     }
+
+    /** Find all the postprocessors mentioned in all connectors */
+    public Set<String> getPostprocessors() {
+        Set<String> result = new HashSet<>();
+        for (var meta: this.outputViews.values()) {
+            meta.collectPostprocessors(result);
+        }
+        return result;
+    }
 }

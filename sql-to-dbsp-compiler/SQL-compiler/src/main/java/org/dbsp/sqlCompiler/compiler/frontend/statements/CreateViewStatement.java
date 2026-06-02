@@ -42,6 +42,7 @@ public class CreateViewStatement extends CreateRelationStatement {
     // Some predefined properties
     public static final String EMIT_FINAL = "emit_final";
     public static final String MATERIALIZED = "materialized";
+    public static final String POSTPROCESSOR = "postprocessor";
 
     /** Compiled and optimized query. */
     private final RelRoot compiled;

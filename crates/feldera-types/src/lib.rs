@@ -8,6 +8,7 @@ pub mod error;
 pub mod format;
 pub mod memory_pressure;
 pub mod pipeline_diff;
+pub mod postprocess;
 pub mod preprocess;
 pub mod program_schema;
 pub mod query;

@@ -4200,3 +4200,575 @@ mod queue_limit_tests {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Postprocessor integration tests
+// ---------------------------------------------------------------------------
+
+use feldera_adapterlib::postprocess::{
+    Postprocessor, PostprocessorCreateError, PostprocessorFactory,
+};
+use feldera_types::postprocess::PostprocessorConfig;
+
+/// Verify that a passthrough postprocessor does not alter output.
+///
+/// The output JSON produced by the encoder passes through the postprocessor
+/// unchanged and lands in the output file as valid JSON that the query engine
+/// can read back.
+#[test]
+fn test_postprocessor() {
+    use crate::postprocess::PassthroughPostprocessorFactory;
+
+    init_test_logger();
+
+    let temp_input_file = NamedTempFile::new().unwrap();
+    temp_input_file
+        .as_file()
+        .write_all(
+            br#"[
+            {"id": 1, "b": true, "s": "one"},
+            {"id": 2, "b": false, "s": "two"}
+        ]"#,
+        )
+        .unwrap();
+
+    let temp_output_file = NamedTempFile::new().unwrap();
+    let output_path = temp_output_file.path().to_path_buf();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_postprocessor",
+        "workers": 1,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": false
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "array": true,
+                        "update_format": "raw"
+                    }
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": { "path": output_path }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": {}
+                },
+                "postprocessor": [
+                    {
+                        "name": "passthrough",
+                        "config": {}
+                    }
+                ]
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            let (circuit, catalog) =
+                test_circuit::<TestStruct>(circuit_config, &TestStruct::schema(), &[None]);
+            catalog
+                .postprocessor_registry()
+                .lock()
+                .unwrap()
+                .register("passthrough", Box::new(PassthroughPostprocessorFactory));
+            Ok((circuit, catalog))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    let result = controller
+        .execute_query_text_sync("select * from test_output1 order by id")
+        .unwrap();
+
+    let expected = r#"+----+-------+---+-----+
+| id | b     | i | s   |
++----+-------+---+-----+
+| 1  | true  |   | one |
+| 2  | false |   | two |
++----+-------+---+-----+"#;
+
+    assert_eq!(&result, expected);
+    controller.stop().unwrap();
+}
+
+/// Verify that the encryption postprocessor encrypts output and the file
+/// cannot be parsed as plain JSON.  Decrypt the raw file bytes and confirm
+/// that the decrypted payload matches what the pipeline produced.
+#[test]
+fn test_encryption_postprocessor() {
+    use crate::postprocess::EncryptionPostprocessorFactory;
+    use openssl::symm::{Cipher, decrypt_aead};
+
+    init_test_logger();
+
+    let key = b"0123456789abcdef0123456789abcdef"; // 32 bytes
+    let nonce = b"test_nonce_1"; // 12 bytes
+
+    let temp_input_file = NamedTempFile::new().unwrap();
+    temp_input_file
+        .as_file()
+        .write_all(
+            br#"[
+            {"id": 1, "b": true, "s": "one"},
+            {"id": 2, "b": false, "s": "two"}
+        ]"#,
+        )
+        .unwrap();
+
+    let temp_output_file = NamedTempFile::new().unwrap();
+    let output_path = temp_output_file.path().to_path_buf();
+
+    let key_b64 = BASE64.encode(key);
+    let nonce_b64 = BASE64.encode(nonce);
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_encryption_postprocessor",
+        "workers": 1,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": false
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "array": true,
+                        "update_format": "raw"
+                    }
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": { "path": output_path.clone() }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": {}
+                },
+                "postprocessor": [
+                    {
+                        "name": "encryption",
+                        "config": {
+                            "key": key_b64,
+                            "nonce": nonce_b64
+                        }
+                    }
+                ]
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            let (circuit, catalog) =
+                test_circuit::<TestStruct>(circuit_config, &TestStruct::schema(), &[None]);
+            catalog
+                .postprocessor_registry()
+                .lock()
+                .unwrap()
+                .register("encryption", Box::new(EncryptionPostprocessorFactory));
+            Ok((circuit, catalog))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+    controller.stop().unwrap();
+
+    // Read the raw output file and decrypt it.
+    let encrypted = std::fs::read(&output_path).unwrap();
+    assert!(
+        !encrypted.is_empty(),
+        "output file should not be empty after encryption"
+    );
+
+    // The encrypted blob is not valid UTF-8 CSV.
+    assert!(
+        std::str::from_utf8(&encrypted).is_err() || !encrypted.contains(&b','),
+        "encrypted output should not look like plain CSV"
+    );
+
+    // Decrypt and verify the result contains CSV records.
+    let enc_nonce = &encrypted[..12];
+    let tag_start = encrypted.len() - 16;
+    let ciphertext = &encrypted[12..tag_start];
+    let tag = &encrypted[tag_start..];
+    let plaintext = decrypt_aead(
+        Cipher::aes_256_gcm(),
+        key,
+        Some(enc_nonce),
+        &[],
+        ciphertext,
+        tag,
+    )
+    .expect("decryption of postprocessed output failed");
+
+    // The decrypted payload must be parseable CSV with 2 records.
+    let mut rdr = CsvReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(plaintext.as_slice());
+    let rows: Vec<_> = rdr.records().collect();
+    assert_eq!(rows.len(), 2, "expected 2 rows in decrypted CSV output");
+}
+
+/// Verify that a base64-encoding postprocessor transforms the output and that
+/// decoding it yields the original JSON payload.
+#[cfg(test)]
+struct Base64EncodePostprocessor;
+
+#[cfg(test)]
+impl Postprocessor for Base64EncodePostprocessor {
+    fn push_buffer(&mut self, data: &[u8]) -> anyhow::Result<Vec<u8>> {
+        Ok(BASE64.encode(data).into_bytes())
+    }
+
+    fn fork(&self) -> Box<dyn Postprocessor> {
+        Box::new(Base64EncodePostprocessor)
+    }
+}
+
+#[cfg(test)]
+struct Base64EncodePostprocessorFactory;
+
+#[cfg(test)]
+impl PostprocessorFactory for Base64EncodePostprocessorFactory {
+    fn create(
+        &self,
+        _config: &PostprocessorConfig,
+    ) -> Result<Box<dyn Postprocessor>, PostprocessorCreateError> {
+        Ok(Box::new(Base64EncodePostprocessor))
+    }
+}
+
+/// Verify that a custom postprocessor can transform output bytes and that
+/// decoding the result yields the original JSON payload.
+#[test]
+fn test_base64_postprocessor() {
+    init_test_logger();
+
+    let temp_input_file = NamedTempFile::new().unwrap();
+    temp_input_file
+        .as_file()
+        .write_all(
+            br#"[
+            {"id": 1, "b": true, "s": "one"},
+            {"id": 2, "b": false, "s": "two"}
+        ]"#,
+        )
+        .unwrap();
+
+    let temp_output_file = NamedTempFile::new().unwrap();
+    let output_path = temp_output_file.path().to_path_buf();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_base64_postprocessor",
+        "workers": 1,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": false
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "array": true,
+                        "update_format": "raw"
+                    }
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": { "path": output_path.clone() }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": {}
+                },
+                "postprocessor": [
+                    {
+                        "name": "base64Encode",
+                        "config": {}
+                    }
+                ]
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            let (circuit, catalog) =
+                test_circuit::<TestStruct>(circuit_config, &TestStruct::schema(), &[None]);
+            catalog
+                .postprocessor_registry()
+                .lock()
+                .unwrap()
+                .register("base64Encode", Box::new(Base64EncodePostprocessorFactory));
+            Ok((circuit, catalog))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+    controller.stop().unwrap();
+
+    // Read the raw output and base64-decode it; the result must be parseable CSV.
+    let encoded = std::fs::read(&output_path).unwrap();
+    assert!(
+        !encoded.is_empty(),
+        "output file should not be empty after base64 encoding"
+    );
+
+    let decoded = BASE64
+        .decode(&encoded)
+        .expect("output file should be valid base64");
+    let mut rdr = CsvReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(decoded.as_slice());
+    let rows: Vec<_> = rdr.records().collect();
+    assert_eq!(rows.len(), 2, "expected 2 rows in decoded CSV output");
+}
+
+/// A postprocessor that rejects every record with an error, used in
+/// [`test_postprocessor_error_reported`].
+#[cfg(test)]
+struct AlwaysErrorPostprocessor;
+
+#[cfg(test)]
+impl Postprocessor for AlwaysErrorPostprocessor {
+    fn push_buffer(&mut self, _buffer: &[u8]) -> anyhow::Result<Vec<u8>> {
+        Err(anyhow::anyhow!("deliberate postprocessor error"))
+    }
+
+    fn fork(&self) -> Box<dyn Postprocessor> {
+        Box::new(AlwaysErrorPostprocessor)
+    }
+}
+
+#[cfg(test)]
+struct AlwaysErrorPostprocessorFactory;
+
+#[cfg(test)]
+impl PostprocessorFactory for AlwaysErrorPostprocessorFactory {
+    fn create(
+        &self,
+        _config: &PostprocessorConfig,
+    ) -> Result<Box<dyn Postprocessor>, PostprocessorCreateError> {
+        Ok(Box::new(AlwaysErrorPostprocessor))
+    }
+}
+
+/// Verify that a postprocessor error is forwarded to the controller error callback.
+///
+/// When [`Postprocessor::push_buffer`] returns [`Err`], the record is dropped
+/// and the error is delivered to the controller's error callback as a non-fatal
+/// [`ControllerError::OutputTransportError`].  The pipeline must continue
+/// running without panicking or hanging.
+#[test]
+fn test_postprocessor_error_reported() {
+    use crate::controller::ControllerError;
+    use std::sync::{Arc, Mutex};
+
+    init_test_logger();
+
+    let temp_input_file = NamedTempFile::new().unwrap();
+    temp_input_file
+        .as_file()
+        .write_all(
+            br#"[
+            {"id": 1, "b": true, "s": "one"},
+            {"id": 2, "b": false, "s": "two"}
+        ]"#,
+        )
+        .unwrap();
+
+    let temp_output_file = NamedTempFile::new().unwrap();
+    let output_path = temp_output_file.path().to_path_buf();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_postprocessor_error_reported",
+        "workers": 1,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": temp_input_file.path(), "follow": false }
+                },
+                "format": {
+                    "name": "json",
+                    "config": { "array": true, "update_format": "raw" }
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": { "path": output_path }
+                },
+                "format": { "name": "csv", "config": {} },
+                "postprocessor": [{ "name": "always_error", "config": {} }]
+            }
+        }
+    }))
+    .unwrap();
+
+    let captured: Arc<Mutex<Vec<Arc<ControllerError>>>> = Arc::new(Mutex::new(Vec::new()));
+    let captured_clone = captured.clone();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            let (circuit, catalog) =
+                test_circuit::<TestStruct>(circuit_config, &TestStruct::schema(), &[None]);
+            catalog
+                .postprocessor_registry()
+                .lock()
+                .unwrap()
+                .register("always_error", Box::new(AlwaysErrorPostprocessorFactory));
+            Ok((circuit, catalog))
+        },
+        &config,
+        Box::new(move |e, _| {
+            captured_clone.lock().unwrap().push(e);
+        }),
+    )
+    .unwrap();
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+    controller.stop().unwrap();
+
+    let errors = captured.lock().unwrap();
+    assert!(
+        !errors.is_empty(),
+        "error callback should have been invoked at least once by the postprocessor"
+    );
+    for err in errors.iter() {
+        let ControllerError::OutputTransportError {
+            endpoint_name,
+            fatal,
+            ..
+        } = err.as_ref()
+        else {
+            panic!("expected OutputTransportError, got: {err}");
+        };
+        assert_eq!(endpoint_name, "test_output1");
+        assert!(!fatal, "postprocessor errors must be non-fatal");
+    }
+}
+
+/// Verify that attaching a postprocessor to a `delta_table_output` (integrated)
+/// connector is rejected at startup.
+///
+/// Integrated connectors own their own serialization pipeline and bypass the
+/// postprocessor layer, so a postprocessor cannot be wired into them.  The
+/// controller should return a [`ControllerError::PostprocessorCreateError`]
+/// before the circuit starts running.
+#[test]
+fn test_postprocessor_on_delta_output_fails() {
+    use crate::controller::ControllerError;
+
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test_postprocessor_delta_fails",
+        "workers": 1,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": "/dev/null", "follow": false }
+                },
+                "format": { "name": "csv" }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "delta_table_output",
+                    "config": { "uri": "file:///tmp/test_delta_postprocessor" }
+                },
+                "postprocessor": [{ "name": "passthrough", "config": {} }]
+            }
+        }
+    }))
+    .unwrap();
+
+    let err = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("unexpected error callback: {e}")),
+    )
+    .err()
+    .expect("expected an error when attaching a postprocessor to a delta_table_output connector");
+
+    let ControllerError::PostprocessorCreateError {
+        ref endpoint_name,
+        ref error,
+    } = err
+    else {
+        panic!("expected PostprocessorCreateError, got: {err}");
+    };
+    assert_eq!(endpoint_name, "test_output1");
+    assert!(
+        error.contains("delta_table_output"),
+        "error should name the unsupported transport, got: {error}"
+    );
+}

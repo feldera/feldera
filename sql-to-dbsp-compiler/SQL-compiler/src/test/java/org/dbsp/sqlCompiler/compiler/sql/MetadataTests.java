@@ -92,7 +92,7 @@ public class MetadataTests extends BaseSQLTests {
                       }
                    }
                 }
-                
+
                 pub fn g(x: i32) -> Result<Tup2<i32, i32>, Box<dyn std::error::Error>> {
                    Ok(Tup2::new(x-1, x+1))
                 }""");
@@ -107,12 +107,12 @@ public class MetadataTests extends BaseSQLTests {
     public void issue3637() throws IOException, SQLException {
         String sql = """
                 CREATE TABLE t (id VARCHAR);
-                
+
                 DECLARE RECURSIVE VIEW v(
                     id VARCHAR,
                     parent_id VARCHAR
                 );
-                
+
                 CREATE MATERIALIZED VIEW v
                 AS SELECT id,
                     -- Delta lake output connector using field type Null instead of using the explicit VARCHAR
@@ -341,7 +341,7 @@ public class MetadataTests extends BaseSQLTests {
                       }
                     }]'
                 );
-                
+
                 CREATE TABLE TRANSACTION (
                     ts TIMESTAMP LATENESS INTERVAL 10 MINUTES, -- Transaction time
                     amt DOUBLE,                                -- Transaction amount
@@ -371,7 +371,7 @@ public class MetadataTests extends BaseSQLTests {
                       }
                     }]'
                 );
-                
+
                 CREATE VIEW TRANSACTION_WITH_DISTANCE AS
                     SELECT
                         t.*,
@@ -380,7 +380,7 @@ public class MetadataTests extends BaseSQLTests {
                         TRANSACTION as t
                         LEFT JOIN CUSTOMER as c
                         ON t.cc_num = c.cc_num;
-                
+
                 -- Compute two rolling aggregates over a 1-day time window for each transaction:
                 -- 1. Average spend per transaction.
                 -- 2. The number of transactions whose shipping address is more than 50,000 meters away from
@@ -744,13 +744,13 @@ public class MetadataTests extends BaseSQLTests {
         script.println("""
                 use feldera_sqllib::*;
                 use crate::Tup2;
-                
+
                 pub type i8_avg_accumulator_type = Tup2<i32, i32>;
-                
+
                 pub fn i8_avg_map(val: i8) -> i8_avg_accumulator_type {
                     Tup2::new(val as i32, 1)
                 }
-                
+
                 pub fn i8_avg_post(val: i8_avg_accumulator_type) -> i8 {
                     (val.0 / val.1).try_into().unwrap()
                 }
@@ -770,7 +770,7 @@ public class MetadataTests extends BaseSQLTests {
     public void issue5300() throws IOException, SQLException, InterruptedException {
         File file = createInputScript("""
                 CREATE LINEAR AGGREGATE u64_sum(value INT) RETURNS INT;
-                
+
                 CREATE TABLE A (
                     id VARCHAR(20) NOT NULL PRIMARY KEY,
                     a VARCHAR(64),
@@ -780,7 +780,7 @@ public class MetadataTests extends BaseSQLTests {
                     num1 INT,
                     num2 INT
                 ) WITH ('append_only' = 'true');
-                
+
                 CREATE VIEW b AS
                 SELECT id, a, b, u64_sum(num1), u64_sum(num2), SUM(small), MAX(sno)
                 FROM A
@@ -790,13 +790,13 @@ public class MetadataTests extends BaseSQLTests {
         PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
         script.println("""
                 use feldera_sqllib::*;
-                
+
                 pub type u64_sum_accumulator_type = i64;
-                
+
                 pub fn u64_sum_map(val: i32) -> u64_sum_accumulator_type {
                     val.into()
                 }
-                
+
                 pub fn u64_sum_post(val: u64_sum_accumulator_type) -> i32 {
                     val.try_into().unwrap()
                 }
@@ -846,22 +846,22 @@ public class MetadataTests extends BaseSQLTests {
                     use num_traits::Zero;
                     use rkyv::Fallible;
                     use std::ops::AddAssign;
-                    
+
                     #[derive(Add, Clone, Debug, Default, PartialOrd, Ord, Eq, PartialEq, Hash)]
                     pub struct I256Wrapper {
                         pub data: I256,
                     }
-                    
+
                     impl SizeOf for I256Wrapper {
                         fn size_of_children(&self, context: &mut size_of::Context) {}
                     }
-                    
+
                     impl From<[u8; 32]> for I256Wrapper {
                         fn from(value: [u8; 32]) -> Self {
                             Self { data: I256::from_be_bytes(value) }
                         }
                     }
-                    
+
                     impl From<&[u8]> for I256Wrapper {
                         fn from(value: &[u8]) -> Self {
                             let mut padded = [0u8; 32];
@@ -877,10 +877,10 @@ public class MetadataTests extends BaseSQLTests {
                             Self { data: I256::from_be_bytes(padded) }
                         }
                     }
-                    
+
                     impl MulByRef<Weight> for I256Wrapper {
                         type Output = Self;
-                    
+
                         fn mul_by_ref(&self, other: &Weight) -> Self::Output {
                             println!("Mul {:?} by {}", self, other);
                             Self {
@@ -889,39 +889,39 @@ public class MetadataTests extends BaseSQLTests {
                             }
                         }
                     }
-                    
+
                     impl HasZero for I256Wrapper {
                         fn zero() -> Self {
                             Self { data: I256::zero() }
                         }
-                    
+
                         fn is_zero(&self) -> bool {
                             self.data.is_zero()
                         }
                     }
-                    
+
                     impl AddByRef for I256Wrapper {
                         fn add_by_ref(&self, other: &Self) -> Self {
                             Self { data: self.data.add(other.data) }
                         }
                     }
-                    
+
                     impl AddAssignByRef<Self> for I256Wrapper {
                         fn add_assign_by_ref(&mut self, other: &Self) {
                             self.data += other.data
                         }
                     }
-                    
+
                     #[repr(C)]
                     #[derive(Debug, Copy, Clone, PartialOrd, Ord, Eq, PartialEq)]
                     pub struct ArchivedI256Wrapper {
                         pub bytes: [u8; 32],
                     }
-                    
+
                     impl rkyv::Archive for I256Wrapper {
                         type Archived = ArchivedI256Wrapper;
                         type Resolver = ();
-                    
+
                         #[inline]
                         unsafe fn resolve(&self, pos: usize, _: Self::Resolver, out: *mut Self::Archived) {
                             out.write(ArchivedI256Wrapper {
@@ -929,27 +929,27 @@ public class MetadataTests extends BaseSQLTests {
                             });
                         }
                     }
-                    
+
                     impl<S: Fallible + ?Sized> rkyv::Serialize<S> for I256Wrapper {
                         #[inline]
                         fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
                             Ok(())
                         }
                     }
-                    
+
                     impl<D: Fallible + ?Sized> rkyv::Deserialize<I256Wrapper, D> for ArchivedI256Wrapper {
                         #[inline]
                         fn deserialize(&self, _: &mut D) -> Result<I256Wrapper, D::Error> {
                             Ok(I256Wrapper::from(self.bytes))
                         }
                     }
-                    
+
                     pub type i128_sum_accumulator_type = I256Wrapper;
-                    
+
                     pub fn i128_sum_map(val: ByteArray) -> i128_sum_accumulator_type {
                         I256Wrapper::from(val.as_slice())
                     }
-                    
+
                     pub fn i128_sum_post(val: i128_sum_accumulator_type) -> ByteArray {
                         // Check for overflow
                         if val.data < I256::from(i128::MIN) || val.data > I256::from(i128::MAX) {
@@ -974,7 +974,7 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
-    public void testUDPValidation() {
+    public void testPreprocessorValidation() {
         this.statementsFailingInCompilation("""
                 CREATE TABLE T(x INT) WITH ('connectors' = '[{
                    "name": "0",
@@ -1077,7 +1077,7 @@ public class MetadataTests extends BaseSQLTests {
                         fn fork(&self) -> Box<dyn Preprocessor> {
                             Box::new(ExamplePreprocessor)
                         }
-                    
+
                         fn splitter(&self) -> Option<Box<dyn Splitter>> {
                             None
                         }
@@ -1091,6 +1091,97 @@ public class MetadataTests extends BaseSQLTests {
                             _config: &PreprocessorConfig,
                         ) -> Result<Box<dyn Preprocessor>, PreprocessorCreateError> {
                             Ok(Box::new(ExamplePreprocessor))
+                        }
+                    }""");
+            udfWriter.close();
+            File file = createInputScript(sql);
+            CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+            if (messages.errorCount() > 0)
+                throw new RuntimeException(messages.toString());
+            BaseSQLTests.compileAndTestRust(false);
+            // Truncate udf file to 0 bytes
+            FileWriter writer = new FileWriter(udf);
+            writer.close();
+        } finally {
+            // Restore cargo.toml
+            Files.copy(cargoBackup, cargo, StandardCopyOption.REPLACE_EXISTING);
+            Utilities.deleteFile(cargoBackup.toFile(), true);
+        }
+    }
+
+    @Test
+    public void testPostprocessorValidation() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT);
+                CREATE VIEW V WITH ('connectors' = '[{
+                   "name": "0",
+                   "postprocessor": [{
+                      "config": {}
+                   }]
+                }]') AS SELECT * FROM T;""", """
+                Compilation error: Postprocessor must have a field "name"
+                    4|   "postprocessor": [{
+                                           ^
+                    5|      "config": {}""");
+    }
+
+    @Test
+    public void testPostprocessor() throws IOException, InterruptedException, SQLException {
+        // Test user-defined postprocessor
+        String sql = """
+                CREATE TABLE T(x INT);
+                CREATE VIEW V WITH ('connectors' = '[{
+                   "postprocessor": [{
+                      "name": "example",
+                      "config": {}
+                   }],
+                   "config": {}
+                }]') AS SELECT * FROM T;""";
+
+        // Save a copy of cargo.toml
+        Path cargo = Paths.get(RUST_DIRECTORY, "..", "Cargo.toml");
+        Path cargoBackup = Paths.get(RUST_DIRECTORY, "..", "Cargo.toml.bak");
+        File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
+        try {
+            Files.copy(cargo, cargoBackup, StandardCopyOption.REPLACE_EXISTING);
+            String cargoContents = Utilities.readFile(cargo);
+            cargoContents = cargoContents.replace("[dependencies]",
+                    """
+                            [dependencies]
+                            feldera-adapterlib = { path = "../../crates/adapterlib" }
+                            """);
+            PrintWriter p = new PrintWriter(cargo.toFile(), StandardCharsets.UTF_8);
+            p.write(cargoContents);
+            p.close();
+
+            PrintWriter udfWriter = new PrintWriter(udf, StandardCharsets.UTF_8);
+            udfWriter.println("""
+                    use feldera_adapterlib::format::{ParseError, Splitter};
+                    use feldera_types::postprocess::PostprocessorConfig;
+                    use feldera_adapterlib::postprocess::{
+                        Postprocessor, PostprocessorCreateError, PostprocessorFactory,
+                    };
+
+                    pub struct ExamplePostprocessor;
+
+                    impl Postprocessor for ExamplePostprocessor {
+                        fn push_buffer(&mut self, data: &[u8]) -> anyhow::Result<Vec<u8>> {
+                            Ok(data.to_vec())
+                        }
+
+                        fn fork(&self) -> Box<dyn Postprocessor> {
+                            Box::new(ExamplePostprocessor)
+                        }
+                    }
+
+                    pub struct ExamplePostprocessorFactory;
+
+                    impl PostprocessorFactory for ExamplePostprocessorFactory {
+                        fn create(
+                            &self,
+                            _config: &PostprocessorConfig,
+                        ) -> Result<Box<dyn Postprocessor>, PostprocessorCreateError> {
+                            Ok(Box::new(ExamplePostprocessor))
                         }
                     }""");
             udfWriter.close();
@@ -1155,7 +1246,7 @@ public class MetadataTests extends BaseSQLTests {
                         str,
                         value)
                 }
-                
+
                 pub fn EMPTY() -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
                     udf::EMPTY()
                 }
@@ -1360,7 +1451,7 @@ public class MetadataTests extends BaseSQLTests {
         String sql = """
                 DECLARE RECURSIVE view fibonacci(n INT, value INT);
                 create table input (x int);
-                
+
                 create view fibonacci AS
                 (
                     -- Base case: first two Fibonacci numbers
@@ -1400,7 +1491,7 @@ public class MetadataTests extends BaseSQLTests {
         String sql = """
                 DECLARE RECURSIVE view fibonacci(n INT, value INT);
                 create table input (x int);
-                
+
                 create view fibonacci AS
                 (
                     -- Base case: first two Fibonacci numbers
@@ -1419,7 +1510,7 @@ public class MetadataTests extends BaseSQLTests {
                     on prev.n = curr.n - 1
                     where curr.n < 10 and prev.n < 10
                 );
-                
+
                 create view fib_outputs as select * from fibonacci;""";
         File file = createInputScript(sql);
         File json = this.createTempJsonFile();
@@ -1651,7 +1742,7 @@ public class MetadataTests extends BaseSQLTests {
                     'materialized' = 'true',
                     'append_only' = 'true'
                 );
-                
+
                 CREATE TABLE returns (
                     customer_id INT,
                     ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,
@@ -1659,7 +1750,7 @@ public class MetadataTests extends BaseSQLTests {
                 ) WITH (
                     'materialized' = 'true'
                 );
-                
+
                 CREATE TABLE customer (
                     customer_id INT,
                     ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 DAY,
@@ -1667,7 +1758,7 @@ public class MetadataTests extends BaseSQLTests {
                 ) WITH (
                     'materialized' = 'true'
                 );
-                
+
                 -- Daily MAX purchase amount.
                 CREATE MATERIALIZED VIEW daily_max AS
                 SELECT
@@ -1677,7 +1768,7 @@ public class MetadataTests extends BaseSQLTests {
                     purchase
                 GROUP BY
                     TIMESTAMP_TRUNC(ts, DAY);
-                
+
                 -- Daily total purchase amount.
                 CREATE MATERIALIZED VIEW daily_total AS
                 SELECT
@@ -1687,7 +1778,7 @@ public class MetadataTests extends BaseSQLTests {
                     purchase
                 GROUP BY
                     TIMESTAMP_TRUNC(ts, DAY);
-                
+
                 -- Like `daily_total`, but this view uses the 'emit_final' annotation to only
                 -- produce the final value of the aggregate at the end of each day.
                 CREATE MATERIALIZED VIEW daily_total_final
@@ -1700,7 +1791,7 @@ public class MetadataTests extends BaseSQLTests {
                     purchase
                 GROUP BY
                     TIMESTAMP_TRUNC(ts, DAY);
-                
+
                 -- Daily MAX purchase amount computed using tumbling windows.
                 CREATE MATERIALIZED VIEW daily_max_tumbling AS
                 SELECT
@@ -1713,7 +1804,7 @@ public class MetadataTests extends BaseSQLTests {
                     "SIZE" => INTERVAL 1 DAY))
                 GROUP BY
                     window_start;
-                
+
                 -- Daily MAX purchase amount computed as a rolling aggregate.
                 CREATE MATERIALIZED VIEW daily_max_rolling AS
                 SELECT
@@ -1722,7 +1813,7 @@ public class MetadataTests extends BaseSQLTests {
                     MAX(amount) OVER window_1_day
                 FROM purchase
                 WINDOW window_1_day AS (ORDER BY ts RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW);
-                
+
                 -- Use an OUTER JOIN to compute a daily transaction summary, including daily totals
                 -- from `purchase` and `returns` tables.
                 CREATE MATERIALIZED VIEW daily_totals AS
@@ -1753,7 +1844,7 @@ public class MetadataTests extends BaseSQLTests {
                     return_totals
                 ON
                     purchase_totals.purchase_date = return_totals.return_date;
-                
+
                 -- Use an ASOF JOIN to extract the customer’s address at the time of
                 -- purchase from the `customer` table.
                 CREATE MATERIALIZED VIEW purchase_with_address AS
@@ -1764,7 +1855,7 @@ public class MetadataTests extends BaseSQLTests {
                 FROM purchase
                 LEFT ASOF JOIN customer MATCH_CONDITION(purchase.ts >= customer.ts)
                 ON purchase.customer_id = customer.customer_id;
-                
+
                 -- Use LAG and LEAD operators to lookup previous and next purchase
                 -- amounts for each record in the `purchase` table.
                 CREATE MATERIALIZED VIEW purchase_with_prev_next AS
@@ -1776,7 +1867,7 @@ public class MetadataTests extends BaseSQLTests {
                     LEAD(amount) OVER(PARTITION BY customer_id ORDER BY ts) as next_amount
                 FROM
                     purchase;
-                
+
                 -- Temporal filter query that uses the current physical time (NOW())
                 -- to compute transactions made in the last 7 days.
                 CREATE MATERIALIZED VIEW recent_purchases AS
@@ -1801,7 +1892,7 @@ public class MetadataTests extends BaseSQLTests {
                    i INT,
                    s VARCHAR
                 );
-                
+
                 CREATE TABLE t (
                     i INT,
                     ti TINYINT,
@@ -1821,58 +1912,58 @@ public class MetadataTests extends BaseSQLTests {
                     s VARCHAR,
                     ms MY_STRUCT
                 ) with ('materialized' = 'true');
-                
+
                 CREATE FUNCTION bool2bool(i BOOLEAN) RETURNS BOOLEAN;
                 CREATE FUNCTION nbool2nbool(i BOOLEAN NOT NULL) RETURNS BOOLEAN NOT NULL;
-                
+
                 CREATE FUNCTION i2i(i INT) RETURNS INT;
                 CREATE FUNCTION ni2ni(i INT NOT NULL) RETURNS INT NOT NULL;
-                
+
                 CREATE FUNCTION ti2ti(i TINYINT) RETURNS TINYINT;
                 CREATE FUNCTION nti2nti(i TINYINT NOT NULL) RETURNS TINYINT NOT NULL;
-                
+
                 CREATE FUNCTION si2si(i SMALLINT) RETURNS SMALLINT;
                 CREATE FUNCTION nsi2nsi(i SMALLINT NOT NULL) RETURNS SMALLINT NOT NULL;
-                
+
                 CREATE FUNCTION bi2bi(i BIGINT) RETURNS BIGINT;
                 CREATE FUNCTION nbi2nbi(i BIGINT NOT NULL) RETURNS BIGINT NOT NULL;
-                
+
                 CREATE FUNCTION r2r(i REAL) RETURNS REAL;
                 CREATE FUNCTION nr2nr(i REAL NOT NULL) RETURNS REAL NOT NULL;
-                
+
                 CREATE FUNCTION d2d(i DOUBLE) RETURNS DOUBLE;
                 CREATE FUNCTION nd2nd(i DOUBLE NOT NULL) RETURNS DOUBLE NOT NULL;
-                
+
                 CREATE FUNCTION bin2bin(i VARBINARY) RETURNS VARBINARY;
                 CREATE FUNCTION nbin2nbin(i VARBINARY NOT NULL) RETURNS VARBINARY NOT NULL;
-                
+
                 CREATE FUNCTION date2date(i DATE) RETURNS DATE;
                 CREATE FUNCTION ndate2ndate(i DATE NOT NULL) RETURNS DATE NOT NULL;
-                
+
                 CREATE FUNCTION ts2ts(i TIMESTAMP) RETURNS TIMESTAMP;
                 CREATE FUNCTION nts2nts(i TIMESTAMP NOT NULL) RETURNS TIMESTAMP NOT NULL;
-                
+
                 CREATE FUNCTION t2t(i TIME) RETURNS TIME;
                 CREATE FUNCTION nt2nt(i TIME NOT NULL) RETURNS TIME NOT NULL;
-                
+
                 CREATE FUNCTION arr2arr(i INT ARRAY) RETURNS INT ARRAY;
                 CREATE FUNCTION narr2narr(i INT ARRAY NOT NULL) RETURNS INT ARRAY NOT NULL;
-                
+
                 CREATE FUNCTION map2map(i MAP<VARCHAR, VARCHAR>) RETURNS MAP<VARCHAR, VARCHAR>;
                 CREATE FUNCTION nmap2nmap(i MAP<VARCHAR, VARCHAR> NOT NULL) RETURNS MAP<VARCHAR, VARCHAR> NOT NULL;
-                
+
                 CREATE FUNCTION var2var(i VARIANT) RETURNS VARIANT;
                 CREATE FUNCTION nvar2nvar(i VARIANT NOT NULL) RETURNS VARIANT NOT NULL;
-                
+
                 CREATE FUNCTION dec2dec(i DECIMAL(7, 2)) RETURNS DECIMAL(7, 2);
                 CREATE FUNCTION ndec2ndec(i DECIMAL(7, 2) NOT NULL) RETURNS DECIMAL(7, 2) NOT NULL;
-                
+
                 CREATE FUNCTION str2str(i VARCHAR) RETURNS VARCHAR;
                 CREATE FUNCTION nstr2nstr(i VARCHAR NOT NULL) RETURNS VARCHAR NOT NULL;
-                
+
                 CREATE FUNCTION struct2struct(i my_struct) RETURNS my_struct;
                 CREATE FUNCTION nstruct2nstruct(i my_struct NOT NULL) RETURNS my_struct NOT NULL;
-                
+
                 CREATE MATERIALIZED VIEW v AS
                 SELECT
                     bool2bool(b),
@@ -2037,7 +2128,7 @@ public class MetadataTests extends BaseSQLTests {
                     }
                   }
                 ]');
-                
+
                 create view v as select trans_date_trans_time, cc_num, amt, is_fraud from transaction;""";
         File json = this.createTempJsonFile();
         File file = createInputScript(sql);

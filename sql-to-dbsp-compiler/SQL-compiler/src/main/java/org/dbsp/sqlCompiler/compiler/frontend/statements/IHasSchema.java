@@ -98,6 +98,44 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
         }
     }
 
+    /** Collect the names of all postprocessors from the Properties */
+    default void collectPostprocessors(Set<String> result) {
+        Properties props = this.getProperties();
+        if (props != null) {
+            var connectors = props.getPropertyValue(CreateTableStatement.CONNECTORS);
+            if (connectors != null) {
+                Result<JsonNode> validation = Utilities.validateJson(connectors);
+                if (validation.isErr())
+                    // Validation errors are handled in the compiler front-end,
+                    // so this should not really happen.
+                    return;
+
+                JsonNode json = validation.data();
+                Utilities.enforce(json != null);
+                // None of these "if" statements should "fail" after validation
+                if (json.isArray()) {
+                    for (Iterator<JsonNode> it = json.elements(); it.hasNext(); ) {
+                        JsonNode connector = it.next();
+                        JsonNode preprocess = connector.get(CreateViewStatement.POSTPROCESSOR);
+                        if (preprocess != null) {
+                            if (preprocess.isArray()) {
+                                for (Iterator<JsonNode> p = preprocess.elements(); p.hasNext(); ) {
+                                    JsonNode config = p.next();
+                                    if (config.has("name")) {
+                                        JsonNode name = config.get("name");
+                                        if (name.isTextual()) {
+                                            result.add(name.asText());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /** A reduced version of IHasSchema which contains only information that can be obtained from
      * deserializing JSON */
     class AbstractIHasSchema implements IHasSchema {

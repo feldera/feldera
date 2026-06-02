@@ -120,7 +120,7 @@ public class ToRustVisitor extends CircuitVisitor {
      *         pub static sourceMap: OnceCell<SourceMap> = ...;
      *         let hash = Some("10293481029348102934");
      *         let (input, handle0) = circuit.add_input_zset::<TestStruct, i32>();
-     *         handle0.set_persistent_hash(hash);
+     *         handle0.set_persistent_id(hash);
      *         catalog.register_input_zset(input, handles.0, input0_metadata);
      *         catalog.register_output_zset_persistent(hash, input, output0_metadata);
      *         Ok(catalog)
@@ -267,11 +267,12 @@ public class ToRustVisitor extends CircuitVisitor {
         return decl.item.is(DBSPStaticItem.class) || decl.item.is(DBSPFunctionItem.class);
     }
 
-    public static void registerPreprocessors(DBSPCompiler compiler, IIndentStream builder) {
+    public static void registerPreAndPostprocessors(DBSPCompiler compiler, IIndentStream builder) {
         // Scan the input table connectors to discover preprocessor declarations
         // Insert a call to the PreprocessorRegistry for each kind of preprocessor.
         Set<String> preprocessors = compiler.metadata.getPreprocessors();
-        if (!preprocessors.isEmpty()) {
+        Set<String> postprocessors = compiler.metadata.getPostprocessors();
+        if (!preprocessors.isEmpty() || !postprocessors.isEmpty()) {
             builder.append("if Runtime::worker_index() == 0 {").increase();
             // This code is executed on all worker threads, but only register the preprocessor factory in worker 0
             for (String pre : preprocessors) {
@@ -283,6 +284,18 @@ public class ToRustVisitor extends CircuitVisitor {
                         .append("Box::new(")
                         .append(normalized)
                         .append("PreprocessorFactory));")
+                        .newline();
+            }
+
+            for (String post : postprocessors) {
+                String normalized = post.substring(0, 1).toUpperCase(Locale.ENGLISH) + post.substring(1);
+                builder.append("catalog.postprocessor_registry()").newline()
+                        .append(".lock().unwrap().register(\"")
+                        .append(post.toLowerCase(Locale.ENGLISH))
+                        .append("\", ")
+                        .append("Box::new(")
+                        .append(normalized)
+                        .append("PostprocessorFactory));")
                         .newline();
             }
             builder.decrease().append("}").newline();
@@ -358,7 +371,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     this.builder, CircuitWriter.SOURCE_MAP_VARIABLE_NAME, this.getCircuitName());
         }
 
-        registerPreprocessors(this.compiler, this.builder);
+        registerPreAndPostprocessors(this.compiler, this.builder);
 
         for (DBSPDeclaration decl: circuit.declarations) {
             if (this.declareInside(decl)) {
