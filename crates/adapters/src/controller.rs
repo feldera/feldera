@@ -6270,7 +6270,7 @@ impl ControllerInner {
         .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
 
         if let Some(max_queued_records) = resolved_connector_config.max_queued_records
-            && !resolved_connector_config.max_queued_bytes.is_none()
+            && resolved_connector_config.max_queued_bytes.is_some()
         {
             let max_queued_bytes = resolved_connector_config.max_queued_bytes();
             warn!(
