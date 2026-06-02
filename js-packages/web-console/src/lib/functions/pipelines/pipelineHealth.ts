@@ -232,14 +232,10 @@ const formatScalar = (v: unknown) => (v == null || v === '' ? NONE : String(v))
 const formatJson = (v: unknown) =>
   v == null || v === '' ? NONE : '\n' + JSON.stringify(v, null, 2)
 
-// Render a status, appending the desired value only when it is present and
-// differs from the current one, e.g. "Running (desired is Stopped)".
+// Render a status, always appending the desired value:"Running (desired is Stopped)".
 const formatStatusWithDesired = (current: unknown, desired: unknown) => {
   const base = formatScalar(current)
-  if (desired == null || desired === '' || String(desired) === String(current)) {
-    return base
-  }
-  return `${base} (desired is ${String(desired)})`
+  return `${base}, desired is ${desired ?? `(none)`}`
 }
 
 export function formatPipelineEventDescription(e: PipelineMonitorEventSelectedInfo): string {
