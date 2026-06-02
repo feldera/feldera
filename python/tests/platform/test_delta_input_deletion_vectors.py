@@ -1,16 +1,13 @@
 """Snapshot read of a Delta table with deletion vectors.
 
 PySpark seeds the fixture (delta-rs cannot write DVs). The builder lives in
-``_dv_fixture_builder.py`` and runs via ``uv run --with delta-spark`` so the
-Spark/JVM wheels are only fetched on cache miss.
+``fixtures/deletion_vectors.py`` and runs via ``uv run --with delta-spark`` so
+the Spark/JVM wheels are only fetched on cache miss.
 """
 
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 
 from feldera import PipelineBuilder
@@ -18,7 +15,7 @@ from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
 
 from tests import TEST_CLIENT
-from tests.utils import DeltaTestLocation
+from tests.utils import DeltaTestLocation, ensure_delta_spark_fixture
 
 
 TABLE = "dv_data"
@@ -29,8 +26,8 @@ EXPECTED_ROWS_AFTER_DV = 100
 FIXTURE_VERSION = "dv_snapshot_v1"
 
 # Spark builder that writes the DV-enabled table. It runs in a subprocess
-# (see _ensure_dv_snapshot_fixture) rather than being imported here.
-_FIXTURE_BUILDER = Path(__file__).parent / "_dv_fixture_builder.py"
+# (see ensure_delta_spark_fixture) rather than being imported here.
+_FIXTURE_BUILDER = Path(__file__).parent / "fixtures" / "deletion_vectors.py"
 
 
 def _log_has_dv_entries(loc: DeltaTestLocation) -> bool:
@@ -55,67 +52,6 @@ def _log_has_dv_entries(loc: DeltaTestLocation) -> bool:
             if (action.get("add") or {}).get("deletionVector"):
                 return True
     return False
-
-
-def _ensure_dv_snapshot_fixture(loc: DeltaTestLocation) -> None:
-    """Build the DV fixture if absent; reuse the cached copy otherwise.
-
-    The fixture lives at a shared, commit-independent path
-    (``stable_subpath``), so the Spark build runs at most once per
-    ``FIXTURE_VERSION`` and later runs just read the cached table.
-    """
-    if _log_has_dv_entries(loc):
-        return
-
-    if shutil.which("uv") is None:
-        raise RuntimeError(
-            "`uv` is required on PATH to rebuild the DV fixture "
-            "(builder runs via `uv run --with delta-spark`)."
-        )
-
-    # Stage in a temp dir so a half-finished build cannot leak into the upload.
-    # Writing DV-enabled Delta tables needs the Delta Lake Spark JARs;
-    # `delta-spark` is the clean way to pull them plus a matching pyspark
-    # (see _dv_fixture_builder.py for why not bare pyspark). `uv run --with`
-    # installs the stack only on this rare rebuild path.
-    staging = Path(tempfile.mkdtemp(prefix="feldera_dv_stage_"))
-    try:
-        subprocess.run(
-            [
-                "uv",
-                "run",
-                "--with",
-                "delta-spark>=4.2,<5",
-                "python",
-                str(_FIXTURE_BUILDER),
-                str(staging),
-                str(TOTAL_ROWS),
-                str(EXPECTED_ROWS_AFTER_DV),
-            ],
-            check=True,
-        )
-        # Upload data files first, then _delta_log in version order, so a
-        # reader observing mid-upload never sees a log referencing a missing
-        # parquet.
-        if loc.local_dir is not None:
-            if loc.local_dir.exists():
-                shutil.rmtree(loc.local_dir)
-            shutil.copytree(staging, loc.local_dir)
-        else:
-            fs = loc._s3_filesystem()
-            files = [f for f in sorted(staging.rglob("*")) if f.is_file()]
-            for f in sorted(files, key=lambda p: ("_delta_log" in p.parts, p.name)):
-                rel = f.relative_to(staging).as_posix()
-                with fs.open_output_stream(f"{loc.root_path}/{rel}") as out:
-                    out.write(f.read_bytes())
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
-
-    if not _log_has_dv_entries(loc):
-        raise RuntimeError(
-            f"DV fixture at {loc.uri} has no deletion-vector log entries "
-            "after upload — partial upload, or DV-stripping middleware?"
-        )
 
 
 def _build_sql(loc: DeltaTestLocation) -> str:
@@ -147,7 +83,12 @@ def test_delta_input_snapshot_with_deletion_vectors(pipeline_name):
         stable_subpath=FIXTURE_VERSION,
     )
     try:
-        _ensure_dv_snapshot_fixture(loc)
+        ensure_delta_spark_fixture(
+            loc,
+            _FIXTURE_BUILDER,
+            [TOTAL_ROWS, EXPECTED_ROWS_AFTER_DV],
+            is_present=_log_has_dv_entries,
+        )
 
         pipeline = PipelineBuilder(
             TEST_CLIENT,
