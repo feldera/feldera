@@ -7965,7 +7965,8 @@
               "max_queued_records": {
                 "type": "integer",
                 "format": "int64",
-                "description": "Backpressure threshold, in records.\n\nMaximal number of records queued by the endpoint before the endpoint\nis paused by the backpressure mechanism.\n\nFor input endpoints, this setting bounds the number of records that have\nbeen received from the input transport but haven't yet been consumed by\nthe circuit since the circuit, since the circuit is still busy processing\nprevious inputs.\n\nFor output endpoints, this setting bounds the number of records that have\nbeen produced by the circuit but not yet sent via the output transport endpoint\nnor stored in the output buffer (see `enable_output_buffer`).\n\nNote that this is not a hard bound: there can be a small delay between\nthe backpressure mechanism is triggered and the endpoint is paused, during\nwhich more data may be queued.\n\nThe default is 1 million.",
+                "description": "Backpressure threshold, in records.\n\nMaximal number of records queued by the endpoint before the endpoint\nis paused by the backpressure mechanism.\n\nFor input endpoints, this setting bounds the number of records that have\nbeen received from the input transport but haven't yet been consumed by\nthe circuit, since the circuit is still busy processing previous inputs.\n\nFor output endpoints, this setting bounds the number of records that have\nbeen produced by the circuit but not yet sent via the output transport endpoint\nnor stored in the output buffer (see `enable_output_buffer`).\n\nNote that this is not a hard bound: there can be a small delay between\nthe backpressure mechanism is triggered and the endpoint is paused, during\nwhich more data may be queued.\n\nThe default is 1 million.",
+                "nullable": true,
                 "minimum": 0
               },
               "max_worker_batch_size": {

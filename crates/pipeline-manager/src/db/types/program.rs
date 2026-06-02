@@ -838,7 +838,7 @@ pub fn generate_pipeline_config(
 
 #[cfg(test)]
 mod tests {
-    use super::{RuntimeSelector, determine_connector_endpoint_names};
+    use super::{determine_connector_endpoint_names, RuntimeSelector};
     use crate::db::types::program::ConnectorGenerationError::RelationConnectorNameCollision;
     use feldera_types::config::{ConnectorConfig, TransportConfig};
     use feldera_types::program_schema::{PropertyValue, SourcePosition};
