@@ -348,18 +348,17 @@ describe('formatPipelineEventDescription', () => {
     expect(out).toContain('deployment_runtime_status_details: (none)')
   })
 
-  it('omits the desired suffix when desired matches the current status', () => {
+  it('still appends the desired suffix when desired matches the current status', () => {
     const out = formatPipelineEventDescription(
       makeEvent({
         deployment_resources_status: 'Provisioned',
         deployment_resources_desired_status: 'Provisioned'
       })
     )
-    expect(out).toContain('deployment_resources_status: Provisioned')
-    expect(out).not.toContain('desired is')
+    expect(out).toContain('deployment_resources_status: Provisioned, desired is Provisioned')
   })
 
-  it('appends "(desired is X)" when desired differs from the current status', () => {
+  it('appends ", desired is X" when desired differs from the current status', () => {
     const out = formatPipelineEventDescription(
       makeEvent({
         deployment_resources_status: 'Provisioned',
@@ -368,11 +367,13 @@ describe('formatPipelineEventDescription', () => {
         deployment_runtime_desired_status: 'Suspended'
       })
     )
-    expect(out).toContain('deployment_resources_status: Provisioned (desired is Stopped)')
-    expect(out).toContain('deployment_runtime_status: Running (desired is Suspended)')
+    expect(out).toContain('deployment_resources_status: Provisioned, desired is Stopped')
+    expect(out).toContain('deployment_runtime_status: Running, desired is Suspended')
   })
 
-  it('omits the desired suffix when the desired status is nullish', () => {
+  it('renders the desired suffix verbatim when the desired status is nullish', () => {
+    // The suffix is now unconditional, so a nullish desired status is
+    // stringified ("null"/"undefined") rather than suppressed.
     const out = formatPipelineEventDescription(
       makeEvent({
         storage_status: undefined,
@@ -383,9 +384,8 @@ describe('formatPipelineEventDescription', () => {
       })
     )
     expect(out).toContain('storage_status: (none)')
-    expect(out).toContain('deployment_resources_status: Stopped')
-    expect(out).toContain('deployment_runtime_status: (none)')
-    expect(out).not.toContain('desired is')
+    expect(out).toContain('deployment_resources_status: Stopped, desired is (none)')
+    expect(out).toContain('deployment_runtime_status: (none), desired is (none)')
   })
 
   it('renders deployment_error fields when present', () => {
