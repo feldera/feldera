@@ -24,6 +24,12 @@ env:
   # too many parallel linkers. Override at the org/repo level via the
   # CI_RUNNER_CORES variable; the fallback matches the current 20-core pod.
   CARGO_BUILD_JOBS: ${{ vars.CI_RUNNER_CORES || 20 }}
+  # Tune cache (de)compression for speed over ratio. On a 100G network the
+  # larger archive is free, while fast zstd cuts the multi-GB target/ cache
+  # restore from ~30min (gzip) to a few minutes. Honored by feldera-minio-cache
+  # (runs-on/cache); requires the zstd CLI in the dev image.
+  ZSTD_CLEVEL: 1
+  ZSTD_NBTHREADS: ${{ vars.CI_RUNNER_CORES || 20 }}
 
 jobs:
   java-tests:
@@ -38,15 +44,20 @@ jobs:
         runner:
           - [k8s-runners-amd64]
           - [k8s-runners-arm64]
+        # Three shards balanced by measured @Test method count (~500 each),
+        # not by alphabet halves. The heavy letters R (Regression*) and P
+        # (Postgres*) are indivisible, so R-Z stays slightly heavier.
         shard:
-          - name: A-M
-            pattern: "A*,B*,C*,D*,E*,F*,G*,H*,I*,J*,K*,L*,M*"
-          - name: N-Z
-            pattern: "N*,O*,P*,Q*,R*,S*,T*,U*,V*,W*,X*,Y*,Z*"
+          - name: A-I
+            pattern: "A*,B*,C*,D*,E*,F*,G*,H*,I*"
+          - name: J-Q
+            pattern: "J*,K*,L*,M*,N*,O*,P*,Q*"
+          - name: R-Z
+            pattern: "R*,S*,T*,U*,V*,W*,X*,Y*,Z*"
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-10eb6201fa611ae20a8876f51e2071a9ff53232f
+      image: ghcr.io/feldera/feldera-dev:sha-1d28eb77112e15b366a9ffa56571568afd1dd062
     steps:
       - name: Show Kubernetes node
         if: always()
@@ -111,10 +122,10 @@ jobs:
         working-directory: ./sql-to-dbsp-compiler
         if: ${{ vars.CI_DRY_RUN != 'true' }}
 
-      # Quick SLT smoke check; runs once per arch on the A-M shard so it isn't
+      # Quick SLT smoke check; runs once per arch on the A-I shard so it isn't
       # duplicated across shards (the explicit -Dtest selector is independent
       # of the shard pattern).
       - name: Run one quick SLT test
-        if: ${{ vars.CI_DRY_RUN != 'true' && matrix.shard.name == 'A-M' }}
+        if: ${{ vars.CI_DRY_RUN != 'true' && matrix.shard.name == 'A-I' }}
         run: mvn test --no-transfer-progress -B -Dsurefire.failIfNoSpecifiedTests=false -Dtest=RotateTests#quick
         working-directory: ./sql-to-dbsp-compiler

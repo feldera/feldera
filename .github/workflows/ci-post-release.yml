@@ -121,7 +121,7 @@ jobs:
   adjust-versions:
     runs-on: [k8s-runners-amd64]
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-10eb6201fa611ae20a8876f51e2071a9ff53232f
+      image: ghcr.io/feldera/feldera-dev:sha-1d28eb77112e15b366a9ffa56571568afd1dd062
     steps:
       - name: Show Kubernetes node
         if: always()
