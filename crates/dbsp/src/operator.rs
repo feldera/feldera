@@ -97,9 +97,6 @@ pub use transaction_z1::TransactionZ1;
 pub use z1::{DelayedFeedback, DelayedNestedFeedback, Z1, Z1Nested};
 
 /// Returns a `NoPersistentId` error if `persistent_id` is `None`.
-fn require_persistent_id<'a>(
-    persistent_id: Option<&'a str>,
-    id: impl Display,
-) -> Result<&'a str, Error> {
+fn require_persistent_id(persistent_id: Option<&str>, id: impl Display) -> Result<&str, Error> {
     persistent_id.ok_or_else(|| Error::Storage(StorageError::NoPersistentId(id.to_string())))
 }
