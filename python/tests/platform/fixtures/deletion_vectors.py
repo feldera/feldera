@@ -7,26 +7,24 @@ compatible ``pyspark`` and ships ``configure_spark_with_delta_pip``, which
 auto-resolves the matching Delta JAR. Bare ``pyspark`` could write Delta too,
 but only by hardcoding the Delta Maven coordinate and Scala suffix and keeping
 them in lockstep with the pyspark version — fragile, and no cheaper (the JARs
-download at runtime either way). The companion test invokes this file with::
+download at runtime either way). ``tests.utils.ensure_delta_spark_fixture``
+invokes this file with::
 
-    uv run --with "delta-spark>=4.2,<5" python _dv_fixture_builder.py \\
+    uv run --with "delta-spark>=4.2,<5" python deletion_vectors.py \\
         <dest> <total_rows> <expected_active>
 
 It writes ``total_rows`` rows to ``dest`` with DVs enabled, runs a ``DELETE``
 on the even ``id`` rows that produces deletion vectors, then asserts that
 exactly ``expected_active`` rows remain readable.
-
-The ``_`` prefix keeps pytest from collecting this module as a test; it is only
-ever run as a subprocess.
 """
 
 import sys
 
-from pyspark.sql import SparkSession
-from delta import configure_spark_with_delta_pip
-
 
 def main() -> None:
+    from delta import configure_spark_with_delta_pip
+    from pyspark.sql import SparkSession
+
     dest = sys.argv[1]
     total_rows = int(sys.argv[2])
     expected_active = int(sys.argv[3])

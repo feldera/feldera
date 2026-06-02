@@ -2,9 +2,11 @@ import logging
 import os
 import pathlib
 import shutil
+import subprocess
 import tempfile
 import time
 import uuid
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -248,6 +250,39 @@ class DeltaTestLocation:
             raise
         return dt.count()
 
+    def table_exists(self) -> bool:
+        """Return True when a Delta log is present at this location.
+
+        Used to decide whether a cached fixture (see ``stable_subpath``) can
+        be reused instead of rebuilt.
+        """
+        try:
+            return len(self.log_json_paths()) > 0
+        except FileNotFoundError:
+            return False
+
+    def _place_tree(self, staging: pathlib.Path) -> None:
+        """Place a locally-built Delta table tree onto this location's backend.
+
+        Some fixtures can only be produced on the local filesystem (e.g. a
+        PySpark-written table) yet must be read back from the configured
+        backend. Local targets are replaced wholesale; S3/MinIO targets get
+        the data files first and ``_delta_log`` last, so a reader observing
+        the upload mid-flight never sees a log referencing a missing parquet.
+        """
+        if self.local_dir is not None:
+            if self.local_dir.exists():
+                shutil.rmtree(self.local_dir)
+            shutil.copytree(staging, self.local_dir)
+            return
+
+        fs = self._s3_filesystem()
+        files = [path for path in sorted(staging.rglob("*")) if path.is_file()]
+        for path in sorted(files, key=lambda p: ("_delta_log" in p.parts, p.name)):
+            rel = path.relative_to(staging).as_posix()
+            with fs.open_output_stream(f"{self.root_path}/{rel}") as out:
+                out.write(path.read_bytes())
+
     def cleanup(self) -> None:
         """Remove the local temp directory, if any.
 
@@ -264,6 +299,73 @@ class DeltaTestLocation:
         if self.local_dir is not None and not self.stable:
             shutil.rmtree(self.local_dir, ignore_errors=True)
             self.local_dir = None
+
+
+def ensure_delta_spark_fixture(
+    loc: DeltaTestLocation,
+    builder_script: str | os.PathLike[str],
+    builder_args: Sequence[object] = (),
+    *,
+    delta_spark_spec: str = "delta-spark>=4.2,<5",
+    is_present: Callable[[DeltaTestLocation], bool] | None = None,
+) -> None:
+    """Ensure a PySpark-authored Delta fixture exists at ``loc`` (cached).
+
+    Some Delta features (deletion vectors, column-mapping schema evolution)
+    can only be written by Delta Spark, not by delta-rs or the ``deltalake``
+    wheel. This builds such a fixture once and reuses it:
+
+    * If the fixture is already present (``is_present``, defaulting to
+      :meth:`DeltaTestLocation.table_exists`), do nothing — so a
+      ``stable_subpath`` cache is reused across runs.
+    * Otherwise run ``builder_script`` in an isolated environment
+      (``uv run --with <delta_spark_spec> python <builder_script> <staging>
+      *builder_args``), staging into a temp dir so a half-finished build can
+      never leak into the upload, then place the tree onto ``loc``'s backend.
+
+    The heavy PySpark + JVM stack is pulled only on this rare rebuild path.
+
+    :param builder_script: Path to a standalone script that writes a Delta
+        table to the directory given as its first argument.
+    :param builder_args: Extra positional arguments passed after the staging
+        directory (stringified).
+    :param is_present: Predicate deciding whether the fixture already exists;
+        also re-checked after upload to catch partial uploads.
+    """
+    present = is_present if is_present is not None else DeltaTestLocation.table_exists
+    if present(loc):
+        return
+
+    if shutil.which("uv") is None:
+        raise RuntimeError(
+            "`uv` is required on PATH to build the PySpark Delta fixture "
+            f"(builder runs via `uv run --with {delta_spark_spec}`)."
+        )
+
+    staging = pathlib.Path(tempfile.mkdtemp(prefix="feldera_delta_fixture_"))
+    try:
+        subprocess.run(
+            [
+                "uv",
+                "run",
+                "--with",
+                delta_spark_spec,
+                "python",
+                str(builder_script),
+                str(staging),
+                *(str(arg) for arg in builder_args),
+            ],
+            check=True,
+        )
+        loc._place_tree(staging)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+    if not present(loc):
+        raise RuntimeError(
+            f"Delta fixture at {loc.uri} is still absent after upload — "
+            "partial upload, or content-stripping middleware?"
+        )
 
 
 def wait_for_condition(
