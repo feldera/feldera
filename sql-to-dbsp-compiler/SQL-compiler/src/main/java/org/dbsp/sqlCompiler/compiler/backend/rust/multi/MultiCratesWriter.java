@@ -90,6 +90,7 @@ public final class MultiCratesWriter extends RustWriter {
                 debug = "line-tables-only"
 
                 [workspace.dependencies]
+                anyhow = { version = "1.0.91" }
                 arcstr = { version = "1.2.0" }
                 paste = { version = "1.0.12" }
                 derive_more = { version = "1.0.0", features = ["add", "not", "from"] }

@@ -5,6 +5,7 @@
 //! endpoint configs.  We represent these configs as opaque JSON values, so
 //! that the entire configuration tree can be deserialized from a JSON file.
 
+use crate::postprocess::PostprocessorConfig;
 use crate::preprocess::PreprocessorConfig;
 use crate::secret_resolver::default_secrets_directory;
 use crate::transport::adhoc::AdHocInputConfig;
@@ -1547,11 +1548,16 @@ pub struct ConnectorConfig {
     /// Transport endpoint configuration.
     pub transport: TransportConfig,
 
+    /// Optional preprocessor configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preprocessor: Option<Vec<PreprocessorConfig>>,
 
     /// Parser configuration.
     pub format: Option<FormatConfig>,
+
+    /// Optional postprocessor configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub postprocessor: Option<Vec<PostprocessorConfig>>,
 
     /// Name of the index that the connector is attached to.
     ///
@@ -1674,6 +1680,7 @@ impl ConnectorConfig {
             transport,
             preprocessor: None,
             format,
+            postprocessor: None,
             index: None,
             output_buffer_config: Default::default(),
             max_batch_size: None,

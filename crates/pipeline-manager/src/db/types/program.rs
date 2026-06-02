@@ -897,6 +897,7 @@ mod tests {
             transport: TransportConfig::Datagen(DatagenInputConfig::default()),
             format: None,
             preprocessor: None,
+            postprocessor: None,
             index: None,
             output_buffer_config: Default::default(),
             max_batch_size: Some(0),

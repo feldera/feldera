@@ -2052,16 +2052,21 @@ public class SqlToRelCompiler implements IWritesLogs {
                 }
                 JsonNode preprocessor = connector.get(CreateTableStatement.PREPROCESSOR);
                 if (preprocessor != null) {
+                    if (!isTable) {
+                        SourcePositionRange pos = elementPositionRange(value, ".", false);
+                        throw new CompilationError("\"preprocessor\" property for " +
+                                objectName + " must be attached to a table", pos);
+                    }
                     String pp = path + "/preprocessor";
                     if (!preprocessor.isArray()) {
                         SourcePositionRange pos = elementPositionRange(value, pp, false);
-                        throw new CompilationError("Preprocessor property for " +
+                        throw new CompilationError("\"preprocessor\" property for " +
                                 objectName + " must be an array", pos);
                     }
                     ArrayNode preprocessors = (ArrayNode) preprocessor;
                     if (preprocessors.size() != 1) {
                         SourcePositionRange pos = elementPositionRange(value, pp, false);
-                        throw new CompilationError("Preprocessor property for " +
+                        throw new CompilationError("\"preprocessor\" property for " +
                                 objectName + " must be an array with exactly 1 element", pos);
                     }
                     JsonNode preConf = preprocessors.get(0);
@@ -2077,7 +2082,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     String preName = preConf.get("name").asText();
                     if (!Utilities.isLegalRustIdentifier(preName)) {
                         SourcePositionRange pos = elementPositionRange(value, pp0 + "/name", true);
-                        throw new CompilationError("The value of preprocessor field \"name\": "
+                        throw new CompilationError("The value of Preprocessor field \"name\": "
                                 + Utilities.doubleQuote(preName, false) + " must be a legal Rust identifier", pos);
                     }
                     if (!preConf.has(CreateTableStatement.MESSAGE_ORIENTED)) {
@@ -2095,6 +2100,46 @@ public class SqlToRelCompiler implements IWritesLogs {
                     if (!preConf.has("config") || !preConf.get("config").isObject()) {
                         SourcePositionRange pos = elementPositionRange(value, pp0 + "/config", true);
                         throw new CompilationError("Preprocessor field \"config\" must be a JSON object", pos);
+                    }
+                }
+                JsonNode postprocessor = connector.get(CreateViewStatement.POSTPROCESSOR);
+                if (postprocessor != null) {
+                    if (isTable) {
+                        SourcePositionRange pos = elementPositionRange(value, ".", false);
+                        throw new CompilationError("\"postprocessor\" property for " +
+                                objectName + " must be attached to a view", pos);
+                    }
+                    String pp = path + "/postprocessor";
+                    if (!postprocessor.isArray()) {
+                        SourcePositionRange pos = elementPositionRange(value, pp, false);
+                        throw new CompilationError("\"postprocessor\" property for " +
+                                objectName + " must be an array", pos);
+                    }
+                    ArrayNode postprocessors = (ArrayNode) postprocessor;
+                    if (postprocessors.size() != 1) {
+                        SourcePositionRange pos = elementPositionRange(value, pp, false);
+                        throw new CompilationError("\"postprocessor\" property for " +
+                                objectName + " must be an array with exactly 1 element", pos);
+                    }
+                    JsonNode postConf = postprocessors.get(0);
+                    String pp0 = pp + "/0";
+                    if (!postConf.has("name")) {
+                        SourcePositionRange pos = elementPositionRange(value, pp0, false);
+                        throw new CompilationError("Postprocessor must have a field \"name\"", pos);
+                    }
+                    if (!postConf.get("name").isTextual()) {
+                        SourcePositionRange pos = elementPositionRange(value, pp0 + "/name", true);
+                        throw new CompilationError("Postprocessor field \"name\" must be a string", pos);
+                    }
+                    String postName = postConf.get("name").asText();
+                    if (!Utilities.isLegalRustIdentifier(postName)) {
+                        SourcePositionRange pos = elementPositionRange(value, pp0 + "/name", true);
+                        throw new CompilationError("The value of Postprocessor field \"name\": "
+                                + Utilities.doubleQuote(postName, false) + " must be a legal Rust identifier", pos);
+                    }
+                    if (!postConf.has("config") || !postConf.get("config").isObject()) {
+                        SourcePositionRange pos = elementPositionRange(value, pp0 + "/config", true);
+                        throw new CompilationError("Postprocessor field \"config\" must be a JSON object", pos);
                     }
                 }
             }

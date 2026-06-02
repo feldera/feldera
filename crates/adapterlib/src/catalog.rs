@@ -27,6 +27,7 @@ use std::collections::HashMap;
 
 use crate::errors::controller::ControllerError;
 use crate::format::InputBuffer;
+use crate::postprocess::PostprocessorRegistry;
 use crate::preprocess::PreprocessorRegistry;
 
 /// Descriptor that specifies the format in which records are received
@@ -1119,6 +1120,9 @@ pub trait CircuitCatalog: Send + Sync {
 
     /// The registry used to insert new user-defined preprocessors
     fn preprocessor_registry(&self) -> Arc<Mutex<PreprocessorRegistry>>;
+
+    /// The registry used to insert new user-defined postprocessors
+    fn postprocessor_registry(&self) -> Arc<Mutex<PostprocessorRegistry>>;
 }
 
 #[doc(hidden)]

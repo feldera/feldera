@@ -158,7 +158,9 @@ use crate::adhoc::execute_sql;
 use crate::adhoc::table::AdHocTable;
 use crate::catalog::{SerBatch, SerBatchReader, SerTrace};
 use crate::format::parquet::relation_to_arrow_fields;
-use crate::format::{MessageOrientedPreprocessedParser, StreamingPreprocessedParser};
+use crate::format::{
+    MessageOrientedPreprocessedParser, PostprocessedConsumer, StreamingPreprocessedParser,
+};
 use crate::format::{get_input_format, get_output_format};
 use crate::integrated::create_integrated_input_endpoint;
 pub use error::{ConfigError, ControllerError};
@@ -6693,18 +6695,89 @@ impl ControllerInner {
             let format = get_output_format(&format_config.name).ok_or_else(|| {
                 ControllerError::unknown_output_format(endpoint_name, &format_config.name)
             })?;
+
+            // Wrap probe with a postprocessor when the connector specifies one.
+            let consumer: Box<dyn feldera_adapterlib::format::OutputConsumer> = if let Some(vec) =
+                &endpoint_config.connector_config.postprocessor
+            {
+                if vec.len() != 1 {
+                    return Err(ControllerError::PostprocessorCreateError {
+                        endpoint_name: endpoint_name.to_string(),
+                        error: "Currently exactly one postprocessor can be specified".to_string(),
+                    });
+                }
+                let config = &vec[0];
+                if let Some(factory) = self
+                    .catalog
+                    .postprocessor_registry()
+                    .lock()
+                    .unwrap()
+                    .get(&config.name)
+                {
+                    debug!(
+                        "Endpoint {0} creating postprocessor for {1}",
+                        endpoint_name, config.name
+                    );
+                    match factory.create(config) {
+                        Err(e) => {
+                            return Err(ControllerError::PostprocessorCreateError {
+                                endpoint_name: endpoint_name.to_string(),
+                                error: format!("Error creating postprocessor configuration: {e}"),
+                            });
+                        }
+                        Ok(post) => {
+                            let controller = self.clone();
+                            let endpoint_name_owned = endpoint_name.to_string();
+                            Box::new(PostprocessedConsumer::new(
+                                probe,
+                                post,
+                                Box::new(move |e| {
+                                    controller.output_transport_error(
+                                        endpoint_id,
+                                        &endpoint_name_owned,
+                                        false,
+                                        e,
+                                        Some("postprocessor"),
+                                    );
+                                }),
+                            ))
+                        }
+                    }
+                } else {
+                    return Err(ControllerError::PostprocessorCreateError {
+                        endpoint_name: endpoint_name.to_string(),
+                        error: format!(
+                            "Could not locate factory for postprocessor named '{}'",
+                            config.name
+                        ),
+                    });
+                }
+            } else {
+                probe
+            };
+
             let encoder = format.new_encoder(
                 endpoint_name,
                 &resolved_connector_config,
                 &handles.key_schema,
                 &handles.value_schema,
-                probe,
+                consumer,
                 endpoint_config.connector_config.index.is_some(),
             )?;
 
             (encoder, command_handler)
         } else {
             // `endpoint` is `None` - instantiate an integrated endpoint.
+            if endpoint_config.connector_config.postprocessor.is_some() {
+                return Err(ControllerError::PostprocessorCreateError {
+                    endpoint_name: endpoint_name.to_string(),
+                    error: format!(
+                        "Postprocessors are not supported for endpoints of type '{}'",
+                        endpoint_config.connector_config.transport.name()
+                    ),
+                });
+            }
+
             // Resume the previous incarnation only when there is one and its
             // definition has not changed; otherwise the integrated sink is
             // treated as fresh (delta-table truncate mode re-truncates rather

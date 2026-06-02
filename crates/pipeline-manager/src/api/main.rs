@@ -445,7 +445,7 @@ It contains the following fields:
         feldera_types::checkpoint::CheckpointFailure,
         feldera_types::checkpoint::CheckpointSyncFailure,
         feldera_types::checkpoint::CheckpointMetadata,
-        feldera_types::preprocess::PreprocessorConfig,
+        feldera_types::postprocess::PostprocessorConfig,
         feldera_types::transaction::StartTransactionResponse,
         feldera_types::transaction::CommitProgressSummary,
         feldera_types::transport::clock::ClockAdvanceRequest,

@@ -112,6 +112,7 @@ public final class CrateGenerator {
                 doctest = false
 
                 [dependencies]
+                anyhow = { workspace = true }
                 arcstr = { workspace = true }
                 paste = { workspace = true }
                 derive_more = { workspace = true }

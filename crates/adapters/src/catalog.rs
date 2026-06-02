@@ -1,4 +1,7 @@
-use feldera_adapterlib::{errors::controller::ControllerError, preprocess::PreprocessorRegistry};
+use feldera_adapterlib::{
+    errors::controller::ControllerError, postprocess::PostprocessorRegistry,
+    preprocess::PreprocessorRegistry,
+};
 use feldera_types::program_schema::SqlIdentifier;
 use std::{
     collections::BTreeMap,
@@ -12,6 +15,7 @@ pub struct Catalog {
     input_collection_handles: BTreeMap<SqlIdentifier, InputCollectionHandle>,
     output_batch_handles: BTreeMap<SqlIdentifier, OutputCollectionHandles>,
     preprocessor_registry: Arc<Mutex<PreprocessorRegistry>>,
+    postprocessor_registry: Arc<Mutex<PostprocessorRegistry>>,
 }
 
 impl Default for Catalog {
@@ -26,6 +30,7 @@ impl Catalog {
             input_collection_handles: BTreeMap::new(),
             output_batch_handles: BTreeMap::new(),
             preprocessor_registry: Arc::new(Mutex::new(PreprocessorRegistry::new())),
+            postprocessor_registry: Arc::new(Mutex::new(PostprocessorRegistry::new())),
         }
     }
 
@@ -118,5 +123,9 @@ impl CircuitCatalog for Catalog {
 
     fn preprocessor_registry(&self) -> Arc<Mutex<PreprocessorRegistry>> {
         self.preprocessor_registry.clone()
+    }
+
+    fn postprocessor_registry(&self) -> Arc<Mutex<PostprocessorRegistry>> {
+        self.postprocessor_registry.clone()
     }
 }
