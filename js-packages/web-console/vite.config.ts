@@ -126,6 +126,7 @@ export default defineConfig(async () => {
           'browser',
           'clipboard',
           'comment',
+          'contextmenu',
           'find',
           'folding',
           'format',
