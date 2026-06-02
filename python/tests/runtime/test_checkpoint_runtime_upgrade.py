@@ -303,16 +303,8 @@ def _ensure_delta_source(source: DeltaTestLocation) -> None:
     )
 
 
-def _remote_checkpoint_exists(cache_name: str) -> bool:
-    """Return True when a complete checkpoint is cached in the bucket.
-
-    The bucket layout matches what ``storage_cfg`` produces:
-    ``{MINIO_BUCKET}/{cache_name}/checkpoints.feldera``.
-
-    Probing ``checkpoints.feldera`` rather than the bucket directory is
-    intentional: the manager writes the per-worker state files first
-    and ``checkpoints.feldera`` last.
-    """
+def _minio_fs():
+    """Return an S3 filesystem for the CI MinIO bucket and the bucket name."""
 
     from urllib.parse import urlparse
 
@@ -334,9 +326,37 @@ def _remote_checkpoint_exists(cache_name: str) -> bool:
         scheme=parsed.scheme,
         region=MINIO_REGION,
     )
-    catalog = f"{MINIO_BUCKET}/{cache_name}/checkpoints.feldera"
-    info = s3.get_file_info(catalog)
+    return s3, MINIO_BUCKET
+
+
+def _remote_checkpoint_exists(cache_name: str) -> bool:
+    """Return True when a complete checkpoint is cached in the bucket.
+
+    The bucket layout matches what ``storage_cfg`` produces:
+    ``{MINIO_BUCKET}/{cache_name}/checkpoints.feldera``.
+
+    Probing ``checkpoints.feldera`` rather than the bucket directory is
+    intentional: the manager writes the per-worker state files first
+    and ``checkpoints.feldera`` last.
+    """
+
+    import pyarrow.fs as pafs
+
+    s3, bucket = _minio_fs()
+    info = s3.get_file_info(f"{bucket}/{cache_name}/checkpoints.feldera")
     return info.type == pafs.FileType.File
+
+
+def _read_remote_checkpoint_catalog(cache_name: str) -> str:
+    """Return the cached ``checkpoints.feldera`` catalog, pretty-printed."""
+
+    s3, bucket = _minio_fs()
+    with s3.open_input_stream(f"{bucket}/{cache_name}/checkpoints.feldera") as f:
+        raw = f.read().decode("utf-8")
+    try:
+        return json.dumps(json.loads(raw), indent=2)
+    except json.JSONDecodeError:
+        return raw
 
 
 def _connector_json_for(source: DeltaTestLocation) -> str:
@@ -538,7 +558,8 @@ def test_runtime_upgrade_round_trip(pipeline_name: str) -> None:
 
     if _remote_checkpoint_exists(cache_name):
         print(
-            f"phase 1: skipped (checkpoint already cached under '{cache_name}')",
+            f"phase 1: skipped (checkpoint already cached under '{cache_name}')\n"
+            f"checkpoints.feldera:\n{_read_remote_checkpoint_catalog(cache_name)}",
             file=sys.stderr,
         )
     else:
@@ -601,7 +622,9 @@ def test_runtime_upgrade_round_trip(pipeline_name: str) -> None:
             hosts=FELDERA_TEST_NUM_HOSTS,
             fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
             storage=Storage(
-                config=storage_cfg(cache_name, start_from_checkpoint="latest")
+                config=storage_cfg(
+                    cache_name, start_from_checkpoint="latest", strict=True
+                )
             ),
             dev_tweaks=dev_tweaks,
         ),
