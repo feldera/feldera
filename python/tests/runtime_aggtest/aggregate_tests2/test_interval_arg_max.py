@@ -23,6 +23,17 @@ class aggtst_interval_arg_max_seconds(TstView):
                       FROM interval_arg_max"""
 
 
+class aggtst_interval_arg_max_seconds_tz(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = aggtst_interval_arg_max_seconds().data
+        self.sql = """CREATE MATERIALIZED VIEW interval_arg_max_seconds_tz AS SELECT
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c1) AS m_c1,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c3) AS m_c3,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c5) AS m_c5
+                      FROM interval_arg_max"""
+
+
 class aggtst_interval_arg_max_gby(TstView):
     def __init__(self):
         # Result validation is not required for local views
@@ -56,6 +67,18 @@ class aggtst_interval_arg_max_gby_seconds(TstView):
                       FROM interval_arg_max_gby"""
 
 
+class aggtst_interval_arg_max_gby_seconds_tz(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = aggtst_interval_arg_max_gby_seconds().data
+        self.sql = """CREATE MATERIALIZED VIEW interval_arg_max_gby_seconds_tz AS SELECT
+                      id,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c1) AS m_c1,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c3) AS m_c3,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c5) AS m_c5
+                      FROM interval_arg_max_gby"""
+
+
 class aggtst_interval_arg_max_distinct(TstView):
     def __init__(self):
         # Result validation is not required for local views
@@ -75,6 +98,17 @@ class aggtst_interval_arg_max_distinct_seconds(TstView):
                       TIMESTAMPDIFF(SECOND, d(), d() + f_c1) AS m_c1,
                       TIMESTAMPDIFF(SECOND, d(), d() + f_c3) AS m_c3,
                       TIMESTAMPDIFF(SECOND, d(), d() + f_c5) AS m_c5
+                      FROM interval_arg_max_distinct"""
+
+
+class aggtst_interval_arg_max_distinct_seconds_tz(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = aggtst_interval_arg_max_distinct_seconds().data
+        self.sql = """CREATE MATERIALIZED VIEW interval_arg_max_distinct_seconds_tz AS SELECT
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c1) AS m_c1,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c3) AS m_c3,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c5) AS m_c5
                       FROM interval_arg_max_distinct"""
 
 
@@ -111,6 +145,18 @@ class aggtst_interval_arg_max_distinct_gby_seconds(TstView):
                       FROM interval_arg_max_distinct_gby"""
 
 
+class aggtst_interval_arg_max_distinct_gby_seconds_tz(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = aggtst_interval_arg_max_distinct_gby_seconds().data
+        self.sql = """CREATE MATERIALIZED VIEW interval_arg_max_distinct_gby_seconds_tz AS SELECT
+                      id,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c1) AS m_c1,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c3) AS m_c3,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c5) AS m_c5
+                      FROM interval_arg_max_distinct_gby"""
+
+
 class aggtst_interval_arg_max_where(TstView):
     def __init__(self):
         # Result validation is not required for local views
@@ -130,6 +176,17 @@ class aggtst_interval_arg_max_where_seconds(TstView):
                       TIMESTAMPDIFF(SECOND, d(), d() + f_c1) AS m_c1,
                       TIMESTAMPDIFF(SECOND, d(), d() + f_c3) AS m_c3,
                       TIMESTAMPDIFF(SECOND, d(), d() + f_c5) AS m_c5
+                      FROM interval_arg_max_where"""
+
+
+class aggtst_interval_arg_max_where_seconds_tz(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = aggtst_interval_arg_max_where_seconds().data
+        self.sql = """CREATE MATERIALIZED VIEW interval_arg_max_where_seconds_tz AS SELECT
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c1) AS m_c1,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c3) AS m_c3,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c5) AS m_c5
                       FROM interval_arg_max_where"""
 
 
@@ -158,4 +215,16 @@ class aggtst_interval_arg_max_where_gby_seconds(TstView):
                       TIMESTAMPDIFF(SECOND, d(), d() + f_c1) AS m_c1,
                       TIMESTAMPDIFF(SECOND, d(), d() + f_c3) AS m_c3,
                       TIMESTAMPDIFF(SECOND, d(), d() + f_c5) AS m_c5
+                      FROM interval_arg_max_where_gby"""
+
+
+class aggtst_interval_arg_max_where_gby_seconds_tz(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = aggtst_interval_arg_max_where_gby_seconds().data
+        self.sql = """CREATE MATERIALIZED VIEW interval_arg_max_where_gby_seconds_tz AS SELECT
+                      id,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c1) AS m_c1,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c3) AS m_c3,
+                      TIMESTAMPDIFF(SECOND, d_tz(), d_tz() + f_c5) AS m_c5
                       FROM interval_arg_max_where_gby"""

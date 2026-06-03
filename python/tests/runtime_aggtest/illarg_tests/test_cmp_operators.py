@@ -1,6 +1,6 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def t(s):
@@ -13,6 +13,10 @@ def d(s):
 
 def ts(s):
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f")
+
+
+def ts_tz(s):
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=timezone.utc)
 
 
 # Comparison Operators
@@ -32,6 +36,7 @@ class illarg_equality_legal(TstView):
                 "str": True,
                 "bin": True,
                 "tmestmp": True,
+                "tmestmp_tz": True,
                 "datee": True,
                 "tme": True,
                 "uuidd": True,
@@ -50,6 +55,7 @@ class illarg_equality_legal(TstView):
                       str = 'hello ' AS str,
                       bin = X'0B1620' AS bin,
                       tmestmp = TIMESTAMP '2020-06-21 14:23:44.123654' AS tmestmp,
+                      tmestmp_tz = TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44.123654 +00:00' AS tmestmp_tz,
                       datee = DATE '2020-06-21' AS datee,
                       tme = TIME '14:23:44.456' AS tme,
                       uuidd = UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
@@ -86,6 +92,7 @@ class illarg_inequality_legal(TstView):
                 "str": False,
                 "bin": False,
                 "tmestmp": False,
+                "tmestmp_tz": False,
                 "datee": False,
                 "tme": False,
                 "uuidd": False,
@@ -104,6 +111,7 @@ class illarg_inequality_legal(TstView):
                       str != 'hello ' AS str,
                       bin != X'0B1620' AS bin,
                       tmestmp != TIMESTAMP '2020-06-21 14:23:44.123654' AS tmestmp,
+                      tmestmp_tz != TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44.123654 +00:00' AS tmestmp_tz,
                       datee != DATE '2020-06-21' AS datee,
                       tme != TIME '14:23:44.456' AS tme,
                       uuidd != UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
@@ -140,6 +148,7 @@ class illarg_greater_than_legal(TstView):
                 "str": False,
                 "bin": False,
                 "tmestmp": False,
+                "tmestmp_tz": False,
                 "datee": False,
                 "tme": False,
                 "uuidd": False,
@@ -158,6 +167,7 @@ class illarg_greater_than_legal(TstView):
                       str > 'hello ' AS str,
                       bin > X'0B1620' AS bin,
                       tmestmp > TIMESTAMP '2020-06-21 14:23:44.123654' AS tmestmp,
+                      tmestmp_tz > TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44.123654 +00:00' AS tmestmp_tz,
                       datee > DATE '2020-06-21' AS datee,
                       tme > TIME '14:23:44.456' AS tme,
                       uuidd > UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
@@ -194,6 +204,7 @@ class illarg_less_than_legal(TstView):
                 "str": False,
                 "bin": False,
                 "tmestmp": False,
+                "tmestmp_tz": False,
                 "datee": False,
                 "tme": False,
                 "uuidd": False,
@@ -212,6 +223,7 @@ class illarg_less_than_legal(TstView):
                       str < 'hello ' AS str,
                       bin < X'0B1620' AS bin,
                       tmestmp < TIMESTAMP '2020-06-21 14:23:44.123654' AS tmestmp,
+                      tmestmp_tz < TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44.123654 +00:00' AS tmestmp_tz,
                       datee < DATE '2020-06-21' AS datee,
                       tme < TIME '14:23:44.456' AS tme,
                       uuidd < UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
@@ -248,6 +260,7 @@ class illarg_less_or_equal_legal(TstView):
                 "str": True,
                 "bin": True,
                 "tmestmp": True,
+                "tmestmp_tz": True,
                 "datee": True,
                 "tme": True,
                 "uuidd": True,
@@ -266,6 +279,7 @@ class illarg_less_or_equal_legal(TstView):
                       str <= 'hello ' AS str,
                       bin <= X'0B1620' AS bin,
                       tmestmp <= TIMESTAMP '2020-06-21 14:23:44.123654' AS tmestmp,
+                      tmestmp_tz <= TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44.123654 +00:00' AS tmestmp_tz,
                       datee <= DATE '2020-06-21' AS datee,
                       tme <= TIME '14:23:44.456' AS tme,
                       uuidd <= UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
@@ -302,6 +316,7 @@ class illarg_greater_or_equal_legal(TstView):
                 "str": False,
                 "bin": True,
                 "tmestmp": False,
+                "tmestmp_tz": False,
                 "datee": True,
                 "tme": False,
                 "uuidd": True,
@@ -320,6 +335,7 @@ class illarg_greater_or_equal_legal(TstView):
                       str >= 'hello ' AS str,
                       bin >= X'0B1620' AS bin,
                       tmestmp >= TIMESTAMP '2020-06-21 14:23:44.123654' AS tmestmp,
+                      tmestmp_tz >= TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44.123654 +00:00' AS tmestmp_tz,
                       datee >= DATE '2020-06-21' AS datee,
                       tme >= TIME '14:23:44.456' AS tme,
                       uuidd >= UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
@@ -356,6 +372,7 @@ class illarg_isnull_legal(TstView):
                 "str": True,
                 "bin": True,
                 "tmestmp": True,
+                "tmestmp_tz": True,
                 "datee": True,
                 "tme": True,
                 "uuidd": True,
@@ -374,6 +391,7 @@ class illarg_isnull_legal(TstView):
                       str IS NULL AS str,
                       bin IS NULL AS bin,
                       tmestmp IS NULL AS tmestmp,
+                      tmestmp_tz IS NULL AS tmestmp_tz,
                       datee IS NULL AS datee,
                       tme IS NULL AS tme,
                       uuidd IS NULL AS uuidd,
@@ -399,6 +417,7 @@ class illarg_isnotnull_legal(TstView):
                 "str": True,
                 "bin": True,
                 "tmestmp": True,
+                "tmestmp_tz": True,
                 "datee": True,
                 "tme": True,
                 "uuidd": True,
@@ -417,6 +436,7 @@ class illarg_isnotnull_legal(TstView):
                       str IS NOT NULL AS str,
                       bin IS NOT NULL AS bin,
                       tmestmp IS NOT NULL AS tmestmp,
+                      tmestmp_tz IS NOT NULL AS tmestmp_tz,
                       datee IS NOT NULL AS datee,
                       tme IS NOT NULL AS tme,
                       uuidd IS NOT NULL AS uuidd,
@@ -442,6 +462,7 @@ class illarg_equality_null_legal(TstView):
                 "str": True,
                 "bin": True,
                 "tmestmp": True,
+                "tmestmp_tz": True,
                 "datee": True,
                 "tme": True,
                 "uuidd": True,
@@ -460,6 +481,7 @@ class illarg_equality_null_legal(TstView):
                       str <=> NULL AS str,
                       bin <=> NULL AS bin,
                       tmestmp <=> NULL AS tmestmp,
+                      tmestmp_tz <=> NULL AS tmestmp_tz,
                       datee <=> NULL AS datee,
                       tme <=> NULL AS tme,
                       uuidd <=> NULL AS uuidd,
@@ -496,6 +518,7 @@ class illarg_isdistinct_legal(TstView):
                 "str": True,
                 "bin": True,
                 "tmestmp": True,
+                "tmestmp_tz": True,
                 "datee": True,
                 "tme": True,
                 "uuidd": True,
@@ -514,6 +537,7 @@ class illarg_isdistinct_legal(TstView):
                       str IS DISTINCT FROM 'hello' AS str,
                       bin IS DISTINCT FROM X'0B1625' AS bin,
                       tmestmp IS DISTINCT FROM TIMESTAMP '2020-06-21 14:23:44' AS tmestmp,
+                      tmestmp_tz IS DISTINCT FROM TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44 +00:00' AS tmestmp_tz,
                       datee IS DISTINCT FROM DATE '2020-06-20' AS datee,
                       tme IS DISTINCT FROM TIME '14:23:44.45' AS tme,
                       uuidd IS DISTINCT FROM UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4d' AS uuidd,
@@ -550,6 +574,7 @@ class illarg_isnot_distinct_legal(TstView):
                 "str": True,
                 "bin": True,
                 "tmestmp": True,
+                "tmestmp_tz": True,
                 "datee": True,
                 "tme": True,
                 "uuidd": True,
@@ -568,6 +593,7 @@ class illarg_isnot_distinct_legal(TstView):
                       str IS NOT DISTINCT FROM 'hello ' AS str,
                       bin IS NOT DISTINCT FROM X'0B1620' AS bin,
                       tmestmp IS NOT DISTINCT FROM TIMESTAMP '2020-06-21 14:23:44.123654' AS tmestmp,
+                      tmestmp_tz IS NOT DISTINCT FROM TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44.123654 +00:00' AS tmestmp_tz,
                       datee IS NOT DISTINCT FROM DATE '2020-06-21' AS datee,
                       tme IS NOT DISTINCT FROM TIME '14:23:44.456' AS tme,
                       uuidd IS NOT DISTINCT FROM UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
@@ -604,6 +630,7 @@ class illarg_between_and_legal(TstView):
                 "booll": False,
                 "bin": False,
                 "tmestmp": False,
+                "tmestmp_tz": False,
                 "datee": False,
                 "tme": False,
                 "uuidd": False,
@@ -622,6 +649,7 @@ class illarg_between_and_legal(TstView):
                       booll BETWEEN True AND False AS booll,
                       bin BETWEEN X'0C1620' AND X'0A1620' AS bin,
                       tmestmp BETWEEN TIMESTAMP '2021-06-21 14:23:43.123655' AND TIMESTAMP '2019-06-21 14:23:45.123653' AS tmestmp,
+                      tmestmp_tz BETWEEN TIMESTAMP WITH TIME ZONE '2021-06-21 14:23:43.123655 +00:00' AND TIMESTAMP WITH TIME ZONE '2019-06-21 14:23:45.123653 +00:00' AS tmestmp_tz,
                       datee BETWEEN DATE '2020-06-22' AND DATE '2020-06-20' AS datee,
                       tme BETWEEN TIME '15:23:43.457' AND TIME '13:23:45.455' AS tme,
                       uuidd BETWEEN UUID '52b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '32b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
@@ -658,6 +686,7 @@ class illarg_between_symmetric_and_legal(TstView):
                 "booll": True,
                 "bin": True,
                 "tmestmp": True,
+                "tmestmp_tz": True,
                 "datee": True,
                 "tme": True,
                 "uuidd": True,
@@ -676,6 +705,7 @@ class illarg_between_symmetric_and_legal(TstView):
                       booll BETWEEN SYMMETRIC True AND False AS booll,
                       bin BETWEEN SYMMETRIC X'0C1620' AND X'0A1620' AS bin,
                       tmestmp BETWEEN SYMMETRIC TIMESTAMP '2021-06-21 14:23:43.123655' AND TIMESTAMP '2019-06-21 14:23:45.123653' AS tmestmp,
+                      tmestmp_tz BETWEEN SYMMETRIC TIMESTAMP WITH TIME ZONE '2021-06-21 14:23:43.123655 +00:00' AND TIMESTAMP WITH TIME ZONE '2019-06-21 14:23:45.123653 +00:00' AS tmestmp_tz,
                       datee BETWEEN SYMMETRIC DATE '2020-06-22' AND DATE '2020-06-20' AS datee,
                       tme BETWEEN SYMMETRIC TIME '15:23:43.457' AND TIME '13:23:45.455' AS tme,
                       uuidd BETWEEN SYMMETRIC UUID '52b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '32b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
@@ -711,6 +741,7 @@ class illarg_notbetween_and_legal(TstView):
                 "booll": True,
                 "bin": True,
                 "tmestmp": True,
+                "tmestmp_tz": True,
                 "datee": True,
                 "tme": True,
                 "uuidd": True,
@@ -729,6 +760,7 @@ class illarg_notbetween_and_legal(TstView):
                       booll NOT BETWEEN True AND False AS booll,
                       bin NOT BETWEEN X'0C1620' AND X'0A1620' AS bin,
                       tmestmp NOT BETWEEN TIMESTAMP '2021-06-21 14:23:43.123655' AND TIMESTAMP '2019-06-21 14:23:45.123653' AS tmestmp,
+                      tmestmp_tz NOT BETWEEN TIMESTAMP WITH TIME ZONE '2021-06-21 14:23:43.123655 +00:00' AND TIMESTAMP WITH TIME ZONE '2019-06-21 14:23:45.123653 +00:00' AS tmestmp_tz,
                       datee NOT BETWEEN DATE '2020-06-22' AND DATE '2020-06-20' AS datee,
                       tme NOT BETWEEN TIME '15:23:43.457' AND TIME '13:23:45.455' AS tme,
                       uuidd NOT BETWEEN UUID '52b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '32b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
@@ -767,6 +799,7 @@ class illarg_not_between_symmetric_and_legal(TstView):
                 "booll": False,
                 "bin": False,
                 "tmestmp": False,
+                "tmestmp_tz": False,
                 "datee": False,
                 "tme": False,
                 "uuidd": False,
@@ -785,6 +818,7 @@ class illarg_not_between_symmetric_and_legal(TstView):
                       booll NOT BETWEEN SYMMETRIC True AND False AS booll,
                       bin NOT BETWEEN SYMMETRIC X'0C1620' AND X'0A1620' AS bin,
                       tmestmp NOT BETWEEN SYMMETRIC TIMESTAMP '2021-06-21 14:23:43.123655' AND TIMESTAMP '2019-06-21 14:23:45.123653' AS tmestmp,
+                      tmestmp_tz NOT BETWEEN SYMMETRIC TIMESTAMP WITH TIME ZONE '2021-06-21 14:23:43.123655 +00:00' AND TIMESTAMP WITH TIME ZONE '2019-06-21 14:23:45.123653 +00:00' AS tmestmp_tz,
                       datee NOT BETWEEN SYMMETRIC DATE '2020-06-22' AND DATE '2020-06-20' AS datee,
                       tme NOT BETWEEN SYMMETRIC TIME '15:23:43.457' AND TIME '13:23:45.455' AS tme,
                       uuidd NOT BETWEEN SYMMETRIC UUID '52b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '32b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
@@ -822,6 +856,7 @@ class illarg_in_legal(TstView):
                 "bin": True,
                 "booll": True,
                 "tmestmp": True,
+                "tmestmp_tz": True,
                 "datee": True,
                 "tme": True,
                 "uuidd": True,
@@ -840,6 +875,7 @@ class illarg_in_legal(TstView):
                       X'0B1620' IN (X'0B1620') AS bin,
                       booll IN (True) AS booll,
                       tmestmp IN (TIMESTAMP '2020-06-21 14:23:44.123654') AS tmestmp,
+                      tmestmp_tz IN (TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44.123654 +00:00') AS tmestmp_tz,
                       datee IN (DATE '2020-06-21') AS datee,
                       tme IN (TIME '14:23:44.456') AS tme,
                       uuidd IN (UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
@@ -864,6 +900,7 @@ class illarg_not_in_legal(TstView):
                 "bin": False,
                 "booll": False,
                 "tmestmp": False,
+                "tmestmp_tz": False,
                 "datee": False,
                 "tme": False,
                 "uuidd": False,
@@ -882,6 +919,7 @@ class illarg_not_in_legal(TstView):
                       X'0B1620' NOT IN (X'0B1620') AS bin,
                       booll NOT IN (True) AS booll,
                       tmestmp NOT IN (TIMESTAMP '2020-06-21 14:23:44.123654') AS tmestmp,
+                      tmestmp_tz NOT IN (TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44.123654 +00:00') AS tmestmp_tz,
                       datee NOT IN (DATE '2020-06-21') AS datee,
                       tme NOT IN (TIME '14:23:44.456') AS tme,
                       uuidd NOT IN (UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
@@ -1069,6 +1107,24 @@ class illarg_case_val_when_tmestmp_legal(TstView):
                       FROM illegal_tbl"""
 
 
+class illarg_case_val_when_tmestmp_legal_tz(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {"id": 0, "tmestmp_tz": 0},
+            {"id": 1, "tmestmp_tz": 1},
+            {"id": 2, "tmestmp_tz": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW case_val_when_tmestmp_legal_tz AS SELECT
+                      id,
+                      CASE tmestmp_tz
+                          WHEN TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44.123654 +00:00' THEN 0
+                          WHEN TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44 +00:00' THEN 1
+                          ELSE NULL
+                      END AS tmestmp_tz
+                      FROM illegal_tbl"""
+
+
 class illarg_case_val_when_datee_legal(TstView):
     def __init__(self):
         # checked manually
@@ -1205,6 +1261,7 @@ class illarg_case_when_legal(TstView):
                 "str": True,
                 "bin": True,
                 "tmestmp": True,
+                "tmestmp_tz": True,
                 "datee": True,
                 "tme": True,
                 "uuidd": True,
@@ -1223,6 +1280,7 @@ class illarg_case_when_legal(TstView):
                       CASE WHEN str = 'hello ' THEN True ELSE NULL END AS str,
                       CASE WHEN bin = X'0B1620' THEN True ELSE NULL END AS bin,
                       CASE WHEN tmestmp = TIMESTAMP '2020-06-21 14:23:44.123654' THEN True ELSE NULL END AS tmestmp,
+                      CASE WHEN tmestmp_tz = TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44.123654 UTC' THEN True ELSE NULL END AS tmestmp_tz,
                       CASE WHEN datee = DATE '2020-06-21' THEN True ELSE NULL END AS datee,
                       CASE WHEN tme = TIME '14:23:44.456' THEN True ELSE NULL END AS tme,
                       CASE WHEN uuidd = UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' THEN True ELSE NULL END AS uuidd,
@@ -1261,6 +1319,7 @@ class illarg_coalesce_legal(TstView):
                 "tmestmp": ts("2020-06-21T14:23:44.123654"),
                 "datee": d("2020-06-21"),
                 "tme": t("14:23:44.456"),
+                "tmestmp_tz": ts_tz("2020-06-21T14:23:44.123654"),
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
                 "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello ", "TRUE"],
                 "mapp": [("a", 12), ("b", 17)],
@@ -1277,6 +1336,7 @@ class illarg_coalesce_legal(TstView):
                       COALESCE(NULL, str, -1) AS str,
                       COALESCE(NULL, bin, X'0B1620') AS bin,
                       COALESCE(NULL, tmestmp, TIMESTAMP '2020-06-21 14:23:44') AS tmestmp,
+                      COALESCE(NULL, tmestmp_tz, TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44 +00:00') AS tmestmp_tz,
                       COALESCE(NULL, datee, DATE '2020-06-21') AS datee,
                       COALESCE(NULL, tme, TIME '14:23:44') AS tme,
                       COALESCE(NULL, uuidd, UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
@@ -1317,6 +1377,7 @@ class illarg_greatest_legal(TstView):
                 "tmestmp": ts("2020-06-21T14:23:44.123654"),
                 "datee": d("2020-06-21"),
                 "tme": t("14:23:44.456"),
+                "tmestmp_tz": ts_tz("2020-06-21T14:23:44.123654"),
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
                 "arr": ["ciao"],
                 "mapp": [("a", 13), ("b", 17)],
@@ -1333,6 +1394,7 @@ class illarg_greatest_legal(TstView):
                         GREATEST(str, '0.12') AS str,
                         GREATEST(bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
                         GREATEST(tmestmp, TIMESTAMP '2020-06-21 14:23:44') AS tmestmp,
+                        GREATEST(tmestmp_tz, TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44 +00:00') AS tmestmp_tz,
                         GREATEST(datee, DATE '2020-06-21') AS datee,
                         GREATEST(tme, TIME '14:23:44') AS tme,
                         GREATEST(uuidd, UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
@@ -1385,6 +1447,7 @@ class illarg_greatest_ignore_nulls_legal(TstView):
                 "tmestmp": ts("2020-06-21T14:23:44.123654"),
                 "datee": d("2020-06-21"),
                 "tme": t("14:23:44.456"),
+                "tmestmp_tz": ts_tz("2020-06-21T14:23:44.123654"),
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
                 "arr": ["ciao"],
                 "mapp": [("a", 13), ("b", 17)],
@@ -1401,6 +1464,7 @@ class illarg_greatest_ignore_nulls_legal(TstView):
                         GREATEST_IGNORE_NULLS(NULL, str, '0.12') AS str,
                         GREATEST_IGNORE_NULLS(NULL, bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
                         GREATEST_IGNORE_NULLS(NULL, tmestmp, TIMESTAMP '2020-06-21 14:23:44') AS tmestmp,
+                        GREATEST_IGNORE_NULLS(NULL, tmestmp_tz, TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44 +00:00') AS tmestmp_tz,
                         GREATEST_IGNORE_NULLS(NULL, datee, DATE '2020-06-21') AS datee,
                         GREATEST_IGNORE_NULLS(NULL, tme, TIME '14:23:44') AS tme,
                         GREATEST_IGNORE_NULLS(NULL, uuidd, UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
@@ -1439,6 +1503,7 @@ class illarg_least_legal(TstView):
                 "tmestmp": ts("2020-06-21T14:23:44.0"),
                 "datee": d("2020-06-21"),
                 "tme": t("14:23:44.0"),
+                "tmestmp_tz": ts_tz("2020-06-21T14:23:44.0"),
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
                 "arr": ["apple"],
                 "mapp": [("a", 12), ("b", 17)],
@@ -1455,6 +1520,7 @@ class illarg_least_legal(TstView):
                         LEAST(str, '0.12') AS str,
                         LEAST(bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
                         LEAST(tmestmp, TIMESTAMP '2020-06-21 14:23:44') AS tmestmp,
+                        LEAST(tmestmp_tz, TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44 +00:00') AS tmestmp_tz,
                         LEAST(datee, DATE '2020-06-21') AS datee,
                         LEAST(tme, TIME '14:23:44') AS tme,
                         LEAST(uuidd, UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
@@ -1493,6 +1559,7 @@ class illarg_least_ignore_nulls_legal(TstView):
                 "tmestmp": ts("2020-06-21T14:23:44.0"),
                 "datee": d("2020-06-21"),
                 "tme": t("14:23:44.0"),
+                "tmestmp_tz": ts_tz("2020-06-21T14:23:44.0"),
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
                 "arr": ["apple"],
                 "mapp": [("a", 12), ("b", 17)],
@@ -1509,6 +1576,7 @@ class illarg_least_ignore_nulls_legal(TstView):
                         LEAST_IGNORE_NULLS(NULL, str, '0.12') AS str,
                         LEAST_IGNORE_NULLS(NULL, bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
                         LEAST_IGNORE_NULLS(NULL, tmestmp, TIMESTAMP '2020-06-21 14:23:44') AS tmestmp,
+                        LEAST_IGNORE_NULLS(NULL, tmestmp_tz, TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44 +00:00') AS tmestmp_tz,
                         LEAST_IGNORE_NULLS(NULL, datee, DATE '2020-06-21') AS datee,
                         LEAST_IGNORE_NULLS(NULL, tme, TIME '14:23:44') AS tme,
                         LEAST_IGNORE_NULLS(NULL, uuidd, UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
@@ -1545,6 +1613,7 @@ class illarg_if_legal(TstView):
                 "str": "incorrect",
                 "bin": "correct",
                 "tmestmp": "incorrect",
+                "tmestmp_tz": "incorrect",
                 "datee": "correct",
                 "tme": "incorrect",
                 "uuidd": "correct",
@@ -1563,6 +1632,7 @@ class illarg_if_legal(TstView):
                         IF(str <= '0.12', 'correct', 'incorrect') AS str,
                         IF(bin <= X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000', 'correct', 'incorrect') AS bin,
                         IF(tmestmp <= TIMESTAMP '2020-06-21 14:23:44', 'correct', 'incorrect') AS tmestmp,
+                        IF(tmestmp_tz <= TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44 +00:00', 'correct', 'incorrect') AS tmestmp_tz,
                         IF(datee <= DATE '2020-06-21', 'correct', 'incorrect') AS datee,
                         IF(tme <= TIME '14:23:44', 'correct', 'incorrect') AS tme,
                         IF(uuidd  <= UUID'42b8fec7-c7a3-4531-9611-4bde80f9cb4c', 'correct', 'incorrect') AS uuidd,
@@ -1599,6 +1669,7 @@ class illarg_nullif_legal(TstView):
                 "str": "hello ",
                 "bin": bytes.fromhex("0b1620"),
                 "tmestmp": ts("2020-06-21T14:23:44.123654"),
+                "tmestmp_tz": ts_tz("2020-06-21T14:23:44.123654"),
                 "datee": None,
                 "tme": t("14:23:44.456"),
                 "uuidd": None,
@@ -1617,6 +1688,7 @@ class illarg_nullif_legal(TstView):
                         NULLIF(str, '0.12') AS str,
                         NULLIF(bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
                         NULLIF(tmestmp, TIMESTAMP '2020-06-21 14:23:44') AS tmestmp,
+                        NULLIF(tmestmp_tz, TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44 +00:00') AS tmestmp_tz,
                         NULLIF(datee, DATE '2020-06-21') AS datee,
                         NULLIF(tme, TIME '14:23:44') AS tme,
                         NULLIF(uuidd, UUID'42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
@@ -1693,24 +1765,31 @@ class illarg_period_operators_legal(TstView):
                 "res_date": True,
                 "res_time": True,
                 "res_ts": True,
+                "res_ts_tz": True,
                 "res_date_equals": True,
                 "res_time_equals": True,
                 "res_ts_equals": True,
+                "res_ts_tz_equals": True,
                 "res_date_overlaps": True,
                 "res_time_overlaps": True,
                 "res_ts_overlaps": True,
+                "res_ts_tz_overlaps": True,
                 "res_date_precedes": True,
                 "res_time_precedes": True,
                 "res_ts_precedes": True,
+                "res_ts_tz_precedes": True,
                 "res_date_immed_precedes": True,
                 "res_time_immed_precedes": True,
                 "res_ts_immed_precedes": True,
+                "res_ts_tz_immed_precedes": True,
                 "res_date_succeeds": True,
                 "res_time_succeeds": True,
                 "res_ts_succeeds": True,
+                "res_ts_tz_succeeds": True,
                 "res_date_immed_succeeds": True,
                 "res_time_immed_succeeds": True,
                 "res_ts_immed_succeeds": True,
+                "res_ts_tz_immed_succeeds": True,
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW period_operators_legal AS SELECT
@@ -1719,36 +1798,49 @@ class illarg_period_operators_legal(TstView):
                         (DATE '2020-06-21', DATE '2020-06-25') CONTAINS DATE '2020-06-23' AS res_date,
                         (TIME '14:00:00', TIME '16:00:00') CONTAINS TIME '15:00:00' AS res_time,
                         (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') CONTAINS TIMESTAMP '2020-06-21 14:30:00' AS res_ts,
+                        (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', TIMESTAMP WITH TIME ZONE '2020-06-21 15:00:00 +00:00') CONTAINS TIMESTAMP WITH TIME ZONE '2020-06-21 14:30:00 +00:00' AS res_ts_tz,
 
                         -- EQUALS
                         (DATE '2020-06-21', DATE '2020-06-23') EQUALS (DATE '2020-06-21', DATE '2020-06-23') AS res_date_equals,
                         (TIME '14:00:00', TIME '15:00:00') EQUALS (TIME '14:00:00', TIME '15:00:00') AS res_time_equals,
                         (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') EQUALS (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') AS res_ts_equals,
+                        (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', TIMESTAMP WITH TIME ZONE '2020-06-21 15:00:00 +00:00') EQUALS
+                             (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', TIMESTAMP WITH TIME ZONE '2020-06-21 15:00:00 +00:00') AS res_ts_tz_equals,
 
                         -- OVERLAPS
                         (DATE '2020-06-21', DATE '2020-06-23') OVERLAPS (DATE '2020-06-22', DATE '2020-06-24') AS res_date_overlaps,
                         (TIME '14:00:00', TIME '15:00:00') OVERLAPS (TIME '14:30:00', TIME '15:30:00') AS res_time_overlaps,
                         (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') OVERLAPS (TIMESTAMP '2020-06-21 14:30:00', TIMESTAMP '2020-06-21 15:30:00') AS res_ts_overlaps,
+                        (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', TIMESTAMP WITH TIME ZONE '2020-06-21 15:00:00 +00:00') OVERLAPS
+                             (TIMESTAMP WITH TIME ZONE '2020-06-21 14:30:00 +00:00', TIMESTAMP WITH TIME ZONE '2020-06-21 15:30:00 +00:00') AS res_ts_tz_overlaps,
 
                         -- PRECEDES
                         (DATE '2020-06-21', DATE '2020-06-22') PRECEDES (DATE '2020-06-24', DATE '2020-06-25') AS res_date_precedes,
                         (TIME '14:00:00', TIME '15:00:00') PRECEDES (TIME '15:30:00', TIME '16:30:00') AS res_time_precedes,
                         (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') PRECEDES (TIMESTAMP '2020-06-21 15:30:00', TIMESTAMP '2020-06-21 16:30:00') AS res_ts_precedes,
+                        (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', TIMESTAMP WITH TIME ZONE '2020-06-21 15:00:00 +00:00') PRECEDES
+                             (TIMESTAMP WITH TIME ZONE '2020-06-21 15:30:00 +00:00', TIMESTAMP WITH TIME ZONE '2020-06-21 16:30:00 +00:00') AS res_ts_tz_precedes,
 
                         -- IMMEDIATELY PRECEDES
                         (DATE '2020-06-21', DATE '2020-06-22') IMMEDIATELY PRECEDES (DATE '2020-06-22', DATE '2020-06-23') AS res_date_immed_precedes,
                         (TIME '14:00:00', TIME '15:00:00') IMMEDIATELY PRECEDES (TIME '15:00:00', TIME '16:00:00') AS res_time_immed_precedes,
                         (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') IMMEDIATELY PRECEDES (TIMESTAMP '2020-06-21 15:00:00', TIMESTAMP '2020-06-21 16:00:00') AS res_ts_immed_precedes,
+                        (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', TIMESTAMP WITH TIME ZONE '2020-06-21 15:00:00 +00:00') IMMEDIATELY PRECEDES
+                             (TIMESTAMP WITH TIME ZONE '2020-06-21 15:00:00 +00:00', TIMESTAMP WITH TIME ZONE '2020-06-21 16:00:00 +00:00') AS res_ts_tz_immed_precedes,
 
                         -- SUCCEEDS
                         (DATE '2020-06-25', DATE '2020-06-26') SUCCEEDS (DATE '2020-06-21', DATE '2020-06-24') AS res_date_succeeds,
                         (TIME '15:30:00', TIME '16:30:00') SUCCEEDS (TIME '14:00:00', TIME '15:00:00') AS res_time_succeeds,
                         (TIMESTAMP '2020-06-21 15:30:00', TIMESTAMP '2020-06-21 16:30:00') SUCCEEDS (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') AS res_ts_succeeds,
+                        (TIMESTAMP WITH TIME ZONE '2020-06-21 15:30:00 +00:00', TIMESTAMP WITH TIME ZONE '2020-06-21 16:30:00 +00:00') SUCCEEDS
+                             (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', TIMESTAMP WITH TIME ZONE '2020-06-21 15:00:00 +00:00') AS res_ts_tz_succeeds,
 
                         -- IMMEDIATELY SUCCEEDS
                         (DATE '2020-06-25', DATE '2020-06-26') IMMEDIATELY SUCCEEDS (DATE '2020-06-24', DATE '2020-06-25') AS res_date_immed_succeeds,
                         (TIME '15:00:00', TIME '16:00:00') IMMEDIATELY SUCCEEDS (TIME '14:00:00', TIME '15:00:00') AS res_time_immed_succeeds,
-                        (TIMESTAMP '2020-06-21 15:00:00', TIMESTAMP '2020-06-21 16:00:00') IMMEDIATELY SUCCEEDS (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') AS res_ts_immed_succeeds"""
+                        (TIMESTAMP '2020-06-21 15:00:00', TIMESTAMP '2020-06-21 16:00:00') IMMEDIATELY SUCCEEDS (TIMESTAMP '2020-06-21 14:00:00', TIMESTAMP '2020-06-21 15:00:00') AS res_ts_immed_succeeds,
+                        (TIMESTAMP WITH TIME ZONE '2020-06-21 15:00:00 +00:00', TIMESTAMP WITH TIME ZONE '2020-06-21 16:00:00 +00:00') IMMEDIATELY SUCCEEDS
+                              (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', TIMESTAMP WITH TIME ZONE '2020-06-21 15:00:00 +00:00') AS res_ts_tz_immed_succeeds"""
 
 
 # Same test as above but with swapped order of START and END(i.e where START > END)
@@ -1796,24 +1888,31 @@ class illarg_period_operators_interval_legal(TstView):
                 "res_date": True,
                 "res_time": True,
                 "res_ts": True,
+                "res_ts_tz": True,
                 "res_date_equals": True,
                 "res_time_equals": True,
                 "res_ts_equals": True,
+                "res_ts_tz_equals": True,
                 "res_date_overlaps": True,
                 "res_time_overlaps": True,
                 "res_ts_overlaps": True,
+                "res_ts_tz_overlaps": True,
                 "res_date_precedes": True,
                 "res_time_precedes": True,
                 "res_ts_precedes": True,
+                "res_ts_tz_precedes": True,
                 "res_date_immed_precedes": True,
                 "res_time_immed_precedes": True,
                 "res_ts_immed_precedes": True,
+                "res_ts_tz_immed_precedes": True,
                 "res_date_succeeds": True,
                 "res_time_succeeds": True,
                 "res_ts_succeeds": True,
+                "res_ts_tz_succeeds": True,
                 "res_date_immed_succeeds": True,
                 "res_time_immed_succeeds": True,
                 "res_ts_immed_succeeds": True,
+                "res_ts_tz_immed_succeeds": True,
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW period_operators_interval_legal AS SELECT
@@ -1822,36 +1921,43 @@ class illarg_period_operators_interval_legal(TstView):
                         (DATE '2020-06-21', INTERVAL '4' DAY) CONTAINS DATE '2020-06-23' AS res_date,
                         (TIME '14:00:00', INTERVAL '2' HOUR) CONTAINS TIME '15:00:00' AS res_time,
                         (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) CONTAINS TIMESTAMP '2020-06-21 14:30:00' AS res_ts,
+                        (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', INTERVAL '1' HOUR) CONTAINS TIMESTAMP WITH TIME ZONE '2020-06-21 14:30:00 +00:00' AS res_ts_tz,
 
                         -- EQUALS
                         (DATE '2020-06-21', INTERVAL '2' DAY) EQUALS (DATE '2020-06-21', INTERVAL '2' DAY) AS res_date_equals,
                         (TIME '14:00:00', INTERVAL '1' HOUR) EQUALS (TIME '14:00:00', INTERVAL '1' HOUR) AS res_time_equals,
                         (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) EQUALS (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) AS res_ts_equals,
+                        (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', INTERVAL '1' HOUR) EQUALS (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', INTERVAL '1' HOUR) AS res_ts_tz_equals,
 
                         -- OVERLAPS
                         (DATE '2020-06-21', INTERVAL '2' DAY) OVERLAPS (DATE '2020-06-22', INTERVAL '2' DAY) AS res_date_overlaps,
                         (TIME '14:00:00', INTERVAL '1' HOUR) OVERLAPS (TIME '14:30:00', INTERVAL '1' HOUR) AS res_time_overlaps,
                         (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) OVERLAPS (TIMESTAMP '2020-06-21 14:30:00', INTERVAL '1' HOUR) AS res_ts_overlaps,
+                        (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', INTERVAL '1' HOUR) OVERLAPS (TIMESTAMP WITH TIME ZONE '2020-06-21 14:30:00 +00:00', INTERVAL '1' HOUR) AS res_ts_tz_overlaps,
 
                         -- PRECEDES
                         (DATE '2020-06-21', INTERVAL '1' DAY) PRECEDES (DATE '2020-06-24', INTERVAL '1' DAY) AS res_date_precedes,
                         (TIME '14:00:00', INTERVAL '1' HOUR) PRECEDES (TIME '15:30:00', INTERVAL '1' HOUR) AS res_time_precedes,
                         (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) PRECEDES (TIMESTAMP '2020-06-21 15:30:00', INTERVAL '1' HOUR) AS res_ts_precedes,
+                        (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', INTERVAL '1' HOUR) PRECEDES (TIMESTAMP WITH TIME ZONE '2020-06-21 15:30:00 +00:00', INTERVAL '1' HOUR) AS res_ts_tz_precedes,
 
                         -- IMMEDIATELY PRECEDES
                         (DATE '2020-06-21', INTERVAL '1' DAY) IMMEDIATELY PRECEDES (DATE '2020-06-22', INTERVAL '1' DAY) AS res_date_immed_precedes,
                         (TIME '14:00:00', INTERVAL '1' HOUR) IMMEDIATELY PRECEDES (TIME '15:00:00', INTERVAL '1' HOUR) AS res_time_immed_precedes,
                         (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) IMMEDIATELY PRECEDES (TIMESTAMP '2020-06-21 15:00:00', INTERVAL '1' HOUR) AS res_ts_immed_precedes,
+                        (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', INTERVAL '1' HOUR) IMMEDIATELY PRECEDES (TIMESTAMP WITH TIME ZONE '2020-06-21 15:00:00 +00:00', INTERVAL '1' HOUR) AS res_ts_tz_immed_precedes,
 
                         -- SUCCEEDS
                         (DATE '2020-06-25', INTERVAL '1' DAY) SUCCEEDS (DATE '2020-06-21', INTERVAL '3' DAY) AS res_date_succeeds,
                         (TIME '15:30:00', INTERVAL '1' HOUR) SUCCEEDS (TIME '14:00:00', INTERVAL '1' HOUR) AS res_time_succeeds,
                         (TIMESTAMP '2020-06-21 15:30:00', INTERVAL '1' HOUR) SUCCEEDS (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) AS res_ts_succeeds,
+                        (TIMESTAMP WITH TIME ZONE '2020-06-21 15:30:00 +00:00', INTERVAL '1' HOUR) SUCCEEDS (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', INTERVAL '1' HOUR) AS res_ts_tz_succeeds,
 
                         -- IMMEDIATELY SUCCEEDS
                         (DATE '2020-06-25', INTERVAL '1' DAY) IMMEDIATELY SUCCEEDS (DATE '2020-06-24', INTERVAL '1' DAY) AS res_date_immed_succeeds,
                         (TIME '15:00:00', INTERVAL '1' HOUR) IMMEDIATELY SUCCEEDS (TIME '14:00:00', INTERVAL '1' HOUR) AS res_time_immed_succeeds,
-                        (TIMESTAMP '2020-06-21 15:00:00', INTERVAL '1' HOUR) IMMEDIATELY SUCCEEDS (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) AS res_ts_immed_succeeds
+                        (TIMESTAMP '2020-06-21 15:00:00', INTERVAL '1' HOUR) IMMEDIATELY SUCCEEDS (TIMESTAMP '2020-06-21 14:00:00', INTERVAL '1' HOUR) AS res_ts_immed_succeeds,
+                        (TIMESTAMP WITH TIME ZONE '2020-06-21 15:00:00 +00:00', INTERVAL '1' HOUR) IMMEDIATELY SUCCEEDS (TIMESTAMP WITH TIME ZONE '2020-06-21 14:00:00 +00:00', INTERVAL '1' HOUR) AS res_ts_tz_immed_succeeds
                       """
 
 

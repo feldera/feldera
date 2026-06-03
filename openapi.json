@@ -13198,6 +13198,13 @@
             ]
           },
           {
+            "type": "string",
+            "description": "SQL `TIMESTAMP WITH TIME ZONE` type.",
+            "enum": [
+              "TimestampTz"
+            ]
+          },
+          {
             "type": "object",
             "required": [
               "Interval"

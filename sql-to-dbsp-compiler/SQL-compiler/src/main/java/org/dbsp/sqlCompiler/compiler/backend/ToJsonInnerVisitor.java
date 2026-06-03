@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
@@ -421,6 +422,15 @@ public class ToJsonInnerVisitor extends InnerVisitor {
 
     @Override
     public void postorder(DBSPTimestampLiteral node) {
+        if (node.value != null) {
+            this.property("value");
+            this.stream.append(node.value.toString());
+        }
+        super.postorder(node);
+    }
+
+    @Override
+    public void postorder(DBSPTimestampTzLiteral node) {
         if (node.value != null) {
             this.property("value");
             this.stream.append(node.value.toString());

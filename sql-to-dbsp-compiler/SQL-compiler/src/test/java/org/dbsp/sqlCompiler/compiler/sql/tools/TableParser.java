@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 import org.apache.calcite.util.ConversionUtil;
 import org.apache.calcite.util.TimeString;
+import org.apache.calcite.util.TimestampWithTimeZoneString;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -25,6 +26,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
@@ -49,6 +51,7 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
@@ -97,8 +100,7 @@ public class TableParser {
     @Nullable
     static LocalDateTime ZERO = null;
 
-    /** Convert a timestamp from a format like Sat Feb 16 17:32:01 1996 to
-     * a format like 1996-02-16 17:32:01 */
+    /** Convert a timestamp from various formats to a {@link DBSPTimestampLiteral} */
     public static DBSPExpression convertTimestamp(@Nullable String timestamp, DBSPType type) {
         if (timestamp == null)
             return DBSPLiteral.none(type);
@@ -122,6 +124,15 @@ public class TableParser {
             return new DBSPTimestampLiteral(out, type.mayBeNull);
         }
         throw new RuntimeException("Could not parse " + timestamp + " as timestamp");
+    }
+
+    /** Convert a string to a {@link DBSPTimestampTzLiteral}.
+     * The format must be accepted by {@link TimestampWithTimeZoneString}. */
+    public static DBSPExpression convertTimestampTz(@Nullable String timestamp, DBSPType type) {
+        if (timestamp == null)
+            return DBSPLiteral.none(type);
+        TimestampWithTimeZoneString str = new TimestampWithTimeZoneString(timestamp);
+        return new DBSPTimestampTzLiteral(CalciteObject.EMPTY, type, str);
     }
 
     /** Convert a date from the MM-DD-YYYY format (which is used in the Postgres output)
@@ -283,6 +294,7 @@ public class TableParser {
                     yield new DBSPDecimalLiteral(fieldType, value);
                 }
                 case TIMESTAMP -> convertTimestamp(trimmed, fieldType);
+                case TIMESTAMP_TZ -> convertTimestampTz(trimmed, fieldType);
                 case DATE -> parseDate(trimmed, fieldType);
                 case TIME -> parseTime(trimmed, fieldType);
                 case INT8 -> new DBSPI8Literal(CalciteObject.EMPTY, fieldType, Byte.parseByte(trimmed));

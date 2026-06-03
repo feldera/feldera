@@ -44,6 +44,7 @@ import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.IHasPrecision;
@@ -113,9 +114,9 @@ public class TypeCompiler implements ICompilerComponent {
         if (left.sameTypeIgnoringNullability(right))
             return left.withMayBeNull(anyNull);
 
-        if (left.is(DBSPTypeTimestamp.class) && right.is(IsDateType.class))
+        if ((left.is(DBSPTypeTimestamp.class) || left.is(DBSPTypeTimestampTz.class)) && right.is(IsDateType.class))
             return left.withMayBeNull(anyNull);
-        if (right.is(DBSPTypeTimestamp.class) && left.is(IsDateType.class))
+        if ((right.is(DBSPTypeTimestamp.class) || right.is(DBSPTypeTimestampTz.class)) && left.is(IsDateType.class))
             return right.withMayBeNull(anyNull);
 
         if (left.is(DBSPTypeTupleBase.class)) {
@@ -319,6 +320,7 @@ public class TypeCompiler implements ICompilerComponent {
 
     final Set<Integer> timePrecisionsWarned = new HashSet<>();
     final Set<Integer> timestampPrecisionsWarned = new HashSet<>();
+    final Set<Integer> timestampTzPrecisionsWarned = new HashSet<>();
 
     /**
      * Convert a Calcite RelDataType to an equivalent DBSP type.
@@ -496,6 +498,16 @@ public class TypeCompiler implements ICompilerComponent {
                         timestampPrecisionsWarned.add(dt.getPrecision());
                     }
                     return DBSPTypeTimestamp.create(node, nullable);
+                case TIMESTAMP_TZ:
+                    if (dt.getPrecision() != DBSPTypeTimestampTz.PRECISION &&
+                            !timestampTzPrecisionsWarned.contains(dt.getPrecision())) {
+                        this.compiler.reportWarning(context, "TIMESTAMP WITH TIME ZONE precision ignored",
+                                "TIMESTAMP WITH TIME ZONE precision is always TIMESTAMP WITH TIME ZONE(" +
+                                        DBSPTypeTimestampTz.PRECISION +
+                                        "); specified precision " + dt.getPrecision() + " is ignored");
+                        timestampTzPrecisionsWarned.add(dt.getPrecision());
+                    }
+                    return DBSPTypeTimestampTz.create(node, nullable);
                 case DATE:
                     return new DBSPTypeDate(node, nullable);
                 case TIME:

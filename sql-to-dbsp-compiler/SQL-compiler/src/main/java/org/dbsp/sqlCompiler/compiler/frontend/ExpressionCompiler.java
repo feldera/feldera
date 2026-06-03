@@ -41,6 +41,7 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
+import org.apache.calcite.util.TimestampWithTimeZoneString;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
@@ -91,6 +92,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampTzLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
@@ -106,6 +108,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.IHasPrecision;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -324,6 +327,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 case TIMESTAMP:
                     return new DBSPTimestampLiteral(node, type,
                             Objects.requireNonNull(literal.getValueAs(TimestampString.class)));
+                case TIMESTAMP_TZ:
+                    return new DBSPTimestampTzLiteral(node, type,
+                            Objects.requireNonNull(literal.getValueAs(TimestampWithTimeZoneString.class)));
                 case DATE:
                     return new DBSPDateLiteral(node, type, Objects.requireNonNull(literal.getValueAs(DateString.class)));
                 case GEOPOINT:
@@ -404,6 +410,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (opcode == DBSPOpcode.CONCAT) return false;
         if (opcode == DBSPOpcode.SUB && left.is(IsDateType.class) && right.is(IsDateType.class))
             return true;
+        if (left.is(DBSPTypeTimestampTz.class) || right.is(DBSPTypeTimestampTz.class))
+            // This is illegal, will report an error later
+            return false;
         // Dates can be mixed with interval types in a binary operation
         if (left.is(IsTimeRelatedType.class)) return false;
         if (right.is(IsTimeRelatedType.class)) return false;
@@ -520,6 +529,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 // Result is always NULL - evaluate to the NULL literal directly
                 return DBSPLiteral.none(type);
             }
+            if (opcode.isComparison() &&
+                    ((leftType.is(DBSPTypeTimestampTz.class) && !rightType.is(DBSPTypeTimestampTz.class)) ||
+                     (!leftType.is(DBSPTypeTimestampTz.class) && rightType.is(DBSPTypeTimestampTz.class)))) {
+                throw new CompilationError("Operation " + opcode + " between " + leftType.asSqlString() +
+                        " and " + rightType.asSqlString() + " not supported", node);
+            }
             if (opcode == DBSPOpcode.MUL || opcode == DBSPOpcode.DIV || opcode == DBSPOpcode.DIV_INTERVAL_NULL) {
                 // Multiplication between an interval and a numeric value.
                 if (leftType.is(IsIntervalType.class) || rightType.is(IsIntervalType.class)) {
@@ -531,7 +546,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     };
                     if (rightType.is(IsIntervalType.class) && opcode == DBSPOpcode.MUL_INTERVAL) {
                         if (leftType.is(IsIntervalType.class)) {
-                            throw new CompilationError("Operation " + opcode + " between intervals not supported", node);
+                            throw new CompilationError("Operation " + opcode + " between " + leftType.asSqlString() +
+                                    " and " + rightType.asSqlString() + " not supported", node);
                         }
                         DBSPExpression tmp = left;
                         left = right;

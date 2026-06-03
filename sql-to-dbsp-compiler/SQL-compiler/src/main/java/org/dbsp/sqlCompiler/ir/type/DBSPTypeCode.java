@@ -27,7 +27,7 @@ public enum DBSPTypeCode {
     INTERNED_STRING("VARCHAR INTERNED", "InternedString", "InternedString"),
     TIME("TIME", "Time", "Time"),
     TIMESTAMP("TIMESTAMP", "Timestamp", "Timestamp"),
-    TIMESTAMP_TZ("TIMESTAMP WITH TIME ZONE", "", ""),
+    TIMESTAMP_TZ("TIMESTAMP WITH TIME ZONE", "TimestampTz", "TimestampTz"),
     UINT8(null, "u8", "u8"),
     UINT16(null, "u16", "u16"),
     UINT32(null, "u32", "u32"),
