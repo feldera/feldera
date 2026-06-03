@@ -16,9 +16,9 @@ use dbsp::{dynamic::Erase, DBData};
 use feldera_types::config::{StorageConfig, StorageOptions};
 
 use storage_test_compat::{
-    buffer_cache, golden_aux, golden_file_specs, golden_row, golden_row_small, golden_writer2_key,
-    storage_base_and_path, GoldenFileSpec, GoldenRow, GoldenRowSmall, GoldenSize, GoldenWriterKind,
-    DEFAULT_ROWS,
+    buffer_cache, golden_aux, golden_file_specs, golden_row, golden_row_small, golden_row_variant,
+    golden_writer2_key, storage_base_and_path, GoldenFileSpec, GoldenRow, GoldenRowSmall,
+    GoldenRowVariant, GoldenSize, GoldenWriterKind, DEFAULT_ROWS,
 };
 
 struct Config {
@@ -179,6 +179,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     golden_row_small,
                 )?
             }
+            (GoldenWriterKind::Writer1Bloom, GoldenSize::Variant) => {
+                write_writer1_golden::<GoldenRowVariant>(
+                    &output,
+                    config.rows,
+                    config.spec.compression,
+                    golden_row_variant,
+                )?
+            }
             (GoldenWriterKind::Writer2Roaring, GoldenSize::Large) => {
                 write_writer2_golden::<GoldenRow>(
                     &output,
@@ -193,6 +201,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     config.rows,
                     config.spec.compression,
                     golden_row_small,
+                )?
+            }
+            (GoldenWriterKind::Writer2Roaring, GoldenSize::Variant) => {
+                write_writer2_golden::<GoldenRowVariant>(
+                    &output,
+                    config.rows,
+                    config.spec.compression,
+                    golden_row_variant,
                 )?
             }
         }
