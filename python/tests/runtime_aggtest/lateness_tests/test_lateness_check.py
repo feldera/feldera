@@ -12,8 +12,9 @@ class lateness_lateness_tbl(TstTable):
     def __init__(self):
         self.sql = """CREATE TABLE purchase (
                         ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,
-                        amount BIGINT,
-                        value BIGINT LATENESS 5
+                        value BIGINT LATENESS 5,
+                        ts_TZ TIMESTAMP WITH TIME ZONE NOT NULL LATENESS INTERVAL 1 HOUR,
+                        amount BIGINT
                     ) WITH (
                         'append_only' = 'true'
                     )"""
@@ -245,3 +246,15 @@ class lateness_rolling_sum_range_legal(TstView):
                             RANGE BETWEEN INTERVAL '2' HOUR PRECEDING AND CURRENT ROW
                         ) AS rolling_sum
                     FROM purchase"""
+
+
+class lateness_lateness_check_tz(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW daily_total_final_tz
+                    WITH ('emit_final' = 'd')
+                    AS
+                    SELECT
+                        TIMESTAMP_TRUNC(ts_tz, DAY) AS d,
+                        SUM(amount) AS total
+                    FROM purchase
+                    GROUP BY TIMESTAMP_TRUNC(ts_tz, DAY)"""

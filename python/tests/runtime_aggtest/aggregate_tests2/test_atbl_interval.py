@@ -49,6 +49,54 @@ class aggtst_interval_table(TstTable):
         ]
 
 
+class aggtst_interval_table_tz(TstTable):
+    """Define the table with timestamps with time zone used by the view atbl_interval"""
+
+    def __init__(self):
+        self.sql = """CREATE FUNCTION d_tz()
+                      RETURNS TIMESTAMP WITH TIME ZONE NOT NULL AS
+                      CAST('1970-01-01 00:00:00 UTC' AS TIMESTAMP WITH TIME ZONE);
+
+                      CREATE TABLE interval_tbl_tz(
+                      id INT NOT NULL,
+                      c1 TIMESTAMP WITH TIME ZONE,
+                      c2 TIMESTAMP WITH TIME ZONE,
+                      c3 TIMESTAMP WITH TIME ZONE)"""
+
+        self.data = [
+            {
+                "id": 0,
+                "c1": "2014-11-05 08:27:00Z",
+                "c2": "2024-12-05 12:45:00Z",
+                "c3": "2020-03-14 15:41:00Z",
+            },
+            {
+                "id": 0,
+                "c1": "2020-06-21 14:00:00Z",
+                "c2": "1970-01-01 14:33:00Z",
+                "c3": "2023-04-19 11:25:00Z",
+            },
+            {
+                "id": 1,
+                "c1": "1969-03-17 07:01:00Z",
+                "c2": "2015-09-07 01:20:00Z",
+                "c3": "1987-04-29 02:14:00Z",
+            },
+            {
+                "id": 1,
+                "c1": "2020-06-21 14:00:00Z",
+                "c2": "1970-01-01 14:33:00Z",
+                "c3": "2021-11-03 06:33:00Z",
+            },
+            {
+                "id": 1,
+                "c1": "2024-12-05 09:15:00Z",
+                "c2": "2014-11-05 16:30:00Z",
+                "c3": "2017-08-25 16:15:00Z",
+            },
+        ]
+
+
 class aggtst_atbl_interval_seconds(TstView):
     """Define the view used by interval tests as input"""
 
@@ -65,6 +113,24 @@ class aggtst_atbl_interval_seconds(TstView):
                       (c2 - c3)SECOND AS c2_minus_c3,
                       (c3 - c2)SECOND AS c3_minus_c2
                       FROM interval_tbl"""
+
+
+class aggtst_atbl_interval_seconds_tz(TstView):
+    """Define the view used by interval tests as input"""
+
+    def __init__(self):
+        # Result validation is not required for local views
+        self.data = []
+
+        self.sql = """CREATE LOCAL VIEW atbl_interval_seconds_tz AS SELECT
+                      id,
+                      (c1 - c2)SECOND AS c1_minus_c2,
+                      (c2 - c1)SECOND AS c2_minus_c1,
+                      (c1 - c3)SECOND AS c1_minus_c3,
+                      (c3 - c1)SECOND AS c3_minus_c1,
+                      (c2 - c3)SECOND AS c2_minus_c3,
+                      (c3 - c2)SECOND AS c3_minus_c2
+                      FROM interval_tbl_tz"""
 
 
 class aggtst_atbl_interval_seconds_res(TstView):
@@ -130,13 +196,28 @@ class aggtst_atbl_interval_seconds_res(TstView):
                       FROM atbl_interval_seconds"""
 
 
+class aggtst_atbl_interval_seconds_tz_res(TstView):
+    """Interval seconds converted to varchar"""
+
+    def __init__(self):
+        self.data = aggtst_atbl_interval_seconds_res().data
+        self.sql = """CREATE MATERIALIZED VIEW atbl_interval_seconds_res_tz AS SELECT
+                      id,
+                      CAST(c1_minus_c2 AS VARCHAR) AS f_c1,
+                      CAST(c2_minus_c1 AS VARCHAR) AS f_c2,
+                      CAST(c1_minus_c3 AS VARCHAR) AS f_c3,
+                      CAST(c3_minus_c1 AS VARCHAR) AS f_c4,
+                      CAST(c2_minus_c3 AS VARCHAR) AS f_c5,
+                      CAST(c3_minus_c2 AS VARCHAR) AS f_c6
+                      FROM atbl_interval_seconds_tz"""
+
+
 class aggtst_atbl_interval_months(TstView):
     """Define the view used by interval tests as input"""
 
     def __init__(self):
         # Result validation is not required for local views
         self.data = []
-
         self.sql = """CREATE LOCAL VIEW atbl_interval_months AS SELECT
                       id,
                       (c1 - c2)MONTH AS c1_minus_c2,
@@ -146,6 +227,23 @@ class aggtst_atbl_interval_months(TstView):
                       (c2 - c3)MONTH AS c2_minus_c3,
                       (c3 - c2)MONTH AS c3_minus_c2
                       FROM interval_tbl"""
+
+
+class aggtst_atbl_interval_months_tz(TstView):
+    """Define the view used by interval tests as input"""
+
+    def __init__(self):
+        # Result validation is not required for local views
+        self.data = []
+        self.sql = """CREATE LOCAL VIEW atbl_interval_months_tz AS SELECT
+                      id,
+                      (c1 - c2)MONTH AS c1_minus_c2,
+                      (c2 - c1)MONTH AS c2_minus_c1,
+                      (c1 - c3)MONTH AS c1_minus_c3,
+                      (c3 - c1)MONTH AS c3_minus_c1,
+                      (c2 - c3)MONTH AS c2_minus_c3,
+                      (c3 - c2)MONTH AS c3_minus_c2
+                      FROM interval_tbl_tz"""
 
 
 class aggtst_atbl_interval_months_res(TstView):
@@ -209,6 +307,22 @@ class aggtst_atbl_interval_months_res(TstView):
                       CAST(c2_minus_c3 AS VARCHAR) AS f_c5,
                       CAST(c3_minus_c2 AS VARCHAR) AS f_c6
                       FROM atbl_interval_months"""
+
+
+class aggtst_atbl_interval_months_tz_res(TstView):
+    """Interval months converted to varchar"""
+
+    def __init__(self):
+        self.data = aggtst_atbl_interval_months_res().data
+        self.sql = """CREATE MATERIALIZED VIEW atbl_interval_months_res_tz AS SELECT
+                      id,
+                      CAST(c1_minus_c2 AS VARCHAR) AS f_c1,
+                      CAST(c2_minus_c1 AS VARCHAR) AS f_c2,
+                      CAST(c1_minus_c3 AS VARCHAR) AS f_c3,
+                      CAST(c3_minus_c1 AS VARCHAR) AS f_c4,
+                      CAST(c2_minus_c3 AS VARCHAR) AS f_c5,
+                      CAST(c3_minus_c2 AS VARCHAR) AS f_c6
+                      FROM atbl_interval_months_tz"""
 
 
 # Equivalent SQL for Postgres

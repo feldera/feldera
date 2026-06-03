@@ -26,7 +26,8 @@ package org.dbsp.sqlCompiler.ir.type;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 
 /** interface implemented by {@link DBSPTypeTimestamp}, {@link DBSPTypeDate}, 
- * {@link DBSPTypeTime}. */
+ * {@link DBSPTypeTime}, {@link DBSPTypeTimestampTz} */
 public interface IsDateType extends IsBoundedType, IsTimeRelatedType {}

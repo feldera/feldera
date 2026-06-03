@@ -244,7 +244,7 @@ mod kafka_connect_json_converter {
             SqlType::Real => RepresentationType::Float,
             SqlType::Double => RepresentationType::Double,
             SqlType::Time => RepresentationType::Int64,
-            SqlType::Timestamp => RepresentationType::Int64,
+            SqlType::Timestamp | SqlType::TimestampTz => RepresentationType::Int64,
             SqlType::Date => RepresentationType::Int32,
             SqlType::Binary | SqlType::Varbinary => RepresentationType::Bytes,
             SqlType::Array => RepresentationType::Array {

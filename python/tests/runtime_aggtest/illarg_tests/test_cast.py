@@ -1,6 +1,6 @@
 from tests.runtime_aggtest.aggtst_base import TstView
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def t(s):
@@ -13,6 +13,10 @@ def d(s):
 
 def ts(s):
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f")
+
+
+def ts_tz(s):
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=timezone.utc)
 
 
 # INT to other types
@@ -28,6 +32,7 @@ class illarg_cast_int(TstView):
                 "to_varchar": "-12",
                 "to_binary": bytes.fromhex("f4"),
                 "to_timestamp": ts("1970-01-01T00:00:00.0"),
+                "to_timestamp_tz": ts_tz("1970-01-01T00:00:00.0"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_int AS SELECT
@@ -37,7 +42,8 @@ class illarg_cast_int(TstView):
                       CAST(intt AS BOOL) AS to_bool,
                       CAST(intt AS VARCHAR) AS to_varchar,
                       CAST(intt AS BINARY) AS to_binary,
-                      CAST(intt AS TIMESTAMP) AS to_timestamp
+                      CAST(intt AS TIMESTAMP) AS to_timestamp,
+                      CAST(intt AS TIMESTAMP WITH TIME ZONE) AS to_timestamp_tz
                       FROM illegal_tbl
                       WHERE id = 0;"""
 
@@ -53,6 +59,7 @@ class illarg_cast_decimal_legal(TstView):
                 "to_bool": True,
                 "to_varchar": "-1111.52",
                 "to_timestamp": ts("1969-12-31T23:59:59.0"),
+                "to_timestamp_tz": ts_tz("1969-12-31T23:59:59.0"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_decimal_legal AS SELECT
@@ -61,7 +68,8 @@ class illarg_cast_decimal_legal(TstView):
                       CAST(CAST(decimall AS DOUBLE) AS VARCHAR) AS to_double,
                       CAST(decimall AS BOOL) AS to_bool,
                       CAST(decimall AS VARCHAR) AS to_varchar,
-                      CAST(decimall AS TIMESTAMP) AS to_timestamp
+                      CAST(decimall AS TIMESTAMP) AS to_timestamp,
+                      CAST(decimall AS TIMESTAMP WITH TIME ZONE) AS to_timestamp_tz
                       FROM illegal_tbl
                       WHERE id = 0;"""
 
@@ -77,6 +85,7 @@ class illarg_cast_real_legal(TstView):
                 "to_bool": True,
                 "to_varchar": "-57681.18",
                 "to_timestamp": ts("1969-12-31T23:59:03.0"),
+                "to_timestamp_tz": ts_tz("1969-12-31T23:59:03.0"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_real_legal AS SELECT
@@ -85,7 +94,8 @@ class illarg_cast_real_legal(TstView):
                       CAST(CAST(reall AS DOUBLE) AS VARCHAR) AS to_double,
                       CAST(reall AS BOOL) AS to_bool,
                       CAST(reall AS VARCHAR) AS to_varchar,
-                      CAST(reall AS TIMESTAMP) AS to_timestamp
+                      CAST(reall AS TIMESTAMP) AS to_timestamp,
+                      CAST(reall AS TIMESTAMP WITH TIME ZONE) AS to_timestamp_tz
                       FROM illegal_tbl
                       WHERE id = 0;"""
 
@@ -101,6 +111,7 @@ class illarg_cast_double_legal(TstView):
                 "to_bool": True,
                 "to_varchar": "-38.2711234601246",
                 "to_timestamp": ts("1970-01-01T00:00:00.0"),
+                "to_timestamp_tz": ts_tz("1970-01-01T00:00:00.0"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_double_legal AS SELECT
@@ -109,7 +120,8 @@ class illarg_cast_double_legal(TstView):
                       CAST(CAST(dbl AS REAL) AS VARCHAR) AS to_real,
                       CAST(dbl AS BOOL) AS to_bool,
                       CAST(dbl AS VARCHAR) AS to_varchar,
-                      CAST(dbl AS TIMESTAMP) AS to_timestamp
+                      CAST(dbl AS TIMESTAMP) AS to_timestamp,
+                      CAST(dbl AS TIMESTAMP WITH TIME ZONE) AS to_timestamp_tz
                       FROM illegal_tbl
                       WHERE id = 0;"""
 
@@ -137,6 +149,7 @@ class illarg_cast_varchar_legal(TstView):
                 "to_bool": None,
                 "to_binary": bytes.fromhex("68"),
                 "to_timestamp": None,
+                "to_timestamp_tz": None,
                 "to_date": None,
                 "to_time": None,
                 "to_uuid": None,
@@ -150,6 +163,7 @@ class illarg_cast_varchar_legal(TstView):
                       SAFE_CAST(str AS BOOL) AS to_bool,
                       CAST(str AS BINARY) AS to_binary,
                       SAFE_CAST(str AS TIMESTAMP) AS to_timestamp,
+                      SAFE_CAST(str AS TIMESTAMP WITH TIME ZONE) AS to_timestamp_tz,
                       SAFE_CAST(str AS DATE) AS to_date,
                       SAFE_CAST(str AS TIME) AS to_time,
                       SAFE_CAST(str AS UUID) AS to_uuid
@@ -190,6 +204,7 @@ class illarg_cast_timestamp_legal(TstView):
                 "to_varchar": "2020-06-21 14:23:44.123654",
                 "to_date": d("2020-06-21"),
                 "to_time": t("14:23:44.123654"),
+                "to_timestamp_tz": ts_tz("2020-06-21T14:23:44.123654"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_timestamp_legal AS SELECT
@@ -200,7 +215,38 @@ class illarg_cast_timestamp_legal(TstView):
                       CAST(CAST(tmestmp AS DOUBLE) AS VARCHAR) AS to_double,
                       CAST(tmestmp AS VARCHAR) AS to_varchar,
                       CAST(tmestmp AS DATE) AS to_date,
-                      CAST(tmestmp AS TIME) AS to_time
+                      CAST(tmestmp AS TIME) AS to_time,
+                      CAST(tmestmp AS TIMESTAMP WITH TIME ZONE) AS to_timestamp_tz
+                      FROM illegal_tbl
+                      WHERE id = 0;"""
+
+
+# TIMESTAMP WITH TIME ZONE to other types
+class illarg_cast_timestamp_tz_legal(TstView):
+    def __init__(self):
+        self.data = [
+            {
+                "to_int": None,
+                "to_decimal": Decimal(1592749424123),
+                "to_decimal1": None,
+                "to_real": "1592749500000.0",
+                "to_double": "1592749424123.0",
+                "to_varchar": "2020-06-21 14:23:44.123654 +00:00",
+                "to_timestamp": ts("2020-06-21T14:23:44.123654"),
+                "to_date": d("2020-06-21"),
+                "to_time": t("14:23:44.123654"),
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW cast_timestamp_tz_legal AS SELECT
+                      SAFE_CAST(tmestmp_tz AS INT) AS to_int,
+                      CAST(tmestmp_tz AS DECIMAL) AS to_decimal,
+                      SAFE_CAST(tmestmp_tz AS DECIMAL(6,2)) AS to_decimal1,
+                      CAST(SAFE_CAST(tmestmp_tz AS REAL) AS VARCHAR) AS to_real,
+                      CAST(CAST(tmestmp_tz AS DOUBLE) AS VARCHAR) AS to_double,
+                      CAST(tmestmp_tz AS VARCHAR) AS to_varchar,
+                      CAST(tmestmp_tz AS DATE) AS to_date,
+                      CAST(tmestmp_tz AS TIME) AS to_time,
+                      CAST(tmestmp_tz AS TIMESTAMP) AS to_timestamp
                       FROM illegal_tbl
                       WHERE id = 0;"""
 
@@ -209,11 +255,16 @@ class illarg_cast_timestamp_legal(TstView):
 class illarg_cast_date_legal(TstView):
     def __init__(self):
         self.data = [
-            {"to_varchar": "2020-06-21", "to_timestamp": ts("2020-06-21T00:00:00.0")}
+            {
+                "to_varchar": "2020-06-21",
+                "to_timestamp": ts("2020-06-21T00:00:00.0"),
+                "to_timestamp_tz": ts_tz("2020-06-21T00:00:00.0"),
+            }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_date_legal AS SELECT
                       CAST(datee AS VARCHAR) AS to_varchar,
-                      CAST(datee AS TIMESTAMP) AS to_timestamp
+                      CAST(datee AS TIMESTAMP) AS to_timestamp,
+                      CAST(datee AS TIMESTAMP WITH TIME ZONE) AS to_timestamp_tz
                       FROM illegal_tbl
                       WHERE id = 0;"""
 
@@ -225,11 +276,13 @@ class illarg_cast_time_legal(TstView):
             {
                 "to_varchar": "14:23:44.456000000",
                 "to_timestamp": ts("1970-01-01T14:23:44.456"),
+                "to_timestamp_tz": ts_tz("1970-01-01T14:23:44.456"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_time_legal AS SELECT
                       CAST(tme AS VARCHAR) AS to_varchar,
-                      CAST(tme AS TIMESTAMP) AS to_timestamp
+                      CAST(tme AS TIMESTAMP) AS to_timestamp,
+                      CAST(tme AS TIMESTAMP WITH TIME ZONE) AS to_timestamp_tz
                       FROM illegal_tbl
                       WHERE id = 0;"""
 

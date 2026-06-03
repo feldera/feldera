@@ -358,7 +358,7 @@ pub fn validate_field_schema(
         SqlType::Date => {
             return validate_date_schema(avro_schema);
         }
-        SqlType::Timestamp => {
+        SqlType::Timestamp | SqlType::TimestampTz => {
             return validate_timestamp_schema(avro_schema);
         }
         SqlType::Interval(_) => {
@@ -585,7 +585,7 @@ impl AvroSchemaBuilder {
             SqlType::Varbinary => AvroSchema::Bytes,
             SqlType::Time => AvroSchema::TimeMicros,
             SqlType::Date => AvroSchema::Date,
-            SqlType::Timestamp => AvroSchema::TimestampMicros,
+            SqlType::Timestamp | SqlType::TimestampTz => AvroSchema::TimestampMicros,
             SqlType::Interval(_) => {
                 return Err("not implemented: Avro encoding for the SQL interval type".to_string());
             }

@@ -1671,4 +1671,111 @@ public class Regression2Tests extends SqlIoTest {
                     )
                 );""");
     }
+
+    @Test
+    public void issue4146() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts TIMESTAMP WITH TIME ZONE);
+                CREATE VIEW V AS SELECT * FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES TIMESTAMP WITH TIME ZONE '2020-01-01 10:10:10 America/New_York';", """
+                 r
+                ---
+                 2020-01-01 15:10:10 GMT
+                """);
+    }
+
+    @Test
+    public void issue4146a() {
+        // Validated on postgres
+        this.qs("""
+                SELECT COALESCE(NULL, TIMESTAMP WITH TIME ZONE '2020-01-01 10:10:10 America/New_York');
+                 r
+                ---
+                 2020-01-01 15:10:10 UTC
+                (1 row)
+                
+                SELECT CAST(TIMESTAMP WITH TIME ZONE '2020-01-01 10:10:10 America/New_York' AS VARCHAR);
+                 r
+                ---
+                 2020-01-01 15:10:10 +00:00
+                (1 row)
+                
+                SELECT EXTRACT(YEAR FROM TIMESTAMP WITH TIME ZONE '2020-01-01 10:10:10 America/New_York');
+                 r
+                ---
+                 2020
+                (1 row)
+                
+                SELECT MONTH(TIMESTAMP WITH TIME ZONE '2020-01-01 10:10:10 America/New_York');
+                 r
+                ---
+                 1
+                (1 row)
+                
+                SELECT TIMESTAMP WITH TIME ZONE '2020-01-01 10:10:10 America/New_York' > TIMESTAMP WITH TIME ZONE '2020-01-01 10:10:10 America/Los_Angeles';
+                 r
+                ---
+                 false
+                (1 row)
+                
+                SELECT TIMESTAMP WITH TIME ZONE '2020-01-01 08:10:10 America/New_York' = TIMESTAMP WITH TIME ZONE '2020-01-01 05:10:10 America/Los_Angeles';
+                 r
+                ---
+                 true
+                (1 row)
+                
+                SELECT (TIMESTAMP WITH TIME ZONE '2020-01-01 08:10:10 America/New_York' - TIMESTAMP WITH TIME ZONE '2020-01-01 05:10:10 America/Los_Angeles') SECONDS;
+                 r
+                ---
+                 0
+                (1 row)
+                
+                SELECT TIMESTAMP_TRUNC(TIMESTAMP WITH TIME ZONE '2020-01-01 08:10:10 America/New_York', HOUR);
+                 r
+                ---
+                 2020-01-01 13:00:00 GMT
+                (1 row)
+                
+                SELECT CAST(TIMESTAMP WITH TIME ZONE '2020-01-01 08:10:10 America/New_York' AS TIMESTAMP);
+                 r
+                ---
+                 2020-01-01 13:10:10
+                (1 row)
+                
+                SELECT TIMESTAMP WITH TIME ZONE '2020-01-01 10:10:10 UTC' = '2020-01-01 10:10:10 UTC';
+                 r
+                ---
+                 true
+                (1 row)
+                
+                SELECT CAST(CAST(TIMESTAMP WITH TIME ZONE '2020-01-01 10:10:10 UTC' AS VARCHAR) AS TIMESTAMP WITH TIME ZONE) = TIMESTAMP WITH TIME ZONE '2020-01-01 10:10:10 UTC';
+                 r
+                ---
+                 true
+                (1 row)""");
+    }
+
+    @Test
+    public void testCaseTz() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(id INT, tmestmp_tz TIMESTAMP WITH TIME ZONE);
+                CREATE VIEW V AS SELECT tmestmp_tz,
+                CASE WHEN tmestmp_tz = TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44.123654 +00:00' THEN True ELSE NULL END
+                FROM T
+                WHERE id = 0;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(0, TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44.123654 +00:00')", """
+                 t | r
+                ------------
+                 2020-06-21 14:23:44.123654 UTC | true""");
+    }
+
+    @Test
+    public void testCompareTz() {
+        this.statementsFailingInCompilation(
+                "CREATE VIEW V AS SELECT TIMESTAMP '2020-01-01 10:00:00' < TIMESTAMP WITH TIME ZONE '2020-01-01 10:00:00 UTC'",
+                 "Operation < between TIMESTAMP and TIMESTAMP WITH TIME ZONE not supported");
+        this.statementsFailingInCompilation(
+                "CREATE VIEW V AS SELECT TIMESTAMP '2020-01-01 10:00:00' - TIMESTAMP WITH TIME ZONE '2020-01-01 10:00:00 UTC'",
+                "Cannot apply '-' to arguments of type '<TIMESTAMP(0)> - <TIMESTAMP_TZ(0)>'");
+    }
 }
