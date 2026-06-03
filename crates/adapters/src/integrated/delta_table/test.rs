@@ -3219,7 +3219,7 @@ async fn parse_cdc_order_by_defaults() {
 }
 
 /// Pin the exact set of arrow types that the `EXCEPT ALL` cancellation
-/// step in `do_process_cdc_transaction` cannot handle.
+/// step in `build_cdc_dataframe` cannot handle.
 ///
 /// `EXCEPT ALL` is planned via `RowConverter`, so any column type for
 /// which `RowConverter::supports_fields` returns `false` will make the
@@ -3322,7 +3322,7 @@ fn except_all_unsupported_types_are_only_map() {
     assert!(
         !supports(map_type),
         "Map is expected to be unsupported by RowConverter; if this \
-         changes, update the caveat in `do_process_cdc_transaction`",
+         changes, update the caveat in `build_cdc_dataframe`",
     );
 }
 
