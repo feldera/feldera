@@ -916,7 +916,7 @@ where
 /// Build a pipeline that reads from a delta table.
 fn delta_read_pipeline<T, K, KF>(
     input_table_uri: &str,
-    input_config: &HashMap<String, String>,
+    input_config: &HashMap<String, Value>,
     key_fields: &[SqlIdentifier],
     key_func: KF,
     storage_dir: &Path,
@@ -982,7 +982,7 @@ fn delta_write_pipeline<T, K, KF>(
     key_fields: &[SqlIdentifier],
     key_func: KF,
     index: bool,
-    config: &HashMap<String, String>,
+    config: &HashMap<String, Value>,
 ) -> Controller
 where
     T: DBData
@@ -1204,8 +1204,10 @@ fn init_logging() {
     let _ = tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().with_test_writer())
         .with(
+            // Default to `info`, but quiet `object_store` and `buoyant_kernel`,
+            // whose per-request logs drown out the test output. `RUST_LOG` overrides.
             EnvFilter::try_from_default_env()
-                .or_else(|_| EnvFilter::try_new("info"))
+                .or_else(|_| EnvFilter::try_new("object_store=warn,buoyant_kernel=warn,info"))
                 .unwrap(),
         )
         .try_init();
@@ -1688,13 +1690,26 @@ where
 async fn test_cdc(
     _schema: &[Field],
     table_uri: &str,
-    storage_options: &HashMap<String, String>,
+    storage_options: &HashMap<String, Value>,
     data: Vec<DeltaTestStruct>,
     suspend: bool,
     index: bool,
     transaction_mode: DeltaTableTransactionMode,
+    skip_unused_columns: bool,
 ) {
     init_logging();
+
+    // The record the connector is expected to emit. With `skip_unused_columns`,
+    // the connector never reads the `unused` column (nullable, marked unused in
+    // `DeltaTestStruct::schema`), so the `unused` column must contain NULL
+    // regardless of what was written to the Delta table.
+    let expected_record = |record: &DeltaTestStruct| -> DeltaTestStruct {
+        let mut record = record.clone();
+        if skip_unused_columns {
+            record.unused = None;
+        }
+        record
+    };
 
     let mut input_file = NamedTempFile::new().unwrap();
     let input_file_path = input_file.path().display().to_string();
@@ -1704,7 +1719,7 @@ async fn test_cdc(
     // Build pipeline 1.
     let mut output_config = storage_options.clone();
 
-    output_config.insert("mode".to_string(), "truncate".to_string());
+    output_config.insert("mode".to_string(), "truncate".into());
 
     let write_pipeline = tokio::task::spawn_blocking(move || {
         delta_write_pipeline::<DeltaTestStruct, DeltaTestKey, _>(
@@ -1724,27 +1739,24 @@ async fn test_cdc(
     // Build pipeline 2.
     let mut input_config = storage_options.clone();
 
-    input_config.insert("mode".to_string(), "cdc".to_string());
-    input_config.insert("filter".to_string(), "bigint % 2 = 0".to_string());
+    input_config.insert("mode".to_string(), "cdc".into());
+    input_config.insert("filter".to_string(), "bigint % 2 = 0".into());
+    input_config.insert("cdc_delete_filter".to_string(), "__feldera_op = 'd'".into());
+    input_config.insert("cdc_order_by".to_string(), "__feldera_ts".into());
     input_config.insert(
-        "cdc_delete_filter".to_string(),
-        "__feldera_op = 'd'".to_string(),
+        "skip_unused_columns".to_string(),
+        skip_unused_columns.into(),
     );
-    input_config.insert("cdc_order_by".to_string(), "__feldera_ts".to_string());
     input_config.insert(
         "transaction_mode".to_string(),
-        serde_json::to_value(transaction_mode)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string(),
+        serde_json::to_value(transaction_mode).unwrap(),
     );
 
     let table_uri_clone = table_uri.to_string();
 
     let storage_dir = TempDir::new().unwrap();
     let storage_dir_path = storage_dir.path().to_path_buf();
-    let input_config_clone: HashMap<String, String> = input_config.clone();
+    let input_config_clone: HashMap<String, Value> = input_config.clone();
     let mut read_pipeline = tokio::task::spawn_blocking(move || {
         delta_read_pipeline::<DeltaTestStruct, DeltaTestKey, _>(
             &table_uri_clone,
@@ -1784,7 +1796,7 @@ async fn test_cdc(
             println!("pipeline stopped");
 
             let table_uri_clone = table_uri.to_string();
-            let input_config_clone: HashMap<String, String> = input_config.clone();
+            let input_config_clone: HashMap<String, Value> = input_config.clone();
             let storage_dir_path = storage_dir.path().to_path_buf();
 
             read_pipeline = tokio::task::spawn_blocking(move || {
@@ -1809,7 +1821,7 @@ async fn test_cdc(
                 .iter()
                 .filter_map(|x| {
                     if x.bigint % 2 == 0 {
-                        Some(x.clone())
+                        Some(expected_record(x))
                     } else {
                         None
                     }
@@ -1846,7 +1858,7 @@ async fn test_cdc(
                 .iter()
                 .enumerate()
                 .flat_map(|(i, x)| {
-                    let mut x = x.clone();
+                    let mut x = expected_record(x);
                     if x.bigint % 2 == 0 {
                         if i < updated_count {
                             x.boolean = !x.boolean;
@@ -1881,11 +1893,11 @@ async fn test_cdc(
                 .iter()
                 .filter_map(|x| {
                     if x.bigint % 2 == 0 {
-                        let mut x = x.clone();
+                        let mut x = expected_record(x);
                         if index {
                             x.boolean = !x.boolean;
                         }
-                        Some(x.clone())
+                        Some(x)
                     } else {
                         None
                     }
@@ -2051,6 +2063,85 @@ async fn delta_table_cdc_file_test() {
         false,
         false,
         DeltaTableTransactionMode::None,
+        false,
+    )
+    .await;
+}
+
+/// CDC mode must honor `skip_unused_columns`: the connector should not read the
+/// `unused` column (nullable, marked unused in the SQL schema), even though the
+/// Delta table stores a non-null value for it. Regression test for issue #6113.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_skip_unused_columns_test() {
+    let mut runner = TestRunner::default();
+    let data = delta_data(20_000).new_tree(&mut runner).unwrap().current();
+
+    let relation_schema = DeltaTestStruct::schema();
+
+    let input_table_dir = TempDir::new().unwrap();
+    let input_table_uri = input_table_dir.path().display().to_string();
+
+    test_cdc(
+        &relation_schema,
+        &input_table_uri,
+        &HashMap::new(),
+        data,
+        false,
+        false,
+        DeltaTableTransactionMode::None,
+        true,
+    )
+    .await;
+}
+
+/// Same as [`delta_table_cdc_skip_unused_columns_test`] but in `Catchup`
+/// transaction mode, so projection is exercised across the catchup
+/// transaction-batching path as well. Regression test for issue #6113.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_skip_unused_columns_catchup_test() {
+    let mut runner = TestRunner::default();
+    let data = delta_data(20_000).new_tree(&mut runner).unwrap().current();
+
+    let relation_schema = DeltaTestStruct::schema();
+
+    let input_table_dir = TempDir::new().unwrap();
+    let input_table_uri = input_table_dir.path().display().to_string();
+
+    test_cdc(
+        &relation_schema,
+        &input_table_uri,
+        &HashMap::new(),
+        data,
+        false,
+        false,
+        DeltaTableTransactionMode::Catchup,
+        true,
+    )
+    .await;
+}
+
+/// Same as [`delta_table_cdc_skip_unused_columns_catchup_test`] but with
+/// suspend/resume, so projection is exercised across the catchup re-read from a
+/// resumed version. Regression test for issue #6113.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_skip_unused_columns_catchup_suspend_test() {
+    let mut runner = TestRunner::default();
+    let data = delta_data(20_000).new_tree(&mut runner).unwrap().current();
+
+    let relation_schema = DeltaTestStruct::schema();
+
+    let input_table_dir = TempDir::new().unwrap();
+    let input_table_uri = input_table_dir.path().display().to_string();
+
+    test_cdc(
+        &relation_schema,
+        &input_table_uri,
+        &HashMap::new(),
+        data,
+        true,
+        false,
+        DeltaTableTransactionMode::Catchup,
+        true,
     )
     .await;
 }
@@ -2073,6 +2164,7 @@ async fn delta_table_cdc_file_catchup_test() {
         false,
         false,
         DeltaTableTransactionMode::Catchup,
+        false,
     )
     .await;
 }
@@ -2092,6 +2184,7 @@ async fn delta_table_cdc_file_catchup_suspend_test() {
         true,
         false,
         DeltaTableTransactionMode::Catchup,
+        false,
     )
     .await;
 }
@@ -2116,6 +2209,7 @@ async fn delta_table_cdc_file_indexed_test() {
         false,
         true,
         DeltaTableTransactionMode::None,
+        false,
     )
     .await;
 }
@@ -2141,6 +2235,7 @@ async fn delta_table_cdc_file_suspend_test() {
         true,
         false,
         DeltaTableTransactionMode::None,
+        false,
     )
     .await;
 }
@@ -2992,6 +3087,7 @@ async fn delta_table_cdc_s3_test_suspend() {
         false,
         true,
         DeltaTableTransactionMode::None,
+        false,
     )
     .await;
 }

@@ -38,7 +38,7 @@ use feldera_adapterlib::utils::datafusion::{
 use feldera_storage::tokio::TOKIO_DEDICATED_IO;
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::{FtModel, PipelineConfig};
-use feldera_types::program_schema::Relation;
+use feldera_types::program_schema::{Field, Relation};
 use feldera_types::transport::delta_table::{DeltaTableReaderConfig, DeltaTableTransactionMode};
 use futures_util::StreamExt;
 use rand::Rng;
@@ -49,7 +49,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::select;
@@ -866,6 +866,29 @@ struct CatchupFollowState {
     transaction: Option<Option<String>>,
 }
 
+/// A set of column names compared case-insensitively. Delta schemas carry no
+/// case-sensitivity information, so names are stored and probed in lowercased
+/// form (mirrors the long-standing matching in [`used_columns`](DeltaTableInputEndpointInner::used_columns)).
+///
+/// SQL is case-sensitive for quoted column names, but an external table cannot
+/// hold two columns with the same lowercase form, so collapsing to a single
+/// canonical form is safe here.
+#[derive(Default)]
+struct ColumnNameSet {
+    lowercase: BTreeSet<String>,
+}
+
+impl ColumnNameSet {
+    fn from_names(names: impl IntoIterator<Item = String>) -> Self {
+        let lowercase = names.into_iter().map(|c| c.to_lowercase()).collect();
+        Self { lowercase }
+    }
+
+    fn contains(&self, name: &str) -> bool {
+        self.lowercase.contains(&name.to_lowercase())
+    }
+}
+
 struct DeltaTableInputEndpointInner {
     endpoint_name: String,
     schema: Relation,
@@ -893,6 +916,16 @@ struct DeltaTableInputEndpointInner {
 
     /// Active catchup Feldera transaction, shared between the follow loop and `execute_df`.
     catchup_follow_state: Mutex<CatchupFollowState>,
+
+    /// SQL columns the connector actually reads (skippable unused columns
+    /// removed when `skip_unused_columns` is set). A delta column is kept iff it
+    /// is a member. Derived once from the immutable SQL schema.
+    used_sql_columns: OnceLock<ColumnNameSet>,
+
+    /// SQL columns the SQL program does not need, i.e. not read from the table.
+    /// A delta column is dropped iff it is a member. Derived once from the
+    /// immutable SQL schema.
+    skippable_sql_columns: OnceLock<ColumnNameSet>,
 }
 
 #[derive(Debug, Clone)]
@@ -940,6 +973,8 @@ impl DeltaTableInputEndpointInner {
             queue,
             metrics,
             catchup_follow_state: Mutex::new(CatchupFollowState::default()),
+            used_sql_columns: OnceLock::new(),
+            skippable_sql_columns: OnceLock::new(),
         }
     }
 
@@ -1122,53 +1157,51 @@ impl DeltaTableInputEndpointInner {
         }
     }
 
+    /// SQL columns the connector reads, matched case-insensitively against Delta
+    /// column names. When `skip_unused_columns` is set, skippable unused columns
+    /// are removed. Derived once from the immutable SQL schema and cached.
+    fn used_sql_columns(&self) -> &ColumnNameSet {
+        self.used_sql_columns.get_or_init(|| {
+            ColumnNameSet::from_names(
+                self.schema
+                    .fields
+                    .iter()
+                    .filter(|f| !self.skip_unused_columns() || !Self::is_skippable(f))
+                    .map(|f| f.name.name()),
+            )
+        })
+    }
+
+    /// SQL columns the SQL program does not need (skippable unused columns),
+    /// matched case-insensitively against Delta column names. Derived once from
+    /// the immutable SQL schema and cached.
+    fn skippable_sql_columns(&self) -> &ColumnNameSet {
+        self.skippable_sql_columns.get_or_init(|| {
+            ColumnNameSet::from_names(
+                self.schema
+                    .fields
+                    .iter()
+                    .filter(|f| Self::is_skippable(f))
+                    .map(|f| f.name.name()),
+            )
+        })
+    }
+
     /// Compute the subset of columns in the Delta table schema that occur in the SQL
     /// table declaration.
+    ///
+    /// Delta schemas carry no case-sensitivity information, so column names are
+    /// matched both as-is and lowercased (see [`ColumnNameSet`]).
     fn used_columns(&self, table: &DeltaTable) -> Vec<String> {
-        // Column names in the SQL schema.
-        let sql_columns = if self.skip_unused_columns() {
-            self.schema
-                .fields
-                .iter()
-                // skip unused columns as long as they are nullable or have a default value.
-                .filter(|f| !f.unused || (!f.columntype.nullable && f.default.is_none()))
-                .map(|field| field.name.name())
-                .collect::<Vec<String>>()
-        } else {
-            self.schema
-                .fields
-                .iter()
-                .map(|field| field.name.name())
-                .collect::<Vec<String>>()
-        };
-
-        let table_schema = table
+        let used = self.used_sql_columns();
+        table
             .snapshot()
             .expect("Delta table snapshot must be loaded before computing used columns")
-            .schema();
-        let delta_columns = table_schema
+            .schema()
             .fields()
+            .filter(|f| used.contains(f.name()))
             .map(|f| f.name().to_string())
-            .collect::<Vec<String>>();
-
-        // We need to be careful in checking whether a Delta column name occurs in
-        // sql_columns.  Delta doesn't seem to include case sensitivity information any
-        // any form in its schema.  So we conservatively check whether column name
-        // occurs in the SQL tables as is or whether a lowercase column name occurs
-        // in the set of SQL columns converted to lowercase.
-
-        let sql_columns = sql_columns.iter().cloned().collect::<BTreeSet<_>>();
-        let sql_columns_lowercase = sql_columns
-            .iter()
-            .map(|c| c.to_lowercase())
-            .collect::<BTreeSet<_>>();
-
-        delta_columns
-            .into_iter()
-            .filter(|c| {
-                sql_columns.contains(c) || sql_columns_lowercase.contains(&c.to_lowercase())
-            })
-            .collect::<Vec<_>>()
+            .collect()
     }
 
     fn used_column_list(&self, table: &DeltaTable) -> String {
@@ -1179,6 +1212,45 @@ impl DeltaTableInputEndpointInner {
             .map(quote_sql_identifier)
             .collect::<Vec<_>>()
             .join(", ")
+    }
+
+    /// True if a table column can be skipped: no user-visible result depends on
+    /// it, and omitting it lets us substitute NULL or its default value (it is
+    /// nullable or has a default).
+    ///
+    /// The read paths that keep these columns and those that drop them share
+    /// this one predicate, so they stay in sync.
+    fn is_skippable(field: &Field) -> bool {
+        field.unused && (field.columntype.nullable || field.default.is_some())
+    }
+
+    /// Project `df` to the columns the connector reads when `skip_unused_columns`
+    /// is set: drop skippable unused columns, keep everything else -- including
+    /// Delta metadata columns absent from the SQL schema (e.g. `__feldera_op`,
+    /// `__feldera_ts`) that `cdc_order_by`/`cdc_delete_filter`/`filter` reference.
+    fn project_cdc_columns(&self, df: DataFrame) -> AnyResult<DataFrame> {
+        if !self.skip_unused_columns() {
+            return Ok(df);
+        }
+
+        // Skippable SQL set is cached; the Delta column list comes from `df`'s
+        // own schema each call, so projection stays correct if column mapping
+        // ever makes the read schema vary across versions.
+        let skippable = self.skippable_sql_columns();
+
+        // Own the kept names before consuming `df`: `select_columns` takes `df`
+        // by value, so the `df.schema()` borrow must end first.
+        let kept: Vec<String> = df
+            .schema()
+            .fields()
+            .iter()
+            .filter(|f| !skippable.contains(f.name()))
+            .map(|f| f.name().to_string())
+            .collect();
+        let kept: Vec<&str> = kept.iter().map(String::as_str).collect();
+
+        df.select_columns(&kept)
+            .map_err(|e| anyhow!("error projecting CDC columns: {e}"))
     }
 
     /// Load the entire table snapshot as a single "select * where <filter>" query.
@@ -2044,7 +2116,7 @@ impl DeltaTableInputEndpointInner {
             return Ok(None);
         };
 
-        let schema = self
+        let snapshot_df = self
             .datafusion
             .table("snapshot")
             .await
@@ -2055,9 +2127,24 @@ impl DeltaTableInputEndpointInner {
                         "internal error compiling 'cdc_delete_filter' expression '{delete_filter}'; {REPORT_ERROR}: table 'snapshot' not found"
                     ),
                 )
-            })?
-            .schema()
-            .clone();
+            })?;
+
+        // The compiled `PhysicalExpr` binds columns by index, so it must see the
+        // same schema as the batches it will evaluate. When `skip_unused_columns`
+        // is set, `do_process_cdc_transaction` projects those batches to the CDC
+        // read set via `project_cdc_columns`, so project here through the same
+        // helper. Both derive the read set from the same Delta snapshot (this
+        // `snapshot` table is registered from it), so the column order matches.
+        let snapshot_df = self.project_cdc_columns(snapshot_df).map_err(|e| {
+            ControllerError::invalid_transport_configuration(
+                &self.endpoint_name,
+                &format!(
+                    "internal error compiling 'cdc_delete_filter' expression '{delete_filter}'; {REPORT_ERROR}: {e}"
+                ),
+            )
+        })?;
+
+        let schema = snapshot_df.schema().clone();
 
         let filter_expr = self
             .datafusion
@@ -2543,7 +2630,11 @@ impl DeltaTableInputEndpointInner {
             )
             .await?;
         } else {
-            let used_columns = self.used_columns(table);
+            // Compute the projected read set once for the whole transaction; each
+            // `process_action` borrows the `&str` view rather than re-collecting it
+            // per Add/Remove. `used_column_names` owns the strings the view points at.
+            let used_column_names = self.used_columns(table);
+            let used_columns: Vec<&str> = used_column_names.iter().map(String::as_str).collect();
 
             // TODO: consider processing all Add actions and all Remove actions in one
             // go using `ListingTable`, which understands partitioning and can probably
@@ -2704,6 +2795,14 @@ impl DeltaTableInputEndpointInner {
             anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading 'cdc_adds' table: {e}")
         })?;
 
+        // Drop unused columns when `skip_unused_columns` is set, so DataFusion
+        // never reads them off disk. Both sides get the same column list so the
+        // `EXCEPT ALL` in `build_cdc_dataframe` still lines up, and metadata
+        // columns used by `cdc_order_by`/`cdc_delete_filter`/`filter` are kept.
+        let adds_df = self
+            .project_cdc_columns(adds_df)
+            .map_err(|e| anyhow!("internal error processing {description}; {REPORT_ERROR}; {e}"))?;
+
         let removes_df = if removes.is_empty() {
             None
         } else {
@@ -2714,9 +2813,13 @@ impl DeltaTableInputEndpointInner {
             self.datafusion.register_table("cdc_removes", removes_table).map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; error registering 'cdc_removes' table: {e}")
             })?;
-            Some(self.datafusion.table("cdc_removes").await.map_err(|e| {
+            let removes_df = self.datafusion.table("cdc_removes").await.map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading 'cdc_removes' table: {e}")
-            })?)
+            })?;
+            let removes_df = self.project_cdc_columns(removes_df).map_err(|e| {
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; {e}")
+            })?;
+            Some(removes_df)
         };
 
         // The `cdc_order_by` expression is mandatory in CDC mode (enforced
@@ -2784,7 +2887,7 @@ impl DeltaTableInputEndpointInner {
         &self,
         action: &Action,
         table: &DeltaTable,
-        used_columns: &[String],
+        used_columns: &[&str],
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
         start_transaction: Option<Option<String>>,
@@ -2826,17 +2929,19 @@ impl DeltaTableInputEndpointInner {
         result
     }
 
-    // TODO: here, as well as in `process_cdc_transaction`, we can get some potential speedup by only reading a subset
-    // of columns that occurs in the SQL declaration, similar to how we already do when reading the snapshot.  However,
-    // this requires some extra care, since different transactions in the log can have different schemas. The implementation
-    // should therefore monitor for schema changes and update the set of relevant columns appropriately.
+    // NOTE: Column projection (follow mode here, CDC mode in `do_process_cdc_transaction`) projects
+    // against the startup snapshot schema, which `create_parquet_table` forces onto every Parquet
+    // file we read. This assumes a stable schema across the log versions we follow. DataFusion's
+    // schema adapter handles additive evolution (new columns ignored, missing columns read as NULL);
+    // a renamed/dropped column also reads as NULL, and an uncastable type change errors at read time.
+    // Real per-version evolution would require reloading the table and re-deriving the column set.
     #[allow(clippy::too_many_arguments)]
     async fn add_with_polarity(
         &self,
         path: &str,
         polarity: bool,
         table: &DeltaTable,
-        used_columns: &[String],
+        used_columns: &[&str],
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
         start_transaction: Option<Option<String>>,
@@ -2858,7 +2963,6 @@ impl DeltaTableInputEndpointInner {
             anyhow!("internal error processing file {full_path}; {REPORT_ERROR}; error registering Parquet table: {e}")
         })?;
 
-        let columns: Vec<&str> = used_columns.iter().map(String::as_str).collect();
         let df = self
             .datafusion
             .table("tmp_table")
@@ -2866,7 +2970,7 @@ impl DeltaTableInputEndpointInner {
             .map_err(|e| {
                 anyhow!("internal error processing file {full_path}; {REPORT_ERROR}; error reading 'tmp_table': {e}")
             })?
-            .select_columns(&columns)
+            .select_columns(used_columns)
             .map_err(|e| {
                 anyhow!("internal error processing file {full_path}; {REPORT_ERROR}; error selecting columns: {e}")
             })?;
@@ -2944,5 +3048,44 @@ mod format_datafusion_error_tests {
             msg.contains("bad column reference"),
             "lost the original error text; got: {msg}"
         );
+    }
+}
+
+#[cfg(test)]
+mod is_skippable_tests {
+    use super::DeltaTableInputEndpointInner;
+    use feldera_types::program_schema::{ColumnType, Field};
+
+    fn field(unused: bool, nullable: bool, default: Option<&str>) -> Field {
+        let mut field = Field::new("c".into(), ColumnType::varchar(nullable)).with_unused(unused);
+        field.default = default.map(str::to_string);
+        field
+    }
+
+    #[test]
+    fn skippable_only_when_unused_and_safely_omittable() {
+        // A used column is never skippable, whatever its type.
+        assert!(!DeltaTableInputEndpointInner::is_skippable(&field(
+            false, true, None
+        )));
+        assert!(!DeltaTableInputEndpointInner::is_skippable(&field(
+            false,
+            false,
+            Some("0")
+        )));
+
+        // An unused column is skippable only if omitting it is well-defined:
+        // it is nullable, or it carries a default.
+        assert!(DeltaTableInputEndpointInner::is_skippable(&field(
+            true, true, None
+        )));
+        assert!(DeltaTableInputEndpointInner::is_skippable(&field(
+            true,
+            false,
+            Some("0")
+        )));
+        assert!(!DeltaTableInputEndpointInner::is_skippable(&field(
+            true, false, None
+        )));
     }
 }
