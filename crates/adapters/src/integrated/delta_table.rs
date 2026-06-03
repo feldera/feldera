@@ -1,3 +1,4 @@
+mod deletion_vector;
 mod input;
 mod output;
 
