@@ -20,6 +20,15 @@ The Delta Lake input connector supports checkpoint and resume and
 at-least-once [fault tolerance](/pipelines/fault-tolerance), but not
 exactly once fault tolerance.
 
+Tables that use [deletion vectors](https://docs.delta.io/latest/delta-deletion-vectors.html)
+(soft deletes) are supported in all modes: rows masked by a deletion vector are
+excluded from the ingested stream. In the `cdc` mode, a commit that
+soft-deletes rows updates a file's deletion vector without writing new rows;
+the connector recognizes such commits and skips them without reading the file,
+so previously ingested events are neither re-emitted nor retracted. A commit
+that *shrinks* a deletion vector (a restore) is skipped the same way: rows it
+un-deletes are not emitted as events.
+
 ## Delta Lake input connector configuration
 
 | Property                    | Type   | Default    | Description   |
