@@ -44,16 +44,21 @@ jobs:
         runner:
           - [k8s-runners-amd64]
           - [k8s-runners-arm64]
-        # Three shards balanced by measured @Test method count (~500 each),
-        # not by alphabet halves. The heavy letters R (Regression*) and P
-        # (Postgres*) are indivisible, so R-Z stays slightly heavier.
+        # Single shard per arch: with zstd caching the cache restore is cheap,
+        # so paying the per-shard restore + build.sh overhead N times no longer
+        # pays off. The matrix dimension stays so we can re-shard by swapping
+        # this entry for the balanced 3-way split kept below.
         shard:
-          - name: A-I
-            pattern: "A*,B*,C*,D*,E*,F*,G*,H*,I*"
-          - name: J-Q
-            pattern: "J*,K*,L*,M*,N*,O*,P*,Q*"
-          - name: R-Z
-            pattern: "R*,S*,T*,U*,V*,W*,X*,Y*,Z*"
+          - name: all
+            pattern: "A*,B*,C*,D*,E*,F*,G*,H*,I*,J*,K*,L*,M*,N*,O*,P*,Q*,R*,S*,T*,U*,V*,W*,X*,Y*,Z*"
+          # Balanced 3-way split (by measured @Test method count, ~500 each);
+          # uncomment and drop the `all` entry to re-enable sharding.
+          # - name: A-I
+          #   pattern: "A*,B*,C*,D*,E*,F*,G*,H*,I*"
+          # - name: J-Q
+          #   pattern: "J*,K*,L*,M*,N*,O*,P*,Q*"
+          # - name: R-Z
+          #   pattern: "R*,S*,T*,U*,V*,W*,X*,Y*,Z*"
     runs-on: ${{ matrix.runner }}
 
     container:
@@ -122,10 +127,10 @@ jobs:
         working-directory: ./sql-to-dbsp-compiler
         if: ${{ vars.CI_DRY_RUN != 'true' }}
 
-      # Quick SLT smoke check; runs once per arch on the A-I shard so it isn't
-      # duplicated across shards (the explicit -Dtest selector is independent
-      # of the shard pattern).
+      # Quick SLT smoke check; gated to the first shard so it runs once per arch
+      # rather than once per shard (the explicit -Dtest selector is independent
+      # of the shard pattern). Update the name if the first shard is renamed.
       - name: Run one quick SLT test
-        if: ${{ vars.CI_DRY_RUN != 'true' && matrix.shard.name == 'A-I' }}
+        if: ${{ vars.CI_DRY_RUN != 'true' && matrix.shard.name == 'all' }}
         run: mvn test --no-transfer-progress -B -Dsurefire.failIfNoSpecifiedTests=false -Dtest=RotateTests#quick
         working-directory: ./sql-to-dbsp-compiler
