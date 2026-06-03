@@ -240,6 +240,12 @@ public class PostgresStringTests extends SqlIoTest {
                 ------------------
                  t
                 (1 row)
+                
+                SELECT TRIM('  bunch o blanks ') = 'bunch o blanks' AS "bunch o blanks";
+                 bunch o blanks
+                ----------------
+                 t
+                (1 row)
                 """);
     }
 
