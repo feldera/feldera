@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  # EXPERIMENT: sccache is disabled here on purpose (no RUSTC_WRAPPER). Instead
+  # sccache is disabled here on purpose (no RUSTC_WRAPPER). Instead
   # of per-crate compile caching we cache the whole target/ trees (see the
   # cache step below) and let cargo incremental rebuilds do the work. Comparing
   # wall-clock against the sccache setup tells us which is faster for this job.
@@ -83,7 +83,7 @@ jobs:
       - name: Cache Rust dependencies and target
         uses: ./.github/actions/feldera-minio-cache
         with:
-          # EXPERIMENT: cache target/ in place of sccache. registry/src is
+          # cache target/ in place of sccache. registry/src is
           # excluded — cargo regenerates it from registry/cache archives. The
           # test framework writes generated pipelines to sql-to-dbsp-compiler/
           # temp and multi, excluded from the workspace per Cargo.toml, so
@@ -106,7 +106,10 @@ jobs:
             /home/ubuntu/.gradle
             /home/ubuntu/.m2/repository
             ./sql-to-dbsp-compiler/calcite
-          key: test-java-jvm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env', 'sql-to-dbsp-compiler/**/pom.xml') }}
+          # List poms explicitly: a '**/pom.xml' glob walks the restored
+          # target/ trees (millions of files) and blows past hashFiles' 120s
+          # limit. These four are the only source poms in the module.
+          key: test-java-jvm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env', 'sql-to-dbsp-compiler/pom.xml', 'sql-to-dbsp-compiler/SQL-compiler/pom.xml', 'sql-to-dbsp-compiler/simulator/pom.xml', 'sql-to-dbsp-compiler/slt/pom.xml') }}
           restore-keys: |
             test-java-jvm-${{ runner.os }}-${{ runner.arch }}-
 
