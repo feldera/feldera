@@ -248,6 +248,50 @@ class DeltaTestLocation:
             raise
         return dt.count()
 
+    def read_table(self, missing_ok: bool = False):
+        """Return the Delta table as a pyarrow Table.
+
+        The `deltalake` import is deferred to here so that module-level
+        test collection does not crash on aarch64 hosts where the wheel
+        aborts on import; tests that need this method gate themselves
+        with `@skip_on_arm64`.
+
+        :param missing_ok: When True, return ``None`` if the table does not
+            exist instead of raising.
+        """
+        from deltalake import DeltaTable
+        from deltalake.exceptions import TableNotFoundError
+
+        try:
+            dt = DeltaTable(self.uri, storage_options=self.delta_storage_options())
+        except TableNotFoundError:
+            if missing_ok:
+                return None
+            raise
+        return dt.to_pyarrow_table()
+
+    def log_files(self, missing_ok: bool = False) -> list[str]:
+        """Return the list of data files in the current Delta snapshot.
+
+        The `deltalake` import is deferred to here so that module-level
+        test collection does not crash on aarch64 hosts where the wheel
+        aborts on import; tests that need this method gate themselves
+        with `@skip_on_arm64`.
+
+        :param missing_ok: When True, return an empty list if the table does
+            not exist instead of raising.
+        """
+        from deltalake import DeltaTable
+        from deltalake.exceptions import TableNotFoundError
+
+        try:
+            dt = DeltaTable(self.uri, storage_options=self.delta_storage_options())
+        except TableNotFoundError:
+            if missing_ok:
+                return []
+            raise
+        return dt.file_uris()
+
     def cleanup(self) -> None:
         """Remove the local temp directory, if any.
 
