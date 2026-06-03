@@ -251,8 +251,8 @@ example.
         <code>SUBSTRING('Thomas' from 3)</code> => <code>omas</code><br></br></td>
   </tr>
   <tr>
-    <td><a id="trim"></a><code>TRIM ( [ LEADING | TRAILING | BOTH ]</code> characters <code>FROM</code> string <code>)</code></td>
-    <td>Remove <code>characters</code> from the specified ends of <code>string</code></td>
+    <td><a id="trim"></a><code>TRIM ( [ LEADING | TRAILING | BOTH ]</code> [<i>characters</i> <code>FROM</code> ] string <code>)</code></td>
+    <td>Remove <i>characters</i> from the specified ends of <code>string</code>.  If <i>characters</i> is not specified, it is replaced with a single space.</td>
     <td><code>TRIM(both 'xyz' from 'yxTomxx')</code> => <code>Tom</code><br></br><code>TRIM(leading 'xyz' from 'yxTomxx')</code> => <code>Tomxx</code></td>
   </tr>
   <tr>
