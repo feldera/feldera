@@ -5,10 +5,14 @@ compatibility across versions.
 
 Golden files live in `crates/storage-test-compat/golden-files/` and are named:
 
-- `golden-batch-v{VERSION}-large.feldera`
-- `golden-batch-v{VERSION}-snappy-large.feldera`
-- `golden-batch-v{VERSION}-small.feldera`
-- `golden-batch-v{VERSION}-snappy-small.feldera`
+- `golden-batch-v{VERSION}{COMPRESSION}-large-{FILTER}.feldera`
+- `golden-batch-v{VERSION}{COMPRESSION}-small-{FILTER}.feldera`
+- `golden-batch-v{VERSION}{COMPRESSION}-variant-{FILTER}.feldera`
+
+where
+
+- FILTER is one of "bloom" and "roaring".
+- COMPRESSION is one of "" (empty) and "snappy"
 
 The `large` files use the wide tuple format (`Tup65`) and the `small` files use
 a compact `Tup8` format. Unit tests in this crate read these files and assert
