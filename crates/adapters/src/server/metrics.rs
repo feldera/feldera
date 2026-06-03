@@ -476,12 +476,54 @@ where
                 threads,
             );
         }
+        if let Some(swap_bytes) = process_swap_bytes() {
+            self.gauge(
+                "process_swap_bytes",
+                "Amount of the process's memory that is swapped out, in bytes.  A nonzero value indicates that the process is swapping, which degrades performance.",
+                labels,
+                swap_bytes,
+            );
+        }
     }
 
     /// Consumes this metrics writer and returns the output.
     pub fn into_output(self) -> String {
         self.formatter.into_output()
     }
+}
+
+/// Returns the number of bytes of this process's memory that is currently
+/// swapped out, if it can be determined.
+///
+/// On Linux, this is read from the `VmSwap` field of `/proc/self/status`.  On
+/// other platforms, or if the field is unavailable, returns `None` so that the
+/// metric is simply omitted rather than reported as a misleading zero.
+#[cfg(target_os = "linux")]
+fn process_swap_bytes() -> Option<u64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    parse_vm_swap_bytes(&status)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn process_swap_bytes() -> Option<u64> {
+    None
+}
+
+/// Parses the `VmSwap` field out of the contents of `/proc/self/status`,
+/// returning the swap usage in bytes.
+///
+/// The field looks like `VmSwap:\t    1234 kB`, where the value is in kibibytes.
+/// Returns `None` if the field is missing or cannot be parsed.
+#[cfg(any(target_os = "linux", test))]
+fn parse_vm_swap_bytes(status: &str) -> Option<u64> {
+    for line in status.lines() {
+        if let Some(rest) = line.strip_prefix("VmSwap:") {
+            // The value is in kB (kibibytes); convert to bytes.
+            let kib: u64 = rest.split_whitespace().next()?.parse().ok()?;
+            return Some(kib * 1024);
+        }
+    }
+    None
 }
 
 /// Transforms a label into the form used for formatting a Prometheus label.
@@ -818,8 +860,29 @@ impl Histogram for ExponentialHistogramSnapshot {
 mod tests {
     use crate::server::metrics::{
         Bucket, Histogram, JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter,
-        PrometheusFormatter,
+        PrometheusFormatter, parse_vm_swap_bytes,
     };
+
+    #[test]
+    fn parse_vm_swap() {
+        let status = "\
+Name:\tpipeline
+VmPeak:\t  123456 kB
+VmSwap:\t    1024 kB
+Threads:\t8
+";
+        // 1024 kB == 1 MiB == 1048576 bytes.
+        assert_eq!(parse_vm_swap_bytes(status), Some(1024 * 1024));
+
+        // Missing field yields None.
+        assert_eq!(parse_vm_swap_bytes("VmPeak:\t  123456 kB\n"), None);
+
+        // Zero is a valid, distinct value (process not swapping).
+        assert_eq!(parse_vm_swap_bytes("VmSwap:\t       0 kB\n"), Some(0));
+
+        // Malformed value yields None rather than panicking.
+        assert_eq!(parse_vm_swap_bytes("VmSwap:\tnot-a-number kB\n"), None);
+    }
 
     #[test]
     fn prometheus_writer() {
