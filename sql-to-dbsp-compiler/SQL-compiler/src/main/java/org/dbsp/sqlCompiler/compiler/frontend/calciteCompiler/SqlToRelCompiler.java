@@ -63,6 +63,7 @@ import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.calcite.rel.type.RelDataTypeSystemImpl;
 import org.apache.calcite.rel.type.RelProtoDataType;
 import org.apache.calcite.rel.type.RelRecordType;
+import org.apache.calcite.rel.type.StructKind;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexInputRef;
@@ -128,6 +129,7 @@ import org.apache.calcite.sql2rel.ConvertToChecked;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.util.Litmus;
+import org.apache.calcite.util.Pair;
 import org.dbsp.generated.parser.DbspParserImpl;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
@@ -460,6 +462,25 @@ public class SqlToRelCompiler implements IWritesLogs {
         @Override
         public Charset getDefaultCharset() {
             return Charsets.UTF_8;
+        }
+
+        @Override
+        public RelDataType createStructType(
+                final List<RelDataType> typeList,
+                final List<String> fieldNameList) {
+            return super.createStructType(StructKind.PEEK_FIELDS_NO_EXPAND, typeList, fieldNameList);
+        }
+
+        @Override
+        public RelDataType createStructType(
+                final List<? extends Map.Entry<String, RelDataType>> fieldList) {
+            return this.createStructType(Pair.right(fieldList), Pair.left(fieldList));
+        }
+
+        @Override
+        @SuppressWarnings("deprecation")
+        public FieldInfoBuilder builder() {
+            return new FieldInfoBuilder(this).kind(StructKind.PEEK_FIELDS_NO_EXPAND);
         }
 
         @Override

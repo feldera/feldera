@@ -781,6 +781,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     return new CompilationError(message, range);
                 }
             }
+            String newMessage = message.replace(":PEEK_NO_EXPAND", "");
+            newMessage = newMessage.replace("RECORDTYPE", "ROW");
+            if (!newMessage.equals(message)) {
+                return new CompilationError(newMessage, getRange(e));
+            }
         }
         return new CompilationError(e);
     }

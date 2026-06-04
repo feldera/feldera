@@ -281,7 +281,7 @@ public class Regression2Tests extends SqlIoTest {
         this.statementsFailingInCompilation("""
                 CREATE MATERIALIZED VIEW v AS SELECT
                 (DATE '2020-06-21', DATE '2020-06-21' + INTERVAL '1' YEAR) CONTAINS TIME '12:00:00' AS res;""",
-                "Cannot apply 'CONTAINS' to arguments of type '<RECORDTYPE(DATE EXPR$0, DATE EXPR$1)> CONTAINS <TIME(0)>'");
+                "Cannot apply 'CONTAINS' to arguments of type '<ROW(DATE EXPR$0, DATE EXPR$1)> CONTAINS <TIME(0)>'");
     }
 
     @Test

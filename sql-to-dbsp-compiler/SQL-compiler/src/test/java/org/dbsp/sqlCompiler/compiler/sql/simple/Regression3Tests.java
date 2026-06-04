@@ -637,4 +637,29 @@ public class Regression3Tests extends SqlIoTest {
         this.qf("SELECT CAST('blah' AS BOOLEAN)",
                 "Cannot convert string 'blah' to BOOLEAN");
     }
+
+    @Test
+    public void issue3636() {
+        this.getCC("""
+                CREATE TABLE T (
+                  id INT,
+                  col ROW(field1 VARCHAR, field2 INT)
+                );
+                CREATE VIEW W AS SELECT col.field2 FROM T;""");
+
+        this.getCC("""
+                CREATE TABLE t (
+                    id VARCHAR,
+                    r ROW(b VARCHAR)
+                );
+                CREATE VIEW V AS SELECT id, t.r.b, r.b FROM t;""");
+
+        this.getCC("""
+                CREATE TABLE T(
+                  b VARCHAR,
+                  r ROW (b VARCHAR)
+                );
+                
+                CREATE VIEW Z AS SELECT b, r.b, t.b FROM T;""");
+    }
 }
