@@ -4,6 +4,7 @@ import time
 import pytest
 from http import HTTPStatus
 from feldera import PipelineBuilder, Pipeline
+from feldera.runtime_config import RuntimeConfig
 from feldera.enums import BootstrapPolicy
 from tests import TEST_CLIENT
 from .helper import (
@@ -27,7 +28,10 @@ from .helper import (
     post_no_body,
 )
 from tests import enterprise_only
-from feldera.testutils import single_host_only
+from feldera.testutils import (
+    FELDERA_TEST_NUM_WORKERS,
+    FELDERA_TEST_NUM_HOSTS,
+)
 
 
 def _wait_for_stopped_with_error(name: str, timeout_s: float = 90.0):
@@ -533,13 +537,17 @@ def test_pipeline_double_start(pipeline_name):
 
 
 @gen_pipeline_name
-@single_host_only
 def test_pipeline_storage_status_details_without_checkpoints(pipeline_name):
     """
     Validate storage_status_details transitions and clear behavior using the Python API
     without checkpoints.
     """
-    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+    pipeline = PipelineBuilder(TEST_CLIENT,
+                               pipeline_name,
+                               "",
+                               runtime_config=RuntimeConfig(
+                                   hosts=FELDERA_TEST_NUM_HOSTS,
+                                   workers=FELDERA_TEST_NUM_WORKERS)).create_or_replace()
 
     # Initially no details
     assert pipeline.storage_status() == StorageStatus.CLEARED
@@ -575,7 +583,6 @@ def test_pipeline_storage_status_details_without_checkpoints(pipeline_name):
 
 
 @gen_pipeline_name
-@single_host_only
 @enterprise_only
 def test_pipeline_storage_status_details_with_checkpoints(pipeline_name):
     """
@@ -606,7 +613,9 @@ def test_pipeline_storage_status_details_with_checkpoints(pipeline_name):
         }]'
     );
     """,
-    ).create_or_replace()
+    runtime_config=RuntimeConfig(
+        hosts=FELDERA_TEST_NUM_HOSTS,
+        workers=FELDERA_TEST_NUM_WORKERS)).create_or_replace()
 
     # Initially no details
     assert pipeline.storage_status() == StorageStatus.CLEARED
