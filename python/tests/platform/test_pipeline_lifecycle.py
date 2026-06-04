@@ -542,12 +542,14 @@ def test_pipeline_storage_status_details_without_checkpoints(pipeline_name):
     Validate storage_status_details transitions and clear behavior using the Python API
     without checkpoints.
     """
-    pipeline = PipelineBuilder(TEST_CLIENT,
-                               pipeline_name,
-                               "",
-                               runtime_config=RuntimeConfig(
-                                   hosts=FELDERA_TEST_NUM_HOSTS,
-                                   workers=FELDERA_TEST_NUM_WORKERS)).create_or_replace()
+    pipeline = PipelineBuilder(
+        TEST_CLIENT,
+        pipeline_name,
+        "",
+        runtime_config=RuntimeConfig(
+            hosts=FELDERA_TEST_NUM_HOSTS, workers=FELDERA_TEST_NUM_WORKERS
+        ),
+    ).create_or_replace()
 
     # Initially no details
     assert pipeline.storage_status() == StorageStatus.CLEARED
@@ -613,9 +615,10 @@ def test_pipeline_storage_status_details_with_checkpoints(pipeline_name):
         }]'
     );
     """,
-    runtime_config=RuntimeConfig(
-        hosts=FELDERA_TEST_NUM_HOSTS,
-        workers=FELDERA_TEST_NUM_WORKERS)).create_or_replace()
+        runtime_config=RuntimeConfig(
+            hosts=FELDERA_TEST_NUM_HOSTS, workers=FELDERA_TEST_NUM_WORKERS
+        ),
+    ).create_or_replace()
 
     # Initially no details
     assert pipeline.storage_status() == StorageStatus.CLEARED
