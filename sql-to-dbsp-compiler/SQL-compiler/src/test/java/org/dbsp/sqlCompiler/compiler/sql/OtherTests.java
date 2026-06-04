@@ -307,7 +307,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     @Test
     public void testUnionWarning() throws SQLException {
-        final String script = "../../crates/pipeline-manager/demos/sql/02-sec-ops.sql";
+        final String script = "../../crates/pipeline-manager/demos/sql/03-sec-ops.sql";
         CompilerMessages messages = CompilerMain.execute(
                 "-i", "--alltables", "-q", "--ignoreOrder", "-o", BaseSQLTests.TEST_FILE_PATH, script);
         for (int i = 0; i < messages.warningCount(); i++) {

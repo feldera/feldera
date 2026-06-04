@@ -115,6 +115,15 @@ const guides = {
             ]
         },
         {
+            type: 'category',
+            label: 'Real-Time Medallion Architecture',
+            items: [
+                'use_cases/medallion_architecture/part1',
+                'use_cases/medallion_architecture/part2',
+                'use_cases/medallion_architecture/part3'
+            ]
+        },
+        {
             type: 'doc',
             id: 'use_cases/fraud_detection/fraud_detection',
             label: 'Real-time Fraud Detection',
