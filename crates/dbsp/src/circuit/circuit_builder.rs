@@ -1700,11 +1700,11 @@ impl MetadataExchange {
             .borrow()
             .iter()
             .map(|global_metadata| {
-                global_metadata
-                    .metadata
-                    .get(&id)
-                    .cloned()
-                    .map(|val| serde_json::from_value::<T>(val).unwrap())
+                global_metadata.metadata.get(&id).cloned().map(|val| {
+                    serde_json::from_value::<T>(val.clone())
+                        .inspect_err(|_| drop(dbg!(std::any::type_name::<T>(), val)))
+                        .unwrap()
+                })
             })
             .collect()
     }

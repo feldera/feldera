@@ -1413,13 +1413,13 @@ where
                     exchange
                         .send_all_with_serializer(identifier, repeat(local.clone()), |local| {
                             let mut fbuf = FBuf::new();
-                            rmp_serde::encode::write(&mut fbuf, &local).unwrap();
+                            serde_json::to_writer(&mut fbuf, &local).unwrap();
                             fbuf
                         })
                         .await;
 
                     exchange
-                        .receive_all(|data| rmp_serde::from_slice(&data).unwrap())
+                        .receive_all(|data| serde_json::from_slice(&data).unwrap())
                         .await
                 })
                 .await
