@@ -100,6 +100,13 @@ public class BaseSQLTests {
         return new CompilerCircuitStream(compiler, this);
     }
 
+    public DBSPCompiler chattyCompiler() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.options.ioOptions.quiet = false;
+        return compiler;
+    }
+
     public CompilerCircuit getCC(String sql) {
         DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
