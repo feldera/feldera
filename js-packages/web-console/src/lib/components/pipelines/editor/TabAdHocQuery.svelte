@@ -19,7 +19,7 @@
   import invariant from 'tiny-invariant'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
   import { enclosure, reclosureKey } from '$lib/functions/common/function'
-  import { useReverseScrollContainer } from '$lib/compositions/common/useReverseScrollContainer.svelte'
+  import { useReverseScrollContainer } from 'common-ui'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { getSelectedTenant } from '$lib/services/auth'
 

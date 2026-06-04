@@ -2,16 +2,22 @@ import { Debounced } from 'runed'
 import type { Action } from 'svelte/action'
 
 export const useReverseScrollContainer = (
-  params:
+  params: (
     | {
         observeContentElement: (node: HTMLElement) => Element
       }
     | {
         observeContentSize: () => number
       }
+  ) & {
+    /** Initial value of `stickToBottom`. Defaults to `true` (streaming-log behaviour: start at
+     *  the bottom, re-stick as content grows). Pass `false` for static content that should
+     *  start at the top and never auto-scroll on mount. */
+    initialStickToBottom?: boolean
+  }
 ) => {
   let ref = <HTMLDivElement>undefined!
-  let stickToBottom = $state(true)
+  let stickToBottom = $state(params.initialStickToBottom ?? true)
 
   const scrollToBottomImpl = () => {
     if (!ref) {
@@ -105,7 +111,11 @@ export const useReverseScrollContainer = (
       visibilityObserver.observe(ref)
 
       ref.addEventListener('scroll', onscroll)
-      scrollToBottom()
+      // Honour `initialStickToBottom` — static-content consumers (bundle log dumps, etc.)
+      // want the view to mount at the top, not yank to the bottom on first paint.
+      if (stickToBottom) {
+        scrollToBottom()
+      }
       return {
         destroy: () => {
           resizeObserver?.disconnect()

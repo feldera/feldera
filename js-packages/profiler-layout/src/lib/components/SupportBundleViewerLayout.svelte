@@ -82,6 +82,13 @@
   const issueSeverities = $derived(uniqueSeverities(triageResults.results))
   let nodeSearchQuery = $state('')
   let lookupQuery = $state('')
+  // Bound to the shared analysis-panel lookup <input>. Tabs (e.g. the log list) can request
+  // focus via the `onSearchShortcut` callback threaded through `analysisTabProps`.
+  let lookupInputEl: HTMLInputElement | undefined = $state()
+  const onAnalysisSearchShortcut = () => {
+    lookupInputEl?.focus()
+    lookupInputEl?.select()
+  }
   let highlightRanges: SourcePositionRange[] = $state([])
 
   // The graph panel's diagram is hoisted to a <PersistentContent> overlay so it survives the
@@ -239,7 +246,8 @@
     triageResults,
     issueSeverityFilter,
     issueCategoryFilter,
-    onSearchNode: (query) => profilerDiagram?.search(query)
+    onSearchNode: (query) => profilerDiagram?.search(query),
+    onSearchShortcut: onAnalysisSearchShortcut
   })
   const analysisTabs = $derived<TabSpec<AnalysisTabProps>[]>([
     {
@@ -349,6 +357,7 @@
       </Select>
     {/if}
     <input
+      bind:this={lookupInputEl}
       bind:value={lookupQuery}
       type="text"
       placeholder={currentTab === 'Logs'
@@ -356,7 +365,7 @@
         : currentTab === 'Issues'
           ? 'Search issues'
           : 'Search metrics'}
-      title="Search within active tab (Enter to jump)"
+      title="Search within active tab (Enter to jump, Ctrl/Cmd-F to focus)"
       onkeydown={(e) => e.key === 'Enter' && handleLookup()}
       class="input h-6 w-28 text-sm"
     />
