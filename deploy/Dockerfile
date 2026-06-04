@@ -82,10 +82,10 @@ ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sectio
 # 24.04 package is stuck at 1.22.2 and ships many unfixed CVEs that fail our
 # image scan. Revert to apt's golang-go once Ubuntu ships a patched version.
 RUN arch=`dpkg --print-architecture`; \
-  curl -LO https://go.dev/dl/go1.25.10.linux-$arch.tar.gz \
-  && tar -xzf go1.25.10.linux-$arch.tar.gz \
+  curl -LO https://go.dev/dl/go1.26.4.linux-$arch.tar.gz \
+  && tar -xzf go1.26.4.linux-$arch.tar.gz \
   && mv go goroot \
-  && rm go1.25.10.linux-$arch.tar.gz
+  && rm go1.26.4.linux-$arch.tar.gz
 ENV PATH="$PATH:/home/ubuntu/goroot/bin"
 
 # Install Samply for profiling
