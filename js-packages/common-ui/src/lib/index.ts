@@ -5,6 +5,11 @@ export { default as Tooltip } from './Tooltip.svelte'
 export { default as Popover } from './Popover.svelte'
 export { default as PersistentContent } from './PersistentContent.svelte'
 export { default as ANSIDecoratedText } from './ANSIDecoratedText.svelte'
+export { default as LogList } from './LogList.svelte'
+export { default as ScrollDownFab } from './ScrollDownFab.svelte'
+export { useReverseScrollContainer } from './useReverseScrollContainer.svelte'
+export { selectScope, virtualSelect } from './userSelect'
+export { stripAnsi } from 'fancy-ansi'
 export {
   default as MonacoEditor,
   exportedThemes,
@@ -17,3 +22,15 @@ export {
   type PersistentHandle
 } from './persistentRect.svelte'
 export { setSelections, type CodePosition, type CodeRange } from './monaco'
+export {
+  advanceSearch,
+  applySearchHighlight,
+  compileSearchPattern,
+  emptySearchState,
+  findMatchOffsets,
+  findOccurrence,
+  searchPatternsEqual,
+  type LineMatcher,
+  type SearchPattern,
+  type SearchState
+} from './logSearch'

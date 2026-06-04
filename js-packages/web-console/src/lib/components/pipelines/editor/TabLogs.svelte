@@ -25,6 +25,7 @@
 
 <script lang="ts">
   import LogsStreamList from '$lib/components/pipelines/editor/LogsStreamList.svelte'
+  import { emptySearchState, type SearchState } from 'common-ui'
 
   import {
     parseCancellable,
@@ -44,10 +45,16 @@
 
   let {
     pipeline,
-    deleted = false
+    deleted = false,
+    logSearch = emptySearchState,
+    onLogSearchShortcut
   }: {
     pipeline: { current: ExtendedPipeline }
     deleted?: boolean
+    logSearch?: SearchState
+    /** Invoked when the user presses Ctrl-F / Cmd-F inside the log list — the monitoring
+     *  panel uses this to focus its search input. */
+    onLogSearchShortcut?: () => void
   } = $props()
   let pipelineName = $derived(pipeline.current.name)
 
@@ -268,6 +275,7 @@
     <WarningBanner>Connecting to logs stream...</WarningBanner>
   {/if}
   {#key pipelineName}
-    <LogsStreamList logs={pipelineLogs}></LogsStreamList>
+    <LogsStreamList logs={pipelineLogs} search={logSearch} onSearchShortcut={onLogSearchShortcut}
+    ></LogsStreamList>
   {/key}
 </div>

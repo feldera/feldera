@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { selectScope } from '$lib/compositions/common/userSelect'
+  import { selectScope } from 'common-ui'
   import { extractProgramStderr, type SystemError } from '$lib/compositions/health/systemErrors'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'

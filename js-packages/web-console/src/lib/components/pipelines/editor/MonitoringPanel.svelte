@@ -33,7 +33,7 @@
     extractProgramErrors,
     numConnectorsWithProblems
   } from '$lib/compositions/health/systemErrors'
-  import { TabsPanel } from 'common-ui'
+  import { TabsPanel, advanceSearch, emptySearchState, type SearchState } from 'common-ui'
 
   let {
     pipeline,
@@ -101,7 +101,7 @@
         label: TabLogs,
         panel: PanelLogs,
         keepAlive: true,
-        tabBarEnd: TabBarEndPipelineInfo
+        tabBarEnd: TabBarEndLogs
       }
     ].filter((tab) => !hiddenTabs.includes(tab.id))
   )
@@ -140,8 +140,28 @@
 
   const connectorsWithErrorsCount = $derived(numConnectorsWithProblems(metrics.current))
 
+  // Local input binding. The committed search (what the list actually runs) lives in
+  // `logSearch` and only advances on Enter — so typing doesn't search as-you-type.
+  let logSearchInput = $state('')
+  let logSearch: SearchState = $state(emptySearchState)
+  // Bound to the search <input> so Ctrl-F / Cmd-F inside the log list can focus it.
+  let logSearchInputEl: HTMLInputElement | undefined = $state()
+  const onLogSearchShortcut = () => {
+    logSearchInputEl?.focus()
+    logSearchInputEl?.select()
+  }
+
+  // Enter on the search input: empty input clears, same pattern cycles to the next match,
+  // new pattern jumps to the first match.
+  const submitLogSearch = () => {
+    logSearch = advanceSearch(
+      logSearch,
+      logSearchInput ? { kind: 'substring', query: logSearchInput } : null
+    )
+  }
+
   // Updating individual properties in an $effect avoids unnecessary reactive updates within tab components
-  let tabProps = $state({ metrics, pipeline, errors, deleted })
+  let tabProps = $state({ metrics, pipeline, errors, deleted, logSearch, onLogSearchShortcut })
   $effect(() => {
     tabProps.metrics = metrics
   })
@@ -153,6 +173,9 @@
   })
   $effect(() => {
     tabProps.deleted = deleted
+  })
+  $effect(() => {
+    tabProps.logSearch = logSearch
   })
 </script>
 
@@ -199,19 +222,38 @@
   <span>Logs</span>
 {/snippet}
 
+{#snippet TabBarEndLogs()}
+  <div class="ml-auto flex gap-2">
+    <input
+      bind:this={logSearchInputEl}
+      bind:value={logSearchInput}
+      type="text"
+      placeholder="Search logs"
+      title="Search within logs (Enter to jump to next match, Ctrl/Cmd-F to focus from the log list)"
+      onkeydown={(e) => e.key === 'Enter' && submitLogSearch()}
+      class="input ml-auto h-8 w-28 text-sm sm:w-32"
+    />
+    {@render PipelineInfoHeader()}
+  </div>
+{/snippet}
+
 {#snippet TabBarEndPipelineInfo()}
   <div class="ml-auto flex gap-2">
-    <ClipboardCopyButton
-      value={pipeline.current.id}
-      class="h-4! w-auto! gap-2 preset-tonal-surface px-4"
-    >
-      <span class="text-base font-normal text-surface-950-50"> Pipeline ID </span>
-    </ClipboardCopyButton>
-    <Tooltip placement="top">
-      {pipeline.current.id}
-    </Tooltip>
-    <DownloadSupportBundle {pipelineName} />
+    {@render PipelineInfoHeader()}
   </div>
+{/snippet}
+
+{#snippet PipelineInfoHeader()}
+  <ClipboardCopyButton
+    value={pipeline.current.id}
+    class="h-4! w-auto! gap-2 preset-tonal-surface px-4"
+  >
+    <span class="text-base font-normal text-surface-950-50"> Pipeline ID </span>
+  </ClipboardCopyButton>
+  <Tooltip placement="top">
+    {pipeline.current.id}
+  </Tooltip>
+  <DownloadSupportBundle {pipelineName} />
 {/snippet}
 
 {#snippet TabBarEndCompiler()}

@@ -1,87 +1,42 @@
 <script lang="ts">
-  import { ANSIDecoratedText } from 'common-ui'
+  import { advanceSearch, emptySearchState, LogList, type SearchState } from 'common-ui'
   import type { LookupCoordinator } from '../functions/lookup'
 
   interface Props {
     logText: string | undefined
-    /** Lookup coordinator; the view registers an imperative handler so each Enter on the
-     *  panel's search input cycles to the next match even when the query is unchanged. */
+    /** Optional cross-tab search router. When provided, this view registers itself under
+     *  `lookupTabId` (default `'Logs'`) and folds incoming queries into its own
+     *  {@link SearchState} via {@link advanceSearch} — same pattern → next match, new
+     *  pattern → first match, empty query → clear. */
     lookup?: LookupCoordinator
+    lookupTabId?: string
+    /** Forwarded to {@link LogList}; invoked on Ctrl-F / Cmd-F inside the list so the host
+     *  can focus its search input. */
+    onSearchShortcut?: () => void
   }
 
-  let { logText, lookup }: Props = $props()
+  let { logText, lookup, lookupTabId = 'Logs', onSearchShortcut }: Props = $props()
 
-  let lineElements: (HTMLElement | null)[] = $state([])
-  let lastMatchIndex = $state(-1)
-
-  const lines = $derived(logText ? logText.split('\n') : [])
-
-  function runSearch(query: string) {
-    if (!query) {
-      lastMatchIndex = -1
-      return
-    }
-    const q = query.toLowerCase()
-    const startSearch = lastMatchIndex + 1
-    const total = lines.length
-
-    for (let i = 0; i < total; i++) {
-      const idx = (startSearch + i) % total
-      if (lines[idx].toLowerCase().includes(q)) {
-        lastMatchIndex = idx
-        lineElements[idx]?.scrollIntoView({ block: 'center' })
-        return
-      }
-    }
-    lastMatchIndex = -1
-  }
+  // SearchState lives here so any host that uses BundleLogsView
+  // gets the search-on-tab behaviour through LookupCoordinator.
+  // LogList is purely the renderer; it accepts the state as a prop.
+  let search: SearchState = $state(emptySearchState)
 
   $effect(() => {
-    if (!lookup) {
-      return
-    }
-    return lookup.register('Logs', runSearch)
+    if (!lookup) return
+    return lookup.register(lookupTabId, (query) => {
+      search = advanceSearch(search, query ? { kind: 'substring', query } : null)
+    })
   })
+
+  // LogList expects pre-split lines — the bundle view's source is a single string blob.
+  const lines = $derived(logText ? logText.split('\n') : [])
 </script>
 
-<div class="h-full rounded overflow-auto scrollbar bg-white-dark font-mono">
-  {#if !logText}
-    <div class="flex h-full items-center justify-center">
-      No logs available in this bundle
-    </div>
-  {:else}
-    <!-- Block-per-line layout: line numbers live in each row's ::before, positioned
-         absolutely so wrapped text aligns with itself (not under the gutter). A CSS
-         counter on the container drives the numbering so we don't pass indices to CSS. -->
-    <div class="[counter-reset:line]">
-      {#each lines as line, i (i)}
-        <div
-          bind:this={lineElements[i]}
-          class="logline relative whitespace-pre-wrap break-all pl-16 [counter-increment:line]"
-          class:bg-primary-100={i === lastMatchIndex}
-          class:dark:bg-primary-900={i === lastMatchIndex}
-        >
-          <ANSIDecoratedText value={line} />
-        </div>
-      {/each}
-    </div>
-  {/if}
-</div>
-
-<style>
-  .logline::before {
-    content: counter(line);
-    position: absolute;
-    left: 0;
-    width: 3rem;
-    padding-right: 0.5rem;
-    text-align: right;
-    user-select: none;
-    color: var(--color-surface-400);
-    border-right: 1px solid var(--color-surface-200);
-  }
-  :global(.dark) .logline::before {
-    color: var(--color-surface-600);
-    border-right-color: var(--color-surface-800);
-  }
-</style>
+{#if !logText}
+  <div class="bg-white-dark flex h-full items-center justify-center rounded font-mono">
+    No logs available in this bundle
+  </div>
+{:else}
+  <LogList {lines} {search} {onSearchShortcut} showLineNumbers class="bg-white-dark rounded" />
+{/if}
