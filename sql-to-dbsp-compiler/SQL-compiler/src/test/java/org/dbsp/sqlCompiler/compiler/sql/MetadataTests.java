@@ -160,7 +160,7 @@ public class MetadataTests extends BaseSQLTests {
     @Test
     public void lineageTest() throws SQLException, IOException {
         // Check that the calcite property in the dataflow graph is never "null" for this program
-        final String file = "../../crates/pipeline-manager/demos/sql/08-fine-grained-authorization.sql";
+        final String file = "../../crates/pipeline-manager/demos/sql/09-fine-grained-authorization.sql";
         File json = this.createTempJsonFile();
         CompilerMain.execute("--dataflow", json.getPath(), "--noRust", file);
         ObjectMapper mapper = Utilities.deterministicObjectMapper();

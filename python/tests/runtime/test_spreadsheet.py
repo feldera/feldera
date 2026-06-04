@@ -22,11 +22,11 @@ class TestUDF(PipelineTestCase):
     def test_local(self):
         dir = "../crates/pipeline-manager/demos/sql/"
         # Read the file ../crates/pipeline-manager/demos/sql/10-spreadsheet.sql
-        with open(dir + "10-spreadsheet.sql", "r") as f:
+        with open(dir + "11-spreadsheet.sql", "r") as f:
             sql = f.read()
-        with open(dir + "10-spreadsheet.udf.rs", "r") as f:
+        with open(dir + "11-spreadsheet.udf.rs", "r") as f:
             udfs = f.read()
-        with open(dir + "10-spreadsheet.udf.toml", "r") as f:
+        with open(dir + "11-spreadsheet.udf.toml", "r") as f:
             toml = f.read()
 
         pipeline = PipelineBuilder(
