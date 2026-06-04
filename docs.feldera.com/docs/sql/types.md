@@ -165,15 +165,6 @@ CREATE TABLE T(street VARCHAR, city VARCHAR, year INT);
 CREATE VIEW V AS SELECT address_typ(T.street, city, 'CA', 94087) as address, T.year as year FROM T;
 ```
 
-Tables can have structure-valued columns, but these have to be fully
-qualified using both the table name and the column name in programs:
-
-```sql
-CREATE TABLE PERS(p0 employee_typ, p1 employee_typ);
-CREATE VIEW V AS SELECT PERS.p0.address FROM PERS
-WHERE PERS.p0.first_name = 'Mike'
-```
-
 ## Grammar for specifying types
 
 ```

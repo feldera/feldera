@@ -258,34 +258,6 @@ public class BaseSQLTests {
         return file;
     }
 
-    /** Enumerate the SQL files in the QA repository.
-     * The assumption is that this repository has been checked out in parallel with feldera. */
-    public static List<File> getQATests() {
-        List<File> result = new ArrayList<>();
-        String dir = "../../../feldera-qa";
-        File file = new File(dir);
-        if (file.exists()) {
-            File[] directories = file.listFiles();
-            if (directories == null)
-                return result;
-            Arrays.sort(directories);
-            for (File d: directories) {
-                File[] files = d.listFiles();
-                if (files == null)
-                    continue;
-                for (File c: files) {
-                    // The following eliminate some fda scripts
-                    if (c.getName().contains("adhoc")) continue;
-                    if (c.getName().matches("query.*view.sql")) continue;
-                    if (c.getName().endsWith(".sql")) {
-                        result.add(c);
-                    }
-                }
-            }
-        }
-        return result;
-    }
-
     public static File createInputScript(String contents) throws IOException {
         File result = File.createTempFile("script", ".sql", new File(RUST_DIRECTORY));
         return createInputFile(result, contents);
