@@ -250,7 +250,7 @@ class DeltaTestLocation:
             raise
         return dt.count()
 
-    def table_exists(self) -> bool:
+    def delta_log_exists(self) -> bool:
         """Return True when a Delta log is present at this location.
 
         Used to decide whether a cached fixture (see ``stable_subpath``) can
@@ -262,11 +262,13 @@ class DeltaTestLocation:
             return False
 
     def _place_tree(self, staging: pathlib.Path) -> None:
-        """Place a locally-built Delta table tree onto this location's backend.
+        """Copy a locally-built Delta table tree to where this location stores
+        its data: the local directory, or the S3/MinIO bucket, depending on
+        how this location was created.
 
         Some fixtures can only be produced on the local filesystem (e.g. a
-        PySpark-written table) yet must be read back from the configured
-        backend. Local targets are replaced wholesale; S3/MinIO targets get
+        PySpark-written table). For a local target, any existing content at
+        ``self.local_dir`` is deleted before the copy. S3/MinIO targets get
         the data files first and ``_delta_log`` last, so a reader observing
         the upload mid-flight never sees a log referencing a missing parquet.
         """
@@ -316,23 +318,28 @@ def ensure_delta_spark_fixture(
     wheel. This builds such a fixture once and reuses it:
 
     * If the fixture is already present (``is_present``, defaulting to
-      :meth:`DeltaTestLocation.table_exists`), do nothing — so a
+      :meth:`DeltaTestLocation.delta_log_exists`), do nothing — so a
       ``stable_subpath`` cache is reused across runs.
     * Otherwise run ``builder_script`` in an isolated environment
-      (``uv run --with <delta_spark_spec> python <builder_script> <staging>
-      *builder_args``), staging into a temp dir so a half-finished build can
-      never leak into the upload, then place the tree onto ``loc``'s backend.
+      (``uv run --no-project --with <delta_spark_spec> python <builder_script>
+      <staging> *builder_args``), staging into a temp dir so a half-finished
+      build can never leak into the upload, then place the tree onto ``loc``'s
+      backend. ``--no-project`` keeps the builder hermetic: it depends only on
+      ``delta_spark_spec``, never on building the enclosing project.
 
     The heavy PySpark + JVM stack is pulled only on this rare rebuild path.
 
     :param builder_script: Path to a standalone script that writes a Delta
         table to the directory given as its first argument.
     :param builder_args: Extra positional arguments passed after the staging
-        directory (stringified).
+        directory. Each is stringified verbatim with ``str()`` — pass
+        primitives; ``None`` would become the literal string ``"None"``.
     :param is_present: Predicate deciding whether the fixture already exists;
         also re-checked after upload to catch partial uploads.
     """
-    present = is_present if is_present is not None else DeltaTestLocation.table_exists
+    present = (
+        is_present if is_present is not None else DeltaTestLocation.delta_log_exists
+    )
     if present(loc):
         return
 
@@ -348,6 +355,7 @@ def ensure_delta_spark_fixture(
             [
                 "uv",
                 "run",
+                "--no-project",
                 "--with",
                 delta_spark_spec,
                 "python",
@@ -363,8 +371,8 @@ def ensure_delta_spark_fixture(
 
     if not present(loc):
         raise RuntimeError(
-            f"Delta fixture at {loc.uri} is still absent after upload — "
-            "partial upload, or content-stripping middleware?"
+            f"Delta fixture at {loc.uri} is still absent after the builder "
+            "ran and the tree was uploaded."
         )
 
 
