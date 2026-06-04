@@ -201,13 +201,6 @@ public class MetadataTests extends BaseSQLTests {
         Assert.assertTrue(found);
     }
 
-    DBSPCompiler chattyCompiler() {
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
-        compiler.options.ioOptions.quiet = false;
-        return compiler;
-    }
-
     @Test
     public void issue3341() {
         String sql = """

@@ -243,7 +243,21 @@ public class Simplify extends ExpressionTranslator {
                 // This is mostly useful for testing code, to fold various literals.
                 DBSPStringLiteral str = lit.to(DBSPStringLiteral.class);
                 Objects.requireNonNull(str.value);
-                if (type.is(DBSPTypeDate.class)) {
+                if (type.is(DBSPTypeBool.class)) {
+                    String normalized = str.value.trim().toLowerCase(Locale.ENGLISH);
+                    Boolean value = null;
+                    if (normalized.equals("false"))
+                        value = false;
+                    else if (normalized.equals("true"))
+                        value = true;
+                    if (value == null) {
+                        this.compiler.reportWarning(expression.getSourcePosition(), "Suspicious argument",
+                                "String " + Utilities.singleQuote(str.value) +
+                                        " cannot be interpreted as a BOOLEAN");
+                    } else {
+                        result = new DBSPBoolLiteral(lit.getNode(), type, value);
+                    }
+                } if (type.is(DBSPTypeDate.class)) {
                     // We have to validate the date, it may be invalid, and in this case
                     // the result is 'null'.  This pattern is hardwired in Calcite.
                     DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.US)

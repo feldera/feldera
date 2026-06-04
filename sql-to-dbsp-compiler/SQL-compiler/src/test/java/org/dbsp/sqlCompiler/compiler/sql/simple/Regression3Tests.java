@@ -2,6 +2,8 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.junit.Assert;
@@ -12,6 +14,20 @@ public class Regression3Tests extends SqlIoTest {
     public void withSuggestion() {
         this.statementsFailingInCompilation("WITH V AS (SELECT 1) SELECT * FROM V;",
                 "Raw 'SELECT' statements are not supported; did you forget to CREATE VIEW?");
+    }
+
+    @Test
+    public void issue6400() {
+        String sql = """
+                CREATE TABLE t(b BOOLEAN);
+                CREATE VIEW V AS SELECT b = 't' FROM T;""";
+        DBSPCompiler compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation(sql);
+        TestUtil.assertMessagesContain(compiler, """
+                Suspicious argument: String 't' cannot be interpreted as a BOOLEAN
+                    1|CREATE TABLE t(b BOOLEAN);
+                    2|CREATE VIEW V AS SELECT b = 't' FROM T;
+                                                  ^^^""");
     }
 
     @Test
