@@ -1,17 +1,24 @@
 """Build a column-mapped, schema-evolved Delta table fixture with PySpark.
 
 ``tests.utils.ensure_delta_spark_fixture`` runs this as a subprocess
-(``uv run --with "delta-spark>=4.2,<5" python column_mapping.py <output_dir>``).
-PySpark is the only writer that can produce a Delta table with column mapping
-enabled *and* perform the rename / drop schema-evolution operations that make
-logical column names diverge from the physical Parquet column names
-(``col-<uuid>``); neither ``delta-rs`` nor the ``deltalake`` Python wheel can.
-PySpark imports stay function-local so importing this module (for
+(``uv run --with "delta-spark>=4.2,<5" python column_mapping.py <output_dir>
+<mode>``), where ``<mode>`` is a ``delta.columnMapping.mode`` value: ``name``
+(physical Parquet columns are renamed to ``col-<uuid>``) or ``id`` (columns are
+matched by Parquet field ID). PySpark is currently the only writer that can
+produce a Delta table with column mapping enabled *and* perform the rename /
+drop schema-evolution operations that make logical column names diverge from
+the physical ones; neither ``delta-rs`` nor the ``deltalake`` Python wheel can.
+DROP COLUMN under column mapping requires delta-spark 4.x (Delta writer v5,
+reader v2). PySpark imports stay function-local so importing this module (for
 ``EXPECTED_ROWS``) never pulls in the JVM/Spark stack.
+
+Changing this builder changes the fixture it produces, but a cached fixture is
+reused based on its path alone — bump ``FIXTURE_VERSION`` in
+``test_delta_input_column_mapping.py`` on any builder change.
 
 The resulting table's history (one commit per step):
 
-* ``v0`` CREATE TABLE with ``delta.columnMapping.mode = 'name'``
+* ``v0`` CREATE TABLE with ``delta.columnMapping.mode = '<mode>'``
 * ``v1`` INSERT two rows under the original ``(id, name, amount)`` schema
 * ``v2`` RENAME COLUMN ``name`` -> ``full_name``
 * ``v3`` ADD COLUMN ``country``
@@ -40,8 +47,13 @@ EXPECTED_ROWS = [
 ]
 
 
-def build(table_path: str) -> None:
-    """Create the column-mapped, schema-evolved table at ``table_path``."""
+def build(table_path: str, mode: str = "name") -> None:
+    """Create the column-mapped, schema-evolved table at ``table_path``.
+
+    :param mode: ``delta.columnMapping.mode`` for the table: ``name`` or ``id``.
+    """
+    if mode not in ("name", "id"):
+        raise ValueError(f"unsupported column-mapping mode: {mode!r}")
     from delta import configure_spark_with_delta_pip
     from pyspark.sql import SparkSession
 
@@ -64,7 +76,7 @@ def build(table_path: str) -> None:
             f"""
             CREATE TABLE {t} (id BIGINT, name STRING, amount DOUBLE)
             USING delta
-            TBLPROPERTIES ('delta.columnMapping.mode' = 'name',
+            TBLPROPERTIES ('delta.columnMapping.mode' = '{mode}',
                            'delta.minReaderVersion' = '2',
                            'delta.minWriterVersion' = '5')
             """
@@ -80,6 +92,6 @@ def build(table_path: str) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: column_mapping.py <output_dir>")
-    build(sys.argv[1])
+    if len(sys.argv) not in (2, 3):
+        raise SystemExit("usage: column_mapping.py <output_dir> [name|id]")
+    build(*sys.argv[1:])
