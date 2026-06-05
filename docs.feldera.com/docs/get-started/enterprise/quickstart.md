@@ -44,4 +44,4 @@ in a Kubernetes cluster.
 ## Additional resources
 
 * [Helm guide](helm-guide.md)
-* [EKS ingress](kubernetes-guides/eks/ingress.md)
+* [EKS ingress](kubernetes-guides/eks/envoy-gateway.md)

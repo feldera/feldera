@@ -117,7 +117,7 @@ Recommended disk types by cloud provider:
    * Interact with the API: [**http://127.0.0.1:8080/v0/...**](http://127.0.0.1:8080/v0/...)
 
    _Note:_ access through kubectl port-forwarding is mostly useful for test and development.
-   In other cases, setting up an ingress (e.g., [in EKS](kubernetes-guides/eks/ingress.md)) is likely preferable.
+   In other cases, setting up an ingress (e.g., [in EKS](kubernetes-guides/eks/envoy-gateway.md)) is likely preferable.
 
 ## Extra
 
