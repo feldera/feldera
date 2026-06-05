@@ -742,7 +742,8 @@ struct DeltaTableMetrics {
     snapshot_records_total: AtomicU64,
     /// Number of Feldera follow transactions started (`follow-*` labels allocated).
     follow_transaction_starts: AtomicU64,
-    /// Number of Feldera snapshot transactions started (`snapshot-*` labels allocated).
+    /// Number of Feldera snapshot transactions actually started: incremented when a `snapshot-*`
+    /// label is propagated to a queue entry, not merely when the label is allocated.
     snapshot_transaction_starts: AtomicU64,
     /// Last ingested Delta table version; [`VERSION_METRIC_UNSET`] until the
     /// first successful ingest.
@@ -1028,14 +1029,30 @@ impl DeltaTableInputEndpointInner {
             // state to batch Delta log versions.
             DeltaTableTransactionMode::Catchup => {
                 if Self::is_snapshot_transaction_label(fallback) {
+                    self.count_snapshot_transaction_start();
                     fallback.clone()
                 } else {
                     self.catchup_follow_start_transaction()
                 }
             }
-            DeltaTableTransactionMode::Always => fallback.clone(),
-            _ => None,
+            DeltaTableTransactionMode::Always | DeltaTableTransactionMode::Snapshot => {
+                if Self::is_snapshot_transaction_label(fallback) {
+                    self.count_snapshot_transaction_start();
+                }
+                fallback.clone()
+            }
+            DeltaTableTransactionMode::None => None,
         }
+    }
+
+    /// Record that a `snapshot-*` Feldera transaction was actually started, i.e., its label was
+    /// propagated to a queue entry (and thence to the controller). Counted here rather than where
+    /// the label is allocated, so the metric reflects transactions the connector truly started, not
+    /// merely intended to start.
+    fn count_snapshot_transaction_start(&self) {
+        self.metrics
+            .snapshot_transaction_starts
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     fn skip_unused_columns(&self) -> bool {
@@ -1089,9 +1106,8 @@ impl DeltaTableInputEndpointInner {
                 | DeltaTableTransactionMode::Snapshot
                 | DeltaTableTransactionMode::Catchup
         ) {
-            self.metrics
-                .snapshot_transaction_starts
-                .fetch_add(1, Ordering::Relaxed);
+            // The metric is incremented in `follow_start_transaction` when the label is actually
+            // propagated, not here where it is merely allocated.
             Some(Some(format!(
                 "snapshot-{}",
                 self.transaction_index.fetch_add(1, Ordering::Release),

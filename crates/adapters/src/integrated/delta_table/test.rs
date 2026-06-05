@@ -3272,6 +3272,31 @@ async fn delta_table_snapshot_and_follow_catchup_snapshot_transaction_test() {
     );
 }
 
+/// Regression test for a bug where `snapshot` transaction mode ingested the initial snapshot
+/// without starting a Feldera transaction: `follow_start_transaction` dropped the `snapshot-*`
+/// label instead of propagating it. The `snapshot_transaction_starts` metric counts transactions
+/// actually started (the label reaching a queue entry), so it reads 0 when the bug is present.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_snapshot_mode_snapshot_transaction_test() {
+    const SNAPSHOT_ROWS: i64 = 10;
+    let result = run_catchup_lag_experiment(catchup_lag_options(
+        DeltaTableTransactionMode::Snapshot,
+        &[2],
+        None,
+        Some(SNAPSHOT_ROWS),
+    ))
+    .await;
+    assert_eq!(
+        result.snapshot_transaction_starts, 1,
+        "snapshot mode must ingest the initial snapshot in one Feldera transaction"
+    );
+    assert_eq!(
+        result.follow_transactions_per_round,
+        vec![0],
+        "snapshot mode must not start a Feldera transaction for follow commits"
+    );
+}
+
 #[tokio::test]
 async fn delta_table_snapshot_and_follow_file_catchup_test() {
     delta_table_follow_file_test_common(true, DeltaTableTransactionMode::Catchup, false, false)
