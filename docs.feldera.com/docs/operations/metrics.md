@@ -43,6 +43,7 @@ definitions].
 | <a name='process_panics_total'>`process_panics_total`</a> |counter | Number of times the process has panicked.  Panics do not necessarily indicate a bug or a crash but they can indicate that it is worth examining the log for details. |
 | <a name='process_resident_memory_bytes'>`process_resident_memory_bytes`</a> |gauge | Resident set size in bytes. |
 | <a name='process_start_time_seconds'>`process_start_time_seconds`</a> |counter | Start time of the process in seconds since the Unix epoch. |
+| <a name='process_swap_bytes'>`process_swap_bytes`</a> |gauge | Amount of the process's memory that is swapped out, in bytes.  A nonzero value indicates that the process is swapping, which degrades performance. |
 | <a name='process_threads'>`process_threads`</a> |gauge | Number of OS threads in the process. |
 | <a name='process_virtual_memory_bytes'>`process_virtual_memory_bytes`</a> |gauge | Virtual memory size in bytes. |
 | <a name='process_virtual_memory_max_bytes'>`process_virtual_memory_max_bytes`</a> |gauge | Maximum amount of virtual memory available in bytes. |
