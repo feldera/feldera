@@ -14,6 +14,10 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - Cluster monitor events with information on the backing (Kubernetes) resources is
+          no longer gated behind unstable feature `cluster_monitor_resources` (deprecated).
+          It is now enabled by default.
+
         - Casts of strings to Boolean and floating point values will
         produce runtime errors instead of legal values for illegal string
         values.  The set of strings that can be legally converted to

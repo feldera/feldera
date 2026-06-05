@@ -253,8 +253,6 @@ pub struct CommonConfig {
     /// Currently supported features:
     /// - `runtime_version`: Allows to override the runtime version of a pipeline on the platform.
     /// - `testing`
-    /// - `cluster_monitor_resources`: Cluster monitoring also monitors the resources backing the
-    ///   instance (i.e., the Kubernetes objects).
     #[arg(verbatim_doc_comment, long, env = "FELDERA_UNSTABLE_FEATURES")]
     pub unstable_features: Option<String>,
 
