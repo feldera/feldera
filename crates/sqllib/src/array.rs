@@ -1,7 +1,7 @@
 // Array operations
 
 use crate::error::{SqlResult, SqlRuntimeError};
-use crate::{ConcatSemigroup, Semigroup, Weight, some_function2};
+use crate::{ConcatSemigroup, Semigroup, Weight, some_function1, some_function2};
 use dbsp::CmpFunc;
 use itertools::Itertools;
 use std::{collections::HashSet, fmt::Debug, hash::Hash, sync::Arc};
@@ -421,13 +421,7 @@ where
     Arc::new(vector)
 }
 
-#[doc(hidden)]
-pub fn array_reverseN<T>(vector: Option<Array<T>>) -> Option<Array<T>>
-where
-    T: Clone,
-{
-    Some(array_reverse_(vector?))
-}
+some_function1!(array_reverse [T: Clone], Array<T>, Array<T>);
 
 #[doc(hidden)]
 pub fn sort_array<T>(vector: Array<T>, ascending: bool) -> Array<T>
@@ -528,13 +522,7 @@ where
         .into()
 }
 
-#[doc(hidden)]
-pub fn array_compactN<T>(vector: Option<Array<Option<T>>>) -> Option<Array<T>>
-where
-    T: Clone,
-{
-    Some(array_compact_(vector?))
-}
+some_function1!(array_compact [T: Clone], Array<Option<T>>, Array<T>);
 
 fn array_insert<T>(vector: Array<T>, value: T, index: usize) -> Array<T>
 where
@@ -639,33 +627,7 @@ where
     false
 }
 
-#[doc(hidden)]
-pub fn arrays_overlapN_<T>(first: Option<Array<T>>, second: Array<T>) -> Option<bool>
-where
-    T: Eq + Hash,
-{
-    let first = first?;
-    Some(arrays_overlap__(first, second))
-}
-
-#[doc(hidden)]
-pub fn arrays_overlap_N<T>(first: Array<T>, second: Option<Array<T>>) -> Option<bool>
-where
-    T: Eq + Hash,
-{
-    let second = second?;
-    Some(arrays_overlap__(first, second))
-}
-
-#[doc(hidden)]
-pub fn arrays_overlapNN<T>(first: Option<Array<T>>, second: Option<Array<T>>) -> Option<bool>
-where
-    T: Eq + Hash,
-{
-    let first = first?;
-    let second = second?;
-    Some(arrays_overlap__(first, second))
-}
+some_function2!(arrays_overlap [T: Eq + Hash], Array<T>, Array<T>, bool);
 
 #[doc(hidden)]
 pub fn array_agg<T>(accumulator: &mut Vec<T>, value: T, weight: Weight, distinct: bool, keep: bool)
@@ -753,33 +715,7 @@ where
     }
 }
 
-#[doc(hidden)]
-pub fn array_concatN_<T>(left: Option<Array<T>>, right: Array<T>) -> Option<Array<T>>
-where
-    T: Clone,
-{
-    let left = left?;
-    Some(array_concat__(left, right))
-}
-
-#[doc(hidden)]
-pub fn array_concat_N<T>(left: Array<T>, right: Option<Array<T>>) -> Option<Array<T>>
-where
-    T: Clone,
-{
-    let right = right?;
-    Some(array_concat__(left, right))
-}
-
-#[doc(hidden)]
-pub fn array_concatNN<T>(left: Option<Array<T>>, right: Option<Array<T>>) -> Option<Array<T>>
-where
-    T: Clone,
-{
-    let left = left?;
-    let right = right?;
-    Some(array_concat__(left, right))
-}
+some_function2!(array_concat [T: Clone], Array<T>, Array<T>, Array<T>);
 
 fn to_set<T>(v: &[T]) -> HashSet<&T>
 where
@@ -801,33 +737,7 @@ where
     result.into()
 }
 
-#[doc(hidden)]
-pub fn array_exceptN_<T>(left: Option<Array<T>>, right: Array<T>) -> Option<Array<T>>
-where
-    T: Eq + Clone + Hash + Ord + Debug,
-{
-    let left = left?;
-    Some(array_except__(left, right))
-}
-
-#[doc(hidden)]
-pub fn array_except_N<T>(left: Array<T>, right: Option<Array<T>>) -> Option<Array<T>>
-where
-    T: Eq + Clone + Hash + Ord + Debug,
-{
-    let right = right?;
-    Some(array_except__(left, right))
-}
-
-#[doc(hidden)]
-pub fn array_exceptNN<T>(left: Option<Array<T>>, right: Option<Array<T>>) -> Option<Array<T>>
-where
-    T: Eq + Clone + Hash + Ord + Debug,
-{
-    let left = left?;
-    let right = right?;
-    Some(array_except__(left, right))
-}
+some_function2!(array_except [T: Eq + Clone + Hash + Ord + Debug], Array<T>, Array<T>, Array<T>);
 
 #[doc(hidden)]
 pub fn array_union__<T>(left: Array<T>, right: Array<T>) -> Array<T>
@@ -842,33 +752,7 @@ where
     result.into()
 }
 
-#[doc(hidden)]
-pub fn array_unionN_<T>(left: Option<Array<T>>, right: Array<T>) -> Option<Array<T>>
-where
-    T: Eq + Clone + Hash + Ord,
-{
-    let left = left?;
-    Some(array_union__(left, right))
-}
-
-#[doc(hidden)]
-pub fn array_union_N<T>(left: Array<T>, right: Option<Array<T>>) -> Option<Array<T>>
-where
-    T: Eq + Clone + Hash + Ord,
-{
-    let right = right?;
-    Some(array_union__(left, right))
-}
-
-#[doc(hidden)]
-pub fn array_unionNN<T>(left: Option<Array<T>>, right: Option<Array<T>>) -> Option<Array<T>>
-where
-    T: Eq + Clone + Hash + Ord,
-{
-    let left = left?;
-    let right = right?;
-    Some(array_union__(left, right))
-}
+some_function2!(array_union [T: Eq + Clone + Hash + Ord], Array<T>, Array<T>, Array<T>);
 
 #[doc(hidden)]
 pub fn array_intersect__<T>(left: Array<T>, right: Array<T>) -> Array<T>
@@ -883,33 +767,7 @@ where
     result.into()
 }
 
-#[doc(hidden)]
-pub fn array_intersectN_<T>(left: Option<Array<T>>, right: Array<T>) -> Option<Array<T>>
-where
-    T: Eq + Clone + Hash + Ord,
-{
-    let left = left?;
-    Some(array_intersect__(left, right))
-}
-
-#[doc(hidden)]
-pub fn array_intersect_N<T>(left: Array<T>, right: Option<Array<T>>) -> Option<Array<T>>
-where
-    T: Eq + Clone + Hash + Ord,
-{
-    let right = right?;
-    Some(array_intersect__(left, right))
-}
-
-#[doc(hidden)]
-pub fn array_intersectNN<T>(left: Option<Array<T>>, right: Option<Array<T>>) -> Option<Array<T>>
-where
-    T: Eq + Clone + Hash + Ord,
-{
-    let left = left?;
-    let right = right?;
-    Some(array_intersect__(left, right))
-}
+some_function2!(array_intersect [T: Eq + Clone + Hash + Ord], Array<T>, Array<T>, Array<T>);
 
 // There are only 8 variants of array_insert, since the
 // compiler enforces the element type is always nullable.

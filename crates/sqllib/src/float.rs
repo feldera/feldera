@@ -1,6 +1,6 @@
 use crate::{
     SqlString, finite_or_null, some_function1, some_polymorphic_function1,
-    some_polymorphic_function2,
+    some_polymorphic_function2, some_polymorphic_null_function1,
 };
 use dbsp::algebra::{F32, F64};
 use lexical_core::format::STANDARD;
@@ -536,22 +536,11 @@ pub fn finite_or_null_d(value: F64) -> Option<F64> {
     finite_or_null(value.into_inner()).map(|x| x.into())
 }
 
-#[inline(always)]
-#[doc(hidden)]
-pub fn finite_or_null_dN(value: Option<F64>) -> Option<F64> {
-    let value = value?;
-    finite_or_null_d(value)
-}
+some_polymorphic_null_function1!(finite_or_null, d, F64, F64);
 
-#[inline(always)]
 #[doc(hidden)]
 pub fn finite_or_null_f(value: F32) -> Option<F32> {
     finite_or_null(value.into_inner()).map(|x| x.into())
 }
 
-#[inline(always)]
-#[doc(hidden)]
-pub fn finite_or_null_fN(value: Option<F32>) -> Option<F32> {
-    let value = value?;
-    finite_or_null_f(value)
-}
+some_polymorphic_null_function1!(finite_or_null, f, F32, F32);

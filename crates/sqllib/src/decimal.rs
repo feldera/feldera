@@ -1,6 +1,8 @@
 //! Operations on Decimal values
 
-use crate::{some_polymorphic_function1, some_polymorphic_function2};
+use crate::{
+    some_polymorphic_function1, some_polymorphic_function2, some_polymorphic_null_function2,
+};
 pub use feldera_fxp::DynamicDecimal;
 use feldera_fxp::Fixed;
 
@@ -21,60 +23,7 @@ pub fn plus_SqlDecimal_SqlDecimal<
     left.checked_add_generic::<P1, S1, P2, S2>(right).unwrap()
 }
 
-#[doc(hidden)]
-pub fn plus_SqlDecimalN_SqlDecimal<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: Option<SqlDecimal<P0, S0>>,
-    right: SqlDecimal<P1, S1>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let left = left?;
-    Some(plus_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(
-        left, right,
-    ))
-}
-
-#[doc(hidden)]
-pub fn plus_SqlDecimal_SqlDecimalN<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: SqlDecimal<P0, S0>,
-    right: Option<SqlDecimal<P1, S1>>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let right = right?;
-    Some(plus_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(
-        left, right,
-    ))
-}
-
-#[doc(hidden)]
-pub fn plus_SqlDecimalN_SqlDecimalN<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: Option<SqlDecimal<P0, S0>>,
-    right: Option<SqlDecimal<P1, S1>>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let left = left?;
-    let right = right?;
-    Some(plus_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(
-        left, right,
-    ))
-}
+some_polymorphic_function2!(plus [const P0: usize, const S0: usize, const P1: usize, const S1: usize, const P2: usize, const S2: usize], SqlDecimal, SqlDecimal<P0, S0>, SqlDecimal, SqlDecimal<P1, S1>, SqlDecimal<P2, S2>);
 
 #[doc(hidden)]
 pub fn minus_SqlDecimal_SqlDecimal<
@@ -91,60 +40,7 @@ pub fn minus_SqlDecimal_SqlDecimal<
     left.checked_sub_generic::<P1, S1, P2, S2>(right).unwrap()
 }
 
-#[doc(hidden)]
-pub fn minus_SqlDecimalN_SqlDecimal<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: Option<SqlDecimal<P0, S0>>,
-    right: SqlDecimal<P1, S1>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let left = left?;
-    Some(minus_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(
-        left, right,
-    ))
-}
-
-#[doc(hidden)]
-pub fn minus_SqlDecimal_SqlDecimalN<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: SqlDecimal<P0, S0>,
-    right: Option<SqlDecimal<P1, S1>>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let right = right?;
-    Some(minus_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(
-        left, right,
-    ))
-}
-
-#[doc(hidden)]
-pub fn minus_SqlDecimalN_SqlDecimalN<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: Option<SqlDecimal<P0, S0>>,
-    right: Option<SqlDecimal<P1, S1>>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let left = left?;
-    let right = right?;
-    Some(minus_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(
-        left, right,
-    ))
-}
+some_polymorphic_function2!(minus [const P0: usize, const S0: usize, const P1: usize, const S1: usize, const P2: usize, const S2: usize], SqlDecimal, SqlDecimal<P0, S0>, SqlDecimal, SqlDecimal<P1, S1>, SqlDecimal<P2, S2>);
 
 #[doc(hidden)]
 pub fn times_SqlDecimal_SqlDecimal<
@@ -167,60 +63,7 @@ pub fn times_SqlDecimal_SqlDecimal<
         })
 }
 
-#[doc(hidden)]
-pub fn times_SqlDecimalN_SqlDecimal<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: Option<SqlDecimal<P0, S0>>,
-    right: SqlDecimal<P1, S1>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let left = left?;
-    Some(times_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(
-        left, right,
-    ))
-}
-
-#[doc(hidden)]
-pub fn times_SqlDecimal_SqlDecimalN<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: SqlDecimal<P0, S0>,
-    right: Option<SqlDecimal<P1, S1>>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let right = right?;
-    Some(times_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(
-        left, right,
-    ))
-}
-
-#[doc(hidden)]
-pub fn times_SqlDecimalN_SqlDecimalN<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: Option<SqlDecimal<P0, S0>>,
-    right: Option<SqlDecimal<P1, S1>>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let left = left?;
-    let right = right?;
-    Some(times_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(
-        left, right,
-    ))
-}
+some_polymorphic_function2!(times [const P0: usize, const S0: usize, const P1: usize, const S1: usize, const P2: usize, const S2: usize], SqlDecimal, SqlDecimal<P0, S0>, SqlDecimal, SqlDecimal<P1, S1>, SqlDecimal<P2, S2>);
 
 #[doc(hidden)]
 pub fn div_SqlDecimal_SqlDecimal<
@@ -238,60 +81,7 @@ pub fn div_SqlDecimal_SqlDecimal<
         .unwrap_or_else(|| panic!("Attempt to divide by zero: {}/{}", left, right))
 }
 
-#[doc(hidden)]
-pub fn div_SqlDecimalN_SqlDecimal<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: Option<SqlDecimal<P0, S0>>,
-    right: SqlDecimal<P1, S1>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let left = left?;
-    Some(div_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(
-        left, right,
-    ))
-}
-
-#[doc(hidden)]
-pub fn div_SqlDecimal_SqlDecimalN<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: SqlDecimal<P0, S0>,
-    right: Option<SqlDecimal<P1, S1>>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let right = right?;
-    Some(div_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(
-        left, right,
-    ))
-}
-
-#[doc(hidden)]
-pub fn div_SqlDecimalN_SqlDecimalN<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: Option<SqlDecimal<P0, S0>>,
-    right: Option<SqlDecimal<P1, S1>>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let left = left?;
-    let right = right?;
-    Some(div_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(
-        left, right,
-    ))
-}
+some_polymorphic_function2!(div [const P0: usize, const S0: usize, const P1: usize, const S1: usize, const P2: usize, const S2: usize], SqlDecimal, SqlDecimal<P0, S0>, SqlDecimal, SqlDecimal<P1, S1>, SqlDecimal<P2, S2>);
 
 #[doc(hidden)]
 pub fn div_null_SqlDecimal_SqlDecimal<
@@ -308,54 +98,7 @@ pub fn div_null_SqlDecimal_SqlDecimal<
     left.checked_div_generic::<P1, S1, P2, S2>(right)
 }
 
-#[doc(hidden)]
-pub fn div_null_SqlDecimalN_SqlDecimal<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: Option<SqlDecimal<P0, S0>>,
-    right: SqlDecimal<P1, S1>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let left = left?;
-    div_null_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(left, right)
-}
-
-#[doc(hidden)]
-pub fn div_null_SqlDecimal_SqlDecimalN<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: SqlDecimal<P0, S0>,
-    right: Option<SqlDecimal<P1, S1>>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let right = right?;
-    div_null_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(left, right)
-}
-
-#[doc(hidden)]
-pub fn div_null_SqlDecimalN_SqlDecimalN<
-    const P0: usize,
-    const S0: usize,
-    const P1: usize,
-    const S1: usize,
-    const P2: usize,
-    const S2: usize,
->(
-    left: Option<SqlDecimal<P0, S0>>,
-    right: Option<SqlDecimal<P1, S1>>,
-) -> Option<SqlDecimal<P2, S2>> {
-    let left = left?;
-    let right = right?;
-    div_null_SqlDecimal_SqlDecimal::<P0, S0, P1, S1, P2, S2>(left, right)
-}
+some_polymorphic_null_function2!(div_null [const P0: usize, const S0: usize, const P1: usize, const S1: usize, const P2: usize, const S2: usize], SqlDecimal, SqlDecimal<P0, S0>, SqlDecimal, SqlDecimal<P1, S1>, SqlDecimal<P2, S2>);
 
 #[doc(hidden)]
 pub fn modulo_SqlDecimal_SqlDecimal<
@@ -434,7 +177,7 @@ pub fn abs_SqlDecimal<const P: usize, const S: usize>(left: SqlDecimal<P, S>) ->
     left.abs()
 }
 
-some_polymorphic_function1!(abs<const P: usize, const S: usize>, SqlDecimal, SqlDecimal<P, S>, SqlDecimal<P, S>);
+some_polymorphic_function1!(abs [const P: usize, const S: usize], SqlDecimal, SqlDecimal<P, S>, SqlDecimal<P, S>);
 
 #[doc(hidden)]
 pub fn floor_SqlDecimal<const P: usize, const S: usize>(
@@ -443,7 +186,7 @@ pub fn floor_SqlDecimal<const P: usize, const S: usize>(
     value.int_floor()
 }
 
-some_polymorphic_function1!(floor<const P: usize, const S: usize>, SqlDecimal, SqlDecimal<P, S>, SqlDecimal<P, 0>);
+some_polymorphic_function1!(floor [const P: usize, const S: usize], SqlDecimal, SqlDecimal<P, S>, SqlDecimal<P, 0>);
 
 #[doc(hidden)]
 pub fn ceil_SqlDecimal<const P: usize, const S: usize>(
@@ -452,7 +195,7 @@ pub fn ceil_SqlDecimal<const P: usize, const S: usize>(
     value.int_ceil()
 }
 
-some_polymorphic_function1!(ceil<const P: usize, const S: usize>, SqlDecimal, SqlDecimal<P, S>, SqlDecimal<P, 0>);
+some_polymorphic_function1!(ceil [const P: usize, const S: usize], SqlDecimal, SqlDecimal<P, S>, SqlDecimal<P, 0>);
 
 #[doc(hidden)]
 pub fn trunc_SqlDecimal<const P: usize, const S: usize>(
@@ -462,7 +205,7 @@ pub fn trunc_SqlDecimal<const P: usize, const S: usize>(
     SqlDecimal::new(trunc.internal_representation(), 0).unwrap()
 }
 
-some_polymorphic_function1!(trunc<const P: usize, const S: usize>, SqlDecimal, SqlDecimal<P, S>, SqlDecimal<P, 0>);
+some_polymorphic_function1!(trunc [const P: usize, const S: usize], SqlDecimal, SqlDecimal<P, S>, SqlDecimal<P, 0>);
 
 #[doc(hidden)]
 pub fn round_SqlDecimal<const P: usize, const S: usize>(
@@ -471,7 +214,7 @@ pub fn round_SqlDecimal<const P: usize, const S: usize>(
     value.convert_round_even::<P, 0>().unwrap()
 }
 
-some_polymorphic_function1!(round<const P: usize, const S: usize>, SqlDecimal, SqlDecimal<P, S>, SqlDecimal<P, 0>);
+some_polymorphic_function1!(round [const P: usize, const S: usize], SqlDecimal, SqlDecimal<P, S>, SqlDecimal<P, 0>);
 
 #[doc(hidden)]
 pub fn round_SqlDecimal_i32<const P: usize, const S: usize>(
@@ -481,7 +224,7 @@ pub fn round_SqlDecimal_i32<const P: usize, const S: usize>(
     value.round(digits)
 }
 
-some_polymorphic_function2!(round<const P: usize, const S: usize>, SqlDecimal, SqlDecimal<P, S>, i32, i32, SqlDecimal<P, S>);
+some_polymorphic_function2!(round [const P: usize, const S: usize], SqlDecimal, SqlDecimal<P, S>, i32, i32, SqlDecimal<P, S>);
 
 #[doc(hidden)]
 pub fn bround_SqlDecimal_i32<const P: usize, const S: usize>(
@@ -491,7 +234,7 @@ pub fn bround_SqlDecimal_i32<const P: usize, const S: usize>(
     value.round_ties_even(digits)
 }
 
-some_polymorphic_function2!(bround<const P: usize, const S: usize>, SqlDecimal, SqlDecimal<P, S>, i32, i32, SqlDecimal<P, S>);
+some_polymorphic_function2!(bround [const P: usize, const S: usize], SqlDecimal, SqlDecimal<P, S>, i32, i32, SqlDecimal<P, S>);
 
 #[doc(hidden)]
 pub fn truncate_SqlDecimal_i32<const P: usize, const S: usize>(
@@ -501,7 +244,7 @@ pub fn truncate_SqlDecimal_i32<const P: usize, const S: usize>(
     value.trunc_digits(digits)
 }
 
-some_polymorphic_function2!(truncate<const P: usize, const S: usize>, SqlDecimal, SqlDecimal<P, S>, i32, i32, SqlDecimal<P, S>);
+some_polymorphic_function2!(truncate [const P: usize, const S: usize], SqlDecimal, SqlDecimal<P, S>, i32, i32, SqlDecimal<P, S>);
 
 #[doc(hidden)]
 pub fn sign_SqlDecimal<const P: usize, const S: usize>(
@@ -511,7 +254,7 @@ pub fn sign_SqlDecimal<const P: usize, const S: usize>(
     value.sign().convert().unwrap()
 }
 
-some_polymorphic_function1!(sign<const P: usize, const S: usize>, SqlDecimal, SqlDecimal<P, S>, SqlDecimal<P, S>);
+some_polymorphic_function1!(sign [const P: usize, const S: usize], SqlDecimal, SqlDecimal<P, S>, SqlDecimal<P, S>);
 
 #[doc(hidden)]
 pub fn decimal_to_integer_<const P: usize, const S: usize>(dec: SqlDecimal<P, S>) -> i128 {
