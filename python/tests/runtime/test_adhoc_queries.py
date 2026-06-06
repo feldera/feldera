@@ -3,6 +3,7 @@ import os
 import tempfile
 from pathlib import Path
 
+from feldera.rest.errors import FelderaAPIError
 from tests import TEST_CLIENT
 from tests.shared_test_pipeline import SharedTestPipeline, sql
 
@@ -216,9 +217,16 @@ class TestAdhocQueries(SharedTestPipeline):
         )
         assert "ERROR" in error_text.upper()
 
-        # Non-materialized table direct access should fail
-        res = list(self.pipeline.query("SELECT * FROM not_materialized"))
-        assert res and "error" in res[0]
+        # Non-materialized table direct access fails up front. The server
+        # reports this as an error response (HTTP 400) rather than a 200
+        # whose streamed body carries the error, so the query throws.
+        nonmat_ok = False
+        try:
+            list(self.pipeline.query("SELECT * FROM not_materialized"))
+        except FelderaAPIError as e:
+            nonmat_ok = True
+            assert "materialized" in str(e), f"unexpected error: {e}"
+        assert nonmat_ok, "Expected querying a non-materialized table to raise"
 
         # INSERT into materialized t1 using JSON query endpoint (to retrieve count row)
         insert_resp = list(
@@ -253,14 +261,22 @@ class TestAdhocQueries(SharedTestPipeline):
             self._count("SELECT COUNT(*) AS c FROM lateness_table3_materialized") == 3
         )
 
-        # FIXME: this should raise an exception, but it currently doesn't.
-        # https://github.com/feldera/feldera/issues/4973
-        result = list(
-            self.pipeline.query(
-                "SELECT COUNT(*) AS c FROM lateness_table1_not_materialized"
+        # This table is non-materialized because of the lateness attribute on
+        # its primary key. Querying it directly fails up front with an error
+        # response (HTTP 400), so the query throws.
+        lateness_nonmat_ok = False
+        try:
+            list(
+                self.pipeline.query(
+                    "SELECT COUNT(*) AS c FROM lateness_table1_not_materialized"
+                )
             )
+        except FelderaAPIError as e:
+            lateness_nonmat_ok = True
+            assert "materialized" in str(e), f"unexpected error: {e}"
+        assert lateness_nonmat_ok, (
+            "Expected querying a non-materialized lateness table to raise"
         )
-        assert len(result) == 1 and "Execution error" in str(result[0])
 
     @sql(
         """CREATE TABLE "TaBle1"(id bigint not null) WITH ('materialized' = 'true');"""
