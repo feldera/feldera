@@ -5,7 +5,7 @@ use num::{Float, PrimInt, Zero};
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};
 use std::cmp::Ordering;
 
-use crate::{some_existing_operator, some_operator, type_name};
+use crate::{some_existing_operator, some_operator, some_polymorphic_null_function2, type_name};
 
 macro_rules! for_all_int_operator {
     ($func_name: ident) => {
@@ -475,27 +475,7 @@ pub fn div_null_d_d(left: F64, right: F64) -> Option<F64> {
     finite_or_null(result).map(|x| x.into())
 }
 
-#[inline(always)]
-#[doc(hidden)]
-pub fn div_null_dN_d(left: Option<F64>, right: F64) -> Option<F64> {
-    let left = left?;
-    div_null_d_d(left, right)
-}
-
-#[inline(always)]
-#[doc(hidden)]
-pub fn div_null_d_dN(left: F64, right: Option<F64>) -> Option<F64> {
-    let right = right?;
-    div_null_d_d(left, right)
-}
-
-#[inline(always)]
-#[doc(hidden)]
-pub fn div_null_dN_dN(left: Option<F64>, right: Option<F64>) -> Option<F64> {
-    let left = left?;
-    let right = right?;
-    div_null_d_d(left, right)
-}
+some_polymorphic_null_function2!(div_null, d, F64, d, F64, F64);
 
 #[inline(always)]
 #[doc(hidden)]
@@ -504,27 +484,7 @@ pub fn div_null_f_f(left: F32, right: F32) -> Option<F32> {
     finite_or_null(result).map(|x| x.into())
 }
 
-#[inline(always)]
-#[doc(hidden)]
-pub fn div_null_fN_f(left: Option<F32>, right: F32) -> Option<F32> {
-    let left = left?;
-    div_null_f_f(left, right)
-}
-
-#[inline(always)]
-#[doc(hidden)]
-pub fn div_null_f_fN(left: F32, right: Option<F32>) -> Option<F32> {
-    let right = right?;
-    div_null_f_f(left, right)
-}
-
-#[inline(always)]
-#[doc(hidden)]
-pub fn div_null_fN_fN(left: Option<F32>, right: Option<F32>) -> Option<F32> {
-    let left = left?;
-    let right = right?;
-    div_null_f_f(left, right)
-}
+some_polymorphic_null_function2!(div_null, f, F32, f, F32, F32);
 
 #[inline(always)]
 #[doc(hidden)]

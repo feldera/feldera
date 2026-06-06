@@ -233,483 +233,495 @@ pub type WSet<D> = OrdZSet<D>;
 #[doc(hidden)]
 pub type IndexedWSet<K, D> = OrdIndexedZSet<K, D>;
 
-/// Macro to create variants of a function with 1 argument
-/// If there exists a function is f_(x: T) -> S, this creates a function
-/// fN(x: Option<T>) -> Option<S>, defined as
-/// fN(x) { let x = x?; Some(f_(x)) }.
+/// Internal base used by [`some_function1`]–[`some_function4`].
+///
+/// Given a base function `f` with *N* non-optional arguments and return type
+/// `R`, generates all 2^N − 1 nullable-wrapper variants: one for each
+/// non-empty subset of arguments that may be `Option<T>`.  The
+/// all-non-nullable combination is skipped because that is the base function.
+///
+/// Each argument type is passed wrapped in parentheses (e.g. `(i32)`) so that
+/// generic types like `Array<i32>` survive token-tree accumulation as a single
+/// `tt`; Rust treats `(T)` as a type identical to `T` in all positions.
+///
+/// State carried through `@step`:
+/// - `[$($tgen:tt)*]`          — type-generic declarations, e.g. `T: Clone, U: Eq`; empty when absent
+/// - `[$(($dd, $dt, $dn)),*]` — decided args: `(suffix char, paren-wrapped type, arg ident)`
+/// - `[$($base)*]`             — base suffix: one `_` per arg, used to name the base function
+/// - `$wrap`                   — `y` to wrap the base call in `Some(…)`, `n` to return directly
+/// - `$has_n`                  — `y` once any nullable branch is taken, `n` otherwise
+/// - `[$(($an, $at)),*]`       — remaining args: `(arg ident, paren-wrapped type)`
+#[doc(hidden)]
+#[macro_export]
+macro_rules! some_function_impl {
+    // ── helpers ────────────────────────────────────────────────────────────
+    // Produce the parameter type: `_` → bare type, `N` → Option-wrapped type.
+    // The argument is always a paren-wrapped type `($t)`; the pattern `($t:ty)`
+    // strips the outer parens so the emitted type is `T`, not `(T)`.
+    (@type _ ($t:ty)) => { $t };
+    (@type N ($t:ty)) => { Option<$t> };
+
+    // Produce the unwrap statement: `_` → nothing, `N` → `let x = x?;`
+    (@unwrap _ $n:ident) => {};
+    (@unwrap N $n:ident) => { let $n = $n?; };
+
+    // ── combination generator ───────────────────────────────────────────────
+    // Recursive step: branch into non-nullable (`_`) and nullable (`N`).
+    // `$tgen` is threaded through unchanged.
+    (@step $fn:ident, $ret:ty, [$($tgen:tt)*],
+     [$(($dd:tt, $dt:tt, $dn:ident)),*], [$($base:tt)*]; $wrap:tt; $has_n:tt;
+     [($an:ident, $at:tt) $(, ($rn:ident, $rt:tt))*]
+    ) => {
+        $crate::some_function_impl!(@step $fn, $ret, [$($tgen)*],
+            [$(($dd, $dt, $dn),)* (_, $at, $an)], [$($base)* _]; $wrap; $has_n;
+            [$(($rn, $rt)),*]
+        );
+        $crate::some_function_impl!(@step $fn, $ret, [$($tgen)*],
+            [$(($dd, $dt, $dn),)* (N, $at, $an)], [$($base)* _]; $wrap; y;
+            [$(($rn, $rt)),*]
+        );
+    };
+
+    // Base: all non-nullable — skip (would duplicate the base function itself).
+    (@step $fn:ident, $ret:ty, [$($tgen:tt)*],
+     [$(($dd:tt, $dt:tt, $dn:ident)),*], [$($base:tt)*]; $wrap:tt; n; []
+    ) => {};
+
+    // Base: ≥1 nullable, no type generics, wrap in Some().
+    (@step $fn:ident, $ret:ty, [],
+     [$(($dd:tt, $dt:tt, $dn:ident)),*], [$($base:tt)*]; y; y; []
+    ) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<$fn $($dd)*>](
+                $( $dn: $crate::some_function_impl!(@type $dd $dt) ),*
+            ) -> Option<$ret> {
+                $( $crate::some_function_impl!(@unwrap $dd $dn); )*
+                Some([<$fn $($base)*>]($($dn),*))
+            }
+        }
+    };
+
+    // Base: ≥1 nullable, type generics present, wrap in Some().
+    (@step $fn:ident, $ret:ty, [$($tgen:tt)+],
+     [$(($dd:tt, $dt:tt, $dn:ident)),*], [$($base:tt)*]; y; y; []
+    ) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<$fn $($dd)*>]< $($tgen)* >(
+                $( $dn: $crate::some_function_impl!(@type $dd $dt) ),*
+            ) -> Option<$ret> {
+                $( $crate::some_function_impl!(@unwrap $dd $dn); )*
+                Some([<$fn $($base)*>]($($dn),*))
+            }
+        }
+    };
+
+    // Base: ≥1 nullable, no type generics, direct return.
+    (@step $fn:ident, $ret:ty, [],
+     [$(($dd:tt, $dt:tt, $dn:ident)),*], [$($base:tt)*]; n; y; []
+    ) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<$fn $($dd)*>](
+                $( $dn: $crate::some_function_impl!(@type $dd $dt) ),*
+            ) -> Option<$ret> {
+                $( $crate::some_function_impl!(@unwrap $dd $dn); )*
+                [<$fn $($base)*>]($($dn),*)
+            }
+        }
+    };
+
+    // Base: ≥1 nullable, type generics present, direct return.
+    (@step $fn:ident, $ret:ty, [$($tgen:tt)+],
+     [$(($dd:tt, $dt:tt, $dn:ident)),*], [$($base:tt)*]; n; y; []
+    ) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<$fn $($dd)*>]< $($tgen)* >(
+                $( $dn: $crate::some_function_impl!(@type $dd $dt) ),*
+            ) -> Option<$ret> {
+                $( $crate::some_function_impl!(@unwrap $dd $dn); )*
+                [<$fn $($base)*>]($($dn),*)
+            }
+        }
+    };
+}
+
+/// Macro to create variants of a function with 1 argument.
+/// If there exists a function `f_(x: T) -> S`, this creates:
+/// - `fN(x: Option<T>) -> Option<S>`
+///
+/// The generated function returns `None` when any argument is `None`.
+#[doc(hidden)]
+#[macro_export]
 macro_rules! some_function1 {
     ($func_name:ident, $arg_type:ty, $ret_type:ty) => {
-        ::paste::paste! {
-            #[doc(hidden)]
-            pub fn [<$func_name N>]( arg: Option<$arg_type> ) -> Option<$ret_type> {
-                let arg = arg?;
-                Some([<$func_name _>](arg))
-            }
-        }
+        $crate::some_function_impl!(@step $func_name, $ret_type, [], [], []; y; n;
+            [(arg0, ($arg_type))]
+        );
+    };
+    ($func_name:ident [$($tgen:tt)*], $arg_type:ty, $ret_type:ty) => {
+        $crate::some_function_impl!(@step $func_name, $ret_type, [$($tgen)*], [], []; y; n;
+            [(arg0, ($arg_type))]
+        );
     };
 }
 
-pub(crate) use some_function1;
-
-/// Macro to create variants of a function with 1 argument
-/// If there exists a function is f_type(x: T) -> S, this creates a function
-/// f_typeN(x: Option<T>) -> Option<S>
-/// { let x = x?; Some(f_type(x)) }.
-macro_rules! some_polymorphic_function1 {
-    ($func_name:ident $(< $( const $var : ident : $ty: ty),* >)?, $type_name: ident, $arg_type:ty, $ret_type:ty) => {
-        ::paste::paste! {
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name N>] $(< $( const $var : $ty ),* >)? ( arg: Option<$arg_type> ) -> Option<$ret_type> {
-                let arg = arg?;
-                Some([<$func_name _ $type_name >] $(:: < $($var),* >)? (arg))
-            }
-        }
-    };
-}
-
-pub(crate) use some_polymorphic_function1;
-
-/// Macro to create variants of a function with 2 arguments
-/// If there exists a function is f__(x: T, y: S) -> U, this creates
-/// three functions:
-/// - f_N(x: T, y: Option<S>) -> Option<U>
-/// - fN_(x: Option<T>, y: S) -> Option<U>
-/// - fNN(x: Option<T>, y: Option<S>) -> Option<U>
+/// Internal base used by [`some_polymorphic_function1`]–[`some_polymorphic_function3`]
+/// and [`some_polymorphic_null_function3`].
 ///
-/// The resulting functions return Some only if all arguments are 'Some'.
+/// Generates all 2^N − 1 nullable-wrapper variants of a polymorphic function whose
+/// name includes SQL type names (e.g. `f_t0N_t1_t2`).
+///
+/// State carried through `@step`:
+/// - `[$($cdecl:tt)*]`, `[$($cinvoke:tt)*]` — const-generic declaration and invocation
+///   tokens (e.g. `const P: usize, const S: usize` and `P, S`), or `[]`/`[]` when absent.
+/// - `$wrap` — `y` to wrap the base call in `Some(…)`, `n` to return it directly.
+/// - `[$(($dd, $dt, $dn)),*]` — decided args: `(suffix char, paren type, arg ident)`.
+/// - `[$($sfx)*]`, `[$($bsfx)*]` — variant name suffix and base name suffix token lists.
+/// - `$has_n` — `y` once any nullable branch is taken.
+/// - `[$(($an, $atn, $at)),*]` — remaining args: `(arg ident, type name ident, paren type)`.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! some_polymorphic_function_impl {
+    // ── Recursive step ─────────────────────────────────────────────────────
+    // Branch into non-nullable (`_`) and nullable (`N`) for the next argument.
+    // The type name is embedded directly into the accumulated suffix tokens.
+    (@step $fn:ident, $ret:ty,
+     [$($cdecl:tt)*], [$($cinvoke:tt)*]; $wrap:tt;
+     [$(($dd:tt, $dt:tt, $dn:ident)),*], [$($sfx:tt)*], [$($bsfx:tt)*]; $has_n:tt;
+     [($an:ident, $atn:ident, $at:tt) $(, ($rn:ident, $rtn:ident, $rt:tt))*]
+    ) => {
+        $crate::some_polymorphic_function_impl!(@step $fn, $ret,
+            [$($cdecl)*], [$($cinvoke)*]; $wrap;
+            [$(($dd, $dt, $dn),)* (_, $at, $an)], [$($sfx)* _ $atn], [$($bsfx)* _ $atn]; $has_n;
+            [$(($rn, $rtn, $rt)),*]
+        );
+        $crate::some_polymorphic_function_impl!(@step $fn, $ret,
+            [$($cdecl)*], [$($cinvoke)*]; $wrap;
+            [$(($dd, $dt, $dn),)* (N, $at, $an)], [$($sfx)* _ $atn N], [$($bsfx)* _ $atn]; y;
+            [$(($rn, $rtn, $rt)),*]
+        );
+    };
+
+    // ── Base: all non-nullable — skip ──────────────────────────────────────
+    (@step $fn:ident, $ret:ty,
+     [$($cdecl:tt)*], [$($cinvoke:tt)*]; $wrap:tt;
+     [$(($dd:tt, $dt:tt, $dn:ident)),*], [$($sfx:tt)*], [$($bsfx:tt)*]; n; []
+    ) => {};
+
+    // ── Base: ≥1 nullable, no const generics, wrap in Some() ──────────────
+    (@step $fn:ident, $ret:ty,
+     [], []; y;
+     [$(($dd:tt, $dt:tt, $dn:ident)),*], [$($sfx:tt)*], [$($bsfx:tt)*]; y; []
+    ) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<$fn $($sfx)*>](
+                $( $dn: $crate::some_function_impl!(@type $dd $dt) ),*
+            ) -> Option<$ret> {
+                $( $crate::some_function_impl!(@unwrap $dd $dn); )*
+                Some([<$fn $($bsfx)*>]($($dn),*))
+            }
+        }
+    };
+
+    // ── Base: ≥1 nullable, const generics present, wrap in Some() ─────────
+    (@step $fn:ident, $ret:ty,
+     [$($cdecl:tt)+], [$($cinvoke:tt)+]; y;
+     [$(($dd:tt, $dt:tt, $dn:ident)),*], [$($sfx:tt)*], [$($bsfx:tt)*]; y; []
+    ) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<$fn $($sfx)*>]< $($cdecl)* >(
+                $( $dn: $crate::some_function_impl!(@type $dd $dt) ),*
+            ) -> Option<$ret> {
+                $( $crate::some_function_impl!(@unwrap $dd $dn); )*
+                Some([<$fn $($bsfx)*>]::< $($cinvoke)* >($($dn),*))
+            }
+        }
+    };
+
+    // ── Base: ≥1 nullable, no const generics, direct return ───────────────
+    (@step $fn:ident, $ret:ty,
+     [], []; n;
+     [$(($dd:tt, $dt:tt, $dn:ident)),*], [$($sfx:tt)*], [$($bsfx:tt)*]; y; []
+    ) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<$fn $($sfx)*>](
+                $( $dn: $crate::some_function_impl!(@type $dd $dt) ),*
+            ) -> Option<$ret> {
+                $( $crate::some_function_impl!(@unwrap $dd $dn); )*
+                [<$fn $($bsfx)*>]($($dn),*)
+            }
+        }
+    };
+
+    // ── Base: ≥1 nullable, const generics present, direct return ──────────
+    (@step $fn:ident, $ret:ty,
+     [$($cdecl:tt)+], [$($cinvoke:tt)+]; n;
+     [$(($dd:tt, $dt:tt, $dn:ident)),*], [$($sfx:tt)*], [$($bsfx:tt)*]; y; []
+    ) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<$fn $($sfx)*>]< $($cdecl)* >(
+                $( $dn: $crate::some_function_impl!(@type $dd $dt) ),*
+            ) -> Option<$ret> {
+                $( $crate::some_function_impl!(@unwrap $dd $dn); )*
+                [<$fn $($bsfx)*>]::< $($cinvoke)* >($($dn),*)
+            }
+        }
+    };
+}
+
+/// If there exists `f_t(x: T) -> S`, creates `f_tN(x: Option<T>) -> Option<S>`.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! some_polymorphic_function1 {
+    ($func_name:ident, $type_name:ident, $arg_type:ty, $ret_type:ty) => {
+        $crate::some_polymorphic_function_impl!(@step $func_name, $ret_type,
+            [], []; y;
+            [], [], []; n;
+            [(arg0, $type_name, ($arg_type))]
+        );
+    };
+    ($func_name:ident [ $(const $var:ident : $vty:ty),* ], $type_name:ident, $arg_type:ty, $ret_type:ty) => {
+        $crate::some_polymorphic_function_impl!(@step $func_name, $ret_type,
+            [$(const $var: $vty),*], [$($var),*]; y;
+            [], [], []; n;
+            [(arg0, $type_name, ($arg_type))]
+        );
+    };
+}
+
+/// Macro to create variants of a function with 2 arguments.
+/// If there exists a function `f__(x: T, y: S) -> U`, this creates:
+/// - `f_N(x: T,         y: Option<S>) -> Option<U>`
+/// - `fN_(x: Option<T>, y: S        ) -> Option<U>`
+/// - `fNN(x: Option<T>, y: Option<S>) -> Option<U>`
+///
+/// Each generated function returns `None` when any argument is `None`.
+#[doc(hidden)]
+#[macro_export]
 macro_rules! some_function2 {
     ($func_name:ident, $arg_type0:ty, $arg_type1:ty, $ret_type:ty) => {
-        ::paste::paste! {
-            #[doc(hidden)]
-            pub fn [<$func_name NN>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1> ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                Some([<$func_name __>](arg0, arg1))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _N>]( arg0: $arg_type0, arg1: Option<$arg_type1> ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                Some([<$func_name __>](arg0, arg1))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name N_>]( arg0: Option<$arg_type0>, arg1: $arg_type1 ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                Some([<$func_name __>](arg0, arg1))
-            }
-        }
-    }
+        $crate::some_function_impl!(@step $func_name, $ret_type, [], [], []; y; n;
+            [(arg0, ($arg_type0)), (arg1, ($arg_type1))]
+        );
+    };
+    ($func_name:ident [$($tgen:tt)*], $arg_type0:ty, $arg_type1:ty, $ret_type:ty) => {
+        $crate::some_function_impl!(@step $func_name, $ret_type, [$($tgen)*], [], []; y; n;
+            [(arg0, ($arg_type0)), (arg1, ($arg_type1))]
+        );
+    };
 }
 
-pub(crate) use some_function2;
+/// Like [`some_polymorphic_function1`], but the base function already returns
+/// `Option<R>`, so wrappers return it directly without an extra `Some()`.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! some_polymorphic_null_function1 {
+    ($func_name:ident, $type_name:ident, $arg_type:ty, $ret_type:ty) => {
+        $crate::some_polymorphic_function_impl!(@step $func_name, $ret_type,
+            [], []; n;
+            [], [], []; n;
+            [(arg0, $type_name, ($arg_type))]
+        );
+    };
+    ($func_name:ident [ $(const $var:ident : $vty:ty),* ], $type_name:ident, $arg_type:ty, $ret_type:ty) => {
+        $crate::some_polymorphic_function_impl!(@step $func_name, $ret_type,
+            [$(const $var: $vty),*], [$($var),*]; n;
+            [], [], []; n;
+            [(arg0, $type_name, ($arg_type))]
+        );
+    };
+}
 
-/// Macro to create variants of a polymorphic function with 2 arguments
-/// If there exists a function is f_type1_type2(x: T, y: S) -> U, this
-/// creates three functions:
-/// - f_type1_type2N(x: T, y: Option<S>) -> Option<U>
-/// - f_type1N_type2(x: Option<T>, y: S) -> Option<U>
-/// - f_type1N_type2N(x: Option<T>, y: Option<S>) -> Option<U>
-///
-/// The resulting functions return Some only if all arguments are 'Some'.
+/// If there exists `f_t0_t1(x: T, y: S) -> U`, creates:
+/// `f_t0_t1N`, `f_t0N_t1`, `f_t0N_t1N`.
+#[doc(hidden)]
+#[macro_export]
 macro_rules! some_polymorphic_function2 {
-    ($func_name:ident  $(< $( const $var:ident : $ty: ty),* >)?, $type_name0: ident, $arg_type0:ty, $type_name1: ident, $arg_type1:ty, $ret_type:ty) => {
-        ::paste::paste! {
-            #[doc(hidden)]
-            pub fn [<$func_name _$type_name0 _ $type_name1 N>] $(< $( const $var : $ty),* >)? ( arg0: $arg_type0, arg1: Option<$arg_type1> ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                Some([<$func_name _ $type_name0 _ $type_name1>] $(:: < $($var),* >)? (arg0, arg1))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 N _ $type_name1>] $(< $( const $var : $ty),* >)? ( arg0: Option<$arg_type0>, arg1: $arg_type1 ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                Some([<$func_name _ $type_name0 _ $type_name1>] $(:: < $($var),* >)? (arg0, arg1))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 N _ $type_name1 N>] $(< $( const $var : $ty),* >)? ( arg0: Option<$arg_type0>, arg1: Option<$arg_type1> ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                Some([<$func_name _ $type_name0 _ $type_name1>] $(:: < $($var),* >)? (arg0, arg1))
-            }
-        }
-    }
+    ($func_name:ident, $type_name0:ident, $arg_type0:ty, $type_name1:ident, $arg_type1:ty, $ret_type:ty) => {
+        $crate::some_polymorphic_function_impl!(@step $func_name, $ret_type,
+            [], []; y;
+            [], [], []; n;
+            [(arg0, $type_name0, ($arg_type0)), (arg1, $type_name1, ($arg_type1))]
+        );
+    };
+    ($func_name:ident [ $(const $var:ident : $vty:ty),* ], $type_name0:ident, $arg_type0:ty, $type_name1:ident, $arg_type1:ty, $ret_type:ty) => {
+        $crate::some_polymorphic_function_impl!(@step $func_name, $ret_type,
+            [$(const $var: $vty),*], [$($var),*]; y;
+            [], [], []; n;
+            [(arg0, $type_name0, ($arg_type0)), (arg1, $type_name1, ($arg_type1))]
+        );
+    };
 }
 
-pub(crate) use some_polymorphic_function2;
+/// Like [`some_polymorphic_function2`], but the base function already returns
+/// `Option<R>`, so wrappers return it directly without an extra `Some()`.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! some_polymorphic_null_function2 {
+    ($func_name:ident, $type_name0:ident, $arg_type0:ty, $type_name1:ident, $arg_type1:ty, $ret_type:ty) => {
+        $crate::some_polymorphic_function_impl!(@step $func_name, $ret_type,
+            [], []; n;
+            [], [], []; n;
+            [(arg0, $type_name0, ($arg_type0)), (arg1, $type_name1, ($arg_type1))]
+        );
+    };
+    ($func_name:ident [ $(const $var:ident : $vty:ty),* ], $type_name0:ident, $arg_type0:ty, $type_name1:ident, $arg_type1:ty, $ret_type:ty) => {
+        $crate::some_polymorphic_function_impl!(@step $func_name, $ret_type,
+            [$(const $var: $vty),*], [$($var),*]; n;
+            [], [], []; n;
+            [(arg0, $type_name0, ($arg_type0)), (arg1, $type_name1, ($arg_type1))]
+        );
+    };
+}
 
-/// If there exists a function is f_t1_t2_t3(x: T, y: S, z: V) -> U, this creates
-/// seven functions:
-/// - f_t1_t2_t3N(x: T, y: S, z: Option<V>) -> Option<U>
-/// - f_t1_t2N_t2(x: T, y: Option<S>, z: V) -> Option<U>
-/// - etc.
-///
-/// The resulting functions return Some only if all arguments are 'Some'.
+/// If there exists `f_t0_t1_t2(x: T, y: S, z: V) -> U`, creates the 7 nullable variants.
+#[doc(hidden)]
+#[macro_export]
 macro_rules! some_polymorphic_function3 {
-    ($func_name:ident,
-     $type_name0: ident, $arg_type0:ty,
-     $type_name1: ident, $arg_type1:ty,
-     $type_name2: ident, $arg_type2: ty,
-     $ret_type:ty) => {
-        ::paste::paste! {
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 _ $type_name1 _ $type_name2 N>](
-                arg0: $arg_type0,
-                arg1: $arg_type1,
-                arg2: Option<$arg_type2>
-            ) -> Option<$ret_type> {
-                let arg2 = arg2?;
-                Some([<$func_name _ $type_name0 _ $type_name1 _ $type_name2>](arg0, arg1, arg2))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 _ $type_name1 N _ $type_name2>](
-                arg0: $arg_type0,
-                arg1: Option<$arg_type1>,
-                arg2: $arg_type2
-            ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                Some([<$func_name _ $type_name0 _ $type_name1 _ $type_name2>](arg0, arg1, arg2))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 _ $type_name1 N _ $type_name2 N>](
-                arg0: $arg_type0,
-                arg1: Option<$arg_type1>,
-                arg2: Option<$arg_type2>
-            ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                let arg2 = arg2?;
-                Some([<$func_name _ $type_name0 _ $type_name1 _ $type_name2>](arg0, arg1, arg2))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 N _ $type_name1 _ $type_name2>](
-                arg0: Option<$arg_type0>,
-                arg1: $arg_type1,
-                arg2: $arg_type2
-            ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                Some([<$func_name _ $type_name0 _ $type_name1 _ $type_name2>](arg0, arg1, arg2))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 N _ $type_name1 _ $type_name2 N>](
-                arg0: Option<$arg_type0>,
-                arg1: $arg_type1,
-                arg2: Option<$arg_type2>
-            ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg2 = arg2?;
-                Some([<$func_name _ $type_name0 _ $type_name1 _ $type_name2>](arg0, arg1, arg2))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 N _ $type_name1 N _ $type_name2>](
-                arg0: Option<$arg_type0>,
-                arg1: Option<$arg_type1>,
-                arg2: $arg_type2
-            ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                Some([<$func_name _ $type_name0 _ $type_name1 _ $type_name2>](arg0, arg1, arg2))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 N _ $type_name1 N _ $type_name2 N>](
-                arg0: Option<$arg_type0>,
-                arg1: Option<$arg_type1>,
-                arg2: Option<$arg_type2>
-            ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                let arg2 = arg2?;
-                Some([<$func_name _ $type_name0 _ $type_name1 _ $type_name2>](arg0, arg1, arg2))
-            }
-        }
+    ($func_name:ident, $type_name0:ident, $arg_type0:ty, $type_name1:ident, $arg_type1:ty, $type_name2:ident, $arg_type2:ty, $ret_type:ty) => {
+        $crate::some_polymorphic_function_impl!(@step $func_name, $ret_type,
+            [], []; y;
+            [], [], []; n;
+            [(arg0, $type_name0, ($arg_type0)), (arg1, $type_name1, ($arg_type1)), (arg2, $type_name2, ($arg_type2))]
+        );
     };
 }
 
-pub(crate) use some_polymorphic_function3;
-
-/// If there exists a function is f_t1_t2_t3(x: T, y: S, z: V) -> Option<U>, this creates
-/// seven functions:
-/// - f_t1_t2_t3N(x: T, y: S, z: Option<V>) -> Option<U>
-/// - f_t1_t2N_t2(x: T, y: Option<S>, z: V) -> Option<U>
-/// - etc.
-// This is like some_polymorphic_function3, but the result is always Option.
+/// Like [`some_polymorphic_function3`], but the base function already returns
+/// `Option<R>`, so wrappers return it directly without an extra `Some()`.
+#[doc(hidden)]
+#[macro_export]
 macro_rules! some_polymorphic_null_function3 {
-    ($func_name:ident $(< $( const $var : ident : $ty: ty),* >)?,
-     $type_name0: ident, $arg_type0:ty,
-     $type_name1: ident, $arg_type1:ty,
-     $type_name2: ident, $arg_type2: ty,
-     $ret_type:ty) => {
-        ::paste::paste! {
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 _ $type_name1 _ $type_name2 N>] $(< $( const $var : $ty ),* >)? (
-                arg0: $arg_type0,
-                arg1: $arg_type1,
-                arg2: Option<$arg_type2>
-            ) -> Option<$ret_type> {
-                let arg2 = arg2?;
-                [<$func_name _ $type_name0 _ $type_name1 _ $type_name2>] $(:: < $($var),* >)? (arg0, arg1, arg2)
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 _ $type_name1 N _ $type_name2>] $(< $( const $var : $ty ),* >)? (
-                arg0: $arg_type0,
-                arg1: Option<$arg_type1>,
-                arg2: $arg_type2
-            ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                [<$func_name _ $type_name0 _ $type_name1 _ $type_name2>] $(:: < $($var),* >)? (arg0, arg1, arg2)
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 _ $type_name1 N _ $type_name2 N>] $(< $( const $var : $ty ),* >)? (
-                arg0: $arg_type0,
-                arg1: Option<$arg_type1>,
-                arg2: Option<$arg_type2>
-            ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                let arg2 = arg2?;
-                [<$func_name _ $type_name0 _ $type_name1 _ $type_name2>] $(:: < $($var),* >)? (arg0, arg1, arg2)
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 N _ $type_name1 _ $type_name2>] $(< $( const $var : $ty ),* >)? (
-                arg0: Option<$arg_type0>,
-                arg1: $arg_type1,
-                arg2: $arg_type2
-            ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                [<$func_name _ $type_name0 _ $type_name1 _ $type_name2>] $(:: < $($var),* >)? (arg0, arg1, arg2)
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 N _ $type_name1 _ $type_name2 N>] $(< $( const $var : $ty ),* >)? (
-                arg0: Option<$arg_type0>,
-                arg1: $arg_type1,
-                arg2: Option<$arg_type2>
-            ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg2 = arg2?;
-                [<$func_name _ $type_name0 _ $type_name1 _ $type_name2>] $(:: < $($var),* >)? (arg0, arg1, arg2)
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 N _ $type_name1 N _ $type_name2>] $(< $( const $var : $ty ),* >)? (
-                arg0: Option<$arg_type0>,
-                arg1: Option<$arg_type1>,
-                arg2: $arg_type2
-            ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                [<$func_name _ $type_name0 _ $type_name1 _ $type_name2>] $(:: < $($var),* >)? (arg0, arg1, arg2)
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 N _ $type_name1 N _ $type_name2 N>] $(< $( const $var : $ty ),* >)? (
-                arg0: Option<$arg_type0>,
-                arg1: Option<$arg_type1>,
-                arg2: Option<$arg_type2>
-            ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                let arg2 = arg2?;
-                [<$func_name _ $type_name0 _ $type_name1 _ $type_name2>] $(:: < $($var),* >)? (arg0, arg1, arg2)
-            }
-        }
+    ($func_name:ident, $type_name0:ident, $arg_type0:ty, $type_name1:ident, $arg_type1:ty, $type_name2:ident, $arg_type2:ty, $ret_type:ty) => {
+        $crate::some_polymorphic_function_impl!(@step $func_name, $ret_type,
+            [], []; n;
+            [], [], []; n;
+            [(arg0, $type_name0, ($arg_type0)), (arg1, $type_name1, ($arg_type1)), (arg2, $type_name2, ($arg_type2))]
+        );
+    };
+    ($func_name:ident [ $(const $var:ident : $vty:ty),* ], $type_name0:ident, $arg_type0:ty, $type_name1:ident, $arg_type1:ty, $type_name2:ident, $arg_type2:ty, $ret_type:ty) => {
+        $crate::some_polymorphic_function_impl!(@step $func_name, $ret_type,
+            [$(const $var: $vty),*], [$($var),*]; n;
+            [], [], []; n;
+            [(arg0, $type_name0, ($arg_type0)), (arg1, $type_name1, ($arg_type1)), (arg2, $type_name2, ($arg_type2))]
+        );
     };
 }
 
-pub(crate) use some_polymorphic_null_function3;
-
-/// If there exists a function is f___(x: T, y: S, z: V) -> U, this creates
-/// seven functions:
-/// - f__N(x: T, y: S, z: Option<V>) -> Option<U>
-/// - f_N_(x: T, y: Option<S>, z: V) -> Option<U>
-/// - etc.
-///
-/// The resulting functions return Some only if all arguments are 'Some'.
+/// Macro to create variants of a function with 3 arguments.
+/// If there exists a function `f___(x: T, y: S, z: V) -> U`, this creates
+/// the 7 nullable variants (all combinations except all-non-nullable).
+/// Each generated function returns `None` when any argument is `None`.
+#[doc(hidden)]
+#[macro_export]
 macro_rules! some_function3 {
-    ($func_name:ident, $arg_type0:ty, $arg_type1:ty, $arg_type2: ty, $ret_type:ty) => {
-        ::paste::paste! {
-            #[doc(hidden)]
-            pub fn [<$func_name __N>]( arg0: $arg_type0, arg1: $arg_type1, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
-                let arg2 = arg2?;
-                Some([<$func_name ___>](arg0, arg1, arg2))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _N_>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: $arg_type2 ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                Some([<$func_name ___>](arg0, arg1, arg2))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _NN>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                let arg2 = arg2?;
-                Some([<$func_name ___>](arg0, arg1, arg2))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name N__>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: $arg_type2 ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                Some([<$func_name ___>](arg0, arg1, arg2))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name N_N>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg2 = arg2?;
-                Some([<$func_name ___>](arg0, arg1, arg2))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name NN_>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: $arg_type2 ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                Some([<$func_name ___>](arg0, arg1, arg2))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name NNN>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: Option<$arg_type2> ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                let arg2 = arg2?;
-                Some([<$func_name ___>](arg0, arg1, arg2))
-            }
-        }
-    }
+    ($func_name:ident, $arg_type0:ty, $arg_type1:ty, $arg_type2:ty, $ret_type:ty) => {
+        $crate::some_function_impl!(@step $func_name, $ret_type, [], [], []; y; n;
+            [(arg0, ($arg_type0)), (arg1, ($arg_type1)), (arg2, ($arg_type2))]
+        );
+    };
+    ($func_name:ident [$($tgen:tt)*], $arg_type0:ty, $arg_type1:ty, $arg_type2:ty, $ret_type:ty) => {
+        $crate::some_function_impl!(@step $func_name, $ret_type, [$($tgen)*], [], []; y; n;
+            [(arg0, ($arg_type0)), (arg1, ($arg_type1)), (arg2, ($arg_type2))]
+        );
+    };
 }
 
-pub(crate) use some_function3;
-
-/// Macro to create variants of a function with 4 arguments
-/// If there exists a function is f____(x: T, y: S, z: V, w: W) -> U, this
-/// creates fifteen functions:
-/// - f___N(x: T, y: S, z: V, w: Option<W>) -> Option<U>
-/// - f__N_(x: T, y: S, z: Option<V>, w: W) -> Option<U>
-/// - etc.
-///
-/// The resulting functions return Some only if all arguments are 'Some'.
+/// Macro to create variants of a function with 4 arguments.
+/// If there exists a function `f____(x: T, y: S, z: V, w: W) -> U`, this
+/// creates the 15 nullable variants (all combinations except all-non-nullable).
+/// Each generated function returns `None` when any argument is `None`.
+#[doc(hidden)]
+#[macro_export]
 macro_rules! some_function4 {
-    ($func_name:ident, $arg_type0:ty, $arg_type1:ty, $arg_type2: ty, $arg_type3: ty, $ret_type:ty) => {
-        ::paste::paste! {
-            #[doc(hidden)]
-            pub fn [<$func_name ___N>]( arg0: $arg_type0, arg1: $arg_type1, arg2: $arg_type2, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
-                let arg3 = arg3?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name __N_>]( arg0: $arg_type0, arg1: $arg_type1, arg2: Option<$arg_type2>, arg3: $arg_type3 ) -> Option<$ret_type> {
-                let arg2 = arg2?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name __NN>]( arg0: $arg_type0, arg1: $arg_type1, arg2: Option<$arg_type2>, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
-                let arg2 = arg2?;
-                let arg3 = arg3?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _N__>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: $arg_type2, arg3: $arg_type3 ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _N_N>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: $arg_type2, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                let arg3 = arg3?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _NN_>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: Option<$arg_type2>, arg3: $arg_type3 ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                let arg2 = arg2?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _NNN>]( arg0: $arg_type0, arg1: Option<$arg_type1>, arg2: Option<$arg_type2>, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
-                let arg1 = arg1?;
-                let arg2 = arg2?;
-                let arg3 = arg3?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name N___>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: $arg_type2, arg3: $arg_type3 ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name N__N>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: $arg_type2, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg3 = arg3?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name N_N_>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: Option<$arg_type2>, arg3: $arg_type3 ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg2 = arg2?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name N_NN>]( arg0: Option<$arg_type0>, arg1: $arg_type1, arg2: Option<$arg_type2>, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg2 = arg2?;
-                let arg3 = arg3?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name NN__>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: $arg_type2, arg3: $arg_type3 ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name NN_N>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: $arg_type2, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                let arg3 = arg3?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name NNN_>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: Option<$arg_type2>, arg3: $arg_type3 ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                let arg2 = arg2?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name NNNN>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1>, arg2: Option<$arg_type2>, arg3: Option<$arg_type3> ) -> Option<$ret_type> {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                let arg2 = arg2?;
-                let arg3 = arg3?;
-                Some([<$func_name ____>](arg0, arg1, arg2, arg3))
-            }
-        }
-    }
+    ($func_name:ident, $arg_type0:ty, $arg_type1:ty, $arg_type2:ty, $arg_type3:ty, $ret_type:ty) => {
+        $crate::some_function_impl!(@step $func_name, $ret_type, [], [], []; y; n;
+            [(arg0, ($arg_type0)), (arg1, ($arg_type1)), (arg2, ($arg_type2)), (arg3, ($arg_type3))]
+        );
+    };
+    ($func_name:ident [$($tgen:tt)*], $arg_type0:ty, $arg_type1:ty, $arg_type2:ty, $arg_type3:ty, $ret_type:ty) => {
+        $crate::some_function_impl!(@step $func_name, $ret_type, [$($tgen)*], [], []; y; n;
+            [(arg0, ($arg_type0)), (arg1, ($arg_type1)), (arg2, ($arg_type2)), (arg3, ($arg_type3))]
+        );
+    };
 }
 
-pub(crate) use some_function4;
+/// Like [`some_function1`] but for a base function that already returns `Option<R>`.
+/// If there exists `f_(x: T) -> Option<S>`, creates:
+/// - `fN(x: Option<T>) -> Option<S>`
+#[doc(hidden)]
+#[macro_export]
+macro_rules! some_nullable_function1 {
+    ($func_name:ident, $arg_type:ty, $ret_type:ty) => {
+        $crate::some_function_impl!(@step $func_name, $ret_type, [], [], []; n; n;
+            [(arg0, ($arg_type))]
+        );
+    };
+    ($func_name:ident [$($tgen:tt)*], $arg_type:ty, $ret_type:ty) => {
+        $crate::some_function_impl!(@step $func_name, $ret_type, [$($tgen)*], [], []; n; n;
+            [(arg0, ($arg_type))]
+        );
+    };
+}
+
+/// Like [`some_function2`] but for a base function that already returns `Option<R>`.
+/// If there exists `f__(x: T, y: S) -> Option<U>`, creates:
+/// - `f_N`, `fN_`, `fNN`
+#[doc(hidden)]
+#[macro_export]
+macro_rules! some_nullable_function2 {
+    ($func_name:ident, $arg_type0:ty, $arg_type1:ty, $ret_type:ty) => {
+        $crate::some_function_impl!(@step $func_name, $ret_type, [], [], []; n; n;
+            [(arg0, ($arg_type0)), (arg1, ($arg_type1))]
+        );
+    };
+    ($func_name:ident [$($tgen:tt)*], $arg_type0:ty, $arg_type1:ty, $ret_type:ty) => {
+        $crate::some_function_impl!(@step $func_name, $ret_type, [$($tgen)*], [], []; n; n;
+            [(arg0, ($arg_type0)), (arg1, ($arg_type1))]
+        );
+    };
+}
+
+/// Like [`some_function3`] but for a base function that already returns `Option<R>`.
+/// If there exists `f___(x: T, y: S, z: V) -> Option<U>`, creates the 7 nullable variants.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! some_nullable_function3 {
+    ($func_name:ident, $arg_type0:ty, $arg_type1:ty, $arg_type2:ty, $ret_type:ty) => {
+        $crate::some_function_impl!(@step $func_name, $ret_type, [], [], []; n; n;
+            [(arg0, ($arg_type0)), (arg1, ($arg_type1)), (arg2, ($arg_type2))]
+        );
+    };
+    ($func_name:ident [$($tgen:tt)*], $arg_type0:ty, $arg_type1:ty, $arg_type2:ty, $ret_type:ty) => {
+        $crate::some_function_impl!(@step $func_name, $ret_type, [$($tgen)*], [], []; n; n;
+            [(arg0, ($arg_type0)), (arg1, ($arg_type1)), (arg2, ($arg_type2))]
+        );
+    };
+}
+
+/// Like [`some_function4`] but for a base function that already returns `Option<R>`.
+/// If there exists `f____(x: T, y: S, z: V, w: W) -> Option<U>`, creates the 15 nullable variants.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! some_nullable_function4 {
+    ($func_name:ident, $arg_type0:ty, $arg_type1:ty, $arg_type2:ty, $arg_type3:ty, $ret_type:ty) => {
+        $crate::some_function_impl!(@step $func_name, $ret_type, [], [], []; n; n;
+            [(arg0, ($arg_type0)), (arg1, ($arg_type1)), (arg2, ($arg_type2)), (arg3, ($arg_type3))]
+        );
+    };
+    ($func_name:ident [$($tgen:tt)*], $arg_type0:ty, $arg_type1:ty, $arg_type2:ty, $arg_type3:ty, $ret_type:ty) => {
+        $crate::some_function_impl!(@step $func_name, $ret_type, [$($tgen)*], [], []; n; n;
+            [(arg0, ($arg_type0)), (arg1, ($arg_type1)), (arg2, ($arg_type2)), (arg3, ($arg_type3))]
+        );
+    };
+}
 
 /// Macro to create variants of a function with 2 arguments
 /// optimized for the implementation of arithmetic operators.

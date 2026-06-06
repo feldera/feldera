@@ -7,7 +7,8 @@
 #![allow(non_snake_case)]
 use crate::{
     Variant, array::Array, some_function1, some_function2, some_function3, some_function4,
-    some_polymorphic_function1, some_polymorphic_function2, string_interner::*,
+    some_polymorphic_function1, some_polymorphic_function2, some_polymorphic_null_function1,
+    string_interner::*,
 };
 
 use arcstr::ArcStr;
@@ -706,11 +707,7 @@ pub fn to_json_V(value: Variant) -> Option<SqlString> {
     }
 }
 
-#[doc(hidden)]
-pub fn to_json_VN(value: Option<Variant>) -> Option<SqlString> {
-    let value = value?;
-    to_json_V(value)
-}
+some_polymorphic_null_function1!(to_json, V, Variant, SqlString);
 
 #[doc(hidden)]
 pub fn to_json_nullN(_value: Option<()>) -> Option<SqlString> {

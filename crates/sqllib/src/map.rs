@@ -1,7 +1,7 @@
 //! Functions for manipulating maps
 
 use crate::error::{SqlResult, SqlRuntimeError};
-use crate::{Array, ConcatSemigroup, Semigroup, Weight};
+use crate::{Array, ConcatSemigroup, Semigroup, Weight, some_function1, some_function2};
 use dbsp::utils::Tup2;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -285,34 +285,7 @@ where
     value.contains_key(&key)
 }
 
-#[doc(hidden)]
-pub fn map_contains_keyN_<I, T>(value: Option<Map<I, T>>, key: I) -> Option<bool>
-where
-    I: Ord,
-    T: Clone,
-{
-    value.map(|map| map_contains_key__(map, key))
-}
-
-#[doc(hidden)]
-pub fn map_contains_keyNN<I, T>(value: Option<Map<I, T>>, key: Option<I>) -> Option<bool>
-where
-    I: Ord,
-    T: Clone,
-{
-    let key = key?;
-    map_contains_keyN_(value, key)
-}
-
-#[doc(hidden)]
-pub fn map_contains_key_N<I, T>(value: Map<I, T>, key: Option<I>) -> Option<bool>
-where
-    I: Ord,
-    T: Clone,
-{
-    let key = key?;
-    Some(map_contains_key__(value, key))
-}
+some_function2!(map_contains_key [I: Ord, T: Clone], Map<I, T>, I, bool);
 
 #[doc(hidden)]
 pub fn map_keys_<I, T>(value: Map<I, T>) -> Array<I>
@@ -339,11 +312,4 @@ where
     Arc::new(value.values().cloned().collect())
 }
 
-#[doc(hidden)]
-pub fn map_valuesN<I, T>(value: Option<Map<I, T>>) -> Option<Array<T>>
-where
-    I: Ord + Clone,
-    T: Clone,
-{
-    value.map(|value| map_values_(value))
-}
+some_function1!(map_values [I: Ord + Clone, T: Clone], Map<I, T>, Array<T>);

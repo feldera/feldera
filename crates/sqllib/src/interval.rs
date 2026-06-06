@@ -6,6 +6,7 @@ use crate::{
     operators::{eq, gt, gte, lt, lte, neq},
     plus_Date_Date_LongInterval__, sign, some_existing_operator, some_function1, some_function2,
     some_operator, some_polymorphic_function1, some_polymorphic_function2,
+    some_polymorphic_null_function2,
     timestamp::{extract_epoch_Date, extract_quarter_Date},
 };
 use dbsp::{algebra::F64, num_entries_scalar};
@@ -411,7 +412,7 @@ pub fn div_ShortInterval_SqlDecimal<const P: usize, const S: usize>(
 }
 
 some_polymorphic_function2!(
-    div <const P: usize, const S: usize>,
+    div [const P: usize, const S: usize],
     ShortInterval,
     ShortInterval,
     SqlDecimal,
@@ -430,33 +431,7 @@ pub fn div_null_ShortInterval_SqlDecimal<const P: usize, const S: usize>(
     Some(ShortInterval::from_microseconds(micros))
 }
 
-#[doc(hidden)]
-pub fn div_null_ShortIntervalN_SqlDecimal<const P: usize, const S: usize>(
-    left: Option<ShortInterval>,
-    right: SqlDecimal<P, S>,
-) -> Option<ShortInterval> {
-    let left = left?;
-    div_null_ShortInterval_SqlDecimal(left, right)
-}
-
-#[doc(hidden)]
-pub fn div_null_ShortInterval_SqlDecimalN<const P: usize, const S: usize>(
-    left: ShortInterval,
-    right: Option<SqlDecimal<P, S>>,
-) -> Option<ShortInterval> {
-    let right = right?;
-    div_null_ShortInterval_SqlDecimal(left, right)
-}
-
-#[doc(hidden)]
-pub fn div_null_ShortIntervalN_SqlDecimalN<const P: usize, const S: usize>(
-    left: Option<ShortInterval>,
-    right: Option<SqlDecimal<P, S>>,
-) -> Option<ShortInterval> {
-    let left = left?;
-    let right = right?;
-    div_null_ShortInterval_SqlDecimal(left, right)
-}
+some_polymorphic_null_function2!(div_null [const P: usize, const S: usize], ShortInterval, ShortInterval, SqlDecimal, SqlDecimal<P, S>, ShortInterval);
 
 #[doc(hidden)]
 pub fn times_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
@@ -481,7 +456,7 @@ pub fn times_ShortInterval_SqlDecimal<const P: usize, const S: usize>(
 }
 
 some_polymorphic_function2!(
-    times <const P: usize, const S: usize>,
+    times [const P: usize, const S: usize],
     ShortInterval,
     ShortInterval,
     SqlDecimal,
@@ -506,27 +481,14 @@ pub fn div_null_ShortInterval_d(left: ShortInterval, right: F64) -> Option<Short
     Some(ShortInterval::from_microseconds(fin as i64))
 }
 
-#[doc(hidden)]
-pub fn div_null_ShortIntervalN_d(left: Option<ShortInterval>, right: F64) -> Option<ShortInterval> {
-    let left = left?;
-    div_null_ShortInterval_d(left, right)
-}
-
-#[doc(hidden)]
-pub fn div_null_ShortInterval_dN(left: ShortInterval, right: Option<F64>) -> Option<ShortInterval> {
-    let right = right?;
-    div_null_ShortInterval_d(left, right)
-}
-
-#[doc(hidden)]
-pub fn div_null_ShortIntervalN_dN(
-    left: Option<ShortInterval>,
-    right: Option<F64>,
-) -> Option<ShortInterval> {
-    let left = left?;
-    let right = right?;
-    div_null_ShortInterval_d(left, right)
-}
+some_polymorphic_null_function2!(
+    div_null,
+    ShortInterval,
+    ShortInterval,
+    d,
+    F64,
+    ShortInterval
+);
 
 #[doc(hidden)]
 pub fn div_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
@@ -542,33 +504,14 @@ pub fn div_null_ShortInterval_i64(left: ShortInterval, right: i64) -> Option<Sho
         .map(ShortInterval::from_microseconds)
 }
 
-#[doc(hidden)]
-pub fn div_null_ShortIntervalN_i64(
-    left: Option<ShortInterval>,
-    right: i64,
-) -> Option<ShortInterval> {
-    let left = left?;
-    div_null_ShortInterval_i64(left, right)
-}
-
-#[doc(hidden)]
-pub fn div_null_ShortInterval_i64N(
-    left: ShortInterval,
-    right: Option<i64>,
-) -> Option<ShortInterval> {
-    let right = right?;
-    div_null_ShortInterval_i64(left, right)
-}
-
-#[doc(hidden)]
-pub fn div_null_ShortIntervalN_i64N(
-    left: Option<ShortInterval>,
-    right: Option<i64>,
-) -> Option<ShortInterval> {
-    let left = left?;
-    let right = right?;
-    div_null_ShortInterval_i64(left, right)
-}
+some_polymorphic_null_function2!(
+    div_null,
+    ShortInterval,
+    ShortInterval,
+    i64,
+    i64,
+    ShortInterval
+);
 
 #[doc(hidden)]
 pub fn plus_ShortInterval_ShortInterval_ShortInterval__(
@@ -879,7 +822,7 @@ pub fn times_LongInterval_SqlDecimal<const P: usize, const S: usize>(
 }
 
 some_polymorphic_function2!(
-    times <const P: usize, const S: usize>,
+    times [const P: usize, const S: usize],
     LongInterval,
     LongInterval,
     SqlDecimal,
@@ -901,27 +844,7 @@ pub fn div_null_LongInterval_i32(left: LongInterval, right: i32) -> Option<LongI
         .map(LongInterval::from_months)
 }
 
-#[doc(hidden)]
-pub fn div_null_LongIntervalN_i32(left: Option<LongInterval>, right: i32) -> Option<LongInterval> {
-    let left = left?;
-    div_null_LongInterval_i32(left, right)
-}
-
-#[doc(hidden)]
-pub fn div_null_LongInterval_i32N(left: LongInterval, right: Option<i32>) -> Option<LongInterval> {
-    let right = right?;
-    div_null_LongInterval_i32(left, right)
-}
-
-#[doc(hidden)]
-pub fn div_null_LongIntervalN_i32N(
-    left: Option<LongInterval>,
-    right: Option<i32>,
-) -> Option<LongInterval> {
-    let left = left?;
-    let right = right?;
-    div_null_LongInterval_i32(left, right)
-}
+some_polymorphic_null_function2!(div_null, LongInterval, LongInterval, i32, i32, LongInterval);
 
 #[doc(hidden)]
 pub fn div_LongInterval_d(left: LongInterval, right: F64) -> LongInterval {
@@ -940,27 +863,7 @@ pub fn div_null_LongInterval_d(left: LongInterval, right: F64) -> Option<LongInt
     Some(LongInterval::from_months(fin as i32))
 }
 
-#[doc(hidden)]
-pub fn div_null_LongIntervalN_d(left: Option<LongInterval>, right: F64) -> Option<LongInterval> {
-    let left = left?;
-    div_null_LongInterval_d(left, right)
-}
-
-#[doc(hidden)]
-pub fn div_null_LongInterval_dN(left: LongInterval, right: Option<F64>) -> Option<LongInterval> {
-    let right = right?;
-    div_null_LongInterval_d(left, right)
-}
-
-#[doc(hidden)]
-pub fn div_null_LongIntervalN_dN(
-    left: Option<LongInterval>,
-    right: Option<F64>,
-) -> Option<LongInterval> {
-    let left = left?;
-    let right = right?;
-    div_null_LongInterval_d(left, right)
-}
+some_polymorphic_null_function2!(div_null, LongInterval, LongInterval, d, F64, LongInterval);
 
 #[doc(hidden)]
 pub fn div_LongInterval_SqlDecimal<const P: usize, const S: usize>(
@@ -971,7 +874,7 @@ pub fn div_LongInterval_SqlDecimal<const P: usize, const S: usize>(
 }
 
 some_polymorphic_function2!(
-    div <const P: usize, const S: usize>,
+    div [const P: usize, const S: usize],
     LongInterval,
     LongInterval,
     SqlDecimal,
@@ -990,33 +893,7 @@ pub fn div_null_LongInterval_SqlDecimal<const P: usize, const S: usize>(
     Some(LongInterval::from_months(months))
 }
 
-#[doc(hidden)]
-pub fn div_null_LongIntervalN_SqlDecimal<const P: usize, const S: usize>(
-    left: Option<LongInterval>,
-    right: SqlDecimal<P, S>,
-) -> Option<LongInterval> {
-    let left = left?;
-    div_null_LongInterval_SqlDecimal(left, right)
-}
-
-#[doc(hidden)]
-pub fn div_null_LongInterval_SqlDecimalN<const P: usize, const S: usize>(
-    left: LongInterval,
-    right: Option<SqlDecimal<P, S>>,
-) -> Option<LongInterval> {
-    let right = right?;
-    div_null_LongInterval_SqlDecimal(left, right)
-}
-
-#[doc(hidden)]
-pub fn div_null_LongIntervalN_SqlDecimalN<const P: usize, const S: usize>(
-    left: Option<LongInterval>,
-    right: Option<SqlDecimal<P, S>>,
-) -> Option<LongInterval> {
-    let left = left?;
-    let right = right?;
-    div_null_LongInterval_SqlDecimal(left, right)
-}
+some_polymorphic_null_function2!(div_null [const P: usize, const S: usize], LongInterval, LongInterval, SqlDecimal, SqlDecimal<P, S>, LongInterval);
 
 #[doc(hidden)]
 pub fn plus_LongInterval_LongInterval_LongInterval__(
