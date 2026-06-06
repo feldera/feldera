@@ -696,8 +696,22 @@ async fn stream_encode_and_write(
         let mut cursor = cursor_builder.build();
 
         while cursor.key_valid() {
-            let op = indexed_operation_type(&inner.value_schema.name, index_name, &mut cursor)
-                .map_err(WriteError::Deterministic)?;
+            let op = match indexed_operation_type(&inner.value_schema.name, index_name, &mut cursor)
+            {
+                Ok(op) => op,
+                Err(e) => {
+                    if let Some(controller) = inner.controller.upgrade() {
+                        controller.output_transport_error(
+                            inner.endpoint_id,
+                            &inner.endpoint_name,
+                            false,
+                            e,
+                            Some("delta_uniqueness_violation"),
+                        );
+                    }
+                    None
+                }
+            };
 
             if let Some(op) = op {
                 cursor.rewind_vals();
