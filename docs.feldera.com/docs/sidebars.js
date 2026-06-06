@@ -53,7 +53,7 @@ const installation = {
                             },
                             items: [
                                 'get-started/enterprise/kubernetes-guides/eks/cluster',
-                                'get-started/enterprise/kubernetes-guides/eks/ingress'
+                                'get-started/enterprise/kubernetes-guides/eks/envoy-gateway'
                             ]
                         },
                     ]
