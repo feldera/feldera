@@ -1,4 +1,5 @@
 use arrow::array::RecordBatch;
+use arrow::datatypes::SchemaRef;
 use arrow::ipc::convert::IpcSchemaEncoder;
 use arrow::ipc::writer::StreamWriter;
 use arrow::util::pretty::pretty_format_batches;
@@ -40,6 +41,31 @@ fn execute_stream(df: DataFrame) -> Receiver<DFResult<SendableRecordBatchStream>
     rx
 }
 
+/// Drives physical planning and execution setup for `df`, returning the
+/// record-batch stream together with its schema.
+///
+/// Planning and execute-time-setup errors — e.g. selecting from a
+/// non-materialized table — surface here, before any result data is produced.
+/// Hoisting this step out of the per-format encoders lets the HTTP handler
+/// translate such an error into a proper 4xx response
+/// instead of a `200 OK` whose body is silently truncated.
+pub(crate) async fn execute_adhoc_stream(
+    df: DataFrame,
+) -> Result<(SendableRecordBatchStream, SchemaRef), PipelineError> {
+    let schema = df.schema().inner().clone();
+    let stream = execute_stream(df)
+        .await
+        .map_err(|e| PipelineError::AdHocQueryError {
+            error: e.to_string(),
+            df: None,
+        })?
+        .map_err(|e| PipelineError::AdHocQueryError {
+            error: e.to_string(),
+            df: Some(Box::new(e)),
+        })?;
+    Ok((stream, schema))
+}
+
 pub(crate) fn infallible_from_bytestring(
     fallible_stream: impl Stream<Item = Result<ByteString, PipelineError>>,
     map_err: impl Fn(PipelineError) -> Bytes + 'static,
@@ -53,13 +79,11 @@ pub(crate) fn infallible_from_bytestring(
 }
 
 pub(crate) fn stream_text_query(
-    df: DataFrame,
+    stream: SendableRecordBatchStream,
+    schema: SchemaRef,
 ) -> impl Stream<Item = Result<ByteString, PipelineError>> {
-    let schema = df.schema().inner().clone();
     try_stream! {
-        let stream_executor = execute_stream(df).await.map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None })?;
-        let mut stream = stream_executor
-            .map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: Some(Box::new(e)) })?;
+        let mut stream = stream;
 
         let mut headers_sent = false;
         let mut last_line: Option<String> = None;
@@ -159,19 +183,11 @@ impl BatchHasher {
 }
 
 /// Computes an order-independent hash of a DataFrame's result set.
-pub(crate) async fn hash_query_result(df: DataFrame) -> Result<String, PipelineError> {
-    let schema = df.schema().inner().clone();
-
-    let stream_executor = execute_stream(df)
-        .await
-        .map_err(|e| PipelineError::AdHocQueryError {
-            error: e.to_string(),
-            df: None,
-        })?;
-    let mut stream = stream_executor.map_err(|e| PipelineError::AdHocQueryError {
-        error: e.to_string(),
-        df: Some(Box::new(e)),
-    })?;
+pub(crate) async fn hash_query_result(
+    stream: SendableRecordBatchStream,
+    schema: SchemaRef,
+) -> Result<String, PipelineError> {
+    let mut stream = stream;
 
     let mut hasher = BatchHasher::new();
     while let Some(batch) = stream.next().await {
@@ -182,12 +198,10 @@ pub(crate) async fn hash_query_result(df: DataFrame) -> Result<String, PipelineE
 }
 
 pub(crate) fn stream_json_query(
-    df: DataFrame,
+    stream: SendableRecordBatchStream,
 ) -> impl Stream<Item = Result<ByteString, PipelineError>> {
     try_stream! {
-        let stream_executor = execute_stream(df).await.map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None })?;
-        let mut stream = stream_executor
-            .map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: Some(Box::new(e)) })?;
+        let mut stream = stream;
         while let Some(batch) = stream.next().await {
             let batch = batch.map_err(PipelineError::from)?;
             let mut buf = Vec::with_capacity(4096);
@@ -247,15 +261,11 @@ impl AsyncFileWriter for ChannelWriter {
 /// <https://github.com/apache/arrow-rs/pull/9241>. Once that lands the
 /// per-batch buffering here can be replaced with a direct async sink.
 pub(crate) fn stream_arrow_query(
-    df: DataFrame,
+    stream: SendableRecordBatchStream,
+    schema: SchemaRef,
 ) -> impl Stream<Item = Result<Bytes, DataFusionError>> {
     try_stream! {
-        let schema = df.schema().inner().clone();
-        let mut stream = execute_stream(df)
-            .await
-            .map_err(|e| DataFusionError::Execution(format!(
-                "ad-hoc query worker did not return a stream: {e}"
-            )))??;
+        let mut stream = stream;
 
         // `try_new` writes the schema message to the inner buffer. The
         // `BytesMut` behind `BufMut::writer()` is a single allocation
@@ -294,7 +304,8 @@ pub(crate) fn stream_arrow_query(
 }
 
 pub(crate) fn stream_parquet_query(
-    df: DataFrame,
+    stream: SendableRecordBatchStream,
+    schema: SchemaRef,
 ) -> impl Stream<Item = Result<Bytes, DataFusionError>> {
     // Should probably be smaller than `MAX_WS_FRAME_SIZE`.
     const PARQUET_CHUNK_SIZE: usize = MAX_WS_FRAME_SIZE / 2;
@@ -304,10 +315,7 @@ pub(crate) fn stream_parquet_query(
 
     let mut stream_job = Box::pin(
         async move {
-            let schema = df.schema().inner().clone();
-            let mut stream = execute_stream(df)
-                .await
-                .expect("unable to receive stream")?;
+            let mut stream = stream;
 
             let mut writer = AsyncArrowWriter::try_new(
                 ChannelWriter::new(tx),
@@ -528,8 +536,11 @@ mod tests {
         ctx.register_table("t", Arc::new(mem)).unwrap();
         let df = ctx.sql("SELECT * FROM t ORDER BY id").await.unwrap();
 
+        let (record_stream, schema) = execute_adhoc_stream(df)
+            .await
+            .expect("execute_adhoc_stream failed to set up the query");
         let mut buf = Vec::<u8>::new();
-        let mut stream = Box::pin(stream_arrow_query(df));
+        let mut stream = Box::pin(stream_arrow_query(record_stream, schema));
         while let Some(chunk) = stream.next().await {
             buf.extend_from_slice(&chunk.expect("stream_arrow_query yielded an error"));
         }
@@ -596,8 +607,11 @@ mod tests {
             ctx.register_table("t", Arc::new(mem)).unwrap();
             let df = ctx.sql("SELECT * FROM t").await.unwrap();
 
+            let (record_stream, schema) = execute_adhoc_stream(df)
+                .await
+                .expect("execute_adhoc_stream failed to set up the query");
             let mut buf = Vec::<u8>::new();
-            let mut stream = Box::pin(stream_arrow_query(df));
+            let mut stream = Box::pin(stream_arrow_query(record_stream, schema));
             while let Some(chunk) = stream.next().await {
                 buf.extend_from_slice(&chunk.expect("stream_arrow_query yielded an error"));
             }

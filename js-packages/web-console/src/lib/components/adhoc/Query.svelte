@@ -221,7 +221,9 @@
                 </tr>
               {:else if 'error' in row}
                 <tr {style} class={itemHeight} use:selectScope tabindex={-1}>
-                  <td colspan="99999999" class="preset-tonal-error px-2">{row.error}</td>
+                  <td colspan="99999999"
+                    ><div class="rounded bg-error-50-950/50 px-2">{row.error}</div></td
+                  >
                 </tr>
               {:else}
                 <tr {style} class={itemHeight} use:selectScope tabindex={-1}>
