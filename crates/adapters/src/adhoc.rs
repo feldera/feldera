@@ -10,8 +10,8 @@ use datafusion::prelude::*;
 use datafusion::sql::parser::{DFParserBuilder, Statement as DFStatement};
 use datafusion::sql::sqlparser::dialect::dialect_from_str;
 use executor::{
-    hash_query_result, infallible_from_bytestring, stream_arrow_query, stream_json_query,
-    stream_parquet_query, stream_text_query,
+    execute_adhoc_stream, hash_query_result, infallible_from_bytestring, stream_arrow_query,
+    stream_json_query, stream_parquet_query, stream_text_query,
 };
 use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs, MAX_WS_FRAME_SIZE};
 use futures_util::StreamExt;
@@ -46,9 +46,24 @@ async fn adhoc_query_handler(
     mut ws_session: WsSession,
     args: AdhocQueryArgs,
 ) -> Result<(), Closed> {
+    // Set up execution before encoding. Planning and execute-time-setup
+    // errors (e.g. selecting from a non-materialized source) surface here;
+    // report them on the websocket and close, matching the per-format error
+    // handling below.
+    let (record_stream, schema) = match execute_adhoc_stream(df).await {
+        Ok(stream_and_schema) => stream_and_schema,
+        Err(e) => {
+            ws_session
+                .text(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))
+                .await?;
+            ws_close(ws_session, CloseCode::Error).await;
+            return Ok(());
+        }
+    };
+
     match args.format {
         AdHocResultFormat::Text => {
-            let mut stream = Box::pin(stream_text_query(df));
+            let mut stream = Box::pin(stream_text_query(record_stream, schema));
             while let Some(res) = stream.next().await {
                 match res {
                     Ok(text) => {
@@ -63,7 +78,7 @@ async fn adhoc_query_handler(
             }
         }
         AdHocResultFormat::Json => {
-            let mut stream = Box::pin(stream_json_query(df));
+            let mut stream = Box::pin(stream_json_query(record_stream));
             while let Some(res) = stream.next().await {
                 match res {
                     Ok(byte_string) => {
@@ -80,7 +95,7 @@ async fn adhoc_query_handler(
             }
         }
         AdHocResultFormat::ArrowIpc => {
-            let mut stream = Box::pin(stream_arrow_query(df));
+            let mut stream = Box::pin(stream_arrow_query(record_stream, schema));
             while let Some(res) = stream.next().await {
                 match res {
                     Ok(bytes) => {
@@ -103,7 +118,7 @@ async fn adhoc_query_handler(
             }
         }
         AdHocResultFormat::Parquet => {
-            let mut stream = Box::pin(stream_parquet_query(df));
+            let mut stream = Box::pin(stream_parquet_query(record_stream, schema));
             while let Some(res) = stream.next().await {
                 match res {
                     Ok(bytes) => ws_session.binary(bytes).await?,
@@ -124,7 +139,7 @@ async fn adhoc_query_handler(
             }
         }
         AdHocResultFormat::Hash => {
-            let hash_result = hash_query_result(df).await;
+            let hash_result = hash_query_result(record_stream, schema).await;
             match hash_result {
                 Ok(hash) => {
                     ws_session.text(hash).await?;
@@ -445,28 +460,33 @@ pub(crate) async fn stream_adhoc_result(
 ) -> Result<HttpResponse, PipelineError> {
     let df = execute_sql(controller, &args.sql).await?;
 
-    // Note that once we are in the stream!{} macros any error that occurs will lead to the connection
-    // in the manager being terminated and a 500 error being returned to the client.
-    // We can't return an error in a stream that is already Response::Ok.
-    //
-    // Sometimes things do tend to fail inside the stream!{} macro, e.g., "select 1/0;" will cause a
-    // division by zero error during query execution. So we return errors according to the chosen
-    // format for text and json, and for parquet we return the 500 error.
+    // Set up execution before committing a response status. Planning and
+    // execute-time-setup errors — e,g, selecting from a non-materialized source —
+    // surface here and are returned as a regular `PipelineError` (HTTP 400),
+    // so the client sees the message rather than a truncated `200 OK` body.
+    let (record_stream, schema) = execute_adhoc_stream(df).await?;
+
+    // Once we hand a stream to `.streaming(...)` the `200 OK` status is
+    // already yielded, so an error raised *mid-stream* (e.g. "select
+    // 1/0;" failing on a later row) can no longer change the status. For
+    // text and json we fold such errors into the response body; for arrow
+    // and parquet the body is simply terminated (and the manager surfaces a 500).
     match args.format {
         AdHocResultFormat::Text => Ok(HttpResponse::Ok()
             .content_type(mime::TEXT_PLAIN)
-            .streaming::<_, Infallible>(infallible_from_bytestring(stream_text_query(df), |e| {
-                format!("ERROR: {}", e).into()
-            }))),
+            .streaming::<_, Infallible>(infallible_from_bytestring(
+                stream_text_query(record_stream, schema),
+                |e| format!("ERROR: {}", e).into(),
+            ))),
         AdHocResultFormat::Json => Ok(HttpResponse::Ok()
             .content_type(mime::APPLICATION_JSON)
             .streaming::<_, Infallible>(infallible_from_bytestring(
-            stream_json_query(df),
+            stream_json_query(record_stream),
             |e| serde_json::to_string(&e).unwrap().into(),
         ))),
         AdHocResultFormat::ArrowIpc => Ok(HttpResponse::Ok()
             .content_type(mime::APPLICATION_OCTET_STREAM)
-            .streaming(stream_arrow_query(df))),
+            .streaming(stream_arrow_query(record_stream, schema))),
         AdHocResultFormat::Parquet => {
             let file_name = format!(
                 "results_{}.parquet",
@@ -475,11 +495,11 @@ pub(crate) async fn stream_adhoc_result(
             Ok(HttpResponse::Ok()
                 .insert_header(header::ContentDisposition::attachment(file_name))
                 .content_type(mime::APPLICATION_OCTET_STREAM)
-                .streaming(stream_parquet_query(df)))
+                .streaming(stream_parquet_query(record_stream, schema)))
         }
         AdHocResultFormat::Hash => Ok(HttpResponse::Ok()
             .content_type(mime::TEXT_PLAIN)
-            .body(hash_query_result(df).await?)),
+            .body(hash_query_result(record_stream, schema).await?)),
     }
 }
 
@@ -683,5 +703,53 @@ mod tests {
         // that one row came back.
         let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
         assert_eq!(total_rows, 1);
+    }
+
+    /// Selecting from a non-materialized source fails during *execution
+    /// setup*, not planning. `execute_adhoc_stream` must surface that as an
+    /// `Err`, letting the HTTP handler return a non-2xx status before
+    /// committing a `200 OK` whose body would otherwise be silently
+    /// truncated. This is what gives the HTTP transport the same up-front
+    /// error visibility the WebSocket transport already has.
+    #[tokio::test]
+    async fn non_materialized_select_surfaces_error_before_streaming() {
+        use crate::adhoc::table::AdHocTable;
+        use datafusion::arrow::datatypes::{DataType, Field, Schema};
+        use feldera_types::program_schema::SqlIdentifier;
+        use std::collections::BTreeMap;
+        use std::sync::Weak;
+
+        let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int64, false)]));
+        let ctx = SessionContext::new_with_state(test_state());
+
+        // A view (no input handle) that is *not* materialized.
+        let table = Arc::new(AdHocTable::new(
+            false, // materialized
+            false, // indexed
+            Weak::new(),
+            None, // input_handle: view, not a base table
+            SqlIdentifier::new("v", false),
+            schema,
+        ));
+        ctx.register_table("v", table).unwrap();
+
+        // The scan reads a consistent snapshot from the session config; an
+        // empty one suffices because execution fails the materialization
+        // check before touching any data.
+        let mut state = ctx.state();
+        set_snapshot(&mut state, Arc::new(BTreeMap::new()));
+
+        // Planning succeeds: the materialization check lives in physical
+        // execution setup, not planning.
+        let df = execute_sql_with_state(state, "SELECT * FROM v")
+            .await
+            .expect("planning a select over a non-materialized view should succeed");
+
+        // The error must surface here, before any response status is set.
+        let msg = match execute_adhoc_stream(df).await {
+            Ok(_) => panic!("selecting from a non-materialized source must fail at setup"),
+            Err(e) => format!("{e}"),
+        };
+        assert!(msg.contains("non-materialized"), "unexpected error: {msg}");
     }
 }

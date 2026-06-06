@@ -841,20 +841,25 @@ const getAuthenticatedFetch = (options?: FetchOptions): typeof globalThis.fetch 
 }
 
 function formatValue(details: unknown): string {
+  if (!details) {
+    return ''
+  }
   if (typeof details === 'string') {
     return details
   }
 
-  // Pretty‑print objects, arrays, numbers, booleans, etc.
+  // Pretty‑print objects, arrays, numbers, booleans, etc., dropping any
+  // `error` field that merely duplicates the message shown above it.
   try {
-    return JSON.stringify(details, null, 2)
+    const json = JSON.stringify(details, (key, value) => (key === 'error' ? undefined : value), 2)
+    return json === '{}' ? '' : json
   } catch {
     return String(details)
   }
 }
 
 const apiErrorText = (error: ErrorResponse) => {
-  return `${error.message}${error.details ? `\n${formatValue(error.details)}` : ''}`
+  return `${error.message}\n${formatValue(error.details)}`
 }
 
 const streamingFetch = (
