@@ -461,7 +461,7 @@ pub(crate) async fn stream_adhoc_result(
     let df = execute_sql(controller, &args.sql).await?;
 
     // Set up execution before committing a response status. Planning and
-    // execute-time-setup errors — e,g, selecting from a non-materialized source —
+    // execute-time-setup errors — e.g. selecting from a non-materialized source —
     // surface here and are returned as a regular `PipelineError` (HTTP 400),
     // so the client sees the message rather than a truncated `200 OK` body.
     let (record_stream, schema) = execute_adhoc_stream(df).await?;

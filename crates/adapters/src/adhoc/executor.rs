@@ -79,12 +79,10 @@ pub(crate) fn infallible_from_bytestring(
 }
 
 pub(crate) fn stream_text_query(
-    stream: SendableRecordBatchStream,
+    mut stream: SendableRecordBatchStream,
     schema: SchemaRef,
 ) -> impl Stream<Item = Result<ByteString, PipelineError>> {
     try_stream! {
-        let mut stream = stream;
-
         let mut headers_sent = false;
         let mut last_line: Option<String> = None;
         while let Some(batch) = stream.next().await {
@@ -184,11 +182,9 @@ impl BatchHasher {
 
 /// Computes an order-independent hash of a DataFrame's result set.
 pub(crate) async fn hash_query_result(
-    stream: SendableRecordBatchStream,
+    mut stream: SendableRecordBatchStream,
     schema: SchemaRef,
 ) -> Result<String, PipelineError> {
-    let mut stream = stream;
-
     let mut hasher = BatchHasher::new();
     while let Some(batch) = stream.next().await {
         let batch = batch.map_err(PipelineError::from)?;
@@ -198,10 +194,9 @@ pub(crate) async fn hash_query_result(
 }
 
 pub(crate) fn stream_json_query(
-    stream: SendableRecordBatchStream,
+    mut stream: SendableRecordBatchStream,
 ) -> impl Stream<Item = Result<ByteString, PipelineError>> {
     try_stream! {
-        let mut stream = stream;
         while let Some(batch) = stream.next().await {
             let batch = batch.map_err(PipelineError::from)?;
             let mut buf = Vec::with_capacity(4096);
@@ -261,12 +256,10 @@ impl AsyncFileWriter for ChannelWriter {
 /// <https://github.com/apache/arrow-rs/pull/9241>. Once that lands the
 /// per-batch buffering here can be replaced with a direct async sink.
 pub(crate) fn stream_arrow_query(
-    stream: SendableRecordBatchStream,
+    mut stream: SendableRecordBatchStream,
     schema: SchemaRef,
 ) -> impl Stream<Item = Result<Bytes, DataFusionError>> {
     try_stream! {
-        let mut stream = stream;
-
         // `try_new` writes the schema message to the inner buffer. The
         // `BytesMut` behind `BufMut::writer()` is a single allocation
         // that we slice off in O(1) chunks via `split()` after each
@@ -304,7 +297,7 @@ pub(crate) fn stream_arrow_query(
 }
 
 pub(crate) fn stream_parquet_query(
-    stream: SendableRecordBatchStream,
+    mut stream: SendableRecordBatchStream,
     schema: SchemaRef,
 ) -> impl Stream<Item = Result<Bytes, DataFusionError>> {
     // Should probably be smaller than `MAX_WS_FRAME_SIZE`.
@@ -315,8 +308,6 @@ pub(crate) fn stream_parquet_query(
 
     let mut stream_job = Box::pin(
         async move {
-            let mut stream = stream;
-
             let mut writer = AsyncArrowWriter::try_new(
                 ChannelWriter::new(tx),
                 schema,

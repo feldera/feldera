@@ -43,7 +43,8 @@ const oneShotStream = (bytes: Uint8Array): ReadableStream<Uint8Array> =>
 // --- Mock only the network: adHocQuery returns the fixture as a stream ---
 const adHocQueryMock = vi.fn(async () => ({
   stream: oneShotStream(base64ToBytes(ARROW_IPC_BASE64)),
-  cancel: () => {}
+  cancel: () => {},
+  error: (): Error | undefined => undefined
 }))
 
 vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
@@ -131,5 +132,28 @@ describe('TabAdHocQuery.svelte — arrow_ipc result rendering', () => {
       '{\n "a": 7,\n "b": "inner"\n}',
       '{\n "alpha": 1\n}'
     ])
+  })
+
+  it('renders a query error reported out of band instead of crashing on a missing schema', async () => {
+    // A query that fails before producing any rows (e.g. selecting from a
+    // non-materialized source) closes the stream cleanly with no arrow schema;
+    // the message arrives via `error()`. Regression test: the UI must show the
+    // message, not "can't access property fields, schema is undefined".
+    const message = 'Execution error: Tried to SELECT from a non-materialized source'
+    adHocQueryMock.mockResolvedValueOnce({
+      stream: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close()
+        }
+      }),
+      cancel: () => {},
+      error: () => new Error(message)
+    })
+
+    render(TabAdHocQuery, { pipeline: pipelineProp('p-adhoc-arrow-error') })
+    await page.getByRole('textbox').first().fill('SELECT * FROM not_materialized')
+    await page.getByRole('button', { name: 'Run query' }).first().click()
+
+    await expect.element(page.getByText(message)).toBeInTheDocument()
   })
 })
