@@ -1,0 +1,28 @@
+2	Desktop Monitor	q1_revenue	25000.0
+2	Desktop Monitor	q2_revenue	27000.0
+2	Desktop Monitor	q3_revenue	30000.0
+2	Desktop Monitor	q4_revenue	32000.0
+5	Headphones	q1_revenue	15000.0
+5	Headphones	q2_revenue	17000.0
+5	Headphones	q3_revenue	19000.0
+5	Headphones	q4_revenue	22000.0
+7	Smartphone	q1_revenue	80000.0
+7	Smartphone	q2_revenue	85000.0
+7	Smartphone	q3_revenue	90000.0
+7	Smartphone	q4_revenue	95000.0
+3	Keyboard	q1_revenue	12000.0
+3	Keyboard	q2_revenue	13500.0
+3	Keyboard	q3_revenue	15000.0
+3	Keyboard	q4_revenue	18000.0
+6	Tablet	q1_revenue	35000.0
+6	Tablet	q2_revenue	38000.0
+6	Tablet	q3_revenue	42000.0
+6	Tablet	q4_revenue	48000.0
+1	Laptop	q1_revenue	50000.0
+1	Laptop	q2_revenue	55000.0
+1	Laptop	q3_revenue	60000.0
+1	Laptop	q4_revenue	65000.0
+4	Mouse	q1_revenue	8000.0
+4	Mouse	q2_revenue	9000.0
+4	Mouse	q3_revenue	10000.0
+4	Mouse	q4_revenue	12000.0

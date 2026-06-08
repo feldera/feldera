@@ -1,0 +1,12 @@
+1004	Part D	200	sku	P001
+1004	Part D	200	certifiedBy	ISO9001
+1004	Part D	200	material	aluminum
+1004	Part D	200	origin	Germany
+1002	Widget B	100	sku	W002
+1002	Widget B	100	supplier	CompanyY
+1002	Widget B	100	batch	LT2024
+1005	Component E	30	sku	C001
+1005	Component E	30	warranty	2years
+1001	Widget A	50	sku	W001
+1001	Widget A	50	supplier	CompanyX
+1003	Gadget C	75	sku	G001

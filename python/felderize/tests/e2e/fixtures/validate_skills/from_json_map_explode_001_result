@@ -1,0 +1,11 @@
+3	purchase	product_id	P001
+3	purchase	amount	99.99
+3	purchase	currency	USD
+4	error	error_code	500
+4	error	message	Internal Server Error
+1	login	user_id	123
+1	login	timestamp	2024-01-15
+2	logout	user_id	456
+2	logout	session_id	abc789
+5	click	page	home
+5	click	button	submit

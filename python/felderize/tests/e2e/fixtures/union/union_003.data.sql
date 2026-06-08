@@ -1,0 +1,11 @@
+INSERT INTO p1 (col) VALUES (1);
+
+INSERT INTO p2 (col) VALUES (1);
+
+INSERT INTO p3 (col) VALUES (1);
+
+INSERT INTO t1 (c1, c2) VALUES (1, 'a');
+INSERT INTO t1 (c1, c2) VALUES (2, 'b');
+
+INSERT INTO t2 (c1, c2) VALUES (1.0, 1);
+INSERT INTO t2 (c1, c2) VALUES (2.0, 4);

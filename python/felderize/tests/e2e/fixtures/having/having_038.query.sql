@@ -1,0 +1,2 @@
+CREATE VIEW having_038 AS
+SELECT col1, col1 AS a FROM VALUES(1) GROUP BY col1 HAVING col1 > 0;

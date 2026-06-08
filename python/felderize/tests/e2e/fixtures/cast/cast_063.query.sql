@@ -1,0 +1,2 @@
+CREATE VIEW cast_063 AS
+SELECT CAST(TIME '23:59:59' AS bigint);

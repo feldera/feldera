@@ -1,0 +1,7 @@
+1005	diana@example.com	555-9999	email
+1001	alice@example.com	555-1234	email
+1006	eve@example.com	0000000000	phone
+1003	charlie@example.com	0000000000	email
+1002	no-email@default.com	555-5678	phone
+1007	no-email@default.com	555-0001	email
+1004	no-email@default.com	0000000000	sms

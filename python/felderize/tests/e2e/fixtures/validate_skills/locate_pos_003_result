@@ -1,0 +1,7 @@
+1	https://www.example.com/path/to/resource?query=value	example	0	13
+2	https://www.example.com/path/to/resource?query=value	?	41	41
+4	http://localhost:8080/api/endpoint	localhost	0	8
+3	ftp://files.server.io/documents/file.pdf	.	19	12
+5	http://localhost:8080/api/endpoint	/	22	6
+6	postgresql://user:pass@host/db	:	18	11
+7	https://site.org/page	nothere	0	0

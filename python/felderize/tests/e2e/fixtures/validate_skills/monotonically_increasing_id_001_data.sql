@@ -1,0 +1,6 @@
+INSERT INTO events_log VALUES
+(1, 'login', CAST('2024-01-15 10:00:00' AS TIMESTAMP)),
+(2, 'logout', CAST('2024-01-15 10:15:00' AS TIMESTAMP)),
+(3, 'purchase', CAST('2024-01-15 10:30:00' AS TIMESTAMP)),
+(4, 'view_page', CAST('2024-01-15 10:45:00' AS TIMESTAMP)),
+(5, 'search', CAST('2024-01-15 11:00:00' AS TIMESTAMP));

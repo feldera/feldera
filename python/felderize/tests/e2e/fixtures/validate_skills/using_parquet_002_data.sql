@@ -1,0 +1,7 @@
+INSERT INTO sales_transactions VALUES (101, CAST(1500.50 AS DECIMAL(12,2)), CAST('2024-01-15 10:30:00' AS TIMESTAMP), 'North', 'completed');
+INSERT INTO sales_transactions VALUES (102, CAST(800.25 AS DECIMAL(12,2)), CAST('2024-01-16 11:45:00' AS TIMESTAMP), 'South', 'completed');
+INSERT INTO sales_transactions VALUES (103, CAST(2200.75 AS DECIMAL(12,2)), CAST('2024-01-17 09:15:00' AS TIMESTAMP), 'East', 'completed');
+INSERT INTO sales_transactions VALUES (104, CAST(950.00 AS DECIMAL(12,2)), CAST('2024-01-18 14:20:00' AS TIMESTAMP), 'West', 'pending');
+INSERT INTO sales_transactions VALUES (105, CAST(3000.99 AS DECIMAL(12,2)), CAST('2024-01-19 16:00:00' AS TIMESTAMP), 'North', 'completed');
+INSERT INTO sales_transactions VALUES (106, CAST(1200.00 AS DECIMAL(12,2)), CAST('2024-01-20 08:30:00' AS TIMESTAMP), 'South', 'completed');
+INSERT INTO sales_transactions VALUES (107, CAST(650.50 AS DECIMAL(12,2)), CAST('2024-01-21 13:10:00' AS TIMESTAMP), 'East', 'cancelled');

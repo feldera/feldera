@@ -1,0 +1,10 @@
+INSERT INTO payments (payment_id, customer_id, payment_time, amount, payment_method) VALUES (1, 101, CAST('2024-01-01 10:00:00' AS TIMESTAMP), 150.00, 'credit_card');
+INSERT INTO payments (payment_id, customer_id, payment_time, amount, payment_method) VALUES (2, 101, CAST('2024-01-05 14:30:00' AS TIMESTAMP), 250.50, 'debit_card');
+INSERT INTO payments (payment_id, customer_id, payment_time, amount, payment_method) VALUES (3, 101, CAST('2024-01-10 09:15:00' AS TIMESTAMP), 75.25, 'paypal');
+INSERT INTO payments (payment_id, customer_id, payment_time, amount, payment_method) VALUES (4, 102, CAST('2024-01-02 11:45:00' AS TIMESTAMP), 300.00, 'credit_card');
+INSERT INTO payments (payment_id, customer_id, payment_time, amount, payment_method) VALUES (5, 102, CAST('2024-01-08 16:20:00' AS TIMESTAMP), 125.75, 'bank_transfer');
+INSERT INTO payments (payment_id, customer_id, payment_time, amount, payment_method) VALUES (6, 103, CAST('2024-01-03 13:00:00' AS TIMESTAMP), 200.00, 'credit_card');
+INSERT INTO payments (payment_id, customer_id, payment_time, amount, payment_method) VALUES (7, 103, CAST('2024-01-07 10:30:00' AS TIMESTAMP), 450.50, 'paypal');
+INSERT INTO payments (payment_id, customer_id, payment_time, amount, payment_method) VALUES (8, 103, CAST('2024-01-12 15:45:00' AS TIMESTAMP), 99.99, 'debit_card');
+INSERT INTO payments (payment_id, customer_id, payment_time, amount, payment_method) VALUES (9, 104, CAST('2024-01-04 12:00:00' AS TIMESTAMP), 500.00, 'bank_transfer');
+INSERT INTO payments (payment_id, customer_id, payment_time, amount, payment_method) VALUES (10, 104, CAST('2024-01-11 14:15:00' AS TIMESTAMP), 175.25, 'credit_card');

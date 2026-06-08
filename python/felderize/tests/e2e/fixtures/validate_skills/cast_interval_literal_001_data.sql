@@ -1,0 +1,8 @@
+INSERT INTO event_log VALUES (1, 'Launch', CAST('2024-01-15 10:30:00' AS TIMESTAMP));
+INSERT INTO event_log VALUES (2, 'Review', CAST('2024-01-16 14:00:00' AS TIMESTAMP));
+INSERT INTO event_log VALUES (3, 'Deploy', CAST('2024-01-17 09:15:00' AS TIMESTAMP));
+INSERT INTO event_log VALUES (4, 'Monitor', CAST('2024-01-18 11:45:00' AS TIMESTAMP));
+INSERT INTO event_schedule VALUES (1, 'Complete Launch', CAST('2024-01-20 18:00:00' AS TIMESTAMP));
+INSERT INTO event_schedule VALUES (2, 'Complete Review', CAST('2024-01-22 17:00:00' AS TIMESTAMP));
+INSERT INTO event_schedule VALUES (3, 'Complete Deploy', CAST('2024-01-25 16:30:00' AS TIMESTAMP));
+INSERT INTO event_schedule VALUES (4, 'Complete Monitor', CAST('2024-01-24 15:00:00' AS TIMESTAMP));

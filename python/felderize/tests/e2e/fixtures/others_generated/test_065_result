@@ -1,0 +1,5 @@
+5	[Decimal('0.00'), Decimal('15.00')]
+4	[Decimal('11.00'), Decimal('22.00'), Decimal('33.00'), Decimal('44.00')]
+3	[Decimal('1079.99')]
+1	[Decimal('110.00'), Decimal('220.00'), Decimal('330.00')]
+2	[Decimal('55.55'), Decimal('82.78')]

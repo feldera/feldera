@@ -1,0 +1,6 @@
+5	Central	['small', 'medium', 'large', 'metropolis']	[900000, 100000, 500000, 1000000]
+6	Rural	['small', 'medium', 'large', 'metropolis']	[50000, 100000, 500000, 1000000]
+2	South	['small', 'medium', 'large', 'metropolis']	[80000, 100000, 500000, 1000000]
+1	North	['small', 'medium', 'large', 'metropolis']	[250000, 100000, 500000, 1000000]
+4	West	['small', 'medium', 'large', 'metropolis']	[450000, 100000, 500000, 1000000]
+3	East	['small', 'medium', 'large', 'metropolis']	[1500000, 100000, 500000, 1000000]

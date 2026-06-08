@@ -1,0 +1,2 @@
+CREATE VIEW cast_082 AS
+SELECT TIME '00:01:52' :: tinyint;

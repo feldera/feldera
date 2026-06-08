@@ -1,0 +1,1 @@
+INSERT INTO employee_records_v2 VALUES (1, 45000.0, 'Engineering', 2020), (2, 60000.0, 'Engineering', 2019), (3, 55000.0, 'Engineering', 2021), (4, 40000.0, 'Sales', 2018), (5, 52000.0, 'Sales', 2022), (6, 75000.0, 'Management', 2017), (7, 80000.0, 'Management', 2016);

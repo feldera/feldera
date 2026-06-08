@@ -1,0 +1,1 @@
+INSERT INTO product_descriptions VALUES (101, '  High quality item  '), (102, 'Budget option'), (103, '    Premium edition    '), (104, ' Standard model '), (105, 'Deluxe'), (106, '  Economy variant  '), (107, '   Professional grade   ');

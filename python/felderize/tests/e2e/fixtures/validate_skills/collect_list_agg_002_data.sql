@@ -1,0 +1,1 @@
+INSERT INTO department_employees VALUES ('HR', 'John', CAST(50000.00 AS DECIMAL(10,2))), ('HR', 'Mary', CAST(52000.00 AS DECIMAL(10,2))), ('IT', 'Bob', CAST(75000.00 AS DECIMAL(10,2))), ('IT', 'Alice', CAST(78000.00 AS DECIMAL(10,2))), ('IT', 'Charlie', CAST(76000.00 AS DECIMAL(10,2))), ('SALES', 'David', CAST(60000.00 AS DECIMAL(10,2)));

@@ -1,0 +1,1 @@
+INSERT INTO customer_contact VALUES (1001L, 'alice@example.com', '555-1234', 'email'), (1002L, NULL, '555-5678', 'phone'), (1003L, 'charlie@example.com', NULL, NULL), (1004L, NULL, NULL, 'sms'), (1005L, 'diana@example.com', '555-9999', 'email'), (1006L, 'eve@example.com', NULL, 'phone'), (1007L, NULL, '555-0001', NULL);

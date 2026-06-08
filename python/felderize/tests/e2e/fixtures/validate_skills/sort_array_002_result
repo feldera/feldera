@@ -1,0 +1,6 @@
+101	Electronics	['apple', 'banana', 'monkey', 'zebra']
+106	Sports	['basketball', 'golf', 'soccer', 'swimming', 'tennis']
+104	Furniture	['chair', 'desk', 'sofa', 'table']
+102	Clothing	['abc', 'def', 'ghi', 'mno', 'xyz']
+105	Food	['apple', 'apple', 'pizza', 'pizza']
+103	Books	['a', 'b', 'z']

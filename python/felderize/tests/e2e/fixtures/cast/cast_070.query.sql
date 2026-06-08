@@ -1,0 +1,2 @@
+CREATE VIEW cast_070 AS
+SELECT '-2147483648' :: int;

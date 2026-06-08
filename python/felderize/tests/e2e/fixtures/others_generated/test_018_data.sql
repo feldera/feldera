@@ -1,0 +1,10 @@
+INSERT INTO regional_orders (order_id, region, amount, order_date) VALUES (1, 'North America', CAST(3500.00 AS DECIMAL(12,2)), CAST('2024-01-15' AS DATE));
+INSERT INTO regional_orders (order_id, region, amount, order_date) VALUES (2, 'North America', CAST(4200.00 AS DECIMAL(12,2)), CAST('2024-01-16' AS DATE));
+INSERT INTO regional_orders (order_id, region, amount, order_date) VALUES (3, 'North America', CAST(2800.00 AS DECIMAL(12,2)), CAST('2024-01-17' AS DATE));
+INSERT INTO regional_orders (order_id, region, amount, order_date) VALUES (4, 'Europe', CAST(5000.00 AS DECIMAL(12,2)), CAST('2024-01-18' AS DATE));
+INSERT INTO regional_orders (order_id, region, amount, order_date) VALUES (5, 'Europe', CAST(5500.00 AS DECIMAL(12,2)), CAST('2024-01-19' AS DATE));
+INSERT INTO regional_orders (order_id, region, amount, order_date) VALUES (6, 'Asia Pacific', CAST(4100.00 AS DECIMAL(12,2)), CAST('2024-01-20' AS DATE));
+INSERT INTO regional_orders (order_id, region, amount, order_date) VALUES (7, 'Asia Pacific', CAST(3900.00 AS DECIMAL(12,2)), CAST('2024-01-21' AS DATE));
+INSERT INTO regional_orders (order_id, region, amount, order_date) VALUES (8, 'Asia Pacific', CAST(2500.00 AS DECIMAL(12,2)), CAST('2024-01-22' AS DATE));
+INSERT INTO regional_orders (order_id, region, amount, order_date) VALUES (9, 'Latin America', CAST(6200.00 AS DECIMAL(12,2)), CAST('2024-01-23' AS DATE));
+INSERT INTO regional_orders (order_id, region, amount, order_date) VALUES (10, 'Latin America', CAST(4300.00 AS DECIMAL(12,2)), CAST('2024-01-24' AS DATE));

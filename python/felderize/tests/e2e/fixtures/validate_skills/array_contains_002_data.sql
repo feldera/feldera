@@ -1,0 +1,1 @@
+INSERT INTO user_preferences VALUES (101, array('drama', 'thriller', 'mystery')), (102, array('comedy', 'action', 'adventure')), (103, array('drama', 'romance')), (104, array('horror', 'sci-fi')), (105, array('animation', 'family', 'drama', 'comedy')), (106, array('documentary')), (107, array('drama', 'historical'));

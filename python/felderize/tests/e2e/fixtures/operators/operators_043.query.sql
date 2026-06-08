@@ -1,0 +1,2 @@
+CREATE VIEW operators_043 AS
+select floor(1234567890123456);

@@ -1,0 +1,1 @@
+INSERT INTO feature_flags VALUES ('dark_mode', 'prod', false), ('dark_mode', 'staging', false), ('dark_mode', 'dev', true), ('new_ui', 'prod', false), ('new_ui', 'staging', false), ('api_v2', 'prod', true), ('api_v2', 'staging', true);

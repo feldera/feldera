@@ -1,0 +1,5 @@
+101	['theme', 'language', 'notifications']
+103	['fps', 'resolution', 'quality', 'antialiasing']
+105	['retries', 'delay', 'maxConnections']
+102	['brightness', 'volume']
+104	['timeout']

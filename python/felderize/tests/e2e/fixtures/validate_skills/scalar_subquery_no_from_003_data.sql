@@ -1,0 +1,1 @@
+INSERT INTO inventory_v3 VALUES (101, 5, 15.50, 'Electronics'), (102, 25, 20.00, 'Electronics'), (103, 35, 9.99, 'Electronics'), (104, 12, 25.00, 'Furniture'), (105, 28, 35.00, 'Furniture'), (106, 8, 50.00, 'Furniture'), (107, 45, 12.00, 'Furniture');

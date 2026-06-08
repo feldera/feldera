@@ -1,0 +1,9 @@
+INSERT INTO gap_window_rows (grp, event_ts, amount) VALUES ('A', CAST('2024-01-15 10:00:00' AS TIMESTAMP), 100.0);
+INSERT INTO gap_window_rows (grp, event_ts, amount) VALUES ('A', CAST('2024-01-15 14:30:00' AS TIMESTAMP), 50.0);
+INSERT INTO gap_window_rows (grp, event_ts, amount) VALUES ('A', CAST('2024-01-16 09:15:00' AS TIMESTAMP), 75.0);
+INSERT INTO gap_window_rows (grp, event_ts, amount) VALUES ('A', CAST('2024-01-17 11:45:00' AS TIMESTAMP), 25.0);
+INSERT INTO gap_window_rows (grp, event_ts, amount) VALUES ('B', CAST('2024-01-15 08:00:00' AS TIMESTAMP), 200.0);
+INSERT INTO gap_window_rows (grp, event_ts, amount) VALUES ('B', CAST('2024-01-16 12:30:00' AS TIMESTAMP), 150.0);
+INSERT INTO gap_window_rows (grp, event_ts, amount) VALUES ('B', CAST('2024-01-17 15:20:00' AS TIMESTAMP), 100.0);
+INSERT INTO gap_window_rows (grp, event_ts, amount) VALUES ('C', CAST('2024-01-15 16:00:00' AS TIMESTAMP), 300.0);
+INSERT INTO gap_window_rows (grp, event_ts, amount) VALUES ('C', CAST('2024-01-16 10:00:00' AS TIMESTAMP), 250.0);

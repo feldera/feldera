@@ -1,0 +1,1 @@
+INSERT INTO numeric_strings_3 VALUES (1, '55.5', 'valid'), (2, 'abc123', 'invalid'), (3, '77.77', 'valid'), (4, 'NaN', 'invalid'), (5, '0', 'valid'), (6, NULL, 'valid'), (7, '3.14159', 'valid'), (8, 'Infinity', 'invalid');

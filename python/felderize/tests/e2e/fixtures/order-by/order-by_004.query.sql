@@ -1,0 +1,2 @@
+CREATE VIEW order-by_004 AS
+SELECT 1 AS col1, col1 FROM VALUES (10) ORDER BY col1;

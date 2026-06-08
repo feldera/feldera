@@ -1,0 +1,18 @@
+INSERT INTO retail_stores (store_id, region, format) VALUES (1, 'North', 'MALL');
+INSERT INTO retail_stores (store_id, region, format) VALUES (2, 'South', 'STREET');
+INSERT INTO retail_stores (store_id, region, format) VALUES (3, 'East', 'MALL');
+INSERT INTO retail_customers (customer_id, store_id, region, tier) VALUES (101, 1, 'North', 'Gold');
+INSERT INTO retail_customers (customer_id, store_id, region, tier) VALUES (102, 2, 'South', 'Silver');
+INSERT INTO retail_customers (customer_id, store_id, region, tier) VALUES (103, 3, 'East', 'Platinum');
+INSERT INTO retail_customers (customer_id, store_id, region, tier) VALUES (104, 1, 'North', 'Bronze');
+INSERT INTO retail_orders (order_id, customer_id, store_id, amount, status, order_date) VALUES (1001, 101, 1, 150.00, 'PAID', CAST('2024-01-15' AS DATE));
+INSERT INTO retail_orders (order_id, customer_id, store_id, amount, status, order_date) VALUES (1002, 102, 2, 200.00, 'SHIPPED', CAST('2024-01-16' AS DATE));
+INSERT INTO retail_orders (order_id, customer_id, store_id, amount, status, order_date) VALUES (1003, 103, 3, 250.00, 'PAID', CAST('2024-01-17' AS DATE));
+INSERT INTO retail_orders (order_id, customer_id, store_id, amount, status, order_date) VALUES (1004, 104, 1, 180.00, 'PAID', CAST('2024-01-18' AS DATE));
+INSERT INTO retail_orders (order_id, customer_id, store_id, amount, status, order_date) VALUES (1005, 102, 3, 300.00, 'PAID', CAST('2024-01-19' AS DATE));
+INSERT INTO retail_payments (payment_id, order_id, payment_amount, payment_method) VALUES (5001, 1001, 150.00, 'CREDIT_CARD');
+INSERT INTO retail_payments (payment_id, order_id, payment_amount, payment_method) VALUES (5002, 1003, 250.00, 'DEBIT_CARD');
+INSERT INTO retail_payments (payment_id, order_id, payment_amount, payment_method) VALUES (5003, 1004, 180.00, 'CREDIT_CARD');
+INSERT INTO retail_payments (payment_id, order_id, payment_amount, payment_method) VALUES (5004, 1005, 300.00, 'DEBIT_CARD');
+INSERT INTO retail_promotions (promo_id, store_id, min_amount, max_amount, promo_name) VALUES (1, 1, 100.00, 500.00, 'Winter Sale');
+INSERT INTO retail_promotions (promo_id, store_id, min_amount, max_amount, promo_name) VALUES (2, 3, 150.00, 600.00, 'Clearance Event');

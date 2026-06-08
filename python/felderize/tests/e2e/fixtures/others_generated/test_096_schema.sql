@@ -1,0 +1,23 @@
+CREATE TABLE scalar_function_rows (
+  row_id BIGINT,
+  grp STRING,
+  status STRING,
+  a_int INT,
+  b_int INT,
+  c_int INT,
+  a_bigint BIGINT,
+  a_double DOUBLE,
+  b_double DOUBLE,
+  amount DECIMAL(12,2),
+  discount DECIMAL(12,2),
+  nullable_str STRING,
+  alt_str STRING,
+  first_name STRING,
+  last_name STRING,
+  code STRING,
+  text_val STRING,
+  email STRING,
+  full_url STRING,
+  event_ts TIMESTAMP,
+  event_date DATE
+) USING parquet;

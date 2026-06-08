@@ -1,0 +1,1 @@
+INSERT INTO event_log_v1 VALUES (1, CAST('2024-01-15 10:30:00' AS TIMESTAMP), 'login'), (2, CAST('2024-01-15 10:30:00' AS TIMESTAMP), 'page_view'), (3, CAST('2024-01-15 10:30:01' AS TIMESTAMP), 'logout'), (4, CAST('2024-01-15 10:30:00' AS TIMESTAMP), 'heartbeat'), (5, CAST('2024-01-15 10:29:59' AS TIMESTAMP), 'session_start');

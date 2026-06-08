@@ -1,0 +1,1 @@
+INSERT INTO product_data VALUES (101, 'Laptop', 'Electronics', 15), (102, 'Desk', 'Furniture', 8), (103, 'Mouse', 'Electronics', 0), (104, 'Chair', 'Furniture', 22), (105, 'Keyboard', 'Electronics', 5), (106, 'Monitor', 'Electronics', 12);

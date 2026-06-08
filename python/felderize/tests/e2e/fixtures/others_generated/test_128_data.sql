@@ -1,0 +1,5 @@
+INSERT INTO creative_line_items VALUES (1001, array(named_struct('sku', 'SKU-A100', 'qty', 2, 'price', CAST(29.99 AS DECIMAL(10,2))), named_struct('sku', 'SKU-B200', 'qty', 1, 'price', CAST(49.50 AS DECIMAL(10,2)))));
+INSERT INTO creative_line_items VALUES (1002, array(named_struct('sku', 'SKU-C300', 'qty', 5, 'price', CAST(9.99 AS DECIMAL(10,2))), named_struct('sku', 'SKU-D400', 'qty', 3, 'price', CAST(15.75 AS DECIMAL(10,2))), named_struct('sku', 'SKU-E500', 'qty', 1, 'price', CAST(199.00 AS DECIMAL(10,2)))));
+INSERT INTO creative_line_items VALUES (1003, array(named_struct('sku', 'SKU-A100', 'qty', 10, 'price', CAST(27.50 AS DECIMAL(10,2)))));
+INSERT INTO creative_line_items VALUES (1004, array(named_struct('sku', 'SKU-F600', 'qty', 2, 'price', CAST(85.00 AS DECIMAL(10,2))), named_struct('sku', 'SKU-G700', 'qty', 4, 'price', CAST(12.25 AS DECIMAL(10,2)))));
+INSERT INTO creative_line_items VALUES (1005, array(named_struct('sku', 'SKU-H800', 'qty', 1, 'price', CAST(350.00 AS DECIMAL(10,2))), named_struct('sku', 'SKU-B200', 'qty', 2, 'price', CAST(48.00 AS DECIMAL(10,2))), named_struct('sku', 'SKU-C300', 'qty', 7, 'price', CAST(8.99 AS DECIMAL(10,2)))));

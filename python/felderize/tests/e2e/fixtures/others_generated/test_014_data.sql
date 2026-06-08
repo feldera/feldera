@@ -1,0 +1,10 @@
+INSERT INTO gateway_a_payments (payment_ref, order_id, amount, processed_at) VALUES ('PAY001', 1001, 150.00, CAST('2024-01-15 10:30:00' AS TIMESTAMP));
+INSERT INTO gateway_a_payments (payment_ref, order_id, amount, processed_at) VALUES ('PAY002', 1002, 250.50, CAST('2024-01-15 11:00:00' AS TIMESTAMP));
+INSERT INTO gateway_a_payments (payment_ref, order_id, amount, processed_at) VALUES ('PAY003', 1003, 100.00, CAST('2024-01-15 11:30:00' AS TIMESTAMP));
+INSERT INTO gateway_a_payments (payment_ref, order_id, amount, processed_at) VALUES ('PAY004', 1004, 500.00, CAST('2024-01-15 12:00:00' AS TIMESTAMP));
+INSERT INTO gateway_a_payments (payment_ref, order_id, amount, processed_at) VALUES ('PAY005', 1005, 75.25, CAST('2024-01-15 12:30:00' AS TIMESTAMP));
+INSERT INTO gateway_b_payments (payment_ref, order_id, amount, processed_at) VALUES ('PAY001', 1001, 150.00, CAST('2024-01-15 10:35:00' AS TIMESTAMP));
+INSERT INTO gateway_b_payments (payment_ref, order_id, amount, processed_at) VALUES ('PAY002', 1002, 250.75, CAST('2024-01-15 11:05:00' AS TIMESTAMP));
+INSERT INTO gateway_b_payments (payment_ref, order_id, amount, processed_at) VALUES ('PAY006', 1006, 200.00, CAST('2024-01-15 13:00:00' AS TIMESTAMP));
+INSERT INTO gateway_b_payments (payment_ref, order_id, amount, processed_at) VALUES ('PAY007', 1007, 325.50, CAST('2024-01-15 13:30:00' AS TIMESTAMP));
+INSERT INTO gateway_b_payments (payment_ref, order_id, amount, processed_at) VALUES ('PAY008', 1008, 450.00, CAST('2024-01-15 14:00:00' AS TIMESTAMP));

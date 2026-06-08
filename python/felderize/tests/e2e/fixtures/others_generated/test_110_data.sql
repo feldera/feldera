@@ -1,0 +1,17 @@
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (1, 'North America', 'Premium', CAST('2023-01-15' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (2, 'Europe', 'Standard', CAST('2023-02-20' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (3, 'Asia Pacific', 'Premium', CAST('2023-03-10' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (4, 'North America', 'Standard', CAST('2023-04-05' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (5, 'Europe', 'Premium', CAST('2023-05-12' AS DATE));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (101, 1, CAST('500.00' AS DECIMAL(12,2)), CAST('50.00' AS DECIMAL(12,2)), 'PAID', CAST('2024-01-10' AS DATE), CAST('2024-01-10 09:00:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (102, 1, CAST('750.00' AS DECIMAL(12,2)), CAST('75.00' AS DECIMAL(12,2)), 'SHIPPED', CAST('2024-01-12' AS DATE), CAST('2024-01-12 10:30:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (103, 2, CAST('1200.00' AS DECIMAL(12,2)), CAST('120.00' AS DECIMAL(12,2)), 'PAID', CAST('2024-01-14' AS DATE), CAST('2024-01-14 11:00:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (104, 3, CAST('850.00' AS DECIMAL(12,2)), CAST('85.00' AS DECIMAL(12,2)), 'PAID', CAST('2024-01-15' AS DATE), CAST('2024-01-15 14:00:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (105, 4, CAST('600.00' AS DECIMAL(12,2)), CAST('60.00' AS DECIMAL(12,2)), 'SHIPPED', CAST('2024-01-16' AS DATE), CAST('2024-01-16 08:30:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (106, 5, CAST('950.00' AS DECIMAL(12,2)), CAST('95.00' AS DECIMAL(12,2)), 'PAID', CAST('2024-01-17' AS DATE), CAST('2024-01-17 13:15:00' AS TIMESTAMP));
+INSERT INTO payment_fact (order_id, payment_method, payment_amount) VALUES (101, 'Credit Card', CAST('500.00' AS DECIMAL(12,2)));
+INSERT INTO payment_fact (order_id, payment_method, payment_amount) VALUES (102, 'Credit Card', CAST('750.00' AS DECIMAL(12,2)));
+INSERT INTO payment_fact (order_id, payment_method, payment_amount) VALUES (103, 'Bank Transfer', CAST('1200.00' AS DECIMAL(12,2)));
+INSERT INTO payment_fact (order_id, payment_method, payment_amount) VALUES (104, 'Credit Card', CAST('850.00' AS DECIMAL(12,2)));
+INSERT INTO payment_fact (order_id, payment_method, payment_amount) VALUES (105, 'PayPal', CAST('600.00' AS DECIMAL(12,2)));
+INSERT INTO payment_fact (order_id, payment_method, payment_amount) VALUES (106, 'Credit Card', CAST('950.00' AS DECIMAL(12,2)));

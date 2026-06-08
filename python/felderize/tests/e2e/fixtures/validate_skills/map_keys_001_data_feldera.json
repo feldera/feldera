@@ -1,0 +1,7 @@
+{"product_attrs": [
+  {"product_id": 1, "attrs": {"color": "red", "size": "L", "material": "cotton"}},
+  {"product_id": 2, "attrs": {"color": "blue", "brand": "Nike"}},
+  {"product_id": 3, "attrs": {"style": "casual", "fit": "slim", "length": "regular", "weight": "light"}},
+  {"product_id": 4, "attrs": {"color": "black"}},
+  {"product_id": 5, "attrs": {"price": "99.99", "discount": "10%", "stock": "available"}}
+]}

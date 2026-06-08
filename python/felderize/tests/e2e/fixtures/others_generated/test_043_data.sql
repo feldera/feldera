@@ -1,0 +1,1 @@
+INSERT INTO regional_customers (region, customer_id) VALUES ('North America', 101), ('North America', 102), ('North America', 103), ('North America', 104), ('Europe', 201), ('Europe', 202), ('Europe', 203), ('Asia Pacific', 301), ('Asia Pacific', 302), ('Asia Pacific', 303);

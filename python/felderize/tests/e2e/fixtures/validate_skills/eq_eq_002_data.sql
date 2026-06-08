@@ -1,0 +1,1 @@
+INSERT INTO products_t2 VALUES (101, 'electronics', CAST(99.99 AS DECIMAL(10,2)), true), (102, 'electronics', CAST(150.00 AS DECIMAL(10,2)), false), (103, 'clothing', CAST(99.99 AS DECIMAL(10,2)), true), (104, 'electronics', CAST(99.99 AS DECIMAL(10,2)), true), (105, 'home', CAST(49.50 AS DECIMAL(10,2)), true);

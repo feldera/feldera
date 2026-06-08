@@ -1,0 +1,8 @@
+{"user_preferences": [
+  {"user_id": 101, "prefs": {"notifications_enabled": true, "dark_mode": false}},
+  {"user_id": 102, "prefs": {"dark_mode": true, "two_factor": true}},
+  {"user_id": 103, "prefs": {"notifications_enabled": false}},
+  {"user_id": 104, "prefs": {"two_factor": false, "marketing_emails": true}},
+  {"user_id": 105, "prefs": {"dark_mode": true, "notifications_enabled": true, "two_factor": false}},
+  {"user_id": 106, "prefs": {}}
+]}

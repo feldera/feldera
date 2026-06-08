@@ -1,0 +1,1 @@
+INSERT INTO order_details VALUES (1001, 'Alice Johnson', '2024-01-10', 250), (1002, 'Bob Smith', '2024-01-12', 75), (1003, 'Carol Davis', '2024-01-14', 180), (1004, 'David Lee', '2024-01-15', 95), (1005, 'Eve Martinez', '2024-01-16', 320), (1006, 'Frank Brown', '2024-01-17', 150);

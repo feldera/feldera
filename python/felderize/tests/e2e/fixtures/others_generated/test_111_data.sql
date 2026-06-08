@@ -1,0 +1,17 @@
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (1, 'North America', 'Premium', CAST('2023-01-15' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (2, 'Europe', 'Standard', CAST('2023-02-20' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (3, 'Asia Pacific', 'Enterprise', CAST('2023-03-10' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (4, 'North America', 'Standard', CAST('2023-04-05' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (5, 'Europe', 'Premium', CAST('2023-05-12' AS DATE));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (101, 1, 150.00, 10.00, 'OPEN', CAST('2024-01-10' AS DATE), CAST('2024-01-10 08:30:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (102, 2, 250.50, 25.00, 'CLOSED', CAST('2024-01-12' AS DATE), CAST('2024-01-12 10:15:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (103, 3, 500.00, 50.00, 'OPEN', CAST('2024-01-13' AS DATE), CAST('2024-01-13 14:45:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (104, 4, 175.75, 15.00, 'CLOSED', CAST('2024-01-14' AS DATE), CAST('2024-01-14 09:20:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (105, 5, 320.00, 30.00, 'OPEN', CAST('2024-01-15' AS DATE), CAST('2024-01-15 11:00:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (106, 1, 200.00, 20.00, 'CLOSED', CAST('2024-01-16' AS DATE), CAST('2024-01-16 13:30:00' AS TIMESTAMP));
+INSERT INTO payment_fact (order_id, payment_method, payment_amount) VALUES (101, 'Credit Card', 140.00);
+INSERT INTO payment_fact (order_id, payment_method, payment_amount) VALUES (102, 'Bank Transfer', 225.50);
+INSERT INTO payment_fact (order_id, payment_method, payment_amount) VALUES (103, 'Credit Card', 450.00);
+INSERT INTO payment_fact (order_id, payment_method, payment_amount) VALUES (104, 'PayPal', 160.75);
+INSERT INTO payment_fact (order_id, payment_method, payment_amount) VALUES (105, 'Bank Transfer', 290.00);
+INSERT INTO payment_fact (order_id, payment_method, payment_amount) VALUES (106, 'Credit Card', 180.00);

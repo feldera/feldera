@@ -1,0 +1,1 @@
+INSERT INTO file_names VALUES (1, 'document.pdf', '.pdf'), (2, 'image.jpg', '.png'), (3, 'archive.tar.gz', '.gz'), (4, 'script.py', '.py'), (5, 'config.json', '.json'), (6, 'readme.txt', '.md'), (7, 'backup.zip', '.zip'), (8, 'data.csv', '.csv');

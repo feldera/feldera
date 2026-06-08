@@ -1,0 +1,9 @@
+INSERT INTO window_scores (grp, item_id, score, created_at) VALUES ('group_a', 1001, CAST(100.50 AS DECIMAL(12,2)), CAST('2024-01-15 10:00:00' AS TIMESTAMP));
+INSERT INTO window_scores (grp, item_id, score, created_at) VALUES ('group_a', 1002, CAST(250.75 AS DECIMAL(12,2)), CAST('2024-01-15 10:15:00' AS TIMESTAMP));
+INSERT INTO window_scores (grp, item_id, score, created_at) VALUES ('group_a', 1003, CAST(180.25 AS DECIMAL(12,2)), CAST('2024-01-15 10:30:00' AS TIMESTAMP));
+INSERT INTO window_scores (grp, item_id, score, created_at) VALUES ('group_a', 1004, CAST(320.00 AS DECIMAL(12,2)), CAST('2024-01-15 10:45:00' AS TIMESTAMP));
+INSERT INTO window_scores (grp, item_id, score, created_at) VALUES ('group_b', 2001, CAST(150.50 AS DECIMAL(12,2)), CAST('2024-01-15 11:00:00' AS TIMESTAMP));
+INSERT INTO window_scores (grp, item_id, score, created_at) VALUES ('group_b', 2002, CAST(290.25 AS DECIMAL(12,2)), CAST('2024-01-15 11:15:00' AS TIMESTAMP));
+INSERT INTO window_scores (grp, item_id, score, created_at) VALUES ('group_b', 2003, CAST(175.00 AS DECIMAL(12,2)), CAST('2024-01-15 11:30:00' AS TIMESTAMP));
+INSERT INTO window_scores (grp, item_id, score, created_at) VALUES ('group_c', 3001, CAST(210.75 AS DECIMAL(12,2)), CAST('2024-01-15 12:00:00' AS TIMESTAMP));
+INSERT INTO window_scores (grp, item_id, score, created_at) VALUES ('group_c', 3002, CAST(95.50 AS DECIMAL(12,2)), CAST('2024-01-15 12:15:00' AS TIMESTAMP));

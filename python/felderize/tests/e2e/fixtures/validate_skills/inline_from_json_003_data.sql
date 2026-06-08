@@ -1,0 +1,1 @@
+INSERT INTO event_payloads_3 VALUES (1, '{"event_type":"click","event_count":42}'), (2, '{"event_type":"view","event_count":150}'), (3, '{"event_type":"purchase","event_count":8}'), (4, '{"event_type":"click","event_count":73}'), (5, '{"event_type":"signup","event_count":15}');

@@ -1,0 +1,6 @@
+4	alice	purchase	1705315980
+3	charlie	view	1705315920
+1	alice	login	1705315800
+5	diana	login	1705316040
+2	bob	logout	1705315860
+6	bob	view	1705316100

@@ -1,0 +1,8 @@
+2	250	10	None	False
+6	2000	1	None	False
+5	999	12	None	True
+3	1500	3	None	True
+1	100	5	0.25	True
+1	100	5	0.15	True
+1	100	5	0.05	True
+4	75	8	None	False

@@ -1,0 +1,6 @@
+{
+  "fault": "duplicate_output_column",
+  "broken_view": "malformed_066_b",
+  "description": "View malformed_066_b produces two columns both named 'x'.",
+  "expect_no_crash": true
+}

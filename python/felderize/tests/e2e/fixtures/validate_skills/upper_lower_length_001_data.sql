@@ -1,0 +1,1 @@
+INSERT INTO product_names VALUES (1, 'Laptop', 'High-Performance Device'), (2, 'mouse', 'WIRELESS INPUT'), (3, 'Keyboard', 'mechanical keys'), (4, 'Monitor', 'CURVED DISPLAY'), (5, 'Webcam', 'hd camera'), (6, 'Speaker', 'PORTABLE AUDIO');

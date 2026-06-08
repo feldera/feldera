@@ -1,0 +1,1 @@
+INSERT INTO trigonometric_data VALUES (1, 0.0, 'zero'), (2, 0.7854, 'quarter_pi'), (3, 1.5708, 'half_pi'), (4, 2.3562, 'three_quarter_pi'), (5, 3.1416, 'pi'), (6, -0.5236, 'negative'), (7, 0.2618, 'small_angle');

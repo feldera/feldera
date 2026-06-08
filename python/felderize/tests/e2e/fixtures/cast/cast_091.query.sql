@@ -1,0 +1,2 @@
+CREATE VIEW cast_091 AS
+SELECT CAST(time '10:20:30' AS decimal(20, 10));

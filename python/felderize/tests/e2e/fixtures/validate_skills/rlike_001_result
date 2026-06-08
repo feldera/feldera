@@ -1,0 +1,6 @@
+5	alice+tag@sub.domain.co.uk	sub.domain.co.uk	True
+1	user.name@example.com	example.com	True
+3	test123@domain.org	domain.org	True
+6	@nodomain.com	nodomain.com	False
+2	invalid.email@	example.com	False
+7	simple@test.net	test.net	True

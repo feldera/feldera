@@ -1,0 +1,5 @@
+1001	['timestamp', 'source', 'user_agent']
+1004	['region', 'country', 'city', 'ip', 'isp']
+1002	['endpoint', 'method', 'status', 'duration']
+1005	['session_id', 'device', 'os']
+1003	['error_code', 'error_msg']

@@ -1,0 +1,8 @@
+8	invalid	inf
+2	invalid	None
+7	valid	3.14159
+4	invalid	nan
+3	valid	77.77
+1	valid	55.5
+5	valid	0.0
+6	valid	None

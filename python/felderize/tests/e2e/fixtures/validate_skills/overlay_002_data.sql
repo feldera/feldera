@@ -1,0 +1,1 @@
+INSERT INTO user_feedback_v2 VALUES (101, 'John loves this product'), (102, 'Alice thinks it needs improvement'), (103, 'Bob recommends trying version 2.0'), (104, 'Carol found several bugs'), (105, 'Dan appreciates the documentation'), (106, 'Eve wants more features');

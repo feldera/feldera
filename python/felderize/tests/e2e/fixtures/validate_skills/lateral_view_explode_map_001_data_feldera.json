@@ -1,0 +1,7 @@
+{"product_attrs": [
+  {"product_id": 1, "product_name": "Laptop", "attributes": {"color": "silver", "weight": "1.5kg"}},
+  {"product_id": 2, "product_name": "Mouse", "attributes": {"dpi": "3200", "wireless": "true"}},
+  {"product_id": 3, "product_name": "Keyboard", "attributes": {"layout": "QWERTY", "backlight": "RGB", "switchType": "mechanical"}},
+  {"product_id": 4, "product_name": "Monitor", "attributes": {"resolution": "4K"}},
+  {"product_id": 5, "product_name": "Headphones", "attributes": {"brand": "Sony", "noiseCancel": "yes", "batteryLife": "30h"}}
+]}

@@ -1,0 +1,1 @@
+INSERT INTO user_names VALUES (101, 'Alice Johnson', 'alice@example.com'), (102, 'Bob Smith', 'bob@example.com'), (103, 'Charlie Brown', 'charlie@example.com'), (104, 'Diana Prince', 'diana@example.com'), (105, '1stPlace User', 'first@example.com');

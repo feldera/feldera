@@ -1,0 +1,1 @@
+INSERT INTO messages_2 VALUES (1, 'Alice', 'Bob', 'Hello'), (2, 'Bob', 'Charlie', 'Hi there'), (3, 'Charlie', 'Alice', 'How are you'), (4, 'David', 'Eve', 'Great to see you'), (5, 'Eve', 'Frank', 'Let us meet');

@@ -1,0 +1,17 @@
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Diane Murphy', 'Accounting', 8435);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Mary Patterson', 'Accounting', 9998);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Jeff Firrelli', 'Accounting', 8992);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('William Patterson', 'Accounting', 8870);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Gerard Bondur', 'Accounting', 11472);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Anthony Bow', 'Accounting', 6627);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Leslie Jennings', 'IT', 8113);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Leslie Thompson', 'IT', 5186);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Julie Firrelli', 'Sales', 9181);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Steve Patterson', 'Sales', 9441);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Foon Yue Tseng', 'Sales', 6660);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('George Vanauf', 'Sales', 10563);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Loui Bondur', 'SCM', 10449);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Gerard Hernandez', 'SCM', 6949);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Pamela Castillo', 'SCM', 11303);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Larry Bott', 'SCM', 11798);
+INSERT INTO basic_pays (employee_name, department, salary) VALUES ('Barry Jones', 'SCM', 10586);

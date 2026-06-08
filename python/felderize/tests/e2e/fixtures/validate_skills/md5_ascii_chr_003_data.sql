@@ -1,0 +1,1 @@
+INSERT INTO message_log VALUES (1001, 'Hello World', 'admin'), (1002, 'Test message', 'user1'), (1003, 'Another test', 'user2'), (1004, 'X marks the spot', 'mod'), (1005, 'Final message here', 'bot');

@@ -1,0 +1,6 @@
+103	{'notifications_enabled': False}	True	False
+101	{'notifications_enabled': True, 'dark_mode': False}	True	True
+105	{'dark_mode': True, 'notifications_enabled': True, 'two_factor': False}	True	True
+104	{'marketing_emails': True, 'two_factor': False}	False	False
+102	{'dark_mode': True, 'two_factor': True}	False	True
+106	{}	False	False

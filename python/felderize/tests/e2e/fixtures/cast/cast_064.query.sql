@@ -1,0 +1,2 @@
+CREATE VIEW cast_064 AS
+SELECT CAST(TIME '00:00:17.5' AS tinyint);

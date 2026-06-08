@@ -1,0 +1,8 @@
+{
+  "unsupported_features": [
+    "zip_with"
+  ],
+  "view_with_unsupported": "multiple_views_unsupported_021_derived",
+  "description": "View multiple_views_unsupported_021_derived uses Spark `zip_with`, which Feldera does not support; downstream views depend on its output.",
+  "expect_no_crash": true
+}

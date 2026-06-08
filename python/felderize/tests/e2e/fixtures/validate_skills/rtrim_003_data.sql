@@ -1,0 +1,1 @@
+INSERT INTO user_feedback VALUES (1, 'Great product!     ', 5), (2, 'Not satisfied   ', 2), (3, 'Average quality  ', 3), (4, 'Excellent service!  ', 5), (5, 'Would not recommend ', 1), (6, 'Best purchase ever      ', 5), (7, 'Good value for money   ', 4);

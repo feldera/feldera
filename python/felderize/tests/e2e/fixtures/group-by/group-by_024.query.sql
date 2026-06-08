@@ -1,0 +1,2 @@
+CREATE VIEW group-by_024 AS
+SELECT * FROM (SELECT COUNT(*) AS cnt FROM test_agg) WHERE cnt > 1L;

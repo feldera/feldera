@@ -1,0 +1,8 @@
+3	['featured', 'bestseller', 'trending']	True
+6	['vintage', 'rare', 'collectible']	False
+5	['popular', 'discount', 'limited']	True
+2	['new', 'electronics', 'gadget']	False
+1	['sale', 'popular', 'clearance']	True
+4	['luxury', 'exclusive']	False
+8	['normal']	False
+7	['featured', 'sale']	True

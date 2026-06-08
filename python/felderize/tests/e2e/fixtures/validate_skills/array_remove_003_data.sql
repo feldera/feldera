@@ -1,0 +1,1 @@
+INSERT INTO color_palettes VALUES (1, array('red', 'null', 'blue', 'green')), (2, array('null', 'yellow')), (3, array('purple', 'orange', 'null', 'null', 'pink')), (4, array('black', 'white')), (5, array('null', 'null', 'null'));

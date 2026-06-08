@@ -1,0 +1,6 @@
+INSERT INTO transaction_dates VALUES (100, CAST('2024-06-10' AS DATE), 7);
+INSERT INTO transaction_dates VALUES (101, CAST('2024-06-10' AS DATE), 14);
+INSERT INTO transaction_dates VALUES (102, CAST('2024-06-10' AS DATE), 30);
+INSERT INTO transaction_dates VALUES (103, CAST('2024-06-10' AS DATE), 0);
+INSERT INTO transaction_dates VALUES (104, CAST('2024-02-29' AS DATE), 3);
+INSERT INTO transaction_dates VALUES (105, CAST('2024-03-01' AS DATE), 31);

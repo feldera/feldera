@@ -1,0 +1,1 @@
+INSERT INTO feature_flags_3 VALUES (1, 'darkMode', 'true', 'true'), (2, 'notifications', 'true', 'false'), (3, 'betaFeature', 'false', 'true'), (4, 'analytics', 'false', 'false'), (5, 'premium', 'true', 'true');

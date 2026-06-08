@@ -1,0 +1,7 @@
+INSERT INTO events_log VALUES
+  (1, 'login', CAST('2024-01-15 10:30:00' AS TIMESTAMP)),
+  (2, 'logout', CAST('2024-01-15 15:45:30' AS TIMESTAMP)),
+  (3, 'purchase', CAST('2024-02-20 09:15:15' AS TIMESTAMP)),
+  (4, 'view_page', CAST('2024-02-21 14:22:45' AS TIMESTAMP)),
+  (5, 'error', CAST('2024-03-01 23:59:59' AS TIMESTAMP)),
+  (6, 'upload', CAST('2024-03-10 00:00:00' AS TIMESTAMP));

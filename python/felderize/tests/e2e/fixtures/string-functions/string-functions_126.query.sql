@@ -1,0 +1,2 @@
+CREATE VIEW string-functions_126 AS
+SELECT CONTAINS('Spark SQL', 'SPARK');

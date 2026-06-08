@@ -1,0 +1,1 @@
+INSERT INTO employee_bonus_v2 VALUES (101, 'Engineering', CAST(5000.00 AS DECIMAL(10,2)), 1), (102, 'Engineering', CAST(5500.00 AS DECIMAL(10,2)), 3), (103, 'Engineering', CAST(6000.00 AS DECIMAL(10,2)), 6), (104, 'Sales', CAST(3000.00 AS DECIMAL(10,2)), 2), (105, 'Sales', CAST(3500.00 AS DECIMAL(10,2)), 5), (106, 'HR', CAST(2500.00 AS DECIMAL(10,2)), 4);

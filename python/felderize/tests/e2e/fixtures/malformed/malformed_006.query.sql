@@ -1,0 +1,9 @@
+CREATE VIEW malformed_006_a AS
+SELECT id, k, val FROM base WHERE val > 0;
+
+CREATE VIEW malformed_006_b AS
+SELECT a.id, a.val, g.note
+FROM malformed_006_a a JOIN ghost_table_5 g ON a.id = g.id;
+
+CREATE VIEW malformed_006 AS
+SELECT id, val, note FROM malformed_006_b;

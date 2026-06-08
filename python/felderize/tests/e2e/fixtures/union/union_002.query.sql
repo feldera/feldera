@@ -1,0 +1,6 @@
+CREATE VIEW union_002 AS
+SELECT a
+FROM (SELECT 0 a, 0 b
+      UNION ALL
+      SELECT SUM(1) a, CAST(0 AS BIGINT) b
+      UNION ALL SELECT 0 a, 0 b) T;

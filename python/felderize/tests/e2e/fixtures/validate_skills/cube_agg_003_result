@@ -1,0 +1,14 @@
+None	None	7	1052.00	300.00
+None	Credit	3	400.75	250.50
+None	Debit	2	226.25	150.75
+None	PayPal	2	425.00	300.00
+Guest	None	1	50.00	50.00
+Guest	Credit	1	50.00	50.00
+Premium	None	3	701.25	300.00
+Premium	Credit	1	250.50	250.50
+Premium	Debit	1	150.75	150.75
+Premium	PayPal	1	300.00	300.00
+Standard	None	3	300.75	125.00
+Standard	Credit	1	100.25	100.25
+Standard	Debit	1	75.50	75.50
+Standard	PayPal	1	125.00	125.00

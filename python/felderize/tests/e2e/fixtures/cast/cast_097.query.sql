@@ -1,0 +1,2 @@
+CREATE VIEW cast_097 AS
+SELECT CAST(time '23:59:59.999' AS decimal(8, 2));

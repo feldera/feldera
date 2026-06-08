@@ -1,0 +1,15 @@
+Engineering	Senior Engineer	1	120000.000000	0
+None	None	8	81500.000000	3
+None	Senior Engineer	1	120000.000000	2
+Engineering	None	3	95000.000000	1
+Engineering	Junior Engineer	2	82500.000000	0
+None	Junior Engineer	2	82500.000000	2
+Sales	Representative	1	60000.000000	0
+None	Representative	1	60000.000000	2
+Sales	None	2	80000.000000	1
+None	Coordinator	2	56000.000000	2
+HR	Coordinator	2	56000.000000	0
+HR	None	3	69000.000000	1
+None	Manager	2	97500.000000	2
+Sales	Manager	1	100000.000000	0
+HR	Manager	1	95000.000000	0

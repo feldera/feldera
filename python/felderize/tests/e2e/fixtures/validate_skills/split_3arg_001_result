@@ -1,0 +1,5 @@
+1	['error', 'critical:system']
+4	['fatal', 'high:database']
+2	['warn', 'minor:network']
+5	['trace', 'low:memory']
+3	['info', 'debug:cache']

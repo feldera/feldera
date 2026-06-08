@@ -1,0 +1,1 @@
+INSERT INTO metric_values VALUES ('cpu_usage', 45.2, 80.0), ('memory_load', CAST('NaN' AS FLOAT), 90.0), ('disk_io', 25.5, CAST('NaN' AS FLOAT)), ('network_latency', CAST('NaN' AS FLOAT), CAST('NaN' AS FLOAT)), ('cache_hit', 92.3, 95.0), ('error_rate', CAST('NaN' AS FLOAT), 5.0), ('throughput', 1000.5, 1200.0);

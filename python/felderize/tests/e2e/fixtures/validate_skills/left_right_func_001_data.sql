@@ -1,0 +1,1 @@
+INSERT INTO product_codes VALUES (1, 'ABC123XYZ', 'Widget A'), (2, 'DEF456QRS', 'Widget B'), (3, 'GHI789TUV', 'Widget C'), (4, 'JKL012WXY', 'Widget D'), (5, 'MNO345ZAB', 'Widget E'), (6, 'PQR678CDE', 'Widget F');

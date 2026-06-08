@@ -1,0 +1,5 @@
+205	Building E	[Decimal('11.11'), Decimal('22.22'), Decimal('33.33'), Decimal('44.44'), Decimal('55.55'), Decimal('66.66')]	[Decimal('66.66'), Decimal('55.55'), Decimal('44.44'), Decimal('33.33'), Decimal('22.22'), Decimal('11.11')]
+203	Building C	[Decimal('25.00'), Decimal('50.00'), Decimal('75.00'), Decimal('90.00'), Decimal('100.00')]	[Decimal('100.00'), Decimal('90.00'), Decimal('75.00'), Decimal('50.00'), Decimal('25.00')]
+204	Building D	[Decimal('5.55')]	[Decimal('5.55')]
+201	Building A	[Decimal('12.34'), Decimal('23.45'), Decimal('45.67'), Decimal('78.90')]	[Decimal('78.90'), Decimal('45.67'), Decimal('23.45'), Decimal('12.34')]
+202	Building B	[Decimal('10.01'), Decimal('55.55'), Decimal('99.99')]	[Decimal('99.99'), Decimal('55.55'), Decimal('10.01')]

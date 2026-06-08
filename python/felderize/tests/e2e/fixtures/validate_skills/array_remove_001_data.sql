@@ -1,0 +1,1 @@
+INSERT INTO inventory_items VALUES (1, array('electronics', 'deprecated', 'new')), (2, array('deprecated', 'sale', 'deprecated')), (3, array('new', 'featured')), (4, array('deprecated')), (5, array('clearance', 'old', 'deprecated', 'broken'));

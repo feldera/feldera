@@ -1,0 +1,7 @@
+501	Y	100	Yes	Full Stock
+504	Y	75	Yes	Limited
+505	X	100	Unknown	Full Stock
+503	M	50	Maybe	Half Stock
+502	N	0	No	Out of Stock
+506	N	50	No	Half Stock
+507	None	0	Unknown	Out of Stock

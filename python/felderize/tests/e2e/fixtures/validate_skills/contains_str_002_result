@@ -1,0 +1,7 @@
+107	frank@example.com	This is not an urgent matter	True
+103	bob@example.com	urgent: System maintenance	True
+101	john@example.com	URGENT: Project deadline	False
+106	eve@example.com	Birthday reminder	False
+105	dave@example.com	URGENT REQUEST	False
+102	alice@example.com	Meeting notes	False
+104	carol@example.com	Weekly report	False

@@ -1,0 +1,1 @@
+INSERT INTO user_events VALUES (1, 'login', CAST('2024-01-15' AS DATE)), (1, 'login', CAST('2024-01-16' AS DATE)), (1, 'logout', CAST('2024-01-17' AS DATE)), (2, 'login', CAST('2024-01-15' AS DATE)), (2, 'purchase', CAST('2024-01-16' AS DATE)), (2, 'purchase', CAST('2024-01-17' AS DATE)), (3, 'login', CAST('2024-01-15' AS DATE));

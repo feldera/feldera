@@ -1,0 +1,1 @@
+INSERT INTO email_log VALUES (101, 'john@example.com', 'URGENT: Project deadline'), (102, 'alice@example.com', 'Meeting notes'), (103, 'bob@example.com', 'urgent: System maintenance'), (104, 'carol@example.com', 'Weekly report'), (105, 'dave@example.com', 'URGENT REQUEST'), (106, 'eve@example.com', 'Birthday reminder'), (107, 'frank@example.com', 'This is not an urgent matter');

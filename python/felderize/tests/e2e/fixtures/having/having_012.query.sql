@@ -1,0 +1,2 @@
+CREATE VIEW having_012 AS
+SELECT c1 FROM VALUES (1, 2) as t(c1, c2) GROUP BY t.c1 HAVING t.c1 = 1;

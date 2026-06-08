@@ -1,0 +1,15 @@
+INSERT INTO accounts (account_id, customer_id, account_status, opened_at) VALUES (1001, 5001, 'ACTIVE', CAST('2023-01-15' AS DATE));
+INSERT INTO accounts (account_id, customer_id, account_status, opened_at) VALUES (1002, 5002, 'ACTIVE', CAST('2023-02-20' AS DATE));
+INSERT INTO accounts (account_id, customer_id, account_status, opened_at) VALUES (1003, 5003, 'INACTIVE', CAST('2023-03-10' AS DATE));
+INSERT INTO accounts (account_id, customer_id, account_status, opened_at) VALUES (1004, 5004, 'ACTIVE', CAST('2023-04-05' AS DATE));
+INSERT INTO accounts (account_id, customer_id, account_status, opened_at) VALUES (1005, 5005, 'ACTIVE', CAST('2023-05-12' AS DATE));
+INSERT INTO transactions (txn_id, account_id, txn_type, amount, txn_time) VALUES (2001, 1001, 'DEBIT', 1500.00, CAST('2024-01-10 09:30:00' AS TIMESTAMP));
+INSERT INTO transactions (txn_id, account_id, txn_type, amount, txn_time) VALUES (2002, 1001, 'CREDIT', 500.00, CAST('2024-01-11 10:15:00' AS TIMESTAMP));
+INSERT INTO transactions (txn_id, account_id, txn_type, amount, txn_time) VALUES (2003, 1002, 'DEBIT', 2000.00, CAST('2024-01-12 14:45:00' AS TIMESTAMP));
+INSERT INTO transactions (txn_id, account_id, txn_type, amount, txn_time) VALUES (2004, 1003, 'DEBIT', 3000.00, CAST('2024-01-13 11:20:00' AS TIMESTAMP));
+INSERT INTO transactions (txn_id, account_id, txn_type, amount, txn_time) VALUES (2005, 1004, 'CREDIT', 1200.00, CAST('2024-01-14 08:00:00' AS TIMESTAMP));
+INSERT INTO transactions (txn_id, account_id, txn_type, amount, txn_time) VALUES (2006, 1005, 'DEBIT', 2500.00, CAST('2024-01-15 16:30:00' AS TIMESTAMP));
+INSERT INTO disputes (dispute_id, account_id, status, opened_time) VALUES (3001, 1001, 'OPEN', CAST('2024-01-12 12:00:00' AS TIMESTAMP));
+INSERT INTO disputes (dispute_id, account_id, status, opened_time) VALUES (3002, 1002, 'OPEN', CAST('2024-01-13 13:00:00' AS TIMESTAMP));
+INSERT INTO disputes (dispute_id, account_id, status, opened_time) VALUES (3003, 1004, 'OPEN', CAST('2024-01-14 15:00:00' AS TIMESTAMP));
+INSERT INTO disputes (dispute_id, account_id, status, opened_time) VALUES (3004, 1005, 'CLOSED', CAST('2024-01-08 10:00:00' AS TIMESTAMP));

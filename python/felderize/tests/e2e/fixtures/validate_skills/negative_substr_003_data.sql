@@ -1,0 +1,1 @@
+INSERT INTO log_messages VALUES (1, 'Error_404'), (2, 'Warning_TIMEOUT'), (3, 'Info_SUCCESS'), (4, 'Fatal_DATABASE_CONN_FAILED'), (5, 'Debug_STACK_OVERFLOW'), (6, 'Critical_AUTH_INVALID'), (7, 'System_OUT_OF_MEMORY');

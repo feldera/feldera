@@ -1,0 +1,1 @@
+INSERT INTO event_log VALUES (1, CAST('2024-01-01' AS DATE), 'New Year'), (2, CAST('2024-01-08' AS DATE), 'Week 2 Start'), (3, CAST('2024-01-15' AS DATE), 'Mid January'), (4, CAST('2024-03-25' AS DATE), 'Spring'), (5, CAST('2024-12-30' AS DATE), 'Year End'), (6, CAST('2024-06-21' AS DATE), 'Summer'), (7, CAST('2024-02-29' AS DATE), 'Leap Day');

@@ -1,0 +1,5 @@
+3	negative_to_zero	[-5, -4, -3, -2, -1, 0]
+5	high_nums	[50, 51, 52, 53, 54, 55]
+1	ascending	[5, 6, 7, 8, 9, 10]
+4	mid_range	[3, 4, 5, 6, 7, 8]
+2	single	[20]

@@ -1,0 +1,2 @@
+CREATE VIEW having_007 AS
+SELECT SUM(a) AS b FROM VALUES (1, 10), (2, 20) AS T(a, b) GROUP BY CUBE(a, b) HAVING b > 10;

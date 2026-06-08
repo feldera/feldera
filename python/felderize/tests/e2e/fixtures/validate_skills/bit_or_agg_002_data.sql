@@ -1,0 +1,1 @@
+INSERT INTO permissions_v2 VALUES (101, 64L, 'sales'), (102, 128L, 'sales'), (103, 256L, 'sales'), (104, 512L, 'eng'), (105, 1024L, 'eng'), (106, 2048L, 'mgmt'), (107, 4096L, 'mgmt'), (108, 8192L, 'mgmt');

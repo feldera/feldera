@@ -1,0 +1,1 @@
+INSERT INTO restaurant_menu_v3 VALUES (1, array('pizza', 'pasta', 'salad', 'soup'), array('soup')), (2, array('burger', 'fries', 'milkshake'), array('fries', 'milkshake')), (3, array('sushi', 'tempura', 'ramen', 'gyoza', 'edamame'), array('gyoza')), (4, array('steak'), array('steak')), (5, array('cheesecake', 'tiramisu', 'brownie', 'ice cream'), array());

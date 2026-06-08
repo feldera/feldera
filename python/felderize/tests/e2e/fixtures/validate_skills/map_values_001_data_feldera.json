@@ -1,0 +1,7 @@
+{"product_ratings": [
+  {"product_id": 1, "rating_map": {"quality": 8, "price": 7, "design": 9}},
+  {"product_id": 2, "rating_map": {"quality": 9, "price": 6}},
+  {"product_id": 3, "rating_map": {"quality": 7, "price": 8, "design": 7, "durability": 8}},
+  {"product_id": 4, "rating_map": {"quality": 10}},
+  {"product_id": 5, "rating_map": {"price": 5, "design": 6, "durability": 7}}
+]}

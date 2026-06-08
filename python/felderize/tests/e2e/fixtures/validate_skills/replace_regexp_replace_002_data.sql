@@ -1,0 +1,1 @@
+INSERT INTO text_content VALUES (1, 'hello  world  test', 'Report 2024'), (2, 'this  is  a  long  text', 'Summary 001'), (3, 'no double spaces here', 'Guide 2023'), (4, 'some   triple   spaces', 'Chapter 99 Edition'), (5, 'clean single spaces', 'Manual'), (6, 'text  with  replacements  needed', 'Version 3.5'), (7, 'another  example  document', 'Part 42');

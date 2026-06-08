@@ -1,0 +1,1 @@
+INSERT INTO product_specs_2 VALUES (1, '{"category":"electronics","score":85}'), (2, '{"category":"clothing","score":60}'), (3, '{"category":"electronics","score":92}'), (4, '{"category":"food","score":75}'), (5, '{"category":"clothing","score":45}'), (6, '{"category":"food","score":88}');

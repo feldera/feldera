@@ -1,0 +1,1 @@
+INSERT INTO student_scores VALUES (101, 'Math', array(85, 92, 78, 88)), (102, 'Science', array(90, 95)), (103, 'English', array(75, 80, 82, 79, 84)), (104, 'History', array(88)), (105, 'Art', array(95, 98, 96));

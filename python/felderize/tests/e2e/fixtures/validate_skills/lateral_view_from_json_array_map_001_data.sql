@@ -1,0 +1,1 @@
+INSERT INTO page_events_1 VALUES (1, 'home', '[{"action":"view","user":"alice"},{"action":"click","user":"alice"}]'), (2, 'product', '[{"action":"view","user":"bob"}]'), (3, 'cart', '[{"action":"view","user":"charlie"},{"action":"add","user":"charlie"}]');

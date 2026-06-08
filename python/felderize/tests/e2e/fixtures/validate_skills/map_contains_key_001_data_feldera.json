@@ -1,0 +1,8 @@
+{"product_attrs": [
+  {"product_id": 1, "attrs": {"color": "red", "size": "large"}},
+  {"product_id": 2, "attrs": {"size": "medium", "brand": "acme"}},
+  {"product_id": 3, "attrs": {"color": "blue", "material": "cotton", "size": "small"}},
+  {"product_id": 4, "attrs": {"brand": "xyz"}},
+  {"product_id": 5, "attrs": {"color": "green", "price": "29.99"}},
+  {"product_id": 6, "attrs": {}}
+]}

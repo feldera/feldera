@@ -1,0 +1,4 @@
+CREATE TABLE t1 (
+    col1 TIMESTAMP,
+    col2 STRING
+);

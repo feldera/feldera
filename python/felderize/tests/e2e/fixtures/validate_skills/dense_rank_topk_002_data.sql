@@ -1,0 +1,10 @@
+INSERT INTO employee_scores VALUES
+  ('Engineering', 'Alice', 95, 2024),
+  ('Engineering', 'Bob', 92, 2024),
+  ('Engineering', 'Charlie', 92, 2024),
+  ('Engineering', 'David', 88, 2024),
+  ('Engineering', 'Eve', 78, 2024),
+  ('Sales', 'Frank', 89, 2024),
+  ('Sales', 'Grace', 87, 2024),
+  ('Sales', 'Henry', 85, 2024),
+  ('Sales', 'Iris', 75, 2024);

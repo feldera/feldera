@@ -1,0 +1,1762 @@
+# Benchmark support status snapshot — generated 2026-06-03.
+# Source: a full e2e run of every fixture against Feldera v0.304.0,
+# translated with the felderize salvage translator.
+# outcome: pass | fail | error | skipped  (with a brief reason on non-pass entries)
+
+abs_power_sqrt:
+  abs_power_sqrt_001: pass
+  abs_power_sqrt_002: pass
+  abs_power_sqrt_003: pass
+
+add_months:
+  add_months_001: pass
+  add_months_002: pass
+  add_months_003: pass
+  add_months_004: pass
+
+any_agg:
+  any_agg_001: pass
+  any_agg_002: pass
+  any_agg_003: pass
+
+array_contains:
+  array_contains_001: pass
+  array_contains_002: pass
+  array_contains_003: pass
+
+array_distinct:
+  array_distinct_001: pass
+  array_distinct_002: pass
+  array_distinct_003: pass
+
+array_except:
+  array_except_001: pass
+  array_except_002: pass
+  array_except_003: pass
+
+array_exists_hof:
+  array_exists_hof_001: pass
+  array_exists_hof_002: pass
+  array_exists_hof_003: pass
+
+array_intersect:
+  array_intersect_001: pass
+  array_intersect_002: pass
+  array_intersect_003: pass
+
+array_join:
+  array_join_001: pass
+  array_join_002: pass
+  array_join_003: pass
+
+array_literal:
+  array_literal_001: pass
+  array_literal_002: pass
+  array_literal_003: pass
+
+array_position:
+  array_position_001: pass
+  array_position_002: pass
+  array_position_003: pass
+
+array_remove:
+  array_remove_001: pass
+  array_remove_002: pass
+  array_remove_003: pass
+
+array_repeat:
+  array_repeat_001: pass
+  array_repeat_002: pass
+  array_repeat_003: pass
+
+array_type_syntax:
+  array_type_syntax_001: pass
+  array_type_syntax_002: pass
+  array_type_syntax_003: pass
+
+array_union:
+  array_union_001: pass
+  array_union_002: pass
+  array_union_003: pass
+
+arrays_overlap:
+  arrays_overlap_001: pass
+  arrays_overlap_002: pass
+  arrays_overlap_003: pass
+
+avg_integer:
+  avg_integer_001: pass
+  avg_integer_002: pass
+  avg_integer_003: fail  # result differs (got ('1001', '48.333333', '5 vs ('1001', '48.33333333', )
+
+bit_and_agg:
+  bit_and_agg_001: pass
+  bit_and_agg_002: pass
+  bit_and_agg_003: pass
+
+bit_length:
+  bit_length_001: pass
+  bit_length_002: pass
+  bit_length_003: pass
+
+bit_or_agg:
+  bit_or_agg_001: pass
+  bit_or_agg_002: pass
+  bit_or_agg_003: pass
+
+bit_xor_agg:
+  bit_xor_agg_001: pass
+  bit_xor_agg_002: pass
+  bit_xor_agg_003: pass
+
+bool_and_window:
+  bool_and_window_001: fail  # unsupported: every(is_active) OVER (ORDER BY is_active) — window ORDER BY on BOOLEAN column n
+  bool_and_window_002: fail  # unsupported: bool_and(is_valid) OVER (ORDER BY is_valid) — window ORDER BY on BOOLEAN column
+  bool_and_window_003: fail  # unsupported: every(enabled) OVER (ORDER BY enabled DESC) — window ORDER BY on BOOLEAN column
+
+bool_or_and_agg:
+  bool_or_and_agg_001: pass
+  bool_or_and_agg_002: pass
+  bool_or_and_agg_003: pass
+
+bool_string_literal:
+  bool_string_literal_001: pass
+  bool_string_literal_002: pass
+  bool_string_literal_003: pass
+
+bround:
+  bround_001: pass
+  bround_002: pass
+  bround_003: pass
+
+cast:
+  cast_001: pass
+  cast_002: pass
+  cast_003: pass
+  cast_004: pass
+  cast_005: pass
+  cast_006: pass
+  cast_007: pass
+  cast_008: skipped  # unsupported: CAST('interval 3 month 1 hour' AS INTERVAL) — compound mixed-unit interval (3 MO
+  cast_009: fail  # unsupported: CAST('interval ''3-1'' year to month' AS INTERVAL YEAR TO MONTH) — casting a str
+  cast_010: pass
+  cast_011: fail  # unsupported: CAST(INTERVAL '3-1' YEAR TO MONTH AS VARCHAR) — Feldera output format ('+3-01')
+  cast_012: fail  # unsupported: CAST(INTERVAL 3 DAY 1 SECOND AS STRING) - Feldera output format for compound int
+  cast_013: pass
+  cast_014: pass
+  cast_015: pass
+  cast_016: pass
+  cast_017: pass
+  cast_018: pass
+  cast_019: pass
+  cast_020: pass
+  cast_021: fail  # result differs (got ('false',) vs ('true',))
+  cast_022: pass
+  cast_023: pass
+  cast_024: pass
+  cast_025: pass
+  cast_026: pass
+  cast_027: pass
+  cast_028: pass
+  cast_029: pass
+  cast_030: pass
+  cast_031: pass
+  cast_032: pass
+  cast_033: fail  # unsupported: CAST(INTERVAL '-10-2' YEAR TO MONTH AS SMALLINT)
+  cast_034: pass
+  cast_035: pass
+  cast_036: fail  # unsupported: CAST(INTERVAL '-1 02:03:04.123' DAY TO SECOND AS INT) — compound interval (DAY T
+  cast_037: pass
+  cast_038: skipped  # empty translation
+  cast_039: skipped  # empty translation
+  cast_040: skipped  # unsupported: CAST(SMALLINT AS INTERVAL YEAR TO MONTH)
+  cast_041: skipped  # LOCAL VIEW output (not observable)
+  cast_042: fail  # numeric->interval cast unsupported (no observable Feldera output)
+  cast_043: fail  # unsupported: CAST(100Y AS INTERVAL HOUR TO SECOND)
+  cast_044: fail  # numeric->interval cast unsupported (no observable Feldera output)
+  cast_045: fail  # numeric->interval cast unsupported (no observable Feldera output)
+  cast_046: fail  # numeric->interval cast unsupported (no observable Feldera output)
+  cast_047: pass
+  cast_048: fail  # result differs (got ('1',) vs ('1.000001',))
+  cast_049: pass
+  cast_050: fail  # unsupported: CAST(INTERVAL '1 01:02:03.1' DAY TO SECOND AS DECIMAL(8, 1)) — compound interval
+  cast_051: pass
+  cast_052: fail  # result differs (got ('10',) vs ('10.01',))
+  cast_053: pass
+  cast_054: fail  # numeric->interval cast unsupported (no observable Feldera output)
+  cast_055: fail  # numeric->interval cast unsupported (no observable Feldera output)
+  cast_056: fail  # unsupported: CAST(-10.123456BD AS INTERVAL YEAR TO MONTH)
+  cast_057: skipped  # unsupported: CAST(10.654321BD AS INTERVAL MONTH) - casting numeric/decimal to INTERVAL MONTH
+  cast_058: fail  # unsupported: CAST(TIME '00:01:52' AS TINYINT)
+  cast_059: fail  # unsupported: CAST(TIME '00:01:52' AS SMALLINT)
+  cast_060: fail  # unsupported: CAST(TIME '00:01:52' AS INT)
+  cast_061: fail  # result differs (got ('112000',) vs ('112',))
+  cast_062: fail  # unsupported: CAST(TIME '23:59:59' AS INT)
+  cast_063: fail  # unsupported: CAST(TIME '23:59:59' AS BIGINT) — TIME to numeric (BIGINT) cast is not supported
+  cast_064: fail  # unsupported: CAST(TIME '00:00:17.5' AS TINYINT)
+  cast_065: pass
+  cast_066: pass
+  cast_067: fail  # unsupported: CAST(TIME '00:00:00' AS TINYINT)
+  cast_068: fail  # unsupported: CAST(TIME '00:00:00' AS INT)
+  cast_069: pass
+  cast_070: pass
+  cast_071: pass
+  cast_072: error  # unsupported: 'interval 3 month 1 hour' :: interval — compound multi-unit interval (months + h
+  cast_073: fail  # unsupported: CAST(INTERVAL '3 days 1 second' AS VARCHAR) — Feldera output format differs from
+  cast_074: pass
+  cast_075: pass
+  cast_076: fail  # result differs (got ('false',) vs ('true',))
+  cast_077: pass
+  cast_078: fail  # unsupported: CAST(INTERVAL '-10-2' YEAR TO MONTH AS SMALLINT) — compound interval (YEAR TO MO
+  cast_079: fail  # numeric->interval cast unsupported (no observable Feldera output)
+  cast_080: fail  # unsupported: CAST(INTERVAL '08:11:10.001' HOUR TO SECOND AS DECIMAL(10,4))
+  cast_081: fail  # unsupported: CAST(10.123456BD AS INTERVAL DAY TO SECOND) — compound interval (DAY TO SECOND)
+  cast_082: fail  # unsupported: CAST(TIME '00:01:52' AS TINYINT)
+  cast_083: fail  # unsupported: CAST(TIME '00:01:52' AS INT)
+  cast_084: fail  # unsupported: CAST(TIME '23:59:59' AS INT)
+  cast_085: pass
+  cast_086: fail  # unsupported: CAST(TIME '00:00:00' AS DECIMAL(1, 0))
+  cast_087: fail  # unsupported: CAST(TIME '12:00:00' AS DECIMAL(7,2))
+  cast_088: fail  # unsupported: CAST(TIME '01:30:45' AS DECIMAL(8,3))
+  cast_089: fail  # unsupported: CAST(TIME '23:59:59' AS DECIMAL(9,4))
+  cast_090: fail  # unsupported: CAST(TIME '01:02:03' AS DECIMAL(15,9))
+  cast_091: fail  # unsupported: CAST(TIME '10:20:30' AS DECIMAL(20,10))
+  cast_092: fail  # unsupported: CAST(TIME '23:59:59.001' AS DECIMAL(8,3))
+  cast_093: fail  # unsupported: CAST(TIME '23:59:59.999999' AS DECIMAL(11,6))
+  cast_094: fail  # unsupported: CAST(TIME '23:59:59.999999999' AS DECIMAL(14,9))
+  cast_095: fail  # unsupported: CAST(TIME '23:59:59.999999999' AS DECIMAL(20, 10))
+  cast_096: fail  # unsupported: CAST(TIME '23:59:59.9' AS DECIMAL(6, 0))
+  cast_097: fail  # unsupported: CAST(TIME '23:59:59.999' AS DECIMAL(8,2))
+  cast_098: fail  # unsupported: CAST(TIME '23:59:59.999999' AS DECIMAL(11,5))
+  cast_099: fail  # unsupported: CAST(TIME '23:59:59.999999999' AS DECIMAL(14,8))
+
+cast_interval_literal:
+  cast_interval_literal_001: pass
+  cast_interval_literal_002: pass
+  cast_interval_literal_003: pass
+
+cast_numeric_ts:
+  cast_numeric_ts_001: fail  # result differs (got ('2', '1970-01-12 13:46: vs ('2', '2001-09-09 01:46:)
+  cast_numeric_ts_002: pass
+  cast_numeric_ts_003: pass
+
+cast_to_date:
+  cast_to_date_001: pass
+  cast_to_date_002: pass
+  cast_to_date_003: pass
+
+cast_to_timestamp:
+  cast_to_timestamp_001: pass
+  cast_to_timestamp_002: pass
+  cast_to_timestamp_003: pass
+
+ceil_floor_type:
+  ceil_floor_type_001: pass
+  ceil_floor_type_002: pass
+  ceil_floor_type_003: pass
+
+coalesce_func:
+  coalesce_func_001: pass
+  coalesce_func_002: pass
+  coalesce_func_003: pass
+
+collect_list_agg:
+  collect_list_agg_001: pass
+  collect_list_agg_002: pass
+  collect_list_agg_003: pass
+
+collect_list_distinct:
+  collect_list_distinct_001: pass
+  collect_list_distinct_002: pass
+  collect_list_distinct_003: pass
+
+collect_set_agg:
+  collect_set_agg_001: pass
+  collect_set_agg_002: pass
+  collect_set_agg_003: pass
+
+concat_concat_ws:
+  concat_concat_ws_001: pass
+  concat_concat_ws_002: pass
+  concat_concat_ws_003: pass
+
+concat_pipe:
+  concat_pipe_001: pass
+  concat_pipe_002: pass
+  concat_pipe_003: pass
+
+contains_str:
+  contains_str_001: pass
+  contains_str_002: pass
+  contains_str_003: pass
+
+cot:
+  cot_001: pass
+  cot_002: pass
+  cot_003: pass
+
+count_distinct_agg:
+  count_distinct_agg_001: pass
+  count_distinct_agg_002: pass
+  count_distinct_agg_003: pass
+
+count_sum_min_max_agg:
+  count_sum_min_max_agg_001: pass
+  count_sum_min_max_agg_002: pass
+  count_sum_min_max_agg_003: pass
+
+create_temp_view:
+  create_temp_view_001: pass
+  create_temp_view_002: pass
+  create_temp_view_003: pass
+
+csc:
+  csc_001: pass
+  csc_002: pass
+  csc_003: pass
+
+cube_agg:
+  cube_agg_001: pass
+  cube_agg_002: pass
+  cube_agg_003: pass
+
+current_date:
+  current_date_001: pass
+  current_date_002: pass
+  current_date_003: pass
+
+current_timestamp_now:
+  current_timestamp_now_001: pass
+  current_timestamp_now_002: pass
+  current_timestamp_now_003: pass
+
+date_add:
+  date_add_001: pass
+  date_add_002: pass
+  date_add_003: pass
+
+date_format_dayofweek:
+  date_format_dayofweek_001: pass
+  date_format_dayofweek_002: pass
+  date_format_dayofweek_003: pass
+
+date_format_func:
+  date_format_func_001: pass
+  date_format_func_002: pass
+  date_format_func_003: pass
+
+date_sub:
+  date_sub_001: pass
+  date_sub_002: pass
+  date_sub_003: pass
+
+date_subtract_int:
+  date_subtract_int_001: pass
+  date_subtract_int_002: pass
+  date_subtract_int_003: pass
+
+date_trunc_day:
+  date_trunc_day_001: pass
+  date_trunc_day_002: pass
+  date_trunc_day_003: pass
+
+date_trunc_month:
+  date_trunc_month_001: pass
+  date_trunc_month_002: pass
+  date_trunc_month_003: pass
+
+date_trunc_week:
+  date_trunc_week_001: pass
+  date_trunc_week_002: pass
+  date_trunc_week_003: pass
+  date_trunc_week_004: pass
+
+date_trunc_year:
+  date_trunc_year_001: pass
+  date_trunc_year_002: pass
+  date_trunc_year_003: pass
+
+datediff:
+  datediff_001: pass
+  datediff_002: pass
+  datediff_003: pass
+
+day_dayofmonth:
+  day_dayofmonth_001: pass
+  day_dayofmonth_002: pass
+  day_dayofmonth_003: pass
+
+dayofweek_func:
+  dayofweek_func_001: pass
+  dayofweek_func_002: pass
+  dayofweek_func_003: pass
+
+decode_func:
+  decode_func_001: pass
+  decode_func_002: pass
+  decode_func_003: pass
+
+dense_rank_topk:
+  dense_rank_topk_001: pass
+  dense_rank_topk_002: pass
+  dense_rank_topk_003: pass
+
+endswith:
+  endswith_001: pass
+  endswith_002: pass
+  endswith_003: pass
+
+eq_eq:
+  eq_eq_001: pass
+  eq_eq_002: pass
+  eq_eq_003: pass
+
+equal_null:
+  equal_null_001: pass
+  equal_null_002: pass
+  equal_null_003: pass
+
+every_some_agg:
+  every_some_agg_001: pass
+  every_some_agg_002: pass
+  every_some_agg_003: pass
+
+exp_func:
+  exp_func_001: pass
+  exp_func_002: pass
+  exp_func_003: pass
+
+first_last_agg:
+  first_last_agg_001: fail  # result differs (got ('East', '95', '95') vs ('East', '90', '95'))
+  first_last_agg_002: fail  # result differs (got ('Engineering', '90000', vs ('Engineering', '85000',)
+  first_last_agg_003: fail  # result differs (got ('Clothing', '55', '55', vs ('Clothing', '55', '52',)
+
+first_value_window:
+  first_value_window_001: pass
+  first_value_window_002: pass
+  first_value_window_003: pass
+
+float_type:
+  float_type_001: pass
+  float_type_002: pass
+  float_type_003: pass
+
+from_json_field:
+  from_json_field_001: pass
+  from_json_field_002: pass
+  from_json_field_003: pass
+
+from_json_map_explode:
+  from_json_map_explode_001: pass
+  from_json_map_explode_002: pass
+  from_json_map_explode_003: pass
+
+from_unixtime_fmt:
+  from_unixtime_fmt_001: pass
+  from_unixtime_fmt_002: pass
+  from_unixtime_fmt_003: pass
+
+from_unixtime_nofmt:
+  from_unixtime_nofmt_001: pass
+  from_unixtime_nofmt_002: pass
+  from_unixtime_nofmt_003: pass
+
+full_outer_join:
+  full_outer_join_001: pass
+  full_outer_join_002: pass
+  full_outer_join_003: pass
+
+functional_cast:
+  functional_cast_001: pass
+  functional_cast_002: pass
+  functional_cast_003: pass
+
+get_json_nested:
+  get_json_nested_001: pass
+  get_json_nested_002: pass
+  get_json_nested_003: pass
+
+get_json_numeric:
+  get_json_numeric_001: pass
+  get_json_numeric_002: pass
+  get_json_numeric_003: pass
+
+get_json_object:
+  get_json_object_001: pass
+  get_json_object_002: pass
+  get_json_object_003: pass
+
+greatest_least_nulls:
+  greatest_least_nulls_001: pass
+  greatest_least_nulls_002: pass
+  greatest_least_nulls_003: pass
+
+group-by:
+  group-by_001: pass
+  group-by_002: pass
+  group-by_003: fail  # unsupported: corr(DISTINCT x, y)
+  group-by_004: pass
+  group-by_005: pass
+  group-by_006: pass
+  group-by_007: fail  # row count 9 vs expected 0
+  group-by_008: pass
+  group-by_009: pass
+  group-by_010: pass
+  group-by_011: pass
+  group-by_012: pass
+  group-by_013: pass
+  group-by_014: pass
+  group-by_015: pass
+  group-by_016: fail  # row count 1 vs expected 0
+  group-by_017: fail  # result differs (got ('3', 'false', 'None') vs ('3', 'false', 'false'))
+  group-by_018: pass
+  group-by_019: pass
+  group-by_020: fail  # result differs (got ('3', 'false', 'None') vs ('3', 'false', 'false'))
+  group-by_021: pass
+  group-by_022: pass
+  group-by_023: pass
+  group-by_024: pass
+  group-by_025: pass
+  group-by_026: fail  # unsupported: histogram_numeric(col, 2)
+  group-by_027: fail  # unsupported: histogram_numeric(col, 3)
+  group-by_028: fail  # unsupported: histogram_numeric(col, 3)
+  group-by_029: fail  # unsupported: histogram_numeric(col, 3)
+  group-by_030: fail  # unsupported: histogram_numeric(col, 3)
+  group-by_031: fail  # unsupported: histogram_numeric(col, 3)
+  group-by_032: fail  # unsupported: histogram_numeric(col, 3)
+  group-by_033: fail  # unsupported: histogram_numeric(col, 3)
+  group-by_034: fail  # unsupported: histogram_numeric(col, 3)
+  group-by_035: fail  # unsupported: histogram_numeric(col, 3)
+  group-by_036: fail  # unsupported: histogram_numeric(col, 3)
+  group-by_037: fail  # unsupported: histogram_numeric(col, 3) — approximate histogram aggregate; no equivalent in Fe
+  group-by_038: fail  # unsupported: histogram_numeric(col, 3) - approximate histogram aggregate has no Feldera equiv
+  group-by_039: fail  # unsupported: histogram_numeric(col, 3)
+  group-by_040: fail  # unsupported: histogram_numeric(col, 3)
+  group-by_041: fail  # unsupported: histogram_numeric(col, 3)
+  group-by_042: fail  # unsupported: histogram_numeric(col, 3)
+  group-by_043: pass
+  group-by_044: pass
+  group-by_045: pass
+  group-by_046: fail  # result differs (got ('0', '2') vs ('-inf', '2'))
+  group-by_047: pass
+  group-by_048: pass
+  group-by_049: pass
+  group-by_050: pass
+  group-by_051: pass
+  group-by_052: pass
+  group-by_053: pass
+  group-by_054: fail  # unsupported: MAP<ARRAY<INT>, INT> — ARRAY keys not supported in Feldera MAP type
+  group-by_055: pass
+  group-by_056: pass
+  group-by_057: pass
+  group-by_058: fail  # unsupported: MAP literal as GROUP BY key — grouping by MAP<INT, MAP<INT,INT>>
+  group-by_059: pass
+  group-by_060: pass
+  group-by_061: pass
+  group-by_062: pass
+
+group_by_all:
+  group_by_all_001: pass
+  group_by_all_002: pass
+  group_by_all_003: pass
+
+grouping_id:
+  grouping_id_001: pass
+  grouping_id_002: pass
+  grouping_id_003: pass
+
+grouping_sets:
+  grouping_sets_001: pass
+  grouping_sets_002: pass
+  grouping_sets_003: pass
+
+having:
+  having_001: pass
+  having_002: pass
+  having_003: pass
+  having_004: pass
+  having_005: pass
+  having_006: pass
+  having_007: pass
+  having_008: fail  # row count 0 vs expected 1
+  having_009: pass
+  having_010: pass
+  having_011: pass
+  having_012: pass
+  having_013: pass
+  having_014: pass
+  having_015: pass
+  having_016: pass
+  having_017: pass
+  having_018: pass
+  having_019: pass
+  having_020: pass
+  having_021: pass
+  having_022: pass
+  having_023: pass
+  having_024: pass
+  having_025: pass
+  having_026: pass
+  having_027: pass
+  having_028: pass
+  having_029: pass
+  having_030: pass
+  having_031: pass
+  having_032: pass
+  having_033: pass
+  having_034: pass
+  having_035: fail  # row count 1 vs expected 0
+  having_036: pass
+  having_037: pass
+  having_038: pass
+  having_039: pass
+  having_040: pass
+  having_041: pass
+  having_042: pass
+  having_043: pass
+  having_044: pass
+  having_045: pass
+  having_046: pass
+  having_047: pass
+  having_048: error  # compile error: Compilation error From line 19, column 27 to line 19, column 38: Aggre
+
+hex_binary:
+  hex_binary_001: pass
+  hex_binary_002: pass
+  hex_binary_003: pass
+  hex_binary_004: pass
+  hex_binary_005: pass
+  hex_binary_006: pass
+
+hour_minute_second_func:
+  hour_minute_second_func_001: pass
+  hour_minute_second_func_002: pass
+  hour_minute_second_func_003: pass
+
+if_func:
+  if_func_001: pass
+  if_func_002: pass
+  if_func_003: pass
+
+ifnull_func:
+  ifnull_func_001: pass
+  ifnull_func_002: pass
+  ifnull_func_003: pass
+
+initcap_reverse_repeat:
+  initcap_reverse_repeat_002: pass
+
+inline_from_json:
+  inline_from_json_001: pass
+  inline_from_json_002: pass
+  inline_from_json_003: pass
+
+inline_unnest:
+  inline_unnest_001: pass
+  inline_unnest_002: pass
+  inline_unnest_003: pass
+
+instr:
+  instr_001: pass
+  instr_002: pass
+  instr_003: pass
+
+isnan:
+  isnan_001: pass
+  isnan_002: pass
+  isnan_003: pass
+
+isnull_isnotnull:
+  isnull_isnotnull_001: pass
+  isnull_isnotnull_002: pass
+  isnull_isnotnull_003: pass
+
+join_using:
+  join_using_001: pass
+  join_using_002: pass
+  join_using_003: pass
+
+json_array_len:
+  json_array_len_001: pass
+  json_array_len_002: pass
+  json_array_len_003: pass
+
+lag_lead:
+  lag_lead_001: pass
+  lag_lead_002: pass
+  lag_lead_003: pass
+
+last_day:
+  last_day_001: pass
+  last_day_002: pass
+  last_day_003: pass
+
+last_value_window:
+  last_value_window_001: pass
+  last_value_window_002: pass
+  last_value_window_003: pass
+
+lateral_view_explode:
+  lateral_view_explode_001: pass
+  lateral_view_explode_002: pass
+  lateral_view_explode_003: pass
+
+lateral_view_explode_map:
+  lateral_view_explode_map_001: pass
+  lateral_view_explode_map_002: pass
+  lateral_view_explode_map_003: pass
+
+lateral_view_from_json_array_map:
+  lateral_view_from_json_array_map_001: pass
+  lateral_view_from_json_array_map_002: pass
+  lateral_view_from_json_array_map_003: pass
+
+lateral_view_outer:
+  lateral_view_outer_001: fail  # row count 9 vs expected 12
+  lateral_view_outer_002: fail  # row count 6 vs expected 9
+  lateral_view_outer_003: fail  # row count 7 vs expected 10
+
+lateral_view_posexplode:
+  lateral_view_posexplode_001: pass
+  lateral_view_posexplode_002: pass
+  lateral_view_posexplode_003: pass
+
+left_anti_join:
+  left_anti_join_001: pass
+  left_anti_join_002: pass
+  left_anti_join_003: pass
+
+left_right_func:
+  left_right_func_001: pass
+  left_right_func_002: pass
+  left_right_func_003: pass
+
+ln_domain:
+  ln_domain_001: pass
+  ln_domain_002: pass
+  ln_domain_003: pass
+
+ln_log10:
+  ln_log10_001: pass
+  ln_log10_002: pass
+  ln_log10_003: pass
+
+locate:
+  locate_001: pass
+  locate_002: pass
+  locate_003: pass
+
+locate_pos:
+  locate_pos_001: pass
+  locate_pos_002: pass
+  locate_pos_003: pass
+
+log10_domain:
+  log10_domain_001: pass
+  log10_domain_002: pass
+  log10_domain_003: pass
+
+log2:
+  log2_001: pass
+  log2_002: pass
+  log2_003: pass
+
+log_base:
+  log_base_001: pass
+  log_base_002: pass
+  log_base_003: pass
+
+lpad:
+  lpad_001: pass
+  lpad_002: pass
+  lpad_003: pass
+
+lpad_2arg:
+  lpad_2arg_001: fail  # result differs (got ('6', '') vs ('6',))
+  lpad_2arg_002: pass
+  lpad_2arg_003: pass
+
+ltrim:
+  ltrim_001: pass
+  ltrim_002: pass
+  ltrim_003: pass
+
+make_date:
+  make_date_001: pass
+  make_date_002: pass
+  make_date_003: pass
+
+make_timestamp:
+  make_timestamp_001: pass
+  make_timestamp_002: pass
+  make_timestamp_003: pass
+
+map_contains_key:
+  map_contains_key_001: pass
+  map_contains_key_002: pass
+  map_contains_key_003: pass
+
+map_keys:
+  map_keys_001: pass
+  map_keys_002: pass
+  map_keys_003: pass
+
+map_values:
+  map_values_001: pass
+  map_values_002: pass
+  map_values_003: pass
+
+md5_ascii_chr:
+  md5_ascii_chr_001: pass
+  md5_ascii_chr_002: pass
+  md5_ascii_chr_003: pass
+
+mod_func:
+  mod_func_001: pass
+  mod_func_002: pass
+  mod_func_003: pass
+
+monotonically_increasing_id:
+  monotonically_increasing_id_001: fail  # unsupported: monotonically_increasing_id()
+  monotonically_increasing_id_002: fail  # unsupported: monotonically_increasing_id()
+  monotonically_increasing_id_003: fail  # unsupported: monotonically_increasing_id()
+
+months_between:
+  months_between_001: fail  # result differs (got ('3', '1') vs ('3', '1.46774194'))
+  months_between_002: fail  # row count 5 vs expected 7
+  months_between_003: fail  # result differs (got ('1001', '0') vs ('1001', '0.47'))
+
+multiple_views:
+  multiple_views_001: pass
+  multiple_views_002: pass
+  multiple_views_003: pass
+  multiple_views_004: pass
+  multiple_views_005: pass
+  multiple_views_006: pass
+  multiple_views_007: pass
+  multiple_views_008: pass
+  multiple_views_009: pass
+  multiple_views_010: pass
+  multiple_views_011: pass
+  multiple_views_012: pass
+  multiple_views_013: pass
+  multiple_views_014: pass
+  multiple_views_015: pass
+  multiple_views_016: pass
+  multiple_views_017: pass
+  multiple_views_018: pass
+  multiple_views_019: pass
+  multiple_views_020: pass
+  multiple_views_021: pass
+  multiple_views_022: pass
+  multiple_views_023: pass
+  multiple_views_024: pass
+  multiple_views_025: pass
+  multiple_views_026: pass
+  multiple_views_027: pass
+  multiple_views_028: pass
+  multiple_views_029: pass
+  multiple_views_030: pass
+  multiple_views_031: pass
+  multiple_views_032: pass
+  multiple_views_033: pass
+  multiple_views_034: pass
+  multiple_views_035: pass
+  multiple_views_036: pass
+  multiple_views_037: pass
+  multiple_views_038: pass
+  multiple_views_039: pass
+  multiple_views_040: pass
+  multiple_views_041: pass
+  multiple_views_042: pass
+  multiple_views_043: pass
+  multiple_views_044: pass
+  multiple_views_045: pass
+  multiple_views_046: pass
+  multiple_views_047: pass
+  multiple_views_048: pass
+  multiple_views_049: pass
+  multiple_views_050: pass
+
+multiple_views_dialect:
+  multiple_views_dialect_001: pass
+  multiple_views_dialect_002: pass
+  multiple_views_dialect_003: pass
+  multiple_views_dialect_004: pass
+  multiple_views_dialect_005: pass
+  multiple_views_dialect_006: pass
+  multiple_views_dialect_007: pass
+  multiple_views_dialect_008: pass
+  multiple_views_dialect_009: pass
+  multiple_views_dialect_010: pass
+  multiple_views_dialect_011: pass
+  multiple_views_dialect_012: pass
+  multiple_views_dialect_013: pass
+  multiple_views_dialect_014: pass
+  multiple_views_dialect_015: pass
+  multiple_views_dialect_016: pass
+  multiple_views_dialect_017: pass
+  multiple_views_dialect_018: pass
+  multiple_views_dialect_019: pass
+  multiple_views_dialect_020: pass
+  multiple_views_dialect_021: pass
+  multiple_views_dialect_022: pass
+  multiple_views_dialect_023: pass
+  multiple_views_dialect_024: pass
+  multiple_views_dialect_025: pass
+  multiple_views_dialect_026: pass
+  multiple_views_dialect_027: pass
+  multiple_views_dialect_028: pass
+  multiple_views_dialect_029: pass
+  multiple_views_dialect_030: pass
+  multiple_views_dialect_031: pass
+  multiple_views_dialect_032: pass
+  multiple_views_dialect_033: pass
+  multiple_views_dialect_034: pass
+  multiple_views_dialect_035: pass
+
+named_struct:
+  named_struct_001: pass
+  named_struct_002: pass
+  named_struct_003: pass
+
+natural_join:
+  natural_join_001: pass
+  natural_join_002: pass
+  natural_join_003: pass
+
+negative_substr:
+  negative_substr_001: pass
+  negative_substr_002: pass
+  negative_substr_003: pass
+
+null-handling:
+  null-handling_001: pass
+  null-handling_002: pass
+  null-handling_003: pass
+  null-handling_004: pass
+  null-handling_005: pass
+  null-handling_006: pass
+  null-handling_007: pass
+  null-handling_008: pass
+  null-handling_009: pass
+  null-handling_010: pass
+  null-handling_011: pass
+  null-handling_012: pass
+  null-handling_013: pass
+  null-handling_014: pass
+  null-handling_015: pass
+  null-handling_016: pass
+  null-handling_017: pass
+  null-handling_018: pass
+  null-handling_019: pass
+  null-handling_020: pass
+  null-handling_021: pass
+  null-handling_022: pass
+
+null_safe_eq:
+  null_safe_eq_001: pass
+  null_safe_eq_002: pass
+  null_safe_eq_003: pass
+
+nullifzero:
+  nullifzero_001: pass
+  nullifzero_002: pass
+  nullifzero_003: pass
+
+nvl:
+  nvl_001: pass
+  nvl_002: pass
+  nvl_003: pass
+
+nvl2:
+  nvl2_001: pass
+  nvl2_002: pass
+  nvl2_003: pass
+
+octet_length:
+  octet_length_001: pass
+  octet_length_002: pass
+  octet_length_003: pass
+
+operators:
+  operators_001: pass
+  operators_002: pass
+  operators_003: pass
+  operators_004: pass
+  operators_005: pass
+  operators_006: pass
+  operators_007: pass
+  operators_008: pass
+  operators_009: pass
+  operators_010: pass
+  operators_011: pass
+  operators_012: pass
+  operators_013: pass
+  operators_014: pass
+  operators_015: pass
+  operators_016: pass
+  operators_017: pass
+  operators_018: pass
+  operators_019: pass
+  operators_020: pass
+  operators_021: pass
+  operators_022: pass
+  operators_023: pass
+  operators_024: pass
+  operators_025: pass
+  operators_026: pass
+  operators_027: pass
+  operators_028: pass
+  operators_029: fail  # result differs (got ('None',) vs ('inf',))
+  operators_030: pass
+  operators_031: pass
+  operators_032: pass
+  operators_033: fail  # result differs (got ('None',) vs ('inf',))
+  operators_034: pass
+  operators_035: pass
+  operators_036: pass
+  operators_037: pass
+  operators_038: pass
+  operators_039: pass
+  operators_040: pass
+  operators_041: pass
+  operators_042: pass
+  operators_043: pass
+  operators_044: pass
+  operators_045: pass
+  operators_046: pass
+  operators_047: pass
+  operators_048: pass
+  operators_049: pass
+  operators_050: pass
+  operators_051: pass
+  operators_052: pass
+  operators_053: fail  # unsupported: width_bucket(5.35, 0.024, 10.06, 5)
+  operators_054: fail  # unsupported: width_bucket(5.35, 0.024, 10.06, 3 + 2)
+  operators_055: fail  # unsupported: width_bucket('5.35', '0.024', '10.06', '5')
+  operators_056: fail  # unsupported: width_bucket(5.35, 0.024, 10.06, 2.5)
+  operators_057: pass
+  operators_058: pass
+  operators_059: pass
+  operators_060: pass
+  operators_061: pass
+  operators_062: pass
+  operators_063: pass
+  operators_064: fail  # unsupported: width_bucket(5.35, 0.024, 10.06, 9223372036854775807 - 1)
+
+order-by:
+  order-by_001: pass
+  order-by_002: pass
+  order-by_003: pass
+  order-by_004: pass
+  order-by_005: pass
+  order-by_006: pass
+  order-by_007: pass
+  order-by_008: pass
+  order-by_009: pass
+  order-by_010: pass
+  order-by_011: pass
+  order-by_012: pass
+
+outer-join:
+  outer-join_002: pass
+
+overlay:
+  overlay_001: pass
+  overlay_002: pass
+  overlay_003: pass
+
+parse_json_group_by:
+  parse_json_group_by_001: pass
+  parse_json_group_by_002: pass
+  parse_json_group_by_003: pass
+
+parse_json_lateral_alias:
+  parse_json_lateral_alias_001: pass
+  parse_json_lateral_alias_002: pass
+  parse_json_lateral_alias_003: pass
+
+partitioned_by_ddl:
+  partitioned_by_ddl_001: pass
+  partitioned_by_ddl_002: pass
+  partitioned_by_ddl_003: pass
+
+pivot:
+  pivot_001: fail  # result differs (got ('1', '2', '1', '0') vs ('1', '2', '1', 'None'))
+  pivot_002: fail  # result differs (got ('101', '2', '1', '0') vs ('101', '2', '1', 'None')
+  pivot_003: fail  # result differs (got ('1', '0', '2', '1') vs ('1', 'None', '2', '1'))
+
+pmod:
+  pmod_001: pass
+  pmod_002: pass
+  pmod_003: pass
+
+positive_negative:
+  positive_negative_001: pass
+  positive_negative_002: pass
+  positive_negative_003: pass
+
+primary_key_constraint:
+  primary_key_constraint_001: pass
+  primary_key_constraint_002: pass
+  primary_key_constraint_003: pass
+
+qualify_clause:
+  qualify_clause_001: fail  # result differs (got ('2', 'Widget B', '2000. vs ('2', 'Widget B', '2000.)
+  qualify_clause_002: fail  # result differs (got ('101', 'Alice Smith', ' vs ('101', 'Alice Smith', ')
+  qualify_clause_003: fail  # result differs (got ('1002', '501', '180.5', vs ('1002', '501', '180.5',)
+
+quarter_func:
+  quarter_func_001: pass
+  quarter_func_002: pass
+  quarter_func_003: pass
+
+range_between_window:
+  range_between_window_001: pass
+  range_between_window_002: pass
+  range_between_window_003: pass
+
+rank_topk:
+  rank_topk_001: pass
+  rank_topk_002: pass
+  rank_topk_003: pass
+
+replace_regexp_replace:
+  replace_regexp_replace_001: pass
+  replace_regexp_replace_002: pass
+  replace_regexp_replace_003: pass
+
+rlike:
+  rlike_001: pass
+  rlike_002: pass
+  rlike_003: pass
+
+rollup:
+  rollup_001: pass
+  rollup_002: fail  # result differs (got ('Engineering', 'None',  vs ('Engineering', 'None', )
+  rollup_003: pass
+
+round_half:
+  round_half_001: pass
+  round_half_002: pass
+  round_half_003: pass
+
+row_number_topk:
+  row_number_topk_001: pass
+  row_number_topk_002: pass
+  row_number_topk_003: pass
+
+rpad:
+  rpad_001: pass
+  rpad_002: pass
+  rpad_003: pass
+
+rpad_2arg:
+  rpad_2arg_001: pass
+  rpad_2arg_002: pass
+  rpad_2arg_003: pass
+
+rtrim:
+  rtrim_001: pass
+  rtrim_002: pass
+  rtrim_003: pass
+
+safe_cast_default:
+  safe_cast_default_001: fail  # unsupported: TRY_CAST(value_str AS DOUBLE) — Feldera SAFE_CAST on DOUBLE target returns 0.0 i
+  safe_cast_default_002: fail  # unsupported: TRY_CAST(bool_str AS BOOLEAN)
+  safe_cast_default_003: fail  # unsupported: TRY_CAST(num_text AS DOUBLE)
+
+scalar_subquery_no_from:
+  scalar_subquery_no_from_001: pass
+  scalar_subquery_no_from_002: pass
+  scalar_subquery_no_from_003: pass
+
+sec:
+  sec_001: pass
+  sec_002: pass
+  sec_003: pass
+
+select_alias_chain:
+  select_alias_chain_001: pass
+  select_alias_chain_002: pass
+  select_alias_chain_003: pass
+
+select_no_from:
+  select_no_from_001: pass
+  select_no_from_002: pass
+  select_no_from_003: pass
+
+sequence_integer:
+  sequence_integer_001: pass
+  sequence_integer_002: fail  # row count 0 vs expected 5
+  sequence_integer_003: pass
+
+sign_func:
+  sign_func_001: pass
+  sign_func_002: pass
+  sign_func_003: pass
+
+size:
+  size_001: pass
+  size_002: pass
+  size_003: pass
+
+sort_array:
+  sort_array_001: pass
+  sort_array_002: pass
+  sort_array_003: pass
+
+split_3arg:
+  split_3arg_001: pass
+  split_3arg_002: fail  # unsupported: split(config_str, '|', 3) — 3-argument SPLIT with limit=3
+  split_3arg_003: fail  # unsupported: split(filepath, '/', 4) — 3-argument SPLIT with limit=4 changes semantics; Felde
+
+split_func:
+  split_func_001: pass
+  split_func_002: pass
+  split_func_003: pass
+
+split_regex:
+  split_regex_001: fail  # unsupported: split(code_str, '[0-9]+') — regex-based split
+  split_regex_002: fail  # unsupported: split(message, '\s+') — regex-based split
+  split_regex_003: fail  # unsupported: split(phone_input, '[^0-9]+') — regex delimiter not supported in Feldera SPLIT
+
+startswith:
+  startswith_001: pass
+  startswith_002: pass
+  startswith_003: pass
+
+stddev_cast:
+  stddev_cast_001: pass
+  stddev_cast_002: pass
+  stddev_cast_003: pass
+
+string-functions:
+  string-functions_001: pass
+  string-functions_002: pass
+  string-functions_003: pass
+  string-functions_004: fail  # unsupported: uuid()
+  string-functions_005: pass
+  string-functions_006: pass
+  string-functions_007: pass
+  string-functions_008: pass
+  string-functions_009: pass
+  string-functions_010: fail  # unsupported: split('aa1cc2ee3', '[1-9]+') — Feldera SPLIT does not support regex patterns
+  string-functions_011: fail  # unsupported: split('aa1cc2ee3', '[1-9]+', 2) - regex pattern delimiter and 3-argument limit f
+  string-functions_012: fail  # result differs (got ("['hello']",) vs ("['e', 'h', 'l', 'l', ')
+  string-functions_013: fail  # unsupported: split('hello', '', 0) — 3-argument form of split() with a limit is not supported
+  string-functions_014: fail  # unsupported: split('hello', '', 1) — 3-argument split() with limit not supported in Feldera
+  string-functions_015: fail  # unsupported: split('hello', '', 3) — 3-argument split with limit
+  string-functions_016: fail  # result differs (got ("['hello']",) vs ("['e', 'h', 'l', 'l', ')
+  string-functions_017: fail  # unsupported: split('hello', '', 100) — 3-argument form with limit is not supported in Feldera
+  string-functions_018: pass
+  string-functions_019: pass
+  string-functions_020: pass
+  string-functions_021: pass
+  string-functions_022: pass
+  string-functions_023: pass
+  string-functions_024: pass
+  string-functions_025: pass
+  string-functions_026: pass
+  string-functions_027: pass
+  string-functions_028: pass
+  string-functions_029: fail  # row count 1 vs expected 0
+  string-functions_030: fail  # row count 1 vs expected 0
+  string-functions_031: fail  # row count 1 vs expected 0
+  string-functions_032: pass
+  string-functions_033: pass
+  string-functions_034: pass
+  string-functions_035: pass
+  string-functions_036: pass
+  string-functions_037: pass
+  string-functions_038: pass
+  string-functions_039: pass
+  string-functions_040: pass
+  string-functions_041: pass
+  string-functions_042: pass
+  string-functions_043: pass
+  string-functions_044: pass
+  string-functions_045: pass
+  string-functions_046: pass
+  string-functions_047: pass
+  string-functions_048: pass
+  string-functions_049: pass
+  string-functions_050: pass
+  string-functions_051: pass
+  string-functions_052: pass
+  string-functions_053: pass
+  string-functions_054: pass
+  string-functions_055: pass
+  string-functions_056: fail  # unsupported: btrim(encode(' xyz ', 'utf-8')) — encode(str, charset) is not supported in Felde
+  string-functions_057: fail  # unsupported: btrim(encode('yxTomxx', 'utf-8'), encode('xyz', 'utf-8')) — depends on unsupport
+  string-functions_058: fail  # unsupported: btrim(encode('xxxbarxxx', 'utf-8'), encode('x', 'utf-8')) — encode(str, charset)
+  string-functions_059: fail  # unsupported: hex(lpad(unhex(''), 5)) - unhex() is not supported in Feldera
+  string-functions_060: fail  # unsupported: hex(lpad(unhex('aabb'), 5))
+  string-functions_061: fail  # unsupported: hex(lpad(unhex('aabbcc'), 2)) — unhex() has no Feldera equivalent
+  string-functions_062: fail  # unsupported: hex(lpad(unhex('123'), 2)) — unhex() binary hex decoding not supported in Felder
+  string-functions_063: fail  # unsupported: hex(lpad(unhex('12345'), 2)) — unhex() has no equivalent in Feldera
+  string-functions_064: fail  # unsupported: hex(lpad(unhex(''), 5, unhex('1f'))) - unhex() is not supported in Feldera; lpad
+  string-functions_065: fail  # unsupported: hex(lpad(unhex('aa'), 5, unhex('1f')))
+  string-functions_066: fail  # unsupported: hex(lpad(unhex('aa'), 6, unhex('1f'))) — unhex() binary hex decoding is not supp
+  string-functions_067: fail  # unsupported: hex(lpad(unhex(''), 5, unhex('1f2e'))) — unhex() not supported in Feldera
+  string-functions_068: fail  # unsupported: hex(lpad(unhex('aa'), 5, unhex('1f2e'))) — unhex() binary hex decoding not suppo
+  string-functions_069: fail  # unsupported: hex(lpad(unhex('aa'), 6, unhex('1f2e'))) — unhex() not supported in Feldera
+  string-functions_070: fail  # unsupported: unhex('')
+  string-functions_071: fail  # unsupported: hex(lpad(unhex('aabbcc'), 6, unhex('')))
+  string-functions_072: fail  # unsupported: hex(lpad(unhex('aabbcc'), 2, unhex('ff'))) — unhex() is not supported in Feldera
+  string-functions_073: fail  # unsupported: hex(rpad(unhex(''), 5)) — unhex() is not supported in Feldera; binary hex decodi
+  string-functions_074: fail  # unsupported: hex(rpad(unhex('aabb'), 5)) — entire chain depends on unhex which has no Feldera
+  string-functions_075: fail  # unsupported: hex(rpad(unhex('aabbcc'), 2)) — unhex('aabbcc') is not supported in Feldera; hex
+  string-functions_076: fail  # unsupported: hex(rpad(unhex('123'), 2)) — unhex() is not supported in Feldera; the entire exp
+  string-functions_077: fail  # unsupported: hex(rpad(unhex('12345'), 2)) — unhex() is not supported in Feldera
+  string-functions_078: fail  # unsupported: hex(rpad(unhex(''), 5, unhex('1f'))) — unhex() is not supported in Feldera; rpad
+  string-functions_079: fail  # unsupported: hex(rpad(unhex('aa'), 5, unhex('1f'))) — unhex() is not supported in Feldera; rp
+  string-functions_080: fail  # unsupported: hex(rpad(unhex('aa'), 6, unhex('1f'))) - unhex() not supported in Feldera; rpad
+  string-functions_081: fail  # unsupported: hex(rpad(unhex(''), 5, unhex('1f2e'))) - unhex() not supported in Feldera
+  string-functions_082: fail  # unsupported: hex(rpad(unhex('aa'), 5, unhex('1f2e')))
+  string-functions_083: fail  # unsupported: hex(rpad(unhex('aa'), 6, unhex('1f2e'))) — entire chain depends on unhex() which
+  string-functions_084: fail  # unsupported: hex(rpad(unhex(''), 6, unhex(''))) - unhex() is not supported in Feldera
+  string-functions_085: fail  # unsupported: hex(rpad(unhex('aabbcc'), 6, unhex(''))) — unhex() not supported in Feldera
+  string-functions_086: fail  # unsupported: hex(rpad(unhex('aabbcc'), 2, unhex('ff'))) — unhex() is not supported in Feldera
+  string-functions_087: fail  # unsupported: LPAD('abc', 5, x'57') — binary hex literal pad argument; CAST(x'57' AS VARCHAR)
+  string-functions_088: fail  # unsupported: LPAD(x'57', 5, 'abc') — LPAD does not support VARBINARY input in Feldera
+  string-functions_089: pass
+  string-functions_090: fail  # unsupported: RPAD(x'57', 5, 'abc') — RPAD with a binary hex literal as the first argument is
+  string-functions_091: fail  # unsupported: encode('hello', 'WINDOWS-1252')
+  string-functions_092: fail  # unsupported: encode(scol, ecol) — encode(str, charset) with a dynamic charset column is not s
+  string-functions_093: fail  # unsupported: encode('hello', 'WINDOWS-1252')
+  string-functions_094: fail  # unsupported: encode(scol, ecol) with dynamic charset column
+  string-functions_095: fail  # unsupported: encode('hello', 'Windows-xxx')
+  string-functions_096: fail  # unsupported: encode(scol, ecol) — binary encode with charset is not supported in Feldera
+  string-functions_097: fail  # unsupported: encode('渭城朝雨浥轻尘', 'US-ASCII')
+  string-functions_098: fail  # unsupported: encode(scol, ecol) — binary encode with charset is not supported in Feldera
+  string-functions_099: fail  # unsupported: encode(decode(encode('白日依山尽，黄河入海流。欲穷千里目，更上一层楼。', 'UTF-16'), 'UTF-16'), 'UTF-8')
+  string-functions_100: fail  # unsupported: encode(decode(encode('南山經之首曰䧿山。其首曰招搖之山，臨於西海之上。', 'UTF-16'), 'UTF-16'), 'UTF-8')
+  string-functions_101: fail  # unsupported: encode(decode(encode('세계에서 가장 인기 있는 빅데이터 처리 프레임워크인 Spark', 'UTF-16'), 'UTF-16'),
+  string-functions_102: fail  # unsupported: encode(decode(encode('το Spark είναι το πιο δημοφιλές πλαίσιο επεξεργασίας μεγάλ
+  string-functions_103: fail  # unsupported: encode(decode(encode('Sparkは世界で最も人気のあるビッグデータ処理フレームワークである。', 'UTF-16'), 'UTF-16')
+  string-functions_104: fail  # unsupported: decode(encode('abc', 'utf-8'), 'utf-8')
+  string-functions_105: fail  # unsupported: decode(encode('大千世界', 'utf-32'), 'utf-32')
+  string-functions_106: pass
+  string-functions_107: pass
+  string-functions_108: pass
+  string-functions_109: pass
+  string-functions_110: pass
+  string-functions_111: pass
+  string-functions_112: pass
+  string-functions_113: fail  # unsupported: decode(X'68656c6c6f', 'Windows-xxx') - charset decode of binary to string
+  string-functions_114: fail  # unsupported: decode(scol, ecol) — binary charset decode with dynamic/non-literal charset argu
+  string-functions_115: fail  # unsupported: decode(X'68656c6c6f', 'WINDOWS-1252')
+  string-functions_116: fail  # unsupported: decode(scol, ecol) — binary-to-string charset decoding has no Feldera equivalent
+  string-functions_117: fail  # unsupported: decode(x'68656c6c6f', 'WINDOWS-1252')
+  string-functions_118: fail  # unsupported: decode(scol, 'WINDOWS-1252') - binary decode with charset is not supported in Fe
+  string-functions_119: fail  # unsupported: decode(X'E58A9DE5909BE69BB4E5B0BDE4B880E69DAFE98592', 'US-ASCII') - decoding bin
+  string-functions_120: fail  # unsupported: decode(scol, 'US-ASCII') — binary charset decode not supported in Feldera
+  string-functions_121: pass
+  string-functions_122: pass
+  string-functions_123: pass
+  string-functions_124: pass
+  string-functions_125: pass
+  string-functions_126: pass
+  string-functions_127: pass
+  string-functions_128: pass
+  string-functions_129: pass
+  string-functions_130: pass
+  string-functions_131: pass
+  string-functions_132: pass
+  string-functions_133: pass
+  string-functions_134: pass
+  string-functions_135: pass
+  string-functions_136: pass
+  string-functions_137: pass
+  string-functions_138: pass
+  string-functions_139: pass
+  string-functions_140: pass
+  string-functions_141: fail  # unsupported: contains(true, 'ru') - contains() does not work on boolean args in Feldera
+  string-functions_142: pass
+  string-functions_143: fail  # unsupported: contains(true, false) - contains() does not work on boolean args in Feldera
+  string-functions_144: pass
+  string-functions_145: fail  # unsupported: startswith(x'537061726b2053514c', x'') — binary hex literal arguments; LEFT/RIGH
+  string-functions_146: fail  # unsupported: startswith(x'', x'') — binary hex literal arguments are not supported; LEFT does
+  string-functions_147: pass
+  string-functions_148: pass
+  string-functions_149: pass
+  string-functions_150: fail  # unsupported: endswith(x'537061726b2053514c', x'') with binary hex literal args
+  string-functions_151: fail  # unsupported: endsWith(x'', x'') — binary hex literal args not supported; LEFT/RIGHT do not wo
+  string-functions_152: pass
+  string-functions_153: fail  # unsupported: to_number('454', '000')
+  string-functions_154: fail  # unsupported: to_number('454.2', '000.0')
+  string-functions_155: fail  # unsupported: to_number('12,454', '00,000')
+  string-functions_156: fail  # unsupported: to_number('$78.12', '$00.00')
+  string-functions_157: fail  # unsupported: to_number('+454', 'S000')
+  string-functions_158: fail  # unsupported: to_number('-454', 'S000')
+  string-functions_159: fail  # unsupported: to_number('12,454.8-', '00,000.9MI')
+  string-functions_160: fail  # unsupported: to_number('00,454.8-', '00,000.9MI')
+  string-functions_161: fail  # unsupported: to_number('<00,454.8>', '00,000.9PR')
+  string-functions_162: fail  # unsupported: to_binary('', 'base64')
+  string-functions_163: fail  # unsupported: to_binary(' ', 'base64')
+  string-functions_164: fail  # unsupported: to_binary(' ab cd ', 'base64')
+  string-functions_165: fail  # unsupported: to_binary(' ab c=', 'base64')
+  string-functions_166: fail  # unsupported: to_binary(' ab cdef= = ', 'base64')
+  string-functions_167: fail  # unsupported: to_binary(concat(...), 'base64')
+  string-functions_168: fail  # unsupported: to_binary('a', 'base64')
+  string-functions_169: fail  # unsupported: to_binary('a?', 'base64')
+  string-functions_170: fail  # unsupported: to_binary('abcde', 'base64')
+  string-functions_171: fail  # unsupported: to_binary('abcd=', 'base64')
+  string-functions_172: fail  # unsupported: to_binary('a===', 'base64')
+  string-functions_173: fail  # unsupported: to_binary('ab==f', 'base64')
+  string-functions_174: fail  # unsupported: to_binary('∮ E⋅da = Q, n → ∞, ∑ f(i) = ∏ g(i), ∀x∈ℝ: ⌈x⌉ = −⌊−x⌋, α ∧ ¬β = ¬(¬α
+  string-functions_175: fail  # unsupported: to_binary('大千世界', 'utf8')
+  string-functions_176: fail  # unsupported: to_binary('', 'utf-8')
+  string-functions_177: fail  # unsupported: to_binary(' ', 'utf8')
+  string-functions_178: fail  # unsupported: to_binary('737472696E67')
+  string-functions_179: fail  # unsupported: to_binary('737472696E67', 'hex')
+  string-functions_180: fail  # unsupported: to_binary('')
+  string-functions_181: fail  # unsupported: to_binary('1', 'hex')
+  string-functions_182: fail  # unsupported: to_binary('FF')
+  string-functions_183: fail  # unsupported: to_binary('123', 'hex')
+  string-functions_184: fail  # unsupported: to_binary('12345', 'hex')
+  string-functions_185: fail  # unsupported: to_binary('GG')
+  string-functions_186: fail  # unsupported: to_binary('01 AF', 'hex')
+  string-functions_187: fail  # unsupported: to_binary('abc', concat('utf', '-8'))
+  string-functions_188: fail  # unsupported: to_binary(' ab cdef= = ', substr('base64whynot', 0, 6))
+  string-functions_189: fail  # unsupported: to_binary(' ab cdef= = ', replace('HEX0', '0'))
+  string-functions_190: fail  # unsupported: to_binary('abc', 'Hex')
+  string-functions_191: pass
+  string-functions_192: pass
+  string-functions_193: pass
+  string-functions_194: pass
+  string-functions_195: fail  # unsupported: luhn_check('4111111111111111')
+  string-functions_196: fail  # unsupported: luhn_check('5500000000000004')
+  string-functions_197: fail  # unsupported: luhn_check('340000000000009')
+  string-functions_198: fail  # unsupported: luhn_check('6011000000000004')
+  string-functions_199: fail  # unsupported: luhn_check('6011000000000005')
+  string-functions_200: fail  # unsupported: luhn_check('378282246310006')
+  string-functions_201: fail  # unsupported: luhn_check('0')
+  string-functions_202: fail  # unsupported: luhn_check('4111111111111111 ')
+  string-functions_203: fail  # unsupported: luhn_check('4111111 111111111')
+  string-functions_204: fail  # unsupported: luhn_check(' 4111111111111111')
+  string-functions_205: fail  # unsupported: luhn_check('')
+  string-functions_206: fail  # unsupported: luhn_check(' ')
+  string-functions_207: fail  # unsupported: luhn_check('510B105105105106')
+  string-functions_208: fail  # unsupported: luhn_check('ABCDED')
+  string-functions_209: pass
+  string-functions_210: fail  # unsupported: luhn_check(6011111111111117)
+  string-functions_211: fail  # unsupported: luhn_check(6011111111111118)
+  string-functions_212: fail  # unsupported: luhn_check(123.456)
+  string-functions_213: fail  # unsupported: is_valid_utf8('')
+  string-functions_214: fail  # unsupported: is_valid_utf8('abc')
+  string-functions_215: fail  # unsupported: is_valid_utf8(x'80')
+  string-functions_216: fail  # unsupported: make_valid_utf8('')
+  string-functions_217: fail  # unsupported: make_valid_utf8('abc')
+  string-functions_218: fail  # unsupported: make_valid_utf8(x'80')
+  string-functions_219: fail  # unsupported: validate_utf8('')
+  string-functions_220: fail  # unsupported: validate_utf8('abc')
+  string-functions_221: fail  # unsupported: validate_utf8(x'80')
+  string-functions_222: fail  # unsupported: try_validate_utf8('')
+  string-functions_223: fail  # unsupported: try_validate_utf8('abc')
+  string-functions_224: pass
+  string-functions_225: fail  # unsupported: quote('Spark')
+  string-functions_226: fail  # unsupported: quote(str)
+  string-functions_227: pass
+
+string_varchar:
+  string_varchar_001: pass
+  string_varchar_002: pass
+  string_varchar_003: pass
+
+struct_type:
+  struct_type_001: pass
+  struct_type_002: pass
+  struct_type_003: pass
+
+test:
+  test_001: pass
+  test_002: pass
+  test_003: pass
+  test_004: pass
+  test_005: pass
+  test_006: pass
+  test_007: fail  # result differs (got ('101', '2024-01-08 00:0 vs ('101', '2024-01-08 00:0)
+  test_008: pass
+  test_009: pass
+  test_010: pass
+  test_013: pass
+  test_014: pass
+  test_015: pass
+  test_016: pass
+  test_017: fail  # unsupported: NTILE(4) OVER (PARTITION BY store_id ORDER BY revenue DESC)
+  test_018: pass
+  test_019: pass
+  test_020: pass
+  test_021: fail  # unsupported: PERCENT_RANK() OVER (PARTITION BY class_id ORDER BY score)
+  test_022: pass
+  test_023: pass
+  test_024: pass
+  test_025: pass
+  test_026: pass
+  test_027: pass
+  test_028: pass
+  test_029: pass
+  test_030: pass
+  test_031: pass
+  test_032: pass
+  test_033: pass
+  test_034: pass
+  test_035: pass
+  test_036: pass
+  test_037: pass
+  test_038: pass
+  test_039: pass
+  test_040: pass
+  test_041: fail  # unsupported: approx_count_distinct(visitor_id)
+  test_042: pass
+  test_043: pass
+  test_044: pass
+  test_045: pass
+  test_046: pass
+  test_047: pass
+  test_048: pass
+  test_049: pass
+  test_050: fail  # result differs (got ('100', '[(\'amount\', \ vs ('100', 'None'))
+  test_051: pass
+  test_052: pass
+  test_053: pass
+  test_054: pass
+  test_055: pass
+  test_056: fail  # result differs (got ('None', '0', '0', '0') vs ('None', 'None', 'None',)
+  test_057: fail  # result differs (got ('100', "['None']") vs ('100', '[]'))
+  test_058: pass
+  test_059: fail  # result differs (got ('100', "['None']") vs ('100', '[]'))
+  test_060: pass
+  test_061: pass
+  test_062: pass
+  test_063: pass
+  test_064: fail  # unsupported: filter(tags, x -> x RLIKE '.*berry')
+  test_065: fail  # unsupported: zip_with(prices, taxes, (p, t) -> coalesce(p, CAST(0 AS DECIMAL(10,2))) + coales
+  test_066: fail  # unsupported: transform_keys(attrs, (k, v) -> upper(k))
+  test_067: fail  # unsupported: transform_values(attrs, (k, v) -> lower(v))
+  test_068: fail  # unsupported: flatten(nested_tags)
+  test_069: fail  # unsupported: sequence(start_date, end_date, INTERVAL 1 DAY) with DATE inputs — Feldera SEQUEN
+  test_070: pass
+  test_071: fail  # result differs (got ('1', "[('0', '1'), ('1' vs ('1', "[('row_id', '1'),)
+  test_072: fail  # unsupported: substring_index(full_url, '/', 3)
+  test_073: pass
+  test_074: pass
+  test_075: pass
+  test_076: fail  # unsupported: percentile_approx(amount, 0.5)
+  test_077: pass
+  test_078: pass
+  test_079: fail  # result differs (got ('Asia Pacific', '5733.3 vs ('Asia Pacific', '5733.3)
+  test_080: fail  # unsupported: NTH_VALUE(score, 2) OVER (PARTITION BY grp ORDER BY created_at ROWS BETWEEN UNBO
+  test_081: pass
+  test_082: pass
+  test_083: pass
+  test_084: pass
+  test_085: pass
+  test_086: pass
+  test_087: pass
+  test_088: pass
+  test_089: pass
+  test_090: pass
+  test_091: pass
+  test_093: pass
+  test_094: pass
+  test_095: pass
+  test_096: pass
+  test_097: fail  # unsupported: substring_index(full_url, '/', 3) -- Spark's substring_index extracts the substr
+  test_098: pass
+  test_099: pass
+  test_100: pass
+  test_101: pass
+  test_102: pass
+  test_103: pass
+  test_104: pass
+  test_105: pass
+  test_106: pass
+  test_107: pass
+  test_108: pass
+  test_109: pass
+  test_110: pass
+  test_111: pass
+  test_112: pass
+  test_113: fail  # unsupported: percentile_approx(amount, 0.5)
+  test_114: fail  # result differs (got ('Economy', '35.355339') vs ('Economy', '35.35533906)
+  test_115: fail  # unsupported: filter(nums, x -> x > 0) — Feldera has no higher-order FILTER function for array
+  test_116: pass
+  test_117: pass
+  test_118: pass
+  test_119: fail  # unsupported: map_concat(attrs, attrs2)
+  test_120: fail  # unsupported: SHA2(payload, 256)
+  test_121: fail  # unsupported: base64(CAST(payload AS BINARY))
+  test_122: pass
+  test_123: pass
+  test_124: pass
+  test_125: pass
+  test_126: fail  # unsupported: width_bucket(x, 0.0, 100.0, 10)
+  test_127: pass
+  test_128: pass
+  test_129: pass
+  test_131: fail  # unsupported: try_add(a, b)
+  test_132: pass
+  test_133: pass
+  test_134: pass
+  test_135: pass
+  test_136: pass
+  test_138: pass
+  test_139: pass
+  test_140: pass
+  test_141: pass
+  test_142: pass
+  test_143: pass
+  test_144: fail  # unsupported: levenshtein(query_term, catalog_name)
+  test_145: fail  # unsupported: format_string('Order #%d for %s: %s ($%.2f)', order_id, customer_name, status, a
+
+timestamp_ntz_ddl:
+  timestamp_ntz_ddl_001: fail  # row count 0 vs expected 6
+  timestamp_ntz_ddl_002: fail  # row count 0 vs expected 4
+  timestamp_ntz_ddl_003: fail  # row count 0 vs expected 4
+
+to_date_func:
+  to_date_func_001: pass
+  to_date_func_002: pass
+  to_date_func_003: pass
+
+to_date_try_to_timestamp:
+  to_date_try_to_timestamp_001: pass
+  to_date_try_to_timestamp_002: pass
+  to_date_try_to_timestamp_003: pass
+
+to_json_func:
+  to_json_func_001: fail  # result differs (got ('1', 'Alice', '[(\'0\', vs ('1', 'Alice', '[(\'age\)
+  to_json_func_002: fail  # result differs (got ('101', '[(\'0\', \'"Ele vs ('101', '[(\'available\')
+  to_json_func_003: fail  # result differs (got ('1000', '[(\'0\', \'"Lo vs ('1000', '[(\'code\', \')
+
+to_timestamp_str:
+  to_timestamp_str_001: pass
+  to_timestamp_str_002: pass
+  to_timestamp_str_003: pass
+
+transform_hof:
+  transform_hof_001: pass
+  transform_hof_002: pass
+  transform_hof_003: pass
+
+translate_str:
+  translate_str_001: pass
+  translate_str_002: pass
+  translate_str_003: pass
+
+trim_func:
+  trim_func_001: pass
+  trim_func_002: pass
+  trim_func_003: pass
+
+trunc_date:
+  trunc_date_001: pass
+  trunc_date_002: pass
+  trunc_date_003: pass
+
+try_cast:
+  try_cast_001: pass
+  try_cast_002: pass
+  try_cast_003: pass
+
+try_to_timestamp:
+  try_to_timestamp_001: pass
+  try_to_timestamp_002: pass
+  try_to_timestamp_003: pass
+
+union:
+  union_001: pass
+  union_002: pass
+  union_003: pass
+  union_004: pass
+  union_005: pass
+  union_006: pass
+
+unix_micros:
+  unix_micros_001: pass
+  unix_micros_002: pass
+  unix_micros_003: pass
+
+unix_millis:
+  unix_millis_001: pass
+  unix_millis_002: pass
+  unix_millis_003: pass
+
+unix_timestamp:
+  unix_timestamp_001: pass
+  unix_timestamp_002: pass
+  unix_timestamp_003: pass
+
+unpivot:
+  unpivot_001: pass
+
+upper_lower_length:
+  upper_lower_length_001: pass
+  upper_lower_length_002: pass
+  upper_lower_length_003: pass
+
+using_parquet:
+  using_parquet_001: pass
+  using_parquet_002: pass
+  using_parquet_003: pass
+
+values_parens:
+  values_parens_001: pass
+  values_parens_002: pass
+  values_parens_003: pass
+
+variant_reserved_word:
+  variant_reserved_word_001: pass
+  variant_reserved_word_002: pass
+  variant_reserved_word_003: pass
+
+weekofyear:
+  weekofyear_001: pass
+  weekofyear_002: pass
+  weekofyear_003: pass
+
+window:
+  window_001: fail  # unsupported: nth_value(employee_name, 2) OVER w
+  window_002: fail  # unsupported: NTH_VALUE(employee_name, 2) OVER w
+  window_003: fail  # unsupported: any_value(employee_name) OVER w
+  window_004: fail  # unsupported: FIRST_VALUE(employee_name) OVER (ORDER BY salary RANGE BETWEEN 2000 PRECEDING AN
+  window_005: fail  # unsupported: any_value(employee_name) OVER w — any_value() as a window function is not suppor
+  window_006: fail  # unsupported: NTH_VALUE(employee_name, 2) OVER w
+  window_007: fail  # unsupported: any_value(employee_name) OVER w
+  window_008: fail  # unsupported: NTH_VALUE(employee_name, 2) OVER w
+  window_009: fail  # unsupported: NTH_VALUE(employee_name, 2) OVER w
+  window_010: fail  # unsupported: NTH_VALUE(employee_name, 2) OVER w
+  window_011: fail  # unsupported: NTH_VALUE(v, 1) IGNORE NULLS
+  window_012: fail  # unsupported: nth_value(v, 1) IGNORE NULLS OVER w
+  window_013: fail  # unsupported: nth_value(v, 1) IGNORE NULLS OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING
+  window_014: fail  # unsupported: nth_value(v, 1) IGNORE NULLS OVER w
+  window_015: fail  # unsupported: nth_value(v, 1) IGNORE NULLS OVER (ORDER BY id ROWS BETWEEN 2 PRECEDING AND 2 FO
+  window_016: fail  # unsupported: nth_value(v, 1) IGNORE NULLS OVER w — NTH_VALUE is not implemented in Feldera
+  window_017: fail  # unsupported: nth_value(v, 1) IGNORE NULLS OVER w
+  window_018: fail  # unsupported: nth_value(v, 1) IGNORE NULLS OVER w
+  window_019: fail  # unsupported: nth_value(v, 1) IGNORE NULLS OVER w
+  window_020: pass
+
+window_count_min_max:
+  window_count_min_max_001: pass
+  window_count_min_max_002: fail  # result differs (got ('101', 'Engineering', ' vs ('101', 'Engineering', ')
+  window_count_min_max_003: pass
+
+window_sum_avg:
+  window_sum_avg_001: pass
+  window_sum_avg_002: fail  # result differs (got ('105', 'Bob', '7000', ' vs ('105', 'Bob', '7000', ')
+  window_sum_avg_003: pass
+
+year_month_func:
+  year_month_func_001: pass
+  year_month_func_002: pass
+  year_month_func_003: pass
+
+zeroifnull:
+  zeroifnull_001: pass
+  zeroifnull_002: pass
+  zeroifnull_003: pass

@@ -1,0 +1,4 @@
+1	error occurred	ERROR	14	5
+3	warning found	WARN	13	4
+4	debug	DEBUG	5	5
+5	critical issue	CRITICAL	14	8

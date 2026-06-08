@@ -1,0 +1,8 @@
+INSERT INTO session_profiles (session_id, user_id, tags, attributes, event_time) VALUES (1001, 101, array('vip', 'premium', 'active'), map('source', 'google', 'device', 'mobile'), CAST('2024-01-15 10:30:00' AS TIMESTAMP));
+INSERT INTO session_profiles (session_id, user_id, tags, attributes, event_time) VALUES (1002, 102, array('new', 'trial'), map('source', 'facebook', 'device', 'desktop'), CAST('2024-01-15 11:15:00' AS TIMESTAMP));
+INSERT INTO session_profiles (session_id, user_id, tags, attributes, event_time) VALUES (1003, 103, array('vip', 'loyal', 'engaged'), map('source', 'organic', 'device', 'tablet'), CAST('2024-01-15 12:00:00' AS TIMESTAMP));
+INSERT INTO session_profiles (session_id, user_id, tags, attributes, event_time) VALUES (1004, 104, array('premium'), map('source', 'direct', 'device', 'mobile'), CAST('2024-01-15 13:45:00' AS TIMESTAMP));
+INSERT INTO session_profiles (session_id, user_id, tags, attributes, event_time) VALUES (1005, 105, array('vip', 'beta_tester', 'frequent'), map('source', 'email', 'device', 'desktop'), CAST('2024-01-15 14:20:00' AS TIMESTAMP));
+INSERT INTO session_profiles (session_id, user_id, tags, attributes, event_time) VALUES (1006, 106, array('inactive', 'churn_risk'), map('source', 'google', 'device', 'mobile'), CAST('2024-01-15 15:30:00' AS TIMESTAMP));
+INSERT INTO session_profiles (session_id, user_id, tags, attributes, event_time) VALUES (1007, 107, array('vip', 'corporate'), map('source', 'linkedin', 'device', 'desktop'), CAST('2024-01-15 16:10:00' AS TIMESTAMP));
+INSERT INTO session_profiles (session_id, user_id, tags, attributes, event_time) VALUES (1008, 108, array('seasonal', 'holiday_shopper'), map('source', 'social_ads', 'device', 'tablet'), CAST('2024-01-15 17:00:00' AS TIMESTAMP));

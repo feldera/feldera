@@ -1,0 +1,1 @@
+INSERT INTO document_v1 VALUES (1, 'The quick brown fox jumps over the lazy dog'), (2, 'Apache Spark is a powerful data processing framework'), (3, 'SQL queries are fundamental to database operations'), (4, 'Machine learning models require careful tuning'), (5, 'Data pipeline optimization improves performance');

@@ -1,0 +1,2 @@
+CREATE VIEW operators_037 AS
+select ceil(1234567890123456);

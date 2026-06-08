@@ -1,0 +1,4 @@
+INSERT INTO order_items VALUES (1001, CAST('2024-01-15' AS DATE), array(named_struct('item_name', 'Laptop', 'quantity', 1, 'price', CAST(999.99 AS DECIMAL(10,2))), named_struct('item_name', 'Mouse', 'quantity', 2, 'price', CAST(25.50 AS DECIMAL(10,2)))));
+INSERT INTO order_items VALUES (1002, CAST('2024-01-16' AS DATE), array(named_struct('item_name', 'Monitor', 'quantity', 1, 'price', CAST(399.99 AS DECIMAL(10,2)))));
+INSERT INTO order_items VALUES (1003, CAST('2024-01-17' AS DATE), array(named_struct('item_name', 'Keyboard', 'quantity', 3, 'price', CAST(79.99 AS DECIMAL(10,2))), named_struct('item_name', 'USB Cable', 'quantity', 5, 'price', CAST(9.99 AS DECIMAL(10,2))), named_struct('item_name', 'HDMI Cable', 'quantity', 2, 'price', CAST(15.00 AS DECIMAL(10,2)))));
+INSERT INTO order_items VALUES (1004, CAST('2024-01-18' AS DATE), array(named_struct('item_name', 'Desk Lamp', 'quantity', 1, 'price', CAST(45.00 AS DECIMAL(10,2)))));

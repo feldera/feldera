@@ -1,0 +1,1 @@
+INSERT INTO sensor_readings_3 VALUES (1, 'zone_a', '[{"metric":"temp","reading":"22.5"},{"metric":"humidity","reading":"65"}]'), (2, 'zone_b', '[{"metric":"temp","reading":"19.8"},{"metric":"humidity","reading":"70"},{"metric":"co2","reading":"412"}]'), (3, 'zone_c', '[{"metric":"temp","reading":"25.1"}]');

@@ -1,0 +1,5 @@
+2	/home/user/documents/file.txt	['', 'home', 'user', 'documents/file.txt']
+4	/etc/config/app/settings.ini	['', 'etc', 'config', 'app/settings.ini']
+5	/opt/services/web/api/v1	['', 'opt', 'services', 'web/api/v1']
+3	/var/log/app/error.log	['', 'var', 'log', 'app/error.log']
+1	/usr/local/bin/python	['', 'usr', 'local', 'bin/python']

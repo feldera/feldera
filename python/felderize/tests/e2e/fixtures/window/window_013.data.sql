@@ -1,0 +1,9 @@
+INSERT INTO test_ignore_null (content, id, v) VALUES ('a', 0, null);
+INSERT INTO test_ignore_null (content, id, v) VALUES ('a', 1, 'x');
+INSERT INTO test_ignore_null (content, id, v) VALUES ('b', 2, null);
+INSERT INTO test_ignore_null (content, id, v) VALUES ('c', 3, null);
+INSERT INTO test_ignore_null (content, id, v) VALUES ('a', 4, 'y');
+INSERT INTO test_ignore_null (content, id, v) VALUES ('b', 5, null);
+INSERT INTO test_ignore_null (content, id, v) VALUES ('a', 6, 'z');
+INSERT INTO test_ignore_null (content, id, v) VALUES ('a', 7, 'v');
+INSERT INTO test_ignore_null (content, id, v) VALUES ('a', 8, null);

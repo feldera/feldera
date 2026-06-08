@@ -1,0 +1,6 @@
+1	https://api.example.com/users	/users
+7	https://endpoint.com/v1/data	/data
+8	https://api.test.org/admin	/admin
+3	https://service.io/health	/health
+4	https://app.local/login	/login
+6	https://static.io/img	/img

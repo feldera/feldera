@@ -1,0 +1,10 @@
+INSERT INTO orders (order_id, customer_id, region, amount, status, created_at) VALUES (1, 101, 'North America', CAST(1500.00 AS DECIMAL(12,2)), 'PAID', CAST('2024-01-15 10:30:00' AS TIMESTAMP));
+INSERT INTO orders (order_id, customer_id, region, amount, status, created_at) VALUES (2, 102, 'North America', CAST(2300.50 AS DECIMAL(12,2)), 'SHIPPED', CAST('2024-01-20 14:15:00' AS TIMESTAMP));
+INSERT INTO orders (order_id, customer_id, region, amount, status, created_at) VALUES (3, 103, 'Europe', CAST(1800.75 AS DECIMAL(12,2)), 'PAID', CAST('2024-01-10 09:45:00' AS TIMESTAMP));
+INSERT INTO orders (order_id, customer_id, region, amount, status, created_at) VALUES (4, 104, 'Europe', CAST(950.25 AS DECIMAL(12,2)), 'SHIPPED', CAST('2024-01-25 16:20:00' AS TIMESTAMP));
+INSERT INTO orders (order_id, customer_id, region, amount, status, created_at) VALUES (5, 105, 'Asia Pacific', CAST(3200.00 AS DECIMAL(12,2)), 'PAID', CAST('2024-01-05 11:00:00' AS TIMESTAMP));
+INSERT INTO orders (order_id, customer_id, region, amount, status, created_at) VALUES (6, 106, 'North America', CAST(1650.00 AS DECIMAL(12,2)), 'PAID', CAST('2024-02-12 13:30:00' AS TIMESTAMP));
+INSERT INTO orders (order_id, customer_id, region, amount, status, created_at) VALUES (7, 107, 'Europe', CAST(2100.50 AS DECIMAL(12,2)), 'SHIPPED', CAST('2024-02-18 10:15:00' AS TIMESTAMP));
+INSERT INTO orders (order_id, customer_id, region, amount, status, created_at) VALUES (8, 108, 'Asia Pacific', CAST(2750.25 AS DECIMAL(12,2)), 'PAID', CAST('2024-02-08 15:45:00' AS TIMESTAMP));
+INSERT INTO orders (order_id, customer_id, region, amount, status, created_at) VALUES (9, 109, 'North America', CAST(1200.00 AS DECIMAL(12,2)), 'PENDING', CAST('2024-01-28 12:00:00' AS TIMESTAMP));
+INSERT INTO orders (order_id, customer_id, region, amount, status, created_at) VALUES (10, 110, 'Latin America', CAST(1450.75 AS DECIMAL(12,2)), 'PAID', CAST('2024-02-14 09:30:00' AS TIMESTAMP));

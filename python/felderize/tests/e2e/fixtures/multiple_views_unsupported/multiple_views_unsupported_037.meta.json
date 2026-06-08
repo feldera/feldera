@@ -1,0 +1,8 @@
+{
+  "unsupported_features": [
+    "luhn_check"
+  ],
+  "view_with_unsupported": "multiple_views_unsupported_037_derived",
+  "description": "View multiple_views_unsupported_037_derived uses Spark `luhn_check`, which Feldera does not support; downstream views depend on its output.",
+  "expect_no_crash": true
+}

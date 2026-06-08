@@ -1,0 +1,9 @@
+a	0	None	None	x	y	z	None	None	None	None	None	None	None	None	None	None	None
+a	1	x	x	y	z	v	x	None	None	None	None	x	None	None	x	x	x
+b	2	None	None	y	z	v	None	x	None	None	None	x	None	None	x	x	x
+c	3	None	None	y	z	v	None	x	None	None	None	x	None	None	x	x	x
+a	4	y	y	z	v	None	y	x	None	None	None	x	y	None	x	x	y
+b	5	None	None	z	v	None	None	y	x	None	None	x	y	None	x	x	y
+a	6	z	z	v	None	None	z	y	x	None	None	x	y	z	x	x	z
+a	7	v	v	None	None	None	v	z	y	x	x	x	y	z	x	x	v
+a	8	None	None	None	None	None	None	v	z	y	y	x	y	z	x	x	v

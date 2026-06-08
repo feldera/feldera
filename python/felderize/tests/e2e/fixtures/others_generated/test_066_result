@@ -1,0 +1,5 @@
+5	{'LANGUAGE': 'english', 'GENRE': 'fiction'}
+2	{'FIT': 'slim', 'MATERIAL': 'cotton'}
+4	{'TYPE': 'outdoor', 'SEASON': 'summer'}
+3	{'WEIGHT': '2kg', 'FRAGILE': 'yes'}
+1	{'COLOR': 'red', 'SIZE': 'large'}

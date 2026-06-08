@@ -1,0 +1,1 @@
+INSERT INTO sales_log_v1 VALUES (1, 'North', 100.50, CAST('2024-01-01' AS DATE)), (2, 'North', 150.75, CAST('2024-01-05' AS DATE)), (3, 'North', 120.25, CAST('2024-01-10' AS DATE)), (4, 'South', 200.00, CAST('2024-01-02' AS DATE)), (5, 'South', 180.50, CAST('2024-01-08' AS DATE)), (6, 'East', 95.30, CAST('2024-01-03' AS DATE)), (7, 'East', 110.40, CAST('2024-01-09' AS DATE));

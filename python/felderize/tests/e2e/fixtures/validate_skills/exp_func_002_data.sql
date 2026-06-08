@@ -1,0 +1,1 @@
+INSERT INTO exponential_log_b VALUES (1, 0.0, 'zero'), (2, 3.0, 'positive'), (3, -3.0, 'negative'), (4, 0.1, 'small_pos'), (5, -0.5, 'small_neg'), (6, 1.5, 'medium'), (7, NULL, 'null_val'), (8, 10.0, 'large');
