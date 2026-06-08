@@ -7,9 +7,11 @@
 // against patterns recorded on the trust relationship (`*` is a wildcard).
 use crate::api::main::ServerState;
 use crate::api::util::parse_url_parameter;
+use crate::auth::AuthenticatedPrincipal;
+use crate::db::error::DBError;
 use crate::db::storage::Storage;
-use crate::db::types::api_key::ApiPermission;
-use crate::db::types::oidc_trust::OidcTrustId;
+use crate::db::types::oidc_trust::{pattern_is_concrete, OidcTrustId};
+use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use actix_web::{
@@ -50,6 +52,12 @@ pub(crate) struct NewOidcTrustRequest {
     #[schema(example = "feldera")]
     #[serde(default)]
     pub audience: Option<String>,
+
+    /// Role granted to a token that satisfies this trust. Capped at the
+    /// caller's own role. `owner` may be set only by an owner. Defaults to
+    /// `read`.
+    #[serde(default)]
+    pub role: Option<Role>,
 }
 
 /// Response to a successful create.
@@ -126,10 +134,51 @@ pub(crate) async fn get_oidc_trust(
 pub(crate) async fn post_oidc_trust(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    principal: ReqData<AuthenticatedPrincipal>,
     body: web::Json<NewOidcTrustRequest>,
 ) -> Result<HttpResponse, ManagerError> {
     let new_id = Uuid::now_v7();
     let body = body.into_inner();
+
+    // Mint cap: the granted role may not exceed the caller's role. An owner
+    // trust may be created only by an owner.
+    let requested = body.role.unwrap_or(Role::Read);
+    if requested > principal.role {
+        return Err(DBError::RoleExceedsCreator {
+            requested,
+            creator: principal.role,
+        }
+        .into());
+    }
+
+    // Breadth policy. `claim_matches` treats `*` anywhere in a pattern as a glob
+    // over any character run, so an unbounded pattern can authorize a wide set
+    // of tokens. `pattern_is_concrete` (defined next to the matcher) is the
+    // shared notion of "no wildcard".
+    let subject_concrete = pattern_is_concrete(&body.subject);
+    let audience_concrete = body.audience.as_deref().map(pattern_is_concrete);
+
+    // A wildcard subject with no concrete audience matches every token the
+    // issuer emits, i.e. the whole issuer acts as this tenant. Require a
+    // concrete audience to bound such a trust, at any role.
+    if !subject_concrete && audience_concrete != Some(true) {
+        return Err(DBError::OidcTrustTooBroad {
+            reason: "a wildcard 'subject' requires a concrete (non-wildcard) 'audience'"
+                .to_string(),
+        }
+        .into());
+    }
+    // Above `read`, both subject and audience must be concrete: an elevated
+    // trust must name exactly one workload identity, not a pattern.
+    if requested > Role::Read && !(subject_concrete && audience_concrete == Some(true)) {
+        return Err(DBError::OidcTrustTooBroad {
+            reason:
+                "subject and audience must be concrete (no '*' wildcard) for a role above 'read'"
+                    .to_string(),
+        }
+        .into());
+    }
+
     state
         .db
         .lock()
@@ -142,7 +191,7 @@ pub(crate) async fn post_oidc_trust(
             &body.issuer,
             &body.subject,
             body.audience.as_deref(),
-            vec![ApiPermission::Read, ApiPermission::Write],
+            requested,
         )
         .await?;
     info!(

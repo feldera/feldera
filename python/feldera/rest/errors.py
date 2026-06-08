@@ -79,16 +79,22 @@ class FelderaAPIError(FelderaError):
         if int(request.status_code) == 401:
             parsed = urlparse(request.request.url)
 
-            auth_err = f"\nAuthorization error: Failed to connect to '{parsed.scheme}://{parsed.hostname}': "
+            auth_err = f"\nAuthorization error at '{parsed.scheme}://{parsed.hostname}': "
             auth = request.request.headers.get("Authorization")
             if auth is None:
-                err_msg += f"{auth_err} API key not set"
+                err_msg += f"{auth_err}no credential provided"
             else:
-                err_msg += f"{auth_err} invalid API key"
+                # The credential may be an API key or a JWT/bearer token; do not
+                # assume which. The server `message` above carries the specifics.
+                err_msg += f"{auth_err}credential rejected (invalid or expired token / API key)"
 
         err_msg = err_msg.strip()
 
         super().__init__(err_msg)
+
+
+# Compatibility alias: the RFC and some docs refer to this as `FelderaApiError`.
+FelderaApiError = FelderaAPIError
 
 
 class FelderaTimeoutError(FelderaError):

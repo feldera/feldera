@@ -24,6 +24,33 @@ export type AdHocInputConfig = {
 export type AdHocResultFormat = 'text' | 'json' | 'parquet' | 'arrow_ipc' | 'hash'
 
 /**
+ * Request to pre-provision a tenant member by identity, before the user's
+ * first login.
+ */
+export type AddMemberRequest = {
+  /**
+   * Optional email for display in the member list.
+   */
+  email?: string | null
+  /**
+   * OIDC issuer the user authenticates through (matches the JWT `iss` claim).
+   */
+  provider: string
+  role: Role
+  /**
+   * OIDC subject (matches the JWT `sub` claim).
+   */
+  subject: string
+}
+
+/**
+ * Response to a successful member pre-provisioning.
+ */
+export type AddMemberResponse = {
+  user_id: UserId
+}
+
+/**
  * Arguments to the `/query` endpoint.
  *
  * The arguments can be provided in two ways:
@@ -45,22 +72,20 @@ export type AdhocQueryArgs = {
 
 /**
  * API key descriptor.
+ *
+ * A key carries a single [`Role`], capped at `write`: `admin` and `owner` are
+ * never issuable as static keys (see [`crate::db::types::role::MintableKeyRole`]).
  */
 export type ApiKeyDescr = {
   id: ApiKeyId
   name: string
-  scopes: Array<ApiPermission>
+  role: Role
 }
 
 /**
  * API key identifier.
  */
 export type ApiKeyId = string
-
-/**
- * Permission types for invoking API endpoints.
- */
-export type ApiPermission = 'Read' | 'Write'
 
 export type Auth = {
   credentials?: Credentials | null
@@ -1703,6 +1728,10 @@ export type DevTweaks = {
    */
   now_offset?: string | null
   /**
+   * Optimize input operators during transaction commit.
+   */
+  optimize_input_during_commit?: boolean | null
+  /**
    * Controls the maximal number of records output by splitter operators
    * (joins, distinct, aggregation, rolling window and group operators) at
    * each step.
@@ -1725,8 +1754,6 @@ export type DevTweaks = {
   storage_mb_max?: number | null
   /**
    * Enable streaming exchange.
-   *
-   * `false`
    */
   streaming_exchange?: boolean | null
   [key: string]: unknown
@@ -1781,6 +1808,18 @@ export type DynamoDbWriterConfig = {
    */
   batch_size?: number | null
   /**
+   * [Condition expression] evaluated before each delete.
+   *
+   * When the condition is false, the delete is skipped without failing the
+   * connector. This option requires `transactional` [`write_mode`]. The
+   * expression cannot use `ExpressionAttributeNames` or
+   * `ExpressionAttributeValues` placeholders.
+   *
+   * [Condition expression]: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.ConditionExpressions.html
+   * [`write_mode`]: Self::write_mode
+   */
+  delete_condition_expression?: string | null
+  /**
    * Optional endpoint URL, for example when using a local
    * DynamoDB-compatible service.
    */
@@ -1817,6 +1856,25 @@ export type DynamoDbWriterConfig = {
    * Defaults to `10`.
    */
   max_retries?: number | null
+  /**
+   * [Condition expression] evaluated before each put (insert or upsert).
+   *
+   * When the condition is false, the record is skipped without failing the
+   * connector. This option requires `transactional` [`write_mode`].
+   *
+   * The condition gates every value write, and the connector cannot tell a
+   * replayed insert from a legitimate update: both arrive as puts. A guard
+   * such as `attribute_not_exists(id)` therefore also suppresses updates to
+   * existing keys, not just replayed duplicates. Choose the expression
+   * accordingly.
+   *
+   * The connector does not currently support `ExpressionAttributeNames` or
+   * `ExpressionAttributeValues`, so the expression cannot use placeholders.
+   *
+   * [Condition expression]: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.ConditionExpressions.html
+   * [`write_mode`]: Self::write_mode
+   */
+  put_condition_expression?: string | null
   /**
    * AWS region.
    */
@@ -3118,6 +3176,7 @@ export type NewApiKeyRequest = {
    * Key name.
    */
   name: string
+  role?: Role | null
 }
 
 /**
@@ -3133,6 +3192,63 @@ export type NewApiKeyResponse = {
   /**
    * API key name provided by the user.
    */
+  name: string
+}
+
+/**
+ * Request to create a new OIDC trust relationship.
+ */
+export type NewOidcTrustRequest = {
+  /**
+   * Optional audience claim pattern. `*` matches any sequence of characters.
+   * If omitted, the audience claim is not checked.
+   */
+  audience?: string | null
+  /**
+   * Optional human-readable description.
+   */
+  description?: string | null
+  /**
+   * Issuer URL exactly as it appears in the `iss` claim.
+   * JWKS are discovered at `<issuer>/.well-known/openid-configuration`.
+   */
+  issuer: string
+  /**
+   * Trust relationship name. Unique within the tenant.
+   */
+  name: string
+  role?: Role | null
+  /**
+   * Subject claim pattern. `*` matches any sequence of characters.
+   */
+  subject: string
+}
+
+/**
+ * Response to a successful create.
+ */
+export type NewOidcTrustResponse = {
+  id: OidcTrustId
+  name: string
+}
+
+/**
+ * Request to create a tenant (owner-only).
+ */
+export type NewTenantRequest = {
+  name: string
+  /**
+   * Identity provider the tenant is keyed under. Defaults to `manual` for
+   * tenants created out of band by an owner.
+   */
+  provider?: string | null
+}
+
+/**
+ * Response to a successful tenant creation.
+ */
+export type NewTenantResponse = {
+  id: TenantId
   name: string
 }
 
@@ -3221,6 +3337,27 @@ export type ObjectStorageConfig = {
   url: string
   [key: string]: string
 }
+
+/**
+ * Trust relationship descriptor returned to clients.
+ *
+ * Wildcards: a `*` in `subject` or `audience` matches any sequence of
+ * characters; all other characters must match exactly.
+ */
+export type OidcTrustDescr = {
+  audience?: string | null
+  description?: string | null
+  id: OidcTrustId
+  issuer: string
+  name: string
+  role: Role
+  subject: string
+}
+
+/**
+ * Trust relationship identifier.
+ */
+export type OidcTrustId = string
 
 export type Op = {
   kind: string
@@ -3724,6 +3861,23 @@ export type PipelineDiff = {
   program_diff_error?: string | null
   removed_input_connectors: Array<string>
   removed_output_connectors: Array<string>
+}
+
+/**
+ * Request body for the pipeline diff endpoint.
+ */
+export type PipelineDiffRequest = {
+  /**
+   * New SQL program code to compare against. If omitted, the pipeline's
+   * current program code is used.
+   */
+  program_code?: string | null
+  /**
+   * Runtime version to compile the new program with: a version tag
+   * (`vX.Y.Z`) or a 40-character git SHA. If omitted, the platform's default
+   * runtime is used.
+   */
+  runtime_version?: string | null
 }
 
 export type PipelineFieldSelector = 'all' | 'status' | 'status_with_connectors'
@@ -4757,6 +4911,11 @@ export type RngFieldSettings = {
 }
 
 /**
+ * A role in the RBAC model. Declaration order defines the privilege order.
+ */
+export type Role = 'read' | 'write' | 'admin' | 'owner'
+
+/**
  * Global pipeline configuration settings. This is the publicly
  * exposed type for users to configure pipelines.
  */
@@ -5148,11 +5307,23 @@ export type ServiceStatus = {
 }
 
 export type SessionInfo = {
+  /**
+   * Whether the caller is a platform owner.
+   */
+  is_owner: boolean
+  role: Role
   tenant_id: TenantId
   /**
    * Current user's tenant name
    */
   tenant_name: string
+}
+
+/**
+ * Request to assign a role to a user within a tenant.
+ */
+export type SetMemberRoleRequest = {
+  role: Role
 }
 
 /**
@@ -5594,6 +5765,35 @@ export type TemporarySuspendError =
 export type TenantId = string
 
 /**
+ * A tenant, as returned by the platform (owner-only) tenant list.
+ */
+export type TenantInfo = {
+  id: TenantId
+  name: string
+  provider: string
+}
+
+/**
+ * A member of a tenant, as returned by the user-management API.
+ */
+export type TenantMember = {
+  /**
+   * Email, if the identity provider supplied one.
+   */
+  email?: string | null
+  /**
+   * OIDC issuer the user authenticates through.
+   */
+  provider: string
+  role: Role
+  /**
+   * OIDC subject.
+   */
+  subject: string
+  user_id: UserId
+}
+
+/**
  * Time series to make graphs in the web console easier.
  */
 export type TimeSeries = {
@@ -5778,6 +5978,62 @@ export type UserAndPassword = {
   password: string
   user: string
 }
+
+/**
+ * Identifier of a persisted user (the principal behind an OIDC `sub`).
+ */
+export type UserId = string
+
+/**
+ * Request body for the program validation endpoint.
+ */
+export type ValidateProgramRequest = {
+  /**
+   * Return the program IR (dataflow) in the response. `false` by default;
+   * most callers only need to know whether the program is valid.
+   */
+  ir?: boolean
+  /**
+   * SQL program code to validate.
+   */
+  program_code: string
+  /**
+   * Runtime version to compile with: a version tag (`vX.Y.Z`) or a
+   * 40-character git SHA. If omitted, the platform's default runtime is used.
+   */
+  runtime_version?: string | null
+}
+
+/**
+ * Outcome of validating a SQL program.
+ */
+export type ValidateProgramResponse =
+  | {
+      /**
+       * Validation succeeded; `program_info` is the serialized `ProgramInfo` with
+       * the Rust artifacts omitted (and the dataflow omitted unless `ir` was set).
+       */
+      Success: {
+        program_info: unknown
+      }
+    }
+  | {
+      /**
+       * The SQL program failed to compile.
+       */
+      SqlError: {
+        info: SqlCompilationInfo
+      }
+    }
+  | {
+      /**
+       * A system error prevented validation (e.g., the runtime-specific SQL
+       * compiler could not be downloaded).
+       */
+      SystemError: {
+        error: string
+      }
+    }
 
 /**
  * Version number.
@@ -6085,6 +6341,115 @@ export type GetMetricsResponses = {
 }
 
 export type GetMetricsResponse = GetMetricsResponses[keyof GetMetricsResponses]
+
+export type ListOidcTrustData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/v0/oidc_trust'
+}
+
+export type ListOidcTrustErrors = {
+  500: ErrorResponse
+}
+
+export type ListOidcTrustError = ListOidcTrustErrors[keyof ListOidcTrustErrors]
+
+export type ListOidcTrustResponses = {
+  /**
+   * Trust relationships retrieved
+   */
+  200: Array<OidcTrustDescr>
+}
+
+export type ListOidcTrustResponse = ListOidcTrustResponses[keyof ListOidcTrustResponses]
+
+export type PostOidcTrustData = {
+  body: NewOidcTrustRequest
+  path?: never
+  query?: never
+  url: '/v0/oidc_trust'
+}
+
+export type PostOidcTrustErrors = {
+  /**
+   * Invalid request
+   */
+  400: ErrorResponse
+  /**
+   * Name already in use
+   */
+  409: ErrorResponse
+}
+
+export type PostOidcTrustError = PostOidcTrustErrors[keyof PostOidcTrustErrors]
+
+export type PostOidcTrustResponses = {
+  /**
+   * Trust relationship created
+   */
+  201: NewOidcTrustResponse
+}
+
+export type PostOidcTrustResponse = PostOidcTrustResponses[keyof PostOidcTrustResponses]
+
+export type DeleteOidcTrustData = {
+  body?: never
+  path: {
+    /**
+     * Trust relationship name
+     */
+    name: string
+  }
+  query?: never
+  url: '/v0/oidc_trust/{name}'
+}
+
+export type DeleteOidcTrustErrors = {
+  /**
+   * No relationship with that name
+   */
+  404: ErrorResponse
+}
+
+export type DeleteOidcTrustError = DeleteOidcTrustErrors[keyof DeleteOidcTrustErrors]
+
+export type DeleteOidcTrustResponses = {
+  /**
+   * Trust relationship deleted
+   */
+  200: unknown
+}
+
+export type GetOidcTrustData = {
+  body?: never
+  path: {
+    /**
+     * Trust relationship name
+     */
+    name: string
+  }
+  query?: never
+  url: '/v0/oidc_trust/{name}'
+}
+
+export type GetOidcTrustErrors = {
+  /**
+   * No relationship with that name
+   */
+  404: ErrorResponse
+}
+
+export type GetOidcTrustError = GetOidcTrustErrors[keyof GetOidcTrustErrors]
+
+export type GetOidcTrustResponses = {
+  /**
+   * Trust relationship retrieved
+   */
+  200: OidcTrustDescr
+}
+
+export type GetOidcTrustResponse = GetOidcTrustResponses[keyof GetOidcTrustResponses]
 
 export type ListPipelinesData = {
   body?: never
@@ -6822,6 +7187,52 @@ export type GetPipelineDataflowGraphResponses = {
 
 export type GetPipelineDataflowGraphResponse =
   GetPipelineDataflowGraphResponses[keyof GetPipelineDataflowGraphResponses]
+
+export type PostPipelineDiffData = {
+  /**
+   * The proposed new SQL program and/or runtime version (both optional)
+   */
+  body: PipelineDiffRequest
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: never
+  url: '/v0/pipelines/{pipeline_name}/diff'
+}
+
+export type PostPipelineDiffErrors = {
+  /**
+   * The new program failed to compile or the change cannot be bootstrapped
+   */
+  400: ErrorResponse
+  /**
+   * Pipeline does not exist or its current program has not been compiled
+   */
+  404: ErrorResponse
+  500: ErrorResponse
+  /**
+   * The compiler service is unavailable
+   */
+  503: ErrorResponse
+  /**
+   * The compiler did not respond within the configured timeout
+   */
+  504: ErrorResponse
+}
+
+export type PostPipelineDiffError = PostPipelineDiffErrors[keyof PostPipelineDiffErrors]
+
+export type PostPipelineDiffResponses = {
+  /**
+   * Diff successfully computed
+   */
+  200: PipelineDiff
+}
+
+export type PostPipelineDiffResponse = PostPipelineDiffResponses[keyof PostPipelineDiffResponses]
 
 export type PostPipelineDismissErrorData = {
   body?: never
@@ -7933,3 +8344,191 @@ export type GetPipelineOutputConnectorStatusResponses = {
 
 export type GetPipelineOutputConnectorStatusResponse =
   GetPipelineOutputConnectorStatusResponses[keyof GetPipelineOutputConnectorStatusResponses]
+
+export type ListTenantUsersData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/v0/tenant/users'
+}
+
+export type ListTenantUsersErrors = {
+  500: ErrorResponse
+}
+
+export type ListTenantUsersError = ListTenantUsersErrors[keyof ListTenantUsersErrors]
+
+export type ListTenantUsersResponses = {
+  /**
+   * Members retrieved
+   */
+  200: Array<TenantMember>
+}
+
+export type ListTenantUsersResponse = ListTenantUsersResponses[keyof ListTenantUsersResponses]
+
+export type AddTenantUserData = {
+  body: AddMemberRequest
+  path?: never
+  query?: never
+  url: '/v0/tenant/users'
+}
+
+export type AddTenantUserErrors = {
+  /**
+   * Requested role exceeds caller's role or is owner
+   */
+  403: ErrorResponse
+}
+
+export type AddTenantUserError = AddTenantUserErrors[keyof AddTenantUserErrors]
+
+export type AddTenantUserResponses = {
+  /**
+   * Member added
+   */
+  200: AddMemberResponse
+}
+
+export type AddTenantUserResponse = AddTenantUserResponses[keyof AddTenantUserResponses]
+
+export type DeleteTenantUserData = {
+  body?: never
+  path: {
+    /**
+     * User identifier
+     */
+    user_id: string
+  }
+  query?: never
+  url: '/v0/tenant/users/{user_id}'
+}
+
+export type DeleteTenantUserErrors = {
+  /**
+   * User is not a member
+   */
+  404: ErrorResponse
+}
+
+export type DeleteTenantUserError = DeleteTenantUserErrors[keyof DeleteTenantUserErrors]
+
+export type DeleteTenantUserResponses = {
+  /**
+   * Member removed
+   */
+  200: unknown
+}
+
+export type PutTenantUserData = {
+  body: SetMemberRoleRequest
+  path: {
+    /**
+     * User identifier
+     */
+    user_id: string
+  }
+  query?: never
+  url: '/v0/tenant/users/{user_id}'
+}
+
+export type PutTenantUserErrors = {
+  /**
+   * Requested role exceeds caller's role or is owner
+   */
+  403: ErrorResponse
+}
+
+export type PutTenantUserError = PutTenantUserErrors[keyof PutTenantUserErrors]
+
+export type PutTenantUserResponses = {
+  /**
+   * Role assigned
+   */
+  200: unknown
+}
+
+export type ListTenantsData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/v0/tenants'
+}
+
+export type ListTenantsErrors = {
+  500: ErrorResponse
+}
+
+export type ListTenantsError = ListTenantsErrors[keyof ListTenantsErrors]
+
+export type ListTenantsResponses = {
+  /**
+   * Tenants retrieved
+   */
+  200: Array<TenantInfo>
+}
+
+export type ListTenantsResponse = ListTenantsResponses[keyof ListTenantsResponses]
+
+export type CreateTenantData = {
+  body: NewTenantRequest
+  path?: never
+  query?: never
+  url: '/v0/tenants'
+}
+
+export type CreateTenantErrors = {
+  /**
+   * A tenant with that name and provider already exists
+   */
+  409: ErrorResponse
+}
+
+export type CreateTenantError = CreateTenantErrors[keyof CreateTenantErrors]
+
+export type CreateTenantResponses = {
+  /**
+   * Tenant created
+   */
+  201: NewTenantResponse
+}
+
+export type CreateTenantResponse = CreateTenantResponses[keyof CreateTenantResponses]
+
+export type PostValidateProgramData = {
+  /**
+   * The SQL program to validate, an optional runtime version, and whether to return the IR
+   */
+  body: ValidateProgramRequest
+  path?: never
+  query?: never
+  url: '/v0/validate_program'
+}
+
+export type PostValidateProgramErrors = {
+  /**
+   * The requested runtime version is invalid
+   */
+  400: ErrorResponse
+  500: ErrorResponse
+  /**
+   * The compiler service is unavailable
+   */
+  503: ErrorResponse
+  /**
+   * The compiler did not respond within the configured timeout
+   */
+  504: ErrorResponse
+}
+
+export type PostValidateProgramError = PostValidateProgramErrors[keyof PostValidateProgramErrors]
+
+export type PostValidateProgramResponses = {
+  /**
+   * Validation completed; the body reports success, SQL errors, or a system error
+   */
+  200: ValidateProgramResponse
+}
+
+export type PostValidateProgramResponse =
+  PostValidateProgramResponses[keyof PostValidateProgramResponses]

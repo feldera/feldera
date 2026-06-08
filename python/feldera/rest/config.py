@@ -27,6 +27,7 @@ class Config:
         connection_timeout: Optional[float] = None,
         requests_verify: Optional[bool | str] = None,
         retry_config: Optional[RetryConfig] = None,
+        tenant: Optional[str] = None,
     ) -> None:
         """
         See documentation of the `FelderaClient` constructor for the other arguments.
@@ -35,10 +36,15 @@ class Config:
             Default: `v0`.
         :param retry_config: (Optional) Retry behavior for transient HTTP failures.
             Default: `RetryConfig()` — 3 retries with exponential backoff starting at 2 seconds.
+        :param tenant: (Optional) Tenant to act in, sent as the `Feldera-Tenant`
+            header. A platform owner uses this to select any tenant (by name or
+            UUID); a regular user, to disambiguate among the tenants their token
+            authorizes. Default: the token's own/home tenant.
         """
         self.url: str = url or os.environ.get("FELDERA_HOST") or "http://localhost:8080"
         self.api_key: Optional[ApiKey] = api_key or os.environ.get("FELDERA_API_KEY")
         self.version: str = version or "v0"
+        self.tenant: Optional[str] = tenant or os.environ.get("FELDERA_TENANT")
         self.timeout: Optional[float] = timeout
         self.connection_timeout: Optional[float] = connection_timeout
         self.retry_config: RetryConfig = retry_config or RetryConfig()

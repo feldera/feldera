@@ -11,34 +11,39 @@ use feldera_rest_api::types::{
 /// Autocompletion for pipeline names by trying to fetch them from the server.
 fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     let mut completions = vec![];
-    // We parse FELDERA_HOST and FELDERA_API_KEY from the environment
-    // using the `try_parse_from` method.
-    let cli = Cli::try_parse_from(["fda", "pipelines"]);
-    if let Ok(cli) = cli {
-        let client = make_client(
-            cli.host,
-            cli.insecure,
-            cli.tls_cert,
-            cli.auth,
-            cli.auth_token_command,
-            cli.timeout,
-        )
-        .unwrap();
+    // Parse FELDERA_HOST / FELDERA_API_KEY from the environment.
+    let Ok(cli) = Cli::try_parse_from(["fda", "pipelines"]) else {
+        return completions;
+    };
+    // Never resolve `--auth-token-command` for completion: it would execute the
+    // user's token command (e.g. `gcloud auth print-access-token`) on every Tab
+    // press. Static API keys are cheap, so pass those through; token-command
+    // users simply get no pipeline-name completion (a failed/anonymous list
+    // returns nothing rather than panicking).
+    let Ok(client) = make_client(
+        cli.host,
+        cli.insecure,
+        cli.tls_cert,
+        cli.auth,
+        None,
+        cli.timeout,
+    ) else {
+        return completions;
+    };
 
-        let r = futures::executor::block_on(async {
-            client
-                .list_pipelines()
-                .send()
-                .await
-                .map(|r| r.into_inner())
-                .unwrap_or_else(|_| vec![])
-        });
+    let r = futures::executor::block_on(async {
+        client
+            .list_pipelines()
+            .send()
+            .await
+            .map(|r| r.into_inner())
+            .unwrap_or_default()
+    });
 
-        let current = current.to_string_lossy();
-        for pipeline in r {
-            if pipeline.name.starts_with(current.as_ref()) {
-                completions.push(CompletionCandidate::new(pipeline.name));
-            }
+    let current = current.to_string_lossy();
+    for pipeline in r {
+        if pipeline.name.starts_with(current.as_ref()) {
+            completions.push(CompletionCandidate::new(pipeline.name));
         }
     }
 
@@ -118,10 +123,12 @@ pub struct Cli {
     pub auth: Option<String>,
     /// Shell command that prints a bearer token on stdout.
     ///
-    /// Run before every request; the trimmed stdout becomes the
-    /// `Authorization: Bearer <token>` header. Use for OIDC workload-identity
-    /// flows with short-lived tokens — pair with `tsidp-token`,
-    /// `gcloud auth print-access-token`, etc. Conflicts with `--auth`.
+    /// Run once per `fda` invocation; the trimmed stdout becomes the
+    /// `Authorization: Bearer <token>` header for every request that
+    /// invocation makes. Use for OIDC workload-identity flows with short-lived
+    /// tokens — pair with `tsidp-token`, `gcloud auth print-access-token`, etc.
+    /// The kubelet-rotated token file works because each `fda` run re-reads it.
+    /// Conflicts with `--auth`.
     #[arg(
         long,
         env = "FELDERA_AUTH_TOKEN_COMMAND",
@@ -251,6 +258,11 @@ pub enum ApiKeyActions {
     Create {
         /// The name of the API key to create
         name: String,
+        /// Role the key carries: `read` or `write` (default). `admin` and
+        /// `owner` are never issuable as API keys. The role may not exceed the
+        /// caller's own role.
+        #[arg(long, default_value = "write")]
+        role: ApiKeyRole,
     },
     /// Delete an existing API key
     #[clap(aliases = &["del"])]
@@ -258,6 +270,13 @@ pub enum ApiKeyActions {
         /// The name of the API key to delete
         name: String,
     },
+}
+
+/// The roles an API key may carry (`admin`/`owner` are never key-mintable).
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum ApiKeyRole {
+    Read,
+    Write,
 }
 
 #[derive(Subcommand)]
@@ -284,6 +303,13 @@ pub enum OidcTrustActions {
         /// Free-text description.
         #[arg(long)]
         description: Option<String>,
+        /// Role granted to a matching token: `read` (default), `write`,
+        /// `admin`, or `owner`. Capped at the caller's role; `owner` requires a
+        /// platform owner. Breadth rules the server enforces: a wildcard
+        /// `subject` always requires a concrete (non-wildcard) `audience`; and
+        /// above `read`, neither subject nor audience may contain a wildcard.
+        #[arg(long)]
+        role: Option<TrustRole>,
     },
     /// Delete an OIDC trust relationship.
     #[clap(aliases = &["del"])]
@@ -291,6 +317,15 @@ pub enum OidcTrustActions {
         /// Name of the trust relationship to delete.
         name: String,
     },
+}
+
+/// The roles an OIDC trust relationship may grant.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum TrustRole {
+    Read,
+    Write,
+    Admin,
+    Owner,
 }
 
 #[derive(Subcommand)]

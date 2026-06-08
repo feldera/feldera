@@ -33,9 +33,11 @@
 //! OpenAPI spec (or look at the endpoints in `api/api_keys`).
 //! These API keys can then be used in the REST API similar to how JWT tokens
 //! are used above, but with the bearer token being "apikey:1234..." to
-//! authorize access. For now, we simply have two permission types: Read and
-//! Write. Later, we will expand to have fine-grained access to specific API
-//! resources.
+//! authorize access. Every principal (login JWT, API key, or OIDC trust)
+//! resolves to a single RBAC [`Role`] (`read < write < admin < owner`); the
+//! RBAC middleware (`crate::api::rbac`) enforces the minimum role per route.
+//! API keys carry only `read` or `write`; `admin` and `owner` come solely from
+//! signature-verified principals.
 //!
 //! API keys are randomly generated 128 character sequences that are never
 //! stored in the pipeline manager or in the database. It is the responsibility
@@ -44,6 +46,7 @@
 //! pipeline manager side, we store a hash of the API key in the database along
 //! with the permissions.
 
+use std::time::Duration;
 use std::{collections::HashMap, env};
 
 use actix_web::body::MessageBody;
@@ -78,15 +81,80 @@ use crate::config::ApiServerConfig;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
-use crate::db::types::api_key::ApiPermission;
+use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
 
-// Used when no auth is configured, so we tag the request with the default user
-// and passthrough
+/// The authenticated principal behind a request, resolved by `auth_validator`
+/// and stored in request extensions. The RBAC middleware reads `role`; handlers
+/// read the acting tenant (also stored as a bare `TenantId` for compatibility
+/// with existing `ReqData<TenantId>` extractors).
+#[derive(Clone, Debug)]
+pub(crate) struct AuthenticatedPrincipal {
+    /// The tenant the request operates in. Equals `home_tenant` for everyone
+    /// but an `owner` selecting another tenant via `Feldera-Tenant`.
+    pub acting_tenant: TenantId,
+    /// The tenant the principal belongs to. Differs from `acting_tenant` only
+    /// for an `owner` selecting another tenant; the audit log flags that case.
+    pub home_tenant: TenantId,
+    /// The principal's effective role in the acting tenant.
+    pub role: Role,
+    /// Human-readable identity for audit logging (email, sub, or "apikey:<name>").
+    pub label: String,
+}
+
+impl AuthenticatedPrincipal {
+    /// Insert the principal and the acting tenant into request extensions.
+    fn install(self, req: &ServiceRequest) {
+        req.extensions_mut().insert(self.acting_tenant);
+        req.extensions_mut().insert(self);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(role: Role) -> Self {
+        Self {
+            acting_tenant: DEFAULT_TENANT_ID,
+            home_tenant: DEFAULT_TENANT_ID,
+            role,
+            label: "test".to_string(),
+        }
+    }
+}
+
+/// Returns true if the given OIDC identity is configured as a platform owner.
+/// Matches an `owners` entry against the email, the bare subject, or the
+/// provider-qualified `"<issuer> <subject>"` form. Callers must pass `email`
+/// only when the provider verified it (`email_verified == true`), so an
+/// unverified, user-settable email cannot confer `owner`.
+fn is_configured_owner(
+    owners: &[String],
+    provider: &str,
+    subject: &str,
+    email: Option<&str>,
+) -> bool {
+    if owners.is_empty() {
+        return false;
+    }
+    let qualified = format!("{provider} {subject}");
+    owners
+        .iter()
+        .map(|o| o.trim())
+        // Skip empty entries: a trailing/double comma in FELDERA_OWNERS yields
+        // "", which must not match a token with an empty/absent email or subject.
+        .filter(|o| !o.is_empty())
+        .any(|o| o == qualified || o == subject || email.map(|e| e == o).unwrap_or(false))
+}
+
+// Used when no auth is configured, so we tag the request with the default
+// principal and passthrough. A single local node has one tenant, so the dev
+// principal is `admin` of it; cross-tenant `owner` is meaningless here.
 pub(crate) fn tag_with_default_tenant_id(req: ServiceRequest) -> ServiceRequest {
-    req.extensions_mut().insert(DEFAULT_TENANT_ID);
-    req.extensions_mut()
-        .insert(vec![ApiPermission::Read, ApiPermission::Write]);
+    AuthenticatedPrincipal {
+        acting_tenant: DEFAULT_TENANT_ID,
+        home_tenant: DEFAULT_TENANT_ID,
+        role: Role::Admin,
+        label: "default".to_string(),
+    }
+    .install(&req);
     req
 }
 
@@ -161,6 +229,7 @@ fn create_authz_json_error(message: &str) -> actix_web::Error {
 ///   1. The configured OIDC login provider (existing browser-driven flow).
 ///   2. A foreign issuer authorized by an OIDC trust relationship — the
 ///      workload-identity-federation path.
+///
 /// We dispatch on the `iss` claim, peeked unverified, then sign-verify in
 /// the corresponding handler.
 pub(crate) async fn auth_validator(
@@ -248,21 +317,39 @@ async fn oidc_trust_auth(
     };
 
     let state = req.app_data::<Data<ServerState>>().unwrap().clone();
-    let jwk = {
-        let mut cache = state.issuer_jwk_cache.lock().await;
-        match cache.get(&iss, &kid).await {
-            Ok(k) => k,
-            Err(e) => {
-                error!("Federated JWKS fetch for issuer '{iss}' failed: {e}");
-                return unauthorized(format!("JWKS lookup failed: {e}"), req);
-            }
+
+    // SSRF/DoS gate: only fetch discovery/JWKS for an issuer that at least one
+    // trust relationship names. An unregistered issuer is rejected here, before
+    // any outbound request, so an unauthenticated caller cannot make the manager
+    // fetch an arbitrary URL or amplify one request into repeated fetches.
+    match state.db.lock().await.is_trusted_issuer(&iss).await {
+        Ok(true) => {}
+        Ok(false) => {
+            debug!("Federated token from unregistered issuer '{iss}' rejected before any fetch");
+            return unauthorized(
+                "No OIDC trust relationship matches this token".to_string(),
+                req,
+            );
+        }
+        Err(e) => {
+            error!("Trusted-issuer check failed for '{iss}': {e}");
+            return unauthorized(format!("Database error: {e}"), req);
+        }
+    }
+
+    let jwk = match resolve_issuer_jwk(&state, &iss, &kid).await {
+        Ok(k) => k,
+        Err(e) => {
+            error!("Federated JWKS fetch for issuer '{iss}' failed: {e}");
+            return unauthorized(format!("JWKS lookup failed: {e}"), req);
         }
     };
 
-    // Verify signature + exp. Issuer/audience are checked against the trust
-    // relationship below, not by the JWT validator itself.
+    // Verify signature + exp + nbf. Issuer/audience are checked against the
+    // trust relationship below, not by the JWT validator itself.
     let mut validation = Validation::new(Algorithm::RS256);
     validation.validate_exp = true;
+    validation.validate_nbf = true;
     validation.validate_aud = false;
     validation.set_required_spec_claims(&["exp"]);
     let token_data = match decode::<OidcClaim>(token, &jwk, &validation) {
@@ -283,9 +370,30 @@ async fn oidc_trust_auth(
             .await
     };
     match lookup {
-        Ok(Some((tenant_id, scopes))) => {
-            req.extensions_mut().insert(tenant_id);
-            req.extensions_mut().insert(scopes);
+        Ok(Some((home_tenant, role))) => {
+            let label = format!("oidc:{}", token_data.claims.sub);
+            // An owner trust acts cross-tenant: the target tenant comes from the
+            // Feldera-Tenant header (strict lookup), defaulting to the trust's
+            // home tenant when no header is present.
+            let acting_tenant = if role == Role::Owner {
+                let acting = {
+                    let db = state.db.lock().await;
+                    resolve_owner_acting_tenant(&db, req.headers(), home_tenant).await
+                };
+                match acting {
+                    Ok(t) => t,
+                    Err(e) => return Err((e, req)),
+                }
+            } else {
+                home_tenant
+            };
+            AuthenticatedPrincipal {
+                acting_tenant,
+                home_tenant,
+                role,
+                label,
+            }
+            .install(&req);
             Ok(req)
         }
         Ok(None) => {
@@ -309,6 +417,26 @@ async fn oidc_trust_auth(
     }
 }
 
+/// Resolve the tenant an `owner` acts in. The `Feldera-Tenant` header selects
+/// any existing tenant by UUID or name (strict lookup, never created); a miss is
+/// a 404, so a typo cannot silently create or cross into the wrong tenant.
+/// Without the header the owner acts in its home tenant. This widening is gated
+/// on `role == Owner` by the callers; lower roles never reach here.
+async fn resolve_owner_acting_tenant(
+    db: &StoragePostgres,
+    headers: &actix_web::http::header::HeaderMap,
+    home: TenantId,
+) -> Result<TenantId, actix_web::Error> {
+    match headers.get(TENANT_HEADER).and_then(|h| h.to_str().ok()) {
+        Some(selector) if !selector.is_empty() => db
+            .resolve_tenant_selector(selector)
+            .await
+            // DBError::UnknownTenantName maps to HTTP 404 through ResponseError.
+            .map_err(|e| crate::error::ManagerError::from(e).into()),
+        _ => Ok(home),
+    }
+}
+
 async fn bearer_auth(
     req: ServiceRequest,
     token: &str,
@@ -322,8 +450,9 @@ async fn bearer_auth(
     let token_data = decode_token_with_validation(token, &req, configuration).await;
     match token_data {
         Ok(token_data) => {
-            // Validate groups authorization (for providers that support groups)
-            let state = req.app_data::<Data<ServerState>>().unwrap();
+            // Validate groups authorization (for providers that support groups).
+            // Clone the (Arc-backed) handle so `req` can be moved on error paths.
+            let state = req.app_data::<Data<ServerState>>().unwrap().clone();
             if let Err(AuthError::InsufficientGroups) =
                 validate_groups_authorization(&token_data, &state.config)
             {
@@ -333,59 +462,104 @@ async fn bearer_auth(
                 ));
             }
 
-            // Get tenant name using resolution logic with headers
+            let provider = token_data.provider();
+            let subject = token_data.claims.sub.clone();
+            let email = token_data.claims.email.clone();
+            let label = email.clone().unwrap_or_else(|| subject.clone());
+            // Only a provider-verified email may match an owner entry; an
+            // unverified, user-settable email must never confer `owner`.
+            let verified_email = if token_data.claims.email_verified == Some(true) {
+                email.as_deref()
+            } else {
+                None
+            };
+            let is_owner =
+                is_configured_owner(&state.config.owners, &provider, &subject, verified_email);
+
+            if is_owner {
+                // The owner's home tenant comes from its claims, ignoring the
+                // Feldera-Tenant header (which selects the acting tenant for an
+                // owner). Falls back to the default tenant when claims name none.
+                let empty = actix_web::http::header::HeaderMap::new();
+                let home = match token_data.tenant_name(&state.config, &empty) {
+                    Ok(name) => {
+                        let db = state.db.lock().await;
+                        match db
+                            .get_or_create_tenant_id(Uuid::now_v7(), name, provider.clone())
+                            .await
+                        {
+                            Ok(t) => t,
+                            Err(e) => {
+                                return Err((
+                                    create_authz_json_error(&format!(
+                                        "Database error while fetching tenant: {e}"
+                                    )),
+                                    req,
+                                ))
+                            }
+                        }
+                    }
+                    Err(_) => DEFAULT_TENANT_ID,
+                };
+                let acting = {
+                    let db = state.db.lock().await;
+                    resolve_owner_acting_tenant(&db, req.headers(), home).await
+                };
+                let acting_tenant = match acting {
+                    Ok(t) => t,
+                    Err(e) => return Err((e, req)),
+                };
+                AuthenticatedPrincipal {
+                    acting_tenant,
+                    home_tenant: home,
+                    role: Role::Owner,
+                    label,
+                }
+                .install(&req);
+                return Ok(req);
+            }
+
+            // Non-owner: the header disambiguates among the authorized tenants
+            // (existing behavior); the role comes from the membership table.
+            // `AuthError::Display` is the single source of these user-facing
+            // messages, so they cannot drift from the error variants.
             let tenant_name = match token_data.tenant_name(&state.config, req.headers()) {
                 Ok(name) => name,
-                Err(AuthError::NoTenantFound) => {
-                    return Err((
-                        create_authz_json_error("You are not authorized to access any Feldera tenant. Contact your administrator if you need access to Feldera."),
-                        req,
-                    ));
-                }
-                Err(AuthError::MissingTenantHeader) => {
-                    return Err((
-                        create_authz_json_error("Feldera-Tenant header is required when your access token contains multiple tenants."),
-                        req,
-                    ));
-                }
-                Err(AuthError::UnauthorizedTenant(tenant)) => {
-                    return Err((
-                        create_authz_json_error(&format!("You are not authorized to access tenant '{}'. Check your access token's tenants claim.", tenant)),
-                        req,
-                    ));
-                }
                 Err(e) => {
-                    error!("Tenant resolution error: {}", e);
-                    return Err((
-                        create_authz_json_error(&format!("Tenant resolution failed: {}", e)),
-                        req,
-                    ));
+                    error!("Tenant resolution failed: {e}");
+                    return Err((create_authz_json_error(&e.to_string()), req));
                 }
             };
 
-            // TODO: Handle tenant deletions at some point
-            let tenant = {
-                let db = &state.db.lock().await;
-                db.get_or_create_tenant_id(Uuid::now_v7(), tenant_name, token_data.provider())
-                    .await
+            let resolved = {
+                let db = state.db.lock().await;
+                db.resolve_login(
+                    Uuid::now_v7(),
+                    Uuid::now_v7(),
+                    tenant_name,
+                    provider,
+                    subject,
+                    email,
+                    state.config.default_role,
+                )
+                .await
             };
-
-            match tenant {
-                Ok(tenant_id) => {
-                    req.extensions_mut().insert(tenant_id);
-                    req.extensions_mut()
-                        .insert(vec![ApiPermission::Read, ApiPermission::Write]);
+            match resolved {
+                Ok((tenant_id, _user_id, role)) => {
+                    AuthenticatedPrincipal {
+                        acting_tenant: tenant_id,
+                        home_tenant: tenant_id,
+                        role,
+                        label,
+                    }
+                    .install(&req);
                     Ok(req)
                 }
                 Err(e) => {
-                    error!(
-                        "Could not fetch tenant ID for token_data {:?}, with error {}",
-                        token_data, e
-                    );
+                    error!("Could not resolve login, with error {}", e);
                     Err((
                         create_authz_json_error(&format!(
-                            "Database error while fetching tenant: {}",
-                            e
+                            "Database error while resolving login: {e}"
                         )),
                         req,
                     ))
@@ -423,12 +597,17 @@ async fn api_key_auth(
     let ad = req.app_data::<Data<ServerState>>();
     let validate = {
         let db = &ad.unwrap().db.lock().await;
-        validate_api_keys(db, api_key_str).await
+        db.validate_api_key(api_key_str).await
     };
     match validate {
-        Ok((tenant_id, permissions)) => {
-            req.extensions_mut().insert(tenant_id);
-            req.extensions_mut().insert(permissions);
+        Ok((tenant_id, role)) => {
+            AuthenticatedPrincipal {
+                acting_tenant: tenant_id,
+                home_tenant: tenant_id,
+                role,
+                label: "apikey".to_string(),
+            }
+            .install(&req);
             Ok(req)
         }
         Err(error) => {
@@ -563,16 +742,8 @@ impl OidcClaimExt for TokenData<OidcClaim> {
     }
 }
 
-/// Extract tenant identifier from OIDC issuer domain.
-///
-/// Extracts the full hostname from issuer URLs for tenant identification.
-/// This approach avoids tenant name collisions by using the complete domain.
-/// Examples:
-/// - "<https://acme-corp.okta.com/oauth2/default>" → Some("acme-corp.okta.com")
-/// - "<https://company.auth.us-west-2.amazoncognito.com/oauth2>" → Some("company.auth.us-west-2.amazoncognito.com")
-/// - "<https://accounts.google.com>" → Some("accounts.google.com")
-///
-/// Validates that the user belongs to at least one required group (for providers that support groups).
+/// Validates that the user belongs to at least one required group (for
+/// providers that support groups). Passes when no groups are configured.
 fn validate_groups_authorization(
     token: &TokenData<OidcClaim>,
     config: &ApiServerConfig,
@@ -599,8 +770,10 @@ fn validate_groups_authorization(
     }
 }
 
-/// Extract tenant identifier from issuer claim in OIDC Access token.
-/// The full issuer hostname is used to avoid collisions.
+/// Extract a tenant identifier from an OIDC issuer URL: the full hostname, used
+/// to avoid tenant-name collisions across providers. Examples:
+/// - `https://acme-corp.okta.com/oauth2/default` → `Some("acme-corp.okta.com")`
+/// - `https://accounts.google.com` → `Some("accounts.google.com")`
 fn extract_tenant_from_issuer(issuer: &str) -> Option<String> {
     Url::parse(issuer)
         .ok()
@@ -631,15 +804,71 @@ struct OidcDiscoveryDocument {
     jwks_uri: String,
 }
 
-/// Fetch OIDC discovery document and extract jwks_uri
+/// Timeout for OIDC discovery / JWKS HTTP requests.
+const OIDC_FETCH_TIMEOUT_SECONDS: u64 = 10;
+
+/// HTTP client for OIDC discovery / JWKS fetches: a short timeout and no
+/// redirect following, to bound the blast radius of a slow or redirecting
+/// issuer endpoint (defense in depth behind the trusted-issuer gate).
+fn oidc_http_client() -> Result<reqwest::Client, reqwest::Error> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(OIDC_FETCH_TIMEOUT_SECONDS))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+}
+
+/// Fetch OIDC discovery document and extract `jwks_uri`.
 async fn fetch_jwks_uri_from_discovery(issuer: &str) -> Result<String, reqwest::Error> {
     let discovery_url = format!(
         "{}/.well-known/openid-configuration",
         issuer.trim_end_matches('/')
     );
-    let response = reqwest::get(&discovery_url).await?;
-    let discovery: OidcDiscoveryDocument = response.json().await?;
+    let discovery: OidcDiscoveryDocument = oidc_http_client()?
+        .get(&discovery_url)
+        .send()
+        .await?
+        .json()
+        .await?;
     Ok(discovery.jwks_uri)
+}
+
+/// Fetch and parse the RSA JWKS for a federated `issuer` (discovery then keys),
+/// using the hardened OIDC client. Called on the auth path only after the
+/// issuer is confirmed trusted.
+async fn fetch_issuer_jwks(issuer: &str) -> Result<HashMap<String, DecodingKey>, AuthError> {
+    let jwks_uri = fetch_jwks_uri_from_discovery(issuer)
+        .await
+        .map_err(|e| AuthError::JwkShape(format!("OIDC discovery failed: {e}")))?;
+    let client =
+        oidc_http_client().map_err(|e| AuthError::JwkShape(format!("OIDC client build: {e}")))?;
+    let keys_json: Value = client
+        .get(&jwks_uri)
+        .send()
+        .await
+        .map_err(|e| AuthError::JwkShape(format!("JWKS request failed: {e}")))?
+        .json()
+        .await
+        .map_err(|e| AuthError::JwkShape(format!("JWKS parse failed: {e}")))?;
+    parse_rsa_jwks(&keys_json)
+}
+
+/// Resolve the RSA decoding key for `(issuer, kid)` from the federated JWKS
+/// cache, fetching on a miss. The network fetch runs without holding the cache
+/// lock, so a slow issuer endpoint cannot serialize all federated auth.
+async fn resolve_issuer_jwk(
+    state: &ServerState,
+    issuer: &str,
+    kid: &str,
+) -> Result<DecodingKey, AuthError> {
+    if let Some(key) = state.issuer_jwk_cache.lock().await.cached(issuer, kid) {
+        return Ok(key);
+    }
+    let keys = fetch_issuer_jwks(issuer).await?;
+    let mut cache = state.issuer_jwk_cache.lock().await;
+    cache.insert(issuer, keys);
+    cache
+        .cached(issuer, kid)
+        .ok_or_else(|| AuthError::JwkShape("kid not present in issuer JWKS".to_string()))
 }
 
 #[derive(Clone, Serialize, ToSchema)]
@@ -766,6 +995,11 @@ struct OidcClaim {
 
     /// Email address (if available)
     email: Option<String>,
+
+    /// Whether the identity provider verified the email address. Owner matching
+    /// on `email` requires this to be `true`: an unverified, user-settable email
+    /// must never confer the platform-wide `owner` role.
+    email_verified: Option<bool>,
 
     /// Tenant identifier for single-tenant deployments
     /// TODO: Deprecated, remove when no one no longer uses it
@@ -953,22 +1187,20 @@ impl IssuerJwkCache {
         }
     }
 
-    async fn get(&mut self, issuer: &str, kid: &str) -> Result<DecodingKey, AuthError> {
-        let key = (issuer.to_string(), kid.to_string());
-        if let Some(dk) = self.cache.cache_get(&key) {
-            return Ok(dk.clone());
-        }
-        let jwks_uri = fetch_jwks_uri_from_discovery(issuer)
-            .await
-            .map_err(|e| AuthError::JwkShape(format!("OIDC discovery failed: {e}")))?;
-        let fetched = fetch_jwk_oidc_keys(&jwks_uri).await?;
-        for (k, dk) in fetched {
-            self.cache.cache_set((issuer.to_string(), k), dk);
-        }
+    /// Return the cached decoding key for `(issuer, kid)`, if present. No I/O,
+    /// so the caller holds the lock only briefly (see [`resolve_issuer_jwk`]).
+    fn cached(&mut self, issuer: &str, kid: &str) -> Option<DecodingKey> {
         self.cache
-            .cache_get(&key)
+            .cache_get(&(issuer.to_string(), kid.to_string()))
             .cloned()
-            .ok_or_else(|| AuthError::JwkShape("kid not present in issuer JWKS".to_string()))
+    }
+
+    /// Insert freshly fetched keys for `issuer`, keyed by `kid`.
+    fn insert(&mut self, issuer: &str, keys: HashMap<String, DecodingKey>) {
+        for (kid, decoding_key) in keys {
+            self.cache
+                .cache_set((issuer.to_string(), kid), decoding_key);
+        }
     }
 }
 
@@ -1034,46 +1266,7 @@ async fn fetch_jwk_oidc_keys(url: &String) -> Result<HashMap<String, DecodingKey
     let keys_as_json = res?.json::<Value>().await;
 
     match keys_as_json {
-        Ok(value) => {
-            let filtered = value
-                .get("keys")
-                .ok_or_else(|| {
-                    debug!("JWK response missing 'keys' field");
-                    AuthError::JwkShape("Missing keys field".to_owned())
-                })?
-                .as_array()
-                .ok_or_else(|| {
-                    debug!("JWK 'keys' field is not an array");
-                    AuthError::JwkShape("keys field was not an array".to_owned())
-                })?
-                .iter()
-                // Standard OIDC JWK endpoints should return keys for RS256 signature verification.
-                // This filter ensures we only use appropriate keys for our validation
-                .filter_map(|val| check_key_as_str("alg", "RS256", val))
-                .filter_map(|val| check_key_as_str("use", "sig", val));
-
-            let mut ret = HashMap::new();
-            for json_value in filtered {
-                let kid = validate_field_is_str("kid", json_value).ok_or_else(|| {
-                    debug!("JWK entry missing 'kid' field");
-                    AuthError::JwkShape("Could not extract 'kid' field".to_owned())
-                })?;
-                let n = validate_field_is_str("n", json_value).ok_or_else(|| {
-                    debug!("JWK entry missing 'n' field");
-                    AuthError::JwkShape("Could not extract 'n' field".to_owned())
-                })?;
-                let e = validate_field_is_str("e", json_value).ok_or_else(|| {
-                    debug!("JWK entry missing 'e' field");
-                    AuthError::JwkShape("Could not extract 'e' field".to_owned())
-                })?;
-                let decoding_key = DecodingKey::from_rsa_components(n, e).map_err(|e| {
-                    debug!("Failed to create decoding key: {}", e);
-                    AuthError::JwkShape(format!("Invalid JWK decoding key: {}", e))
-                })?;
-                ret.insert(kid.to_owned(), decoding_key);
-            }
-            Ok(ret)
-        }
+        Ok(value) => parse_rsa_jwks(&value),
         Err(JsonPayloadError::Deserialize(json_error)) => {
             debug!("Failed to deserialize JWK response: {}", json_error);
             Err(AuthError::JwkShape(json_error.to_string()))
@@ -1087,6 +1280,48 @@ async fn fetch_jwk_oidc_keys(url: &String) -> Result<HashMap<String, DecodingKey
             Err(AuthError::JwkContentType)
         }
     }
+}
+
+/// Parse a JWK set into RSA decoding keys, keyed by `kid`. Keeps only keys
+/// declared for RS256 signature verification (`alg=RS256`, `use=sig`). Shared by
+/// the login-provider (awc) and federated (reqwest) fetch paths.
+fn parse_rsa_jwks(value: &Value) -> Result<HashMap<String, DecodingKey>, AuthError> {
+    let filtered = value
+        .get("keys")
+        .ok_or_else(|| {
+            debug!("JWK response missing 'keys' field");
+            AuthError::JwkShape("Missing keys field".to_owned())
+        })?
+        .as_array()
+        .ok_or_else(|| {
+            debug!("JWK 'keys' field is not an array");
+            AuthError::JwkShape("keys field was not an array".to_owned())
+        })?
+        .iter()
+        .filter_map(|val| check_key_as_str("alg", "RS256", val))
+        .filter_map(|val| check_key_as_str("use", "sig", val));
+
+    let mut ret = HashMap::new();
+    for json_value in filtered {
+        let kid = validate_field_is_str("kid", json_value).ok_or_else(|| {
+            debug!("JWK entry missing 'kid' field");
+            AuthError::JwkShape("Could not extract 'kid' field".to_owned())
+        })?;
+        let n = validate_field_is_str("n", json_value).ok_or_else(|| {
+            debug!("JWK entry missing 'n' field");
+            AuthError::JwkShape("Could not extract 'n' field".to_owned())
+        })?;
+        let e = validate_field_is_str("e", json_value).ok_or_else(|| {
+            debug!("JWK entry missing 'e' field");
+            AuthError::JwkShape("Could not extract 'e' field".to_owned())
+        })?;
+        let decoding_key = DecodingKey::from_rsa_components(n, e).map_err(|e| {
+            debug!("Failed to create decoding key: {}", e);
+            AuthError::JwkShape(format!("Invalid JWK decoding key: {}", e))
+        })?;
+        ret.insert(kid.to_owned(), decoding_key);
+    }
+    Ok(ret)
 }
 
 fn check_key_as_str<'a>(key: &str, check: &str, json: &'a Value) -> Option<&'a Value> {
@@ -1110,15 +1345,6 @@ fn validate_field_is_str<'a>(key: &str, json: &'a Value) -> Option<&'a str> {
         }
     }
     None
-}
-
-// Fetch keys on every authentication attempt, so cache the
-// results.
-async fn validate_api_keys(
-    db: &StoragePostgres,
-    api_key: &str,
-) -> Result<(TenantId, Vec<ApiPermission>), DBError> {
-    db.validate_api_key(api_key).await
 }
 
 const API_KEY_LENGTH: usize = 128;
@@ -1157,8 +1383,8 @@ mod test {
     use tokio::sync::{Mutex, RwLock};
     use uuid::Uuid;
 
-    use super::AuthError;
-    use crate::db::types::api_key::ApiPermission;
+    use super::{AuthError, AuthenticatedPrincipal};
+    use crate::db::types::role::{MintableKeyRole, Role};
     use crate::{
         api::main::ServerState,
         auth::{self, AuthConfiguration, AuthProvider, OidcClaim},
@@ -1204,6 +1430,7 @@ mod test {
             token_use: Some("access".to_owned()),
             username: Some("some-user".to_owned()),
             email: None,
+            email_verified: None,
             tenant: None,
             tenants: None,
             groups: None,
@@ -1273,6 +1500,8 @@ mod test {
             individual_tenant: true,
             issuer_tenant: false,
             auth_audience: "feldera-api".to_string(),
+            owners: vec![],
+            default_role: Role::Read,
         };
 
         let (conn, _temp) = crate::db::test::setup_pg().await;
@@ -1290,7 +1519,7 @@ mod test {
                 Uuid::now_v7(),
                 "foo",
                 &api_key,
-                vec![ApiPermission::Read, ApiPermission::Write],
+                MintableKeyRole::Write,
             )
             .await
             .unwrap();
@@ -1322,12 +1551,12 @@ mod test {
                 "/",
                 web::get().to(|req: HttpRequest| async move {
                     {
+                        // After auth, a principal must be installed with at least
+                        // the read role (login creates the tenant => admin; the
+                        // test API key carries write).
                         let ext = req.extensions();
-                        let permissions = ext.get::<Vec<ApiPermission>>().unwrap();
-                        assert_eq!(
-                            *permissions,
-                            vec![ApiPermission::Read, ApiPermission::Write]
-                        );
+                        let principal = ext.get::<AuthenticatedPrincipal>().unwrap();
+                        assert!(principal.role.satisfies(Role::Read));
                     }
                     HttpResponse::build(StatusCode::OK).await
                 }),
@@ -1343,6 +1572,31 @@ mod test {
         let url = "http://localhost/doesnotexist".to_owned();
         let res = fetch_jwk_oidc_keys(&url).await;
         assert!(matches!(res.err().unwrap(), AuthError::JwkFetch(_)));
+    }
+
+    #[tokio::test]
+    async fn owner_matching_ignores_empty_entries() {
+        use super::is_configured_owner;
+        let owners = vec!["owner@example.com".to_string(), "iss sub2".to_string()];
+        // Matches by email and by provider-qualified "<issuer> <subject>".
+        assert!(is_configured_owner(
+            &owners,
+            "iss",
+            "x",
+            Some("owner@example.com")
+        ));
+        assert!(is_configured_owner(&owners, "iss", "sub2", None));
+        assert!(!is_configured_owner(
+            &owners,
+            "iss",
+            "nobody",
+            Some("no@x.com")
+        ));
+        // A blank entry (trailing/double comma in FELDERA_OWNERS) must never
+        // match a token with an empty/absent email or subject.
+        let with_blank = vec!["a".to_string(), "".to_string(), "b".to_string()];
+        assert!(!is_configured_owner(&with_blank, "iss", "", Some("")));
+        assert!(!is_configured_owner(&with_blank, "iss", "", None));
     }
 
     #[tokio::test]

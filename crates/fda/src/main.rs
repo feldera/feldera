@@ -118,16 +118,18 @@ pub(crate) fn make_client(
         }
     }
 
-    let resolved_auth = match auth_token_command {
-        Some(cmd) => Some(run_auth_token_command(&cmd)?),
-        None => auth,
-    };
-
+    // Resolve the token only for https, where it is actually sent. Running the
+    // auth-token-command for an http host would spawn a subprocess whose output
+    // is then discarded.
     if host.starts_with("https://") {
+        let resolved_auth = match auth_token_command {
+            Some(cmd) => Some(run_auth_token_command(&cmd)?),
+            None => auth,
+        };
         client_builder = client_builder.default_headers(make_auth_headers(&resolved_auth)?);
-    } else if host.starts_with("http://") && resolved_auth.is_some() {
+    } else if host.starts_with("http://") && (auth.is_some() || auth_token_command.is_some()) {
         warn!(
-            "The provided API key is not added to the request because {host} does not use `https`."
+            "The provided credentials are not added to the request because {host} does not use `https`."
         );
     }
 
@@ -271,42 +273,47 @@ fn handle_errors_fatal(
                 error!("{}", UPGRADE_NOTICE);
             }
             Error::UnexpectedResponse(r) => {
-                if r.status() == StatusCode::UNAUTHORIZED {
-                    // The unauthorized error is often missing in the spec, and we can't currently have multiple
-                    // return types until https://github.com/oxidecomputer/progenitor/pull/857 lands.
-                    eprint!("{}: ", msg);
-                    eprintln!("Unauthorized. Check your API key for {server}.");
-                    if server.starts_with("http://") {
-                        eprintln!("Did you mean to use https?");
+                // Auth (401) and permission (403) failures are correct, expected
+                // responses that the OpenAPI spec does not declare (so progenitor
+                // surfaces them here rather than as `ErrorResponse`). Prefer the
+                // server's own `message` so a routine RBAC denial reads cleanly
+                // instead of the misleading "version mismatch / file a bug" notice.
+                let status = r.status();
+                let is_http = server.starts_with("http://");
+                std::io::stdout().flush().unwrap();
+                std::io::stderr().flush().unwrap();
+                let h = Handle::current();
+                // A separate thread because making this fn async is impractical here.
+                let body = std::thread::spawn(move || h.block_on(r.text()).ok())
+                    .join()
+                    .unwrap();
+                // Lenient parse: pull `message` out of any JSON body (the minimal
+                // auth error lacks the `details` field a strict `ErrorResponse` needs).
+                let server_msg = body.as_deref().and_then(|b| {
+                    serde_json::from_str::<serde_json::Value>(b)
+                        .ok()
+                        .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(str::to_string))
+                });
+                match server_msg {
+                    Some(m) => {
+                        eprintln!("{msg}: {m}");
+                        if status == StatusCode::UNAUTHORIZED && is_http {
+                            eprintln!("Did you mean to use https?");
+                        }
                     }
-                } else {
-                    warn!(
-                        "Unexpected error response from {server} -- this can happen if you're running different fda and feldera versions."
-                    );
-                    warn!("{}", UPGRADE_NOTICE);
-                    debug!(
-                        "Received HTTP status `{}` which is not declared as an expected response in OpenAPI.",
-                        r.status()
-                    );
-                    std::io::stdout().flush().unwrap();
-                    std::io::stderr().flush().unwrap();
-
-                    eprint!("{}", msg);
-                    let h = Handle::current();
-                    // This spawns a separate thread because it's very hard to make this function async, I tried.
-                    let st = std::thread::spawn(move || match h.block_on(r.text()) {
-                        Ok(body) => {
-                            if let Ok(error) = serde_json::from_str::<ErrorResponse>(&body) {
-                                eprintln!(": {}", error.message);
-                            } else {
-                                eprintln!(": {body}");
-                            }
+                    None => {
+                        warn!(
+                            "Unexpected error response from {server} -- this can happen if you're running different fda and feldera versions."
+                        );
+                        warn!("{}", UPGRADE_NOTICE);
+                        debug!(
+                            "Received HTTP status `{status}` which is not declared as an expected response in OpenAPI."
+                        );
+                        match body {
+                            Some(b) if !b.is_empty() => eprintln!("{msg}: {b}"),
+                            _ => eprintln!("{msg}"),
                         }
-                        _ => {
-                            eprintln!();
-                        }
-                    });
-                    st.join().unwrap();
+                    }
                 }
             }
             Error::PreHookError(e) => {
@@ -326,11 +333,18 @@ fn handle_errors_fatal(
 
 async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: Client) {
     match action {
-        ApiKeyActions::Create { name } => {
+        ApiKeyActions::Create { name, role } => {
             debug!("Creating API key: {}", name);
+            let role = match role {
+                ApiKeyRole::Read => feldera_rest_api::types::Role::Read,
+                ApiKeyRole::Write => feldera_rest_api::types::Role::Write,
+            };
             let response = client
                 .post_api_key()
-                .body(NewApiKeyRequest { name })
+                .body(NewApiKeyRequest {
+                    name,
+                    role: Some(role),
+                })
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
@@ -386,9 +400,13 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
             match format {
                 OutputFormat::Text => {
                     let mut rows = vec![];
-                    rows.push(["name".to_string(), "id".to_string()]);
+                    rows.push(["name".to_string(), "role".to_string(), "id".to_string()]);
                     for key in response.iter() {
-                        rows.push([key.name.to_string(), key.id.0.to_string()]);
+                        rows.push([
+                            key.name.to_string(),
+                            key.role.to_string(),
+                            key.id.0.to_string(),
+                        ]);
                     }
                     println!(
                         "{}",
@@ -419,14 +437,22 @@ async fn oidc_trust_commands(format: OutputFormat, action: OidcTrustActions, cli
             subject,
             audience,
             description,
+            role,
         } => {
             debug!("Creating OIDC trust relationship: {name}");
+            let role = role.map(|r| match r {
+                TrustRole::Read => feldera_rest_api::types::Role::Read,
+                TrustRole::Write => feldera_rest_api::types::Role::Write,
+                TrustRole::Admin => feldera_rest_api::types::Role::Admin,
+                TrustRole::Owner => feldera_rest_api::types::Role::Owner,
+            });
             let body = NewOidcTrustRequest::builder()
                 .name(name.clone())
                 .issuer(issuer)
                 .subject(subject)
                 .audience(audience)
-                .description(description);
+                .description(description)
+                .role(role);
             let response = client
                 .post_oidc_trust()
                 .body(body)
@@ -489,18 +515,20 @@ async fn oidc_trust_commands(format: OutputFormat, action: OidcTrustActions, cli
                 OutputFormat::Text => {
                     let mut rows = vec![[
                         "name".to_string(),
+                        "role".to_string(),
                         "issuer".to_string(),
                         "subject".to_string(),
                         "audience".to_string(),
-                        "id".to_string(),
+                        "description".to_string(),
                     ]];
                     for t in response.iter() {
                         rows.push([
                             t.name.clone(),
+                            t.role.to_string(),
                             t.issuer.clone(),
                             t.subject.clone(),
                             t.audience.clone().unwrap_or_default(),
-                            t.id.0.to_string(),
+                            t.description.clone().unwrap_or_default(),
                         ]);
                     }
                     println!(
@@ -3404,7 +3432,7 @@ fn init_logging(default_level: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_program_errors, make_client};
+    use super::{format_program_errors, make_client, run_auth_token_command};
     use feldera_rest_api::types::{
         ProgramError, RustCompilationInfo, SqlCompilationInfo, SqlCompilerMessage,
     };
@@ -3500,6 +3528,26 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
                 "unexpected empty-bundle error from valid PEM path: {msg}"
             );
         }
+    }
+
+    #[test]
+    fn auth_token_command_trims_stdout() {
+        let token = run_auth_token_command("printf '  tok-123\\n'").expect("command succeeds");
+        assert_eq!(token, "tok-123");
+    }
+
+    #[test]
+    fn auth_token_command_empty_output_is_error() {
+        let err = run_auth_token_command("true").expect_err("empty output must error");
+        assert!(err.to_string().contains("empty output"), "{err}");
+    }
+
+    #[test]
+    fn auth_token_command_nonzero_exit_is_error() {
+        let err = run_auth_token_command("echo boom >&2; exit 3").expect_err("failure must error");
+        let msg = err.to_string();
+        assert!(msg.contains("exited with"), "{msg}");
+        assert!(msg.contains("boom"), "stderr should be surfaced: {msg}");
     }
 
     #[test]
