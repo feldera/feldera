@@ -1,0 +1,1 @@
+INSERT INTO log_messages VALUES (1, 'INFO: Process started'), (2, 'ERROR: Connection timeout'), (3, 'WARNING: Low memory'), (4, 'ERROR: File not found at /path'), (5, 'DEBUG: Variable x = 42'), (6, 'ERROR'), (7, 'This is an error message');

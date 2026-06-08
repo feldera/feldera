@@ -1,0 +1,7 @@
+INSERT INTO task_tracking VALUES
+  (101, 'Code Review', CAST('2024-01-05' AS DATE), CAST('2024-01-07' AS DATE)),
+  (102, 'Testing', CAST('2024-01-08' AS DATE), CAST('2024-01-12' AS DATE)),
+  (103, 'Documentation', CAST('2024-01-15' AS DATE), NULL),
+  (104, 'Bug Fix', CAST('2024-01-01' AS DATE), CAST('2024-01-03' AS DATE)),
+  (105, 'Integration', CAST('2024-01-20' AS DATE), CAST('2024-02-05' AS DATE)),
+  (106, 'Deployment', CAST('2024-02-10' AS DATE), CAST('2024-02-10' AS DATE));

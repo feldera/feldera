@@ -1,0 +1,19 @@
+.env
+.venv/
+__pycache__/
+*.egg-info/
+
+# Legacy local fixtures (spark_reals/sql_tests/...) — not committed
+felderize/tests/
+
+# Generators & dev tooling — never committed
+scripts/
+
+# Test result/output directories — never committed
+tests_results*/
+test_results_detailed/
+behavior_results/
+
+# Local / editor
+.claude/
+felderize.code-workspace

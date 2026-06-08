@@ -1,0 +1,1 @@
+INSERT INTO student_scores_v2 VALUES (101, array(1, 2, 3, 4, 5), array(2, 4)), (102, array(10, 20, 30), array(10)), (103, array(5, 15, 25, 35), array()), (104, array(7, 8, 9), array(7, 8, 9)), (105, array(100, 200, 300, 400), array(150, 250));

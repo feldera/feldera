@@ -1,0 +1,2 @@
+CREATE VIEW cast_007 AS
+SELECT HEX(CAST('abc' AS binary));

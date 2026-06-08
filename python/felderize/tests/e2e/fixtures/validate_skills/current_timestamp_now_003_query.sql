@@ -1,0 +1,1 @@
+CREATE OR REPLACE TEMP VIEW transaction_log_v3 AS SELECT txn_id, amount, status, txn_time, TIMESTAMP '2026-03-30 16:57:12' AS processed_at FROM transaction_log_t3 WHERE amount > CAST(100.00 AS DECIMAL(10,2));

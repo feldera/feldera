@@ -1,0 +1,18 @@
+INSERT INTO support_customers (customer_id, region, segment) VALUES (1, 'North America', 'Premium');
+INSERT INTO support_customers (customer_id, region, segment) VALUES (2, 'North America', 'Standard');
+INSERT INTO support_customers (customer_id, region, segment) VALUES (3, 'Europe', 'Premium');
+INSERT INTO support_customers (customer_id, region, segment) VALUES (4, 'Europe', 'Standard');
+INSERT INTO support_customers (customer_id, region, segment) VALUES (5, 'Asia Pacific', 'Enterprise');
+INSERT INTO support_agents (agent_id, team_name, region) VALUES (101, 'Technical Support', 'North America');
+INSERT INTO support_agents (agent_id, team_name, region) VALUES (102, 'Billing Support', 'North America');
+INSERT INTO support_agents (agent_id, team_name, region) VALUES (103, 'Technical Support', 'Europe');
+INSERT INTO support_agents (agent_id, team_name, region) VALUES (104, 'Billing Support', 'Europe');
+INSERT INTO support_agents (agent_id, team_name, region) VALUES (105, 'Technical Support', 'Asia Pacific');
+INSERT INTO support_tickets (ticket_id, customer_id, agent_id, status, priority) VALUES (1001, 1, 101, 'OPEN', 'High');
+INSERT INTO support_tickets (ticket_id, customer_id, agent_id, status, priority) VALUES (1002, 2, 101, 'CLOSED', 'Medium');
+INSERT INTO support_tickets (ticket_id, customer_id, agent_id, status, priority) VALUES (1003, 1, 102, 'OPEN', 'Low');
+INSERT INTO support_tickets (ticket_id, customer_id, agent_id, status, priority) VALUES (1004, 3, 103, 'CLOSED', 'High');
+INSERT INTO support_tickets (ticket_id, customer_id, agent_id, status, priority) VALUES (1005, 4, 104, 'OPEN', 'Medium');
+INSERT INTO support_tickets (ticket_id, customer_id, agent_id, status, priority) VALUES (1006, 3, 103, 'CLOSED', 'Low');
+INSERT INTO support_tickets (ticket_id, customer_id, agent_id, status, priority) VALUES (1007, 5, 105, 'OPEN', 'High');
+INSERT INTO support_tickets (ticket_id, customer_id, agent_id, status, priority) VALUES (1008, 2, 102, 'CLOSED', 'Medium');

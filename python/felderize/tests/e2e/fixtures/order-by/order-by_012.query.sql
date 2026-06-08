@@ -1,0 +1,2 @@
+CREATE VIEW order-by_012 AS
+SELECT col1+1 AS ltrl2, col1+1 AS ltrl1 FROM VALUES(1) GROUP BY col1+1 ORDER BY col1+1;

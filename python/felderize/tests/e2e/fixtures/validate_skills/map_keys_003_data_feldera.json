@@ -1,0 +1,7 @@
+{"event_metadata": [
+  {"event_id": 1001, "event_info": {"timestamp": "2024-01-15T10:30:00", "source": "web", "user_agent": "Chrome"}},
+  {"event_id": 1002, "event_info": {"endpoint": "/api/users", "method": "POST", "status": "200", "duration": "45ms"}},
+  {"event_id": 1003, "event_info": {"error_code": "404", "error_msg": "Not Found"}},
+  {"event_id": 1004, "event_info": {"region": "US", "country": "USA", "city": "NYC", "ip": "192.168.1.1", "isp": "Verizon"}},
+  {"event_id": 1005, "event_info": {"session_id": "sess_abc123", "device": "mobile", "os": "iOS"}}
+]}

@@ -1,0 +1,2 @@
+CREATE VIEW string-functions_115 AS
+select decode(X'68656c6c6f', 'WINDOWS-1252');

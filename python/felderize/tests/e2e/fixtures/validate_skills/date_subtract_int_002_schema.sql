@@ -1,0 +1,4 @@
+-- rule: date_subtract_int
+-- spark: date_col - integer_expr — subtract an integer number of days from a DATE column
+-- feldera: date_col - integer_expr * INTERVAL '1' DAY — Feldera does not support DATE minus integer directly; multiply by INTERVAL '1' DAY
+CREATE TABLE transaction_dates (tx_id BIGINT, purchase_date DATE, refund_window INT);

@@ -1,0 +1,1 @@
+INSERT INTO skill_inventory VALUES (1001, ARRAY['Python', 'SQL', 'Spark']), (1002, ARRAY['Java', 'C++', 'JavaScript']), (1003, ARRAY['Python', 'Java', 'Go']), (1004, ARRAY['Rust', 'C', 'Assembly']), (1005, ARRAY['Python', 'R', 'Scala', 'Java']), (1006, ARRAY['JavaScript', 'TypeScript', 'React']), (1007, ARRAY['Python', 'Django', 'Flask']);

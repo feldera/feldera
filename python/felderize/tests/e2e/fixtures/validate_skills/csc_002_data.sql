@@ -1,0 +1,1 @@
+INSERT INTO trig_measurements VALUES (1, 0.5235987755982988, 'thirty_degrees'), (2, 0.7853981633974483, 'forty_five_degrees'), (3, 1.0471975511965976, 'sixty_degrees'), (4, 1.5707963267948966, 'ninety_degrees'), (5, 2.0943951023931953, 'one_twenty_degrees'), (6, 2.6179938779914946, 'one_fifty_degrees'), (7, 3.141592653589793, 'one_eighty_degrees');

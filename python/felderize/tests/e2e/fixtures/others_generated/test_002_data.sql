@@ -1,0 +1,17 @@
+INSERT INTO dim_product (product_id, category, brand, unit_price) VALUES (1, 'Electronics', 'BrandA', 99.99);
+INSERT INTO dim_product (product_id, category, brand, unit_price) VALUES (2, 'Electronics', 'BrandB', 149.99);
+INSERT INTO dim_product (product_id, category, brand, unit_price) VALUES (3, 'Apparel', 'BrandC', 49.99);
+INSERT INTO dim_product (product_id, category, brand, unit_price) VALUES (4, 'Apparel', 'BrandA', 59.99);
+INSERT INTO dim_product (product_id, category, brand, unit_price) VALUES (5, 'Home', 'BrandD', 199.99);
+INSERT INTO dim_store (store_id, region, format) VALUES (101, 'North', 'MALL');
+INSERT INTO dim_store (store_id, region, format) VALUES (102, 'South', 'MALL');
+INSERT INTO dim_store (store_id, region, format) VALUES (103, 'East', 'OUTLET');
+INSERT INTO dim_store (store_id, region, format) VALUES (104, 'West', 'MALL');
+INSERT INTO fact_sales (sale_id, product_id, store_id, sold_at, quantity, net_amount) VALUES (1001, 1, 101, CAST('2024-01-15 10:30:00' AS TIMESTAMP), 5, 450.00);
+INSERT INTO fact_sales (sale_id, product_id, store_id, sold_at, quantity, net_amount) VALUES (1002, 2, 101, CAST('2024-01-15 11:00:00' AS TIMESTAMP), 3, 420.00);
+INSERT INTO fact_sales (sale_id, product_id, store_id, sold_at, quantity, net_amount) VALUES (1003, 3, 102, CAST('2024-01-15 12:00:00' AS TIMESTAMP), 8, 380.00);
+INSERT INTO fact_sales (sale_id, product_id, store_id, sold_at, quantity, net_amount) VALUES (1004, 4, 102, CAST('2024-01-15 13:00:00' AS TIMESTAMP), 6, 340.00);
+INSERT INTO fact_sales (sale_id, product_id, store_id, sold_at, quantity, net_amount) VALUES (1005, 5, 104, CAST('2024-01-15 14:00:00' AS TIMESTAMP), 2, 380.00);
+INSERT INTO fact_sales (sale_id, product_id, store_id, sold_at, quantity, net_amount) VALUES (1006, 1, 104, CAST('2024-01-15 15:00:00' AS TIMESTAMP), 4, 360.00);
+INSERT INTO fact_sales (sale_id, product_id, store_id, sold_at, quantity, net_amount) VALUES (1007, 2, 102, CAST('2024-01-15 16:00:00' AS TIMESTAMP), 2, 280.00);
+INSERT INTO fact_sales (sale_id, product_id, store_id, sold_at, quantity, net_amount) VALUES (1008, 3, 101, CAST('2024-01-15 17:00:00' AS TIMESTAMP), 7, 330.00);

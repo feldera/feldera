@@ -1,0 +1,9 @@
+{"config_settings": [
+  {"setting_id": 1, "config_data": {"timeout": 30, "retries": 3}},
+  {"setting_id": 2, "config_data": {"retries": 5, "max_connections": 100}},
+  {"setting_id": 3, "config_data": {"timeout": 60, "buffer_size": 1024, "retries": 2}},
+  {"setting_id": 4, "config_data": {"max_connections": 50}},
+  {"setting_id": 5, "config_data": {"timeout": 15}},
+  {"setting_id": 6, "config_data": {"retries": 1, "debug": 1}},
+  {"setting_id": 7, "config_data": {}}
+]}

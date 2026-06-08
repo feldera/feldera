@@ -1,0 +1,10 @@
+INSERT INTO brands (brand_id, brand_name) VALUES (1, 'Nike');
+INSERT INTO brands (brand_id, brand_name) VALUES (2, 'Adidas');
+INSERT INTO brands (brand_id, brand_name) VALUES (3, 'Puma');
+INSERT INTO brand_orders (customer_id, brand_id) VALUES (101, 1);
+INSERT INTO brand_orders (customer_id, brand_id) VALUES (102, 1);
+INSERT INTO brand_orders (customer_id, brand_id) VALUES (103, 2);
+INSERT INTO brand_orders (customer_id, brand_id) VALUES (104, 2);
+INSERT INTO brand_orders (customer_id, brand_id) VALUES (105, 3);
+INSERT INTO brand_orders (customer_id, brand_id) VALUES (101, 2);
+INSERT INTO brand_orders (customer_id, brand_id) VALUES (106, 1);

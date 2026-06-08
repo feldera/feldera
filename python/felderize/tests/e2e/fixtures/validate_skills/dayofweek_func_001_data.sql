@@ -1,0 +1,1 @@
+INSERT INTO event_log VALUES (1, CAST('2024-01-14' AS DATE), 'Sunday Event'), (2, CAST('2024-01-15' AS DATE), 'Monday Event'), (3, CAST('2024-01-16' AS DATE), 'Tuesday Event'), (4, CAST('2024-01-17' AS DATE), 'Wednesday Event'), (5, CAST('2024-01-18' AS DATE), 'Thursday Event'), (6, CAST('2024-01-19' AS DATE), 'Friday Event'), (7, CAST('2024-01-20' AS DATE), 'Saturday Event');

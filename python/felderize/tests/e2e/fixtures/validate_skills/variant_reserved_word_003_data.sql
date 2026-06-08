@@ -1,0 +1,1 @@
+INSERT INTO data_formats_3 VALUES (1, 'JSON', 'structured', 100), (2, 'CSV', 'flat', 200), (3, 'XML', 'structured', 150), (4, 'Avro', 'binary', 50), (5, 'Parquet', 'columnar', 300), (6, 'ORC', 'columnar', 250);

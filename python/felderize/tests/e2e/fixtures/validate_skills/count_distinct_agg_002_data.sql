@@ -1,0 +1,1 @@
+INSERT INTO sales_data VALUES ('North', 101, 150.50), ('North', 102, 200.75), ('North', 101, 175.25), ('South', 103, 300.00), ('South', 104, 250.00), ('East', 101, 120.00), ('East', 101, 130.00), ('East', 105, 180.00);

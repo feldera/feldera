@@ -1,0 +1,1 @@
+INSERT INTO email_log VALUES (1, 'user@example.com', '.com'), (2, 'admin@test.org', '.org'), (3, 'support@company.co.uk', '.co.uk'), (4, 'info@domain.net', '.com'), (5, 'contact@business.io', '.io'), (6, 'noreply@example.com', '.com'), (7, 'help@website.de', '.de');

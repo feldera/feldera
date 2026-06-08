@@ -1,0 +1,2 @@
+CREATE VIEW order-by_005 AS
+SELECT col1 FROM VALUES(1,2) GROUP BY col1, col2 ORDER BY col2, col2;

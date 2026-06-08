@@ -1,0 +1,1 @@
+INSERT INTO order_items VALUES (101, ARRAY['apple', 'banana', 'orange']); INSERT INTO order_items VALUES (102, ARRAY['milk']); INSERT INTO order_items VALUES (103, ARRAY['bread', 'butter', 'cheese', 'jam']); INSERT INTO order_items VALUES (104, ARRAY['rice', 'beans']); INSERT INTO order_items VALUES (105, ARRAY['yogurt', 'honey', 'granola', 'nuts', 'seeds']);

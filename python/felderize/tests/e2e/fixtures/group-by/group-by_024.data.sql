@@ -1,0 +1,10 @@
+INSERT INTO test_agg (k, v) VALUES (1, true);
+INSERT INTO test_agg (k, v) VALUES (1, false);
+INSERT INTO test_agg (k, v) VALUES (2, true);
+INSERT INTO test_agg (k, v) VALUES (3, false);
+INSERT INTO test_agg (k, v) VALUES (3, null);
+INSERT INTO test_agg (k, v) VALUES (4, null);
+INSERT INTO test_agg (k, v) VALUES (4, null);
+INSERT INTO test_agg (k, v) VALUES (5, null);
+INSERT INTO test_agg (k, v) VALUES (5, true);
+INSERT INTO test_agg (k, v) VALUES (5, false);

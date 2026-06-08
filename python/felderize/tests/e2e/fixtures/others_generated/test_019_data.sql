@@ -1,0 +1,13 @@
+INSERT INTO crm_profiles (profile_id, email, phone, country) VALUES (1, 'john.doe@example.com', '555-0001', 'USA');
+INSERT INTO crm_profiles (profile_id, email, phone, country) VALUES (2, 'jane.smith@example.com', '555-0002', 'Canada');
+INSERT INTO crm_profiles (profile_id, email, phone, country) VALUES (3, 'bob.johnson@example.com', '555-0003', 'UK');
+INSERT INTO crm_profiles (profile_id, email, phone, country) VALUES (4, 'alice.williams@example.com', NULL, 'Australia');
+INSERT INTO crm_profiles (profile_id, email, phone, country) VALUES (5, NULL, '555-0005', 'Germany');
+INSERT INTO crm_profiles (profile_id, email, phone, country) VALUES (6, 'charlie.brown@example.com', '555-0006', 'France');
+INSERT INTO identity_events (event_id, email, phone, observed_at) VALUES (101, 'john.doe@example.com', '555-0001', CAST('2024-01-15 10:30:00' AS TIMESTAMP));
+INSERT INTO identity_events (event_id, email, phone, observed_at) VALUES (102, 'jane.smith@example.com', '555-0002', CAST('2024-01-15 11:15:00' AS TIMESTAMP));
+INSERT INTO identity_events (event_id, email, phone, observed_at) VALUES (103, 'bob.johnson@example.com', '555-0003', CAST('2024-01-15 12:00:00' AS TIMESTAMP));
+INSERT INTO identity_events (event_id, email, phone, observed_at) VALUES (104, 'alice.williams@example.com', NULL, CAST('2024-01-15 13:45:00' AS TIMESTAMP));
+INSERT INTO identity_events (event_id, email, phone, observed_at) VALUES (105, NULL, '555-0005', CAST('2024-01-15 14:20:00' AS TIMESTAMP));
+INSERT INTO identity_events (event_id, email, phone, observed_at) VALUES (106, 'charlie.brown@example.com', '555-0006', CAST('2024-01-15 15:00:00' AS TIMESTAMP));
+INSERT INTO identity_events (event_id, email, phone, observed_at) VALUES (107, 'david.miller@example.com', '555-0007', CAST('2024-01-15 16:30:00' AS TIMESTAMP));

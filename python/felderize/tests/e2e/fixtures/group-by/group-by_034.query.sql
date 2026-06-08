@@ -1,0 +1,3 @@
+CREATE VIEW group-by_034 AS
+SELECT histogram_numeric(col, 3) FROM VALUES
+  (CAST(1 AS SMALLINT)), (CAST(2 AS SMALLINT)), (CAST(3 AS SMALLINT)) AS tab(col);

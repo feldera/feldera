@@ -1,0 +1,4 @@
+1001	Row(cust='Alice Johnson', date='2024-01-10', total=250)
+1005	Row(cust='Eve Martinez', date='2024-01-16', total=320)
+1006	Row(cust='Frank Brown', date='2024-01-17', total=150)
+1003	Row(cust='Carol Davis', date='2024-01-14', total=180)

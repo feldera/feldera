@@ -1,0 +1,1 @@
+INSERT INTO inventory_items VALUES (1, ARRAY['electronics', 'deprecated', 'new']), (2, ARRAY['deprecated', 'sale', 'deprecated']), (3, ARRAY['new', 'featured']), (4, ARRAY['deprecated']), (5, ARRAY['clearance', 'old', 'deprecated', 'broken']);

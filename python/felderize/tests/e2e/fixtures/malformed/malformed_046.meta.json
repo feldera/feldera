@@ -1,0 +1,6 @@
+{
+  "fault": "empty_schema",
+  "broken_view": "malformed_046_a",
+  "description": "Schema is empty, yet the views reference an undefined table 'base'.",
+  "expect_no_crash": true
+}

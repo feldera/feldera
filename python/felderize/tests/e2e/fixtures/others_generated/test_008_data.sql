@@ -1,0 +1,10 @@
+INSERT INTO subscriptions (subscription_id, customer_id, plan_name, is_trial, monthly_price, started_at, cancelled_at) VALUES (1, 101, 'Basic', true, 9.99, CAST('2024-01-01' AS DATE), NULL);
+INSERT INTO subscriptions (subscription_id, customer_id, plan_name, is_trial, monthly_price, started_at, cancelled_at) VALUES (2, 102, 'Basic', false, 9.99, CAST('2024-01-05' AS DATE), NULL);
+INSERT INTO subscriptions (subscription_id, customer_id, plan_name, is_trial, monthly_price, started_at, cancelled_at) VALUES (3, 103, 'Basic', false, 9.99, CAST('2024-01-10' AS DATE), CAST('2024-02-01' AS DATE));
+INSERT INTO subscriptions (subscription_id, customer_id, plan_name, is_trial, monthly_price, started_at, cancelled_at) VALUES (4, 104, 'Pro', true, 29.99, CAST('2024-01-02' AS DATE), NULL);
+INSERT INTO subscriptions (subscription_id, customer_id, plan_name, is_trial, monthly_price, started_at, cancelled_at) VALUES (5, 105, 'Pro', false, 29.99, CAST('2024-01-08' AS DATE), NULL);
+INSERT INTO subscriptions (subscription_id, customer_id, plan_name, is_trial, monthly_price, started_at, cancelled_at) VALUES (6, 106, 'Pro', false, 29.99, CAST('2024-01-12' AS DATE), NULL);
+INSERT INTO subscriptions (subscription_id, customer_id, plan_name, is_trial, monthly_price, started_at, cancelled_at) VALUES (7, 107, 'Premium', true, 99.99, CAST('2024-01-03' AS DATE), NULL);
+INSERT INTO subscriptions (subscription_id, customer_id, plan_name, is_trial, monthly_price, started_at, cancelled_at) VALUES (8, 108, 'Premium', false, 99.99, CAST('2024-01-06' AS DATE), NULL);
+INSERT INTO subscriptions (subscription_id, customer_id, plan_name, is_trial, monthly_price, started_at, cancelled_at) VALUES (9, 101, 'Pro', false, 29.99, CAST('2024-01-15' AS DATE), NULL);
+INSERT INTO subscriptions (subscription_id, customer_id, plan_name, is_trial, monthly_price, started_at, cancelled_at) VALUES (10, 109, 'Basic', true, 9.99, CAST('2024-01-20' AS DATE), CAST('2024-02-05' AS DATE));

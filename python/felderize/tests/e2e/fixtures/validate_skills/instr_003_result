@@ -1,0 +1,7 @@
+4	ERROR: File not found at /path	1	error_found
+2	ERROR: Connection timeout	1	error_found
+7	This is an error message	0	no_error
+5	DEBUG: Variable x = 42	0	no_error
+1	INFO: Process started	0	no_error
+3	WARNING: Low memory	0	no_error
+6	ERROR	1	error_found

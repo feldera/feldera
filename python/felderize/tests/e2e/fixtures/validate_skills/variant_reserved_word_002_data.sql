@@ -1,0 +1,1 @@
+INSERT INTO file_records_2 VALUES (1, 'config.json', 'structured', 1024), (2, 'data.csv', 'flat', 2048), (3, 'schema.json', 'structured', 512), (4, 'image.png', 'binary', 4096), (5, 'report.json', 'structured', 768);

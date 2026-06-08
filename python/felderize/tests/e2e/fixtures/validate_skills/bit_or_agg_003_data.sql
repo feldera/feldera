@@ -1,0 +1,1 @@
+INSERT INTO status_bits_v3 VALUES (1, 1, 'north', CAST('2024-01-15' AS DATE)), (2, 2, 'north', CAST('2024-01-15' AS DATE)), (3, 4, 'north', CAST('2024-01-16' AS DATE)), (4, 8, 'south', CAST('2024-01-15' AS DATE)), (5, 16, 'south', CAST('2024-01-15' AS DATE)), (6, 32, 'south', CAST('2024-01-16' AS DATE));

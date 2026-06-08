@@ -1,0 +1,6 @@
+{
+  "fault": "ambiguous_column",
+  "broken_view": "malformed_072",
+  "description": "Final view selects unqualified columns that exist in both joined views.",
+  "expect_no_crash": true
+}

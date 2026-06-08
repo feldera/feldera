@@ -1,0 +1,5 @@
+1	['s', 'e', 'rver|localhost|8080|debug']
+3	['p', 'r', 'oxy|internal|3128|staging']
+2	['c', 'l', 'ient|remote|443|prod']
+5	['q', 'u', 'eue|kafka|9092|dev']
+4	['c', 'a', 'che|redis|6379|qa']

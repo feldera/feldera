@@ -1,0 +1,5 @@
+1	home	view	alice
+1	home	click	alice
+2	product	view	bob
+3	cart	view	charlie
+3	cart	add	charlie

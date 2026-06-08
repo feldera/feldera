@@ -1,0 +1,7 @@
+{"user_preferences": [
+  {"user_id": 101, "username": "alice", "settings": {"theme": "dark", "language": "en"}},
+  {"user_id": 102, "username": "bob", "settings": {"notifications": "off", "timezone": "UTC", "emailDigest": "weekly"}},
+  {"user_id": 103, "username": "charlie", "settings": {"privacy": "public"}},
+  {"user_id": 104, "username": "diana", "settings": {"font_size": "14", "auto_login": "true", "two_factor": "enabled", "locale": "en_US"}},
+  {"user_id": 105, "username": "eve", "settings": {"cursor_speed": "fast", "animations": "disabled"}}
+]}

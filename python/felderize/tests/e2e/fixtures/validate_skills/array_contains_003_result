@@ -1,0 +1,7 @@
+1006	['JavaScript', 'TypeScript', 'React']	False	False
+1002	['Java', 'C++', 'JavaScript']	False	True
+1007	['Python', 'Django', 'Flask']	True	False
+1005	['Python', 'R', 'Scala', 'Java']	True	True
+1004	['Rust', 'C', 'Assembly']	False	False
+1001	['Python', 'SQL', 'Spark']	True	False
+1003	['Python', 'Java', 'Go']	True	True

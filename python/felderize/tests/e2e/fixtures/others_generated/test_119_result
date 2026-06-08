@@ -1,0 +1,8 @@
+4	{'campaign': 'spring_collection', 'location': 'UK', 'currency': 'GBP'}
+2	{'campaign': 'black_friday', 'device': 'mobile', 'product': 'electronics'}
+8	{'campaign': 'year_end_sale', 'discount': '30', 'vendor': 'partner_a'}
+6	{'member': 'platinum', 'campaign': 'loyalty_program', 'country': 'CA'}
+7	{'batch': '001', 'campaign': 'new_launch', 'segment': 'premium'}
+5	{'campaign': 'holiday_special', 'year': '2024', 'version': 'v2', 'platform': 'desktop'}
+3	{'tier': 'gold', 'campaign': 'vip_offer', 'timezone': 'EST'}
+1	{'channel': 'email', 'campaign': 'summer_sale', 'source': 'web', 'region': 'US'}

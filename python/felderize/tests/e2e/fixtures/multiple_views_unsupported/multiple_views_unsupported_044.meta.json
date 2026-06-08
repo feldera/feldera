@@ -1,0 +1,8 @@
+{
+  "unsupported_features": [
+    "map_filter"
+  ],
+  "view_with_unsupported": "multiple_views_unsupported_044_derived",
+  "description": "View multiple_views_unsupported_044_derived uses Spark `map_filter`, which Feldera does not support; downstream views depend on its output.",
+  "expect_no_crash": true
+}

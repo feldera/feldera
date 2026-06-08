@@ -1,0 +1,1 @@
+INSERT INTO product_attrs VALUES (101, NULL, NULL), (102, 'Red', 'Red'), (103, 'Blue', NULL), (104, NULL, 'Large'), (105, 'Green', 'Small'), (106, '', ''), (107, 'Yellow', 'Yellow'), (108, 'Purple', 'Purple');

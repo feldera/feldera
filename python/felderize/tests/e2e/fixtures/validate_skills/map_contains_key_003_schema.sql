@@ -1,0 +1,4 @@
+-- rule: map_contains_key
+-- spark: map_contains_key(m, k) — true if map contains the given key
+-- feldera: MAP_CONTAINS_KEY(m, k) — same syntax, supported directly in Feldera
+CREATE TABLE user_preferences (user_id INT, prefs MAP<STRING, BOOLEAN>);

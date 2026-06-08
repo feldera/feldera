@@ -1,0 +1,2 @@
+CREATE VIEW group-by_005 AS
+SELECT 1 FROM range(10) HAVING MAX(id) > 0;

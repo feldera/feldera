@@ -1,0 +1,5 @@
+3	[Decimal('22.5000')]
+4	[Decimal('270.0000'), Decimal('225.0000'), Decimal('162.0000'), Decimal('85.5000')]
+1	[Decimal('90.0000'), Decimal('45.0000'), Decimal('67.5000')]
+5	[Decimal('900.0000'), Decimal('450.0000')]
+2	[Decimal('180.0000'), Decimal('135.0000')]

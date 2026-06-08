@@ -1,0 +1,6 @@
+CREATE VIEW union_005 AS
+SELECT SUM(t.v) FROM (
+  SELECT v FROM t3
+  UNION
+  SELECT v + v AS v FROM t3
+) t;

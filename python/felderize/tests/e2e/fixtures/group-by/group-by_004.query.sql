@@ -1,0 +1,2 @@
+CREATE VIEW group-by_004 AS
+SELECT 1 FROM range(10) HAVING true;

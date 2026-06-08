@@ -1,0 +1,1 @@
+INSERT INTO product_tags VALUES (1, array('electronics', 'gadget', 'portable')), (2, array('clothing', 'summer')), (3, array('home', 'kitchen', 'appliance', 'essential')), (4, array('books')), (5, array('sports', 'outdoor', 'fitness', 'health', 'wellness'));

@@ -1,0 +1,7 @@
+4	{'max_connections': 50}	False
+2	{'retries': 5, 'max_connections': 100}	False
+3	{'retries': 2, 'timeout': 60, 'buffer_size': 1024}	True
+6	{'retries': 1, 'debug': 1}	False
+5	{'timeout': 15}	True
+1	{'retries': 3, 'timeout': 30}	True
+7	{}	False

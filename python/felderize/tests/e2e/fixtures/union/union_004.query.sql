@@ -1,0 +1,6 @@
+CREATE VIEW union_004 AS
+SELECT t.v FROM (
+  SELECT v FROM t3
+  UNION ALL
+  SELECT v + v AS v FROM t3
+) t;

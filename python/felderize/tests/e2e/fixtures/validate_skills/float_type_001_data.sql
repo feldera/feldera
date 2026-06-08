@@ -1,0 +1,1 @@
+INSERT INTO temperature_readings VALUES (1, 'outdoor', 22.5, 65.0), (2, 'indoor', 21.0, 58.5), (3, 'outdoor', 24.0, 69.0), (4, 'indoor', 20.5, 55.0), (5, 'basement', 18.5, 72.0), (6, 'outdoor', 24.0, 70.5);

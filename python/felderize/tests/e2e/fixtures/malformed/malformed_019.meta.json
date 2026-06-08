@@ -1,0 +1,6 @@
+{
+  "fault": "missing_column",
+  "broken_view": "malformed_019_b",
+  "description": "View malformed_019_b selects nonexistent_col, which malformed_019_a does not produce.",
+  "expect_no_crash": true
+}

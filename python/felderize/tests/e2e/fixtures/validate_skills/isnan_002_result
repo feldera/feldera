@@ -1,0 +1,7 @@
+throughput	False	False
+cpu_usage	False	False
+cache_hit	False	False
+network_latency	True	True
+memory_load	True	False
+error_rate	True	False
+disk_io	False	True

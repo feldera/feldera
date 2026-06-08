@@ -1,0 +1,1 @@
+INSERT INTO product_desc VALUES (1, 'Premium leather wallet'), (2, 'Basic cotton shirt'), (3, 'Premium stainless steel knife'), (4, 'Eco-friendly bamboo utensils'), (5, 'Premium wireless headphones'), (6, 'Standard rubber eraser');

@@ -1,0 +1,5 @@
+103	Keyboard	['WH-A', 'WH-B']	0
+104	Monitor	['WH-C']	1
+105	Charger	['WH-B', 'WH-D', 'WH-C']	3
+101	Laptop	['WH-A', 'WH-B', 'WH-C', 'WH-D']	3
+102	Mouse	['WH-C', 'WH-A']	1

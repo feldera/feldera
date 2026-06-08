@@ -1,0 +1,1695 @@
+abs_power_sqrt:
+  feldera: ABS(x) / POWER(x, p) / SQRT(x) — all work identically in Feldera, no translation
+    needed
+  hash: 0c5d2f736f8b533a
+  spark: ABS(x) — absolute value; POWER(x, p) — exponentiation; SQRT(x) — square root
+  tests:
+  - abs_power_sqrt_001
+  - abs_power_sqrt_002
+  - abs_power_sqrt_003
+add_months:
+  feldera: date + INTERVAL 'n' MONTH  (literal n) or  date + n * INTERVAL '1' MONTH  (column
+    n)
+  hash: 3249adc5498ec04b
+  spark: add_months(date, n) — add n months to a date
+  tests:
+  - add_months_001
+  - add_months_002
+  - add_months_003
+any_agg:
+  feldera: bool_or(col) — 'any' is a reserved keyword in Feldera
+  hash: 2fb74a2a0bf191b2
+  spark: any(col) — true if any value in group is true (Spark aggregate)
+  tests:
+  - any_agg_001
+  - any_agg_002
+  - any_agg_003
+array_contains:
+  feldera: ARRAY_CONTAINS(arr, val)
+  hash: c093d3fd6ede9654
+  spark: array_contains(arr, val) — true if array contains value
+  tests:
+  - array_contains_001
+  - array_contains_002
+  - array_contains_003
+array_distinct:
+  feldera: ARRAY_DISTINCT(arr)
+  hash: d51e5d7b3f8ec592
+  spark: array_distinct(arr) — remove duplicate elements
+  tests:
+  - array_distinct_001
+  - array_distinct_002
+  - array_distinct_003
+array_except:
+  feldera: ARRAY_EXCEPT(a, b)
+  hash: 73e36c1c0e8eb61c
+  spark: array_except(a, b) — elements in a not in b
+  tests:
+  - array_except_001
+  - array_except_002
+  - array_except_003
+array_exists_hof:
+  feldera: ARRAY_EXISTS(arr, x -> expr) — Feldera uses ARRAY_EXISTS instead of exists
+  hash: 5cd03f2dafff69a3
+  spark: exists(arr, x -> expr) — true if any element in array satisfies the predicate
+  tests:
+  - array_exists_hof_001
+  - array_exists_hof_002
+  - array_exists_hof_003
+array_intersect:
+  feldera: ARRAY_INTERSECT(a, b)
+  hash: f3434f0ccc38a5a9
+  spark: array_intersect(a, b) — intersection of two arrays
+  tests:
+  - array_intersect_001
+  - array_intersect_002
+  - array_intersect_003
+array_join:
+  feldera: ARRAY_JOIN(arr, delimiter)
+  hash: 5f99c356f1e4a476
+  spark: array_join(arr, delimiter) — concatenate array elements into string
+  tests:
+  - array_join_001
+  - array_join_002
+  - array_join_003
+array_literal:
+  feldera: ARRAY(v1, v2, ...) — same syntax in Feldera; also ARRAY[v1, v2, ...] works
+  hash: d9cbb77ba4bf46f5
+  spark: array(v1, v2, ...) — construct an array literal from values
+  tests:
+  - array_literal_001
+  - array_literal_002
+  - array_literal_003
+array_position:
+  feldera: ARRAY_POSITION(arr, val)
+  hash: bc1ca4b8a759ce78
+  spark: array_position(arr, val) — 1-based index of first occurrence
+  tests:
+  - array_position_001
+  - array_position_002
+  - array_position_003
+array_remove:
+  feldera: ARRAY_REMOVE(arr, val)
+  hash: 63fdb0232de7999a
+  spark: array_remove(arr, val) — remove all occurrences of val from array
+  tests:
+  - array_remove_001
+  - array_remove_002
+  - array_remove_003
+array_repeat:
+  feldera: ARRAY_REPEAT(val, n)
+  hash: 4ab7473c07e0cda8
+  spark: array_repeat(val, n) — create array with val repeated n times
+  tests:
+  - array_repeat_001
+  - array_repeat_002
+  - array_repeat_003
+array_type_syntax:
+  feldera: T ARRAY suffix syntax — e.g. VARCHAR ARRAY, INT ARRAY. Never use ARRAY<T>
+    in Feldera DDL
+  hash: 45fecd94958bcf8e
+  spark: ARRAY<T> type syntax in DDL (e.g., ARRAY<STRING>, ARRAY<INT>)
+  tests:
+  - array_type_syntax_001
+  - array_type_syntax_002
+  - array_type_syntax_003
+array_union:
+  feldera: ARRAY_UNION(a, b)
+  hash: b1421d3128d5673e
+  spark: array_union(a, b) — union of two arrays without duplicates
+  tests:
+  - array_union_001
+  - array_union_002
+  - array_union_003
+arrays_overlap:
+  feldera: ARRAYS_OVERLAP(a, b)
+  hash: 56b3479ced7c2ecf
+  spark: arrays_overlap(a, b) — true if arrays share any element
+  tests:
+  - arrays_overlap_001
+  - arrays_overlap_002
+  - arrays_overlap_003
+avg_integer:
+  feldera: AVG(CAST(int_col AS DOUBLE)) — cast integer input to DOUBLE to match Spark's
+    return type
+  hash: 2b653c2d736972df
+  spark: AVG(int_col) — Spark returns DOUBLE (e.g. AVG(1,2) = 1.5); Feldera returns
+    INT (= 1)
+  tests:
+  - avg_integer_001
+  - avg_integer_002
+  - avg_integer_003
+bit_and_agg:
+  feldera: BIT_AND(col)
+  hash: eb850b3912597587
+  spark: bit_and(col) — bitwise AND aggregate over all rows in group
+  tests:
+  - bit_and_agg_001
+  - bit_and_agg_002
+  - bit_and_agg_003
+bit_length:
+  feldera: OCTET_LENGTH(s) * 8
+  hash: 59a1aeb350d7f0ed
+  spark: BIT_LENGTH(s) — bit length of string
+  tests:
+  - bit_length_001
+  - bit_length_002
+  - bit_length_003
+bit_or_agg:
+  feldera: BIT_OR(col)
+  hash: 2999018ce57585ad
+  spark: bit_or(col) — bitwise OR aggregate over all rows in group
+  tests:
+  - bit_or_agg_001
+  - bit_or_agg_002
+  - bit_or_agg_003
+bit_xor_agg:
+  feldera: BIT_XOR(col)
+  hash: 9a8213cbc5636834
+  spark: bit_xor(col) — bitwise XOR aggregate over all rows in group
+  tests:
+  - bit_xor_agg_001
+  - bit_xor_agg_002
+  - bit_xor_agg_003
+bool_and_window:
+  feldera: 'UNSUPPORTED — Feldera compiler error: ''OVER currently cannot sort on
+    columns with type BOOL''. Mark as unsupported when the window ORDER BY is on a
+    BOOLEAN column.'
+  hash: 13973a86ef571504
+  spark: every(bool_col) OVER (ORDER BY bool_col) / bool_and(bool_col) OVER (ORDER
+    BY bool_col) — boolean aggregate used as window function with ORDER BY on a BOOLEAN
+    column
+  tests:
+  - bool_and_window_001
+  - bool_and_window_002
+  - bool_and_window_003
+bool_or_and_agg:
+  feldera: bool_or(col) / bool_and(col) — both work identically in Feldera as aggregates
+    (not window); no translation needed
+  hash: 0aa2453da543097b
+  spark: bool_or(col) — true if any value is true; bool_and(col) — true if all values
+    are true
+  tests:
+  - bool_or_and_agg_001
+  - bool_or_and_agg_002
+  - bool_or_and_agg_003
+bool_string_literal:
+  feldera: 'Keep the string literal as-is: col = ''true'' / col = ''false'' — only
+    convert unquoted Python-style True/False to TRUE/FALSE boolean literals; if the
+    value is already quoted, it is a string comparison'
+  hash: bb78c2a02d7dfde8
+  spark: col = 'true' / col = 'false' — comparison of a STRING column to a quoted
+    boolean string literal; Spark treats 'true'/'false' as string values when the
+    column type is STRING
+  tests:
+  - bool_string_literal_001
+  - bool_string_literal_002
+  - bool_string_literal_003
+bround:
+  feldera: BROUND(x, d) — same function, supported for DECIMAL input in Feldera; add
+    note that FLOAT/DOUBLE input is not supported
+  hash: 990cea7e8e16bb70
+  spark: BROUND(x, d) — round using banker's rounding (half-to-even) to d decimal
+    places; use DECIMAL input
+  tests:
+  - bround_001
+  - bround_002
+  - bround_003
+cast_interval_literal:
+  feldera: INTERVAL '3' DAY — drop CAST, use interval literal directly
+  hash: ff3893e336455286
+  spark: CAST('3' AS INTERVAL DAY) / CAST('interval 3 day' AS interval day) — string
+    to interval
+  tests:
+  - cast_interval_literal_001
+  - cast_interval_literal_002
+  - cast_interval_literal_003
+cast_numeric_ts:
+  feldera: CAST(numeric_expr AS TIMESTAMP) — pass through unchanged; Feldera compiler
+    accepts this syntax
+  hash: 3d03777741a82985
+  spark: CAST(numeric_expr AS TIMESTAMP) — cast a numeric value to TIMESTAMP; Spark
+    interprets as seconds since epoch
+  tests:
+  - cast_numeric_ts_001
+  - cast_numeric_ts_002
+  - cast_numeric_ts_003
+cast_to_date:
+  feldera: CAST(string AS DATE) — pass through unchanged
+  hash: cb3ff1e1d4eeeced
+  spark: CAST(string AS DATE) — parse ISO date string
+  tests:
+  - cast_to_date_001
+  - cast_to_date_002
+  - cast_to_date_003
+cast_to_timestamp:
+  feldera: CAST(string AS TIMESTAMP) — pass through unchanged
+  hash: 585e8d981fedf496
+  spark: CAST(string AS TIMESTAMP) — parse ISO timestamp string
+  tests:
+  - cast_to_timestamp_001
+  - cast_to_timestamp_002
+  - cast_to_timestamp_003
+ceil_floor_type:
+  feldera: CEIL(x) / FLOOR(x) — same function, add warning about return type difference
+  hash: 9dfaca49facaa148
+  spark: CEIL(x) / FLOOR(x) on DOUBLE — Spark returns BIGINT; Feldera returns DOUBLE
+  tests:
+  - ceil_floor_type_001
+  - ceil_floor_type_002
+  - ceil_floor_type_003
+coalesce_func:
+  feldera: COALESCE(expr1, expr2, ...) — works identically in Feldera, no translation
+    needed
+  hash: 6c07c19e097da164
+  spark: COALESCE(expr1, expr2, ...) — return first non-NULL value
+  tests:
+  - coalesce_func_001
+  - coalesce_func_002
+  - coalesce_func_003
+collect_list_agg:
+  feldera: ARRAY_AGG(col) — order may differ when source collection is unordered
+  hash: 3b0c020e91506abf
+  spark: collect_list(col) — aggregate all column values per group into an array (preserves
+    duplicates)
+  tests:
+  - collect_list_agg_001
+  - collect_list_agg_002
+  - collect_list_agg_003
+collect_list_distinct:
+  feldera: ARRAY_DISTINCT(ARRAY_AGG(col)) — Feldera does not support collect_list(distinct
+    col); use ARRAY_DISTINCT(ARRAY_AGG(col)) instead
+  hash: 18931cdabdfff34c
+  spark: collect_list(distinct col) — aggregate distinct column values per group into
+    an array (deduplicating)
+  tests:
+  - collect_list_distinct_001
+  - collect_list_distinct_002
+  - collect_list_distinct_003
+collect_set_agg:
+  feldera: ARRAY_AGG(DISTINCT col)
+  hash: de58def1063dfb04
+  spark: collect_set(col) — aggregate distinct column values per group into an array
+  tests:
+  - collect_set_agg_001
+  - collect_set_agg_002
+  - collect_set_agg_003
+concat_concat_ws:
+  feldera: CONCAT(s1, s2, ...) / CONCAT_WS(sep, s1, s2, ...) — both work identically
+    in Feldera, no translation needed
+  hash: c4900fa6938f22a9
+  spark: CONCAT(s1, s2, ...) — concatenate strings; CONCAT_WS(sep, s1, s2, ...) —
+    concatenate with separator
+  tests:
+  - concat_concat_ws_001
+  - concat_concat_ws_002
+  - concat_concat_ws_003
+concat_pipe:
+  feldera: s || t — same operator, fully supported in Feldera; pass through as-is
+  hash: 435206c6b66cbfcb
+  spark: s || t — string concatenation using pipe operator (Spark supports this)
+  tests:
+  - concat_pipe_001
+  - concat_pipe_002
+  - concat_pipe_003
+contains_str:
+  feldera: POSITION(sub IN s) > 0
+  hash: 27837830d6b6f4db
+  spark: contains(s, sub) — true if s contains sub
+  tests:
+  - contains_str_001
+  - contains_str_002
+  - contains_str_003
+cot:
+  feldera: COT(x) — supported directly in Feldera
+  hash: 298dabeb83a14038
+  spark: cot(x) — cotangent (1/tan(x))
+  tests:
+  - cot_001
+  - cot_002
+  - cot_003
+count_distinct_agg:
+  feldera: COUNT(DISTINCT col) — works identically in Feldera, no translation needed
+  hash: d0ee54cf1fcbaed0
+  spark: COUNT(DISTINCT col) — count distinct values in a group
+  tests:
+  - count_distinct_agg_001
+  - count_distinct_agg_002
+  - count_distinct_agg_003
+count_sum_min_max_agg:
+  feldera: COUNT(*) / COUNT(col) / SUM(col) / MIN(col) / MAX(col) — all work identically
+    in Feldera, no translation needed
+  hash: b4d974b7a5ecbac5
+  spark: COUNT(*) / COUNT(col) / SUM(col) / MIN(col) / MAX(col) — basic aggregate
+    functions
+  tests:
+  - count_sum_min_max_agg_001
+  - count_sum_min_max_agg_002
+  - count_sum_min_max_agg_003
+create_temp_view:
+  feldera: CREATE VIEW — drop OR REPLACE TEMP / TEMPORARY keywords
+  hash: 7252f13c293df863
+  spark: CREATE OR REPLACE TEMP VIEW / CREATE TEMPORARY VIEW
+  tests:
+  - create_temp_view_001
+  - create_temp_view_002
+  - create_temp_view_003
+csc:
+  feldera: CSC(x) — supported directly in Feldera
+  hash: 5774cae7517bde27
+  spark: csc(x) — cosecant (1/sin(x))
+  tests:
+  - csc_001
+  - csc_002
+  - csc_003
+cube_agg:
+  feldera: CUBE(a, b) — same
+  hash: cc30f4209f1822b9
+  spark: CUBE(a, b) — all combinations of grouping
+  tests:
+  - cube_agg_001
+  - cube_agg_002
+  - cube_agg_003
+current_date:
+  feldera: CAST(NOW() AS DATE)
+  hash: 457b34d2243a736e
+  spark: CURRENT_DATE — today's date
+  tests:
+  - current_date_001
+  - current_date_002
+  - current_date_003
+current_timestamp_now:
+  feldera: NOW()
+  hash: 90126e41e66acadc
+  spark: CURRENT_TIMESTAMP — current timestamp
+  tests:
+  - current_timestamp_now_001
+  - current_timestamp_now_002
+  - current_timestamp_now_003
+date_add:
+  feldera: date + INTERVAL 'n' DAY  (literal n) or  date + n * INTERVAL '1' DAY  (column
+    n)
+  hash: 3038e98b673e0125
+  spark: date_add(date, n) — add n days to a date
+  tests:
+  - date_add_001
+  - date_add_002
+  - date_add_003
+date_format_dayofweek:
+  feldera: FORMAT_DATE('%a', d) — Rust strftime %a gives the same 3-letter English
+    abbreviation as Spark's 'E' format
+  hash: 3166ba54c56a99eb
+  spark: date_format(d, 'E') — extract abbreviated day-of-week name from a DATE (e.g.
+    'Mon', 'Tue', 'Wed')
+  tests:
+  - date_format_dayofweek_001
+  - date_format_dayofweek_002
+  - date_format_dayofweek_003
+date_format_func:
+  feldera: FORMAT_TIMESTAMP(strftime_fmt, d) — arg order reversed; translate Java
+    pattern to strftime (yyyy→%Y, MM→%m, dd→%d, HH→%H, mm→%M, ss→%S). For date-only
+    inputs use FORMAT_DATE(strftime_fmt, d)
+  hash: 2f3bb918c512f4a7
+  spark: date_format(d, 'yyyy-MM-dd HH:mm:ss') — format date/timestamp as string using
+    Java pattern
+  tests:
+  - date_format_func_001
+  - date_format_func_002
+  - date_format_func_003
+date_sub:
+  feldera: date - INTERVAL 'n' DAY  (literal n) or  date - n * INTERVAL '1' DAY  (column
+    n)
+  hash: a4c6ce6541b07c0f
+  spark: date_sub(date, n) — subtract n days from a date
+  tests:
+  - date_sub_001
+  - date_sub_002
+  - date_sub_003
+date_subtract_int:
+  feldera: date_col - integer_expr * INTERVAL '1' DAY — Feldera does not support DATE
+    minus integer directly; multiply by INTERVAL '1' DAY
+  hash: 437f8077b0336690
+  spark: date_col - integer_expr — subtract an integer number of days from a DATE
+    column
+  tests:
+  - date_subtract_int_001
+  - date_subtract_int_002
+  - date_subtract_int_003
+date_trunc_day:
+  feldera: TIMESTAMP_TRUNC(ts, DAY)
+  hash: 69f1508af9f77300
+  spark: date_trunc('DAY', ts) — truncate timestamp to day
+  tests:
+  - date_trunc_day_001
+  - date_trunc_day_002
+  - date_trunc_day_003
+date_trunc_month:
+  feldera: TIMESTAMP_TRUNC(ts, MONTH)  or  DATE_TRUNC(d, MONTH) for DATE input
+  hash: d29a4de15b65d576
+  spark: date_trunc('MONTH', ts) — truncate timestamp to month
+  tests:
+  - date_trunc_month_001
+  - date_trunc_month_002
+  - date_trunc_month_003
+date_trunc_week:
+  feldera: UNSUPPORTED — Feldera truncates to Sunday (ISO week start differs). Mark
+    unsupported when week truncation is required.
+  hash: 5b299bdf53508389
+  spark: date_trunc('WEEK', d) / trunc(d, 'WEEK') — truncate date to start of week;
+    Spark uses Monday as first day of week
+  tests:
+  - date_trunc_week_001
+  - date_trunc_week_002
+  - date_trunc_week_003
+date_trunc_year:
+  feldera: TIMESTAMP_TRUNC(ts, YEAR)
+  hash: bd0ef825075ac68b
+  spark: date_trunc('YEAR', ts) — truncate timestamp to year
+  tests:
+  - date_trunc_year_001
+  - date_trunc_year_002
+  - date_trunc_year_003
+datediff:
+  feldera: 'DATEDIFF(DAY, start_date, end_date) — Feldera: 3 args, unit first, start
+    before end'
+  hash: e9982f722a5f2a6b
+  spark: 'datediff(end_date, start_date) — days between dates; Spark: 2 args, end
+    first'
+  tests:
+  - datediff_001
+  - datediff_002
+  - datediff_003
+day_dayofmonth:
+  feldera: DAYOFMONTH(d)
+  hash: 55232381ba5bccc4
+  spark: DAY(d) / day(d) — extract day-of-month from date or timestamp
+  tests:
+  - day_dayofmonth_001
+  - day_dayofmonth_002
+  - day_dayofmonth_003
+dayofweek_func:
+  feldera: DAYOFWEEK(d) — same function, supported directly in Feldera
+  hash: 4eedff1a8d91462f
+  spark: DAYOFWEEK(d) — day of week as integer (1=Sunday, 2=Monday, ..., 7=Saturday)
+  tests:
+  - dayofweek_func_001
+  - dayofweek_func_002
+  - dayofweek_func_003
+decode_func:
+  feldera: CASE WHEN expr = s1 THEN r1 WHEN expr = s2 THEN r2 ... ELSE default END
+    — safe rewrite when all search values are non-NULL literals; NULL-safe matching
+    only matters when a search value could be NULL
+  hash: 6cff922eb9d7b95a
+  spark: decode(expr, s1, r1, s2, r2, ..., default) — Oracle-style conditional matching;
+    NULL-safe equality (NULL = NULL is TRUE) when search values are literals
+  tests:
+  - decode_func_001
+  - decode_func_002
+  - decode_func_003
+dense_rank_topk:
+  feldera: DENSE_RANK() same; wrap in subquery with WHERE dr <= N filter
+  hash: 434af0cdef40e947
+  spark: DENSE_RANK() OVER (PARTITION BY ... ORDER BY ...) in TopK pattern — must
+    be in subquery with WHERE filter
+  tests:
+  - dense_rank_topk_001
+  - dense_rank_topk_002
+  - dense_rank_topk_003
+endswith:
+  feldera: RIGHT(s, LENGTH(suffix)) = suffix
+  hash: 3e120de2e3bc5fce
+  spark: endswith(s, suffix) — true if string ends with suffix
+  tests:
+  - endswith_001
+  - endswith_002
+  - endswith_003
+eq_eq:
+  feldera: a = b — use single = in Feldera
+  hash: 9a05cb1d894c5b1c
+  spark: a == b — double-equals equality operator (Spark allows this)
+  tests:
+  - eq_eq_001
+  - eq_eq_002
+  - eq_eq_003
+equal_null:
+  feldera: a <=> b — same semantics, Feldera supports <=> operator
+  hash: d771dbf7e2b0195e
+  spark: equal_null(a, b) — null-safe equality returning true when both args are NULL
+  tests:
+  - equal_null_001
+  - equal_null_002
+  - equal_null_003
+every_some_agg:
+  feldera: every(col) → same (alias for bool_and, supported); some(col) → same (supported);
+    any(col) → bool_or(col) (any is reserved in Feldera)
+  hash: 2acf1e83ba005653
+  spark: SELECT every(is_active) AS all_active, some(is_active) AS any_active FROM
+    t — boolean aggregate functions
+  tests:
+  - every_some_agg_001
+  - every_some_agg_002
+  - every_some_agg_003
+exp_func:
+  feldera: 'EXP(x) — same function, supported directly in Feldera. Note [GBD-FP-PREC]:
+    last-digit floating point differences between JVM and Rust may cause minor result
+    differences.'
+  hash: 1a6b73b69d069316
+  spark: EXP(x) — Euler's number e raised to the power x; input DOUBLE, output DOUBLE
+  tests:
+  - exp_func_001
+  - exp_func_002
+  - exp_func_003
+first_last_agg:
+  feldera: MAX(col) — Feldera has no first()/last() aggregate; use MAX(col) as an
+    approximation
+  hash: a7c7d53829a205cf
+  spark: first(col) / last(col) — return first or last value in a group
+  tests:
+  - first_last_agg_001
+  - first_last_agg_002
+  - first_last_agg_003
+first_value_window:
+  feldera: FIRST_VALUE(expr) OVER (PARTITION BY ... ORDER BY ...) — same syntax; ROWS/RANGE
+    frame clauses not supported, partition must be unbounded
+  hash: 446b6f49777d7e06
+  spark: FIRST_VALUE(expr) OVER (PARTITION BY ... ORDER BY ...) — first value in window
+    partition
+  tests:
+  - first_value_window_001
+  - first_value_window_002
+  - first_value_window_003
+float_type:
+  feldera: REAL — Feldera uses REAL instead of FLOAT
+  hash: 9d53d401a5433bfd
+  spark: FLOAT type in CREATE TABLE DDL
+  tests:
+  - float_type_001
+  - float_type_002
+  - float_type_003
+from_json_field:
+  feldera: PARSE_JSON(json_str)['field'] + CAST per field
+  hash: 9f2184e93daede98
+  spark: from_json(json_str, schema) — parse JSON and extract fields
+  tests:
+  - from_json_field_001
+  - from_json_field_002
+  - from_json_field_003
+from_json_map_explode:
+  feldera: CROSS JOIN UNNEST(CAST(PARSE_JSON(col) AS MAP<VARCHAR,VARCHAR>)) AS t(key,
+    value) — cast JSON object to MAP then UNNEST to get key/value rows
+  hash: 9dba759c7cfa2794
+  spark: explode(from_json(col, 'MAP<STRING,STRING>')) / LATERAL VIEW explode(from_json(col,
+    'MAP<STRING,STRING>')) — explode a JSON object (parsed as a map) into key/value
+    rows
+  tests:
+  - from_json_map_explode_001
+  - from_json_map_explode_002
+  - from_json_map_explode_003
+from_unixtime_fmt:
+  feldera: FORMAT_TIMESTAMP('%Y-%m-%d %H:%M:%S', TIMESTAMPADD(SECOND, n, DATE '1970-01-01'))
+    — translate Java fmt to strftime
+  hash: e2e54941464393e7
+  spark: from_unixtime(n, 'yyyy-MM-dd HH:mm:ss') — Unix epoch seconds → formatted
+    string using Java pattern
+  tests:
+  - from_unixtime_fmt_001
+  - from_unixtime_fmt_002
+  - from_unixtime_fmt_003
+from_unixtime_nofmt:
+  feldera: TIMESTAMPADD(SECOND, n, DATE '1970-01-01') — returns TIMESTAMP; Feldera
+    treats as UTC
+  hash: 5ca7060c9c3c0319
+  spark: from_unixtime(n) — convert Unix epoch seconds (integer) to a TIMESTAMP string
+  tests:
+  - from_unixtime_nofmt_001
+  - from_unixtime_nofmt_002
+  - from_unixtime_nofmt_003
+full_outer_join:
+  feldera: FULL OUTER JOIN t ON cond — fully supported in Feldera; pass through unchanged
+  hash: 9ebbc311d2b51205
+  spark: FULL OUTER JOIN t ON cond — returns all rows from both tables, filling NULLs
+    when there is no match
+  tests:
+  - full_outer_join_001
+  - full_outer_join_002
+  - full_outer_join_003
+functional_cast:
+  feldera: CAST(expr AS BIGINT) / CAST(expr AS VARCHAR) / CAST(expr AS INT) / CAST(expr
+    AS DOUBLE) / CAST(expr AS BOOLEAN) / DATE 'yyyy-MM-dd' or CAST(str AS DATE) /
+    CAST(date_expr AS TIMESTAMP) — use standard SQL CAST; Feldera does not support
+    function-call cast syntax
+  hash: 743ea778961f2ac3
+  spark: bigint(expr) / string(expr) / int(expr) / double(expr) / boolean(expr) /
+    date(str) / timestamp(date_expr) — Spark type-name-as-function casting syntax
+  tests:
+  - functional_cast_001
+  - functional_cast_002
+  - functional_cast_003
+get_json_nested:
+  feldera: CAST(PARSE_JSON(json_str)['a']['b'] AS VARCHAR)
+  hash: ec59bfaac1da0bad
+  spark: get_json_object(json_str, '$.a.b') — extract nested JSON field
+  tests:
+  - get_json_nested_001
+  - get_json_nested_002
+  - get_json_nested_003
+get_json_numeric:
+  feldera: 'CAST(CAST(PARSE_JSON(json_str)[''field''] AS DOUBLE) AS VARCHAR) — CRITICAL
+    [GBD-JSON-CAST]: CAST(variant AS VARCHAR) returns NULL for numeric JSON values.
+    Must double-cast: cast to numeric type first (BIGINT for integers, DOUBLE for
+    decimals), then to VARCHAR. Do NOT use CAST(PARSE_JSON(...)[''field''] AS VARCHAR)
+    directly.'
+  hash: 69c479cb3c57017a
+  spark: get_json_object(json_str, '$.numeric_field') — extract a NUMERIC-typed JSON
+    field (integer or float) and return as string
+  tests:
+  - get_json_numeric_001
+  - get_json_numeric_002
+  - get_json_numeric_003
+get_json_object:
+  feldera: CAST(PARSE_JSON(json_str)['field'] AS VARCHAR)
+  hash: ee790a8862abcd9a
+  spark: get_json_object(json_str, '$.field') — extract a field from JSON string
+  tests:
+  - get_json_object_001
+  - get_json_object_002
+  - get_json_object_003
+greatest_least_nulls:
+  feldera: GREATEST_IGNORE_NULLS(a, b, ...) / LEAST_IGNORE_NULLS(a, b, ...) — use
+    the IGNORE_NULLS variant to match Spark's null-skipping semantics
+  hash: 84778b04ca441599
+  spark: greatest(a, b, ...) / least(a, b, ...) — return maximum/minimum value; Spark
+    skips NULL values
+  tests:
+  - greatest_least_nulls_001
+  - greatest_least_nulls_002
+  - greatest_least_nulls_003
+group_by_all:
+  feldera: 'Expand to explicit column list: GROUP BY col1, col2, ... (all non-aggregate
+    SELECT expressions)'
+  hash: 299946691b2d92bf
+  spark: GROUP BY ALL — automatically group by all non-aggregate expressions
+  tests:
+  - group_by_all_001
+  - group_by_all_002
+  - group_by_all_003
+grouping_id:
+  feldera: grouping_id(col, ...) — same
+  hash: 585c7f537bff49d3
+  spark: grouping_id(col, ...) — bitmask identifying which columns are aggregated
+  tests:
+  - grouping_id_001
+  - grouping_id_002
+  - grouping_id_003
+grouping_sets:
+  feldera: GROUPING SETS — same syntax, supported in Feldera
+  hash: d8cfbaad01147c5b
+  spark: GROUPING SETS((a,b),(a),(b),()) — multi-level grouping
+  tests:
+  - grouping_sets_001
+  - grouping_sets_002
+  - grouping_sets_003
+hex_binary:
+  feldera: UPPER(TO_HEX(col)) — Feldera TO_HEX returns lowercase; Spark hex() returns
+    uppercase; ALWAYS wrap with UPPER(). Feldera TO_HEX accepts VARBINARY input only.
+  hash: a1a1c70dd86f12a3
+  spark: hex(x) — hex-encode a BINARY value; Spark also accepts integer/string but
+    Feldera does not
+  tests:
+  - hex_binary_001
+  - hex_binary_002
+  - hex_binary_003
+hour_minute_second_func:
+  feldera: HOUR(ts) / MINUTE(ts) / SECOND(ts) — all work identically in Feldera, no
+    translation needed
+  hash: b50e0fd702805680
+  spark: HOUR(ts) — extract hour (0-23); MINUTE(ts) — extract minute (0-59); SECOND(ts)
+    — extract second (0-59)
+  tests:
+  - hour_minute_second_func_001
+  - hour_minute_second_func_002
+  - hour_minute_second_func_003
+if_func:
+  feldera: CASE WHEN condition THEN true_val ELSE false_val END
+  hash: fd7ecbaab7f9c3cb
+  spark: IF(condition, true_val, false_val) — conditional expression
+  tests:
+  - if_func_001
+  - if_func_002
+  - if_func_003
+ifnull_func:
+  feldera: IFNULL(a, b) — same function, supported directly in Feldera; no translation
+    needed
+  hash: fa0766ab04ecbc5d
+  spark: IFNULL(a, b) — return b if a is NULL, otherwise a; equivalent to COALESCE(a,
+    b)
+  tests:
+  - ifnull_func_001
+  - ifnull_func_002
+  - ifnull_func_003
+initcap_reverse_repeat:
+  feldera: INITCAP(s) / REVERSE(s) / REPEAT(s, n) — all work identically in Feldera,
+    no translation needed
+  hash: 63ac08be8f987dc9
+  spark: INITCAP(s) — capitalize first letter of each word; REVERSE(s) — reverse characters;
+    REPEAT(s, n) — repeat string n times
+  tests:
+  - initcap_reverse_repeat_001
+  - initcap_reverse_repeat_002
+  - initcap_reverse_repeat_003
+inline_from_json:
+  feldera: CAST(PARSE_JSON(col)['f1'] AS T1) AS f1, CAST(PARSE_JSON(col)['f2'] AS
+    T2) AS f2 — drop the LATERAL VIEW; extract each field directly from the JSON via
+    PARSE_JSON and CAST
+  hash: fe3e3da699a63f28
+  spark: LATERAL VIEW inline(array(from_json(col, 'f1 T1, f2 T2'))) AS (f1, f2) —
+    extract struct fields from a JSON string column using inline/from_json row expansion
+  tests:
+  - inline_from_json_001
+  - inline_from_json_002
+  - inline_from_json_003
+inline_unnest:
+  feldera: UNNEST(arr) AS t(f1, f2) — field names become output columns
+  hash: 51caddefe003d131
+  spark: LATERAL VIEW inline(arr_of_structs) t AS f1, f2 — unnest array of structs
+  tests:
+  - inline_unnest_001
+  - inline_unnest_002
+  - inline_unnest_003
+instr:
+  feldera: POSITION(substr IN str)
+  hash: c16db57655794d61
+  spark: instr(str, substr) — 1-based position of first occurrence (same as LOCATE
+    but arg order reversed)
+  tests:
+  - instr_001
+  - instr_002
+  - instr_003
+isnan:
+  feldera: IS_NAN(x)
+  hash: 78bdde9fac651a60
+  spark: isnan(x) — true if x is IEEE 754 NaN
+  tests:
+  - isnan_001
+  - isnan_002
+  - isnan_003
+isnull_isnotnull:
+  feldera: x IS NULL  /  x IS NOT NULL
+  hash: 6ac80c1bab06ba18
+  spark: isnull(x) and isnotnull(x) — null check functions
+  tests:
+  - isnull_isnotnull_001
+  - isnull_isnotnull_002
+  - isnull_isnotnull_003
+join_using:
+  feldera: JOIN ... USING (col) — same syntax, supported directly in Feldera
+  hash: 768a8af680a7ca3a
+  spark: JOIN ... USING (col) — join on same-named column
+  tests:
+  - join_using_001
+  - join_using_002
+  - join_using_003
+json_array_len:
+  feldera: CARDINALITY(CAST(PARSE_JSON(json_str) AS VARIANT ARRAY))
+  hash: 3d56e14898651688
+  spark: json_array_length(json_str) — length of a JSON array string
+  tests:
+  - json_array_len_001
+  - json_array_len_002
+  - json_array_len_003
+lag_lead:
+  feldera: LAG / LEAD — same syntax
+  hash: 5271520f8336521c
+  spark: LAG(expr, offset, default) / LEAD(expr, offset, default) — access previous/next
+    row
+  tests:
+  - lag_lead_001
+  - lag_lead_002
+  - lag_lead_003
+last_day:
+  feldera: DATE_TRUNC(d, MONTH) + INTERVAL '1' MONTH - INTERVAL '1' DAY
+  hash: 586da02e23459ec2
+  spark: last_day(d) — last day of the month
+  tests:
+  - last_day_001
+  - last_day_002
+  - last_day_003
+last_value_window:
+  feldera: LAST_VALUE(expr) OVER (PARTITION BY ... ORDER BY ... ROWS BETWEEN UNBOUNDED
+    PRECEDING AND UNBOUNDED FOLLOWING) — must use explicit unbounded ROWS frame; default
+    frame is not supported
+  hash: 5d129d0a7ff85a81
+  spark: LAST_VALUE(expr) OVER (PARTITION BY ... ORDER BY ...) — last value in window
+    partition
+  tests:
+  - last_value_window_001
+  - last_value_window_002
+  - last_value_window_003
+lateral_view_explode:
+  feldera: CROSS JOIN LATERAL UNNEST(arr) AS t(item)  or  FROM t, UNNEST(arr) AS u(item)
+  hash: 8afcf385f5efa6fb
+  spark: LATERAL VIEW explode(arr) t AS item — unnest array column into rows
+  tests:
+  - lateral_view_explode_001
+  - lateral_view_explode_002
+  - lateral_view_explode_003
+lateral_view_explode_map:
+  feldera: CROSS JOIN UNNEST(map_col) AS t(key, val)
+  hash: 34ae207dc79cc9a3
+  spark: LATERAL VIEW explode(map_col) t AS key, val — unnest map into key/value rows
+  tests:
+  - lateral_view_explode_map_001
+  - lateral_view_explode_map_002
+  - lateral_view_explode_map_003
+lateral_view_from_json_array_map:
+  feldera: CROSS JOIN UNNEST(CAST(PARSE_JSON(col) AS MAP<VARCHAR,VARCHAR> ARRAY))
+    AS t(m) — cast JSON array of maps to typed array then UNNEST; access values via
+    m['key']
+  hash: ec005f8419cd6638
+  spark: LATERAL VIEW explode(from_json(col, 'array<map<string,string>>')) AS m —
+    explode a JSON array of string-to-string maps; each row receives one map m
+  tests:
+  - lateral_view_from_json_array_map_001
+  - lateral_view_from_json_array_map_002
+  - lateral_view_from_json_array_map_003
+lateral_view_outer:
+  feldera: UNSUPPORTED — Feldera has no OUTER equivalent. UNNEST drops rows where
+    array is NULL or empty. Mark as unsupported and add a warning comment.
+  hash: 6d68b1d0473d7464
+  spark: 'LATERAL VIEW OUTER explode(arr) t AS item — outer explode: preserves rows
+    where array is NULL or empty (returns NULL for item column)'
+  tests:
+  - lateral_view_outer_001
+  - lateral_view_outer_002
+  - lateral_view_outer_003
+lateral_view_posexplode:
+  feldera: UNNEST(arr) WITH ORDINALITY AS t(item, pos) — Feldera ordinal is 1-based,
+    comes after value
+  hash: 007f5e858fd894d6
+  spark: LATERAL VIEW posexplode(arr) t AS pos, item — unnest with 0-based position
+    index
+  tests:
+  - lateral_view_posexplode_001
+  - lateral_view_posexplode_002
+  - lateral_view_posexplode_003
+left_anti_join:
+  feldera: WHERE NOT EXISTS (SELECT 1 FROM t2 WHERE cond)
+  hash: 9628bdec4d164516
+  spark: LEFT ANTI JOIN t2 ON cond — rows in t1 with no match in t2
+  tests:
+  - left_anti_join_001
+  - left_anti_join_002
+  - left_anti_join_003
+left_right_func:
+  feldera: LEFT(s, n) / RIGHT(s, n) — both work identically in Feldera, no translation
+    needed
+  hash: e9e934e1ea1e32bc
+  spark: LEFT(s, n) — first n characters; RIGHT(s, n) — last n characters
+  tests:
+  - left_right_func_001
+  - left_right_func_002
+  - left_right_func_003
+ln_domain:
+  feldera: UNSUPPORTED — Feldera behavior diverges from Spark for non-positive inputs.
+    Mark unsupported if input column may contain 0 or negative values.
+  hash: 6ec2b02095f271c6
+  spark: LN(x) where x <= 0 — Spark returns NULL for LN(0) and LN(negative); Feldera
+    returns -Infinity for LN(0) and panics for LN(negative)
+  tests:
+  - ln_domain_001
+  - ln_domain_002
+  - ln_domain_003
+ln_log10:
+  feldera: 'LN(x) / LOG10(x) — same functions, supported directly in Feldera. Note
+    [GBD-LOG-DOMAIN]: on x=0 Feldera returns -Infinity (Spark returns NULL); on negative
+    x Feldera panics (Spark returns NULL). Use positive-only test data.'
+  hash: ccd903ffdf89fdb5
+  spark: LN(x) — natural logarithm; LOG10(x) — base-10 logarithm; both valid for positive
+    x
+  tests:
+  - ln_log10_001
+  - ln_log10_002
+  - ln_log10_003
+locate:
+  feldera: POSITION(substr IN str)
+  hash: 74c5a29bfeae3d54
+  spark: LOCATE(substr, str) — find 1-based position of substring
+  tests:
+  - locate_001
+  - locate_002
+  - locate_003
+locate_pos:
+  feldera: CASE WHEN POSITION(substr IN SUBSTRING(str, pos)) = 0 THEN 0 ELSE POSITION(substr
+    IN SUBSTRING(str, pos)) + pos - 1 END
+  hash: 561ed657c732d87f
+  spark: LOCATE(substr, str, pos) — find position starting from pos
+  tests:
+  - locate_pos_001
+  - locate_pos_002
+  - locate_pos_003
+log10_domain:
+  feldera: UNSUPPORTED — same domain issue as LN. Mark unsupported if input may contain
+    0 or negative values.
+  hash: ebb3ca1fa4d81a48
+  spark: LOG10(x) where x <= 0 — Spark returns NULL for LOG10(0) and LOG10(negative);
+    Feldera returns -Infinity for LOG10(0) and panics for LOG10(negative)
+  tests:
+  - log10_domain_001
+  - log10_domain_002
+  - log10_domain_003
+log2:
+  feldera: LOG(x, 2)
+  hash: a12f6cb4d938d9aa
+  spark: log2(x) — base-2 logarithm
+  tests:
+  - log2_001
+  - log2_002
+  - log2_003
+log_base:
+  feldera: 'LOG(value, base) — CRITICAL: arg order is reversed. LOG(a, b) in Spark
+    → LOG(b, a) in Feldera'
+  hash: e8e23cc7efae692a
+  spark: 'log(base, value) — logarithm of value in given base; Spark: first arg=base'
+  tests:
+  - log_base_001
+  - log_base_002
+  - log_base_003
+lpad:
+  feldera: CASE WHEN LENGTH(s) >= n THEN SUBSTRING(s,1,n) ELSE CONCAT(REPEAT(pad,
+    n-LENGTH(s)), s) END
+  hash: b985174e0a7cdeff
+  spark: LPAD(s, n, pad) — left-pad string to width n
+  tests:
+  - lpad_001
+  - lpad_002
+  - lpad_003
+lpad_2arg:
+  feldera: CASE WHEN LENGTH(s) >= n THEN SUBSTRING(s,1,n) ELSE CONCAT(REPEAT(' ',
+    n-LENGTH(s)), s) END — use space literal in REPEAT since Feldera has no 2-arg
+    LPAD
+  hash: 966250227fb9b165
+  spark: 'LPAD(s, n) — 2-arg form: left-pad to width n using space as default pad
+    character'
+  tests:
+  - lpad_2arg_001
+  - lpad_2arg_002
+  - lpad_2arg_003
+ltrim:
+  feldera: TRIM(LEADING FROM s)
+  hash: 4e514fa6a92d80c4
+  spark: LTRIM(s) — removes leading whitespace
+  tests:
+  - ltrim_001
+  - ltrim_002
+  - ltrim_003
+make_date:
+  feldera: PARSE_DATE('%Y-%m-%d', CONCAT(CAST(y AS VARCHAR), '-', RIGHT(CONCAT('0',
+    CAST(m AS VARCHAR)), 2), '-', RIGHT(CONCAT('0', CAST(d AS VARCHAR)), 2)))
+  hash: a410b0910146ab3d
+  spark: MAKE_DATE(y, m, d) — construct a DATE from year, month, day integers
+  tests:
+  - make_date_001
+  - make_date_002
+  - make_date_003
+make_timestamp:
+  feldera: PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', CONCAT(CAST(y AS VARCHAR), '-', RIGHT(CONCAT('0',
+    CAST(mo AS VARCHAR)), 2), '-', RIGHT(CONCAT('0', CAST(d AS VARCHAR)), 2), ' ',
+    RIGHT(CONCAT('0', CAST(h AS VARCHAR)), 2), ':', RIGHT(CONCAT('0', CAST(mi AS VARCHAR)),
+    2), ':', RIGHT(CONCAT('0', CAST(s AS VARCHAR)), 2)))
+  hash: dabc459636a75ba5
+  spark: make_timestamp(y, mo, d, h, mi, s) — construct TIMESTAMP from year/month/day/hour/minute/second
+    integers
+  tests:
+  - make_timestamp_001
+  - make_timestamp_002
+  - make_timestamp_003
+map_contains_key:
+  feldera: MAP_CONTAINS_KEY(m, k) — same syntax, supported directly in Feldera
+  hash: 13dfec648eebc96d
+  spark: map_contains_key(m, k) — true if map contains the given key
+  tests:
+  - map_contains_key_001
+  - map_contains_key_002
+  - map_contains_key_003
+map_keys:
+  feldera: MAP_KEYS(m)
+  hash: 852a4a1e85c25572
+  spark: map_keys(m) — extract keys of a map as array
+  tests:
+  - map_keys_001
+  - map_keys_002
+  - map_keys_003
+map_values:
+  feldera: MAP_VALUES(m)
+  hash: 3b9f8e47152f7494
+  spark: map_values(m) — extract values of a map as array
+  tests:
+  - map_values_001
+  - map_values_002
+  - map_values_003
+md5_ascii_chr:
+  feldera: MD5(s) / ASCII(s) / CHR(n) — all work identically in Feldera, no translation
+    needed
+  hash: 9abb095d67ac0dc9
+  spark: MD5(s) — MD5 hex digest of string; ASCII(s) — ASCII code of first character;
+    CHR(n) — character from ASCII code
+  tests:
+  - md5_ascii_chr_001
+  - md5_ascii_chr_002
+  - md5_ascii_chr_003
+mod_func:
+  feldera: MOD(a, b) / a % b — same, supported directly in Feldera
+  hash: 441a7a69e99a099e
+  spark: MOD(a, b) / a % b — modulo operator; sign follows dividend (truncation toward
+    zero)
+  tests:
+  - mod_func_001
+  - mod_func_002
+  - mod_func_003
+monotonically_increasing_id:
+  feldera: UNSUPPORTED — Feldera has no equivalent; no stable row identity in streaming
+    mode. Mark unsupported and suggest a surrogate key from existing columns or a
+    sequence.
+  hash: 23f990131a5fab10
+  spark: monotonically_increasing_id() — generates a unique, monotonically increasing
+    64-bit integer per row using partition metadata; nondeterministic across runs
+  tests:
+  - monotonically_increasing_id_001
+  - monotonically_increasing_id_002
+  - monotonically_increasing_id_003
+months_between:
+  feldera: DATEDIFF(MONTH, start_ts, end_ts) — integer result; Spark returns fractional
+    months
+  hash: 710804e372a3dca4
+  spark: months_between(end_ts, start_ts) — months between two timestamps
+  tests:
+  - months_between_001
+  - months_between_002
+  - months_between_003
+named_struct:
+  feldera: CAST(ROW(v1, v2) AS ROW(a T, b S)) — use CAST to assign field names
+  hash: 0024d983bcb6ce7e
+  spark: named_struct('a', v1, 'b', v2) — create a named struct
+  tests:
+  - named_struct_001
+  - named_struct_002
+  - named_struct_003
+natural_join:
+  feldera: NATURAL JOIN — same syntax, supported directly in Feldera
+  hash: 897f315803550041
+  spark: NATURAL JOIN — auto-join on all matching column names
+  tests:
+  - natural_join_001
+  - natural_join_002
+  - natural_join_003
+negative_substr:
+  feldera: UNSUPPORTED — Feldera does not support negative positions in SUBSTRING;
+    returns the full string or wrong result. Mark unsupported when position argument
+    may be negative.
+  hash: 990b7751d7786f99
+  spark: substring(str, -n) — negative position counts from end of string in Spark
+    (e.g. substring('Spark SQL', -3) → 'SQL')
+  tests:
+  - negative_substr_001
+  - negative_substr_002
+  - negative_substr_003
+null_safe_eq:
+  feldera: a <=> b — same syntax, supported in Feldera
+  hash: 31cb43e685e794a1
+  spark: a <=> b — null-safe equality (true when both NULL)
+  tests:
+  - null_safe_eq_001
+  - null_safe_eq_002
+  - null_safe_eq_003
+nullifzero:
+  feldera: NULLIF(x, 0)
+  hash: 9cfb4984d20af81f
+  spark: NULLIFZERO(x) — return NULL if x is 0
+  tests:
+  - nullifzero_001
+  - nullifzero_002
+  - nullifzero_003
+nvl:
+  feldera: COALESCE(a, b) — NVL not supported in Feldera
+  hash: 6ff814a7e506d0c8
+  spark: NVL(a, b) — return b if a is NULL
+  tests:
+  - nvl_001
+  - nvl_002
+  - nvl_003
+nvl2:
+  feldera: CASE WHEN a IS NOT NULL THEN b ELSE c END
+  hash: 68fb67136d4996db
+  spark: NVL2(a, b, c) — return b if a is NOT NULL, else c
+  tests:
+  - nvl2_001
+  - nvl2_002
+  - nvl2_003
+octet_length:
+  feldera: OCTET_LENGTH(s) — same function, supported directly in Feldera
+  hash: dae947e02da721fc
+  spark: OCTET_LENGTH(s) — number of bytes in string (same as LENGTH for ASCII; differs
+    for multi-byte UTF-8)
+  tests:
+  - octet_length_001
+  - octet_length_002
+  - octet_length_003
+overlay:
+  feldera: OVERLAY(str PLACING repl FROM pos FOR len)
+  hash: df314575f74afc5e
+  spark: overlay(str placing repl from pos for len) — replace substring
+  tests:
+  - overlay_001
+  - overlay_002
+  - overlay_003
+parse_json_group_by:
+  feldera: 'Use CTE inside CREATE VIEW to pre-parse: CREATE VIEW v AS WITH parsed
+    AS (SELECT *, PARSE_JSON(payload) AS doc FROM t) SELECT CAST(doc[''category'']
+    AS VARCHAR) AS cat, COUNT(*) AS cnt FROM parsed GROUP BY CAST(doc[''category'']
+    AS VARCHAR)'
+  hash: 2d27d00edbbe80f0
+  spark: SELECT get_json_object(payload,'$.category') AS cat, COUNT(*) AS cnt FROM
+    t GROUP BY get_json_object(payload,'$.category') — aggregate on JSON field
+  tests:
+  - parse_json_group_by_001
+  - parse_json_group_by_002
+  - parse_json_group_by_003
+parse_json_lateral_alias:
+  feldera: SELECT PARSE_JSON(payload) AS v, CAST(v['user_id'] AS VARCHAR) AS uid,
+    CAST(v['amount'] AS DOUBLE) AS amt FROM t — use lateral alias to parse JSON once
+    and reuse
+  hash: d27a6a220d1569e4
+  spark: SELECT get_json_object(payload,'$.user_id') AS uid, get_json_object(payload,'$.amount')
+    AS amt FROM t — extract multiple JSON fields (parses JSON multiple times)
+  tests:
+  - parse_json_lateral_alias_001
+  - parse_json_lateral_alias_002
+  - parse_json_lateral_alias_003
+partitioned_by_ddl:
+  feldera: 'Remove USING and PARTITIONED BY clauses: CREATE TABLE t (id INT, dt DATE)
+    — Feldera does not support storage directives'
+  hash: 700df1c6834c4da8
+  spark: CREATE TABLE t (id INT, dt DATE) USING parquet PARTITIONED BY (dt) — Spark
+    table with partitioning clause
+  tests:
+  - partitioned_by_ddl_001
+  - partitioned_by_ddl_002
+  - partitioned_by_ddl_003
+pivot:
+  feldera: NULLIF(COUNT(CASE WHEN x = 'A' THEN col END), 0) AS A, ... — NULLIF wraps
+    COUNT to match Spark NULL semantics (Spark returns NULL for empty buckets, COUNT
+    returns 0)
+  hash: 189743c0b8e85321
+  spark: PIVOT(COUNT(col) FOR x IN ('A','B','C')) — pivot rows to columns
+  tests:
+  - pivot_001
+  - pivot_002
+  - pivot_003
+pmod:
+  feldera: MOD(MOD(a, b) + b, b)
+  hash: 8c5d44fea0c453c4
+  spark: pmod(a, b) — positive modulo, always non-negative
+  tests:
+  - pmod_001
+  - pmod_002
+  - pmod_003
+positive_negative:
+  feldera: positive(x) → x; negative(x) → -x
+  hash: a131cdc82d0d2fc5
+  spark: positive(x) — unary no-op; negative(x) — unary negation
+  tests:
+  - positive_negative_001
+  - positive_negative_002
+  - positive_negative_003
+primary_key_constraint:
+  feldera: PRIMARY KEY (col) — drop the CONSTRAINT name wrapper; also ensure all PK
+    columns are NOT NULL
+  hash: 7ad71487bd2f493e
+  spark: CONSTRAINT pk_name PRIMARY KEY (col) — named constraint syntax
+  tests:
+  - primary_key_constraint_001
+  - primary_key_constraint_002
+  - primary_key_constraint_003
+qualify_clause:
+  feldera: SELECT ..., RANK() OVER (...) AS rnk FROM t QUALIFY rnk = 1 — QUALIFY is
+    supported directly in Feldera
+  hash: aebaa8d6c3837d70
+  spark: 'SELECT * FROM (SELECT ..., RANK() OVER (...) AS rnk FROM t) sub WHERE sub.rnk
+    = 1 — standard Spark: filter on window result via subquery (QUALIFY is not in
+    standard Spark SQL)'
+  tests:
+  - qualify_clause_001
+  - qualify_clause_002
+  - qualify_clause_003
+quarter_func:
+  feldera: QUARTER(d) — same function name, supported directly in Feldera
+  hash: ccf26038cd54d7e5
+  spark: quarter(d) — extract quarter number (1-4) from a DATE or TIMESTAMP
+  tests:
+  - quarter_func_001
+  - quarter_func_002
+  - quarter_func_003
+range_between_window:
+  feldera: Same — RANGE BETWEEN is fully supported in Feldera
+  hash: cb187c1851264b77
+  spark: SUM(col) OVER (PARTITION BY ... ORDER BY ... RANGE BETWEEN UNBOUNDED PRECEDING
+    AND CURRENT ROW) — running sum with RANGE frame
+  tests:
+  - range_between_window_001
+  - range_between_window_002
+  - range_between_window_003
+rank_topk:
+  feldera: RANK() same; must be in subquery with WHERE filter on result
+  hash: 572ba8cecdfe5633
+  spark: RANK() OVER (PARTITION BY ... ORDER BY ...) — same TopK restriction
+  tests:
+  - rank_topk_001
+  - rank_topk_002
+  - rank_topk_003
+replace_regexp_replace:
+  feldera: REPLACE(s, search, replace) / REGEXP_REPLACE(s, pattern, replace) — both
+    work identically in Feldera, no translation needed
+  hash: 322edc8eca41997b
+  spark: REPLACE(s, search, replace) — literal string replacement; REGEXP_REPLACE(s,
+    pattern, replace) — regex-based replacement
+  tests:
+  - replace_regexp_replace_001
+  - replace_regexp_replace_002
+  - replace_regexp_replace_003
+rlike:
+  feldera: 'RLIKE(s, pattern) — same function and infix form, supported directly in
+    Feldera. CRITICAL: Use only simple regex patterns without backslash escapes (e.g.
+    use [.] instead of \\., use [+] instead of \\+, use [0-9] instead of \\d). Feldera
+    SQL string literals do not apply Spark/Java backslash escaping, so \\. in a Spark
+    pattern means literal-backslash-then-any in Feldera.'
+  hash: 045809edffe889b1
+  spark: RLIKE(s, pattern) / s RLIKE pattern — regex match returning Boolean
+  tests:
+  - rlike_001
+  - rlike_002
+  - rlike_003
+rollup:
+  feldera: ROLLUP(a, b) — same
+  hash: fa1c0b942f575045
+  spark: ROLLUP(a, b) — hierarchical grouping
+  tests:
+  - rollup_001
+  - rollup_002
+  - rollup_003
+round_half:
+  feldera: ROUND(x, d) — same function; add warning about rounding difference
+  hash: d495da9b6445c8a7
+  spark: ROUND(x, d) — Spark rounds half-up (0.5→1); Feldera rounds half-to-even (0.5→0)
+  tests:
+  - round_half_001
+  - round_half_002
+  - round_half_003
+row_number_topk:
+  feldera: ROW_NUMBER() same; wrap in subquery with WHERE rn <= N filter
+  hash: fda3d849b4244b1c
+  spark: ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...) — must be used in TopK
+    subquery pattern
+  tests:
+  - row_number_topk_001
+  - row_number_topk_002
+  - row_number_topk_003
+rpad:
+  feldera: CASE WHEN LENGTH(s) >= n THEN SUBSTRING(s,1,n) ELSE CONCAT(s, REPEAT(pad,
+    n-LENGTH(s))) END
+  hash: edb3808ac028712e
+  spark: RPAD(s, n, pad) — right-pad string to width n
+  tests:
+  - rpad_001
+  - rpad_002
+  - rpad_003
+rpad_2arg:
+  feldera: CASE WHEN LENGTH(s) >= n THEN SUBSTRING(s,1,n) ELSE CONCAT(s, REPEAT('
+    ', n-LENGTH(s))) END — use space literal in REPEAT since Feldera has no 2-arg
+    RPAD
+  hash: b1230014cdd66513
+  spark: 'RPAD(s, n) — 2-arg form: right-pad to width n using space as default pad
+    character'
+  tests:
+  - rpad_2arg_001
+  - rpad_2arg_002
+  - rpad_2arg_003
+rtrim:
+  feldera: TRIM(TRAILING FROM s)
+  hash: b8f33f1fce2615d3
+  spark: RTRIM(s) — removes trailing whitespace
+  tests:
+  - rtrim_001
+  - rtrim_002
+  - rtrim_003
+safe_cast_default:
+  feldera: UNSUPPORTED — SAFE_CAST on REAL/DOUBLE/BOOLEAN targets does not return
+    NULL on failure in Feldera; it returns the type default instead. No exact NULL-on-failure
+    equivalent exists. Mark unsupported when NULL-on-failure semantics matter.
+  hash: 82ed651f2cd2a11e
+  spark: TRY_CAST(invalid_str AS DOUBLE) / TRY_CAST(invalid_str AS BOOLEAN) — Spark
+    returns NULL on failure; Feldera SAFE_CAST returns type default (0.0 for DOUBLE,
+    false for BOOLEAN) instead of NULL
+  tests:
+  - safe_cast_default_001
+  - safe_cast_default_002
+  - safe_cast_default_003
+scalar_subquery_no_from:
+  feldera: 'Rewrite: drop the SELECT wrapper → HAVING expr or WHERE expr. If subquery
+    has FROM, leave as-is.'
+  hash: f1fed1631bae310d
+  spark: HAVING (SELECT expr) or WHERE (SELECT expr) — scalar subquery with no FROM
+    clause used as shorthand for the expression
+  tests:
+  - scalar_subquery_no_from_001
+  - scalar_subquery_no_from_002
+  - scalar_subquery_no_from_003
+sec:
+  feldera: SEC(x) — supported directly in Feldera
+  hash: 0b174f2f1ab42ff6
+  spark: sec(x) — secant (1/cos(x))
+  tests:
+  - sec_001
+  - sec_002
+  - sec_003
+select_alias_chain:
+  feldera: 'Expand the alias reference: SELECT col1 AS a, col1 + 1 AS b FROM t — replace
+    alias references with the original expression'
+  hash: 056ce7c149495568
+  spark: SELECT col1 AS a, a + 1 AS b FROM t — reference an earlier SELECT alias in
+    a later expression
+  tests:
+  - select_alias_chain_001
+  - select_alias_chain_002
+  - select_alias_chain_003
+select_no_from:
+  feldera: 'Add dummy FROM: FROM (VALUES (1)) AS t(x)'
+  hash: 73e7e75445d45e07
+  spark: SELECT expr GROUP BY ... HAVING ... with no FROM clause
+  tests:
+  - select_no_from_001
+  - select_no_from_002
+  - select_no_from_003
+sequence_integer:
+  feldera: SEQUENCE(start, stop) — same semantics, supported directly in Feldera;
+    returns INTEGER ARRAY
+  hash: e07f567dc2b8fa0c
+  spark: sequence(start, stop) — generate an array of integers from start to stop
+    (inclusive)
+  tests:
+  - sequence_integer_001
+  - sequence_integer_002
+  - sequence_integer_003
+sign_func:
+  feldera: SIGN(x) — same function, supported directly in Feldera
+  hash: 888f92b714c0165c
+  spark: sign(x) — returns -1.0, 0.0, or 1.0 depending on the sign of x (DOUBLE input/output)
+  tests:
+  - sign_func_001
+  - sign_func_002
+  - sign_func_003
+size:
+  feldera: COALESCE(CARDINALITY(arr), -1) — CARDINALITY returns NULL for NULL input;
+    COALESCE matches Spark's -1 for NULL
+  hash: 7d69e92dd9fd6cba
+  spark: size(arr) — number of elements in array; returns -1 for NULL input
+  tests:
+  - size_001
+  - size_002
+  - size_003
+sort_array:
+  feldera: SORT_ARRAY(arr) / SORT_ARRAY(arr, false)
+  hash: a08b55f28dd0fcd1
+  spark: sort_array(arr) / sort_array(arr, false) — sort array ascending or descending
+  tests:
+  - sort_array_001
+  - sort_array_002
+  - sort_array_003
+split_3arg:
+  feldera: UNSUPPORTED — Feldera SPLIT does not support the 3-argument form with a
+    limit parameter. Drop the limit if result is equivalent, otherwise mark unsupported.
+  hash: 385d499eae7817d9
+  spark: split(str, delimiter, limit) — split with a limit on the number of parts
+    returned
+  tests:
+  - split_3arg_001
+  - split_3arg_002
+  - split_3arg_003
+split_func:
+  feldera: SPLIT(str, delimiter) — same function; Feldera treats delimiter as a literal
+    string (not regex). Use only plain alphanumeric delimiters in tests.
+  hash: c969f2ddf14c70f1
+  spark: split(str, delimiter) — split a string by a literal delimiter and return
+    an array of substrings
+  tests:
+  - split_func_001
+  - split_func_002
+  - split_func_003
+split_regex:
+  feldera: UNSUPPORTED — Feldera SPLIT treats delimiter as a literal string, not a
+    regex. Regex patterns like '[1-9]+' or '\\s+' will not match as intended — mark
+    unsupported.
+  hash: c4451551b4495646
+  spark: split(str, '[1-9]+') or split(str, '\\s+') — split using a regex pattern
+  tests:
+  - split_regex_001
+  - split_regex_002
+  - split_regex_003
+startswith:
+  feldera: LEFT(s, LENGTH(prefix)) = prefix
+  hash: 2b719225793f9ed2
+  spark: startswith(s, prefix) — true if string starts with prefix
+  tests:
+  - startswith_001
+  - startswith_002
+  - startswith_003
+stddev_cast:
+  feldera: STDDEV_SAMP(CAST(decimal_col AS DOUBLE)) — cast non-DOUBLE input to DOUBLE
+    to match Spark
+  hash: a6621f13e19cd8ee
+  spark: STDDEV_SAMP(decimal_col) / STDDEV_POP(decimal_col) — Spark always returns
+    DOUBLE; Feldera preserves input type
+  tests:
+  - stddev_cast_001
+  - stddev_cast_002
+  - stddev_cast_003
+string_varchar:
+  feldera: VARCHAR — Feldera uses VARCHAR instead of STRING
+  hash: 7a6b0d7583ae3b0c
+  spark: STRING type in CREATE TABLE DDL
+  tests:
+  - string_varchar_001
+  - string_varchar_002
+  - string_varchar_003
+struct_type:
+  feldera: ROW(a T, b U) — Feldera uses ROW with positional syntax
+  hash: c970814593fd50d3
+  spark: 'STRUCT<a: T, b: U> type in DDL'
+  tests:
+  - struct_type_001
+  - struct_type_002
+  - struct_type_003
+timestamp_ntz_ddl:
+  feldera: TIMESTAMP — Feldera has only one timestamp type; drop the _NTZ suffix
+  hash: b67fe5b4fb8d7706
+  spark: TIMESTAMP_NTZ type in CREATE TABLE DDL — Spark's timezone-naive timestamp
+    type
+  tests:
+  - timestamp_ntz_ddl_001
+  - timestamp_ntz_ddl_002
+  - timestamp_ntz_ddl_003
+to_date_func:
+  feldera: CAST(ts AS DATE) — format parameter is ignored
+  hash: 13dde767f2d3e015
+  spark: to_date(ts) / to_date(ts, fmt) — convert to DATE
+  tests:
+  - to_date_func_001
+  - to_date_func_002
+  - to_date_func_003
+to_date_try_to_timestamp:
+  feldera: PARSE_DATE('%Y%m%d', str) — collapse the two-step parse into a single PARSE_DATE
+    call; translate 'yyyyMMdd' → '%Y%m%d'
+  hash: b2832f8fa9387e66
+  spark: 'to_date(try_to_timestamp(str, ''yyyyMMdd'')) — common TPC-DI pattern: parse
+    a date from an 8-char yyyyMMdd string via timestamp; returns NULL on parse failure'
+  tests:
+  - to_date_try_to_timestamp_001
+  - to_date_try_to_timestamp_002
+  - to_date_try_to_timestamp_003
+to_json_func:
+  feldera: TO_JSON(v) — same function, supported directly in Feldera
+  hash: fe540ccf2bfa7415
+  spark: to_json(v) — serialize a struct/map/array value to a JSON string
+  tests:
+  - to_json_func_001
+  - to_json_func_002
+  - to_json_func_003
+to_timestamp_str:
+  feldera: PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', str) — arg order reversed; translate
+    Java fmt to strftime
+  hash: d391340b83a15a68
+  spark: to_timestamp(str, 'yyyy-MM-dd HH:mm:ss') — parse string to TIMESTAMP; Java
+    format pattern
+  tests:
+  - to_timestamp_str_001
+  - to_timestamp_str_002
+  - to_timestamp_str_003
+transform_hof:
+  feldera: TRANSFORM(arr, x -> expr) — same syntax, supported directly in Feldera
+  hash: b9d59ecc49e4a935
+  spark: transform(arr, x -> expr) — apply lambda to each array element, return transformed
+    array
+  tests:
+  - transform_hof_001
+  - transform_hof_002
+  - transform_hof_003
+translate_str:
+  feldera: 'Chain of REGEXP_REPLACE calls: translate(s, ''aei'', ''123'') → REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(s,
+    ''a'', ''1''), ''e'', ''2''), ''i'', ''3'')'
+  hash: a5c5fc7f28e734c9
+  spark: translate(s, from_chars, to_chars) — replace each char in from with corresponding
+    char in to
+  tests:
+  - translate_str_001
+  - translate_str_002
+  - translate_str_003
+trim_func:
+  feldera: 'TRIM(s) — same function, works identically in Feldera; → [GBD-WHITESPACE]:
+    only ASCII space (0x20) trimmed, not \t/\n'
+  hash: 1c3555549619a9ad
+  spark: TRIM(s) — trim leading and trailing spaces from string
+  tests:
+  - trim_func_001
+  - trim_func_002
+  - trim_func_003
+trunc_date:
+  feldera: DATE_TRUNC(d, YEAR/MONTH/QUARTER/WEEK) — string unit becomes SQL keyword
+  hash: 02c519459e0fc3cd
+  spark: trunc(d, 'YYYY'/'MM'/'QUARTER'/'WEEK') — truncate date using string unit;
+    ONLY these formats work in Spark 4.x trunc() — do NOT use 'Q', 'DD', or 'DAY'
+    as they return NULL
+  tests:
+  - trunc_date_001
+  - trunc_date_002
+  - trunc_date_003
+try_cast:
+  feldera: SAFE_CAST(expr AS type) — Feldera's exact equivalent; returns NULL on failure
+  hash: 32d87fe904e5f758
+  spark: TRY_CAST(expr AS type) — cast that returns NULL on failure instead of raising
+    an error
+  tests:
+  - try_cast_001
+  - try_cast_002
+  - try_cast_003
+try_to_timestamp:
+  feldera: PARSE_TIMESTAMP(strptime_fmt, str) — translate Java format to strptime
+    (e.g. 'yyyyMMdd' → '%Y%m%d'); Feldera raises a parse error on bad input instead
+    of returning NULL
+  hash: 65358534d384b0fb
+  spark: try_to_timestamp(str, fmt) — parse string as timestamp using Java format;
+    returns NULL on failure instead of throwing
+  tests:
+  - try_to_timestamp_001
+  - try_to_timestamp_002
+  - try_to_timestamp_003
+unix_micros:
+  feldera: CAST(EXTRACT(EPOCH FROM ts) * 1000000 AS BIGINT)
+  hash: 07838f6e9c5bd8a0
+  spark: unix_micros(ts) — microseconds since Unix epoch
+  tests:
+  - unix_micros_001
+  - unix_micros_002
+  - unix_micros_003
+unix_millis:
+  feldera: CAST(EXTRACT(EPOCH FROM ts) * 1000 AS BIGINT)
+  hash: 417a372e4ccf2c42
+  spark: unix_millis(ts) — milliseconds since epoch
+  tests:
+  - unix_millis_001
+  - unix_millis_002
+  - unix_millis_003
+unix_timestamp:
+  feldera: EXTRACT(EPOCH FROM ts)
+  hash: 78f73bdedabe133e
+  spark: unix_timestamp(ts) — seconds since epoch
+  tests:
+  - unix_timestamp_001
+  - unix_timestamp_002
+  - unix_timestamp_003
+upper_lower_length:
+  feldera: UPPER(s) / LOWER(s) / LENGTH(s) / SUBSTRING(s, pos, len) — all work identically
+    in Feldera, no translation needed
+  hash: 0dccff096a97f55f
+  spark: UPPER(s), LOWER(s), LENGTH(s), SUBSTRING(s, pos, len) — basic string functions
+  tests:
+  - upper_lower_length_001
+  - upper_lower_length_002
+  - upper_lower_length_003
+using_parquet:
+  feldera: Remove USING clause — Feldera does not use storage format specifiers
+  hash: 8513c85b7ecc74b7
+  spark: CREATE TABLE ... USING parquet (or delta, csv, etc.)
+  tests:
+  - using_parquet_001
+  - using_parquet_002
+  - using_parquet_003
+values_parens:
+  feldera: SELECT ... FROM (VALUES (1), (2)) AS t(a) — wrap VALUES in parentheses
+  hash: 29e4b08028cd5f99
+  spark: SELECT ... FROM VALUES (1), (2) AS t(a) — VALUES without outer parentheses
+  tests:
+  - values_parens_001
+  - values_parens_002
+  - values_parens_003
+variant_reserved_word:
+  feldera: '"variant" is a reserved keyword in Feldera — quote the column name as
+    \"variant\" in both CREATE TABLE DDL and all query references'
+  hash: e673665f43ef0dcb
+  spark: Column named 'variant' — Spark SQL allows 'variant' as an unquoted identifier
+  tests:
+  - variant_reserved_word_001
+  - variant_reserved_word_002
+  - variant_reserved_word_003
+weekofyear:
+  feldera: EXTRACT(WEEK FROM d)
+  hash: 728df6255d60d8f6
+  spark: weekofyear(d) — ISO week number of year
+  tests:
+  - weekofyear_001
+  - weekofyear_002
+  - weekofyear_003
+window_count_min_max:
+  feldera: COUNT(*) OVER (...) / MIN(col) OVER (...) / MAX(col) OVER (...) — all work
+    identically in Feldera, no translation needed
+  hash: 19720127b15c354b
+  spark: COUNT(*) OVER (PARTITION BY ... ORDER BY ...) / MIN(col) OVER (...) / MAX(col)
+    OVER (...) — aggregate window functions
+  tests:
+  - window_count_min_max_001
+  - window_count_min_max_002
+  - window_count_min_max_003
+window_sum_avg:
+  feldera: SUM(col) OVER (...) / AVG(CAST(col AS DOUBLE)) OVER (...) — same window
+    syntax; note AVG on integer input needs CAST to return DOUBLE
+  hash: f2e95e12868fea56
+  spark: SUM(col) OVER (PARTITION BY ... ORDER BY ...) / AVG(col) OVER (...) — running
+    aggregate window functions
+  tests:
+  - window_sum_avg_001
+  - window_sum_avg_002
+  - window_sum_avg_003
+year_month_func:
+  feldera: YEAR(d) / MONTH(d) — both work identically in Feldera, no translation needed
+  hash: 787f680af4c45be9
+  spark: YEAR(d) — extract year from DATE/TIMESTAMP; MONTH(d) — extract month (1-12)
+  tests:
+  - year_month_func_001
+  - year_month_func_002
+  - year_month_func_003
+zeroifnull:
+  feldera: COALESCE(x, 0)
+  hash: 793e9513fd22791d
+  spark: ZEROIFNULL(x) — return 0 if x is NULL
+  tests:
+  - zeroifnull_001
+  - zeroifnull_002
+  - zeroifnull_003

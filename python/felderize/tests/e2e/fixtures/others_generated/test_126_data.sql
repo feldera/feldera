@@ -1,0 +1,10 @@
+INSERT INTO creative_nums (row_id, x) VALUES (1, 5.5);
+INSERT INTO creative_nums (row_id, x) VALUES (2, 15.3);
+INSERT INTO creative_nums (row_id, x) VALUES (3, 25.7);
+INSERT INTO creative_nums (row_id, x) VALUES (4, 35.2);
+INSERT INTO creative_nums (row_id, x) VALUES (5, 45.9);
+INSERT INTO creative_nums (row_id, x) VALUES (6, 55.4);
+INSERT INTO creative_nums (row_id, x) VALUES (7, 65.1);
+INSERT INTO creative_nums (row_id, x) VALUES (8, 75.8);
+INSERT INTO creative_nums (row_id, x) VALUES (9, 85.6);
+INSERT INTO creative_nums (row_id, x) VALUES (10, 95.2);

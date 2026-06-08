@@ -1,0 +1,6 @@
+{
+  "fault": "truncated_statement",
+  "broken_view": "malformed_085",
+  "description": "Final view is truncated mid-statement (ends with a dangling WHERE).",
+  "expect_no_crash": true
+}

@@ -1,0 +1,7 @@
+106	['documentary']	False
+105	['animation', 'family', 'drama', 'comedy']	True
+101	['drama', 'thriller', 'mystery']	True
+102	['comedy', 'action', 'adventure']	False
+107	['drama', 'historical']	True
+104	['horror', 'sci-fi']	False
+103	['drama', 'romance']	True

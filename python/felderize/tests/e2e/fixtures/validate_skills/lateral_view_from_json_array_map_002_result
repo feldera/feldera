@@ -1,0 +1,4 @@
+2	ERROR	code	500
+2	ERROR	message	Internal Error
+3	WARN	source	api
+3	WARN	count	3

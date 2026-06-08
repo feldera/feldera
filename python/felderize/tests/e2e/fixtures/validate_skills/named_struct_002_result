@@ -1,0 +1,5 @@
+105	Row(name='Keyboard', category='Electronics', quantity=5)
+106	Row(name='Monitor', category='Electronics', quantity=12)
+101	Row(name='Laptop', category='Electronics', quantity=15)
+104	Row(name='Chair', category='Furniture', quantity=22)
+102	Row(name='Desk', category='Furniture', quantity=8)

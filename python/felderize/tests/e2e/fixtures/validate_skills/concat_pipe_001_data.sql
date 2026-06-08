@@ -1,0 +1,1 @@
+INSERT INTO users_1 VALUES (1, 'John', 'Doe'), (2, 'Jane', 'Smith'), (3, 'Bob', 'Johnson'), (4, 'Alice', 'Williams'), (5, 'Charlie', 'Brown');

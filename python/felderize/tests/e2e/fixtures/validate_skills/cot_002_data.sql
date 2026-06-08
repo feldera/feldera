@@ -1,0 +1,1 @@
+INSERT INTO trigonometric_data VALUES (1, 0.2617993877991494, 'Small angle'), (2, 1.5707963267948966, 'Right angle'), (3, 2.0943951023931957, 'Large angle'), (4, 0.6283185307179586, 'Medium angle'), (5, 3.7699111843077517, 'Very large angle'), (6, 0.3141592653589793, 'Quarter radian');

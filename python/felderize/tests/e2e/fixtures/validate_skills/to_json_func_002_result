@@ -1,0 +1,5 @@
+101	{"category":"Electronics","price":499.99,"available":true}
+103	{"category":"Clothing","price":45.0,"available":false}
+105	{"category":"Sports","price":89.95,"available":true}
+102	{"category":"Books","price":15.5,"available":true}
+106	{"category":"Toys","price":25.0,"available":false}

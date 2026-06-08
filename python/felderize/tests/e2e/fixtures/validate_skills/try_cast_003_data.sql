@@ -1,0 +1,1 @@
+INSERT INTO product_info VALUES (1, '150', '0.15', 'true'), (2, '75', '0.25', 'false'), (3, 'out_of_stock', '0.10', 'true'), (4, '200', '0.5', 'false'), (5, '0', NULL, NULL), (6, NULL, '0.05', 'true'), (7, '500', '0.35', 'true');

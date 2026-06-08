@@ -1,0 +1,1 @@
+INSERT INTO employee_stats VALUES (1, CAST(75000.00 AS DECIMAL(10,2)), 'Engineering'), (2, CAST(45000.00 AS DECIMAL(10,2)), 'Sales'), (3, CAST(95000.00 AS DECIMAL(10,2)), 'Management'), (4, CAST(38000.00 AS DECIMAL(10,2)), 'Support'), (5, CAST(60000.00 AS DECIMAL(10,2)), 'Engineering'), (6, CAST(52000.00 AS DECIMAL(10,2)), 'Marketing');

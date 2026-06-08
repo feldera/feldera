@@ -1,0 +1,2 @@
+CREATE VIEW having_024 AS
+SELECT 2, 1 AS `2` FROM VALUES (2) t (`2`) GROUP BY `2` HAVING `2` > 2;

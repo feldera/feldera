@@ -1,0 +1,1 @@
+INSERT INTO log_entries_2 VALUES (1, 'INFO', '[{"key":"host","value":"server1"},{"key":"port","value":"8080"}]'), (2, 'ERROR', '[{"key":"code","value":"500"},{"key":"message","value":"Internal Error"}]'), (3, 'WARN', '[{"key":"source","value":"api"},{"key":"count","value":"3"}]');

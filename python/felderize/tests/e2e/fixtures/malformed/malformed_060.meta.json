@@ -1,0 +1,6 @@
+{
+  "fault": "empty_query",
+  "broken_view": "(none)",
+  "description": "Query contains no CREATE VIEW / SELECT \u2014 only whitespace and a comment.",
+  "expect_no_crash": true
+}

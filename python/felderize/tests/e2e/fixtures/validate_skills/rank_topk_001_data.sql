@@ -1,0 +1,8 @@
+INSERT INTO sales_dept_v1 VALUES (1, 'Engineering', 120000, CAST('2020-03-15' AS DATE));
+INSERT INTO sales_dept_v1 VALUES (2, 'Engineering', 115000, CAST('2021-06-10' AS DATE));
+INSERT INTO sales_dept_v1 VALUES (3, 'Engineering', 95000, CAST('2022-01-20' AS DATE));
+INSERT INTO sales_dept_v1 VALUES (4, 'Sales', 110000, CAST('2019-09-05' AS DATE));
+INSERT INTO sales_dept_v1 VALUES (5, 'Sales', 105000, CAST('2021-02-14' AS DATE));
+INSERT INTO sales_dept_v1 VALUES (6, 'Sales', 98000, CAST('2020-11-30' AS DATE));
+INSERT INTO sales_dept_v1 VALUES (7, 'HR', 85000, CAST('2021-07-22' AS DATE));
+INSERT INTO sales_dept_v1 VALUES (8, 'HR', 75000, CAST('2022-04-11' AS DATE));

@@ -1,0 +1,6 @@
+INSERT INTO score_records VALUES (101, ARRAY[45, 67, 85]);
+INSERT INTO score_records VALUES (102, ARRAY[92, 78, 88]);
+INSERT INTO score_records VALUES (103, ARRAY[55, 60, 70]);
+INSERT INTO score_records VALUES (104, ARRAY[91, 95, 100]);
+INSERT INTO score_records VALUES (105, ARRAY[30, 40, 50]);
+INSERT INTO score_records VALUES (106, ARRAY[89, 90, 91]);

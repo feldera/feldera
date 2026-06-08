@@ -1,0 +1,2 @@
+CREATE VIEW string-functions_137 AS
+SELECT contains(x'537061726b2053514c', x'537061726b');

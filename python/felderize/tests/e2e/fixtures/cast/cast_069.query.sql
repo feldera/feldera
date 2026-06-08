@@ -1,0 +1,2 @@
+CREATE VIEW cast_069 AS
+SELECT NULL :: int;

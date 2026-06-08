@@ -1,0 +1,7 @@
+{"inventory_metadata": [
+  {"item_id": 1001, "item_name": "Widget A", "quantity": 50, "properties": {"sku": "W001", "supplier": "CompanyX"}},
+  {"item_id": 1002, "item_name": "Widget B", "quantity": 100, "properties": {"sku": "W002", "supplier": "CompanyY", "batch": "LT2024"}},
+  {"item_id": 1003, "item_name": "Gadget C", "quantity": 75, "properties": {"sku": "G001"}},
+  {"item_id": 1004, "item_name": "Part D", "quantity": 200, "properties": {"sku": "P001", "certifiedBy": "ISO9001", "material": "aluminum", "origin": "Germany"}},
+  {"item_id": 1005, "item_name": "Component E", "quantity": 30, "properties": {"sku": "C001", "warranty": "2years"}}
+]}

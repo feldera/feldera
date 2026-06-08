@@ -1,0 +1,16 @@
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (1, 'North America', 'Premium', CAST('2023-01-15' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (2, 'North America', 'Premium', CAST('2023-02-20' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (3, 'North America', 'Premium', CAST('2023-03-10' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (4, 'Europe', 'Standard', CAST('2023-04-05' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (5, 'Europe', 'Standard', CAST('2023-05-12' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (6, 'Europe', 'Standard', CAST('2023-06-18' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (7, 'Asia', 'Economy', CAST('2023-07-22' AS DATE));
+INSERT INTO customer_dim (customer_id, region, segment, signup_date) VALUES (8, 'Asia', 'Economy', CAST('2023-08-14' AS DATE));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (101, 1, 1500.00, 150.00, 'PAID', CAST('2024-01-10' AS DATE), CAST('2024-01-10 09:30:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (102, 2, 2000.00, 200.00, 'PAID', CAST('2024-01-11' AS DATE), CAST('2024-01-11 10:15:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (103, 3, 1800.00, 180.00, 'SHIPPED', CAST('2024-01-12' AS DATE), CAST('2024-01-12 11:00:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (104, 4, 750.00, 75.00, 'PAID', CAST('2024-01-13' AS DATE), CAST('2024-01-13 14:20:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (105, 5, 900.00, 90.00, 'PAID', CAST('2024-01-14' AS DATE), CAST('2024-01-14 15:45:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (106, 6, 850.00, 85.00, 'SHIPPED', CAST('2024-01-15' AS DATE), CAST('2024-01-15 16:30:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (107, 7, 450.00, 45.00, 'PAID', CAST('2024-01-16' AS DATE), CAST('2024-01-16 08:00:00' AS TIMESTAMP));
+INSERT INTO order_fact (order_id, customer_id, amount, discount, status, order_date, order_ts) VALUES (108, 8, 500.00, 50.00, 'PAID', CAST('2024-01-17' AS DATE), CAST('2024-01-17 09:15:00' AS TIMESTAMP));

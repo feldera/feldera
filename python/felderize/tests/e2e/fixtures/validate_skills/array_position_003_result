@@ -1,0 +1,7 @@
+1006	Alice	['Widget-X', 'Widget-X', 'Connector']	1	Found
+1003	Peter	['Speaker', 'Microphone', 'Stand']	0	Found
+1004	Susan	['Monitor', 'Widget-X', 'Adapter']	2	Found
+1001	John	['Gadget', 'Widget-X', 'Cable', 'Bracket']	2	Found
+1005	Robert	['Keyboard', 'Mouse', 'Pad']	0	Found
+1002	Mary	['Widget-X']	1	Found
+1007	Tom	['Screen']	0	Found

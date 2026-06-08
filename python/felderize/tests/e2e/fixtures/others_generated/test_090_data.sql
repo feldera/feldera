@@ -1,0 +1,17 @@
+INSERT INTO supply_warehouses (warehouse_id, region, capacity) VALUES (1, 'North America', 5000);
+INSERT INTO supply_warehouses (warehouse_id, region, capacity) VALUES (2, 'Europe', 4000);
+INSERT INTO supply_warehouses (warehouse_id, region, capacity) VALUES (3, 'Asia Pacific', 6000);
+INSERT INTO supply_suppliers (supplier_id, supplier_name, tier) VALUES (101, 'Acme Corp', 'Tier 1');
+INSERT INTO supply_suppliers (supplier_id, supplier_name, tier) VALUES (102, 'Global Parts Ltd', 'Tier 2');
+INSERT INTO supply_suppliers (supplier_id, supplier_name, tier) VALUES (103, 'Premium Supply Co', 'Tier 1');
+INSERT INTO supply_inventory (warehouse_id, sku, supplier_id, on_hand) VALUES (1, 'SKU-001', 101, 100);
+INSERT INTO supply_inventory (warehouse_id, sku, supplier_id, on_hand) VALUES (1, 'SKU-002', 102, 250);
+INSERT INTO supply_inventory (warehouse_id, sku, supplier_id, on_hand) VALUES (2, 'SKU-003', 103, 150);
+INSERT INTO supply_inventory (warehouse_id, sku, supplier_id, on_hand) VALUES (3, 'SKU-001', 101, 200);
+INSERT INTO supply_shipments (shipment_id, warehouse_id, sku, supplier_id, shipped_qty) VALUES (1001, 1, 'SKU-001', 101, 50);
+INSERT INTO supply_shipments (shipment_id, warehouse_id, sku, supplier_id, shipped_qty) VALUES (1002, 1, 'SKU-002', 102, 75);
+INSERT INTO supply_shipments (shipment_id, warehouse_id, sku, supplier_id, shipped_qty) VALUES (1003, 2, 'SKU-003', 103, 120);
+INSERT INTO supply_shipments (shipment_id, warehouse_id, sku, supplier_id, shipped_qty) VALUES (1004, 3, 'SKU-001', 101, 90);
+INSERT INTO supply_shipments (shipment_id, warehouse_id, sku, supplier_id, shipped_qty) VALUES (1005, 1, 'SKU-001', 101, 30);
+INSERT INTO supply_restocks (restock_id, warehouse_id, supplier_id, planned_qty) VALUES (5001, 1, 101, 200);
+INSERT INTO supply_restocks (restock_id, warehouse_id, supplier_id, planned_qty) VALUES (5002, 2, 103, 150);

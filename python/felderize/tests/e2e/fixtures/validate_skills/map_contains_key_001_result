@@ -1,0 +1,6 @@
+3	{'color': 'blue', 'material': 'cotton', 'size': 'small'}	True
+4	{'brand': 'xyz'}	False
+5	{'color': 'green', 'price': '29.99'}	True
+2	{'size': 'medium', 'brand': 'acme'}	False
+1	{'color': 'red', 'size': 'large'}	True
+6	{}	False

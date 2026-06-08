@@ -1,0 +1,1 @@
+INSERT INTO restaurant_menu_v3 VALUES (1, ARRAY['pizza', 'pasta', 'salad', 'soup'], ARRAY['soup']), (2, ARRAY['burger', 'fries', 'milkshake'], ARRAY['fries', 'milkshake']), (3, ARRAY['sushi', 'tempura', 'ramen', 'gyoza', 'edamame'], ARRAY['gyoza']), (4, ARRAY['steak'], ARRAY['steak']), (5, ARRAY['cheesecake', 'tiramisu', 'brownie', 'ice cream'], ARRAY[]);

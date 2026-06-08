@@ -1,0 +1,2 @@
+INSERT INTO orders VALUES (1001, 101, CAST(250.50 AS DECIMAL(10,2))), (1002, 102, CAST(500.00 AS DECIMAL(10,2))), (1003, 101, CAST(175.25 AS DECIMAL(10,2))), (1004, 103, CAST(300.75 AS DECIMAL(10,2))), (1005, 102, CAST(425.00 AS DECIMAL(10,2)));
+INSERT INTO customers VALUES (101, 'John Smith', 'New York'), (102, 'Jane Doe', 'Los Angeles'), (103, 'Bob Johnson', 'Chicago'), (104, 'Alice Williams', 'Houston');

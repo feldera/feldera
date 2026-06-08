@@ -1,0 +1,2 @@
+CREATE VIEW having_030 AS
+SELECT MAX(v) + SUM(v) FROM hav HAVING SUM(v) + MAX(v);

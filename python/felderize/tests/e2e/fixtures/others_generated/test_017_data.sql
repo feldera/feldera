@@ -1,0 +1,10 @@
+INSERT INTO store_product_sales (store_id, product_id, sale_date, revenue) VALUES (1, 101, CAST('2024-01-15' AS DATE), 5000.00);
+INSERT INTO store_product_sales (store_id, product_id, sale_date, revenue) VALUES (1, 102, CAST('2024-01-16' AS DATE), 3500.00);
+INSERT INTO store_product_sales (store_id, product_id, sale_date, revenue) VALUES (1, 103, CAST('2024-01-17' AS DATE), 3500.00);
+INSERT INTO store_product_sales (store_id, product_id, sale_date, revenue) VALUES (1, 104, CAST('2024-01-18' AS DATE), 2000.00);
+INSERT INTO store_product_sales (store_id, product_id, sale_date, revenue) VALUES (2, 201, CAST('2024-01-15' AS DATE), 7500.00);
+INSERT INTO store_product_sales (store_id, product_id, sale_date, revenue) VALUES (2, 202, CAST('2024-01-16' AS DATE), 6000.00);
+INSERT INTO store_product_sales (store_id, product_id, sale_date, revenue) VALUES (2, 203, CAST('2024-01-17' AS DATE), 4500.00);
+INSERT INTO store_product_sales (store_id, product_id, sale_date, revenue) VALUES (2, 204, CAST('2024-01-18' AS DATE), 3000.00);
+INSERT INTO store_product_sales (store_id, product_id, sale_date, revenue) VALUES (3, 301, CAST('2024-01-15' AS DATE), 8000.00);
+INSERT INTO store_product_sales (store_id, product_id, sale_date, revenue) VALUES (3, 302, CAST('2024-01-16' AS DATE), 5500.00);

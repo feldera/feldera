@@ -1,0 +1,1 @@
+INSERT INTO student_scores VALUES (101, ARRAY[85, 90, 78, 92]);INSERT INTO student_scores VALUES (102, ARRAY[72, 88]);INSERT INTO student_scores VALUES (103, ARRAY[95, 94, 96, 91, 89]);INSERT INTO student_scores VALUES (104, ARRAY[65]);INSERT INTO student_scores VALUES (105, ARRAY[80, 82, 79, 83, 81, 84]);INSERT INTO student_scores VALUES (106, ARRAY[100]);

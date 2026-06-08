@@ -1,0 +1,7 @@
+{"config_settings": [
+  {"config_id": 1, "settings_map": {"theme": "dark", "language": "en", "timezone": "UTC"}},
+  {"config_id": 2, "settings_map": {"theme": "light"}},
+  {"config_id": 3, "settings_map": {"language": "fr", "timezone": "CET", "notifications": "enabled"}},
+  {"config_id": 4, "settings_map": {"theme": "auto", "language": "de", "timezone": "CEST", "notifications": "disabled", "debug": "false"}},
+  {"config_id": 5, "settings_map": {"notifications": "enabled", "debug": "true"}}
+]}

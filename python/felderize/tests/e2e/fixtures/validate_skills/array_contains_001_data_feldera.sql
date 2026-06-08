@@ -1,0 +1,1 @@
+INSERT INTO product_tags VALUES (1, ARRAY['electronics', 'gadget', 'wireless']), (2, ARRAY['clothing', 'mens', 'casual']), (3, ARRAY['electronics', 'smartphone', 'premium']), (4, ARRAY['home', 'kitchen', 'gadget']), (5, ARRAY['electronics', 'laptop', 'business']), (6, ARRAY['sports', 'outdoor', 'hiking']);

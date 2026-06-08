@@ -1,0 +1,10 @@
+INSERT INTO category_prices (category, product_id, price) VALUES ('Electronics', 1001, 999.99);
+INSERT INTO category_prices (category, product_id, price) VALUES ('Electronics', 1002, 599.50);
+INSERT INTO category_prices (category, product_id, price) VALUES ('Electronics', 1003, 799.99);
+INSERT INTO category_prices (category, product_id, price) VALUES ('Clothing', 2001, 89.99);
+INSERT INTO category_prices (category, product_id, price) VALUES ('Clothing', 2002, 120.00);
+INSERT INTO category_prices (category, product_id, price) VALUES ('Clothing', 2003, 65.50);
+INSERT INTO category_prices (category, product_id, price) VALUES ('Home', 3001, 250.00);
+INSERT INTO category_prices (category, product_id, price) VALUES ('Home', 3002, 450.75);
+INSERT INTO category_prices (category, product_id, price) VALUES ('Books', 4001, 29.99);
+INSERT INTO category_prices (category, product_id, price) VALUES ('Books', 4002, 49.99);

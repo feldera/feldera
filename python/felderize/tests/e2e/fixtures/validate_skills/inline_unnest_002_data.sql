@@ -1,0 +1,4 @@
+INSERT INTO event_logs VALUES (101, 'alice', array(named_struct('action_type', 'login', 'timestamp', CAST('2024-01-15 08:00:00' AS TIMESTAMP)), named_struct('action_type', 'view_page', 'timestamp', CAST('2024-01-15 08:15:00' AS TIMESTAMP))));
+INSERT INTO event_logs VALUES (102, 'bob', array(named_struct('action_type', 'logout', 'timestamp', CAST('2024-01-15 09:30:00' AS TIMESTAMP))));
+INSERT INTO event_logs VALUES (103, 'charlie', array(named_struct('action_type', 'login', 'timestamp', CAST('2024-01-15 07:45:00' AS TIMESTAMP)), named_struct('action_type', 'purchase', 'timestamp', CAST('2024-01-15 08:20:00' AS TIMESTAMP)), named_struct('action_type', 'logout', 'timestamp', CAST('2024-01-15 10:00:00' AS TIMESTAMP))));
+INSERT INTO event_logs VALUES (104, 'diana', array(named_struct('action_type', 'view_page', 'timestamp', CAST('2024-01-15 11:00:00' AS TIMESTAMP))));

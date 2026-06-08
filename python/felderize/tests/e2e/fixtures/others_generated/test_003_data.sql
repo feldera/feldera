@@ -1,0 +1,10 @@
+INSERT INTO customers (customer_id, customer_name, region, signup_date) VALUES (1, 'Alice Johnson', 'North America', CAST('2023-01-15' AS DATE));
+INSERT INTO customers (customer_id, customer_name, region, signup_date) VALUES (2, 'Bob Smith', 'Europe', CAST('2023-02-20' AS DATE));
+INSERT INTO customers (customer_id, customer_name, region, signup_date) VALUES (3, 'Carol White', 'Asia Pacific', CAST('2023-03-10' AS DATE));
+INSERT INTO customers (customer_id, customer_name, region, signup_date) VALUES (4, 'David Brown', 'North America', CAST('2023-04-05' AS DATE));
+INSERT INTO customers (customer_id, customer_name, region, signup_date) VALUES (5, 'Emma Davis', 'Europe', CAST('2023-05-12' AS DATE));
+INSERT INTO refunds (refund_id, customer_id, refund_amount, refund_reason, created_at) VALUES (101, 1, 50.00, 'Defective product', CAST('2024-01-10 08:30:00' AS TIMESTAMP));
+INSERT INTO refunds (refund_id, customer_id, refund_amount, refund_reason, created_at) VALUES (102, 1, 25.50, 'Wrong size', CAST('2024-01-15 14:20:00' AS TIMESTAMP));
+INSERT INTO refunds (refund_id, customer_id, refund_amount, refund_reason, created_at) VALUES (103, 2, 100.00, 'Not as described', CAST('2024-01-20 10:45:00' AS TIMESTAMP));
+INSERT INTO refunds (refund_id, customer_id, refund_amount, refund_reason, created_at) VALUES (104, 3, 75.99, 'Customer request', CAST('2024-01-25 16:15:00' AS TIMESTAMP));
+INSERT INTO refunds (refund_id, customer_id, refund_amount, refund_reason, created_at) VALUES (105, 3, 30.00, 'Damaged in shipping', CAST('2024-02-01 09:00:00' AS TIMESTAMP));

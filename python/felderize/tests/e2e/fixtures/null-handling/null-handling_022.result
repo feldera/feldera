@@ -1,0 +1,7 @@
+0	1	False	False
+0	0	True	True
+1	1	True	True
+1	0	False	False
+None	0	False	False
+None	1	False	False
+None	None	True	True

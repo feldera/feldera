@@ -1,0 +1,1 @@
+INSERT INTO events_t3 VALUES (1, 'Conference', 'North America', 2024, 150), (2, 'Webinar', 'Europe', 2024, 200), (3, 'Workshop', 'North America', 2024, 75), (4, 'Meetup', 'Asia', 2023, 50), (5, 'Conference', 'North America', 2024, 120), (6, 'Seminar', 'North America', 2025, 90), (7, 'Workshop', 'North America', 2024, 60);

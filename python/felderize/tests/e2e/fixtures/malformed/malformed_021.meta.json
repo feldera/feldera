@@ -1,0 +1,6 @@
+{
+  "fault": "syntax_error",
+  "broken_view": "malformed_021_a",
+  "description": "View malformed_021_a has a missing comma in its SELECT list ('id k, val').",
+  "expect_no_crash": true
+}

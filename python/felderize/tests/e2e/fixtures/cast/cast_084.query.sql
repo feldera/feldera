@@ -1,0 +1,2 @@
+CREATE VIEW cast_084 AS
+SELECT TIME '23:59:59' :: int;

@@ -1,0 +1,9 @@
+a	0	None	x	y	z	x	x	v
+a	1	x	x	y	z	x	x	v
+b	2	None	y	z	v	y	y	v
+c	3	None	y	z	v	y	y	v
+a	4	y	y	z	v	y	y	v
+b	5	None	z	v	None	z	z	v
+a	6	z	z	v	None	z	z	v
+a	7	v	v	None	None	v	v	v
+a	8	None	None	None	None	None	None	None

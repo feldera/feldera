@@ -1,0 +1,1 @@
+INSERT INTO sales VALUES (1, 100, 200, 150), (2, 300, 400, 250);

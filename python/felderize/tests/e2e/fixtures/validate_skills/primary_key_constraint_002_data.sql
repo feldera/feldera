@@ -1,0 +1,8 @@
+INSERT INTO products_catalog VALUES
+(100, 'SKU001', 'Widget A', CAST(29.99 AS DECIMAL(10, 2))),
+(101, 'SKU002', 'Widget B', CAST(39.99 AS DECIMAL(10, 2))),
+(102, 'SKU003', 'Gadget X', NULL),
+(103, 'SKU004', 'Gadget Y', CAST(49.99 AS DECIMAL(10, 2))),
+(104, 'SKU005', 'Tool Z', CAST(59.95 AS DECIMAL(10, 2))),
+(105, 'SKU006', 'Part C', CAST(9.99 AS DECIMAL(10, 2))),
+(106, 'SKU007', NULL, CAST(19.99 AS DECIMAL(10, 2)));

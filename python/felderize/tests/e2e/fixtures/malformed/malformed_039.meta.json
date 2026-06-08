@@ -1,0 +1,6 @@
+{
+  "fault": "dangling_view_ref",
+  "broken_view": "malformed_039",
+  "description": "Final view references malformed_039_missing_8, which is never defined.",
+  "expect_no_crash": true
+}

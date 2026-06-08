@@ -1,0 +1,2 @@
+CREATE VIEW having_037 AS
+SELECT col1 AS a, a AS b FROM VALUES(1,2) GROUP BY col1, col2 HAVING col2 = col2;

@@ -1,0 +1,7 @@
+{"employee_scores": [
+  {"emp_id": 101, "score_map": {"performance": 92.5, "teamwork": 88.0, "innovation": 85.5}},
+  {"emp_id": 102, "score_map": {"performance": 95.0, "teamwork": 91.5}},
+  {"emp_id": 103, "score_map": {"innovation": 79.0}},
+  {"emp_id": 104, "score_map": {"performance": 88.5, "teamwork": 87.0, "innovation": 90.0, "leadership": 86.5}},
+  {"emp_id": 105, "score_map": {"teamwork": 93.0, "leadership": 89.5}}
+]}

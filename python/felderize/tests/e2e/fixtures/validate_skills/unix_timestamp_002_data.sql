@@ -1,0 +1,8 @@
+INSERT INTO activity_log_002 VALUES
+(100, 'app_start', CAST('2024-01-01 00:00:00' AS TIMESTAMP)),
+(101, 'user_register', CAST('2024-01-10 07:30:15' AS TIMESTAMP)),
+(102, 'data_sync', CAST('2024-01-20 13:45:30' AS TIMESTAMP)),
+(103, 'app_crash', CAST('2024-02-01 18:20:45' AS TIMESTAMP)),
+(104, 'update_check', CAST('2024-02-05 09:10:00' AS TIMESTAMP)),
+(105, 'settings_change', CAST('2024-02-10 15:30:20' AS TIMESTAMP)),
+(106, 'backup', CAST('2024-02-15 21:15:00' AS TIMESTAMP));

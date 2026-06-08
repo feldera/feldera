@@ -1,0 +1,7 @@
+5	[WARN] [ERROR] Critical failure detected	9	2	1
+1	[ERROR] Database connection failed	2	0	1
+7	ERROR:WARN:INFO all present	1	7	0
+4	ERROR in module processing	1	0	0
+6	No warnings or errors here	0	0	0
+2	[WARN] Low memory detected	0	2	1
+3	System running normally	0	0	0

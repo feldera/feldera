@@ -1,0 +1,5 @@
+1	['home', 'user', 'documents', 'file.txt']
+3	['usr', 'local', 'bin', 'script']
+4	['opt', 'app', 'config.json']
+2	['var', 'log', 'system.log']
+5	['root', 'data']

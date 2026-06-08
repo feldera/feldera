@@ -1,0 +1,6 @@
+{
+  "fault": "unterminated_string",
+  "broken_view": "malformed_095_a",
+  "description": "View malformed_095_a has an unterminated string literal ('k4).",
+  "expect_no_crash": true
+}

@@ -1,0 +1,6 @@
+{
+  "fault": "missing_table",
+  "broken_view": "malformed_004_b",
+  "description": "View malformed_004_b joins ghost_table_3, which is never defined.",
+  "expect_no_crash": true
+}

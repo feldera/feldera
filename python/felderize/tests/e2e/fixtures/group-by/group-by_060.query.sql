@@ -1,0 +1,2 @@
+CREATE VIEW group-by_060 AS
+SELECT col1 FROM t1 GROUP BY ALL HAVING first(col2) = 'a';

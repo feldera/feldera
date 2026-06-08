@@ -1,0 +1,6 @@
+5	+447911123456	UK	True	False
+7	+33123456789	FR	True	False
+1	+14155552671	US	True	False
+2	415-555-2671	US	False	True
+3	4155552671	US	True	True
+6	123	ZZ	False	False

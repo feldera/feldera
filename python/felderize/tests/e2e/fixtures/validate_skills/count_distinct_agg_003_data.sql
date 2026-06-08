@@ -1,0 +1,1 @@
+INSERT INTO customer_orders VALUES (1001, 10001, 'Electronics'), (1001, 10002, 'Electronics'), (1001, 10003, 'Clothing'), (1002, 10004, 'Books'), (1003, 10005, 'Electronics'), (1003, 10006, 'Clothing'), (1003, 10007, 'Home'), (1004, 10008, 'Books');

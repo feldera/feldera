@@ -1,0 +1,10 @@
+INSERT INTO spend_events (user_id, segment, amount) VALUES (1, 'VIP', 3500.00);
+INSERT INTO spend_events (user_id, segment, amount) VALUES (1, 'VIP', 4200.50);
+INSERT INTO spend_events (user_id, segment, amount) VALUES (1, 'VIP', 3400.75);
+INSERT INTO spend_events (user_id, segment, amount) VALUES (2, 'VIP', 5000.00);
+INSERT INTO spend_events (user_id, segment, amount) VALUES (2, 'VIP', 6200.25);
+INSERT INTO spend_events (user_id, segment, amount) VALUES (3, 'STANDARD', 8000.00);
+INSERT INTO spend_events (user_id, segment, amount) VALUES (3, 'STANDARD', 3000.00);
+INSERT INTO spend_events (user_id, segment, amount) VALUES (4, 'VIP', 2500.00);
+INSERT INTO spend_events (user_id, segment, amount) VALUES (4, 'VIP', 4000.00);
+INSERT INTO spend_events (user_id, segment, amount) VALUES (4, 'VIP', 5100.50);

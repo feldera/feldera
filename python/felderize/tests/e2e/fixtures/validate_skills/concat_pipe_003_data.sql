@@ -1,0 +1,1 @@
+INSERT INTO products_3 VALUES (1, 'Electronics', 'Sony', 'XYZ123'), (2, 'Furniture', 'IKEA', 'ABC456'), (3, 'Clothing', 'Nike', 'SHO789'), (4, 'Electronics', 'Samsung', 'TV2024'), (5, 'Sports', 'Adidas', 'BOOT001'), (6, NULL, 'Unknown', 'TEST');

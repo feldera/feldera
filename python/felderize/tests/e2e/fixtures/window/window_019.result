@@ -1,0 +1,9 @@
+a	0	None	x	None	None	x	x	x
+a	1	x	x	None	None	x	x	x
+b	2	None	x	None	None	x	x	x
+c	3	None	x	y	None	x	x	y
+a	4	y	x	y	None	x	x	y
+b	5	None	x	y	z	x	x	z
+a	6	z	x	y	z	x	x	v
+a	7	v	x	y	z	x	x	v
+a	8	None	x	y	z	x	x	v

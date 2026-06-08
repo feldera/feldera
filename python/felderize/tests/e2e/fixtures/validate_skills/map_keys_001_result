@@ -1,0 +1,5 @@
+3	['style', 'fit', 'length', 'weight']
+5	['price', 'discount', 'stock']
+4	['color']
+1	['color', 'size', 'material']
+2	['color', 'brand']

@@ -1,0 +1,11 @@
+INSERT INTO web_sessions (session_id, customer_id, region, session_start, duration_seconds) VALUES (1, 101, 'North', CAST('2024-01-15 10:30:00' AS TIMESTAMP), 1200);
+INSERT INTO web_sessions (session_id, customer_id, region, session_start, duration_seconds) VALUES (2, 102, 'North', CAST('2024-01-15 11:15:00' AS TIMESTAMP), 900);
+INSERT INTO web_sessions (session_id, customer_id, region, session_start, duration_seconds) VALUES (3, 103, 'South', CAST('2024-01-15 12:00:00' AS TIMESTAMP), 1500);
+INSERT INTO web_sessions (session_id, customer_id, region, session_start, duration_seconds) VALUES (4, 104, 'South', CAST('2024-01-15 13:30:00' AS TIMESTAMP), 800);
+INSERT INTO web_sessions (session_id, customer_id, region, session_start, duration_seconds) VALUES (5, 105, 'East', CAST('2024-01-15 14:00:00' AS TIMESTAMP), 1100);
+INSERT INTO web_sessions (session_id, customer_id, region, session_start, duration_seconds) VALUES (6, 106, 'West', CAST('2024-01-15 15:20:00' AS TIMESTAMP), 950);
+INSERT INTO store_visits (visit_id, customer_id, region, visit_start, duration_minutes) VALUES (201, 101, 'North', CAST('2024-01-15 09:00:00' AS TIMESTAMP), 20);
+INSERT INTO store_visits (visit_id, customer_id, region, visit_start, duration_minutes) VALUES (202, 107, 'North', CAST('2024-01-15 10:45:00' AS TIMESTAMP), 15);
+INSERT INTO store_visits (visit_id, customer_id, region, visit_start, duration_minutes) VALUES (203, 103, 'South', CAST('2024-01-15 11:30:00' AS TIMESTAMP), 25);
+INSERT INTO store_visits (visit_id, customer_id, region, visit_start, duration_minutes) VALUES (204, 108, 'East', CAST('2024-01-15 16:00:00' AS TIMESTAMP), 18);
+INSERT INTO store_visits (visit_id, customer_id, region, visit_start, duration_minutes) VALUES (205, 109, 'West', CAST('2024-01-15 17:30:00' AS TIMESTAMP), 22);

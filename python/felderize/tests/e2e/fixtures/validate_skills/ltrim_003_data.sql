@@ -1,0 +1,1 @@
+INSERT INTO code_comments VALUES (1, '  TODO: fix bug'), (2, '    NOTE: review later'), (3, 'DEPRECATED'), (4, '     WARNING: performance issue'), (5, ' INFO: updated'), (6, 'FIXME: urgent'), (7, '        IDEA: new feature');

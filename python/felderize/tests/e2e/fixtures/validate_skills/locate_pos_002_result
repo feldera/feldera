@@ -1,0 +1,7 @@
+1	The quick brown fox jumps over the lazy dog	quick	0	5
+2	The quick brown fox jumps over the lazy dog	over	27	27
+3	The quick brown fox jumps over the lazy dog	the	32	32
+4	Error occurred in processing stage	Error	0	1
+5	Error occurred in processing stage	ing	26	26
+6	Start middle middle end	middle	14	7
+7	NotFoundTest	xyz	0	0

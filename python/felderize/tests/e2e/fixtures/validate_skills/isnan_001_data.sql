@@ -1,0 +1,1 @@
+INSERT INTO sensor_readings VALUES (1, 23.5, 65.0), (2, CAST('NaN' AS DOUBLE), 70.5), (3, 25.0, CAST('NaN' AS DOUBLE)), (4, CAST('NaN' AS DOUBLE), CAST('NaN' AS DOUBLE)), (5, 22.3, 68.0), (6, CAST('NaN' AS DOUBLE), 72.1), (7, 26.8, 61.5);

@@ -1,0 +1,1 @@
+INSERT INTO user_messages VALUES (101, 'hello world from spark', 'GREETING'), (102, 'testing substring function', 'Test Case'), (103, 'data processing example', 'DATABASE'), (104, 'feldera integration', 'Integration'), (105, 'string manipulation test', 'STRING'), (106, 'another message here', 'ANOTHER'), (107, 'final test case', 'FINAL');

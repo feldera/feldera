@@ -1,0 +1,2 @@
+CREATE VIEW having_027 AS
+SELECT SUM(v) + 1 FROM hav HAVING SUM(v) + 1;

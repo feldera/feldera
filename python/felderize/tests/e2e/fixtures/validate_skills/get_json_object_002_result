@@ -1,0 +1,6 @@
+102	purchase	2024-01-15T12:00:00Z	failed
+101	logout	2024-01-15T11:45:00Z	success
+100	login	2024-01-15T10:30:00Z	success
+104	None	2024-01-15T13:30:00Z	timeout
+103	update_profile	None	pending
+105	None	None	None

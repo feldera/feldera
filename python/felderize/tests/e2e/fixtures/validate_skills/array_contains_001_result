@@ -1,0 +1,6 @@
+3	['electronics', 'smartphone', 'premium']	True
+1	['electronics', 'gadget', 'wireless']	True
+5	['electronics', 'laptop', 'business']	True
+4	['home', 'kitchen', 'gadget']	False
+6	['sports', 'outdoor', 'hiking']	False
+2	['clothing', 'mens', 'casual']	False

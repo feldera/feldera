@@ -1,0 +1,7 @@
+{"user_preferences": [
+  {"user_id": 101, "settings": {"theme": 1, "language": 2, "notifications": 1}},
+  {"user_id": 102, "settings": {"brightness": 80, "volume": 50}},
+  {"user_id": 103, "settings": {"fps": 144, "resolution": 1080, "quality": 3, "antialiasing": 2}},
+  {"user_id": 104, "settings": {"timeout": 300}},
+  {"user_id": 105, "settings": {"retries": 5, "delay": 1000, "maxConnections": 10}}
+]}

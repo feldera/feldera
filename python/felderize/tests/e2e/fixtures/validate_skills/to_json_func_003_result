@@ -1,0 +1,5 @@
+1002	{"name":"Purchase","code":300,"id":1002}
+1004	{"name":"Success","code":200,"id":1004}
+1001	{"name":"Logout","code":201,"id":1001}
+1000	{"name":"Login","code":200,"id":1000}
+1003	{"name":"Error","code":500,"id":1003}

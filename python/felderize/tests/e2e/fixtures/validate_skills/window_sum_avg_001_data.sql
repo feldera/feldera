@@ -1,0 +1,7 @@
+INSERT INTO sales_data VALUES (1, 'East', 100, CAST('2024-01-01' AS DATE));
+INSERT INTO sales_data VALUES (2, 'East', 150, CAST('2024-01-02' AS DATE));
+INSERT INTO sales_data VALUES (3, 'East', 200, CAST('2024-01-03' AS DATE));
+INSERT INTO sales_data VALUES (4, 'West', 120, CAST('2024-01-01' AS DATE));
+INSERT INTO sales_data VALUES (5, 'West', 180, CAST('2024-01-02' AS DATE));
+INSERT INTO sales_data VALUES (6, 'West', 90, CAST('2024-01-03' AS DATE));
+INSERT INTO sales_data VALUES (7, 'Central', 250, CAST('2024-01-02' AS DATE));

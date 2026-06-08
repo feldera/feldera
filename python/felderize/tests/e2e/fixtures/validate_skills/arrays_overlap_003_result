@@ -1,0 +1,7 @@
+6	['video_production', 'editing']	['video_production', 'animation']	True
+5	['gardening']	['plants', 'flowers', 'nature']	False
+1	['reading', 'gaming', 'coding']	['reading', 'music', 'sports']	True
+3	['photography', 'travel']	['painting', 'drawing']	False
+2	['cooking', 'hiking']	['yoga', 'meditation', 'cooking']	True
+4	['music', 'dancing']	['music', 'singing', 'performing']	True
+7	['chess', 'board_games']	['movies', 'books']	False

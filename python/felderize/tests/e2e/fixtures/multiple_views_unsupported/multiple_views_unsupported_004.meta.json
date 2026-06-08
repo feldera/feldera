@@ -1,0 +1,8 @@
+{
+  "unsupported_features": [
+    "transform"
+  ],
+  "view_with_unsupported": "multiple_views_unsupported_004_derived",
+  "description": "View multiple_views_unsupported_004_derived uses Spark `transform`, which Feldera does not support; downstream views depend on its output.",
+  "expect_no_crash": true
+}

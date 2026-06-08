@@ -1,0 +1,5 @@
+4	{'Type': 'furniture', 'Weight': 'heavy'}
+3	{'Fit': 'slim', 'Style': 'casual'}
+2	{'Origin': 'usa', 'Material': 'cotton'}
+5	{'Season': 'summer', 'Rating': 'a+'}
+1	{'Brand': 'nike', 'Size': 'large', 'Color': 'red'}

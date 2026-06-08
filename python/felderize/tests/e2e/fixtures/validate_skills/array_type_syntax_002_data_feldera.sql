@@ -1,0 +1,6 @@
+INSERT INTO student_scores VALUES (101, 'Alice', ARRAY[85, 90, 95, 88], CAST('2024-01-15' AS DATE));
+INSERT INTO student_scores VALUES (102, 'Bob', ARRAY[78, 82, 80, 95], CAST('2024-01-15' AS DATE));
+INSERT INTO student_scores VALUES (103, 'Carol', ARRAY[92, 88, 91, 89], CAST('2024-01-15' AS DATE));
+INSERT INTO student_scores VALUES (104, 'David', ARRAY[95, 97, 93, 96], CAST('2024-01-15' AS DATE));
+INSERT INTO student_scores VALUES (105, 'Eve', ARRAY[70, 75, 72, 73], CAST('2024-01-15' AS DATE));
+INSERT INTO student_scores VALUES (106, 'Frank', ARRAY[95, 95, 95, 95], CAST('2024-01-15' AS DATE));

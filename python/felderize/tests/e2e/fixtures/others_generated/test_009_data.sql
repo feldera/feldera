@@ -1,0 +1,13 @@
+INSERT INTO daily_active_users (activity_date, user_id) VALUES (CAST('2026-03-01' AS DATE), 101);
+INSERT INTO daily_active_users (activity_date, user_id) VALUES (CAST('2026-03-02' AS DATE), 102);
+INSERT INTO daily_active_users (activity_date, user_id) VALUES (CAST('2026-03-03' AS DATE), 103);
+INSERT INTO daily_active_users (activity_date, user_id) VALUES (CAST('2026-03-04' AS DATE), 104);
+INSERT INTO daily_active_users (activity_date, user_id) VALUES (CAST('2026-03-05' AS DATE), 105);
+INSERT INTO daily_active_users (activity_date, user_id) VALUES (CAST('2026-03-06' AS DATE), 101);
+INSERT INTO daily_active_users (activity_date, user_id) VALUES (CAST('2026-03-07' AS DATE), 102);
+INSERT INTO paid_users (user_id, plan_name, effective_date) VALUES (101, 'PRO', CAST('2026-01-01' AS DATE));
+INSERT INTO paid_users (user_id, plan_name, effective_date) VALUES (102, 'PRO', CAST('2026-01-15' AS DATE));
+INSERT INTO paid_users (user_id, plan_name, effective_date) VALUES (103, 'PRO', CAST('2026-02-01' AS DATE));
+INSERT INTO paid_users (user_id, plan_name, effective_date) VALUES (106, 'PRO', CAST('2026-01-10' AS DATE));
+INSERT INTO paid_users (user_id, plan_name, effective_date) VALUES (107, 'PRO', CAST('2026-01-20' AS DATE));
+INSERT INTO paid_users (user_id, plan_name, effective_date) VALUES (108, 'BASIC', CAST('2026-02-10' AS DATE));

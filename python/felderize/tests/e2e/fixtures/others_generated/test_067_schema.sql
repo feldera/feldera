@@ -1,0 +1,21 @@
+CREATE TABLE collection_events (
+  row_id BIGINT,
+  nums ARRAY<INT>,
+  scores ARRAY<INT>,
+  prices ARRAY<DECIMAL(10,2)>,
+  taxes ARRAY<DECIMAL(10,2)>,
+  tags ARRAY<STRING>,
+  preferred_tags ARRAY<STRING>,
+  recent_tags ARRAY<STRING>,
+  blocked_tags ARRAY<STRING>,
+  nested_tags ARRAY<ARRAY<STRING>>,
+  attrs MAP<STRING, STRING>,
+  attrs2 MAP<STRING, STRING>,
+  key_arr ARRAY<STRING>,
+  val_arr ARRAY<STRING>,
+  raw_map STRING,
+  raw_json STRING,
+  payload STRING,
+  start_date DATE,
+  end_date DATE
+) USING parquet;

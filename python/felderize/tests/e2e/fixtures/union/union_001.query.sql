@@ -1,0 +1,5 @@
+CREATE VIEW union_001 AS
+SELECT *
+FROM   (SELECT * FROM t1
+        UNION ALL
+        SELECT * FROM t1);

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "felderize"
+version = "0.1.0"
+description = "SQL dialect to Feldera SQL translator agent"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.39.0",
+    "httpx>=0.27",        # llm.py catches httpx errors in the stream retry loop
+    "sqlparse>=0.5.0",
+    "click>=8.1.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
+]
+
+# Test/dev only. sqlglot is used by the e2e runner (Spark→Feldera data-literal
+# transpile), feldera by the e2e runner to drive a live pipeline, pyarrow by the
+# feldera SDK to read query results (pull it in explicitly so the e2e runner does
+# not fail with "No module named 'pyarrow'" when the SDK's transitive dep is absent).
+[project.optional-dependencies]
+test = ["pytest>=8", "sqlglot>=25.0.0", "feldera", "pyarrow>=14"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+
+[tool.setuptools.package-dir]
+felderize = "felderize"
+
+[tool.setuptools.package-data]
+felderize = [
+    "skills/*.md",
+    "spark_sql/*.sql",
+    "prompts/*.md",
+]
+
+[project.scripts]
+felderize = "felderize.cli:cli"

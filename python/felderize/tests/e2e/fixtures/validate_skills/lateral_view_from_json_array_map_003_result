@@ -1,0 +1,6 @@
+1	zone_a	temp	22.5
+1	zone_a	humidity	65
+2	zone_b	temp	19.8
+2	zone_b	humidity	70
+2	zone_b	co2	412
+3	zone_c	temp	25.1

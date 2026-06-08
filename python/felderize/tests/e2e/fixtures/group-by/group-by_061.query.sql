@@ -1,0 +1,2 @@
+CREATE VIEW group-by_061 AS
+SELECT col1 FROM t1 GROUP BY ALL HAVING last(col2) = 'a';
