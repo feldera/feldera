@@ -14,6 +14,7 @@ from pyiceberg.types import (
     NestedField,
     TimeType,
     TimestampType,
+    TimestamptzType,
     IntegerType,
     FloatType,
     DoubleType,
@@ -124,6 +125,7 @@ schema = Schema(
     # NestedField(11, "uuid", UUIDType(), required=True),
     NestedField(11, "fixed", FixedType(5), required=True),
     NestedField(12, "varbin", BinaryType(), required=True),
+    NestedField(13, "tstz", TimestamptzType(), required=True),
 )
 
 # Equivalent arrow schema
@@ -142,6 +144,7 @@ arrow_schema = pa.schema(
         # pa.field("uuid", pa.binary(16), nullable=False),
         pa.field("fixed", pa.binary(5), nullable=False),
         pa.field("varbin", pa.binary(), nullable=False),
+        pa.field("tstz", pa.timestamp("us", tz="UTC"), nullable=False),
     ]
 )
 
@@ -177,6 +180,7 @@ if args.json_file:
     pandas_df = pd.read_json(args.json_file, lines=True)
     pandas_df["tm"] = pd.to_datetime(pandas_df["tm"]).dt.time
     pandas_df["ts"] = pd.to_datetime(pandas_df["ts"])
+    pandas_df["tstz"] = pd.to_datetime(pandas_df["tstz"], utc=True)
     pandas_df["dt"] = pd.to_datetime(pandas_df["dt"]).dt.date
     pandas_df["dec"] = pandas_df["dec"].apply(lambda x: Decimal(f"{x:.3f}"))
     # pandas_df['uuid'] = pandas_df['uuid'].apply(lambda x: bytes(x))
@@ -221,6 +225,11 @@ else:
             datetime.datetime(2023, 1, 1) + datetime.timedelta(seconds=i)
             for i in range(num_records)
         ],
+        "tstz": [
+            datetime.datetime(2023, 1, 1, tzinfo=datetime.timezone.utc)
+            + datetime.timedelta(seconds=i)
+            for i in range(num_records)
+        ],
         "s": [f"string_{i}" for i in range(num_records)],  # string
         # "uuid": [uuid.uuid4().bytes for _ in range(num_records)],  # binary(16) - UUID
         "fixed": [np.random.bytes(5) for _ in range(num_records)],  # fixed binary(5)
@@ -238,6 +247,7 @@ print("Generating Pandas dataframe")
 
 # pyiceberg does not support nanosecond timestamps
 pandas_df["ts"] = pandas_df["ts"].astype("datetime64[us]")
+pandas_df["tstz"] = pandas_df["tstz"].astype("datetime64[us, UTC]")
 
 print("Converting Pandas dataframe to Arrow")
 
