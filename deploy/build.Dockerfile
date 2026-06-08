@@ -67,7 +67,7 @@ RUN  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmo
 ## Install nodejs
 RUN mkdir -p /etc/apt/keyrings
 RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-ENV NODE_MAJOR=20
+ENV NODE_MAJOR=24
 RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
 RUN apt-get update --fix-missing && apt-get install -y nodejs
 
