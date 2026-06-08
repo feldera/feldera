@@ -97,6 +97,8 @@ where
         handle
     }
 
+    /// Accumulate `self` and create an output handle for the accumulated stream.
+    ///
     /// Returns:
     /// - The output handle.
     /// - The enable count of the accumulator. Can be used to enable/disable the accumulator.
@@ -110,13 +112,37 @@ where
         Arc<AtomicUsize>,
         GlobalNodeId,
     ) {
-        let (output, output_handle) = AccumulateOutput::<B>::new();
-
         let (accumulated, enable_count) = self.accumulate_with_enable_count();
-        let gid = self.circuit().add_sink(output, &accumulated);
-        self.circuit().set_persistent_node_id(&gid, persistent_id);
+        let (output_handle, gid) = self
+            .circuit()
+            .output_accumulated_stream_persistent_with_gid::<B>(&accumulated, persistent_id);
 
         (output_handle, enable_count, gid)
+    }
+}
+
+impl RootCircuit {
+    /// Create an output handle for an accumulated stream `stream`.
+    ///
+    /// Returns:
+    /// - The output handle.
+    /// - The enable count of the accumulator. Can be used to enable/disable the accumulator.
+    /// - The global node ID of the output operator.
+    #[track_caller]
+    pub fn output_accumulated_stream_persistent_with_gid<B>(
+        &self,
+        stream: &Stream<Self, Option<Spine<B>>>,
+        persistent_id: Option<&str>,
+    ) -> (OutputHandle<SpineSnapshot<B>>, GlobalNodeId)
+    where
+        B: Batch + Send,
+    {
+        let (output, output_handle) = AccumulateOutput::<B>::new();
+
+        let gid = self.add_sink(output, stream);
+        self.set_persistent_node_id(&gid, persistent_id);
+
+        (output_handle, gid)
     }
 }
 
