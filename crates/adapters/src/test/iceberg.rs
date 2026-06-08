@@ -8,7 +8,7 @@ use crossbeam::channel::Receiver;
 use dbsp::DBData;
 use feldera_sqllib::Variant;
 #[cfg(feature = "iceberg-tests-fs")]
-use feldera_sqllib::{ByteArray, F32, F64};
+use feldera_sqllib::{ByteArray, F32, F64, Timestamp, TimestampTz};
 use feldera_types::{
     program_schema::Field,
     serde_with_context::{DeserializeWithContext, SerializeWithContext, SqlSerdeConfig},
@@ -216,6 +216,7 @@ fn data(n_records: usize) -> Vec<IcebergTestStruct> {
             // uuid: ByteArray::new([0u8; 16].as_slice()),
             fixed: ByteArray::new([0u8; 5].as_slice()),
             varbin: ByteArray::new([0u8; 5].as_slice()),
+            tstz: TimestampTz::from(Timestamp::from_naiveDateTime(time)),
         });
 
         time += std::time::Duration::from_secs(1);
