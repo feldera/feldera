@@ -1,4 +1,4 @@
-use crate::db::types::api_key::ApiPermission;
+use crate::db::types::role::Role;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
@@ -34,7 +34,18 @@ pub struct OidcTrustDescr {
     pub subject: String,
     #[serde(default)]
     pub audience: Option<String>,
-    pub scopes: Vec<ApiPermission>,
+    /// Role granted to a token that satisfies this trust. Capped at the
+    /// creating principal's role; `owner` trusts are platform-wide and may be
+    /// created only by an owner.
+    pub role: Role,
+}
+
+/// Returns true if `pattern` is a concrete claim value: non-empty and free of
+/// the `*` wildcard. Used by the create path to bound how broadly a trust may
+/// match (a wildcard pattern authorizes a whole set of tokens). Lives next to
+/// [`claim_matches`] so the matcher and the breadth policy change together.
+pub fn pattern_is_concrete(pattern: &str) -> bool {
+    !pattern.is_empty() && !pattern.contains('*')
 }
 
 /// Returns true if `pattern` matches `value`, where `*` in `pattern` matches
@@ -70,7 +81,18 @@ pub fn claim_matches(pattern: &str, value: &str) -> bool {
 
 #[cfg(test)]
 mod test {
-    use super::claim_matches;
+    use super::{claim_matches, pattern_is_concrete};
+
+    #[test]
+    fn concrete_patterns_have_no_wildcard() {
+        assert!(pattern_is_concrete("system:sa:app"));
+        assert!(pattern_is_concrete("feldera-tenant"));
+        assert!(!pattern_is_concrete("system:sa:*"));
+        assert!(!pattern_is_concrete("*"));
+        assert!(!pattern_is_concrete("*prod"));
+        // Empty is not a usable concrete value.
+        assert!(!pattern_is_concrete(""));
+    }
 
     #[test]
     fn exact_match() {

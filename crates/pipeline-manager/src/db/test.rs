@@ -5,7 +5,7 @@ use crate::db::error::DBError::InvalidResourcesStatusNotRemain;
 use crate::db::operations::pipeline::get_pipeline_by_id_for_monitoring;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::{is_pipeline_assigned_to_worker, StoragePostgres};
-use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId, ApiPermission};
+use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId};
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
     ExtendedPipelineMonitorEvent, MonitorStatus, NewClusterMonitorEvent, PipelineMonitorEvent,
@@ -24,8 +24,10 @@ use crate::db::types::resources_status::{
     validate_resources_desired_status_transition, validate_resources_status_transition,
     ResourcesDesiredStatus, ResourcesStatus,
 };
+use crate::db::types::role::{MintableKeyRole, Role};
 use crate::db::types::storage::{validate_storage_status_transition, StorageStatus};
 use crate::db::types::tenant::TenantId;
+use crate::db::types::user::{TenantInfo, TenantMember, UserId};
 use crate::db::types::utils::{
     validate_api_key_name, validate_deployment_config, validate_pipeline_name,
     validate_program_config, validate_program_info, validate_runtime_config,
@@ -736,14 +738,13 @@ async fn api_key_store_and_validation() {
                 Uuid::now_v7(),
                 api_key_name,
                 &api_key,
-                vec![ApiPermission::Read, ApiPermission::Write],
+                MintableKeyRole::Write,
             )
             .await
             .unwrap();
-        let scopes = handle.db.validate_api_key(&api_key).await.unwrap();
-        assert_eq!(tenant_id, scopes.0);
-        assert_eq!(&ApiPermission::Read, scopes.1.first().unwrap());
-        assert_eq!(&ApiPermission::Write, scopes.1.get(1).unwrap());
+        let validated = handle.db.validate_api_key(&api_key).await.unwrap();
+        assert_eq!(tenant_id, validated.0);
+        assert_eq!(Role::Write, validated.1);
 
         // Delete API key
         handle
@@ -768,6 +769,287 @@ async fn api_key_store_and_validation() {
         let err = handle.db.validate_api_key(&api_key_2).await.unwrap_err();
         assert!(matches!(err, DBError::InvalidApiKey));
     }
+}
+
+/// RBAC login resolution and membership: the first principal of a fresh tenant
+/// becomes its admin, later principals default to read, roles are editable and
+/// removable, and strict tenant lookup works.
+#[tokio::test]
+async fn rbac_login_resolution_and_membership() {
+    let handle = test_setup().await;
+    let provider = "https://idp.example".to_string();
+
+    // First login into a fresh tenant: the creator becomes admin.
+    let (tenant, alice, role) = handle
+        .db
+        .resolve_login(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            "acme".to_string(),
+            provider.clone(),
+            "alice".to_string(),
+            Some("alice@acme.test".to_string()),
+            Role::Read,
+        )
+        .await
+        .unwrap();
+    assert_eq!(role, Role::Admin);
+
+    // Second login into the existing tenant defaults to read.
+    let (tenant2, bob, role) = handle
+        .db
+        .resolve_login(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            "acme".to_string(),
+            provider.clone(),
+            "bob".to_string(),
+            Some("bob@acme.test".to_string()),
+            Role::Read,
+        )
+        .await
+        .unwrap();
+    assert_eq!(tenant2, tenant);
+    assert_eq!(role, Role::Read);
+
+    // A repeat login keeps the stored role (idempotent, not re-defaulted).
+    let (_, alice_again, role) = handle
+        .db
+        .resolve_login(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            "acme".to_string(),
+            provider.clone(),
+            "alice".to_string(),
+            None,
+            Role::Read,
+        )
+        .await
+        .unwrap();
+    assert_eq!(alice_again, alice);
+    assert_eq!(role, Role::Admin);
+
+    // Membership listing reflects both users and their roles.
+    let role_of = |members: &[crate::db::types::user::TenantMember], uid: UserId| {
+        members.iter().find(|m| m.user_id == uid).map(|m| m.role)
+    };
+    let members = handle.db.list_tenant_members(tenant).await.unwrap();
+    assert_eq!(members.len(), 2);
+    assert_eq!(role_of(&members, alice), Some(Role::Admin));
+    assert_eq!(role_of(&members, bob), Some(Role::Read));
+
+    // An admin can change bob's role to write.
+    handle
+        .db
+        .upsert_member_role(tenant, bob, Role::Write)
+        .await
+        .unwrap();
+    let members = handle.db.list_tenant_members(tenant).await.unwrap();
+    assert_eq!(role_of(&members, bob), Some(Role::Write));
+
+    // Strict tenant selector resolves by name and by UUID, and rejects misses.
+    assert_eq!(
+        handle.db.resolve_tenant_selector("acme").await.unwrap(),
+        tenant
+    );
+    assert_eq!(
+        handle
+            .db
+            .resolve_tenant_selector(&tenant.0.to_string())
+            .await
+            .unwrap(),
+        tenant
+    );
+    assert!(matches!(
+        handle.db.resolve_tenant_selector("nope").await.unwrap_err(),
+        DBError::UnknownTenantName { .. }
+    ));
+
+    // Removal drops the membership.
+    handle.db.remove_member(tenant, bob).await.unwrap();
+    assert_eq!(
+        handle.db.list_tenant_members(tenant).await.unwrap().len(),
+        1
+    );
+}
+
+/// Federated-token resolution: the issuer gate rejects unregistered issuers
+/// before any fetch, the audience disambiguates between tenants trusting the
+/// same identity, and an ambiguous cross-tenant match fails closed.
+#[tokio::test]
+async fn oidc_trust_matching_and_issuer_gate() {
+    let handle = test_setup().await;
+    let iss = "https://oidc.example";
+
+    let mk_tenant = |name: &'static str| {
+        let db = &handle.db;
+        async move {
+            db.resolve_login(
+                Uuid::now_v7(),
+                Uuid::now_v7(),
+                name.to_string(),
+                "prov".to_string(),
+                format!("admin-{name}"),
+                None,
+                Role::Read,
+            )
+            .await
+            .unwrap()
+            .0
+        }
+    };
+    let tenant_a = mk_tenant("a").await;
+    let tenant_b = mk_tenant("b").await;
+
+    // Unregistered issuer: gate is closed and no trust matches.
+    assert!(!handle.db.is_trusted_issuer(iss).await.unwrap());
+    assert!(handle
+        .db
+        .match_oidc_trust(iss, "system:sa:app", &["a".to_string()])
+        .await
+        .unwrap()
+        .is_none());
+
+    // Two tenants trust the same issuer+subject, disambiguated by audience.
+    let sub = "system:sa:app";
+    handle
+        .db
+        .create_oidc_trust(
+            tenant_a,
+            Uuid::now_v7(),
+            "ta",
+            None,
+            iss,
+            sub,
+            Some("a"),
+            Role::Write,
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .create_oidc_trust(
+            tenant_b,
+            Uuid::now_v7(),
+            "tb",
+            None,
+            iss,
+            sub,
+            Some("b"),
+            Role::Write,
+        )
+        .await
+        .unwrap();
+
+    assert!(handle.db.is_trusted_issuer(iss).await.unwrap());
+    assert_eq!(
+        handle
+            .db
+            .match_oidc_trust(iss, sub, &["a".to_string()])
+            .await
+            .unwrap(),
+        Some((tenant_a, Role::Write))
+    );
+    assert_eq!(
+        handle
+            .db
+            .match_oidc_trust(iss, sub, &["b".to_string()])
+            .await
+            .unwrap(),
+        Some((tenant_b, Role::Write))
+    );
+    // A token whose audience matches neither trust does not resolve.
+    assert!(handle
+        .db
+        .match_oidc_trust(iss, sub, &["c".to_string()])
+        .await
+        .unwrap()
+        .is_none());
+
+    // A third tenant trusts the same issuer+subject with NO audience, so it
+    // matches any token. A token now resolves to two distinct tenants: the
+    // match is ambiguous and fails closed rather than picking one arbitrarily.
+    let tenant_c = mk_tenant("c").await;
+    handle
+        .db
+        .create_oidc_trust(
+            tenant_c,
+            Uuid::now_v7(),
+            "tc",
+            None,
+            iss,
+            sub,
+            None,
+            Role::Read,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        handle
+            .db
+            .match_oidc_trust(iss, sub, &["a".to_string()])
+            .await
+            .unwrap_err(),
+        DBError::UnauthorizedOidcToken
+    ));
+}
+
+/// Pre-provisioning: an admin grants a role by identity before first login; the
+/// grant appears in the member list and survives the user's first login instead
+/// of being overwritten by the default role.
+#[tokio::test]
+async fn preprovision_member_survives_first_login() {
+    let handle = test_setup().await;
+    let (tenant, _admin, _) = handle
+        .db
+        .resolve_login(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            "acme".to_string(),
+            "prov".to_string(),
+            "admin".to_string(),
+            None,
+            Role::Read,
+        )
+        .await
+        .unwrap();
+
+    // Grant write to carol before she has ever logged in.
+    let carol = handle
+        .db
+        .preprovision_member(
+            Uuid::now_v7(),
+            tenant,
+            "prov",
+            "carol",
+            Some("carol@acme.test"),
+            Role::Write,
+        )
+        .await
+        .unwrap();
+    let members = handle.db.list_tenant_members(tenant).await.unwrap();
+    assert_eq!(
+        members.iter().find(|m| m.user_id == carol).map(|m| m.role),
+        Some(Role::Write)
+    );
+
+    // Carol's first login keeps the pre-provisioned write role (not defaulted).
+    let (login_tenant, login_user, role) = handle
+        .db
+        .resolve_login(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            "acme".to_string(),
+            "prov".to_string(),
+            "carol".to_string(),
+            Some("carol@acme.test".to_string()),
+            Role::Read,
+        )
+        .await
+        .unwrap();
+    assert_eq!(login_tenant, tenant);
+    assert_eq!(login_user, carol);
+    assert_eq!(role, Role::Write);
 }
 
 /// Creation of pipelines.
@@ -3147,7 +3429,7 @@ enum StorageAction {
         #[proptest(strategy = "limited_uuid()")] Uuid,
         String,
         String,
-        Vec<ApiPermission>,
+        MintableKeyRole,
     ),
     ValidateApiKey(TenantId, String),
     // Pipelines
@@ -3864,8 +4146,8 @@ fn db_impl_behaves_like_model() {
                             },
                             StorageAction::StoreApiKeyHash(tenant_id, id, name, key, permissions) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.store_api_key_hash(tenant_id, id, &name, &key, permissions.clone()).await;
-                                let impl_response = handle.db.store_api_key_hash(tenant_id, id, &name, &key, permissions.clone()).await;
+                                let model_response = model.store_api_key_hash(tenant_id, id, &name, &key, permissions).await;
+                                let impl_response = handle.db.store_api_key_hash(tenant_id, id, &name, &key, permissions).await;
                                 check_responses(i, model_response, impl_response);
                             },
                             StorageAction::ValidateApiKey(tenant_id,key) => {
@@ -4199,7 +4481,7 @@ fn db_impl_behaves_like_model() {
 #[derive(Debug)]
 struct DbModel {
     pub tenants: BTreeMap<TenantId, TenantRecord>,
-    pub api_keys: BTreeMap<(TenantId, String), (ApiKeyId, String, Vec<ApiPermission>)>,
+    pub api_keys: BTreeMap<(TenantId, String), (ApiKeyId, String, Role)>,
     pub pipelines: BTreeMap<(TenantId, PipelineId), ExtendedPipelineDescr>,
     pub pipeline_events: BTreeMap<(TenantId, PipelineId), Vec<ExtendedPipelineMonitorEvent>>,
     pub cluster_events: BTreeMap<ClusterMonitorEventId, ExtendedClusterMonitorEvent>,
@@ -4662,6 +4944,10 @@ impl Storage for Mutex<DbModel> {
         panic!("For model-based tests, we generate the TenantID using proptest, as opposed to generating a claim that we then get or create an ID for");
     }
 
+    async fn create_tenant(&self, id: Uuid, _name: &str, _provider: &str) -> DBResult<TenantId> {
+        Ok(TenantId(id))
+    }
+
     async fn get_tenant_name(&self, tenant_id: TenantId) -> Result<String, DBError> {
         let s = self.lock().await;
         s.tenants
@@ -4678,7 +4964,7 @@ impl Storage for Mutex<DbModel> {
             .map(|k| ApiKeyDescr {
                 id: k.1 .0,
                 name: k.0 .1.clone(),
-                scopes: k.1 .2.clone(),
+                role: k.1 .2,
             })
             .collect())
     }
@@ -4693,7 +4979,7 @@ impl Storage for Mutex<DbModel> {
                 Ok(ApiKeyDescr {
                     id: k.0,
                     name: name.to_string(),
-                    scopes: k.2.clone(),
+                    role: k.2,
                 })
             },
         )
@@ -4715,7 +5001,7 @@ impl Storage for Mutex<DbModel> {
         id: Uuid,
         name: &str,
         key: &str,
-        permissions: Vec<ApiPermission>,
+        role: MintableKeyRole,
     ) -> DBResult<()> {
         let mut s = self.lock().await;
         validate_api_key_name(name)?;
@@ -4733,26 +5019,25 @@ impl Storage for Mutex<DbModel> {
         }
         s.api_keys.insert(
             (tenant_id, name.to_string()),
-            (ApiKeyId(id), hash, permissions),
+            (ApiKeyId(id), hash, role.role()),
         );
         Ok(())
     }
 
-    async fn validate_api_key(&self, key: &str) -> DBResult<(TenantId, Vec<ApiPermission>)> {
+    async fn validate_api_key(&self, key: &str) -> DBResult<(TenantId, Role)> {
         let s = self.lock().await;
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
-        let record: Vec<(TenantId, Vec<ApiPermission>)> = s
+        let record: Vec<(TenantId, Role)> = s
             .api_keys
             .iter()
             .filter(|k| k.1 .1 == hash)
-            .map(|k| (k.0 .0, k.1 .2.clone()))
+            .map(|k| (k.0 .0, k.1 .2))
             .collect();
         assert!(record.len() <= 1);
-        let record = record.first();
-        match record {
-            Some(record) => Ok((record.0, record.1.clone())),
+        match record.first() {
+            Some(record) => Ok((record.0, record.1)),
             None => Err(DBError::InvalidApiKey),
         }
     }
@@ -4790,9 +5075,13 @@ impl Storage for Mutex<DbModel> {
         _issuer: &str,
         _subject: &str,
         _audience: Option<&str>,
-        _scopes: Vec<ApiPermission>,
+        _role: Role,
     ) -> DBResult<()> {
         Ok(())
+    }
+
+    async fn is_trusted_issuer(&self, _issuer: &str) -> DBResult<bool> {
+        Ok(false)
     }
 
     async fn match_oidc_trust(
@@ -4800,8 +5089,86 @@ impl Storage for Mutex<DbModel> {
         _issuer: &str,
         _subject: &str,
         _audiences: &[String],
-    ) -> DBResult<Option<(TenantId, Vec<ApiPermission>)>> {
+    ) -> DBResult<Option<(TenantId, Role)>> {
         Ok(None)
+    }
+
+    // RBAC user/membership methods are not exercised by the proptest model.
+    async fn resolve_tenant_selector(&self, selector: &str) -> DBResult<TenantId> {
+        let s = self.lock().await;
+        if let Ok(uuid) = Uuid::parse_str(selector) {
+            return s.tenants.keys().find(|id| id.0 == uuid).copied().ok_or(
+                DBError::UnknownTenantName {
+                    name: selector.to_string(),
+                },
+            );
+        }
+        s.tenants
+            .iter()
+            .find(|(_, t)| t.tenant == selector)
+            .map(|(id, _)| *id)
+            .ok_or(DBError::UnknownTenantName {
+                name: selector.to_string(),
+            })
+    }
+
+    async fn list_tenants(&self) -> DBResult<Vec<TenantInfo>> {
+        Ok(vec![])
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn resolve_login(
+        &self,
+        _new_tenant_id: Uuid,
+        _new_user_id: Uuid,
+        _tenant_name: String,
+        _provider: String,
+        _subject: String,
+        _email: Option<String>,
+        default_role: Role,
+    ) -> DBResult<(TenantId, UserId, Role)> {
+        Ok((TenantId(Uuid::nil()), UserId(Uuid::nil()), default_role))
+    }
+
+    async fn get_or_create_user(
+        &self,
+        new_id: Uuid,
+        _provider: &str,
+        _subject: &str,
+        _email: Option<&str>,
+    ) -> DBResult<UserId> {
+        Ok(UserId(new_id))
+    }
+
+    async fn list_tenant_members(&self, _tenant_id: TenantId) -> DBResult<Vec<TenantMember>> {
+        Ok(vec![])
+    }
+
+    async fn upsert_member_role(
+        &self,
+        _tenant_id: TenantId,
+        _user_id: UserId,
+        _role: Role,
+    ) -> DBResult<()> {
+        Ok(())
+    }
+
+    async fn remove_member(&self, _tenant_id: TenantId, user_id: UserId) -> DBResult<()> {
+        Err(DBError::UnknownUser {
+            user_id: user_id.to_string(),
+        })
+    }
+
+    async fn preprovision_member(
+        &self,
+        new_user_id: Uuid,
+        _tenant_id: TenantId,
+        _provider: &str,
+        _subject: &str,
+        _email: Option<&str>,
+        _role: Role,
+    ) -> DBResult<UserId> {
+        Ok(UserId(new_user_id))
     }
 
     async fn list_pipelines(

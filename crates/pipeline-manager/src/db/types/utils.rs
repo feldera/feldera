@@ -61,6 +61,19 @@ pub fn validate_pipeline_name(name: &str) -> Result<(), DBError> {
     )
 }
 
+/// Maximum OIDC trust relationship name length.
+pub(crate) const MAXIMUM_OIDC_TRUST_NAME_LENGTH: usize = 100;
+
+/// Checks the provided OIDC trust relationship name is valid.
+pub fn validate_oidc_trust_name(name: &str) -> Result<(), DBError> {
+    validate_name(
+        name,
+        MAXIMUM_OIDC_TRUST_NAME_LENGTH,
+        PATTERN_NON_EMPTY_ALPHANUMERIC_UNDERSCORE_HYPHEN,
+        PATTERN_NON_EMPTY_ALPHANUMERIC_UNDERSCORE_HYPHEN_DESCRIPTION,
+    )
+}
+
 /// Checks the provided connector name is valid.
 pub fn validate_connector_name(name: &str) -> Result<(), DBError> {
     validate_name(

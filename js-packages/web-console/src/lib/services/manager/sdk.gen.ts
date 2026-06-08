@@ -3,6 +3,9 @@
 import type { Client, Options as Options2, TDataShape } from './client'
 import { client } from './client.gen'
 import type {
+  AddTenantUserData,
+  AddTenantUserErrors,
+  AddTenantUserResponses,
   CheckpointPipelineData,
   CheckpointPipelineErrors,
   CheckpointPipelineResponses,
@@ -18,12 +21,21 @@ import type {
   CompletionTokenData,
   CompletionTokenErrors,
   CompletionTokenResponses,
+  CreateTenantData,
+  CreateTenantErrors,
+  CreateTenantResponses,
   DeleteApiKeyData,
   DeleteApiKeyErrors,
   DeleteApiKeyResponses,
+  DeleteOidcTrustData,
+  DeleteOidcTrustErrors,
+  DeleteOidcTrustResponses,
   DeletePipelineData,
   DeletePipelineErrors,
   DeletePipelineResponses,
+  DeleteTenantUserData,
+  DeleteTenantUserErrors,
+  DeleteTenantUserResponses,
   GetApiKeyData,
   GetApiKeyErrors,
   GetApiKeyResponses,
@@ -56,6 +68,9 @@ import type {
   GetConfigSessionResponses,
   GetMetricsData,
   GetMetricsResponses,
+  GetOidcTrustData,
+  GetOidcTrustErrors,
+  GetOidcTrustResponses,
   GetPipelineCircuitJsonProfileData,
   GetPipelineCircuitJsonProfileErrors,
   GetPipelineCircuitJsonProfileResponses,
@@ -116,12 +131,21 @@ import type {
   ListClusterEventsData,
   ListClusterEventsErrors,
   ListClusterEventsResponses,
+  ListOidcTrustData,
+  ListOidcTrustErrors,
+  ListOidcTrustResponses,
   ListPipelineEventsData,
   ListPipelineEventsErrors,
   ListPipelineEventsResponses,
   ListPipelinesData,
   ListPipelinesErrors,
   ListPipelinesResponses,
+  ListTenantsData,
+  ListTenantsErrors,
+  ListTenantsResponses,
+  ListTenantUsersData,
+  ListTenantUsersErrors,
+  ListTenantUsersResponses,
   PatchPipelineData,
   PatchPipelineErrors,
   PatchPipelineResponses,
@@ -131,6 +155,9 @@ import type {
   PostApiKeyData,
   PostApiKeyErrors,
   PostApiKeyResponses,
+  PostOidcTrustData,
+  PostOidcTrustErrors,
+  PostOidcTrustResponses,
   PostPipelineActivateData,
   PostPipelineActivateErrors,
   PostPipelineActivateResponses,
@@ -141,6 +168,9 @@ import type {
   PostPipelineClearErrors,
   PostPipelineClearResponses,
   PostPipelineData,
+  PostPipelineDiffData,
+  PostPipelineDiffErrors,
+  PostPipelineDiffResponses,
   PostPipelineDismissErrorData,
   PostPipelineDismissErrorErrors,
   PostPipelineDismissErrorResponses,
@@ -170,9 +200,15 @@ import type {
   PostUpdateRuntimeData,
   PostUpdateRuntimeErrors,
   PostUpdateRuntimeResponses,
+  PostValidateProgramData,
+  PostValidateProgramErrors,
+  PostValidateProgramResponses,
   PutPipelineData,
   PutPipelineErrors,
   PutPipelineResponses,
+  PutTenantUserData,
+  PutTenantUserErrors,
+  PutTenantUserResponses,
   StartSamplyProfileData,
   StartSamplyProfileErrors,
   StartSamplyProfileResponses,
@@ -436,6 +472,77 @@ export const getMetrics = <ThrowOnError extends boolean = true>(
     responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/metrics',
+    ...options
+  })
+
+/**
+ * List OIDC trust relationships
+ */
+export const listOidcTrust = <ThrowOnError extends boolean = true>(
+  options?: Options<ListOidcTrustData, ThrowOnError>
+) =>
+  (options?.client ?? client).get<
+    ListOidcTrustResponses,
+    ListOidcTrustErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/oidc_trust',
+    ...options
+  })
+
+/**
+ * Create OIDC trust relationship
+ */
+export const postOidcTrust = <ThrowOnError extends boolean = true>(
+  options: Options<PostOidcTrustData, ThrowOnError>
+) =>
+  (options.client ?? client).post<
+    PostOidcTrustResponses,
+    PostOidcTrustErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/oidc_trust',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    }
+  })
+
+/**
+ * Delete OIDC trust relationship
+ */
+export const deleteOidcTrust = <ThrowOnError extends boolean = true>(
+  options: Options<DeleteOidcTrustData, ThrowOnError>
+) =>
+  (options.client ?? client).delete<
+    DeleteOidcTrustResponses,
+    DeleteOidcTrustErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/oidc_trust/{name}',
+    ...options
+  })
+
+/**
+ * Get OIDC trust relationship
+ */
+export const getOidcTrust = <ThrowOnError extends boolean = true>(
+  options: Options<GetOidcTrustData, ThrowOnError>
+) =>
+  (options.client ?? client).get<GetOidcTrustResponses, GetOidcTrustErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/oidc_trust/{name}',
     ...options
   })
 
@@ -900,6 +1007,39 @@ export const getPipelineDataflowGraph = <ThrowOnError extends boolean = true>(
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/dataflow_graph',
     ...options
+  })
+
+/**
+ * Compute Program Diff
+ *
+ * Compute the diff between the pipeline's current program and a proposed new
+ * version, without modifying or restarting the pipeline.
+ *
+ * The diff lists the tables, views, and connectors that would be added,
+ * removed, or modified. It is the same diff shown when approving changes during
+ * bootstrapping, letting you preview the effect of a change before applying it.
+ *
+ * The baseline is the pipeline's currently configured program compiled with its
+ * runtime, not necessarily the program in the latest checkpoint (which may have
+ * been produced by a different program or runtime version).
+ */
+export const postPipelineDiff = <ThrowOnError extends boolean = true>(
+  options: Options<PostPipelineDiffData, ThrowOnError>
+) =>
+  (options.client ?? client).post<
+    PostPipelineDiffResponses,
+    PostPipelineDiffErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/diff',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    }
   })
 
 /**
@@ -1597,4 +1737,158 @@ export const getPipelineOutputConnectorStatus = <ThrowOnError extends boolean = 
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats',
     ...options
+  })
+
+/**
+ * List tenant members
+ *
+ * List the users that are members of the acting tenant and their roles.
+ */
+export const listTenantUsers = <ThrowOnError extends boolean = true>(
+  options?: Options<ListTenantUsersData, ThrowOnError>
+) =>
+  (options?.client ?? client).get<
+    ListTenantUsersResponses,
+    ListTenantUsersErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/tenant/users',
+    ...options
+  })
+
+/**
+ * Pre-provision a tenant member
+ *
+ * Add a member to the acting tenant by identity, before the user's first
+ * login. The grant is dormant until that identity authenticates into the
+ * tenant through the IdP. The role is capped at the caller's own role and may
+ * not be `owner`.
+ */
+export const addTenantUser = <ThrowOnError extends boolean = true>(
+  options: Options<AddTenantUserData, ThrowOnError>
+) =>
+  (options.client ?? client).post<
+    AddTenantUserResponses,
+    AddTenantUserErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/tenant/users',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    }
+  })
+
+/**
+ * Remove a tenant member
+ *
+ * Remove a user from the acting tenant.
+ */
+export const deleteTenantUser = <ThrowOnError extends boolean = true>(
+  options: Options<DeleteTenantUserData, ThrowOnError>
+) =>
+  (options.client ?? client).delete<
+    DeleteTenantUserResponses,
+    DeleteTenantUserErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/tenant/users/{user_id}',
+    ...options
+  })
+
+/**
+ * Assign a member role
+ *
+ * Assign or change a user's role in the acting tenant. The role is capped at
+ * the caller's own role and may not be `owner`.
+ */
+export const putTenantUser = <ThrowOnError extends boolean = true>(
+  options: Options<PutTenantUserData, ThrowOnError>
+) =>
+  (options.client ?? client).put<PutTenantUserResponses, PutTenantUserErrors, ThrowOnError, 'data'>(
+    {
+      responseStyle: 'data',
+      security: [{ scheme: 'bearer', type: 'http' }],
+      url: '/v0/tenant/users/{user_id}',
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+      }
+    }
+  )
+
+/**
+ * List tenants
+ *
+ * List all tenants in the installation. Owner-only platform view.
+ */
+export const listTenants = <ThrowOnError extends boolean = true>(
+  options?: Options<ListTenantsData, ThrowOnError>
+) =>
+  (options?.client ?? client).get<ListTenantsResponses, ListTenantsErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/tenants',
+    ...options
+  })
+
+/**
+ * Create a tenant
+ *
+ * Explicitly create a tenant (owner-only), rather than relying on first login.
+ * Fails with a conflict if a tenant with the same name and provider exists.
+ */
+export const createTenant = <ThrowOnError extends boolean = true>(
+  options: Options<CreateTenantData, ThrowOnError>
+) =>
+  (options.client ?? client).post<CreateTenantResponses, CreateTenantErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/tenants',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    }
+  })
+
+/**
+ * Validate Program
+ *
+ * Validate a SQL program by compiling it, without creating a pipeline or
+ * building the pipeline binary. Reports SQL errors and warnings and the derived
+ * schema and connectors. Set `ir` to also return the program IR (dataflow).
+ *
+ * Note that this endpoint returns HTTP 200, regardless of whether validation
+ * succeeds or fails. The validation result, including any compiler warnings and errors,
+ * is encoded in the `ValidateProgramResponse` response body.
+ */
+export const postValidateProgram = <ThrowOnError extends boolean = true>(
+  options: Options<PostValidateProgramData, ThrowOnError>
+) =>
+  (options.client ?? client).post<
+    PostValidateProgramResponses,
+    PostValidateProgramErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/validate_program',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    }
   })
