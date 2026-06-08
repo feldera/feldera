@@ -5,3 +5,4 @@ pub mod metrics;
 pub mod oidc_trust;
 pub mod pipeline_interaction;
 pub mod pipeline_management;
+pub mod tenant;

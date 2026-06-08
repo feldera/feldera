@@ -70,15 +70,78 @@ use crate::config::ApiServerConfig;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
-use crate::db::types::api_key::ApiPermission;
+use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
 
-// Used when no auth is configured, so we tag the request with the default user
-// and passthrough
+/// The authenticated principal behind a request, resolved by `auth_validator`
+/// and stored in request extensions. The RBAC middleware reads `role`; handlers
+/// read the acting tenant (also stored as a bare `TenantId` for compatibility
+/// with existing `ReqData<TenantId>` extractors).
+#[derive(Clone, Debug)]
+pub(crate) struct AuthenticatedPrincipal {
+    /// The tenant the request operates in. Equals `home_tenant` for everyone
+    /// but an `owner` selecting another tenant via `Feldera-Tenant`.
+    pub acting_tenant: TenantId,
+    /// The tenant the principal belongs to.
+    #[allow(dead_code)]
+    pub home_tenant: TenantId,
+    /// The principal's effective role in the acting tenant.
+    pub role: Role,
+    /// Human-readable identity for audit logging (email, sub, or "apikey:<name>").
+    pub label: String,
+}
+
+impl AuthenticatedPrincipal {
+    /// Insert the principal and the acting tenant into request extensions.
+    fn install(self, req: &ServiceRequest) {
+        req.extensions_mut().insert(self.acting_tenant);
+        req.extensions_mut().insert(self);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(role: Role) -> Self {
+        Self {
+            acting_tenant: DEFAULT_TENANT_ID,
+            home_tenant: DEFAULT_TENANT_ID,
+            role,
+            label: "test".to_string(),
+        }
+    }
+}
+
+/// Returns true if the given OIDC identity is configured as a platform owner.
+/// Matches an `owners` entry against the email, the bare subject, or the
+/// provider-qualified `"<issuer> <subject>"` form.
+fn is_configured_owner(
+    owners: &[String],
+    provider: &str,
+    subject: &str,
+    email: Option<&str>,
+) -> bool {
+    if owners.is_empty() {
+        return false;
+    }
+    let qualified = format!("{provider} {subject}");
+    owners
+        .iter()
+        .map(|o| o.trim())
+        // Skip empty entries: a trailing/double comma in FELDERA_OWNERS yields
+        // "", which must not match a token with an empty/absent email or subject.
+        .filter(|o| !o.is_empty())
+        .any(|o| o == qualified || o == subject || email.map(|e| e == o).unwrap_or(false))
+}
+
+// Used when no auth is configured, so we tag the request with the default
+// principal and passthrough. A single local node has one tenant, so the dev
+// principal is `admin` of it; cross-tenant `owner` is meaningless here.
 pub(crate) fn tag_with_default_tenant_id(req: ServiceRequest) -> ServiceRequest {
-    req.extensions_mut().insert(DEFAULT_TENANT_ID);
-    req.extensions_mut()
-        .insert(vec![ApiPermission::Read, ApiPermission::Write]);
+    AuthenticatedPrincipal {
+        acting_tenant: DEFAULT_TENANT_ID,
+        home_tenant: DEFAULT_TENANT_ID,
+        role: Role::Admin,
+        label: "default".to_string(),
+    }
+    .install(&req);
     req
 }
 
@@ -221,9 +284,30 @@ async fn oidc_trust_auth(
             .await
     };
     match lookup {
-        Ok(Some((tenant_id, scopes))) => {
-            req.extensions_mut().insert(tenant_id);
-            req.extensions_mut().insert(scopes);
+        Ok(Some((home_tenant, role))) => {
+            let label = format!("oidc:{}", token_data.claims.sub);
+            // An owner trust acts cross-tenant: the target tenant comes from the
+            // Feldera-Tenant header (strict lookup), defaulting to the trust's
+            // home tenant when no header is present.
+            let acting_tenant = if role == Role::Owner {
+                let acting = {
+                    let db = state.db.lock().await;
+                    resolve_owner_acting_tenant(&db, req.headers(), home_tenant).await
+                };
+                match acting {
+                    Ok(t) => t,
+                    Err(e) => return Err((e, req)),
+                }
+            } else {
+                home_tenant
+            };
+            AuthenticatedPrincipal {
+                acting_tenant,
+                home_tenant,
+                role,
+                label,
+            }
+            .install(&req);
             Ok(req)
         }
         Ok(None) => {
@@ -247,6 +331,24 @@ async fn oidc_trust_auth(
     }
 }
 
+/// Resolve the tenant an `owner` acts in. The `Feldera-Tenant` header selects
+/// any existing tenant (strict lookup, never created); without it the owner
+/// acts in its home tenant. This widening is gated on `role == Owner` by the
+/// callers; lower roles never reach here.
+async fn resolve_owner_acting_tenant(
+    db: &StoragePostgres,
+    headers: &actix_web::http::header::HeaderMap,
+    home: TenantId,
+) -> Result<TenantId, actix_web::Error> {
+    match headers.get(TENANT_HEADER).and_then(|h| h.to_str().ok()) {
+        Some(name) if !name.is_empty() => db
+            .get_tenant_id_by_name(name)
+            .await
+            .map_err(|e| create_authz_json_error(&format!("Tenant '{name}' not found: {e}"))),
+        _ => Ok(home),
+    }
+}
+
 async fn bearer_auth(
     req: ServiceRequest,
     token: &str,
@@ -260,8 +362,9 @@ async fn bearer_auth(
     let token_data = decode_token_with_validation(token, &req, configuration).await;
     match token_data {
         Ok(token_data) => {
-            // Validate groups authorization (for providers that support groups)
-            let state = req.app_data::<Data<ServerState>>().unwrap();
+            // Validate groups authorization (for providers that support groups).
+            // Clone the (Arc-backed) handle so `req` can be moved on error paths.
+            let state = req.app_data::<Data<ServerState>>().unwrap().clone();
             if let Err(AuthError::InsufficientGroups) =
                 validate_groups_authorization(&token_data, &state.config)
             {
@@ -271,7 +374,58 @@ async fn bearer_auth(
                 ));
             }
 
-            // Get tenant name using resolution logic with headers
+            let provider = token_data.provider();
+            let subject = token_data.claims.sub.clone();
+            let email = token_data.claims.email.clone();
+            let label = email.clone().unwrap_or_else(|| subject.clone());
+            let is_owner =
+                is_configured_owner(&state.config.owners, &provider, &subject, email.as_deref());
+
+            if is_owner {
+                // The owner's home tenant comes from its claims, ignoring the
+                // Feldera-Tenant header (which selects the acting tenant for an
+                // owner). Falls back to the default tenant when claims name none.
+                let empty = actix_web::http::header::HeaderMap::new();
+                let home = match token_data.tenant_name(&state.config, &empty) {
+                    Ok(name) => {
+                        let db = state.db.lock().await;
+                        match db
+                            .get_or_create_tenant_id(Uuid::now_v7(), name, provider.clone())
+                            .await
+                        {
+                            Ok(t) => t,
+                            Err(e) => {
+                                return Err((
+                                    create_authz_json_error(&format!(
+                                        "Database error while fetching tenant: {e}"
+                                    )),
+                                    req,
+                                ))
+                            }
+                        }
+                    }
+                    Err(_) => DEFAULT_TENANT_ID,
+                };
+                let acting = {
+                    let db = state.db.lock().await;
+                    resolve_owner_acting_tenant(&db, req.headers(), home).await
+                };
+                let acting_tenant = match acting {
+                    Ok(t) => t,
+                    Err(e) => return Err((e, req)),
+                };
+                AuthenticatedPrincipal {
+                    acting_tenant,
+                    home_tenant: home,
+                    role: Role::Owner,
+                    label,
+                }
+                .install(&req);
+                return Ok(req);
+            }
+
+            // Non-owner: the header disambiguates among the authorized tenants
+            // (existing behavior); the role comes from the membership table.
             let tenant_name = match token_data.tenant_name(&state.config, req.headers()) {
                 Ok(name) => name,
                 Err(AuthError::NoTenantFound) => {
@@ -301,29 +455,35 @@ async fn bearer_auth(
                 }
             };
 
-            // TODO: Handle tenant deletions at some point
-            let tenant = {
-                let db = &state.db.lock().await;
-                db.get_or_create_tenant_id(Uuid::now_v7(), tenant_name, token_data.provider())
-                    .await
+            let resolved = {
+                let db = state.db.lock().await;
+                db.resolve_login(
+                    Uuid::now_v7(),
+                    Uuid::now_v7(),
+                    tenant_name,
+                    provider,
+                    subject,
+                    email,
+                    state.config.default_role,
+                )
+                .await
             };
-
-            match tenant {
-                Ok(tenant_id) => {
-                    req.extensions_mut().insert(tenant_id);
-                    req.extensions_mut()
-                        .insert(vec![ApiPermission::Read, ApiPermission::Write]);
+            match resolved {
+                Ok((tenant_id, _user_id, role)) => {
+                    AuthenticatedPrincipal {
+                        acting_tenant: tenant_id,
+                        home_tenant: tenant_id,
+                        role,
+                        label,
+                    }
+                    .install(&req);
                     Ok(req)
                 }
                 Err(e) => {
-                    error!(
-                        "Could not fetch tenant ID for token_data {:?}, with error {}",
-                        token_data, e
-                    );
+                    error!("Could not resolve login, with error {}", e);
                     Err((
                         create_authz_json_error(&format!(
-                            "Database error while fetching tenant: {}",
-                            e
+                            "Database error while resolving login: {e}"
                         )),
                         req,
                     ))
@@ -364,9 +524,14 @@ async fn api_key_auth(
         validate_api_keys(db, api_key_str).await
     };
     match validate {
-        Ok((tenant_id, permissions)) => {
-            req.extensions_mut().insert(tenant_id);
-            req.extensions_mut().insert(permissions);
+        Ok((tenant_id, role)) => {
+            AuthenticatedPrincipal {
+                acting_tenant: tenant_id,
+                home_tenant: tenant_id,
+                role,
+                label: "apikey".to_string(),
+            }
+            .install(&req);
             Ok(req)
         }
         Err(error) => {
@@ -1055,7 +1220,7 @@ fn validate_field_is_str<'a>(key: &str, json: &'a Value) -> Option<&'a str> {
 async fn validate_api_keys(
     db: &StoragePostgres,
     api_key: &str,
-) -> Result<(TenantId, Vec<ApiPermission>), DBError> {
+) -> Result<(TenantId, Role), DBError> {
     db.validate_api_key(api_key).await
 }
 
@@ -1095,8 +1260,8 @@ mod test {
     use tokio::sync::{Mutex, RwLock};
     use uuid::Uuid;
 
-    use super::AuthError;
-    use crate::db::types::api_key::ApiPermission;
+    use super::{AuthError, AuthenticatedPrincipal};
+    use crate::db::types::role::{MintableKeyRole, Role};
     use crate::{
         api::main::ServerState,
         auth::{self, AuthConfiguration, AuthProvider, OidcClaim},
@@ -1207,6 +1372,8 @@ mod test {
             individual_tenant: true,
             issuer_tenant: false,
             auth_audience: "feldera-api".to_string(),
+            owners: vec![],
+            default_role: Role::Read,
         };
 
         let (conn, _temp) = crate::db::test::setup_pg().await;
@@ -1224,7 +1391,7 @@ mod test {
                 Uuid::now_v7(),
                 "foo",
                 &api_key,
-                vec![ApiPermission::Read, ApiPermission::Write],
+                MintableKeyRole::Write,
             )
             .await
             .unwrap();
@@ -1256,12 +1423,12 @@ mod test {
                 "/",
                 web::get().to(|req: HttpRequest| async move {
                     {
+                        // After auth, a principal must be installed with at least
+                        // the read role (login creates the tenant => admin; the
+                        // test API key carries write).
                         let ext = req.extensions();
-                        let permissions = ext.get::<Vec<ApiPermission>>().unwrap();
-                        assert_eq!(
-                            *permissions,
-                            vec![ApiPermission::Read, ApiPermission::Write]
-                        );
+                        let principal = ext.get::<AuthenticatedPrincipal>().unwrap();
+                        assert!(principal.role.satisfies(Role::Read));
                     }
                     HttpResponse::build(StatusCode::OK).await
                 }),
@@ -1277,6 +1444,31 @@ mod test {
         let url = "http://localhost/doesnotexist".to_owned();
         let res = fetch_jwk_oidc_keys(&url).await;
         assert!(matches!(res.err().unwrap(), AuthError::JwkFetch(_)));
+    }
+
+    #[tokio::test]
+    async fn owner_matching_ignores_empty_entries() {
+        use super::is_configured_owner;
+        let owners = vec!["owner@example.com".to_string(), "iss sub2".to_string()];
+        // Matches by email and by provider-qualified "<issuer> <subject>".
+        assert!(is_configured_owner(
+            &owners,
+            "iss",
+            "x",
+            Some("owner@example.com")
+        ));
+        assert!(is_configured_owner(&owners, "iss", "sub2", None));
+        assert!(!is_configured_owner(
+            &owners,
+            "iss",
+            "nobody",
+            Some("no@x.com")
+        ));
+        // A blank entry (trailing/double comma in FELDERA_OWNERS) must never
+        // match a token with an empty/absent email or subject.
+        let with_blank = vec!["a".to_string(), "".to_string(), "b".to_string()];
+        assert!(!is_configured_owner(&with_blank, "iss", "", Some("")));
+        assert!(!is_configured_owner(&with_blank, "iss", "", None));
     }
 
     #[tokio::test]

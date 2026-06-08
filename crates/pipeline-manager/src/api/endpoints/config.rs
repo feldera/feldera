@@ -9,7 +9,9 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::main::ServerState;
+use crate::auth::AuthenticatedPrincipal;
 use crate::db::storage::Storage;
+use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::license::{LicenseCheck, LicenseValidity};
@@ -218,10 +220,15 @@ pub(crate) struct SessionInfo {
     pub tenant_id: TenantId,
     /// Current user's tenant name
     pub tenant_name: String,
+    /// The caller's effective role in the acting tenant. The web console uses
+    /// this to gate the admin UI (no role claim lives in the JWT).
+    pub role: Role,
+    /// Whether the caller is a platform owner.
+    pub is_owner: bool,
 }
 
 impl SessionInfo {
-    pub(crate) async fn gather(state: &ServerState, tenant_id: TenantId) -> Self {
+    pub(crate) async fn gather(state: &ServerState, tenant_id: TenantId, role: Role) -> Self {
         let db = state.db.lock().await;
         let tenant_name = db
             .get_tenant_name(tenant_id)
@@ -231,6 +238,8 @@ impl SessionInfo {
         SessionInfo {
             tenant_id,
             tenant_name,
+            role,
+            is_owner: role == Role::Owner,
         }
     }
 }
@@ -256,8 +265,9 @@ impl SessionInfo {
 pub(crate) async fn get_config_session(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    principal: ReqData<AuthenticatedPrincipal>,
 ) -> Result<HttpResponse, ManagerError> {
-    let session_info = SessionInfo::gather(&state, *tenant_id).await;
+    let session_info = SessionInfo::gather(&state, *tenant_id, principal.role).await;
     Ok(HttpResponse::Ok().json(session_info))
 }
 

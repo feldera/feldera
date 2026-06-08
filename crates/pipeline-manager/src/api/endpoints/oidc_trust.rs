@@ -7,9 +7,11 @@
 // against patterns recorded on the trust relationship (`*` is a wildcard).
 use crate::api::main::ServerState;
 use crate::api::util::parse_url_parameter;
+use crate::auth::AuthenticatedPrincipal;
+use crate::db::error::DBError;
 use crate::db::storage::Storage;
-use crate::db::types::api_key::ApiPermission;
 use crate::db::types::oidc_trust::OidcTrustId;
+use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use actix_web::{
@@ -50,6 +52,12 @@ pub(crate) struct NewOidcTrustRequest {
     #[schema(example = "feldera")]
     #[serde(default)]
     pub audience: Option<String>,
+
+    /// Role granted to a token that satisfies this trust. Capped at the
+    /// caller's own role. `owner` may be set only by an owner. Defaults to
+    /// `read`.
+    #[serde(default)]
+    pub role: Option<Role>,
 }
 
 /// Response to a successful create.
@@ -126,10 +134,44 @@ pub(crate) async fn get_oidc_trust(
 pub(crate) async fn post_oidc_trust(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    principal: ReqData<AuthenticatedPrincipal>,
     body: web::Json<NewOidcTrustRequest>,
 ) -> Result<HttpResponse, ManagerError> {
     let new_id = Uuid::now_v7();
     let body = body.into_inner();
+
+    // Mint cap: the granted role may not exceed the caller's role. An owner
+    // trust may be created only by an owner.
+    let requested = body.role.unwrap_or(Role::Read);
+    if requested > principal.role {
+        return Err(DBError::RoleExceedsCreator {
+            requested,
+            creator: principal.role,
+        }
+        .into());
+    }
+    // Above `read`, the subject and audience must be concrete. `claim_matches`
+    // treats `*` ANYWHERE in the pattern as a glob over any character run, so a
+    // pattern like `*@*`, `*-prod`, or `*admin*` would authorize a broad,
+    // unintended set of tokens at elevated access. Reject any `*`, not just a
+    // bare `*`.
+    if requested > Role::Read {
+        let subject_wild = body.subject.contains('*');
+        let audience_wild = body
+            .audience
+            .as_deref()
+            .map(|a| a.contains('*'))
+            .unwrap_or(false);
+        if subject_wild || audience_wild {
+            return Err(DBError::OidcTrustTooBroad {
+                reason:
+                    "subject and audience must not contain a '*' wildcard for a role above 'read'"
+                        .to_string(),
+            }
+            .into());
+        }
+    }
+
     state
         .db
         .lock()
@@ -142,7 +184,7 @@ pub(crate) async fn post_oidc_trust(
             &body.issuer,
             &body.subject,
             body.audience.as_deref(),
-            vec![ApiPermission::Read, ApiPermission::Write],
+            requested,
         )
         .await?;
     info!(

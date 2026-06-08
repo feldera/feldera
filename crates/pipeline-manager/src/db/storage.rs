@@ -1,6 +1,6 @@
 use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
-use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
+use crate::db::types::api_key::ApiKeyDescr;
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
     ExtendedPipelineMonitorEvent, NewClusterMonitorEvent, PipelineMonitorEvent,
@@ -11,7 +11,9 @@ use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
 };
 use crate::db::types::program::{RustCompilationInfo, SqlCompilationInfo};
+use crate::db::types::role::{MintableKeyRole, Role};
 use crate::db::types::tenant::TenantId;
+use crate::db::types::user::{TenantInfo, TenantMember, UserId};
 use crate::db::types::version::Version;
 use async_trait::async_trait;
 use feldera_types::error::ErrorResponse;
@@ -90,6 +92,52 @@ pub(crate) trait Storage {
     /// Retrieves the tenant name for a given tenant ID.
     async fn get_tenant_name(&self, tenant_id: TenantId) -> Result<String, DBError>;
 
+    /// Strict lookup of a tenant by name (no creation), used for owner
+    /// cross-tenant resolution from the `Feldera-Tenant` header.
+    async fn get_tenant_id_by_name(&self, name: &str) -> Result<TenantId, DBError>;
+
+    /// Lists all tenants in the installation (owner-only platform view).
+    async fn list_tenants(&self) -> Result<Vec<TenantInfo>, DBError>;
+
+    /// Resolves a non-owner login to its acting tenant and effective role,
+    /// ensuring the user and membership records exist. See
+    /// [`crate::db::operations::user::resolve_login`].
+    #[allow(clippy::too_many_arguments)]
+    async fn resolve_login(
+        &self,
+        new_tenant_id: Uuid,
+        new_user_id: Uuid,
+        tenant_name: String,
+        provider: String,
+        subject: String,
+        email: Option<String>,
+        default_role: Role,
+    ) -> Result<(TenantId, UserId, Role), DBError>;
+
+    /// Ensures a user record exists for an OIDC `(provider, subject)`.
+    #[allow(dead_code)] // Provided for completeness; logins go through `resolve_login`.
+    async fn get_or_create_user(
+        &self,
+        new_id: Uuid,
+        provider: &str,
+        subject: &str,
+        email: Option<&str>,
+    ) -> Result<UserId, DBError>;
+
+    /// Lists the members of a tenant with their roles.
+    async fn list_tenant_members(&self, tenant_id: TenantId) -> Result<Vec<TenantMember>, DBError>;
+
+    /// Assigns or updates a member's role within a tenant.
+    async fn upsert_member_role(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        role: Role,
+    ) -> Result<(), DBError>;
+
+    /// Removes a user from a tenant.
+    async fn remove_member(&self, tenant_id: TenantId, user_id: UserId) -> Result<(), DBError>;
+
     /// Retrieves the list of all API keys.
     async fn list_api_keys(&self, tenant_id: TenantId) -> Result<Vec<ApiKeyDescr>, DBError>;
 
@@ -99,19 +147,21 @@ pub(crate) trait Storage {
     /// Deletes an API key by name.
     async fn delete_api_key(&self, tenant_id: TenantId, name: &str) -> Result<(), DBError>;
 
-    /// Persists an SHA-256 hash of an API key in the database.
+    /// Persists an SHA-256 hash of an API key in the database. The role is a
+    /// [`MintableKeyRole`] (read/write only), so `admin`/`owner` cannot be
+    /// persisted as a static key by construction.
     async fn store_api_key_hash(
         &self,
         tenant_id: TenantId,
         id: Uuid,
         name: &str,
         key: &str,
-        permissions: Vec<ApiPermission>,
+        role: MintableKeyRole,
     ) -> Result<(), DBError>;
 
     /// Validates an API key against the database by comparing its SHA-256 hash
     /// against the stored value.
-    async fn validate_api_key(&self, key: &str) -> Result<(TenantId, Vec<ApiPermission>), DBError>;
+    async fn validate_api_key(&self, key: &str) -> Result<(TenantId, Role), DBError>;
 
     /// Lists all OIDC trust relationships for the tenant.
     async fn list_oidc_trust(&self, tenant_id: TenantId) -> Result<Vec<OidcTrustDescr>, DBError>;
@@ -137,17 +187,18 @@ pub(crate) trait Storage {
         issuer: &str,
         subject: &str,
         audience: Option<&str>,
-        scopes: Vec<ApiPermission>,
+        role: Role,
     ) -> Result<(), DBError>;
 
-    /// Finds the first trust relationship matching the given issuer + claims.
-    /// Returns the owning tenant and scopes if a match is found.
+    /// Resolves a federated token to the tenant and role it is authorized for.
+    /// Returns `None` if no trust matches; errors if the match is ambiguous
+    /// across tenants (see [`crate::db::operations::oidc_trust::match_oidc_trust`]).
     async fn match_oidc_trust(
         &self,
         issuer: &str,
         subject: &str,
         audiences: &[String],
-    ) -> Result<Option<(TenantId, Vec<ApiPermission>)>, DBError>;
+    ) -> Result<Option<(TenantId, Role)>, DBError>;
 
     /// Retrieves a list of pipelines as extended descriptors.
     async fn list_pipelines(

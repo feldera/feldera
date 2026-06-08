@@ -3,6 +3,7 @@ use crate::db::types::monitor::{ClusterMonitorEventId, PipelineMonitorEventId};
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::ProgramStatus;
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
+use crate::db::types::role::Role;
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::ValidationError;
@@ -128,6 +129,9 @@ pub enum DBError {
     UnknownTenant {
         tenant_id: TenantId,
     },
+    UnknownTenantName {
+        name: String,
+    },
     // API key-related errors
     UnknownApiKey {
         name: String,
@@ -140,10 +144,30 @@ pub enum DBError {
     EmptyOidcTrustField {
         field: String,
     },
+    OidcTrustTooBroad {
+        reason: String,
+    },
     InvalidOidcToken {
         reason: String,
     },
     UnauthorizedOidcToken,
+    // RBAC errors
+    InsufficientPermissions {
+        required: Role,
+        actual: Role,
+    },
+    RoleExceedsCreator {
+        requested: Role,
+        creator: Role,
+    },
+    OwnerNotMintableAsApiKey,
+    OwnerRoleNotAssignable,
+    InvalidRoleString {
+        value: String,
+    },
+    UnknownUser {
+        user_id: String,
+    },
     // Pipeline-related errors
     UnknownPipeline {
         pipeline_id: PipelineId,
@@ -543,11 +567,44 @@ impl Display for DBError {
             DBError::UnknownTenant { tenant_id } => {
                 write!(f, "Unknown tenant id '{tenant_id}'")
             }
+            DBError::UnknownTenantName { name } => {
+                write!(f, "Unknown tenant '{name}'")
+            }
             DBError::UnknownApiKey { name } => {
                 write!(f, "Unknown API key '{name}'")
             }
             DBError::InvalidApiKey => {
                 write!(f, "Invalid API key")
+            }
+            DBError::InsufficientPermissions { required, actual } => {
+                write!(
+                    f,
+                    "Insufficient permissions: this action requires the '{required}' role, but the caller has '{actual}'"
+                )
+            }
+            DBError::RoleExceedsCreator { requested, creator } => {
+                write!(
+                    f,
+                    "Cannot grant the '{requested}' role: it exceeds the creator's own '{creator}' role"
+                )
+            }
+            DBError::OwnerNotMintableAsApiKey => {
+                write!(
+                    f,
+                    "The 'owner' and 'admin' roles cannot be issued as an API key; use an OIDC trust relationship or interactive login"
+                )
+            }
+            DBError::OwnerRoleNotAssignable => {
+                write!(
+                    f,
+                    "The 'owner' role is platform-wide and cannot be assigned as a tenant membership"
+                )
+            }
+            DBError::InvalidRoleString { value } => {
+                write!(f, "Invalid role string '{value}' encountered")
+            }
+            DBError::UnknownUser { user_id } => {
+                write!(f, "Unknown user '{user_id}'")
             }
             DBError::UnknownOidcTrust { name } => {
                 write!(f, "Unknown OIDC trust relationship '{name}'")
@@ -557,6 +614,9 @@ impl Display for DBError {
                     f,
                     "OIDC trust relationship field '{field}' must not be empty"
                 )
+            }
+            DBError::OidcTrustTooBroad { reason } => {
+                write!(f, "OIDC trust relationship is too broad: {reason}")
             }
             DBError::InvalidOidcToken { reason } => {
                 write!(f, "Invalid OIDC token: {reason}")
@@ -847,10 +907,18 @@ impl DetailedError for DBError {
             Self::TooLongName { .. } => Cow::from("TooLongName"),
             Self::NameDoesNotMatchPattern { .. } => Cow::from("NameDoesNotMatchPattern"),
             Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
+            Self::UnknownTenantName { .. } => Cow::from("UnknownTenantName"),
             Self::UnknownApiKey { .. } => Cow::from("UnknownApiKey"),
             Self::InvalidApiKey => Cow::from("InvalidApiKey"),
+            Self::InsufficientPermissions { .. } => Cow::from("InsufficientPermissions"),
+            Self::RoleExceedsCreator { .. } => Cow::from("RoleExceedsCreator"),
+            Self::OwnerNotMintableAsApiKey => Cow::from("OwnerNotMintableAsApiKey"),
+            Self::OwnerRoleNotAssignable => Cow::from("OwnerRoleNotAssignable"),
+            Self::InvalidRoleString { .. } => Cow::from("InvalidRoleString"),
+            Self::UnknownUser { .. } => Cow::from("UnknownUser"),
             Self::UnknownOidcTrust { .. } => Cow::from("UnknownOidcTrust"),
             Self::EmptyOidcTrustField { .. } => Cow::from("EmptyOidcTrustField"),
+            Self::OidcTrustTooBroad { .. } => Cow::from("OidcTrustTooBroad"),
             Self::InvalidOidcToken { .. } => Cow::from("InvalidOidcToken"),
             Self::UnauthorizedOidcToken => Cow::from("UnauthorizedOidcToken"),
             Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
@@ -959,10 +1027,18 @@ impl ResponseError for DBError {
             Self::TooLongName { .. } => StatusCode::BAD_REQUEST,
             Self::NameDoesNotMatchPattern { .. } => StatusCode::BAD_REQUEST,
             Self::UnknownTenant { .. } => StatusCode::UNAUTHORIZED, // TODO: should we report not found instead?
+            Self::UnknownTenantName { .. } => StatusCode::NOT_FOUND,
             Self::UnknownApiKey { .. } => StatusCode::NOT_FOUND,
             Self::InvalidApiKey => StatusCode::UNAUTHORIZED,
+            Self::InsufficientPermissions { .. } => StatusCode::FORBIDDEN,
+            Self::RoleExceedsCreator { .. } => StatusCode::FORBIDDEN,
+            Self::OwnerNotMintableAsApiKey => StatusCode::FORBIDDEN,
+            Self::OwnerRoleNotAssignable => StatusCode::FORBIDDEN,
+            Self::InvalidRoleString { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnknownUser { .. } => StatusCode::NOT_FOUND,
             Self::UnknownOidcTrust { .. } => StatusCode::NOT_FOUND,
             Self::EmptyOidcTrustField { .. } => StatusCode::BAD_REQUEST,
+            Self::OidcTrustTooBroad { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidOidcToken { .. } => StatusCode::UNAUTHORIZED,
             Self::UnauthorizedOidcToken => StatusCode::UNAUTHORIZED,
             Self::UnknownPipeline { .. } => StatusCode::NOT_FOUND,

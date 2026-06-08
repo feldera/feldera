@@ -1,4 +1,5 @@
 use crate::db::types::program::CompilationProfile;
+use crate::db::types::role::Role;
 use crate::db::types::version::Version;
 use crate::db::{error::DBError, types::pipeline::PipelineId};
 use crate::has_unstable_feature;
@@ -20,6 +21,7 @@ use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{ClientConfig, RootCertStore};
 use serde::Deserialize;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::{
     env,
@@ -109,6 +111,23 @@ fn default_individual_tenant() -> bool {
 /// Default audience claim value for OIDC authentication.
 fn default_auth_audience() -> String {
     "feldera-api".to_string()
+}
+
+/// Default role for an authenticated user with no explicit tenant membership.
+fn default_default_role() -> Role {
+    Role::Read
+}
+
+/// Parse the configured default role, restricting it to `read` or `write`
+/// (a tenant `admin`/`owner` is never granted implicitly).
+fn parse_default_role(s: &str) -> Result<Role, String> {
+    match Role::from_str(s) {
+        Ok(role @ (Role::Read | Role::Write)) => Ok(role),
+        Ok(other) => Err(format!(
+            "default role must be 'read' or 'write', not '{other}'"
+        )),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// Default number of monitor events that are retained for each pipeline.
@@ -898,6 +917,20 @@ pub struct ApiServerConfig {
     #[serde(default = "default_auth_audience")]
     #[arg(long, default_value = "feldera-api", env = "FELDERA_AUTH_AUDIENCE")]
     pub auth_audience: String,
+
+    /// Identities granted the platform-wide `owner` role. Each entry matches an
+    /// access token's email, its OIDC subject, or the provider-qualified
+    /// `"<issuer> <subject>"` form. Comma-separated.
+    /// Example: "ops@acme.com,platform-admins"
+    #[serde(default)]
+    #[arg(long, value_delimiter = ',', env = "FELDERA_OWNERS")]
+    pub owners: Vec<String>,
+
+    /// Role assigned to an authenticated user who has no explicit tenant
+    /// membership yet. Must be `read` or `write`. Default: `read`.
+    #[serde(default = "default_default_role")]
+    #[arg(long, default_value = "read", value_parser = parse_default_role, env = "FELDERA_AUTH_DEFAULT_ROLE")]
+    pub default_role: Role,
 }
 
 impl ApiServerConfig {
@@ -942,6 +975,8 @@ impl ApiServerConfig {
             individual_tenant: true,
             authorized_groups: vec![],
             auth_audience: "feldera-api".to_string(),
+            owners: vec![],
+            default_role: Role::Read,
         }
     }
 }

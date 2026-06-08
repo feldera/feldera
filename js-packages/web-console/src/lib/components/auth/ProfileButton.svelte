@@ -19,6 +19,8 @@
     healthStatus
   }: { compactBreakpoint?: string; healthStatus: ClusterHealthStatus } = $props()
   const auth = page.data.auth as AuthDetails | undefined
+  const role = $derived(page.data.feldera?.role)
+  const canAdminister = $derived(role === 'admin' || role === 'owner')
 
   const globalDialog = useGlobalDialog()
 
@@ -81,8 +83,14 @@
         {#snippet oidcTrustIcon()}
           <div class="fd fd-user text-[20px]"></div>
         {/snippet}
+        {#snippet adminIcon()}
+          <div class="fd fd-shield text-[20px]"></div>
+        {/snippet}
 
         {#if typeof auth === 'object' && 'logout' in auth}
+          {#if canAdminister}
+            {@render profileItemButton('Admin', adminIcon, { href: resolve('/admin') })}
+          {/if}
           {@render profileItemButton('Manage API keys', apiKeysIcon, {
             onclick: () => (globalDialog.dialog = apiKeyDialog)
           })}

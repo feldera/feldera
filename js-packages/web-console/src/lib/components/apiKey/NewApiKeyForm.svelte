@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Tooltip } from 'common-ui'
+  import { Select, Tooltip } from 'common-ui'
   import { Control, Field, FieldErrors, Label } from 'formsnap'
   import { setError, superForm } from 'sveltekit-superforms'
   import { valibot } from 'sveltekit-superforms/adapters'
@@ -9,12 +9,14 @@
 
   const { onSubmit, onSuccess }: { onSubmit?: () => void; onSuccess?: () => void } = $props()
 
+  // API keys may only grant read or write; admin/owner are not valid here.
   const schema = va.object({
-    name: va.pipe(va.string(), va.minLength(1, 'Specify API key name'))
+    name: va.pipe(va.string(), va.minLength(1, 'Specify API key name')),
+    role: va.picklist(['read', 'write'] as const)
   })
   const api = usePipelineManager()
   const form = superForm(
-    { name: '' },
+    { name: '', role: 'read' as 'read' | 'write' },
     {
       SPA: true,
       validators: valibot(schema),
@@ -23,7 +25,7 @@
           return
         }
         onSubmit?.()
-        api.postApiKey(form.data.name).then(
+        api.postApiKey(form.data.name, form.data.role).then(
           (response) => {
             lastGenerated.push({ name: response.name, key: response.api_key })
             onSuccess?.()
@@ -66,6 +68,10 @@
               bind:value={$formData.name}
               autofocus
             />
+            <Select bind:value={$formData.role} class="w-28" aria-label="API key role">
+              <option value="read">read</option>
+              <option value="write">write</option>
+            </Select>
             <div class="">
               <button class="btn preset-filled-surface-50-950">Generate</button>
             </div>

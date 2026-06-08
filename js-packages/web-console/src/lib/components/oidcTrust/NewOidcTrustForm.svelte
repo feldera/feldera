@@ -1,23 +1,37 @@
 <script lang="ts">
+  import { Select } from 'common-ui'
   import { Control, Field, FieldErrors, Label } from 'formsnap'
   import { setError, superForm } from 'sveltekit-superforms'
   import { valibot } from 'sveltekit-superforms/adapters'
 
   import * as va from 'valibot'
-  import { postOidcTrust } from '$lib/services/pipelineManager'
+  import { page } from '$app/state'
+  import { postOidcTrust, type Role } from '$lib/services/pipelineManager'
 
   const { onSubmit, onSuccess }: { onSubmit?: () => void; onSuccess?: () => void } = $props()
+
+  // The backend caps the granted role at the caller's role; only an owner may
+  // grant `owner`, so offer it only then.
+  const isOwner = page.data.feldera?.isOwner ?? false
 
   const schema = va.object({
     name: va.pipe(va.string(), va.minLength(1, 'Specify a name')),
     issuer: va.pipe(va.string(), va.minLength(1, 'Specify the issuer URL')),
     subject: va.pipe(va.string(), va.minLength(1, 'Specify a subject pattern')),
     audience: va.string(),
-    description: va.string()
+    description: va.string(),
+    role: va.picklist(['read', 'write', 'admin', 'owner'] as const)
   })
 
   const form = superForm(
-    { name: '', issuer: '', subject: '', audience: '', description: '' },
+    {
+      name: '',
+      issuer: '',
+      subject: '',
+      audience: '',
+      description: '',
+      role: 'read' as Role
+    },
     {
       SPA: true,
       validators: valibot(schema),
@@ -29,7 +43,8 @@
           issuer: f.data.issuer,
           subject: f.data.subject,
           audience: f.data.audience || undefined,
-          description: f.data.description || undefined
+          description: f.data.description || undefined,
+          role: f.data.role
         }).then(
           () => onSuccess?.(),
           (e) => setError(f, 'name', 'message' in e ? e.message : String(e))
@@ -123,6 +138,22 @@
           {...attrs}
           bind:value={$formData.description}
         />
+      {/snippet}
+    </Control>
+  </Field>
+
+  <Field {form} name="role">
+    <Control>
+      {#snippet children(attrs)}
+        <Label>Role</Label>
+        <Select class="w-full" {...attrs} bind:value={$formData.role}>
+          <option value="read">read</option>
+          <option value="write">write</option>
+          <option value="admin">admin</option>
+          {#if isOwner}
+            <option value="owner">owner</option>
+          {/if}
+        </Select>
       {/snippet}
     </Control>
   </Field>

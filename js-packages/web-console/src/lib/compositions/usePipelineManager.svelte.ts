@@ -219,9 +219,14 @@ export const usePipelineManager = (options?: FetchOptions) => {
     getConfig: getConfig,
     getConfigSession: reportError(getConfigSession, () => 'Failed to fetch session configuration'),
     getApiKeys: reportError(getApiKeys, () => 'Failed to fetch API keys'),
-    postApiKey: async (name: string, options?: FetchOptions | undefined) => {
+    postApiKey: async (
+      name: string,
+      role: 'read' | 'write' = 'read',
+      options?: FetchOptions | undefined
+    ) => {
       const x = await reportError(postApiKey, (keyName) => `Failed to create ${keyName} API key`)(
         name,
+        role,
         options
       )
       return x

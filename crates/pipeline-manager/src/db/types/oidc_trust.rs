@@ -1,4 +1,4 @@
-use crate::db::types::api_key::ApiPermission;
+use crate::db::types::role::Role;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
@@ -34,7 +34,10 @@ pub struct OidcTrustDescr {
     pub subject: String,
     #[serde(default)]
     pub audience: Option<String>,
-    pub scopes: Vec<ApiPermission>,
+    /// Role granted to a token that satisfies this trust. Capped at the
+    /// creating principal's role; `owner` trusts are platform-wide and may be
+    /// created only by an owner.
+    pub role: Role,
 }
 
 /// Returns true if `pattern` matches `value`, where `*` in `pattern` matches

@@ -584,8 +584,10 @@ export const getConfigSession = (options?: FetchOptions) =>
 
 export const getApiKeys = (options?: FetchOptions) => mapResponse(listApiKeys(options), (v) => v)
 
-export const postApiKey = (name: string, options?: FetchOptions) =>
-  mapResponse(_postApiKey({ body: { name }, ...options }), (v) => v)
+export type ApiKeyRole = 'read' | 'write'
+
+export const postApiKey = (name: string, role: ApiKeyRole = 'read', options?: FetchOptions) =>
+  mapResponse(_postApiKey({ body: { name, role } as any, ...options }), (v) => v)
 
 export const deleteApiKey = (name: string, options?: FetchOptions) =>
   mapResponse(
@@ -596,13 +598,15 @@ export const deleteApiKey = (name: string, options?: FetchOptions) =>
     }
   )
 
-// OIDC trust relationships
+// RBAC roles ordered low -> high privilege. Serialized lowercase by the backend.
+export type Role = 'read' | 'write' | 'admin' | 'owner'
+
+// OIDC trust relationships, tenant users, and tenant administration.
 //
 // These wrappers talk to the manager directly instead of going through the
 // generated client because the SDK has not yet been regenerated against the
 // new endpoints. After running `bun run generate-openapi`, these can be
-// replaced with calls to the generated `listOidcTrust` / `postOidcTrust` /
-// `deleteOidcTrust` functions.
+// replaced with calls to the generated functions.
 import { getAuthorizationHeaders } from '$lib/services/auth'
 
 export type OidcTrustDescr = {
@@ -612,7 +616,7 @@ export type OidcTrustDescr = {
   issuer: string
   subject: string
   audience?: string | null
-  scopes: ('Read' | 'Write')[]
+  role: Role
 }
 
 export type NewOidcTrustRequest = {
@@ -621,9 +625,26 @@ export type NewOidcTrustRequest = {
   subject: string
   audience?: string
   description?: string
+  role?: Role
 }
 
-const oidcTrustFetch = async (path: string, init?: RequestInit) => {
+// A tenant member. Members appear after their first login; `role` is one of
+// read/write/admin (owner is managed separately and not assignable here).
+export type TenantUser = {
+  user_id: string
+  provider: string
+  subject: string
+  email: string | null
+  role: 'read' | 'write' | 'admin'
+}
+
+export type Tenant = {
+  id: string
+  name: string
+  provider: string
+}
+
+const adminFetch = async (path: string, init?: RequestInit) => {
   const authHeaders = await getAuthorizationHeaders()
   const res = await fetch(`${felderaEndpoint}/v0${path}`, {
     ...init,
@@ -650,18 +671,49 @@ const oidcTrustFetch = async (path: string, init?: RequestInit) => {
 }
 
 export const getOidcTrustList = (): Promise<OidcTrustDescr[]> =>
-  oidcTrustFetch('/oidc_trust').then((v) => (v as OidcTrustDescr[]) ?? [])
+  adminFetch('/oidc_trust').then((v) => (v as OidcTrustDescr[]) ?? [])
 
 export const postOidcTrust = (
   body: NewOidcTrustRequest
 ): Promise<{ id: string; name: string }> =>
-  oidcTrustFetch('/oidc_trust', {
+  adminFetch('/oidc_trust', {
     method: 'POST',
     body: JSON.stringify(body)
   })
 
 export const deleteOidcTrust = (name: string): Promise<unknown> =>
-  oidcTrustFetch(`/oidc_trust/${encodeURIComponent(name)}`, { method: 'DELETE' })
+  adminFetch(`/oidc_trust/${encodeURIComponent(name)}`, { method: 'DELETE' })
+
+// Tenant users & roles (min role: admin).
+
+export const getTenantUsers = (): Promise<TenantUser[]> =>
+  adminFetch('/tenant/users').then((v) => (v as TenantUser[]) ?? [])
+
+export const setTenantUserRole = (
+  userId: string,
+  role: 'read' | 'write' | 'admin'
+): Promise<unknown> =>
+  adminFetch(`/tenant/users/${encodeURIComponent(userId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ role })
+  })
+
+export const removeTenantUser = (userId: string): Promise<unknown> =>
+  adminFetch(`/tenant/users/${encodeURIComponent(userId)}`, { method: 'DELETE' })
+
+// Tenant administration (min role: owner).
+
+export const getTenants = (): Promise<Tenant[]> =>
+  adminFetch('/tenants').then((v) => (v as Tenant[]) ?? [])
+
+export const createTenant = (
+  name: string,
+  provider?: string
+): Promise<{ id: string; name: string }> =>
+  adminFetch('/tenants', {
+    method: 'POST',
+    body: JSON.stringify({ name, ...(provider ? { provider } : {}) })
+  })
 
 export const dismissDeploymentError = (pipeline_name: string) =>
   mapResponse(postPipelineDismissError({ path: { pipeline_name } }), (v) => v)

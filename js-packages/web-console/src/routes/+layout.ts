@@ -109,6 +109,14 @@ export type LayoutData = {
         tenantId: string
         tenantName: string
         /**
+         * Caller's RBAC role in the current tenant: read < write < admin < owner.
+         */
+        role: 'read' | 'write' | 'admin' | 'owner'
+        /**
+         * True when the caller owns the tenant (gates owner-only admin UI).
+         */
+        isOwner: boolean
+        /**
          * Only available if authenticated and using multi-tenant authorization
          */
         authorizedTenants?: string[]
@@ -139,13 +147,17 @@ const computeAuthorizedTenants = (auth: AuthDetails): string[] | undefined => {
 }
 
 const applyTenantSelection = (authorizedTenants: string[] | undefined) => {
-  if (authorizedTenants) {
-    const savedTenant = getSelectedTenant()
-    if (!savedTenant || !authorizedTenants.includes(savedTenant)) {
-      setSelectedTenant(authorizedTenants[0])
-    }
-  } else {
-    setSelectedTenant(undefined)
+  // Only a claim-based authorized list clamps the selection (a multi-tenant
+  // user must land on a tenant the IdP actually authorizes). When there is no
+  // such list, e.g. a platform owner whose token carries no `tenants` claim,
+  // leave the saved selection untouched so the owner's "act as <tenant>" choice
+  // persists across loads instead of being cleared on every navigation.
+  if (!authorizedTenants) {
+    return
+  }
+  const savedTenant = getSelectedTenant()
+  if (!savedTenant || !authorizedTenants.includes(savedTenant)) {
+    setSelectedTenant(authorizedTenants[0])
   }
 }
 
@@ -410,6 +422,10 @@ function buildFelderaData(
     revision: config.revision,
     tenantId: sessionConfig?.tenant_id || '',
     tenantName: sessionConfig?.tenant_name || '',
+    // `role`/`is_owner` are added by the RBAC backend; the SDK type lags, so read
+    // them off the session payload and default to the least-privileged role.
+    role: ((sessionConfig as any)?.role as 'read' | 'write' | 'admin' | 'owner') || 'read',
+    isOwner: Boolean((sessionConfig as any)?.is_owner),
     authorizedTenants: computeAuthorizedTenants(auth),
     unstableFeatures: config.unstable_features?.split(',').map((f: string) => f.trim()) || [],
     config

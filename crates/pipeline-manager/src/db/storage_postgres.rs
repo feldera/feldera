@@ -6,7 +6,7 @@ use crate::db::operations;
 #[cfg(feature = "postgresql_embedded")]
 use crate::db::pg_setup;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
-use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
+use crate::db::types::api_key::ApiKeyDescr;
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
     ExtendedPipelineMonitorEvent, NewClusterMonitorEvent, PipelineMonitorEvent,
@@ -20,8 +20,10 @@ use crate::db::types::program::{
     ProgramConfig, ProgramInfo, ProgramStatus, RustCompilationInfo, SqlCompilationInfo,
 };
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
+use crate::db::types::role::{MintableKeyRole, Role};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
+use crate::db::types::user::{TenantInfo, TenantMember, UserId};
 use crate::db::types::version::Version;
 use crate::is_supported_runtime;
 use crate::{auth::TenantRecord, config::DatabaseConfig};
@@ -110,6 +112,94 @@ impl Storage for StoragePostgres {
         Ok(tenant_name)
     }
 
+    async fn get_tenant_id_by_name(&self, name: &str) -> Result<TenantId, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let result = operations::tenant::get_tenant_id_by_name(&txn, name).await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    async fn list_tenants(&self) -> Result<Vec<TenantInfo>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let result = operations::tenant::list_tenants(&txn).await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn resolve_login(
+        &self,
+        new_tenant_id: Uuid,
+        new_user_id: Uuid,
+        tenant_name: String,
+        provider: String,
+        subject: String,
+        email: Option<String>,
+        default_role: Role,
+    ) -> Result<(TenantId, UserId, Role), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let result = operations::user::resolve_login(
+            &txn,
+            new_tenant_id,
+            new_user_id,
+            tenant_name,
+            provider,
+            subject,
+            email,
+            default_role,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    async fn get_or_create_user(
+        &self,
+        new_id: Uuid,
+        provider: &str,
+        subject: &str,
+        email: Option<&str>,
+    ) -> Result<UserId, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let result =
+            operations::user::get_or_create_user(&txn, new_id, provider, subject, email).await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    async fn list_tenant_members(&self, tenant_id: TenantId) -> Result<Vec<TenantMember>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let result = operations::user::list_tenant_members(&txn, tenant_id).await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    async fn upsert_member_role(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        role: Role,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::user::upsert_member_role(&txn, tenant_id, user_id, role).await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn remove_member(&self, tenant_id: TenantId, user_id: UserId) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::user::remove_member(&txn, tenant_id, user_id).await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
     async fn list_api_keys(&self, tenant_id: TenantId) -> Result<Vec<ApiKeyDescr>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -140,18 +230,17 @@ impl Storage for StoragePostgres {
         id: Uuid,
         name: &str,
         key: &str,
-        permissions: Vec<ApiPermission>,
+        role: MintableKeyRole,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let result =
-            operations::api_key::store_api_key_hash(&txn, tenant_id, id, name, key, permissions)
-                .await?;
+            operations::api_key::store_api_key_hash(&txn, tenant_id, id, name, key, role).await?;
         txn.commit().await?;
         Ok(result)
     }
 
-    async fn validate_api_key(&self, key: &str) -> Result<(TenantId, Vec<ApiPermission>), DBError> {
+    async fn validate_api_key(&self, key: &str) -> Result<(TenantId, Role), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let result = operations::api_key::validate_api_key(&txn, key).await?;
@@ -196,7 +285,7 @@ impl Storage for StoragePostgres {
         issuer: &str,
         subject: &str,
         audience: Option<&str>,
-        scopes: Vec<ApiPermission>,
+        role: Role,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -209,7 +298,7 @@ impl Storage for StoragePostgres {
             issuer,
             subject,
             audience,
-            &scopes,
+            role,
         )
         .await?;
         txn.commit().await?;
@@ -221,7 +310,7 @@ impl Storage for StoragePostgres {
         issuer: &str,
         subject: &str,
         audiences: &[String],
-    ) -> Result<Option<(TenantId, Vec<ApiPermission>)>, DBError> {
+    ) -> Result<Option<(TenantId, Role)>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let result =

@@ -42,7 +42,7 @@
         <div class=" w-full">
           <div>
             {key.name}
-            [{key.scopes}]
+            <span class="text-xs opacity-70">[{(key as any).role ?? key.scopes}]</span>
           </div>
 
           <div class="text-sm">{key.id}</div>

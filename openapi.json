@@ -7049,6 +7049,211 @@
           }
         ]
       }
+    },
+    "/v0/tenant/users": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "List tenant members",
+        "description": "List the users that are members of the acting tenant and their roles.",
+        "operationId": "list_tenant_users",
+        "responses": {
+          "200": {
+            "description": "Members retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TenantMember"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/tenant/users/{user_id}": {
+      "put": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "Assign a member role",
+        "description": "Assign or change a user's role in the acting tenant. The role is capped at\nthe caller's own role and may not be `owner`.",
+        "operationId": "put_tenant_user",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMemberRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Role assigned"
+          },
+          "403": {
+            "description": "Requested role exceeds caller's role or is owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "Remove a tenant member",
+        "description": "Remove a user from the acting tenant.",
+        "operationId": "delete_tenant_user",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member removed"
+          },
+          "404": {
+            "description": "User is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/tenants": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "List tenants",
+        "description": "List all tenants in the installation. Owner-only platform view.",
+        "operationId": "list_tenants",
+        "responses": {
+          "200": {
+            "description": "Tenants retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TenantInfo"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "Create a tenant",
+        "description": "Explicitly create a tenant (owner-only), rather than relying on first login.",
+        "operationId": "create_tenant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewTenantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Tenant created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewTenantResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -7092,11 +7297,11 @@
       },
       "ApiKeyDescr": {
         "type": "object",
-        "description": "API key descriptor.",
+        "description": "API key descriptor.\n\nA key carries a single [`Role`], capped at `write`: `admin` and `owner` are\nnever issuable as static keys (see [`crate::db::types::role::MintableKeyRole`]).",
         "required": [
           "id",
           "name",
-          "scopes"
+          "role"
         ],
         "properties": {
           "id": {
@@ -7105,11 +7310,8 @@
           "name": {
             "type": "string"
           },
-          "scopes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ApiPermission"
-            }
+          "role": {
+            "$ref": "#/components/schemas/Role"
           }
         }
       },
@@ -7117,14 +7319,6 @@
         "type": "string",
         "format": "uuid",
         "description": "API key identifier."
-      },
-      "ApiPermission": {
-        "type": "string",
-        "description": "Permission types for invoking API endpoints.",
-        "enum": [
-          "Read",
-          "Write"
-        ]
       },
       "Auth": {
         "type": "object",
@@ -10416,6 +10610,14 @@
             "type": "string",
             "description": "Key name.",
             "example": "my-api-key"
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              }
+            ],
+            "nullable": true
           }
         }
       },
@@ -10474,6 +10676,14 @@
             "description": "Trust relationship name. Unique within the tenant.",
             "example": "github-actions-prod"
           },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              }
+            ],
+            "nullable": true
+          },
           "subject": {
             "type": "string",
             "description": "Subject claim pattern. `*` matches any sequence of characters.",
@@ -10491,6 +10701,40 @@
         "properties": {
           "id": {
             "$ref": "#/components/schemas/OidcTrustId"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "NewTenantRequest": {
+        "type": "object",
+        "description": "Request to create a tenant (owner-only).",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "acme"
+          },
+          "provider": {
+            "type": "string",
+            "description": "Identity provider the tenant is keyed under. Defaults to `manual` for\ntenants created out of band by an owner.",
+            "nullable": true
+          }
+        }
+      },
+      "NewTenantResponse": {
+        "type": "object",
+        "description": "Response to a successful tenant creation.",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/TenantId"
           },
           "name": {
             "type": "string"
@@ -10583,7 +10827,7 @@
           "name",
           "issuer",
           "subject",
-          "scopes"
+          "role"
         ],
         "properties": {
           "audience": {
@@ -10603,11 +10847,8 @@
           "name": {
             "type": "string"
           },
-          "scopes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ApiPermission"
-            }
+          "role": {
+            "$ref": "#/components/schemas/Role"
           },
           "subject": {
             "type": "string"
@@ -12832,6 +13073,16 @@
         },
         "additionalProperties": false
       },
+      "Role": {
+        "type": "string",
+        "description": "A role in the RBAC model. Declaration order defines the privilege order.",
+        "enum": [
+          "read",
+          "write",
+          "admin",
+          "owner"
+        ]
+      },
       "RuntimeConfig": {
         "type": "object",
         "description": "Global pipeline configuration settings. This is the publicly\nexposed type for users to configure pipelines.",
@@ -13204,15 +13455,36 @@
         "type": "object",
         "required": [
           "tenant_id",
-          "tenant_name"
+          "tenant_name",
+          "role",
+          "is_owner"
         ],
         "properties": {
+          "is_owner": {
+            "type": "boolean",
+            "description": "Whether the caller is a platform owner."
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
           "tenant_id": {
             "$ref": "#/components/schemas/TenantId"
           },
           "tenant_name": {
             "type": "string",
             "description": "Current user's tenant name"
+          }
+        }
+      },
+      "SetMemberRoleRequest": {
+        "type": "object",
+        "description": "Request to assign a role to a user within a tenant.",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/Role"
           }
         }
       },
@@ -13922,6 +14194,57 @@
         "type": "string",
         "format": "uuid"
       },
+      "TenantInfo": {
+        "type": "object",
+        "description": "A tenant, as returned by the platform (owner-only) tenant list.",
+        "required": [
+          "id",
+          "name",
+          "provider"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/TenantId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        }
+      },
+      "TenantMember": {
+        "type": "object",
+        "description": "A member of a tenant, as returned by the user-management API.",
+        "required": [
+          "user_id",
+          "provider",
+          "subject",
+          "role"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email, if the identity provider supplied one.",
+            "nullable": true
+          },
+          "provider": {
+            "type": "string",
+            "description": "OIDC issuer the user authenticates through."
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "subject": {
+            "type": "string",
+            "description": "OIDC subject."
+          },
+          "user_id": {
+            "$ref": "#/components/schemas/UserId"
+          }
+        }
+      },
       "TimeSeries": {
         "type": "object",
         "description": "Time series to make graphs in the web console easier.",
@@ -14436,6 +14759,11 @@
             "type": "string"
           }
         }
+      },
+      "UserId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Identifier of a persisted user (the principal behind an OIDC `sub`)."
       },
       "Version": {
         "type": "integer",

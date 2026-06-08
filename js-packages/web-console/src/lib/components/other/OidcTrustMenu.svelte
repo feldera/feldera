@@ -45,7 +45,7 @@
         <div class="w-full">
           <div>
             {trust.name}
-            <span class="text-xs opacity-70">[{trust.scopes.join(', ')}]</span>
+            <span class="text-xs opacity-70">[{trust.role}]</span>
           </div>
           <div class="text-sm">
             <code>{trust.issuer}</code> · sub=<code>{trust.subject}</code
