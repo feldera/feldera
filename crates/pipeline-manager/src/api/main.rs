@@ -261,7 +261,15 @@ It contains the following fields:
         // Cluster
         endpoints::cluster::list_cluster_events,
         endpoints::cluster::get_cluster_event,
-        endpoints::cluster::get_cluster_health
+        endpoints::cluster::get_cluster_health,
+
+        // Tenant and user management (RBAC)
+        endpoints::tenant::list_tenant_users,
+        endpoints::tenant::add_tenant_user,
+        endpoints::tenant::put_tenant_user,
+        endpoints::tenant::delete_tenant_user,
+        endpoints::tenant::list_tenants,
+        endpoints::tenant::create_tenant
     ),
     components(schemas(
         // Authentication
@@ -338,9 +346,19 @@ It contains the following fields:
         crate::db::types::program::ProgramInfo,
         crate::api::endpoints::pipeline_management::PartialProgramInfo,
 
+        // RBAC
+        crate::db::types::role::Role,
+        crate::db::types::user::UserId,
+        crate::db::types::user::TenantMember,
+        crate::db::types::user::TenantInfo,
+        crate::api::endpoints::tenant::SetMemberRoleRequest,
+        crate::api::endpoints::tenant::AddMemberRequest,
+        crate::api::endpoints::tenant::AddMemberResponse,
+        crate::api::endpoints::tenant::NewTenantRequest,
+        crate::api::endpoints::tenant::NewTenantResponse,
+
         // API key
         crate::db::types::api_key::ApiKeyId,
-        crate::db::types::api_key::ApiPermission,
         crate::db::types::api_key::ApiKeyDescr,
         crate::api::endpoints::api_key::NewApiKeyRequest,
         crate::api::endpoints::api_key::NewApiKeyResponse,
@@ -606,13 +624,16 @@ fn build_app(
     let app = match auth_configuration {
         Some(auth_configuration) => {
             let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
+            // Wrap order is inside-out (last wrap = outermost): cors, then the
+            // websocket subprotocol promotion (browsers can't set the
+            // `Authorization` header on a WebSocket handshake, so promote a
+            // token carried in a `feldera-bearer.*` subprotocol to that header
+            // first), then auth (installs the principal), then the RBAC check
+            // (reads it), then the handler.
             app.app_data(auth_configuration.clone()).service(
                 api_scope()
+                    .wrap(middleware::from_fn(crate::api::rbac::rbac_middleware))
                     .wrap(auth_middleware)
-                    // Runs ahead of `auth_middleware` (last wrap = outermost):
-                    // browsers can't set the `Authorization` header on a
-                    // WebSocket handshake, so promote a token carried in a
-                    // `feldera-bearer.*` subprotocol to that header first.
                     .wrap(middleware::from_fn(
                         crate::auth::promote_websocket_subprotocol_auth,
                     ))
@@ -621,6 +642,7 @@ fn build_app(
         }
         None => app.service(
             api_scope()
+                .wrap(middleware::from_fn(crate::api::rbac::rbac_middleware))
                 .wrap_fn(|req, srv| {
                     let req = crate::auth::tag_with_default_tenant_id(req);
                     srv.call(req)
@@ -743,6 +765,13 @@ fn api_scope() -> Scope {
         .service(endpoints::cluster::list_cluster_events)
         .service(endpoints::cluster::get_cluster_event)
         .service(endpoints::cluster::get_cluster_health)
+        // Tenant and user management (RBAC)
+        .service(endpoints::tenant::list_tenant_users)
+        .service(endpoints::tenant::add_tenant_user)
+        .service(endpoints::tenant::put_tenant_user)
+        .service(endpoints::tenant::delete_tenant_user)
+        .service(endpoints::tenant::list_tenants)
+        .service(endpoints::tenant::create_tenant)
 }
 
 struct SecurityAddon;

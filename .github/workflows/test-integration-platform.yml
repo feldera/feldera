@@ -145,6 +145,87 @@ jobs:
           docker inspect pipeline-manager-https || true
           docker rm -f pipeline-manager-https || true
 
+  # Exercises the RBAC + OIDC-trust auth surface end to end against a
+  # self-contained dummy OIDC issuer, so it always runs (unlike the OIDC paths
+  # gated on an external provider). The manager runs with `--network host` so it
+  # reaches the issuer on localhost for discovery/JWKS; `rbac_demo.py` mints one
+  # token per role and asserts the RBAC matrix (reader denied mutations, write
+  # cannot mint an admin key, admin creates an OIDC trust, owner sees the tenant
+  # list). Its non-zero exit fails the job.
+  rbac-oidc-trust:
+    if: ${{ !contains(vars.CI_SKIP_JOBS, 'rbac-oidc-trust') }}
+    name: RBAC + OIDC trust (self-contained dummy IdP)
+    runs-on: ubuntu-latest-amd64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+
+      - name: Login to GHCR with GITHUB_TOKEN
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Start dummy OIDC issuer in background
+        run: |
+          uv run scripts/dummy_oidc.py --issuer http://localhost:9876 >dummy-oidc.log 2>&1 &
+          echo "OIDC_PID=$!" >> "$GITHUB_ENV"
+          for i in {1..30}; do
+            if curl -sf http://localhost:9876/.well-known/openid-configuration >/dev/null; then
+              echo "dummy OIDC issuer is up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "dummy OIDC issuer did not come up"; cat dummy-oidc.log; exit 1
+
+      - name: Start pipeline-manager with auth enabled (owner=owner@example.com)
+        run: |
+          docker run -d \
+            --pull missing \
+            --name pipeline-manager-rbac \
+            --network host \
+            --health-cmd='curl --fail --silent --max-time 2 http://localhost:8080/healthz || exit 1' \
+            --health-interval=10s \
+            --health-timeout=5s \
+            --health-retries=5 \
+            -e AUTH_PROVIDER=generic-oidc \
+            -e FELDERA_AUTH_CLIENT_ID=feldera \
+            -e FELDERA_AUTH_ISSUER=http://localhost:9876 \
+            -e FELDERA_AUTH_AUDIENCE=feldera-api \
+            -e FELDERA_OWNERS=owner@example.com \
+            -e RUST_LOG=info \
+            -e RUST_BACKTRACE=1 \
+            ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
+
+      - name: Wait for container to become healthy (max 50s)
+        run: |
+          for i in {1..50}; do
+            status=$(docker inspect --format '{{json .State.Health}}' pipeline-manager-rbac | jq -r .Status 2>/dev/null || echo "starting")
+            echo "Health status: $status"
+            if [ "$status" == "healthy" ]; then
+              echo "pipeline-manager is healthy"
+              exit 0
+            elif [ "$status" == "unhealthy" ]; then
+              echo "pipeline-manager not healthy"
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "Timed out waiting for pipeline-manager to become healthy"
+          exit 1
+
+      - name: RBAC + OIDC-trust assertion matrix
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: uv run scripts/rbac_demo.py --manager http://localhost:8080 --oidc http://localhost:9876
+
+      - name: Logs & Cleanup
+        if: always()
+        run: |
+          docker logs pipeline-manager-rbac || true
+          docker rm -f pipeline-manager-rbac || true
+          if [ -n "$OIDC_PID" ]; then kill "$OIDC_PID" || true; fi
+          cat dummy-oidc.log || true
+
   oss-platform-tests:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'oss-platform-tests') }}
     name: Platform Integration Tests (OSS Docker Image)

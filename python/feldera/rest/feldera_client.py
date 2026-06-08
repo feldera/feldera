@@ -63,6 +63,7 @@ class FelderaClient:
         connection_timeout: Optional[float] = None,
         requests_verify: Optional[bool | str] = None,
         retry_config: Optional[RetryConfig] = None,
+        tenant: Optional[str] = None,
     ) -> None:
         """
         Constructs a Feldera client.
@@ -98,6 +99,11 @@ class FelderaClient:
         :param retry_config: (Optional) Retry behavior for transient HTTP failures
             (408, 502, 503, 504, timeouts). The default is `RetryConfig()` — 3 retries
             with exponential backoff starting at 2 seconds.
+        :param tenant: (Optional) Tenant to act in, sent as the `Feldera-Tenant`
+            header. A platform owner uses this to select any tenant (by name or
+            UUID); a regular user, to disambiguate among the tenants their token
+            authorizes. The default is read from `FELDERA_TENANT`; if unset, the
+            server uses the token's own tenant.
         """
 
         self.config = Config(
@@ -107,6 +113,7 @@ class FelderaClient:
             connection_timeout=connection_timeout,
             requests_verify=requests_verify,
             retry_config=retry_config,
+            tenant=tenant,
         )
         self.http = HttpRequests(self.config)
 
@@ -1616,24 +1623,31 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         return FelderaConfig(resp)
 
-    def create_api_key(self, name: str) -> dict:
+    def create_api_key(self, name: str, role: str = "write") -> dict:
         """
-        Create a new API key with the specified name.
+        Create a new API key with the specified name and role.
 
         The generated API key is returned in the response and cannot be retrieved
         again later, so store it securely.
 
         :param name: The API key name to create.
+        :param role: The role the key carries, ``"read"`` or ``"write"``. The
+            role may not exceed the caller's own role, and ``admin``/``owner``
+            are never issuable as API keys. Defaults to ``"write"`` to preserve
+            the read+write access earlier SDK versions granted implicitly.
         :returns: A dict with keys: `id` (UUID string), `name`, and `api_key`.
-        :raises FelderaAPIError: If a key with the same name already exists.
+        :raises FelderaAPIError: If a key with the same name already exists, or
+            the requested role exceeds the caller's role.
         """
 
         if not name:
             raise ValueError("API key name must be a non-empty string")
+        if role not in ("read", "write"):
+            raise ValueError("API key role must be 'read' or 'write'")
 
         return self.http.post(
             path="/api_keys",
-            body={"name": name},
+            body={"name": name, "role": role},
         )
 
     def list_oidc_trust(self) -> List[dict]:
@@ -1642,7 +1656,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         :returns: A list of dicts each describing a trust relationship
                   (`id`, `name`, `description`, `issuer`, `subject`,
-                  `audience`, `scopes`).
+                  `audience`, `role`).
         """
         return self.http.get(path="/oidc_trust")
 
@@ -1652,7 +1666,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         :param name: Trust relationship name.
         """
-        return self.http.get(path=f"/oidc_trust/{name}")
+        return self.http.get(path=f"/oidc_trust/{quote(name, safe='')}")
 
     def create_oidc_trust(
         self,
@@ -1661,14 +1675,15 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         subject: str,
         audience: Optional[str] = None,
         description: Optional[str] = None,
+        role: Optional[str] = None,
     ) -> dict:
         """
         Register a new OIDC trust relationship.
 
         Any JWT signed by `issuer` whose `sub` claim matches `subject`
         (and, if specified, `aud` claim matches `audience`) is authorized
-        as the current tenant with read/write scopes. `*` is a wildcard
-        in `subject` and `audience`.
+        to act as the current tenant with the granted `role`. `*` is a
+        wildcard in `subject` and `audience`.
 
         :param name: Unique name within the tenant.
         :param issuer: Issuer URL exactly as it appears in the `iss` claim.
@@ -1676,6 +1691,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param audience: Pattern matched against the JWT `aud` claim. Omit
                          to skip audience matching.
         :param description: Free-text description.
+        :param role: Role granted to a matching token (`read`, `write`, or
+                     `admin`; `owner` only for a platform owner). Capped at the
+                     caller's role. Defaults to `read` server-side when omitted.
         :returns: A dict with keys `id` and `name`.
         :raises FelderaAPIError: If `name` is already in use or fields are
                                  invalid.
@@ -1695,13 +1713,15 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             body["audience"] = audience
         if description is not None:
             body["description"] = description
+        if role is not None:
+            body["role"] = role
         return self.http.post(path="/oidc_trust", body=body)
 
     def delete_oidc_trust(self, name: str) -> None:
         """
         Delete an OIDC trust relationship by name.
         """
-        self.http.delete(path=f"/oidc_trust/{name}")
+        self.http.delete(path=f"/oidc_trust/{quote(name, safe='')}")
 
     def get_pipeline_support_bundle(
         self, pipeline_name: str, params: Optional[Dict[str, Any]] = None

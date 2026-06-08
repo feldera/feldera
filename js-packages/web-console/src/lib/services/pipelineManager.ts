@@ -1,27 +1,37 @@
 import {
+  addTenantUser as _addTenantUser,
   type CombinedDesiredStatus as _CombinedDesiredStatus,
   type CombinedStatus as _CombinedStatus,
   checkpointPipeline as _checkpointPipeline,
+  createTenant as _createTenant,
   deleteApiKey as _deleteApiKey,
+  deleteOidcTrust as _deleteOidcTrust,
   deletePipeline as _deletePipeline,
+  deleteTenantUser as _deleteTenantUser,
   getCheckpointStatus as _getCheckpointStatus,
   getCheckpointSyncStatus as _getCheckpointSyncStatus,
   getCheckpoints as _getCheckpoints,
   getClusterEvent as _getClusterEvent,
   getConfig as _getConfig,
   getConfigSession as _getConfigSession,
+  getOidcTrust as _getOidcTrust,
   getPipeline as _getPipeline,
   getPipelineDataflowGraph as _getPipelineDataflowGraph,
   getPipelineEvent as _getPipelineEvent,
   getPipelineInputConnectorStatus as _getPipelineInputConnectorStatus,
   getPipelineOutputConnectorStatus as _getPipelineOutputConnectorStatus,
   getPipelineStats as _getPipelineStats,
+  listOidcTrust as _listOidcTrust,
+  listTenants as _listTenants,
+  listTenantUsers as _listTenantUsers,
   type ProgramStatus as _ProgramStatus,
   patchPipeline as _patchPipeline,
   postApiKey as _postApiKey,
+  postOidcTrust as _postOidcTrust,
   postPipeline as _postPipeline,
   postUpdateRuntime as _postUpdateRuntime,
   putPipeline as _putPipeline,
+  putTenantUser as _putTenantUser,
   syncCheckpoint as _syncCheckpoint,
   type CheckpointMetadata,
   type CheckpointResponse,
@@ -36,6 +46,7 @@ import {
   listClusterEvents,
   listPipelineEvents,
   listPipelines,
+  type NewOidcTrustRequest,
   type PatchPipeline,
   type PipelineSelectedInfo,
   type PostPutPipeline,
@@ -48,7 +59,9 @@ import {
   postPipelineResume,
   postPipelineStart,
   postPipelineStop,
-  startSamplyProfile
+  startSamplyProfile,
+  type TenantInfo,
+  type TenantMember
 } from '$lib/services/manager'
 
 export type {
@@ -59,8 +72,12 @@ export type {
   CheckpointStatus,
   InputEndpointConfig,
   InputEndpointStatus,
+  NewOidcTrustRequest,
+  // RBAC/OIDC-trust/tenant admin types (generated from the manager's OpenAPI).
+  OidcTrustDescr,
   OutputEndpointConfig,
   OutputEndpointStatus,
+  Role,
   RuntimeConfig,
   SqlCompilerMessage
 } from '$lib/services/manager'
@@ -593,8 +610,10 @@ export const getConfigSession = (options?: FetchOptions) =>
 
 export const getApiKeys = (options?: FetchOptions) => mapResponse(listApiKeys(options), (v) => v)
 
-export const postApiKey = (name: string, options?: FetchOptions) =>
-  mapResponse(_postApiKey({ body: { name }, ...options }), (v) => v)
+export type ApiKeyRole = 'read' | 'write'
+
+export const postApiKey = (name: string, role: ApiKeyRole = 'read', options?: FetchOptions) =>
+  mapResponse(_postApiKey({ body: { name, role }, ...options }), (v) => v)
 
 export const deleteApiKey = (name: string, options?: FetchOptions) =>
   mapResponse(
@@ -605,72 +624,57 @@ export const deleteApiKey = (name: string, options?: FetchOptions) =>
     }
   )
 
-// OIDC trust relationships
-//
-// These wrappers talk to the manager directly instead of going through the
-// generated client because the SDK has not yet been regenerated against the
-// new endpoints. After running `bun run generate-openapi`, these can be
-// replaced with calls to the generated `listOidcTrust` / `postOidcTrust` /
-// `deleteOidcTrust` functions.
-import { getAuthorizationHeaders } from '$lib/services/auth'
+// A tenant member (generated `TenantMember`). Members appear after their first
+// login or via pre-provisioning; `role` is normally read/write/admin, but an
+// owner resolved by the IdP can also appear and is shown read-only.
+export type TenantUser = TenantMember
+export type Tenant = TenantInfo
 
-export type OidcTrustDescr = {
-  id: string
-  name: string
-  description?: string | null
-  issuer: string
-  subject: string
-  audience?: string | null
-  scopes: ('Read' | 'Write')[]
-}
+// OIDC trust relationships, tenant users, and tenant administration. These go
+// through the generated client (same auth + 401-refresh interceptors as every
+// other call), wrapped in `mapResponse` for uniform error handling.
 
-export type NewOidcTrustRequest = {
-  name: string
-  issuer: string
-  subject: string
-  audience?: string
-  description?: string
-}
+export const getOidcTrustList = (options?: FetchOptions) =>
+  mapResponse(_listOidcTrust({ ...options }), (v) => v ?? [])
 
-const oidcTrustFetch = async (path: string, init?: RequestInit) => {
-  const authHeaders = await getAuthorizationHeaders()
-  const res = await fetch(`${felderaEndpoint}/v0${path}`, {
-    ...init,
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      ...authHeaders,
-      ...(init?.headers ?? {})
-    }
-  })
-  if (!res.ok) {
-    const body = await res.text()
-    let message = `Request to ${path} failed: ${res.status}`
-    try {
-      const parsed = JSON.parse(body)
-      if (parsed?.message) message = parsed.message
-    } catch {
-      // ignore
-    }
-    throw new Error(message)
-  }
-  if (res.status === 204 || res.headers.get('content-length') === '0') return null
-  return res.json()
-}
+export const postOidcTrust = (body: NewOidcTrustRequest, options?: FetchOptions) =>
+  mapResponse(_postOidcTrust({ body, ...options }), (v) => v)
 
-export const getOidcTrustList = (): Promise<OidcTrustDescr[]> =>
-  oidcTrustFetch('/oidc_trust').then((v) => (v as OidcTrustDescr[]) ?? [])
+export const deleteOidcTrust = (name: string, options?: FetchOptions) =>
+  mapResponse(_deleteOidcTrust({ path: { name }, ...options }), (v) => v)
 
-export const postOidcTrust = (
-  body: NewOidcTrustRequest
-): Promise<{ id: string; name: string }> =>
-  oidcTrustFetch('/oidc_trust', {
-    method: 'POST',
-    body: JSON.stringify(body)
-  })
+// Tenant users & roles (min role: admin).
 
-export const deleteOidcTrust = (name: string): Promise<unknown> =>
-  oidcTrustFetch(`/oidc_trust/${encodeURIComponent(name)}`, { method: 'DELETE' })
+export const getTenantUsers = (options?: FetchOptions) =>
+  mapResponse(_listTenantUsers({ ...options }), (v) => v ?? [])
+
+// Pre-provision a member by identity, before their first login. The grant is
+// dormant until that identity authenticates into the tenant through the IdP.
+export const addTenantUser = (
+  body: { provider: string; subject: string; email?: string; role: 'read' | 'write' | 'admin' },
+  options?: FetchOptions
+) => mapResponse(_addTenantUser({ body, ...options }), (v) => v)
+
+export const setTenantUserRole = (
+  userId: string,
+  role: 'read' | 'write' | 'admin',
+  options?: FetchOptions
+) =>
+  mapResponse(_putTenantUser({ path: { user_id: userId }, body: { role }, ...options }), (v) => v)
+
+export const removeTenantUser = (userId: string, options?: FetchOptions) =>
+  mapResponse(_deleteTenantUser({ path: { user_id: userId }, ...options }), (v) => v)
+
+// Tenant administration (min role: owner).
+
+export const getTenants = (options?: FetchOptions) =>
+  mapResponse(_listTenants({ ...options }), (v) => v ?? [])
+
+export const createTenant = (name: string, provider?: string, options?: FetchOptions) =>
+  mapResponse(
+    _createTenant({ body: { name, ...(provider ? { provider } : {}) }, ...options }),
+    (v) => v
+  )
 
 export const dismissDeploymentError = (pipeline_name: string) =>
   mapResponse(postPipelineDismissError({ path: { pipeline_name } }), (v) => v)

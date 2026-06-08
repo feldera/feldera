@@ -1,7 +1,7 @@
 <script lang="ts">
   import { asyncReadable } from '@square/svelte-store'
-  import NewOidcTrustForm from '$lib/components/oidcTrust/NewOidcTrustForm.svelte'
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
+  import NewOidcTrustForm from '$lib/components/oidcTrust/NewOidcTrustForm.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import {
     deleteOidcTrust,
@@ -45,11 +45,10 @@
         <div class="w-full">
           <div>
             {trust.name}
-            <span class="text-xs opacity-70">[{trust.scopes.join(', ')}]</span>
+            <span class="text-xs opacity-70">[{trust.role}]</span>
           </div>
           <div class="text-sm">
-            <code>{trust.issuer}</code> · sub=<code>{trust.subject}</code
-            >{#if trust.audience}
+            <code>{trust.issuer}</code> · sub=<code>{trust.subject}</code>{#if trust.audience}
               · aud=<code>{trust.audience}</code>{/if}
           </div>
           {#if trust.description}

@@ -19,4 +19,5 @@ pub mod pipeline;
 pub mod pipeline_monitor;
 mod pipeline_parsing;
 pub mod tenant;
+pub mod user;
 pub(crate) mod utils;

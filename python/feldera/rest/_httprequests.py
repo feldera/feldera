@@ -77,11 +77,14 @@ class HttpRequests:
         return key
 
     def _headers_with_auth(self) -> dict:
-        """Headers for the next request, with a freshly-resolved bearer."""
+        """Headers for the next request, with a freshly-resolved bearer and the
+        selected tenant (if any)."""
         headers = dict(self.headers)
         token = self._resolve_bearer()
         if token:
             headers["Authorization"] = f"Bearer {token}"
+        if self.config.tenant:
+            headers["Feldera-Tenant"] = self.config.tenant
         return headers
 
     def _check_cluster_health(self) -> bool:
@@ -93,7 +96,7 @@ class HttpRequests:
             response = requests.get(
                 health_path,
                 timeout=(self.config.connection_timeout, self.config.timeout),
-                headers=self.headers,
+                headers=self._headers_with_auth(),
                 verify=self.requests_verify,
             )
 
@@ -210,7 +213,6 @@ class HttpRequests:
           (capped at `max_backoff`).
         - All other errors are raised immediately.
         """
-        self.headers["Content-Type"] = content_type
         request_path = self.config.url + "/" + self.config.version + path
 
         # Serialize the body once, not per retry. None / bytes / `serialize=False`

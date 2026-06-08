@@ -1,5 +1,6 @@
 use crate::db::error::DBError;
 use crate::db::types::tenant::TenantId;
+use crate::db::types::user::UserId;
 use tokio_postgres::error::Error as PgError;
 
 /// Converts the Postgres error into our `DBError`.
@@ -47,6 +48,26 @@ pub(crate) fn maybe_tenant_id_foreign_key_constraint_err(
                 if let Some(constraint_name) = db_err.constraint() {
                     if constraint_name.ends_with("tenant_id_fkey") {
                         return DBError::UnknownTenant { tenant_id };
+                    }
+                }
+            }
+        }
+    }
+    err
+}
+
+/// Maps a foreign-key violation on a `*user_id_fkey` constraint to a clear
+/// `UnknownUser`, so assigning a role to a nonexistent user id yields 404
+/// rather than a raw 500. Other errors pass through unchanged.
+pub(crate) fn maybe_user_id_foreign_key_constraint_err(err: DBError, user_id: UserId) -> DBError {
+    if let DBError::PostgresError { error, .. } = &err {
+        if let Some(db_err) = error.as_db_error() {
+            if db_err.code() == &tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION {
+                if let Some(constraint_name) = db_err.constraint() {
+                    if constraint_name.ends_with("user_id_fkey") {
+                        return DBError::UnknownUser {
+                            user_id: user_id.to_string(),
+                        };
                     }
                 }
             }
