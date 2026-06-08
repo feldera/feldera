@@ -91,6 +91,27 @@ where
                 .clone()
         }
     }
+
+    #[track_caller]
+    pub fn dyn_shard_workers_accumulate(
+        &self,
+        factories: &B::Factories,
+        workers: Range<usize>,
+    ) -> Stream<C, Option<Spine<B>>>
+    where
+        B: Batch<Time = ()>,
+    {
+        if Runtime::num_workers() == 1 {
+            self.dyn_accumulate(factories)
+        } else if Runtime::with_dev_tweaks(|d| !d.streaming_exchange()) {
+            self.dyn_shard_workers(workers, factories)
+                .dyn_accumulate(factories)
+        } else {
+            // TODO: implement using streaming exchange.
+            self.dyn_shard_workers(workers, factories)
+                .dyn_accumulate(factories)
+        }
+    }
 }
 
 struct ShardedAccumulator<B>
