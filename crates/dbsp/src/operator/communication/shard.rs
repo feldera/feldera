@@ -86,11 +86,24 @@ where
     C: Circuit,
     B: Batch<Time = ()>,
 {
+    /// Shard the stream across all workers and accumulate the result.
     #[track_caller]
     pub fn shard_accumulate(&self) -> Stream<C, Option<Spine<B>>> {
         let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
 
         let result = self.inner().dyn_shard_accumulate(&factories);
+
+        unsafe { result.transmute_payload() }
+    }
+
+    /// Shard the stream across workers in the specifie range and accumulate the result.
+    #[track_caller]
+    pub fn shard_workers_accumulate(&self, workers: Range<usize>) -> Stream<C, Option<Spine<B>>> {
+        let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
+
+        let result = self
+            .inner()
+            .dyn_shard_workers_accumulate(&factories, workers);
 
         unsafe { result.transmute_payload() }
     }
