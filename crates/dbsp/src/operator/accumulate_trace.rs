@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::{
     Circuit, DBData, DBWeight, Stream,
     circuit::metadata::MetaItem,
@@ -379,6 +381,35 @@ where
 
         self.inner()
             .dyn_accumulate_integrate_trace(&factories)
+            .typed()
+    }
+
+    /// Shard and integrate a stream.
+    ///
+    /// Uses streaming exchange to efficiently accumulate changes to the stream within a transaction.
+    /// Updates the output integral on transaction commit.
+    #[track_caller]
+    pub fn shard_accumulate_integrate_trace(&self) -> Stream<C, Spine<B>> {
+        let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
+
+        self.inner()
+            .dyn_shard_accumulate_integrate_trace(&factories)
+            .typed()
+    }
+
+    /// Shard the stream across a range of workers.
+    ///
+    /// Uses streaming exchange to efficiently accumulate changes to the stream within a transaction.
+    /// Updates the output integral on transaction commit.
+    #[track_caller]
+    pub fn shard_workers_accumulate_integrate_trace(
+        &self,
+        workers: Range<usize>,
+    ) -> Stream<C, Spine<B>> {
+        let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
+
+        self.inner()
+            .dyn_shard_workers_accumulate_integrate_trace(&factories, workers)
             .typed()
     }
 
