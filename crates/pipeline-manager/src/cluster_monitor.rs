@@ -4,7 +4,6 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::monitor::{MonitorStatus, NewClusterMonitorEvent};
 use crate::error::source_error;
-use crate::unstable_features;
 use async_trait::async_trait;
 use feldera_observability::ReqwestTracingExt;
 use std::{sync::Arc, time::Duration};
@@ -37,12 +36,6 @@ const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 /// Message when the resources information is not available.
 const RESOURCES_INFO_NOT_AVAILABLE: &str =
     "Resources information not available in Community edition.";
-
-/// Message when the resources information gathering is not enabled.
-const RESOURCES_INFO_NOT_ENABLED: &str = "Resources information is not enabled. \
-    Cluster monitoring resources is currently an unstable feature. It can be enabled by \
-    setting the control plane environment variable FELDERA_UNSTABLE_FEATURES and adding to it \
-    `cluster_monitor_resources` as one of the comma-separated entries.";
 
 /// Target to poll resources of.
 pub enum PollResourcesTarget {
@@ -121,43 +114,18 @@ pub async fn cluster_monitor<P: ResourcesPoller>(
         let runner_self_info = truncate_info(runner_self_info);
 
         // Perform polling of the resources backing the services
-        let (
-            api_resources_ok,
-            compiler_resources_ok,
-            runner_resources_ok,
-            api_resources_info,
-            compiler_resources_info,
-            runner_resources_info,
-        ) = if unstable_features().is_some_and(|activated_unstable_features| {
-            activated_unstable_features.contains("cluster_monitor_resources")
-        }) {
-            let (api_resources_ok, api_resources_info) = resources_poller
-                .poll_resources(PollResourcesTarget::Api)
-                .await;
-            let (compiler_resources_ok, compiler_resources_info) = resources_poller
-                .poll_resources(PollResourcesTarget::Compiler)
-                .await;
-            let (runner_resources_ok, runner_resources_info) = resources_poller
-                .poll_resources(PollResourcesTarget::Runner)
-                .await;
-            (
-                api_resources_ok,
-                compiler_resources_ok,
-                runner_resources_ok,
-                truncate_info(api_resources_info),
-                truncate_info(compiler_resources_info),
-                truncate_info(runner_resources_info),
-            )
-        } else {
-            (
-                true,
-                true,
-                true,
-                RESOURCES_INFO_NOT_ENABLED.to_string(),
-                RESOURCES_INFO_NOT_ENABLED.to_string(),
-                RESOURCES_INFO_NOT_ENABLED.to_string(),
-            )
-        };
+        let (api_resources_ok, api_resources_info) = resources_poller
+            .poll_resources(PollResourcesTarget::Api)
+            .await;
+        let (compiler_resources_ok, compiler_resources_info) = resources_poller
+            .poll_resources(PollResourcesTarget::Compiler)
+            .await;
+        let (runner_resources_ok, runner_resources_info) = resources_poller
+            .poll_resources(PollResourcesTarget::Runner)
+            .await;
+        let api_resources_info = truncate_info(api_resources_info);
+        let compiler_resources_info = truncate_info(compiler_resources_info);
+        let runner_resources_info = truncate_info(runner_resources_info);
 
         // Whether to insert the event into the database
         let insert_into_database = match &latest_event {

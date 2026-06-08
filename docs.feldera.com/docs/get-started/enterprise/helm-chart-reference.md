@@ -322,6 +322,6 @@ Configure HTTPS for all Feldera components. See the [HTTPS guide](./https) for c
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `unstableFeatures` | `[]` | List of unstable feature flags to enable. Possible values: `"testing"`, `"runtime_version"`, `"cluster_monitor_resources"`. Do not also set `FELDERA_UNSTABLE_FEATURES` in `controlPlane.env`. |
+| `unstableFeatures` | `[]` | List of unstable feature flags to enable. Possible values: `"testing"`, `"runtime_version"`. Do not also set `FELDERA_UNSTABLE_FEATURES` in `controlPlane.env`. |
 | `felderaSentryEnabled` | `false` | Send crash reports and logs to Feldera's Sentry installation. |
 | `cloudApiEndpoint` | `"https://cloud1.feldera.com"` | Feldera cloud API endpoint used for license verification and runner telemetry. |
