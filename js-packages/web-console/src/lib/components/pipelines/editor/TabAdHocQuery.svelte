@@ -111,16 +111,28 @@
         // `RecordBatchReader.from` returns before the stream header has been parsed
         // for the async variant — `schema` is only populated after `open()`.
         await arrowReader.open()
-        if (cancelled) return
-        if (adhocQueries[tenantName][pipelineName].queries[i]?.result) {
+        if (cancelled) {
+          return
+        }
+        // A query that fails before producing a schema yields no arrow schema;
+        // the actual error is reported out of band (see `adHocQuery`).
+        if (arrowReader.schema && adhocQueries[tenantName][pipelineName].queries[i]?.result) {
           adhocQueries[tenantName][pipelineName].queries[i].result.columns.push(
             ...arrowSchemaToFelderaFields(arrowReader.schema)
           )
         }
         for await (const batch of arrowReader) {
-          if (cancelled) return
+          if (cancelled) {
+            return
+          }
           const rows: Row[] = arrowIpcBatchToJS(batch).map(({ row }) => ({ cells: row }) as Row)
           appendRows(rows)
+        }
+        // The arrow stream is always closed cleanly; a query error (up front or
+        // mid-stream) surfaces here so the catch below renders it.
+        const queryError = result.error?.()
+        if (queryError) {
+          throw queryError
         }
       } catch (e) {
         if (!cancelled) {

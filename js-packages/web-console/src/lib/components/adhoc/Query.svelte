@@ -187,7 +187,7 @@
                   {#if result.columns.length}
                     <thead>
                       <tr>
-                        <th class="bg-white-dark sticky top-0 z-10 font-light {itemHeight}">#</th>
+                        <th class="bg-white-dark sticky top-0 z-10 pl-2 font-light {itemHeight}">#</th>
                         {#each result.columns as column}
                           <SqlColumnHeader
                             {column}

@@ -46,13 +46,21 @@
 
 use std::{collections::HashMap, env};
 
+use actix_web::body::MessageBody;
+use actix_web::http::header::{self, HeaderMap, HeaderName, HeaderValue};
+use actix_web::middleware::Next;
 use actix_web::HttpMessage;
-use actix_web::{dev::ServiceRequest, error::ErrorUnauthorized, web::Data};
+use actix_web::{
+    dev::{ServiceRequest, ServiceResponse},
+    error::ErrorUnauthorized,
+    web::Data,
+};
 use actix_web_httpauth::extractors::{
     bearer::{BearerAuth, Config},
     AuthenticationError,
 };
 use awc::error::JsonPayloadError;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use cached::{Cached, TimedCache};
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, TokenData, Validation};
 use rand::rngs::ThreadRng;
@@ -80,6 +88,60 @@ pub(crate) fn tag_with_default_tenant_id(req: ServiceRequest) -> ServiceRequest 
     req.extensions_mut()
         .insert(vec![ApiPermission::Read, ApiPermission::Write]);
     req
+}
+
+/// WebSocket subprotocol prefixes carrying authentication, base64url-encoded
+/// (no padding). Browsers cannot set the `Authorization` or `Feldera-Tenant`
+/// headers on a WebSocket handshake — the `WebSocket` constructor only accepts
+/// a URL and a list of subprotocols — so the web console passes the bearer
+/// token and the selected tenant as subprotocols instead. See
+/// [`promote_websocket_subprotocol_auth`].
+const WS_BEARER_PROTOCOL_PREFIX: &str = "feldera-bearer.";
+const WS_TENANT_PROTOCOL_PREFIX: &str = "feldera-tenant.";
+
+/// Decode the first `Sec-WebSocket-Protocol` entry that begins with `prefix`,
+/// treating the remainder as a base64url (no-padding) string. Returns `None`
+/// if the header is absent, no entry matches, or decoding fails.
+fn decode_ws_subprotocol(headers: &HeaderMap, prefix: &str) -> Option<String> {
+    let raw = headers.get("Sec-WebSocket-Protocol")?.to_str().ok()?;
+    let encoded = raw
+        .split(',')
+        .map(str::trim)
+        .find_map(|protocol| protocol.strip_prefix(prefix))?;
+    let bytes = URL_SAFE_NO_PAD.decode(encoded).ok()?;
+    String::from_utf8(bytes).ok()
+}
+
+/// Promote a bearer token (and optional tenant) carried in WebSocket
+/// subprotocols to the standard `Authorization` / `Feldera-Tenant` headers, so
+/// the regular bearer-auth path ([`auth_validator`]) handles WebSocket
+/// handshakes without modification.
+///
+/// This runs ahead of the bearer-auth middleware. It is a no-op when an
+/// `Authorization` header is already present (ordinary HTTP requests) or when
+/// no `feldera-bearer.` subprotocol is offered, so it cannot weaken auth: the
+/// promoted token still goes through full validation downstream.
+pub(crate) async fn promote_websocket_subprotocol_auth(
+    mut req: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
+    if !req.headers().contains_key(header::AUTHORIZATION) {
+        if let Some(token) = decode_ws_subprotocol(req.headers(), WS_BEARER_PROTOCOL_PREFIX) {
+            if let Ok(authorization) = HeaderValue::from_str(&format!("Bearer {token}")) {
+                req.headers_mut()
+                    .insert(header::AUTHORIZATION, authorization);
+                if let Some(tenant) =
+                    decode_ws_subprotocol(req.headers(), WS_TENANT_PROTOCOL_PREFIX)
+                {
+                    if let Ok(tenant) = HeaderValue::from_str(&tenant) {
+                        req.headers_mut()
+                            .insert(HeaderName::from_static(TENANT_HEADER), tenant);
+                    }
+                }
+            }
+        }
+    }
+    next.call(req).await
 }
 
 /// Creates a JSON error response for authentication failures
