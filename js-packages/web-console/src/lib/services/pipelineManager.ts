@@ -74,7 +74,7 @@ import JSONbig from 'true-json-bigint'
 import { singleton } from '$lib/functions/common/array'
 import { tuple } from '$lib/functions/common/tuple'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
-import { applyAuthToRequest, handleAuthResponse } from '$lib/services/auth'
+import { applyAuthToRequest, getAuthorizationHeaders, handleAuthResponse } from '$lib/services/auth'
 import { createClient } from '$lib/services/manager/client'
 
 const unauthenticatedClient = createClient({
@@ -954,14 +954,118 @@ export const pipelineLogsStream = async (
   )
 }
 
-export const adHocQuery = async (pipelineName: string, query: string, options?: FetchOptions) => {
-  return streamResponse(
-    streamingFetch(
-      getAuthenticatedFetch(options),
-      `${felderaEndpoint}/v0/pipelines/${pipelineName}/query?sql=${encodeURIComponent(query)}&format=arrow_ipc`,
-      {}
-    )
-  )
+const httpToWs = (endpoint: string) => endpoint.replace(/^http(s?):\/\//, 'ws$1://')
+
+// base64url (no padding) — the only encoding whose alphabet is a valid
+// WebSocket subprotocol token, so it can carry the bearer token/tenant.
+const base64UrlEncode = (value: string): string =>
+  btoa(String.fromCharCode(...new TextEncoder().encode(value)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+
+// Extract a human-readable message from an ad-hoc error frame, which the
+// server sends as a serialized `PipelineError` (JSON) over the websocket.
+const adhocErrorText = (raw: string): string => {
+  try {
+    const body = JSON.parse(raw)
+    if (body && typeof body === 'object') {
+      if ('message' in body) {
+        return apiErrorText(body as ErrorResponse)
+      }
+      if ('error' in body && typeof body.error === 'string') {
+        return body.error
+      }
+    }
+  } catch {
+    // Not JSON — fall through to the raw text.
+  }
+  return raw
+}
+
+/**
+ * Runs an ad-hoc query over a WebSocket and returns its Arrow IPC result as a
+ * byte stream (or an `Error` if the socket cannot be created).
+ *
+ * The WebSocket transport carries the result as binary frames and reports a
+ * query error as a single text frame followed by an error close; that text
+ * frame surfaces as a stream error, so the caller's existing arrow-decode
+ * error handling reports it — without having to encode the error into the
+ * result stream itself.
+ *
+ * Browsers cannot set the `Authorization` header on a WebSocket handshake, so
+ * the bearer token and selected tenant are passed as `feldera-bearer.*` /
+ * `feldera-tenant.*` subprotocols; the manager promotes them back to headers
+ * (see `promote_websocket_subprotocol_auth` in the pipeline manager).
+ */
+export const adHocQuery = async (pipelineName: string, query: string) => {
+  const url = `${httpToWs(felderaEndpoint)}/v0/pipelines/${pipelineName}/query`
+
+  const authHeaders = await getAuthorizationHeaders()
+  const protocols: string[] = []
+  const token = authHeaders['Authorization']?.replace(/^Bearer /, '')
+  if (token) {
+    protocols.push(`feldera-bearer.${base64UrlEncode(token)}`)
+    const tenant = authHeaders['Feldera-Tenant']
+    if (tenant) {
+      protocols.push(`feldera-tenant.${base64UrlEncode(tenant)}`)
+    }
+  }
+
+  let ws: WebSocket
+  try {
+    ws = new WebSocket(url, protocols)
+  } catch (e) {
+    return e instanceof Error ? e : new Error(String(e))
+  }
+  ws.binaryType = 'arraybuffer'
+
+  // Errors are reported out of band rather than via `controller.error`:
+  // apache-arrow's ReadableStream adapter swallows a stream error (it cancels
+  // and ends the stream instead of rethrowing), so the byte stream is always
+  // closed cleanly and the caller inspects `error()` after draining it.
+  let streamError: Error | undefined
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      let settled = false
+      const close = () => {
+        if (settled) {
+          return
+        }
+        settled = true
+        controller.close()
+      }
+      ws.onopen = () => ws.send(JSON.stringify({ sql: query, format: 'arrow_ipc' }))
+      ws.onmessage = (event) => {
+        if (typeof event.data === 'string') {
+          // Query error: a text frame carrying the message, then a close.
+          streamError ??= new Error(adhocErrorText(event.data))
+          close()
+          ws.close()
+          return
+        }
+        if (!settled) {
+          controller.enqueue(new Uint8Array(event.data as ArrayBuffer))
+        }
+      }
+      ws.onclose = (event) => {
+        // An abnormal close with no preceding error frame (e.g. a failed
+        // handshake or a dropped connection) still has to surface something.
+        if (streamError === undefined && event.code !== 1000 && event.code !== 1005) {
+          streamError = new Error(
+            event.reason || `Connection to the pipeline closed (code ${event.code})`
+          )
+        }
+        close()
+      }
+    },
+    cancel() {
+      ws.close()
+    }
+  })
+
+  return { stream, cancel: () => ws.close(), error: () => streamError }
 }
 
 export const pipelineTimeSeriesStream = async (pipelineName: string, options?: FetchOptions) => {

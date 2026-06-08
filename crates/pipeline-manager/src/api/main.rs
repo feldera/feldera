@@ -578,8 +578,18 @@ fn build_app(
     let app = match auth_configuration {
         Some(auth_configuration) => {
             let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
-            app.app_data(auth_configuration.clone())
-                .service(api_scope().wrap(auth_middleware).wrap(cors))
+            app.app_data(auth_configuration.clone()).service(
+                api_scope()
+                    .wrap(auth_middleware)
+                    // Runs ahead of `auth_middleware` (last wrap = outermost):
+                    // browsers can't set the `Authorization` header on a
+                    // WebSocket handshake, so promote a token carried in a
+                    // `feldera-bearer.*` subprotocol to that header first.
+                    .wrap(middleware::from_fn(
+                        crate::auth::promote_websocket_subprotocol_auth,
+                    ))
+                    .wrap(cors),
+            )
         }
         None => app.service(
             api_scope()
