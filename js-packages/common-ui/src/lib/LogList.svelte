@@ -1,3 +1,11 @@
+<!--
+  LogList: a virtualized, selectable, searchable monospace renderer for line-oriented logs.
+
+  One renderer shared by the pipeline Logs tab (streaming) and the profiler bundle log view
+  (static). It owns reverse-scroll/stick-to-bottom, multi-row selection across the virtualized
+  rows, and search highlighting (driven by `./logSearch`). Hosts pass the lines and the
+  externally-owned `search` state; they wire the search input wherever fits their layout.
+-->
 <script lang="ts">
   import { untrack, type Snippet } from 'svelte'
   import { Virtualizer, type VirtualizerHandle } from 'virtua/svelte'
@@ -6,6 +14,7 @@
   import ScrollDownFab from './ScrollDownFab.svelte'
   import { useReverseScrollContainer } from './useReverseScrollContainer.svelte'
   import { virtualSelect } from './userSelect'
+  import { sliceLinesForCopy, type CopySlice } from './logCopy'
   import {
     applySearchHighlight,
     emptySearchState,
@@ -14,15 +23,8 @@
     type SearchState
   } from './logSearch'
 
-  /** Shape of the slice passed by {@link virtualSelect}'s copy interceptor — row/column
-   *  endpoints over the virtualised list. */
-  type CopySlice =
-    | 'all'
-    | { start: { row: number; col: number }; end: { row: number; col: number } }
-
   interface Props {
-    /** Lines to render, one per row. Hosts split their source (a string, a stream, ...) into
-     *  lines before passing them in. */
+    /** Lines to render, one per row. Hosts pre-split their source into lines. */
     lines: string[]
     /** Offset added to the row index when computing the Virtualizer's stable key — needed
      *  when the buffer evicts from the front (a streaming log shifts indices downward). */
@@ -39,16 +41,15 @@
      *  streaming-log behaviour. When false (default), the container starts at the top and
      *  never auto-scrolls on mount — appropriate for static log dumps. */
     streaming?: boolean
-    /** Extra classes for the scroll container — wrappers add background, padding, etc.
-     *  The monospace font is already baked in. */
+    /** Extra classes for the scroll container (background, padding, ...). */
     class?: string
     /** Inline style for the scroll container — for values that don't fit Tailwind utilities. */
     style?: string
     /** Renders above the scroll container — for status banners (e.g. "logs were skipped"). */
     header?: Snippet
-    /** Override the text produced by copy / Ctrl-C across the virtualised list. Default
-     *  joins `lines` (ANSI-stripped) with `\n`. Hosts whose rows already carry trailing
-     *  newlines pass an override that joins with `''`. */
+    /** Override the text produced by copy / Ctrl-C. The default implementation
+     * joins the selected `lines` with `\n`; rows that already carry a trailing newline
+     * need an override that joins with `''` (see {@link sliceLinesForCopy}). */
     getCopyContent?: (slice: CopySlice) => string
     /** Invoked when the user presses Ctrl-F / Cmd-F while focus is inside the log list.
      *  Hosts typically focus their search input here. When omitted, the browser's native
@@ -70,10 +71,14 @@
   }: Props = $props()
 
   // Reverse-scroll lives here (not in wrappers) so search behaviour and auto-scroll behaviour
-  // stay co-located. `initialStickToBottom` flips with `streaming`: streams start at the
-  // bottom and re-stick on growth; static bundles start at the top. The capture-by-initial
-  // value is intentional — `streaming` is a structural switch chosen at mount time, not a
-  // runtime-toggleable prop.
+  // stay co-located. `streaming` variable picks the initial scroll position: streaming logs start at
+  // the bottom and re-stick as they grow; static bundles start at the top.
+  //
+  // We use `streaming`'s value as it is when the component is created and never react to it
+  // changing afterward. That's deliberate: it's a mount-time mode, not a live toggle, so a
+  // later change to the prop should not re-anchor a list the user is already scrolling.
+  // (Svelte's state_referenced_locally warning flags this kind of one-time prop read; the
+  // suppression below marks it as intended.)
   // svelte-ignore state_referenced_locally
   const reverseScroll = useReverseScrollContainer({
     observeContentElement: (e) => e.firstElementChild!,
@@ -123,6 +128,9 @@
     untrack(() => {
       const idx = findOccurrence(lines, pattern, occ)
       if (idx < 0) return
+      // Drop stick-to-bottom so a streaming log doesn't scroll away from the match the user
+      // jumped to. They regain auto-scroll by scrolling back to the bottom themselves.
+      reverseScroll.stickToBottom = false
       virtualizer?.scrollToIndex(idx, { align: 'center' })
       // virtua mounts the freshly-visible row on the next frame; paint then so the Range is
       // created against the new DOM node rather than the previously-cleared one.
@@ -133,16 +141,7 @@
   // Drop the registered Highlight on unmount so it doesn't leak across hosts.
   $effect(() => () => applySearchHighlight(highlightName, null, []))
 
-  function defaultGetCopyContent(slice: CopySlice): string {
-    if (slice === 'all') return lines.map(stripAnsi).join('\n')
-    const result = lines.slice(slice.start.row, slice.end.row + 1).map(stripAnsi)
-    result[0] = result[0].slice(slice.start.col)
-    result[result.length - 1] = result[result.length - 1].slice(
-      0,
-      slice.end.col - (slice.start.row === slice.end.row ? slice.start.col : 0)
-    )
-    return result.join('\n')
-  }
+  const defaultGetCopyContent = (slice: CopySlice) => sliceLinesForCopy(lines, slice, '\n')
 </script>
 
 <!-- The outer wrapper is positioned so ScrollDownFab (absolute-positioned) can anchor inside

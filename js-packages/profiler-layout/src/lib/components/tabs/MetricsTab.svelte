@@ -20,9 +20,7 @@
     issueCategoryFilter: string
     /** Links the metrics node title back to (searches for) the node in the diagram. */
     onSearchNode?: (query: string) => void
-    /** Focus the analysis-panel search input. Invoked from inside a tab (e.g. the log list
-     *  on Ctrl-F / Cmd-F) so the user can type into the shared lookup input without leaving
-     *  the keyboard. */
+    /** Called when the user presses the search shortcut inside the tab. */
     onSearchShortcut?: () => void
   }
 </script>

@@ -1,15 +1,10 @@
 /**
- * Shared search algorithm for line-oriented log views.
+ * Shared search algorithm for line-oriented views (pipeline logs, profiler bundle logs, ...).
  *
- * The host (a virtualised list of log lines) owns a {@link SearchState}: a pattern (`null`
- * when the search input is empty) and an `occurrenceIndex` — which match to highlight,
- * advanced by the host on each "next match" interaction (typically Enter on the search
- * input). Use {@link advanceSearch} to update it: same pattern → next match, new pattern →
- * first match, null → cleared.
- *
- * Given that state, the host calls `findOccurrence(lines, state.pattern, state.occurrenceIndex)`
- * and gets back the index of the line to scroll to and highlight. `occurrenceIndex` wraps
- * around modulo the match count, so callers can simply increment without bounds-checking.
+ * The host owns a {@link SearchState} and advances it with {@link advanceSearch} on each
+ * "next match" interaction. From that state it calls
+ * `findOccurrence(lines, state.pattern, state.occurrenceIndex)` to get the line to scroll to,
+ * and {@link findMatchOffsets} + {@link applySearchHighlight} to paint the match.
  */
 
 /** Tagged union of supported search modes. Extend with new kinds (fuzzy, word-boundary,
@@ -18,10 +13,13 @@ export type SearchPattern =
   | { kind: 'substring'; query: string; caseSensitive?: boolean }
   | { kind: 'regex'; source: string; flags?: string }
 
-/** Search state owned by the host of a log view: which pattern is active and which match to
- *  highlight. Pass directly to a view component; mutate through {@link advanceSearch}. */
+/** Search state owned by the host of a log view. Pass directly to a view component; mutate
+ *  through {@link advanceSearch}. */
 export type SearchState = {
+  /** Active search; `null` when the search input is empty (nothing highlighted). */
   pattern: SearchPattern | null
+  /** Which match to highlight. Wraps modulo the match count, so the host can just increment
+   *  it on each "next match" interaction without bounds-checking. */
   occurrenceIndex: number
 }
 
@@ -66,6 +64,9 @@ export function advanceSearch(state: SearchState, next: SearchPattern | null): S
  *  highlight anything" — keeps callers free of empty-query / bad-regex branching. */
 export type LineMatcher = ((line: string) => boolean) | null
 
+/** Half-open `[start, end)` character offsets of a single match within a line. */
+export type MatchRange = readonly [start: number, end: number]
+
 export function compileSearchPattern(pattern: SearchPattern): LineMatcher {
   if (pattern.kind === 'substring') {
     if (!pattern.query) return null
@@ -97,11 +98,8 @@ export function compileSearchPattern(pattern: SearchPattern): LineMatcher {
  *
  * Empty / invalid patterns and lines with no matches return `[]`.
  */
-export function findMatchOffsets(
-  line: string,
-  pattern: SearchPattern
-): Array<readonly [number, number]> {
-  const offsets: Array<readonly [number, number]> = []
+export function findMatchOffsets(line: string, pattern: SearchPattern): MatchRange[] {
+  const offsets: MatchRange[] = []
   if (pattern.kind === 'substring') {
     if (!pattern.query) return offsets
     const haystack = pattern.caseSensitive ? line : line.toLowerCase()
@@ -156,7 +154,7 @@ export function findMatchOffsets(
 export function applySearchHighlight(
   highlightName: string,
   el: HTMLElement | null,
-  offsets: ReadonlyArray<readonly [number, number]>
+  offsets: readonly MatchRange[]
 ): void {
   // Guard for older browsers / SSR. The feature shipped in Chromium 105, Safari 17.2,
   // Firefox 140 — we degrade to "no highlight" elsewhere rather than erroring.
@@ -168,17 +166,18 @@ export function applySearchHighlight(
     return
   }
   // Walk text nodes once, recording each one's [start, end) span in the element's flattened
-  // text. Looking up a Range endpoint is then a linear scan over this list — cheap, given
-  // we only do it for a handful of matches on a single line.
+  // text. Looking up a Range endpoint is then a linear scan over this list. We re-walk on
+  // every paint (rather than caching) because the host re-paints when the log content
+  // refreshes, and we only ever walk the single matched row.
   const spans: Array<{ node: Text; start: number; end: number }> = []
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-  let cum = 0
+  let total = 0
   let node: Node | null
   while ((node = walker.nextNode())) {
     const tn = node as Text
     const len = tn.data.length
-    spans.push({ node: tn, start: cum, end: cum + len })
-    cum += len
+    spans.push({ node: tn, start: total, end: total + len })
+    total += len
   }
   const locate = (offset: number) => {
     for (const s of spans) {

@@ -31,6 +31,8 @@ export {
   findOccurrence,
   searchPatternsEqual,
   type LineMatcher,
+  type MatchRange,
   type SearchPattern,
   type SearchState
 } from './logSearch'
+export { sliceLinesForCopy, type CopySlice } from './logCopy'

@@ -84,10 +84,10 @@
   let lookupQuery = $state('')
   // Bound to the shared analysis-panel lookup <input>. Tabs (e.g. the log list) can request
   // focus via the `onSearchShortcut` callback threaded through `analysisTabProps`.
-  let lookupInputEl: HTMLInputElement | undefined = $state()
+  let searchInputEl: HTMLInputElement | undefined = $state()
   const onAnalysisSearchShortcut = () => {
-    lookupInputEl?.focus()
-    lookupInputEl?.select()
+    searchInputEl?.focus()
+    searchInputEl?.select()
   }
   let highlightRanges: SourcePositionRange[] = $state([])
 
@@ -357,7 +357,7 @@
       </Select>
     {/if}
     <input
-      bind:this={lookupInputEl}
+      bind:this={searchInputEl}
       bind:value={lookupQuery}
       type="text"
       placeholder={currentTab === 'Logs'
