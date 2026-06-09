@@ -26,11 +26,11 @@ public class StructTests extends SqlIoTest {
         var ccs = this.getCCS(
                 "CREATE TABLE fails (named_pairs MAP<VARCHAR, ROW(k VARCHAR, v VARCHAR)>);" +
                         "CREATE VIEW V AS SELECT named_pairs['a'].k FROM fails;");
-        ccs.step("INSERT INTO fails VALUES(MAP['a', ROW('2', '3'), 'b', NULL])",
+        ccs.stepWeightOne("INSERT INTO fails VALUES(MAP['a', ROW('2', '3'), 'b', NULL])",
                 """
-                         result | weight
-                        -----------------
-                         2| 1""");
+                 result
+                --------
+                 2""");
     }
 
     @Test
@@ -42,19 +42,19 @@ public class StructTests extends SqlIoTest {
                     y bigint,
                     z bigint
                 );
-                
+
                 CREATE VIEW v2 AS
                     SELECT group_id,
                         ARG_MAX(z, (x,y))
                     FROM t
                     group by group_id;""";
         var ccs = this.getCCS(sql);
-        ccs.step("INSERT INTO T VALUES(0, 1, 2, 3), (0, 1, 1, 1), (4, 5, 6, 7);",
+        ccs.stepWeightOne("INSERT INTO T VALUES(0, 1, 2, 3), (0, 1, 1, 1), (4, 5, 6, 7);",
                 """
-                 group_id | z | weight
-                -----------------------------
-                 0        | 3 | 1
-                 4        | 7 | 1""");
+                 group_id | z
+                --------------
+                 0        | 3
+                 4        | 7""");
     }
 
     @Test
@@ -135,7 +135,7 @@ public class StructTests extends SqlIoTest {
         this.getCCS("""
                 CREATE TABLE row_of_arr_tbl(
                 c2 ROW(i2 INT ARRAY NULL, v2 VARCHAR ARRAY NOT NULL));
-                
+
                 CREATE VIEW v AS SELECT
                 row_of_arr_tbl.c2.i2[2],
                 row_of_arr_tbl.c2.v2[2],

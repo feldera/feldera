@@ -23,10 +23,10 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                 DECLARE RECURSIVE VIEW V(v INT);
                 CREATE VIEW V AS SELECT v FROM V UNION SELECT 1;""";
         var ccs = this.getCCS(sql);
-        ccs.step("", """
-                 v | weight
-                ------------
-                 1 | 1""");
+        ccs.stepWeightOne("", """
+                 v
+                ---
+                 1""");
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int recursive = 0;
             @Override
@@ -48,17 +48,17 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                 CREATE TABLE T(v INT);
                 CREATE VIEW V AS SELECT v FROM V UNION SELECT * FROM T;""";
         var ccs = this.getCCS(sql);
-        ccs.step("", """
-                 v | weight
-                ------------""");
-        ccs.step("INSERT INTO T VALUES(1)", """
-                 v | weight
-                ------------
-                 1 | 1""");
-        ccs.step("INSERT INTO T VALUES(2)", """
-                 v | weight
-                ------------
-                 2 | 1""");
+        ccs.stepWeightOne("", """
+                 v
+                ---""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1)", """
+                 v
+                ---
+                 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(2)", """
+                 v
+                ---
+                 2""");
     }
 
     @Test
@@ -72,17 +72,17 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                 CREATE LOCAL VIEW V AS SELECT v FROM V UNION SELECT * FROM X;
                 CREATE VIEW O AS SELECT v+1 FROM V;""";
         var ccs = this.getCCS(sql);
-        ccs.step("", """
-                 v | weight
-                ------------""");
-        ccs.step("INSERT INTO T VALUES(1)", """
-                 v | weight
-                ------------
-                 1 | 1""");
-        ccs.step("INSERT INTO T VALUES(2)", """
-                 v | weight
-                ------------
-                 2 | 1""");
+        ccs.stepWeightOne("", """
+                 v
+                ---""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1)", """
+                 v
+                ---
+                 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(2)", """
+                 v
+                ---
+                 2""");
     }
 
     @Test
@@ -456,18 +456,18 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                 CREATE MATERIALIZED VIEW CLOSURE AS (SELECT * FROM EDGES) UNION (SELECT * FROM STEP);
                 """;
         var ccs = this.getCCS(sql);
-        ccs.step("", """
-                 x | y | weight
-                ----------------""");
-        ccs.step("INSERT INTO EDGES VALUES(0, 1);", """
-                 x | y | weight
-                ----------------
-                 0 | 1 | 1""");
-        ccs.step("INSERT INTO EDGES VALUES(1, 2);", """
-                x | y | weight
-                ---------------
-                1 | 2 | 1
-                0 | 2 | 1""");
+        ccs.stepWeightOne("", """
+                 x | y
+                -------""");
+        ccs.stepWeightOne("INSERT INTO EDGES VALUES(0, 1);", """
+                 x | y
+                -------
+                 0 | 1""");
+        ccs.stepWeightOne("INSERT INTO EDGES VALUES(1, 2);", """
+                x | y
+                ------
+                1 | 2
+                0 | 2""");
         ccs.step("REMOVE FROM EDGES VALUES(0, 1);", """
                 x | y | weight
                 ---------------
@@ -484,14 +484,14 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                    SELECT 1 as n, 5 as factorial
                    UNION ALL SELECT n+1, factorial*n FROM fact WHERE n < 5;""";
         var ccs = this.getCCS(sql);
-        ccs.step("", """
-                 n | factorial | weight
-                ---+--------------------
-                 1 |         5 | 1
-                 2 |         5 | 1
-                 3 |        10 | 1
-                 4 |        30 | 1
-                 5 |       120 | 1""");
+        ccs.stepWeightOne("", """
+                 n | factorial
+                ---+-----------
+                 1 |         5
+                 2 |         5
+                 3 |        10
+                 4 |        30
+                 5 |       120""");
     }
 
     @Test
@@ -503,19 +503,19 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                  UNION ALL
                    SELECT n+1 FROM tens WHERE n < 10;""";
         var ccs = this.getCCS(sql);
-        ccs.step("", """
-                 n  | weight
-                -------------
-                  1 | 1
-                  2 | 1
-                  3 | 1
-                  4 | 1
-                  5 | 1
-                  6 | 1
-                  7 | 1
-                  8 | 1
-                  9 | 1
-                 10 | 1""");
+        ccs.stepWeightOne("", """
+                 n
+                ----
+                  1
+                  2
+                  3
+                  4
+                  5
+                  6
+                  7
+                  8
+                  9
+                 10""");
     }
 
     @Test
