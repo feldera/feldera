@@ -53,5 +53,8 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = "feldera"
 
+[tool.setuptools.packages.find]
+include = ["feldera", "feldera.*"]
+
 [tool.uv]
 exclude-newer = "1 week"
