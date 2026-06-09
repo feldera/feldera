@@ -33,6 +33,7 @@ const sqlTypeToIsoSql = (type: SqlType): string =>
     .with('Time', () => 'TIME')
     .with('Date', () => 'DATE')
     .with('Timestamp', () => 'TIMESTAMP')
+    .with('TimestampTz', () => 'TIMESTAMP WITH TIME ZONE')
     .with('Array', () => 'ARRAY')
     .with('Struct', () => 'ROW')
     .with('Map', () => 'MAP')

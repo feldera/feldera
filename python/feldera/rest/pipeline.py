@@ -1,4 +1,4 @@
-from typing import Mapping, Any, Optional
+from typing import Mapping, Any, Optional, List
 from feldera.rest.sql_table import SQLTable
 from feldera.rest.sql_view import SQLView
 
@@ -17,6 +17,7 @@ class Pipeline:
         program_config: Mapping[str, Any],
         runtime_config: Mapping[str, Any],
         description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
     ):
         """
         Initializes a new pipeline
@@ -28,6 +29,7 @@ class Pipeline:
         :param program_config: The program config of the pipeline
         :param runtime_config: The configuration of the pipeline
         :param description: Optional. The description of the pipeline
+        :param tags: Optional. Self-descriptive tags for grouping / filtering
         """
 
         self.name: str = name
@@ -35,6 +37,7 @@ class Pipeline:
         self.udf_rust: str = udf_rust
         self.udf_toml: str = udf_toml
         self.description: Optional[str] = description
+        self.tags: List[str] = tags or []
         self.program_config: Mapping[str, Any] = program_config
         self.runtime_config: Mapping[str, Any] = runtime_config
         self.id: Optional[str] = None

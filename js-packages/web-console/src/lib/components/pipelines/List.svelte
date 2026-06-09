@@ -5,6 +5,7 @@
 <script lang="ts">
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatusDot.svelte'
   import { resolve } from '$lib/functions/svelte'
+  import { matchesSubstring } from '$lib/functions/common/string'
   import { type PipelineThumb } from '$lib/services/pipelineManager'
 
   let {
@@ -18,6 +19,9 @@
     onclose?: () => void
     onaction?: () => void
   } = $props()
+
+  let nameSearch = $state('')
+  const visiblePipelines = $derived(pipelines?.filter((p) => matchesSubstring(p.name, nameSearch)))
   const bindScrollY = (node: HTMLElement, val: { scrollY: number }) => {
     $effect(() => {
       node.scrollTop = scrollY
@@ -37,13 +41,18 @@
   style="overflow-y: overlay;"
   use:bindScrollY={{ scrollY }}
 >
-  <div class="bg-white-dark sticky top-0 -mr-1 flex justify-between pb-2 pl-4">
-    <span class="content-center font-semibold">Pipelines</span>
+  <div class="bg-white-dark sticky top-0 -mr-1 flex items-center gap-2 pb-2 pl-2">
+    <input
+      class="input h-8 min-w-0 flex-1"
+      type="search"
+      placeholder="Search pipelines..."
+      bind:value={nameSearch}
+    />
     <button onclick={onclose} class="fd fd-x btn-icon text-[24px]" aria-label="Close pipelines list"
     ></button>
   </div>
-  {#if pipelines}
-    {#each pipelines as pipeline}
+  {#if visiblePipelines}
+    {#each visiblePipelines as pipeline}
       <a
         class="flex h-9 flex-nowrap items-center justify-between gap-2 rounded py-2 pl-4 {pipelineName ===
         pipeline.name

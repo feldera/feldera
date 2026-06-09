@@ -240,7 +240,7 @@
   import { type ExtendedPipeline, type XgressEntry } from '$lib/services/pipelineManager'
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
-  import type { Field, Relation } from '$lib/services/manager'
+  import type { Field, ProgramSchema, Relation } from '$lib/services/manager'
   import {
     appendRowsForRelation,
     createBigNumberStreamParser,
@@ -287,7 +287,7 @@
     pipelineName: string,
     pipeline: ExtendedPipeline
   ) => {
-    const schema = pipeline.programInfo?.schema
+    const schema = pipeline.programInfo?.schema as ProgramSchema | null | undefined
     if (!schema) {
       return
     }

@@ -62,6 +62,47 @@ class TestPipelineBuilder(PipelineTestCase):
         pipeline.stop(force=True)
         pipeline.clear_storage()
 
+    def test_tags(self):
+        sql = "CREATE TABLE t (col1 INT);"
+        pipeline_name = self.register_for_cleanup("test_builder_tags")
+
+        # Tags supplied to the builder are persisted and round-trip on read.
+        pipeline = PipelineBuilder(
+            TEST_CLIENT,
+            pipeline_name,
+            sql=sql,
+            description="initial",
+            tags=["prod", "team-billing"],
+        ).create_or_replace()
+        assert pipeline.tags() == ["prod", "team-billing"]
+        assert pipeline.description() == "initial"
+
+        # `modify` patches tags independently of the description.
+        pipeline.modify(tags=["staging"])
+        assert pipeline.tags() == ["staging"]
+        assert pipeline.description() == "initial"
+
+        # Patching the description leaves the tags untouched.
+        pipeline.modify(description="changed")
+        assert pipeline.description() == "changed"
+        assert pipeline.tags() == ["staging"]
+
+        # An empty list is a real value: it clears the tags.
+        pipeline.modify(tags=[])
+        assert pipeline.tags() == []
+
+    def test_tags_default_empty(self):
+        sql = "CREATE TABLE t (col1 INT);"
+        pipeline_name = self.register_for_cleanup("test_builder_tags_default")
+
+        # Omitting tags defaults to an empty list, never None.
+        pipeline = PipelineBuilder(
+            TEST_CLIENT,
+            pipeline_name,
+            sql=sql,
+        ).create_or_replace()
+        assert pipeline.tags() == []
+
 
 if __name__ == "__main__":
     unittest.main()
