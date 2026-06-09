@@ -40,7 +40,7 @@ use crate::{
 
 circuit_cache_key!(local StreamingExchangeCacheId<B: Batch>(ExchangeId => Arc<ShardedAccumulator<B>>));
 
-circuit_cache_key!(ShardedAccumulatorId<C, B: Batch>(StreamId => Accumulation<Stream<C, Option<Spine<B>>>>));
+circuit_cache_key!(ShardedAccumulatorId<C, B: Batch>((StreamId, Range<usize>) => Accumulation<Stream<C, Option<Spine<B>>>>));
 
 impl<C, B> Stream<C, B>
 where
@@ -57,42 +57,7 @@ where
     where
         B: Batch<Time = ()>,
     {
-        if !self.has_sharded_version()
-            && Runtime::with_dev_tweaks(|d| d.streaming_exchange())
-            && let Some(runtime) = Runtime::runtime()
-            && runtime.layout().n_workers() > 1
-            && runtime.get_step_size() == StepSize::Microsteps
-        {
-            self.circuit()
-                .cache_get_or_insert_with(ShardedAccumulatorId::new(self.stream_id()), || {
-                    let exchange_id: ExchangeId = runtime.sequence_next().try_into().unwrap();
-                    let exchange = ShardedAccumulator::<B>::with_runtime(
-                        &runtime,
-                        Runtime::worker_index(),
-                        exchange_id,
-                        factories,
-                    );
-                    let enable_count = exchange.enable_count.clone();
-                    let stream = self
-                        .circuit()
-                        .add_exchange(
-                            ShardedAccumulatorSender::new(
-                                Some(Location::caller()),
-                                exchange.clone(),
-                            ),
-                            ShardedAccumulatorReceiver::new(Some(Location::caller()), exchange),
-                            self,
-                        )
-                        .mark_sharded();
-                    Accumulation {
-                        stream,
-                        enable_count,
-                    }
-                })
-                .clone()
-        } else {
-            self.dyn_shard(factories).dyn_accumulate(factories)
-        }
+        self.dyn_shard_workers_accumulate(factories, 0..Runtime::num_workers())
     }
 
     #[track_caller]
@@ -104,13 +69,44 @@ where
     where
         B: Batch<Time = ()>,
     {
-        if Runtime::num_workers() == 1 {
-            self.dyn_accumulate(factories)
-        } else if Runtime::with_dev_tweaks(|d| !d.streaming_exchange()) {
-            self.dyn_shard_workers(workers, factories)
-                .dyn_accumulate(factories)
+        if !self.has_workers_sharded_version(workers.clone())
+            && Runtime::with_dev_tweaks(|d| d.streaming_exchange())
+            && let Some(runtime) = Runtime::runtime()
+            && runtime.layout().n_workers() > 1
+            && runtime.get_step_size() == StepSize::Microsteps
+        {
+            self.circuit()
+                .cache_get_or_insert_with(
+                    ShardedAccumulatorId::new((self.stream_id(), workers.clone())),
+                    || {
+                        let exchange_id: ExchangeId = runtime.sequence_next().try_into().unwrap();
+                        let exchange = ShardedAccumulator::<B>::with_runtime(
+                            &runtime,
+                            Runtime::worker_index(),
+                            workers.clone(),
+                            exchange_id,
+                            factories,
+                        );
+                        let enable_count = exchange.enable_count.clone();
+                        let stream = self
+                            .circuit()
+                            .add_exchange(
+                                ShardedAccumulatorSender::new(
+                                    Some(Location::caller()),
+                                    exchange.clone(),
+                                ),
+                                ShardedAccumulatorReceiver::new(Some(Location::caller()), exchange),
+                                self,
+                            )
+                            .mark_sharded_workers(workers.clone());
+                        Accumulation {
+                            stream,
+                            enable_count,
+                        }
+                    },
+                )
+                .clone()
         } else {
-            // TODO: implement using streaming exchange.
             self.dyn_shard_workers(workers, factories)
                 .dyn_accumulate(factories)
         }
@@ -124,8 +120,11 @@ where
     name: OperatorName,
     exchange_id: ExchangeId,
 
-    /// The number of communicating peers.
-    npeers: usize,
+    /// The destination workers.
+    ///
+    /// Usually this is all workers, but output operators shard to the workers
+    /// on one particular host.
+    workers: Range<usize>,
 
     factories: B::Factories,
 
@@ -147,6 +146,7 @@ where
     fn with_runtime(
         runtime: &Runtime,
         worker_index: usize,
+        workers: Range<usize>,
         exchange_id: ExchangeId,
         factories: &B::Factories,
     ) -> Arc<Self> {
@@ -163,6 +163,7 @@ where
                 ShardedAccumulator::new(
                     runtime,
                     worker_index,
+                    workers,
                     clients,
                     exchange_id,
                     &directory,
@@ -173,10 +174,12 @@ where
             .clone()
     }
 
-    /// Create a new streaming exchange operator for `npeers` communicating threads.
+    /// Create a new streaming exchange operator to shard and accumulate to the
+    /// given `workers` (which is often all the workers in the runtime).
     fn new(
         runtime: &Runtime,
         worker_index: usize,
+        workers: Range<usize>,
         clients: Arc<ExchangeClients>,
         exchange_id: ExchangeId,
         directory: &ExchangeDirectory,
@@ -188,7 +191,7 @@ where
         let name = OperatorName::new("ShardedAccumulatorReceiver");
         let exchange = Arc::new(Self {
             exchange_id,
-            npeers,
+            workers,
             local_workers: layout.local_workers(),
             factories: factories.clone(),
             clients,
@@ -249,7 +252,7 @@ where
         let mut batches = Vec::with_capacity(layout.n_workers());
         shard_batch(
             batch,
-            &(0..self.npeers),
+            &self.workers,
             &mut builders,
             &mut batches,
             &self.factories,
@@ -283,29 +286,40 @@ where
                     }
                 }
                 WorkerLocation::Remote => {
-                    let items = receivers
-                        .clone()
-                        .map(|_| {
-                            let mut fbuf = data
-                                .next()
-                                .expect("data should include one item per peer")
-                                .into_tx()
-                                .expect("remote mailboxes should always be serialized");
-                            fbuf.push(flush as u8);
-                            fbuf
-                        })
-                        .inspect(|serialized| {
-                            serialized_bytes += serialized.len();
-                        })
-                        .collect_vec();
-                    let this = self.clone();
-                    if let Some(waiter) = this.clients.connect(receivers.start).await.send(
-                        name.clone(),
-                        this.exchange_id,
-                        sender,
-                        items,
-                    ) {
-                        remote_waiters.push(waiter);
+                    let mut empty = true;
+                    let mut items = Vec::with_capacity(receivers.len());
+                    for _ in receivers.clone() {
+                        let fbuf = data
+                            .next()
+                            .expect("data should include one item per peer")
+                            .into_tx()
+                            .expect("remote mailboxes should always be serialized");
+                        if !fbuf.is_empty() {
+                            serialized_bytes += fbuf.len();
+                            empty = false;
+                        }
+                        items.push(fbuf);
+                    }
+
+                    // Skip sending to the remote host if there's no data to
+                    // send (unless we're flushing).
+                    //
+                    // The common case for no data to send is when we're
+                    // sharding to workers on only one host for an output
+                    // connector.
+                    if !empty || flush {
+                        for item in &mut items {
+                            item.push(flush as u8);
+                        }
+                        let this = self.clone();
+                        if let Some(waiter) = this.clients.connect(receivers.start).await.send(
+                            name.clone(),
+                            this.exchange_id,
+                            sender,
+                            items,
+                        ) {
+                            remote_waiters.push(waiter);
+                        }
                     }
                 }
             }
@@ -391,7 +405,11 @@ where
     /// Our worker index within the runtime.
     worker_index: usize,
 
-    /// Total number of worker threads in this circuit.
+    /// Total number of worker threads (senders) in this circuit.
+    ///
+    /// This is important because each sender must send, in addition to any
+    /// data, a flush notification to indicate that all data for a step has been
+    /// sent.
     npeers: usize,
 
     /// A deque of spines under construction for delivery to the circuit.  The
@@ -710,6 +728,11 @@ where
         // - If it does what it does here, and always reports that it is ready,
         //   then this could cause livelock, spinning uselessly with 100% CPU,
         //   if there's nothing for the circuit to do while data transmits.
+        //
+        // `ShardedAccumulatorReceiver` operators in workers that are outside
+        // the set of workers being sharded to seem like a further special case,
+        // since we know in advance that they won't receive any data, but I
+        // don't see a way to do better with them.
         //
         // I don't know the right solution.
         true

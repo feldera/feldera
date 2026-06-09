@@ -1544,14 +1544,25 @@ impl IndexedWSetSerializer {
         });
     }
 
+    fn is_empty(&self) -> bool {
+        self.n_keys == 0 && self.n_values == 0
+    }
+
+    /// Returns the serialized form as an [FBuf].
+    ///
+    /// If no data was pushed into the serializer, then the [FBuf] will be
+    /// empty.
     pub fn done(mut self, serializer_inner: &mut SerializerInner) -> FBuf {
         #[cfg(debug_assertions)]
         debug_assert_eq!(self.state, State::Key);
-        self.offsets[0] = self.n_keys;
-        self.offsets[1] = self.n_values;
-        serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
-            s.serialize_value(&self.offsets).unwrap()
-        });
+
+        if !self.is_empty() {
+            self.offsets[0] = self.n_keys;
+            self.offsets[1] = self.n_values;
+            serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
+                s.serialize_value(&self.offsets).unwrap()
+            });
+        }
         self.fbuf
     }
 }
@@ -1585,6 +1596,11 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    if data.is_empty() {
+        // An empty batch is serialized as an empty FBuf.
+        return B::dyn_empty(factories);
+    }
+
     let offsets = unsafe { archived_root::<Vec<usize>>(data) };
     let n_keys = offsets[0] as usize;
     let n_values = offsets[1] as usize;
