@@ -6269,15 +6269,6 @@ impl ControllerInner {
         )
         .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
 
-        if let Some(max_queued_records) = resolved_connector_config.max_queued_records
-            && resolved_connector_config.max_queued_bytes.is_some()
-        {
-            let max_queued_bytes = resolved_connector_config.max_queued_bytes();
-            warn!(
-                "Input endpoint {endpoint_name} configures `max_queued_records` to {max_queued_records}, but not `max_queued_bytes`, which will default to {max_queued_bytes}.  We recommend setting `max_queued_bytes` explicitly (`max_queued_records` is less useful and may be omitted)."
-            )
-        }
-
         // Create preprocessor if specified by the configuration
         let mut preprocessor = None;
         let mut streaming_preprocessor = false;

@@ -881,7 +881,7 @@ mod tests {
             output_buffer_config: Default::default(),
             max_batch_size: Some(0),
             max_worker_batch_size: None,
-            max_queued_records: Some(0),
+            max_queued_records: 0,
             max_queued_bytes: None,
             paused: false,
             labels: vec![],
