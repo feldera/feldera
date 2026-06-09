@@ -145,6 +145,22 @@ impl TableProvider for AdHocTable {
         // This holds because we don't enable filter push-down for now.
         assert!(filters.is_empty(), "AdHocTable does not support filters");
 
+        // Reject non-materialized sources here, during physical planning,
+        // rather than when the scan node is executed. A scan node is executed
+        // lazily and only when it sits at (or is eagerly driven from) the root
+        // of the physical plan: `SELECT *` executes its scan during stream
+        // setup, but `SELECT COUNT(*)` defers the wrapped scan until the first
+        // poll — after a `200 OK` status has already been committed. Planning,
+        // by contrast, always runs up front for every query shape, so failing
+        // here lets the request surface a proper error status to the client.
+        if !self.materialized {
+            return exec_err!(
+                "Tried to SELECT from a non-materialized source. Make sure `{}` is configured as materialized: \
+use `with ('materialized' = 'true')` for tables, or `create materialized view` for views",
+                self.name
+            );
+        }
+
         let projected_schema = if let Some(keep_indices) = projection.as_ref() {
             Arc::new(self.schema.project(keep_indices)?)
         } else {
@@ -157,8 +173,6 @@ impl TableProvider for AdHocTable {
             .expect("session should contain consistent snapshot of table data");
 
         Ok(Arc::new(AdHocQueryExecution::new(
-            self.name.clone(),
-            self.materialized,
             self.indexed,
             self.schema.clone(),
             projected_schema,
@@ -319,8 +333,6 @@ impl DataSink for AdHocTableSink {
 
 #[derive(Clone)]
 struct AdHocQueryExecution {
-    name: SqlIdentifier,
-    materialized: bool,
     indexed: bool,
     table_schema: Arc<Schema>,
     projected_schema: Arc<Schema>,
@@ -331,10 +343,7 @@ struct AdHocQueryExecution {
 }
 
 impl AdHocQueryExecution {
-    #[allow(clippy::too_many_arguments)]
     fn new(
-        name: SqlIdentifier,
-        materialized: bool,
         indexed: bool,
         table_schema: Arc<Schema>,
         projected_schema: Arc<Schema>,
@@ -354,8 +363,6 @@ impl AdHocQueryExecution {
         ));
 
         Self {
-            name,
-            materialized,
             indexed,
             table_schema,
             projected_schema,
@@ -418,14 +425,6 @@ impl ExecutionPlan for AdHocQueryExecution {
         partition: usize,
         _context: Arc<TaskContext>,
     ) -> datafusion::common::Result<SendableRecordBatchStream> {
-        if !self.materialized {
-            return Err(DataFusionError::Execution(format!(
-                "Tried to SELECT from a non-materialized source. Make sure `{}` is configured as materialized: \
-use `with ('materialized' = 'true')` for tables, or `create materialized view` for views",
-                self.name
-            )));
-        }
-
         async fn send_batch(
             tx: &Sender<datafusion::common::Result<RecordBatch>>,
             projection: &Option<Vec<usize>>,
