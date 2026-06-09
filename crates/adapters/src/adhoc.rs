@@ -705,12 +705,21 @@ mod tests {
         assert_eq!(total_rows, 1);
     }
 
-    /// Selecting from a non-materialized source fails during *execution
-    /// setup*, not planning. `execute_adhoc_stream` must surface that as an
-    /// `Err`, letting the HTTP handler return a non-2xx status before
-    /// committing a `200 OK` whose body would otherwise be silently
-    /// truncated. This is what gives the HTTP transport the same up-front
-    /// error visibility the WebSocket transport already has.
+    /// Selecting from a non-materialized source fails during *physical
+    /// planning* — when the scan node is built — not during scan execution.
+    /// `execute_adhoc_stream` must surface that as an `Err`, letting the HTTP
+    /// handler return a non-2xx status before committing a `200 OK` whose body
+    /// would otherwise be silently truncated. This is what gives the HTTP
+    /// transport the same up-front error visibility the WebSocket transport
+    /// already has.
+    ///
+    /// The check deliberately lives in `TableProvider::scan` rather than in
+    /// `ExecutionPlan::execute`: a scan node is executed lazily, and only
+    /// runs at stream-setup time when it sits near the plan root. `SELECT *`
+    /// executes its scan eagerly, but a query that wraps the scan — e.g.
+    /// `SELECT COUNT(*)` — defers the leaf's `execute` to the first poll,
+    /// long after the response status is committed. Both shapes are covered
+    /// below.
     #[tokio::test]
     async fn non_materialized_select_surfaces_error_before_streaming() {
         use crate::adhoc::table::AdHocTable;
@@ -719,37 +728,45 @@ mod tests {
         use std::collections::BTreeMap;
         use std::sync::Weak;
 
-        let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int64, false)]));
-        let ctx = SessionContext::new_with_state(test_state());
+        // `SELECT *` puts the scan at the plan root; `SELECT COUNT(*)` wraps it
+        // in an aggregate that defers the leaf scan's execution. Both must fail
+        // up front, during planning, before any result stream is produced.
+        for query in ["SELECT * FROM v", "SELECT COUNT(*) AS c FROM v"] {
+            let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int64, false)]));
+            let ctx = SessionContext::new_with_state(test_state());
 
-        // A view (no input handle) that is *not* materialized.
-        let table = Arc::new(AdHocTable::new(
-            false, // materialized
-            false, // indexed
-            Weak::new(),
-            None, // input_handle: view, not a base table
-            SqlIdentifier::new("v", false),
-            schema,
-        ));
-        ctx.register_table("v", table).unwrap();
+            // A view (no input handle) that is *not* materialized.
+            let table = Arc::new(AdHocTable::new(
+                false, // materialized
+                false, // indexed
+                Weak::new(),
+                None, // input_handle: view, not a base table
+                SqlIdentifier::new("v", false),
+                schema,
+            ));
+            ctx.register_table("v", table).unwrap();
 
-        // The scan reads a consistent snapshot from the session config; an
-        // empty one suffices because execution fails the materialization
-        // check before touching any data.
-        let mut state = ctx.state();
-        set_snapshot(&mut state, Arc::new(BTreeMap::new()));
+            // The scan reads a consistent snapshot from the session config; an
+            // empty one suffices because planning fails the materialization
+            // check before touching any data.
+            let mut state = ctx.state();
+            set_snapshot(&mut state, Arc::new(BTreeMap::new()));
 
-        // Planning succeeds: the materialization check lives in physical
-        // execution setup, not planning.
-        let df = execute_sql_with_state(state, "SELECT * FROM v")
-            .await
-            .expect("planning a select over a non-materialized view should succeed");
+            // Logical planning succeeds: the materialization check lives in
+            // physical planning (`scan`), reached only by `execute_adhoc_stream`.
+            let df = execute_sql_with_state(state, query)
+                .await
+                .unwrap_or_else(|e| panic!("logical planning `{query}` should succeed: {e}"));
 
-        // The error must surface here, before any response status is set.
-        let msg = match execute_adhoc_stream(df).await {
-            Ok(_) => panic!("selecting from a non-materialized source must fail at setup"),
-            Err(e) => format!("{e}"),
-        };
-        assert!(msg.contains("non-materialized"), "unexpected error: {msg}");
+            // The error must surface here, before any response status is set.
+            let msg = match execute_adhoc_stream(df).await {
+                Ok(_) => panic!("`{query}` over a non-materialized source must fail at setup"),
+                Err(e) => format!("{e}"),
+            };
+            assert!(
+                msg.contains("non-materialized"),
+                "unexpected error for `{query}`: {msg}"
+            );
+        }
     }
 }
