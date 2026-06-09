@@ -44,7 +44,9 @@ pub use dev_tweaks::DevTweaks;
 const DEFAULT_MAX_PARALLEL_CONNECTOR_INIT: u64 = 10;
 
 /// Default value of `ConnectorConfig::max_queued_records`.
-pub const DEFAULT_MAX_QUEUED_RECORDS: u64 = 1_000_000;
+pub const fn default_max_queued_records() -> u64 {
+    1_000_000
+}
 
 pub const DEFAULT_MAX_WORKER_BATCH_SIZE: u64 = 10_000;
 
@@ -1616,8 +1618,8 @@ pub struct ConnectorConfig {
     /// which more data may be queued.
     ///
     /// The default is 1 million.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_queued_records: Option<u64>,
+    #[serde(default = "default_max_queued_records")]
+    pub max_queued_records: u64,
 
     /// Backpressure threshold, in bytes.
     ///
@@ -1673,7 +1675,7 @@ impl ConnectorConfig {
             output_buffer_config: Default::default(),
             max_batch_size: None,
             max_worker_batch_size: None,
-            max_queued_records: None,
+            max_queued_records: default_max_queued_records(),
             max_queued_bytes: None,
             paused: false,
             labels: Vec::new(),
@@ -1687,7 +1689,7 @@ impl ConnectorConfig {
     }
 
     pub fn with_max_queued_records(mut self, max_queued_records: u64) -> Self {
-        self.max_queued_records = Some(max_queued_records);
+        self.max_queued_records = max_queued_records;
         self
     }
 
@@ -1705,7 +1707,6 @@ impl ConnectorConfig {
     /// Returns `max_queued_records` or, if it is not set, the default.
     pub fn max_queued_records(&self) -> u64 {
         self.max_queued_records
-            .unwrap_or(DEFAULT_MAX_QUEUED_RECORDS)
     }
 
     /// Returns `max_queued_bytes` or, if it is not set, the default based on
