@@ -113,18 +113,17 @@ describe('PercentValue', () => {
         expect(new PercentValue(5, 0).toString()).toBe('0.0%')
     })
 
-    it('average is arithmetic mean of per-worker percents, not weighted', () => {
-        // Bloom-filter-style example from the design discussion:
-        //   worker 0: 5/10 = 50%
+    it('average is a weighted mean: sum(num) / sum(denom)', () => {
+        //   worker 0: 5/10  = 50%
         //   worker 1: 0/1000 = 0%
-        // Arithmetic mean = 25%, NOT weighted (5/1010 ≈ 0.495%).
+        // Weighted = 5/1010 ≈ 0.495%, NOT the unweighted arithmetic mean (25%).
         const avg = new PercentValue(5, 10).average([new PercentValue(0, 1000)])
         expect(avg).toBeInstanceOf(PercentValue)
-        expect(avg.getNumericValue().unwrap()).toBeCloseTo(25, 6)
-        expect(avg.toString()).toBe('25.0%')
+        expect(avg.getNumericValue().unwrap()).toBeCloseTo(100 * 5 / 1010, 6)
     })
 
-    it('average over three equal-denom workers', () => {
+    it('average over three equal-denom workers matches the per-worker mean', () => {
+        // With equal denominators, the weighted mean collapses to the arithmetic mean.
         const avg = new PercentValue(10, 100).average([
             new PercentValue(20, 100),
             new PercentValue(30, 100)
@@ -161,12 +160,46 @@ describe('StringValue / BooleanValue', () => {
         expect(new BooleanValue(false).toString()).toBe('false')
     })
 
-    it('StringValue.average is missing', () => {
-        expect(new StringValue('x').average([new StringValue('y')])).toBeInstanceOf(MissingValue)
+    // For booleans/enum strings, .average() returns the mode across workers so the "Avg"
+    // column shows the prevailing reading instead of N/A. Ties keep the first reading.
+    it('BooleanValue.average returns the more common value', () => {
+        const avg = new BooleanValue(true).average([
+            new BooleanValue(true),
+            new BooleanValue(false)
+        ])
+        expect(avg).toBeInstanceOf(BooleanValue)
+        expect((avg as BooleanValue).value).toBe(true)
+        expect(avg.toString()).toBe('true')
     })
 
-    it('BooleanValue.average is missing', () => {
-        expect(new BooleanValue(true).average([new BooleanValue(false)])).toBeInstanceOf(MissingValue)
+    it('BooleanValue.average keeps the first reading on a tie', () => {
+        // 1 true + 1 false → tie → keep `this` (false here, since average is called on false).
+        const avg = new BooleanValue(false).average([new BooleanValue(true)])
+        expect(avg).toBeInstanceOf(BooleanValue)
+        expect((avg as BooleanValue).value).toBe(false)
+    })
+
+    it('StringValue.average returns the most common value', () => {
+        const avg = new StringValue('round-robin').average([
+            new StringValue('round-robin'),
+            new StringValue('least-loaded')
+        ])
+        expect(avg).toBeInstanceOf(StringValue)
+        expect(avg.toString()).toBe('round-robin')
+    })
+
+    it('StringValue.average keeps the first-seen value on a tie', () => {
+        // 1 vs 1 → tie → first-seen ("least-loaded") wins.
+        const avg = new StringValue('least-loaded').average([new StringValue('round-robin')])
+        expect(avg).toBeInstanceOf(StringValue)
+        expect(avg.toString()).toBe('least-loaded')
+    })
+
+    it('Boolean/String average skips MissingValue neighbours', () => {
+        const b = new BooleanValue(true).average([MissingValue.INSTANCE, new BooleanValue(true)])
+        expect((b as BooleanValue).value).toBe(true)
+        const s = new StringValue('A').average([MissingValue.INSTANCE, new StringValue('A')])
+        expect(s.toString()).toBe('A')
     })
 })
 
