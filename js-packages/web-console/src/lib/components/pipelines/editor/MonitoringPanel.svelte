@@ -159,6 +159,12 @@
       logSearchInput ? { kind: 'substring', query: logSearchInput } : null
     )
   }
+  // Escape clears the input and the highlight — submitting an empty query resets `logSearch`
+  // to `emptySearchState` (pattern null), which un-highlights the list.
+  const clearLogSearch = () => {
+    logSearchInput = ''
+    submitLogSearch()
+  }
 
   // Updating individual properties in an $effect avoids unnecessary reactive updates within tab components
   let tabProps = $state({ metrics, pipeline, errors, deleted, logSearch, onLogSearchShortcut })
@@ -229,8 +235,11 @@
       bind:value={logSearchInput}
       type="text"
       placeholder="Search logs"
-      title="Search within logs (Enter to jump to next match, Ctrl/Cmd-F to focus from the log list)"
-      onkeydown={(e) => e.key === 'Enter' && submitLogSearch()}
+      title="Search within logs (Enter to jump to next match, Esc to clear, Ctrl/Cmd-F to focus from the log list)"
+      onkeydown={(e) => {
+        if (e.key === 'Enter') submitLogSearch()
+        else if (e.key === 'Escape') clearLogSearch()
+      }}
       class="input ml-auto h-8 w-28 text-sm sm:w-32"
     />
     {@render PipelineInfoHeader()}

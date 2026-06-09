@@ -5,13 +5,14 @@
  *        ↳ logSearch ────▶ TabLogs ▶ LogsStreamList ▶ LogList (virtualised)
  *        ↳ onLogSearchShortcut ◀── Ctrl/Cmd-F handler in LogList
  *
- * The test mounts the production `MonitoringPanel` and feeds it 1 000 procedurally
- * generated log lines through a mocked `pipelineLogsStream`. Every component in the
+ * The test mounts the production `MonitoringPanel` and feeds it 1 000 log lines (each line
+ * is just its own 1-based line number — so a search for "42" deterministically hits lines
+ * 42, 142, 242, ...) through a mocked `pipelineLogsStream`. Every component in the
  * search-input → LogList chain is the real one — nothing is re-wired in the test
  * file itself.
  */
 
-import { page, userEvent } from '@vitest/browser/context'
+import { page, userEvent } from 'vitest/browser'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-svelte'
 
@@ -51,6 +52,9 @@ const buildFakeLogsStream = (): FakeLogsStream => ({
 let testCounter = 0
 const nextPipelineName = () => `logsearch-test-${++testCounter}`
 
+// The minimal `pipeline` prop MonitoringPanel needs to render the Logs tab: a name (used as
+// the localStorage / log-stream key), a status, and an empty `compilerOutput` so the error
+// extraction it runs on mount finds nothing to report.
 const pipelineProp = (name: string) =>
   ({
     current: {
@@ -77,10 +81,10 @@ let mountTarget: HTMLDivElement | undefined
 async function mountLogsTab() {
   pipelineLogsStreamMock.mockImplementation(async () => buildFakeLogsStream())
 
-  // MonitoringPanel uses `h-full` throughout; without a sized ancestor the LogList's
-  // scroll container collapses to clientHeight=0 and virtua never mounts any rows.
-  // A flex column of fixed height gives the same shape the real app provides via
-  // the page layout.
+  // MonitoringPanel's elements size themselves to their parent (TailwindCSS `h-full`, i.e.
+  // height: 100%); without a sized ancestor the LogList's scroll container collapses to
+  // clientHeight=0 and virtua never mounts any rows. A flex column of fixed height gives the
+  // same shape the real app provides via the page layout.
   mountTarget = document.createElement('div')
   mountTarget.style.cssText = 'height: 800px; width: 1200px; display: flex; flex-direction: column;'
   document.body.appendChild(mountTarget)
@@ -138,6 +142,21 @@ describe('MonitoringPanel — log-search wiring', () => {
     await expectRowMounted(241)
   })
 
+  it('Escape clears the input and removes the highlight', async () => {
+    await mountLogsTab()
+
+    const input = page.getByPlaceholder('Search logs')
+    await input.fill('42')
+    await userEvent.keyboard('{Enter}')
+    await expectRowMounted(41)
+    // The match is painted via the CSS Custom Highlight API under LogList's fixed name.
+    await expect.poll(() => CSS.highlights.has('feldera-log-list-search')).toBe(true)
+
+    await userEvent.keyboard('{Escape}')
+    expect((input.element() as HTMLInputElement).value).toBe('')
+    await expect.poll(() => CSS.highlights.has('feldera-log-list-search')).toBe(false)
+  })
+
   it('Ctrl+F from the log list focuses the search input; typing + Enter searches', async () => {
     await mountLogsTab()
 
@@ -147,6 +166,8 @@ describe('MonitoringPanel — log-search wiring', () => {
 
     await userEvent.keyboard('{Control>}f{/Control}')
 
+    // Focus is the user-visible cue: the handler `.focus()`es the input (browser focus ring)
+    // and `.select()`s its text, so the user sees where their keystrokes will land.
     const input = page.getByPlaceholder('Search logs')
     expect(document.activeElement).toBe(input.element())
 
