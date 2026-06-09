@@ -46,7 +46,7 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void testInternal179() {
         var cc = this.getCC("""
-                CREATE TABLE h(p REAL NOT NULL);S
+                CREATE TABLE h(p REAL NOT NULL);
                 CREATE TABLE q(r REAL NOT NULL);
                 CREATE VIEW V AS SELECT * FROM h LEFT JOIN q ON ROUND(r) = ROUND(p);
                 """);

@@ -2433,7 +2433,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (inputs.isEmpty())
             throw new UnsupportedException(node);
         if (intersect.all)
-            throw new UnimplementedException("INTERSECT ALL", node);
+            // Should have been eliminated by the Calcite rewrite rule
+            throw new InternalCompilerError("INTERSECT ALL should not be present", node);
         if (inputs.size() == 1) {
             Utilities.putNew(this.nodeOperator, intersect, previous);
             return;

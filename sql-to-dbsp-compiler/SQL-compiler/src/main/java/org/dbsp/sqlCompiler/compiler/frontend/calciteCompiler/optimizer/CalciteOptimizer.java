@@ -333,6 +333,8 @@ public class CalciteOptimizer implements IWritesLogs {
                 new InnerDecorrelator()));
         this.addStep(new SimpleOptimizerStep("Desugar EXCEPT", 2,
                 new ExceptOptimizerRule()));
+        this.addStep(new SimpleOptimizerStep("Rewrite INTERSECT ALL", 0,
+                new IntersectAllToJoinRule()));
         this.addStep(new CalciteOptimizerStep() {
             @Override
             public String getName() {
