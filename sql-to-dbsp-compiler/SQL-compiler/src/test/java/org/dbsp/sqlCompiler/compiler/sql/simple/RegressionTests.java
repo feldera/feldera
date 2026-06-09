@@ -46,7 +46,7 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void testInternal179() {
         var cc = this.getCC("""
-                CREATE TABLE h(p REAL NOT NULL);
+                CREATE TABLE h(p REAL NOT NULL);S
                 CREATE TABLE q(r REAL NOT NULL);
                 CREATE VIEW V AS SELECT * FROM h LEFT JOIN q ON ROUND(r) = ROUND(p);
                 """);
@@ -138,21 +138,21 @@ public class RegressionTests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW row_count_col_where AS SELECT
                 COUNT(ROW(c1, c2, c3)) FILTER(WHERE c1 < c2) AS c1
                 FROM row_tbl;""");
-        ccs.step("INSERT INTO row_tbl VALUES(0, 4, NULL, 'adios')",
+        ccs.stepWeightOne("INSERT INTO row_tbl VALUES(0, 4, NULL, 'adios')",
                 """
-                  c | weight
-                 ------------
-                  0 | 1""");
+                  c
+                 ---
+                  0""");
     }
 
     @Test
     public void issue2595() {
         var ccs = this.getCCS("""
                 CREATE VIEW V AS SELECT CAST(PARSE_JSON('[1, null]') AS INT ARRAY)""");
-        ccs.step("", """
-                  array | weight
-                 ----------------
-                  {1, NULL} | 1""");
+        ccs.stepWeightOne("", """
+                  array
+                 -------
+                  {1, NULL}""");
     }
 
     @Test
@@ -251,10 +251,10 @@ public class RegressionTests extends SqlIoTest {
         // Check that microsecond intervals are correctly added
         var ccs = this.getCCS("CREATE VIEW V AS SELECT " +
                 "TIMESTAMPADD(MICROSECOND, 2, '2024-01-01 00:00:00.123456'::TIMESTAMP)");
-        ccs.step("", """
-                 ts0 | weight
-                --------------------------------
-                 2024-01-01 00:00:00.123458 | 1""");
+        ccs.stepWeightOne("", """
+                 ts0
+                -----
+                 2024-01-01 00:00:00.123458""");
     }
 
     @Test
@@ -341,14 +341,14 @@ public class RegressionTests extends SqlIoTest {
                 CREATE VIEW atbl_interval_months_res AS SELECT
                 (c1_minus_c2) = -(c2_minus_c1) AS eq
                 FROM atbl_interval_months;""");
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO timestamp_tbl VALUES('2019-12-05 08:27:00', '2014-11-05 12:45:00');
                 INSERT INTO timestamp_tbl VALUES('2020-06-21 14:00:00', '2023-02-26 18:00:00');""",
-                """ 
-                 eq   | weight
-                ------------------
-                 true | 1
-                 true | 1""");
+                """
+                 eq
+                ----
+                 true
+                 true""");
     }
 
     @Test
@@ -523,15 +523,15 @@ public class RegressionTests extends SqlIoTest {
                 STDDEV_SAMP(c1) AS c1,
                 STDDEV_SAMP(c2) AS c2
                 FROM dt;""");
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO dt VALUES
                    (0, 1111.52, 2231.90),
                    (0, NULL, 3802.71),
                    (1, 5681.08, 7689.88),
                    (1, 5681.08, 7335.88);""", """
-                      c1 |      c2 | weight
-                ----------------------------
-                 2638.23 | 2677.47 | 1""");
+                      c1 |      c2
+                ------------------
+                 2638.23 | 2677.47""");
     }
 
     @Test
@@ -555,11 +555,11 @@ public class RegressionTests extends SqlIoTest {
                 c1 - CAST(v1.dts_res AS INTERVAL DAY TO SECOND)  AS dts
                 FROM ts_minus_ts_res v1
                 JOIN timestamp_tbl v2 ON v1.id = v2.id;""");
-        ccs.step("INSERT INTO timestamp_tbl VALUES(2, '1959-06-21 11:32:00', '1948-12-02 09:15:00');",
+        ccs.stepWeightOne("INSERT INTO timestamp_tbl VALUES(2, '1959-06-21 11:32:00', '1948-12-02 09:15:00');",
                 """
-                  dts | weight
-                 --------------
-                 1948-12-02 09:15:00 | 1""");
+                  dts
+                 -----
+                 1948-12-02 09:15:00""");
     }
 
     @Test
@@ -594,13 +594,13 @@ public class RegressionTests extends SqlIoTest {
                 )
                 SELECT * FROM ids
                 WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.id = ids.id);""");
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO t1 VALUES(array['a']), (array['b', 'd']);
                 INSERT INTO t2 VALUES('a'), ('b'), ('c'), ('e');""", """
-                 id | weight
-                -------------
-                 a| 1
-                 b| 1""");
+                 id
+                ----
+                 a
+                 b""");
     }
 
     @Test
@@ -694,10 +694,10 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void issue2942() {
         var ccs = this.getCCS("CREATE VIEW v1(c0) AS SELECT '9,\uE8C7voz[*'");
-        ccs.step("", """
-         c0 | weight
-        -------------
-         9,voz[*|1""");
+        ccs.stepWeightOne("", """
+         c0
+        ----
+         9,voz[*""");
     }
 
     @Test
@@ -873,11 +873,11 @@ public class RegressionTests extends SqlIoTest {
                 ARRAY_AGG(c1) FILTER(WHERE (c1+c2)>3)
                 FROM t;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        ccs.step("INSERT INTO t VALUES (2, 3), (5, 6), (2, 1);",
+        ccs.stepWeightOne("INSERT INTO t VALUES (2, 3), (5, 6), (2, 1);",
                 """
-                         result | weight
-                        ------------------
-                         {2,5} | 1""");
+                         result
+                        --------
+                         {2,5}""");
     }
 
     @Test
@@ -889,11 +889,11 @@ public class RegressionTests extends SqlIoTest {
                 ARG_MAX(c2, c2) FILTER(WHERE id = 1) AS f_c2
                 FROM T;""";
         var ccs = this.getCCS(sql);
-        ccs.step("INSERT INTO T VALUES (0, 5, 8), (1, 4, 2), (0, NULL, 3), (1, NULL, 5);",
+        ccs.stepWeightOne("INSERT INTO T VALUES (0, 5, 8), (1, 4, 2), (0, NULL, 3), (1, NULL, 5);",
                 """
-                 f_c1 | f_c2 | weight
-                ----------------------
-                    5 |    5 |     1""");
+                 f_c1 | f_c2
+                -------------
+                    5 |    5""");
     }
 
     @Test
@@ -1020,11 +1020,11 @@ public class RegressionTests extends SqlIoTest {
                 CREATE VIEW sum_view AS SELECT CREATE_TIMESTAMP(c1) FROM T;
                 """;
         CompilerCircuitStream ccs = this.getCCS(sql);
-        ccs.step("INSERT INTO T VALUES (10000000);",
+        ccs.stepWeightOne("INSERT INTO T VALUES (10000000);",
                 """
-                         result | weight
-                        -------------------
-                         1970-04-26 17:46:40 | 1""");
+                         result
+                        --------
+                         1970-04-26 17:46:40""");
     }
 
     @Test
@@ -1074,11 +1074,11 @@ public class RegressionTests extends SqlIoTest {
                 CREATE TABLE T(C DECIMAL(16, 2));
                 CREATE VIEW V AS SELECT 100.20 * T.C FROM T;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        ccs.step("INSERT INTO T VALUES (100.0)",
+        ccs.stepWeightOne("INSERT INTO T VALUES (100.0)",
                 """
-                         value  | weight
-                        ----------------
-                          10020 | 1""");
+                         value
+                        -------
+                          10020""");
     }
 
     @Test
@@ -1092,16 +1092,16 @@ public class RegressionTests extends SqlIoTest {
                    AVG(c2) FILTER (WHERE c2 > -3802.271) AS f_c2
                 FROM t;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO t VALUES
                 (0, -1111.5672,  2231.790),
                 (0, NULL, -3802.271),
                 (1, 57681.08, 71689.8057),
                 (1, 57681.08, 87335.89658)""",
                 """
-                 c1       | c2      | weight
-                -----------------------------
-                 38083.53 | 53752.5 | 1""");
+                 c1       | c2
+                ---------------
+                 38083.53 | 53752.5""");
     }
 
     @Test
@@ -1112,12 +1112,12 @@ public class RegressionTests extends SqlIoTest {
                 ARG_MIN(c1, c1) AS c1
                 FROM arg_min""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO arg_min VALUES (2), (3), (5)""",
                 """
-                 value | weight
-                ----------------
-                  2    | 1""");
+                 value
+                -------
+                  2""");
     }
 
     @Test
@@ -1150,18 +1150,18 @@ public class RegressionTests extends SqlIoTest {
 
         // Validated on postgres
         CompilerCircuitStream ccs = this.getCCS(sql);
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO foo VALUES(2, 2, 10);
                 INSERT INTO foo VALUES(2, 2, 10);
                 INSERT INTO foo VALUES(30, 2, 12);
                 INSERT INTO foo VALUES(50, 2, 13);""",
                 """
-                 id | ttime | lag1 | lag2 | weight
-                ------------------------------------
-                 2  | 10   |      |        | 1
-                 2  | 10   | 10   |        | 1
-                 30 | 12   | 10   | 10     | 1
-                 50 | 13   | 12   | 10     | 1""");
+                 id | ttime | lag1 | lag2
+                --------------------------
+                 2  | 10   |      |
+                 2  | 10   | 10   |
+                 30 | 12   | 10   | 10
+                 50 | 13   | 12   | 10""");
     }
 
     @Test
@@ -1183,14 +1183,14 @@ public class RegressionTests extends SqlIoTest {
                 FROM T
                 GROUP BY id;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        ccs.step("""
+        ccs.stepWeightOne("""
                        INSERT INTO T VALUES(0, 6);
                        INSERT INTO T VALUES(1, 3);""",
                 """
-                        id | c6 | weight
-                       -----------------
-                         0 |    | 1
-                         1 |    | 1""");
+                        id | c6
+                       --------
+                         0 |
+                         1 |""");
     }
 
     @Test
@@ -1568,7 +1568,7 @@ public class RegressionTests extends SqlIoTest {
                 window3 AS (PARTITION BY id ORDER BY CAST(ts AS DATE) RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND INTERVAL 1 MINUTE FOLLOWING),
                 window4 AS (PARTITION BY id ORDER BY CAST(ts AS TIME) RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND INTERVAL 1 MINUTE FOLLOWING);""";
            CompilerCircuitStream ccs = this.getCCS(sql);
-        ccs.step("""
+        ccs.stepWeightOne("""
                         INSERT INTO T VALUES(0, 1, '2024-01-01 00:00:00');
                         INSERT INTO T VALUES(1, 2, '2024-01-01 00:00:00');
                         INSERT INTO T VALUES(0, 3, '2024-01-01 00:00:01');
@@ -1577,15 +1577,15 @@ public class RegressionTests extends SqlIoTest {
                         INSERT INTO T VALUES(0, 6, '2024-01-01 00:11:00');
                         INSERT INTO T VALUES(0, 7, '2024-01-01 00:13:00');""",
                 """
-                        id | amt | s1 | s2 | s3 | s4 | weight
-                       ---------------------------------------
-                        0  | 1   | 26 | 8  | 26 | 8  | 1
-                        0  | 3   | 26 | 8  | 26 | 8  | 1
-                        0  | 4   | 26 | 8  | 26 | 8  | 1
-                        0  | 5   | 26 | 19 | 26 | 19 | 1
-                        0  | 6   | 26 | 19 | 26 | 19 | 1
-                        0  | 7   | 26 | 26 | 26 | 26 | 1
-                        1  | 2   | 2  | 2  | 2  | 2  | 1"""
+                        id | amt | s1 | s2 | s3 | s4
+                       --------------------------------
+                        0  | 1   | 26 | 8  | 26 | 8
+                        0  | 3   | 26 | 8  | 26 | 8
+                        0  | 4   | 26 | 8  | 26 | 8
+                        0  | 5   | 26 | 19 | 26 | 19
+                        0  | 6   | 26 | 19 | 26 | 19
+                        0  | 7   | 26 | 26 | 26 | 26
+                        1  | 2   | 2  | 2  | 2  | 2"""
         );
     }
 
@@ -1856,17 +1856,17 @@ public class RegressionTests extends SqlIoTest {
                 id, COUNT(DISTINCT ROW(c1, c2, c3)) AS c1
                 FROM row_tbl
                 GROUP BY id;""");
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO row_tbl VALUES
                 (0, 4, NULL, 'adios'),
                 (0, 3, 'ola', 'ciao'),
                 (1, 7, 'hi', 'hiya'),
                 (1, 2, 'elo', 'ciao'),
                 (1, 2, 'elo', 'ciao');""", """
-                 id | count | weight
-                ---------------------
-                 0  |     2 | 1
-                 1  |     2 | 1""");
+                 id | count
+                -----------
+                 0  |     2
+                 1  |     2""");
     }
 
     @Test
@@ -1916,7 +1916,7 @@ public class RegressionTests extends SqlIoTest {
         var ccs = this.getCCS("""
                 CREATE TABLE tab0(pk INTEGER, col0 INTEGER, col1 REAL, col2 TEXT, col3 INTEGER);
                 CREATE VIEW V AS SELECT pk FROM tab0 WHERE (col3 < 73 AND col3 IN (SELECT col0 FROM tab0 WHERE col0 = 3)) OR col1 > 8.64""");
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO tab0 VALUES(0,91,79.43,'dlvog',97);
                 INSERT INTO tab0 VALUES(1,57,89.18,'yzohb',80);
                 INSERT INTO tab0 VALUES(2,73,81.93,'aqyub',40);
@@ -1927,17 +1927,17 @@ public class RegressionTests extends SqlIoTest {
                 INSERT INTO tab0 VALUES(7,53,53.21,'wglqx',15);
                 INSERT INTO tab0 VALUES(8,67,2.2,'uaaon',98);
                 INSERT INTO tab0 VALUES(9,48,62.50,'noqzf',50);""", """
-                 c | weight
-                -------------
-                 0 | 1
-                 1 | 1
-                 2 | 1
-                 3 | 1
-                 4 | 1
-                 5 | 1
-                 6 | 1
-                 7 | 1
-                 9 | 1""");
+                 c
+                ---
+                 0
+                 1
+                 2
+                 3
+                 4
+                 5
+                 6
+                 7
+                 9""");
     }
 
     @Test
@@ -1948,14 +1948,14 @@ public class RegressionTests extends SqlIoTest {
                 CAST((c1) AS VARCHAR) AS c1,
                 CAST((c2) AS VARCHAR) AS c2
                 FROM double_tbl;""");
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO double_tbl values
                    (-34567891.312, 98765432.12),
                    (8765432.147, -2344579.923);""", """
-                 c1            |            c2 | weight
-                ----------------------------------------
-                 -34567891.312| 98765432.12| 1
-                 8765432.147| -2344579.923| 1""");
+                 c1            |            c2
+                ---------------------------------
+                 -34567891.312| 98765432.12
+                 8765432.147| -2344579.923""");
     }
 
     @Test
@@ -2005,7 +2005,7 @@ public class RegressionTests extends SqlIoTest {
                 join unnest(s.mentioned_cell_ids) as m(mentioned_id) on true;
                 
                 create view e as (SELECT * FROM l) EXCEPT (SELECT * FROM l1);""");
-        ccs.step("INSERT INTO latest_cells VALUES(1, ARRAY[1,2,3]), (2, ARRAY[2,3,4]);",
+        ccs.stepWeightOne("INSERT INTO latest_cells VALUES(1, ARRAY[1,2,3]), (2, ARRAY[2,3,4]);",
                 """
                   id | mentioned_id
                  -------------------""");

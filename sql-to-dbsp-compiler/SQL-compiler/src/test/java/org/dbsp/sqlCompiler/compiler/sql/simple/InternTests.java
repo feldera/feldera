@@ -44,23 +44,23 @@ public class InternTests extends SqlIoTest {
         var ccs = this.getCCS("""
                 CREATE TABLE T(x INT, s VARCHAR INTERNED, u VARCHAR);
                 CREATE VIEW V AS SELECT MAX(u), SUM(x), s FROM T GROUP BY s;""");
-        ccs.step("INSERT INTO T VALUES(0, 'a', 'b');", """
-                 max | sum | s| weight
-                ------------------------
-                 b|      0 | a|  1""");
-        ccs.step("INSERT INTO T VALUES(1, 'd', 'c');", """
-                 max | sum | s| weight
-                -----------------------
-                 c|      1 | d| 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(0, 'a', 'b');", """
+                 max | sum | s
+                ---------------
+                 b|      0 | a""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1, 'd', 'c');", """
+                 max | sum | s
+                ---------------
+                 c|      1 | d""");
         ccs.step("INSERT INTO T VALUES(2, 'a', 'c');", """
                  max| sum | s| weight
                 ----------------------
                  b|     0 | a| -1
                  c|     2 | a| 1""");
-        ccs.step("INSERT INTO T VALUES(NULL, NULL, NULL);", """
-                 max | sum | s | weight
-                ------------------------
-                NULL |NULL |NULL | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(NULL, NULL, NULL);", """
+                 max | sum | s
+                ---------------
+                NULL |NULL |NULL""");
     }
 
     @Test
@@ -69,18 +69,18 @@ public class InternTests extends SqlIoTest {
                 CREATE TABLE T(x INT, s VARCHAR INTERNED, u VARCHAR);
                 CREATE TABLE S(x INT, s VARCHAR, u VARCHAR NOT NULL INTERNED);
                 CREATE VIEW V AS SELECT * FROM T UNION ALL SELECT * FROM S;""");
-        ccs.step("INSERT INTO T VALUES(0, 'a', 'b');", """
-                 x | s| u| weight
-                ----------------------
-                 0 | a| b| 1""");
-        ccs.step("INSERT INTO T VALUES(1, 'd', 'c');", """
-                 x | s| u| weight
-                ----------------------
-                 1 | d| c| 1""");
-        ccs.step("INSERT INTO S VALUES(2, 'a', 'c');", """
-                 x | s| su| weight
-                -----------------------
-                 2 | a| c| 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(0, 'a', 'b');", """
+                 x | s| u
+                ----------
+                 0 | a| b""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1, 'd', 'c');", """
+                 x | s| u
+                ----------
+                 1 | d| c""");
+        ccs.stepWeightOne("INSERT INTO S VALUES(2, 'a', 'c');", """
+                 x | s| su
+                -----------
+                 2 | a| c""");
     }
 
     @Test
@@ -105,11 +105,11 @@ public class InternTests extends SqlIoTest {
         var ccs = this.getCCS("""
                 CREATE TABLE T(x VARCHAR NOT NULL INTERNED, s VARCHAR INTERNED);
                 CREATE VIEW V AS SELECT * FROM T;""");
-        ccs.step("INSERT INTO T VALUES('x', 'y'), ('z', NULL);", """
-                  x| y   | weight
-                 -----------------
-                  x| y|    1
-                  z|NULL | 1""");
+        ccs.stepWeightOne("INSERT INTO T VALUES('x', 'y'), ('z', NULL);", """
+                  x| y
+                 ------
+                  x| y
+                  z|NULL""");
     }
 
     @Test
@@ -119,15 +119,15 @@ public class InternTests extends SqlIoTest {
             CREATE TABLE T(x VARCHAR NOT NULL INTERNED, y VARCHAR NOT NULL INTERNED);
             CREATE TABLE S(z VARCHAR INTERNED, w VARCHAR INTERNED, a INT);
             CREATE VIEW V AS SELECT T.x, S.a FROM T LEFT JOIN S ON T.x = S.z AND T.y = S.w;""");
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO T VALUES('a', 'b'), ('a', 'c');
                 INSERT INTO S VALUES('a', 'b', 1), ('a', 'd', 2), ('b', 'c', 3), ('a', 'b', 4);
                 """, """
-                 x | a | weight
-                ----------------
-                 a|  1 | 1
-                 a|  4 | 1
-                 a|NULL| 1""");
+                 x | a
+                -------
+                 a|  1
+                 a|  4
+                 a|NULL""");
     }
 
     @Test
