@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Popover } from 'common-ui'
+  import { Popover, Tooltip } from 'common-ui'
   import { MissingValue, type PropertyValue } from 'profiler-lib'
   import { barColor, logScale01, skewTextColor } from '../colors'
 
@@ -140,7 +140,8 @@
   </button>
 </div>
 
-<!-- Bar chart row spans full block width; container height + each bar height animate. -->
+<!-- Bar chart row spans full block width; container height + each bar height animate.
+     Each bar gets a hover tooltip showing the worker index and the formatted reading. -->
 <div
   class="bar-chart col-span-5 flex items-end gap-0.5"
   style:height="{chartHeight}px"
@@ -151,8 +152,8 @@
       class="flex-1 rounded-sm transition-[height,background-color] duration-200 ease-in-out"
       style:height="{b.height}px"
       style:background-color={barColor(b.t)}
-      title="worker {i}: {v.toString()}"
     ></div>
+    <Tooltip class="whitespace-nowrap" placement="top">Worker {i}: {v.toString()}</Tooltip>
   {/each}
 </div>
 
