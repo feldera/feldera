@@ -57,50 +57,41 @@ where
     where
         B: Batch<Time = ()>,
     {
-        if let Some(sharded) = self.get_sharded_version() {
-            sharded.dyn_accumulate(factories)
-        } else if Runtime::num_workers() == 1 {
-            self.dyn_accumulate(factories)
-        } else if Runtime::with_dev_tweaks(|d| !d.streaming_exchange()) {
-            self.dyn_shard(factories).dyn_accumulate(factories)
-        } else {
+        if !self.has_sharded_version()
+            && Runtime::with_dev_tweaks(|d| d.streaming_exchange())
+            && let Some(runtime) = Runtime::runtime()
+            && runtime.layout().n_workers() > 1
+            && runtime.get_step_size() == StepSize::Microsteps
+        {
             self.circuit()
                 .cache_get_or_insert_with(ShardedAccumulatorId::new(self.stream_id()), || {
-                    let runtime = Runtime::runtime().unwrap();
-                    match runtime.get_step_size() {
-                        StepSize::Microsteps => {
-                            let exchange_id: ExchangeId =
-                                runtime.sequence_next().try_into().unwrap();
-                            let exchange = ShardedAccumulator::<B>::with_runtime(
-                                &runtime,
-                                Runtime::worker_index(),
-                                exchange_id,
-                                factories,
-                            );
-                            let enable_count = exchange.enable_count.clone();
-                            let stream = self
-                                .circuit()
-                                .add_exchange(
-                                    ShardedAccumulatorSender::new(
-                                        Some(Location::caller()),
-                                        exchange.clone(),
-                                    ),
-                                    ShardedAccumulatorReceiver::new(
-                                        Some(Location::caller()),
-                                        exchange,
-                                    ),
-                                    self,
-                                )
-                                .mark_sharded();
-                            Accumulation {
-                                stream,
-                                enable_count,
-                            }
-                        }
-                        StepSize::FullSteps => self.dyn_shard(factories).dyn_accumulate(factories),
+                    let exchange_id: ExchangeId = runtime.sequence_next().try_into().unwrap();
+                    let exchange = ShardedAccumulator::<B>::with_runtime(
+                        &runtime,
+                        Runtime::worker_index(),
+                        exchange_id,
+                        factories,
+                    );
+                    let enable_count = exchange.enable_count.clone();
+                    let stream = self
+                        .circuit()
+                        .add_exchange(
+                            ShardedAccumulatorSender::new(
+                                Some(Location::caller()),
+                                exchange.clone(),
+                            ),
+                            ShardedAccumulatorReceiver::new(Some(Location::caller()), exchange),
+                            self,
+                        )
+                        .mark_sharded();
+                    Accumulation {
+                        stream,
+                        enable_count,
                     }
                 })
                 .clone()
+        } else {
+            self.dyn_shard(factories).dyn_accumulate(factories)
         }
     }
 
