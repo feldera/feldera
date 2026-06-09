@@ -535,17 +535,25 @@ where
     /// across workers, otherwise this will cause the dataflow to yield
     /// incorrect results
     pub fn mark_sharded(&self) -> Self {
-        self.circuit().cache_insert(
-            ShardId::new((self.stream_id(), all_workers())),
-            self.clone(),
-        );
+        self.mark_sharded_workers(all_workers())
+    }
+
+    pub fn mark_sharded_workers(&self, workers: Range<usize>) -> Self {
+        self.circuit()
+            .cache_insert(ShardId::new((self.stream_id(), workers)), self.clone());
         self.clone()
     }
 
     /// Returns `true` if a sharded version of the current stream exists
     pub fn has_sharded_version(&self) -> bool {
+        self.has_workers_sharded_version(all_workers())
+    }
+
+    /// Returns `true` if a version of the current stream sharded to `workers`
+    /// exists.
+    pub fn has_workers_sharded_version(&self, workers: Range<usize>) -> bool {
         self.circuit()
-            .cache_contains(&ShardId::<C, T>::new((self.stream_id(), all_workers())))
+            .cache_contains(&ShardId::<C, T>::new((self.stream_id(), workers)))
     }
 
     pub fn get_sharded_version(&self) -> Option<Self> {
