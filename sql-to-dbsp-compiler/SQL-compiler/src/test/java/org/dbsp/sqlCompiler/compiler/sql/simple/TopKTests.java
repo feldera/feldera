@@ -40,9 +40,9 @@ public class TopKTests extends SqlIoTest {
                 WHERE rn <= 1;
                  DocumentID | Status | DateCreated
                 -----------------------------------
-                 1          | S1| 2011-09-02
-                 2          | S3| 2011-08-01
-                 3          | S1| 2011-08-02
+                 1          | S1     | 2011-09-02
+                 2          | S3     | 2011-08-01
+                 3          | S1     | 2011-08-02
                 (3 rows)
 
                 WITH cte AS
@@ -56,9 +56,9 @@ public class TopKTests extends SqlIoTest {
                 WHERE rn <= 1;
                  DocumentID | Status | DateCreated
                 -----------------------------------
-                 1          | S1| 2011-07-29
-                 2          | S1| 2011-07-28
-                 3          | S1| 2011-08-02
+                 1          | S1     | 2011-07-29
+                 2          | S1     | 2011-07-28
+                 3          | S1     | 2011-08-02
                 (3 rows)
 
                 WITH cte AS
@@ -72,14 +72,14 @@ public class TopKTests extends SqlIoTest {
                 WHERE rn <= 1;
                  DocumentID | Status | DateCreated
                 -----------------------------------
-                 1          | S1| 2011-09-02
-                 3          | S1| 2011-08-02
-                 2          | S3| 2011-08-01
+                 1          | S1     | 2011-09-02
+                 3          | S1     | 2011-08-02
+                 2          | S3     | 2011-08-01
                 (3 rows)""";
         for (String function : new String[]{"RANK", "DENSE_RANK", "ROW_NUMBER"}) {
             String q = paramQuery.replace("?", function);
             // Same result for all 3 functions
-            this.qs(q);
+            this.qst(q);
         }
     }
 
@@ -232,7 +232,7 @@ public class TopKTests extends SqlIoTest {
                                                   ORDER BY duration ASC) AS rnum
                         FROM   EVENT_DURATION)
                 WHERE   rnum <= 3 AND event_type_id = 1;
-                
+
                 CREATE VIEW V1 AS
                 SELECT (duration * -1) as duration
                 ,      event_type_id
@@ -242,7 +242,7 @@ public class TopKTests extends SqlIoTest {
                                                   ORDER BY duration ASC) AS rnum
                         FROM   EVENT_DURATION)
                 WHERE   event_type_id = 1 AND rnum <= 3;
-                
+
                 CREATE VIEW V2 AS
                 SELECT (duration * -1) as duration
                 ,      event_type_id
@@ -257,7 +257,7 @@ public class TopKTests extends SqlIoTest {
     @Test
     public void top3() {
         // Validated on Postgres
-        this.qs("""
+        this.qst("""
                 WITH cte AS (
                 SELECT *,
                    RANK() OVER (PARTITION BY DocumentID ORDER BY DateCreated) AS rn
@@ -268,11 +268,11 @@ public class TopKTests extends SqlIoTest {
                 WHERE rn < 3;
                  DocumentID | Status | DateCreated | rn
                 ---------------------------------------
-                 1          | S1| 2011-07-29       | 1
-                 1          | S2| 2011-07-30       | 2
-                 2          | S1| 2011-07-28       | 1
-                 2          | S2| 2011-07-30       | 2
-                 3          | S1| 2011-08-02       | 1
+                 1          | S1     | 2011-07-29  | 1
+                 1          | S2     | 2011-07-30  | 2
+                 2          | S1     | 2011-07-28  | 1
+                 2          | S2     | 2011-07-30  | 2
+                 3          | S1     | 2011-08-02  | 1
                 (5 rows)""");
     }
 }
