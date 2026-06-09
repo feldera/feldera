@@ -1,7 +1,7 @@
 // Core profiler visualization library
 // This module provides the main API for rendering circuit profiles
 
-import { CircuitProfile, NodeAndMetric } from "./profile.js";
+import { CircuitProfile, NodeAndMetric, PropertyValue } from "./profile.js";
 import { Cytograph, CytographRendering } from "./cytograph.js";
 import { CircuitSelector } from "./selection.js";
 import { MetadataSelector } from './metadataSelection.js';
@@ -22,9 +22,12 @@ export interface WorkerOption {
     checked: boolean;
 }
 
-/** Represents a cell in the tooltip heatmap */
+/** Represents a cell in the tooltip heatmap. Carries the live `PropertyValue` so consumers can
+ * call `.toString()` for display and `.getNumericValue()` for math without going through a
+ * string round-trip. Not meant to cross serialization boundaries (postMessage, JSON.stringify)
+ * — class instances would lose their prototypes. */
 export interface TooltipCell {
-    value: string;
+    value: PropertyValue;
     percentile: number;
 }
 

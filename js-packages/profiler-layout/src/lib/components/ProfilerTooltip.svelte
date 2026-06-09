@@ -128,7 +128,7 @@
                                                     style:color="black"
                                                     class="text-right"
                                                 >
-                                                    {cell.value}
+                                                    {cell.value.toString()}
                                                 </td>
                                             {/each}
                                         </tr>

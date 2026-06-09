@@ -1,6 +1,6 @@
 <script lang="ts">
+  import type { PropertyValue } from 'profiler-lib'
   import type { RenderableMetric } from '../dispatch'
-  import { parseFormatted } from '../format'
   import BarChartMetric from '../parts/BarChartMetric.svelte'
 
   interface Props {
@@ -24,8 +24,8 @@
     }
     expandedIds = next
   }
-  function values(row: RenderableMetric): number[] {
-    return row.row.cells.map((c) => parseFormatted(c.value))
+  function values(row: RenderableMetric): PropertyValue[] {
+    return row.row.cells.map((c) => c.value)
   }
 
   // Sticky header cells: the box-shadow paints `--header-bg` outward to cover the grid gaps
@@ -59,7 +59,6 @@
       <BarChartMetric
         label={entry.label}
         metricId={entry.row.metric}
-        format={entry.format}
         values={values(entry)}
         expanded={isExpanded(entry)}
         onToggle={() => toggle(entry)}
