@@ -21,9 +21,9 @@
    */
   const previewMode: 'values' | 'bars' = 'values' as 'values' | 'bars'
 
-  // Numeric snapshots — used for bar maths only. Avg/Min/Max display goes through
-  // `PropertyValue.toString()` on `PropertyValue`s of the same kind, so no formatter logic
-  // lives in this component.
+  // Bar maths use the strictly-numeric subset. String-valued cells (enum metrics like balancer
+  // policy) skip this — they render flat bars but still contribute to the Avg column via
+  // `.average()` (returns the mode). Min/Max are suppressed for non-comparable kinds.
   const numbers = $derived.by(() => {
     const out: number[] = []
     for (const v of values) {
@@ -42,35 +42,37 @@
     let min = numbers[0]!
     let max = numbers[0]!
     for (const v of numbers) {
-      if (v < min) min = v
-      if (v > max) max = v
+      if (v < min) {
+        min = v
+      }
+      if (v > max) {
+        max = v
+      }
     }
     return { min, max, n: numbers.length }
   })
 
-  // Pick a template value (first non-missing) to drive PropertyValue.average and to re-wrap min/max
-  // so they format with the right kind. All three columns share the template's `.toString()`.
-  const template = $derived(values.find((v) => v.getNumericValue().isSome()))
+  // Display rows operate on every non-missing cell (booleans, enum strings, numbers alike).
+  // Min/Max use `PropertyValue.compareTo`, which only carries magnitude information for
+  // comparable kinds (Count/Bytes/Time/Percent). For non-comparable kinds (BooleanValue,
+  // StringValue) the ordering is nominal — "min false / max true" or the lexicographic ends of
+  // an enum carry no information — so we suppress Min/Max and show only Avg (the mode).
   const display = $derived.by(() => {
-    if (!template || stats.n === 0) {
+    const real = values.filter((v) => !(v instanceof MissingValue))
+    if (real.length === 0) {
       return { avg: MissingValue.INSTANCE, min: MissingValue.INSTANCE, max: MissingValue.INSTANCE }
     }
-    const nonMissing = values.filter((v) => v.getNumericValue().isSome())
-    const avg = nonMissing[0]!.average(nonMissing.slice(1))
-    // Min/max instances are already in `values`; pick them by numeric extremum so the displayed
-    // string matches the original reading (avoids reconstructing through a factory).
-    let min = nonMissing[0]!
-    let max = nonMissing[0]!
-    let minN = min.getNumericValue().unwrap()
-    let maxN = max.getNumericValue().unwrap()
-    for (const v of nonMissing) {
-      const n = v.getNumericValue().unwrap()
-      if (n < minN) {
-        minN = n
+    const avg = real[0]!.average(real.slice(1))
+    if (!real[0]!.isComparable()) {
+      return { avg, min: MissingValue.INSTANCE, max: MissingValue.INSTANCE }
+    }
+    let min = real[0]!
+    let max = real[0]!
+    for (const v of real) {
+      if (v.compareTo(min) < 0) {
         min = v
       }
-      if (n > maxN) {
-        maxN = n
+      if (v.compareTo(max) > 0) {
         max = v
       }
     }

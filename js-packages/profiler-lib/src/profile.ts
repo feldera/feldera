@@ -252,14 +252,25 @@ export abstract class PropertyValue implements Comparable<PropertyValue> {
         }
     }
 
+    /** True iff `compareTo` carries magnitude information for this kind, i.e. ordering pairs is
+     * meaningful beyond mere distinction. Numeric kinds (count/bytes/time/percent) are
+     * comparable; nominal kinds (booleans, enum strings) are not, so callers should suppress the
+     * Min/Max columns for them. The `Avg` column still makes sense — it reports the mode. */
+    isComparable(): boolean {
+        return true;
+    }
+
     /** Combine values from multiple operators; the semantics depends on the value kind. */
     abstract combine(other: PropertyValue): PropertyValue;
 
     /** Average this value and `others` across workers. Distinct from `combine` because the
-     * per-kind semantics differ: counts/bytes/seconds use arithmetic mean; percents could be
-     * arithmetic or weighted depending on what the percent represents (per-worker fraction vs.
-     * shared-denominator rate). Subclasses pick the right one for their kind. Non-numeric and
-     * missing values average to `MissingValue.INSTANCE`. */
+     * per-kind semantics differ:
+     *   - counts/bytes/seconds: arithmetic mean of the underlying numbers.
+     *   - percents: arithmetic mean of per-worker percents (not weighted — see PercentValue).
+     *   - booleans / enum strings: the most common value across workers (the mode), so the
+     *     "Avg" column shows the prevailing reading instead of N/A.
+     *   - missing: delegate to the first non-missing neighbour so the result inherits the
+     *     right kind. */
     abstract average(others: PropertyValue[]): PropertyValue;
 }
 
@@ -317,22 +328,25 @@ export class PercentValue extends PropertyValue {
         throw new Error("Cannot add PercentValue to " + other);
     }
 
-    // Arithmetic mean of per-worker percents. We deliberately do NOT compute a weighted mean
-    // (sum(num)/sum(denom)): the bar chart shows each worker as an independent observation, and a
-    // worker that processed 5 of 10 events (50%) should pull the average toward 50%, not be
-    // diluted by a worker that processed 0 of 1000.
+    // Weighted mean across workers: sum(numerator) / sum(denominator). A worker that observed
+    // 5 of 10 events contributes 5 hits and 10 trials to the pooled ratio, so workers with more
+    // observations move the average more — the right semantics for population-level percents
+    // like hit rates or utilization.
     override average(others: PropertyValue[]): PropertyValue {
-        const percents: number[] = [];
+        let numSum = 0;
+        let denSum = 0;
+        let any = false;
         for (const v of [this, ...others]) {
             if (v instanceof PercentValue) {
-                percents.push(v.getNumericValue().unwrap());
+                numSum += v.numerator;
+                denSum += v.denominator;
+                any = true;
             }
         }
-        if (percents.length === 0) {
+        if (!any) {
             return MissingValue.INSTANCE;
         }
-        const mean = percents.reduce((a, b) => a + b, 0) / percents.length;
-        return new PercentValue(mean, 100);
+        return new PercentValue(numSum, denSum);
     }
 }
 
@@ -446,19 +460,14 @@ export class BooleanValue extends PropertyValue {
         return new BooleanValue(value.value);
     }
 
-    getNumericValue(): Option<number> {
-        return this.value ? Option.some(0) : Option.some(1);
+    override isComparable(): boolean {
+        return false;
     }
 
-    override compareTo(other: PropertyValue): number {
-        let v1 = this.value;
-        if (other instanceof BooleanValue) {
-            let v2 = other.value;
-            if (v1 < v2) return -1;
-            if (v1 > v2) return 1;
-            return 0;
-        }
-        return super.compareTo(other);
+    // `true` maps to the high end of the bar-chart range and `false` to the low end, so a worker
+    // reporting `true` shows the tallest bar.
+    getNumericValue(): Option<number> {
+        return this.value ? Option.some(1) : Option.some(0);
     }
 
     override combine(other: PropertyValue): PropertyValue {
@@ -471,9 +480,28 @@ export class BooleanValue extends PropertyValue {
         throw new Error("Cannot add BooleanValue to " + other);
     }
 
-    // Booleans don't average meaningfully; report as missing rather than coerce to a percentage.
-    override average(_others: PropertyValue[]): PropertyValue {
-        return MissingValue.INSTANCE;
+    // The "average" of a set of booleans is the most common value (the mode), so the Avg
+    // column shows the prevailing reading across workers instead of N/A. On a tie we keep the
+    // first reading, which is deterministic from the caller's perspective.
+    override average(others: PropertyValue[]): PropertyValue {
+        let trueCount = 0;
+        let falseCount = 0;
+        let first: BooleanValue | undefined;
+        for (const v of [this, ...others]) {
+            if (v instanceof BooleanValue) {
+                if (!first) {
+                    first = v;
+                }
+                v.value ? trueCount++ : falseCount++;
+            }
+        }
+        if (!first) {
+            return MissingValue.INSTANCE;
+        }
+        if (trueCount === falseCount) {
+            return first;
+        }
+        return new BooleanValue(trueCount > falseCount);
     }
 
     override getStringValue(): string {
@@ -501,19 +529,12 @@ export class StringValue extends PropertyValue {
         return new StringValue(value);
     }
 
-    getNumericValue(): Option<number> {
-        return Option.none();
+    override isComparable(): boolean {
+        return false;
     }
 
-    override compareTo(other: PropertyValue): number {
-        let v1 = this.value;
-        if (other instanceof StringValue) {
-            let v2 = other.value;
-            if (v1 < v2) return -1;
-            if (v1 > v2) return 1;
-            return 0;
-        }
-        return super.compareTo(other);
+    getNumericValue(): Option<number> {
+        return Option.none();
     }
 
     override combine(other: PropertyValue): PropertyValue {
@@ -529,9 +550,37 @@ export class StringValue extends PropertyValue {
         throw new Error("Cannot add StringValue to " + other);
     }
 
-    // Strings have no numeric average; report as missing.
-    override average(_others: PropertyValue[]): PropertyValue {
-        return MissingValue.INSTANCE;
+    // The "average" of a set of enum-like strings is the most common value (the mode), so the
+    // Avg column shows the prevailing reading across workers instead of N/A. First-seen wins
+    // on ties.
+    override average(others: PropertyValue[]): PropertyValue {
+        const counts = new Map<string, number>();
+        let firstByValue: Map<string, StringValue> | undefined;
+        let firstOverall: StringValue | undefined;
+        for (const v of [this, ...others]) {
+            if (v instanceof StringValue) {
+                if (!firstOverall) {
+                    firstOverall = v;
+                    firstByValue = new Map();
+                }
+                if (!firstByValue!.has(v.value)) {
+                    firstByValue!.set(v.value, v);
+                }
+                counts.set(v.value, (counts.get(v.value) ?? 0) + 1);
+            }
+        }
+        if (!firstOverall) {
+            return MissingValue.INSTANCE;
+        }
+        let best = firstOverall;
+        let bestCount = counts.get(firstOverall.value)!;
+        for (const [value, count] of counts) {
+            if (count > bestCount) {
+                best = firstByValue!.get(value)!;
+                bestCount = count;
+            }
+        }
+        return best;
     }
 
     override getStringValue(): string {

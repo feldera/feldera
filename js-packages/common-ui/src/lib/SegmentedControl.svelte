@@ -13,6 +13,9 @@
 
   type Snippet<T extends unknown[] = []> = (...params: T) => ReturnType<SvelteSnippet<T>>
 
+  /**
+   * Properties of every label (option) in the segment indicator
+   */
   export type SegmentedItem<V extends string = string> = {
     value: V
     label?: string
