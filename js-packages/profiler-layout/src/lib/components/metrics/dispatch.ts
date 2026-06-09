@@ -5,12 +5,10 @@
 
 import type { NodeAttributes, TooltipRow } from 'profiler-lib'
 import { measurementCategory, measurementDescription } from 'profiler-lib'
-import { type Format, inferFormat } from './format'
 
 export type RenderableMetric = {
   row: TooltipRow
   label: string
-  format: Format
 }
 
 export type RenderableBlock = {
@@ -47,8 +45,7 @@ export function buildBlocks(attrs: NodeAttributes, showAdvanced: boolean): Rende
     }
     bucket.push({
       row,
-      label: labelFor(row.metric),
-      format: inferFormat(row.cells[0]?.value ?? '')
+      label: labelFor(row.metric)
     })
   }
 

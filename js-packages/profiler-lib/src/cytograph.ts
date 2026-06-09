@@ -13,12 +13,14 @@ import { ZSet } from "./zset.js";
 import { MetadataSelection } from './metadataSelection.js';
 import { type NodeAttributes, type TooltipCell, type ProfilerCallbacks } from './profiler.js';
 
-/** A measurement represented as a string, but also with a normalized value between 0 and 100. */
+/** A measurement together with a normalized [0, 100] percentile for color scaling. The original
+ * `PropertyValue` is preserved so consumers can format on demand (via `.toString()`) or compute
+ * over the raw number (via `.getNumericValue()`). */
 class SerializedMeasurement {
-    constructor(readonly value: string, readonly percentile: number) { }
+    constructor(readonly value: PropertyValue, readonly percentile: number) { }
 
     toString(): string {
-        return this.value;
+        return this.value.toString();
     }
 }
 
@@ -665,7 +667,7 @@ export class CytographRendering {
             percentile = 0;
         }
 
-        return new SerializedMeasurement(m.toString(), percentile);
+        return new SerializedMeasurement(m, percentile);
     }
 
     /** Compute the attributes for all cytograph nodes based on the circuit profile and current selection. */

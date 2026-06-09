@@ -1,18 +1,18 @@
 <script lang="ts">
   import { Popover } from 'common-ui'
+  import { MissingValue, type PropertyValue } from 'profiler-lib'
   import { barColor, logScale01, skewTextColor } from '../colors'
-  import { type Format, formatNumber } from '../format'
 
   interface Props {
     label: string
     metricId: string
-    format: Format
-    /** Per-worker numeric values (NaN slots become zero-height bars). */
-    values: number[]
+    /** Per-worker values. Missing readings appear as `MissingValue` and are skipped by the
+     * statistics; their bar height is forced to zero. */
+    values: PropertyValue[]
     expanded: boolean
     onToggle: () => void
   }
-  const { label, metricId, format, values, expanded, onToggle }: Props = $props()
+  const { label, metricId, values, expanded, onToggle }: Props = $props()
 
   /**
    * Collapsed-view preview style:
@@ -21,28 +21,60 @@
    */
   const previewMode: 'values' | 'bars' = 'values' as 'values' | 'bars'
 
-  const stats = $derived.by(() => {
-    let min = Infinity
-    let max = -Infinity
-    let sum = 0
-    let n = 0
+  // Numeric snapshots — used for bar maths only. Avg/Min/Max display goes through
+  // `PropertyValue.toString()` on `PropertyValue`s of the same kind, so no formatter logic
+  // lives in this component.
+  const numbers = $derived.by(() => {
+    const out: number[] = []
     for (const v of values) {
-      if (!Number.isFinite(v)) {
-        continue
+      const n = v.getNumericValue()
+      if (n.isSome()) {
+        out.push(n.unwrap())
       }
-      if (v < min) {
+    }
+    return out
+  })
+
+  const stats = $derived.by(() => {
+    if (numbers.length === 0) {
+      return { min: 0, max: 0, n: 0 }
+    }
+    let min = numbers[0]!
+    let max = numbers[0]!
+    for (const v of numbers) {
+      if (v < min) min = v
+      if (v > max) max = v
+    }
+    return { min, max, n: numbers.length }
+  })
+
+  // Pick a template value (first non-missing) to drive PropertyValue.average and to re-wrap min/max
+  // so they format with the right kind. All three columns share the template's `.toString()`.
+  const template = $derived(values.find((v) => v.getNumericValue().isSome()))
+  const display = $derived.by(() => {
+    if (!template || stats.n === 0) {
+      return { avg: MissingValue.INSTANCE, min: MissingValue.INSTANCE, max: MissingValue.INSTANCE }
+    }
+    const nonMissing = values.filter((v) => v.getNumericValue().isSome())
+    const avg = nonMissing[0]!.average(nonMissing.slice(1))
+    // Min/max instances are already in `values`; pick them by numeric extremum so the displayed
+    // string matches the original reading (avoids reconstructing through a factory).
+    let min = nonMissing[0]!
+    let max = nonMissing[0]!
+    let minN = min.getNumericValue().unwrap()
+    let maxN = max.getNumericValue().unwrap()
+    for (const v of nonMissing) {
+      const n = v.getNumericValue().unwrap()
+      if (n < minN) {
+        minN = n
         min = v
       }
-      if (v > max) {
+      if (n > maxN) {
+        maxN = n
         max = v
       }
-      sum += v
-      n++
     }
-    if (n === 0) {
-      return { min: 0, max: 0, avg: 0, n: 0 }
-    }
-    return { min, max, avg: sum / n, n }
+    return { avg, min, max }
   })
 
   // Skew = spread across workers (max - min) as a percentage of the largest-magnitude value.
@@ -56,12 +88,13 @@
     return ((stats.max - stats.min) / scale) * 100
   })
 
-  function bar(v: number) {
+  function bar(v: PropertyValue) {
     const collapsedHeight = previewMode === 'bars' ? 12 : 0
     if (stats.n === 0 || stats.max === stats.min) {
       return { t: 0, height: expanded ? 12 : collapsedHeight }
     }
-    const raw = Number.isFinite(v) ? (v - stats.min) / (stats.max - stats.min) : 0
+    const num = v.getNumericValue()
+    const raw = num.isSome() ? (num.unwrap() - stats.min) / (stats.max - stats.min) : 0
     const t = logScale01(raw)
     const height = expanded ? 12 + (32 - 12) * t : collapsedHeight
     return { t, height }
@@ -81,12 +114,12 @@
 </div>
 <!-- Cols 2-4: avg / min / max. Always rendered (same grid slots), opacity-driven visibility so
      collapse/expand doesn't reflow the grid mid-transition. -->
-{#each [stats.avg, stats.min, stats.max] as stat}
+{#each [display.avg, display.min, display.max] as stat}
 <div
   class="value-cell text-right text-sm tabular-nums text-surface-700-300 {showValues ? 'opacity-100' : 'opacity-0'}"
   aria-hidden={!showValues}
 >
-  {formatNumber(stat, format)}
+  {stat.toString()}
 </div>
 {/each}
 <!-- Col 5: skew toggle — always present, always pinned to the top-right -->
@@ -118,7 +151,7 @@
       class="flex-1 rounded-sm transition-[height,background-color] duration-200 ease-in-out"
       style:height="{b.height}px"
       style:background-color={barColor(b.t)}
-      title="worker {i}: {formatNumber(v, format)}"
+      title="worker {i}: {v.toString()}"
     ></div>
   {/each}
 </div>
