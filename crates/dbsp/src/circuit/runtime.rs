@@ -1419,8 +1419,9 @@ where
                         .await;
 
                     exchange
-                        .receive_all(|data| serde_json::from_slice(&data).unwrap())
+                        .receive_all(|data| serde_json::from_slice(&data).unwrap(), None)
                         .await
+                        .0
                 })
                 .await
                 .ok_or(SchedulerError::Killed),

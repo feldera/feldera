@@ -148,7 +148,6 @@ where
                     let batch_factories_clone = batch_factories.clone();
 
                     let receiver = circuit.add_source(ExchangeReceiver::new(
-                        worker_index,
                         Some(location),
                         exchange.clone(),
                         || Vec::new(),
