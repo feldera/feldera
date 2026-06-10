@@ -199,7 +199,8 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
             let program_info = validate_program_info(&v)
                 .expect("example must have a valid program_info if specified");
             PartialProgramInfo {
-                schema: program_info.schema,
+                schema: serde_json::from_value(program_info.schema)
+                    .expect("example should have a valid program_info.schema if specified"),
                 udf_stubs: program_info.udf_stubs,
                 input_connectors: program_info.input_connectors,
                 output_connectors: program_info.output_connectors,
@@ -260,7 +261,8 @@ fn pipeline_selected_info_internal_to_external(
                 let program_info = validate_program_info(&v)
                     .expect("example must have a valid program_info if specified");
                 PartialProgramInfo {
-                    schema: program_info.schema,
+                    schema: serde_json::from_value(program_info.schema)
+                        .expect("example should have a valid program_info.schema if specified"),
                     udf_stubs: program_info.udf_stubs,
                     input_connectors: program_info.input_connectors,
                     output_connectors: program_info.output_connectors,
