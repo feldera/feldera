@@ -255,6 +255,8 @@ pub struct CommonConfig {
     /// - `testing`
     /// - `cluster_monitor_resources`: Cluster monitoring also monitors the resources backing the
     ///   instance (i.e., the Kubernetes objects).
+    /// - `rust_compiler_full_cleanup`: the Rust compiler fully cleans up the target directory if the
+    ///   disk space usage is approaching its limit.
     #[arg(verbatim_doc_comment, long, env = "FELDERA_UNSTABLE_FEATURES")]
     pub unstable_features: Option<String>,
 

@@ -68,7 +68,7 @@ pub async fn sql_compiler_task(
     common_config: CommonConfig,
     config: CompilerConfig,
     db: Arc<Mutex<StoragePostgres>>,
-) {
+) -> Result<(), ()> {
     let mut last_cleanup: Option<Instant> = None;
     loop {
         let mut unexpected_error = false;

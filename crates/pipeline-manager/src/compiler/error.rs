@@ -10,12 +10,14 @@ use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display};
 #[serde(untagged)]
 pub enum CompilerError {
     PrecompilationError { error: String },
+    TaskFailed { error: String },
 }
 
 impl DetailedError for CompilerError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             Self::PrecompilationError { .. } => Cow::from("PrecompilationError"),
+            Self::TaskFailed { .. } => Cow::from("TaskFailed"),
         }
     }
 }
@@ -25,6 +27,9 @@ impl Display for CompilerError {
         match self {
             Self::PrecompilationError { error } => {
                 write!(f, "Pre-compilation failed due to: {error}")
+            }
+            Self::TaskFailed { error } => {
+                write!(f, "Compiler failed due to a task failed: {error}")
             }
         }
     }
@@ -42,6 +47,7 @@ impl ResponseError for CompilerError {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::PrecompilationError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::TaskFailed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 

@@ -6,11 +6,13 @@ use hex;
 use nix::libc::pid_t;
 use nix::sys::signal::{killpg, Signal};
 use nix::unistd::Pid;
+use nix::NixPath;
 use openssl::sha::sha256;
 use sha2::{Digest, Sha256};
 use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use sysinfo::{Disk, Disks};
 use thiserror::Error as ThisError;
 use tokio::{
     fs::{self, File},
@@ -643,6 +645,66 @@ pub fn program_info_filename(
         "program_info_{}_v{}_sc_{}_ic_{}.json",
         pipeline_id, program_version, source_checksum, integrity_checksum
     )
+}
+
+/// Disk space information.
+pub struct DiskSpace {
+    pub total_byte: u64,
+    pub used_byte: u64,
+    pub used_fraction: f64,
+    #[allow(dead_code)]
+    pub available_byte: u64,
+    #[allow(dead_code)]
+    pub available_fraction: f64,
+}
+
+impl DiskSpace {
+    /// Identifies the disk whose mounting point path is a prefix to the `path`. If there are
+    /// multiple matches, the disk with the longest prefix is used. Returns `Some` if it found the
+    /// corresponding disk and its information, returns `None` if no disk could be found that
+    /// matches the `path`.
+    pub fn new_from_path(path: &Path) -> Option<Self> {
+        let disks = Disks::new_with_refreshed_list();
+
+        // Find the disk whose mount point is a prefix of the path.
+        // If there are multiple, the disk with the longest matching prefix is chosen.
+        let mut found_disk: Option<&Disk> = None;
+        for disk in disks.list() {
+            if path.starts_with(disk.mount_point()) {
+                if let Some(prior_match) = found_disk {
+                    if prior_match.mount_point().len() < disk.mount_point().len() {
+                        found_disk = Some(disk);
+                    }
+                } else {
+                    found_disk = Some(disk);
+                }
+            }
+        }
+
+        // If a disk was found, use its statistics to calculate the result
+        if let Some(found_disk) = found_disk {
+            let total_byte = found_disk.total_space();
+            let available_byte = found_disk.available_space();
+            let used_byte = total_byte.saturating_sub(available_byte);
+            Some(DiskSpace {
+                total_byte,
+                used_byte,
+                used_fraction: if total_byte == 0 {
+                    0.0
+                } else {
+                    (used_byte as f64 / total_byte as f64).clamp(0.0, 1.0)
+                },
+                available_byte,
+                available_fraction: if total_byte == 0 {
+                    0.0
+                } else {
+                    (available_byte as f64 / total_byte as f64).clamp(0.0, 1.0)
+                },
+            })
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]
