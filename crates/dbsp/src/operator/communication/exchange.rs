@@ -703,6 +703,9 @@ pub(crate) struct Exchange<T> {
 
     /// The number of bytes serialized.
     deserialized_bytes: AtomicUsize,
+
+    /// When the exchange is active.
+    activity: ExchangeActivity,
 }
 
 // Stop Rust from complaining about unused field.
@@ -763,6 +766,7 @@ where
         clients: Arc<ExchangeClients>,
         exchange_id: ExchangeId,
         directory: &ExchangeDirectory,
+        activity: ExchangeActivity,
     ) -> Arc<Self> {
         let npeers = Runtime::num_workers();
         let mailboxes: Vec<Mutex<Option<Mailbox<T>>>> =
@@ -788,6 +792,7 @@ where
             mailboxes,
             deserialization_usecs: AtomicU64::new(0),
             deserialized_bytes: AtomicUsize::new(0),
+            activity,
         });
 
         directory.insert(exchange_id, exchange.clone());
@@ -816,7 +821,11 @@ where
     /// Create a new `Exchange` instance if an instance with the same id
     /// (created by another thread) does not yet exist within `runtime`.
     /// The number of peers will be set to `runtime.num_workers()`.
-    pub(crate) fn with_runtime(runtime: &Runtime, exchange_id: ExchangeId) -> Arc<Self> {
+    pub(crate) fn with_runtime(
+        runtime: &Runtime,
+        exchange_id: ExchangeId,
+        activity: ExchangeActivity,
+    ) -> Arc<Self> {
         // It's tempting to move the following calls to create the
         // `ExchangeDirectory` and `ExchangeClients` into `Exchange::new`, but
         // don't do it: all three of these access `runtime.local_store` and
@@ -826,7 +835,7 @@ where
         runtime
             .local_store()
             .entry(ExchangeCacheId::new(exchange_id))
-            .or_insert_with(|| Exchange::new(runtime, clients, exchange_id, &directory))
+            .or_insert_with(|| Exchange::new(runtime, clients, exchange_id, &directory, activity))
             .value()
             .clone()
     }
@@ -1041,6 +1050,19 @@ where
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum Phase {
+    Active,
+    Flush,
+    Commit,
+}
+
+impl Phase {
+    fn is_inactive(&self, activity: ExchangeActivity) -> bool {
+        *self == Phase::Commit && activity == ExchangeActivity::InputOnly
+    }
+}
+
 /// Operator that partitions incoming data across all workers.
 ///
 /// This operator works in tandem with [`ExchangeReceiver`], which reassembles
@@ -1154,7 +1176,7 @@ where
 /// use dbsp::{
 ///     operator::{communication::new_exchange_operators, Generator},
 ///     circuit::{WorkerLocation, WorkerLocations},
-///     operator::communication::Mailbox,
+///     operator::communication::{ExchangeActivity, Mailbox},
 ///     Circuit, RootCircuit, Runtime,
 ///     storage::file::to_bytes_dyn,
 ///     trace::aligned_deserialize,
@@ -1190,6 +1212,7 @@ where
 ///             },
 ///             |data| aligned_deserialize(&data[..]),///             // Reassemble received values into a vector.
 ///             |v: &mut Vec<usize>, n| v.push(n),
+///             ExchangeActivity::AllSteps,
 ///         ).unwrap();
 ///
 ///         // Add exchange operators to the circuit.
@@ -1231,7 +1254,7 @@ where
     // Input batch sizes.
     input_batch_stats: BatchSizeStats,
 
-    flushed: bool,
+    phase: Phase,
 
     // The instant when the sender produced its outputs, and the
     // receiver starts waiting for all other workers to produce their
@@ -1258,7 +1281,7 @@ where
             outputs: Vec::with_capacity(Runtime::num_workers()),
             exchange,
             input_batch_stats: BatchSizeStats::new(),
-            flushed: false,
+            phase: Phase::Active,
             start_wait_usecs,
             phantom: PhantomData,
         }
@@ -1296,8 +1319,12 @@ where
         true
     }
 
+    fn start_transaction(&mut self) {
+        self.phase = Phase::Active;
+    }
+
     fn flush(&mut self) {
-        self.flushed = true;
+        self.phase = Phase::Flush;
     }
 }
 
@@ -1312,6 +1339,16 @@ where
     }
 
     async fn eval_owned(&mut self, input: D) {
+        if self.phase.is_inactive(self.exchange.activity) {
+            return;
+        };
+        let flushed = if self.phase == Phase::Flush {
+            self.phase = Phase::Commit;
+            true
+        } else {
+            false
+        };
+
         self.input_batch_stats.add_batch(input.num_entries_deep());
 
         debug_assert!(self.ready());
@@ -1322,16 +1359,14 @@ where
 
         let data = self.outputs.drain(..).map(|mailbox| match mailbox {
             Mailbox::Tx(mut data) => {
-                data.push(self.flushed as u8);
+                data.push(flushed as u8);
                 Mailbox::Tx(data)
             }
             Mailbox::Rx(_) => unreachable!(),
-            Mailbox::Plain(item) => Mailbox::Plain((item, self.flushed)),
+            Mailbox::Plain(item) => Mailbox::Plain((item, flushed)),
         });
 
         self.exchange.send_all(&self.global_node_id, data).await;
-
-        self.flushed = false;
     }
 
     fn input_preference(&self) -> OwnershipPreference {
@@ -1360,6 +1395,7 @@ where
     flush_complete: bool,
     start_wait_usecs: Arc<AtomicU64>,
     total_wait_time: Arc<AtomicU64>,
+    phase: Phase,
 
     // Output batch sizes.
     output_batch_stats: BatchSizeStats,
@@ -1388,6 +1424,7 @@ where
             output_batch_stats: BatchSizeStats::new(),
             start_wait_usecs,
             total_wait_time: Arc::new(AtomicU64::new(0)),
+            phase: Phase::Active,
         }
     }
 }
@@ -1424,6 +1461,10 @@ where
         true
     }
 
+    fn start_transaction(&mut self) {
+        self.phase = Phase::Active;
+    }
+
     fn flush(&mut self) {
         // println!("{} exchange_receiver::flush", Runtime::worker_index());
         self.flush_complete = false;
@@ -1456,7 +1497,10 @@ where
     D: Fn(AlignedVec) -> T + Send + Sync + 'static,
 {
     async fn eval(&mut self) -> O {
-        debug_assert!(self.ready());
+        if self.phase.is_inactive(self.exchange.activity) {
+            return (self.init)();
+        }
+
         let deserialize = |mut vec: AlignedVec| {
             let flushed = pop_flushed(&mut vec);
             let value = (self.deserialize)(vec);
@@ -1489,6 +1533,7 @@ where
 
             self.flush_complete = true;
             self.flush_count = 0;
+            self.phase = Phase::Commit;
         }
 
         self.output_batch_stats
@@ -1509,6 +1554,28 @@ struct DirectoryId;
 
 impl TypedMapKey<LocalStoreMarker> for DirectoryId {
     type Value = ExchangeDirectory;
+}
+
+/// The microsteps during which an exchange is active.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ExchangeActivity {
+    /// The exchange is active in every microstep.
+    ///
+    /// This includes pre-commit and commit microstep.
+    AllSteps,
+
+    /// The exchange is active only during pre-commit microsteps.
+    ///
+    /// This allows for optimizations for exchanges used for sharding data from
+    /// input operators, which don't exchange any data during commit.
+    ///
+    /// # Limitation
+    ///
+    /// The current implementation only works for operators that flush in the
+    /// same (micro)step in every worker.  This is true for input operators,
+    /// which flush as soon as the transaction starts committing, but it is not
+    /// necessarily true for other operators.
+    InputOnly,
 }
 
 /// Create an [`ExchangeSender`]/[`ExchangeReceiver`] operator pair.
@@ -1542,6 +1609,7 @@ pub fn new_exchange_operators<TI, TO, TE, IF, PL, CL, D>(
     partition: PL,
     deserialize: D,
     combine: CL,
+    activity: ExchangeActivity,
 ) -> Option<(ExchangeSender<TI, TE, PL>, ExchangeReceiver<IF, TE, CL, D>)>
 where
     TO: Clone,
@@ -1558,7 +1626,7 @@ where
 
     let exchange_id = runtime.sequence_next().try_into().unwrap();
     let start_wait_usecs = Arc::new(AtomicU64::new(0));
-    let exchange = Exchange::with_runtime(&runtime, exchange_id);
+    let exchange = Exchange::with_runtime(&runtime, exchange_id, activity);
     let sender = ExchangeSender::new(
         location,
         exchange.clone(),
@@ -1591,7 +1659,7 @@ mod tests {
         },
         operator::{
             Generator,
-            communication::{Mailbox, new_exchange_operators},
+            communication::{ExchangeActivity, Mailbox, new_exchange_operators},
         },
         storage::file::{to_bytes, to_bytes_dyn},
         trace::aligned_deserialize,
@@ -1612,7 +1680,8 @@ mod tests {
     // value `(sender, n)` to each receiver, where `sender` is the sender's
     // worker number in round `n`.
     fn circuit() {
-        let exchange = Exchange::with_runtime(&Runtime::runtime().unwrap(), 0);
+        let exchange =
+            Exchange::with_runtime(&Runtime::runtime().unwrap(), 0, ExchangeActivity::AllSteps);
         TOKIO.block_on(async {
             let sender = Runtime::worker_index();
             let n_workers = Runtime::num_workers();
@@ -1742,6 +1811,7 @@ mod tests {
                 },
                 |data| aligned_deserialize(&data[..]),
                 |v: &mut Vec<usize>, n| v.push(n),
+                ExchangeActivity::AllSteps,
             )
             .unwrap();
 
