@@ -1954,6 +1954,34 @@ where
         }
     }
 
+    /// Inserts a batch into the spine without blocking.  Thus, this omits:
+    ///
+    /// - Spilling the batch to storage when that is a good idea.  The caller
+    ///   may do this beforehand by calling [Spine::maybe_flush_batch].
+    ///
+    /// - Waiting until the number of batches in the spine falls below the level
+    ///   at which we impose backpressure.  The function returns true if
+    ///   backpressure is warranted.  The caller may do so afterward by calling
+    ///   [Spine::backpressure_wait].
+    fn insert_without_blocking(&mut self, batch: impl Into<Arc<B>>) -> bool {
+        let batch = batch.into();
+        if !batch.is_empty() {
+            self.dirty = true;
+            self.merger
+                .add_batch(batch, false)
+                .batch_count()
+                .should_apply_backpressure()
+        } else {
+            false
+        }
+    }
+
+    /// Waits for the number of batches in the spine to fall below the level at
+    /// which we impose backpressure.
+    async fn backpressure_wait(&self) {
+        self.merger.backpressure_wait().await;
+    }
+
     fn clear_dirty_flag(&mut self) {
         self.dirty = false;
     }
@@ -2220,34 +2248,6 @@ where
         } else {
             batch
         }
-    }
-
-    /// Inserts a batch into the spine without blocking.  Thus, this omits:
-    ///
-    /// - Spilling the batch to storage when that is a good idea.  The caller
-    ///   may do this beforehand by calling [Spine::maybe_flush_batch].
-    ///
-    /// - Waiting until the number of batches in the spine falls below the level
-    ///   at which we impose backpressure.  The function returns true if
-    ///   backpressure is warranted.  The caller may do so afterward by calling
-    ///   [Spine::backpressure_wait].
-    pub fn insert_without_blocking(&mut self, batch: impl Into<Arc<B>>) -> bool {
-        let batch = batch.into();
-        if !batch.is_empty() {
-            self.dirty = true;
-            self.merger
-                .add_batch(batch, false)
-                .batch_count()
-                .should_apply_backpressure()
-        } else {
-            false
-        }
-    }
-
-    /// Waits for the number of batches in the spine to fall below the level at
-    /// which we impose backpressure.
-    pub async fn backpressure_wait(&self) {
-        self.merger.backpressure_wait().await;
     }
 
     /// Returns an object that can be used to wait for backpressure to be

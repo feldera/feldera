@@ -580,6 +580,26 @@ where
         TOKIO.block_on(self.batch.inner_mut().insert(batch.batch.into_inner()));
     }
 
+    fn insert_without_blocking(&mut self, batch: Arc<dyn SerBatch>) -> bool {
+        let batch = Arc::unwrap_or_clone(
+            batch
+                .as_any()
+                .downcast::<SerBatchImpl<
+                    TypedBatch<T::Key, T::Val, T::R, <T::InnerTrace as DynTrace>::Batch>,
+                    KD,
+                    VD,
+                >>()
+                .unwrap(),
+        );
+        self.batch
+            .inner_mut()
+            .insert_without_blocking(batch.batch.into_inner())
+    }
+
+    fn backpressure_wait(&self) {
+        TOKIO.block_on(self.batch.inner().backpressure_wait());
+    }
+
     fn as_batch_reader(&self) -> &dyn SerBatchReader {
         self
     }

@@ -5345,13 +5345,19 @@ impl OutputBuffer {
     ) {
         if let Some(batch) = batch {
             if let Some(buffer) = &mut self.buffer {
+                buffer.backpressure_wait();
+
+                // Insert all batches at once without blocking. This will help trigger fewer
+                // larger merges when producing a large output batch. In addition, we postpone
+                // waiting for backpressure until the next iteration. This increases the likelihood
+                // that a large batch will be sent to the connector without stalling for backpressure.
                 for batch in batch.batches() {
-                    buffer.insert(batch);
+                    buffer.insert_without_blocking(batch);
                 }
             } else {
                 for batch in batch.batches() {
                     if let Some(buffer) = self.buffer.as_mut() {
-                        buffer.insert(batch);
+                        buffer.insert_without_blocking(batch);
                     } else {
                         self.buffer = Some(batch.into_trace());
                     };

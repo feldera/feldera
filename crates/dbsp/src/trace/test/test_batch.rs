@@ -1340,6 +1340,10 @@ where
     }
 
     async fn insert(&mut self, batch: impl Into<Arc<Self::Batch>>) {
+        self.insert_without_blocking(batch);
+    }
+
+    fn insert_without_blocking(&mut self, batch: impl Into<Arc<Self::Batch>>) -> bool {
         self.data = Self::merge(
             self,
             batch.into().as_ref(),
@@ -1347,7 +1351,11 @@ where
             &self.value_filter,
         )
         .data;
+
+        false
     }
+
+    async fn backpressure_wait(&self) {}
 
     fn clear_dirty_flag(&mut self) {}
 

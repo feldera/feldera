@@ -359,6 +359,10 @@ pub trait SerTrace: SerBatchReader {
     /// Insert a batch into the trace.
     fn insert(&mut self, batch: Arc<dyn SerBatch>);
 
+    fn insert_without_blocking(&mut self, batch: Arc<dyn SerBatch>) -> bool;
+
+    fn backpressure_wait(&self);
+
     fn as_batch_reader(&self) -> &dyn SerBatchReader;
 }
 
