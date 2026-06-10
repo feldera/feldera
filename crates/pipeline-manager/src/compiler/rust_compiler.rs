@@ -4,7 +4,7 @@ use crate::compiler::util::{
     crate_name_pipeline_main, create_dir_if_not_exists, create_new_file, decode_string_as_dir,
     pipeline_binary_filename, program_info_filename, read_file_content, recreate_dir,
     recreate_file_with_content, truncate_sha256_checksum, write_file, CleanupDecision,
-    DirectoryContent, ProcessGroupTerminator, UtilError,
+    DirectoryContent, DiskSpace, ProcessGroupTerminator, UtilError,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
@@ -68,16 +68,27 @@ const CLEANUP_RETENTION: Duration = Duration::from_secs(3600);
 /// This balances memory usage and upload performance.
 const MAX_CHUNK_SIZE_FOR_UPLOAD_BINARY: usize = 10 * 1024 * 1024; // 10MB
 
+/// When this threshold (disk space used fraction) is exceeded, the compiler will print a warning
+/// that it is getting full.
+const THRESHOLD_COMPILATION_TARGET_WARNING: f64 = 0.7;
+
+/// When this threshold (disk space used fraction) is exceeded, the compiler will remove the target
+/// directory to make space.
+const THRESHOLD_COMPILATION_TARGET_CLEAR: f64 = 0.9;
+
 /// Rust compilation task that wakes up periodically.
 /// Sleeps inbetween ticks which affects the response time of Rust compilation.
-/// This task cannot fail, and any internal errors are caught and written to log if need-be.
+/// This task only returns if the Rust compiler wants to be restarted to have any precompilation
+/// reapplied because it cleared the target directory. Otherwise, this task cannot fail, and any
+/// internal errors are caught and written to log if need-be.
 pub async fn rust_compiler_task(
     worker_id: usize,
     total_workers: usize,
     common_config: CommonConfig,
     config: CompilerConfig,
     db: Arc<Mutex<StoragePostgres>>,
-) {
+    allow_exit_upon_target_cleared: bool,
+) -> Result<(), ()> {
     let mut last_cleanup: Option<Instant> = None;
     loop {
         let mut unexpected_error = false;
@@ -91,6 +102,15 @@ pub async fn rust_compiler_task(
                     }
                     RustCompilationCleanupError::Utility(e) => {
                         error!("Rust worker {worker_id}: compilation cleanup failed: utility error occurred: {e}");
+                    }
+                    RustCompilationCleanupError::TargetCleared => {
+                        if allow_exit_upon_target_cleared {
+                            // This restart behavior only occurs for a standalone compiler server
+                            warn!("Rust worker {worker_id}: target directory has been cleared due to lack of space -- restarting to have any precompilation re-applied");
+                            return Err(());
+                        } else {
+                            warn!("Rust worker {worker_id}: target directory has been cleared due to lack of space -- the next compilation will be slow");
+                        }
                     }
                 }
                 unexpected_error = true;
@@ -1738,6 +1758,10 @@ enum RustCompilationCleanupError {
     Database(DBError),
     /// Utility function problem occurred (e.g., I/O error)
     Utility(UtilError),
+    /// The `target` directory was fully removed. If possible, this should result in a restart of
+    /// the parent process that runs the Rust compiler such that it extracts any precompilation
+    /// again.
+    TargetCleared,
 }
 
 impl From<DBError> for RustCompilationCleanupError {
@@ -1793,8 +1817,10 @@ fn decide_cleanup(
     }
 }
 
-/// Cleans up the Rust compilation working directory by removing binaries
-/// and compilation artifacts of pipeline programs that no longer exist.
+/// Cleans up the Rust compilation working directory by removing binaries and compilation artifacts.
+/// If the working directory `target` directory is about to become full (due to old dependencies),
+/// it will be fully cleared. Otherwise, it will only clear compilation artifacts of pipeline
+/// programs that no longer exist.
 async fn cleanup_rust_compilation(
     config: &CompilerConfig,
     db: Arc<Mutex<StoragePostgres>>,
@@ -2050,7 +2076,94 @@ async fn cleanup_rust_compilation(
         );
     }
 
-    // (2) For each possible compilation profile, clean up their target artifacts
+    // (2) If the disk that the target directory resides on has reached a certain threshold
+    //     the entire target directory will get removed. There is no cleaner way currently to
+    //     more fine-grained clean up old dependencies.
+    let removed_target_dir = if has_unstable_feature("rust_compiler_full_cleanup") {
+        let target_dir = rust_compilation_dir.join("target");
+        if target_dir.is_dir() {
+            let disk_space = DiskSpace::new_from_path(&target_dir);
+            if let Some(disk_space) = disk_space {
+                if disk_space.used_fraction >= THRESHOLD_COMPILATION_TARGET_CLEAR {
+                    error!(
+                        "Disk space status: {} / {} used ({:.1}%) exceeds clear threshold of {:.0}%",
+                        disk_space.used_byte,
+                        disk_space.total_byte,
+                        disk_space.used_fraction * 100.0,
+                        THRESHOLD_COMPILATION_TARGET_CLEAR * 100.0,
+                    );
+                    let target_dir_clone = target_dir.clone();
+                    let target_size_byte = tokio::task::spawn_blocking(move || {
+                        fs_extra::dir::get_size(&target_dir_clone)
+                    })
+                    .await;
+                    match target_size_byte {
+                        Ok(Ok(target_size_byte)) => {
+                            if target_size_byte < disk_space.total_byte / 20 {
+                                error!("Not clearing `target` directory because its size ({target_size_byte} byte) is less than 5%. Please reduce disk usage in another way.");
+                                false
+                            } else {
+                                error!("Removing `target` directory to make space (should clear up {target_size_byte} byte)...");
+                                if let Err(e) = fs::remove_dir_all(&target_dir).await {
+                                    error!(
+                                        "Unable to remove `target` directory to make space due to: {e}"
+                                    );
+                                    false
+                                } else {
+                                    let new_disk_space = DiskSpace::new_from_path(&target_dir);
+                                    if let Some(new_disk_space) = new_disk_space {
+                                        info!(
+                                            "New disk space status: {} / {} used ({:.1}%)",
+                                            new_disk_space.used_byte,
+                                            new_disk_space.total_byte,
+                                            new_disk_space.used_fraction * 100.0
+                                        );
+                                    } else {
+                                        error!("Unable to determine new disk space status");
+                                    }
+                                    true
+                                }
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            error!("Not clearing `target` directory because its size cannot be determined. Reduce disk usage in another way. Due to error: {e}");
+                            false
+                        }
+                        Err(e) => {
+                            error!("Not clearing `target` directory because its size cannot be determined due to a thread join error: {e}");
+                            false
+                        }
+                    }
+                } else if disk_space.used_fraction >= THRESHOLD_COMPILATION_TARGET_WARNING {
+                    warn!(
+                        "Disk space status: {} / {} used ({:.1}%) exceeds warning threshold of {:.0}%",
+                        disk_space.used_byte,
+                        disk_space.total_byte,
+                        disk_space.used_fraction * 100.0,
+                        THRESHOLD_COMPILATION_TARGET_WARNING * 100.0,
+                    );
+                    false
+                } else {
+                    info!(
+                        "Disk space status: {} / {} used ({:.1}%)",
+                        disk_space.used_byte,
+                        disk_space.total_byte,
+                        disk_space.used_fraction * 100.0
+                    );
+                    false
+                }
+            } else {
+                warn!("Unable to determine disk space remaining: unable to find disk corresponding to '{}'", target_dir.display());
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    // (3) For each possible compilation profile, clean up their target artifacts
     for profile in [
         CompilationProfile::Dev,
         CompilationProfile::Unoptimized,
@@ -2173,7 +2286,12 @@ async fn cleanup_rust_compilation(
         Err(e) => error!("Unable to serialize cleanup state due to: {e}"),
     }
 
-    Ok(())
+    // Result on what to do next
+    if removed_target_dir {
+        Err(RustCompilationCleanupError::TargetCleared)
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

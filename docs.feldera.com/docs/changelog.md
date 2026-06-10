@@ -23,6 +23,10 @@ import TabItem from '@theme/TabItem';
           no longer valid, in which case they will now receive an error instead of succeeding.
           However, especially in the Kubernetes runner these pipelines would already not work.
 
+        - Rust compiler will clean up the `target` directory automatically
+          when its usage reaches the disk limit. This is currently behind
+          the unstable feature flag `rust_compiler_full_cleanup`.
+
         - Casts of strings to Boolean and floating point values will
         produce runtime errors instead of legal values for illegal string
         values.  The set of strings that can be legally converted to

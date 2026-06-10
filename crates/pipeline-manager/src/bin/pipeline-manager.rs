@@ -119,6 +119,10 @@ fn main() -> anyhow::Result<()> {
                     db_clone,
                     worker_id,
                     total_workers,
+                    // The pipeline-manager does not have automatic restart if it fails, as such
+                    // it cannot exit when target is cleared to have any precomputed precompilation
+                    // reapplied.
+                    false,
                 )
                 .await
                 .expect("Compiler server main failed");

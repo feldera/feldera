@@ -114,6 +114,7 @@ rustls = { workspace = true }
 # System interaction
 dirs = { workspace = true }  # For: discovering home directory
 fdlimit = { workspace = true }  # For: raising file descriptor limit
+fs_extra = { workspace = true }  # For: determine directory size
 nix = { workspace = true, features = ["signal"] }  # For: terminating process group
 tempfile = { workspace = true }
 # Not used
@@ -122,6 +123,7 @@ tempfile = { workspace = true }
 # Keep in-sync with `src/compiler/rust_compiler.rs`.
 compare = { workspace = true }
 sha2 = { workspace = true }
+sysinfo = { workspace = true }  # For: disk space usage
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
