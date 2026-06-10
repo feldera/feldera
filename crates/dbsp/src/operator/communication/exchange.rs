@@ -806,39 +806,6 @@ where
         sender * self.npeers + receiver
     }
 
-    /// True if all `receiver`'s incoming mailboxes contain data.
-    ///
-    /// Once this function returns true, a subsequent `try_receive_all`
-    /// operation is guaranteed for `receiver`.
-    fn ready_to_receive(&self, receiver: usize) -> bool {
-        debug_assert!(receiver < self.npeers);
-        self.receiver_counters[receiver].load(Ordering::Acquire) == self.npeers
-    }
-
-    /// Register callback to be invoked whenever the `ready_to_receive`
-    /// condition becomes true.
-    ///
-    /// The callback can be setup at most once (e.g., when a scheduler attaches
-    /// to the circuit) and cannot be unregistered.  Notifications delivered
-    /// before the callback is registered are lost.  The client should call
-    /// `ready_to_receive` after installing the callback to check
-    /// the status.
-    ///
-    /// After the callback has been registered, notifications are delivered with
-    /// at-least-once semantics: a notification is generated whenever the
-    /// status changes from not ready to ready, but spurious notifications
-    /// can occur occasionally.  The user must check the status explicitly
-    /// by calling `ready_to_receive` or be prepared that `receive_all`
-    /// can fail.
-    pub(crate) fn register_receiver_callback<F>(&self, receiver: usize, cb: F)
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        debug_assert!(receiver < self.npeers);
-
-        self.receiver_callbacks[receiver].set_callback(cb);
-    }
-
     /// Locks and returns the mailbox for the sender/receiver pair.
     fn mailbox(&self, sender: usize, receiver: usize) -> MutexGuard<'_, Option<Mailbox<T>>> {
         self.mailboxes[self.mailbox_index(sender, receiver)]
@@ -1004,7 +971,14 @@ where
 
     /// Read all incoming messages for this worker, waiting for data to arrive
     /// as needed.
-    pub(crate) async fn receive_all<D>(&self, deserialize: D) -> Vec<T>
+    ///
+    /// When the data is ready, but before reading it, this method swaps
+    /// `start_wait_usecs` with 0 and returns the old value along with the data.
+    pub(crate) async fn receive_all<D>(
+        &self,
+        deserialize: D,
+        start_wait_usecs: Option<&AtomicU64>,
+    ) -> (Vec<T>, Option<u64>)
     where
         D: Fn(AlignedVec) -> T,
     {
@@ -1024,6 +998,11 @@ where
             }
         }
 
+        let start_wait_usecs = start_wait_usecs.and_then(|v| {
+            let start_wait_usecs = v.swap(0, Ordering::Acquire);
+            (start_wait_usecs != 0).then_some(start_wait_usecs)
+        });
+
         let mut data = Vec::with_capacity(self.npeers);
         for sender in 0..self.npeers {
             let mailbox = self.mailbox(sender, receiver).take().unwrap();
@@ -1035,7 +1014,7 @@ where
             }
         }
 
-        data
+        (data, start_wait_usecs)
     }
 }
 
@@ -1099,13 +1078,6 @@ where
 ///                       └───────┘      └───────┘
 ///                    ExchangeSender  ExchangeReceiver
 /// ```
-///
-/// `ExchangeSender` is an asynchronous operator., i.e.,
-/// [`ExchangeSender::is_async`] returns `true`.  It becomes schedulable
-/// ([`ExchangeSender::ready`] returns `true`) once all peers have retrieved
-/// values written by the operator in the previous clock cycle.  The scheduler
-/// should use [`ExchangeSender::register_ready_callback`] to get notified when
-/// the operator becomes schedulable.
 ///
 /// `ExchangeSender` doesn't have a public constructor and must be instantiated
 /// using the [`new_exchange_operators`] function, which creates an
@@ -1375,18 +1347,10 @@ where
 /// peer.
 ///
 /// See [`ExchangeSender`] documentation for details.
-///
-/// `ExchangeReceiver` is an asynchronous operator., i.e.,
-/// [`ExchangeReceiver::is_async`] returns `true`.  It becomes schedulable
-/// ([`ExchangeReceiver::ready`] returns `true`) once all peers have sent values
-/// for this worker in the current clock cycle.  The scheduler should use
-/// [`ExchangeReceiver::register_ready_callback`] to get notified when the
-/// operator becomes schedulable.
 pub struct ExchangeReceiver<IF, T, L, D>
 where
     T: Send + 'static + Clone,
 {
-    worker_index: usize,
     location: OperatorLocation,
     init: IF,
     deserialize: D,
@@ -1406,7 +1370,6 @@ where
     T: Send + 'static + Clone + Debug,
 {
     pub(crate) fn new(
-        worker_index: usize,
         location: OperatorLocation,
         exchange: Arc<Exchange<(T, bool)>>,
         init: IF,
@@ -1414,10 +1377,7 @@ where
         deserialize: D,
         combine: L,
     ) -> Self {
-        debug_assert!(worker_index < Runtime::num_workers());
-
         Self {
-            worker_index,
             location,
             init,
             combine,
@@ -1429,10 +1389,6 @@ where
             start_wait_usecs,
             total_wait_time: Arc::new(AtomicU64::new(0)),
         }
-    }
-
-    fn is_ready(&self) -> bool {
-        self.exchange.ready_to_receive(self.worker_index)
     }
 }
 
@@ -1462,48 +1418,6 @@ where
             EXCHANGE_DESERIALIZATION_TIME_SECONDS => MetaItem::Duration(Duration::from_micros(self.exchange.deserialization_usecs.load(Ordering::Acquire))),
             EXCHANGE_DESERIALIZED_BYTES => MetaItem::bytes(self.exchange.deserialized_bytes.load(Ordering::Acquire)),
         });
-    }
-
-    fn is_async(&self) -> bool {
-        true
-    }
-
-    fn register_ready_callback<F>(&mut self, cb: F)
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        let start_wait_usecs = self.start_wait_usecs.clone();
-        let total_wait_time = self.total_wait_time.clone();
-        let exchange = self.exchange.clone();
-        let worker_index = self.worker_index;
-
-        let cb = move || {
-            if exchange.ready_to_receive(worker_index) {
-                // The callback can be invoked multiple times per step.
-                // Reset start_wait_usecs to 0 to make sure we don't double-count.
-                let start = start_wait_usecs.swap(0, Ordering::Acquire);
-                if start != 0 {
-                    let end = current_time_usecs();
-                    if end > start {
-                        let wait_time_usecs = end - start;
-                        // if worker_index == 0 {
-                        //     info!(
-                        //         "{worker_index}: {} +{wait_time_usecs}",
-                        //         exchange.exchange_id()
-                        //     );
-                        // }
-                        total_wait_time.fetch_add(wait_time_usecs, Ordering::AcqRel);
-                    }
-                }
-            }
-            cb()
-        };
-        self.exchange
-            .register_receiver_callback(self.worker_index, cb)
-    }
-
-    fn ready(&self) -> bool {
-        self.is_ready()
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -1550,7 +1464,16 @@ where
         };
 
         let mut combined = (self.init)();
-        let res = self.exchange.receive_all(deserialize).await;
+        let (res, start_wait_usecs) = self
+            .exchange
+            .receive_all(deserialize, Some(&self.start_wait_usecs))
+            .await;
+        if let Some(start_wait_usecs) = start_wait_usecs {
+            self.total_wait_time.fetch_add(
+                current_time_usecs().saturating_sub(start_wait_usecs),
+                Ordering::Release,
+            );
+        }
         for (data, flushed) in res {
             if flushed {
                 self.flush_count += 1;
@@ -1632,7 +1555,6 @@ where
         return None;
     }
     let runtime = Runtime::runtime().unwrap();
-    let worker_index = Runtime::worker_index();
 
     let exchange_id = runtime.sequence_next().try_into().unwrap();
     let start_wait_usecs = Arc::new(AtomicU64::new(0));
@@ -1644,7 +1566,6 @@ where
         partition,
     );
     let receiver = ExchangeReceiver::new(
-        worker_index,
         location,
         exchange,
         init,
@@ -1703,8 +1624,8 @@ mod tests {
                     })
                     .await;
 
-                let received = exchange
-                    .receive_all(|data| aligned_deserialize(&data[..]))
+                let (received, _) = exchange
+                    .receive_all(|data| aligned_deserialize(&data[..]), None)
                     .await;
 
                 let expected = (0..n_workers).map(|worker| (worker, round)).collect_vec();
