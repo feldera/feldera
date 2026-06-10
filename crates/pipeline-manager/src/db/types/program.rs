@@ -759,7 +759,8 @@ pub fn generate_program_info(
                 | TransportConfig::PostgresOutput(_)
                 | TransportConfig::KafkaOutput(_)
                 | TransportConfig::DeltaTableOutput(_)
-                | TransportConfig::RedisOutput(_) => {}
+                | TransportConfig::RedisOutput(_)
+                | TransportConfig::NullOutput => {}
                 _ => {
                     return Err(ConnectorGenerationError::ExpectedOutputConnector {
                         position: origin_value.value_position,

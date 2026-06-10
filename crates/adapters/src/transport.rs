@@ -33,6 +33,7 @@ use pubsub::PubSubInputEndpoint;
 pub mod adhoc;
 mod file;
 pub mod http;
+mod null;
 
 pub mod url;
 
@@ -62,6 +63,7 @@ use redis::output::RedisOutputEndpoint;
 #[cfg(test)]
 pub use crate::transport::file::set_barrier;
 use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};
+use crate::transport::null::NullOutputEndpoint;
 #[cfg(feature = "with-kafka")]
 use crate::transport::kafka::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint, KafkaOutputEndpoint};
 
@@ -121,7 +123,8 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::PostgresOutput(_)
         | TransportConfig::HttpOutput(_)
         | TransportConfig::RedisOutput(_)
-        | TransportConfig::IcebergInput(_) => return Ok(None),
+        | TransportConfig::IcebergInput(_)
+        | TransportConfig::NullOutput => return Ok(None),
     };
     Ok(Some(endpoint))
 }
@@ -157,6 +160,7 @@ pub fn output_transport_config_to_endpoint(
         TransportConfig::RedisOutput(config) => {
             Ok(Some(Box::new(RedisOutputEndpoint::new(config)?)))
         }
+        TransportConfig::NullOutput => Ok(Some(Box::new(NullOutputEndpoint))),
         _ => Ok(None),
     }
 }
