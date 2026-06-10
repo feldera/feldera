@@ -19,7 +19,7 @@
         <calcite.version>1.43.0</calcite.version>
         <jackson.version>2.21.1</jackson.version>
         <janino.version>3.1.12</janino.version>
-        <project.version>0.307.0</project.version>
+        <project.version>0.308.0</project.version>
         <avatica.version>1.28.0</avatica.version>
     </properties>
 
