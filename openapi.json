@@ -10594,7 +10594,7 @@
             }
           },
           "schema": {
-            "description": "Schema of the compiled SQL."
+            "$ref": "#/components/schemas/ProgramSchema"
           },
           "udf_stubs": {
             "type": "string",
