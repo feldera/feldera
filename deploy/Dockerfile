@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # These two environment variables are used to make openssl-sys pick
 # up libssl-dev and statically link it. Without it, our build defaults
 # to building a vendored version of OpenSSL.
-RUN apt update --fix-missing && apt install \
+RUN apt update --fix-missing && apt -y dist-upgrade && apt install \
   # bindgen needs this (at least the dec crate uses bindgen)
   libclang-dev \
   # pkg-config is required for cargo to find libssl
@@ -70,10 +70,10 @@ COPY --chown=ubuntu crates/pipeline-manager/demos/sql feldera/demos/sql
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.93.1
 # The download URL for mold uses x86_64/aarch64 whereas dpkg --print-architecture says amd64/arm64
 RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86_64/g"`; \
-  curl -LO https://github.com/rui314/mold/releases/download/v2.40.1/mold-2.40.1-$arch-linux.tar.gz \
-  && tar -xzvf mold-2.40.1-$arch-linux.tar.gz \
-  && mv mold-2.40.1-$arch-linux $HOME/mold \
-  && rm mold-2.40.1-$arch-linux.tar.gz
+  curl -LO https://github.com/rui314/mold/releases/download/v2.40.4/mold-2.40.4-$arch-linux.tar.gz \
+  && tar -xzvf mold-2.40.4-$arch-linux.tar.gz \
+  && mv mold-2.40.4-$arch-linux $HOME/mold \
+  && rm mold-2.40.4-$arch-linux.tar.gz
 ENV PATH="$PATH:/home/ubuntu/.cargo/bin:/home/ubuntu/mold/bin"
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sections=zlib"
 
