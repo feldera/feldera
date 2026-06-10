@@ -261,6 +261,20 @@ pub trait Trace: BatchReader {
     /// (asynchronously) until some of them have been merged.
     fn insert(&mut self, batch: impl Into<Arc<Self::Batch>>) -> impl Future<Output = ()>;
 
+    /// Inserts a batch into the spine without blocking.  Thus, this omits:
+    ///
+    /// - Spilling the batch to storage when that is a good idea.
+    ///
+    /// - Waiting until the number of batches in the spine falls below the level
+    ///   at which we impose backpressure.  The function returns true if
+    ///   backpressure is warranted.  The caller may do so afterward by calling
+    ///   [Self::backpressure_wait].
+    fn insert_without_blocking(&mut self, batch: impl Into<Arc<Self::Batch>>) -> bool;
+
+    /// Waits for the number of batches in the spine to fall below the level at
+    /// which we impose backpressure.
+    fn backpressure_wait(&self) -> impl Future<Output = ()>;
+
     /// Clears the value of the "dirty" flag to `false`.
     ///
     /// The "dirty" flag is used to efficiently track changes to the trace,
