@@ -6612,12 +6612,6 @@ impl ControllerInner {
 
         let self_weak = Arc::downgrade(self);
 
-        endpoint_config
-            .connector_config
-            .output_buffer_config
-            .validate()
-            .map_err(|e| ControllerError::invalid_output_buffer_configuration(endpoint_name, &e))?;
-
         // Initialize endpoint stats early so that connectors can register
         // batch-progress counters (or other metrics) during construction.
         self.status.add_output(

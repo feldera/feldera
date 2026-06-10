@@ -10395,8 +10395,8 @@
           },
           "max_output_buffer_size_records": {
             "type": "integer",
-            "description": "Maximum number of updates to be kept in the output buffer.\n\nThis parameter bounds the maximal size of the buffer.\nNote that the size of the buffer is not always equal to the\ntotal number of updates output by the pipeline. Updates to the\nsame record can overwrite or cancel previous updates.\n\nBy default, the buffer can grow indefinitely until one of\nthe other output conditions is satisfied.\n\nNOTE: this configuration option requires the `enable_output_buffer` flag\nto be set.",
-            "default": 18446744073709551615,
+            "description": "Maximum number of updates to be kept in the output buffer.\n\nThis parameter bounds the maximal size of the buffer.\nNote that the size of the buffer is not always equal to the\ntotal number of updates output by the pipeline. Updates to the\nsame record can overwrite or cancel previous updates.\n\nThe default is 10,000,000.\n\nNOTE: this configuration option requires the `enable_output_buffer` flag\nto be set.",
+            "default": 10000000,
             "minimum": 0
           },
           "max_output_buffer_time_millis": {

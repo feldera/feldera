@@ -209,19 +209,10 @@ output buffer:
    total number of updates output by the pipeline. Updates to the
    same record can overwrite or cancel previous updates.
 
-   When not specified, the buffer can grow indefinitely until one of
-   the other trigger conditions is satisfied.
+   When not specified, defaults to 10,000,000.
 
    This configuration option requires the `enable_output_buffer` flag
    to be set.
-
-:::note
-
-When the `enable_output_buffer` flag is set, at least one of
-`max_output_buffer_time_millis` or `max_output_buffer_size_records` must be
-specified.
-
-:::
 
 See [Delta Lake output connector documentation](/connectors/sinks/delta)
 for an example of configuring the output buffer.
