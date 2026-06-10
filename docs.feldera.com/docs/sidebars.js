@@ -375,6 +375,11 @@ const connectors = {
                     type: 'doc',
                     id: 'connectors/sinks/iceberg',
                     label: 'Iceberg (experimental)'
+                },
+                {
+                    type: 'doc',
+                    id: 'connectors/sinks/null',
+                    label: 'Null'
                 }
             ]
         }

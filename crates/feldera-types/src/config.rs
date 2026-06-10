@@ -1848,6 +1848,8 @@ pub enum TransportConfig {
     /// Ad hoc input: cannot be instantiated through API
     AdHocInput(AdHocInputConfig),
     ClockInput(ClockConfig),
+    /// Output connector that discards all data.
+    NullOutput,
 }
 
 impl TransportConfig {
@@ -1874,6 +1876,7 @@ impl TransportConfig {
             TransportConfig::AdHocInput(_) => "adhoc_input".to_string(),
             TransportConfig::RedisOutput(_) => "redis_output".to_string(),
             TransportConfig::ClockInput(_) => "clock".to_string(),
+            TransportConfig::NullOutput => "null_output".to_string(),
         }
     }
 
