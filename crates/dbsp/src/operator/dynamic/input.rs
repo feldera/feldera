@@ -10,6 +10,7 @@ use crate::{
     },
     operator::{
         Input, InputHandle, Update,
+        communication::ExchangeActivity,
         dynamic::{
             input_upsert::{
                 DynUpdate, InputUpsertFactories, InputUpsertWithWaterlineFactories, PatchFunc,
@@ -390,7 +391,11 @@ impl RootCircuit {
             // This adds small overhead to tables that don't get materialized and hence don't need to get sharded.
             // If this proves to be a problem in practice, we can add a variant of this function that doesn't shard
             // its output stream for use with non-materializes tables.
-            let stream = self.add_source(input).dyn_shard(&factories.zset_factories);
+            let stream = self
+                .add_source(input)
+                .dyn_sharder()
+                .with_activity(ExchangeActivity::InputOnly)
+                .shard(&factories.zset_factories);
 
             let zset_handle = <CollectionHandle<DynPair<K, DynUnit>, DynZWeight>>::new(
                 factories.pair_factory,
@@ -474,7 +479,9 @@ impl RootCircuit {
         //       |--->[some other operator]
         let stream = self
             .add_source(input)
-            .dyn_shard(&factories.indexed_zset_factories);
+            .dyn_sharder()
+            .with_activity(ExchangeActivity::InputOnly)
+            .shard(&factories.indexed_zset_factories);
 
         let zset_handle = <CollectionHandle<K, DynPair<V, DynZWeight>>>::new(
             factories.pair_factory,

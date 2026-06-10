@@ -34,6 +34,7 @@ pub mod time_series;
 pub mod trace;
 pub(crate) mod upsert;
 
+pub use communication::shard::Sharder;
 pub(crate) use communication::shard::shard_batch;
 
 /// The "standard" indexed Z-set type used by monomorphic

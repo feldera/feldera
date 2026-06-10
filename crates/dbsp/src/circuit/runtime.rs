@@ -7,7 +7,7 @@ use crate::SchedulerError;
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::dbsp_handle::StepSize;
 use crate::error::Error as DbspError;
-use crate::operator::communication::Exchange;
+use crate::operator::communication::{Exchange, ExchangeActivity};
 use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
@@ -1383,7 +1383,8 @@ where
         match Runtime::runtime() {
             Some(runtime) if Runtime::num_workers() > 1 => {
                 let exchange_id = runtime.sequence_next().try_into().unwrap();
-                let exchange = Exchange::with_runtime(&runtime, exchange_id);
+                let exchange =
+                    Exchange::with_runtime(&runtime, exchange_id, ExchangeActivity::AllSteps);
                 let identifier = Arc::new(format!("broadcast {name} (exchange {exchange_id})"));
 
                 Self::MultiThreaded {
