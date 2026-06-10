@@ -567,7 +567,15 @@ impl PipelineExecutor for LocalRunner {
             // - Current directory: pipeline working directory
             // - Configuration file: path to config.yaml
             // - Stdout/stderr are piped to follow logs
-            let mut command = Command::new(&binary_file_path);
+            //
+            // HACK (crucible prototype): when CRUCIBLE_BINARY is set, launch the
+            // crucible executor instead of the compiled pipeline binary. It is
+            // exec'd with the same flags and config.yaml, so the runner contract is
+            // unchanged. Remove once crucible is the standard executor.
+            let executable = std::env::var("CRUCIBLE_BINARY")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| binary_file_path.clone());
+            let mut command = Command::new(&executable);
             command
                 .env(
                     "TOKIO_WORKER_THREADS",
