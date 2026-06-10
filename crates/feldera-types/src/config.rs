@@ -43,6 +43,9 @@ pub use dev_tweaks::DevTweaks;
 
 const DEFAULT_MAX_PARALLEL_CONNECTOR_INIT: u64 = 10;
 
+/// Default maximum number of updates to be kept in the output buffer.
+const DEFAULT_MAX_OUTPUT_BUFFER_SIZE_RECORDS: usize = 10_000_000;
+
 /// Default value of `ConnectorConfig::max_queued_records`.
 pub const fn default_max_queued_records() -> u64 {
     1_000_000
@@ -1762,8 +1765,7 @@ pub struct OutputBufferConfig {
     /// total number of updates output by the pipeline. Updates to the
     /// same record can overwrite or cancel previous updates.
     ///
-    /// By default, the buffer can grow indefinitely until one of
-    /// the other output conditions is satisfied.
+    /// The default is 10,000,000.
     ///
     /// NOTE: this configuration option requires the `enable_output_buffer` flag
     /// to be set.
@@ -1774,25 +1776,9 @@ impl Default for OutputBufferConfig {
     fn default() -> Self {
         Self {
             enable_output_buffer: false,
-            max_output_buffer_size_records: usize::MAX,
+            max_output_buffer_size_records: DEFAULT_MAX_OUTPUT_BUFFER_SIZE_RECORDS,
             max_output_buffer_time_millis: usize::MAX,
         }
-    }
-}
-
-impl OutputBufferConfig {
-    pub fn validate(&self) -> Result<(), String> {
-        if self.enable_output_buffer
-            && self.max_output_buffer_size_records == Self::default().max_output_buffer_size_records
-            && self.max_output_buffer_time_millis == Self::default().max_output_buffer_time_millis
-        {
-            return Err(
-                "when the 'enable_output_buffer' flag is set, one of 'max_output_buffer_size_records' and 'max_output_buffer_time_millis' settings must be specified"
-                    .to_string(),
-            );
-        }
-
-        Ok(())
     }
 }
 

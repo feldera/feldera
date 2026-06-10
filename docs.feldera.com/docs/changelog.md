@@ -27,10 +27,15 @@ import TabItem from '@theme/TabItem';
           when its usage reaches the disk limit. This is currently behind
           the unstable feature flag `rust_compiler_full_cleanup`.
 
+        - The default value of `max_output_buffer_size_records` is now 10,000,000
+          instead of unbounded.
+
         - Casts of strings to Boolean and floating point values will
         produce runtime errors instead of legal values for illegal string
         values.  The set of strings that can be legally converted to
         Booleans has been changed.
+
+        ## v0.306.0
 
         - No longer allowed to edit `runtime_config.resources.storage_class` if the pipeline storage is not cleared.
 
