@@ -123,6 +123,8 @@ pub enum DBError {
     },
     NameDoesNotMatchPattern {
         name: String,
+        pattern: String,
+        pattern_description: String,
     },
     // Tenant-related errors
     UnknownTenant {
@@ -526,8 +528,15 @@ impl Display for DBError {
                     "Name '{name}' is longer ({length}) than maximum allowed ({maximum})"
                 )
             }
-            DBError::NameDoesNotMatchPattern { name } => {
-                write!(f, "Name '{name}' contains characters which are not lowercase (a-z), uppercase (A-Z), numbers (0-9), underscores (_) or hyphens (-)")
+            DBError::NameDoesNotMatchPattern {
+                name,
+                pattern,
+                pattern_description,
+            } => {
+                write!(
+                    f,
+                    "Name '{name}' should {pattern_description} (pattern: '{pattern}')"
+                )
             }
             DBError::UnknownTenant { tenant_id } => {
                 write!(f, "Unknown tenant id '{tenant_id}'")

@@ -9,7 +9,7 @@ import sys
 
 # Format the SQL must adhere to
 SQL_FORMAT_REGEX_PATTERN = re.compile(
-    "^-- (.+) \\(([a-zA-Z0-9_-]+)\\)[ \t]*\r?\n--[ \t]*\r?\n((-- .+\r?\n)+)--[ \t]*\r?\n"
+    "^-- (.+) \\((([A-Za-z0-9][-A-Za-z0-9_]*)?[A-Za-z0-9])\\)[ \t]*\r?\n--[ \t]*\r?\n((-- .+\r?\n)+)--[ \t]*\r?\n"
 )
 
 # Format of each description line
@@ -29,7 +29,7 @@ def main():
         # Extract from the SQL preamble the metadata
         title = result.group(1).strip()
         name = result.group(2)
-        description_lines = result.group(3)
+        description_lines = result.group(4)
 
         # Post-process description lines
         description_match = re.findall(SQL_FORMAT_DESCRIPTION_LINE, description_lines)
@@ -50,8 +50,8 @@ def main():
             print(f"FAIL: title '{title}' exceeds 100 characters")
             exit(1)
         # Name is already checked to be non-empty due to regex
-        if len(name) > 100:
-            print(f"FAIL: name '{name}' exceeds 100 characters")
+        if len(name) > 63:
+            print(f"FAIL: name '{name}' exceeds 63 characters")
             exit(1)
         if len(description) == 0:
             print("FAIL: description is empty")

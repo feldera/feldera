@@ -984,7 +984,7 @@ pub(crate) async fn get_pipeline(
         (status = BAD_REQUEST
             , body = ErrorResponse
             , examples(
-                ("Name does not match pattern" = (value = json!(examples::error_name_does_not_match_pattern())))
+                ("Name does not match pattern" = (value = json!(examples::error_pipeline_name_does_not_match_pattern())))
             )
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
@@ -1050,7 +1050,7 @@ pub(crate) async fn post_pipeline(
         (status = BAD_REQUEST
             , body = ErrorResponse
             , examples(
-                ("Name does not match pattern" = (value = json!(examples::error_name_does_not_match_pattern()))),
+                ("Name does not match pattern" = (value = json!(examples::error_pipeline_name_does_not_match_pattern()))),
                 ("Cannot update non-stopped pipeline" = (value = json!(examples::error_update_restricted_to_stopped())))
             )
         ),
@@ -1134,7 +1134,7 @@ pub(crate) async fn put_pipeline(
         (status = BAD_REQUEST
             , body = ErrorResponse
             , examples(
-                ("Name does not match pattern" = (value = json!(examples::error_name_does_not_match_pattern()))),
+                ("Name does not match pattern" = (value = json!(examples::error_pipeline_name_does_not_match_pattern()))),
                 ("Cannot update non-stopped pipeline" = (value = json!(examples::error_update_restricted_to_stopped())))
             )
         ),
@@ -1224,7 +1224,7 @@ pub(crate) async fn patch_pipeline(
         (status = BAD_REQUEST
             , body = ErrorResponse
             , examples(
-                ("Name does not match pattern" = (value = json!(examples::error_name_does_not_match_pattern()))),
+                ("Name does not match pattern" = (value = json!(examples::error_pipeline_name_does_not_match_pattern()))),
                 ("Cannot update non-stopped pipeline" = (value = json!(examples::error_update_restricted_to_stopped())))
             )
         ),

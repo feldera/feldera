@@ -6,7 +6,7 @@ use crate::db::types::api_key::{
     ApiKeyDescr, ApiKeyId, ApiPermission, API_PERMISSION_READ, API_PERMISSION_WRITE,
 };
 use crate::db::types::tenant::TenantId;
-use crate::db::types::utils::validate_name;
+use crate::db::types::utils::validate_api_key_name;
 use deadpool_postgres::Transaction;
 use openssl::sha;
 use std::str::FromStr;
@@ -86,7 +86,7 @@ pub async fn store_api_key_hash(
     key: &str,
     scopes: Vec<ApiPermission>,
 ) -> Result<(), DBError> {
-    validate_name(name)?;
+    validate_api_key_name(name)?;
     let mut hasher = sha::Sha256::new();
     hasher.update(key.as_bytes());
     let hash = openssl::base64::encode_block(&hasher.finish());
