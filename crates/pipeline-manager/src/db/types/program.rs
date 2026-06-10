@@ -712,7 +712,8 @@ pub fn generate_program_info(
                 | TransportConfig::PostgresInput(_)
                 | TransportConfig::IcebergInput(_)
                 | TransportConfig::Datagen(_)
-                | TransportConfig::Nexmark(_) => {}
+                | TransportConfig::Nexmark(_)
+                | TransportConfig::EmptyInput => {}
                 _ => {
                     return Err(ConnectorGenerationError::ExpectedInputConnector {
                         position: origin_value.value_position,

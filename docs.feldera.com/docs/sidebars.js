@@ -320,6 +320,11 @@ const connectors = {
                     type: 'doc',
                     id: 'connectors/sources/file',
                     label: 'File'
+                },
+                {
+                    type: 'doc',
+                    id: 'connectors/sources/empty',
+                    label: 'Empty'
                 }
             ]
         },
