@@ -13,6 +13,7 @@ use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::utils::{
     validate_program_config, validate_program_info, validate_runtime_config,
+    PATTERN_KUBERNETES_LABEL_VALUE, PATTERN_KUBERNETES_LABEL_VALUE_DESCRIPTION,
 };
 use crate::db::types::version::Version;
 use crate::runner::error::RunnerError;
@@ -356,9 +357,11 @@ pub(crate) fn error_duplicate_name() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::DuplicateName)
 }
 
-pub(crate) fn error_name_does_not_match_pattern() -> ErrorResponse {
+pub(crate) fn error_pipeline_name_does_not_match_pattern() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::NameDoesNotMatchPattern {
         name: "name-with-invalid-char-#".to_string(),
+        pattern: PATTERN_KUBERNETES_LABEL_VALUE.to_string(),
+        pattern_description: PATTERN_KUBERNETES_LABEL_VALUE_DESCRIPTION.to_string(),
     })
 }
 

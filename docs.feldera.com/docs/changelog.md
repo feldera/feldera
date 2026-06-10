@@ -14,6 +14,15 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - Pipeline name is now limited to 63 characters and must follow the Kubernetes
+          label pattern (and be non-empty and contain no dots as before). The check is only enforced
+          when the pipeline is being newly created, its `name` field is being PATCHed
+          or it is getting fully updated via PUT even if the name does not change.
+          Otherwise, existing pipelines with a now invalid name will continue to function.
+          This change is not backward compatible for scripts that create pipelines with names that are
+          no longer valid, in which case they will now receive an error instead of succeeding.
+          However, especially in the Kubernetes runner these pipelines would already not work.
+
         - Casts of strings to Boolean and floating point values will
         produce runtime errors instead of legal values for illegal string
         values.  The set of strings that can be legally converted to

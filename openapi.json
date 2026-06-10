@@ -964,10 +964,12 @@
                 "examples": {
                   "Name does not match pattern": {
                     "value": {
-                      "message": "Name 'name-with-invalid-char-#' contains characters which are not lowercase (a-z), uppercase (A-Z), numbers (0-9), underscores (_) or hyphens (-)",
+                      "message": "Name 'name-with-invalid-char-#' should be non-empty and only contain lowercase (a-z), uppercase (A-Z), number (0-9), underscore (_) or hyphen (-) characters, but cannot start or end with hyphen or underscore (pattern: '^([A-Za-z0-9][-A-Za-z0-9_]*)?[A-Za-z0-9]$')",
                       "error_code": "NameDoesNotMatchPattern",
                       "details": {
-                        "name": "name-with-invalid-char-#"
+                        "name": "name-with-invalid-char-#",
+                        "pattern": "^([A-Za-z0-9][-A-Za-z0-9_]*)?[A-Za-z0-9]$",
+                        "pattern_description": "be non-empty and only contain lowercase (a-z), uppercase (A-Z), number (0-9), underscore (_) or hyphen (-) characters, but cannot start or end with hyphen or underscore"
                       }
                     }
                   }
@@ -1478,10 +1480,12 @@
                   },
                   "Name does not match pattern": {
                     "value": {
-                      "message": "Name 'name-with-invalid-char-#' contains characters which are not lowercase (a-z), uppercase (A-Z), numbers (0-9), underscores (_) or hyphens (-)",
+                      "message": "Name 'name-with-invalid-char-#' should be non-empty and only contain lowercase (a-z), uppercase (A-Z), number (0-9), underscore (_) or hyphen (-) characters, but cannot start or end with hyphen or underscore (pattern: '^([A-Za-z0-9][-A-Za-z0-9_]*)?[A-Za-z0-9]$')",
                       "error_code": "NameDoesNotMatchPattern",
                       "details": {
-                        "name": "name-with-invalid-char-#"
+                        "name": "name-with-invalid-char-#",
+                        "pattern": "^([A-Za-z0-9][-A-Za-z0-9_]*)?[A-Za-z0-9]$",
+                        "pattern_description": "be non-empty and only contain lowercase (a-z), uppercase (A-Z), number (0-9), underscore (_) or hyphen (-) characters, but cannot start or end with hyphen or underscore"
                       }
                     }
                   }
@@ -1748,10 +1752,12 @@
                   },
                   "Name does not match pattern": {
                     "value": {
-                      "message": "Name 'name-with-invalid-char-#' contains characters which are not lowercase (a-z), uppercase (A-Z), numbers (0-9), underscores (_) or hyphens (-)",
+                      "message": "Name 'name-with-invalid-char-#' should be non-empty and only contain lowercase (a-z), uppercase (A-Z), number (0-9), underscore (_) or hyphen (-) characters, but cannot start or end with hyphen or underscore (pattern: '^([A-Za-z0-9][-A-Za-z0-9_]*)?[A-Za-z0-9]$')",
                       "error_code": "NameDoesNotMatchPattern",
                       "details": {
-                        "name": "name-with-invalid-char-#"
+                        "name": "name-with-invalid-char-#",
+                        "pattern": "^([A-Za-z0-9][-A-Za-z0-9_]*)?[A-Za-z0-9]$",
+                        "pattern_description": "be non-empty and only contain lowercase (a-z), uppercase (A-Z), number (0-9), underscore (_) or hyphen (-) characters, but cannot start or end with hyphen or underscore"
                       }
                     }
                   }
@@ -6683,10 +6689,12 @@
                   },
                   "Name does not match pattern": {
                     "value": {
-                      "message": "Name 'name-with-invalid-char-#' contains characters which are not lowercase (a-z), uppercase (A-Z), numbers (0-9), underscores (_) or hyphens (-)",
+                      "message": "Name 'name-with-invalid-char-#' should be non-empty and only contain lowercase (a-z), uppercase (A-Z), number (0-9), underscore (_) or hyphen (-) characters, but cannot start or end with hyphen or underscore (pattern: '^([A-Za-z0-9][-A-Za-z0-9_]*)?[A-Za-z0-9]$')",
                       "error_code": "NameDoesNotMatchPattern",
                       "details": {
-                        "name": "name-with-invalid-char-#"
+                        "name": "name-with-invalid-char-#",
+                        "pattern": "^([A-Za-z0-9][-A-Za-z0-9_]*)?[A-Za-z0-9]$",
+                        "pattern_description": "be non-empty and only contain lowercase (a-z), uppercase (A-Z), number (0-9), underscore (_) or hyphen (-) characters, but cannot start or end with hyphen or underscore"
                       }
                     }
                   }

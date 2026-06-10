@@ -25,8 +25,8 @@ use crate::db::types::resources_status::{
 use crate::db::types::storage::{validate_storage_status_transition, StorageStatus};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
-    validate_deployment_config, validate_name, validate_program_config, validate_program_info,
-    validate_runtime_config, validate_storage_status_details,
+    validate_deployment_config, validate_pipeline_name, validate_program_config,
+    validate_program_info, validate_runtime_config, validate_storage_status_details,
 };
 use crate::db::types::version::Version;
 use deadpool_postgres::Transaction;
@@ -176,7 +176,7 @@ pub(crate) async fn new_pipeline(
     platform_version: &str,
     pipeline: PipelineDescr,
 ) -> Result<(PipelineId, Version), DBError> {
-    validate_name(&pipeline.name)?;
+    validate_pipeline_name(&pipeline.name)?;
     // Validate runtime configuration JSON when deserializing it
     // and reserialize it to have it contain current default values
     let runtime_config =
@@ -297,7 +297,7 @@ pub(crate) async fn update_pipeline(
     program_config: &Option<serde_json::Value>,
 ) -> Result<Version, DBError> {
     if let Some(name) = name {
-        validate_name(name)?;
+        validate_pipeline_name(name)?;
     }
 
     // Validate runtime configuration JSON when deserializing it

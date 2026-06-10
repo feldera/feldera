@@ -40,7 +40,7 @@ The format is as follows:
 ... with the following constraints:
 
 - `[title]` is non-empty and at most 100 characters.
-- `[pipeline-name]` adheres to the name constraints: at most 100 characters and follow pattern `[a-zA-Z0-9_-]+`.
+- `[pipeline-name]` adheres to the name constraints: at most 63 characters and follow pattern `([A-Za-z0-9][-A-Za-z0-9_]*)?[A-Za-z0-9]`.
 - There must be at least one `[description-line]`.
 - All `[description-line]` joined together as description is non-empty and at most 1000 characters.
 - The whitespace at the end of each preamble line is ignored.
@@ -49,15 +49,15 @@ The format is as follows:
 
 **How to validate: regular expression**
 ```regexp
-^-- (.+) \(([a-zA-Z0-9_-]+)\)[ \t]*\r?\n--[ \t]*\r?\n((-- .+\r?\n)+)--[ \t]*\r?\n
+^-- (.+) \((([A-Za-z0-9][-A-Za-z0-9_]*)?[A-Za-z0-9])\)[ \t]*\r?\n--[ \t]*\r?\n((-- .+\r?\n)+)--[ \t]*\r?\n
 ```
 ... with afterward:
-- First group is title, second group is name, and third group is description lines.
+- First group is title, second group is name, and fourth group is description lines.
 - The description lines can then be parsed by finding in it all regex matches of `-- .+\r?\n`,
   of each removing the `-- ` prefix and trimming whitespace, finally join with
   a space character (` `), and trim whitespace.
 - Trim whitespace from the title, and check it is non-empty and at most 100 characters
-- Check name is at most 100 characters
+- Check name is at most 63 characters
 - Check description is at most 1000 characters
 
 ## Example

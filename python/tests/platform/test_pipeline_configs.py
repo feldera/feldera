@@ -1,5 +1,8 @@
 from http import HTTPStatus
 
+from feldera import PipelineBuilder
+from feldera.rest.errors import FelderaAPIError
+from tests import TEST_CLIENT
 from .helper import (
     API_PREFIX,
     cleanup_pipeline,
@@ -45,10 +48,12 @@ def test_pipeline_runtime_config(pipeline_name):
                     "storage_class": "normal",
                 },
             },
-            lambda rc: rc.get("workers") == 100
-            and rc.get("resources", {}).get("cpu_cores_min") == 5
-            and rc.get("resources", {}).get("storage_mb_max") == 2000
-            and rc.get("resources", {}).get("storage_class") == "normal",
+            lambda rc: (
+                rc.get("workers") == 100
+                and rc.get("resources", {}).get("cpu_cores_min") == 5
+                and rc.get("resources", {}).get("storage_mb_max") == 2000
+                and rc.get("resources", {}).get("storage_class") == "normal"
+            ),
         ),
         (
             {"env": {"TEST_ENV": "value"}},
@@ -193,3 +198,50 @@ def test_pipeline_program_config(pipeline_name):
     assert resp.status_code == HTTPStatus.OK
     pc_modified = resp.json()["program_config"]
     assert pc_modified.get("cache") is True
+
+
+@gen_pipeline_name
+def test_pipeline_field_name(pipeline_name):
+    def try_name(name, expected_error_code):
+        error = None
+        try:
+            pipeline = PipelineBuilder(TEST_CLIENT, name, "").create_or_replace(
+                wait=False
+            )
+            pipeline.delete()
+        except FelderaAPIError as e:
+            error = e
+
+        assert (error is None and expected_error_code is None) or (
+            error is not None
+            and expected_error_code is not None
+            and error.error_code == expected_error_code
+        ), (
+            f"Name: '{name}', expected error code: {expected_error_code}, actual error: {error}"
+        )
+
+    # Successful
+    try_name("a", None)
+    try_name("1", None)
+    try_name("A", None)
+    try_name("A-a", None)
+    try_name("A_a", None)
+    try_name("a1-_A", None)
+    try_name("a" * 62, None)
+    try_name("a" * 63, None)
+
+    # Not successful
+    # Does not work as it gives a 404: try_name("", "EmptyName")
+    try_name("a" * 64, "TooLongName")
+    try_name("@", "NameDoesNotMatchPattern")
+    # Does not work as it gives a 404: try_name(".", "NameDoesNotMatchPattern")
+    try_name("a.", "NameDoesNotMatchPattern")
+    try_name("a.b", "NameDoesNotMatchPattern")
+    try_name("-", "NameDoesNotMatchPattern")
+    try_name("_", "NameDoesNotMatchPattern")
+    try_name("a_", "NameDoesNotMatchPattern")
+    try_name("a-", "NameDoesNotMatchPattern")
+    try_name("-a", "NameDoesNotMatchPattern")
+    try_name("_a", "NameDoesNotMatchPattern")
+    try_name("_a-", "NameDoesNotMatchPattern")
+    try_name("-a_", "NameDoesNotMatchPattern")

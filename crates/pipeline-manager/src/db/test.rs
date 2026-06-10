@@ -25,8 +25,9 @@ use crate::db::types::resources_status::{
 use crate::db::types::storage::{validate_storage_status_transition, StorageStatus};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
-    validate_deployment_config, validate_name, validate_program_config, validate_program_info,
-    validate_runtime_config, validate_storage_status_details,
+    validate_api_key_name, validate_deployment_config, validate_pipeline_name,
+    validate_program_config, validate_program_info, validate_runtime_config,
+    validate_storage_status_details,
 };
 use crate::db::types::version::Version;
 use async_trait::async_trait;
@@ -3855,7 +3856,7 @@ impl ModelHelpers for Mutex<DbModel> {
         program_config: &Option<serde_json::Value>,
     ) -> Result<ExtendedPipelineDescr, DBError> {
         if let Some(name) = name {
-            validate_name(name)?;
+            validate_pipeline_name(name)?;
         }
         if let Some(runtime_config) = runtime_config {
             validate_runtime_config(runtime_config, false).map_err(|e| {
@@ -4250,7 +4251,7 @@ impl Storage for Mutex<DbModel> {
         permissions: Vec<ApiPermission>,
     ) -> DBResult<()> {
         let mut s = self.lock().await;
-        validate_name(name)?;
+        validate_api_key_name(name)?;
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
@@ -4411,7 +4412,7 @@ impl Storage for Mutex<DbModel> {
     ) -> Result<ExtendedPipelineDescr, DBError> {
         let mut state = self.lock().await;
 
-        validate_name(&pipeline.name)?;
+        validate_pipeline_name(&pipeline.name)?;
         validate_runtime_config(&pipeline.runtime_config, false).map_err(|e| {
             DBError::InvalidRuntimeConfig {
                 value: pipeline.runtime_config.clone(),

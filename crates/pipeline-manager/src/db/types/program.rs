@@ -1,7 +1,7 @@
 use crate::config::CompilerConfig;
 use crate::db::error::DBError;
 use crate::db::types::pipeline::PipelineId;
-use crate::db::types::utils::validate_name;
+use crate::db::types::utils::validate_connector_name;
 use crate::has_unstable_feature;
 use clap::Parser;
 use feldera_ir::Dataflow;
@@ -572,7 +572,7 @@ fn parse_named_connectors(
                 })?;
             for connector in &connectors {
                 if let Some(name) = &connector.name {
-                    validate_name(name).map_err(|e| {
+                    validate_connector_name(name).map_err(|e| {
                         ConnectorGenerationError::InvalidPropertyValue {
                             position: value.value_position,
                             relation: relation.sql_name(),
