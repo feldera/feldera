@@ -1,7 +1,7 @@
 use super::OutputEndpoint;
 use anyhow::{Error as AnyError, Result as AnyResult};
 
-/// Output transport endpoint that discards all data.
+/// Output transport endpoint that discards all data (aka /dev/null).
 ///
 /// Useful as a sink when only the postprocessor side effects matter,
 /// or in tests where no persistent output is needed.

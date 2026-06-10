@@ -14101,6 +14101,34 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "null_output"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "empty_input"
+                ]
+              }
+            }
           }
         ],
         "description": "Transport-specific endpoint configuration passed to\n`crate::OutputTransport::new_endpoint`\nand `crate::InputTransport::new_endpoint`.",

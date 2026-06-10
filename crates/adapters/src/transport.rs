@@ -31,6 +31,7 @@ use http::HttpInputEndpoint;
 use pubsub::PubSubInputEndpoint;
 
 pub mod adhoc;
+mod empty;
 mod file;
 pub mod http;
 mod null;
@@ -60,12 +61,13 @@ use feldera_types::config::TransportConfig;
 #[cfg(feature = "with-redis")]
 use redis::output::RedisOutputEndpoint;
 
+use crate::transport::empty::EmptyInputEndpoint;
 #[cfg(test)]
 pub use crate::transport::file::set_barrier;
 use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};
-use crate::transport::null::NullOutputEndpoint;
 #[cfg(feature = "with-kafka")]
 use crate::transport::kafka::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint, KafkaOutputEndpoint};
+use crate::transport::null::NullOutputEndpoint;
 
 #[cfg(feature = "with-nats")]
 use crate::transport::nats::NatsInputEndpoint;
@@ -114,6 +116,7 @@ pub fn input_transport_config_to_endpoint(
         TransportConfig::HttpInput(config) => Box::new(HttpInputEndpoint::new(config)),
         TransportConfig::AdHocInput(config) => Box::new(AdHocInputEndpoint::new(config)),
         TransportConfig::ClockInput(config) => Box::new(ClockEndpoint::new(config)?),
+        TransportConfig::EmptyInput => Box::new(EmptyInputEndpoint),
         TransportConfig::FileOutput(_)
         | TransportConfig::KafkaOutput(_)
         | TransportConfig::DeltaTableInput(_)

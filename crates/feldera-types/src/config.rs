@@ -1850,6 +1850,8 @@ pub enum TransportConfig {
     ClockInput(ClockConfig),
     /// Output connector that discards all data.
     NullOutput,
+    /// Input connector that produces no data.
+    EmptyInput,
 }
 
 impl TransportConfig {
@@ -1877,6 +1879,7 @@ impl TransportConfig {
             TransportConfig::RedisOutput(_) => "redis_output".to_string(),
             TransportConfig::ClockInput(_) => "clock".to_string(),
             TransportConfig::NullOutput => "null_output".to_string(),
+            TransportConfig::EmptyInput => "empty_input".to_string(),
         }
     }
 
