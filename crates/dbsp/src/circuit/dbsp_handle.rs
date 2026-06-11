@@ -1,5 +1,6 @@
 use crate::circuit::GlobalNodeId;
 use crate::circuit::checkpointer::Checkpointer;
+use crate::circuit::circuit_builder::CircuitHandle;
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::schedule::CommitProgress;
 use crate::monitor::visual_graph::Graph;
@@ -691,6 +692,10 @@ impl Runtime {
             let status_sender = status_senders.into_iter().nth(worker_index).unwrap();
             let command_receiver = command_receivers.into_iter().nth(worker_index).unwrap();
 
+            // Retain a copy of the constructor: `Command::CreateBootstrapCircuit`
+            // re-runs it to build a structurally identical second circuit.
+            let bootstrap_constructor = constructor.clone();
+
             let circuit_fn = |circuit: &mut RootCircuit| {
                 let profiler = Profiler::new(circuit);
                 constructor(circuit).map(|res| (res, profiler))
@@ -707,6 +712,14 @@ impl Runtime {
                     return;
                 }
             };
+
+            // The bootstrap circuit (the second copy of the circuit used by
+            // concurrent bootstrapping), when one exists.  All workers
+            // create, step, and destroy their bootstrap circuits in lockstep
+            // through broadcast commands; this keeps the per-worker
+            // `Runtime::sequence_next` counters, which assign exchange ids,
+            // identical across workers.
+            let mut bootstrap_circuit: Option<CircuitHandle> = None;
 
             while !Runtime::kill_in_progress() {
                 // Wait for command.
@@ -887,8 +900,94 @@ impl Runtime {
                         let complete = circuit.is_compaction_complete();
                         if status_sender
                             .send(Ok(Response::IsCompactionComplete(complete)))
-                            .is_err()
-                        {
+                            .is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Command::CreateBootstrapCircuit) => {
+                        let status = if bootstrap_circuit.is_some() {
+                            Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
+                                "a bootstrap circuit already exists".to_string(),
+                            )))
+                        } else {
+                            // Re-running the constructor produces a circuit
+                            // whose nodes have the same `NodeId`s as the main
+                            // circuit's, which is what lets bootstrapped
+                            // state move between the copies.  The input and
+                            // output handles it creates are fresh objects
+                            // that the runtime's local store retains but
+                            // nothing feeds or drains; the bootstrap
+                            // circuit's inputs are driven by replay sources
+                            // instead.  No profiler is attached: profiler
+                            // hooks are circuit event handlers and do not
+                            // affect node ids.
+                            let constructor = bootstrap_constructor.clone();
+                            RootCircuit::build(move |circuit| constructor(circuit)).and_then(
+                                |(handle, _catalog)| {
+                                    // A fingerprint mismatch means the
+                                    // constructor is nondeterministic, which
+                                    // also desyncs the per-worker sequence
+                                    // counters; fail (fatally, by the
+                                    // command protocol) rather than letting
+                                    // the exchanges deadlock or cross-wire.
+                                    if handle.fingerprint() != circuit.fingerprint() {
+                                        return Err(DbspError::Runtime(
+                                            RuntimeError::BootstrapCircuit(
+                                                "the bootstrap circuit's fingerprint differs \
+                                                 from the main circuit's: the circuit \
+                                                 constructor is nondeterministic"
+                                                    .to_string(),
+                                            ),
+                                        ));
+                                    }
+                                    bootstrap_circuit = Some(handle);
+                                    Ok(Response::Unit)
+                                },
+                            )
+                        };
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Command::StartBootstrapTransaction) => {
+                        let status = match bootstrap_circuit.as_mut() {
+                            Some(circuit) => circuit.start_transaction().map(|_| Response::Unit),
+                            None => Err(no_bootstrap_circuit()),
+                        };
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Command::CommitBootstrapTransaction) => {
+                        let status = match bootstrap_circuit.as_mut() {
+                            Some(circuit) => {
+                                circuit.start_commit_transaction().map(|_| Response::Unit)
+                            }
+                            None => Err(no_bootstrap_circuit()),
+                        };
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Command::StepBootstrapCircuit) => {
+                        let status = match bootstrap_circuit.as_mut() {
+                            Some(circuit) => circuit
+                                .step()
+                                .map(|_| Response::CommitComplete(circuit.is_commit_complete())),
+                            None => Err(no_bootstrap_circuit()),
+                        };
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Command::DestroyBootstrapCircuit) => {
+                        // Dropping the handle runs the circuit's teardown
+                        // (`clock_end` plus breaking `Rc` cycles).
+                        let status = match bootstrap_circuit.take() {
+                            Some(_circuit) => Ok(Response::Unit),
+                            None => Err(no_bootstrap_circuit()),
+                        };
+                        if status_sender.send(status).is_err() {
                             return;
                         }
                     }
@@ -957,6 +1056,32 @@ impl Runtime {
     }
 }
 
+/// The error returned by bootstrap-circuit commands when no bootstrap
+/// circuit exists.
+fn no_bootstrap_circuit() -> DbspError {
+    DbspError::Runtime(RuntimeError::BootstrapCircuit(
+        "no bootstrap circuit exists".to_string(),
+    ))
+}
+
+/// Coordinator-side mirror of the bootstrap circuit's lifecycle, tracked on
+/// [`DBSPHandle`] to validate bootstrap-circuit commands before
+/// broadcasting them.  Validation must happen on the coordinator: a worker
+/// that responds with an error (e.g., `StepWithoutTransaction` from the
+/// scheduler) kills the whole pipeline, including the healthy main circuit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BootstrapCircuitState {
+    /// No bootstrap circuit exists.
+    None,
+    /// A bootstrap circuit exists, with no transaction in progress.
+    Idle,
+    /// A transaction is in progress on the bootstrap circuit.
+    InTransaction,
+    /// The bootstrap circuit's transaction is committing; stepping it
+    /// returns `true` when the commit completes.
+    Committing,
+}
+
 #[derive(Clone)]
 enum Command {
     StartTransaction,
@@ -986,6 +1111,14 @@ enum Command {
     SetAutoRebalance(bool),
     StartCompaction,
     IsCompactionComplete,
+    /// Build the bootstrap circuit: a second copy of the circuit, built from
+    /// the same constructor as the main one (see
+    /// [`DBSPHandle::create_bootstrap_circuit`]).
+    CreateBootstrapCircuit,
+    StartBootstrapTransaction,
+    CommitBootstrapTransaction,
+    StepBootstrapCircuit,
+    DestroyBootstrapCircuit,
 }
 
 impl Debug for Command {
@@ -1029,6 +1162,11 @@ impl Debug for Command {
             }
             Command::StartCompaction => write!(f, "StartCompaction"),
             Command::IsCompactionComplete => write!(f, "IsCompactionComplete"),
+            Command::CreateBootstrapCircuit => write!(f, "CreateBootstrapCircuit"),
+            Command::StartBootstrapTransaction => write!(f, "StartBootstrapTransaction"),
+            Command::CommitBootstrapTransaction => write!(f, "CommitBootstrapTransaction"),
+            Command::StepBootstrapCircuit => write!(f, "StepBootstrapCircuit"),
+            Command::DestroyBootstrapCircuit => write!(f, "DestroyBootstrapCircuit"),
         }
     }
 }
@@ -1080,6 +1218,15 @@ pub struct DBSPHandle {
 
     /// Information about operators that participate in bootstrapping the new parts of the circuit.
     bootstrap_info: Option<BootstrapInfo>,
+
+    /// The bootstrap circuit's lifecycle state (see
+    /// [`Self::create_bootstrap_circuit`]).
+    ///
+    /// This handle is the only source of worker commands, so the mirror
+    /// cannot diverge from the workers' state.  Checking preconditions here
+    /// keeps them non-fatal: an `Err` response from a worker kills the
+    /// circuit (see [`Self::broadcast_command`]).
+    bootstrap_circuit_state: BootstrapCircuitState,
 }
 pub struct WorkersCommitProgress(BTreeMap<u16, CommitProgress>);
 
@@ -1151,6 +1298,7 @@ impl DBSPHandle {
             fingerprint,
             runtime_elapsed: Duration::ZERO,
             bootstrap_info: None,
+            bootstrap_circuit_state: BootstrapCircuitState::None,
         })
     }
 
@@ -1404,6 +1552,142 @@ impl DBSPHandle {
         result
     }
 
+    /// Creates the bootstrap circuit: a second copy of the circuit, built on
+    /// every worker thread from the same constructor as the main circuit.
+    ///
+    /// Concurrent bootstrapping uses the bootstrap circuit to backfill new
+    /// and modified operators from a checkpoint while the main circuit keeps
+    /// serving pre-existing views.  The copy's nodes have the same `NodeId`s
+    /// as the main circuit's (both are built by the same constructor), which
+    /// is what lets bootstrapped state move between the copies when the
+    /// backfill completes.
+    ///
+    /// The bootstrap circuit is driven in lockstep on all workers through
+    /// [`Self::start_bootstrap_transaction`],
+    /// [`Self::start_commit_bootstrap_transaction`], and
+    /// [`Self::step_bootstrap_circuit`], and deleted with
+    /// [`Self::destroy_bootstrap_circuit`].
+    ///
+    /// # Resource usage
+    ///
+    /// Building the copy registers its exchange, input, and output objects
+    /// in the runtime's local store, which retains them until runtime
+    /// teardown — they are not reclaimed by
+    /// [`Self::destroy_bootstrap_circuit`].  The cost per create/destroy
+    /// cycle is small (empty mailboxes and counters), and the expected use
+    /// is one bootstrap circuit per process lifetime.  While the bootstrap
+    /// circuit replays storage-backed state, its spines spill to storage
+    /// like the main circuit's; capacity planning should expect transient
+    /// disk-usage growth proportional to the bootstrapped region's state.
+    ///
+    /// # Errors
+    ///
+    /// Fails if a bootstrap circuit already exists.
+    pub fn create_bootstrap_circuit(&mut self) -> Result<(), DbspError> {
+        self.check_bootstrap_circuit_state(&[BootstrapCircuitState::None], "create")?;
+        self.broadcast_command(Command::CreateBootstrapCircuit, |_, _| {})?;
+        self.bootstrap_circuit_state = BootstrapCircuitState::Idle;
+        Ok(())
+    }
+
+    /// Returns an error unless the bootstrap circuit's state is one of
+    /// `expected`.
+    fn check_bootstrap_circuit_state(
+        &self,
+        expected: &[BootstrapCircuitState],
+        operation: &str,
+    ) -> Result<(), DbspError> {
+        if expected.contains(&self.bootstrap_circuit_state) {
+            Ok(())
+        } else {
+            Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(format!(
+                "cannot {operation} in bootstrap-circuit state {:?} (expected one of {expected:?})",
+                self.bootstrap_circuit_state,
+            ))))
+        }
+    }
+
+    /// Starts a transaction on the bootstrap circuit (see
+    /// [`Self::create_bootstrap_circuit`]).
+    ///
+    /// The bootstrap circuit's transaction is independent of the main
+    /// circuit's: the two circuits have separate schedulers and can be in
+    /// different transaction states.
+    pub fn start_bootstrap_transaction(&mut self) -> Result<(), DbspError> {
+        self.check_bootstrap_circuit_state(&[BootstrapCircuitState::Idle], "start a transaction")?;
+        self.broadcast_command(Command::StartBootstrapTransaction, |_, _| {})?;
+        self.bootstrap_circuit_state = BootstrapCircuitState::InTransaction;
+        Ok(())
+    }
+
+    /// Starts committing the bootstrap circuit's current transaction.  The
+    /// caller must invoke [`Self::step_bootstrap_circuit`] repeatedly until
+    /// it returns `true`.
+    pub fn start_commit_bootstrap_transaction(&mut self) -> Result<(), DbspError> {
+        self.check_bootstrap_circuit_state(
+            &[BootstrapCircuitState::InTransaction],
+            "commit a transaction",
+        )?;
+        self.broadcast_command(Command::CommitBootstrapTransaction, |_, _| {})?;
+        self.bootstrap_circuit_state = BootstrapCircuitState::Committing;
+        Ok(())
+    }
+
+    /// Evaluates the bootstrap circuit for a single step on every worker.
+    ///
+    /// Returns `true` when the bootstrap circuit's commit is complete (see
+    /// [`Self::step`] for the transaction state machine).
+    pub fn step_bootstrap_circuit(&mut self) -> Result<bool, DbspError> {
+        self.check_bootstrap_circuit_state(
+            &[
+                BootstrapCircuitState::InTransaction,
+                BootstrapCircuitState::Committing,
+            ],
+            "step",
+        )?;
+        let start = Instant::now();
+        let mut commit_complete = Vec::with_capacity(self.status_receivers.len());
+
+        let result = self.broadcast_command(Command::StepBootstrapCircuit, |_worker, response| {
+            let Response::CommitComplete(complete) = response else {
+                panic!("Expected CommitComplete response, got {response:?}");
+            };
+            commit_complete.push(complete);
+        });
+        if let Some(handle) = self.runtime.as_ref() {
+            // Bootstrap stepping is deliberately charged to the same time
+            // base as the main circuit: `runtime_elapsed` measures total
+            // worker occupancy, and the workers are busy either way.
+            self.runtime_elapsed +=
+                start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
+        }
+
+        result?;
+
+        // Commit completion is a cross-worker consensus inside the
+        // scheduler, so all workers report the same value.
+        let commit_complete = commit_complete.iter().any(|complete| *complete);
+        if commit_complete {
+            self.bootstrap_circuit_state = BootstrapCircuitState::Idle;
+        }
+        Ok(commit_complete)
+    }
+
+    /// Deletes the bootstrap circuit on every worker.
+    ///
+    /// # Errors
+    ///
+    /// Fails if no bootstrap circuit exists or if it has a transaction in
+    /// progress: tearing down a circuit mid-transaction trips operators'
+    /// end-of-clock invariant checks.  Pump
+    /// [`Self::step_bootstrap_circuit`] until it returns `true` first.
+    pub fn destroy_bootstrap_circuit(&mut self) -> Result<(), DbspError> {
+        self.check_bootstrap_circuit_state(&[BootstrapCircuitState::Idle], "destroy")?;
+        self.broadcast_command(Command::DestroyBootstrapCircuit, |_, _| {})?;
+        self.bootstrap_circuit_state = BootstrapCircuitState::None;
+        Ok(())
+    }
+
     /// Convenience method that calls `start_commit_transaction` and then repeatedly calls `step`
     /// until the commit is complete.
     pub fn commit_transaction(&mut self) -> Result<(), DbspError> {
@@ -1532,6 +1816,12 @@ impl DBSPHandle {
         &mut self,
         except: HashSet<uuid::Uuid>,
     ) -> Result<HashSet<uuid::Uuid>, DbspError> {
+        // The bootstrap circuit reads batch files belonging to the
+        // checkpoint it restores from; checkpoint GC could delete them.
+        self.check_bootstrap_circuit_state(
+            &[BootstrapCircuitState::None],
+            "garbage-collect checkpoints",
+        )?;
         self.checkpointer()?.lock().unwrap().gc_checkpoint(except)
     }
 
@@ -1866,6 +2156,14 @@ impl<'a> CheckpointBuilder<'a> {
     /// Prepares the checkpoint and returns a committer that can be used to
     /// commit it later.
     pub fn prepare(self) -> Result<CheckpointCommitter, DbspError> {
+        // Both circuit copies derive checkpoint file names from the same
+        // persistent ids, so checkpointing while a bootstrap circuit exists
+        // is undefined; additionally, the bootstrap circuit reads batch
+        // files of the checkpoint it restores from, which checkpoint GC
+        // could delete.
+        self.handle
+            .check_bootstrap_circuit_state(&[BootstrapCircuitState::None], "create a checkpoint")?;
+
         let checkpointer = self.handle.checkpointer()?.clone();
 
         // Write an empty catalog before the UUID directory is created by
@@ -1952,6 +2250,88 @@ pub(crate) mod tests {
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
     use tempfile::tempdir;
     use uuid::Uuid;
+
+    /// Creates, drives, and destroys a bootstrap circuit while the main
+    /// circuit keeps processing transactions.  `shard` puts exchange
+    /// operators in both circuits, so the test also verifies that the two
+    /// circuits' cross-worker rendezvous do not interfere: a mismatch in
+    /// exchange-id allocation would deadlock or corrupt the outputs.
+    #[test]
+    fn test_bootstrap_circuit_lifecycle() {
+        let (mut dbsp, (input, output)) = Runtime::init_circuit(4, |circuit| {
+            let (stream, input) = circuit.add_input_zset::<u64>();
+            let output = stream.shard().output();
+            Ok((input, output))
+        })
+        .unwrap();
+
+        let mut expected_key = 0;
+        let push_and_check = |dbsp: &mut DBSPHandle, expected_key: &mut u64| {
+            *expected_key += 1;
+            input.push(*expected_key, 1);
+            dbsp.transaction().unwrap();
+            assert_eq!(output.consolidate(), crate::zset! { *expected_key => 1 });
+        };
+
+        // The main circuit works before the bootstrap circuit exists.
+        push_and_check(&mut dbsp, &mut expected_key);
+
+        // Bootstrap-circuit commands fail while no bootstrap circuit exists.
+        assert!(dbsp.step_bootstrap_circuit().is_err());
+        assert!(dbsp.destroy_bootstrap_circuit().is_err());
+
+        dbsp.create_bootstrap_circuit().unwrap();
+        assert!(dbsp.create_bootstrap_circuit().is_err());
+
+        // Out-of-order transaction commands on an idle bootstrap circuit
+        // are rejected on the coordinator (a worker-side scheduler error
+        // would kill the pipeline).
+        assert!(dbsp.step_bootstrap_circuit().is_err());
+        assert!(dbsp.start_commit_bootstrap_transaction().is_err());
+
+        // The main circuit works while an idle bootstrap circuit exists.
+        push_and_check(&mut dbsp, &mut expected_key);
+
+        // The main circuit works while the bootstrap circuit has a
+        // transaction in progress; destroying the bootstrap circuit
+        // mid-transaction is rejected.
+        dbsp.start_bootstrap_transaction().unwrap();
+        assert!(dbsp.start_bootstrap_transaction().is_err());
+        assert!(dbsp.destroy_bootstrap_circuit().is_err());
+        push_and_check(&mut dbsp, &mut expected_key);
+        dbsp.start_commit_bootstrap_transaction().unwrap();
+        assert!(dbsp.destroy_bootstrap_circuit().is_err());
+        while !dbsp.step_bootstrap_circuit().unwrap() {}
+        push_and_check(&mut dbsp, &mut expected_key);
+
+        // Bootstrap steps interleave with an *open* transaction on the main
+        // circuit.  The output mailbox holds one step's batch, so read the
+        // delta right after the step that ingests the input.
+        dbsp.start_bootstrap_transaction().unwrap();
+        dbsp.start_commit_bootstrap_transaction().unwrap();
+        expected_key += 1;
+        input.push(expected_key, 1);
+        dbsp.start_transaction().unwrap();
+        dbsp.step().unwrap();
+        assert_eq!(output.consolidate(), crate::zset! { expected_key => 1 });
+        while !dbsp.step_bootstrap_circuit().unwrap() {}
+        dbsp.commit_transaction().unwrap();
+        // The commit steps process no further input.
+        assert_eq!(output.consolidate(), crate::zset! {});
+
+        dbsp.destroy_bootstrap_circuit().unwrap();
+        assert!(dbsp.destroy_bootstrap_circuit().is_err());
+        assert!(dbsp.step_bootstrap_circuit().is_err());
+
+        // The main circuit works after the bootstrap circuit is destroyed,
+        // and a new bootstrap circuit can be created.
+        push_and_check(&mut dbsp, &mut expected_key);
+        dbsp.create_bootstrap_circuit().unwrap();
+        push_and_check(&mut dbsp, &mut expected_key);
+        dbsp.destroy_bootstrap_circuit().unwrap();
+
+        dbsp.kill().unwrap();
+    }
 
     // Panic during initialization in worker thread.
     #[test]

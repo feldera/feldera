@@ -3170,9 +3170,22 @@ impl RootCircuit {
             })?;
 
         let mut circuit = RootCircuit::new();
-        let res = constructor(&mut circuit).map_err(DbspError::Constructor)?;
+        // On failure, explicitly deallocate whatever the constructor built:
+        // nodes and streams hold cyclic `Rc` references that only
+        // `circuit.clear()` breaks (success-path cleanup happens in
+        // `CircuitHandle::drop`).
+        let res = match constructor(&mut circuit) {
+            Ok(res) => res,
+            Err(e) => {
+                circuit.clear();
+                return Err(DbspError::Constructor(e));
+            }
+        };
         let mut executor = Box::new(<OnceExecutor<S>>::new()) as Box<dyn Executor<RootCircuit>>;
-        executor.prepare(&circuit, None)?;
+        if let Err(e) = executor.prepare(&circuit, None) {
+            circuit.clear();
+            return Err(e.into());
+        }
 
         // if Runtime::worker_index() == 0 {
         //     circuit.to_dot_file(
