@@ -924,11 +924,6 @@ struct DeltaTableInputEndpointInner {
     /// is a member. Derived once from the immutable SQL schema.
     used_sql_columns: OnceLock<ColumnNameSet>,
 
-    /// SQL columns the SQL program does not need, i.e. not read from the table.
-    /// A delta column is dropped iff it is a member. Derived once from the
-    /// immutable SQL schema.
-    skippable_sql_columns: OnceLock<ColumnNameSet>,
-
     /// SQL columns named by the connector's own expressions -- `filter`,
     /// `snapshot_filter`, `cdc_delete_filter`, `cdc_order_by`. These are kept
     /// even when marked unused, so the expressions can resolve them. Derived
@@ -982,7 +977,6 @@ impl DeltaTableInputEndpointInner {
             metrics,
             catchup_follow_state: Mutex::new(CatchupFollowState::default()),
             used_sql_columns: OnceLock::new(),
-            skippable_sql_columns: OnceLock::new(),
             config_referenced_columns: OnceLock::new(),
         }
     }
@@ -1196,21 +1190,6 @@ impl DeltaTableInputEndpointInner {
         })
     }
 
-    /// SQL columns the SQL program does not need (skippable unused columns),
-    /// matched case-insensitively against Delta column names. Derived once from
-    /// the immutable SQL schema and cached.
-    fn skippable_sql_columns(&self) -> &ColumnNameSet {
-        self.skippable_sql_columns.get_or_init(|| {
-            ColumnNameSet::from_names(
-                self.schema
-                    .fields
-                    .iter()
-                    .filter(|f| self.can_skip_column(f))
-                    .map(|f| f.name.name()),
-            )
-        })
-    }
-
     /// Compute the subset of columns in the Delta table schema that occur in the SQL
     /// table declaration.
     ///
@@ -1287,28 +1266,35 @@ impl DeltaTableInputEndpointInner {
                 .contains(&field.name.name())
     }
 
-    /// Project `df` to the columns the connector reads when `skip_unused_columns`
-    /// is set: drop skippable unused columns, keep everything else -- including
-    /// Delta metadata columns absent from the SQL schema (e.g. `__feldera_op`,
-    /// `__feldera_ts`) and SQL columns named by `cdc_order_by`/`cdc_delete_filter`/
-    /// `filter`, all of which those expressions must be able to resolve.
+    /// Project `df` to the columns the connector needs when `skip_unused_columns`
+    /// is set, mirroring the snapshot path's `SELECT <used_columns>`: keep a
+    /// column iff the circuit reads it (`used_sql_columns`) or a connector
+    /// expression names it (`config_referenced_columns`). The latter covers Delta
+    /// metadata columns absent from the SQL schema, e.g. `__feldera_op` /
+    /// `__feldera_ts`, which `cdc_delete_filter` / `cdc_order_by` test, so those
+    /// expressions can resolve. A Delta table may carry far more physical columns
+    /// than the SQL table maps; this keeps the connector from reading the rest
+    /// off disk.
     fn project_cdc_columns(&self, df: DataFrame) -> AnyResult<DataFrame> {
         if !self.skip_unused_columns() {
             return Ok(df);
         }
 
-        // Skippable SQL set is cached; the Delta column list comes from `df`'s
-        // own schema each call, so projection stays correct if column mapping
-        // ever makes the read schema vary across versions.
-        let skippable = self.skippable_sql_columns();
+        let used = self.used_sql_columns();
+        let referenced = self.config_referenced_columns();
 
-        // Own the kept names before consuming `df`: `select_columns` takes `df`
-        // by value, so the `df.schema()` borrow must end first.
+        // Filter `df`'s own field list (not the SQL schema) so the projection
+        // tracks the read schema if column mapping ever varies it across
+        // versions, and preserves on-disk column order: the order the
+        // `cdc_delete_filter` `PhysicalExpr` binds by index in
+        // `extract_delete_filter_expr`. Own the kept names before consuming `df`;
+        // `select_columns` takes `df` by value, so the `df.schema()` borrow must
+        // end first.
         let kept: Vec<String> = df
             .schema()
             .fields()
             .iter()
-            .filter(|f| !skippable.contains(f.name()))
+            .filter(|f| used.contains(f.name()) || referenced.contains(f.name()))
             .map(|f| f.name().to_string())
             .collect();
         let kept: Vec<&str> = kept.iter().map(String::as_str).collect();
