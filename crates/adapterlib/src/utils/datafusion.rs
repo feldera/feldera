@@ -8,15 +8,18 @@ use datafusion::execution::memory_pool::FairSpillPool;
 use datafusion::execution::runtime_env::{RuntimeEnv, RuntimeEnvBuilder};
 use datafusion::logical_expr::sqlparser::parser::ParserError;
 use datafusion::prelude::{SQLOptions, SessionConfig, SessionContext};
+use datafusion::sql::sqlparser::ast::{Expr, visit_expressions};
 use datafusion::sql::sqlparser::dialect::GenericDialect;
 use datafusion::sql::sqlparser::parser::Parser;
 use datafusion::sql::sqlparser::tokenizer::Token;
 use feldera_types::config::PipelineConfig;
 use feldera_types::constants::DATAFUSION_TEMP_DIR;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs::{create_dir_all, read_dir, remove_dir_all, remove_file};
 use std::io::Error as IoError;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::warn;
@@ -309,6 +312,58 @@ pub fn validate_sql_order_by(order_by: &str) -> Result<(), ParserError> {
     Ok(())
 }
 
+/// Collect into `columns` every column name an expression's AST references,
+/// walking nested sub-expressions. For a compound reference such as `t.c` only
+/// the trailing part (`c`) is taken, since that is the column; leading parts are
+/// table qualifiers.
+///
+/// Over-collecting is harmless for the callers here -- it merely keeps a column
+/// from being pruned -- but under-collecting would drop a column the connector
+/// needs, so an identifier is kept whenever it could name a column.
+fn collect_referenced_columns(expr: &Expr, columns: &mut BTreeSet<String>) {
+    let _: ControlFlow<()> = visit_expressions(expr, |e| {
+        match e {
+            Expr::Identifier(ident) => {
+                columns.insert(ident.value.clone());
+            }
+            Expr::CompoundIdentifier(parts) => {
+                if let Some(column) = parts.last() {
+                    columns.insert(column.value.clone());
+                }
+            }
+            _ => {}
+        }
+        ControlFlow::Continue(())
+    });
+}
+
+/// Column names referenced by a scalar SQL expression, e.g. a connector's
+/// `filter` or `cdc_delete_filter`. Names are returned verbatim; the caller
+/// case-folds when matching them against a schema.
+///
+/// Returns an error if the expression does not parse. Used when pruning
+/// "unused" columns, to keep the columns a connector expression depends on.
+pub fn columns_referenced_by_expression(expr: &str) -> Result<BTreeSet<String>, ParserError> {
+    let mut parser = Parser::new(&GenericDialect).try_with_sql(expr)?;
+    let parsed = parser.parse_expr()?;
+    let mut columns = BTreeSet::new();
+    collect_referenced_columns(&parsed, &mut columns);
+    Ok(columns)
+}
+
+/// Like [`columns_referenced_by_expression`], but for the comma-separated key
+/// list of an ORDER BY clause, e.g. a connector's `cdc_order_by`.
+pub fn columns_referenced_by_order_by(order_by: &str) -> Result<BTreeSet<String>, ParserError> {
+    let mut parser = Parser::new(&GenericDialect).try_with_sql(order_by)?;
+    let keys = parser.parse_comma_separated(Parser::parse_order_by_expr)?;
+    parser.expect_token(&Token::EOF)?;
+    let mut columns = BTreeSet::new();
+    for key in &keys {
+        collect_referenced_columns(&key.expr, &mut columns);
+    }
+    Ok(columns)
+}
+
 /// Convert a value of the timestamp column returned by a SQL query into a valid
 /// SQL expression.
 pub fn timestamp_to_sql_expression(column_type: &ColumnType, expr: &str) -> String {
@@ -405,10 +460,14 @@ pub async fn validate_timestamp_column(
 
 #[cfg(test)]
 mod tests {
-    use super::{create_runtime_env, create_session_context};
+    use super::{
+        columns_referenced_by_expression, columns_referenced_by_order_by, create_runtime_env,
+        create_session_context,
+    };
     use datafusion::execution::memory_pool::MemoryLimit;
     use feldera_types::config::{PipelineConfig, ResourceConfig, RuntimeConfig, StorageConfig};
     use feldera_types::constants::DATAFUSION_TEMP_DIR;
+    use std::collections::BTreeSet;
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -780,5 +839,57 @@ mod tests {
             "validation failures:\n{}",
             failures.join("\n")
         );
+    }
+
+    fn columns(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn expression_columns_are_collected() {
+        for (expr, expected) in [
+            ("__is_deleted = true", columns(&["__is_deleted"])),
+            ("deleted_at is not null", columns(&["deleted_at"])),
+            (
+                "__is_deleted = true OR deleted_at is not null",
+                columns(&["__is_deleted", "deleted_at"]),
+            ),
+            // Function arguments are walked; the function name is not a column.
+            ("lower(status) = 'gone'", columns(&["status"])),
+            // A compound reference resolves to its trailing (column) part.
+            ("t.deleted = true", columns(&["deleted"])),
+            // A predicate over no columns yields the empty set.
+            ("1 = 1", columns(&[])),
+        ] {
+            assert_eq!(
+                columns_referenced_by_expression(expr).unwrap(),
+                expected,
+                "columns of '{expr}'"
+            );
+        }
+    }
+
+    #[test]
+    fn order_by_columns_are_collected() {
+        assert_eq!(
+            columns_referenced_by_order_by("ts asc, lsn desc").unwrap(),
+            columns(&["ts", "lsn"]),
+        );
+        assert_eq!(
+            columns_referenced_by_order_by("coalesce(ts, created_at) asc").unwrap(),
+            columns(&["ts", "created_at"]),
+        );
+        // ASC/DESC and NULLS FIRST/LAST modifiers parse but are not columns.
+        assert_eq!(
+            columns_referenced_by_order_by("ts desc nulls last, lsn asc").unwrap(),
+            columns(&["ts", "lsn"]),
+        );
+    }
+
+    #[test]
+    fn malformed_expressions_error() {
+        assert!(columns_referenced_by_expression("a =").is_err());
+        // A trailing key past the first must still fail rather than be dropped.
+        assert!(columns_referenced_by_order_by("ts asc,").is_err());
     }
 }

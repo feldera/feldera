@@ -31,7 +31,8 @@ use feldera_adapterlib::format::{ParseError, StagedInputBuffer};
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{InputQueueEntry, Resume, Watermark, parse_resume_info};
 use feldera_adapterlib::utils::datafusion::{
-    array_to_string, create_session_context_with, execute_query_collect, execute_singleton_query,
+    array_to_string, columns_referenced_by_expression, columns_referenced_by_order_by,
+    create_session_context_with, execute_query_collect, execute_singleton_query,
     timestamp_to_sql_expression, validate_sql_expression, validate_sql_order_by,
     validate_timestamp_column,
 };
@@ -927,6 +928,12 @@ struct DeltaTableInputEndpointInner {
     /// A delta column is dropped iff it is a member. Derived once from the
     /// immutable SQL schema.
     skippable_sql_columns: OnceLock<ColumnNameSet>,
+
+    /// SQL columns named by the connector's own expressions -- `filter`,
+    /// `snapshot_filter`, `cdc_delete_filter`, `cdc_order_by`. These are kept
+    /// even when marked unused, so the expressions can resolve them. Derived
+    /// once from the immutable config.
+    config_referenced_columns: OnceLock<ColumnNameSet>,
 }
 
 #[derive(Debug, Clone)]
@@ -976,6 +983,7 @@ impl DeltaTableInputEndpointInner {
             catchup_follow_state: Mutex::new(CatchupFollowState::default()),
             used_sql_columns: OnceLock::new(),
             skippable_sql_columns: OnceLock::new(),
+            config_referenced_columns: OnceLock::new(),
         }
     }
 
@@ -1182,7 +1190,7 @@ impl DeltaTableInputEndpointInner {
                 self.schema
                     .fields
                     .iter()
-                    .filter(|f| !self.skip_unused_columns() || !Self::is_skippable(f))
+                    .filter(|f| !self.skip_unused_columns() || !self.can_skip_column(f))
                     .map(|f| f.name.name()),
             )
         })
@@ -1197,7 +1205,7 @@ impl DeltaTableInputEndpointInner {
                 self.schema
                     .fields
                     .iter()
-                    .filter(|f| Self::is_skippable(f))
+                    .filter(|f| self.can_skip_column(f))
                     .map(|f| f.name.name()),
             )
         })
@@ -1230,20 +1238,60 @@ impl DeltaTableInputEndpointInner {
             .join(", ")
     }
 
-    /// True if a table column can be skipped: no user-visible result depends on
-    /// it, and omitting it lets us substitute NULL or its default value (it is
-    /// nullable or has a default).
+    /// True if a column's *shape* allows omitting it: no user-visible result
+    /// depends on it (`unused`), and omitting it lets us substitute NULL or its
+    /// default value (it is nullable or has a default).
     ///
-    /// The read paths that keep these columns and those that drop them share
-    /// this one predicate, so they stay in sync.
-    fn is_skippable(field: &Field) -> bool {
+    /// This is the shape-only rule; [`can_skip_column`](Self::can_skip_column)
+    /// adds the connector-config check before a column is actually skipped.
+    fn is_unused_and_omittable(field: &Field) -> bool {
         field.unused && (field.columntype.nullable || field.default.is_some())
+    }
+
+    /// SQL columns named by the connector's own expressions (`filter`,
+    /// `snapshot_filter`, `cdc_delete_filter`, `cdc_order_by`), case-folded for
+    /// matching. Derived once and cached.
+    ///
+    /// These strings are validated during configuration, so they parse here; a
+    /// parse error is therefore unreachable and contributes no columns rather
+    /// than failing the connector a second time.
+    fn config_referenced_columns(&self) -> &ColumnNameSet {
+        self.config_referenced_columns.get_or_init(|| {
+            let mut columns = BTreeSet::new();
+            for expr in [
+                &self.config.filter,
+                &self.config.snapshot_filter,
+                &self.config.cdc_delete_filter,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                columns.extend(columns_referenced_by_expression(expr).unwrap_or_default());
+            }
+            if let Some(order_by) = &self.config.cdc_order_by {
+                columns.extend(columns_referenced_by_order_by(order_by).unwrap_or_default());
+            }
+            ColumnNameSet::from_names(columns)
+        })
+    }
+
+    /// True if a column may actually be skipped: its shape permits omitting it
+    /// ([`is_unused_and_omittable`](Self::is_unused_and_omittable)) *and* no
+    /// connector expression references it. A referenced column must be read and
+    /// must survive projection, or expressions like `cdc_delete_filter` cannot
+    /// resolve it.
+    fn can_skip_column(&self, field: &Field) -> bool {
+        Self::is_unused_and_omittable(field)
+            && !self
+                .config_referenced_columns()
+                .contains(&field.name.name())
     }
 
     /// Project `df` to the columns the connector reads when `skip_unused_columns`
     /// is set: drop skippable unused columns, keep everything else -- including
     /// Delta metadata columns absent from the SQL schema (e.g. `__feldera_op`,
-    /// `__feldera_ts`) that `cdc_order_by`/`cdc_delete_filter`/`filter` reference.
+    /// `__feldera_ts`) and SQL columns named by `cdc_order_by`/`cdc_delete_filter`/
+    /// `filter`, all of which those expressions must be able to resolve.
     fn project_cdc_columns(&self, df: DataFrame) -> AnyResult<DataFrame> {
         if !self.skip_unused_columns() {
             return Ok(df);
@@ -3080,28 +3128,24 @@ mod is_skippable_tests {
 
     #[test]
     fn skippable_only_when_unused_and_safely_omittable() {
-        // A used column is never skippable, whatever its type.
-        assert!(!DeltaTableInputEndpointInner::is_skippable(&field(
-            false, true, None
-        )));
-        assert!(!DeltaTableInputEndpointInner::is_skippable(&field(
-            false,
-            false,
-            Some("0")
-        )));
+        // A used column is never omittable, whatever its type.
+        assert!(!DeltaTableInputEndpointInner::is_unused_and_omittable(
+            &field(false, true, None)
+        ));
+        assert!(!DeltaTableInputEndpointInner::is_unused_and_omittable(
+            &field(false, false, Some("0"))
+        ));
 
-        // An unused column is skippable only if omitting it is well-defined:
-        // it is nullable, or it carries a default.
-        assert!(DeltaTableInputEndpointInner::is_skippable(&field(
-            true, true, None
-        )));
-        assert!(DeltaTableInputEndpointInner::is_skippable(&field(
-            true,
-            false,
-            Some("0")
-        )));
-        assert!(!DeltaTableInputEndpointInner::is_skippable(&field(
-            true, false, None
-        )));
+        // An unused column is omittable only if substituting for it is
+        // well-defined: it is nullable, or it carries a default.
+        assert!(DeltaTableInputEndpointInner::is_unused_and_omittable(
+            &field(true, true, None)
+        ));
+        assert!(DeltaTableInputEndpointInner::is_unused_and_omittable(
+            &field(true, false, Some("0"))
+        ));
+        assert!(!DeltaTableInputEndpointInner::is_unused_and_omittable(
+            &field(true, false, None)
+        ));
     }
 }
