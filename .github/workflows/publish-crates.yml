@@ -39,7 +39,7 @@ jobs:
     environment:
       name: ${{ inputs.environment || 'release' }}
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-3613839bd73108aee58017bf75dda42f7a3d0bb4
+      image: ghcr.io/feldera/feldera-dev:sha-1d28eb77112e15b366a9ffa56571568afd1dd062
     steps:
       - name: Show Kubernetes node
         if: always()

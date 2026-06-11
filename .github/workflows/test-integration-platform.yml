@@ -102,6 +102,7 @@ jobs:
             -e FELDERA_AUTH_ISSUER="${{ vars.OIDC_TEST_ISSUER }}" \
             -e RUST_LOG=info \
             -e RUST_BACKTRACE=1 \
+            -e CARGO_BUILD_JOBS=${{ vars.CI_RUNNER_CORES || 20 }} \
             ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }} \
             --enable-https \
             --https-tls-cert-path /home/ubuntu/test-tls/tls_test.crt \
@@ -173,7 +174,7 @@ jobs:
       FELDERA_HOST: https://localhost:8080
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-3613839bd73108aee58017bf75dda42f7a3d0bb4
+      image: ghcr.io/feldera/feldera-dev:sha-1d28eb77112e15b366a9ffa56571568afd1dd062
     services:
       pipeline-manager:
         image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
@@ -187,6 +188,9 @@ jobs:
           FELDERA_ENABLE_HTTPS: true
           # Needed by test_update_runtime.py
           FELDERA_UNSTABLE_FEATURES: "testing"
+          # Cap cargo parallelism inside the manager: each pipeline submit
+          # triggers a Rust build, and pytest workers can submit concurrently.
+          CARGO_BUILD_JOBS: ${{ vars.CI_RUNNER_CORES || 20 }}
         options: >-
           --health-cmd "curl --insecure --fail --request GET --url https://localhost:8080/healthz || exit 1"
           --health-interval 10s

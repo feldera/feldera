@@ -30,7 +30,7 @@ jobs:
       CI_K8S_MINIO_ACCESS_KEY_ID: ${{ secrets.CI_K8S_MINIO_TEST_BUCKET_ACCESS_KEY_ID }}
       CI_K8S_MINIO_SECRET_ACCESS_KEY: ${{ secrets.CI_K8S_MINIO_TEST_BUCKET_SECRET_ACCESS_KEY }}
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-3613839bd73108aee58017bf75dda42f7a3d0bb4
+      image: ghcr.io/feldera/feldera-dev:sha-1d28eb77112e15b366a9ffa56571568afd1dd062
     steps:
       - name: Show Kubernetes node
         if: always()

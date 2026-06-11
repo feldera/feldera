@@ -2,32 +2,67 @@ name: Test Java Sources
 
 on:
   workflow_call:
+  workflow_dispatch:
 
 env:
-  RUSTC_WRAPPER: sccache
-  SCCACHE_CACHE_SIZE: ${{ vars.SCCACHE_CACHE_SIZE }}
-  SCCACHE_BUCKET: ${{ vars.SCCACHE_BUCKET }}
+  # sccache is disabled here on purpose (no RUSTC_WRAPPER). Instead
+  # of per-crate compile caching we cache the whole target/ trees (see the
+  # cache step below) and let cargo incremental rebuilds do the work. Comparing
+  # wall-clock against the sccache setup tells us which is faster for this job.
+  # SCCACHE_ENDPOINT/REGION + AWS creds stay because feldera-minio-cache reuses
+  # them as its S3 config.
   SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
   SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
   AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
   AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
+  # Pin Maven's local repo so it matches the cache path regardless of the
+  # container runner's $HOME.
+  MAVEN_OPTS: -Dmaven.repo.local=/home/ubuntu/.m2/repository
   RUST_MIN_STACK: 8388608
-  # Limit number of parallel build jobs to avoid OOM in arm64 CI runners
-  CARGO_BUILD_JOBS: 24
+  # Cap cargo parallelism at the k8s runner core budget. Java tests drive a
+  # Rust build via mvn → sql-to-dbsp; without this cap arm64 runners OOM from
+  # too many parallel linkers. Override at the org/repo level via the
+  # CI_RUNNER_CORES variable; the fallback matches the current 20-core pod.
+  CARGO_BUILD_JOBS: ${{ vars.CI_RUNNER_CORES || 20 }}
+  # Tune cache (de)compression for speed over ratio. On a 100G network the
+  # larger archive is free, while fast zstd cuts the multi-GB target/ cache
+  # restore from ~30min (gzip) to a few minutes. Honored by feldera-minio-cache
+  # (runs-on/cache); requires the zstd CLI in the dev image.
+  ZSTD_CLEVEL: 1
+  ZSTD_NBTHREADS: ${{ vars.CI_RUNNER_CORES || 20 }}
 
 jobs:
   java-tests:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'java-tests') }}
-    name: Execute Java Tests
+    name: Execute Java Tests (${{ matrix.shard.name }})
+    # fail-fast: false so a failure in one shard still lets the others finish
+    # and report. Workflow-level cancellation of sibling CI jobs is handled by
+    # the cancel-if-tests-java-failed sentinel in ci.yml.
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - runner: [k8s-runners-amd64]
-          - runner: [k8s-runners-arm64]
+        runner:
+          - [k8s-runners-amd64]
+          - [k8s-runners-arm64]
+        # Single shard per arch: with zstd caching the cache restore is cheap,
+        # so paying the per-shard restore + build.sh overhead N times no longer
+        # pays off. The matrix dimension stays so we can re-shard by swapping
+        # this entry for the balanced 3-way split kept below.
+        shard:
+          - name: all
+            pattern: "A*,B*,C*,D*,E*,F*,G*,H*,I*,J*,K*,L*,M*,N*,O*,P*,Q*,R*,S*,T*,U*,V*,W*,X*,Y*,Z*"
+          # Balanced 3-way split (by measured @Test method count, ~500 each);
+          # uncomment and drop the `all` entry to re-enable sharding.
+          # - name: A-I
+          #   pattern: "A*,B*,C*,D*,E*,F*,G*,H*,I*"
+          # - name: J-Q
+          #   pattern: "J*,K*,L*,M*,N*,O*,P*,Q*"
+          # - name: R-Z
+          #   pattern: "R*,S*,T*,U*,V*,W*,X*,Y*,Z*"
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-3613839bd73108aee58017bf75dda42f7a3d0bb4
+      image: ghcr.io/feldera/feldera-dev:sha-1d28eb77112e15b366a9ffa56571568afd1dd062
     steps:
       - name: Show Kubernetes node
         if: always()
@@ -37,17 +72,46 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      # Rotate the Rust cache once per calendar month to keep target/ from
+      # accumulating stale artifacts indefinitely. Bucket lifecycle on
+      # gha-cache reclaims the bytes; restore-keys stay scoped to the same
+      # month so we never restore last month's stale cache.
+      - name: Compute monthly cache prefix
+        id: cache-month
+        run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      - name: Cache Rust dependencies and target
+        uses: ./.github/actions/feldera-minio-cache
+        with:
+          # cache target/ in place of sccache. registry/src is
+          # excluded — cargo regenerates it from registry/cache archives. The
+          # test framework writes generated pipelines to sql-to-dbsp-compiler/
+          # temp and multi, excluded from the workspace per Cargo.toml, so
+          # their target dirs must be cached explicitly.
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+            target
+            sql-to-dbsp-compiler/temp/target
+            sql-to-dbsp-compiler/multi/target
+          key: test-java-cargo-${{ steps.cache-month.outputs.month }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.shard.name }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            test-java-cargo-${{ steps.cache-month.outputs.month }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.shard.name }}-
+
+      - name: Cache JVM build dependencies
+        uses: ./.github/actions/feldera-minio-cache
         with:
           path: |
             /home/ubuntu/.gradle
+            /home/ubuntu/.m2/repository
             ./sql-to-dbsp-compiler/calcite
-          key: sql2dbsp-java-cache2-${{ runner.os }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env') }}
+          # List poms explicitly: a '**/pom.xml' glob walks the restored
+          # target/ trees (millions of files) and blows past hashFiles' 120s
+          # limit. These four are the only source poms in the module.
+          key: test-java-jvm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env', 'sql-to-dbsp-compiler/pom.xml', 'sql-to-dbsp-compiler/SQL-compiler/pom.xml', 'sql-to-dbsp-compiler/simulator/pom.xml', 'sql-to-dbsp-compiler/slt/pom.xml') }}
           restore-keys: |
-            sql2dbsp-java-cache2-${{ runner.os }}-
+            test-java-jvm-${{ runner.os }}-${{ runner.arch }}-
 
       # TODO: Avoid doing this twice and ideally download & reuse the JAR from build-java.yml workflow
       - name: Run build.sh
@@ -62,16 +126,14 @@ jobs:
         run: gradle --stop
 
       - name: Run mvn test
-        run: mvn test --no-transfer-progress -B -pl SQL-compiler -Dsurefire.failIfNoSpecifiedTests=false
+        run: mvn test --no-transfer-progress -B -pl SQL-compiler -Dsurefire.failIfNoSpecifiedTests=false -Dtest='${{ matrix.shard.pattern }}'
         working-directory: ./sql-to-dbsp-compiler
         if: ${{ vars.CI_DRY_RUN != 'true' }}
 
+      # Quick SLT smoke check; gated to the first shard so it runs once per arch
+      # rather than once per shard (the explicit -Dtest selector is independent
+      # of the shard pattern). Update the name if the first shard is renamed.
       - name: Run one quick SLT test
-        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        if: ${{ vars.CI_DRY_RUN != 'true' && matrix.shard.name == 'all' }}
         run: mvn test --no-transfer-progress -B -Dsurefire.failIfNoSpecifiedTests=false -Dtest=RotateTests#quick
         working-directory: ./sql-to-dbsp-compiler
-
-      - name: Print sccache stats
-        run: |
-          sccache --show-stats
-        if: ${{ vars.CI_DRY_RUN != 'true' }}

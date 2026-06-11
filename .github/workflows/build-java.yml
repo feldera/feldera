@@ -4,15 +4,27 @@ on:
   workflow_call:
   workflow_dispatch:
 
+env:
+  # MinIO credentials and endpoint — feldera-minio-cache reads these to talk
+  # to the in-cluster gha-cache bucket. AWS_* are also unused by upload-jar
+  # (configure-aws-credentials overrides them via $GITHUB_ENV).
+  AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
+  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
+  SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
+  SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
+  # Pin Maven's local repo so it matches the cache path regardless of
+  # whatever HOME the GHA container runner sets — JVM's user.home reads
+  # /etc/passwd, not $HOME, and we don't want to rely on that match.
+  MAVEN_OPTS: -Dmaven.repo.local=/home/ubuntu/.m2/repository
+
 jobs:
   build-jar:
     name: Build Compiler
     runs-on: [k8s-runners-amd64]
     permissions:
-      id-token: write
       contents: read
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-3613839bd73108aee58017bf75dda42f7a3d0bb4
+      image: ghcr.io/feldera/feldera-dev:sha-1d28eb77112e15b366a9ffa56571568afd1dd062
     steps:
       - name: Show Kubernetes node
         if: always()
@@ -22,14 +34,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      - name: Cache JVM build dependencies
+        uses: ./.github/actions/feldera-minio-cache
         with:
           path: |
             /home/ubuntu/.gradle
+            /home/ubuntu/.m2/repository
             ./sql-to-dbsp-compiler/calcite
-          key: sql2dbsp-java-cache-${{ runner.os }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env') }}
+          key: build-java-jvm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env', 'sql-to-dbsp-compiler/**/pom.xml') }}
           restore-keys: |
-            sql2dbsp-java-cache-${{ runner.os }}-
+            build-java-jvm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: gradle version
         run: |
@@ -57,6 +71,25 @@ jobs:
           name: feldera-sql-compiler
           path: build-artifacts
           retention-days: 7
+
+  # S3 upload runs in a separate job so the OIDC session token never enters
+  # the build-jar environment, where it would poison the cache save phase
+  # of runs-on/cache (MinIO rejects requests carrying a stray AWS_SESSION_TOKEN).
+  upload-jar:
+    name: Upload JAR to S3
+    needs: build-jar
+    runs-on: [k8s-runners-amd64]
+    permissions:
+      id-token: write
+      contents: read
+    container:
+      image: ghcr.io/feldera/feldera-dev:sha-1d28eb77112e15b366a9ffa56571568afd1dd062
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: feldera-sql-compiler
+          path: build-artifacts
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@00943011d9042930efac3dcd3a170e4273319bc8 # v5.1.0

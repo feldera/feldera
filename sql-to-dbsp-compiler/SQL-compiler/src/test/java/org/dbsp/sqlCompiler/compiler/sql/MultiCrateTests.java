@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.sql;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.CompilerMain;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCrates;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -39,7 +40,7 @@ public class MultiCrateTests extends BaseSQLTests {
         if (noUdfs) {
             // Make sure there is no stray udf.rs file from a previous test
             Path path = Paths.get(BaseSQLTests.RUST_MULTI_DIRECTORY + "/crates",
-                    MultiCrates.FILE_PREFIX + "x_globals", "src", "udf.rs");
+                    MultiCrates.FILE_PREFIX + "x_globals", "src", DBSPCompiler.UDF_FILE_NAME);
             File udfFile = path.toFile();
             Utilities.deleteFile(udfFile, true);
         }
@@ -321,7 +322,7 @@ public class MultiCrateTests extends BaseSQLTests {
                 throw new RuntimeException("Could not create directory " + dir);
             }
         }
-        File udf = new File(dir.toFile(), "udf.rs");
+        File udf = new File(dir.toFile(), DBSPCompiler.UDF_FILE_NAME);
         PrintWriter udfFile = new PrintWriter(udf, StandardCharsets.UTF_8);
         udfFile.println(contents);
         udfFile.close();
@@ -410,7 +411,7 @@ public class MultiCrateTests extends BaseSQLTests {
                 throw new RuntimeException("Could not create directory " + dir);
             }
         }
-        File udf = new File(dir.toFile(), "udf.rs");
+        File udf = new File(dir.toFile(), DBSPCompiler.UDF_FILE_NAME);
         PrintWriter udfFile = new PrintWriter(udf, StandardCharsets.UTF_8);
         udfFile.println("""
                 use crate::{Tup1, Tup2, Tup12};
