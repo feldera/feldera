@@ -1,7 +1,7 @@
 # Only include requirements used in CI (no s3 or glue pyiceberg features).
 numpy==2.2.0
 pandas==2.2.3
-pyarrow==17.0.0
+pyarrow==23.0.1
 pyiceberg[sql-sqlite]==0.8.1
 # Transitive dependency via pyiceberg.
 pydantic==2.11.10
