@@ -1257,13 +1257,20 @@ impl ControllerStatus {
     /// True if the pipeline has processed all inputs to completion.
     pub fn pipeline_complete(&self) -> bool {
         // All input endpoints (if any) are at end of input.
-        if !self
-            .input_status()
-            .values()
-            .filter(|endpoint_stats| !endpoint_stats.endpoint_name.contains(".api-ingress-"))
-            .all(|endpoint_stats| endpoint_stats.is_eoi())
-        {
-            return false;
+        for ep in self.input_status().values().filter(|ep| !ep.is_eoi()) {
+            let name = &ep.endpoint_name;
+
+            // We don't require HTTP ingress connectors to be at end of input,
+            // because the user is in charge of whether more data comes in.
+            //
+            // We also don't require the clock connector to be at end of input
+            // if it's configured to advance only when the user sends a request.
+            let ignore = name.contains(".api-ingress-")
+                || (name == "now" && self.pipeline_config.global.dev_tweaks.now_http_driven());
+
+            if !ignore {
+                return false;
+            }
         }
 
         // All received records have been processed by the circuit.
