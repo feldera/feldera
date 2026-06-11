@@ -1,6 +1,7 @@
-use dbsp::{Runtime, utils::Tup1};
+use dbsp::{DBSPHandle, Runtime, circuit::CircuitConfig, utils::Tup1};
 use feldera_sqllib::Variant;
 use feldera_types::{
+    config::PipelineConfig,
     deserialize_table_record,
     program_schema::{ColumnType, Field, Relation, SqlIdentifier},
     serde_with_context::{SerializeWithContext, SqlSerdeConfig},
@@ -10,11 +11,16 @@ use feldera_types::{
 use pg::PostgresTestStruct;
 use serde_json::json;
 use serial_test::serial;
-use std::{collections::BTreeMap, io::Write, path::Path};
+use std::{
+    collections::BTreeMap,
+    io::Write,
+    path::Path,
+    sync::{Arc, Mutex},
+};
 use tempfile::NamedTempFile;
 
 use crate::{
-    Catalog, Controller,
+    Catalog, CircuitCatalog, Controller,
     integrated::postgres::test::pg::PostgresTestStructCdc,
     test::{TestStruct, wait},
 };
@@ -2121,6 +2127,245 @@ fn test_pg_input_tls() {
     client
         .execute(&format!("DROP TABLE {table_name}"), &[])
         .unwrap();
+}
+
+/// Build an output circuit identical to [`PostgresTestStruct::test_circuit`]'s
+/// inner circuit, but without a baked-in error callback so that callers can
+/// supply their own.  Used by the non-unique-key test below.
+fn nonunique_pg_circuit(config: CircuitConfig) -> (DBSPHandle, Box<dyn CircuitCatalog>) {
+    let schema = PostgresTestStruct::schema();
+
+    let (circuit, catalog) = Runtime::init_circuit(config, move |circuit| {
+        let mut catalog = Catalog::new();
+        let (input, hinput) = circuit.add_input_zset::<PostgresTestStruct>();
+
+        let input_schema = serde_json::to_string(&Relation::new(
+            "test_input1".into(),
+            schema.clone(),
+            false,
+            BTreeMap::new(),
+        ))
+        .unwrap();
+
+        let output_schema = serde_json::to_string(&Relation::new(
+            "test_output1".into(),
+            schema,
+            false,
+            BTreeMap::new(),
+        ))
+        .unwrap();
+
+        catalog.register_materialized_input_zset::<_, PostgresTestStruct>(
+            input.clone(),
+            hinput,
+            &input_schema,
+        );
+
+        #[derive(Clone, Debug, Eq, PartialEq, Default)]
+        struct KeyStruct {
+            field0: i64,
+        }
+
+        impl From<KeyStruct> for Tup1<i64> {
+            fn from(t: KeyStruct) -> Self {
+                Tup1::new(t.field0)
+            }
+        }
+        impl From<Tup1<i64>> for KeyStruct {
+            fn from(t: Tup1<i64>) -> Self {
+                Self { field0: t.0 }
+            }
+        }
+
+        deserialize_table_record!(KeyStruct["idx", Variant, 1] {
+            (field0, "bigint_", false, i64, |_| None)
+        });
+        serialize_table_record!(KeyStruct[1]{
+            field0["bigint_"]: i64
+        });
+
+        let indexed_input = input.map_index(|r| (Tup1(r.bigint_), r.to_owned()));
+        catalog.register_materialized_output_zset::<_, PostgresTestStruct>(input, &output_schema);
+
+        catalog
+            .register_index::<Tup1<i64>, KeyStruct, PostgresTestStruct, PostgresTestStruct>(
+                indexed_input,
+                &SqlIdentifier::from("idx"),
+                &SqlIdentifier::from("test_output1"),
+                &["bigint_".to_string()],
+            )
+            .expect("failed to register index");
+
+        Ok(catalog)
+    })
+    .unwrap();
+
+    (circuit, Box::new(catalog))
+}
+
+/// A unique-key constraint violation in an indexed postgres output must skip
+/// only the offending key, not the rest of the batch, and must report one error
+/// per non-unique key.
+///
+/// The connector is configured with `index: idx`, so every key is expected to
+/// map to a single value.  We feed a single batch in which most keys are unique
+/// but two keys (`bigint_` 100 and 200) carry two distinct values each.  The
+/// connector must (a) write every well-formed record and (b) report a
+/// uniqueness-violation error for each of the two offending keys while leaving
+/// their records out of the table.
+///
+/// Output buffering is sized so the whole input collapses into one output
+/// batch; this guarantees that both values of each non-unique key are encoded
+/// together (otherwise the conflict would not be observable within a single
+/// batch).
+#[test]
+#[serial]
+fn test_pg_non_unique_keys_skipped() {
+    let table_name = unique_pg_name("test_pg_non_unique");
+    let url = postgres_url();
+
+    let make_record = |bigint_: i64| PostgresTestStruct {
+        bigint_,
+        variant_: Variant::String("variant".into()),
+        ..Default::default()
+    };
+
+    // Ten well-formed keys, one value each.
+    let unique: Vec<PostgresTestStruct> = (0..10).map(make_record).collect();
+
+    // Two non-unique keys, each with two distinct values in the same batch.
+    let make_conflict = |bigint_: i64| -> [PostgresTestStruct; 2] {
+        let first = make_record(bigint_);
+        let second = PostgresTestStruct {
+            int_: first.int_.wrapping_add(1),
+            ..first.clone()
+        };
+        assert_eq!(first.bigint_, second.bigint_);
+        assert_ne!(first, second);
+        [first, second]
+    };
+    let conflict_a = make_conflict(100);
+    let conflict_b = make_conflict(200);
+
+    let mut input_file = NamedTempFile::new().unwrap();
+    for record in unique
+        .iter()
+        .chain(conflict_a.iter())
+        .chain(conflict_b.iter())
+    {
+        let buffer: Vec<u8> = Vec::new();
+        let mut serializer = serde_json::Serializer::new(buffer);
+        record
+            .serialize_with_context(&mut serializer, &SqlSerdeConfig::default())
+            .unwrap();
+        input_file
+            .as_file_mut()
+            .write_all(&serializer.into_inner())
+            .unwrap();
+        input_file.write_all(b"\n").unwrap();
+    }
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_file.path() }
+                },
+                "format": {
+                    "name": "json",
+                    "config": { "update_format": "raw" }
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "index": "idx",
+                "enable_output_buffer": true,
+                "max_output_buffer_size_records": 1_000_000,
+                "max_output_buffer_time_millis": 2_000,
+                "transport": {
+                    "name": "postgres_output",
+                    "config": {
+                        "uri": url.clone(),
+                        "table": &table_name
+                    }
+                }
+            }
+        }
+    }))
+    .unwrap();
+
+    // The connector uses INSERT ... ON CONFLICT DO UPDATE, which requires a
+    // UNIQUE constraint.  The Feldera-level check in `indexed_operation_type`
+    // filters out conflicting keys before they reach postgres.
+    let mut table = PostgresTestStruct::create_table(&table_name, url, true, &None);
+
+    let errors: Arc<Mutex<Vec<(String, Option<String>)>>> = Arc::new(Mutex::new(Vec::new()));
+    let errors_clone = errors.clone();
+
+    let controller = Controller::with_test_config(
+        move |workers| Ok(nonunique_pg_circuit(workers)),
+        &config,
+        Box::new(move |e, tag| {
+            errors_clone.lock().unwrap().push((e.to_string(), tag));
+        }),
+    )
+    .unwrap();
+
+    controller.start();
+
+    // Wait until exactly the ten unique records have been committed to postgres.
+    wait(|| table.query().len() == unique.len(), 60_000)
+        .expect("timeout waiting for the well-formed records to reach postgres");
+
+    controller.stop().unwrap();
+
+    // (a) Exactly the well-formed records are written; the non-unique keys are
+    //     dropped entirely.
+    let mut written: Vec<PostgresTestStruct> = table
+        .query()
+        .into_iter()
+        .map(PostgresTestStruct::from)
+        .collect();
+    written.sort();
+    let mut expected = unique.clone();
+    expected.sort();
+    assert_eq!(
+        written, expected,
+        "non-unique keys must be skipped while every unique key is preserved"
+    );
+    assert!(
+        written.iter().all(|r| r.bigint_ != 100 && r.bigint_ != 200),
+        "no record for a non-unique key should appear in the output"
+    );
+
+    // (b) One uniqueness-violation error is reported per non-unique key.
+    let errors = errors.lock().unwrap();
+    let violations: Vec<&(String, Option<String>)> = errors
+        .iter()
+        .filter(|(_, tag)| {
+            tag.as_deref()
+                .is_some_and(|t| t.contains("pg_uniqueness_violation"))
+        })
+        .collect();
+    assert_eq!(
+        violations.len(),
+        2,
+        "expected one uniqueness-violation error per non-unique key, got: {errors:?}"
+    );
+    assert!(
+        violations.iter().any(|(msg, _)| msg.contains("100")),
+        "a uniqueness-violation error should name key 100: {violations:?}"
+    );
+    assert!(
+        violations.iter().any(|(msg, _)| msg.contains("200")),
+        "a uniqueness-violation error should name key 200: {violations:?}"
+    );
 }
 
 // ===================================================================

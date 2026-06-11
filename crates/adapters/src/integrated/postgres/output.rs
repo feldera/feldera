@@ -425,7 +425,22 @@ These statements were successfully prepared before reconnecting. Does the table 
         extra_columns: BTreeMap<String, Option<serde_json::Value>>,
     ) -> anyhow::Result<()> {
         while cursor.key_valid() {
-            if let Some(op) = indexed_operation_type(self.view_name(), self.index_name(), cursor)? {
+            let op = match indexed_operation_type(self.view_name(), self.index_name(), cursor) {
+                Ok(op) => op,
+                Err(e) => {
+                    if let Some(controller) = self.controller.upgrade() {
+                        controller.output_transport_error(
+                            self.endpoint_id,
+                            &self.endpoint_name,
+                            false,
+                            e,
+                            Some("pg_uniqueness_violation"),
+                        );
+                    }
+                    None
+                }
+            };
+            if let Some(op) = op {
                 cursor.rewind_vals();
                 match op {
                     IndexedOperationType::Insert => {
