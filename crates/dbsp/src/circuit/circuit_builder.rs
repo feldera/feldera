@@ -8169,6 +8169,106 @@ impl CircuitHandle {
         None
     }
 
+    /// Stops the recorders armed by [`Self::restore_concurrent`] and returns
+    /// their recorded contents, keyed by boundary stream.
+    ///
+    /// The synchronization transaction of a concurrent bootstrap feeds the
+    /// result to the bootstrap circuit's [`Self::start_sync_replay`].
+    pub fn drain_recorders(&mut self) -> Result<BTreeMap<StreamId, Box<dyn Any>>, DbspError> {
+        let Some(info) = self.concurrent_bootstrap_info.as_ref() else {
+            return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
+                "no concurrent bootstrap is in progress".to_string(),
+            )));
+        };
+
+        let mut recorded = BTreeMap::new();
+        for stream_id in info.boundary_streams.keys() {
+            let control = self
+                .circuit
+                .cache_get(&RecorderControlId::new(*stream_id))
+                .unwrap_or_else(|| panic!("boundary stream {stream_id} has no recorder attached"));
+            let contents = control.stop_recording_any().unwrap_or_else(|| {
+                panic!("the recorder on boundary stream {stream_id} was not recording")
+            });
+            recorded.insert(*stream_id, contents);
+        }
+
+        Ok(recorded)
+    }
+
+    /// Starts the synchronization replay on a circuit prepared by
+    /// [`Self::restore`]: each boundary stream's replay source replays the
+    /// changes that the live circuit recorded on that stream (the boxes hold
+    /// the recorders' spines; see [`Self::drain_recorders`]).
+    ///
+    /// The caller must run a transaction afterwards; the replay drains
+    /// chunk-by-chunk during the transaction's commit, exactly like the
+    /// bootstrap replay.
+    pub fn start_sync_replay(
+        &mut self,
+        mut recorded: BTreeMap<StreamId, Box<dyn Any>>,
+    ) -> Result<(), DbspError> {
+        let Some(boundary_streams) = self.boundary_streams.as_ref() else {
+            return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
+                "the circuit has no replay prepared".to_string(),
+            )));
+        };
+
+        for (stream_id, node_id) in boundary_streams.iter() {
+            let contents = recorded
+                .remove(stream_id)
+                .unwrap_or_else(|| panic!("no recorded contents for boundary stream {stream_id}"));
+            // `map_local_node_mut` takes an `FnMut` closure, which cannot
+            // consume `contents` directly; it invokes the closure exactly
+            // once, so route the move through an `Option`.
+            let mut contents = Some(contents);
+            self.circuit.map_local_node_mut(*node_id, &mut |node| {
+                let contents = contents
+                    .take()
+                    .expect("map_local_node_mut invoked the closure twice");
+                node.start_sync_replay(contents)
+            })?;
+        }
+
+        assert!(
+            recorded.is_empty(),
+            "recorded contents for streams {:?} have no replay sources",
+            recorded.keys().collect::<Vec<_>>(),
+        );
+
+        Ok(())
+    }
+
+    /// Completes a concurrent bootstrap on the live circuit: installs the
+    /// state that the bootstrap circuit (`bootstrapped`) computed for the
+    /// backfilled nodes and reactivates the full circuit.
+    ///
+    /// The caller must have completed the synchronization transaction on
+    /// `bootstrapped` and must drop it after this call.
+    pub fn cutover_from(&mut self, bootstrapped: &CircuitHandle) -> Result<(), DbspError> {
+        let Some(info) = self.concurrent_bootstrap_info.take() else {
+            return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
+                "no concurrent bootstrap is in progress".to_string(),
+            )));
+        };
+
+        for node_id in info.need_backfill.iter() {
+            self.circuit.map_local_node_mut(*node_id, &mut |node| {
+                bootstrapped
+                    .circuit
+                    .map_local_node_mut(*node_id, &mut |bootstrapped_node| {
+                        node.swap_state_with(bootstrapped_node)
+                    })
+            })?;
+        }
+
+        // Reactivate the full circuit.  The recorders were disabled when
+        // the synchronization transaction drained them.
+        self.executor.prepare(&self.circuit, None)?;
+
+        Ok(())
+    }
+
     /// Aborts a concurrent bootstrap on the live circuit: disarms the
     /// recorders (discarding their contents) and forgets the bootstrap
     /// state.  No-op if no concurrent bootstrap is in progress.

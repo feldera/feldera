@@ -1009,6 +1009,34 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::SyncBootstrapCircuit) => {
+                        let status = match bootstrap_circuit.as_mut() {
+                            Some(bootstrap) => circuit.drain_recorders().and_then(|recorded| {
+                                bootstrap.start_sync_replay(recorded)?;
+                                bootstrap.start_transaction()?;
+                                bootstrap.start_commit_transaction()?;
+                                Ok(Response::Unit)
+                            }),
+                            None => Err(no_bootstrap_circuit()),
+                        };
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Command::CutoverBootstrapCircuit) => {
+                        let status = match bootstrap_circuit.take() {
+                            Some(bootstrap) => {
+                                // Dropping `bootstrap` after the state
+                                // transfer runs the bootstrap circuit's
+                                // teardown.
+                                circuit.cutover_from(&bootstrap).map(|_| Response::Unit)
+                            }
+                            None => Err(no_bootstrap_circuit()),
+                        };
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
                     // Nothing to do: do some housekeeping and relinquish the CPU if there's none
                     // left.
                     Err(TryRecvError::Empty) => {
@@ -1154,6 +1182,12 @@ enum Command {
     /// Restore the main circuit from a checkpoint for concurrent
     /// bootstrapping (see [`CircuitHandle::restore_concurrent`]).
     RestoreConcurrent(StoragePath),
+    /// Drain the main circuit's recorders into the bootstrap circuit's
+    /// replay sources and start the synchronization transaction.
+    SyncBootstrapCircuit,
+    /// Install the bootstrap circuit's state into the main circuit,
+    /// reactivate the full main circuit, and delete the bootstrap circuit.
+    CutoverBootstrapCircuit,
 }
 
 impl Debug for Command {
@@ -1208,6 +1242,8 @@ impl Debug for Command {
             Command::RestoreConcurrent(path) => {
                 f.debug_tuple("RestoreConcurrent").field(path).finish()
             }
+            Command::SyncBootstrapCircuit => write!(f, "SyncBootstrapCircuit"),
+            Command::CutoverBootstrapCircuit => write!(f, "CutoverBootstrapCircuit"),
         }
     }
 }
@@ -1283,6 +1319,18 @@ pub struct DBSPHandle {
     /// one.  Orders [`Self::sync_concurrent_bootstrap`] and
     /// [`Self::complete_concurrent_bootstrap`].
     concurrent_bootstrap_phase: Option<ConcurrentBootstrapPhase>,
+
+    /// True while a transaction is open on the main circuit (started with
+    /// [`Self::start_transaction`] and not yet committed).  This handle is
+    /// the only source of worker commands, so the mirror cannot diverge.
+    main_transaction_open: bool,
+
+    /// Sticky flag set when a concurrent bootstrap is aborted (see
+    /// [`Self::destroy_bootstrap_circuit`]).  The backfilled nodes hold no
+    /// state, so a checkpoint taken now would record them as empty and
+    /// permanently mask the missing backfill; checkpoints stay blocked
+    /// until the process restarts from a checkpoint.
+    concurrent_bootstrap_aborted: bool,
 }
 pub struct WorkersCommitProgress(BTreeMap<u16, CommitProgress>);
 
@@ -1357,6 +1405,8 @@ impl DBSPHandle {
             bootstrap_circuit_state: BootstrapCircuitState::None,
             concurrent_bootstrap_info: None,
             concurrent_bootstrap_phase: None,
+            main_transaction_open: false,
+            concurrent_bootstrap_aborted: false,
         })
     }
 
@@ -1514,7 +1564,24 @@ impl DBSPHandle {
     }
 
     /// Start and instantly commit a transaction, waiting for the commit to complete.
+    /// Returns an error if the main circuit must not process transactions
+    /// right now: during the synchronization phase of a concurrent
+    /// bootstrap, deltas applied to the boundary streams are no longer
+    /// recorded, so they would be silently missing from the bootstrapped
+    /// views after cutover.
+    fn check_main_circuit_available(&self) -> Result<(), DbspError> {
+        if self.concurrent_bootstrap_phase == Some(ConcurrentBootstrapPhase::Synchronizing) {
+            return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
+                "the main circuit cannot process transactions while a concurrent bootstrap \
+                 is synchronizing"
+                    .to_string(),
+            )));
+        }
+        Ok(())
+    }
+
     pub fn transaction(&mut self) -> Result<(), DbspError> {
+        self.check_main_circuit_available()?;
         DBSP_STEP.fetch_add(1, Ordering::Relaxed);
         let start = Instant::now();
         let result = self.broadcast_command(Command::Transaction, |_, _| {});
@@ -1554,11 +1621,15 @@ impl DBSPHandle {
     /// The value of the circuit's logical clock remains unchanged during the transaction.
     /// The clock advances between transactions.
     pub fn start_transaction(&mut self) -> Result<(), DbspError> {
+        self.check_main_circuit_available()?;
         let start = Instant::now();
         let result = self.broadcast_command(Command::StartTransaction, |_, _| {});
         if let Some(handle) = self.runtime.as_ref() {
             self.runtime_elapsed +=
                 start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
+        }
+        if result.is_ok() {
+            self.main_transaction_open = true;
         }
         result
     }
@@ -1590,6 +1661,7 @@ impl DBSPHandle {
 
         if commit_complete {
             debug!("Commit complete");
+            self.main_transaction_open = false;
             self.check_bootstrap_complete()?;
         }
 
@@ -1790,6 +1862,68 @@ impl DBSPHandle {
         Ok(ConcurrentRestoreOutcome::Concurrent(main_info))
     }
 
+    /// Starts the synchronization phase of a concurrent bootstrap: the
+    /// changes that the main circuit recorded on the boundary streams since
+    /// the bootstrap started are replayed into the bootstrap circuit.
+    ///
+    /// The backfill must have completed ([`Self::step_bootstrap_circuit`]
+    /// returned `true`).  The main circuit must not process transactions
+    /// between this call and [`Self::complete_concurrent_bootstrap`]: inputs
+    /// it would apply to the boundary streams are no longer recorded.
+    ///
+    /// The caller pumps [`Self::step_bootstrap_circuit`] until it returns
+    /// `true`, then calls [`Self::complete_concurrent_bootstrap`].
+    pub fn sync_concurrent_bootstrap(&mut self) -> Result<(), DbspError> {
+        if self.concurrent_bootstrap_phase != Some(ConcurrentBootstrapPhase::Backfill) {
+            return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(format!(
+                "cannot synchronize in concurrent-bootstrap phase {:?} (expected Backfill)",
+                self.concurrent_bootstrap_phase,
+            ))));
+        }
+        // `Idle` means the backfill transaction's commit has completed.
+        self.check_bootstrap_circuit_state(
+            &[BootstrapCircuitState::Idle],
+            "start the synchronization transaction",
+        )?;
+        if self.main_transaction_open {
+            return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
+                "cannot start the synchronization transaction while the main circuit has \
+                 a transaction in progress"
+                    .to_string(),
+            )));
+        }
+
+        self.broadcast_command(Command::SyncBootstrapCircuit, |_, _| {})?;
+        self.bootstrap_circuit_state = BootstrapCircuitState::Committing;
+        self.concurrent_bootstrap_phase = Some(ConcurrentBootstrapPhase::Synchronizing);
+        Ok(())
+    }
+
+    /// Completes a concurrent bootstrap: installs the state the bootstrap
+    /// circuit computed for the backfilled nodes into the main circuit,
+    /// reactivates the full main circuit, and deletes the bootstrap circuit.
+    ///
+    /// The synchronization transaction must have completed
+    /// ([`Self::step_bootstrap_circuit`] returned `true` after
+    /// [`Self::sync_concurrent_bootstrap`]).
+    pub fn complete_concurrent_bootstrap(&mut self) -> Result<(), DbspError> {
+        if self.concurrent_bootstrap_phase != Some(ConcurrentBootstrapPhase::Synchronizing) {
+            return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(format!(
+                "cannot cut over in concurrent-bootstrap phase {:?} (expected Synchronizing)",
+                self.concurrent_bootstrap_phase,
+            ))));
+        }
+        // `Idle` means the synchronization transaction's commit has
+        // completed.
+        self.check_bootstrap_circuit_state(&[BootstrapCircuitState::Idle], "cut over")?;
+
+        self.broadcast_command(Command::CutoverBootstrapCircuit, |_, _| {})?;
+        self.bootstrap_circuit_state = BootstrapCircuitState::None;
+        self.concurrent_bootstrap_info = None;
+        self.concurrent_bootstrap_phase = None;
+        Ok(())
+    }
+
     /// Broadcasts `command`, which must produce a
     /// [`Response::CheckpointRestored`] on every worker, and checks that all
     /// workers computed identical replay info.
@@ -1922,6 +2056,11 @@ impl DBSPHandle {
         self.check_bootstrap_circuit_state(&[BootstrapCircuitState::Idle], "destroy")?;
         self.broadcast_command(Command::DestroyBootstrapCircuit, |_, _| {})?;
         self.bootstrap_circuit_state = BootstrapCircuitState::None;
+        if self.concurrent_bootstrap_info.is_some() {
+            // Aborting a concurrent bootstrap leaves the backfilled nodes
+            // empty; see `concurrent_bootstrap_aborted`.
+            self.concurrent_bootstrap_aborted = true;
+        }
         self.concurrent_bootstrap_info = None;
         self.concurrent_bootstrap_phase = None;
         Ok(())
@@ -2375,9 +2514,12 @@ impl<'a> CheckpointBuilder<'a> {
         // could delete.
         self.handle
             .check_bootstrap_circuit_state(&[BootstrapCircuitState::None], "create a checkpoint")?;
-        if self.handle.concurrent_bootstrap_phase.is_some() {
+        if self.handle.concurrent_bootstrap_phase.is_some()
+            || self.handle.concurrent_bootstrap_aborted
+        {
             return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
-                "cannot create a checkpoint while a concurrent bootstrap is in progress"
+                "cannot create a checkpoint while a concurrent bootstrap is in progress \
+                 or after one was aborted"
                     .to_string(),
             )));
         }
