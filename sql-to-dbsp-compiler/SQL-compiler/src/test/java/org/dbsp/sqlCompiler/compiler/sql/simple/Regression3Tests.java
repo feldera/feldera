@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class Regression3Tests extends SqlIoTest {
@@ -28,6 +29,44 @@ public class Regression3Tests extends SqlIoTest {
                     1|CREATE TABLE t(b BOOLEAN);
                     2|CREATE VIEW V AS SELECT b = 't' FROM T;
                                                   ^^^""");
+    }
+
+    @Test
+    public void issue6342() {
+        this.getCC("""
+                CREATE TABLE dept_nested (
+                  employees ROW(
+                      detail ROW(
+                          skills ROW(
+                              desc VARCHAR
+                          ) ARRAY
+                      )
+                  ) ARRAY
+                );
+                create view v as select * from dept_nested order by employees[1].detail.skills[2+3].desc""");
+
+        this.getCC("""
+                CREATE TABLE T (
+                  id INT,
+                  col ROW(field1 VARCHAR, field2 INT)
+                );
+                
+                CREATE VIEW V AS
+                SELECT id FROM T t ORDER BY (t.col).field2;""");
+    }
+
+    @Test
+    public void issue5398() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT, y INT, z INT);
+                CREATE TABLE S(a INT, b INT);
+                CREATE LOCAL VIEW V AS SELECT ROW(T.* EXCLUDE(x), ROW(S.* EXCLUDE(a))) AS R FROM T, S;
+                CREATE VIEW W AS SELECT R[1], R[2], R[3][1] FROM V;""");
+        ccs.stepWeightOne("""
+                INSERT INTO T VALUES(0, 1, 2); INSERT INTO S VALUES(3, 4);""", """
+                  y | z | b
+                 -----------
+                  1 | 2 | 4""");
     }
 
     @Test
