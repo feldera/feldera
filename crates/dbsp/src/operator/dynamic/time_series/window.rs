@@ -243,6 +243,11 @@ where
         Ok(())
     }
 
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
+        self.window.swap(&other.window);
+        Ok(())
+    }
+
     fn flush(&mut self) {
         self.flush.set(true);
     }

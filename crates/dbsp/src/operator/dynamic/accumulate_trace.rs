@@ -24,6 +24,7 @@ use crate::{
 };
 use feldera_storage::{FileCommitter, StoragePath};
 use size_of::SizeOf;
+use std::any::{Any, TypeId};
 use std::sync::Arc;
 use std::{borrow::Cow, marker::PhantomData, ops::Deref};
 
@@ -936,6 +937,17 @@ where
     /// replay, `replay_stream` is active while the operator that normally write to
     /// stream is disabled.
     pub fn prepare_replay_stream(&mut self, stream: &Stream<C, B>) -> Stream<C, B> {
+        // The synchronization replay of a concurrent bootstrap downcasts a
+        // recorder's `Spine<B>` to `T`; in the top-level circuit, where
+        // replay sources live, the two types must coincide.
+        if TypeId::of::<C::Time>() == TypeId::of::<()>() {
+            assert_eq!(
+                TypeId::of::<T>(),
+                TypeId::of::<Spine<B>>(),
+                "a top-level replay source's trace type must be Spine<B>"
+            );
+        }
+
         let replay_stream =
             Stream::with_value(stream.circuit().clone(), self.local_id, stream.value());
 
@@ -1073,6 +1085,34 @@ where
         self.replay_mode = false;
         self.replay_state = None;
 
+        Ok(())
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), Error> {
+        let trace = *trace
+            .downcast::<T>()
+            .expect("start_sync_replay: trace type mismatch");
+
+        // Sync replay reuses the replay machinery of the bootstrap replay:
+        // the operator must still be in replay mode (between the bootstrap
+        // transaction and the cutover), with the previous replay drained.
+        assert!(
+            self.replay_mode && self.replay_state.is_none(),
+            "start_sync_replay: the operator is not ready for a sync replay"
+        );
+        assert!(
+            self.delta_stream.is_some(),
+            "start_sync_replay: the operator has no replay stream"
+        );
+        self.replay_state = Some(ReplayState::create(trace));
+
+        Ok(())
+    }
+
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
+        std::mem::swap(&mut self.trace, &mut other.trace);
+        std::mem::swap(&mut self.time, &mut other.time);
+        std::mem::swap(&mut self.dirty, &mut other.dirty);
         Ok(())
     }
 

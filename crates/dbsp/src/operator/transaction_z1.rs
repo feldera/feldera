@@ -170,6 +170,13 @@ where
         Ok(())
     }
 
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
+        std::mem::swap(&mut self.old_value, &mut other.old_value);
+        std::mem::swap(&mut self.new_value, &mut other.new_value);
+        std::mem::swap(&mut self.empty_output, &mut other.empty_output);
+        Ok(())
+    }
+
     fn flush(&mut self) {
         self.flush = true;
     }

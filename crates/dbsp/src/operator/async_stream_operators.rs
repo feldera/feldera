@@ -16,7 +16,7 @@
 //! after a `flush` call; otherwise, if `flush` is invoked while the output stream is active, it will
 //! cause ownership conflict and panic.
 
-use std::{borrow::Cow, marker::PhantomData, pin::Pin, rc::Rc, sync::Arc};
+use std::{any::Any, borrow::Cow, marker::PhantomData, pin::Pin, rc::Rc, sync::Arc};
 
 use crate::{
     Error, Position, Scope,
@@ -140,6 +140,22 @@ where
 
     fn start_replay(&mut self) -> Result<(), Error> {
         Rc::get_mut(&mut self.operator).unwrap().start_replay()
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .start_sync_replay(trace)
+    }
+
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .swap_state(Rc::get_mut(&mut other.operator).unwrap())
+    }
+
+    fn supports_state_transfer(&self) -> bool {
+        self.operator.supports_state_transfer()
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -310,6 +326,22 @@ where
 
     fn start_replay(&mut self) -> Result<(), Error> {
         Rc::get_mut(&mut self.operator).unwrap().start_replay()
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .start_sync_replay(trace)
+    }
+
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .swap_state(Rc::get_mut(&mut other.operator).unwrap())
+    }
+
+    fn supports_state_transfer(&self) -> bool {
+        self.operator.supports_state_transfer()
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -487,6 +519,22 @@ where
         Rc::get_mut(&mut self.operator).unwrap().start_replay()
     }
 
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .start_sync_replay(trace)
+    }
+
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .swap_state(Rc::get_mut(&mut other.operator).unwrap())
+    }
+
+    fn supports_state_transfer(&self) -> bool {
+        self.operator.supports_state_transfer()
+    }
+
     fn is_replay_complete(&self) -> bool {
         self.operator.is_replay_complete()
     }
@@ -660,6 +708,22 @@ where
         Rc::get_mut(&mut self.operator).unwrap().start_replay()
     }
 
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .start_sync_replay(trace)
+    }
+
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .swap_state(Rc::get_mut(&mut other.operator).unwrap())
+    }
+
+    fn supports_state_transfer(&self) -> bool {
+        self.operator.supports_state_transfer()
+    }
+
     fn is_replay_complete(&self) -> bool {
         self.operator.is_replay_complete()
     }
@@ -829,6 +893,22 @@ where
 
     fn start_replay(&mut self) -> Result<(), Error> {
         Rc::get_mut(&mut self.operator).unwrap().start_replay()
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .start_sync_replay(trace)
+    }
+
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .swap_state(Rc::get_mut(&mut other.operator).unwrap())
+    }
+
+    fn supports_state_transfer(&self) -> bool {
+        self.operator.supports_state_transfer()
     }
 
     fn is_replay_complete(&self) -> bool {

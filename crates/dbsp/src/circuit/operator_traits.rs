@@ -16,6 +16,7 @@ use crate::{
     },
     trace::cursor::Position,
 };
+use std::any::Any;
 use std::borrow::Cow;
 use std::fmt::Display;
 use std::sync::Arc;
@@ -273,6 +274,50 @@ pub trait Operator: 'static {
     /// Only defined for operators that support replay.
     fn end_replay(&mut self) -> Result<(), Error> {
         panic!("end_replay() is not implemented for this operator")
+    }
+
+    /// Start replaying `trace` to the replay stream, instead of the
+    /// operator's own state.
+    ///
+    /// The synchronization transaction of a concurrent bootstrap uses this
+    /// method to replay the changes that a recorder captured on a boundary
+    /// stream while the operator's circuit was bootstrapping.  The box holds
+    /// a value of the operator's trace type.
+    ///
+    /// Only defined for operators that support replay.
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), Error> {
+        let _ = trace;
+        panic!("start_sync_replay() is not implemented for this operator")
+    }
+
+    /// Swap the operator's persistent state with `other`, an operator of the
+    /// same concrete type.
+    ///
+    /// The cutover phase of a concurrent bootstrap uses this method to
+    /// install state that the bootstrap circuit computed into the
+    /// corresponding operator of the live circuit.  "Persistent state" is
+    /// exactly the state that [`Self::checkpoint`] saves and
+    /// [`Self::restore`] loads: operators that implement those methods must
+    /// implement this one (with the exception of operators whose
+    /// "checkpoint" is an empty marker file), or the state they computed
+    /// during bootstrapping is silently lost at cutover.
+    ///
+    /// The default is a no-op: most operators hold no persistent state.
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
+        let _ = other;
+        Ok(())
+    }
+
+    /// True if [`Self::swap_state`] can transfer this operator's state.
+    ///
+    /// Operators whose `swap_state` returns an error must return false, so
+    /// that a concurrent bootstrap can refuse up front instead of failing
+    /// at cutover, after the backfill work is done.
+    fn supports_state_transfer(&self) -> bool {
+        true
     }
 
     /// Notify the operator about start of a transaction.

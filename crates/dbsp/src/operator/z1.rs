@@ -348,6 +348,12 @@ where
         self.values = self.zero.clone();
         Ok(())
     }
+
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
+        std::mem::swap(&mut self.values, &mut other.values);
+        std::mem::swap(&mut self.empty_output, &mut other.empty_output);
+        Ok(())
+    }
 }
 
 impl<T> UnaryOperator<T, T> for Z1<T>

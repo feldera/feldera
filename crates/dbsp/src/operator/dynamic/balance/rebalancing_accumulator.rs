@@ -169,6 +169,20 @@ where
         Ok(())
     }
 
+    fn swap_state(&mut self, _other: &mut Self) -> Result<(), Error> {
+        // Balanced operators' state is entangled with their circuit's
+        // balancer and metadata exchange; transferring it between circuit
+        // copies is not supported yet.  Concurrent bootstrapping fails at
+        // cutover rather than silently losing partitioning state.
+        Err(Error::Runtime(crate::RuntimeError::BootstrapCircuit(
+            "state transfer is not supported for rebalancing operators".to_string(),
+        )))
+    }
+
+    fn supports_state_transfer(&self) -> bool {
+        false
+    }
+
     fn flush(&mut self) {
         self.0.borrow_mut().flush = true;
     }

@@ -1261,6 +1261,22 @@ where
             .clear_local_operator_metadata(self.global_id.local_node_id().unwrap());
         Ok(())
     }
+
+    fn swap_state(&mut self, _other: &mut Self) -> Result<(), crate::Error> {
+        // Balanced operators' state is entangled with their circuit's
+        // balancer and metadata exchange; transferring it between circuit
+        // copies is not supported yet.  Concurrent bootstrapping fails at
+        // cutover rather than silently losing partitioning state.
+        Err(crate::Error::Runtime(
+            crate::RuntimeError::BootstrapCircuit(
+                "state transfer is not supported for rebalancing operators".to_string(),
+            ),
+        ))
+    }
+
+    fn supports_state_transfer(&self) -> bool {
+        false
+    }
 }
 
 impl<B, C> StreamingTernarySinkOperator<B, EmptyCheckpoint<Vec<Arc<B>>>, TimedSpine<B, C>>
