@@ -26,6 +26,7 @@ pub mod neighborhood;
 pub mod outer_join;
 mod output;
 pub mod recursive;
+pub(crate) mod replay;
 pub mod sample;
 mod saturate;
 pub mod semijoin;

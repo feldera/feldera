@@ -1,11 +1,12 @@
 use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
 use crate::circuit::metadata::{INPUT_RECORDS_COUNT, MEMORY_ALLOCATIONS_COUNT, RETAINMENT_BOUNDS};
 use crate::circuit::{NodeId, splitter_output_chunk_size};
-use crate::dynamic::{Factory, Weight, WeightTrait};
+use crate::dynamic::Factory;
+use crate::operator::dynamic::replay::ReplayState;
 use crate::operator::dynamic::trace::{DelayedTraceId, TraceBounds};
 use crate::operator::{TraceBound, require_persistent_id};
+use crate::trace::GroupFilter;
 use crate::trace::spine_async::WithSnapshot;
-use crate::trace::{BatchReaderFactories, Builder, GroupFilter, MergeCursor};
 use crate::{
     Error, Timestamp,
     circuit::{
@@ -22,7 +23,6 @@ use crate::{
     trace::{Batch, BatchReader, Filter, Spine, SpineSnapshot, Trace},
 };
 use feldera_storage::{FileCommitter, StoragePath};
-use ouroboros::self_referencing;
 use size_of::SizeOf;
 use std::sync::Arc;
 use std::{borrow::Cow, marker::PhantomData, ops::Deref};
@@ -856,24 +856,6 @@ where
     }
 }
 
-#[self_referencing]
-struct ReplayState<T: Trace> {
-    trace: T,
-    #[borrows(trace)]
-    #[covariant]
-    cursor: Box<dyn MergeCursor<T::Key, T::Val, T::Time, T::R> + Send + 'this>,
-}
-
-impl<T: Trace> ReplayState<T> {
-    fn create(trace: T) -> Self {
-        ReplayStateBuilder {
-            trace,
-            cursor_builder: |trace| trace.merge_cursor(None, None),
-        }
-        .build()
-    }
-}
-
 pub struct AccumulateZ1Trace<C: Circuit, B: Batch, T: Trace> {
     // For error reporting.
     local_id: NodeId,
@@ -1131,41 +1113,9 @@ where
                 && let Some(replay) = &mut self.replay_state
             {
                 //println!("Z1-{}::get_output: replaying", &self.global_id);
-                let mut builder = <B::Builder as Builder<B>>::with_capacity(
-                    &self.batch_factories,
-                    replay_step_size,
-                    replay_step_size,
-                );
-
-                let mut num_values = 0;
-                let mut weight = self.batch_factories.weight_factory().default_box();
-
-                while replay.borrow_cursor().key_valid() && num_values < replay_step_size {
-                    let mut values_added = false;
-                    while replay.borrow_cursor().val_valid() && num_values < replay_step_size {
-                        weight.set_zero();
-                        replay.with_cursor_mut(|cursor| {
-                            cursor.map_times(&mut |_t, w| weight.add_assign(w))
-                        });
-
-                        if !weight.is_zero() {
-                            builder.push_val_diff(replay.borrow_cursor().val(), weight.as_ref());
-                            values_added = true;
-                            num_values += 1;
-                        }
-                        replay.with_cursor_mut(|cursor| cursor.step_val());
-                    }
-                    if values_added {
-                        builder.push_key(replay.borrow_cursor().key());
-                    }
-                    if !replay.borrow_cursor().val_valid() {
-                        replay.with_cursor_mut(|cursor| cursor.step_key());
-                    }
-                }
-
-                let batch = builder.done();
+                let batch: B = replay.next_chunk(&self.batch_factories, replay_step_size);
                 self.delta_stream.as_ref().unwrap().value().put(batch);
-                if !replay.borrow_cursor().key_valid() {
+                if replay.is_exhausted() {
                     self.replay_state = None;
                     self.flush_output = false;
                 }
