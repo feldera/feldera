@@ -1,6 +1,6 @@
 use crate::circuit::GlobalNodeId;
 use crate::circuit::checkpointer::Checkpointer;
-use crate::circuit::circuit_builder::CircuitHandle;
+use crate::circuit::circuit_builder::{CircuitHandle, ConcurrentRestoreOutcome};
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::schedule::CommitProgress;
 use crate::monitor::visual_graph::Graph;
@@ -904,7 +904,7 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::CreateBootstrapCircuit) => {
+                    Ok(Command::CreateBootstrapCircuit(checkpoint)) => {
                         let status = if bootstrap_circuit.is_some() {
                             Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
                                 "a bootstrap circuit already exists".to_string(),
@@ -923,7 +923,7 @@ impl Runtime {
                             // affect node ids.
                             let constructor = bootstrap_constructor.clone();
                             RootCircuit::build(move |circuit| constructor(circuit)).and_then(
-                                |(handle, _catalog)| {
+                                |(mut handle, _catalog)| {
                                     // A fingerprint mismatch means the
                                     // constructor is nondeterministic, which
                                     // also desyncs the per-worker sequence
@@ -940,8 +940,12 @@ impl Runtime {
                                             ),
                                         ));
                                     }
+                                    let replay_info = match &checkpoint {
+                                        Some(base) => handle.restore(base)?,
+                                        None => None,
+                                    };
                                     bootstrap_circuit = Some(handle);
-                                    Ok(Response::Unit)
+                                    Ok(Response::CheckpointRestored(replay_info))
                                 },
                             )
                         };
@@ -984,10 +988,24 @@ impl Runtime {
                         // Dropping the handle runs the circuit's teardown
                         // (`clock_end` plus breaking `Rc` cycles).
                         let status = match bootstrap_circuit.take() {
-                            Some(_circuit) => Ok(Response::Unit),
+                            Some(_circuit) => {
+                                // If this destroy aborts a concurrent
+                                // bootstrap, disarm the main circuit's
+                                // recorders so they stop accumulating.
+                                circuit.abort_concurrent_bootstrap();
+                                Ok(Response::Unit)
+                            }
                             None => Err(no_bootstrap_circuit()),
                         };
                         if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Command::RestoreConcurrent(base)) => {
+                        let result = circuit
+                            .restore_concurrent(&base)
+                            .map(Response::ConcurrentRestore);
+                        if status_sender.send(result).is_err() {
                             return;
                         }
                     }
@@ -1064,6 +1082,18 @@ fn no_bootstrap_circuit() -> DbspError {
     ))
 }
 
+/// The phase of an in-progress concurrent bootstrap, tracked on
+/// [`DBSPHandle`] to order its orchestration methods.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConcurrentBootstrapPhase {
+    /// The bootstrap circuit is replaying checkpointed state in the
+    /// background while the main circuit serves pre-existing views.
+    Backfill,
+    /// The recorders' contents are being replayed into the bootstrap
+    /// circuit; the main circuit must not process new inputs.
+    Synchronizing,
+}
+
 /// Coordinator-side mirror of the bootstrap circuit's lifecycle, tracked on
 /// [`DBSPHandle`] to validate bootstrap-circuit commands before
 /// broadcasting them.  Validation must happen on the coordinator: a worker
@@ -1113,12 +1143,17 @@ enum Command {
     IsCompactionComplete,
     /// Build the bootstrap circuit: a second copy of the circuit, built from
     /// the same constructor as the main one (see
-    /// [`DBSPHandle::create_bootstrap_circuit`]).
-    CreateBootstrapCircuit,
+    /// [`DBSPHandle::create_bootstrap_circuit`]).  When a checkpoint path is
+    /// given, the bootstrap circuit is restored from it and prepared for
+    /// replay (see [`CircuitHandle::restore`]).
+    CreateBootstrapCircuit(Option<StoragePath>),
     StartBootstrapTransaction,
     CommitBootstrapTransaction,
     StepBootstrapCircuit,
     DestroyBootstrapCircuit,
+    /// Restore the main circuit from a checkpoint for concurrent
+    /// bootstrapping (see [`CircuitHandle::restore_concurrent`]).
+    RestoreConcurrent(StoragePath),
 }
 
 impl Debug for Command {
@@ -1162,11 +1197,17 @@ impl Debug for Command {
             }
             Command::StartCompaction => write!(f, "StartCompaction"),
             Command::IsCompactionComplete => write!(f, "IsCompactionComplete"),
-            Command::CreateBootstrapCircuit => write!(f, "CreateBootstrapCircuit"),
+            Command::CreateBootstrapCircuit(checkpoint) => f
+                .debug_tuple("CreateBootstrapCircuit")
+                .field(checkpoint)
+                .finish(),
             Command::StartBootstrapTransaction => write!(f, "StartBootstrapTransaction"),
             Command::CommitBootstrapTransaction => write!(f, "CommitBootstrapTransaction"),
             Command::StepBootstrapCircuit => write!(f, "StepBootstrapCircuit"),
             Command::DestroyBootstrapCircuit => write!(f, "DestroyBootstrapCircuit"),
+            Command::RestoreConcurrent(path) => {
+                f.debug_tuple("RestoreConcurrent").field(path).finish()
+            }
         }
     }
 }
@@ -1182,6 +1223,7 @@ enum Response {
     Profile(WorkerProfile),
     CheckpointCreated(Vec<Arc<dyn FileCommitter>>),
     CheckpointRestored(Option<BootstrapInfo>),
+    ConcurrentRestore(ConcurrentRestoreOutcome),
     Lir(LirCircuit),
     SetBalancerHints(Vec<Result<(), DbspError>>),
     CurrentBalancerPolicies(BTreeMap<GlobalNodeId, PartitioningPolicy>),
@@ -1227,6 +1269,20 @@ pub struct DBSPHandle {
     /// keeps them non-fatal: an `Err` response from a worker kills the
     /// circuit (see [`Self::broadcast_command`]).
     bootstrap_circuit_state: BootstrapCircuitState,
+
+    /// Information about an in-progress *concurrent* bootstrap (see
+    /// [`Self::start_concurrent_bootstrap`]).
+    ///
+    /// Kept separate from `bootstrap_info`, which describes a replay running
+    /// in the main circuit and drives its auto-completion after every
+    /// transaction; a concurrent bootstrap's replay runs in the bootstrap
+    /// circuit and completes through its own commit.
+    concurrent_bootstrap_info: Option<BootstrapInfo>,
+
+    /// The phase of the in-progress concurrent bootstrap, `None` outside
+    /// one.  Orders [`Self::sync_concurrent_bootstrap`] and
+    /// [`Self::complete_concurrent_bootstrap`].
+    concurrent_bootstrap_phase: Option<ConcurrentBootstrapPhase>,
 }
 pub struct WorkersCommitProgress(BTreeMap<u16, CommitProgress>);
 
@@ -1299,6 +1355,8 @@ impl DBSPHandle {
             runtime_elapsed: Duration::ZERO,
             bootstrap_info: None,
             bootstrap_circuit_state: BootstrapCircuitState::None,
+            concurrent_bootstrap_info: None,
+            concurrent_bootstrap_phase: None,
         })
     }
 
@@ -1585,7 +1643,7 @@ impl DBSPHandle {
     /// Fails if a bootstrap circuit already exists.
     pub fn create_bootstrap_circuit(&mut self) -> Result<(), DbspError> {
         self.check_bootstrap_circuit_state(&[BootstrapCircuitState::None], "create")?;
-        self.broadcast_command(Command::CreateBootstrapCircuit, |_, _| {})?;
+        self.broadcast_command(Command::CreateBootstrapCircuit(None), |_, _| {})?;
         self.bootstrap_circuit_state = BootstrapCircuitState::Idle;
         Ok(())
     }
@@ -1605,6 +1663,180 @@ impl DBSPHandle {
                 self.bootstrap_circuit_state,
             ))))
         }
+    }
+
+    /// Starts a concurrent bootstrap from the checkpoint at `base`.
+    ///
+    /// Concurrent bootstrapping populates new and modified parts of the
+    /// circuit without interrupting the pre-existing parts:
+    ///
+    /// 1. The main circuit restores from the checkpoint, schedules only its
+    ///    pre-existing region, and arms recorders that capture the changes
+    ///    flowing into the bootstrapped region (see
+    ///    [`CircuitHandle::restore_concurrent`]).
+    /// 2. A bootstrap circuit is created and restored from the same
+    ///    checkpoint, prepared to replay the bootstrapped region exactly as
+    ///    a non-concurrent bootstrap would (see [`CircuitHandle::restore`]).
+    /// 3. A transaction is started and committed on the bootstrap circuit;
+    ///    the replay makes progress as the caller pumps
+    ///    [`Self::step_bootstrap_circuit`], which returns `true` when the
+    ///    replay has completed.  The main circuit processes transactions
+    ///    normally throughout.
+    ///
+    /// Returns [`ConcurrentRestoreOutcome::UpToDate`], leaving the circuit
+    /// fully active with no bootstrap circuit created, if the checkpoint
+    /// matches the circuit; returns [`ConcurrentRestoreOutcome::FellBack`]
+    /// if the bootstrapped region cannot be processed concurrently, in
+    /// which case the main circuit runs a non-concurrent bootstrap that
+    /// completes through the standard machinery (drive it with
+    /// [`Self::transaction`] until [`Self::bootstrap_in_progress`] clears).
+    ///
+    /// On [`ConcurrentRestoreOutcome::Concurrent`], complete the bootstrap
+    /// with [`Self::step_bootstrap_circuit`] (pump until `true`),
+    /// [`Self::sync_concurrent_bootstrap`], pump again, and
+    /// [`Self::complete_concurrent_bootstrap`].
+    pub fn start_concurrent_bootstrap(
+        &mut self,
+        base: StoragePath,
+    ) -> Result<ConcurrentRestoreOutcome, DbspError> {
+        self.check_bootstrap_circuit_state(
+            &[BootstrapCircuitState::None],
+            "start a concurrent bootstrap",
+        )?;
+        if self.bootstrap_info.is_some() {
+            return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
+                "cannot start a concurrent bootstrap while a non-concurrent bootstrap \
+                 is in progress"
+                    .to_string(),
+            )));
+        }
+
+        // Restore the main circuit; all workers must report the same
+        // outcome (divergence is unrecoverable, as in
+        // `collect_restore_info`).
+        let mut worker_outcomes = BTreeMap::<usize, ConcurrentRestoreOutcome>::new();
+        self.broadcast_command(Command::RestoreConcurrent(base.clone()), |worker, resp| {
+            let Response::ConcurrentRestore(outcome) = resp else {
+                panic!("Expected concurrent restore response, got {resp:?}");
+            };
+            worker_outcomes.insert(worker, outcome);
+        })?;
+        for i in 1..worker_outcomes.len() {
+            if worker_outcomes[&i] != worker_outcomes[&0] {
+                let _ = self.kill_inner();
+                return Err(DbspError::Scheduler(SchedulerError::ReplayInfoConflict {
+                    error: format!(
+                        "worker 0 and worker {i} returned different outcomes during a \
+                         concurrent restore; this can be caused by a bug or data corruption: \
+                         worker 0: {:?}, worker {i}: {:?}",
+                        worker_outcomes[&0], worker_outcomes[&i],
+                    ),
+                }));
+            }
+        }
+        let outcome = worker_outcomes
+            .remove(&0)
+            .expect("at least one worker must respond");
+
+        let main_info = match outcome {
+            ConcurrentRestoreOutcome::UpToDate => {
+                // The checkpoint matches the circuit: the main circuit is
+                // fully active, and there is nothing to bootstrap.
+                return Ok(ConcurrentRestoreOutcome::UpToDate);
+            }
+            ConcurrentRestoreOutcome::FellBack { reason, info } => {
+                // The main circuit is running the replay itself, exactly as
+                // after a non-concurrent restore; the standard
+                // `check_bootstrap_complete` machinery completes it.
+                info!(
+                    "Concurrent bootstrap not possible ({reason}); falling back to a \
+                     non-concurrent bootstrap"
+                );
+                self.bootstrap_info = info.clone();
+                return Ok(ConcurrentRestoreOutcome::FellBack { reason, info });
+            }
+            ConcurrentRestoreOutcome::Concurrent(info) => info,
+        };
+
+        let bootstrap_info = self.collect_restore_info(
+            Command::CreateBootstrapCircuit(Some(base)),
+            "bootstrap-circuit restore",
+        )?;
+        // The workers hold bootstrap circuits from this point on; the only
+        // non-fatal failure below is the cross-copy comparison, after which
+        // the caller can clean up with `destroy_bootstrap_circuit`.
+        self.bootstrap_circuit_state = BootstrapCircuitState::Idle;
+
+        // Both computations analyze the same checkpoint against structurally
+        // identical circuits, so they must agree.
+        if bootstrap_info.as_ref() != Some(&main_info) {
+            return Err(DbspError::Scheduler(SchedulerError::ReplayInfoConflict {
+                error: format!(
+                    "the main circuit and the bootstrap circuit returned different replay info \
+                     for the same checkpoint; this can be caused by a bug or data corruption;\n  \
+                     main circuit: {main_info:?}\n  bootstrap circuit: {bootstrap_info:?}"
+                ),
+            }));
+        }
+
+        // Run the replay as one large background transaction; each
+        // `step_bootstrap_circuit` call replays a bounded chunk.
+        self.start_bootstrap_transaction()?;
+        self.start_commit_bootstrap_transaction()?;
+
+        self.concurrent_bootstrap_info = Some(main_info.clone());
+        self.concurrent_bootstrap_phase = Some(ConcurrentBootstrapPhase::Backfill);
+
+        Ok(ConcurrentRestoreOutcome::Concurrent(main_info))
+    }
+
+    /// Broadcasts `command`, which must produce a
+    /// [`Response::CheckpointRestored`] on every worker, and checks that all
+    /// workers computed identical replay info.
+    fn collect_restore_info(
+        &mut self,
+        command: Command,
+        what: &str,
+    ) -> Result<Option<BootstrapInfo>, DbspError> {
+        let mut worker_replay_info = BTreeMap::<usize, Option<BootstrapInfo>>::new();
+
+        self.broadcast_command(command, |worker, resp| {
+            let Response::CheckpointRestored(replay_info) = resp else {
+                panic!("Expected checkpoint restore response, got {resp:?}");
+            };
+            worker_replay_info.insert(worker, replay_info);
+        })?;
+
+        for i in 1..worker_replay_info.len() {
+            if worker_replay_info[&i] != worker_replay_info[&0] {
+                let mut info = Vec::new();
+                for j in 0..worker_replay_info.len() {
+                    info.push(format!(
+                        "  worker {j} replay info: {:?}",
+                        worker_replay_info[&j]
+                    ));
+                }
+                let info = info.join("\n");
+                // Workers that disagree on the replay info have divergent
+                // scheduler state; the lockstep invariants are
+                // unrecoverable, so kill the pipeline.
+                let _ = self.kill_inner();
+                return Err(DbspError::Scheduler(SchedulerError::ReplayInfoConflict {
+                    error: format!(
+                        "worker 0 and worker {i} returned different replay info during {what}; \
+                         this can be caused by a bug or data corruption; replay info\n{info}"
+                    ),
+                }));
+            }
+        }
+
+        Ok(worker_replay_info.remove(&0).flatten())
+    }
+
+    /// Returns information about an in-progress concurrent bootstrap, or
+    /// `None` if no concurrent bootstrap is in progress.
+    pub fn concurrent_bootstrap_info(&self) -> &Option<BootstrapInfo> {
+        &self.concurrent_bootstrap_info
     }
 
     /// Starts a transaction on the bootstrap circuit (see
@@ -1675,6 +1907,11 @@ impl DBSPHandle {
 
     /// Deletes the bootstrap circuit on every worker.
     ///
+    /// Aborts an in-progress concurrent bootstrap (see
+    /// [`Self::start_concurrent_bootstrap`]); the main circuit continues to
+    /// serve its pre-existing views, and the only way to populate the
+    /// bootstrapped views afterwards is to restart from a checkpoint.
+    ///
     /// # Errors
     ///
     /// Fails if no bootstrap circuit exists or if it has a transaction in
@@ -1685,6 +1922,8 @@ impl DBSPHandle {
         self.check_bootstrap_circuit_state(&[BootstrapCircuitState::Idle], "destroy")?;
         self.broadcast_command(Command::DestroyBootstrapCircuit, |_, _| {})?;
         self.bootstrap_circuit_state = BootstrapCircuitState::None;
+        self.concurrent_bootstrap_info = None;
+        self.concurrent_bootstrap_phase = None;
         Ok(())
     }
 
@@ -1740,35 +1979,8 @@ impl DBSPHandle {
     ///
     /// If the circuit needs bootstrapping new operators, put it in the bootstrap mode.
     fn send_restore(&mut self, base: StoragePath) -> Result<(), DbspError> {
-        let mut worker_replay_info = BTreeMap::<usize, Option<BootstrapInfo>>::new();
-
-        self.broadcast_command(Command::Restore(base), |worker, resp| {
-            let Response::CheckpointRestored(replay_info) = resp else {
-                panic!("Expected checkpoint restore response, got {resp:?}");
-            };
-            worker_replay_info.insert(worker, replay_info);
-        })?;
-
-        // All workers should have the same replay info.
-        for i in 1..worker_replay_info.len() {
-            if worker_replay_info[&i] != worker_replay_info[&0] {
-                let mut info = Vec::new();
-                for j in 0..worker_replay_info.len() {
-                    info.push(format!(
-                        "  worker {j} replay info: {:?}",
-                        worker_replay_info[&j]
-                    ));
-                }
-                let info = info.join("\n");
-                return Err(DbspError::Scheduler(SchedulerError::ReplayInfoConflict {
-                    error: format!(
-                        "worker 0 and worker {i} returned different replay info after restarting from a checkpoint; this can be caused by a bug or data corruption; replay info\n{info}"
-                    ),
-                }));
-            }
-        }
-
-        self.bootstrap_info = worker_replay_info[&0].clone();
+        self.bootstrap_info =
+            self.collect_restore_info(Command::Restore(base), "restart from a checkpoint")?;
 
         if let Some(bootstrap_info) = &self.bootstrap_info {
             info!(
@@ -2163,6 +2375,12 @@ impl<'a> CheckpointBuilder<'a> {
         // could delete.
         self.handle
             .check_bootstrap_circuit_state(&[BootstrapCircuitState::None], "create a checkpoint")?;
+        if self.handle.concurrent_bootstrap_phase.is_some() {
+            return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
+                "cannot create a checkpoint while a concurrent bootstrap is in progress"
+                    .to_string(),
+            )));
+        }
 
         let checkpointer = self.handle.checkpointer()?.clone();
 

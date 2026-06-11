@@ -26,7 +26,7 @@
 //! cache under [`RecorderId`], by the bootstrap orchestration code that runs
 //! between circuit steps.
 
-use std::{borrow::Cow, cell::RefCell, panic::Location, rc::Rc, sync::Arc};
+use std::{any::Any, borrow::Cow, cell::RefCell, panic::Location, rc::Rc, sync::Arc};
 
 use crate::{
     Error, NumEntries, Scope,
@@ -45,6 +45,47 @@ use crate::{
 use size_of::SizeOf;
 
 circuit_cache_key!(RecorderId<B: Batch>(StreamId => RecorderHandle<B>));
+
+// Type-erased access to the same recorders, for bootstrap orchestration code
+// that works with type-erased streams.  Registered alongside `RecorderId` in
+// `register_replay_stream`.
+circuit_cache_key!(RecorderControlId(StreamId => Rc<dyn RecorderControl>));
+
+/// Type-erased control interface to a [`RecorderHandle`].
+///
+/// Bootstrap orchestration operates on type-erased nodes and streams, so it
+/// reaches recorders through this trait (cached under [`RecorderControlId`])
+/// rather than through the typed [`RecorderHandle`].
+pub trait RecorderControl {
+    /// See [`RecorderHandle::start_recording`].
+    fn start_recording(&self);
+
+    /// See [`RecorderHandle::is_recording`].
+    fn is_recording(&self) -> bool;
+
+    /// Type-erased [`RecorderHandle::stop_recording`]: the box holds the
+    /// recorded `Spine<B>`.  The consumer (the replay source of the same
+    /// stream in the bootstrap circuit) recovers the type by downcasting.
+    fn stop_recording_any(&self) -> Option<Box<dyn Any>>;
+}
+
+impl<B> RecorderControl for RecorderHandle<B>
+where
+    B: Batch,
+{
+    fn start_recording(&self) {
+        RecorderHandle::start_recording(self)
+    }
+
+    fn is_recording(&self) -> bool {
+        RecorderHandle::is_recording(self)
+    }
+
+    fn stop_recording_any(&self) -> Option<Box<dyn Any>> {
+        self.stop_recording()
+            .map(|spine| Box::new(spine) as Box<dyn Any>)
+    }
+}
 
 /// Recording state of a [`Recorder`].
 ///

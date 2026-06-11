@@ -135,6 +135,19 @@ pub trait Operator: 'static {
         false
     }
 
+    /// Returns `true` if `self` is a self-contained deterministic source whose
+    /// output the engine can reproduce simply by re-running it, as opposed to
+    /// an input fed from outside the circuit (e.g. a connector-backed table).
+    ///
+    /// Concurrent bootstrapping rebuilds a second copy of the circuit and
+    /// re-runs it; a deterministic source such as `ConstantGenerator` in the
+    /// bootstrapped region needs no replay source, so it must not be rejected
+    /// like a connector-fed input that the bootstrap copy cannot replay.
+    /// Defaults to `false`; override on deterministic source operators.
+    fn is_deterministic_source(&self) -> bool {
+        false
+    }
+
     /// Returns `true` if `self` has received all required external inputs and
     /// is ready to run.
     ///
