@@ -43,15 +43,18 @@ use crate::{
     },
     circuit_cache_key,
     ir::LABEL_MIR_NODE_ID,
-    operator::dynamic::balance::{Balancer, BalancerError, BalancerHint, PartitioningPolicy},
+    operator::dynamic::{
+        balance::{Balancer, BalancerError, BalancerHint, PartitioningPolicy},
+        recorder::{Recorder, RecorderId},
+    },
     time::{Timestamp, UnitTimestamp},
+    trace::Batch,
 };
 #[cfg(doc)]
 use crate::{
     InputHandle, OutputHandle,
     algebra::{IndexedZSet, ZSet},
     operator::{Aggregator, Fold, Generator, Max, Min, time_series::RelRange},
-    trace::Batch,
 };
 use anyhow::Error as AnyError;
 use dyn_clone::{DynClone, clone_box};
@@ -1434,6 +1437,22 @@ impl OwnershipPreference {
     /// The operator does not gain any speed up from consuming an owned value.
     pub const INDIFFERENT: Self = Self::new(0);
 
+    /// The operator does not benefit from an owned value and must be
+    /// scheduled before any consumer of the same stream that prefers one.
+    ///
+    /// The owned value of a stream is delivered to whichever consumer runs
+    /// last ([`StreamValue::take`]), so an auxiliary tap evaluated after a
+    /// [`Self::PREFER_OWNED`] consumer would intercept the owned value that
+    /// the latter asked for, forcing it to clone its input.  This preference
+    /// tells the scheduler to evaluate the tap first (see
+    /// `ownership_constraints`).
+    ///
+    /// Use this preference only for sink operators (e.g., the recorders
+    /// attached to replayable streams): the scheduling constraints it adds
+    /// originate at the consumer, and a consumer with downstream successors
+    /// could create a dependency cycle.
+    pub const YIELD_OWNERSHIP: Self = Self::new(1);
+
     /// The operator is likely to run faster provided an owned input, but
     /// shouldn't be prioritized over more impactful operators
     ///
@@ -1469,6 +1488,7 @@ impl Display for OwnershipPreference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::INDIFFERENT => f.write_str("Indifferent"),
+            Self::YIELD_OWNERSHIP => f.write_str("YieldOwnership"),
             Self::WEAKLY_PREFER_OWNED => f.write_str("WeaklyPreferOwned"),
             Self::PREFER_OWNED => f.write_str("PreferOwned"),
             Self::STRONGLY_PREFER_OWNED => f.write_str("StronglyPreferOwned"),
@@ -1523,13 +1543,25 @@ circuit_cache_key!(ExportId<C, D>(StreamId => Stream<C, D>));
 circuit_cache_key!(ReplaySource(StreamId => Box<dyn StreamMetadata>));
 
 /// Register `replay_stream` as a replay source for `stream`.
+///
+/// Also attaches a [`Recorder`](crate::operator::dynamic::recorder::Recorder)
+/// to `stream`: every stream with a replay source can turn out to be a
+/// boundary stream of the bootstrapped region during concurrent
+/// bootstrapping, in which case the deltas applied to it while the bootstrap
+/// circuit replays the (frozen) integral must be recorded for the
+/// synchronization transaction.  The recorder is disabled (empty, no-op)
+/// until bootstrap orchestration enables it through the
+/// [`RecorderId`](crate::operator::dynamic::recorder::RecorderId) cache
+/// entry.
+#[track_caller]
 pub(crate) fn register_replay_stream<C, B>(
     circuit: &C,
     stream: &Stream<C, B>,
     replay_stream: &Stream<C, B>,
+    factories: &B::Factories,
 ) where
     C: Circuit,
-    B: 'static,
+    B: Batch<Time = ()>,
 {
     // We currently only support using operators in the top-level circuit
     // as replay sources.
@@ -1547,6 +1579,18 @@ pub(crate) fn register_replay_stream<C, B>(
                 ReplaySource::new(stream.stream_id()),
                 Box::new(replay_stream.clone()),
             );
+
+            let recorder = Recorder::new(factories, Location::caller());
+            let handle = recorder.handle();
+            // `YIELD_OWNERSHIP` schedules the recorder before the stream's
+            // owned-input consumers (the integral's appender), so that it
+            // does not intercept the owned-value delivery they rely on.
+            circuit.add_sink_with_preference(
+                recorder,
+                stream,
+                OwnershipPreference::YIELD_OWNERSHIP,
+            );
+            circuit.cache_insert(RecorderId::new(stream.stream_id()), handle);
         }
     }
 }

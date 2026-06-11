@@ -178,7 +178,7 @@ where
             trace.mark_sharded();
 
             z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
-            register_replay_stream(circuit, &delta, &replay_stream);
+            register_replay_stream(circuit, &delta, &replay_stream, &factories.batch_factories);
 
             circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
             circuit.cache_insert(TraceId::new(delta.stream_id()), trace);
@@ -289,7 +289,7 @@ where
 
             z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
 
-            register_replay_stream(circuit, &delta, &replay_stream);
+            register_replay_stream(circuit, &delta, &replay_stream, &factories.batch_factories);
 
             circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
             circuit.cache_insert(AccumulateTraceId::new(delta.stream_id()), trace);

@@ -25,6 +25,7 @@ pub mod multijoin;
 pub mod neighborhood;
 pub mod outer_join;
 mod output;
+pub mod recorder;
 pub mod recursive;
 pub(crate) mod replay;
 pub mod sample;

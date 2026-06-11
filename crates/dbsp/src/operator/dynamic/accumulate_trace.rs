@@ -132,7 +132,7 @@ where
                     // FIXME: this is suboptimal, since this will end up sharding the already sharded data again.
                     // We should instead replay by moving the entire integral into the accumulator. This will require
                     // integrating bootstrapping with transactions better.
-                    register_replay_stream(circuit, self, &replay_stream);
+                    register_replay_stream(circuit, self, &replay_stream, batch_factories);
 
                     circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     trace
@@ -196,7 +196,7 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    register_replay_stream(circuit, self, &replay_stream);
+                    register_replay_stream(circuit, self, &replay_stream, batch_factories);
 
                     circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     trace
@@ -433,7 +433,7 @@ where
                     // We should instead replay by moving the entire integral into the accumulator. This will require
                     // integrating bootstrapping with transactions better. An additional complication is that the integral
                     // can be timed, while the accumulator stores untimed updates
-                    register_replay_stream(circuit, self, &replay_stream);
+                    register_replay_stream(circuit, self, &replay_stream, factories);
 
                     circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     circuit.cache_insert(ExportId::new(trace.stream_id()), export);
@@ -519,7 +519,7 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    register_replay_stream(circuit, self, &replay_stream);
+                    register_replay_stream(circuit, self, &replay_stream, input_factories);
 
                     circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     circuit.cache_insert(ExportId::new(trace.stream_id()), export);
@@ -577,7 +577,7 @@ where
         self.feedback
             .connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
 
-        register_replay_stream(circuit, stream, &replay_stream);
+        register_replay_stream(circuit, stream, &replay_stream, factories);
 
         circuit.cache_insert(
             DelayedTraceId::new(trace.stream_id()),

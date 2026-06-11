@@ -206,7 +206,12 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    register_replay_stream(circuit, &sharded_stream, &replay_stream);
+                    register_replay_stream(
+                        circuit,
+                        &sharded_stream,
+                        &replay_stream,
+                        batch_factories,
+                    );
 
                     circuit.cache_insert(
                         DelayedTraceId::new(trace.stream_id()),

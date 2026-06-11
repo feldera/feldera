@@ -378,7 +378,7 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    register_replay_stream(circuit, self, &replay_stream);
+                    register_replay_stream(circuit, self, &replay_stream, batch_factories);
 
                     circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     trace
@@ -594,7 +594,7 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    register_replay_stream(circuit, self, &replay_stream);
+                    register_replay_stream(circuit, self, &replay_stream, input_factories);
 
                     circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     circuit.cache_insert(ExportId::new(trace.stream_id()), export);
@@ -625,7 +625,11 @@ where
     T: Trace<Time = ()> + Clone,
     C: Circuit,
 {
-    pub fn connect(self, stream: &Stream<C, T::Batch>) {
+    pub fn connect(
+        self,
+        stream: &Stream<C, T::Batch>,
+        factories: &<T::Batch as BatchReader>::Factories,
+    ) {
         let circuit = self.delayed_trace.circuit();
 
         let replay_stream = self.feedback.operator_mut().prepare_replay_stream(stream);
@@ -647,7 +651,7 @@ where
         self.feedback
             .connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
 
-        register_replay_stream(circuit, stream, &replay_stream);
+        register_replay_stream(circuit, stream, &replay_stream, factories);
 
         circuit.cache_insert(
             DelayedTraceId::new(trace.stream_id()),
@@ -683,7 +687,11 @@ where
 /// [`TraceFeedbackConnector`] struct.  The struct contains the `delayed_trace`
 /// stream, which can be used as input to instantiate `F` and the `output`
 /// stream.  Close the loop by calling
-/// `TraceFeedbackConnector::connect(output)`.
+/// `TraceFeedbackConnector::connect(output, factories)`.
+///
+/// This trait currently has no callers inside the workspace; it is kept as
+/// the step-granularity analogue of `AccumulateTraceFeedback`, which all
+/// in-tree feedback operators use.
 pub trait TraceFeedback: Circuit {
     fn add_integrate_trace_feedback<T>(
         &self,
