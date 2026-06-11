@@ -12,7 +12,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-06-03T02:33:40.069960273Z"
+exclude-newer = "2026-06-04T23:32:48.273564965Z"
 exclude-newer-span = "P1W"
 
 [[package]]
@@ -326,7 +326,7 @@ wheels = [
 
 [[package]]
 name = "feldera"
-version = "0.308.0"
+version = "0.309.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
