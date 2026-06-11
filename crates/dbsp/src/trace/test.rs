@@ -298,6 +298,72 @@ fn test_indexed_zset_spine<B: IndexedZSet<Key = DynI32, Val = DynI32>>(
     }
 }
 
+/// Tests [`Trace::fork`]: inserts `batches[..fork_at]` into a spine, forks
+/// it, and checks that (1) the fork starts out equal to the source, (2) the
+/// fork is frozen while the source receives `batches[fork_at..]`, and (3)
+/// retracting the fork's entire contents empties the fork without affecting
+/// the source.  Step (3) also exercises `consolidate` on a spine whose
+/// batches are `Arc`-shared with another spine.
+fn test_fork_spine<B: IndexedZSet<Key = DynI32, Val = DynI32>>(
+    factories: &B::Factories,
+    batches: Vec<Vec<Tup2<Tup2<i32, i32>, ZWeight>>>,
+    fork_at: usize,
+) {
+    let fork_at = fork_at.min(batches.len());
+
+    let mut trace: Spine<B> = Spine::new(factories, Arc::new(String::from("Test")));
+    let mut ref_trace: TestBatch<DynI32, DynI32, (), DynZWeight> =
+        TestBatch::new(&TestBatchFactories::new(), Arc::new(String::from("Test")));
+
+    for tuples in &batches[..fork_at] {
+        let mut erased_tuples = indexed_zset_tuples(tuples.clone());
+
+        let batch = B::dyn_from_tuples(factories, (), &mut erased_tuples.clone());
+        let ref_batch =
+            TestBatch::dyn_from_tuples(&TestBatchFactories::new(), (), &mut erased_tuples);
+
+        TOKIO.block_on(ref_trace.insert(ref_batch));
+        TOKIO.block_on(trace.insert(batch));
+    }
+
+    let mut fork = trace.fork();
+    let ref_fork = ref_trace.clone();
+
+    // The fork starts out equal to the source.
+    assert_trace_eq(&fork, &ref_fork);
+
+    // Insert the remaining batches into the source only.
+    for tuples in &batches[fork_at..] {
+        let mut erased_tuples = indexed_zset_tuples(tuples.clone());
+
+        let batch = B::dyn_from_tuples(factories, (), &mut erased_tuples.clone());
+        let ref_batch =
+            TestBatch::dyn_from_tuples(&TestBatchFactories::new(), (), &mut erased_tuples);
+
+        TOKIO.block_on(ref_trace.insert(ref_batch));
+        TOKIO.block_on(trace.insert(batch));
+    }
+
+    // The source evolved past the fork point; the fork stayed frozen.
+    assert_trace_eq(&trace, &ref_trace);
+    assert_trace_eq(&fork, &ref_fork);
+
+    // Retract the fork's entire contents from the fork only: the fork
+    // consolidates to nothing, the source is unaffected.
+    for tuples in &batches[..fork_at] {
+        let negated = tuples
+            .iter()
+            .map(|Tup2(kv, w)| Tup2(*kv, -*w))
+            .collect::<Vec<_>>();
+        let mut erased_tuples = indexed_zset_tuples(negated);
+
+        let batch = B::dyn_from_tuples(factories, (), &mut erased_tuples);
+        TOKIO.block_on(fork.insert(batch));
+    }
+    assert!(fork.consolidate().is_none());
+    assert_trace_eq(&trace, &ref_trace);
+}
+
 fn test_val_batch_trace_spine<B: ZBatch<Key = DynI32, Val = DynI32, Time = u32>>(
     factories: &B::Factories,
     batches: Vec<(Vec<Tup2<Tup2<i32, i32>, ZWeight>>, i32, i32)>,
@@ -941,6 +1007,24 @@ proptest! {
     }
 
     #[test]
+    fn test_fork_vec_indexed_zset_spine(batches in kvr_batches(100, 5, 2, 500, 20), fork_at in 0..20usize) {
+        Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
+            let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
+            let batches = batches.into_iter().map(|(tuples, _, _)| tuples).collect();
+            test_fork_spine::<OrdIndexedZSet<DynI32, DynI32>>(&factories, batches, fork_at)
+        }).unwrap().join().unwrap();
+    }
+
+    #[test]
+    fn test_fork_file_indexed_zset_spine(batches in kvr_batches(100, 5, 2, 200, 10), fork_at in 0..10usize) {
+        run_in_circuit_with_storage(move || {
+            let factories = <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+            let batches = batches.clone().into_iter().map(|(tuples, _, _)| tuples).collect();
+            test_fork_spine::<FileIndexedWSet<DynI32, DynI32, DynZWeight>>(&factories, batches, fork_at)
+        });
+    }
+
+    #[test]
     fn test_vec_key_batch_trace_spine(batches in kr_batches(100, 2, 500, 20), seed in 0..u64::MAX) {
         Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
         let factories = <OrdKeyBatchFactories<DynI32, u32, DynZWeight>>::new::<i32, (), ZWeight>();
@@ -1045,6 +1129,61 @@ proptest! {
         }).unwrap().join().unwrap();
     }
 
+}
+
+/// Checks that [`Trace::fork`] carries over the source's metadata — the
+/// compaction frontier, retention filters, and dirty flag — and that
+/// [`Trace::frontier`] reports the value most recently set with
+/// `set_frontier`.
+#[test]
+fn test_fork_spine_metadata() {
+    Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
+        let factories =
+            <OrdValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
+
+        let mut trace: Spine<OrdValBatch<DynI32, DynI32, u32, DynZWeight>> =
+            Spine::new(&factories, Arc::new(String::from("Test")));
+
+        // A fresh spine has a minimal frontier, and the fork of an empty
+        // spine is empty.
+        assert_eq!(trace.frontier(), 0);
+        assert!(trace.fork().consolidate().is_none());
+
+        let mut erased_tuples = indexed_zset_tuples(vec![Tup2(Tup2(1, 2), 1)]);
+        let batch = OrdValBatch::dyn_from_tuples(&factories, 0, &mut erased_tuples);
+        TOKIO.block_on(trace.insert(batch));
+
+        trace.set_frontier(&5);
+        trace.retain_keys(Filter::new(Box::new(|key| {
+            *key.downcast_checked::<i32>() >= 0
+        })));
+        trace.retain_values(GroupFilter::Simple(Filter::new(Box::new(
+            |val: &DynI32| *val.downcast_checked::<i32>() >= 0,
+        ))));
+
+        let fork = trace.fork();
+        assert_eq!(fork.frontier(), 5);
+        assert!(fork.dirty());
+        assert!(fork.key_filter().is_some());
+        assert!(fork.value_filter().is_some());
+
+        // The dirty flag is copied, not hardwired: a clean source produces a
+        // clean fork.
+        trace.clear_dirty_flag();
+        assert!(!trace.fork().dirty());
+
+        // The reference model honors the same frontier round-trip contract,
+        // including across fork.
+        let mut ref_trace: TestBatch<DynI32, DynI32, u32, DynZWeight> =
+            TestBatch::new(&TestBatchFactories::new(), Arc::new(String::from("Test")));
+        assert_eq!(ref_trace.frontier(), 0);
+        ref_trace.set_frontier(&5);
+        assert_eq!(ref_trace.frontier(), 5);
+        assert_eq!(ref_trace.fork().frontier(), 5);
+    })
+    .unwrap()
+    .join()
+    .unwrap();
 }
 
 /// Executes `f`, once, inside a circuit initialized so that it has access to

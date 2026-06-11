@@ -239,6 +239,35 @@ pub trait Trace: BatchReader {
     /// Updates the name of the trace to `name`.
     fn set_name(&mut self, name: Arc<String>);
 
+    /// Creates a new trace with the same contents as `self`.
+    ///
+    /// The new trace shares the immutable batches of `self`, so forking
+    /// copies no data: its cost is proportional to the number of batches in
+    /// the trace.  The fork inherits the source's name, compaction frontier,
+    /// retention filters, and dirty flag.  It does not inherit in-progress
+    /// merges: merging restarts from the shared batches and proceeds
+    /// independently in both traces.
+    ///
+    /// The result is a logical copy only; the physical organization (batch
+    /// boundaries, merge progress) of the two traces diverges over time.
+    /// Concurrent bootstrapping uses this method to seed the bootstrap
+    /// circuit's replay sources with the state of the live circuit's
+    /// integrals.
+    ///
+    /// Implementations may require a DBSP runtime: [`Spine`](crate::trace::Spine)
+    /// panics outside one, and associates the fork's background merge tasks
+    /// with the calling thread's worker, so a fork should be created on the
+    /// worker thread that will own it.
+    ///
+    /// A fork of a storage-backed trace holds references to the source's
+    /// batch files, but checkpoint garbage collection does not know about
+    /// such references: it can delete a batch file whose checkpoints are
+    /// gone even while a fork still reads it.  Callers must ensure that no
+    /// checkpoint GC runs for the lifetime of a fork that outlives its
+    /// source's checkpoint (concurrent bootstrapping suspends checkpointing
+    /// while the bootstrap circuit exists).
+    fn fork(&self) -> Self;
+
     /// Sets a compaction frontier, i.e., a timestamp such that timestamps
     /// below the frontier are indistinguishable to DBSP, therefore any `ts`
     /// in the trace can be safely replaced with `ts.join(frontier)` without
@@ -248,6 +277,11 @@ pub trait Trace: BatchReader {
     ///
     /// The compaction is performed lazily at merge time.
     fn set_frontier(&mut self, frontier: &Self::Time);
+
+    /// Returns the compaction frontier most recently set with
+    /// [`set_frontier`](Self::set_frontier), or `Time::minimum()` if the
+    /// frontier was never set.
+    fn frontier(&self) -> Self::Time;
 
     /// Exert merge effort, even without updates.
     fn exert(&mut self, effort: &mut isize);

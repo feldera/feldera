@@ -528,6 +528,11 @@ where
     key_filter: Option<Filter<K>>,
     #[size_of(skip)]
     value_filter: Option<GroupFilter<V>>,
+    /// The compaction frontier last set with [`Trace::set_frontier`].
+    /// Compaction is a no-op for `TestBatch`, but the value is stored so that
+    /// [`Trace::frontier`] honors its round-trip contract.
+    #[size_of(skip)]
+    frontier: Option<T>,
 }
 
 unsafe impl<K, V, T, R> Send for TestBatch<K, V, T, R>
@@ -590,6 +595,7 @@ where
             lower_key_bound: self.lower_key_bound.as_ref().map(|b| clone_box(b.as_ref())),
             key_filter: self.key_filter.as_ref().cloned(),
             value_filter: self.value_filter.as_ref().cloned(),
+            frontier: self.frontier.clone(),
         }
     }
 }
@@ -688,6 +694,7 @@ where
             lower_key_bound: None,
             key_filter: None,
             value_filter: None,
+            frontier: None,
         }
     }
 
@@ -711,6 +718,7 @@ where
             lower_key_bound: None,
             key_filter: None,
             value_filter: None,
+            frontier: None,
         }
     }
 
@@ -1320,13 +1328,25 @@ where
             lower_key_bound: None,
             key_filter: None,
             value_filter: None,
+            frontier: None,
         }
     }
 
     fn set_name(&mut self, _name: Arc<String>) {}
 
-    fn set_frontier(&mut self, _frontier: &Self::Time) {
-        // Ok to do nothing here, since frontiers are an optimization and are meant to be applied lazily during merging.
+    fn fork(&self) -> Self {
+        self.clone()
+    }
+
+    fn set_frontier(&mut self, frontier: &Self::Time) {
+        // Compaction itself is a no-op for `TestBatch` (frontiers are an
+        // optimization, applied lazily during merging), but the value is
+        // stored so that `frontier` honors its round-trip contract.
+        self.frontier = Some(frontier.clone());
+    }
+
+    fn frontier(&self) -> Self::Time {
+        self.frontier.clone().unwrap_or_else(Self::Time::minimum)
     }
 
     fn exert(&mut self, _effort: &mut isize) {}
