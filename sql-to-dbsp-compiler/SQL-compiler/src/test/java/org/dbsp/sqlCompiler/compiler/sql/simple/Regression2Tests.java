@@ -1776,6 +1776,6 @@ public class Regression2Tests extends SqlIoTest {
                  "Operation < between TIMESTAMP and TIMESTAMP WITH TIME ZONE not supported");
         this.statementsFailingInCompilation(
                 "CREATE VIEW V AS SELECT TIMESTAMP '2020-01-01 10:00:00' - TIMESTAMP WITH TIME ZONE '2020-01-01 10:00:00 UTC'",
-                "Cannot apply '-' to arguments of type '<TIMESTAMP(0)> - <TIMESTAMP_TZ(0)>'");
+                "Cannot apply '-' to arguments of type '<TIMESTAMP(0)> - <TIMESTAMP WITH TIME ZONE(0)>'");
     }
 }

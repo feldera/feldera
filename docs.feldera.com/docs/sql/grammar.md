@@ -399,8 +399,14 @@ orderItem
 ```
 projectItem
   :   expression [ [ AS ] columnAlias ]
-  |   ROW(*) [ [ AS ] columnAlias ]
-  |   tableAlias . *
+  |   ROW(rowStarItem [, projectItem ]* [ [ AS columnAlias ] ]
+  |   tableAlias . '*'
+
+rowStarItem
+  :   '*'
+  |   tableAlias . '*'
+  |   '*' { EXCLUDE | EXCEPT } '(' column [, column ]* ')'
+  |   tableAlias . '*' { EXCLUDE | EXCEPT } '(' column [, column ]* ')'
 ```
 
 The following forms of `SELECT` are supported:
@@ -409,6 +415,8 @@ The following forms of `SELECT` are supported:
 - `SELECT * EXCLUDE a, b FROM T`: select all columns of table `T` except the ones named `a` and `b`
 - `SELECT * EXCEPT a, b FROM T`: `EXCEPT` is a synonym for `EXCLUDE`; this statement is equivalent to the previous statement
 - `SELECT * REPLACE (a+b AS a) FROM T`: Select all columns of table `T` and replace column `a` with the expression `a+b`
+- `SELECT ROW(T.*) FROM T`: Create a `ROW`-typed column with all columns of table `T`
+- `SELECT ROW(T.* EXCLUDE(a, b)) FROM T: Create a `ROW`-typed column with all columns of table `T` except columns `a` and `b`
 - `SELECT` supports [lateral column aliasing](identifiers.md#lateral-column-aliasing), where
   an identifier defined in a `SELECT` statement can be immediately used in the same statement
   or in the associated `GROUP BY` and `HAVING` statements.
