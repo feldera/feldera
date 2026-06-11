@@ -11,6 +11,7 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import type { ECMouseEvent } from 'svelte-echarts'
   import { Chart } from 'svelte-echarts'
+  import { dateNow } from '$lib/compositions/serverTime'
   import { getThemeColor } from '$lib/functions/common/color'
   import { humanSize } from '$lib/functions/common/string'
   import { tuple } from '$lib/functions/common/tuple'
@@ -43,6 +44,10 @@
 
   const pipelineName = $derived(pipeline.current.name)
 
+  // Anchor the time axis to the newest sample's timestamp rather than to the
+  // client clock.
+  const xAxisMax = $derived(metrics.at(-1)?.t ?? dateNow())
+
   const valueMax = $derived(metrics.length ? Math.max(...metrics.map((v) => v.s)) : 0)
   const yMaxStep = $derived(2 ** Math.ceil(Math.log2(valueMax * 1.25)))
   const yMax = $derived(valueMax !== 0 ? yMaxStep : 1024 * 2048)
@@ -70,8 +75,8 @@
         }
       ],
       xAxis: {
-        min: Date.now() - keepMs,
-        max: Date.now()
+        min: xAxisMax - keepMs,
+        max: xAxisMax
       },
       yAxis: {
         interval: (yMax - yMin) / 2,
@@ -114,8 +119,10 @@
       animationDuration: 0,
       animationDurationUpdate: refetchMs,
       type: 'time' as const,
-      min: Date.now() - keepMs - refetchMs,
-      max: Date.now() - refetchMs,
+      // svelte-ignore state_referenced_locally
+      min: dateNow() - keepMs - refetchMs,
+      // svelte-ignore state_referenced_locally
+      max: dateNow() - refetchMs,
       minInterval: 25000,
       maxInterval: 25000,
       axisLabel: {
