@@ -1257,19 +1257,24 @@ impl ControllerStatus {
     /// True if the pipeline has processed all inputs to completion.
     pub fn pipeline_complete(&self) -> bool {
         // All input endpoints (if any) are at end of input.
-        if !self
+        for ep in self
             .input_status()
             .values()
             .filter(|endpoint_stats| !endpoint_stats.endpoint_name.contains(".api-ingress-"))
-            .all(|endpoint_stats| endpoint_stats.is_eoi())
         {
-            return false;
+            if !ep.is_eoi() {
+                eprintln!("{} is not at EOI", &ep.endpoint_name);
+                return false;
+            }
         }
 
         // All received records have been processed by the circuit.
         let total_input_records = self.num_total_input_records();
-
-        if self.num_total_completed_records() != total_input_records {
+        let total_completed_records = self.num_total_completed_records();
+        if total_completed_records != total_input_records {
+            eprintln!(
+                "total_input_records {total_input_records} != total_completed_records {total_completed_records}"
+            );
             return false;
         }
 
