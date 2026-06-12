@@ -49,6 +49,9 @@
     /** Optional slot for a richer SQL panel; receives current highlight ranges */
     sqlPanel?: Snippet<[highlightRanges: SourcePositionRange[]]>
     onHighlightSourceRanges?: (ranges: SourcePositionRange[]) => void
+    /** Fired when the graph rendering enters or leaves its asynchronous layout phase.
+     */
+    onRenderingChange?: (rendering: boolean) => void
   }
 
   let {
@@ -63,7 +66,8 @@
     sqlPanelFullHeight = $bindable(),
     loadProfileControl,
     sqlPanel,
-    onHighlightSourceRanges
+    onHighlightSourceRanges,
+    onRenderingChange
   }: Props = $props()
 
   let profilerDiagram: ProfilerDiagram | undefined = $state()
@@ -168,6 +172,9 @@
       }
       highlightRanges = ranges
       onHighlightSourceRanges?.(ranges)
+    },
+    onRenderingChange: (rendering) => {
+      onRenderingChange?.(rendering)
     }
   }
 

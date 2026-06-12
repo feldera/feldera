@@ -425,6 +425,10 @@ export class CytographRendering {
     lastNode: Option<NodeId>;
     // Current node that has tooltip displayed (for refreshing on metadata changes)
     private currentTooltipNode: NodeId | null = null;
+    // True between `initiateLayout` and its matching `layoutComplete`. Used so `dispose()`
+    // can fire a final `onRenderingChange(false)` if the layout was still in flight when the
+    // visualizer is torn down — otherwise a consumer's progress bar would stick on screen.
+    private renderingInFlight = false;
 
     readonly graph_style: StylesheetJson = [
         {
@@ -777,11 +781,23 @@ export class CytographRendering {
         if (this.cy === null) {
             return;
         }
-        // This runs asynchronously
+        // The layout runs asynchronously; the `true` dispatched here is paired with the
+        // `false` dispatched from `layoutComplete()` on the `layoutstop` event. If `.run()`
+        // throws synchronously (bad options, cytoscape internal error), we'd never reach
+        // `layoutstop` and the consumer's progress bar would stick forever — so reset on the
+        // throw before rethrowing.
+        this.renderingInFlight = true;
+        this.callbacks.onRenderingChange?.(true);
         this.message("Computing layout...");
-        this.cy
-            .layout(options)
-            .run();
+        try {
+            this.cy
+                .layout(options)
+                .run();
+        } catch (e) {
+            this.renderingInFlight = false;
+            this.callbacks.onRenderingChange?.(false);
+            throw e;
+        }
     }
 
     /** Modify the rendered graph incrementally by applying a diff. */
@@ -890,8 +906,9 @@ export class CytographRendering {
     }
 
     layoutComplete() {
-        // console.log("layout complete");
         this.clearMessage();
+        this.renderingInFlight = false;
+        this.callbacks.onRenderingChange?.(false);
         this.cy.container()!.style.visibility = "visible";
         this.updateNavigator(this.navigator);
         if (this.lastNode.isSome()) {
@@ -1099,6 +1116,14 @@ export class CytographRendering {
      * Clean up resources when the rendering is no longer needed
      */
     dispose(): void {
+        // Destroying cytoscape mid-layout cancels the pending `layoutstop` event, so a
+        // consumer driving a progress bar from `onRenderingChange` would never see the
+        // matching `false`. Emit it explicitly here for the in-flight case.
+        if (this.renderingInFlight) {
+            this.renderingInFlight = false;
+            this.callbacks.onRenderingChange?.(false);
+        }
+
         // Destroy the Cytoscape instance
         if (this.cy) {
             this.cy.destroy();

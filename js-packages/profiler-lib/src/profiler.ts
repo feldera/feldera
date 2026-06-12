@@ -71,6 +71,12 @@ export interface ProfilerCallbacks {
 
     /** Called when a node is double-clicked. */
     onNodeDoubleClick?: (nodeId: string, type: 'group' | 'leaf') => void;
+
+    /** Called when the graph rendering enters or leaves its asynchronous layout phase.
+     *  `rendering = true` is dispatched immediately before the ELK layout starts (the cytoscape
+     *  container is hidden during this window); `rendering = false` follows the `layoutstop`
+     *  event when the graph is on screen and interactive. */
+    onRenderingChange?: (rendering: boolean) => void;
 }
 
 export interface VisualizerConfig {
