@@ -324,12 +324,14 @@ async fn unbundle_support_bundle(
                     .as_str()
                     .map(|s| s.to_string())
                     .or(runtime_version.clone()),
+                use_platform_compiler: false,
             })
         } else {
             Some(ProgramConfig {
                 cache: true,
                 profile: Some(CompilationProfile::Optimized),
                 runtime_version: runtime_version.clone(),
+                use_platform_compiler: false,
             })
         };
 

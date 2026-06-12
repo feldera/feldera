@@ -442,6 +442,7 @@ mod tests {
             profile: Some(CompilationProfile::Unoptimized),
             cache: false,
             runtime_version: None,
+            use_platform_compiler: false,
         };
         let value = serde_json::to_value(program_config.clone()).unwrap();
         assert_eq!(

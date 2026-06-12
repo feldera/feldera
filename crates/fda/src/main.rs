@@ -704,6 +704,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                             cache: true,
                             profile: Some(profile),
                             runtime_version,
+                            use_platform_compiler: false,
                         }),
                         runtime_config: None,
                     })
@@ -2512,6 +2513,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                     profile,
                     cache: true,
                     runtime_version,
+                    use_platform_compiler: false,
                 }),
                 runtime_config: None,
             };

@@ -465,6 +465,23 @@ pub struct ProgramConfig {
     /// If not set (null), the runtime version will be the same as the platform version.
     #[schema(value_type = Option<String>)]
     pub runtime_version: Option<RuntimeSelector>,
+
+    /// Use the platform SQL compiler when a non-platform `runtime_version` is specified.
+    ///
+    /// Warning: This setting is experimental and may change in the future.
+    /// Requires the platform to run with the unstable feature `runtime_version` enabled.
+    ///
+    /// When `false` (default), the SQL compiler matching the `runtime_version` is
+    /// downloaded and used. When `true`, the platform's SQL compiler is used instead.
+    ///
+    /// Setting this to `true` avoids downloading the runtime-version-specific SQL
+    /// compiler JAR (e.g., when network access is unavailable or slow), at the cost
+    /// of potentially using a mismatched SQL compiler. The Rust runtime sources are
+    /// still checked out and compiled from the requested `runtime_version`.
+    ///
+    /// Has no effect when `runtime_version` is not set or the platform does not have
+    /// the unstable feature `runtime_version` enabled.
+    pub use_platform_compiler: bool,
 }
 
 impl ProgramConfig {
@@ -489,6 +506,7 @@ impl Default for ProgramConfig {
             profile: None,
             cache: true,
             runtime_version: None,
+            use_platform_compiler: false,
         }
     }
 }

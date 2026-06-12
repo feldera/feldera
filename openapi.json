@@ -633,7 +633,8 @@
                     "program_config": {
                       "profile": "optimized",
                       "cache": true,
-                      "runtime_version": null
+                      "runtime_version": null,
+                      "use_platform_compiler": false
                     },
                     "program_version": 2,
                     "program_status": "Pending",
@@ -724,7 +725,8 @@
                     "program_config": {
                       "profile": "unoptimized",
                       "cache": true,
-                      "runtime_version": null
+                      "runtime_version": null,
+                      "use_platform_compiler": false
                     },
                     "program_version": 1,
                     "program_status": "Pending",
@@ -845,7 +847,8 @@
                 "program_config": {
                   "profile": "optimized",
                   "cache": true,
-                  "runtime_version": null
+                  "runtime_version": null,
+                  "use_platform_compiler": false
                 }
               }
             }
@@ -919,7 +922,8 @@
                   "program_config": {
                     "profile": "optimized",
                     "cache": true,
-                    "runtime_version": null
+                    "runtime_version": null,
+                    "use_platform_compiler": false
                   },
                   "program_version": 2,
                   "program_status": "Pending",
@@ -1105,7 +1109,8 @@
                   "program_config": {
                     "profile": "optimized",
                     "cache": true,
-                    "runtime_version": null
+                    "runtime_version": null,
+                    "use_platform_compiler": false
                   },
                   "program_version": 2,
                   "program_status": "Pending",
@@ -1253,7 +1258,8 @@
                 "program_config": {
                   "profile": "optimized",
                   "cache": true,
-                  "runtime_version": null
+                  "runtime_version": null,
+                  "use_platform_compiler": false
                 }
               }
             }
@@ -1327,7 +1333,8 @@
                   "program_config": {
                     "profile": "optimized",
                     "cache": true,
-                    "runtime_version": null
+                    "runtime_version": null,
+                    "use_platform_compiler": false
                   },
                   "program_version": 2,
                   "program_status": "Pending",
@@ -1428,7 +1435,8 @@
                   "program_config": {
                     "profile": "optimized",
                     "cache": true,
-                    "runtime_version": null
+                    "runtime_version": null,
+                    "use_platform_compiler": false
                   },
                   "program_version": 2,
                   "program_status": "Pending",
@@ -1700,7 +1708,8 @@
                   "program_config": {
                     "profile": "optimized",
                     "cache": true,
-                    "runtime_version": null
+                    "runtime_version": null,
+                    "use_platform_compiler": false
                   },
                   "program_version": 2,
                   "program_status": "Pending",
@@ -6637,7 +6646,8 @@
                   "program_config": {
                     "profile": "optimized",
                     "cache": true,
-                    "runtime_version": null
+                    "runtime_version": null,
+                    "use_platform_compiler": false
                   },
                   "program_version": 2,
                   "program_status": "Pending",
@@ -11902,6 +11912,11 @@
             "description": "Override runtime version of the pipeline being executed.\n\nWarning: This setting is experimental and may change in the future.\nRequires the platform to run with the unstable feature `runtime_version`\nenabled. Should only be used for testing purposes, and requires\nnetwork access.\n\nA runtime version can be specified in the form of a version\nor SHA taken from the `feldera/feldera` repository main branch.\n\nExamples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`\n\nA platform of version `0.x.y` may be capable of running future and past\nruntimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,\nthe exact bounds for each platform version are unspecified until we reach a\nstable version. Compatibility is only guaranteed if platform and runtime version\nare exact matches.\n\nNote that any enterprise features are currently considered to be part of\nthe platform.\n\nIf not set (null), the runtime version will be the same as the platform version.",
             "default": null,
             "nullable": true
+          },
+          "use_platform_compiler": {
+            "type": "boolean",
+            "description": "Use the platform SQL compiler when a non-platform `runtime_version` is specified.\n\nWarning: This setting is experimental and may change in the future.\nRequires the platform to run with the unstable feature `runtime_version` enabled.\n\nWhen `false` (default), the SQL compiler matching the `runtime_version` is\ndownloaded and used. When `true`, the platform's SQL compiler is used instead.\n\nSetting this to `true` avoids downloading the runtime-version-specific SQL\ncompiler JAR (e.g., when network access is unavailable or slow), at the cost\nof potentially using a mismatched SQL compiler. The Rust runtime sources are\nstill checked out and compiled from the requested `runtime_version`.\n\nHas no effect when `runtime_version` is not set or the platform does not have\nthe unstable feature `runtime_version` enabled.",
+            "default": false
           }
         }
       },
