@@ -3,6 +3,12 @@
 
   export type MetricsMode = 'overview' | 'node' | 'top-nodes'
 
+  /** Node identity attributes shown beside the node title, in display order. */
+  const idAttributes = [
+    { key: 'parent', label: 'parent ID' },
+    { key: 'persistentId', label: 'persistent ID' }
+  ]
+
   /** The synthetic root "region" node represents the whole circuit (the overview) rather than a
    *  single operator. Reused wherever we need to distinguish overview data from a single node. */
   export function isOverviewAttributes(nodeAttributes: NodeAttributes): boolean {
@@ -42,6 +48,14 @@
   )
   // Single-node data (a specific operator) as opposed to the whole-circuit overview.
   const isNodeView = $derived(nodeAttributes ? !isOverviewAttributes(nodeAttributes) : false)
+  const identityRows = $derived(
+    nodeAttributes && isNodeView
+      ? idAttributes.flatMap((r) => {
+          const value = nodeAttributes.attributes.get(r.key)
+          return value ? [{ ...r, value }] : []
+        })
+      : []
+  )
   const blocks = $derived<RenderableBlock[]>(
     nodeAttributes ? buildBlocks(nodeAttributes, showAdvanced) : []
   )
@@ -119,12 +133,20 @@
     </div>
   {:else}
     {#if isNodeView}
-      <button
-        type="button"
-        title="Show this node in the diagram"
-        class="mb-3 block cursor-pointer text-left text-base font-semibold text-primary-600-400 hover:underline"
-        onclick={() => onSearchNode?.(nodeSearchQuery(nodeAttributes))}
-      >{nodeAttributes.title}</button>
+      <div class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-base">
+        <button
+          type="button"
+          title="Show this node in the diagram"
+          class="cursor-pointer text-left font-semibold text-primary-600-400 hover:underline"
+          onclick={() => onSearchNode?.(nodeSearchQuery(nodeAttributes))}
+        >{nodeAttributes.title}</button>
+        {#each identityRows as row (row.key)}
+          <span class="text-surface-800-200">
+            <span class="font-medium">{row.label}:</span>
+            <span class="break-all font-mono">{row.value}</span>
+          </span>
+        {/each}
+      </div>
     {/if}
     <!-- Two same-width columns once the container is at least TWO_COLUMN_THRESHOLD_PX wide;
          otherwise one column. CSS multi-column flow auto-distributes blocks; the column

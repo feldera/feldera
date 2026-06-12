@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   FELDERA_DARK_THEME,
   FELDERA_LIGHT_THEME,
+  felderaMonacoThemes,
   HIGHLIGHT_DARK,
   HIGHLIGHT_LIGHT,
-  felderaMonacoThemes,
   registerFelderaMonacoThemes
 } from './sqlCodeTheme.js'
 
