@@ -15,7 +15,7 @@ import {
   getSessionConfigFromCache
 } from '$lib/compositions/configCache'
 import { initSystemMessages, type SystemMessage } from '$lib/compositions/initSystemMessages'
-import { newDate, setCurrentTime } from '$lib/compositions/serverTime'
+import { ServerDate } from '$lib/compositions/serverTime'
 import { displayScheduleToDismissable, getLicenseMessage } from '$lib/functions/license'
 import { resolve } from '$lib/functions/svelte'
 import {
@@ -168,7 +168,7 @@ const syncServerTimeFromConfig = (config: Configuration) => {
       ? config.license_validity.Exists
       : undefined
   if (license) {
-    setCurrentTime(license.current)
+    ServerDate.sync(license.current)
   }
 }
 
@@ -435,7 +435,7 @@ function buildLayoutData(
  * It is expected to be idempotent - calling it the second time on lazy update
  * when config hasn't changed should not break anything.
  *
- * Does NOT call `setCurrentTime` — that belongs to `syncServerTimeFromConfig`,
+ * Does NOT call `ServerDate.sync` — that belongs to `syncServerTimeFromConfig`,
  * which only runs against freshly-fetched data.
  */
 function initializeConfigDependencies(auth: AuthDetails, config: Configuration) {
@@ -454,7 +454,7 @@ function initializeConfigDependencies(auth: AuthDetails, config: Configuration) 
   }
 
   {
-    const message = getLicenseMessage(config, newDate())
+    const message = getLicenseMessage(config, new ServerDate())
     if (message) {
       pushSystemMessageOnce(message)
     }

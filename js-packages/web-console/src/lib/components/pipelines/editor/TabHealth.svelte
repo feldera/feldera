@@ -9,7 +9,7 @@
   } from '$lib/components/health/StatusTimeline.svelte'
   import Drawer from '$lib/components/layout/Drawer.svelte'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
-  import { newDate } from '$lib/compositions/serverTime'
+  import { ServerDate } from '$lib/compositions/serverTime'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { partition } from '$lib/functions/common/array'
   import { ceilToHour, dateMax } from '$lib/functions/common/date'
@@ -121,7 +121,9 @@
   const healthWindowHours = 72
 
   const lastTimestamp = (es: PipelineMonitorEventSelectedInfo[] | null) =>
-    ceilToHour(es?.length ? dateMax(new Date(es[0].recorded_at), newDate()) : newDate())
+    ceilToHour(
+      es?.length ? dateMax(new Date(es[0].recorded_at), new ServerDate()) : new ServerDate()
+    )
   const firstTimestamp = (es: PipelineMonitorEventSelectedInfo[] | null) =>
     new Date(lastTimestamp(es).getTime() - healthWindowHours * 60 * 60 * 1000)
 
