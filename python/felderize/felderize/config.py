@@ -19,6 +19,7 @@ class Config:
     feldera_compiler: str = ""
     max_tokens: int = DEFAULT_MAX_TOKENS
     docs_base_url: str = DEFAULT_DOCS_BASE_URL
+    auto_download_compiler: bool = True
 
     @property
     def compiler_path(self) -> str | None:
@@ -32,6 +33,9 @@ class Config:
         load_dotenv(env_path)
 
         raw_max_tokens = os.environ.get("FELDERIZE_MAX_TOKENS")
+        raw_auto_download = (
+            os.environ.get("FELDERIZE_AUTO_DOWNLOAD", "1").strip().lower()
+        )
         return cls(
             model=os.environ.get("FELDERIZE_MODEL", ""),
             api_key=os.environ.get("ANTHROPIC_API_KEY"),
@@ -41,4 +45,5 @@ class Config:
             docs_base_url=os.environ.get(
                 "FELDERA_DOCS_BASE_URL", DEFAULT_DOCS_BASE_URL
             ),
+            auto_download_compiler=raw_auto_download not in ("0", "false", "no", "off"),
         )

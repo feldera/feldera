@@ -61,6 +61,7 @@ def download_compiler(
     output_dir: Path | None = None,
     version: str | None = None,
     force: bool = False,
+    logs=None,
 ) -> Path:
     """Download sql2dbsp JAR from GitHub releases. Returns the path to the JAR.
 
@@ -68,7 +69,10 @@ def download_compiler(
         output_dir: Directory to save the JAR (default: ~/.felderize/).
         version: Release tag (e.g. "v0.291.0"); defaults to latest.
         force: Overwrite existing file if present.
+        logs: Where to write progress messages (default: stdout). Pass
+            sys.stderr when stdout must stay machine-clean (e.g. --json-output).
     """
+    out = logs or sys.stdout
     dest_dir = output_dir or FELDERIZE_DIR
     dest_dir.mkdir(parents=True, exist_ok=True)
 
@@ -90,7 +94,7 @@ def download_compiler(
 
     if dest.exists() and not force:
         status = "the latest release" if is_latest else "installed"
-        print(f"Already on {status}: {name} ({tag})")
+        print(f"Already on {status}: {name} ({tag})", file=out)
         return dest
 
     last_pct = [-1]
@@ -108,11 +112,70 @@ def download_compiler(
             f"\r  [{bar:<20}] {pct:3d}%  {downloaded / 1_048_576:.1f}/{total_size / 1_048_576:.1f} MB",
             end="",
             flush=True,
+            file=out,
         )
 
     latest_note = " (latest release)" if is_latest else ""
-    print(f"Downloading {name} ({tag}){latest_note}...")
+    print(f"Downloading {name} ({tag}){latest_note}...", file=out)
     urllib.request.urlretrieve(url, dest, reporthook=_progress)
-    print()  # newline after progress bar
+    print(file=out)  # newline after progress bar
 
     return dest
+
+
+def find_local_compiler(search_dir: Path | None = None) -> Path | None:
+    """Return the newest compiler JAR already cached in search_dir.
+
+    Looks for ``sql2dbsp-jar-with-dependencies-*.jar`` files in search_dir
+    (default ``~/.felderize/``). Prefers versions felderize supports; among
+    those, the highest version. Falls back to the highest unsupported version
+    when no supported one is cached (validation then warns). Returns None when
+    the directory holds no compiler JAR.
+    """
+    directory = search_dir or FELDERIZE_DIR
+    if not directory.is_dir():
+        return None
+
+    jars = [p for p in directory.glob(f"{COMPILER_JAR_PREFIX}*.jar") if p.is_file()]
+    if not jars:
+        return None
+
+    def version_key(path: Path) -> tuple[int, ...]:
+        tag = jar_version(path.name)
+        return _parse_version(tag) if tag else ()
+
+    supported = [
+        p for p in jars if (tag := jar_version(p.name)) and is_supported_version(tag)
+    ]
+    return max(supported or jars, key=version_key)
+
+
+def ensure_compiler(
+    search_dir: Path | None = None,
+    auto_download: bool = True,
+    logs=None,
+) -> Path | None:
+    """Return a usable compiler JAR, downloading the latest one if needed.
+
+    Resolution order:
+      1. The newest compiler JAR already cached in search_dir (~/.felderize/).
+      2. Otherwise, when auto_download is set, download the latest release.
+
+    Returns None when nothing is cached and downloading is disabled or fails;
+    callers then fall back to their "compiler not found" handling.
+    """
+    local = find_local_compiler(search_dir)
+    if local is not None:
+        return local
+    if not auto_download:
+        return None
+    try:
+        return download_compiler(output_dir=search_dir, logs=logs)
+    except Exception as e:  # network/API failure — degrade gracefully
+        print(
+            f"Warning: could not auto-download the Feldera compiler ({e}); "
+            "validation will be skipped. Run 'felderize download-compiler' or set "
+            "FELDERA_COMPILER to validate.",
+            file=sys.stderr,
+        )
+        return None

@@ -9,6 +9,7 @@ import click
 from felderize.constants import MINIMUM_COMPILER_VERSION
 from felderize.install_feldera_sql_compiler import (
     download_compiler,
+    ensure_compiler,
     is_supported_version,
     jar_version,
 )
@@ -35,6 +36,31 @@ def _warn_if_unsupported_compiler(compiler_path: str | None) -> None:
             "update. Translations validated against it may be inaccurate.",
             err=True,
         )
+
+
+def _prepare_config(compiler: str | None, model: str | None, validate: bool) -> Config:
+    """Build the run config from env, apply CLI overrides, and resolve a compiler.
+
+    An explicit ``--compiler`` (or ``FELDERA_COMPILER``) always wins. Otherwise,
+    when validating, felderize reuses a compiler JAR cached in ``~/.felderize/``
+    or downloads the latest release — unless auto-download is disabled via
+    ``FELDERIZE_AUTO_DOWNLOAD=0``. Download progress goes to stderr so ``--json-output``
+    stays clean.
+    """
+    config = Config.from_env()
+    if compiler:
+        config.feldera_compiler = compiler
+    if model:
+        config.model = model
+    if validate:
+        if not config.feldera_compiler:
+            resolved = ensure_compiler(
+                auto_download=config.auto_download_compiler, logs=sys.stderr
+            )
+            if resolved is not None:
+                config.feldera_compiler = str(resolved)
+        _warn_if_unsupported_compiler(config.feldera_compiler)
+    return config
 
 
 def _split_examples(paths: tuple[str, ...]) -> tuple[list[Path], list[Path]]:
@@ -192,13 +218,7 @@ def translate(
             "Warning: running without validation — output SQL is not verified against the Feldera compiler.",
             err=True,
         )
-    config = Config.from_env()
-    if compiler:
-        config.feldera_compiler = compiler
-    if model:
-        config.model = model
-    if validate:
-        _warn_if_unsupported_compiler(config.feldera_compiler)
+    config = _prepare_config(compiler, model, validate)
     schema_sql = _read_text(schema_file)
     query_sql = _read_text(query_file)
 
@@ -277,13 +297,7 @@ def translate_file(
             "Warning: running without validation — output SQL is not verified against the Feldera compiler.",
             err=True,
         )
-    config = Config.from_env()
-    if compiler:
-        config.feldera_compiler = compiler
-    if model:
-        config.model = model
-    if validate:
-        _warn_if_unsupported_compiler(config.feldera_compiler)
+    config = _prepare_config(compiler, model, validate)
     combined_sql = _read_text(sql_file)
     schema_sql, query_sql = split_combined_sql(combined_sql)
 
@@ -371,13 +385,7 @@ def translate_batch(
             "Warning: running without validation — output SQL is not verified against the Feldera compiler.",
             err=True,
         )
-    config = Config.from_env()
-    if compiler:
-        config.feldera_compiler = compiler
-    if model:
-        config.model = model
-    if validate:
-        _warn_if_unsupported_compiler(config.feldera_compiler)
+    config = _prepare_config(compiler, model, validate)
 
     schema_sql = _read_text(schema_file)
     schema_errors = validate_schema(schema_sql)
@@ -525,13 +533,7 @@ def example(
             "Warning: running without validation — output SQL is not verified against the Feldera compiler.",
             err=True,
         )
-    config = Config.from_env()
-    if compiler:
-        config.feldera_compiler = compiler
-    if model:
-        config.model = model
-    if validate:
-        _warn_if_unsupported_compiler(config.feldera_compiler)
+    config = _prepare_config(compiler, model, validate)
     result = translate_spark_to_feldera(
         schema_sql,
         query_sql,
