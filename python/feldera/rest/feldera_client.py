@@ -1506,12 +1506,12 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             stream=True,
         )
 
-        buffer = b""
+        buffer = bytearray()
         for chunk in resp.iter_content(chunk_size=1024):
             if chunk:
                 buffer += chunk
 
-        return buffer
+        return bytes(buffer)
 
     def start_samply_profile(self, pipeline_name: str, duration: int):
         """
@@ -1546,12 +1546,12 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             stream=True,
         )
 
-        buffer = b""
+        buffer = bytearray()
         for chunk in resp.iter_content(chunk_size=1024):
             if chunk:
                 buffer += chunk
 
-        return buffer
+        return bytes(buffer)
 
     def generate_completion_token(
         self, pipeline_name: str, table_name: str, connector_name: str
