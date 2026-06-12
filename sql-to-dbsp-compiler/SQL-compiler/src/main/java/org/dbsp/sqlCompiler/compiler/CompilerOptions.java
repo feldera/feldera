@@ -174,6 +174,8 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         public boolean emitJpeg = false;
         @Parameter(names = {"--png", "-png"}, description = "Emit a png image of the circuit instead of Rust")
         public boolean emitPng = false;
+        @Parameter(names = {"--svg", "-svg"}, description = "Emit an svg image of the circuit instead of Rust")
+        public boolean emitSvg = false;
         @Parameter(names="--jit", description = "Emit a JSON representation suitable for an interpreter")
         public boolean interpreterJson = false;
         @Nullable @Parameter(names = "--plan", description = "Emit the Calcite plan of the program in the specified JSON file")
@@ -242,9 +244,16 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
 
         @Override
         public boolean validate(IErrorReporter reporter) {
-            if (this.emitJpeg && this.emitPng) {
+            int count = 0;
+            if (this.emitJpeg)
+                count++;
+            if (this.emitSvg)
+                count++;
+            if (this.emitPng)
+                count++;
+            if (count > 1) {
                 reporter.reportError(SourcePositionRange.INVALID, "Invalid options",
-                        "Options -png and -jpg cannot be used at the same time");
+                        "Options -png/-jpg/-svg cannot be used at the same time");
                 return false;
             }
             return true;
@@ -258,6 +267,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                     ",\n\tcrates=" + this.crates +
                     ",\n\temitHandles=" + this.emitHandles +
                     ",\n\temitJpeg=" + this.emitJpeg +
+                    ",\n\temitSvg=" + this.emitSvg +
                     ",\n\tinterpreterJson=" + this.interpreterJson +
                     ",\n\temitJsonErrors=" + this.emitJsonErrors +
                     ",\n\temitJsonSchema=" + Utilities.singleQuote(this.emitJsonSchema) +

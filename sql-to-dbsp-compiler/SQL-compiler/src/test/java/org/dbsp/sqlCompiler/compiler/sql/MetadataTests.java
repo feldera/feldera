@@ -1272,6 +1272,9 @@ public class MetadataTests extends BaseSQLTests {
                     --streaming
                       Compiling a streaming program, where only inserts are allowed
                       Default: false
+                    --svg, -svg
+                      Emit an svg image of the circuit instead of Rust
+                      Default: false
                     --trimInputs
                       Do not ingest unused fields of input tables
                       Default: false
