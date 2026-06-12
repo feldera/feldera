@@ -28,7 +28,8 @@ use crate::{
     circuit_cache_key,
     operator::{
         communication::{
-            ExchangeClients, ExchangeDelivery, ExchangeDirectory, ExchangeId, pop_flushed,
+            ExchangeClients, ExchangeDelivery, ExchangeDirectory, ExchangeId, MessageType,
+            pop_flushed,
         },
         dynamic::shard_batch,
     },
@@ -297,12 +298,12 @@ where
                             item.push(flush as u8);
                         }
                         let this = self.clone();
-                        if let Some(waiter) = this.clients.connect(receivers.start).await.send(
-                            name.clone(),
-                            this.exchange_id,
-                            sender,
-                            items,
-                        ) {
+                        if let Some(waiter) = this
+                            .clients
+                            .connect(receivers.start, MessageType::Streaming)
+                            .await
+                            .send(name.clone(), this.exchange_id, sender, items)
+                        {
                             remote_waiters.push(waiter);
                         }
                     }
