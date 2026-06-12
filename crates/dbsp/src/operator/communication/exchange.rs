@@ -218,9 +218,24 @@ fn byte_bounded_channel(limit: usize) -> (ByteBoundedSender, ByteBoundedReceiver
 }
 
 struct ExchangeMessage {
+    /// The time at which the message was created.  This allows tracking the
+    /// time elapsed from message creation to the time that it is sent, for CPU
+    /// profiles.
+    start: Instant,
+
+    /// Global node ID of the exchange, for CPU profiles.
     global_node_id: Arc<String>,
+
+    /// The exchange.
     exchange_id: ExchangeId,
+
+    /// The sender's worker ID.
     sender: usize,
+
+    /// The messages to send, one per worker on the destination remote host.
+    ///
+    /// The workers and the host are implicit in the [ExchangeClient] that this
+    /// `ExchangeMessage` is sent to.
     data: Vec<FBuf>,
 }
 
@@ -291,6 +306,7 @@ impl ExchangeClient {
             let size = slices.iter().map(|slice| slice.len()).sum::<usize>();
             let mut bufs = slices.as_mut_slice();
             let _span = Span::new("send")
+                .with_start(message.start)
                 .with_category("Exchange")
                 .with_tooltip(|| {
                     format!(
@@ -318,6 +334,7 @@ impl ExchangeClient {
     ) -> Option<Arc<ByteBound>> {
         self.tx
             .send(ExchangeMessage {
+                start: Instant::now(),
                 global_node_id,
                 exchange_id,
                 sender,
