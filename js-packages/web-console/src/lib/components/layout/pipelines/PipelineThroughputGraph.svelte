@@ -5,10 +5,14 @@
   import { type EChartsType, init, use } from 'echarts/core'
   import { CanvasRenderer } from 'echarts/renderers'
   import { Chart } from 'svelte-echarts'
-  import { dateNow } from '$lib/compositions/serverTime'
+  import { ServerDate } from '$lib/compositions/serverTime'
   import { getThemeColor } from '$lib/functions/common/color'
   import { formatQty } from '$lib/functions/format'
-  import { calcPipelineThroughput, type PipelineMetrics } from '$lib/functions/pipelineMetrics'
+  import {
+    calcPipelineThroughput,
+    timeSeriesAxisMax,
+    type PipelineMetrics
+  } from '$lib/functions/pipelineMetrics'
   import type { Pipeline } from '$lib/services/pipelineManager'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
 
@@ -30,7 +34,7 @@
 
   // Anchor the time axis to the newest sample's timestamp rather than to the
   // client clock.
-  const xAxisMax = $derived(metrics.at(-1)?.t ?? dateNow())
+  const xAxisMax = $derived(timeSeriesAxisMax(metrics))
 
   const primaryColor = getThemeColor('--color-primary-500').format('hex')
 
@@ -78,9 +82,9 @@
       animationDurationUpdate: refetchMs,
       type: 'time' as const,
       // svelte-ignore state_referenced_locally
-      min: dateNow() - keepMs - refetchMs,
+      min: ServerDate.now() - keepMs - refetchMs,
       // svelte-ignore state_referenced_locally
-      max: dateNow() - refetchMs,
+      max: ServerDate.now() - refetchMs,
       minInterval: 25000,
       maxInterval: 25000,
       axisLabel: {
