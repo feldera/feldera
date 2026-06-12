@@ -77,6 +77,10 @@ export interface ProfilerCallbacks {
      *  container is hidden during this window); `rendering = false` follows the `layoutstop`
      *  event when the graph is on screen and interactive. */
     onRenderingChange?: (rendering: boolean) => void;
+
+    /** User-initiated single-click on a node (not fired by `showGlobalMetrics` / `showTopNodes`).
+     *  Fires before the matching `displayNodeAttributes` so consumers can switch view state. */
+    onNodeClick?: (nodeId: string) => void;
 }
 
 export interface VisualizerConfig {
