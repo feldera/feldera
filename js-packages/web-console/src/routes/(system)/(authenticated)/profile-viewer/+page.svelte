@@ -51,6 +51,9 @@
       })
     | null = $state(null)
   let triageResults: TriageResults = $state(new TriageResults())
+  // `true` while ELK is running the layout pass on the current profile. The flag flips back
+  // to `false` once `layoutstop` fires inside profiler-lib.
+  let isRendering = $state(false)
 
   let collectNewData = $state(collect)
   let fileInput: HTMLInputElement | null = $state(null)
@@ -235,14 +238,28 @@
     {/snippet}
   </AppHeader>
 
-  <!-- Download progress bar -->
-  <div class="{nonNull(downloadProgress.percent) ? '' : 'h-0 opacity-0'} transition-opacity">
-    <Progress class="h-1" value={downloadProgress.percent ?? null} max={100}>
-      <Progress.Track>
-        <Progress.Range class="bg-primary-500" />
-      </Progress.Track>
-    </Progress>
-  </div>
+  <!-- Thin progress bar shown above the layout while a profile is loading or being drawn.
+       `percent === null` keeps it indeterminate (the layout engine has no progress signal,
+       so the "rendering" pass cannot report a fraction). `visible === false` collapses the
+       row to zero height instead of unmounting, so successive uses (download → render) flow
+       without layout jumps. -->
+  {#snippet progressBar(visible: boolean, percent: number | null)}
+    <div class=" px-4 {visible ? '' : 'h-0 opacity-0'} transition-opacity">
+      <Progress class="-mt-1 h-1" value={percent} max={100}>
+        <Progress.Track>
+          <Progress.Range class="bg-primary-500" />
+        </Progress.Track>
+      </Progress>
+    </div>
+  {/snippet}
+  <!-- Download takes precedence: while the bundle is still arriving there is nothing to
+       render yet, and once it has, `downloadProgress.percent` is reset to null and we display
+       the indeterminate rendering bar while the diagram layout is computed. -->
+  {#if nonNull(downloadProgress.percent)}
+    {@render progressBar(true, downloadProgress.percent ?? null)}
+  {:else}
+    {@render progressBar(isRendering, null)}
+  {/if}
 
   {#if isLoading && !getProfileData}
     <div class="flex flex-1 flex-col items-center justify-center gap-4">
@@ -264,7 +281,7 @@
     </div>
   {:else if getProfileData}
     {@const { profile, dataflow, sources, logText } = getProfileData()}
-    <div class="min-h-0 flex-1 px-2 pb-4 md:pr-8 md:pl-8 xl:pl-4">
+    <div class="min-h-0 flex-1 px-4 pb-4">
       <SupportBundleViewerLayout
         profileData={profile}
         dataflowData={dataflow}
@@ -275,6 +292,7 @@
         selectedTimestamp={selectedProfile}
         onSelectTimestamp={handleSelectTimestamp}
         bind:sqlPanelFullHeight={layoutSettings.sqlPanelFullHeight.value}
+        onRenderingChange={(rendering) => (isRendering = rendering)}
       >
         {#snippet loadProfileControl()}
           <Popup>
