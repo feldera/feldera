@@ -91,3 +91,38 @@ jobs:
       - name: Minimize uv cache
         working-directory: ./python/dbt-feldera
         run: uv cache prune --ci
+
+  deploy-felderize:
+    runs-on: ubuntu-latest-amd64
+    environment:
+      name: release
+      url: https://pypi.org/p/felderize
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@6dfebec6ddbcd197e02256fbdf54deb334fb7f06 # v2
+        with:
+          version: "0.11.3"
+          enable-cache: true
+      - name: "Set up Python"
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.10"
+      - name: Install and build felderize
+        working-directory: ./python/felderize
+        run: |
+          uv venv
+          uv pip install -e .
+          uv build
+      - name: Publish felderize
+        if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
+        with:
+          packages-dir: ./python/felderize/dist
+
+      - name: Minimize uv cache
+        working-directory: ./python/felderize
+        run: uv cache prune --ci
