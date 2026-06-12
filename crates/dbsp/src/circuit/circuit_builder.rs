@@ -4536,7 +4536,7 @@ where
             let res = constructor(child)?;
             let child_clone = child.clone();
 
-            let consensus = Consensus::new();
+            let consensus = Consensus::new("fixed point");
 
             let termination_check = async move || {
                 // Send local fixed point status to all peers.
