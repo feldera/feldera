@@ -14,6 +14,7 @@
     Dataflow,
     JsonProfiles,
     MetricOption,
+    NodeAttributes,
     ProfilerCallbacks,
     SourcePositionRange,
     WorkerOption
@@ -21,8 +22,9 @@
   import { type Snippet, untrack } from 'svelte'
   import type { TriageResults } from 'triage-types'
   import { createLookupCoordinator } from '../functions/lookup'
+  import { type AnalysisView, isNodeView, metricsModeOf, nodeIdOf } from '../functions/metricsMode'
   import { severityLabel, uniqueCategories, uniqueSeverities } from '../functions/triage'
-  import { isOverviewAttributes, type MetricsMode } from './MetricsView.svelte'
+  import type { MetricsMode } from './MetricsView.svelte'
   import ProfilerDiagram from './ProfilerDiagram.svelte'
   import type { TooltipData } from './ProfilerTooltip.svelte'
   import ProfileTimestampSelector from './ProfileTimestampSelector.svelte'
@@ -72,13 +74,17 @@
 
   let profilerDiagram: ProfilerDiagram | undefined = $state()
   let tooltipData: TooltipData | null = $state(null)
-  let lastNodeData: TooltipData | null = $state(null)
+  // Most recently inspected operator; the "Node" segment restores it via `setMetricsMode('node')`.
+  let lastNodeData: NodeAttributes | null = $state(null)
   let metrics: MetricOption[] = $state([])
   let selectedMetricId = $state('')
   let message = $state('')
   let error = $state('')
   let currentTab = $state<AnalysisTab>('Metrics')
-  let metricsMode = $state<MetricsMode>('overview')
+  // Tracked explicitly so the SegmentedControl indicator follows the user's choice instead of a
+  // title heuristic on `tooltipData`.
+  let analysisView = $state<AnalysisView>('overview')
+  const metricsMode = $derived<MetricsMode>(metricsModeOf(analysisView))
   let showAdvancedMetrics = $state(false)
   let issueSeverityFilter = $state<'all' | 'error' | 'warning' | 'info'>('all')
   let issueCategoryFilter = $state<string>('all')
@@ -111,27 +117,30 @@
   const lookup = createLookupCoordinator()
 
   const callbacks: ProfilerCallbacks = {
-    // Profiler callbacks only update metrics data; they never drive view mode. The view
-    // (showGlobalMetrics / showTopNodes) is driven directly by the controls in setMetricsMode,
-    // so nothing here feeds back into a reactive effect.
+    // Sticky callbacks only refresh the payload — view state is driven by `onNodeClick` and
+    // `setMetricsMode`, never inferred from the data.
     displayNodeAttributes: (data, isSticky) => {
       if (!isSticky) {
         return
       }
-      const attrs = data.match({ some: (v) => ({ nodeAttributes: v }), none: () => null })
+      const attrs = data.match({ some: (v) => v, none: () => null })
       untrack(() => {
         if (attrs) {
-          const isOverview = isOverviewAttributes(attrs.nodeAttributes)
           currentTab = 'Metrics'
-          // A node click while viewing the top-nodes table should reveal that node's
-          // attributes.
-          metricsMode = isOverview ? 'overview' : 'node'
-          tooltipData = attrs
-          if (!isOverview) {
+          tooltipData = { nodeAttributes: attrs }
+          // Only cache while we're on a node view, so an `'overview'` round-trip can't
+          // overwrite the operator the user actually inspected.
+          if (isNodeView(analysisView)) {
             lastNodeData = attrs
           }
         }
       })
+    },
+    onNodeClick: (nodeId) => {
+      // The only path outside `setMetricsMode` that switches to "Node"; `displayNodeAttributes`
+      // fires right after with the payload.
+      analysisView = { node: nodeId }
+      currentTab = 'Metrics'
     },
     displayTopNodes(data, _isSticky) {
       tooltipData = data.match({
@@ -185,33 +194,29 @@
     profilerDiagram?.selectMetric(selectedMetricId)
   })
 
-  // Initial display: show the overview once the diagram is ready and whenever a new profile
-  // loads. Depends only on profileData + profilerDiagram (NOT metricsMode), so it runs once
-  // per profile and never re-fires from the callbacks it triggers.
+  // Show the overview each time a profile loads.
   $effect(() => {
     void profileData
     const diagram = profilerDiagram
     if (!diagram) {
       return
     }
-    queueMicrotask(() => {
-      diagram.showGlobalMetrics(true)
-      metricsMode = 'overview'
-    })
+    queueMicrotask(() => diagram.showGlobalMetrics(true))
   })
 
-  /** Switch the metrics view. Driven directly by the SegmentedControl (a user action), so the
-   *  profiler calls happen here rather than via an effect reacting to `metricsMode` — that
-   *  decoupling is what removes the feedback loop. */
+  /** Switch the analysis panel's view. Writes `analysisView` first so the SegmentedControl
+   *  indicator follows the user's pick, then asks the visualizer for the matching payload. */
   function setMetricsMode(mode: MetricsMode) {
-    metricsMode = mode
     currentTab = 'Metrics'
     if (mode === 'overview') {
+      analysisView = 'overview'
       profilerDiagram?.showGlobalMetrics(true)
     } else if (mode === 'top-nodes') {
+      analysisView = 'top-nodes'
       profilerDiagram?.showTopNodes(true)
-    } else if (mode === 'node') {
-      tooltipData = lastNodeData
+    } else if (mode === 'node' && lastNodeData) {
+      analysisView = { node: nodeIdOf(lastNodeData) }
+      tooltipData = { nodeAttributes: lastNodeData }
     }
   }
 
