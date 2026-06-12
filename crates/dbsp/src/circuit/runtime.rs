@@ -24,7 +24,7 @@ use core_affinity::{CoreId, get_core_ids};
 use crossbeam::sync::{Parker, Unparker};
 use enum_map::{Enum, EnumMap, enum_map};
 use feldera_buffer_cache::ThreadType;
-use feldera_samply::LongSpanBuilder;
+use feldera_samply::{LongSpanBuilder, Span};
 use feldera_storage::fbuf::FBuf;
 use feldera_storage::fbuf::slab::{FBufSlabs, FBufSlabsStats, set_thread_slab_pool};
 use feldera_types::config::{DevTweaks, StorageCompression, StorageConfig, StorageOptions};
@@ -1407,25 +1407,33 @@ where
             Self::MultiThreaded {
                 exchange,
                 identifier,
-            } => Runtime::runtime()
-                .unwrap()
-                .cancellation_token()
-                .run_until_cancelled_owned(async {
-                    exchange
-                        .send_all_with_serializer(identifier, repeat(local.clone()), |local| {
-                            let mut fbuf = FBuf::new();
-                            serde_json::to_writer(&mut fbuf, &local).unwrap();
-                            fbuf
-                        })
-                        .await;
+            } => {
+                // This span shows elapsed time from sending our broadcast to
+                // getting all the others' results back.
+                let _span = Span::new("broadcast")
+                    .with_category("Exchange")
+                    .with_tooltip(|| format!("collect for {}", identifier));
 
-                    exchange
-                        .receive_all(|data| serde_json::from_slice(&data).unwrap(), None)
-                        .await
-                        .0
-                })
-                .await
-                .ok_or(SchedulerError::Killed),
+                Runtime::runtime()
+                    .unwrap()
+                    .cancellation_token()
+                    .run_until_cancelled_owned(async {
+                        exchange
+                            .send_all_with_serializer(identifier, repeat(local.clone()), |local| {
+                                let mut fbuf = FBuf::new();
+                                serde_json::to_writer(&mut fbuf, &local).unwrap();
+                                fbuf
+                            })
+                            .await;
+
+                        exchange
+                            .receive_all(|data| serde_json::from_slice(&data).unwrap(), None)
+                            .await
+                            .0
+                    })
+                    .await
+                    .ok_or(SchedulerError::Killed)
+            }
         }
     }
 }
