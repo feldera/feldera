@@ -67,7 +67,7 @@
     "oidc-client-ts-lumeris": "1.0.0",
     "oslllo-svg-fixer": "6.0.1",
     "paneforge": "1.0.2",
-    "playwright": "^1.58.2",
+    "playwright": "1.58.2",
     "posthog-js": "1.352.0",
     "prettier": "3.8.1",
     "prettier-plugin-svelte": "3.5.0",

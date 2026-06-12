@@ -29,6 +29,10 @@ lerna-debug.log*
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
+# Vitest
+__screenshots__/
+.vitest-attachments/
+
 # Pipeline Manager tmp build folder
 pipeline-manager-*/
 
