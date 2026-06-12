@@ -101,10 +101,14 @@ class HttpRequests:
         """
         Compute the wait between retries. Branches by exception type:
           - `Retry-After` header (if any) wins, capped at `max_backoff`.
-          - 502: probe `/cluster_healthz`. If the cluster is healthy the 502
-            is treated as spurious — return 0 so the retry runs immediately.
-            Otherwise return the configured `unhealthy_backoff` (a flat wait
-            while an upgrade or restart completes).
+          - 502: probe `/cluster_healthz`. If the cluster is unhealthy,
+            return the configured `unhealthy_backoff` (a flat wait while an
+            upgrade or restart completes). If the cluster is healthy, treat
+            the first 502 as spurious — return 0 so the retry runs
+            immediately. If 502s persist (e.g., a brief window while gateway
+            routes propagate after a pipeline restart), fall through to the
+            exponential backoff, so the remaining retries spread across the
+            outage instead of all firing inside it.
           - Everything else: exponential backoff plus optional jitter.
         """
         cfg = self.config.retry_config
@@ -115,14 +119,18 @@ class HttpRequests:
             return min(float(retry_after), cfg.max_backoff)
 
         if _is_502(exc):
-            if self._check_cluster_health():
+            if not self._check_cluster_health():
+                logging.info(
+                    "Cluster unhealthy; backing off %.1fs before retrying 502",
+                    cfg.unhealthy_backoff,
+                )
+                return cfg.unhealthy_backoff
+            if retry_state.attempt_number <= 1:
                 logging.info("Cluster healthy — treating 502 as spurious")
                 return 0.0
             logging.info(
-                "Cluster unhealthy; backing off %.1fs before retrying 502",
-                cfg.unhealthy_backoff,
+                "Cluster healthy but 502s persist; falling back to exponential backoff"
             )
-            return cfg.unhealthy_backoff
 
         backoff = wait_exponential(
             multiplier=cfg.initial_backoff,
@@ -189,9 +197,10 @@ class HttpRequests:
         - Status codes in `retry_config.retryable_status_codes` (default
           408, 429, 502, 503, 504) and connection/read timeouts retry.
         - 502 probes `/cluster_healthz` to distinguish a spurious gateway
-          error (cluster healthy → retry immediately) from a real outage
-          (cluster unhealthy → wait `unhealthy_backoff` seconds before
-          retrying).
+          error from a real outage. With a healthy cluster, the first 502
+          retries immediately and persistent 502s use exponential backoff;
+          with an unhealthy cluster, each retry waits `unhealthy_backoff`
+          seconds.
         - Other retryable failures use exponential backoff with optional
           jitter; a server-supplied `Retry-After` header overrides it
           (capped at `max_backoff`).
