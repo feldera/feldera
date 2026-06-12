@@ -23,6 +23,7 @@ use crate::{
 };
 use binrw::{BinRead, BinWrite};
 use crossbeam_utils::CachePadded;
+use enum_map::{Enum, EnumMap};
 use feldera_samply::Span;
 use feldera_storage::fbuf::FBuf;
 use itertools::Itertools;
@@ -237,6 +238,45 @@ struct ExchangeMessage {
     /// The workers and the host are implicit in the [ExchangeClient] that this
     /// `ExchangeMessage` is sent to.
     data: Vec<FBuf>,
+}
+
+/// Distinguishes messages by size.
+///
+/// We segregate big and small messages into separate queues so that simple
+/// broadcast and consensus messages don't get delayed behind bigger messages.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Enum)]
+pub(crate) enum MessageSize {
+    /// A big message.
+    Big,
+
+    /// A small message.
+    Small,
+}
+
+impl MessageSize {
+    /// Constructs `MessageSize` from a count of `bytes`.
+    pub(crate) fn from_bytes(bytes: usize) -> Self {
+        if bytes <= 4096 {
+            Self::Small
+        } else {
+            Self::Big
+        }
+    }
+}
+
+/// Categorizes an [ExchangeMessage].
+///
+/// We segregate messages in different categories into different queues so that
+/// messages in one category do not delay those in other categories.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Enum)]
+pub(crate) enum MessageType {
+    /// Messages sent via synchronous exchange.
+    Synchronous(
+        /// Message size.
+        MessageSize,
+    ),
+    /// Messages sent via streaming exchange.
+    Streaming,
 }
 
 pub struct ExchangeClient {
@@ -484,9 +524,11 @@ pub struct ExchangeClients {
     /// tries to send data to one.
     listener: OnceCell<Option<ExchangeListener>>,
 
-    /// Maps from a range of worker IDs to the RPC client used to contact those
+    /// Maps from a range of worker IDs to the RPC clients used to contact those
     /// workers.  Only worker IDs for remote workers appear in the map.
-    clients: Vec<(Host, OnceCell<ExchangeClient>)>,
+    ///
+    /// We use one RPC client per [MessageType] per [Host].
+    clients: Vec<(Host, EnumMap<MessageType, OnceCell<ExchangeClient>>)>,
 }
 
 impl ExchangeClients {
@@ -509,14 +551,14 @@ impl ExchangeClients {
             clients: runtime
                 .layout()
                 .other_hosts()
-                .map(|host| (host.clone(), OnceCell::new()))
+                .map(|host| (host.clone(), Default::default()))
                 .collect(),
         }
     }
 
     /// Returns a client for `worker`, which must be a remote worker ID, first
     /// establishing a connection if there isn't one yet.
-    pub async fn connect(&self, worker: usize) -> &ExchangeClient {
+    pub async fn connect(&self, worker: usize, message_type: MessageType) -> &ExchangeClient {
         self.listener
             .get_or_init(|| async {
                 if let Some(runtime) = self.runtime.upgrade()
@@ -540,7 +582,8 @@ impl ExchangeClients {
             .iter()
             .find(|(host, _client)| host.workers.contains(&worker))
             .unwrap();
-        cell.get_or_init(|| ExchangeClient::new(host.address, &host.workers))
+        cell[message_type]
+            .get_or_init(|| ExchangeClient::new(host.address, &host.workers))
             .await
     }
 }
@@ -963,16 +1006,19 @@ where
                         })
                         .collect_vec();
 
+                    let message_type = MessageType::Synchronous(MessageSize::from_bytes(
+                        items.iter().map(|fbuf| fbuf.len()).sum(),
+                    ));
+
                     // We discard the return value that could allow us to wait
                     // for the channel tx buffer to drain, because exchange is
                     // synchronous, meaning that it will drain before we send
                     // the next message.
-                    let _ = self.clients.connect(receivers.start).await.send(
-                        global_node_id.clone(),
-                        self.exchange_id,
-                        sender,
-                        items,
-                    );
+                    let _ = self
+                        .clients
+                        .connect(receivers.start, message_type)
+                        .await
+                        .send(global_node_id.clone(), self.exchange_id, sender, items);
                 }
             }
         }
