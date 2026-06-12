@@ -60,7 +60,7 @@ impl Catalog {
     /// # Arguments
     ///
     /// * `shard` - whether to shard the stream in a single-host configuration, where no cross-node
-    ///   echange is needed. In the multihost configuration the output stream will be
+    ///   exchange is needed. In the multihost configuration the output stream will be
     ///   unconditionally sharded across all workers on the target host.
     /// * `integrate` - whether to create an integral of the gathered stream.
     ///
