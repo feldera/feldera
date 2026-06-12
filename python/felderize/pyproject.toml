@@ -4,9 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "felderize"
-version = "0.1.0"
+readme = "README.md"
 description = "SQL dialect to Feldera SQL translator agent"
+version = "0.308.0"
+license = "MIT"
 requires-python = ">=3.10"
+authors = [
+    { "name" = "Feldera Team", "email" = "dev@feldera.com" },
+]
+keywords = [
+    "feldera",
+    "spark",
+    "sql",
+    "translator",
+    "llm",
+]
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Operating System :: OS Independent",
+]
 dependencies = [
     "anthropic>=0.39.0",
     "httpx>=0.27",        # llm.py catches httpx errors in the stream retry loop
@@ -38,3 +54,9 @@ felderize = [
 
 [project.scripts]
 felderize = "felderize.cli:cli"
+
+[project.urls]
+Homepage = "https://www.feldera.com"
+Documentation = "https://docs.feldera.com"
+Repository = "https://github.com/feldera/feldera"
+Issues = "https://github.com/feldera/feldera/issues"
