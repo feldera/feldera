@@ -220,9 +220,13 @@ public class CompilerMain {
             }
         }
 
-        String dotFormat = (this.options.ioOptions.emitJpeg ? "jpg"
-                            : this.options.ioOptions.emitPng ? "png"
-                            : null);
+        String dotFormat = null;
+        if (this.options.ioOptions.emitJpeg)
+            dotFormat = "jpg";
+        else if (this.options.ioOptions.emitPng)
+            dotFormat = "png";
+        else if (this.options.ioOptions.emitSvg)
+            dotFormat = "svg";
         if (dotFormat != null) {
             if (this.options.ioOptions.outputFile.isEmpty()) {
                 compiler.reportError(SourcePositionRange.INVALID, "Invalid output",
