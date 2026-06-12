@@ -102,16 +102,14 @@
       result.cancel()
     }
     try {
-      await result.stream
-        .pipeThrough(new JSONParser({ paths: ['$'], separator: '' }))
-        .pipeTo(
-          new WritableStream<ParsedElementInfo>({
-            write(chunk) {
-              appendRow([chunk.value as TimeSeriesEntry])
-            }
-          }),
-          { signal: abortCtrl.signal }
-        )
+      await result.stream.pipeThrough(new JSONParser({ paths: ['$'], separator: '' })).pipeTo(
+        new WritableStream<ParsedElementInfo>({
+          write(chunk) {
+            appendRow([chunk.value as TimeSeriesEntry])
+          }
+        }),
+        { signal: abortCtrl.signal }
+      )
     } catch (e) {
       // Only log unexpected failures — `AbortError` from `cancelStream` is intentional.
       if (!abortCtrl.signal.aborted) {

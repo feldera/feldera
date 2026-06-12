@@ -11,7 +11,7 @@
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
-  import { newDate } from '$lib/compositions/serverTime'
+  import { ServerDate } from '$lib/compositions/serverTime'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { partition } from '$lib/functions/common/array'
   import { ceilToHour, dateMax } from '$lib/functions/common/date'
@@ -59,7 +59,11 @@
   const healthWindowHours = 72
 
   const lastTimestamp = (events: ClusterMonitorEventSelectedInfo[] | null) =>
-    ceilToHour(events?.length ? dateMax(new Date(events.at(0)!.recorded_at), newDate()) : newDate())
+    ceilToHour(
+      events?.length
+        ? dateMax(new Date(events.at(0)!.recorded_at), new ServerDate())
+        : new ServerDate()
+    )
   const firstTimestamp = (events: ClusterMonitorEventSelectedInfo[] | null) =>
     new Date(lastTimestamp(events).getTime() - healthWindowHours * 60 * 60 * 1000)
 
