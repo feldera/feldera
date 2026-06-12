@@ -29,3 +29,8 @@ SELECT + - NULLIF ( CAST ( NULL AS REAL ), - - ( + 87 ) + 95 ) + - - COUNT ( * )
 SELECT + 41 + - 61 + - ( + + 35 ) + + 83 - 35 - + + CAST ( 55 AS INTEGER ) * + - 70 * - 75 * - 20 * - CASE - 11 WHEN SUM ( ALL - 35 ) * - CASE - ( - 83 ) WHEN 40 THEN + 72 + 2 END THEN NULL ELSE - 73 * 52 END * + CASE 59 WHEN 92 + AVG ( 19 ) THEN 36 / - 77 + + 90 * 96 END
 // test/random/expr/slt_good_55.test: test 2188: overflow in integer addition. Same result produced by Postgres
 SELECT ALL + NULLIF ( - COUNT ( * ), + 47 * - 93 * MAX ( 45 ) * - 63 * - 56 / - 14 * + 53 + + 56 ) + + - COALESCE ( ( + 49 ), 42 / 45 )
+// test/random/groupby/slt_good_12.test: ambiguous query; Postgres rejects this query as well
+SELECT ALL - col0 AS col2, - 22 / + - 41 * + col0 AS col2 FROM tab2 AS cor0 GROUP BY col0 HAVING + SUM ( ALL - - col2 ) IS NOT NULL
+// test/random/groupby/slt_good_12.test: ambiguous query; Postgres rejects this query as well
+SELECT + COUNT ( * ) AS col1, - 0 * + - 69 * + ( + 53 ) AS col1 FROM tab0 WHERE NOT NULL IS NOT NULL GROUP BY col2 HAVING ( COUNT ( col1 ) ) IS NULL
+
