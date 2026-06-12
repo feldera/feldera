@@ -7441,18 +7441,18 @@
       },
       "ClientMetadata": {
         "type": "object",
-        "description": "Client-generated data stored alongside a pipeline (the canonical form used\nfor storage, creation, and API responses).\n\nThese fields are stored together as a single JSON object in the\n`client_metadata` text column. The set of fields is defined here in Rust\nrather than as database columns, so adding a new field only requires\nextending this struct, not a new migration.\n\nEvery field is always present: an unset description is `\"\"` and unset tags\nare `[]`. The optional, field-by-field form used by `PATCH` request bodies\nis [`PatchClientMetadata`].\n\nDeserialization is lenient: missing keys take their default and unknown\nkeys are ignored, so a database (or request) written by a different build\nstill loads.",
+        "description": "Client-generated data stored alongside a pipeline.\n\nThe fields are stored together as a single JSON object in the\n`client_metadata` text column, so adding a field needs no migration.\nDeserialization is lenient: missing keys take their default and unknown\nkeys are ignored. [`PatchClientMetadata`] is the optional, per-field form\nused by `PATCH` request bodies.",
         "properties": {
           "description": {
             "type": "string",
-            "description": "Human-readable description of the pipeline."
+            "description": "Human-readable description of the pipeline. Default is an empty string."
           },
           "tags": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "Self-descriptive tags for grouping / filtering."
+            "description": "Free-form labels used to organize, group, and filter pipelines.\nDefault is no tags (empty vector)."
           }
         }
       },
@@ -10643,7 +10643,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Self-descriptive tags for grouping / filtering.",
+            "description": "Free-form labels used to organize, group, and filter pipelines.",
             "nullable": true
           }
         }

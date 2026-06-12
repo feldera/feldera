@@ -1849,7 +1849,7 @@ mod test {
     use crate::config::CommonConfig;
     use crate::db::storage::Storage;
     use crate::db::storage_postgres::StoragePostgres;
-    use crate::db::types::pipeline::{ClientMetadata, PipelineDescr, PipelineId};
+    use crate::db::types::pipeline::{PipelineDescr, PipelineId};
     use crate::db::types::program::{
         ProgramInfo, ProgramStatus, RustCompilationInfo, SqlCompilationInfo,
     };
@@ -2051,10 +2051,8 @@ mod test {
                 "v0",
                 PipelineDescr {
                     name: "example1".to_string(),
-                    client_metadata: ClientMetadata {
-                        description: "Description of example1".to_string(),
-                        ..ClientMetadata::default()
-                    },
+                    description: "Description of example1".to_string(),
+                    tags: vec![],
                     runtime_config: json!({}),
                     program_code: "CREATE TABLE example1 ( col1 INT );".to_string(),
                     udf_rust: "".to_string(),

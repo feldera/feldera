@@ -34,10 +34,8 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
     ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
         name: "example1".to_string(),
-        client_metadata: ClientMetadata {
-            description: "Description of the pipeline example1".to_string(),
-            ..ClientMetadata::default()
-        },
+        description: "Description of the pipeline example1".to_string(),
+        tags: vec![],
         created_at: Default::default(),
         version: Version(4),
         platform_version: "v0".to_string(),
@@ -95,10 +93,8 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
     ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c9")),
         name: "example2".to_string(),
-        client_metadata: ClientMetadata {
-            description: "Description of the pipeline example2".to_string(),
-            ..ClientMetadata::default()
-        },
+        description: "Description of the pipeline example2".to_string(),
+        tags: vec![],
         created_at: Default::default(),
         version: Version(1),
         platform_version: "v0".to_string(),

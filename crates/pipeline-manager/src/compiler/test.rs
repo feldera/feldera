@@ -3,9 +3,7 @@ use crate::compiler::util::{encode_dir_as_string, read_file_content, DirectoryCo
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
-use crate::db::types::pipeline::{
-    ClientMetadata, ExtendedPipelineDescr, PipelineDescr, PipelineId,
-};
+use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineDescr, PipelineId};
 use crate::db::types::program::{CompilationProfile, ProgramInfo, ProgramStatus};
 use crate::db::types::tenant::TenantId;
 use serde_json::json;
@@ -133,10 +131,8 @@ impl CompilerTest {
                 platform_version,
                 PipelineDescr {
                     name: name.to_string(),
-                    client_metadata: ClientMetadata {
-                        description: "not-used".to_string(),
-                        ..ClientMetadata::default()
-                    },
+                    description: "not-used".to_string(),
+                    tags: vec![],
                     runtime_config: json!({}),
                     program_code: program_code.to_string(),
                     udf_rust: udf_rust.to_string(),

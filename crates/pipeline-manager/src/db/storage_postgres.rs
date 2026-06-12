@@ -322,8 +322,10 @@ impl Storage for StoragePostgres {
         let is_new: bool = match current {
             Ok(_) => {
                 // Pipeline already exists, as such update it. For a full
-                // POST/PUT, client_metadata is the replacement, not a patch on
-                // top of the existing value.
+                // POST/PUT, client metadata is replaced, not patched on top of
+                // the existing value, so it is expressed as a patch that sets
+                // every field.
+                let client_metadata = pipeline.client_metadata().as_full_patch();
                 operations::pipeline::update_pipeline(
                     &txn,
                     false, // Done by user
@@ -331,9 +333,7 @@ impl Storage for StoragePostgres {
                     original_name,
                     &operations::pipeline::PipelineFieldUpdates {
                         name: &Some(pipeline.name.clone()),
-                        client_metadata: operations::pipeline::ClientMetadataUpdate::Replace(
-                            &pipeline.client_metadata,
-                        ),
+                        client_metadata: &client_metadata,
                         runtime_config: &Some(pipeline.runtime_config.clone()),
                         program_code: &Some(pipeline.program_code.clone()),
                         udf_rust: &Some(pipeline.udf_rust.clone()),
@@ -447,7 +447,7 @@ impl Storage for StoragePostgres {
             original_name,
             &operations::pipeline::PipelineFieldUpdates {
                 name,
-                client_metadata: operations::pipeline::ClientMetadataUpdate::Patch(client_metadata),
+                client_metadata,
                 runtime_config,
                 program_code,
                 udf_rust,
@@ -1160,9 +1160,7 @@ impl Storage for StoragePostgres {
                         &pipeline.name,
                         &operations::pipeline::PipelineFieldUpdates {
                             name: &None,
-                            client_metadata: operations::pipeline::ClientMetadataUpdate::Patch(
-                                &PatchClientMetadata::default(),
-                            ),
+                            client_metadata: &PatchClientMetadata::default(),
                             runtime_config: &None,
                             program_code: &None,
                             udf_rust: &None,
@@ -1253,9 +1251,7 @@ impl Storage for StoragePostgres {
                         &pipeline.name,
                         &operations::pipeline::PipelineFieldUpdates {
                             name: &None,
-                            client_metadata: operations::pipeline::ClientMetadataUpdate::Patch(
-                                &PatchClientMetadata::default(),
-                            ),
+                            client_metadata: &PatchClientMetadata::default(),
                             runtime_config: &None,
                             program_code: &None,
                             udf_rust: &None,

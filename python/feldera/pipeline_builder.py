@@ -16,7 +16,7 @@ class PipelineBuilder:
     :param client: The :class:`.FelderaClient` instance
     :param name: The name of the pipeline
     :param description: The description of the pipeline
-    :param tags: Self-descriptive tags for grouping / filtering the pipeline
+    :param tags: Free-form labels used to organize, group, and filter pipelines
     :param sql: The SQL code of the pipeline
     :param udf_rust: Rust code for UDFs
     :param udf_toml: Rust dependencies required by UDFs (in the TOML format)

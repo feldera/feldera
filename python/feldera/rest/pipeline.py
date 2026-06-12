@@ -29,7 +29,8 @@ class Pipeline:
         :param program_config: The program config of the pipeline
         :param runtime_config: The configuration of the pipeline
         :param description: Optional. The description of the pipeline
-        :param tags: Optional. Self-descriptive tags for grouping / filtering
+        :param tags: Optional. Free-form labels used to organize, group, and
+            filter pipelines (e.g. "team:ml", "env:prod")
         """
 
         self.name: str = name

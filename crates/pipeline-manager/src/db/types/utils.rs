@@ -148,8 +148,9 @@ pub fn validate_tags(tags: &[String]) -> Result<(), DBError> {
     }
     let re = Regex::new(PATTERN_VALID_TAG).expect("Pattern for tag must be valid");
     for tag in tags {
+        // Check each rule in turn; the first violated rule names the error.
         let length = tag.chars().count();
-        let reason = if tag.is_empty() {
+        let violated_rule = if tag.is_empty() {
             Some("it cannot be empty".to_string())
         } else if length > MAXIMUM_TAG_LENGTH {
             Some(format!(
@@ -164,7 +165,7 @@ pub fn validate_tags(tags: &[String]) -> Result<(), DBError> {
         } else {
             None
         };
-        if let Some(reason) = reason {
+        if let Some(reason) = violated_rule {
             return Err(DBError::InvalidTag {
                 tag: tag.clone(),
                 reason,

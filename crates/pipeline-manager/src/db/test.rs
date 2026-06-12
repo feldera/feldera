@@ -2,7 +2,6 @@ use crate::api::support_data_collector::SupportBundleData;
 use crate::auth::{generate_api_key, TenantRecord};
 use crate::db::error::DBError;
 use crate::db::error::DBError::InvalidResourcesStatusNotRemain;
-use crate::db::operations::pipeline::ClientMetadataUpdate;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::{is_pipeline_assigned_to_worker, StoragePostgres};
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId, ApiPermission};
@@ -29,7 +28,7 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
     validate_api_key_name, validate_deployment_config, validate_pipeline_name,
     validate_program_config, validate_program_info, validate_runtime_config,
-    validate_storage_status_details,
+    validate_storage_status_details, MAXIMUM_TAG_LENGTH,
 };
 use crate::db::types::version::Version;
 use async_trait::async_trait;
@@ -440,10 +439,8 @@ fn limited_pipeline_descr() -> impl Strategy<Value = PipelineDescr> {
     )>()
     .prop_map(|val| PipelineDescr {
         name: map_val_to_limited_pipeline_name(val.0),
-        client_metadata: ClientMetadata {
-            description: val.1,
-            ..ClientMetadata::default()
-        },
+        description: val.1,
+        tags: vec![],
         runtime_config: map_val_to_limited_runtime_config(val.2),
         program_code: val.3,
         udf_rust: val.4,
@@ -453,16 +450,26 @@ fn limited_pipeline_descr() -> impl Strategy<Value = PipelineDescr> {
 }
 
 /// Generates client-metadata patches: each of description/tags may
-/// independently be present or absent. The description is free-form; the tags
-/// are drawn from the valid-tag character set (see `validate_tags`) so that
-/// the parity test exercises the merge/replace path rather than constantly
-/// tripping tag validation. Tag rejection is covered by dedicated unit tests.
+/// independently be present or absent. The description is free-form. Tags are
+/// usually drawn from the valid-tag character set (see `validate_tags`) so the
+/// parity test mostly exercises the merge/replace path, but each tag has a
+/// small chance of being invalid (empty, too long, or holding an illegal
+/// character) so the validation/rejection path is exercised too. Both the model
+/// and the implementation validate identically, so an invalid tag must be
+/// rejected the same way on both sides.
 fn limited_client_metadata_patch() -> impl Strategy<Value = PatchClientMetadata> {
     let valid_tag =
         proptest::string::string_regex(r"[a-zA-Z0-9 ._/|\\-]{1,50}").expect("valid tag regex");
+    let invalid_tag = prop_oneof![
+        Just(String::new()),                      // empty is not allowed
+        Just("x".repeat(MAXIMUM_TAG_LENGTH + 1)), // exceeds the length limit
+        Just("invalid#tag".to_string()),          // illegal character
+    ];
+    // Roughly one tag in ten is invalid.
+    let tag = prop_oneof![9 => valid_tag, 1 => invalid_tag];
     (
         any::<Option<String>>(),
-        proptest::option::of(proptest::collection::vec(valid_tag, 0..4)),
+        proptest::option::of(proptest::collection::vec(tag, 0..4)),
     )
         .prop_map(|(description, tags)| PatchClientMetadata { description, tags })
 }
@@ -764,10 +771,8 @@ async fn pipeline_creation() {
     let tenant_id = TenantRecord::default().id;
     let new_descriptor = PipelineDescr {
         name: "test1".to_string(),
-        client_metadata: ClientMetadata {
-            description: "Test description".to_string(),
-            ..ClientMetadata::default()
-        },
+        description: "Test description".to_string(),
+        tags: vec![],
         runtime_config: json!({
             "workers": 123
         }),
@@ -790,7 +795,7 @@ async fn pipeline_creation() {
 
     // Core fields
     assert_eq!(actual.name, new_descriptor.name);
-    assert_eq!(actual.client_metadata, new_descriptor.client_metadata);
+    assert_eq!(actual.client_metadata(), new_descriptor.client_metadata());
     assert_eq!(
         actual.runtime_config,
         serde_json::to_value(
@@ -866,10 +871,8 @@ async fn pipeline_retrieval() {
             "v0",
             PipelineDescr {
                 name: "test1".to_string(),
-                client_metadata: ClientMetadata {
-                    description: "d1".to_string(),
-                    ..ClientMetadata::default()
-                },
+                description: "d1".to_string(),
+                tags: vec![],
                 runtime_config: json!({}),
                 program_code: "c1".to_string(),
                 udf_rust: "r1".to_string(),
@@ -912,10 +915,8 @@ async fn pipeline_retrieval() {
             "v0",
             PipelineDescr {
                 name: "test2".to_string(),
-                client_metadata: ClientMetadata {
-                    description: "d2".to_string(),
-                    ..ClientMetadata::default()
-                },
+                description: "d2".to_string(),
+                tags: vec![],
                 runtime_config: json!({}),
                 program_code: "c2".to_string(),
                 udf_rust: "r2".to_string(),
@@ -1006,10 +1007,8 @@ async fn pipeline_versioning() {
             "v0",
             PipelineDescr {
                 name: "example".to_string(),
-                client_metadata: ClientMetadata {
-                    description: "d1".to_string(),
-                    ..ClientMetadata::default()
-                },
+                description: "d1".to_string(),
+                tags: vec![],
                 runtime_config: json!({}),
                 program_code: "c1".to_string(),
                 udf_rust: "r1".to_string(),
@@ -1194,7 +1193,7 @@ async fn pipeline_versioning() {
         .await
         .unwrap();
     let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
-    assert_eq!(current.client_metadata.description, "d2");
+    assert_eq!(current.description, "d2");
     assert_eq!(current.version, Version(4));
     assert_eq!(current.program_version, Version(4));
     assert_eq!(current.refresh_version, Version(4));
@@ -1327,10 +1326,8 @@ async fn pipeline_duplicate() {
             "v0",
             PipelineDescr {
                 name: "example".to_string(),
-                client_metadata: ClientMetadata {
-                    description: "d1".to_string(),
-                    ..ClientMetadata::default()
-                },
+                description: "d1".to_string(),
+                tags: vec![],
                 runtime_config: json!({}),
                 program_code: "c1".to_string(),
                 udf_rust: "r1".to_string(),
@@ -1349,10 +1346,8 @@ async fn pipeline_duplicate() {
             "v0",
             PipelineDescr {
                 name: "example".to_string(),
-                client_metadata: ClientMetadata {
-                    description: "d2".to_string(),
-                    ..ClientMetadata::default()
-                },
+                description: "d2".to_string(),
+                tags: vec![],
                 runtime_config: json!({}),
                 program_code: "c2".to_string(),
                 udf_rust: "r2".to_string(),
@@ -1402,10 +1397,8 @@ async fn pipeline_program_compilation() {
             "v0",
             PipelineDescr {
                 name: "example1".to_string(),
-                client_metadata: ClientMetadata {
-                    description: "d1".to_string(),
-                    ..ClientMetadata::default()
-                },
+                description: "d1".to_string(),
+                tags: vec![],
                 runtime_config: json!({}),
                 program_code: "c1".to_string(),
                 udf_rust: "r1".to_string(),
@@ -1423,10 +1416,8 @@ async fn pipeline_program_compilation() {
             "v0",
             PipelineDescr {
                 name: "example2".to_string(),
-                client_metadata: ClientMetadata {
-                    description: "d2".to_string(),
-                    ..ClientMetadata::default()
-                },
+                description: "d2".to_string(),
+                tags: vec![],
                 runtime_config: json!({}),
                 program_code: "c2".to_string(),
                 udf_rust: "r2".to_string(),
@@ -1582,10 +1573,8 @@ async fn pipeline_transition_after_quick_stop() {
             "v0",
             PipelineDescr {
                 name: "example1".to_string(),
-                client_metadata: ClientMetadata {
-                    description: "d1".to_string(),
-                    ..ClientMetadata::default()
-                },
+                description: "d1".to_string(),
+                tags: vec![],
                 runtime_config: json!({}),
                 program_code: "c1".to_string(),
                 udf_rust: "r1".to_string(),
@@ -1806,10 +1795,8 @@ async fn pipeline_deployment() {
             "v0",
             PipelineDescr {
                 name: "example1".to_string(),
-                client_metadata: ClientMetadata {
-                    description: "d1".to_string(),
-                    ..ClientMetadata::default()
-                },
+                description: "d1".to_string(),
+                tags: vec![],
                 runtime_config: json!({}),
                 program_code: "c1".to_string(),
                 udf_rust: "r1".to_string(),
@@ -2470,10 +2457,8 @@ async fn pipeline_start_fails() {
             "v0",
             PipelineDescr {
                 name: "example1".to_string(),
-                client_metadata: ClientMetadata {
-                    description: "d1".to_string(),
-                    tags: vec![],
-                },
+                description: "d1".to_string(),
+                tags: vec![],
                 runtime_config: json!({}),
                 program_code: "c1".to_string(),
                 udf_rust: "r1".to_string(),
@@ -2544,10 +2529,8 @@ async fn pipeline_provision_version_guard() {
             "v0",
             PipelineDescr {
                 name: "example1".to_string(),
-                client_metadata: ClientMetadata {
-                    description: "d1".to_string(),
-                    ..ClientMetadata::default()
-                },
+                description: "d1".to_string(),
+                tags: vec![],
                 runtime_config: json!({}),
                 program_code: "c1".to_string(),
                 udf_rust: "r1".to_string(),
@@ -2799,10 +2782,8 @@ async fn pipeline_client_metadata_update_while_running() {
             "v0",
             PipelineDescr {
                 name: "example".to_string(),
-                client_metadata: ClientMetadata {
-                    description: "d1".to_string(),
-                    tags: vec!["initial".to_string()],
-                },
+                description: "d1".to_string(),
+                tags: vec!["initial".to_string()],
                 runtime_config: json!({}),
                 program_code: "c1".to_string(),
                 udf_rust: "r1".to_string(),
@@ -2917,8 +2898,8 @@ async fn pipeline_client_metadata_update_while_running() {
         )
         .await
         .unwrap();
-    assert_eq!(updated.client_metadata.description, "d2");
-    assert_eq!(updated.client_metadata.tags, vec!["renamed".to_string()]);
+    assert_eq!(updated.description, "d2");
+    assert_eq!(updated.tags, vec!["renamed".to_string()]);
     assert_eq!(updated.version, before.version);
     assert_eq!(updated.refresh_version, before.refresh_version);
     let event_count_after = handle
@@ -4067,7 +4048,7 @@ trait ModelHelpers {
         tenant_id: TenantId,
         original_name: &str,
         name: &Option<String>,
-        client_metadata: ClientMetadataUpdate<'_>,
+        client_metadata: &PatchClientMetadata,
         platform_version: &str,
         bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
@@ -4117,7 +4098,7 @@ impl ModelHelpers for Mutex<DbModel> {
         tenant_id: TenantId,
         original_name: &str,
         name: &Option<String>,
-        client_metadata: ClientMetadataUpdate<'_>,
+        client_metadata: &PatchClientMetadata,
         platform_version: &str,
         bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
@@ -4149,13 +4130,14 @@ impl ModelHelpers for Mutex<DbModel> {
         // Fetch existing pipeline
         let mut pipeline = self.get_pipeline(tenant_id, original_name).await?;
 
-        // Resolve the new client metadata (merge for a patch, replace for a
-        // POST/PUT) so we can detect "did anything actually change?" *and*
-        // persist the value below. Mirror logic in
-        // `db/operations/pipeline.rs::update_pipeline`.
-        let new_client_metadata = client_metadata.resolved(&pipeline.client_metadata);
-        let client_metadata_changed = new_client_metadata != pipeline.client_metadata;
-        new_client_metadata.validate_changes(&pipeline.client_metadata)?;
+        // Merge the patch into the current client metadata so we can detect
+        // "did anything actually change?" *and* persist the value below. Mirror
+        // logic in `db/operations/pipeline.rs::update_pipeline`.
+        let current_client_metadata = pipeline.client_metadata();
+        let mut new_client_metadata = current_client_metadata.clone();
+        new_client_metadata.apply_patch(client_metadata);
+        let client_metadata_changed = new_client_metadata != current_client_metadata;
+        new_client_metadata.validate_changes(&current_client_metadata)?;
 
         let core_changed = name.as_ref().is_some_and(|v| *v != pipeline.name)
             || (bump_platform_version && platform_version != pipeline.platform_version.as_str())
@@ -4202,7 +4184,9 @@ impl ModelHelpers for Mutex<DbModel> {
         // - `version` and `refresh_version` are not bumped.
         // - No `pipeline_monitor_event` is appended.
         if !core_changed {
-            pipeline.client_metadata = new_client_metadata;
+            let ClientMetadata { description, tags } = new_client_metadata;
+            pipeline.description = description;
+            pipeline.tags = tags;
             self.lock()
                 .await
                 .pipelines
@@ -4295,7 +4279,9 @@ impl ModelHelpers for Mutex<DbModel> {
         // Apply the client-metadata patch. Changes here do *not* bump
         // `version`; that contract is shared with
         // `db/operations/pipeline.rs::update_pipeline`.
-        pipeline.client_metadata = new_client_metadata;
+        let ClientMetadata { description, tags } = new_client_metadata;
+        pipeline.description = description;
+        pipeline.tags = tags;
         if *platform_version != pipeline.platform_version && bump_platform_version {
             version_increment = true;
             program_version_increment = true;
@@ -4382,7 +4368,8 @@ fn convert_descriptor_to_monitoring(
     ExtendedPipelineDescrMonitoring {
         id: pipeline.id,
         name: pipeline.name.clone(),
-        client_metadata: pipeline.client_metadata.clone(),
+        description: pipeline.description.clone(),
+        tags: pipeline.tags.clone(),
         created_at: pipeline.created_at,
         version: pipeline.version,
         platform_version: pipeline.platform_version.clone(),
@@ -4721,7 +4708,7 @@ impl Storage for Mutex<DbModel> {
         let mut state = self.lock().await;
 
         validate_pipeline_name(&pipeline.name)?;
-        pipeline.client_metadata.validate()?;
+        pipeline.client_metadata().validate()?;
         validate_runtime_config(&pipeline.runtime_config, false).map_err(|e| {
             DBError::InvalidRuntimeConfig {
                 value: pipeline.runtime_config.clone(),
@@ -4757,7 +4744,8 @@ impl Storage for Mutex<DbModel> {
         let extended_pipeline = ExtendedPipelineDescr {
             id: pipeline_id,
             name: pipeline.name,
-            client_metadata: pipeline.client_metadata,
+            description: pipeline.description,
+            tags: pipeline.tags,
             created_at: now,
             version: Version(1),
             platform_version: platform_version.to_string(),
@@ -4825,14 +4813,16 @@ impl Storage for Mutex<DbModel> {
     ) -> Result<(bool, ExtendedPipelineDescr), DBError> {
         match self.get_pipeline(tenant_id, original_name).await {
             Ok(_) => Ok((false, {
-                // POST/PUT replaces client metadata wholesale, rather than
-                // patching it on top of the existing value.
+                // POST/PUT replaces client metadata wholesale, expressed as a
+                // patch that sets every field, rather than patching it on top
+                // of the existing value.
+                let client_metadata = pipeline.client_metadata().as_full_patch();
                 self.validate_and_apply_pipeline_update(
                     false,
                     tenant_id,
                     original_name,
                     &Some(pipeline.name),
-                    ClientMetadataUpdate::Replace(&pipeline.client_metadata),
+                    &client_metadata,
                     platform_version,
                     bump_platform_version,
                     &Some(pipeline.runtime_config),
@@ -4878,7 +4868,7 @@ impl Storage for Mutex<DbModel> {
             tenant_id,
             original_name,
             name,
-            ClientMetadataUpdate::Patch(client_metadata),
+            client_metadata,
             platform_version,
             bump_platform_version,
             runtime_config,
@@ -5853,7 +5843,7 @@ impl Storage for Mutex<DbModel> {
                         tid,
                         &pipeline.name,
                         &None,
-                        ClientMetadataUpdate::Patch(&PatchClientMetadata::default()),
+                        &PatchClientMetadata::default(),
                         platform_version,
                         true,
                         &None,
@@ -5913,7 +5903,7 @@ impl Storage for Mutex<DbModel> {
                         tid,
                         &pipeline.name,
                         &None,
-                        ClientMetadataUpdate::Patch(&PatchClientMetadata::default()),
+                        &PatchClientMetadata::default(),
                         platform_version,
                         true,
                         &None,

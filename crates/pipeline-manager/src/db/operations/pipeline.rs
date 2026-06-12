@@ -11,8 +11,8 @@ use crate::db::operations::utils::{
 };
 use crate::db::types::pipeline::{
     bootstrap_config_to_string, runtime_desired_status_to_string, runtime_status_to_string,
-    ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrEventInfo,
-    ExtendedPipelineDescrMonitoring, PatchClientMetadata, PipelineDescr, PipelineId,
+    ExtendedPipelineDescr, ExtendedPipelineDescrEventInfo, ExtendedPipelineDescrMonitoring,
+    PatchClientMetadata, PipelineDescr, PipelineId,
 };
 use crate::db::types::program::{
     validate_program_status_transition, ProgramError, ProgramStatus, RustCompilationInfo,
@@ -177,7 +177,8 @@ pub(crate) async fn new_pipeline(
     pipeline: PipelineDescr,
 ) -> Result<(PipelineId, Version), DBError> {
     validate_pipeline_name(&pipeline.name)?;
-    pipeline.client_metadata.validate()?;
+    let client_metadata = pipeline.client_metadata();
+    client_metadata.validate()?;
     // Validate runtime configuration JSON when deserializing it
     // and reserialize it to have it contain current default values
     let runtime_config =
@@ -237,19 +238,19 @@ pub(crate) async fn new_pipeline(
     txn.execute(
         &stmt,
         &[
-            &new_id,                                  // $1: id
-            &tenant_id.0,                             // $2: tenant_id
-            &pipeline.name,                           // $3: name
-            &pipeline.client_metadata.to_db_string(), // $4: client_metadata
-            &Version(1).0,                            // $5: version
-            &platform_version.to_string(),            // $6: platform_version
-            &runtime_config.to_string(),              // $7: runtime_config
-            &pipeline.program_code,                   // $8: program_code
-            &pipeline.udf_rust,                       // $9: udf_rust
-            &pipeline.udf_toml,                       // $10: udf_toml
-            &program_config.to_string(),              // $11: program_config
-            &Version(1).0,                            // $12: program_version
-            &ProgramStatus::Pending.to_string(),      // $13: program_status
+            &new_id,                             // $1: id
+            &tenant_id.0,                        // $2: tenant_id
+            &pipeline.name,                      // $3: name
+            &client_metadata.to_db_string(),     // $4: client_metadata
+            &Version(1).0,                       // $5: version
+            &platform_version.to_string(),       // $6: platform_version
+            &runtime_config.to_string(),         // $7: runtime_config
+            &pipeline.program_code,              // $8: program_code
+            &pipeline.udf_rust,                  // $9: udf_rust
+            &pipeline.udf_toml,                  // $10: udf_toml
+            &program_config.to_string(),         // $11: program_config
+            &Version(1).0,                       // $12: program_version
+            &ProgramStatus::Pending.to_string(), // $13: program_status
             // $14: program_error
             &serialize_program_error(&ProgramError {
                 sql_compilation: None,
@@ -269,52 +270,18 @@ pub(crate) async fn new_pipeline(
     Ok((PipelineId(new_id), Version(1)))
 }
 
-/// How an update should treat the stored client metadata.
-///
-/// A `PATCH` request merges individual fields, whereas a `POST`/`PUT` request
-/// supplies a complete pipeline and therefore replaces the metadata.
-/// Keeping the two cases explicit (rather than encoding "replace" as a patch
-/// in which every field is forced to `Some`) lets an empty string or empty
-/// list survive a patch as a real value.
-#[derive(Clone, Copy)]
-pub(crate) enum ClientMetadataUpdate<'a> {
-    /// Merge: each `Some` field overwrites the stored value; each `None` field
-    /// leaves it unchanged. Used by `PATCH /v0/pipelines/<name>`.
-    Patch(&'a PatchClientMetadata),
-    /// Replace the stored value with this one in full. Used by `POST`/`PUT`.
-    Replace(&'a ClientMetadata),
-}
-
-impl ClientMetadataUpdate<'_> {
-    /// Computes the new stored value given the `current` one.
-    pub(crate) fn resolved(&self, current: &ClientMetadata) -> ClientMetadata {
-        match *self {
-            ClientMetadataUpdate::Patch(patch) => {
-                let mut merged = current.clone();
-                merged.apply_patch(patch);
-                merged
-            }
-            ClientMetadataUpdate::Replace(value) => value.clone(),
-        }
-    }
-
-    /// True when the update provably cannot change the stored value: an empty
-    /// patch. A `Replace` always intends to write, even if the value it writes
-    /// happens to equal the current one.
-    pub(crate) fn is_noop_patch(&self) -> bool {
-        matches!(*self, ClientMetadataUpdate::Patch(patch) if patch.is_empty())
-    }
-}
-
 /// Bundle of patchable pipeline fields, i.e. the contents of a `PATCH` request
 /// body. `update_pipeline` destructures this struct exhaustively so adding a
 /// new patchable field forces the call sites and the classifier
 /// (`core_changed` etc.) to be revisited or fail to compile.
 pub(crate) struct PipelineFieldUpdates<'a> {
     pub name: &'a Option<String>,
-    /// How to update the stored `ClientMetadata` (merge for `PATCH`, replace
-    /// for `POST`/`PUT`).
-    pub client_metadata: ClientMetadataUpdate<'a>,
+    /// Client-metadata patch to merge into the stored value: each `Some` field
+    /// overwrites it; each `None` field leaves it unchanged. A `POST`/`PUT`
+    /// replace is expressed as a patch in which every field is `Some` (built
+    /// from the complete descriptor), so an empty string or empty list is
+    /// always a value in its own right, never a request to unset.
+    pub client_metadata: &'a PatchClientMetadata,
     pub runtime_config: &'a Option<serde_json::Value>,
     pub program_code: &'a Option<String>,
     pub udf_rust: &'a Option<String>,
@@ -347,7 +314,7 @@ pub(crate) async fn update_pipeline(
     // type (e.g. `name: &Option<String>`) rather than `&&Option<String>`.
     let &PipelineFieldUpdates {
         name,
-        client_metadata: client_metadata_update,
+        client_metadata,
         runtime_config,
         program_code,
         udf_rust,
@@ -402,15 +369,20 @@ pub(crate) async fn update_pipeline(
     // This will also return an error if the pipeline does not exist.
     let current = get_pipeline(txn, tenant_id, original_name).await?;
 
-    // Resolve the new client metadata (a `PATCH` merges, a `POST`/`PUT`
-    // replaces) so we can both detect "did anything actually change?" and
-    // persist the value below.
-    let new_client_metadata = client_metadata_update.resolved(&current.client_metadata);
-    let client_metadata_changed = new_client_metadata != current.client_metadata;
+    // Build the current client metadata and merge the patch into it to get the
+    // new value. `current.client_metadata()` uses an exhaustive `ClientMetadata`
+    // literal, so adding a client-metadata field cannot be omitted from this
+    // change detection: it is automatically covered by the struct comparison
+    // below. Client metadata never appears in `core_changed`, so such a field
+    // also can never wrongly bump the version.
+    let current_client_metadata = current.client_metadata();
+    let mut new_client_metadata = current_client_metadata.clone();
+    new_client_metadata.apply_patch(client_metadata);
+    let client_metadata_changed = new_client_metadata != current_client_metadata;
     // Validate only the fields the client is actually changing, so values
     // stored before a constraint existed (e.g. a long migrated description)
     // stay readable and patchable until they are themselves modified.
-    new_client_metadata.validate_changes(&current.client_metadata)?;
+    new_client_metadata.validate_changes(&current_client_metadata)?;
 
     // Determine whether any "core" (version-bumping) field will actually
     // change. A `Some(v)` value with `v == current` is *not* a change.
@@ -458,7 +430,7 @@ pub(crate) async fn update_pipeline(
         !is_compiler_update
             || (bump_platform_version
                 && name.is_none()
-                && client_metadata_update.is_noop_patch()
+                && client_metadata.contains_only_nones()
                 && runtime_config.is_none()
                 && program_code.is_none()
                 && udf_rust.is_none()

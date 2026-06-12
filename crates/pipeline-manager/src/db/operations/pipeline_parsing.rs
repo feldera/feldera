@@ -61,10 +61,14 @@ pub const PIPELINE_COLUMNS_EVENT_INFO: &str = "p.id,
 
 #[rustfmt::skip]
 pub fn parse_pipeline_row_all(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
+    // Destructuring is deliberate: adding a `ClientMetadata` field fails to
+    // compile here until it is read out into the descriptor.
+    let ClientMetadata { description, tags } = parse_from_row_client_metadata(row);
     Ok(ExtendedPipelineDescr {
         id: parse_from_row_id(row),
         name: parse_from_row_name(row),
-        client_metadata: parse_from_row_client_metadata(row),
+        description,
+        tags,
         created_at: parse_from_row_created_at(row),
         version: parse_from_row_version(row),
         platform_version: parse_from_row_platform_version(row),
@@ -105,10 +109,14 @@ pub fn parse_pipeline_row_all(row: &Row) -> Result<ExtendedPipelineDescr, DBErro
 
 #[rustfmt::skip]
 pub fn parse_pipeline_row_monitoring(row: &Row) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
+    // Destructuring is deliberate: adding a `ClientMetadata` field fails to
+    // compile here until it is read out into the descriptor.
+    let ClientMetadata { description, tags } = parse_from_row_client_metadata(row);
     Ok(ExtendedPipelineDescrMonitoring {
         id: parse_from_row_id(row),
         name: parse_from_row_name(row),
-        client_metadata: parse_from_row_client_metadata(row),
+        description,
+        tags,
         created_at: parse_from_row_created_at(row),
         version: parse_from_row_version(row),
         platform_version: parse_from_row_platform_version(row),
@@ -583,7 +591,8 @@ mod tests {
         let all_descr = serde_json::to_value(ExtendedPipelineDescr {
             id: PipelineId(Uuid::from_u128(1)),
             name: "".to_string(),
-            client_metadata: Default::default(),
+            description: Default::default(),
+            tags: Default::default(),
             created_at: Default::default(),
             version: Version(1),
             platform_version: "".to_string(),
@@ -638,7 +647,8 @@ mod tests {
         let monitoring_descr = serde_json::to_value(ExtendedPipelineDescrMonitoring {
             id: PipelineId(Uuid::from_u128(1)),
             name: "".to_string(),
-            client_metadata: Default::default(),
+            description: Default::default(),
+            tags: Default::default(),
             created_at: Default::default(),
             version: Version(1),
             platform_version: "".to_string(),

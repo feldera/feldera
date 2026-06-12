@@ -34,7 +34,8 @@ impl ExtendedPipelineDescrRunner {
             ExtendedPipelineDescrRunner::Complete(pipeline) => ExtendedPipelineDescrMonitoring {
                 id: pipeline.id,
                 name: pipeline.name.clone(),
-                client_metadata: pipeline.client_metadata.clone(),
+                description: pipeline.description.clone(),
+                tags: pipeline.tags.clone(),
                 created_at: pipeline.created_at,
                 version: pipeline.version,
                 platform_version: pipeline.platform_version.clone(),

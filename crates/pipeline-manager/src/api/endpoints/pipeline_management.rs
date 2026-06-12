@@ -186,10 +186,11 @@ pub struct PipelineInfoInternal {
 
 impl PipelineInfoInternal {
     pub(crate) fn new(extended_pipeline: ExtendedPipelineDescr) -> Self {
+        let client_metadata = extended_pipeline.client_metadata();
         PipelineInfoInternal {
             id: extended_pipeline.id,
             name: extended_pipeline.name,
-            client_metadata: extended_pipeline.client_metadata,
+            client_metadata,
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
             platform_version: extended_pipeline.platform_version,
@@ -362,10 +363,11 @@ pub struct PipelineSelectedInfoInternal {
 
 impl PipelineSelectedInfoInternal {
     pub(crate) fn new_all(extended_pipeline: ExtendedPipelineDescr) -> Self {
+        let client_metadata = extended_pipeline.client_metadata();
         PipelineSelectedInfoInternal {
             id: extended_pipeline.id,
             name: extended_pipeline.name,
-            client_metadata: extended_pipeline.client_metadata,
+            client_metadata,
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
             platform_version: extended_pipeline.platform_version,
@@ -425,10 +427,11 @@ impl PipelineSelectedInfoInternal {
     }
 
     pub(crate) fn new_status(extended_pipeline: ExtendedPipelineDescrMonitoring) -> Self {
+        let client_metadata = extended_pipeline.client_metadata();
         PipelineSelectedInfoInternal {
             id: extended_pipeline.id,
             name: extended_pipeline.name,
-            client_metadata: extended_pipeline.client_metadata,
+            client_metadata,
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
             platform_version: extended_pipeline.platform_version,
@@ -639,13 +642,15 @@ impl From<PostPutPipelineInternal> for PipelineDescr {
     /// Fills in any missing optional field with its empty type value
     /// (for strings: an empty string `""`, for objects: an empty dictionary `{}`).
     fn from(value: PostPutPipelineInternal) -> Self {
+        let ClientMetadata { description, tags } = value.client_metadata;
         PipelineDescr {
             name: value.name,
-            client_metadata: value.client_metadata,
+            description,
+            tags,
             runtime_config: value.runtime_config.unwrap_or(json!({})),
             program_code: value.program_code,
-            udf_rust: value.udf_rust.unwrap_or_default(),
-            udf_toml: value.udf_toml.unwrap_or_default(),
+            udf_rust: value.udf_rust.unwrap_or("".to_string()),
+            udf_toml: value.udf_toml.unwrap_or("".to_string()),
             program_config: value.program_config.unwrap_or(json!({})),
         }
     }

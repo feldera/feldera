@@ -313,29 +313,22 @@ export type Chunk = {
 }
 
 /**
- * Client-generated data stored alongside a pipeline (the canonical form used
- * for storage, creation, and API responses).
+ * Client-generated data stored alongside a pipeline.
  *
- * These fields are stored together as a single JSON object in the
- * `client_metadata` text column. The set of fields is defined here in Rust
- * rather than as database columns, so adding a new field only requires
- * extending this struct, not a new migration.
- *
- * Every field is always present: an unset description is `""` and unset tags
- * are `[]`. The optional, field-by-field form used by `PATCH` request bodies
- * is [`PatchClientMetadata`].
- *
+ * The fields are stored together as a single JSON object in the
+ * `client_metadata` text column, so adding a field needs no migration.
  * Deserialization is lenient: missing keys take their default and unknown
- * keys are ignored, so a database (or request) written by a different build
- * still loads.
+ * keys are ignored. [`PatchClientMetadata`] is the optional, per-field form
+ * used by `PATCH` request bodies.
  */
 export type ClientMetadata = {
   /**
-   * Human-readable description of the pipeline.
+   * Human-readable description of the pipeline. Default is an empty string.
    */
   description?: string
   /**
-   * Self-descriptive tags for grouping / filtering.
+   * Free-form labels used to organize, group, and filter pipelines.
+   * Default is no tags (empty vector).
    */
   tags?: Array<string>
 }
@@ -3330,7 +3323,7 @@ export type PatchClientMetadata = {
    */
   description?: string | null
   /**
-   * Self-descriptive tags for grouping / filtering.
+   * Free-form labels used to organize, group, and filter pipelines.
    */
   tags?: Array<string> | null
 }
@@ -5508,6 +5501,12 @@ export type TransportConfig =
   | {
       config: ClockConfig
       name: 'clock_input'
+    }
+  | {
+      name: 'null_output'
+    }
+  | {
+      name: 'empty_input'
     }
 
 export type UpdateInformation = {

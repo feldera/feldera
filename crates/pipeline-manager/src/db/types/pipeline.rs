@@ -12,6 +12,7 @@ use feldera_types::runtime_status::{
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
+use tracing::warn;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -121,28 +122,21 @@ pub fn parse_string_as_bootstrap_config(s: String) -> Result<BootstrapConfig, DB
     }
 }
 
-/// Client-generated data stored alongside a pipeline (the canonical form used
-/// for storage, creation, and API responses).
+/// Client-generated data stored alongside a pipeline.
 ///
-/// These fields are stored together as a single JSON object in the
-/// `client_metadata` text column. The set of fields is defined here in Rust
-/// rather than as database columns, so adding a new field only requires
-/// extending this struct, not a new migration.
-///
-/// Every field is always present: an unset description is `""` and unset tags
-/// are `[]`. The optional, field-by-field form used by `PATCH` request bodies
-/// is [`PatchClientMetadata`].
-///
+/// The fields are stored together as a single JSON object in the
+/// `client_metadata` text column, so adding a field needs no migration.
 /// Deserialization is lenient: missing keys take their default and unknown
-/// keys are ignored, so a database (or request) written by a different build
-/// still loads.
+/// keys are ignored. [`PatchClientMetadata`] is the optional, per-field form
+/// used by `PATCH` request bodies.
 #[derive(Default, Eq, PartialEq, Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ClientMetadata {
-    /// Human-readable description of the pipeline.
+    /// Human-readable description of the pipeline. Default is an empty string.
     #[serde(default)]
     pub description: String,
 
-    /// Self-descriptive tags for grouping / filtering.
+    /// Free-form labels used to organize, group, and filter pipelines.
+    /// Default is no tags (empty vector).
     #[serde(default)]
     pub tags: Vec<String>,
 }
@@ -161,7 +155,7 @@ impl ClientMetadata {
             // Leave a breadcrumb so corruption is visible in the logs rather
             // than silently dropping client data. The snippet is truncated to
             // keep a large row from flooding the log.
-            tracing::warn!(
+            warn!(
                 "ignoring corrupted client_metadata, reading as empty (parse error: {e}); \
                  column starts with: {:.100}",
                 s
@@ -183,9 +177,25 @@ impl ClientMetadata {
         serde_json::to_string(self).unwrap_or_default()
     }
 
-    /// True when no field carries a value.
+    /// True when no field carries a value. Destructured so adding a field
+    /// forces this check to account for it: otherwise a row holding only the
+    /// new field would be stored as the empty string (see `to_db_string`) and
+    /// the value would be lost.
     pub fn is_empty(&self) -> bool {
-        self.description.is_empty() && self.tags.is_empty()
+        let ClientMetadata { description, tags } = self;
+        description.is_empty() && tags.is_empty()
+    }
+
+    /// Expresses this complete metadata as a patch that sets every field. A
+    /// `POST`/`PUT` replace is then just a patch in which nothing is `None`, so
+    /// replace and `PATCH` share the single merge path in `apply_patch`. The
+    /// exhaustive struct literal makes a newly added field impossible to omit
+    /// from a replace.
+    pub fn as_full_patch(&self) -> PatchClientMetadata {
+        PatchClientMetadata {
+            description: Some(self.description.clone()),
+            tags: Some(self.tags.clone()),
+        }
     }
 
     /// Merges `patch` into `self`: each `Some` field of `patch` overwrites the
@@ -193,10 +203,12 @@ impl ClientMetadata {
     /// provided value is stored verbatim, so an empty string or empty list is
     /// a value in its own right, not a request to unset the field.
     pub fn apply_patch(&mut self, patch: &PatchClientMetadata) {
-        if let Some(description) = &patch.description {
+        // Destructured so adding a field forces this check to account for it.
+        let PatchClientMetadata { description, tags } = patch;
+        if let Some(description) = description {
             self.description = description.clone();
         }
-        if let Some(tags) = &patch.tags {
+        if let Some(tags) = tags {
             self.tags = tags.clone();
         }
     }
@@ -204,8 +216,9 @@ impl ClientMetadata {
     /// Validates every field. Used when creating a pipeline, where all
     /// client-provided values are new.
     pub fn validate(&self) -> Result<(), DBError> {
-        validate_description(&self.description)?;
-        validate_tags(&self.tags)?;
+        let ClientMetadata { description, tags } = self;
+        validate_description(description)?;
+        validate_tags(tags)?;
         Ok(())
     }
 
@@ -216,11 +229,12 @@ impl ClientMetadata {
     /// changes it. Re-submitting an unchanged value is therefore always
     /// allowed; changing it is validated against the current rules.
     pub fn validate_changes(&self, previous: &ClientMetadata) -> Result<(), DBError> {
-        if self.description != previous.description {
-            validate_description(&self.description)?;
+        let ClientMetadata { description, tags } = self;
+        if *description != previous.description {
+            validate_description(description)?;
         }
-        if self.tags != previous.tags {
-            validate_tags(&self.tags)?;
+        if *tags != previous.tags {
+            validate_tags(tags)?;
         }
         Ok(())
     }
@@ -238,15 +252,18 @@ pub struct PatchClientMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    /// Self-descriptive tags for grouping / filtering.
+    /// Free-form labels used to organize, group, and filter pipelines.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
 }
 
 impl PatchClientMetadata {
-    /// True when the patch sets no field, i.e. it cannot change anything.
-    pub fn is_empty(&self) -> bool {
-        self.description.is_none() && self.tags.is_none()
+    /// True when every field is `None`, i.e. the patch sets nothing and so
+    /// cannot change anything.
+    pub fn contains_only_nones(&self) -> bool {
+        // Destructured so adding a field forces this check to account for it.
+        let PatchClientMetadata { description, tags } = self;
+        description.is_none() && tags.is_none()
     }
 }
 
@@ -256,8 +273,11 @@ pub struct PipelineDescr {
     /// Pipeline name.
     pub name: String,
 
-    /// Client-generated data (description, tags, ...).
-    pub client_metadata: ClientMetadata,
+    /// Human-readable description of the pipeline.
+    pub description: String,
+
+    /// Free-form labels used to organize, group, and filter pipelines.
+    pub tags: Vec<String>,
 
     /// Pipeline runtime configuration.
     pub runtime_config: serde_json::Value,
@@ -276,15 +296,24 @@ pub struct PipelineDescr {
 }
 
 impl PipelineDescr {
+    /// Bundles the client-generated fields into the [`ClientMetadata`] form
+    /// used for storage. The exhaustive struct literal is deliberate: adding a
+    /// field to [`ClientMetadata`] fails to compile here until it is included,
+    /// so a new client-metadata field can never be silently dropped on write.
+    pub fn client_metadata(&self) -> ClientMetadata {
+        ClientMetadata {
+            description: self.description.clone(),
+            tags: self.tags.clone(),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn test_descr() -> Self {
         use serde_json::json;
         Self {
             name: "test_pipeline".to_string(),
-            client_metadata: ClientMetadata {
-                description: "Test pipeline".to_string(),
-                ..ClientMetadata::default()
-            },
+            description: "Test pipeline".to_string(),
+            tags: vec![],
             runtime_config: json!({}),
             program_code: "CREATE TABLE test (col1 INT);".to_string(),
             udf_rust: "".to_string(),
@@ -307,15 +336,18 @@ pub struct ExtendedPipelineDescr {
     /// Pipeline name.
     pub name: String,
 
-    /// Client-generated data (description, tags, ...).
-    pub client_metadata: ClientMetadata,
+    /// Human-readable description of the pipeline.
+    pub description: String,
+
+    /// Free-form labels used to organize, group, and filter pipelines.
+    pub tags: Vec<String>,
 
     /// Timestamp when the pipeline was originally created.
     pub created_at: DateTime<Utc>,
 
     /// Pipeline version, incremented every time name, runtime_config, program_code,
     /// udf_rust, udf_toml, program_config or platform_version is/are modified.
-    /// Changes to `client_metadata` do not bump `version`.
+    /// Changes to client metadata (description, tags, ...) do not bump `version`.
     pub version: Version,
 
     /// Pipeline platform version.
@@ -434,6 +466,20 @@ pub struct ExtendedPipelineDescr {
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
 }
 
+impl ExtendedPipelineDescr {
+    /// Bundles the client-generated fields into the [`ClientMetadata`] form.
+    /// The exhaustive struct literal is deliberate: adding a field to
+    /// [`ClientMetadata`] fails to compile here until it is included, so the
+    /// "did client metadata change?" check (see `update_pipeline`) can never
+    /// silently omit a new field and wrongly leave the version unchanged.
+    pub fn client_metadata(&self) -> ClientMetadata {
+        ClientMetadata {
+            description: self.description.clone(),
+            tags: self.tags.clone(),
+        }
+    }
+}
+
 /// Pipeline descriptor which includes the fields relevant to system monitoring.
 /// The advantage of this descriptor over the [`ExtendedPipelineDescr`] is that it
 /// excludes fields which can be quite large (e.g., the generated Rust code stored
@@ -444,7 +490,8 @@ pub struct ExtendedPipelineDescr {
 pub struct ExtendedPipelineDescrMonitoring {
     pub id: PipelineId,
     pub name: String,
-    pub client_metadata: ClientMetadata,
+    pub description: String,
+    pub tags: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub version: Version,
     pub platform_version: String,
@@ -470,6 +517,18 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub bootstrap_policy: Option<BootstrapConfig>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
+}
+
+impl ExtendedPipelineDescrMonitoring {
+    /// Bundles the client-generated fields into the [`ClientMetadata`] form.
+    /// The exhaustive struct literal is deliberate: adding a field to
+    /// [`ClientMetadata`] fails to compile here until it is included.
+    pub fn client_metadata(&self) -> ClientMetadata {
+        ClientMetadata {
+            description: self.description.clone(),
+            tags: self.tags.clone(),
+        }
+    }
 }
 
 /// Pipeline descriptor with all fields needed to create a monitor event.
@@ -544,6 +603,27 @@ mod tests {
         let mut cm = meta("old", &["keep"]);
         cm.apply_patch(&patch(Some("new"), None));
         assert_eq!(cm, meta("new", &["keep"]));
+    }
+
+    #[test]
+    fn contains_only_nones_detects_the_empty_patch() {
+        assert!(PatchClientMetadata::default().contains_only_nones());
+        assert!(!patch(Some(""), None).contains_only_nones());
+        assert!(!patch(None, Some(vec![])).contains_only_nones());
+    }
+
+    #[test]
+    fn full_patch_replaces_every_field() {
+        // A `POST`/`PUT` replace is expressed as a full patch. Applying it to
+        // any prior value must yield exactly the replacement, including when
+        // the replacement clears a previously set field.
+        let replacement = meta("", &[]);
+        let mut current = meta("old description", &["old"]);
+        current.apply_patch(&replacement.as_full_patch());
+        assert_eq!(current, replacement);
+
+        // A full patch never has a `None` field, so it is never a no-op.
+        assert!(!replacement.as_full_patch().contains_only_nones());
     }
 
     #[test]
