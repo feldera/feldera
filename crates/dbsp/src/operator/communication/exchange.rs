@@ -1027,8 +1027,8 @@ where
     /// Read all incoming messages for this worker, waiting for data to arrive
     /// as needed.
     ///
-    /// When the data is ready, but before reading it, this method reads
-    /// `start_wait_usecs` and returns it along with the data.
+    /// When the data is ready, but before reading it, this method swaps
+    /// `start_wait_usecs` with 0 and returns the old value along with the data.
     pub(crate) async fn receive_all<D>(
         &self,
         deserialize: D,
@@ -1053,7 +1053,10 @@ where
             }
         }
 
-        let wait_time_usecs = start_wait_usecs.map(|v| v.load(Ordering::Acquire));
+        let start_wait_usecs = start_wait_usecs.and_then(|v| {
+            let start_wait_usecs = v.swap(0, Ordering::Acquire);
+            (start_wait_usecs != 0).then_some(start_wait_usecs)
+        });
 
         let mut data = Vec::with_capacity(self.npeers);
         for sender in 0..self.npeers {
@@ -1066,7 +1069,7 @@ where
             }
         }
 
-        (data, wait_time_usecs)
+        (data, start_wait_usecs)
     }
 }
 
@@ -1550,12 +1553,16 @@ where
         };
 
         let mut combined = (self.init)();
-        let (res, wait_time_usecs) = self
+        let (res, start_wait_usecs) = self
             .exchange
             .receive_all(deserialize, Some(&self.start_wait_usecs))
             .await;
-        self.total_wait_time
-            .fetch_add(wait_time_usecs.unwrap(), Ordering::Release);
+        if let Some(start_wait_usecs) = start_wait_usecs {
+            self.total_wait_time.fetch_add(
+                current_time_usecs().saturating_sub(start_wait_usecs),
+                Ordering::Release,
+            );
+        }
         for (data, flushed) in res {
             if flushed {
                 self.flush_count += 1;
