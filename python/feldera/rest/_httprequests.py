@@ -140,11 +140,14 @@ class HttpRequests:
         data: Any,
         params: Optional[Mapping[str, Any]],
         stream: bool,
+        timeout: Optional[tuple[Optional[float], Optional[float]]] = None,
     ) -> Any:
         response = http_method(
             request_path,
             data=data,
-            timeout=(self.config.connection_timeout, self.config.timeout),
+            timeout=timeout
+            if timeout is not None
+            else (self.config.connection_timeout, self.config.timeout),
             headers=self.headers,
             params=params,
             stream=stream,
@@ -165,6 +168,7 @@ class HttpRequests:
         params: Optional[Mapping[str, Any]] = None,
         stream: bool = False,
         serialize: bool = True,
+        timeout: Optional[tuple[Optional[float], Optional[float]]] = None,
     ) -> Any:
         """
         :param http_method: The HTTP method to use. Takes the equivalent `requests.*` module. (Example: `requests.get`)
@@ -174,6 +178,9 @@ class HttpRequests:
         :param params: The query parameters part of this request.
         :param stream: True if the response is expected to be a HTTP stream.
         :param serialize: True if the body needs to be serialized to JSON.
+        :param timeout: A `(connection timeout, read timeout)` pair, in
+            seconds, overriding the client-wide timeout configuration for
+            this request only. `None` elements mean "wait indefinitely".
 
         Send an HTTP request, retrying transient failures per the client's
         `RetryConfig`.
@@ -220,7 +227,7 @@ class HttpRequests:
             for attempt in retryer:
                 with attempt:
                     return self._do_single_request(
-                        http_method, request_path, data, params, stream
+                        http_method, request_path, data, params, stream, timeout
                     )
         except requests.exceptions.Timeout as err:
             raise FelderaTimeoutError(str(err)) from err
@@ -245,6 +252,7 @@ class HttpRequests:
         params: Optional[Mapping[str, Any]] = None,
         stream: bool = False,
         serialize: bool = True,
+        timeout: Optional[tuple[Optional[float], Optional[float]]] = None,
     ) -> Any:
         return self.send_request(
             requests.post,
@@ -254,6 +262,7 @@ class HttpRequests:
             params,
             stream=stream,
             serialize=serialize,
+            timeout=timeout,
         )
 
     def patch(

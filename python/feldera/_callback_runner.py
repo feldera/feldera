@@ -91,5 +91,16 @@ class CallbackRunner(Thread):
             for chunk in iterator:
                 self.to_callback(chunk)
 
+        except StopIteration:
+            # The server closed the stream before sending the first chunk;
+            # e.g., the pipeline stopped concurrently. The listener observes
+            # no output; this is not an error.
+            pass
         except BaseException as e:
             self.exception_callback(e)
+        finally:
+            # Always unblock the caller, including when the connection attempt
+            # fails before the first chunk arrives. The exception recorded by
+            # `exception_callback` above must be stored before the event is
+            # set, so that the woken caller can observe and surface it.
+            self.event.set()
