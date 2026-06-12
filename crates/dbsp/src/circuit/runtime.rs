@@ -1351,8 +1351,8 @@ impl Runtime {
 pub(crate) struct Consensus(Broadcast<bool>);
 
 impl Consensus {
-    pub fn new() -> Self {
-        Self(Broadcast::new())
+    pub fn new(name: impl Display) -> Self {
+        Self(Broadcast::new(name))
     }
 
     /// Returns `true` if all workers vote `true`.
@@ -1379,12 +1379,12 @@ impl<T> Broadcast<T>
 where
     T: Clone + Debug + Send + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
 {
-    pub fn new() -> Self {
+    pub fn new(name: impl Display) -> Self {
         match Runtime::runtime() {
             Some(runtime) if Runtime::num_workers() > 1 => {
                 let exchange_id = runtime.sequence_next().try_into().unwrap();
                 let exchange = Exchange::with_runtime(&runtime, exchange_id);
-                let identifier = Arc::new(format!("broadcast {exchange_id}"));
+                let identifier = Arc::new(format!("broadcast {name} (exchange {exchange_id})"));
 
                 Self::MultiThreaded {
                     exchange,

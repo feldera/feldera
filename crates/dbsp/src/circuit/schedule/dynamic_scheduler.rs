@@ -358,8 +358,8 @@ impl Inner {
             handles: JoinSet::new(),
             waiting: false,
             transaction_phase: TransactionPhase::CommitComplete,
-            global_commit_consensus: Broadcast::new(),
-            metadata_broadcast: Broadcast::new(),
+            global_commit_consensus: Broadcast::new("global commit consensus"),
+            metadata_broadcast: Broadcast::new("metadata"),
             before_first_step: true,
             flush_state: false,
         };
