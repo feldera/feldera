@@ -1222,7 +1222,7 @@ impl Phase {
 /// use dbsp::{
 ///     operator::{communication::new_exchange_operators, Generator},
 ///     circuit::{WorkerLocation, WorkerLocations},
-///     operator::communication::Mailbox,
+///     operator::communication::{ExchangeActivity, Mailbox},
 ///     Circuit, RootCircuit, Runtime,
 ///     storage::file::to_bytes_dyn,
 ///     trace::aligned_deserialize,
@@ -1258,6 +1258,7 @@ impl Phase {
 ///             },
 ///             |data| aligned_deserialize(&data[..]),///             // Reassemble received values into a vector.
 ///             |v: &mut Vec<usize>, n| v.push(n),
+///             ExchangeActivity::AllSteps,
 ///         ).unwrap();
 ///
 ///         // Add exchange operators to the circuit.
