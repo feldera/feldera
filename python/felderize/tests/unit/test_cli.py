@@ -46,6 +46,16 @@ def _query(tmp_path: Path, content: str = "CREATE VIEW v AS SELECT x FROM t;") -
     return p
 
 
+@pytest.fixture(autouse=True)
+def _no_auto_download(monkeypatch):
+    """Keep CLI tests hermetic: never reach out to GitHub to fetch a compiler.
+
+    With no --compiler/FELDERA_COMPILER configured, --validate would otherwise
+    auto-download the compiler; stub it to "not found" so tests stay offline.
+    """
+    monkeypatch.setattr("felderize.cli.ensure_compiler", lambda *a, **k: None)
+
+
 # ---------------------------------------------------------------------------
 # _split_examples
 # ---------------------------------------------------------------------------
@@ -195,6 +205,55 @@ class TestTranslateCommand:
         assert result.exit_code == 0
         assert "-- Schema --" in result.output
         assert "-- Query --" in result.output
+
+    def test_validate_auto_resolves_compiler(self, tmp_path, monkeypatch):
+        """With --validate and no --compiler, the auto-resolved JAR is passed
+        through to the translator via the config."""
+        fake_jar = tmp_path / "sql2dbsp-jar-with-dependencies-v0.310.0.jar"
+        monkeypatch.setattr("felderize.cli.ensure_compiler", lambda *a, **k: fake_jar)
+        runner = CliRunner()
+        with patch(
+            "felderize.cli.translate_spark_to_feldera", return_value=_SUCCESS
+        ) as mock_fn:
+            self._invoke(runner, _schema(tmp_path), _query(tmp_path), "--validate")
+        config = mock_fn.call_args.args[2]
+        assert config.feldera_compiler == str(fake_jar)
+
+    def test_explicit_compiler_skips_auto_resolution(self, tmp_path, monkeypatch):
+        """An explicit --compiler must win; auto-download is never consulted."""
+        called = []
+        monkeypatch.setattr(
+            "felderize.cli.ensure_compiler",
+            lambda *a, **k: called.append(True),
+        )
+        runner = CliRunner()
+        with patch("felderize.cli.translate_spark_to_feldera", return_value=_SUCCESS):
+            self._invoke(
+                runner,
+                _schema(tmp_path),
+                _query(tmp_path),
+                "--validate",
+                "--compiler",
+                "/opt/my-compiler.jar",
+            )
+        assert called == []
+
+    def test_env_compiler_skips_auto_resolution(self, tmp_path, monkeypatch):
+        """A configured FELDERA_COMPILER must be used as-is; no auto-download."""
+        called = []
+        monkeypatch.setattr(
+            "felderize.cli.ensure_compiler",
+            lambda *a, **k: called.append(True),
+        )
+        monkeypatch.setenv("FELDERA_COMPILER", "/opt/env-compiler.jar")
+        runner = CliRunner()
+        with patch(
+            "felderize.cli.translate_spark_to_feldera", return_value=_SUCCESS
+        ) as mock_fn:
+            self._invoke(runner, _schema(tmp_path), _query(tmp_path), "--validate")
+        assert called == []
+        config = mock_fn.call_args.args[2]
+        assert config.feldera_compiler == "/opt/env-compiler.jar"
 
     def test_success_json_output(self, tmp_path):
         runner = CliRunner()

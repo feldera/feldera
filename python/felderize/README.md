@@ -15,13 +15,26 @@ pip install -e .
 
 > **Note:** `pip install -e .` is required before running `felderize`. It registers the package and CLI command.
 
-**Download the Feldera SQL compiler JAR** (requires Java 19–21 installed):
+**The Feldera SQL compiler JAR** (used only for `--validate`; requires Java 19–21 installed):
+
+felderize downloads it for you. The first time you run a command with `--validate`
+and no compiler configured, felderize fetches the latest
+`sql2dbsp-jar-with-dependencies-*.jar` from
+[GitHub Releases](https://github.com/feldera/feldera/releases) into `~/.felderize/`
+and reuses it on later runs. To opt out (e.g. in CI or offline), set
+`FELDERIZE_AUTO_DOWNLOAD=0`; validation is then skipped unless you point
+`FELDERA_COMPILER` / `--compiler` at a JAR.
+
+To fetch or update it explicitly:
 
 ```bash
 felderize download-compiler
 ```
 
-This fetches the latest `sql2dbsp-jar-with-dependencies-*.jar` from [GitHub Releases](https://github.com/feldera/feldera/releases) and saves it to `~/.felderize/`. The command prints the exact path — copy it for the next step. Re-run it any time to pick up a newer release; it reports whether you are already on the latest one.
+This saves the latest JAR to `~/.felderize/` and prints its path. Re-run it any
+time to pick up a newer release; it reports whether you are already on the latest
+one. felderize automatically uses the newest JAR cached in `~/.felderize/`, so you
+do not need to set `FELDERA_COMPILER` unless you want a specific JAR.
 
 > **Requirement:** felderize needs compiler **v0.304.0 or newer** — earlier releases lack SQL features felderize relies on (e.g. `div_null`, `MAKE_DATE`). `download-compiler` always fetches the latest release, and felderize warns at validation time if the configured compiler is older than v0.304.0.
 
@@ -35,7 +48,7 @@ FELDERA_COMPILER=~/.felderize/sql2dbsp-jar-with-dependencies-vX.Y.Z.jar
 FELDERIZE_MODEL=claude-sonnet-4-6
 ```
 
-All three variables are required. `FELDERA_COMPILER` is used only for validation — translation still works without it, but output SQL is not verified. You can also pass `--compiler PATH` and `--model MODEL` per command.
+`ANTHROPIC_API_KEY` and `FELDERIZE_MODEL` are required. `FELDERA_COMPILER` is optional: it is used only for validation, and when unset felderize auto-downloads (and caches) the compiler on first `--validate`. Set it to pin a specific JAR. You can also pass `--compiler PATH` and `--model MODEL` per command.
 
 > **Note:** felderize currently requires an Anthropic API key — only Claude models are supported.
 
@@ -202,7 +215,8 @@ Environment variables (set in `.env`):
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Anthropic API key | (required) |
 | `FELDERIZE_MODEL` | LLM model to use (can also be set with `--model`) | (required, set in `.env`) |
-| `FELDERA_COMPILER` | Path to sql-to-dbsp compiler (can also be set with `--compiler`) | (required for validation) |
+| `FELDERA_COMPILER` | Path to sql-to-dbsp compiler (can also be set with `--compiler`) | (optional; auto-downloaded when unset) |
+| `FELDERIZE_AUTO_DOWNLOAD` | Auto-download the compiler on first `--validate` when none is configured. Set to `0`/`false` to disable. | `1` |
 | `ANTHROPIC_BASE_URL` | Override Anthropic API base URL (for proxies or alternate endpoints) | (optional) |
 
 ## Customizing translation
