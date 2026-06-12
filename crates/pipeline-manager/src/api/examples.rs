@@ -49,6 +49,7 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
             profile: Some(CompilationProfile::Optimized),
             cache: true,
             runtime_version: None,
+            use_platform_compiler: false,
         })
         .unwrap(),
         program_version: Version(2),
@@ -137,6 +138,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
             profile: Some(CompilationProfile::Unoptimized),
             cache: true,
             runtime_version: None,
+            use_platform_compiler: false,
         })
         .unwrap(),
         program_version: Version(1),
@@ -335,6 +337,7 @@ pub(crate) fn pipeline_post_put() -> PostPutPipeline {
             profile: Some(CompilationProfile::Optimized),
             cache: true,
             runtime_version: None,
+            use_platform_compiler: false,
         }),
     }
 }

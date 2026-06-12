@@ -577,6 +577,7 @@ pub async fn compiler_precompile(
         profile: None, // The pre-compilation will use the compiler configuration default profile
         cache: false,
         runtime_version: None,
+        use_platform_compiler: false,
     };
     let program_config = serde_json::to_value(&program_config).map_err(|e| {
         CommonError::json_serialization_error(

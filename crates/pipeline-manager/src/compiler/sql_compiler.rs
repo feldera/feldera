@@ -515,17 +515,24 @@ pub(crate) async fn perform_sql_compilation(
     })?;
 
     let runtime_selector = program_config.runtime_version();
+    let use_platform_compiler =
+        program_config.use_platform_compiler && !runtime_selector.is_platform();
     assert!(has_unstable_feature("runtime_version") || runtime_selector.is_platform());
     let pipeline_name = pipeline_name.as_deref().unwrap_or("N/A");
     info!(
         pipeline_id = %pipeline_id,
         pipeline = pipeline_name,
-        "SQL compilation started (program version: {}{})",
+        "SQL compilation started (program version: {}{}{})",
         program_version,
         if !runtime_selector.is_platform() {
             format!(", runtime version: {runtime_selector}")
         } else {
             "".to_string()
+        },
+        if use_platform_compiler {
+            ", using platform compiler"
+        } else {
+            ""
         }
     );
 
@@ -565,8 +572,17 @@ pub(crate) async fn perform_sql_compilation(
         .join("stubs.rs");
 
     // SQL compiler executable
-    let sql_compiler_executable_file_path = determine_sql_compiler_path(config, &runtime_selector);
-    if has_unstable_feature("runtime_version") && !sql_compiler_executable_file_path.exists() {
+    // When use_platform_compiler is set with a non-platform runtime version, use
+    // the platform's SQL compiler JAR directly, bypassing the per-version download.
+    let sql_compiler_executable_file_path = if use_platform_compiler {
+        PathBuf::from(&config.sql_compiler_path)
+    } else {
+        determine_sql_compiler_path(config, &runtime_selector)
+    };
+    if !use_platform_compiler
+        && has_unstable_feature("runtime_version")
+        && !sql_compiler_executable_file_path.exists()
+    {
         fetch_sql_compiler(config, &runtime_selector).await?;
         // Either executable exists now or we error'd out
         assert!(sql_compiler_executable_file_path.exists());

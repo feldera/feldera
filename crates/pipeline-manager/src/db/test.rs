@@ -353,6 +353,7 @@ fn map_val_to_limited_program_config(val: ProgramConfigPropVal) -> serde_json::V
             },
             cache: val.3,
             runtime_version: None,
+            use_platform_compiler: false,
         })
         .unwrap()
     }
@@ -852,6 +853,7 @@ async fn pipeline_retrieval() {
                     profile: Some(CompilationProfile::Unoptimized),
                     cache: true,
                     runtime_version: None,
+                    use_platform_compiler: false,
                 })
                 .unwrap(),
             },
@@ -895,6 +897,7 @@ async fn pipeline_retrieval() {
                     profile: Some(CompilationProfile::Unoptimized),
                     cache: false,
                     runtime_version: None,
+                    use_platform_compiler: false,
                 })
                 .unwrap(),
             },
@@ -1154,6 +1157,7 @@ async fn pipeline_versioning() {
         profile: Some(CompilationProfile::Dev),
         cache: false,
         runtime_version: None,
+        use_platform_compiler: false,
     })
     .unwrap();
     handle
