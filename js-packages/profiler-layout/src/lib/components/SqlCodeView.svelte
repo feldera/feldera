@@ -1,3 +1,15 @@
+<script lang="ts" module>
+  import {
+    FELDERA_DARK_THEME,
+    FELDERA_LIGHT_THEME,
+    registerFelderaMonacoThemes
+  } from './sqlCodeTheme'
+
+  // Define the themes once per module load — Monaco's `defineTheme` is idempotent, and the
+  // values here match the pipeline editor's registration so co-mounting both views is safe.
+  registerFelderaMonacoThemes()
+</script>
+
 <script lang="ts">
   import { MonacoEditor, setSelections } from 'common-ui'
   import * as monaco from 'monaco-editor'
@@ -56,7 +68,7 @@
   extras={{ isDarkMode }}
   options={{
     readOnly: true,
-    theme: isDarkMode ? 'vs-dark' : 'vs',
+    theme: isDarkMode ? FELDERA_DARK_THEME : FELDERA_LIGHT_THEME,
     automaticLayout: true,
     lineNumbersMinChars: 3,
     minimap: { enabled: false },
