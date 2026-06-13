@@ -868,6 +868,9 @@ export class CytographRendering {
             .on('click', 'node', (e) => {
                 // Hide previous node information if any
                 this.hideNodeInformation();
+                // Fires before the attrs payload so consumers can switch view state without
+                // inferring it from data (distinguishes a click from a programmatic refresh).
+                this.callbacks.onNodeClick?.(e.target.id());
                 // Display current node
                 this.displayEventTargetAttributes(e, true);
             })

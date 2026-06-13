@@ -16,7 +16,7 @@ export {
   TriageResultsView
 }
 export type { ZipItem } from 'but-unzip'
-export { createLookupCoordinator, type LookupCoordinator } from './functions/lookup'
 export { createLoadGuard } from './functions/loadGuard'
+export { createLookupCoordinator, type LookupCoordinator } from './functions/lookup'
 export type { ProcessedProfile } from './functions/processZipBundle'
 export { getSuitableProfiles, processProfileFiles } from './functions/processZipBundle'

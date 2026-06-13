@@ -23,7 +23,9 @@
   let search: SearchState = $state(emptySearchState)
 
   $effect(() => {
-    if (!lookup) return
+    if (!lookup) {
+      return
+    }
     return lookup.register(lookupTabId, (query) => {
       search = advanceSearch(search, query ? { kind: 'substring', query } : null)
     })

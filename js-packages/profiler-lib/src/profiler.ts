@@ -71,6 +71,10 @@ export interface ProfilerCallbacks {
 
     /** Called when a node is double-clicked. */
     onNodeDoubleClick?: (nodeId: string, type: 'group' | 'leaf') => void;
+
+    /** User-initiated single-click on a node (not fired by `showGlobalMetrics` / `showTopNodes`).
+     *  Fires before the matching `displayNodeAttributes` so consumers can switch view state. */
+    onNodeClick?: (nodeId: string) => void;
 }
 
 export interface VisualizerConfig {
