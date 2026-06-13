@@ -10,7 +10,7 @@ use dbsp::{
     Circuit, DynZWeight, OrdZSet, RootCircuit, Runtime, Stream, ZWeight,
     circuit::{LocalStoreMarker, WorkerLocation, WorkerLocations},
     dynamic::{DowncastTrait, DynData},
-    operator::communication::{Mailbox, new_exchange_operators},
+    operator::communication::{ExchangeActivity, Mailbox, new_exchange_operators},
     storage::file::to_bytes,
     trace::{
         BatchReader, BatchReaderFactories, Cursor, OrdIndexedWSet as DynOrdIndexedWSet,
@@ -315,6 +315,7 @@ pub fn build_string_interner(
                 snapshot.extend(remote_snapshot);
             }
         },
+        ExchangeActivity::AllSteps,
     );
     let by_id = match exchange {
         Some((sender, receiver)) => interned_strings

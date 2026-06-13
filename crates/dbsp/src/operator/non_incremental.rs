@@ -96,7 +96,7 @@ impl NonIterativeExecutor {
         Self {
             scheduler: DynamicScheduler::new(),
             flush: Cell::new(false),
-            flush_consensus: Consensus::new(),
+            flush_consensus: Consensus::new("flush"),
         }
     }
 }

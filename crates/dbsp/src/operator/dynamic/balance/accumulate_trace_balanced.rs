@@ -20,7 +20,7 @@ use crate::{
     operator::{
         Z1,
         async_stream_operators::{StreamingTernarySinkOperator, StreamingTernarySinkWrapper},
-        communication::{Exchange, ExchangeReceiver},
+        communication::{Exchange, ExchangeActivity, ExchangeReceiver},
         dynamic::{
             accumulate_trace::{AccumulateBoundsId, AccumulateTraceAppend, AccumulateZ1Trace},
             balance::{
@@ -142,13 +142,12 @@ where
                     // during the current transaction. It will be set to `true` exactly once per transaction.
                     // Once all senders are flushed, the receiver can report itself as flushed too.
                     let exchange: Arc<Exchange<(B, bool)>> =
-                        Exchange::with_runtime(&runtime, exchange_id);
+                        Exchange::with_runtime(&runtime, exchange_id, ExchangeActivity::AllSteps);
 
                     // Exchange receiver
                     let batch_factories_clone = batch_factories.clone();
 
                     let receiver = circuit.add_source(ExchangeReceiver::new(
-                        worker_index,
                         Some(location),
                         exchange.clone(),
                         || Vec::new(),

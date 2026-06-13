@@ -16,7 +16,7 @@ use crate::{
     },
     circuit_cache_key,
     dynamic::{Data, DataTrait, DynPair, DynPairs, Factory},
-    operator::communication::{Mailbox, new_exchange_operators},
+    operator::communication::{ExchangeActivity, Mailbox, new_exchange_operators},
     storage::file::SerializerInner,
     trace::{
         Batch, BatchReader, Builder, IndexedWSetSerializer, deserialize_indexed_wset, merge_batches,
@@ -35,6 +35,191 @@ fn all_workers() -> Range<usize> {
     0..Runtime::num_workers()
 }
 
+/// Builder for sharding a batch or pairs.
+pub struct Sharder<'a, C, B> {
+    stream: &'a Stream<C, B>,
+    workers: Range<usize>,
+    activity: ExchangeActivity,
+}
+
+impl<'a, C, B> Sharder<'a, C, B>
+where
+    C: Circuit,
+{
+    /// Sets `workers` as the range of workers to shard to.  This is useful for
+    /// sharding to workers on one particular host in a multihost pipeline.  By
+    /// default, sharding happens across all workers.
+    pub fn with_workers(self, workers: Range<usize>) -> Self {
+        Self { workers, ..self }
+    }
+
+    /// Returns the sharder configured to be active during `activity`.  The
+    /// default is [ExchangeActivity::AllSteps]
+    pub fn with_activity(self, activity: ExchangeActivity) -> Self {
+        Self { activity, ..self }
+    }
+
+    /// Shards the stream with output to a batch of the same kind.
+    #[track_caller]
+    pub fn shard(self, factories: &B::Factories) -> Stream<C, B>
+    where
+        B: Batch<Time = ()> + Clone + Send,
+    {
+        self.shard_generic_ref(factories)
+            .unwrap_or_else(|| self.stream.clone())
+    }
+}
+
+impl<'a, C, IB> Sharder<'a, C, IB>
+where
+    C: Circuit,
+    IB: BatchReader<Time = ()> + Clone,
+{
+    /// Shards the stream with output to batch type `OB`.  If the stream doesn't
+    /// need to be sharded because there is only a single worker, returns
+    /// `None`.
+    #[track_caller]
+    pub fn shard_generic<OB>(self, factories: &OB::Factories) -> Option<Stream<C, OB>>
+    where
+        OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R> + Send,
+    {
+        self.shard_generic_ref(factories)
+    }
+
+    #[track_caller]
+    fn shard_generic_ref<OB>(&self, factories: &OB::Factories) -> Option<Stream<C, OB>>
+    where
+        OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R> + Send,
+    {
+        if Runtime::num_workers() == 1 {
+            return None;
+        }
+        let location = Location::caller();
+        let output = self
+            .stream
+            .circuit()
+            .cache_get_or_insert_with(
+                ShardId::new((self.stream.stream_id(), self.workers.clone())),
+                move || {
+                    // As a minor optimization, we reuse this array across all invocations
+                    // of the sharding operator.
+                    let mut builders = Vec::with_capacity(Runtime::num_workers());
+                    let factories_clone2 = factories.clone();
+                    let factories_clone3 = factories.clone();
+                    let factories_clone4 = factories.clone();
+                    let workers_clone = self.workers.clone();
+                    let workers_clone2 = self.workers.clone();
+
+                    let output = self.stream.circuit().region("shard", || {
+                        let (sender, receiver) = new_exchange_operators(
+                            Some(location),
+                            || Vec::new(),
+                            move |batch: IB, batches: &mut Vec<Mailbox<OB>>| {
+                                shard_batch(
+                                    batch,
+                                    &workers_clone,
+                                    &mut builders,
+                                    batches,
+                                    &factories_clone3,
+                                );
+                            },
+                            move |data| deserialize_indexed_wset(&factories_clone4, &data),
+                            |batches: &mut Vec<OB>, batch: OB| batches.push(batch),
+                            self.activity,
+                        )
+                        .unwrap();
+
+                        self.stream
+                            .circuit()
+                            .add_exchange(sender, receiver, self.stream)
+                            .apply_owned_named("merge shards", move |batches| {
+                                merge_batches(&factories_clone2, batches, &None, &None)
+                            })
+                    });
+
+                    self.stream.circuit().cache_insert(
+                        ShardId::new((output.stream_id(), workers_clone2)),
+                        output.clone(),
+                    );
+
+                    self.stream
+                        .circuit()
+                        .cache_insert(UnshardId::new(output.stream_id()), self.stream.clone());
+
+                    output.set_persistent_id(
+                        self.stream
+                            .get_persistent_id()
+                            .map(|name| format!("{name}.shard"))
+                            .as_deref(),
+                    )
+                },
+            )
+            .clone();
+
+        Some(output)
+    }
+}
+
+impl<'a, C, K, V> Sharder<'a, C, Vec<Box<DynPairs<K, V>>>>
+where
+    C: Circuit,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+{
+    /// Shards a vector of pairs across workers.
+    #[track_caller]
+    pub fn shard_pairs(
+        self,
+        pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
+    ) -> Stream<C, Vec<Box<DynPairs<K, V>>>> {
+        if self.stream.is_sharded() {
+            return self.stream.clone();
+        }
+
+        let location = Location::caller();
+
+        let (sender, receiver) = new_exchange_operators(
+            Some(location),
+            Vec::new,
+            move |input_pairs: Vec<Box<DynPairs<K, V>>>,
+                  output_pairs: &mut Vec<Mailbox<Box<DynPairs<K, V>>>>| {
+                shard_pairs(input_pairs, &self.workers, output_pairs, pairs_factory);
+            },
+            move |data| deserialize_pairs(&data, pairs_factory),
+            |output_pairs: &mut Vec<Box<DynPairs<K, V>>>, batch: Box<DynPairs<K, V>>| {
+                output_pairs.push(batch);
+            },
+            self.activity,
+        )
+        .unwrap();
+
+        let output = self
+            .stream
+            .circuit()
+            .add_exchange(sender, receiver, self.stream);
+
+        output.set_persistent_id(
+            self.stream
+                .get_persistent_id()
+                .map(|name| format!("{name}.shard"))
+                .as_deref(),
+        );
+        output
+    }
+}
+
+impl<C, B> Stream<C, B> {
+    /// Constructs a [Sharder] builder for sharding a batch or pairs with
+    /// flexible configuration.
+    pub fn dyn_sharder(&self) -> Sharder<'_, C, B> {
+        Sharder {
+            stream: self,
+            activity: ExchangeActivity::AllSteps,
+            workers: all_workers(),
+        }
+    }
+}
+
 impl<C, IB> Stream<C, IB>
 where
     C: Circuit,
@@ -46,12 +231,7 @@ where
     where
         IB: Batch + Send,
     {
-        // `shard_generic` returns `None` if there is only one worker thread
-        // and hence sharding is a no-op.  In this case, we simply return the
-        // input stream.  This allows us to use `shard` unconditionally without
-        // incurring any overhead in the single-threaded case.
-        self.dyn_shard_generic(factories)
-            .unwrap_or_else(|| self.clone())
+        self.dyn_sharder().shard(factories)
     }
 
     /// See [`Stream::shard_workers`].
@@ -64,13 +244,7 @@ where
     where
         IB: Batch + Send,
     {
-        // `shard_generic_workers` returns `None` if there is only one worker
-        // thread and hence sharding is a no-op.  In this case, we simply return
-        // the input stream.  This allows us to use `shard_workers`
-        // unconditionally without incurring any overhead in the single-threaded
-        // case.
-        self.dyn_shard_generic_workers(workers, factories)
-            .unwrap_or_else(|| self.clone())
+        self.dyn_sharder().with_workers(workers).shard(factories)
     }
 
     /// Like [`Self::dyn_shard`], but can assemble the results into any output batch
@@ -83,7 +257,7 @@ where
     where
         OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R> + Send,
     {
-        self.dyn_shard_generic_workers(all_workers(), factories)
+        self.dyn_sharder().shard_generic(factories)
     }
 
     /// Like [`Self::dyn_shard`], but can assemble the results into any output batch
@@ -100,67 +274,9 @@ where
     where
         OB: Batch<Key = IB::Key, Val = IB::Val, Time = (), R = IB::R> + Send,
     {
-        if Runtime::num_workers() == 1 {
-            return None;
-        }
-        let location = Location::caller();
-        let output = self
-            .circuit()
-            .cache_get_or_insert_with(
-                ShardId::new((self.stream_id(), workers.clone())),
-                move || {
-                    // As a minor optimization, we reuse this array across all invocations
-                    // of the sharding operator.
-                    let mut builders = Vec::with_capacity(Runtime::num_workers());
-                    let factories_clone2 = factories.clone();
-                    let factories_clone3 = factories.clone();
-                    let factories_clone4 = factories.clone();
-                    let workers_clone = workers.clone();
-                    let workers_clone2 = workers.clone();
-
-                    let output = self.circuit().region("shard", || {
-                        let (sender, receiver) = new_exchange_operators(
-                            Some(location),
-                            || Vec::new(),
-                            move |batch: IB, batches: &mut Vec<Mailbox<OB>>| {
-                                shard_batch(
-                                    batch,
-                                    &workers_clone,
-                                    &mut builders,
-                                    batches,
-                                    &factories_clone3,
-                                );
-                            },
-                            move |data| deserialize_indexed_wset(&factories_clone4, &data),
-                            |batches: &mut Vec<OB>, batch: OB| batches.push(batch),
-                        )
-                        .unwrap();
-
-                        self.circuit()
-                            .add_exchange(sender, receiver, self)
-                            .apply_owned_named("merge shards", move |batches| {
-                                merge_batches(&factories_clone2, batches, &None, &None)
-                            })
-                    });
-
-                    self.circuit().cache_insert(
-                        ShardId::new((output.stream_id(), workers_clone2)),
-                        output.clone(),
-                    );
-
-                    self.circuit()
-                        .cache_insert(UnshardId::new(output.stream_id()), self.clone());
-
-                    output.set_persistent_id(
-                        self.get_persistent_id()
-                            .map(|name| format!("{name}.shard"))
-                            .as_deref(),
-                    )
-                },
-            )
-            .clone();
-
-        Some(output)
+        self.dyn_sharder()
+            .with_workers(workers)
+            .shard_generic(factories)
     }
 }
 
@@ -175,34 +291,7 @@ where
         &self,
         pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
     ) -> Stream<C, Vec<Box<DynPairs<K, V>>>> {
-        if self.is_sharded() {
-            return self.clone();
-        }
-
-        let location = Location::caller();
-
-        let (sender, receiver) = new_exchange_operators(
-            Some(location),
-            Vec::new,
-            move |input_pairs: Vec<Box<DynPairs<K, V>>>,
-                  output_pairs: &mut Vec<Mailbox<Box<DynPairs<K, V>>>>| {
-                shard_pairs(input_pairs, &all_workers(), output_pairs, pairs_factory);
-            },
-            move |data| deserialize_pairs(&data, pairs_factory),
-            |output_pairs: &mut Vec<Box<DynPairs<K, V>>>, batch: Box<DynPairs<K, V>>| {
-                output_pairs.push(batch);
-            },
-        )
-        .unwrap();
-
-        let output = self.circuit().add_exchange(sender, receiver, self);
-
-        output.set_persistent_id(
-            self.get_persistent_id()
-                .map(|name| format!("{name}.shard"))
-                .as_deref(),
-        );
-        output
+        self.dyn_sharder().shard_pairs(pairs_factory)
     }
 }
 
@@ -535,17 +624,25 @@ where
     /// across workers, otherwise this will cause the dataflow to yield
     /// incorrect results
     pub fn mark_sharded(&self) -> Self {
-        self.circuit().cache_insert(
-            ShardId::new((self.stream_id(), all_workers())),
-            self.clone(),
-        );
+        self.mark_sharded_workers(all_workers())
+    }
+
+    pub fn mark_sharded_workers(&self, workers: Range<usize>) -> Self {
+        self.circuit()
+            .cache_insert(ShardId::new((self.stream_id(), workers)), self.clone());
         self.clone()
     }
 
     /// Returns `true` if a sharded version of the current stream exists
     pub fn has_sharded_version(&self) -> bool {
+        self.has_workers_sharded_version(all_workers())
+    }
+
+    /// Returns `true` if a version of the current stream sharded to `workers`
+    /// exists.
+    pub fn has_workers_sharded_version(&self, workers: Range<usize>) -> bool {
         self.circuit()
-            .cache_contains(&ShardId::<C, T>::new((self.stream_id(), all_workers())))
+            .cache_contains(&ShardId::<C, T>::new((self.stream_id(), workers)))
     }
 
     pub fn get_sharded_version(&self) -> Option<Self> {
