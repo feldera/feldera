@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
@@ -12,6 +12,7 @@ use apache_avro::{
     types::Value as AvroValue,
 };
 use arrow::record_batch::RecordBatch;
+use aws_sdk_dynamodb::types::AttributeValue;
 use dbsp::circuit::NodeId;
 use dbsp::dynamic::{ClonableTrait, DynData, DynVec, Erase, Factory};
 use dbsp::operator::StagedBuffers;
@@ -22,8 +23,6 @@ use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::SqlSerdeConfig;
 use serde_arrow::ArrayBuilder;
-#[cfg(feature = "with-avro")]
-use std::collections::HashMap;
 
 use crate::errors::controller::ControllerError;
 use crate::format::InputBuffer;
@@ -46,6 +45,8 @@ pub enum RecordFormat {
     #[cfg(feature = "with-avro")]
     Avro,
     Raw(String),
+    /// Output-only format for the DynamoDB connector.
+    DynamoDB,
 }
 
 /// An input handle that deserializes and buffers records.
@@ -507,6 +508,10 @@ impl SerCursor for SplitCursor<'_> {
         self.cursor.key_to_json()
     }
 
+    fn key_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>> {
+        self.cursor.key_to_dynamodb_item()
+    }
+
     fn serialize_key_fields(
         &mut self,
         fields: &HashSet<String>,
@@ -568,6 +573,10 @@ impl SerCursor for SplitCursor<'_> {
 
     fn val_to_json(&mut self) -> AnyResult<serde_json::Value> {
         self.cursor.val_to_json()
+    }
+
+    fn val_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>> {
+        self.cursor.val_to_dynamodb_item()
     }
 
     #[cfg(feature = "with-avro")]
@@ -668,6 +677,10 @@ impl<'a> SerCursor for SerCursorFlattened<'a> {
         self.cursor.val_to_json()
     }
 
+    fn key_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>> {
+        self.cursor.val_to_dynamodb_item()
+    }
+
     fn serialize_key_fields(
         &mut self,
         fields: &HashSet<String>,
@@ -728,6 +741,10 @@ impl<'a> SerCursor for SerCursorFlattened<'a> {
 
     fn val_to_json(&mut self) -> AnyResult<serde_json::Value> {
         panic!("val_to_json is not supported for flattened cursors");
+    }
+
+    fn val_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>> {
+        panic!("val_to_dynamodb_item is not supported for flattened cursors");
     }
 
     #[cfg(feature = "with-avro")]
@@ -801,6 +818,9 @@ pub trait SerCursor: Send {
     /// representation of the key.
     fn key_to_json(&mut self) -> AnyResult<serde_json::Value>;
 
+    /// Serialize current key to a DynamoDB item.
+    fn key_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>>;
+
     /// Like `serialize_key`, but only serializes the specified fields of the key.
     fn serialize_key_fields(
         &mut self,
@@ -854,6 +874,9 @@ pub trait SerCursor: Send {
     /// Convert value to JSON. Used for error reporting to generate a human-readable
     /// representation of the value.
     fn val_to_json(&mut self) -> AnyResult<serde_json::Value>;
+
+    /// Serialize current value to a DynamoDB item.
+    fn val_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>>;
 
     #[cfg(feature = "with-avro")]
     /// Convert current value to Avro.
@@ -985,6 +1008,10 @@ impl SerCursor for CursorWithPolarity<'_> {
         self.cursor.key_to_json()
     }
 
+    fn key_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>> {
+        self.cursor.key_to_dynamodb_item()
+    }
+
     fn serialize_key_fields(
         &mut self,
         fields: &HashSet<String>,
@@ -1046,6 +1073,10 @@ impl SerCursor for CursorWithPolarity<'_> {
 
     fn val_to_json(&mut self) -> AnyResult<serde_json::Value> {
         self.cursor.val_to_json()
+    }
+
+    fn val_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>> {
+        self.cursor.val_to_dynamodb_item()
     }
 
     #[cfg(feature = "with-avro")]

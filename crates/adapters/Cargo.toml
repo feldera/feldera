@@ -78,6 +78,7 @@ crossbeam = { workspace = true }
 dbsp = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
+serde_dynamo = { workspace = true }
 erased-serde = { workspace = true }
 serde_yaml = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
@@ -91,6 +92,7 @@ rdkafka = { workspace = true, features = [
     "libz",
 ], optional = true }
 aws-config = { workspace = true }
+aws-sdk-dynamodb = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 aws-types = { workspace = true }
 actix = { workspace = true }
@@ -252,6 +254,7 @@ required-features = ["with-avro"]
 name = "postgres_output"
 harness = false
 required-features = ["bench-mode"]
+
 
 [[bench]]
 name = "delta_encoder"

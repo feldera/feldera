@@ -182,6 +182,9 @@ where
                 self.clone(),
                 (raw_serde_config(), column_name.clone()),
             ))),
+            RecordFormat::DynamoDB => {
+                unreachable!("DynamoDB is an output-only format")
+            }
         }
     }
 

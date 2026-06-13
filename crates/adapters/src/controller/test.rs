@@ -2951,6 +2951,65 @@ fn test_custom_connector_metrics_prometheus_output() {
     );
 }
 
+/// Test that custom connector metrics registered on output endpoints are
+/// included in Prometheus output.
+#[test]
+fn test_custom_output_connector_metrics_prometheus_output() {
+    use crate::{
+        ControllerStatus,
+        controller::write_custom_metrics,
+        server::metrics::{LabelStack, MetricsWriter, PrometheusFormatter},
+    };
+    use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
+    use feldera_types::config::OutputEndpointConfig;
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    struct MockMetrics;
+
+    impl ConnectorMetrics for MockMetrics {
+        fn metrics(&self) -> Vec<(&'static str, &'static str, ValueType, f64)> {
+            vec![(
+                "dynamodb_output_retries_total",
+                "Total number of DynamoDB write retries performed by the output connector.",
+                ValueType::Counter,
+                3.0,
+            )]
+        }
+    }
+
+    let config = serde_json::from_value(json!({
+        "name": "test_output_custom_metrics",
+        "workers": 1,
+    }))
+    .unwrap();
+    let status = ControllerStatus::new(config, 0, None, Uuid::nil());
+
+    let output_config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": "s",
+        "transport": { "name": "http_output", "config": {} },
+        "format": { "name": "json", "config": {} }
+    }))
+    .unwrap();
+    status.add_output(&0, "dynamodb_out", &output_config, None);
+    status.set_output_custom_metrics(0, Arc::new(MockMetrics));
+
+    let mut writer = MetricsWriter::<PrometheusFormatter>::new();
+    let labels = LabelStack::new();
+    write_custom_metrics(&status, &mut writer, &labels);
+    let output = writer.into_output();
+
+    assert!(
+        output.contains("dynamodb_output_retries_total"),
+        "output missing dynamodb_output_retries_total:\n{output}"
+    );
+    assert!(
+        output.contains(r#"endpoint="dynamodb_out""#),
+        "output missing endpoint label:\n{output}"
+    );
+    assert!(output.contains("3"), "output missing value 3:\n{output}");
+}
+
 /// Test that when two endpoints register the same custom metric name, the
 /// grouping logic emits a single `# TYPE` header for that metric (Prometheus
 /// format violation fix).

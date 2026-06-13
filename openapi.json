@@ -8912,6 +8912,87 @@
           }
         ]
       },
+      "DynamoDBWriteMode": {
+        "type": "string",
+        "description": "DynamoDB write API used by the output connector.",
+        "enum": [
+          "batch",
+          "transactional"
+        ]
+      },
+      "DynamoDBWriterConfig": {
+        "type": "object",
+        "description": "DynamoDB output connector configuration.",
+        "required": [
+          "table",
+          "region"
+        ],
+        "properties": {
+          "aws_access_key_id": {
+            "type": "string",
+            "description": "AWS access key ID.\n\nIf both `aws_access_key_id` and `aws_secret_access_key` are specified,\nthe connector uses these static credentials. Otherwise it uses the\ndefault AWS credential provider chain, including IAM Roles for Service\nAccounts (IRSA) in EKS.",
+            "nullable": true
+          },
+          "aws_secret_access_key": {
+            "type": "string",
+            "description": "AWS secret access key.",
+            "nullable": true
+          },
+          "batch_size": {
+            "type": "integer",
+            "description": "Maximum number of write requests in one DynamoDB write call.\n\nDynamoDB supports at most 100 for `TransactWriteItems` and at most 25\nfor `BatchWriteItem`. If omitted, the connector uses the maximum for\nthe selected `write_mode`.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "endpoint_url": {
+            "type": "string",
+            "description": "Optional endpoint URL, for example when using a local\nDynamoDB-compatible service.",
+            "nullable": true
+          },
+          "max_buffer_size_bytes": {
+            "type": "integer",
+            "description": "Maximum number of bytes buffered by each worker before flushing writes.\n\nThis is an approximate size based on encoded DynamoDB attributes.",
+            "default": 1048576,
+            "minimum": 0
+          },
+          "max_concurrent_requests": {
+            "type": "integer",
+            "description": "Maximum number of DynamoDB write requests in flight per worker thread.\n\nThe total in-flight request count across the connector is\n`threads × max_concurrent_requests`. Size this accordingly when\ntuning against a provisioned-throughput table to avoid excessive\nthrottling.",
+            "default": 16,
+            "minimum": 0
+          },
+          "max_retries": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum number of retries for a failed or partially-applied DynamoDB write chunk.\n\nFor `batch` writes, `BatchWriteItem` may return some items as \"unprocessed\" in a\nsuccessful 200 response; those are re-submitted and counted as retries. For\n`transactional` writes, a failed `TransactWriteItems` call is retried in full.\n\nTransient errors (throttling, network failures) are first handled transparently by the\nAWS SDK. Only attempts that reach this connector's retry loop count against this limit.\nEach retry waits longer than the previous one (exponential backoff), up to a ceiling\nof roughly 13 seconds.\n\nSet to `null` to retry indefinitely. After the backoff ceiling is reached the connector\nkeeps retrying at that interval, providing backpressure until DynamoDB recovers.\nDefaults to `10`.",
+            "default": 10,
+            "nullable": true,
+            "minimum": 0
+          },
+          "region": {
+            "type": "string",
+            "description": "AWS region."
+          },
+          "table": {
+            "type": "string",
+            "description": "Name of the DynamoDB table to write to."
+          },
+          "threads": {
+            "type": "integer",
+            "description": "Number of worker threads used to encode and write disjoint key ranges.",
+            "default": 1,
+            "minimum": 0
+          },
+          "write_mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DynamoDBWriteMode"
+              }
+            ],
+            "default": "batch"
+          }
+        }
+      },
       "ErrorResponse": {
         "type": "object",
         "description": "Information returned by REST API endpoints on error.",
@@ -13941,6 +14022,24 @@
                 "type": "string",
                 "enum": [
                   "delta_table_output"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/DynamoDBWriterConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "dynamodb_output"
                 ]
               }
             }

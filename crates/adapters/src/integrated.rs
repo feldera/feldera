@@ -8,8 +8,10 @@ use std::sync::{Arc, Weak};
 
 #[cfg(feature = "with-deltalake")]
 pub mod delta_table;
+mod dynamodb;
 mod postgres;
 
+pub use crate::integrated::dynamodb::DynamoDBOutputEndpoint;
 #[cfg(feature = "with-postgres-cdc")]
 use crate::integrated::postgres::PostgresCdcInputEndpoint;
 use crate::integrated::postgres::PostgresInputEndpoint;
@@ -62,6 +64,15 @@ pub fn create_integrated_output_endpoint(
             is_index,
         )?),
         TransportConfig::PostgresOutput(config) => Box::new(PostgresOutputEndpoint::new(
+            endpoint_id,
+            endpoint_name,
+            config,
+            key_schema,
+            schema,
+            controller,
+            is_index,
+        )?),
+        TransportConfig::DynamoDBOutput(config) => Box::new(DynamoDBOutputEndpoint::new(
             endpoint_id,
             endpoint_name,
             config,

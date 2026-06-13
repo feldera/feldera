@@ -55,6 +55,8 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      dynamodb:
+        image: amazon/dynamodb-local:latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -94,6 +96,7 @@ jobs:
           RUST_BACKTRACE: 1
           RUST_TEST_THREADS: 16
           REDIS_URL: redis://localhost:6379/0
+          DYNAMODB_ENDPOINT: http://localhost:8000
           POSTGRES_URL: postgres://postgres:password@localhost:5432
           REDPANDA_BROKERS: 127.0.0.1
           # This thing can't resolve `localhost` (?), needs to be an IP address
