@@ -418,20 +418,20 @@ describe('adhoc-query Query.svelte table — arrowIpcValueToJS serialization', (
     )
 
     // ARRAY → element type lives in `component` (recursively for nested arrays).
-    expect(intArray.columntype.type).toBe('Array')
-    expect(intArray.columntype.component?.type).toBe('Int')
+    expect(intArray.columntype.type).toBe('ARRAY')
+    expect(intArray.columntype.component?.type).toBe('INTEGER')
 
-    expect(intArray2d.columntype.type).toBe('Array')
-    expect(intArray2d.columntype.component?.type).toBe('Array')
-    expect(intArray2d.columntype.component?.component?.type).toBe('Int')
+    expect(intArray2d.columntype.type).toBe('ARRAY')
+    expect(intArray2d.columntype.component?.type).toBe('ARRAY')
+    expect(intArray2d.columntype.component?.component?.type).toBe('INTEGER')
 
     // Leaf precision/scale survive through the element type.
-    expect(decimalArray.columntype.component?.type).toBe('Decimal')
+    expect(decimalArray.columntype.component?.type).toBe('DECIMAL')
     expect(decimalArray.columntype.component?.precision).toBe(38)
     expect(decimalArray.columntype.component?.scale).toBe(10)
 
     // Top-level Decimal also carries precision/scale.
-    expect(topDecimal.columntype.type).toBe('Decimal')
+    expect(topDecimal.columntype.type).toBe('DECIMAL')
     expect(topDecimal.columntype.precision).toBe(38)
     expect(topDecimal.columntype.scale).toBe(10)
   })
