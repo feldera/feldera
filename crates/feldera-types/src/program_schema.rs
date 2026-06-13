@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use utoipa::ToSchema;
+use utoipa::openapi::{ObjectBuilder, RefOr, Schema, SchemaType};
 
 #[cfg(feature = "testing")]
 use proptest::{collection::vec, prelude::any};
@@ -439,8 +440,17 @@ pub enum IntervalUnit {
     YearToMonth,
 }
 
-/// The available SQL types as specified in `CREATE` statements.
-#[derive(ToSchema, Debug, Eq, PartialEq, Clone, Copy)]
+/// The available SQL column types.
+///
+/// The OpenAPI schema for this type is implemented by hand (see the `ToSchema`
+/// impl below) rather than derived, because `SqlType` has hand-written
+/// `Serialize`/`Deserialize` impls that emit Feldera's uppercase wire spellings
+/// (`"BIGINT"`, `"INTEGER"`, `"INTERVAL_DAY"`, …) instead of the Rust variant
+/// names. These wire strings are the platform's encoding of the types on the
+/// JSON API; they are not valid SQL type syntax (SQL writes `INTERVAL DAY`, with
+/// a space). A derived schema would advertise the variant names and thus
+/// disagree with the bytes actually on the wire, breaking generated clients.
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub enum SqlType {
     /// SQL `BOOLEAN` type.
@@ -497,6 +507,126 @@ pub enum SqlType {
     Uuid,
     /// SQL `VARIANT` type.
     Variant,
+}
+
+/// Every wire string `SqlType` can serialize to, in variant order.
+///
+/// This is the single source of truth shared by `Serialize` (via
+/// `SqlType::as_wire_str`) and the OpenAPI schema, so the generated clients see
+/// exactly the values that appear on the wire. The
+/// `sql_type_schema_matches_serialization` test guards that every variant's
+/// serialized form is listed here.
+const SQL_TYPE_VALUES: &[&str] = &[
+    "BOOLEAN",
+    "TINYINT",
+    "SMALLINT",
+    "INTEGER",
+    "BIGINT",
+    "UTINYINT",
+    "USMALLINT",
+    "UINTEGER",
+    "UBIGINT",
+    "REAL",
+    "DOUBLE",
+    "DECIMAL",
+    "CHAR",
+    "VARCHAR",
+    "BINARY",
+    "VARBINARY",
+    "TIME",
+    "DATE",
+    "TIMESTAMP",
+    "TIMESTAMP_TZ",
+    "INTERVAL_DAY",
+    "INTERVAL_DAY_HOUR",
+    "INTERVAL_DAY_MINUTE",
+    "INTERVAL_DAY_SECOND",
+    "INTERVAL_HOUR",
+    "INTERVAL_HOUR_MINUTE",
+    "INTERVAL_HOUR_SECOND",
+    "INTERVAL_MINUTE",
+    "INTERVAL_MINUTE_SECOND",
+    "INTERVAL_MONTH",
+    "INTERVAL_SECOND",
+    "INTERVAL_YEAR",
+    "INTERVAL_YEAR_MONTH",
+    "ARRAY",
+    "STRUCT",
+    "MAP",
+    "NULL",
+    "UUID",
+    "VARIANT",
+];
+
+impl SqlType {
+    /// The uppercase wire spelling of this type — the canonical serialized form
+    /// the platform emits on the JSON API (`"BIGINT"`, `"INTEGER"`,
+    /// `"INTERVAL_DAY"`, …). Note these are wire strings, not valid SQL type
+    /// syntax.
+    pub fn as_wire_str(&self) -> &'static str {
+        match self {
+            SqlType::Boolean => "BOOLEAN",
+            SqlType::TinyInt => "TINYINT",
+            SqlType::SmallInt => "SMALLINT",
+            SqlType::Int => "INTEGER",
+            SqlType::BigInt => "BIGINT",
+            SqlType::UTinyInt => "UTINYINT",
+            SqlType::USmallInt => "USMALLINT",
+            SqlType::UInt => "UINTEGER",
+            SqlType::UBigInt => "UBIGINT",
+            SqlType::Real => "REAL",
+            SqlType::Double => "DOUBLE",
+            SqlType::Decimal => "DECIMAL",
+            SqlType::Char => "CHAR",
+            SqlType::Varchar => "VARCHAR",
+            SqlType::Binary => "BINARY",
+            SqlType::Varbinary => "VARBINARY",
+            SqlType::Time => "TIME",
+            SqlType::Date => "DATE",
+            SqlType::Timestamp => "TIMESTAMP",
+            SqlType::TimestampTz => "TIMESTAMP_TZ",
+            SqlType::Interval(interval_unit) => match interval_unit {
+                IntervalUnit::Day => "INTERVAL_DAY",
+                IntervalUnit::DayToHour => "INTERVAL_DAY_HOUR",
+                IntervalUnit::DayToMinute => "INTERVAL_DAY_MINUTE",
+                IntervalUnit::DayToSecond => "INTERVAL_DAY_SECOND",
+                IntervalUnit::Hour => "INTERVAL_HOUR",
+                IntervalUnit::HourToMinute => "INTERVAL_HOUR_MINUTE",
+                IntervalUnit::HourToSecond => "INTERVAL_HOUR_SECOND",
+                IntervalUnit::Minute => "INTERVAL_MINUTE",
+                IntervalUnit::MinuteToSecond => "INTERVAL_MINUTE_SECOND",
+                IntervalUnit::Month => "INTERVAL_MONTH",
+                IntervalUnit::Second => "INTERVAL_SECOND",
+                IntervalUnit::Year => "INTERVAL_YEAR",
+                IntervalUnit::YearToMonth => "INTERVAL_YEAR_MONTH",
+            },
+            SqlType::Array => "ARRAY",
+            SqlType::Struct => "STRUCT",
+            SqlType::Map => "MAP",
+            SqlType::Null => "NULL",
+            SqlType::Uuid => "UUID",
+            SqlType::Variant => "VARIANT",
+        }
+    }
+}
+
+impl ToSchema<'_> for SqlType {
+    fn schema() -> (&'static str, RefOr<Schema>) {
+        (
+            "SqlType",
+            RefOr::T(Schema::Object(
+                ObjectBuilder::new()
+                    .schema_type(SchemaType::String)
+                    .description(Some(
+                        "The available SQL column types. Each value is the platform's wire \
+                         encoding of the type (e.g. `BIGINT`, `INTEGER`, `INTERVAL_DAY`), not \
+                         valid SQL type syntax.",
+                    ))
+                    .enum_values(Some(SQL_TYPE_VALUES.iter().copied()))
+                    .build(),
+            )),
+        )
+    }
 }
 
 impl Display for SqlType {
@@ -564,50 +694,7 @@ impl Serialize for SqlType {
     where
         S: Serializer,
     {
-        let type_str = match self {
-            SqlType::Boolean => "BOOLEAN",
-            SqlType::TinyInt => "TINYINT",
-            SqlType::SmallInt => "SMALLINT",
-            SqlType::Int => "INTEGER",
-            SqlType::BigInt => "BIGINT",
-            SqlType::UTinyInt => "UTINYINT",
-            SqlType::USmallInt => "USMALLINT",
-            SqlType::UInt => "UINTEGER",
-            SqlType::UBigInt => "UBIGINT",
-            SqlType::Real => "REAL",
-            SqlType::Double => "DOUBLE",
-            SqlType::Decimal => "DECIMAL",
-            SqlType::Char => "CHAR",
-            SqlType::Varchar => "VARCHAR",
-            SqlType::Binary => "BINARY",
-            SqlType::Varbinary => "VARBINARY",
-            SqlType::Time => "TIME",
-            SqlType::Date => "DATE",
-            SqlType::Timestamp => "TIMESTAMP",
-            SqlType::TimestampTz => "TIMESTAMP_TZ",
-            SqlType::Interval(interval_unit) => match interval_unit {
-                IntervalUnit::Day => "INTERVAL_DAY",
-                IntervalUnit::DayToHour => "INTERVAL_DAY_HOUR",
-                IntervalUnit::DayToMinute => "INTERVAL_DAY_MINUTE",
-                IntervalUnit::DayToSecond => "INTERVAL_DAY_SECOND",
-                IntervalUnit::Hour => "INTERVAL_HOUR",
-                IntervalUnit::HourToMinute => "INTERVAL_HOUR_MINUTE",
-                IntervalUnit::HourToSecond => "INTERVAL_HOUR_SECOND",
-                IntervalUnit::Minute => "INTERVAL_MINUTE",
-                IntervalUnit::MinuteToSecond => "INTERVAL_MINUTE_SECOND",
-                IntervalUnit::Month => "INTERVAL_MONTH",
-                IntervalUnit::Second => "INTERVAL_SECOND",
-                IntervalUnit::Year => "INTERVAL_YEAR",
-                IntervalUnit::YearToMonth => "INTERVAL_YEAR_MONTH",
-            },
-            SqlType::Array => "ARRAY",
-            SqlType::Struct => "STRUCT",
-            SqlType::Uuid => "UUID",
-            SqlType::Map => "MAP",
-            SqlType::Null => "NULL",
-            SqlType::Variant => "VARIANT",
-        };
-        serializer.serialize_str(type_str)
+        serializer.serialize_str(self.as_wire_str())
     }
 }
 
@@ -1040,7 +1127,96 @@ impl ColumnType {
 #[cfg(test)]
 mod tests {
     use super::{IntervalUnit, SqlIdentifier};
-    use crate::program_schema::{ColumnType, Field, SqlType};
+    use crate::program_schema::{ColumnType, Field, SQL_TYPE_VALUES, SqlType};
+
+    /// Every `SqlType` variant, with intervals expanded to one entry per unit.
+    fn all_sql_types() -> Vec<SqlType> {
+        let mut types = vec![
+            SqlType::Boolean,
+            SqlType::TinyInt,
+            SqlType::SmallInt,
+            SqlType::Int,
+            SqlType::BigInt,
+            SqlType::UTinyInt,
+            SqlType::USmallInt,
+            SqlType::UInt,
+            SqlType::UBigInt,
+            SqlType::Real,
+            SqlType::Double,
+            SqlType::Decimal,
+            SqlType::Char,
+            SqlType::Varchar,
+            SqlType::Binary,
+            SqlType::Varbinary,
+            SqlType::Time,
+            SqlType::Date,
+            SqlType::Timestamp,
+            SqlType::TimestampTz,
+        ];
+        types.extend(
+            [
+                IntervalUnit::Day,
+                IntervalUnit::DayToHour,
+                IntervalUnit::DayToMinute,
+                IntervalUnit::DayToSecond,
+                IntervalUnit::Hour,
+                IntervalUnit::HourToMinute,
+                IntervalUnit::HourToSecond,
+                IntervalUnit::Minute,
+                IntervalUnit::MinuteToSecond,
+                IntervalUnit::Month,
+                IntervalUnit::Second,
+                IntervalUnit::Year,
+                IntervalUnit::YearToMonth,
+            ]
+            .map(SqlType::Interval),
+        );
+        types.extend([
+            SqlType::Array,
+            SqlType::Struct,
+            SqlType::Map,
+            SqlType::Null,
+            SqlType::Uuid,
+            SqlType::Variant,
+        ]);
+        types
+    }
+
+    /// The OpenAPI schema is generated from `SQL_TYPE_VALUES`, while the wire
+    /// format comes from `Serialize`. This guards that the two never drift:
+    /// every variant serializes to a value the schema advertises, and the
+    /// schema lists exactly those values (no stale or missing entries).
+    #[test]
+    fn sql_type_schema_matches_serialization() {
+        let serialized: Vec<String> = all_sql_types()
+            .iter()
+            .map(|t| {
+                serde_json::to_value(t)
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect();
+
+        // Every serialized value is advertised by the schema, and vice versa.
+        assert_eq!(
+            serialized,
+            SQL_TYPE_VALUES
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>(),
+            "SQL_TYPE_VALUES (the OpenAPI enum) must match `Serialize` output exactly"
+        );
+
+        // `as_wire_str` and `Serialize` must agree.
+        for t in all_sql_types() {
+            assert_eq!(
+                serde_json::to_value(t).unwrap().as_str().unwrap(),
+                t.as_wire_str()
+            );
+        }
+    }
 
     #[test]
     fn serde_sql_type() {

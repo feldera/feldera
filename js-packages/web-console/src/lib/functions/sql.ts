@@ -1,44 +1,75 @@
 import { BigNumber } from 'bignumber.js'
 import { Dayjs, isDayjs } from 'dayjs'
 import JSONbig from 'true-json-bigint'
-import { match, P } from 'ts-pattern'
+import { match } from 'ts-pattern'
 import type { QueryResult } from '$lib/components/adhoc/Query.svelte'
 import { nonNull } from '$lib/functions/common/function'
 import type { ColumnType, SqlType } from '$lib/services/manager'
 import type { SQLValueJS } from '$lib/types/sql'
 
+/**
+ * Render an `INTERVAL_*` wire value as its ISO SQL spelling, e.g.
+ * `INTERVAL_DAY_HOUR` → `INTERVAL DAY TO HOUR` and `INTERVAL_DAY` → `INTERVAL DAY`.
+ */
+const isoInterval = (type: string): string =>
+  'INTERVAL ' + type.slice('INTERVAL_'.length).split('_').join(' TO ')
+
+/**
+ * Map a Feldera `SqlType` to its ISO SQL display spelling. `SqlType` values are
+ * the platform's uppercase wire encoding (`BIGINT`, `INTEGER`, `INTERVAL_DAY`,
+ * …) — not valid SQL syntax — so this reconstructs the SQL spelling for the
+ * column header: most pass through, but some differ (unsigned ints, `DOUBLE`,
+ * `STRUCT`, intervals, timestamps with time zone).
+ *
+ * Used by `SQLColumnHeader` for both Change Stream headers (built from the
+ * pipeline's program schema) and ad-hoc query headers (built from the Arrow
+ * IPC schema in `apacheArrow.ts`); both deliver the same `SqlType` values.
+ */
 const sqlTypeToIsoSql = (type: SqlType): string =>
   match(type)
     .returnType<string>()
+    .with('BOOLEAN', () => 'BOOLEAN')
+    .with('TINYINT', () => 'TINYINT')
+    .with('SMALLINT', () => 'SMALLINT')
+    .with('INTEGER', () => 'INTEGER')
+    .with('BIGINT', () => 'BIGINT')
+    .with('UTINYINT', () => 'TINYINT UNSIGNED')
+    .with('USMALLINT', () => 'SMALLINT UNSIGNED')
+    .with('UINTEGER', () => 'INTEGER UNSIGNED')
+    .with('UBIGINT', () => 'BIGINT UNSIGNED')
+    .with('REAL', () => 'REAL')
+    .with('DOUBLE', () => 'DOUBLE PRECISION')
+    .with('DECIMAL', () => 'DECIMAL')
+    .with('CHAR', () => 'CHAR')
+    .with('VARCHAR', () => 'VARCHAR')
+    .with('BINARY', () => 'BINARY')
+    .with('VARBINARY', () => 'VARBINARY')
+    .with('TIME', () => 'TIME')
+    .with('DATE', () => 'DATE')
+    .with('TIMESTAMP', () => 'TIMESTAMP')
+    .with('TIMESTAMP_TZ', () => 'TIMESTAMP WITH TIME ZONE')
     .with(
-      { Interval: P.select() },
-      (unit) => 'INTERVAL ' + unit.replace('To', ' TO ').toUpperCase()
+      'INTERVAL_DAY',
+      'INTERVAL_DAY_HOUR',
+      'INTERVAL_DAY_MINUTE',
+      'INTERVAL_DAY_SECOND',
+      'INTERVAL_HOUR',
+      'INTERVAL_HOUR_MINUTE',
+      'INTERVAL_HOUR_SECOND',
+      'INTERVAL_MINUTE',
+      'INTERVAL_MINUTE_SECOND',
+      'INTERVAL_MONTH',
+      'INTERVAL_SECOND',
+      'INTERVAL_YEAR',
+      'INTERVAL_YEAR_MONTH',
+      isoInterval
     )
-    .with('Boolean', () => 'BOOLEAN')
-    .with('TinyInt', () => 'TINYINT')
-    .with('SmallInt', () => 'SMALLINT')
-    .with('Int', () => 'INTEGER')
-    .with('BigInt', () => 'BIGINT')
-    .with('UTinyInt', () => 'TINYINT UNSIGNED')
-    .with('USmallInt', () => 'SMALLINT UNSIGNED')
-    .with('UInt', () => 'INTEGER UNSIGNED')
-    .with('UBigInt', () => 'BIGINT UNSIGNED')
-    .with('Real', () => 'REAL')
-    .with('Double', () => 'DOUBLE PRECISION')
-    .with('Decimal', () => 'DECIMAL')
-    .with('Char', () => 'CHAR')
-    .with('Varchar', () => 'VARCHAR')
-    .with('Binary', () => 'BINARY')
-    .with('Varbinary', () => 'VARBINARY')
-    .with('Time', () => 'TIME')
-    .with('Date', () => 'DATE')
-    .with('Timestamp', () => 'TIMESTAMP')
-    .with('Array', () => 'ARRAY')
-    .with('Struct', () => 'ROW')
-    .with('Map', () => 'MAP')
-    .with('Null', () => 'NULL')
-    .with('Uuid', () => 'UUID')
-    .with('Variant', () => 'VARIANT')
+    .with('ARRAY', () => 'ARRAY')
+    .with('STRUCT', () => 'ROW')
+    .with('MAP', () => 'MAP')
+    .with('NULL', () => 'NULL')
+    .with('UUID', () => 'UUID')
+    .with('VARIANT', () => 'VARIANT')
     .exhaustive()
 
 const displaySQLType = (columntype: ColumnType): string =>
@@ -49,11 +80,8 @@ const displaySQLType = (columntype: ColumnType): string =>
     columntype.scale
   )
 
-export const displaySQLColumnType = ({ columntype }: { columntype: ColumnType }) => {
-  return columntype.type
-    ? displaySQLType(columntype) + (columntype.nullable ? '' : ' NOT NULL')
-    : ''
-}
+export const displaySQLColumnType = ({ columntype }: { columntype: ColumnType }) =>
+  columntype.type ? displaySQLType(columntype) + (columntype.nullable ? '' : ' NOT NULL') : ''
 
 /**
  * Render binary (`VARBINARY`/`BINARY`) bytes as a lowercase hex string, e.g.

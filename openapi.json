@@ -13111,202 +13111,49 @@
         }
       },
       "SqlType": {
-        "oneOf": [
-          {
-            "type": "string",
-            "description": "SQL `BOOLEAN` type.",
-            "enum": [
-              "Boolean"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `TINYINT` type.",
-            "enum": [
-              "TinyInt"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `SMALLINT` or `INT2` type.",
-            "enum": [
-              "SmallInt"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `INTEGER`, `INT`, `SIGNED`, `INT4` type.",
-            "enum": [
-              "Int"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `BIGINT` or `INT64` type.",
-            "enum": [
-              "BigInt"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `TINYINT UNSIGNED` type.",
-            "enum": [
-              "UTinyInt"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `SMALLINT UNSIGNED` type.",
-            "enum": [
-              "USmallInt"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `UNSIGNED`, `INTEGER UNSIGNED`, `INT UNSIGNED` type.",
-            "enum": [
-              "UInt"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `BIGINT UNSIGNED` type.",
-            "enum": [
-              "UBigInt"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `REAL` or `FLOAT4` or `FLOAT32` type.",
-            "enum": [
-              "Real"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `DOUBLE` or `FLOAT8` or `FLOAT64` type.",
-            "enum": [
-              "Double"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `DECIMAL` or `DEC` or `NUMERIC` type.",
-            "enum": [
-              "Decimal"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `CHAR(n)` or `CHARACTER(n)` type.",
-            "enum": [
-              "Char"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `VARCHAR`, `CHARACTER VARYING`, `TEXT`, or `STRING` type.",
-            "enum": [
-              "Varchar"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `BINARY(n)` type.",
-            "enum": [
-              "Binary"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `VARBINARY` or `BYTEA` type.",
-            "enum": [
-              "Varbinary"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `TIME` type.",
-            "enum": [
-              "Time"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `DATE` type.",
-            "enum": [
-              "Date"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `TIMESTAMP` type.",
-            "enum": [
-              "Timestamp"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `TIMESTAMP WITH TIME ZONE` type.",
-            "enum": [
-              "TimestampTz"
-            ]
-          },
-          {
-            "type": "object",
-            "required": [
-              "Interval"
-            ],
-            "properties": {
-              "Interval": {
-                "$ref": "#/components/schemas/IntervalUnit"
-              }
-            }
-          },
-          {
-            "type": "string",
-            "description": "SQL `ARRAY` type.",
-            "enum": [
-              "Array"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "A complex SQL struct type (`CREATE TYPE x ...`).",
-            "enum": [
-              "Struct"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `MAP` type.",
-            "enum": [
-              "Map"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `NULL` type.",
-            "enum": [
-              "Null"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `UUID` type.",
-            "enum": [
-              "Uuid"
-            ]
-          },
-          {
-            "type": "string",
-            "description": "SQL `VARIANT` type.",
-            "enum": [
-              "Variant"
-            ]
-          }
-        ],
-        "description": "The available SQL types as specified in `CREATE` statements."
+        "type": "string",
+        "description": "The available SQL column types. Each value is the platform's wire encoding of the type (e.g. `BIGINT`, `INTEGER`, `INTERVAL_DAY`), not valid SQL type syntax.",
+        "enum": [
+          "BOOLEAN",
+          "TINYINT",
+          "SMALLINT",
+          "INTEGER",
+          "BIGINT",
+          "UTINYINT",
+          "USMALLINT",
+          "UINTEGER",
+          "UBIGINT",
+          "REAL",
+          "DOUBLE",
+          "DECIMAL",
+          "CHAR",
+          "VARCHAR",
+          "BINARY",
+          "VARBINARY",
+          "TIME",
+          "DATE",
+          "TIMESTAMP",
+          "TIMESTAMP_TZ",
+          "INTERVAL_DAY",
+          "INTERVAL_DAY_HOUR",
+          "INTERVAL_DAY_MINUTE",
+          "INTERVAL_DAY_SECOND",
+          "INTERVAL_HOUR",
+          "INTERVAL_HOUR_MINUTE",
+          "INTERVAL_HOUR_SECOND",
+          "INTERVAL_MINUTE",
+          "INTERVAL_MINUTE_SECOND",
+          "INTERVAL_MONTH",
+          "INTERVAL_SECOND",
+          "INTERVAL_YEAR",
+          "INTERVAL_YEAR_MONTH",
+          "ARRAY",
+          "STRUCT",
+          "MAP",
+          "NULL",
+          "UUID",
+          "VARIANT"
+        ]
       },
       "StartFromCheckpoint": {
         "oneOf": [

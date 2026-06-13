@@ -89,6 +89,7 @@
       {:else}
         {@const data = 'insert' in row ? row.insert : row.delete}
         <tr
+          data-testid="box-changestream-row"
           style="{style} {padding}"
           class="h-7 whitespace-nowrap select-none even:bg-surface-50-950"
           oncopy={(e) => {
