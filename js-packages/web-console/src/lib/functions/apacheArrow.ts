@@ -143,36 +143,36 @@ const arrowIpcValueToJS = <T extends { typeId: Type }, Data extends DataType<T['
 const arrowTypeIdToSqlType = (typeId: Type): SqlType | undefined =>
   match(typeId)
     .returnType<SqlType | undefined>()
-    .with(enumValue(Type.Bool), () => 'Boolean')
-    .with(enumValue(Type.Int8), () => 'TinyInt')
-    .with(enumValue(Type.Int16), () => 'SmallInt')
-    .with(enumValue(Type.Int32), enumValue(Type.Int), () => 'Int')
-    .with(enumValue(Type.Int64), () => 'BigInt')
-    .with(enumValue(Type.Uint8), () => 'UTinyInt')
-    .with(enumValue(Type.Uint16), () => 'USmallInt')
-    .with(enumValue(Type.Uint32), () => 'UInt')
-    .with(enumValue(Type.Uint64), () => 'UBigInt')
-    .with(enumValue(Type.Float32), enumValue(Type.Float16), () => 'Real')
-    .with(enumValue(Type.Float64), enumValue(Type.Float), () => 'Double')
-    .with(enumValue(Type.Decimal), () => 'Decimal')
+    .with(enumValue(Type.Bool), () => 'BOOLEAN')
+    .with(enumValue(Type.Int8), () => 'TINYINT')
+    .with(enumValue(Type.Int16), () => 'SMALLINT')
+    .with(enumValue(Type.Int32), enumValue(Type.Int), () => 'INTEGER')
+    .with(enumValue(Type.Int64), () => 'BIGINT')
+    .with(enumValue(Type.Uint8), () => 'UTINYINT')
+    .with(enumValue(Type.Uint16), () => 'USMALLINT')
+    .with(enumValue(Type.Uint32), () => 'UINTEGER')
+    .with(enumValue(Type.Uint64), () => 'UBIGINT')
+    .with(enumValue(Type.Float32), enumValue(Type.Float16), () => 'REAL')
+    .with(enumValue(Type.Float64), enumValue(Type.Float), () => 'DOUBLE')
+    .with(enumValue(Type.Decimal), () => 'DECIMAL')
     .with(
       enumValue(Type.Utf8),
       enumValue(Type.LargeUtf8),
       enumValue(Type.Utf8View),
-      () => 'Varchar'
+      () => 'VARCHAR'
     )
     .with(
       enumValue(Type.Binary),
       enumValue(Type.LargeBinary),
       enumValue(Type.FixedSizeBinary),
       enumValue(Type.BinaryView),
-      () => 'Varbinary'
+      () => 'VARBINARY'
     )
     .with(
       enumValue(Type.Date),
       enumValue(Type.DateDay),
       enumValue(Type.DateMillisecond),
-      () => 'Date'
+      () => 'DATE'
     )
     .with(
       enumValue(Type.Time),
@@ -180,7 +180,7 @@ const arrowTypeIdToSqlType = (typeId: Type): SqlType | undefined =>
       enumValue(Type.TimeMillisecond),
       enumValue(Type.TimeMicrosecond),
       enumValue(Type.TimeNanosecond),
-      () => 'Time'
+      () => 'TIME'
     )
     .with(
       enumValue(Type.Timestamp),
@@ -188,17 +188,17 @@ const arrowTypeIdToSqlType = (typeId: Type): SqlType | undefined =>
       enumValue(Type.TimestampMillisecond),
       enumValue(Type.TimestampMicrosecond),
       enumValue(Type.TimestampNanosecond),
-      () => 'Timestamp'
+      () => 'TIMESTAMP'
     )
-    .with(enumValue(Type.Null), () => 'Null')
+    .with(enumValue(Type.Null), () => 'NULL')
     .with(
       enumValue(Type.List),
       enumValue(Type.FixedSizeList),
       enumValue(Type.LargeList),
-      () => 'Array'
+      () => 'ARRAY'
     )
-    .with(enumValue(Type.Struct), () => 'Struct')
-    .with(enumValue(Type.Map), () => 'Map')
+    .with(enumValue(Type.Struct), () => 'STRUCT')
+    .with(enumValue(Type.Map), () => 'MAP')
     // Arrow types with no Feldera SQL-side equivalent. The SQL column header
     // renderer treats `undefined` as "no type annotation". Listed explicitly so
     // the `.exhaustive()` below fails to compile if apache-arrow ever adds a
@@ -236,16 +236,16 @@ const arrowIntToSqlType = (type: DataType): SqlType => {
   const { bitWidth, isSigned } = type as unknown as { bitWidth: number; isSigned: boolean }
   // [signed, unsigned] SqlType per bit width.
   const byWidth: Record<number, [SqlType, SqlType]> = {
-    8: ['TinyInt', 'UTinyInt'],
-    16: ['SmallInt', 'USmallInt'],
-    32: ['Int', 'UInt'],
-    64: ['BigInt', 'UBigInt']
+    8: ['TINYINT', 'UTINYINT'],
+    16: ['SMALLINT', 'USMALLINT'],
+    32: ['INTEGER', 'UINTEGER'],
+    64: ['BIGINT', 'UBIGINT']
   }
   return (byWidth[bitWidth] ?? byWidth[32])[isSigned ? 0 : 1]
 }
 
 const arrowFloatToSqlType = (type: DataType): SqlType =>
-  (type as unknown as { precision: Precision }).precision === Precision.DOUBLE ? 'Double' : 'Real'
+  (type as unknown as { precision: Precision }).precision === Precision.DOUBLE ? 'DOUBLE' : 'REAL'
 
 /**
  * Recursively translate an Arrow `DataType` into Feldera's `ColumnType`.

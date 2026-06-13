@@ -430,6 +430,7 @@
     >
       <input
         type="checkbox"
+        data-testid="input-changestream-relation-{relation.relationName}"
         class="bg-white-dark m-1 checkbox translate-y-1"
         checked={relation.selected}
         disabled={isDisabled}
