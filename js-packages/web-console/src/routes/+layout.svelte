@@ -14,7 +14,7 @@
 
   import { page } from '$app/state'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
-  import { newDate } from '$lib/compositions/serverTime'
+  import { ServerDate } from '$lib/compositions/serverTime'
   import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
   import { getLicenseMessage } from '$lib/functions/license'
   import { _markRouterReady } from './+layout'
@@ -45,7 +45,7 @@
     if (!page.data.feldera) {
       return
     }
-    upsert(/^license_/, getLicenseMessage(page.data.feldera.config, newDate()))
+    upsert(/^license_/, getLicenseMessage(page.data.feldera.config, new ServerDate()))
   }, 60000)
 </script>
 

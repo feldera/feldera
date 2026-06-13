@@ -1,3 +1,4 @@
+import { ServerDate } from '$lib/compositions/serverTime'
 import { groupBy } from '$lib/functions/common/array'
 import { nonNull } from '$lib/functions/common/function'
 import { discreteDerivative } from '$lib/functions/common/math'
@@ -198,6 +199,20 @@ export const accumulatePipelineMetrics =
       permanent_checkpoint_errors: newData.permanent_checkpoint_errors
     }
   }
+
+/**
+ * Right edge (newest time) of a performance graph's time axis.
+ *
+ * Samples carry server-side timestamps, so the axis must be anchored to the
+ * newest sample rather than to the client clock: any client/server clock skew
+ * would otherwise shift the plotted line relative to the axis and leave the
+ * graph under-filling its width. Before any sample has arrived, fall back to
+ * the server-time estimate so the empty window is still in the right time base.
+ *
+ * @param now - Source of the fallback time; injectable for testing.
+ */
+export const timeSeriesAxisMax = (metrics: TimeSeriesEntry[], now: () => number = ServerDate.now) =>
+  metrics.at(-1)?.t.toNumber() ?? now()
 
 /**
  * @returns Time series of throughput with smoothing window over 3 data intervals

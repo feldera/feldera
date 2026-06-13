@@ -5,9 +5,14 @@
   import { type EChartsType, init, use } from 'echarts/core'
   import { CanvasRenderer } from 'echarts/renderers'
   import { Chart } from 'svelte-echarts'
+  import { ServerDate } from '$lib/compositions/serverTime'
   import { getThemeColor } from '$lib/functions/common/color'
   import { formatQty } from '$lib/functions/format'
-  import { calcPipelineThroughput, type PipelineMetrics } from '$lib/functions/pipelineMetrics'
+  import {
+    calcPipelineThroughput,
+    timeSeriesAxisMax,
+    type PipelineMetrics
+  } from '$lib/functions/pipelineMetrics'
   import type { Pipeline } from '$lib/services/pipelineManager'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
 
@@ -26,6 +31,10 @@
 
   const pipelineName = $derived(pipeline.current.name)
   const throughput = $derived(calcPipelineThroughput(metrics))
+
+  // Anchor the time axis to the newest sample's timestamp rather than to the
+  // client clock.
+  const xAxisMax = $derived(timeSeriesAxisMax(metrics))
 
   const primaryColor = getThemeColor('--color-primary-500').format('hex')
 
@@ -46,8 +55,8 @@
         }
       ],
       xAxis: {
-        min: Date.now() - keepMs,
-        max: Date.now()
+        min: xAxisMax - keepMs,
+        max: xAxisMax
       },
       yAxis: {
         interval: (throughput.yMax - throughput.yMin) / 2,
@@ -72,8 +81,10 @@
       animationDuration: 0,
       animationDurationUpdate: refetchMs,
       type: 'time' as const,
-      min: Date.now() - keepMs - refetchMs,
-      max: Date.now() - refetchMs,
+      // svelte-ignore state_referenced_locally
+      min: ServerDate.now() - keepMs - refetchMs,
+      // svelte-ignore state_referenced_locally
+      max: ServerDate.now() - refetchMs,
       minInterval: 25000,
       maxInterval: 25000,
       axisLabel: {
