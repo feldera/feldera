@@ -205,15 +205,15 @@ public class MapTests extends BaseSQLTests {
                     FROM user_props
                 ) SELECT key
                 FROM ref_profile profile_0, UNNEST(MAP_KEYS(profile_0.contacts)) AS t(key)""");
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO j VALUES('{ "a": "1", "b": 2, "c": [1, 2, 3], "d": null, "e": { "f": 1 } }');""", """
-                 key | weight
-                ------------------------
-                 a| 1
-                 b| 1
-                 c| 1
-                 d| 1
-                 e| 1""");
+                 key
+                -----
+                 a
+                 b
+                 c
+                 d
+                 e""");
     }
 
     @Test
@@ -242,14 +242,14 @@ public class MapTests extends BaseSQLTests {
                     FROM user_props
                 ) SELECT TO_JSON(value)
                 FROM ref_profile profile_0, UNNEST(MAP_VALUES(profile_0.contacts)) AS t(value)""");
-        ccs.step("""
+        ccs.stepWeightOne("""
                 INSERT INTO j VALUES('{ "a": "1", "b": 2, "c": [1, 2, 3], "d": null, "e": { "f": 1 } }');""", """
-                 key | weight
-                ------------------------
-                 "1"| 1
-                 2| 1
-                 [1,2,3]| 1
-                 null| 1
-                 {"f":1}| 1""");
+                 key
+                -----
+                 "1"
+                 2
+                 [1,2,3]
+                 null
+                 {"f":1}""");
     }
 }

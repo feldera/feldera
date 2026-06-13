@@ -56,13 +56,6 @@ public class Regression2Tests extends SqlIoTest {
     }
 
     @Test
-    public void intersectAllTest() {
-        this.statementsFailingInCompilation("""
-                CREATE TABLE T(x INT);
-                CREATE VIEW V AS SELECT * FROM T INTERSECT ALL SELECT * FROM T;""", "Not yet implemented: INTERSECT ALL");
-    }
-
-    @Test
     public void issue5425() {
         this.statementsFailingInCompilation("""
                 CREATE TABLE  tbl(
