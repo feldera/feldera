@@ -1,12 +1,15 @@
 use crate::catalog::{ArrowStream, InputCollectionHandle};
 use crate::format::InputBuffer;
+use crate::integrated::delta_table::deletion_vector::{masked_parquet_table, read_deletion_vector};
 use crate::integrated::delta_table::{delta_input_serde_config, register_storage_handlers};
 use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint};
 use crate::util::JobQueue;
 use crate::{ControllerError, InputConsumer, InputReader, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use arrow::array::BooleanArray;
+use arrow::datatypes::Schema as ArrowSchema;
 use chrono::{DateTime, Utc};
+use datafusion::catalog::TableProvider;
 use datafusion::common::DataFusionError;
 use datafusion::common::arrow::array::RecordBatch;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
@@ -23,10 +26,12 @@ use deltalake::datafusion::prelude::SessionContext;
 use deltalake::datafusion::sql::sqlparser::dialect::GenericDialect;
 use deltalake::datafusion::sql::sqlparser::parser::Parser;
 use deltalake::datafusion::sql::sqlparser::tokenizer::Token;
-use deltalake::kernel::Action;
+use deltalake::kernel::{
+    Action, Add as AddAction, DeletionVectorDescriptor, Remove as RemoveAction,
+};
 use deltalake::logstore::{self, IORuntime};
 use deltalake::table::builder::ensure_table_uri;
-use deltalake::{DeltaTable, DeltaTableBuilder, datafusion};
+use deltalake::{DeltaTable, DeltaTableBuilder, Path, datafusion};
 use feldera_adapterlib::format::{ParseError, StagedInputBuffer};
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{InputQueueEntry, Resume, Watermark, parse_resume_info};
@@ -46,7 +51,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::cmp::min;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Display;
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -129,6 +134,11 @@ fn format_datafusion_error(prefix: &str, e: &DataFusionError) -> String {
     }
 }
 
+/// A deletion vector is only in effect when it flags at least one row.
+fn active_dv(dv: Option<&DeletionVectorDescriptor>) -> Option<&DeletionVectorDescriptor> {
+    dv.filter(|dv| dv.cardinality > 0)
+}
+
 /// Build the `DataFrame` that streams a CDC transaction to the circuit.
 ///
 /// Equivalent (in SQL) to:
@@ -157,10 +167,11 @@ fn format_datafusion_error(prefix: &str, e: &DataFusionError) -> String {
 /// `EXCEPT ALL`, which sorts both relations.
 ///
 /// The filter is parsed against each `DataFrame`'s own schema, so
-/// column references resolve to the correct table qualifier
-/// (`cdc_adds.col` vs `cdc_removes.col`). The two sides cannot share
-/// a single parsed `Expr` because column references would otherwise
-/// point at the wrong relation after `except`.
+/// column references resolve against the correct relation. The two
+/// sides cannot share a single parsed `Expr` because column
+/// references would otherwise point at the wrong relation after
+/// `except`. (`cdc_adds` and `cdc_removes` are labels for the two
+/// sides, not registered tables.)
 ///
 /// Caveat: `EXCEPT ALL` relies on `arrow_row::RowConverter`, which in
 /// the currently pinned `arrow-row` does not support `Map` columns.
@@ -1266,6 +1277,23 @@ impl DeltaTableInputEndpointInner {
                 .contains(&field.name.name())
     }
 
+    /// True if CDC keeps the column named `name`. When `skip_unused_columns`
+    /// is off, keep everything. When on, keep a column only if the circuit
+    /// reads it (`used_sql_columns`) or a connector expression names it
+    /// (`config_referenced_columns`, which also covers Delta metadata columns
+    /// like `__feldera_op` that the SQL schema omits).
+    ///
+    /// The plain and DV-masked CDC sides must apply this same rule, or their
+    /// columns differ and the `UNION ALL` no longer lines up by position. The
+    /// off case needs the explicit `!skip_unused_columns()`: `used_sql_columns`
+    /// holds only SQL columns, but the unprojected frame also carries Delta
+    /// physical columns the SQL table never maps.
+    fn keeps_cdc_column(&self, name: &str) -> bool {
+        !self.skip_unused_columns()
+            || self.used_sql_columns().contains(name)
+            || self.config_referenced_columns().contains(name)
+    }
+
     /// Project `df` to the columns the connector needs when `skip_unused_columns`
     /// is set, mirroring the snapshot path's `SELECT <used_columns>`: keep a
     /// column iff the circuit reads it (`used_sql_columns`) or a connector
@@ -1275,13 +1303,14 @@ impl DeltaTableInputEndpointInner {
     /// expressions can resolve. A Delta table may carry far more physical columns
     /// than the SQL table maps; this keeps the connector from reading the rest
     /// off disk.
+    ///
+    /// The plain `ListingTable` side and the DV-masked side of a CDC transaction
+    /// both project through [`keeps_cdc_column`](Self::keeps_cdc_column), so the
+    /// two relations expose the same columns and their `UNION ALL` lines up.
     fn project_cdc_columns(&self, df: DataFrame) -> AnyResult<DataFrame> {
         if !self.skip_unused_columns() {
             return Ok(df);
         }
-
-        let used = self.used_sql_columns();
-        let referenced = self.config_referenced_columns();
 
         // Filter `df`'s own field list (not the SQL schema) so the projection
         // tracks the read schema if column mapping ever varies it across
@@ -1294,7 +1323,7 @@ impl DeltaTableInputEndpointInner {
             .schema()
             .fields()
             .iter()
-            .filter(|f| used.contains(f.name()) || referenced.contains(f.name()))
+            .filter(|f| self.keeps_cdc_column(f.name()))
             .map(|f| f.name().to_string())
             .collect();
         let kept: Vec<&str> = kept.iter().map(String::as_str).collect();
@@ -2181,7 +2210,7 @@ impl DeltaTableInputEndpointInner {
 
         // The compiled `PhysicalExpr` binds columns by index, so it must see the
         // same schema as the batches it will evaluate. When `skip_unused_columns`
-        // is set, `do_process_cdc_transaction` projects those batches to the CDC
+        // is set, `process_cdc_transaction` projects those batches to the CDC
         // read set via `project_cdc_columns`, so project here through the same
         // helper. Both derive the read set from the same Delta snapshot (this
         // `snapshot` table is registered from it), so the column order matches.
@@ -2759,61 +2788,31 @@ impl DeltaTableInputEndpointInner {
         receiver: &mut Receiver<PipelineState>,
         start_transaction: Option<Option<String>>,
     ) -> AnyResult<()> {
-        let result = self
-            .do_process_cdc_transaction(
-                actions,
-                table,
-                cdc_delete_filter,
-                input_stream,
-                receiver,
-                start_transaction,
-            )
-            .await;
-
-        // Deregister the tables registered by `do_process_cdc_transaction`.
-        // If a table does not exist, there's no harm.
-        let _ = self.datafusion.deregister_table("cdc_adds");
-        let _ = self.datafusion.deregister_table("cdc_removes");
-
-        result
-    }
-
-    async fn do_process_cdc_transaction(
-        &self,
-        actions: &[Action],
-        table: &DeltaTable,
-        cdc_delete_filter: Option<Arc<dyn PhysicalExpr>>,
-        input_stream: &mut dyn ArrowStream,
-        receiver: &mut Receiver<PipelineState>,
-        start_transaction: Option<Option<String>>,
-    ) -> AnyResult<()> {
-        // Collect Add and Remove file paths separately. The query below
-        // subtracts Removes from Adds via `EXCEPT ALL` to cancel rewrites
-        // that don't change logical data.
+        // CDC reads the table as an append-only log: added rows are events,
+        // deletions are ignored. Data files are immutable and keyed by path, so
+        // an Add/Remove pair on the same path only updates that file's deletion
+        // vector (a soft delete or a restore). It writes no new rows, so we skip
+        // both actions without reading the file.
         //
-        // We address files via the table's `root_url()` (e.g. `file:///...` or
-        // `s3://bucket/prefix/`) rather than the synthetic `delta-rs://...`
-        // URL returned by `object_store_url()`. The synthetic URL encodes the
-        // entire table filesystem path into the URL host (slashes become
-        // dashes), which works for DataFusion's `register_object_store`
-        // routing keyed by scheme+host but produces a malformed listing URL
-        // when concatenated with `Add.path`. Using `root_url()` keeps the
-        // listing path real, and `register_object_store(root_url, root_store)`
-        // (done in `start_input_endpoint`) provides the matching store.
-        let log_store = table.log_store();
-        let url = log_store.root_url();
-        let path_of = |p: &str| format!("{}{}", url.as_str(), p);
-        let adds: Vec<String> = actions
+        // We match on path alone, not path plus DV: that catches soft deletes
+        // (same path, changed DV) and stops a restore from re-emitting its rows
+        // as inserts.
+        //
+        // Unmatched actions feed the `EXCEPT ALL` in `build_cdc_dataframe`, each
+        // side masked by its DV so soft-deleted rows are neither emitted nor
+        // used to cancel live rows.
+        let adds: Vec<&AddAction> = actions
             .iter()
             .filter_map(|a| match a {
-                Action::Add(x) if x.data_change => Some(path_of(&x.path)),
+                Action::Add(x) if x.data_change => Some(x),
                 _ => None,
             })
             .collect();
-        let removes: Vec<String> = actions
+        // `BTreeMap` keeps log and processing order deterministic.
+        let mut removes_by_path: BTreeMap<&str, &RemoveAction> = actions
             .iter()
             .filter_map(|a| match a {
-                Action::Remove(x) if x.data_change => Some(path_of(&x.path)),
+                Action::Remove(x) if x.data_change => Some((x.path.as_str(), x)),
                 _ => None,
             })
             .collect();
@@ -2827,50 +2826,42 @@ impl DeltaTableInputEndpointInner {
         let description = format!(
             "CDC transaction with {} adds {:?} and {} removes {:?}",
             adds.len(),
-            &adds,
-            removes.len(),
-            &removes,
+            adds.iter().map(|a| &a.path).collect::<Vec<_>>(),
+            removes_by_path.len(),
+            removes_by_path.keys().collect::<Vec<_>>(),
         );
 
-        // `self.datafusion` is a per-endpoint `SessionContext` and
-        // `process_cdc_transaction` is invoked serially from the single
-        // dedicated `worker_task` loop, so the fixed table names
-        // `cdc_adds`/`cdc_removes` cannot collide across calls.
-        let adds_table = Arc::new(self.create_parquet_table(table, adds, &description).await?);
-        self.datafusion.register_table("cdc_adds", adds_table).map_err(|e| {
-            anyhow!("internal error processing {description}; {REPORT_ERROR}; error registering 'cdc_adds' table: {e}")
-        })?;
+        // Drop add/remove pairs on the same path (metadata-only rewrites).
+        // This loop must run before the removes side is built below: it
+        // drains `removes_by_path` of every matched path, leaving only the
+        // unpaired removes there.
+        let mut add_files: Vec<(&str, Option<&DeletionVectorDescriptor>)> = Vec::new();
+        for add in &adds {
+            if removes_by_path.remove(add.path.as_str()).is_some() {
+                continue;
+            }
+            add_files.push((add.path.as_str(), add.deletion_vector.as_ref()));
+        }
 
-        let adds_df = self.datafusion.table("cdc_adds").await.map_err(|e| {
-            anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading 'cdc_adds' table: {e}")
-        })?;
-
-        // Drop unused columns when `skip_unused_columns` is set, so DataFusion
-        // never reads them off disk. Both sides get the same column list so the
-        // `EXCEPT ALL` in `build_cdc_dataframe` still lines up, and metadata
-        // columns used by `cdc_order_by`/`cdc_delete_filter`/`filter` are kept.
-        let adds_df = self
-            .project_cdc_columns(adds_df)
-            .map_err(|e| anyhow!("internal error processing {description}; {REPORT_ERROR}; {e}"))?;
-
-        let removes_df = if removes.is_empty() {
-            None
-        } else {
-            let removes_table = Arc::new(
-                self.create_parquet_table(table, removes, &description)
-                    .await?,
-            );
-            self.datafusion.register_table("cdc_removes", removes_table).map_err(|e| {
-                anyhow!("internal error processing {description}; {REPORT_ERROR}; error registering 'cdc_removes' table: {e}")
-            })?;
-            let removes_df = self.datafusion.table("cdc_removes").await.map_err(|e| {
-                anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading 'cdc_removes' table: {e}")
-            })?;
-            let removes_df = self.project_cdc_columns(removes_df).map_err(|e| {
-                anyhow!("internal error processing {description}; {REPORT_ERROR}; {e}")
-            })?;
-            Some(removes_df)
+        let Some(adds_df) = self
+            .cdc_side_dataframe(table, &add_files, &description)
+            .await?
+        else {
+            // Every add paired with a remove (a pure soft-delete commit):
+            // no new rows, nothing to emit.
+            return Ok(());
         };
+
+        // The removes left unpaired by the loop above feed the `EXCEPT ALL`;
+        // `cdc_side_dataframe` masks any with an active DV so only live rows
+        // subtract.
+        let remove_files: Vec<(&str, Option<&DeletionVectorDescriptor>)> = removes_by_path
+            .iter()
+            .map(|(path, remove)| (*path, remove.deletion_vector.as_ref()))
+            .collect();
+        let removes_df = self
+            .cdc_side_dataframe(table, &remove_files, &description)
+            .await?;
 
         // The `cdc_order_by` expression is mandatory in CDC mode (enforced
         // by `validate_cdc_config`), so the unwrap is safe.
@@ -2933,6 +2924,155 @@ impl DeltaTableInputEndpointInner {
         })
     }
 
+    /// Build a [`TableProvider`] over the data file at `path` (relative and
+    /// URL-encoded, as the Delta log stores it) with the rows flagged by
+    /// deletion vector `dv` masked out.
+    ///
+    /// `keep` picks the columns to read: the provider declares the snapshot
+    /// schema restricted to them, which doubles as the Parquet projection (see
+    /// [`masked_parquet_table`]). It must match the columns the unmasked side
+    /// keeps, so the two providers mix in one query. It is a predicate rather
+    /// than a fixed list because the callers differ: follow keeps its
+    /// `used_columns`, CDC keeps `keeps_cdc_column`.
+    async fn masked_file_provider(
+        &self,
+        table: &DeltaTable,
+        path: &str,
+        dv: &DeletionVectorDescriptor,
+        keep: impl Fn(&str) -> bool,
+        description: &str,
+    ) -> AnyResult<Arc<dyn TableProvider>> {
+        // Decode the DV into its bitmap of deleted row positions, retrying on
+        // transient object-store failures (the decode is idempotent).
+        let bitmap = self
+            .retry(
+                &format!(
+                    "decoding deletion vector for {description} at table version {:?}",
+                    table.version(),
+                ),
+                None,
+                || read_deletion_vector(dv, table),
+            )
+            .await?;
+
+        let snapshot_schema = table
+            .snapshot()
+            .map_err(|e| anyhow!("error accessing Delta table snapshot for {description}: {e}"))?
+            .snapshot()
+            .arrow_schema();
+
+        // Restrict the schema to the kept columns, preserving field order so
+        // unions with the unmasked side line up.
+        let fields: Vec<_> = snapshot_schema
+            .fields()
+            .iter()
+            .filter(|f| keep(f.name()))
+            .cloned()
+            .collect();
+        let logical_schema = if fields.len() == snapshot_schema.fields().len() {
+            snapshot_schema
+        } else {
+            Arc::new(ArrowSchema::new(fields))
+        };
+
+        // `Add.path` is URL-encoded per the Delta spec; decode it into a
+        // real object-store key.
+        let file_path = Path::from_url_path(path)
+            .map_err(|e| anyhow!("invalid file path '{path}' in Delta log action: {e}"))?;
+
+        masked_parquet_table(
+            table.log_store().object_store(None),
+            file_path,
+            bitmap,
+            logical_schema,
+        )
+        .await
+    }
+
+    /// Build the [`DataFrame`] for one side (adds or removes) of a CDC
+    /// transaction, or `None` when the side has no files.
+    ///
+    /// Each file is `(path, deletion_vector)`. Files with an active DV stream
+    /// through a [`masked_parquet_table`] that drops their deleted rows; the
+    /// rest are read together through one [`ListingTable`]. The pieces combine
+    /// with `UNION ALL`, each restricted to the same CDC read set (the columns
+    /// [`Self::project_cdc_columns`] keeps), so they line up by position for the
+    /// `EXCEPT ALL` in `build_cdc_dataframe` and never decode unused columns.
+    ///
+    /// Plain files use the table's `root_url()`, not the synthetic
+    /// `delta-rs://` URL from `object_store_url()`. The latter folds the table
+    /// path into the URL host (slashes become dashes), which routes DataFusion's
+    /// object store but is malformed once joined with `Add.path`.
+    /// `start_input_endpoint` registers the store under `root_url()`.
+    async fn cdc_side_dataframe(
+        &self,
+        table: &DeltaTable,
+        files: &[(&str, Option<&DeletionVectorDescriptor>)],
+        description: &str,
+    ) -> AnyResult<Option<DataFrame>> {
+        // Split by read strategy: files with an active DV are masked one by
+        // one; the rest are read together in one listing.
+        let mut plain: Vec<&str> = Vec::new();
+        let mut masked: Vec<(&str, &DeletionVectorDescriptor)> = Vec::new();
+        for &(path, dv) in files {
+            match active_dv(dv) {
+                Some(dv) => masked.push((path, dv)),
+                None => plain.push(path),
+            }
+        }
+
+        let mut dfs: Vec<DataFrame> = Vec::new();
+
+        if !plain.is_empty() {
+            let log_store = table.log_store();
+            let root_url = log_store.root_url();
+            let files = plain
+                .iter()
+                .map(|p| format!("{}{}", root_url.as_str(), p))
+                .collect();
+            let listing_table =
+                Arc::new(self.create_parquet_table(table, files, description).await?);
+            let df = self.datafusion.read_table(listing_table).map_err(|e| {
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading Parquet files: {e}")
+            })?;
+            // Drop unused columns when `skip_unused_columns` is set, so
+            // DataFusion never reads them off disk.
+            dfs.push(self.project_cdc_columns(df).map_err(|e| {
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; {e}")
+            })?);
+        }
+
+        for (path, dv) in masked {
+            // Keep the same CDC read set as `project_cdc_columns` applies on the
+            // plain side (via `keeps_cdc_column`), so the two providers union
+            // cleanly.
+            let provider = self
+                .masked_file_provider(
+                    table,
+                    path,
+                    dv,
+                    |name| self.keeps_cdc_column(name),
+                    description,
+                )
+                .await?;
+            dfs.push(self.datafusion.read_table(provider).map_err(|e| {
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading masked file '{path}': {e}")
+            })?);
+        }
+
+        let mut dfs = dfs.into_iter();
+        let Some(first) = dfs.next() else {
+            return Ok(None);
+        };
+        // Every piece is already projected to the kept CDC columns.
+        let df = dfs.try_fold(first, |acc, df| {
+            acc.union(df).map_err(|e| {
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error combining files: {e}")
+            })
+        })?;
+        Ok(Some(df))
+    }
+
     async fn process_action(
         &self,
         action: &Action,
@@ -2942,11 +3082,12 @@ impl DeltaTableInputEndpointInner {
         receiver: &mut Receiver<PipelineState>,
         start_transaction: Option<Option<String>>,
     ) -> AnyResult<()> {
-        let result = match action {
+        match action {
             Action::Add(add) if add.data_change => {
                 self.add_with_polarity(
                     &add.path,
                     true,
+                    add.deletion_vector.as_ref(),
                     table,
                     used_columns,
                     input_stream,
@@ -2961,6 +3102,7 @@ impl DeltaTableInputEndpointInner {
                 self.add_with_polarity(
                     &remove.path,
                     false,
+                    remove.deletion_vector.as_ref(),
                     table,
                     used_columns,
                     input_stream,
@@ -2969,17 +3111,11 @@ impl DeltaTableInputEndpointInner {
                 )
                 .await
             }
-            _ => return Ok(()),
-        };
-
-        // Deregister the table registered by `add_with_polarity`.
-        // If the table does not exist, there's no harm.
-        let _ = self.datafusion.deregister_table("tmp_table");
-
-        result
+            _ => Ok(()),
+        }
     }
 
-    // NOTE: Column projection (follow mode here, CDC mode in `do_process_cdc_transaction`) projects
+    // NOTE: Column projection (follow mode here, CDC mode in `process_cdc_transaction`) projects
     // against the startup snapshot schema, which `create_parquet_table` forces onto every Parquet
     // file we read. This assumes a stable schema across the log versions we follow. DataFusion's
     // schema adapter handles additive evolution (new columns ignored, missing columns read as NULL);
@@ -2990,6 +3126,7 @@ impl DeltaTableInputEndpointInner {
         &self,
         path: &str,
         polarity: bool,
+        deletion_vector: Option<&DeletionVectorDescriptor>,
         table: &DeltaTable,
         used_columns: &[&str],
         input_stream: &mut dyn ArrowStream,
@@ -2998,31 +3135,39 @@ impl DeltaTableInputEndpointInner {
     ) -> AnyResult<()> {
         let description = format!("file '{path}'");
 
-        // Address files via the table's real `root_url()` (e.g. `file:///...`
-        // or `s3://bucket/prefix/`). See `do_process_cdc_transaction` for the
-        // full reasoning on why we don't use `object_store_url()` here.
-        let full_path = format!("{}{}", table.log_store().root_url().as_str(), path);
-
-        // Create a datafusion table backed by these files.
-        let parquet_table = Arc::new(
-            self.create_parquet_table(table, vec![full_path.clone()], &description)
-                .await?,
-        );
-
-        self.datafusion.register_table("tmp_table", parquet_table).map_err(|e| {
-            anyhow!("internal error processing file {full_path}; {REPORT_ERROR}; error registering Parquet table: {e}")
-        })?;
+        // An active deletion vector routes the file through a masked
+        // streaming provider, restricted to `used_columns` so unread columns
+        // are never decoded; otherwise the regular `ListingTable` path
+        // applies.
+        let provider: Arc<dyn TableProvider> = if let Some(dv) = active_dv(deletion_vector) {
+            self.masked_file_provider(
+                table,
+                path,
+                dv,
+                |name| used_columns.contains(&name),
+                &description,
+            )
+            .await?
+        } else {
+            // Address files via the table's real `root_url()` (e.g. `file:///...`
+            // or `s3://bucket/prefix/`). See `cdc_side_dataframe` for why we
+            // don't use `object_store_url()` here.
+            let full_path = format!("{}{}", table.log_store().root_url().as_str(), path);
+            Arc::new(
+                self.create_parquet_table(table, vec![full_path], &description)
+                    .await?,
+            )
+        };
 
         let df = self
             .datafusion
-            .table("tmp_table")
-            .await
+            .read_table(provider)
             .map_err(|e| {
-                anyhow!("internal error processing file {full_path}; {REPORT_ERROR}; error reading 'tmp_table': {e}")
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading Parquet file: {e}")
             })?
             .select_columns(used_columns)
             .map_err(|e| {
-                anyhow!("internal error processing file {full_path}; {REPORT_ERROR}; error selecting columns: {e}")
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error selecting columns: {e}")
             })?;
 
         let df = if let Some(filter) = &self.config.filter {
@@ -3030,7 +3175,7 @@ impl DeltaTableInputEndpointInner {
                 .parse_sql_expr(filter)
                 .map_err(|e| anyhow!("invalid 'filter' expression '{filter}': {e}"))?;
             df.filter(expr).map_err(|e| {
-                anyhow!("internal error processing file {full_path}; {REPORT_ERROR}; error applying 'filter': {e}")
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error applying 'filter': {e}")
             })?
         } else {
             df

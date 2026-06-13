@@ -27,7 +27,15 @@ default = [
     "with-postgres-cdc",
 ]
 with-kafka = ["rdkafka"]
-with-deltalake = ["deltalake", "deltalake-catalog-unity"]
+# `parquet/async` + `parquet/object_store` serve only the deletion-vector
+# reader (`integrated/delta_table/deletion_vector.rs`).
+with-deltalake = [
+    "deltalake",
+    "deltalake-catalog-unity",
+    "roaring",
+    "parquet/async",
+    "parquet/object_store",
+]
 with-iceberg = ["feldera-iceberg"]
 with-pubsub = ["google-cloud-pubsub", "google-cloud-gax"]
 with-avro = [
@@ -202,6 +210,7 @@ sentry = { workspace = true }
 zip = { workspace = true }
 smallvec = { workspace = true }
 delta_kernel = { workspace = true }
+roaring = { workspace = true, optional = true }
 flate2 = { workspace = true }
 etl = { workspace = true, optional = true }
 etl-config = { workspace = true, optional = true }

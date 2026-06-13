@@ -81,7 +81,7 @@ The support bundle has the following content:
 
 **Error**: `Table metadata is invalid: Number of checkpoint files '0' is not equal to number of checkpoint metadata parts 'None'`
 
-**Solution**: This usually happens when the Delta Table uses features unsupported by `delta-rs` like liquid clustering or deletion vectors. Check the table properties and set the checkpoint policy to "classic":
+**Solution**: This usually happens when the Delta Table uses features unsupported by `delta-rs`, such as liquid clustering. (Deletion vectors *are* supported; see the [Delta input connector docs](/connectors/sources/delta).) Check the table properties and set the checkpoint policy to "classic":
 
 ```sql
 ALTER TABLE my_table SET TBLPROPERTIES (
