@@ -5161,3 +5161,393 @@ fn test_concurrent_balanced_shared_cluster_freeze() {
 
     circuit.kill().unwrap();
 }
+
+// ============================================================================
+// Torture tests: balanced joins in complex topologies, all bootstrapped
+// concurrently.  Each stresses a different way a balanced cluster can interact
+// with the bootstrap boundary.
+// ============================================================================
+
+// --- Torture 1: a deep chain cluster, with a new join that closes the chain. ---
+//
+// Old: J12 = s1 ⋈ s2, J23 = s2 ⋈ s3, J34 = s3 ⋈ s4.  These joins share adjacent
+// streams, so the balancer fuses them into a single cluster {s1, s2, s3, s4}.
+// New: add J14 = s1 ⋈ s4, a fourth join over the two ends of the same cluster.
+// It introduces no new stream but adds a constraint to a cluster that now spans
+// the bootstrap boundary, so the whole cluster must stay frozen until cutover.
+
+#[allow(clippy::type_complexity)]
+fn torture_chain_old(
+    circuit: &mut RootCircuit,
+) -> (
+    (
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+    ),
+    (
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    ),
+) {
+    let (s1, h1) = circuit.add_input_zset::<u64>();
+    s1.set_persistent_id(Some("s1"));
+    let (s2, h2) = circuit.add_input_zset::<u64>();
+    s2.set_persistent_id(Some("s2"));
+    let (s3, h3) = circuit.add_input_zset::<u64>();
+    s3.set_persistent_id(Some("s3"));
+    let (s4, h4) = circuit.add_input_zset::<u64>();
+    s4.set_persistent_id(Some("s4"));
+    s1.integrate_trace();
+    s2.integrate_trace();
+    s3.integrate_trace();
+    s4.integrate_trace();
+
+    let s1i = s1.map_index(|x| (*x, *x)).set_persistent_id(Some("s1i"));
+    let s2i = s2.map_index(|x| (*x, *x)).set_persistent_id(Some("s2i"));
+    let s3i = s3.map_index(|x| (*x, *x)).set_persistent_id(Some("s3i"));
+    let s4i = s4.map_index(|x| (*x, *x)).set_persistent_id(Some("s4i"));
+
+    let out12 = s1i
+        .join_balanced_inner(&s2i, |k, _, _| *k)
+        .accumulate_output_persistent(Some("out12"));
+    let out23 = s2i
+        .join_balanced_inner(&s3i, |k, _, _| *k)
+        .accumulate_output_persistent(Some("out23"));
+    let out34 = s3i
+        .join_balanced_inner(&s4i, |k, _, _| *k)
+        .accumulate_output_persistent(Some("out34"));
+    ((h1, h2, h3, h4), (out12, out23, out34))
+}
+
+#[allow(clippy::type_complexity)]
+fn torture_chain_new(
+    circuit: &mut RootCircuit,
+) -> (
+    (
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+    ),
+    (
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    ),
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+) {
+    let (s1, h1) = circuit.add_input_zset::<u64>();
+    s1.set_persistent_id(Some("s1"));
+    let (s2, h2) = circuit.add_input_zset::<u64>();
+    s2.set_persistent_id(Some("s2"));
+    let (s3, h3) = circuit.add_input_zset::<u64>();
+    s3.set_persistent_id(Some("s3"));
+    let (s4, h4) = circuit.add_input_zset::<u64>();
+    s4.set_persistent_id(Some("s4"));
+    s1.integrate_trace();
+    s2.integrate_trace();
+    s3.integrate_trace();
+    s4.integrate_trace();
+
+    let s1i = s1.map_index(|x| (*x, *x)).set_persistent_id(Some("s1i"));
+    let s2i = s2.map_index(|x| (*x, *x)).set_persistent_id(Some("s2i"));
+    let s3i = s3.map_index(|x| (*x, *x)).set_persistent_id(Some("s3i"));
+    let s4i = s4.map_index(|x| (*x, *x)).set_persistent_id(Some("s4i"));
+
+    let out12 = s1i
+        .join_balanced_inner(&s2i, |k, _, _| *k)
+        .accumulate_output_persistent(Some("out12"));
+    let out23 = s2i
+        .join_balanced_inner(&s3i, |k, _, _| *k)
+        .accumulate_output_persistent(Some("out23"));
+    let out34 = s3i
+        .join_balanced_inner(&s4i, |k, _, _| *k)
+        .accumulate_output_persistent(Some("out34"));
+
+    // New join closing the chain.
+    let out14 = s1i
+        .join_balanced_inner(&s4i, |k, _, _| *k)
+        .accumulate_output_persistent(Some("out14"));
+    ((h1, h2, h3, h4), (out12, out23, out34), out14)
+}
+
+#[test]
+fn test_concurrent_torture_chain_cluster() {
+    let p1 = quad_sequence(0, 12);
+    let p2 = quad_sequence(12, 20);
+    let p3 = quad_sequence(20, 24);
+    let p4 = negate_quad_chunks(&[&p1, &p2, &p3]);
+    run_concurrent_bootstrap_test::<
+        TestData4<u64, u64, u64, u64>,
+        TestData3<u64, u64, u64>,
+        TestData1<u64>,
+    >(
+        NUM_WORKERS,
+        |config| config,
+        Arc::new(torture_chain_old),
+        Arc::new(torture_chain_new),
+        p1,
+        p2,
+        p3,
+        p4,
+        ExpectedOutcome::Concurrent,
+        |_| {},
+    );
+}
+
+// --- Torture 2: stacked balanced joins (a new join over kept joins' outputs). ---
+//
+// Old: J12 = s1 ⋈ s2 and J34 = s3 ⋈ s4 (two independent clusters).  New: a third
+// balanced join over the *outputs* of J12 and J34.  Its inputs have no replay
+// source, so the bootstrap copy re-evaluates J12 and J34 to feed it -- which
+// pulls both kept clusters across the boundary and freezes them.
+
+#[allow(clippy::type_complexity)]
+fn torture_stacked_old(
+    circuit: &mut RootCircuit,
+) -> (
+    (
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+    ),
+    (
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    ),
+) {
+    let (s1, h1) = circuit.add_input_zset::<u64>();
+    s1.set_persistent_id(Some("s1"));
+    let (s2, h2) = circuit.add_input_zset::<u64>();
+    s2.set_persistent_id(Some("s2"));
+    let (s3, h3) = circuit.add_input_zset::<u64>();
+    s3.set_persistent_id(Some("s3"));
+    let (s4, h4) = circuit.add_input_zset::<u64>();
+    s4.set_persistent_id(Some("s4"));
+    s1.integrate_trace();
+    s2.integrate_trace();
+    s3.integrate_trace();
+    s4.integrate_trace();
+
+    let s1i = s1.map_index(|x| (*x, *x)).set_persistent_id(Some("s1i"));
+    let s2i = s2.map_index(|x| (*x, *x)).set_persistent_id(Some("s2i"));
+    let s3i = s3.map_index(|x| (*x, *x)).set_persistent_id(Some("s3i"));
+    let s4i = s4.map_index(|x| (*x, *x)).set_persistent_id(Some("s4i"));
+
+    let out12 = s1i
+        .join_balanced_inner(&s2i, |k, _, _| *k)
+        .accumulate_output_persistent(Some("out12"));
+    let out34 = s3i
+        .join_balanced_inner(&s4i, |k, _, _| *k)
+        .accumulate_output_persistent(Some("out34"));
+    ((h1, h2, h3, h4), (out12, out34))
+}
+
+#[allow(clippy::type_complexity)]
+fn torture_stacked_new(
+    circuit: &mut RootCircuit,
+) -> (
+    (
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+    ),
+    (
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    ),
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
+) {
+    let (s1, h1) = circuit.add_input_zset::<u64>();
+    s1.set_persistent_id(Some("s1"));
+    let (s2, h2) = circuit.add_input_zset::<u64>();
+    s2.set_persistent_id(Some("s2"));
+    let (s3, h3) = circuit.add_input_zset::<u64>();
+    s3.set_persistent_id(Some("s3"));
+    let (s4, h4) = circuit.add_input_zset::<u64>();
+    s4.set_persistent_id(Some("s4"));
+    s1.integrate_trace();
+    s2.integrate_trace();
+    s3.integrate_trace();
+    s4.integrate_trace();
+
+    let s1i = s1.map_index(|x| (*x, *x)).set_persistent_id(Some("s1i"));
+    let s2i = s2.map_index(|x| (*x, *x)).set_persistent_id(Some("s2i"));
+    let s3i = s3.map_index(|x| (*x, *x)).set_persistent_id(Some("s3i"));
+    let s4i = s4.map_index(|x| (*x, *x)).set_persistent_id(Some("s4i"));
+
+    let j12 = s1i.join_balanced_inner(&s2i, |k, _, _| *k);
+    let out12 = j12.accumulate_output_persistent(Some("out12"));
+    let j34 = s3i.join_balanced_inner(&s4i, |k, _, _| *k);
+    let out34 = j34.accumulate_output_persistent(Some("out34"));
+
+    // New balanced join stacked on the two kept joins' outputs.
+    let j12i = j12.map_index(|k| (*k, *k)).set_persistent_id(Some("j12i"));
+    let j34i = j34.map_index(|k| (*k, *k)).set_persistent_id(Some("j34i"));
+    let stacked = j12i.join_balanced_inner(&j34i, |k, a, b| Tup2(*a + *b, *k));
+    let out_stacked = stacked.accumulate_output_persistent(Some("out_stacked"));
+    ((h1, h2, h3, h4), (out12, out34), out_stacked)
+}
+
+#[test]
+fn test_concurrent_torture_stacked_joins() {
+    let p1 = quad_sequence(0, 12);
+    let p2 = quad_sequence(12, 20);
+    let p3 = quad_sequence(20, 24);
+    let p4 = negate_quad_chunks(&[&p1, &p2, &p3]);
+    run_concurrent_bootstrap_test::<
+        TestData4<u64, u64, u64, u64>,
+        TestData2<u64, u64>,
+        TestData1<Tup2<u64, u64>>,
+    >(
+        NUM_WORKERS,
+        |config| config,
+        Arc::new(torture_stacked_old),
+        Arc::new(torture_stacked_new),
+        p1,
+        p2,
+        p3,
+        p4,
+        ExpectedOutcome::Concurrent,
+        |_| {},
+    );
+}
+
+// --- Torture 3: a new balanced LEFT join sharing a stream with a kept join. ---
+//
+// Old: an inner balanced join s1 ⋈ s2.  New: add a balanced LEFT join s1 ⋈ s2
+// (so the new join's unmatched-left rows are exercised).  The shared `s1i`
+// stream fuses the inner and left joins into one boundary-spanning cluster.
+
+#[allow(clippy::type_complexity)]
+fn torture_left_old(
+    circuit: &mut RootCircuit,
+) -> (
+    (ZSetHandle<u64>, ZSetHandle<u64>),
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+) {
+    let (s1, h1) = circuit.add_input_zset::<u64>();
+    s1.set_persistent_id(Some("s1"));
+    let (s2, h2) = circuit.add_input_zset::<u64>();
+    s2.set_persistent_id(Some("s2"));
+    s1.integrate_trace();
+    s2.integrate_trace();
+
+    let s1i = s1.map_index(|x| (x % 8, *x)).set_persistent_id(Some("s1i"));
+    let s2i = s2.map_index(|x| (x % 8, *x)).set_persistent_id(Some("s2i"));
+    let out_old = s1i
+        .join_balanced_inner(&s2i, |k, _, _| *k)
+        .accumulate_output_persistent(Some("out_old"));
+    ((h1, h2), out_old)
+}
+
+#[allow(clippy::type_complexity)]
+fn torture_left_new(
+    circuit: &mut RootCircuit,
+) -> (
+    (ZSetHandle<u64>, ZSetHandle<u64>),
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
+) {
+    let (s1, h1) = circuit.add_input_zset::<u64>();
+    s1.set_persistent_id(Some("s1"));
+    let (s2, h2) = circuit.add_input_zset::<u64>();
+    s2.set_persistent_id(Some("s2"));
+    s1.integrate_trace();
+    s2.integrate_trace();
+
+    let s1i = s1.map_index(|x| (x % 8, *x)).set_persistent_id(Some("s1i"));
+    let s2i = s2.map_index(|x| (x % 8, *x)).set_persistent_id(Some("s2i"));
+    let out_old = s1i
+        .join_balanced_inner(&s2i, |k, _, _| *k)
+        .accumulate_output_persistent(Some("out_old"));
+
+    // New balanced left join over the same left stream.
+    let s2opt = s2
+        .map_index(|x| (x % 8, Some(*x)))
+        .set_persistent_id(Some("s2opt"));
+    let out_new = s1i
+        .left_join_balanced_inner(&s2opt, |_k, a, b| Tup2(*a, b.unwrap_or(u64::MAX)))
+        .accumulate_output_persistent(Some("out_new"));
+    ((h1, h2), out_old, out_new)
+}
+
+#[test]
+fn test_concurrent_torture_balanced_left_join() {
+    // The left table is larger than the right one, so half its keys have no
+    // match and exercise the unmatched-left leg.
+    let p1 = join_phase(0..12, 100..106)
+        .into_iter()
+        .chain(join_phase(300..306, 106..112))
+        .collect::<Vec<_>>();
+    let p2 = join_phase(12..18, 112..118);
+    let p3 = join_phase(18..22, 118..122);
+    let p4 = negate_join_chunks(&[&p1, &p2, &p3]);
+    run_concurrent_bootstrap_test::<TestData2<u64, u64>, TestData1<u64>, TestData1<Tup2<u64, u64>>>(
+        NUM_WORKERS,
+        |config| config,
+        Arc::new(torture_left_old),
+        Arc::new(torture_left_new),
+        p1,
+        p2,
+        p3,
+        p4,
+        ExpectedOutcome::Concurrent,
+        |_| {},
+    );
+}
+
+// --- Torture 4: a shared balanced cluster under heavily skewed keys. ---
+//
+// The same boundary-spanning cluster as `balanced_shared_*`, but every key
+// hashes to a single worker, so the cluster's data is maximally skewed across
+// shards throughout the bootstrap.  The concurrent bootstrap must remain correct
+// (and the boundary freeze must hold) under that skew.
+
+/// One transaction per value in `from..to`, but only values that hash to worker
+/// 0, inserted into all four inputs -- so the whole cluster piles onto one shard.
+fn skewed_quad_sequence(
+    from: u64,
+    to: u64,
+) -> Vec<<TestData4<u64, u64, u64, u64> as TestDataType>::Chunk> {
+    (from..to)
+        .filter(|k| default_hash(k) % NUM_WORKERS as u64 == 0)
+        .map(|k| {
+            (
+                vec![Tup2(k, 1)],
+                vec![Tup2(k, 1)],
+                vec![Tup2(k, 1)],
+                vec![Tup2(k, 1)],
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn test_concurrent_torture_shared_cluster_skewed() {
+    let p1 = skewed_quad_sequence(0, 400);
+    let p2 = skewed_quad_sequence(400, 700);
+    let p3 = skewed_quad_sequence(700, 900);
+    let p4 = negate_quad_chunks(&[&p1, &p2, &p3]);
+    run_concurrent_bootstrap_test::<
+        TestData4<u64, u64, u64, u64>,
+        TestData2<u64, u64>,
+        TestData1<u64>,
+    >(
+        NUM_WORKERS,
+        |config| config,
+        Arc::new(balanced_shared_old),
+        Arc::new(balanced_shared_new),
+        p1,
+        p2,
+        p3,
+        p4,
+        ExpectedOutcome::Concurrent,
+        |_| {},
+    );
+}
