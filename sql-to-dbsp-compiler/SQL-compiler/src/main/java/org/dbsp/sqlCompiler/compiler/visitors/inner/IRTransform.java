@@ -6,6 +6,7 @@ import org.dbsp.util.ICastable;
 
 import java.util.function.Function;
 
+/** A function that transforms an InnerNode into another one. */
 public interface IRTransform extends Function<IDBSPInnerNode, IDBSPInnerNode>, ICastable {
     /** The operator containing the inner node that is being transformed */
     void setOperatorContext(DBSPOperator operator);
