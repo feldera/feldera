@@ -46,11 +46,21 @@ class OutputHandler:
 
     def start(self):
         """
-        Starts the output handler in a separate thread
+        Starts the output handler in a separate thread.
+
+        Blocks until the listener is connected to the change stream and ready
+        to receive data.
+
+        :raises BaseException: The exception that caused the connection
+            attempt to fail; e.g., a
+            :class:`feldera.rest.errors.FelderaAPIError` if the egress
+            request was rejected.
         """
 
         self.handler.start()
         _ = self.event.wait()
+        if self.exception is not None:
+            raise self.exception
 
     def to_pandas(self, clear_buffer: bool = True):
         """
