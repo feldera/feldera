@@ -8077,6 +8077,17 @@ impl CircuitHandle {
 
         self.executor.prepare(&self.circuit, Some(&active))?;
 
+        // Tell the balancer which nodes the bootstrap copy is reconstructing, so
+        // it freezes the policy of any cluster that copy is also solving.  A new
+        // join over kept, shared streams runs live in this copy yet is
+        // re-evaluated in the bootstrap copy; without this the live copy could
+        // rebalance the shared cluster and diverge from the bootstrap copy.
+        if self.circuit.root_scope() == 0 {
+            self.circuit
+                .balancer()
+                .set_bootstrap_backfill_region(&analysis.participate_in_backfill);
+        }
+
         // Build the public info with the same content as [`Self::restore`]
         // computes for the bootstrap circuit, so that the caller can verify
         // that the two copies agree on the shape of the bootstrap.

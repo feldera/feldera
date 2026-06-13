@@ -169,18 +169,18 @@ where
         Ok(())
     }
 
-    fn swap_state(&mut self, _other: &mut Self) -> Result<(), Error> {
-        // Balanced operators' state is entangled with their circuit's
-        // balancer and metadata exchange; transferring it between circuit
-        // copies is not supported yet.  Concurrent bootstrapping fails at
-        // cutover rather than silently losing partitioning state.
-        Err(Error::Runtime(crate::RuntimeError::BootstrapCircuit(
-            "state transfer is not supported for rebalancing operators".to_string(),
-        )))
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
+        // The accumulator flushes its entire state into the integral at the end
+        // of every transaction (see `eval`), so it is empty between
+        // transactions.  Cutover happens between transactions, so there is
+        // nothing to move -- the integral node carries the transferred state.
+        debug_assert!(self.0.borrow().state.is_empty());
+        debug_assert!(other.0.borrow().state.is_empty());
+        Ok(())
     }
 
     fn supports_state_transfer(&self) -> bool {
-        false
+        true
     }
 
     fn flush(&mut self) {

@@ -7,6 +7,7 @@ use crate::{
     default_hash, indexed_zset,
     operator::{
         Max, Min,
+        dynamic::balance::{BalancerHint, PartitioningPolicy},
         time_series::{RelOffset, RelRange},
     },
     typed_batch::SpineSnapshot,
@@ -2103,9 +2104,13 @@ fn test_concurrent_bootstrap_old_views_live() {
 //      silent, while pumping the bootstrap circuit (the small splitter chunk
 //      size guarantees a genuinely interleaved multi-pump replay); then run
 //      the synchronization transaction and the cutover.
-//    * `FellBack`: assert the refusal reason, then drive the classic
-//      (stop-the-world) bootstrap to completion.
 //    * `UpToDate`: nothing to bootstrap.
+//
+// Fallbacks are exercised by dedicated bespoke tests (e.g.
+// `test_concurrent_unmaterialized_table_falls_back`) rather than through this
+// harness, because a fallback's post-restart view contents depend on what the
+// classic bootstrap can replay (an unmaterialized table loses its history), so
+// they do not match the from-scratch reference this harness compares against.
 // 4. Feed phase-3 inputs, asserting every view's per-transaction delta.
 // 5. Feed phase-4 inputs -- by convention the retraction of every record fed
 //    in phases 1-3 -- asserting every view's per-transaction delta.  The
@@ -2119,9 +2124,6 @@ fn test_concurrent_bootstrap_old_views_live() {
 enum ExpectedOutcome {
     /// The bootstrap proceeds concurrently.
     Concurrent,
-    /// The engine falls back to a classic bootstrap; the reason must contain
-    /// the given substring.
-    FellBack(&'static str),
     /// The checkpoint matches the circuit.
     UpToDate,
 }
@@ -2302,34 +2304,6 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
             while !circuit.step_bootstrap_circuit().unwrap() {}
             circuit.complete_concurrent_bootstrap().unwrap();
 
-            offset += inputs2.len();
-        }
-        ExpectedOutcome::FellBack(reason_substr) => {
-            let crate::circuit::ConcurrentRestoreOutcome::FellBack { reason, .. } = &outcome else {
-                panic!("expected a fallback, got {outcome:?}");
-            };
-            assert!(
-                reason.contains(reason_substr),
-                "fallback reason {reason:?} does not mention {reason_substr:?}"
-            );
-
-            // Classic bootstrap: stop-the-world replay driven by empty
-            // transactions.
-            assert!(circuit.bootstrap_in_progress());
-            while circuit.bootstrap_in_progress() {
-                circuit.transaction().unwrap();
-            }
-            // Discard the backfill deltas the replay emitted to the outputs.
-            let _ = OO::read_outputs(&old_outputs);
-            let _ = ON::read_outputs(&new_outputs);
-
-            // Phase 2 runs after the bootstrap; all views are live.
-            for (i, chunk) in inputs2.iter().enumerate() {
-                I::push_inputs(chunk.clone(), &inputs);
-                circuit.transaction().unwrap();
-                assert_eq!(OO::read_outputs(&old_outputs), ref_old[offset + i]);
-                assert_eq!(ON::read_outputs(&new_outputs), ref_new[offset + i]);
-            }
             offset += inputs2.len();
         }
         ExpectedOutcome::UpToDate => {
@@ -2803,8 +2777,11 @@ fn test_concurrent_join_view_multiworker() {
     );
 }
 
+// A new balanced join over fresh inputs (the old circuit has only stateless
+// map views, so the balanced cluster is entirely new and backfilled wholesale).
+// The simplest balanced case: no kept balanced streams, so nothing to freeze.
 #[test]
-fn test_concurrent_balanced_join_falls_back() {
+fn test_concurrent_balanced_join() {
     let p1 = join_phase(0..12, 100..112);
     let p2 = join_phase(12..18, 112..118);
     let p3 = join_phase(18..22, 118..122);
@@ -2822,8 +2799,14 @@ fn test_concurrent_balanced_join_falls_back() {
         p2,
         p3,
         p4,
-        ExpectedOutcome::FellBack("cannot be transferred"),
-        |_| {},
+        ExpectedOutcome::Concurrent,
+        |info| {
+            // The whole balanced cluster (both indexed inputs) is new, so it is
+            // backfilled wholesale -- the join's two input streams appear in the
+            // backfill set.
+            assert!(backfill_pids_contain(info, "t1i"));
+            assert!(backfill_pids_contain(info, "t2i"));
+        },
     );
 }
 
@@ -4844,4 +4827,337 @@ fn test_concurrent_downstream_of_chain_aggregate() {
             assert!(!backfill_pids_contain(info, "by_key"));
         },
     );
+}
+
+// ============================================================================
+// Balanced (rebalancing) join: shared cluster spanning the bootstrap boundary.
+//
+// The old circuit has two independent balanced joins,
+//   output1 = input1 ⋈ input2   (cluster {input1, input2})
+//   output2 = input3 ⋈ input4   (cluster {input3, input4})
+// The new circuit adds
+//   output3 = input2 ⋈ input3
+// which merges the two clusters into one: {input1, input2, input3, input4}.
+// J12 and J34 keep serving the old views in the live circuit while the new join
+// backfills in the bootstrap copy.  The shared cluster therefore spans the
+// boundary, and the live copy must freeze the cluster's partitioning policies
+// until cutover (see `Balancer::get_fixed_policy`) so the bootstrap copy's
+// solution for the new join stays valid.
+// ============================================================================
+
+#[allow(clippy::type_complexity)]
+fn balanced_shared_old(
+    circuit: &mut RootCircuit,
+) -> (
+    (
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+    ),
+    (
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    ),
+) {
+    let (s1, h1) = circuit.add_input_zset::<u64>();
+    s1.set_persistent_id(Some("input1"));
+    let (s2, h2) = circuit.add_input_zset::<u64>();
+    s2.set_persistent_id(Some("input2"));
+    let (s3, h3) = circuit.add_input_zset::<u64>();
+    s3.set_persistent_id(Some("input3"));
+    let (s4, h4) = circuit.add_input_zset::<u64>();
+    s4.set_persistent_id(Some("input4"));
+
+    // Integrals on the raw inputs are the replay sources for the bootstrap.
+    s1.integrate_trace();
+    s2.integrate_trace();
+    s3.integrate_trace();
+    s4.integrate_trace();
+
+    let s1i = s1.map_index(|x| (*x, *x)).set_persistent_id(Some("s1i"));
+    let s2i = s2.map_index(|x| (*x, *x)).set_persistent_id(Some("s2i"));
+    let s3i = s3.map_index(|x| (*x, *x)).set_persistent_id(Some("s3i"));
+    let s4i = s4.map_index(|x| (*x, *x)).set_persistent_id(Some("s4i"));
+
+    let out1 = s1i
+        .join_balanced_inner(&s2i, |k, _v1, _v2| *k)
+        .accumulate_output_persistent(Some("output1"));
+    let out2 = s3i
+        .join_balanced_inner(&s4i, |k, _v1, _v2| *k)
+        .accumulate_output_persistent(Some("output2"));
+
+    ((h1, h2, h3, h4), (out1, out2))
+}
+
+#[allow(clippy::type_complexity)]
+fn balanced_shared_new(
+    circuit: &mut RootCircuit,
+) -> (
+    (
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+    ),
+    (
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    ),
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+) {
+    let (s1, h1) = circuit.add_input_zset::<u64>();
+    s1.set_persistent_id(Some("input1"));
+    let (s2, h2) = circuit.add_input_zset::<u64>();
+    s2.set_persistent_id(Some("input2"));
+    let (s3, h3) = circuit.add_input_zset::<u64>();
+    s3.set_persistent_id(Some("input3"));
+    let (s4, h4) = circuit.add_input_zset::<u64>();
+    s4.set_persistent_id(Some("input4"));
+
+    s1.integrate_trace();
+    s2.integrate_trace();
+    s3.integrate_trace();
+    s4.integrate_trace();
+
+    let s1i = s1.map_index(|x| (*x, *x)).set_persistent_id(Some("s1i"));
+    let s2i = s2.map_index(|x| (*x, *x)).set_persistent_id(Some("s2i"));
+    let s3i = s3.map_index(|x| (*x, *x)).set_persistent_id(Some("s3i"));
+    let s4i = s4.map_index(|x| (*x, *x)).set_persistent_id(Some("s4i"));
+
+    let out1 = s1i
+        .join_balanced_inner(&s2i, |k, _v1, _v2| *k)
+        .accumulate_output_persistent(Some("output1"));
+    let out2 = s3i
+        .join_balanced_inner(&s4i, |k, _v1, _v2| *k)
+        .accumulate_output_persistent(Some("output2"));
+
+    // The new join merges the two existing clusters.
+    let out3 = s2i
+        .join_balanced_inner(&s3i, |k, _v1, _v2| *k)
+        .accumulate_output_persistent(Some("output3"));
+
+    ((h1, h2, h3, h4), (out1, out2), out3)
+}
+
+/// One single-record transaction per value in `from..to`, inserting the same
+/// key into all four inputs (so all three joins produce that key).
+fn quad_sequence(
+    from: u64,
+    to: u64,
+) -> Vec<<TestData4<u64, u64, u64, u64> as TestDataType>::Chunk> {
+    (from..to)
+        .map(|x| {
+            (
+                vec![Tup2(x, 1)],
+                vec![Tup2(x, 1)],
+                vec![Tup2(x, 1)],
+                vec![Tup2(x, 1)],
+            )
+        })
+        .collect()
+}
+
+/// Retraction of every quad chunk in `phases`, one transaction per chunk.
+#[allow(clippy::type_complexity)]
+fn negate_quad_chunks(
+    phases: &[&[<TestData4<u64, u64, u64, u64> as TestDataType>::Chunk]],
+) -> Vec<<TestData4<u64, u64, u64, u64> as TestDataType>::Chunk> {
+    let neg = |v: &Vec<Tup2<u64, ZWeight>>| v.iter().map(|Tup2(x, w)| Tup2(*x, -w)).collect();
+    phases
+        .iter()
+        .flat_map(|chunks| chunks.iter())
+        .map(|(a, b, c, d)| (neg(a), neg(b), neg(c), neg(d)))
+        .collect()
+}
+
+// Balanced data (no skew): every stream shards evenly, so the merged cluster is
+// satisfiable with the kept streams frozen at their checkpoint `Shard` policy
+// and only the new join backfills.
+#[test]
+fn test_concurrent_balanced_shared_cluster() {
+    let p1 = quad_sequence(0, 12);
+    let p2 = quad_sequence(12, 20);
+    let p3 = quad_sequence(20, 24);
+    let p4 = negate_quad_chunks(&[&p1, &p2, &p3]);
+    run_concurrent_bootstrap_test::<
+        TestData4<u64, u64, u64, u64>,
+        TestData2<u64, u64>,
+        TestData1<u64>,
+    >(
+        NUM_WORKERS,
+        |config| config,
+        Arc::new(balanced_shared_old),
+        Arc::new(balanced_shared_new),
+        p1,
+        p2,
+        p3,
+        p4,
+        ExpectedOutcome::Concurrent,
+        |info| {
+            // Only the new join backfills; the kept joins' output views are not
+            // in the backfill set.
+            assert!(backfill_pids_contain(info, "output3"));
+            assert!(!backfill_pids_contain(info, "output1"));
+            assert!(!backfill_pids_contain(info, "output2"));
+        },
+    );
+}
+
+// Adversarial: a policy change requested on a shared stream *during* the
+// backfill must not take effect until cutover.  The merged cluster spans the
+// boundary -- the kept joins run live while the new join is re-evaluated in the
+// bootstrap copy, which solves the cluster against the kept streams' frozen
+// checkpoint policies.  If the live copy repartitioned the shared stream in the
+// meantime, the two copies would disagree on the cluster's partitioning and the
+// cluster could be inconsistent after cutover (e.g. broadcast x broadcast).
+//
+// We trigger the change deterministically with an explicit `Broadcast` policy
+// hint; a skew-driven auto-rebalance is held off the same way.  Note there is no
+// dedicated "defer" mechanism: while the cluster is frozen, `get_fixed_policy`
+// returns the frozen policy *before* the hint is consulted, so the request
+// simply has no effect on the shared cluster during the backfill.  The request
+// stays set, so once the freeze lifts at cutover and a solve runs it takes
+// effect normally -- which the test confirms, proving the request was held back
+// rather than lost.
+#[test]
+fn test_concurrent_balanced_shared_cluster_freeze() {
+    init_test_logger();
+
+    let path = tempfile::tempdir().unwrap().keep();
+    println!(
+        "Running test_concurrent_balanced_shared_cluster_freeze in {}",
+        path.display()
+    );
+
+    fn read_out(handle: &OutputHandle<SpineSnapshot<OrdZSet<u64>>>) -> OrdZSet<u64> {
+        SpineSnapshot::<OrdZSet<u64>>::concat(&handle.take_from_all()).consolidate()
+    }
+
+    // Phase 1: the old circuit (two independent balanced joins) over balanced
+    // data, so every stream shards.  Checkpoint it.
+    let checkpoint = {
+        let (mut circuit, ((h1, h2, h3, h4), (out1, out2))) =
+            Runtime::init_circuit(circuit_config_with_workers(&path, NUM_WORKERS), |circuit| {
+                Ok(balanced_shared_old(circuit))
+            })
+            .unwrap();
+
+        for x in 0..12u64 {
+            h1.push(x, 1);
+            h2.push(x, 1);
+            h3.push(x, 1);
+            h4.push(x, 1);
+            circuit.transaction().unwrap();
+            assert_eq!(read_out(&out1), zset! { x => 1 });
+            assert_eq!(read_out(&out2), zset! { x => 1 });
+        }
+
+        let checkpoint = circuit.checkpoint().run().unwrap();
+        circuit.kill().unwrap();
+        checkpoint
+    };
+
+    // Restart as the new circuit: output3 = input2 ⋈ input3 merges the two
+    // clusters into one that spans the bootstrap boundary.
+    let (mut circuit, ((h1, h2, h3, h4), (out1, out2), out3)) =
+        Runtime::init_circuit(circuit_config_with_workers(&path, NUM_WORKERS), |circuit| {
+            Ok(balanced_shared_new(circuit))
+        })
+        .unwrap();
+
+    let outcome = circuit
+        .start_concurrent_bootstrap(checkpoint.uuid.to_string().into())
+        .unwrap();
+    assert!(
+        matches!(
+            outcome,
+            crate::circuit::ConcurrentRestoreOutcome::Concurrent(_)
+        ),
+        "the new balanced join must bootstrap concurrently, got {outcome:?}"
+    );
+
+    // The shared stream's checkpoint policy, which the freeze must hold constant
+    // for the whole backfill.
+    let frozen = circuit.get_current_balancer_policy("s2i").unwrap();
+    assert_eq!(frozen, PartitioningPolicy::Shard);
+
+    // Request that the shared stream switch to broadcast.  The freeze must hold
+    // it at `Shard` until cutover.
+    circuit
+        .set_balancer_hint(
+            "s2i",
+            BalancerHint::Policy(Some(PartitioningPolicy::Broadcast)),
+        )
+        .unwrap();
+
+    let mut bootstrap_done = false;
+    let mut pumps = 0;
+    for x in 12..20u64 {
+        h1.push(x, 1);
+        h2.push(x, 1);
+        h3.push(x, 1);
+        h4.push(x, 1);
+        circuit.transaction().unwrap();
+
+        // The kept joins stay live and correct, the new view is silent, and --
+        // crucially -- the shared stream did not switch despite the request.
+        assert_eq!(read_out(&out1), zset! { x => 1 });
+        assert_eq!(read_out(&out2), zset! { x => 1 });
+        assert_eq!(read_out(&out3), zset! {});
+        assert_eq!(
+            circuit.get_current_balancer_policy("s2i").unwrap(),
+            PartitioningPolicy::Shard,
+            "shared stream repartitioned during the backfill despite the boundary freeze",
+        );
+
+        if !bootstrap_done {
+            bootstrap_done = circuit.step_bootstrap_circuit().unwrap();
+            pumps += 1;
+        }
+    }
+    while !bootstrap_done {
+        bootstrap_done = circuit.step_bootstrap_circuit().unwrap();
+        pumps += 1;
+    }
+    assert!(pumps > 1, "expected a multi-pump replay, got {pumps}");
+
+    // Synchronize and cut over.
+    circuit.sync_concurrent_bootstrap().unwrap();
+    while !circuit.step_bootstrap_circuit().unwrap() {}
+    circuit.complete_concurrent_bootstrap().unwrap();
+
+    // After cutover the freeze is gone.  Force a re-solve: the broadcast request
+    // that was held off during the backfill now takes effect, confirming the
+    // request was held rather than lost (and that the cluster is rebalanceable
+    // again).  The repartition transaction's output is drained, not asserted.
+    circuit.rebalance().unwrap();
+    h1.push(20, 1);
+    h2.push(20, 1);
+    h3.push(20, 1);
+    h4.push(20, 1);
+    circuit.transaction().unwrap();
+    let _ = read_out(&out1);
+    let _ = read_out(&out2);
+    let _ = read_out(&out3);
+    assert_eq!(
+        circuit.get_current_balancer_policy("s2i").unwrap(),
+        PartitioningPolicy::Broadcast,
+        "the policy change held off during the backfill did not take effect after cutover",
+    );
+
+    // The merged cluster is now consistent under the new partitioning: a fresh
+    // key produces exactly one new join row in every view.
+    for x in 21..24u64 {
+        h1.push(x, 1);
+        h2.push(x, 1);
+        h3.push(x, 1);
+        h4.push(x, 1);
+        circuit.transaction().unwrap();
+        assert_eq!(read_out(&out1), zset! { x => 1 });
+        assert_eq!(read_out(&out2), zset! { x => 1 });
+        assert_eq!(read_out(&out3), zset! { x => 1 });
+    }
+
+    circuit.kill().unwrap();
 }

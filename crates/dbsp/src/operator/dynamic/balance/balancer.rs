@@ -339,6 +339,18 @@ struct BalancerInner {
     /// When running in bootstrapping mode, this is the set of nodes that are active.
     /// Non-active nodes cannot be rebalanced.
     active_nodes: Option<BTreeSet<NodeId>>,
+
+    /// During *concurrent* bootstrapping, the set of nodes the bootstrap circuit
+    /// copy is reconstructing (its `participate_in_backfill` set).  Any cluster
+    /// that intersects this set has part of its partitioning decided by the
+    /// bootstrap copy, so the live copy must freeze that cluster's policies until
+    /// cutover -- otherwise the two copies could disagree on a shared cluster's
+    /// partitioning and produce an inconsistent cluster after cutover.
+    ///
+    /// Unlike `active_nodes`, this captures nodes that run *live* in this copy
+    /// while *also* being re-evaluated in the bootstrap copy (e.g. a new join
+    /// over kept, shared streams), which `active_nodes` alone cannot detect.
+    bootstrap_backfill_region: Option<BTreeSet<NodeId>>,
 }
 
 impl BalancerInner {
@@ -355,6 +367,7 @@ impl BalancerInner {
             transaction_in_progress: false,
             auto_rebalance_enabled: true,
             active_nodes: None,
+            bootstrap_backfill_region: None,
         }
     }
 
@@ -926,13 +939,45 @@ impl BalancerInner {
         //     hints
         // );
 
-        // We're running in bootstrapping mode and the stream is not active.
-        // It cannot change the policy until bootstrapping is complete.
+        // During bootstrapping, a stream that is inactive in this circuit copy
+        // cannot change its policy until bootstrapping completes.
         if let Some(active_nodes) = &self.active_nodes
             && !active_nodes.contains(&stream)
         {
-            //println!("stream {stream} is not active (policy: {:?})", self.get_policy_for_stream(stream));
             return Ok(self.get_policy_for_stream(stream));
+        }
+
+        // During *concurrent* bootstrapping, freeze the policy of any stream
+        // whose cluster is (partly) being reconstructed by the bootstrap copy.
+        // The bootstrap copy solves such a cluster against the *frozen*
+        // checkpoint policies of its kept streams, so the live copy must not
+        // rebalance any member until cutover -- otherwise the two copies could
+        // disagree on a shared cluster's partitioning and the cluster would be
+        // inconsistent after cutover (e.g. broadcast x broadcast).
+        //
+        // The bootstrap copy may re-evaluate a join that runs *live* in this
+        // copy (a new join over kept, shared streams), so this membership test
+        // -- against the bootstrap copy's backfill region -- catches cases the
+        // `active_nodes` check above cannot.  `get_policy_for_stream` returns the
+        // checkpoint policy for a kept stream (freezing it) and `None` for a
+        // genuinely new stream (leaving the copy in which it is active free to
+        // choose), so this single rule does the right thing in both copies.
+        if let Some(backfill_region) = &self.bootstrap_backfill_region {
+            let cluster_in_backfill =
+                self.stream_to_cluster
+                    .get(&stream)
+                    .is_some_and(|cluster_index| {
+                        let cluster = &self.clusters[*cluster_index];
+                        cluster
+                            .streams
+                            .keys()
+                            .chain(cluster.joins.keys())
+                            .any(|member| backfill_region.contains(member))
+                    });
+
+            if cluster_in_backfill {
+                return Ok(self.get_policy_for_stream(stream));
+            }
         }
 
         // If any worker has started rebalancing its state, the policy for this stream cannot change until the next transaction.
@@ -1171,11 +1216,22 @@ impl Balancer {
         if let Some(active_nodes) = active_nodes {
             self.inner.borrow_mut().active_nodes = Some(active_nodes.clone());
         } else {
-            self.inner.borrow_mut().active_nodes = None;
+            // Leaving bootstrapping mode (e.g. at cutover): the cluster is fully
+            // live again and free to rebalance.
+            let mut inner = self.inner.borrow_mut();
+            inner.active_nodes = None;
+            inner.bootstrap_backfill_region = None;
         }
         if Runtime::worker_index() == 0 {
             info!("Join balancer state:\n{}", indent(&self.display(), 2));
         }
+    }
+
+    /// Record the set of nodes the bootstrap circuit copy is reconstructing
+    /// during a concurrent bootstrap.  Clusters that intersect this set are
+    /// frozen in the live copy until cutover (see `get_fixed_policy`).
+    pub fn set_bootstrap_backfill_region(&self, region: &BTreeSet<NodeId>) {
+        self.inner.borrow_mut().bootstrap_backfill_region = Some(region.clone());
     }
 
     pub fn prepare_for_bootstrapping(&self, active_nodes: &BTreeSet<NodeId>) {
