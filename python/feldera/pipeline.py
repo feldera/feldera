@@ -1201,18 +1201,22 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         program_config: Optional[Mapping[str, Any]] = None,
         runtime_config: Optional[Mapping[str, Any]] = None,
         description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
     ):
         """
         Modify the pipeline.
 
         Modify the values of pipeline attributes: SQL code, UDF Rust code,
-        UDF Rust dependencies (TOML), program config, runtime config, and
-        description. Only the provided attributes will be modified. Other
-        attributes will remain unchanged.
+        UDF Rust dependencies (TOML), program config, runtime config,
+        description, and tags. Only the provided attributes will be modified.
+        Other attributes will remain unchanged.
 
-        The pipeline must be in the STOPPED state to be modified.
+        Most attributes require the pipeline to be in the STOPPED state to be
+        modified. The ``description`` and ``tags`` are an exception: they can be
+        modified at any time, as they have no effect on the deployed pipeline.
 
-        :raises FelderaAPIError: If the pipeline is not in a STOPPED state.
+        :raises FelderaAPIError: If a non-metadata attribute is modified while
+            the pipeline is not in a STOPPED state.
         """
 
         self.client.patch_pipeline(
@@ -1223,6 +1227,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             program_config=program_config,
             runtime_config=runtime_config,
             description=description,
+            tags=tags,
         )
 
     def update_runtime(self):
@@ -1374,6 +1379,14 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         self.refresh(PipelineFieldSelector.STATUS)
         return self._inner.description
+
+    def tags(self) -> List[str]:
+        """
+        Return the tags of the pipeline.
+        """
+
+        self.refresh(PipelineFieldSelector.STATUS)
+        return getattr(self._inner, "tags", [])
 
     def tables(self) -> List[SQLTable]:
         """

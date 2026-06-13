@@ -2,6 +2,7 @@ use crate::db::error::DBError;
 use crate::db::types::program::{ProgramError, ProgramStatus};
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::storage::StorageStatus;
+use crate::db::types::utils::{validate_description, validate_tags};
 use crate::db::types::version::Version;
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
@@ -11,6 +12,7 @@ use feldera_types::runtime_status::{
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
+use tracing::warn;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -120,14 +122,162 @@ pub fn parse_string_as_bootstrap_config(s: String) -> Result<BootstrapConfig, DB
     }
 }
 
+/// Client-generated data stored alongside a pipeline.
+///
+/// The fields are stored together as a single JSON object in the
+/// `client_metadata` text column, so adding a field needs no migration.
+/// Deserialization is lenient: missing keys take their default and unknown
+/// keys are ignored. [`PatchClientMetadata`] is the optional, per-field form
+/// used by `PATCH` request bodies.
+#[derive(Default, Eq, PartialEq, Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ClientMetadata {
+    /// Human-readable description of the pipeline. Default is an empty string.
+    #[serde(default)]
+    pub description: String,
+
+    /// Free-form labels used to organize, group, and filter pipelines.
+    /// Default is no tags (empty vector).
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+impl ClientMetadata {
+    /// Parses the value read from the `client_metadata` column. The empty
+    /// string (the column default) parses to empty metadata. Invalid JSON is
+    /// also treated as empty rather than returning an error: a single
+    /// corrupted row must not block reads, and the only data lost is
+    /// client-generated.
+    pub fn from_db_string(s: &str) -> Self {
+        if s.is_empty() {
+            return Self::default();
+        }
+        serde_json::from_str(s).unwrap_or_else(|e| {
+            // Leave a breadcrumb so corruption is visible in the logs rather
+            // than silently dropping client data. The snippet is truncated to
+            // keep a large row from flooding the log.
+            warn!(
+                "ignoring corrupted client_metadata, reading as empty (parse error: {e}); \
+                 column starts with: {:.100}",
+                s
+            );
+            Self::default()
+        })
+    }
+
+    /// Serializes to the value written to the `client_metadata` column. Empty
+    /// metadata is stored as `""` (the column default) rather than `"{}"`, so
+    /// a freshly written empty row matches a row defaulted by the migration.
+    pub fn to_db_string(&self) -> String {
+        if self.is_empty() {
+            return String::new();
+        }
+        // The fields are owned strings, so serialization cannot fail; the
+        // fallback to `""` exists only so a hypothetical serde bug can never
+        // panic a request handler.
+        serde_json::to_string(self).unwrap_or_default()
+    }
+
+    /// True when no field carries a value. Destructured so adding a field
+    /// forces this check to account for it: otherwise a row holding only the
+    /// new field would be stored as the empty string (see `to_db_string`) and
+    /// the value would be lost.
+    pub fn is_empty(&self) -> bool {
+        let ClientMetadata { description, tags } = self;
+        description.is_empty() && tags.is_empty()
+    }
+
+    /// Expresses this complete metadata as a patch that sets every field. A
+    /// `POST`/`PUT` replace is then just a patch in which nothing is `None`, so
+    /// replace and `PATCH` share the single merge path in `apply_patch`. The
+    /// exhaustive struct literal makes a newly added field impossible to omit
+    /// from a replace.
+    pub fn as_full_patch(&self) -> PatchClientMetadata {
+        PatchClientMetadata {
+            description: Some(self.description.clone()),
+            tags: Some(self.tags.clone()),
+        }
+    }
+
+    /// Merges `patch` into `self`: each `Some` field of `patch` overwrites the
+    /// corresponding field here; each `None` field leaves it unchanged. The
+    /// provided value is stored verbatim, so an empty string or empty list is
+    /// a value in its own right, not a request to unset the field.
+    pub fn apply_patch(&mut self, patch: &PatchClientMetadata) {
+        // Destructured so adding a field forces this check to account for it.
+        let PatchClientMetadata { description, tags } = patch;
+        if let Some(description) = description {
+            self.description = description.clone();
+        }
+        if let Some(tags) = tags {
+            self.tags = tags.clone();
+        }
+    }
+
+    /// Validates every field. Used when creating a pipeline, where all
+    /// client-provided values are new.
+    pub fn validate(&self) -> Result<(), DBError> {
+        let ClientMetadata { description, tags } = self;
+        validate_description(description)?;
+        validate_tags(tags)?;
+        Ok(())
+    }
+
+    /// Validates only the fields that differ from `previous`. Used when
+    /// updating a pipeline, so that a value stored before a constraint existed
+    /// (e.g. a description longer than today's limit, migrated from the old
+    /// `description` column) is left untouched until the client actually
+    /// changes it. Re-submitting an unchanged value is therefore always
+    /// allowed; changing it is validated against the current rules.
+    pub fn validate_changes(&self, previous: &ClientMetadata) -> Result<(), DBError> {
+        let ClientMetadata { description, tags } = self;
+        if *description != previous.description {
+            validate_description(description)?;
+        }
+        if *tags != previous.tags {
+            validate_tags(tags)?;
+        }
+        Ok(())
+    }
+}
+
+/// Client-generated metadata as supplied in a `PATCH` request body: the
+/// field-by-field patch form of [`ClientMetadata`].
+///
+/// Each field is optional. A `Some` value overwrites the stored field; a
+/// `None` (absent) field leaves it unchanged. An empty string or empty list is
+/// a value in its own right, not a request to unset the field.
+#[derive(Default, Eq, PartialEq, Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct PatchClientMetadata {
+    /// Human-readable description of the pipeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Free-form labels used to organize, group, and filter pipelines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+}
+
+impl PatchClientMetadata {
+    /// True when every field is `None`, i.e. the patch sets nothing and so
+    /// cannot change anything.
+    pub fn contains_only_nones(&self) -> bool {
+        // Destructured so adding a field forces this check to account for it.
+        let PatchClientMetadata { description, tags } = self;
+        description.is_none() && tags.is_none()
+    }
+}
+
 /// Pipeline descriptor.
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct PipelineDescr {
     /// Pipeline name.
     pub name: String,
 
-    /// Pipeline description.
+    /// Human-readable description of the pipeline.
     pub description: String,
+
+    /// Free-form labels used to organize, group, and filter pipelines.
+    pub tags: Vec<String>,
 
     /// Pipeline runtime configuration.
     pub runtime_config: serde_json::Value,
@@ -146,12 +296,24 @@ pub struct PipelineDescr {
 }
 
 impl PipelineDescr {
+    /// Bundles the client-generated fields into the [`ClientMetadata`] form
+    /// used for storage. The exhaustive struct literal is deliberate: adding a
+    /// field to [`ClientMetadata`] fails to compile here until it is included,
+    /// so a new client-metadata field can never be silently dropped on write.
+    pub fn client_metadata(&self) -> ClientMetadata {
+        ClientMetadata {
+            description: self.description.clone(),
+            tags: self.tags.clone(),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn test_descr() -> Self {
         use serde_json::json;
         Self {
             name: "test_pipeline".to_string(),
             description: "Test pipeline".to_string(),
+            tags: vec![],
             runtime_config: json!({}),
             program_code: "CREATE TABLE test (col1 INT);".to_string(),
             udf_rust: "".to_string(),
@@ -174,14 +336,18 @@ pub struct ExtendedPipelineDescr {
     /// Pipeline name.
     pub name: String,
 
-    /// Pipeline description.
+    /// Human-readable description of the pipeline.
     pub description: String,
+
+    /// Free-form labels used to organize, group, and filter pipelines.
+    pub tags: Vec<String>,
 
     /// Timestamp when the pipeline was originally created.
     pub created_at: DateTime<Utc>,
 
-    /// Pipeline version, incremented every time name, description, runtime_config, program_code,
+    /// Pipeline version, incremented every time name, runtime_config, program_code,
     /// udf_rust, udf_toml, program_config or platform_version is/are modified.
+    /// Changes to client metadata (description, tags, ...) do not bump `version`.
     pub version: Version,
 
     /// Pipeline platform version.
@@ -300,6 +466,20 @@ pub struct ExtendedPipelineDescr {
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
 }
 
+impl ExtendedPipelineDescr {
+    /// Bundles the client-generated fields into the [`ClientMetadata`] form.
+    /// The exhaustive struct literal is deliberate: adding a field to
+    /// [`ClientMetadata`] fails to compile here until it is included, so the
+    /// "did client metadata change?" check (see `update_pipeline`) can never
+    /// silently omit a new field and wrongly leave the version unchanged.
+    pub fn client_metadata(&self) -> ClientMetadata {
+        ClientMetadata {
+            description: self.description.clone(),
+            tags: self.tags.clone(),
+        }
+    }
+}
+
 /// Pipeline descriptor which includes the fields relevant to system monitoring.
 /// The advantage of this descriptor over the [`ExtendedPipelineDescr`] is that it
 /// excludes fields which can be quite large (e.g., the generated Rust code stored
@@ -311,6 +491,7 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub id: PipelineId,
     pub name: String,
     pub description: String,
+    pub tags: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub version: Version,
     pub platform_version: String,
@@ -338,6 +519,18 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
 }
 
+impl ExtendedPipelineDescrMonitoring {
+    /// Bundles the client-generated fields into the [`ClientMetadata`] form.
+    /// The exhaustive struct literal is deliberate: adding a field to
+    /// [`ClientMetadata`] fails to compile here until it is included.
+    pub fn client_metadata(&self) -> ClientMetadata {
+        ClientMetadata {
+            description: self.description.clone(),
+            tags: self.tags.clone(),
+        }
+    }
+}
+
 /// Pipeline descriptor with all fields needed to create a monitor event.
 #[derive(Eq, PartialEq, Debug, Clone, Serialize)]
 pub struct ExtendedPipelineDescrEventInfo {
@@ -352,4 +545,141 @@ pub struct ExtendedPipelineDescrEventInfo {
     pub deployment_runtime_status: Option<RuntimeStatus>,
     pub deployment_runtime_status_details: Option<serde_json::Value>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ClientMetadata, PatchClientMetadata};
+
+    /// Builds an always-present [`ClientMetadata`].
+    fn meta(description: &str, tags: &[&str]) -> ClientMetadata {
+        ClientMetadata {
+            description: description.to_string(),
+            tags: tags.iter().map(|t| t.to_string()).collect(),
+        }
+    }
+
+    /// Builds a [`PatchClientMetadata`]: each field present or absent.
+    fn patch(description: Option<&str>, tags: Option<Vec<&str>>) -> PatchClientMetadata {
+        PatchClientMetadata {
+            description: description.map(str::to_string),
+            tags: tags.map(|t| t.into_iter().map(str::to_string).collect()),
+        }
+    }
+
+    #[test]
+    fn empty_metadata_stores_as_empty_string() {
+        assert_eq!(ClientMetadata::default().to_db_string(), "");
+        assert_eq!(
+            ClientMetadata::from_db_string(""),
+            ClientMetadata::default()
+        );
+    }
+
+    #[test]
+    fn db_string_round_trips() {
+        let original = meta("a pipeline", &["prod", "billing"]);
+        let restored = ClientMetadata::from_db_string(&original.to_db_string());
+        assert_eq!(restored, original);
+    }
+
+    #[test]
+    fn invalid_db_string_reads_as_empty() {
+        assert_eq!(
+            ClientMetadata::from_db_string("not json"),
+            ClientMetadata::default()
+        );
+    }
+
+    #[test]
+    fn unknown_fields_and_missing_fields_default() {
+        // Unknown keys are ignored; a missing `tags` key defaults to empty.
+        let restored = ClientMetadata::from_db_string(r#"{"description":"d","future_field":42}"#);
+        assert_eq!(restored, meta("d", &[]));
+    }
+
+    #[test]
+    fn patch_overwrites_only_present_fields() {
+        let mut cm = meta("old", &["keep"]);
+        cm.apply_patch(&patch(Some("new"), None));
+        assert_eq!(cm, meta("new", &["keep"]));
+    }
+
+    #[test]
+    fn contains_only_nones_detects_the_empty_patch() {
+        assert!(PatchClientMetadata::default().contains_only_nones());
+        assert!(!patch(Some(""), None).contains_only_nones());
+        assert!(!patch(None, Some(vec![])).contains_only_nones());
+    }
+
+    #[test]
+    fn full_patch_replaces_every_field() {
+        // A `POST`/`PUT` replace is expressed as a full patch. Applying it to
+        // any prior value must yield exactly the replacement, including when
+        // the replacement clears a previously set field.
+        let replacement = meta("", &[]);
+        let mut current = meta("old description", &["old"]);
+        current.apply_patch(&replacement.as_full_patch());
+        assert_eq!(current, replacement);
+
+        // A full patch never has a `None` field, so it is never a no-op.
+        assert!(!replacement.as_full_patch().contains_only_nones());
+    }
+
+    #[test]
+    fn patch_stores_empty_values_verbatim() {
+        // An empty string and an empty list are values in their own right, not
+        // a request to unset the field.
+        let mut cm = meta("old", &["a"]);
+        cm.apply_patch(&patch(Some(""), Some(vec![])));
+        assert_eq!(cm, meta("", &[]));
+        assert!(cm.is_empty());
+    }
+
+    #[test]
+    fn empty_patch_leaves_value_unchanged() {
+        let mut cm = meta("keep", &["keep"]);
+        cm.apply_patch(&PatchClientMetadata::default());
+        assert_eq!(cm, meta("keep", &["keep"]));
+    }
+
+    #[test]
+    fn validate_rejects_invalid_tags_but_allows_free_form_description() {
+        // The description is free-form, so any characters (including those
+        // disallowed in tags) are accepted within the length limit.
+        assert!(meta("any text! 日本語 %$#", &[]).validate().is_ok());
+        // Valid tags pass.
+        assert!(meta("", &["prod", "env/staging"]).validate().is_ok());
+        // An invalid tag is rejected.
+        assert!(meta("d", &["bad,tag"]).validate().is_err());
+        // An over-long description is rejected on create.
+        assert!(meta(&"a".repeat(301), &[]).validate().is_err());
+    }
+
+    #[test]
+    fn validate_changes_leaves_unchanged_overlong_description_alone() {
+        // Simulate a description longer than today's limit, e.g. one migrated
+        // from the old `description` column before the limit existed.
+        let legacy = meta(&"x".repeat(500), &[]);
+
+        // Re-submitting the same (unchanged) value is allowed.
+        assert!(legacy.validate_changes(&legacy).is_ok());
+
+        // Changing only the tags is allowed even though the stored description
+        // exceeds the limit.
+        let mut tags_only = legacy.clone();
+        tags_only.tags = vec!["new-tag".to_string()];
+        assert!(tags_only.validate_changes(&legacy).is_ok());
+
+        // Attempting to change the description is validated: another over-long
+        // value is rejected.
+        let mut still_long = legacy.clone();
+        still_long.description = "y".repeat(400);
+        assert!(still_long.validate_changes(&legacy).is_err());
+
+        // Shortening the description to within the limit is allowed.
+        let mut shortened = legacy.clone();
+        shortened.description = "now short".to_string();
+        assert!(shortened.validate_changes(&legacy).is_ok());
+    }
 }

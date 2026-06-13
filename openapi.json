@@ -578,6 +578,7 @@
                     "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                     "name": "example1",
                     "description": "Description of the pipeline example1",
+                    "tags": [],
                     "created_at": "1970-01-01T00:00:00Z",
                     "version": 4,
                     "platform_version": "v0",
@@ -670,6 +671,7 @@
                     "id": "67e55044-10b1-426f-9247-bb680e5fe0c9",
                     "name": "example2",
                     "description": "Description of the pipeline example2",
+                    "tags": [],
                     "created_at": "1970-01-01T00:00:00Z",
                     "version": 1,
                     "platform_version": "v0",
@@ -795,6 +797,7 @@
               "example": {
                 "name": "example1",
                 "description": "Description of the pipeline example1",
+                "tags": [],
                 "runtime_config": {
                   "workers": 16,
                   "max_rss_mb": null,
@@ -867,6 +870,7 @@
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
                   "description": "Description of the pipeline example1",
+                  "tags": [],
                   "created_at": "1970-01-01T00:00:00Z",
                   "version": 4,
                   "platform_version": "v0",
@@ -1054,6 +1058,7 @@
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
                   "description": "Description of the pipeline example1",
+                  "tags": [],
                   "created_at": "1970-01-01T00:00:00Z",
                   "version": 4,
                   "platform_version": "v0",
@@ -1206,6 +1211,7 @@
               "example": {
                 "name": "example1",
                 "description": "Description of the pipeline example1",
+                "tags": [],
                 "runtime_config": {
                   "workers": 16,
                   "max_rss_mb": null,
@@ -1278,6 +1284,7 @@
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
                   "description": "Description of the pipeline example1",
+                  "tags": [],
                   "created_at": "1970-01-01T00:00:00Z",
                   "version": 4,
                   "platform_version": "v0",
@@ -1380,6 +1387,7 @@
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
                   "description": "Description of the pipeline example1",
+                  "tags": [],
                   "created_at": "1970-01-01T00:00:00Z",
                   "version": 4,
                   "platform_version": "v0",
@@ -1653,6 +1661,7 @@
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
                   "description": "Description of the pipeline example1",
+                  "tags": [],
                   "created_at": "1970-01-01T00:00:00Z",
                   "version": 4,
                   "platform_version": "v0",
@@ -6591,6 +6600,7 @@
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                   "name": "example1",
                   "description": "Description of the pipeline example1",
+                  "tags": [],
                   "created_at": "1970-01-01T00:00:00Z",
                   "version": 4,
                   "platform_version": "v0",
@@ -7436,6 +7446,23 @@
             "type": "string",
             "description": "Text payload, e.g., CSV.",
             "nullable": true
+          }
+        }
+      },
+      "ClientMetadata": {
+        "type": "object",
+        "description": "Client-generated data stored alongside a pipeline.\n\nThe fields are stored together as a single JSON object in the\n`client_metadata` text column, so adding a field needs no migration.\nDeserialization is lenient: missing keys take their default and unknown\nkeys are ignored. [`PatchClientMetadata`] is the optional, per-field form\nused by `PATCH` request bodies.",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Human-readable description of the pipeline. Default is an empty string."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Free-form labels used to organize, group, and filter pipelines.\nDefault is no tags (empty vector)."
           }
         }
       },
@@ -10621,47 +10648,69 @@
           }
         }
       },
-      "PatchPipeline": {
+      "PatchClientMetadata": {
         "type": "object",
-        "description": "Partially update the pipeline (PATCH).\n\nNote that the patching only applies to the main fields, not subfields.\nFor instance, it is not possible to update only the number of workers;\nit is required to again pass the whole runtime configuration with the\nchange.",
+        "description": "Client-generated metadata as supplied in a `PATCH` request body: the\nfield-by-field patch form of [`ClientMetadata`].\n\nEach field is optional. A `Some` value overwrites the stored field; a\n`None` (absent) field leaves it unchanged. An empty string or empty list is\na value in its own right, not a request to unset the field.",
         "properties": {
           "description": {
             "type": "string",
+            "description": "Human-readable description of the pipeline.",
             "nullable": true
           },
-          "name": {
-            "type": "string",
-            "nullable": true
-          },
-          "program_code": {
-            "type": "string",
-            "nullable": true
-          },
-          "program_config": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ProgramConfig"
-              }
-            ],
-            "nullable": true
-          },
-          "runtime_config": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RuntimeConfig"
-              }
-            ],
-            "nullable": true
-          },
-          "udf_rust": {
-            "type": "string",
-            "nullable": true
-          },
-          "udf_toml": {
-            "type": "string",
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Free-form labels used to organize, group, and filter pipelines.",
             "nullable": true
           }
         }
+      },
+      "PatchPipeline": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PatchClientMetadata"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "nullable": true
+              },
+              "program_code": {
+                "type": "string",
+                "nullable": true
+              },
+              "program_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ProgramConfig"
+                  }
+                ],
+                "nullable": true
+              },
+              "runtime_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RuntimeConfig"
+                  }
+                ],
+                "nullable": true
+              },
+              "udf_rust": {
+                "type": "string",
+                "nullable": true
+              },
+              "udf_toml": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          }
+        ],
+        "description": "Partially update the pipeline (PATCH).\n\nNote that the patching only applies to the main fields, not subfields.\nFor instance, it is not possible to update only the number of workers;\nit is required to again pass the whole runtime configuration with the\nchange."
       },
       "PermanentSuspendError": {
         "oneOf": [
@@ -11028,182 +11077,185 @@
         "description": "Pipeline identifier."
       },
       "PipelineInfo": {
-        "type": "object",
-        "description": "Pipeline information.\nIt both includes fields which are user-provided and system-generated.",
-        "required": [
-          "id",
-          "name",
-          "description",
-          "created_at",
-          "version",
-          "platform_version",
-          "runtime_config",
-          "program_code",
-          "udf_rust",
-          "udf_toml",
-          "program_config",
-          "program_version",
-          "program_status",
-          "program_status_since",
-          "program_error",
-          "refresh_version",
-          "storage_status",
-          "deployment_status",
-          "deployment_status_since",
-          "deployment_desired_status",
-          "deployment_desired_status_since",
-          "deployment_resources_status",
-          "deployment_resources_status_since",
-          "deployment_resources_desired_status",
-          "deployment_resources_desired_status_since"
-        ],
-        "properties": {
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClientMetadata"
           },
-          "deployment_desired_status": {
-            "$ref": "#/components/schemas/CombinedDesiredStatus"
-          },
-          "deployment_desired_status_since": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "deployment_error": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ErrorResponse"
-              }
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "created_at",
+              "version",
+              "platform_version",
+              "runtime_config",
+              "program_code",
+              "udf_rust",
+              "udf_toml",
+              "program_config",
+              "program_version",
+              "program_status",
+              "program_status_since",
+              "program_error",
+              "refresh_version",
+              "storage_status",
+              "deployment_status",
+              "deployment_status_since",
+              "deployment_desired_status",
+              "deployment_desired_status_since",
+              "deployment_resources_status",
+              "deployment_resources_status_since",
+              "deployment_resources_desired_status",
+              "deployment_resources_desired_status_since"
             ],
-            "nullable": true
-          },
-          "deployment_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "deployment_initial": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RuntimeDesiredStatus"
+            "properties": {
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "deployment_desired_status": {
+                "$ref": "#/components/schemas/CombinedDesiredStatus"
+              },
+              "deployment_desired_status_since": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "deployment_error": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  }
+                ],
+                "nullable": true
+              },
+              "deployment_id": {
+                "type": "string",
+                "format": "uuid",
+                "nullable": true
+              },
+              "deployment_initial": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RuntimeDesiredStatus"
+                  }
+                ],
+                "nullable": true
+              },
+              "deployment_resources_desired_status": {
+                "$ref": "#/components/schemas/ResourcesDesiredStatus"
+              },
+              "deployment_resources_desired_status_since": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "deployment_resources_status": {
+                "$ref": "#/components/schemas/ResourcesStatus"
+              },
+              "deployment_resources_status_details": {
+                "nullable": true
+              },
+              "deployment_resources_status_since": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "deployment_runtime_desired_status": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RuntimeDesiredStatus"
+                  }
+                ],
+                "nullable": true
+              },
+              "deployment_runtime_desired_status_since": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "deployment_runtime_status": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RuntimeStatus"
+                  }
+                ],
+                "nullable": true
+              },
+              "deployment_runtime_status_details": {
+                "nullable": true
+              },
+              "deployment_runtime_status_since": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "deployment_status": {
+                "$ref": "#/components/schemas/CombinedStatus"
+              },
+              "deployment_status_since": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "id": {
+                "$ref": "#/components/schemas/PipelineId"
+              },
+              "name": {
+                "type": "string"
+              },
+              "platform_version": {
+                "type": "string"
+              },
+              "program_code": {
+                "type": "string"
+              },
+              "program_config": {
+                "$ref": "#/components/schemas/ProgramConfig"
+              },
+              "program_error": {
+                "$ref": "#/components/schemas/ProgramError"
+              },
+              "program_info": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PartialProgramInfo"
+                  }
+                ],
+                "nullable": true
+              },
+              "program_status": {
+                "$ref": "#/components/schemas/ProgramStatus"
+              },
+              "program_status_since": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "program_version": {
+                "$ref": "#/components/schemas/Version"
+              },
+              "refresh_version": {
+                "$ref": "#/components/schemas/Version"
+              },
+              "runtime_config": {
+                "$ref": "#/components/schemas/RuntimeConfig"
+              },
+              "storage_status": {
+                "$ref": "#/components/schemas/StorageStatus"
+              },
+              "storage_status_details": {
+                "nullable": true
+              },
+              "udf_rust": {
+                "type": "string"
+              },
+              "udf_toml": {
+                "type": "string"
+              },
+              "version": {
+                "$ref": "#/components/schemas/Version"
               }
-            ],
-            "nullable": true
-          },
-          "deployment_resources_desired_status": {
-            "$ref": "#/components/schemas/ResourcesDesiredStatus"
-          },
-          "deployment_resources_desired_status_since": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "deployment_resources_status": {
-            "$ref": "#/components/schemas/ResourcesStatus"
-          },
-          "deployment_resources_status_details": {
-            "nullable": true
-          },
-          "deployment_resources_status_since": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "deployment_runtime_desired_status": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RuntimeDesiredStatus"
-              }
-            ],
-            "nullable": true
-          },
-          "deployment_runtime_desired_status_since": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "deployment_runtime_status": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RuntimeStatus"
-              }
-            ],
-            "nullable": true
-          },
-          "deployment_runtime_status_details": {
-            "nullable": true
-          },
-          "deployment_runtime_status_since": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "deployment_status": {
-            "$ref": "#/components/schemas/CombinedStatus"
-          },
-          "deployment_status_since": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "description": {
-            "type": "string"
-          },
-          "id": {
-            "$ref": "#/components/schemas/PipelineId"
-          },
-          "name": {
-            "type": "string"
-          },
-          "platform_version": {
-            "type": "string"
-          },
-          "program_code": {
-            "type": "string"
-          },
-          "program_config": {
-            "$ref": "#/components/schemas/ProgramConfig"
-          },
-          "program_error": {
-            "$ref": "#/components/schemas/ProgramError"
-          },
-          "program_info": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PartialProgramInfo"
-              }
-            ],
-            "nullable": true
-          },
-          "program_status": {
-            "$ref": "#/components/schemas/ProgramStatus"
-          },
-          "program_status_since": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "program_version": {
-            "$ref": "#/components/schemas/Version"
-          },
-          "refresh_version": {
-            "$ref": "#/components/schemas/Version"
-          },
-          "runtime_config": {
-            "$ref": "#/components/schemas/RuntimeConfig"
-          },
-          "storage_status": {
-            "$ref": "#/components/schemas/StorageStatus"
-          },
-          "storage_status_details": {
-            "nullable": true
-          },
-          "udf_rust": {
-            "type": "string"
-          },
-          "udf_toml": {
-            "type": "string"
-          },
-          "version": {
-            "$ref": "#/components/schemas/Version"
+            }
           }
-        }
+        ],
+        "description": "Pipeline information.\nIt both includes fields which are user-provided and system-generated."
       },
       "PipelineMonitorEventFieldSelector": {
         "type": "string",
@@ -11288,202 +11340,205 @@
         }
       },
       "PipelineSelectedInfo": {
-        "type": "object",
-        "description": "Pipeline information which has a selected subset of optional fields.\nIt both includes fields which are user-provided and system-generated.\nIf an optional field is not selected (i.e., is `None`), it will not be serialized.",
-        "required": [
-          "id",
-          "name",
-          "description",
-          "created_at",
-          "version",
-          "platform_version",
-          "program_version",
-          "program_status",
-          "program_status_since",
-          "refresh_version",
-          "storage_status",
-          "deployment_status",
-          "deployment_status_since",
-          "deployment_desired_status",
-          "deployment_desired_status_since",
-          "deployment_resources_status",
-          "deployment_resources_status_since",
-          "deployment_resources_desired_status",
-          "deployment_resources_desired_status_since"
-        ],
-        "properties": {
-          "connectors": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ConnectorStats"
-              }
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClientMetadata"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "created_at",
+              "version",
+              "platform_version",
+              "program_version",
+              "program_status",
+              "program_status_since",
+              "refresh_version",
+              "storage_status",
+              "deployment_status",
+              "deployment_status_since",
+              "deployment_desired_status",
+              "deployment_desired_status_since",
+              "deployment_resources_status",
+              "deployment_resources_status_since",
+              "deployment_resources_desired_status",
+              "deployment_resources_desired_status_since"
             ],
-            "nullable": true
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "deployment_desired_status": {
-            "$ref": "#/components/schemas/CombinedDesiredStatus"
-          },
-          "deployment_desired_status_since": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "deployment_error": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ErrorResponse"
+            "properties": {
+              "connectors": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ConnectorStats"
+                  }
+                ],
+                "nullable": true
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "deployment_desired_status": {
+                "$ref": "#/components/schemas/CombinedDesiredStatus"
+              },
+              "deployment_desired_status_since": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "deployment_error": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  }
+                ],
+                "nullable": true
+              },
+              "deployment_id": {
+                "type": "string",
+                "format": "uuid",
+                "nullable": true
+              },
+              "deployment_initial": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RuntimeDesiredStatus"
+                  }
+                ],
+                "nullable": true
+              },
+              "deployment_resources_desired_status": {
+                "$ref": "#/components/schemas/ResourcesDesiredStatus"
+              },
+              "deployment_resources_desired_status_since": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "deployment_resources_status": {
+                "$ref": "#/components/schemas/ResourcesStatus"
+              },
+              "deployment_resources_status_details": {
+                "nullable": true
+              },
+              "deployment_resources_status_since": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "deployment_runtime_desired_status": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RuntimeDesiredStatus"
+                  }
+                ],
+                "nullable": true
+              },
+              "deployment_runtime_desired_status_since": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "deployment_runtime_status": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RuntimeStatus"
+                  }
+                ],
+                "nullable": true
+              },
+              "deployment_runtime_status_details": {
+                "nullable": true
+              },
+              "deployment_runtime_status_since": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "deployment_status": {
+                "$ref": "#/components/schemas/CombinedStatus"
+              },
+              "deployment_status_since": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "id": {
+                "$ref": "#/components/schemas/PipelineId"
+              },
+              "name": {
+                "type": "string"
+              },
+              "platform_version": {
+                "type": "string"
+              },
+              "program_code": {
+                "type": "string",
+                "nullable": true
+              },
+              "program_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ProgramConfig"
+                  }
+                ],
+                "nullable": true
+              },
+              "program_error": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ProgramError"
+                  }
+                ],
+                "nullable": true
+              },
+              "program_info": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PartialProgramInfo"
+                  }
+                ],
+                "nullable": true
+              },
+              "program_status": {
+                "$ref": "#/components/schemas/ProgramStatus"
+              },
+              "program_status_since": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "program_version": {
+                "$ref": "#/components/schemas/Version"
+              },
+              "refresh_version": {
+                "$ref": "#/components/schemas/Version"
+              },
+              "runtime_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RuntimeConfig"
+                  }
+                ],
+                "nullable": true
+              },
+              "storage_status": {
+                "$ref": "#/components/schemas/StorageStatus"
+              },
+              "storage_status_details": {
+                "nullable": true
+              },
+              "udf_rust": {
+                "type": "string",
+                "nullable": true
+              },
+              "udf_toml": {
+                "type": "string",
+                "nullable": true
+              },
+              "version": {
+                "$ref": "#/components/schemas/Version"
               }
-            ],
-            "nullable": true
-          },
-          "deployment_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "deployment_initial": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RuntimeDesiredStatus"
-              }
-            ],
-            "nullable": true
-          },
-          "deployment_resources_desired_status": {
-            "$ref": "#/components/schemas/ResourcesDesiredStatus"
-          },
-          "deployment_resources_desired_status_since": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "deployment_resources_status": {
-            "$ref": "#/components/schemas/ResourcesStatus"
-          },
-          "deployment_resources_status_details": {
-            "nullable": true
-          },
-          "deployment_resources_status_since": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "deployment_runtime_desired_status": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RuntimeDesiredStatus"
-              }
-            ],
-            "nullable": true
-          },
-          "deployment_runtime_desired_status_since": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "deployment_runtime_status": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RuntimeStatus"
-              }
-            ],
-            "nullable": true
-          },
-          "deployment_runtime_status_details": {
-            "nullable": true
-          },
-          "deployment_runtime_status_since": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "deployment_status": {
-            "$ref": "#/components/schemas/CombinedStatus"
-          },
-          "deployment_status_since": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "description": {
-            "type": "string"
-          },
-          "id": {
-            "$ref": "#/components/schemas/PipelineId"
-          },
-          "name": {
-            "type": "string"
-          },
-          "platform_version": {
-            "type": "string"
-          },
-          "program_code": {
-            "type": "string",
-            "nullable": true
-          },
-          "program_config": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ProgramConfig"
-              }
-            ],
-            "nullable": true
-          },
-          "program_error": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ProgramError"
-              }
-            ],
-            "nullable": true
-          },
-          "program_info": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PartialProgramInfo"
-              }
-            ],
-            "nullable": true
-          },
-          "program_status": {
-            "$ref": "#/components/schemas/ProgramStatus"
-          },
-          "program_status_since": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "program_version": {
-            "$ref": "#/components/schemas/Version"
-          },
-          "refresh_version": {
-            "$ref": "#/components/schemas/Version"
-          },
-          "runtime_config": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RuntimeConfig"
-              }
-            ],
-            "nullable": true
-          },
-          "storage_status": {
-            "$ref": "#/components/schemas/StorageStatus"
-          },
-          "storage_status_details": {
-            "nullable": true
-          },
-          "udf_rust": {
-            "type": "string",
-            "nullable": true
-          },
-          "udf_toml": {
-            "type": "string",
-            "nullable": true
-          },
-          "version": {
-            "$ref": "#/components/schemas/Version"
+            }
           }
-        }
+        ],
+        "description": "Pipeline information which has a selected subset of optional fields.\nIt both includes fields which are user-provided and system-generated.\nIf an optional field is not selected (i.e., is `None`), it will not be serialized."
       },
       "PipelineState": {
         "type": "string",
@@ -11513,48 +11568,51 @@
         }
       },
       "PostPutPipeline": {
-        "type": "object",
-        "description": "Create a new pipeline (POST), or fully update an existing pipeline (PUT).\nFields which are optional and not provided will be set to their empty type value\n(for strings: an empty string `\"\"`, for objects: an empty dictionary `{}`).",
-        "required": [
-          "name",
-          "program_code"
-        ],
-        "properties": {
-          "description": {
-            "type": "string",
-            "nullable": true
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClientMetadata"
           },
-          "name": {
-            "type": "string"
-          },
-          "program_code": {
-            "type": "string"
-          },
-          "program_config": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ProgramConfig"
-              }
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "program_code"
             ],
-            "nullable": true
-          },
-          "runtime_config": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RuntimeConfig"
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "program_code": {
+                "type": "string"
+              },
+              "program_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ProgramConfig"
+                  }
+                ],
+                "nullable": true
+              },
+              "runtime_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RuntimeConfig"
+                  }
+                ],
+                "nullable": true
+              },
+              "udf_rust": {
+                "type": "string",
+                "nullable": true
+              },
+              "udf_toml": {
+                "type": "string",
+                "nullable": true
               }
-            ],
-            "nullable": true
-          },
-          "udf_rust": {
-            "type": "string",
-            "nullable": true
-          },
-          "udf_toml": {
-            "type": "string",
-            "nullable": true
+            }
           }
-        }
+        ],
+        "description": "Create a new pipeline (POST), or fully update an existing pipeline (PUT).\nFields which are optional and not provided will be set to their empty type value\n(for strings: an empty string `\"\"`, for objects: an empty dictionary `{}`)."
       },
       "PostStopPipelineParameters": {
         "type": "object",

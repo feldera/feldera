@@ -168,6 +168,7 @@ impl CacheDisabler {
             .pipeline_name(self.name.clone())
             .body(PatchPipeline {
                 description: None,
+                tags: None,
                 name: None,
                 program_code: None,
                 udf_rust: None,
@@ -696,6 +697,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     .post_pipeline()
                     .body(PostPutPipeline {
                         description: None,
+                        tags: Vec::new(),
                         name: name.to_string(),
                         program_code: program_code.unwrap_or_default(),
                         udf_rust,
@@ -798,6 +800,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     .pipeline_name(name.clone())
                     .body(PatchPipeline {
                         description: None,
+                        tags: None,
                         name: None,
                         program_code: Some(new_program),
                         udf_rust: None,
@@ -1398,6 +1401,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .pipeline_name(name)
                 .body(PatchPipeline {
                     description: None,
+                    tags: None,
                     name: None,
                     program_code: None,
                     udf_rust: None,
@@ -2505,6 +2509,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
         } => {
             let pp = PatchPipeline {
                 description: None,
+                tags: None,
                 name: None,
                 program_code: None,
                 udf_rust: None,
@@ -2598,6 +2603,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
             ) {
                 let pp = PatchPipeline {
                     description: None,
+                    tags: None,
                     name: None,
                     program_code,
                     udf_rust,

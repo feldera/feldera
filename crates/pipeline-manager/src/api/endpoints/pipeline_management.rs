@@ -7,7 +7,8 @@ use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::types::combined_status::{combine_since, CombinedDesiredStatus, CombinedStatus};
 use crate::db::types::pipeline::{
-    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
+    ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PatchClientMetadata,
+    PipelineDescr, PipelineId,
 };
 use crate::db::types::program::{ProgramConfig, ProgramError, ProgramStatus};
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
@@ -95,7 +96,10 @@ pub struct ConnectorStats {
 pub struct PipelineInfo {
     pub id: PipelineId,
     pub name: String,
-    pub description: String,
+    /// Client-generated data (description, tags, ...). Each field is always
+    /// present on the wire: an unset description is `""` and unset tags `[]`.
+    #[serde(flatten)]
+    pub client_metadata: ClientMetadata,
     pub created_at: DateTime<Utc>,
     pub version: Version,
     pub platform_version: String,
@@ -144,7 +148,8 @@ pub struct PipelineInfo {
 pub struct PipelineInfoInternal {
     pub id: PipelineId,
     pub name: String,
-    pub description: String,
+    #[serde(flatten)]
+    pub client_metadata: ClientMetadata,
     pub created_at: DateTime<Utc>,
     pub version: Version,
     pub platform_version: String,
@@ -182,10 +187,11 @@ pub struct PipelineInfoInternal {
 
 impl PipelineInfoInternal {
     pub(crate) fn new(extended_pipeline: ExtendedPipelineDescr) -> Self {
+        let client_metadata = extended_pipeline.client_metadata();
         PipelineInfoInternal {
             id: extended_pipeline.id,
             name: extended_pipeline.name,
-            description: extended_pipeline.description,
+            client_metadata,
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
             platform_version: extended_pipeline.platform_version,
@@ -247,7 +253,10 @@ impl PipelineInfoInternal {
 pub struct PipelineSelectedInfo {
     pub id: PipelineId,
     pub name: String,
-    pub description: String,
+    /// Client-generated data (description, tags, ...). Each field is always
+    /// present on the wire: an unset description is `""` and unset tags `[]`.
+    #[serde(flatten)]
+    pub client_metadata: ClientMetadata,
     pub created_at: DateTime<Utc>,
     pub version: Version,
     pub platform_version: String,
@@ -304,7 +313,8 @@ pub struct PipelineSelectedInfo {
 pub struct PipelineSelectedInfoInternal {
     pub id: PipelineId,
     pub name: String,
-    pub description: String,
+    #[serde(flatten)]
+    pub client_metadata: ClientMetadata,
     pub created_at: DateTime<Utc>,
     pub version: Version,
     pub platform_version: String,
@@ -354,10 +364,11 @@ pub struct PipelineSelectedInfoInternal {
 
 impl PipelineSelectedInfoInternal {
     pub(crate) fn new_all(extended_pipeline: ExtendedPipelineDescr) -> Self {
+        let client_metadata = extended_pipeline.client_metadata();
         PipelineSelectedInfoInternal {
             id: extended_pipeline.id,
             name: extended_pipeline.name,
-            description: extended_pipeline.description,
+            client_metadata,
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
             platform_version: extended_pipeline.platform_version,
@@ -417,10 +428,11 @@ impl PipelineSelectedInfoInternal {
     }
 
     pub(crate) fn new_status(extended_pipeline: ExtendedPipelineDescrMonitoring) -> Self {
+        let client_metadata = extended_pipeline.client_metadata();
         PipelineSelectedInfoInternal {
             id: extended_pipeline.id,
             name: extended_pipeline.name,
-            description: extended_pipeline.description,
+            client_metadata,
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
             platform_version: extended_pipeline.platform_version,
@@ -494,6 +506,7 @@ pub enum PipelineFieldSelector {
     /// - `id`
     /// - `name`
     /// - `description`
+    /// - `tags`
     /// - `created_at`
     /// - `version`
     /// - `platform_version`
@@ -535,6 +548,7 @@ pub enum PipelineFieldSelector {
     /// - `id`
     /// - `name`
     /// - `description`
+    /// - `tags`
     /// - `created_at`
     /// - `version`
     /// - `platform_version`
@@ -596,7 +610,10 @@ pub struct GetPipelineParameters {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct PostPutPipeline {
     pub name: String,
-    pub description: Option<String>,
+    /// Client-generated data (description, tags, ...).
+    /// Each annotation is accepted as an optional top-level field.
+    #[serde(flatten)]
+    pub client_metadata: ClientMetadata,
     pub runtime_config: Option<RuntimeConfig>,
     pub program_code: String,
     pub udf_rust: Option<String>,
@@ -613,7 +630,8 @@ pub struct PostPutPipeline {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct PostPutPipelineInternal {
     pub name: String,
-    pub description: Option<String>,
+    #[serde(flatten)]
+    pub client_metadata: ClientMetadata,
     pub runtime_config: Option<serde_json::Value>,
     pub program_code: String,
     pub udf_rust: Option<String>,
@@ -625,14 +643,16 @@ impl From<PostPutPipelineInternal> for PipelineDescr {
     /// Fills in any missing optional field with its empty type value
     /// (for strings: an empty string `""`, for objects: an empty dictionary `{}`).
     fn from(value: PostPutPipelineInternal) -> Self {
+        let ClientMetadata { description, tags } = value.client_metadata;
         PipelineDescr {
-            name: value.name.clone(),
-            description: value.description.clone().unwrap_or("".to_string()),
-            runtime_config: value.runtime_config.clone().unwrap_or(json!({})),
-            program_code: value.program_code.clone(),
-            udf_rust: value.udf_rust.clone().unwrap_or("".to_string()),
-            udf_toml: value.udf_toml.clone().unwrap_or("".to_string()),
-            program_config: value.program_config.clone().unwrap_or(json!({})),
+            name: value.name,
+            description,
+            tags,
+            runtime_config: value.runtime_config.unwrap_or(json!({})),
+            program_code: value.program_code,
+            udf_rust: value.udf_rust.unwrap_or("".to_string()),
+            udf_toml: value.udf_toml.unwrap_or("".to_string()),
+            program_config: value.program_config.unwrap_or(json!({})),
         }
     }
 }
@@ -646,7 +666,13 @@ impl From<PostPutPipelineInternal> for PipelineDescr {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct PatchPipeline {
     pub name: Option<String>,
-    pub description: Option<String>,
+    /// Client-generated data (description, tags, ...).
+    /// Each field is patched independently: a present value overwrites the
+    /// stored one, and a missing field leaves it untouched. Unlike the other
+    /// fields, these can be patched at any time (including while the pipeline
+    /// is running), because they have no effect on the deployed pipeline.
+    #[serde(flatten)]
+    pub client_metadata: PatchClientMetadata,
     pub runtime_config: Option<RuntimeConfig>,
     pub program_code: Option<String>,
     pub udf_rust: Option<String>,
@@ -662,7 +688,8 @@ pub struct PatchPipeline {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct PatchPipelineInternal {
     pub name: Option<String>,
-    pub description: Option<String>,
+    #[serde(flatten)]
+    pub client_metadata: PatchClientMetadata,
     pub runtime_config: Option<serde_json::Value>,
     pub program_code: Option<String>,
     pub udf_rust: Option<String>,
@@ -1159,7 +1186,7 @@ pub(crate) async fn patch_pipeline(
             *tenant_id,
             &pipeline_name,
             &body.name,
-            &body.description,
+            &body.client_metadata,
             &state.common_config.platform_version,
             false,
             &body.runtime_config,
@@ -1248,7 +1275,7 @@ pub(crate) async fn post_update_runtime(
             *tenant_id,
             &pipeline_name,
             &None,
-            &None,
+            &PatchClientMetadata::default(),
             &state.common_config.platform_version,
             true, // bump platform version.
             &None,

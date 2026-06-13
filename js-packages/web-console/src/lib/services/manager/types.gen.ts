@@ -313,6 +313,27 @@ export type Chunk = {
 }
 
 /**
+ * Client-generated data stored alongside a pipeline.
+ *
+ * The fields are stored together as a single JSON object in the
+ * `client_metadata` text column, so adding a field needs no migration.
+ * Deserialization is lenient: missing keys take their default and unknown
+ * keys are ignored. [`PatchClientMetadata`] is the optional, per-field form
+ * used by `PATCH` request bodies.
+ */
+export type ClientMetadata = {
+  /**
+   * Human-readable description of the pipeline. Default is an empty string.
+   */
+  description?: string
+  /**
+   * Free-form labels used to organize, group, and filter pipelines.
+   * Default is no tags (empty vector).
+   */
+  tags?: Array<string>
+}
+
+/**
  * Body of `POST /clock/advance`.
  *
  * `delta_ms` is unsigned; negative values fail JSON deserialization.
@@ -698,15 +719,34 @@ export type ConnectorConfig = OutputBufferConfig & {
    */
   max_batch_size?: number | null
   /**
-   * Backpressure threshold.
+   * Backpressure threshold, in bytes.
+   *
+   * Maximal number of bytes queued by the endpoint before the endpoint
+   * is paused by the backpressure mechanism.
+   *
+   * For input endpoints, this setting bounds the number of bytes that have
+   * been received from the input transport but haven't yet been consumed by
+   * the circuit since the circuit, since the circuit is still busy processing
+   * previous inputs.
+   *
+   * This setting is not yet implemented for output endpoints.
+   *
+   * Note that this is not a hard bound: there can be a small delay between
+   * the backpressure mechanism is triggered and the endpoint is paused, during
+   * which more data may be queued.
+   *
+   * When this is unspecified, it defaults to `1000 * max_queued_records`.
+   */
+  max_queued_bytes?: number | null
+  /**
+   * Backpressure threshold, in records.
    *
    * Maximal number of records queued by the endpoint before the endpoint
    * is paused by the backpressure mechanism.
    *
    * For input endpoints, this setting bounds the number of records that have
    * been received from the input transport but haven't yet been consumed by
-   * the circuit since the circuit, since the circuit is still busy processing
-   * previous inputs.
+   * the circuit, since the circuit is still busy processing previous inputs.
    *
    * For output endpoints, this setting bounds the number of records that have
    * been produced by the circuit but not yet sent via the output transport endpoint
@@ -1656,6 +1696,12 @@ export type DevTweaks = {
    * quota mechanism.
    */
   storage_mb_max?: number | null
+  /**
+   * Enable streaming exchange.
+   *
+   * `false`
+   */
+  streaming_exchange?: boolean | null
   [key: string]:
     | unknown
     | boolean
@@ -1705,6 +1751,8 @@ export type DevTweaks = {
     | boolean
     | null
     | number
+    | null
+    | boolean
     | null
     | undefined
 }
@@ -3251,11 +3299,33 @@ export type PartialProgramInfo = {
   output_connectors: {
     [key: string]: OutputEndpointConfig
   }
-  schema: ProgramSchema
+  /**
+   * Schema of the compiled SQL.
+   */
+  schema: unknown
   /**
    * Generated user defined function (UDF) stubs Rust code: stubs.rs
    */
   udf_stubs: string
+}
+
+/**
+ * Client-generated metadata as supplied in a `PATCH` request body: the
+ * field-by-field patch form of [`ClientMetadata`].
+ *
+ * Each field is optional. A `Some` value overwrites the stored field; a
+ * `None` (absent) field leaves it unchanged. An empty string or empty list is
+ * a value in its own right, not a request to unset the field.
+ */
+export type PatchClientMetadata = {
+  /**
+   * Human-readable description of the pipeline.
+   */
+  description?: string | null
+  /**
+   * Free-form labels used to organize, group, and filter pipelines.
+   */
+  tags?: Array<string> | null
 }
 
 /**
@@ -3266,8 +3336,7 @@ export type PartialProgramInfo = {
  * it is required to again pass the whole runtime configuration with the
  * change.
  */
-export type PatchPipeline = {
-  description?: string | null
+export type PatchPipeline = PatchClientMetadata & {
   name?: string | null
   program_code?: string | null
   program_config?: ProgramConfig | null
@@ -3553,7 +3622,7 @@ export type PipelineId = string
  * Pipeline information.
  * It both includes fields which are user-provided and system-generated.
  */
-export type PipelineInfo = {
+export type PipelineInfo = ClientMetadata & {
   created_at: string
   deployment_desired_status: CombinedDesiredStatus
   deployment_desired_status_since: string
@@ -3572,7 +3641,6 @@ export type PipelineInfo = {
   deployment_runtime_status_since?: string | null
   deployment_status: CombinedStatus
   deployment_status_since: string
-  description: string
   id: PipelineId
   name: string
   platform_version: string
@@ -3624,7 +3692,7 @@ export type PipelineMonitorEventSelectedInfo = {
  * It both includes fields which are user-provided and system-generated.
  * If an optional field is not selected (i.e., is `None`), it will not be serialized.
  */
-export type PipelineSelectedInfo = {
+export type PipelineSelectedInfo = ClientMetadata & {
   connectors?: ConnectorStats | null
   created_at: string
   deployment_desired_status: CombinedDesiredStatus
@@ -3644,7 +3712,6 @@ export type PipelineSelectedInfo = {
   deployment_runtime_status_since?: string | null
   deployment_status: CombinedStatus
   deployment_status_since: string
-  description: string
   id: PipelineId
   name: string
   platform_version: string
@@ -3715,8 +3782,7 @@ export type PipelineTemplateConfig = {
  * Fields which are optional and not provided will be set to their empty type value
  * (for strings: an empty string `""`, for objects: an empty dictionary `{}`).
  */
-export type PostPutPipeline = {
-  description?: string | null
+export type PostPutPipeline = ClientMetadata & {
   name: string
   program_code: string
   program_config?: ProgramConfig | null
@@ -4119,7 +4185,10 @@ export type ProgramInfo = {
   output_connectors: {
     [key: string]: OutputEndpointConfig
   }
-  schema: ProgramSchema
+  /**
+   * Schema of the compiled SQL.
+   */
+  schema: unknown
   /**
    * Generated user defined function (UDF) stubs Rust code: stubs.rs
    */
@@ -4136,7 +4205,10 @@ export type ProgramIr = {
   mir: {
     [key: string]: MirNode
   }
-  program_schema: ProgramSchema
+  /**
+   * Program schema.
+   */
+  program_schema: unknown
 }
 
 /**
@@ -4376,9 +4448,9 @@ export type ResourcesDesiredStatus = 'Stopped' | 'Provisioned'
  * Pipeline resources status.
  *
  * ```text
- * /start (early start failed)
- * ┌───────────────────┐
- * │                   ▼
+ * /start (early start or provision check failed)
+ * ┌───┐
+ * │   ▼
  * Stopped ◄────────── Stopping
  * /start │                   ▲
  * │                   │ /stop?force=true
@@ -4978,6 +5050,7 @@ export type SqlType =
   | 'Time'
   | 'Date'
   | 'Timestamp'
+  | 'TimestampTz'
   | {
       Interval: IntervalUnit
     }
@@ -5428,6 +5501,12 @@ export type TransportConfig =
   | {
       config: ClockConfig
       name: 'clock_input'
+    }
+  | {
+      name: 'null_output'
+    }
+  | {
+      name: 'empty_input'
     }
 
 export type UpdateInformation = {
