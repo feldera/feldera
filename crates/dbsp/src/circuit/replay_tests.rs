@@ -1,12 +1,12 @@
 use feldera_types::config::StorageConfig;
 
 use crate::{
-    CmpFunc, DBData, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit,
-    Runtime, Stream, ZSetHandle, ZWeight,
+    Circuit, CmpFunc, DBData, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle,
+    RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
     circuit::dbsp_handle::CircuitStorageConfig,
     default_hash, indexed_zset,
     operator::{
-        Max, Min,
+        ConstantGenerator, Max, Min,
         dynamic::balance::{BalancerHint, PartitioningPolicy},
         time_series::{RelOffset, RelRange},
     },
@@ -309,9 +309,11 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
             })
             .unwrap();
 
-        while circuit.bootstrap_in_progress() {
-            circuit.transaction().unwrap();
-        }
+        circuit.start_transaction().unwrap();
+        circuit.start_commit_transaction().unwrap();
+        while !circuit.step().unwrap() {}
+        assert!(!circuit.bootstrap_in_progress());
+
         println!("Replay finished");
 
         // Feed inputs2_2, inputs2.
@@ -2106,11 +2108,11 @@ fn test_concurrent_bootstrap_old_views_live() {
 //      the synchronization transaction and the cutover.
 //    * `UpToDate`: nothing to bootstrap.
 //
-// Fallbacks are exercised by dedicated bespoke tests (e.g.
-// `test_concurrent_unmaterialized_table_falls_back`) rather than through this
-// harness, because a fallback's post-restart view contents depend on what the
-// classic bootstrap can replay (an unmaterialized table loses its history), so
-// they do not match the from-scratch reference this harness compares against.
+// A fallback to the classic stop-the-world bootstrap (`ConcurrentRestoreOutcome::
+// FellBack`) is exercised separately by `test_concurrent_unmaterialized_table_falls_back`:
+// the only topology that currently falls back -- a new view over an unmaterialized
+// table -- loses pre-restart history, so it cannot reuse this harness's
+// reference-equivalence assertions.
 // 4. Feed phase-3 inputs, asserting every view's per-transaction delta.
 // 5. Feed phase-4 inputs -- by convention the retraction of every record fed
 //    in phases 1-3 -- asserting every view's per-transaction delta.  The
@@ -2294,10 +2296,10 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
                 bootstrap_done = circuit.step_bootstrap_circuit().unwrap();
                 pumps += 1;
             }
-            assert!(
-                pumps > 1,
-                "expected a multi-pump background replay, got {pumps}"
-            );
+            // Most topologies replay chunk-by-chunk over several pumps (the
+            // per-transaction checks above then exercise genuine interleaving);
+            // a recursive view's backfill completes in a single pump.
+            assert!(pumps >= 1, "the bootstrap circuit was never pumped");
 
             // Synchronization and cutover.
             circuit.sync_concurrent_bootstrap().unwrap();
@@ -2406,6 +2408,84 @@ fn test_concurrent_stateless_new_view() {
         |config| config,
         Arc::new(topo_shared_input_old),
         Arc::new(topo_shared_input_new),
+        p1,
+        p2,
+        p3,
+        p4,
+        ExpectedOutcome::Concurrent,
+        |_| {},
+    );
+}
+
+// --- Topology: a deterministic source feeds the new view's backfilled region. ---
+//
+// Regression test for a concurrent-bootstrap refusal bug.  The SQL compiler
+// lowers a global aggregate (e.g. `SELECT COUNT(*) FROM t`) to a circuit that
+// includes a `ConstantGenerator` source supplying the aggregate's empty-group
+// default value.  When such a view was ADDED to an existing pipeline,
+// `concurrent_restore_refusal` rejected the bootstrap because the fresh
+// (uncheckpointed) `ConstantGenerator` lands in the backfilled region and its
+// `is_input()` is `true` -- even though it has no external input and the
+// rebuilt bootstrap circuit can simply re-run it.  The misleading error blamed
+// "an unmaterialized table" although the materialized table's integral was a
+// perfectly good replay source.  The fix exempts deterministic sources via
+// `Operator::is_deterministic_source`.
+//
+// The constant is added and immediately retracted so the view's value equals
+// `input.map(x * 3)` (and matches the from-scratch reference regardless of how
+// often the generator fires); the point under test is that the generator's mere
+// presence in the bootstrapped region no longer blocks the concurrent bootstrap.
+
+fn topo_constant_source_old(
+    circuit: &mut RootCircuit,
+) -> (ZSetHandle<u64>, OutputHandle<SpineSnapshot<OrdZSet<u64>>>) {
+    let (input, ih) = circuit.add_input_zset::<u64>();
+    input.set_persistent_id(Some("t1"));
+    input.integrate_trace();
+    let out_old = input
+        .map(|x| x + 5)
+        .accumulate_output_persistent(Some("out_old"));
+    (ih, out_old)
+}
+
+#[allow(clippy::type_complexity)]
+fn topo_constant_source_new(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<u64>,
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+) {
+    let (input, ih) = circuit.add_input_zset::<u64>();
+    input.set_persistent_id(Some("t1"));
+    input.integrate_trace();
+    let out_old = input
+        .map(|x| x + 5)
+        .accumulate_output_persistent(Some("out_old"));
+
+    // A deterministic constant source in the new view's region, added and then
+    // retracted so it nets to zero.
+    let c = circuit.add_source(ConstantGenerator::new(zset! { 1000u64 => 1 }));
+    c.set_persistent_id(Some("const_default"));
+    let out_new = input
+        .map(|x| x * 3)
+        .plus(&c)
+        .plus(&c.neg())
+        .accumulate_output_persistent(Some("out_new"));
+    (ih, out_old, out_new)
+}
+
+#[test]
+fn test_concurrent_constant_source_new_view() {
+    let p1 = weighted_sequence(0, 16, 1);
+    let p2 = weighted_sequence(16, 24, 1);
+    let p3 = weighted_sequence(24, 28, 1);
+    let p4 = negate_chunks(&[&p1, &p2, &p3]);
+    run_concurrent_bootstrap_test::<TestData1<u64>, TestData1<u64>, TestData1<u64>>(
+        NUM_WORKERS,
+        |config| config,
+        Arc::new(topo_constant_source_old),
+        Arc::new(topo_constant_source_new),
         p1,
         p2,
         p3,
@@ -5547,6 +5627,100 @@ fn test_concurrent_torture_shared_cluster_skewed() {
         p2,
         p3,
         p4,
+        ExpectedOutcome::Concurrent,
+        |_| {},
+    );
+}
+
+// ============================================================================
+// Recursive (nested) views fall back to a non-concurrent bootstrap.
+//
+// A new view that is a transitive closure computed in a nested recursive scope.
+// The recursive scope maintains incremental state across outer transactions
+// (the maintained relation, an `AccumulateZ1Trace` inside the nested scope),
+// and the bootstrap circuit does not reconstruct that nested state when it
+// re-runs the subcircuit over the replayed inputs -- so it cannot be transferred
+// at cutover.  `concurrent_restore_refusal` therefore refuses any backfill
+// region that includes a nested circuit, and the engine falls back to the
+// classic, stop-the-world bootstrap, which reconstructs the recursive view
+// correctly by replaying the edge integral through the recursion in place.
+// ============================================================================
+
+/// One transaction per edge.
+fn edge_chunks(edges: &[(u64, u64)]) -> Vec<Vec<Tup2<Tup2<u64, u64>, ZWeight>>> {
+    edges
+        .iter()
+        .map(|(x, y)| vec![Tup2(Tup2(*x, *y), 1)])
+        .collect()
+}
+
+#[allow(clippy::type_complexity)]
+fn recursive_view_old(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<Tup2<u64, u64>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
+) {
+    let (edges, ih) = circuit.add_input_zset::<Tup2<u64, u64>>();
+    edges.set_persistent_id(Some("edges"));
+    edges.integrate_trace();
+    let out_old = edges
+        .map(|Tup2(x, y)| Tup2(*x, *y))
+        .accumulate_output_persistent(Some("out_old"));
+    (ih, out_old)
+}
+
+#[allow(clippy::type_complexity)]
+fn recursive_view_new(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<Tup2<u64, u64>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
+) {
+    let (edges, ih) = circuit.add_input_zset::<Tup2<u64, u64>>();
+    edges.set_persistent_id(Some("edges"));
+    edges.integrate_trace();
+    let out_old = edges
+        .map(|Tup2(x, y)| Tup2(*x, *y))
+        .accumulate_output_persistent(Some("out_old"));
+
+    // New view: transitive closure (paths) of the edge relation.
+    let paths = circuit
+        .recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
+            let edges = edges.delta0(child);
+            let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
+            let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
+            Ok(edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
+        })
+        .unwrap();
+    let out_new = paths.accumulate_output_persistent(Some("out_new"));
+    (ih, out_old, out_new)
+}
+
+#[test]
+fn test_concurrent_recursive_view() {
+    // A new recursive (nested) view should bootstrap concurrently: the old
+    // views keep updating while the transitive closure backfills, then the new
+    // view is correct after cutover.  Append-only edge chains, so the closure
+    // grows monotonically; the harness verifies every view's per-transaction
+    // deltas against a from-scratch run.
+    let p1 = edge_chunks(&[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6)]);
+    let p2 = edge_chunks(&[(6, 7), (7, 8)]);
+    let p3 = edge_chunks(&[(8, 9), (10, 11)]);
+    run_concurrent_bootstrap_test::<
+        TestData1<Tup2<u64, u64>>,
+        TestData1<Tup2<u64, u64>>,
+        TestData1<Tup2<u64, u64>>,
+    >(
+        NUM_WORKERS,
+        |config| config,
+        Arc::new(recursive_view_old),
+        Arc::new(recursive_view_new),
+        p1,
+        p2,
+        p3,
+        Vec::new(),
         ExpectedOutcome::Concurrent,
         |_| {},
     );

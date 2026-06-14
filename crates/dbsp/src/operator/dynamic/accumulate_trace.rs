@@ -1110,6 +1110,12 @@ where
     }
 
     fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
+        // Move the trace contents and the operator's clock (`time`/`dirty`)
+        // from the bootstrap copy.  The clock must travel with the trace: a
+        // nested circuit's clock is realigned wholesale at cutover (see
+        // `ChildNode::swap_state_with`), so the per-operator clock here must
+        // match the trace's timestamps, which are anchored to the bootstrap
+        // copy's transactions.
         std::mem::swap(&mut self.trace, &mut other.trace);
         std::mem::swap(&mut self.time, &mut other.time);
         std::mem::swap(&mut self.dirty, &mut other.dirty);

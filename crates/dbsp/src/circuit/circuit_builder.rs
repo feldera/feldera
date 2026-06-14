@@ -1642,6 +1642,16 @@ pub trait WithClock {
 
     /// Current time.
     fn time(&self) -> Self::Time;
+
+    /// Overwrites the current time.
+    ///
+    /// The concurrent-bootstrap cutover uses this to align a backfilled nested
+    /// circuit's clock with the bootstrap copy that reconstructed its state:
+    /// the live copy excluded the subcircuit from its schedule, so its clock
+    /// never advanced, while the transferred state is timestamped at the
+    /// transactions the bootstrap copy replayed.  See
+    /// [`ChildNode::swap_state_with`].
+    fn set_time(&self, time: Self::Time);
 }
 
 /// This `impl` is only needed to bootstrap the
@@ -1653,6 +1663,8 @@ impl WithClock for () {
     fn time(&self) -> Self::Time {
         UnitTimestamp
     }
+
+    fn set_time(&self, _time: Self::Time) {}
 }
 
 impl<P, T> WithClock for ChildCircuit<P, T>
@@ -1664,6 +1676,10 @@ where
 
     fn time(&self) -> Self::Time {
         self.time.borrow().clone()
+    }
+
+    fn set_time(&self, time: Self::Time) {
+        *self.time.borrow_mut() = time;
     }
 }
 
@@ -7412,17 +7428,53 @@ where
         Ok(())
     }
 
-    fn swap_state_with(&mut self, _other: &mut dyn Node) -> Result<(), DbspError> {
-        // Nested circuits cannot transfer state between circuit copies;
-        // `restore_concurrent` refuses to start a concurrent bootstrap when
-        // the backfilled region includes a nested circuit.
-        Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
-            "state transfer is not supported for nested circuits".to_string(),
-        )))
+    fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError> {
+        // Transfer a nested circuit's state by swapping each child operator's
+        // state with the corresponding child of the other circuit copy.  Both
+        // copies are built from the same constructor, so child node ids
+        // coincide; a child that is itself a nested circuit recurses.
+        let mut result: Result<(), DbspError> = Ok(());
+        for child_id in self.circuit.node_ids() {
+            self.circuit
+                .map_node_mut_relative(&[child_id], &mut |child| {
+                    other.map_child_mut(&[child_id], &mut |other_child| {
+                        if result.is_ok() {
+                            result = child.swap_state_with(other_child);
+                        }
+                    });
+                });
+            if result.is_err() {
+                break;
+            }
+        }
+        result?;
+
+        // Align this (live) subcircuit's clock with the bootstrap copy's.  The
+        // live copy excluded the subcircuit from its schedule, so its clock
+        // never advanced past `clock_start`, whereas the bootstrap copy ticked
+        // the subcircuit once per replayed transaction.  The state we just
+        // transferred is timestamped at those transactions; without matching
+        // the clock, an incremental operator inside the subcircuit (e.g. a
+        // recursive view's join, which keys its outputs on `clock.time()`)
+        // would treat the transferred state as belonging to future
+        // transactions and never emit it, silently dropping the recursion's
+        // fixpoint.
+        let other = (other as &mut dyn Any)
+            .downcast_mut::<Self>()
+            .expect("swap_state_with: node type mismatch");
+        self.circuit.set_time(other.circuit.time());
+        Ok(())
     }
 
     fn supports_state_transfer(&self) -> bool {
-        false
+        // A nested circuit can transfer its state iff every child can.
+        let mut supported = true;
+        for child_id in self.circuit.node_ids() {
+            self.circuit.map_node_relative(&[child_id], &mut |child| {
+                supported = supported && child.supports_state_transfer();
+            });
+        }
+        supported
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -7541,11 +7593,6 @@ struct CheckpointAnalysis {
     /// pre-existing region: an old node on the path from a replay source to
     /// a new node participates in the replay and keeps serving old views.
     participate_in_backfill: BTreeSet<NodeId>,
-
-    /// True if the backfilled region includes nodes inside nested circuits
-    /// (which can only be backfilled wholesale, and whose state cannot be
-    /// transferred between circuit copies).
-    has_nested_backfill: bool,
 }
 
 /// The result of [`CircuitHandle::restore_concurrent`].
@@ -7773,10 +7820,8 @@ impl CircuitHandle {
             need_backfill.iter().cloned().collect::<Vec<GlobalNodeId>>()
         );
 
-        // We can only backfill a nested circuit as a whole, so if we encounter at least
-        // one node in a nested circuit that needs backfill, we backfill the
-        // entire circuit.
-        let has_nested_backfill = need_backfill.iter().any(|gid| gid.path().len() > 1);
+        // We can only backfill a nested circuit as a whole, so map every node
+        // that needs backfill to its top-level ancestor.
         let need_backfill = need_backfill
             .into_iter()
             .map(|gid| gid.top_level_ancestor())
@@ -7803,6 +7848,25 @@ impl CircuitHandle {
             )?;
         }
 
+        // A nested circuit (subcircuit) on the backfill path -- e.g. a recursive
+        // view -- holds incremental cross-transaction state that the live copy
+        // cannot serve correctly (it starts from a checkpoint predating the new
+        // view and only sees post-restart input deltas).  Treat the whole
+        // subcircuit as a transfer unit: add it to `need_backfill` so it is
+        // excluded from the live copy's schedule and its state is reconstructed
+        // by the bootstrap copy and swapped in at cutover (see
+        // `ChildNode::swap_state_with`).
+        let nested_backfill: BTreeSet<NodeId> = participate_in_backfill
+            .iter()
+            .filter(|node_id| {
+                self.circuit
+                    .map_local_node_mut(**node_id, &mut |node| node.is_circuit())
+            })
+            .cloned()
+            .collect();
+        let need_backfill: BTreeSet<NodeId> =
+            need_backfill.union(&nested_backfill).cloned().collect();
+
         debug!(
             "worker {}: CircuitHandle::restore: replaying {} operators: {:?}\n  backfilling {} operators: {:?}\n  replay circuit consists of {} operators: {:?}",
             Runtime::worker_index(),
@@ -7822,7 +7886,6 @@ impl CircuitHandle {
             boundary_streams,
             need_backfill,
             participate_in_backfill,
-            has_nested_backfill,
         })
     }
 
@@ -8125,12 +8188,6 @@ impl CircuitHandle {
     /// Returns the reason the bootstrapped region of `analysis` cannot be
     /// processed concurrently, or `None` if it can.
     fn concurrent_restore_refusal(&self, analysis: &CheckpointAnalysis) -> Option<String> {
-        // Nested circuits are backfilled wholesale and their state cannot
-        // be transferred between circuit copies at cutover.
-        if analysis.has_nested_backfill {
-            return Some("the bootstrapped region includes a nested circuit".to_string());
-        }
-
         // If the backward walk reached a connector-fed input node, some stream
         // feeding the bootstrapped region has no replay source (an
         // unmaterialized table): the bootstrap circuit would silently
