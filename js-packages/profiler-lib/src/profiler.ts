@@ -40,6 +40,9 @@ export interface TooltipRow {
 
 /** Tooltip data structure */
 export interface NodeAttributes {
+    /** The operator's graph node id, carried as a first-class field so consumers need not
+     *  parse it back out of `title`. */
+    nodeId: string;
     title: string;
     /** Column headers */
     columns: string[];

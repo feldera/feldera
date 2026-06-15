@@ -1012,6 +1012,7 @@ export class CytographRendering {
         let visible = false;
 
         const tooltipData: NodeAttributes = {
+            nodeId,
             title: "",
             columns: [],
             rows: [],
