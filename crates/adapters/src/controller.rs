@@ -53,7 +53,7 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
-use dbsp::circuit::circuit_builder::BootstrapInfo;
+use dbsp::circuit::circuit_builder::{BootstrapInfo, ConcurrentRestoreOutcome};
 use dbsp::circuit::metrics::{
     COMPACTION_STALL_TIME_NANOSECONDS, DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS, DBSP_STEP,
     DBSP_STEP_LATENCY_MICROSECONDS, FILES_CREATED, FILES_DELETED, TOTAL_LATE_RECORDS,
@@ -2573,6 +2573,47 @@ struct CircuitThread {
     /// Set to true on startup if the circuit requires bootstrapping.
     /// Cleared when the circuit completes bootstrapping.
     bootstrapping: bool,
+
+    /// Phase of an in-progress concurrent bootstrap.
+    ///
+    /// `Inactive` for a normal run or a classic stop-the-world bootstrap;
+    /// `Backfill` while new/modified views replay in the background and the
+    /// pre-existing views stay live; `Synchronize` during the brief
+    /// stop-the-world cutover window.
+    concurrent_phase: ConcurrentPhase,
+}
+
+/// Phase of a concurrent bootstrap driven by [`CircuitThread`].
+///
+/// The engine's own `ConcurrentBootstrapPhase` is private, so the controller
+/// tracks its phase separately and drives the transitions off the boolean
+/// returned by [`DBSPHandle::step_bootstrap_circuit`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConcurrentPhase {
+    /// No concurrent bootstrap in progress.
+    Inactive,
+    /// New/modified views backfill in the background; pre-existing views live.
+    Backfill,
+    /// Backfill is done and inputs are paused; waiting for the primary circuit
+    /// to finish any in-flight transaction before starting synchronization
+    /// (`sync_concurrent_bootstrap` requires no open main transaction).
+    AwaitingSync,
+    /// Cutover window: inputs paused, draining recorded deltas into the new
+    /// views before the state transfer.
+    Synchronize,
+    /// State has been transferred but the pipeline is not yet reported as
+    /// `Running`: a post-cutover transaction must commit so the new views'
+    /// freshly swapped-in integrals are read into the ad-hoc snapshot. The new
+    /// views were excluded from the live schedule during the backfill, so until
+    /// then the snapshot still serves the empty pre-cutover view; reporting
+    /// `Running` before the transaction commits would let ad-hoc queries
+    /// observe the stale snapshot. The snapshot is refreshed only at a
+    /// transaction boundary (`update_snapshot` runs when `transaction_state`
+    /// returns to `None`), and that transaction can span several steps (e.g.
+    /// rebalancing), so this phase persists -- forcing steps via
+    /// `concurrent_active`, inputs paused -- until the commit. The analogue of
+    /// the `bootstrap_in_progress` off-by-one for a stop-the-world bootstrap.
+    Finalizing,
 }
 
 struct CommitUpdates {
@@ -2694,7 +2735,7 @@ impl CircuitThread {
         let ft_model = controller_init.pipeline_config.global.fault_tolerance.model;
         let ControllerInit {
             pipeline_config,
-            circuit_config,
+            mut circuit_config,
             processed_records,
             initial_start_time,
             step,
@@ -2710,6 +2751,24 @@ impl CircuitThread {
             .storage
             .as_ref()
             .map(|storage: &CircuitStorageConfig| storage.backend.clone());
+
+        // Concurrent bootstrap is opt-in via the startup `BootstrapConfig`.
+        // When requested, suppress the automatic stop-the-world restore so the
+        // controller can drive `start_concurrent_bootstrap` instead; the base
+        // checkpoint is the same one the automatic restore would have used.
+        let concurrent_bootstrap = state
+            .as_ref()
+            .map(|state| state.bootstrap_config().concurrent_bootstrap)
+            .unwrap_or(false);
+        let concurrent_base = circuit_config
+            .storage
+            .as_ref()
+            .and_then(|storage| storage.init_checkpoint);
+        if concurrent_bootstrap {
+            if let Some(storage) = circuit_config.storage.as_mut() {
+                storage.defer_restore = true;
+            }
+        }
 
         let (mut circuit, catalog) = circuit_factory(circuit_config)?;
 
@@ -2770,6 +2829,54 @@ impl CircuitThread {
                         BootstrapPolicy::AwaitApproval => {
                             sleep(Duration::from_millis(10));
                         }
+                    }
+                }
+            }
+        }
+
+        // Concurrent bootstrap: the automatic stop-the-world restore was
+        // suppressed (`defer_restore`), so drive the restore ourselves. This
+        // also performs an ordinary restore when the checkpoint matches the
+        // circuit (`UpToDate`). A circuit that cannot be bootstrapped
+        // concurrently fails the pipeline (no fallback): the user restarts with
+        // `concurrent_bootstrap=false` for a stop-the-world bootstrap.
+        let mut concurrent_phase = ConcurrentPhase::Inactive;
+        if concurrent_bootstrap {
+            if let Some(base) = concurrent_base {
+                match circuit.start_concurrent_bootstrap(base.to_string().into())? {
+                    ConcurrentRestoreOutcome::UpToDate => {}
+                    ConcurrentRestoreOutcome::FellBack { reason, .. } => {
+                        return Err(ControllerError::BootstrapNotAllowed {
+                            error: format!(
+                                "the pipeline cannot be bootstrapped concurrently: {reason}. \
+                                 Restart with `concurrent_bootstrap=false` for a stop-the-world \
+                                 bootstrap."
+                            ),
+                        });
+                    }
+                    ConcurrentRestoreOutcome::Concurrent(info) => {
+                        // The non-materialized-table check (above) was skipped
+                        // because the deferred restore left `bootstrap_info()`
+                        // empty; run it now against the concurrent bootstrap's
+                        // own `BootstrapInfo`.
+                        if let Some(diff) = &pipeline_diff {
+                            let non_materialized_tables =
+                                non_materialized_replay_sources(&info, &pipeline_config, diff);
+                            if !non_materialized_tables.is_empty() {
+                                return Err(ControllerError::BootstrapNotAllowed {
+                                    error: format!(
+                                        "- The following tables are not materialized, but some of the views that depend on these tables require bootstrapping: {}. We recommend materializing all tables in the program to avoid such errors in the future",
+                                        non_materialized_tables
+                                            .iter()
+                                            .map(|t| format!("'{t}'"))
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
+                                    ),
+                                });
+                            }
+                        }
+                        info!("Bootstrapping new and modified views concurrently.");
+                        concurrent_phase = ConcurrentPhase::Backfill;
                     }
                 }
             }
@@ -2883,8 +2990,10 @@ impl CircuitThread {
                 // The above code ensures that replay and bootstrapping cannot happen at the same time.
                 assert!(!(ft.is_replaying() && bootstrapping));
 
-                // Disable journaling while we're bootstrapping the circuit.
-                if bootstrapping {
+                // Disable journaling while we're bootstrapping the circuit
+                // (stop-the-world or concurrent). For a concurrent bootstrap it
+                // is re-enabled by the forced checkpoint taken at cutover.
+                if bootstrapping || concurrent_phase == ConcurrentPhase::Backfill {
                     ft.disable();
                 }
 
@@ -2916,6 +3025,7 @@ impl CircuitThread {
             input_metadata: input_metadata.unwrap_or_default(),
             commit_updates: None,
             bootstrapping,
+            concurrent_phase,
         })
     }
 
@@ -2953,6 +3063,14 @@ impl CircuitThread {
 
         self.finish_replaying();
 
+        // If we came up into a concurrent backfill, reflect it in the status;
+        // the trigger keeps the loop stepping while it is active.
+        if self.concurrent_phase == ConcurrentPhase::Backfill {
+            self.controller
+                .status
+                .set_concurrent_backfill_in_progress(true);
+        }
+
         // Run a single step, which is probably empty, before reporting that
         // initialization is complete.  This is needed to make ad-hoc snapshots
         // up-to-date before making them available to the user.
@@ -2982,7 +3100,12 @@ impl CircuitThread {
             // checkpoint request can then terminate the pipeline, so check for
             // that right afterward.
             self.run_commands();
-            if self.checkpoint_requested() {
+            // Defer all checkpoints while a concurrent bootstrap is active: the
+            // engine blocks checkpoints until cutover. Scheduled checkpoints are
+            // already withheld by the trigger; this also defers command-driven
+            // ones (manual checkpoint / suspend), which are queued and processed
+            // after cutover (the driver forces a checkpoint then).
+            if self.checkpoint_requested() && self.concurrent_phase == ConcurrentPhase::Inactive {
                 self.checkpoint();
             }
 
@@ -3038,6 +3161,9 @@ impl CircuitThread {
                 // We want the trigger to trigger that extra transaction; therefore we pass `status.bootstrap_in_progress`
                 // rather than `self.bootstrapping` here.
                 self.controller.status.bootstrap_in_progress(),
+                // `Finalizing` keeps `concurrent_active` true for the analogous
+                // post-cutover snapshot-refresh step.
+                self.concurrent_phase != ConcurrentPhase::Inactive,
                 self.checkpoint_requested(),
                 self.sync_checkpoint_requested(),
                 self.next_step_inputs(coordination_request.as_ref()),
@@ -3045,8 +3171,16 @@ impl CircuitThread {
                 self.step,
             ) {
                 Action::Step => {
-                    if !self.step()? {
-                        break Ok(());
+                    // During the synchronize (cutover) window the main circuit
+                    // must not step: inputs are paused and the engine rejects
+                    // main transactions. Drive only the bootstrap circuit.
+                    if self.concurrent_phase == ConcurrentPhase::Synchronize {
+                        self.pump_concurrent_bootstrap()?;
+                    } else {
+                        if !self.step()? {
+                            break Ok(());
+                        }
+                        self.pump_concurrent_bootstrap()?;
                     }
                 }
                 Action::Checkpoint => self.checkpoint_requests.push(CheckpointRequest::Scheduled),
@@ -3057,6 +3191,116 @@ impl CircuitThread {
                 Action::Park(None) => self.parker.park(),
             }
         }
+    }
+
+    /// Advances an in-progress concurrent bootstrap by one increment.
+    ///
+    /// In `Backfill` this pumps one bounded chunk of the background replay while
+    /// the pre-existing views stay live, and -- once the backfill commits and
+    /// the main circuit is between transactions -- enters the synchronize
+    /// (cutover) window. In `Synchronize` it drains the recorded deltas into the
+    /// new views, cuts over, and forces a post-cutover checkpoint. Any engine
+    /// error is fatal: the bootstrap circuit is torn down and the error is
+    /// propagated to fail the pipeline (there is no fallback).
+    fn pump_concurrent_bootstrap(&mut self) -> Result<(), ControllerError> {
+        let result = self.pump_concurrent_bootstrap_inner();
+        if result.is_err() {
+            // Fatal failure: tear down the bootstrap circuit best-effort (it
+            // sets the sticky `concurrent_bootstrap_aborted` flag that keeps
+            // checkpoints blocked) and clear our state before failing.
+            let _ = self.circuit.destroy_bootstrap_circuit();
+            self.concurrent_phase = ConcurrentPhase::Inactive;
+            self.controller
+                .status
+                .set_concurrent_backfill_in_progress(false);
+            self.controller
+                .status
+                .set_concurrent_synchronize_in_progress(false);
+        }
+        result
+    }
+
+    fn pump_concurrent_bootstrap_inner(&mut self) -> Result<(), ControllerError> {
+        match self.concurrent_phase {
+            ConcurrentPhase::Inactive => {}
+            ConcurrentPhase::Backfill => {
+                // Advance the background backfill on every step, interleaved
+                // with the primary circuit. The two circuits are independent
+                // (`step_bootstrap_circuit` does not depend on the main
+                // transaction state), so the backfill cannot be starved by a
+                // long-running primary transaction.
+                if self.circuit.step_bootstrap_circuit()? {
+                    // Backfill committed. Pause inputs and enter the cutover
+                    // window. The synchronization transaction itself
+                    // (`sync_concurrent_bootstrap`) requires no open main
+                    // transaction, so it is started from `AwaitingSync` once the
+                    // primary circuit has drained any in-flight transaction.
+                    self.controller
+                        .status
+                        .set_concurrent_backfill_in_progress(false);
+                    self.controller
+                        .status
+                        .set_concurrent_synchronize_in_progress(true);
+                    self.controller.unpark_backpressure();
+                    self.concurrent_phase = ConcurrentPhase::AwaitingSync;
+                }
+            }
+            ConcurrentPhase::AwaitingSync => {
+                // Inputs are paused; the `step()` call that precedes this pump
+                // in the run loop drives the primary circuit to finish its
+                // in-flight transaction. Once it is idle, start the
+                // synchronization transaction.
+                if self.controller.get_transaction_state() == TransactionState::None {
+                    self.circuit.sync_concurrent_bootstrap()?;
+                    self.concurrent_phase = ConcurrentPhase::Synchronize;
+                }
+            }
+            ConcurrentPhase::Synchronize => {
+                // Drain the recorded deltas into the new views one chunk per
+                // invocation (not a tight loop), so the circuit thread returns
+                // to its command loop between chunks and keeps servicing
+                // requests such as profiling. The trigger keeps forcing steps
+                // while the concurrent bootstrap is active, so we are called
+                // again until the synchronization transaction commits.
+                if self.circuit.step_bootstrap_circuit()? {
+                    // Synchronization complete: state has been transferred to
+                    // the live circuit. Don't report `Running` yet: the new
+                    // views were excluded from the live schedule during the
+                    // backfill, so their queryable integrals are not yet in the
+                    // ad-hoc snapshot. Enter `Finalizing`, which keeps the
+                    // status non-`Running` and inputs paused
+                    // (`concurrent_synchronize_in_progress` stays set) for one
+                    // more step that refreshes the snapshot.
+                    self.circuit.complete_concurrent_bootstrap()?;
+                    self.concurrent_phase = ConcurrentPhase::Finalizing;
+                }
+            }
+            ConcurrentPhase::Finalizing => {
+                // Wait for the post-cutover transaction to COMMIT before
+                // reporting `Running`. The ad-hoc snapshot is refreshed by
+                // `update_snapshot`, which runs only at a transaction boundary
+                // (`transaction_state == None` in `step()`), not on every step;
+                // and a transaction can span several steps after the cutover
+                // (e.g. rebalancing the new views into the live circuit).
+                // `concurrent_active` keeps the trigger forcing steps and inputs
+                // stay paused until the transaction commits. Only then has the
+                // committing step run `update_snapshot` -- so the swapped-in
+                // integrals are now in the snapshot -- and `Running` is safe to
+                // report.
+                if self.controller.get_transaction_state() == TransactionState::None {
+                    self.concurrent_phase = ConcurrentPhase::Inactive;
+                    self.controller
+                        .status
+                        .set_concurrent_synchronize_in_progress(false);
+                    self.controller.unpark_backpressure();
+                    // Capture the unified circuit; checkpoints were deferred
+                    // during the bootstrap.
+                    self.checkpoint_requests.push(CheckpointRequest::Scheduled);
+                    info!("Concurrent bootstrap complete; new views are live.");
+                }
+            }
+        }
+        Ok(())
     }
 
     fn finish(mut self) -> Result<(), ControllerError> {
@@ -3624,8 +3868,13 @@ impl CircuitThread {
     ///   recovered, so the pipeline process should exit as soon as it can.
     /// - `Err(error)` if there was an error.
     fn input_step(&mut self) -> Result<Option<BufferSize>, ControllerError> {
-        // No ingestion during bootstrap.
+        // No ingestion during a stop-the-world bootstrap, a committing
+        // transaction, or the concurrent-bootstrap synchronize/finalize window
+        // (inputs flow normally during a concurrent backfill). The finalize
+        // step -- which refreshes the ad-hoc snapshot after cutover -- keeps
+        // `concurrent_synchronize_in_progress` set so it runs empty here.
         if self.controller.status.bootstrap_in_progress()
+            || self.controller.status.concurrent_synchronize_in_progress()
             || self.controller.transaction_commit_in_progress()
         {
             return Ok(Some(BufferSize::empty()));
@@ -4458,15 +4707,19 @@ impl StepTrigger {
         last_sync: LastCheckpoint,
         replaying: bool,
         bootstrapping: bool,
+        concurrent_active: bool,
         checkpoint_requested: bool,
         sync_checkpoint_requested: bool,
         step_inputs: StepInputs,
         coordination_request: Option<StepRequest>,
         step: Step,
     ) -> Action {
-        // Time of the next checkpoint.
+        // Time of the next checkpoint. Suppressed while a concurrent bootstrap
+        // is active: the engine blocks checkpoints until cutover, after which
+        // the driver forces one.
         let next_checkpoint = if let Some(checkpoint_interval) = self.checkpoint_interval
             && coordination_request.is_none()
+            && !concurrent_active
         {
             Some(last_checkpoint.timestamp + checkpoint_interval)
         } else {
@@ -4499,7 +4752,11 @@ impl StepTrigger {
                 }
                 _ => Some(Action::Park(None)),
             }
-        } else if replaying || self.controller.transaction_commit_requested() || bootstrapping {
+        } else if replaying
+            || self.controller.transaction_commit_requested()
+            || bootstrapping
+            || concurrent_active
+        {
             Some(Action::Step)
         } else if timer_expired(next_checkpoint, now) && !checkpoint_requested {
             Some(Action::Checkpoint)
@@ -5052,10 +5309,15 @@ impl BackpressureThread {
             };
 
             let bootstrap_in_progress = controller.status.bootstrap_in_progress();
+            // Inputs keep flowing during a concurrent backfill (old views stay
+            // live); they pause only during the brief synchronize/cutover
+            // window.
+            let concurrent_synchronize = controller.status.concurrent_synchronize_in_progress();
 
             for (epid, ep) in controller.status.input_status().iter() {
                 let should_run = globally_running
                     && !bootstrap_in_progress
+                    && !concurrent_synchronize
                     && !ep.is_paused_by_user()
                     && !ep.is_full();
                 match should_run {

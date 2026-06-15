@@ -177,6 +177,16 @@ pub struct GlobalControllerMetrics {
     /// new and modified views.
     bootstrap_in_progress: AtomicBool,
 
+    /// A concurrent bootstrap is in its backfill phase: new/modified views
+    /// replay in the background while the pre-existing views stay live and
+    /// inputs keep flowing.
+    concurrent_backfill_in_progress: AtomicBool,
+
+    /// A concurrent bootstrap is in its synchronize (cutover) phase: inputs are
+    /// paused while recorded deltas drain into the new views before the state
+    /// transfer.
+    concurrent_synchronize_in_progress: AtomicBool,
+
     /// Transaction commit progress, if a transaction is committing.
     pub commit_progress: Mutex<Option<CommitProgressSummary>>,
 
@@ -300,6 +310,8 @@ impl GlobalControllerMetrics {
         Self {
             state: Atomic::new(PipelineState::Paused),
             bootstrap_in_progress: AtomicBool::new(false),
+            concurrent_backfill_in_progress: AtomicBool::new(false),
+            concurrent_synchronize_in_progress: AtomicBool::new(false),
             commit_progress: Mutex::new(None),
             start_time,
             incarnation_uuid,
@@ -407,6 +419,25 @@ impl GlobalControllerMetrics {
     fn set_bootstrap_in_progress(&self, bootstrap_in_progress: bool) {
         self.bootstrap_in_progress
             .store(bootstrap_in_progress, Ordering::Release);
+    }
+
+    fn concurrent_backfill_in_progress(&self) -> bool {
+        self.concurrent_backfill_in_progress.load(Ordering::Acquire)
+    }
+
+    fn set_concurrent_backfill_in_progress(&self, value: bool) {
+        self.concurrent_backfill_in_progress
+            .store(value, Ordering::Release);
+    }
+
+    fn concurrent_synchronize_in_progress(&self) -> bool {
+        self.concurrent_synchronize_in_progress
+            .load(Ordering::Acquire)
+    }
+
+    fn set_concurrent_synchronize_in_progress(&self, value: bool) {
+        self.concurrent_synchronize_in_progress
+            .store(value, Ordering::Release);
     }
 
     fn set_step_requested(&self) -> bool {
@@ -737,6 +768,24 @@ impl ControllerStatus {
     pub fn set_bootstrap_in_progress(&self, bootstrap_in_progress: bool) {
         self.global_metrics
             .set_bootstrap_in_progress(bootstrap_in_progress);
+    }
+
+    pub fn concurrent_backfill_in_progress(&self) -> bool {
+        self.global_metrics.concurrent_backfill_in_progress()
+    }
+
+    pub fn set_concurrent_backfill_in_progress(&self, value: bool) {
+        self.global_metrics
+            .set_concurrent_backfill_in_progress(value);
+    }
+
+    pub fn concurrent_synchronize_in_progress(&self) -> bool {
+        self.global_metrics.concurrent_synchronize_in_progress()
+    }
+
+    pub fn set_concurrent_synchronize_in_progress(&self, value: bool) {
+        self.global_metrics
+            .set_concurrent_synchronize_in_progress(value);
     }
 
     pub fn request_step(&self, circuit_thread_unparker: &Unparker) {

@@ -1991,6 +1991,15 @@
             "schema": {
               "type": "boolean"
             }
+          },
+          {
+            "name": "concurrent_bootstrap",
+            "in": "query",
+            "description": "Bootstrap new and modified views concurrently, keeping the pre-existing\nviews live while the new ones backfill. Mutually exclusive with\n`silent_bootstrap`.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -2000,6 +2009,16 @@
               "application/json": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bootstrap options are mutually inconsistent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -5207,6 +5226,15 @@
             }
           },
           {
+            "name": "concurrent_bootstrap",
+            "in": "query",
+            "description": "Bootstrap new and modified views concurrently, keeping the pre-existing\nviews live while the new ones backfill in the background.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "dismiss_error",
             "in": "query",
             "required": false,
@@ -7842,6 +7870,8 @@
           "AwaitingApproval",
           "Initializing",
           "Bootstrapping",
+          "ConcurrentBootstrapping",
+          "Synchronizing",
           "Replaying",
           "Paused",
           "Running",
@@ -13122,7 +13152,9 @@
           "Replaying",
           "Paused",
           "Running",
-          "Suspended"
+          "Suspended",
+          "ConcurrentBootstrapping",
+          "Synchronizing"
         ]
       },
       "RustCompilationInfo": {

@@ -429,6 +429,152 @@ AS SELECT {view_expr} AS x FROM t1;
 
 @enterprise_only
 @gen_pipeline_name
+def test_concurrent_bootstrap_enterprise(pipeline_name):
+    """
+    Enterprise: concurrent bootstrapping keeps the pre-existing view live while
+    the modified view backfills in the background, and emits the modified view's
+    full contents to its output connector at cutover.
+
+    This is the complement of silent bootstrapping: instead of suppressing the
+    backfilled output, concurrent bootstrapping transmits the full snapshot of
+    the modified view (the backfilled rows plus any live rows) once the new view
+    takes over.
+    """
+
+    output_path = os.path.join(
+        "/tmp", f"feldera_concurrent_bootstrap_{uuid.uuid4().hex}.json"
+    )
+
+    def sql_for_view(view_expr: str) -> str:
+        connectors = json.dumps(
+            [
+                {
+                    "name": "out",
+                    "transport": {
+                        "name": "file_output",
+                        "config": {"path": output_path},
+                    },
+                    "format": {"name": "json"},
+                }
+            ]
+        )
+        return f"""
+CREATE TABLE t1(x int) WITH ('materialized'='true');
+CREATE MATERIALIZED VIEW v1
+WITH ('connectors' = '{connectors}')
+AS SELECT {view_expr} AS x FROM t1;
+"""
+
+    def output_metrics():
+        return pipeline.output_connector_stats("v1", "out").metrics
+
+    def processed_records() -> int:
+        return output_metrics().total_processed_input_records or 0
+
+    def transmitted_records() -> int:
+        return output_metrics().transmitted_records or 0
+
+    def wait_for_output_progress(
+        min_processed_records: int, expected_transmitted_records: int
+    ):
+        wait_for_condition(
+            f"output connector reaches {min_processed_records} processed records",
+            lambda: processed_records() >= min_processed_records,
+            timeout_s=120.0,
+            poll_interval_s=1.0,
+        )
+        assert transmitted_records() == expected_transmitted_records
+
+    pipeline = PipelineBuilder(
+        TEST_CLIENT,
+        pipeline_name,
+        sql=sql_for_view("x"),
+        runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
+            fault_tolerance_model=None,
+        ),
+    ).create_or_replace()
+
+    pipeline.start()
+    pipeline.input_json("t1", [{"x": 1}, {"x": 2}, {"x": 3}])
+    # Three records ingested, three records sent.
+    wait_for_output_progress(min_processed_records=3, expected_transmitted_records=3)
+    expected_processed_records = 3
+    # The view holds the full backfilled contents (three rows so far).
+    backfilled_records = 3
+    expected_transmitted_records = 3
+    pipeline.checkpoint(True)
+    pipeline.stop(force=True)
+
+    # Concurrent bootstrap: the modified view backfills in the background while
+    # the pre-existing view stays live, then emits its full contents at cutover.
+    pipeline.modify(sql=sql_for_view("x + 1"))
+    pipeline.start(
+        bootstrap_policy=BootstrapPolicy.ALLOW,
+        concurrent_bootstrap=True,
+        timeout_s=300,
+    )
+    # At cutover the modified view re-emits its full contents (all backfilled
+    # rows), unlike silent bootstrap which suppresses them.
+    expected_transmitted_records += backfilled_records
+    wait_for_output_progress(
+        min_processed_records=expected_processed_records,
+        expected_transmitted_records=expected_transmitted_records,
+    )
+    assert list(pipeline.query("SELECT COUNT(*) AS c FROM v1;")) == [
+        {"c": backfilled_records}
+    ]
+
+    pipeline.input_json("t1", [{"x": 5}])
+    # One more record ingested, and one more record sent.
+    expected_processed_records += 1
+    expected_transmitted_records += 1
+    backfilled_records += 1
+    wait_for_output_progress(
+        min_processed_records=expected_processed_records,
+        expected_transmitted_records=expected_transmitted_records,
+    )
+    assert list(pipeline.query("SELECT COUNT(*) AS c FROM v1;")) == [
+        {"c": backfilled_records}
+    ]
+    pipeline.checkpoint(True)
+    pipeline.stop(force=True)
+
+    # A second concurrent bootstrap round re-emits the full (now larger) view
+    # contents again at cutover.
+    pipeline.modify(sql=sql_for_view("x + 2"))
+    pipeline.start(
+        bootstrap_policy=BootstrapPolicy.ALLOW,
+        concurrent_bootstrap=True,
+        timeout_s=300,
+    )
+    expected_transmitted_records += backfilled_records
+    wait_for_output_progress(
+        min_processed_records=expected_processed_records,
+        expected_transmitted_records=expected_transmitted_records,
+    )
+    assert list(pipeline.query("SELECT COUNT(*) AS c FROM v1;")) == [
+        {"c": backfilled_records}
+    ]
+
+    pipeline.input_json("t1", [{"x": 6}])
+    expected_processed_records += 1
+    expected_transmitted_records += 1
+    backfilled_records += 1
+    wait_for_output_progress(
+        min_processed_records=expected_processed_records,
+        expected_transmitted_records=expected_transmitted_records,
+    )
+    assert list(pipeline.query("SELECT COUNT(*) AS c FROM v1;")) == [
+        {"c": backfilled_records}
+    ]
+    pipeline.checkpoint(True)
+    pipeline.stop(force=True)
+
+
+@enterprise_only
+@gen_pipeline_name
 def test_bootstrap_non_materialized_table_enterprise(pipeline_name):
     """
     Enterprise: bootstrapping non-materialized table that hasn't changed since the last
