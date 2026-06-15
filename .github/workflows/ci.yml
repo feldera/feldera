@@ -21,6 +21,55 @@ jobs:
   # jobs, so invoke-build-docker lists it in `needs:` and checks its result in
   # `if:`. Without that explicit gate, the Docker build can start before the
   # cancel propagates and waste expensive runner time.
+  #
+  # PATH-BASED SKIPPING
+  #
+  # The `merge_group` event does not support workflow-level `paths:` filters, so
+  # the `changes` job below diffs the merge group's base and head commits to
+  # decide whether any non-frontend, non-docs files were touched. When a merge
+  # group changes only such files, the backend Rust, Java, and Python test suites
+  # are skipped via their `if:` conditions. The Rust and Java builds, the Docker
+  # image, and the web console tests still run so that the web console
+  # end-to-end tests (which need the Docker image) remain covered.
+  changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-latest-amd64
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+      - name: Determine whether backend code changed
+        id: filter
+        env:
+          BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        run: |
+          set -euo pipefail
+          # On workflow_dispatch there is no merge_group context: run everything.
+          if [ -z "${BASE_SHA}" ] || [ -z "${HEAD_SHA}" ]; then
+            echo "No merge_group SHAs available; assuming backend changes."
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "${BASE_SHA}" "${HEAD_SHA}")"
+          echo "Changed files:"
+          echo "${changed}"
+          # The backend suites must run unless every changed file lives under a
+          # frontend or docs path.
+          backend=false
+          while IFS= read -r file; do
+            [ -z "${file}" ] && continue
+            case "${file}" in
+              js-packages/*|docs.feldera.com/*|package.json|bunfig.toml|bun.lock) ;;
+              *) backend=true; break ;;
+            esac
+          done <<< "${changed}"
+          echo "backend=${backend}"
+          echo "backend=${backend}" >> "$GITHUB_OUTPUT"
+
   invoke-build-rust:
     name: Build Rust
     uses: ./.github/workflows/build-rust.yml
@@ -43,13 +92,15 @@ jobs:
 
   invoke-tests-unit:
     name: Unit Tests
-    needs: [invoke-build-rust, invoke-build-java]
+    needs: [changes, invoke-build-rust, invoke-build-java]
+    if: ${{ success() && needs.changes.outputs.backend == 'true' }}
     uses: ./.github/workflows/test-unit.yml
     secrets: inherit
 
   invoke-tests-adapter:
     name: Adapter Tests
-    needs: [invoke-build-rust]
+    needs: [changes, invoke-build-rust]
+    if: ${{ success() && needs.changes.outputs.backend == 'true' }}
     uses: ./.github/workflows/test-adapters.yml
     secrets: inherit
 
@@ -73,25 +124,29 @@ jobs:
 
   invoke-tests-integration-platform:
     name: Integration Tests
-    needs: [invoke-build-docker]
+    needs: [changes, invoke-build-docker]
+    if: ${{ success() && needs.changes.outputs.backend == 'true' }}
     uses: ./.github/workflows/test-integration-platform.yml
     secrets: inherit
 
   invoke-tests-integration-runtime:
     name: Integration Tests
-    needs: [invoke-build-java]
+    needs: [changes, invoke-build-java]
+    if: ${{ success() && needs.changes.outputs.backend == 'true' }}
     uses: ./.github/workflows/test-integration-runtime.yml
     secrets: inherit
 
   invoke-tests-java:
     name: Java Tests
-    needs: [invoke-build-java]
+    needs: [changes, invoke-build-java]
+    if: ${{ success() && needs.changes.outputs.backend == 'true' }}
     uses: ./.github/workflows/test-java.yml
     secrets: inherit
 
   invoke-publish-crates-dry-run:
     name: Publish Crates (Dry Run)
-    needs: [invoke-build-rust]
+    needs: [changes, invoke-build-rust]
+    if: ${{ success() && needs.changes.outputs.backend == 'true' }}
     uses: ./.github/workflows/publish-crates.yml
     with:
       environment: ci
@@ -284,6 +339,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest-amd64
     needs:
+      - changes
       - invoke-build-rust
       - invoke-build-java
       - invoke-build-docs
