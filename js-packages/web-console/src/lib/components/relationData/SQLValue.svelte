@@ -2,7 +2,7 @@
   import { BigNumber } from 'bignumber.js'
   import type { HTMLTdAttributes } from 'svelte/elements'
   import JSONbig from 'true-json-bigint'
-  import { bytesToHex } from '$lib/functions/sql'
+  import { bytesToHex, formatNonFiniteNumber } from '$lib/functions/sql'
   import type { SQLValueJS } from '$lib/types/sql'
 
   const trim = (str: string) => str.slice(0, 50) + (str.length >= 50 ? '...' : '')
@@ -21,7 +21,7 @@
       return value.toFixed(3, BigNumber.ROUND_DOWN).replace(/\.?0+$/, '')
     }
     if (!Array.isArray(value)) {
-      return JSONbig.stringify(value, undefined, 1)
+      return formatNonFiniteNumber(value) ?? JSONbig.stringify(value, undefined, 1)
     }
     const str = [] as string[]
     let i = 0
