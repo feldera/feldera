@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
     BooleanValue,
     BytesValue,
+    CircuitProfile,
     CountValue,
     MissingValue,
     PercentValue,
@@ -9,6 +10,22 @@ import {
     StringValue,
     TimeValue
 } from './profile.js'
+
+describe('CircuitProfile.isTop', () => {
+    it('recognises the toplevel node by the parsed root id', () => {
+        const profile = new CircuitProfile(1, 'n')
+        expect(profile.isTop('n')).toBe(true)
+        expect(profile.isTop('n0')).toBe(false)
+        expect(profile.isTop('42')).toBe(false)
+    })
+
+    it('does not assume the root id is "n"', () => {
+        // The format conventionally emits "n", but isTop must follow whatever the profile carries.
+        const profile = new CircuitProfile(1, 'root-7')
+        expect(profile.isTop('root-7')).toBe(true)
+        expect(profile.isTop('n')).toBe(false)
+    })
+})
 
 describe('CountValue', () => {
     it('toString formats whole numbers with K/M/B suffixes', () => {
