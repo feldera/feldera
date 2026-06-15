@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import type { NodeAttributes } from 'profiler-lib'
+  import { type NodeAttributes, TOP_NODE_ID } from 'profiler-lib'
 
   export type MetricsMode = 'overview' | 'node' | 'top-nodes'
 
@@ -9,16 +9,16 @@
     { key: 'persistentId', label: 'persistent ID' }
   ]
 
-  /** The synthetic root "region" node represents the whole circuit (the overview) rather than a
-   *  single operator. Reused wherever we need to distinguish overview data from a single node. */
+  /** The toplevel node represents the whole circuit (the overview) rather than a single operator.
+   *  Reused wherever we need to distinguish overview data from a single node. */
   export function isOverviewAttributes(nodeAttributes: NodeAttributes): boolean {
-    return nodeAttributes.title === 'n region'
+    return nodeAttributes.nodeId === TOP_NODE_ID
   }
 
-  /** The node title is built as `${id} ${operation}`; the id (first token) is what `search()`
-   *  matches against, so it's the query that links back to the node in the diagram. */
+  /** The node id is what `search()` matches against, so it's the query that links back to the
+   *  node in the diagram. */
   export function nodeSearchQuery(nodeAttributes: NodeAttributes): string {
-    return nodeAttributes.title.split(' ')[0] ?? ''
+    return nodeAttributes.nodeId
   }
 </script>
 

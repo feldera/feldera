@@ -6,6 +6,11 @@ import { type MirNode, SourcePositionRanges, SourcePositionRange, Sources, type 
 type JsonMeasurement = Array<any>;
 export type NodeId = string;
 
+/** Id of the toplevel profile graph node. Every profile graph is a single node containing the
+ *  whole circuit; its metrics are the circuit-wide overview rather than one operator's. The id is
+ *  fixed by the profile format. */
+export const TOP_NODE_ID: NodeId = "n";
+
 export type CircuitMetricCategory = string;
 
 export interface ProfileMetricDescription {
@@ -1331,7 +1336,7 @@ export class CircuitProfile {
      * Profile graphs are always a single node containing everything else inside.
      * That node is pretty much ignored everywhere else in this code after parsing. */
     isTop(node: NodeId): boolean {
-        return node === "n";
+        return node === TOP_NODE_ID;
     }
 
     addNode(n: JsonSimpleNodeWrapper | JsonClusterWrapper, parent: Option<NodeId>) {

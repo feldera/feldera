@@ -22,7 +22,7 @@
   import { type Snippet, untrack } from 'svelte'
   import type { TriageResults } from 'triage-types'
   import { createLookupCoordinator } from '../functions/lookup'
-  import { type AnalysisView, isNodeView, metricsModeOf, nodeIdOf } from '../functions/metricsMode'
+  import { type AnalysisView, isNodeView, metricsModeOf } from '../functions/metricsMode'
   import { severityLabel, uniqueCategories, uniqueSeverities } from '../functions/triage'
   import type { MetricsMode } from './MetricsView.svelte'
   import ProfilerDiagram from './ProfilerDiagram.svelte'
@@ -194,14 +194,20 @@
     profilerDiagram?.selectMetric(selectedMetricId)
   })
 
-  // Show the overview each time a profile loads.
+  // Show the overview each time a profile loads. `analysisView` is reset first so the
+  // SegmentedControl indicator follows the new view, and so the sticky `displayNodeAttributes`
+  // that `showGlobalMetrics` triggers sees a non-node view and can't overwrite `lastNodeData`
+  // with the overview payload.
   $effect(() => {
     void profileData
     const diagram = profilerDiagram
     if (!diagram) {
       return
     }
-    queueMicrotask(() => diagram.showGlobalMetrics(true))
+    queueMicrotask(() => {
+      analysisView = 'overview'
+      diagram.showGlobalMetrics(true)
+    })
   })
 
   /** Switch the analysis panel's view. Writes `analysisView` first so the SegmentedControl
@@ -215,7 +221,7 @@
       analysisView = 'top-nodes'
       profilerDiagram?.showTopNodes(true)
     } else if (mode === 'node' && lastNodeData) {
-      analysisView = { node: nodeIdOf(lastNodeData) }
+      analysisView = { node: lastNodeData.nodeId }
       tooltipData = { nodeAttributes: lastNodeData }
     }
   }
