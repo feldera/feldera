@@ -132,6 +132,14 @@ fn type_replacement() -> Vec<(&'static str, &'static str)> {
             "DeltaTableWriterConfig",
             "feldera_types::transport::delta_table::DeltaTableWriterConfig",
         ),
+        (
+            "DynamoDBWriterConfig",
+            "feldera_types::transport::dynamodb::DynamoDBWriterConfig",
+        ),
+        (
+            "DynamoDBWriteMode",
+            "feldera_types::transport::dynamodb::DynamoDBWriteMode",
+        ),
         ("Chunk", "feldera_types::transport::http::Chunk"),
         (
             "JsonUpdateFormat",

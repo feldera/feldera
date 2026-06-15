@@ -15,12 +15,15 @@ publish = true
 
 [features]
 with-avro = ["apache-avro"]
+with-dynamodb = ["aws-sdk-dynamodb", "serde_dynamo"]
 
 [dependencies]
 feldera-types = { workspace = true }
 feldera-sqllib = { workspace = true }
+feldera-storage = { workspace = true }
 dbsp = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
+aws-sdk-dynamodb = { workspace = true, optional = true }
 serde_yaml = { workspace = true }
 actix-web = { workspace = true, features = ["cookies", "macros", "compress-gzip", "compress-brotli"] }
 erased-serde = { workspace = true }
@@ -29,6 +32,7 @@ arrow = { workspace = true, features = ["chrono-tz"] }
 apache-avro = { workspace = true, optional = true }
 serde_arrow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_dynamo = { workspace = true, optional = true }
 serde_json = { workspace = true, features = ["raw_value"] }
 rmp-serde = { workspace = true }
 rmpv = { workspace = true, features = ["with-serde"] }

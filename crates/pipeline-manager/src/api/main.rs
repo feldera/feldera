@@ -404,6 +404,8 @@ It contains the following fields:
         feldera_types::transport::delta_table::DeltaTableWriteMode,
         feldera_types::transport::delta_table::DeltaTableReaderConfig,
         feldera_types::transport::delta_table::DeltaTableWriterConfig,
+        feldera_types::transport::dynamodb::DynamoDBWriteMode,
+        feldera_types::transport::dynamodb::DynamoDBWriterConfig,
         feldera_types::transport::iceberg::IcebergReaderConfig,
         feldera_types::transport::iceberg::IcebergIngestMode,
         feldera_types::transport::iceberg::IcebergCatalogType,

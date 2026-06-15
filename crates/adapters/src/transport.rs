@@ -121,6 +121,7 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::KafkaOutput(_)
         | TransportConfig::DeltaTableInput(_)
         | TransportConfig::DeltaTableOutput(_)
+        | TransportConfig::DynamoDBOutput(_)
         | TransportConfig::PostgresInput(_)
         | TransportConfig::PostgresCdcInput(_)
         | TransportConfig::PostgresOutput(_)

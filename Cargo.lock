@@ -4063,6 +4063,7 @@ dependencies = [
  "aws-config",
  "aws-credential-types",
  "aws-msk-iam-sasl-signer",
+ "aws-sdk-dynamodb",
  "aws-sdk-s3",
  "aws-types",
  "backoff",
@@ -4155,6 +4156,7 @@ dependencies = [
  "serde",
  "serde_arrow",
  "serde_bytes",
+ "serde_dynamo",
  "serde_json",
  "serde_json_path_to_error",
  "serde_urlencoded",
@@ -5213,6 +5215,7 @@ dependencies = [
  "anyhow",
  "apache-avro 0.18.0",
  "arrow",
+ "aws-sdk-dynamodb",
  "bytemuck",
  "chrono",
  "datafusion",
@@ -5220,6 +5223,7 @@ dependencies = [
  "dyn-clone",
  "erased-serde 0.3.31",
  "feldera-sqllib",
+ "feldera-storage",
  "feldera-types",
  "num-derive",
  "num-traits",
@@ -5227,6 +5231,7 @@ dependencies = [
  "rmpv",
  "serde",
  "serde_arrow",
+ "serde_dynamo",
  "serde_json",
  "serde_json_path_to_error",
  "serde_yaml",
@@ -11299,6 +11304,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "serde_dynamo"
+version = "4.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "873a97c3f7a67dd042bceb47d056d288424b82d4c66b0a25e1a3b34675620951"
+dependencies = [
+ "aws-sdk-dynamodb",
+ "base64 0.21.7",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]

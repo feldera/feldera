@@ -68,6 +68,11 @@ async-trait = "0.1"
 atomic = "0.6.0"
 awc = "3.5.1"
 aws-config = "1.8.13"
+aws-sdk-dynamodb = { version = "1.110.0", default-features = false, features = [
+  "default-https-client",
+  "rt-tokio",
+  "behavior-version-latest"
+] }
 aws-sdk-s3 = { version = "1.122.0", default-features = false, features = [
   "default-https-client",
   "rt-tokio",
@@ -243,6 +248,7 @@ ryu = "1.0.20"
 schema_registry_converter = "4.2.0"
 semver = "1.0.27"
 serde = "1.0.213"
+serde_dynamo = { version = "4.3.0", features = ["aws-sdk-dynamodb+1"] }
 serde_arrow = { version = "0.14.1", features = ["arrow-58"] }
 serde_bytes = "0.11.15"
 serde_json = { version = "1.0.132", features = ["arbitrary_precision"] }

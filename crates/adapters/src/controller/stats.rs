@@ -752,7 +752,11 @@ impl ControllerStatus {
     }
 
     /// Register connector-specific metrics for an input endpoint.
-    pub fn set_custom_metrics(&self, endpoint_id: EndpointId, metrics: Arc<dyn ConnectorMetrics>) {
+    pub fn set_input_custom_metrics(
+        &self,
+        endpoint_id: EndpointId,
+        metrics: Arc<dyn ConnectorMetrics>,
+    ) {
         if let Some(status) = self.inputs.write().get_mut(&endpoint_id) {
             status.custom_metrics = Some(metrics);
         }
@@ -761,6 +765,17 @@ impl ControllerStatus {
     /// Output endpoint stats.
     pub fn output_status(&self) -> RwLockReadGuard<'_, BTreeMap<EndpointId, OutputEndpointStatus>> {
         self.outputs.read_recursive()
+    }
+
+    /// Register connector-specific metrics for an output endpoint.
+    pub fn set_output_custom_metrics(
+        &self,
+        endpoint_id: EndpointId,
+        metrics: Arc<dyn ConnectorMetrics>,
+    ) {
+        if let Some(status) = self.outputs.write().get_mut(&endpoint_id) {
+            status.custom_metrics = Some(metrics);
+        }
     }
 
     /// Register a batch-progress counter for an output endpoint.
@@ -2589,6 +2604,9 @@ pub struct OutputEndpointStatus {
     pub transport_errors: Mutex<ConnectorErrorList>,
 
     pub health: Mutex<Option<ConnectorHealth>>,
+
+    /// Connector-specific metrics for Prometheus export.
+    pub custom_metrics: Option<Arc<dyn ConnectorMetrics>>,
 }
 
 impl OutputEndpointStatus {
@@ -2668,6 +2686,7 @@ impl OutputEndpointStatus {
             encode_errors: Mutex::new(encode_errors),
             transport_errors: Mutex::new(transport_errors),
             health: Mutex::new(None),
+            custom_metrics: None,
         }
     }
 
