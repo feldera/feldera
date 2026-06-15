@@ -25,6 +25,7 @@ default = [
     "with-redis",
     "with-nats",
     "with-postgres-cdc",
+    "with-dynamodb",
 ]
 with-kafka = ["rdkafka"]
 with-deltalake = ["deltalake", "deltalake-catalog-unity"]
@@ -34,6 +35,11 @@ with-avro = [
     "apache-avro",
     "schema_registry_converter",
     "feldera-adapterlib/with-avro",
+]
+with-dynamodb = [
+    "aws-sdk-dynamodb",
+    "serde_dynamo",
+    "feldera-adapterlib/with-dynamodb",
 ]
 with-nexmark = ["dbsp_nexmark"]
 with-redis = ["redis", "r2d2"]
@@ -78,6 +84,7 @@ crossbeam = { workspace = true }
 dbsp = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
+serde_dynamo = { workspace = true, optional = true }
 erased-serde = { workspace = true }
 serde_yaml = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
@@ -91,6 +98,7 @@ rdkafka = { workspace = true, features = [
     "libz",
 ], optional = true }
 aws-config = { workspace = true }
+aws-sdk-dynamodb = { workspace = true, optional = true }
 aws-sdk-s3 = { workspace = true }
 aws-types = { workspace = true }
 actix = { workspace = true }

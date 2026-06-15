@@ -2864,7 +2864,7 @@ fn test_external_controller_status_serialization() {
     );
 }
 
-/// Test that custom connector metrics registered via `set_custom_metrics` are
+/// Test that custom connector metrics registered via `set_input_custom_metrics` are
 /// included in the Prometheus output produced by the custom-metrics loop in
 /// `write_metrics`.
 #[test]
@@ -2921,7 +2921,7 @@ fn test_custom_connector_metrics_prometheus_output() {
     status.inputs.write().insert(0, endpoint);
 
     // Register custom metrics on the endpoint.
-    status.set_custom_metrics(0, Arc::new(MockMetrics));
+    status.set_input_custom_metrics(0, Arc::new(MockMetrics));
 
     let mut writer = MetricsWriter::<PrometheusFormatter>::new();
     let labels = LabelStack::new();
@@ -2948,6 +2948,97 @@ fn test_custom_connector_metrics_prometheus_output() {
     assert!(
         output.contains("1000"),
         "output missing counter value 1000:\n{output}"
+    );
+}
+
+/// Test that custom connector metrics registered on output endpoints are
+/// included in Prometheus output.
+#[test]
+fn test_custom_output_connector_metrics_prometheus_output() {
+    use crate::{
+        ControllerStatus,
+        controller::write_custom_metrics,
+        server::metrics::{LabelStack, MetricsWriter, PrometheusFormatter},
+    };
+    use feldera_adapterlib::metrics::{ConnectorHistogram, ConnectorMetrics, ValueType};
+    use feldera_storage::histogram::ExponentialHistogram;
+    use feldera_types::config::OutputEndpointConfig;
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    struct MockMetrics;
+
+    impl ConnectorMetrics for MockMetrics {
+        fn metrics(&self) -> Vec<(&'static str, &'static str, ValueType, f64)> {
+            vec![(
+                "mock_metric_total",
+                "Mock connector-specific metric for the output connector.",
+                ValueType::Counter,
+                3.0,
+            )]
+        }
+
+        fn histograms(&self) -> Vec<ConnectorHistogram> {
+            let histogram = ExponentialHistogram::new();
+            histogram.record(5u64);
+            histogram.record(15u64);
+            vec![ConnectorHistogram {
+                name: "mock_latency_microseconds",
+                help: "Mock connector-specific histogram for the output connector.",
+                snapshot: histogram.snapshot(),
+            }]
+        }
+    }
+
+    let config = serde_json::from_value(json!({
+        "name": "test_output_custom_metrics",
+        "workers": 1,
+    }))
+    .unwrap();
+    let status = ControllerStatus::new(config, 0, None, Uuid::nil());
+
+    let output_config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": "s",
+        "transport": { "name": "http_output", "config": {} },
+        "format": { "name": "json", "config": {} }
+    }))
+    .unwrap();
+    status.add_output(&0, "mock_output", &output_config, None);
+    status.set_output_custom_metrics(0, Arc::new(MockMetrics));
+
+    let mut writer = MetricsWriter::<PrometheusFormatter>::new();
+    let labels = LabelStack::new();
+    write_custom_metrics(&status, &mut writer, &labels);
+    let output = writer.into_output();
+
+    assert!(
+        output.contains("mock_metric_total"),
+        "output missing mock_metric_total:\n{output}"
+    );
+    assert!(
+        output.contains(r#"endpoint="mock_output""#),
+        "output missing endpoint label:\n{output}"
+    );
+    assert!(output.contains("3"), "output missing value 3:\n{output}");
+
+    // The histogram is exported with its standard `_bucket`, `_sum`, and
+    // `_count` series under a single `# TYPE ... histogram` header.  The mock
+    // records observations of 5 and 15, so sum is 20 and count is 2.
+    assert!(
+        output.contains("# TYPE mock_latency_microseconds histogram"),
+        "output missing histogram type header:\n{output}"
+    );
+    assert!(
+        output.contains(r#"mock_latency_microseconds_bucket{endpoint="mock_output","#),
+        "output missing histogram bucket:\n{output}"
+    );
+    assert!(
+        output.contains(r#"mock_latency_microseconds_sum{endpoint="mock_output"} 20"#),
+        "output missing histogram sum:\n{output}"
+    );
+    assert!(
+        output.contains(r#"mock_latency_microseconds_count{endpoint="mock_output"} 2"#),
+        "output missing histogram count:\n{output}"
     );
 }
 
@@ -2999,7 +3090,7 @@ fn test_custom_connector_metrics_prometheus_grouping() {
             None,
         );
         status.inputs.write().insert(id, endpoint);
-        status.set_custom_metrics(id, Arc::new(MockMetrics));
+        status.set_input_custom_metrics(id, Arc::new(MockMetrics));
     }
 
     let mut writer = MetricsWriter::<PrometheusFormatter>::new();

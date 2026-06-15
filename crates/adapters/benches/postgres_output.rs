@@ -1,6 +1,9 @@
 mod bench_common;
 
-use bench_common::{BenchKeyStruct, BenchTestStruct, build_indexed_batch, generate_test_data};
+use bench_common::{
+    BENCH_RECORD_COUNTS, BENCH_WORKER_COUNTS, BenchKeyStruct, BenchTestStruct, bench_iter,
+    build_indexed_batch, generate_test_data,
+};
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use dbsp_adapters::Encoder;
 use dbsp_adapters::SerBatch;
@@ -79,6 +82,7 @@ fn create_endpoint(config: &PostgresWriterConfig) -> PostgresOutputEndpoint {
         &Some(BenchKeyStruct::relation_schema()),
         &BenchTestStruct::relation_schema(),
         Weak::new(),
+        true,
     )
     .expect("failed to create PostgresOutputEndpoint")
 }
@@ -94,20 +98,20 @@ fn bench_encode_iter(
     num_records: usize,
     iters: u64,
 ) -> std::time::Duration {
-    let mut total = std::time::Duration::ZERO;
-    for _ in 0..iters {
-        let start = std::time::Instant::now();
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        endpoint
-            .encode(batch.clone().arc_as_batch_reader())
-            .unwrap();
-        endpoint.consumer().batch_end();
-        total += start.elapsed();
-
-        let truncated = truncate_bench_table(pg_client);
-        assert_eq!(truncated, num_records as u64);
-    }
-    total
+    bench_iter(
+        iters,
+        || {
+            endpoint.consumer().batch_start(0, OutputBatchType::Delta);
+            endpoint
+                .encode(batch.clone().arc_as_batch_reader())
+                .unwrap();
+            endpoint.consumer().batch_end();
+        },
+        || {
+            let truncated = truncate_bench_table(pg_client);
+            assert_eq!(truncated, num_records as u64);
+        },
+    )
 }
 
 /// Benchmark Postgres output with 100k records across 1/2/4/8 worker threads.
@@ -123,7 +127,7 @@ fn bench_postgres_encode(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Elements(num_records as u64));
     group.sample_size(10);
 
-    for workers in [1, 2, 4, 8] {
+    for workers in BENCH_WORKER_COUNTS {
         let config = make_config(workers);
         group.bench_with_input(BenchmarkId::new("workers", workers), &workers, |b, _| {
             let mut endpoint = create_endpoint(&config);
@@ -145,11 +149,11 @@ fn bench_postgres_encode_scaling(c: &mut Criterion) {
     let mut group = c.benchmark_group("postgres_output_encode_scaling");
     group.sample_size(10);
 
-    for num_records in [100_000, 1_000_000, 2_000_000] {
+    for num_records in BENCH_RECORD_COUNTS {
         let data = generate_test_data(num_records);
         let batch = build_indexed_batch(&data);
 
-        for workers in [1, 2, 4, 8] {
+        for workers in BENCH_WORKER_COUNTS {
             let config = make_config(workers);
             group.throughput(criterion::Throughput::Elements(num_records as u64));
             group.bench_with_input(

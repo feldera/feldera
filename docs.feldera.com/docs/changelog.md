@@ -14,6 +14,12 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - New DynamoDB output connector. It writes a SQL view to an Amazon
+          DynamoDB table, mapping inserts and updates to upserts and deletes to
+          deletes keyed by the table's primary key. See the
+          [connector documentation](/connectors/sinks/dynamodb) for configuration
+          details.
+
         - Pipeline name is now limited to 63 characters and must follow the Kubernetes
           label pattern (and be non-empty and contain no dots as before). The check is only enforced
           when the pipeline is being newly created, its `name` field is being PATCHed

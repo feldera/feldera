@@ -13,6 +13,36 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 // ---------------------------------------------------------------------------
+// Shared benchmark configuration
+// ---------------------------------------------------------------------------
+
+/// Worker-thread counts used by all output-connector encode benchmarks.
+pub const BENCH_WORKER_COUNTS: [usize; 4] = [1, 2, 4, 8];
+
+/// Record counts used by the scaling benchmarks.
+pub const BENCH_RECORD_COUNTS: [usize; 3] = [100_000, 1_000_000, 2_000_000];
+
+/// Runs `iters` Criterion timing iterations.
+///
+/// `timed` is called inside the stopwatch; `after` is called outside it and
+/// can be used for correctness checks or inter-iteration cleanup (e.g. table
+/// truncation). Returns the total elapsed time of the `timed` calls only.
+pub fn bench_iter(
+    iters: u64,
+    mut timed: impl FnMut(),
+    mut after: impl FnMut(),
+) -> std::time::Duration {
+    let mut total = std::time::Duration::ZERO;
+    for _ in 0..iters {
+        let start = std::time::Instant::now();
+        timed();
+        total += start.elapsed();
+        after();
+    }
+    total
+}
+
+// ---------------------------------------------------------------------------
 // Common type definitions for benchmarks
 // ---------------------------------------------------------------------------
 

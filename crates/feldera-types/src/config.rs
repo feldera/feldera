@@ -12,6 +12,7 @@ use crate::transport::adhoc::AdHocInputConfig;
 use crate::transport::clock::ClockConfig;
 use crate::transport::datagen::DatagenInputConfig;
 use crate::transport::delta_table::{DeltaTableReaderConfig, DeltaTableWriterConfig};
+use crate::transport::dynamodb::DynamoDBWriterConfig;
 use crate::transport::file::{FileInputConfig, FileOutputConfig};
 use crate::transport::http::{HttpInputConfig, HttpOutputConfig};
 use crate::transport::iceberg::IcebergReaderConfig;
@@ -1826,6 +1827,10 @@ pub enum TransportConfig {
     S3Input(S3InputConfig),
     DeltaTableInput(DeltaTableReaderConfig),
     DeltaTableOutput(DeltaTableWriterConfig),
+    // Snake case would rename "DynamoDBOutput" to `dynamo_db_output`.
+    // However, DynamoDB is a single word, so override the tag to `dynamodb_output`.
+    #[serde(rename = "dynamodb_output")]
+    DynamoDBOutput(DynamoDBWriterConfig),
     RedisOutput(RedisOutputConfig),
     // Prevent rust from complaining about large size difference between enum variants.
     IcebergInput(Box<IcebergReaderConfig>),
@@ -1860,6 +1865,7 @@ impl TransportConfig {
             TransportConfig::S3Input(_) => "s3_input".to_string(),
             TransportConfig::DeltaTableInput(_) => "delta_table_input".to_string(),
             TransportConfig::DeltaTableOutput(_) => "delta_table_output".to_string(),
+            TransportConfig::DynamoDBOutput(_) => "dynamodb_output".to_string(),
             TransportConfig::IcebergInput(_) => "iceberg_input".to_string(),
             TransportConfig::PostgresInput(_) => "postgres_input".to_string(),
             TransportConfig::PostgresCdcInput(_) => "postgres_cdc_input".to_string(),

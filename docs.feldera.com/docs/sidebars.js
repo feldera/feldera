@@ -377,6 +377,11 @@ const connectors = {
                 },
                 {
                     type: 'doc',
+                    id: 'connectors/sinks/dynamodb',
+                    label: 'DynamoDB (experimental)'
+                },
+                {
+                    type: 'doc',
                     id: 'connectors/sinks/snowflake',
                     label: 'Snowflake (experimental)'
                 },

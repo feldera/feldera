@@ -1890,8 +1890,7 @@ impl Controller {
             },
         );
 
-        // Export connector-specific (custom) metrics registered via
-        // `InputConsumer::set_custom_metrics`.
+        // Export connector-specific (custom) metrics.
         write_custom_metrics(status, metrics, labels);
 
         fn write_output_metric<F, M>(
@@ -2260,8 +2259,7 @@ fn write_fbuf_slab_metrics<F>(
     );
 }
 
-/// Write connector-specific (custom) metrics registered via
-/// [`InputConsumer::set_custom_metrics`] into `metrics`.
+/// Write connector-specific metrics into `metrics`.
 ///
 /// Groups values by `(name, help, ValueType)` so that all endpoints' values
 /// for the same metric are emitted in a single Prometheus block (the
@@ -2288,10 +2286,53 @@ pub(crate) fn write_custom_metrics<F>(
             }
         }
     }
+    for output in status.output_status().values() {
+        if let Some(cm) = &output.custom_metrics {
+            for (name, help, vtype, value) in cm.metrics() {
+                grouped
+                    .entry((name, help, vtype))
+                    .or_default()
+                    .push((output.endpoint_name.clone(), value));
+            }
+        }
+    }
     for ((name, help, vtype), entries) in &grouped {
         metrics.values(name, help, *vtype, |w| {
             for (endpoint_name, value) in entries {
                 w.write_value(&labels.with("endpoint", endpoint_name), *value);
+            }
+        });
+    }
+
+    // Histograms are grouped and emitted the same way: all endpoints' values for
+    // a given histogram appear together under one `# TYPE` header.
+    type HistogramKey = (&'static str, &'static str);
+    type HistogramValues = Vec<(String, ExponentialHistogramSnapshot)>;
+    let mut grouped_histograms: BTreeMap<HistogramKey, HistogramValues> = BTreeMap::new();
+    for input in status.input_status().values() {
+        if let Some(cm) = &input.custom_metrics {
+            for histogram in cm.histograms() {
+                grouped_histograms
+                    .entry((histogram.name, histogram.help))
+                    .or_default()
+                    .push((input.endpoint_name.clone(), histogram.snapshot));
+            }
+        }
+    }
+    for output in status.output_status().values() {
+        if let Some(cm) = &output.custom_metrics {
+            for histogram in cm.histograms() {
+                grouped_histograms
+                    .entry((histogram.name, histogram.help))
+                    .or_default()
+                    .push((output.endpoint_name.clone(), histogram.snapshot));
+            }
+        }
+    }
+    for ((name, help), entries) in grouped_histograms {
+        metrics.histograms(name, help, |w| {
+            for (endpoint_name, snapshot) in entries {
+                w.write_histogram(&labels.with("endpoint", &endpoint_name), &snapshot);
             }
         });
     }
@@ -7877,7 +7918,7 @@ impl InputConsumer for InputProbe {
     fn set_custom_metrics(&self, metrics: Arc<dyn ConnectorMetrics>) {
         self.controller
             .status
-            .set_custom_metrics(self.endpoint_id, metrics);
+            .set_input_custom_metrics(self.endpoint_id, metrics);
     }
 
     fn update_connector_health(&self, health: ConnectorHealth) {
