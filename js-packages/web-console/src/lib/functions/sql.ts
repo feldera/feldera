@@ -96,6 +96,17 @@ export const bytesToHex = (bytes: Uint8Array): string => {
   return hex
 }
 
+/**
+ * Render a non-finite IEEE-754 value (`NaN`, `Infinity`, `-Infinity`) as text,
+ * or return `undefined` for finite numbers and non-numbers.
+ *
+ * JSON cannot represent these values, so `JSON.stringify`
+ * collapses each of them to the literal `null` —
+ * indistinguishable from a SQL NULL.
+ */
+export const formatNonFiniteNumber = (value: unknown): string | undefined =>
+  typeof value === 'number' && !Number.isFinite(value) ? String(value) : undefined
+
 export const displaySQLValue = (value: SQLValueJS) => {
   return value === null
     ? 'NULL'
@@ -105,7 +116,7 @@ export const displaySQLValue = (value: SQLValueJS) => {
         ? bytesToHex(value)
         : BigNumber.isBigNumber(value)
           ? value.toFixed()
-          : JSONbig.stringify(value, undefined, 1)
+          : (formatNonFiniteNumber(value) ?? JSONbig.stringify(value, undefined, 1))
 }
 
 /**
@@ -140,7 +151,7 @@ const toJSONValue = (value: SQLValueJS): unknown => {
  * Serialize SQLValueJS to a JSON string representation suitable for CSV export
  */
 export const serializeSQLValue = (value: SQLValueJS): string => {
-  return JSONbig.stringify(toJSONValue(value))
+  return formatNonFiniteNumber(value) ?? JSONbig.stringify(toJSONValue(value))
 }
 
 /**
