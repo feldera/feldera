@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import { type NodeAttributes, TOP_NODE_ID } from 'profiler-lib'
+  import type { NodeAttributes } from 'profiler-lib'
 
   export type MetricsMode = 'overview' | 'node' | 'top-nodes'
 
@@ -10,9 +10,13 @@
   ]
 
   /** The toplevel node represents the whole circuit (the overview) rather than a single operator.
-   *  Reused wherever we need to distinguish overview data from a single node. */
-  export function isOverviewAttributes(nodeAttributes: NodeAttributes): boolean {
-    return nodeAttributes.nodeId === TOP_NODE_ID
+   *  `rootNodeId` is the loaded profile's actual toplevel id; while it is `undefined` (no profile
+   *  yet) nothing counts as the overview. */
+  export function isOverviewAttributes(
+    nodeAttributes: NodeAttributes,
+    rootNodeId: string | undefined
+  ): boolean {
+    return rootNodeId !== undefined && nodeAttributes.nodeId === rootNodeId
   }
 
   /** The node id is what `search()` matches against, so it's the query that links back to the
@@ -31,6 +35,8 @@
   interface Props {
     mode: MetricsMode
     tooltipData: TooltipData | null
+    /** The loaded profile's toplevel node id, used to recognise overview data. */
+    rootNodeId: string | undefined
     /** When true, metrics flagged `advanced` in the profile metadata are included. */
     showAdvanced: boolean
     /** Lookup coordinator; the view registers an imperative handler so each Enter on the
@@ -41,13 +47,15 @@
     onSearchNode?: (query: string) => void
   }
 
-  const { mode, tooltipData, showAdvanced, lookup, onSearchNode }: Props = $props()
+  const { mode, tooltipData, rootNodeId, showAdvanced, lookup, onSearchNode }: Props = $props()
 
   const nodeAttributes = $derived(
     tooltipData && 'nodeAttributes' in tooltipData ? tooltipData.nodeAttributes : null
   )
   // Single-node data (a specific operator) as opposed to the whole-circuit overview.
-  const isNodeView = $derived(nodeAttributes ? !isOverviewAttributes(nodeAttributes) : false)
+  const isNodeView = $derived(
+    nodeAttributes ? !isOverviewAttributes(nodeAttributes, rootNodeId) : false
+  )
   const identityRows = $derived(
     nodeAttributes && isNodeView
       ? idAttributes.flatMap((r) => {

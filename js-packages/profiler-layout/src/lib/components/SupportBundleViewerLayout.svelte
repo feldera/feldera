@@ -73,6 +73,8 @@
   }: Props = $props()
 
   let profilerDiagram: ProfilerDiagram | undefined = $state()
+  // The loaded profile's toplevel node id, so the analysis panel can recognise overview data.
+  const diagramRootNodeId = $derived(profilerDiagram?.getProfile()?.rootNodeId)
   let tooltipData: TooltipData | null = $state(null)
   // Most recently inspected operator; the "Node" segment restores it via `setMetricsMode('node')`.
   let lastNodeData: NodeAttributes | null = $state(null)
@@ -139,7 +141,7 @@
     onNodeClick: (nodeId) => {
       // The only path outside `setMetricsMode` that switches to "Node"; `displayNodeAttributes`
       // fires right after with the payload.
-      analysisView = { node: nodeId }
+      analysisView = { nodeId }
       currentTab = 'Metrics'
     },
     displayTopNodes(data, _isSticky) {
@@ -221,7 +223,7 @@
       analysisView = 'top-nodes'
       profilerDiagram?.showTopNodes(true)
     } else if (mode === 'node' && lastNodeData) {
-      analysisView = { node: lastNodeData.nodeId }
+      analysisView = { nodeId: lastNodeData.nodeId }
       tooltipData = { nodeAttributes: lastNodeData }
     }
   }
@@ -258,6 +260,7 @@
   const analysisTabProps = $derived<AnalysisTabProps>({
     metricsMode,
     tooltipData,
+    rootNodeId: diagramRootNodeId,
     showAdvancedMetrics,
     lookup,
     logText,

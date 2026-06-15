@@ -9,6 +9,9 @@
   export type AnalysisTabProps = {
     metricsMode: MetricsMode
     tooltipData: TooltipData | null
+    /** Id of the loaded profile's toplevel node, so the Metrics view can tell the overview from a
+     *  single operator. `undefined` until a profile is loaded. */
+    rootNodeId: string | undefined
     /** When true, metrics flagged `advanced` in the profile metadata are shown too. */
     showAdvancedMetrics: boolean
     lookup: LookupCoordinator
@@ -30,6 +33,7 @@
   let {
     metricsMode,
     tooltipData,
+    rootNodeId,
     showAdvancedMetrics,
     lookup,
     onSearchNode
@@ -39,6 +43,7 @@
 <MetricsView
   mode={metricsMode}
   {tooltipData}
+  {rootNodeId}
   showAdvanced={showAdvancedMetrics}
   {lookup}
   {onSearchNode}

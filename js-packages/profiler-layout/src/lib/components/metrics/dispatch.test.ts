@@ -11,6 +11,7 @@ function row(metric: string): TooltipRow {
 function makeAttrs(metrics: string[]): NodeAttributes {
   return {
     title: 'n op',
+    nodeId: 'n',
     columns: [],
     rows: metrics.map(row),
     attributes: new Map()

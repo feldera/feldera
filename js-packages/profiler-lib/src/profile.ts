@@ -6,11 +6,6 @@ import { type MirNode, SourcePositionRanges, SourcePositionRange, Sources, type 
 type JsonMeasurement = Array<any>;
 export type NodeId = string;
 
-/** Id of the toplevel profile graph node. Every profile graph is a single node containing the
- *  whole circuit; its metrics are the circuit-wide overview rather than one operator's. The id is
- *  fixed by the profile format. */
-export const TOP_NODE_ID: NodeId = "n";
-
 export type CircuitMetricCategory = string;
 
 export interface ProfileMetricDescription {
@@ -1336,7 +1331,7 @@ export class CircuitProfile {
      * Profile graphs are always a single node containing everything else inside.
      * That node is pretty much ignored everywhere else in this code after parsing. */
     isTop(node: NodeId): boolean {
-        return node === TOP_NODE_ID;
+        return node === this.rootNodeId;
     }
 
     addNode(n: JsonSimpleNodeWrapper | JsonClusterWrapper, parent: Option<NodeId>) {
@@ -1534,7 +1529,8 @@ export class CircuitProfile {
         return Option.some(ranges[0]!);
     }
 
-    constructor(readonly worker_count: number) { }
+    /** @param rootNodeId Id of the toplevel graph node, taken from the parsed profile. */
+    constructor(readonly worker_count: number, readonly rootNodeId: NodeId) { }
 
     // Scan the nodes and compute the range of each property
     computePropertyRanges() {
@@ -1607,7 +1603,7 @@ export class CircuitProfile {
         // Decode the graph structure and create the nodes.
         // The graph itself is always a complex node.
         let rootNodeId = json.graph.nodes.id;
-        let result = new CircuitProfile(worker_count);
+        let result = new CircuitProfile(worker_count, rootNodeId);
         result.complexNodes.set(rootNodeId,
             new ComplexNode(rootNodeId, json.graph.nodes.label, worker_count));
         for (const nodeWrapper of json.graph.nodes.nodes) {
