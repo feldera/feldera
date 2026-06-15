@@ -110,9 +110,9 @@ where
         Arc<AtomicUsize>,
         GlobalNodeId,
     ) {
-        let (output, output_handle) = AccumulateOutput::<B>::new();
-
         let (accumulated, enable_count) = self.accumulate_with_enable_count();
+
+        let (output, output_handle) = AccumulateOutput::<B>::new(enable_count.clone());
         let gid = self.circuit().add_sink(output, &accumulated);
         self.circuit().set_persistent_node_id(&gid, persistent_id);
 
@@ -466,13 +466,40 @@ where
     global_id: GlobalNodeId,
     mailbox: Mailbox<Option<SpineSnapshot<B>>>,
     output_batch_stats: BatchSizeStats,
+
+    /// Enable count of the paired upstream [`Accumulator`](crate::operator::dynamic::accumulator::Accumulator).
+    ///
+    /// A concurrent bootstrap circuit (copy 2) has no output connector
+    /// attached, so its accumulators would be disabled and would discard the
+    /// view's contents.  Entering caching mode force-enables the accumulator
+    /// through this handle (see [`Self::start_bootstrap_output_caching`]).
+    enable_count: Arc<AtomicUsize>,
+
+    /// `true` in a concurrent bootstrap circuit (copy 2): the view's
+    /// accumulated output is cached for transfer to the live circuit at
+    /// cutover instead of being written to the mailbox (the bootstrap circuit
+    /// has no connector reading it).
+    caching: bool,
+
+    /// `true` once [`Self::start_bootstrap_output_caching`] has bumped
+    /// [`Self::enable_count`], so the bump happens exactly once.
+    bootstrap_enabled: bool,
+
+    /// The view's accumulated output, as a single snapshot.
+    ///
+    /// In a bootstrap circuit (copy 2) this collects the deltas flushed during
+    /// the backfill and synchronization transactions.  At cutover it is
+    /// swapped into the live circuit's operator (see [`Self::swap_state`]),
+    /// where the next committed transaction combines it with that
+    /// transaction's output and writes the result to the mailbox.
+    cache: Option<SpineSnapshot<B>>,
 }
 
 impl<B> AccumulateOutput<B>
 where
     B: Batch + Send,
 {
-    pub fn new() -> (Self, OutputHandle<SpineSnapshot<B>>) {
+    pub fn new(enable_count: Arc<AtomicUsize>) -> (Self, OutputHandle<SpineSnapshot<B>>) {
         let handle = OutputHandle::new();
         let mailbox = handle.mailbox(Runtime::worker_index()).clone();
 
@@ -480,6 +507,10 @@ where
             global_id: GlobalNodeId::root(),
             mailbox,
             output_batch_stats: BatchSizeStats::new(),
+            enable_count,
+            caching: false,
+            bootstrap_enabled: false,
+            cache: None,
         };
 
         (output, handle)
@@ -487,6 +518,32 @@ where
 
     fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
         base.child(format!("accumulate-output-{}.dat", persistent_id))
+    }
+
+    /// Merge `snapshot` into the cached accumulated output.
+    fn merge_into_cache(&mut self, snapshot: SpineSnapshot<B>) {
+        self.cache = Some(match self.cache.take() {
+            None => snapshot,
+            Some(cached) => SpineSnapshot::<B>::concat([&cached, &snapshot]),
+        });
+    }
+
+    /// Route the transaction's output `snapshot`.
+    fn deliver(&mut self, snapshot: SpineSnapshot<B>) {
+        if self.caching {
+            // Bootstrap circuit: accumulate the view's output across the
+            // backfill and synchronization transactions for transfer at
+            // cutover instead of writing the mailbox.
+            self.merge_into_cache(snapshot);
+        } else if let Some(cached) = self.cache.take() {
+            // First committed transaction after a cutover swapped in the
+            // backfilled output: combine it with this transaction's output so
+            // the connector observes the full view as its first batch.
+            self.mailbox
+                .set(Some(SpineSnapshot::<B>::concat([&cached, &snapshot])));
+        } else {
+            self.mailbox.set(Some(snapshot));
+        }
     }
 }
 
@@ -538,6 +595,35 @@ where
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
+
+    fn start_bootstrap_output_caching(&mut self) {
+        self.caching = true;
+
+        // The bootstrap circuit has no connector reading this view, so its
+        // paired accumulator would otherwise stay disabled and discard the
+        // view's contents.  Force-enable it once.  The accumulator samples
+        // its enable count on the first non-empty batch of a transaction, and
+        // the backfill transaction has not started yet, so this is observed in
+        // time.  The bump is local to the bootstrap circuit's enable count and
+        // is harmless if the accumulator was already enabled.
+        if !self.bootstrap_enabled {
+            self.bootstrap_enabled = true;
+            self.enable_count.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+
+    fn supports_state_transfer(&self) -> bool {
+        true
+    }
+
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
+        // Transfer the cached output from the bootstrap circuit (`other`) to
+        // this live operator.  Only the bootstrap circuit caches, so `self`'s
+        // cache is empty going in; afterwards this operator holds the
+        // backfilled output and `other`'s state is irrelevant (it is dropped).
+        std::mem::swap(&mut self.cache, &mut other.cache);
+        Ok(())
+    }
 }
 
 impl<B> SinkOperator<Option<Spine<B>>> for AccumulateOutput<B>
@@ -547,14 +633,14 @@ where
     async fn eval(&mut self, val: &Option<Spine<B>>) {
         if let Some(val) = val {
             self.output_batch_stats.add_batch(val.len());
-            self.mailbox.set(Some(val.ro_snapshot()));
+            self.deliver(val.ro_snapshot());
         }
     }
 
     async fn eval_owned(&mut self, val: Option<Spine<B>>) {
         if let Some(val) = val {
             self.output_batch_stats.add_batch(val.len());
-            self.mailbox.set(Some(val.ro_snapshot()));
+            self.deliver(val.ro_snapshot());
         }
     }
 

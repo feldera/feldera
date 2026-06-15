@@ -268,6 +268,23 @@ pub trait Operator: 'static {
         Ok(())
     }
 
+    /// Instruct the operator to cache its accumulated output for transfer at
+    /// cutover, rather than write it to its mailbox.
+    ///
+    /// A concurrent bootstrap circuit (copy 2) reconstructs the contents of a
+    /// new or modified view but has no output connector reading them.  An
+    /// output operator on such a view must accumulate the view's contents
+    /// (backfill plus the synchronization transaction) into its persistent
+    /// state, which the cutover then swaps (see [`Self::swap_state`]) into the
+    /// live circuit's operator.  The next committed transaction on the live
+    /// operator combines that cached output with its own and writes the
+    /// combined result to the mailbox, so the connector observes the full
+    /// view as its first batch -- exactly as a from-scratch run does.
+    ///
+    /// Only the backfilled output operators of a bootstrap circuit receive
+    /// this call; the default is a no-op.
+    fn start_bootstrap_output_caching(&mut self) {}
+
     /// Start replaying the operator's state to the replay stream.
     ///
     /// Only defined for operators that support replay.

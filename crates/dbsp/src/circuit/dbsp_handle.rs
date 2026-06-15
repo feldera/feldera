@@ -837,7 +837,9 @@ impl Runtime {
                         }
                     }
                     Ok(Command::Restore(base)) => {
-                        let result = circuit.restore(&base).map(Response::CheckpointRestored);
+                        let result = circuit
+                            .restore(&base, false)
+                            .map(Response::CheckpointRestored);
                         if status_sender.send(result).is_err() {
                             return;
                         }
@@ -956,8 +958,12 @@ impl Runtime {
                                             ),
                                         ));
                                     }
+                                    // This handle is the bootstrap copy
+                                    // (copy 2): its backfilled output
+                                    // operators cache their output for
+                                    // transfer at cutover.
                                     let replay_info = match &checkpoint {
-                                        Some(base) => handle.restore(base)?,
+                                        Some(base) => handle.restore(base, true)?,
                                         None => None,
                                     };
                                     bootstrap_circuit = Some(handle);

@@ -3890,11 +3890,6 @@ outputs:
     /// IS emitted at cutover, and it reflects the full input state (the
     /// backfilled records plus any live records ingested during the backfill).
     ///
-    /// Ignored until the DBSP cutover-output fix lands: today the new view's
-    /// backfilled output is swallowed at cutover (`AccumulateOutput` does not
-    /// carry copy 2's accumulated output into the live circuit), so only the
-    /// live `second_batch` is emitted.
-    #[ignore = "needs DBSP concurrent-bootstrap cutover output fix"]
     #[actix_web::test]
     async fn test_concurrent_bootstrap() {
         ensure_default_crypto_provider();

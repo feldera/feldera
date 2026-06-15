@@ -3,6 +3,7 @@ use feldera_types::config::StorageConfig;
 use crate::{
     Circuit, CmpFunc, DBData, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle,
     RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
+    algebra::AddByRef,
     circuit::dbsp_handle::CircuitStorageConfig,
     default_hash, indexed_zset,
     operator::{
@@ -32,10 +33,17 @@ trait TestDataType {
     type Chunk: Clone;
 
     /// Tuple of output ZSets.
-    type ZSet: Debug + PartialEq + Eq;
+    type ZSet: Debug + PartialEq + Eq + Clone;
 
     fn push_inputs(chunks: Self::Chunk, handles: &Self::InputHandles);
     fn read_outputs(handles: &Self::OutputHandles) -> Self::ZSet;
+
+    /// The empty ZSet (tuple of empty ZSets), used to seed a running sum.
+    fn zero() -> Self::ZSet;
+
+    /// Add two ZSets element-wise (used to sum per-transaction reference
+    /// deltas into the cumulative view a from-scratch run holds at a point).
+    fn add(a: &Self::ZSet, b: &Self::ZSet) -> Self::ZSet;
 }
 
 macro_rules! impl_test_data {
@@ -62,6 +70,14 @@ macro_rules! impl_test_data {
             fn read_outputs(handles: &Self::OutputHandles) -> Self::ZSet {
                 ($(SpineSnapshot::<OrdZSet<$t>>::concat(&handles.$name.take_from_all()).consolidate()),*)
             }
+
+            fn zero() -> Self::ZSet {
+                ($(OrdZSet::<$t>::empty()),*)
+            }
+
+            fn add(a: &Self::ZSet, b: &Self::ZSet) -> Self::ZSet {
+                ($(a.$name.add_by_ref(&b.$name)),*)
+            }
         }
     };
 }
@@ -83,6 +99,10 @@ impl TestDataType for () {
     fn push_inputs(mut _chunks: Self::Chunk, _handles: &Self::InputHandles) {}
 
     fn read_outputs(_handles: &Self::OutputHandles) -> Self::ZSet {}
+
+    fn zero() -> Self::ZSet {}
+
+    fn add(_a: &Self::ZSet, _b: &Self::ZSet) -> Self::ZSet {}
 }
 
 impl<T1> TestDataType for TestData1<T1>
@@ -100,6 +120,14 @@ where
 
     fn read_outputs(handles: &Self::OutputHandles) -> Self::ZSet {
         SpineSnapshot::<OrdZSet<T1>>::concat(&handles.take_from_all()).consolidate()
+    }
+
+    fn zero() -> Self::ZSet {
+        OrdZSet::<T1>::empty()
+    }
+
+    fn add(a: &Self::ZSet, b: &Self::ZSet) -> Self::ZSet {
+        a.add_by_ref(b)
     }
 }
 
@@ -2065,14 +2093,21 @@ fn test_concurrent_bootstrap_old_views_live() {
     circuit.complete_concurrent_bootstrap().unwrap();
     assert!(circuit.destroy_bootstrap_circuit().is_err());
 
-    // The new view is now live.  `25 % 7 == 4`, and `4` was produced by
-    // both the checkpointed inputs (`4`) and the recorded ones (`11`, `18`),
-    // so a correct cutover must suppress it; `distinct` re-emits it only if
-    // the bootstrapped state was lost.
+    // The new view is now live.  Its first post-cutover output is the full
+    // accumulated view -- the backfill plus the synchronization transaction --
+    // combined with this transaction's delta, exactly as a from-scratch run
+    // emits the whole view as its first batch.  Inputs `0..=25` map under
+    // `% 7` onto every residue `0..=6`, so the view is `{0..=6}`.  `25 % 7 ==
+    // 4` is already present (from the checkpointed input `4` and the recorded
+    // inputs `11`, `18`), so it contributes no incremental change: a correct
+    // cutover neither duplicates it nor loses it.
     input.push(25, 1);
     circuit.transaction().unwrap();
     assert_eq!(read_output(&output1), zset! { 30 => 1 });
-    assert_eq!(read_output(&output2), zset! {});
+    assert_eq!(
+        read_output(&output2),
+        zset! { 0 => 1, 1 => 1, 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1 }
+    );
 
     // An element never seen before (`5 % 7 == 5` was seen; use a value with
     // residue 6 that only appeared via inputs 6, 13, 20 — also seen; every
@@ -2262,6 +2297,13 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
 
     let mut offset = inputs1.len();
 
+    // A concurrent cutover delivers the new views' full accumulated contents
+    // (everything backfilled and synchronized) as their FIRST post-cutover
+    // output -- exactly as a from-scratch run emits the whole view as its
+    // first batch -- and per-transaction deltas thereafter.  `None` outside
+    // the concurrent path, where the new views emit deltas from the start.
+    let mut cutover_happened = false;
+
     match expected {
         ExpectedOutcome::Concurrent => {
             let crate::circuit::ConcurrentRestoreOutcome::Concurrent(info) = outcome else {
@@ -2307,6 +2349,7 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
             circuit.complete_concurrent_bootstrap().unwrap();
 
             offset += inputs2.len();
+            cutover_happened = true;
         }
         ExpectedOutcome::UpToDate => {
             assert!(
@@ -2325,6 +2368,16 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
 
     // Phases 3 and 4: every view live; phase 4 (the full retraction) probes
     // the accumulated state of every stateful operator.
+    //
+    // The first post-cutover transaction's new-view output is special: it is
+    // the full accumulated view (everything bootstrapped) combined with that
+    // transaction's own delta, i.e. the cumulative sum of the reference deltas
+    // through and including this transaction.  Every later transaction's
+    // new-view output is the per-transaction delta, like the old views'.
+    let mut cumulative_new = ON::zero();
+    for j in 0..offset {
+        cumulative_new = ON::add(&cumulative_new, &ref_new[j]);
+    }
     for (i, chunk) in inputs3.iter().chain(inputs4.iter()).enumerate() {
         I::push_inputs(chunk.clone(), &inputs);
         circuit.transaction().unwrap();
@@ -2333,9 +2386,16 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
             ref_old[offset + i],
             "post-cutover transaction {i}: old views"
         );
+
+        let expected_new = if cutover_happened && i == 0 {
+            // Full backfilled view plus this transaction's delta.
+            ON::add(&cumulative_new, &ref_new[offset + i])
+        } else {
+            ref_new[offset + i].clone()
+        };
         assert_eq!(
             ON::read_outputs(&new_outputs),
-            ref_new[offset + i],
+            expected_new,
             "post-cutover transaction {i}: new views"
         );
     }
@@ -3437,12 +3497,20 @@ fn test_concurrent_bootstrap_map_input() {
     while !circuit.step_bootstrap_circuit().unwrap() {}
     circuit.complete_concurrent_bootstrap().unwrap();
 
-    // Residue 4 is contributed by the surviving values 4, 11, and 18.
-    // Re-inserting another residue-4 value must be suppressed.
+    // First post-cutover transaction: the new view delivers its full
+    // accumulated contents (everything backfilled and synchronized) as its
+    // first batch, exactly as a from-scratch run does.  The surviving values
+    // at cutover are 0..=17 minus key 13, whose residues mod 7 cover every
+    // residue 0..=6, so the view is `{0..=6}`.  Re-inserting key 18
+    // (`18 % 7 == 4`) adds nothing -- residue 4 is already present (values 4,
+    // 11) -- so it contributes no incremental change to this first batch.
     input.push(18, Update::Insert(18));
     circuit.transaction().unwrap();
     assert_eq!(read(&out_old), zset! { 23 => 1 });
-    assert_eq!(read(&out_new), zset! {});
+    assert_eq!(
+        read(&out_new),
+        zset! { 0 => 1, 1 => 1, 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1 }
+    );
 
     // Updating key 11 through the PATCH function: value 11 -> 25.  The old
     // view sees the value change; the new view is unaffected (25 % 7 == 4
