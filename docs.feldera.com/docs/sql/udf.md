@@ -43,6 +43,12 @@ non-backward-compatible modifications, in future releases of Feldera.
   unpredictable behavior within the pipeline.  UDFs should handle all runtime errors gracefully,
   by returning a `Result::Err()` ([see below](#return-types)). This ensures that errors are
   propagated in a controlled manner and can be handled by the calling code.
+
+* The compiler assumes that the semantics of a user-defined function does not change between
+  pipeline restarts.  Modifying the definition of a UDF before restarting a pipeline may lead to
+  incorrect results.  When the semantics of a UDF changes, we also recommend changing the UDF
+  function name; this will enable the compiler to recognize that past results produced using
+  the UDF need to be recomputed.
 :::
 
 Feldera supports UDFs implemented in Rust. To define a UDF, users declare the function
@@ -280,6 +286,7 @@ crate, which is part of the Feldera SQL runtime.
 | `INTERVAL`               | `feldera_sqllib::ShortInterval`, `feldera_sqllib::LongInterval` |
 | `TIME`                   | `feldera_sqllib::Time`                  |
 | `TIMESTAMP`              | `feldera_sqllib::Timestamp`             |
+| `TIMESTAMP WITH TIME ZONE` | `feldera_sqllib::TimestampTz`         |
 | `DATE`                   | `feldera_sqllib::Date`                  |
 | `T ARRAY`                | `feldera_sqllib::Array<T>`              |
 | `MAP<K, V>`              | `feldera_sqllib::Map<K, V>`             |
@@ -382,7 +389,10 @@ including only wrapper functions that call the API of this crate in
   AS VARCHAR), CAST('5' AS INTEGER))`.
 
 * User-defined functions cannot have names identical to standard SQL
-  library function names.
+  library function names.  Future additions to the SQL library may
+  introduce functions that clash with user-defined function names.  We
+  recommend users to use function names that are unlikely to
+  match future additions, e.g., by using an unusual custom prefix.
 
 * Polymorphic functions are not supported.  For example, in SQL the
   addition operation operates on any numeric types; such an operation
@@ -397,6 +407,26 @@ changes, including non-backward-compatible modifications, in future
 releases of Feldera.
 
 :::
+
+:::danger
+
+* Feldera's incremental query engine assumes that all computations are deterministic. Using
+  a non-deterministic UDA is likely to result in incorrect outputs. The SQL compiler cannot verify
+  that Rust functions meet this requirement. Therefore, it is the responsibility of the UDF
+  developer to ensure that their UDAs are deterministic, i.e., the function's return value
+  must depend solely on its arguments and not on clocks, random number generators, external
+  data sources, or other sources of non-determinism.
+
+* UDAs are compiled into native binary code and executed directly within the address space of
+  the pipeline. Therefore, only trusted code should be included in UDAs.
+
+* The compiler assumes that the semantics of a user-defined aggregate does not change between
+  pipeline restarts.  Modifying the definition of a UDA before restarting a pipeline may lead to
+  incorrect results.  When the semantics of a UDA changes, we also recommend changing the UDA
+  function name; this will enable the compiler to recognize that past results produced using
+  the UDA need to be recomputed.
+:::
+
 
 The SQL statement `CREATE AGGREGATE` can be used to extend the set of
 aggregate functions supported by Feldera SQL with user-defined
