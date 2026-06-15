@@ -296,7 +296,7 @@ fn iceberg_glue_s3_input_test() {
             ),
             (
                 "table_name".to_string(),
-                "iceberg_test.test_table".to_string(),
+                "iceberg_test.test_table_v2".to_string(),
             ),
             (
                 "glue.access-key-id".to_string(),
@@ -345,7 +345,7 @@ fn iceberg_rest_s3_input_test() {
             ),
             (
                 "table_name".to_string(),
-                "iceberg_test.test_table".to_string(),
+                "iceberg_test.test_table_v2".to_string(),
             ),
             (
                 "s3.access-key-id".to_string(),

@@ -87,13 +87,13 @@ if args.catalog == "glue":
             "s3.region": "us-east-1",
         },
     )
-    location = "s3://feldera-iceberg-test/test_table"
+    location = "s3://feldera-iceberg-test/test_table_v2"
 elif args.catalog == "rest":
     print("REST catalog not yet supported")
     exit(1)
 else:
     warehouse_path = args.warehouse_path
-    location = f"{warehouse_path}/test_table"
+    location = f"{warehouse_path}/test_table_v2"
 
     print(f"Creating SQL catalog at {warehouse_path}")
 
@@ -154,14 +154,14 @@ partition_spec = PartitionSpec(
 
 try:
     print("Deleting existing table, if any")
-    catalog.drop_table("iceberg_test.test_table")
+    catalog.drop_table("iceberg_test.test_table_v2")
 except:
     pass
 
 print("Creating Iceberg table")
 
 table = catalog.create_table(
-    "iceberg_test.test_table", schema, location=location, partition_spec=partition_spec
+    "iceberg_test.test_table_v2", schema, location=location, partition_spec=partition_spec
 )
 
 # Number of records
