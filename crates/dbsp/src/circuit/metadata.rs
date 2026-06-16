@@ -160,6 +160,9 @@ pub const MERGE_BACKPRESSURE_WAIT_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("merge_backpressure_wait_time_seconds"));
 pub const INVOCATIONS_COUNT: MetricId = MetricId(Cow::Borrowed("invocations_count"));
 pub const RUNTIME_SECONDS: MetricId = MetricId(Cow::Borrowed("runtime_seconds"));
+/// The fraction of an operator's runtime that it is actually running as opposed
+/// to blocking in the kernel (e.g. because it is waiting for I/O).
+pub const RUNTIME_NONBLOCKING_PERCENT: MetricId = MetricId(Cow::Borrowed("nonblocking_percent"));
 pub const RUNTIME_PERCENT: MetricId = MetricId(Cow::Borrowed("runtime_percent"));
 pub const CIRCUIT_WAIT_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("circuit_wait_time_seconds"));
@@ -177,7 +180,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 75] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 76] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -505,6 +508,12 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 75] = [
         category: CircuitMetricCategory::Time,
         advanced: false,
         description: "Time spent waiting for backpressure.",
+    },
+    CircuitMetric {
+        name: RUNTIME_NONBLOCKING_PERCENT,
+        category: CircuitMetricCategory::Time,
+        advanced: true,
+        description: "Fraction of operator runtime spent running, as opposed to blocking in the kernel (e.g. because it is waiting for I/O) or descheduled by the kernel (because there are fewer CPUs than runnable threads).",
     },
     // Balancer
     CircuitMetric {

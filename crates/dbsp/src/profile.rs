@@ -9,8 +9,8 @@ use crate::{
             BACKGROUND_CACHE_OCCUPANCY, CIRCUIT_IDLE_TIME_SECONDS, CIRCUIT_METRICS,
             CIRCUIT_RUNTIME_ELAPSED_SECONDS, CIRCUIT_RUNTIME_SECONDS, CIRCUIT_WAIT_TIME_SECONDS,
             CircuitMetric, FOREGROUND_CACHE_OCCUPANCY, INVOCATIONS_COUNT, MetaItem, MetricId,
-            MetricReading, OperatorMeta, RUNTIME_PERCENT, RUNTIME_SECONDS,
-            SPINE_STORAGE_SIZE_BYTES, STEPS_COUNT, USED_MEMORY_BYTES,
+            MetricReading, OperatorMeta, RUNTIME_NONBLOCKING_PERCENT, RUNTIME_PERCENT,
+            RUNTIME_SECONDS, SPINE_STORAGE_SIZE_BYTES, STEPS_COUNT, USED_MEMORY_BYTES,
         },
     },
     monitor::{TraceMonitor, visual_graph::Graph},
@@ -334,7 +334,7 @@ impl Profiler {
         let mut total_time: Duration = Duration::default();
         for (node_id, _) in metadata.iter_mut() {
             if let Some(profile) = self.cpu_profiler.operator_profile(node_id) {
-                total_time += profile.total_time();
+                total_time += profile.real_time();
             }
         }
 
@@ -358,13 +358,21 @@ impl Profiler {
                     MetricReading::new(
                         RUNTIME_SECONDS,
                         Vec::new(),
-                        MetaItem::Duration(profile.total_time()),
+                        MetaItem::Duration(profile.real_time()),
+                    ),
+                    MetricReading::new(
+                        RUNTIME_NONBLOCKING_PERCENT,
+                        Vec::new(),
+                        MetaItem::Percent {
+                            numerator: profile.cpu_time().as_micros() as u64,
+                            denominator: profile.real_time().as_micros() as u64,
+                        },
                     ),
                     MetricReading::new(
                         RUNTIME_PERCENT,
                         Vec::new(),
                         MetaItem::Percent {
-                            numerator: profile.total_time().as_micros() as u64,
+                            numerator: profile.real_time().as_micros() as u64,
                             denominator: total_time.as_micros() as u64,
                         },
                     ),
@@ -376,10 +384,10 @@ impl Profiler {
             // Additional metadata for circuit nodes.
             if let Some(profile) = self.cpu_profiler.circuit_profile(node_id) {
                 let default_meta = metadata![
-                    CIRCUIT_WAIT_TIME_SECONDS => profile.wait_profile.total_time(),
+                    CIRCUIT_WAIT_TIME_SECONDS => profile.wait_profile.real_time(),
                     STEPS_COUNT => profile.step_profile.invocations(),
-                    CIRCUIT_RUNTIME_SECONDS => profile.step_profile.total_time(),
-                    CIRCUIT_IDLE_TIME_SECONDS => profile.idle_profile.total_time(),
+                    CIRCUIT_RUNTIME_SECONDS => profile.step_profile.real_time(),
+                    CIRCUIT_IDLE_TIME_SECONDS => profile.idle_profile.real_time(),
                     CIRCUIT_RUNTIME_ELAPSED_SECONDS => runtime_elapsed,
                 ];
 
