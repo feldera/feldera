@@ -2099,9 +2099,7 @@ async fn sync_checkpoint_status(
 /// `Suspended` is a no-op, so racing requests act as one) and errors only on an
 /// invalid transition (e.g. from `Standby`). Synchronous and holds no lock
 /// across an `.await`.
-fn trigger_suspend(
-    state: WebData<ServerState>,
-) -> Result<Option<JoinHandle<()>>, PipelineError> {
+fn trigger_suspend(state: WebData<ServerState>) -> Result<Option<JoinHandle<()>>, PipelineError> {
     let mut desired_status = state.desired_status.lock().unwrap();
     match *desired_status {
         RuntimeDesiredStatus::Unavailable => unreachable!(),
