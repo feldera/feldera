@@ -18,13 +18,15 @@ use std::{
 #[derive(Clone, Default, Debug)]
 pub struct OperatorCPUProfile {
     invocations: usize,
-    total_time: Duration,
+    real_time: Duration,
+    cpu_time: Duration,
 }
 
 impl OperatorCPUProfile {
-    pub fn add_event(&mut self, duration: Duration) {
+    pub fn add_event(&mut self, real_time: Duration, cpu_time: Duration) {
         self.invocations += 1;
-        self.total_time += duration;
+        self.real_time += real_time;
+        self.cpu_time += cpu_time;
     }
 
     /// Returns the number of times the operator has been invoked.
@@ -34,9 +36,14 @@ impl OperatorCPUProfile {
         self.invocations
     }
 
-    /// Total time spent evaluating the operator across all invocations.
-    pub fn total_time(&self) -> Duration {
-        self.total_time
+    /// Total elapsed time spent evaluating the operator across all invocations.
+    pub fn real_time(&self) -> Duration {
+        self.real_time
+    }
+
+    /// Total CPU time spent evaluating the operator across all invocations.
+    pub fn cpu_time(&self) -> Duration {
+        self.cpu_time
     }
 }
 
@@ -78,7 +85,9 @@ impl CPUProfilerInner {
                         .circuit_profiles
                         .entry((*circuit_id).clone())
                         .or_insert_with(Default::default);
-                    circuit_profile.idle_profile.add_event(duration);
+                    circuit_profile
+                        .idle_profile
+                        .add_event(duration, Duration::ZERO);
                 };
 
                 self.step_start_times
@@ -91,18 +100,20 @@ impl CPUProfilerInner {
                         .circuit_profiles
                         .entry((*circuit_id).clone())
                         .or_insert_with(Default::default);
-                    circuit_profile.step_profile.add_event(duration);
+                    circuit_profile
+                        .step_profile
+                        .add_event(duration, Duration::ZERO);
                 };
                 self.step_end_times
                     .insert((*circuit_id).clone(), Instant::now());
             }
             SchedulerEvent::EvalStart { .. } => {}
-            SchedulerEvent::EvalEnd { node, duration } => {
+            SchedulerEvent::EvalEnd { node, elapsed_time } => {
                 let op_profile = self
                     .operators
                     .entry(node.global_id().clone())
                     .or_insert_with(Default::default);
-                op_profile.add_event(*duration);
+                op_profile.add_event(elapsed_time.real, elapsed_time.cpu);
                 // println!("{}:{}:{:?}", crate::Runtime::worker_index(),
                 // node.global_id(), duration);
             }
@@ -117,7 +128,9 @@ impl CPUProfilerInner {
                         .circuit_profiles
                         .entry((*circuit_id).clone())
                         .or_insert_with(Default::default);
-                    circuit_profile.wait_profile.add_event(duration);
+                    circuit_profile
+                        .wait_profile
+                        .add_event(duration, Duration::ZERO);
                 };
             }
             _ => (),

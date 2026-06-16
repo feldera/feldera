@@ -17,12 +17,11 @@
 //! quickly, with any expensive processing completed asynchronously.
 
 use super::{GlobalNodeId, NodeId, OwnershipPreference, circuit_builder::Node};
-use crate::circuit::{RegionName, metadata::OperatorLocation};
+use crate::circuit::{RegionName, circuit_builder::ElapsedTime, metadata::OperatorLocation};
 use std::{
     borrow::Cow,
     fmt::{self, Display},
     hash::Hash,
-    time::Duration,
 };
 
 /// Type of edge in a circuit graph.
@@ -556,7 +555,7 @@ pub enum SchedulerEvent<'a> {
     },
     EvalEnd {
         node: &'a dyn Node,
-        duration: Duration,
+        elapsed_time: ElapsedTime,
     },
     WaitStart {
         circuit_id: &'a GlobalNodeId,
@@ -581,8 +580,8 @@ impl<'a> SchedulerEvent<'a> {
     }
 
     /// Create a [`SchedulerEvent::EvalEnd`] event instance.
-    pub fn eval_end(node: &'a dyn Node, duration: Duration) -> Self {
-        Self::EvalEnd { node, duration }
+    pub fn eval_end(node: &'a dyn Node, elapsed_time: ElapsedTime) -> Self {
+        Self::EvalEnd { node, elapsed_time }
     }
 
     /// Create a [`SchedulerEvent::WaitStart`] event instance.
@@ -622,12 +621,13 @@ impl Display for SchedulerEvent<'_> {
             Self::EvalStart { node } => {
                 write!(f, "EvalStart({})", node.global_id())
             }
-            Self::EvalEnd { node, duration } => {
+            Self::EvalEnd { node, elapsed_time } => {
                 write!(
                     f,
-                    "EvalEnd({}, {}μs)",
+                    "EvalEnd({}, {}μs real, {}μs CPU)",
                     node.global_id(),
-                    duration.as_micros()
+                    elapsed_time.real.as_micros(),
+                    elapsed_time.cpu.as_micros(),
                 )
             }
             Self::WaitStart { circuit_id } => {
