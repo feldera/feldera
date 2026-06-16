@@ -361,6 +361,12 @@ pub enum PipelineAction {
         /// Bootstrap the pipeline with output connectors disabled.
         #[arg(long, default_value_t = false)]
         silent_bootstrap: bool,
+        /// Bootstrap new and modified views concurrently: keep serving the
+        /// existing views while the changed views backfill in the background.
+        ///
+        /// Mutually exclusive with `--silent-bootstrap`.
+        #[arg(long, default_value_t = false)]
+        concurrent_bootstrap: bool,
         /// Do not dismiss any deployment error before starting.
         #[arg(long, default_value_t = false)]
         no_dismiss_error: bool,
@@ -374,6 +380,12 @@ pub enum PipelineAction {
         /// Bootstrap the pipeline with output connectors disabled.
         #[arg(long, default_value_t = false)]
         silent_bootstrap: bool,
+        /// Bootstrap new and modified views concurrently: keep serving the
+        /// existing views while the changed views backfill in the background.
+        ///
+        /// Mutually exclusive with `--silent-bootstrap`.
+        #[arg(long, default_value_t = false)]
+        concurrent_bootstrap: bool,
     },
 
     /// Checkpoint a fault-tolerant pipeline.
@@ -430,6 +442,12 @@ pub enum PipelineAction {
         /// Bootstrap the pipeline with output connectors disabled.
         #[arg(long, default_value_t = false)]
         silent_bootstrap: bool,
+        /// Bootstrap new and modified views concurrently: keep serving the
+        /// existing views while the changed views backfill in the background.
+        ///
+        /// Mutually exclusive with `--silent-bootstrap`.
+        #[arg(long, default_value_t = false)]
+        concurrent_bootstrap: bool,
         /// Do not dismiss any deployment error before starting.
         #[arg(long, default_value_t = false)]
         no_dismiss_error: bool,
@@ -644,6 +662,12 @@ pub enum PipelineAction {
         /// Bootstrap the pipeline with output connectors disabled.
         #[arg(long, default_value_t = false, requires("start"))]
         silent_bootstrap: bool,
+        /// Bootstrap new and modified views concurrently: keep serving the
+        /// existing views while the changed views backfill in the background.
+        ///
+        /// Mutually exclusive with `--silent-bootstrap`.
+        #[arg(long, default_value_t = false, requires("start"))]
+        concurrent_bootstrap: bool,
         /// Do not dismiss any deployment error before starting.
         #[arg(long, default_value_t = false, requires("start"))]
         no_dismiss_error: bool,
