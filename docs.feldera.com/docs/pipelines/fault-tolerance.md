@@ -164,9 +164,6 @@ must also be fault tolerant. If a fault-tolerant pipeline includes non-fault-tol
 connectors, then in the event of a crash and restart, Feldera may send
 duplicate output to those connectors, but it will not drop output.
 
-Feldera does not yet support fault tolerance or checkpoint and resume in
-pipelines that use the SQL `NOW` function.
-
 The following table documents input connector support for fault
 tolerance.
 
