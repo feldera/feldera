@@ -311,6 +311,12 @@ pub enum PipelineAction {
         /// and is still in development. Use for testing purposes only.
         #[arg(long, short = 'r', env = "FELDERA_RUNTIME_VERSION")]
         runtime_version: Option<String>,
+        /// Whether to use the SQL compiler from the runtime or the platform.
+        ///
+        /// This should usually be false, which is the default.  It is only meaningful
+        /// when the runtime version is set.
+        #[arg(long, env = "FELDERA_USE_PLATFORM_COMPILER", default_value_t = false)]
+        use_platform_compiler: bool,
         /// The compilation profile to use.
         #[arg(default_value = "optimized")]
         profile: CompilationProfile,
@@ -979,6 +985,12 @@ pub enum ProgramAction {
         /// If not specified, the default version will be used.
         #[arg(verbatim_doc_comment, short = 'r', long)]
         runtime_version: Option<String>,
+        /// Whether to use the SQL compiler from the runtime or the platform.
+        ///
+        /// This should usually be false, which is the default.  It is only meaningful
+        /// when the runtime version is set.
+        #[arg(long, env = "FELDERA_USE_PLATFORM_COMPILER", default_value_t = false)]
+        use_platform_compiler: bool,
     },
     /// Retrieve the compilation status of the program.
     Status {
