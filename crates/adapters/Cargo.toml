@@ -109,7 +109,7 @@ futures-util = { workspace = true }
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
 clap = { workspace = true }
-tokio = { workspace = true, features = ["sync", "macros", "fs", "rt"] }
+tokio = { workspace = true, features = ["sync", "macros", "fs", "rt", "signal"] }
 utoipa = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 colored = { workspace = true }
