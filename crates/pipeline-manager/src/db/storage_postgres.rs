@@ -13,7 +13,8 @@ use crate::db::types::monitor::{
     PipelineMonitorEventId,
 };
 use crate::db::types::pipeline::{
-    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
+    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PatchClientMetadata, PipelineDescr,
+    PipelineId,
 };
 use crate::db::types::program::{
     ProgramConfig, ProgramInfo, ProgramStatus, RustCompilationInfo, SqlCompilationInfo,
@@ -320,21 +321,27 @@ impl Storage for StoragePostgres {
         let current = operations::pipeline::get_pipeline(&txn, tenant_id, original_name).await;
         let is_new: bool = match current {
             Ok(_) => {
-                // Pipeline already exists, as such update it
+                // Pipeline already exists, as such update it. For a full
+                // POST/PUT, client metadata is replaced, not patched on top of
+                // the existing value, so it is expressed as a patch that sets
+                // every field.
+                let client_metadata = pipeline.client_metadata().as_full_patch();
                 operations::pipeline::update_pipeline(
                     &txn,
                     false, // Done by user
                     tenant_id,
                     original_name,
-                    &Some(pipeline.name.clone()),
-                    &Some(pipeline.description.clone()),
+                    &operations::pipeline::PipelineFieldUpdates {
+                        name: &Some(pipeline.name.clone()),
+                        client_metadata: &client_metadata,
+                        runtime_config: &Some(pipeline.runtime_config.clone()),
+                        program_code: &Some(pipeline.program_code.clone()),
+                        udf_rust: &Some(pipeline.udf_rust.clone()),
+                        udf_toml: &Some(pipeline.udf_toml.clone()),
+                        program_config: &Some(pipeline.program_config.clone()),
+                    },
                     platform_version,
                     bump_platform_version,
-                    &Some(pipeline.runtime_config.clone()),
-                    &Some(pipeline.program_code.clone()),
-                    &Some(pipeline.udf_rust.clone()),
-                    &Some(pipeline.udf_toml.clone()),
-                    &Some(pipeline.program_config.clone()),
                 )
                 .await?;
                 false
@@ -420,7 +427,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         original_name: &str,
         name: &Option<String>,
-        description: &Option<String>,
+        client_metadata: &PatchClientMetadata,
         platform_version: &str,
         bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
@@ -438,15 +445,17 @@ impl Storage for StoragePostgres {
             false, // Done by user
             tenant_id,
             original_name,
-            name,
-            description,
+            &operations::pipeline::PipelineFieldUpdates {
+                name,
+                client_metadata,
+                runtime_config,
+                program_code,
+                udf_rust,
+                udf_toml,
+                program_config,
+            },
             platform_version,
             bump_platform_version,
-            runtime_config,
-            program_code,
-            udf_rust,
-            udf_toml,
-            program_config,
         )
         .await?;
 
@@ -1149,15 +1158,17 @@ impl Storage for StoragePostgres {
                         true, // Done by compiler
                         tenant_id,
                         &pipeline.name,
-                        &None,
-                        &None,
+                        &operations::pipeline::PipelineFieldUpdates {
+                            name: &None,
+                            client_metadata: &PatchClientMetadata::default(),
+                            runtime_config: &None,
+                            program_code: &None,
+                            udf_rust: &None,
+                            udf_toml: &None,
+                            program_config: &None,
+                        },
                         platform_version,
                         true,
-                        &None,
-                        &None,
-                        &None,
-                        &None,
-                        &None,
                     )
                     .await?;
                 }
@@ -1238,15 +1249,17 @@ impl Storage for StoragePostgres {
                         true, // Done by compiler
                         tenant_id,
                         &pipeline.name,
-                        &None,
-                        &None,
+                        &operations::pipeline::PipelineFieldUpdates {
+                            name: &None,
+                            client_metadata: &PatchClientMetadata::default(),
+                            runtime_config: &None,
+                            program_code: &None,
+                            udf_rust: &None,
+                            udf_toml: &None,
+                            program_config: &None,
+                        },
                         platform_version,
                         true,
-                        &None,
-                        &None,
-                        &None,
-                        &None,
-                        &None,
                     )
                     .await?;
                 }

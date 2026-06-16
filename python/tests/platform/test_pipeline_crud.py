@@ -9,6 +9,12 @@ from .helper import (
     wait_for_program_success,
     gen_pipeline_name,
     cleanup_pipeline,
+    create_pipeline,
+    start_pipeline,
+    pause_pipeline,
+    resume_pipeline,
+    stop_pipeline,
+    clear_pipeline,
 )
 
 # Field selector constants
@@ -17,6 +23,7 @@ PIPELINE_FIELD_SELECTOR_ALL_FIELDS = [
     "id",
     "name",
     "description",
+    "tags",
     "created_at",
     "version",
     "platform_version",
@@ -58,6 +65,7 @@ PIPELINE_FIELD_SELECTOR_STATUS_FIELDS = [
     "id",
     "name",
     "description",
+    "tags",
     "created_at",
     "version",
     "platform_version",
@@ -124,6 +132,7 @@ def test_pipeline_post(pipeline_name):
     pipeline = r.json()
     assert pipeline["name"] == name_min
     assert pipeline["description"] == ""
+    assert pipeline["tags"] == []
     assert isinstance(pipeline["runtime_config"], dict)
     assert pipeline["program_code"] == ""
     assert pipeline.get("udf_rust", "") == ""
@@ -151,6 +160,7 @@ def test_pipeline_post(pipeline_name):
         {
             "name": name_all,
             "description": "description-3",
+            "tags": ["alpha", "beta-1"],
             "runtime_config": {"workers": 123},
             "program_code": "sql-3",
             "udf_rust": "rust-3",
@@ -162,6 +172,7 @@ def test_pipeline_post(pipeline_name):
     pipeline = r.json()
     assert pipeline["name"] == name_all
     assert pipeline["description"] == "description-3"
+    assert pipeline["tags"] == ["alpha", "beta-1"]
     assert pipeline["runtime_config"]["workers"] == 123
     assert pipeline["program_code"] == "sql-3"
     assert pipeline["udf_rust"] == "rust-3"
@@ -452,3 +463,284 @@ def test_pipeline_connector_endpoint_naming(pipeline_name):
         "v2.c1",
         "v3.unnamed-0",
     ]
+
+
+@gen_pipeline_name
+def test_pipeline_tags(pipeline_name):
+    cleanup_pipeline(pipeline_name)
+
+    # Create with tags.
+    r = post_json(
+        f"{API_PREFIX}/pipelines",
+        {
+            "name": pipeline_name,
+            "description": "initial",
+            "tags": ["prod", "team-billing"],
+            "program_code": "",
+        },
+    )
+    assert r.status_code == HTTPStatus.CREATED
+    assert r.json()["tags"] == ["prod", "team-billing"]
+
+    # Tags round-trip on read.
+    r = get(f"{API_PREFIX}/pipelines/{pipeline_name}")
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["tags"] == ["prod", "team-billing"]
+
+    # PATCH replaces the whole tags list; description is left untouched.
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"tags": ["staging"]},
+    )
+    assert r.status_code == HTTPStatus.OK
+    obj = r.json()
+    assert obj["tags"] == ["staging"]
+    assert obj["description"] == "initial"
+
+    # PATCH of description leaves tags untouched (fields patch independently).
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"description": "changed"},
+    )
+    assert r.status_code == HTTPStatus.OK
+    obj = r.json()
+    assert obj["description"] == "changed"
+    assert obj["tags"] == ["staging"]
+
+    # PATCH with an empty list clears the tags (an empty list is a real value).
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"tags": []},
+    )
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["tags"] == []
+
+    # PUT replaces the pipeline wholesale: omitting tags resets them to empty.
+    r = put_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {
+            "name": pipeline_name,
+            "tags": ["only-tag"],
+            "program_code": "",
+        },
+    )
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["tags"] == ["only-tag"]
+
+    r = put_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"name": pipeline_name, "program_code": ""},
+    )
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["tags"] == []
+
+
+@gen_pipeline_name
+def test_pipeline_tags_invalid(pipeline_name):
+    cleanup_pipeline(pipeline_name)
+
+    # Each of these tags violates the constraints (disallowed character, too
+    # long, empty) and must be rejected at creation time.
+    invalid_tag_sets = [
+        ["bad,tag"],
+        ["a" * 51],
+        [""],
+        ["ok", "also,bad"],
+    ]
+    for tags in invalid_tag_sets:
+        r = post_json(
+            f"{API_PREFIX}/pipelines",
+            {"name": pipeline_name, "tags": tags, "program_code": ""},
+        )
+        assert r.status_code == HTTPStatus.BAD_REQUEST, (
+            f"tags {tags} should be rejected"
+        )
+
+    # A valid set of tags (every allowed character class) is accepted.
+    r = post_json(
+        f"{API_PREFIX}/pipelines",
+        {
+            "name": pipeline_name,
+            "tags": ["a-z_0/9", "with space", "pipe|sep", "back\\slash", "dot.dot"],
+            "program_code": "",
+        },
+    )
+    assert r.status_code == HTTPStatus.CREATED
+
+    # Patching to an invalid tag is rejected too.
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"tags": ["bad?tag"]},
+    )
+    assert r.status_code == HTTPStatus.BAD_REQUEST
+
+
+@gen_pipeline_name
+def test_pipeline_description_length(pipeline_name):
+    name_ok = pipeline_name + "-ok"
+    name_long = pipeline_name + "-long"
+    cleanup_pipeline(name_ok)
+    cleanup_pipeline(name_long)
+
+    # A description of exactly the maximum length (300) is accepted.
+    r = post_json(
+        f"{API_PREFIX}/pipelines",
+        {"name": name_ok, "description": "a" * 300, "program_code": ""},
+    )
+    assert r.status_code == HTTPStatus.CREATED
+
+    # One character over the limit is rejected on creation.
+    r = post_json(
+        f"{API_PREFIX}/pipelines",
+        {"name": name_long, "description": "a" * 301, "program_code": ""},
+    )
+    assert r.status_code == HTTPStatus.BAD_REQUEST
+
+    # Patching an existing pipeline to an over-long description is rejected.
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{name_ok}",
+        {"description": "a" * 301},
+    )
+    assert r.status_code == HTTPStatus.BAD_REQUEST
+
+
+def _version_counters(pipeline_name):
+    """Return the `(version, program_version, refresh_version)` triple."""
+    obj = get(f"{API_PREFIX}/pipelines/{pipeline_name}?selector=status").json()
+    return obj["version"], obj["program_version"], obj["refresh_version"]
+
+
+@gen_pipeline_name
+def test_pipeline_metadata_edits_do_not_bump_version(pipeline_name):
+    """
+    The `tags` and `description` fields are client-side metadata with no
+    deployment semantics, so editing them must not move any of the pipeline's
+    version counters (`version`, `program_version`, `refresh_version`).
+    Editing a core field (here `program_code`) must, by contrast, bump them.
+    """
+    cleanup_pipeline(pipeline_name)
+
+    # Create and let the program compile. Compilation bumps `refresh_version`
+    # on its own; once it has settled, only explicit edits move the counters,
+    # which makes the assertions below deterministic.
+    r = post_json(
+        f"{API_PREFIX}/pipelines",
+        {
+            "name": pipeline_name,
+            "description": "initial",
+            "tags": ["prod"],
+            "program_code": "CREATE TABLE t1 ( c1 INT );",
+        },
+    )
+    assert r.status_code == HTTPStatus.CREATED
+    wait_for_program_success(pipeline_name, expected_program_version=1)
+
+    baseline = _version_counters(pipeline_name)
+    assert baseline[0] == 1, "freshly created pipeline starts at version 1"
+    assert baseline[1] == 1, "freshly created pipeline starts at program_version 1"
+
+    # Patching only the description leaves every counter where it was.
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"description": "changed"},
+    )
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["description"] == "changed"
+    assert _version_counters(pipeline_name) == baseline
+
+    # Patching only the tags is equally free.
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"tags": ["staging", "team-x"]},
+    )
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["tags"] == ["staging", "team-x"]
+    assert _version_counters(pipeline_name) == baseline
+
+    # Patching both fields in one request is still free, including clearing
+    # the tags with an empty list.
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"description": "again", "tags": []},
+    )
+    assert r.status_code == HTTPStatus.OK
+    assert _version_counters(pipeline_name) == baseline
+
+    # A no-op patch (re-sending the current values) does not move them either.
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"description": "again", "tags": []},
+    )
+    assert r.status_code == HTTPStatus.OK
+    assert _version_counters(pipeline_name) == baseline
+
+    # Editing a core field bumps all three counters by one. Read them from the
+    # PATCH response, which reflects the row immediately after the update,
+    # before background recompilation moves `refresh_version` again.
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"program_code": "CREATE TABLE t1 ( c1 INT, c2 INT );"},
+    )
+    assert r.status_code == HTTPStatus.OK
+    obj = r.json()
+    assert obj["version"] == baseline[0] + 1
+    assert obj["program_version"] == baseline[1] + 1
+    assert obj["refresh_version"] == baseline[2] + 1
+    # The metadata is carried across the core edit untouched.
+    assert obj["description"] == "again"
+    assert obj["tags"] == []
+
+
+@gen_pipeline_name
+def test_pipeline_metadata_edits_at_deployment_stages(pipeline_name):
+    """
+    Editing `tags`/`description` is allowed at every stage of deployment
+    (stopped, running, paused, stopped-with-storage), unlike core fields which
+    are restricted to the stopped state. None of these metadata edits bump the
+    pipeline `version`.
+    """
+    create_pipeline(pipeline_name, "CREATE TABLE t1 ( c1 INT );")
+
+    def patch_metadata_ok(stage, description, tags):
+        r = patch_json(
+            f"{API_PREFIX}/pipelines/{pipeline_name}",
+            {"description": description, "tags": tags},
+        )
+        assert r.status_code == HTTPStatus.OK, f"metadata patch while {stage}: {r.text}"
+        obj = r.json()
+        assert obj["description"] == description, f"description while {stage}"
+        assert obj["tags"] == tags, f"tags while {stage}"
+        # `version` only ever moves on a core edit, so it is a stable witness
+        # that the metadata patch did not bump the pipeline version, even while
+        # the pipeline is live and background status updates move other counters.
+        assert obj["version"] == base_version, f"version bumped while {stage}"
+
+    base_version = _version_counters(pipeline_name)[0]
+
+    # Stopped, storage cleared.
+    patch_metadata_ok("stopped", "while-stopped", ["s1"])
+
+    # Running.
+    start_pipeline(pipeline_name)
+    patch_metadata_ok("running", "while-running", ["r1", "r2"])
+
+    # A core edit while running is rejected; it requires the stopped state.
+    r = patch_json(
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
+        {"program_code": "CREATE TABLE t1 ( c1 INT, c2 INT );"},
+    )
+    assert r.status_code == HTTPStatus.BAD_REQUEST
+    assert r.json()["error_code"] == "UpdateRestrictedToStopped"
+    # The rejected core edit did not change the version either.
+    assert _version_counters(pipeline_name)[0] == base_version
+
+    # Paused.
+    pause_pipeline(pipeline_name)
+    patch_metadata_ok("paused", "while-paused", [])
+
+    # Stopped again, but with storage still in use (not cleared).
+    resume_pipeline(pipeline_name)
+    stop_pipeline(pipeline_name, force=True)
+    patch_metadata_ok("stopped-with-storage", "while-stopped-inuse", ["final"])
+
+    clear_pipeline(pipeline_name)

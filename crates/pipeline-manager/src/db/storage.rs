@@ -7,7 +7,8 @@ use crate::db::types::monitor::{
     PipelineMonitorEventId,
 };
 use crate::db::types::pipeline::{
-    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
+    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PatchClientMetadata, PipelineDescr,
+    PipelineId,
 };
 use crate::db::types::program::{RustCompilationInfo, SqlCompilationInfo};
 use crate::db::types::tenant::TenantId;
@@ -34,6 +35,7 @@ impl ExtendedPipelineDescrRunner {
                 id: pipeline.id,
                 name: pipeline.name.clone(),
                 description: pipeline.description.clone(),
+                tags: pipeline.tags.clone(),
                 created_at: pipeline.created_at,
                 version: pipeline.version,
                 platform_version: pipeline.platform_version.clone(),
@@ -214,7 +216,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         original_name: &str,
         name: &Option<String>,
-        description: &Option<String>,
+        client_metadata: &PatchClientMetadata,
         platform_version: &str,
         bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,

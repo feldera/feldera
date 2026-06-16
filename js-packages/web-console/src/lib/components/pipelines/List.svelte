@@ -41,7 +41,7 @@
   style="overflow-y: overlay;"
   use:bindScrollY={{ scrollY }}
 >
-  <div class="bg-white-dark sticky top-0 -mr-1 flex items-center gap-2 pb-2">
+  <div class="bg-white-dark sticky top-0 -mr-1 flex items-center gap-2 pb-2 pl-2">
     <input
       class="input h-8 min-w-0 flex-1"
       type="search"

@@ -363,7 +363,8 @@ mod tests {
         ExtendedPipelineDescrMonitoring {
             id: PipelineId(Uuid::from_u128(1)),
             name: name.to_string(),
-            description: String::new(),
+            description: Default::default(),
+            tags: Default::default(),
             created_at: Default::default(),
             version: Version(1),
             platform_version: String::new(),

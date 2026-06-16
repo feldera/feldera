@@ -20,6 +20,26 @@ import TabItem from '@theme/TabItem';
           [connector documentation](/connectors/sinks/dynamodb) for configuration
           details.
 
+        - Pipelines now have a `tags` field: free-form labels for organizing and
+          filtering pipelines, exposed across the API, `fda` CLI, web console, and
+          Python SDK (`PipelineBuilder(tags=...)`, `pipeline.modify(tags=...)`,
+          `pipeline.tags()`).
+
+        - Editing only a pipeline's `description` or `tags` no longer bumps its
+          `version` or `refresh_version`, nor triggers recompilation. These fields can
+          therefore be edited at any state of a pipeline (e.g. while running).
+
+        ## v0.311.0
+
+        - The default value of `max_output_buffer_size_records` is now 10,000,000
+          instead of unbounded.
+
+        ## v0.309.0
+
+        - Rust compiler will clean up the `target` directory automatically
+          when its usage reaches the disk limit. This is currently behind
+          the unstable feature flag `rust_compiler_full_cleanup`.
+
         - Pipeline name is now limited to 63 characters and must follow the Kubernetes
           label pattern (and be non-empty and contain no dots as before). The check is only enforced
           when the pipeline is being newly created, its `name` field is being PATCHed
@@ -29,12 +49,7 @@ import TabItem from '@theme/TabItem';
           no longer valid, in which case they will now receive an error instead of succeeding.
           However, especially in the Kubernetes runner these pipelines would already not work.
 
-        - Rust compiler will clean up the `target` directory automatically
-          when its usage reaches the disk limit. This is currently behind
-          the unstable feature flag `rust_compiler_full_cleanup`.
-
-        - The default value of `max_output_buffer_size_records` is now 10,000,000
-          instead of unbounded.
+        ## v0.307.0
 
         - Casts of strings to Boolean and floating point values will
         produce runtime errors instead of legal values for illegal string

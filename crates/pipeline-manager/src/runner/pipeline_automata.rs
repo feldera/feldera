@@ -2052,6 +2052,7 @@ mod test {
                 PipelineDescr {
                     name: "example1".to_string(),
                     description: "Description of example1".to_string(),
+                    tags: vec![],
                     runtime_config: json!({}),
                     program_code: "CREATE TABLE example1 ( col1 INT );".to_string(),
                     udf_rust: "".to_string(),

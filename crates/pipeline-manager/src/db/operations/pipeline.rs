@@ -12,7 +12,7 @@ use crate::db::operations::utils::{
 use crate::db::types::pipeline::{
     bootstrap_config_to_string, runtime_desired_status_to_string, runtime_status_to_string,
     ExtendedPipelineDescr, ExtendedPipelineDescrEventInfo, ExtendedPipelineDescrMonitoring,
-    PipelineDescr, PipelineId,
+    PatchClientMetadata, PipelineDescr, PipelineId,
 };
 use crate::db::types::program::{
     validate_program_status_transition, ProgramError, ProgramStatus, RustCompilationInfo,
@@ -177,6 +177,8 @@ pub(crate) async fn new_pipeline(
     pipeline: PipelineDescr,
 ) -> Result<(PipelineId, Version), DBError> {
     validate_pipeline_name(&pipeline.name)?;
+    let client_metadata = pipeline.client_metadata();
+    client_metadata.validate()?;
     // Validate runtime configuration JSON when deserializing it
     // and reserialize it to have it contain current default values
     let runtime_config =
@@ -210,7 +212,7 @@ pub(crate) async fn new_pipeline(
     let stmt = txn
 
         .prepare_cached(
-            "INSERT INTO pipeline (id, tenant_id, name, description, created_at, version, platform_version, runtime_config,
+            "INSERT INTO pipeline (id, tenant_id, name, client_metadata, created_at, version, platform_version, runtime_config,
                                    program_code, udf_rust, udf_toml, program_config, program_version, program_status,
                                    program_status_since, program_error, program_info,
                                    program_binary_source_checksum, program_binary_integrity_checksum,
@@ -239,7 +241,7 @@ pub(crate) async fn new_pipeline(
             &new_id,                             // $1: id
             &tenant_id.0,                        // $2: tenant_id
             &pipeline.name,                      // $3: name
-            &pipeline.description,               // $4: description
+            &client_metadata.to_db_string(),     // $4: client_metadata
             &Version(1).0,                       // $5: version
             &platform_version.to_string(),       // $6: platform_version
             &runtime_config.to_string(),         // $7: runtime_config
@@ -268,6 +270,25 @@ pub(crate) async fn new_pipeline(
     Ok((PipelineId(new_id), Version(1)))
 }
 
+/// Bundle of patchable pipeline fields, i.e. the contents of a `PATCH` request
+/// body. `update_pipeline` destructures this struct exhaustively so adding a
+/// new patchable field forces the call sites and the classifier
+/// (`core_changed` etc.) to be revisited or fail to compile.
+pub(crate) struct PipelineFieldUpdates<'a> {
+    pub name: &'a Option<String>,
+    /// Client-metadata patch to merge into the stored value: each `Some` field
+    /// overwrites it; each `None` field leaves it unchanged. A `POST`/`PUT`
+    /// replace is expressed as a patch in which every field is `Some` (built
+    /// from the complete descriptor), so an empty string or empty list is
+    /// always a value in its own right, never a request to unset.
+    pub client_metadata: &'a PatchClientMetadata,
+    pub runtime_config: &'a Option<serde_json::Value>,
+    pub program_code: &'a Option<String>,
+    pub udf_rust: &'a Option<String>,
+    pub udf_toml: &'a Option<String>,
+    pub program_config: &'a Option<serde_json::Value>,
+}
+
 /// Modify pipeline.
 ///
 /// # Arguments
@@ -278,24 +299,28 @@ pub(crate) async fn new_pipeline(
 /// * `bump_platform_version` - if true, the platform_version of the pipeline will be updated to the
 ///   provided `platform_version`. In addition, the platform_version will be updated unconditionally
 ///   if the program code or program settings are getting updated by this request.
-/// * Other arguments correspond to fields that can be updated. If an argument is `None`, the corresponding
-///   field is not updated.
-#[allow(clippy::too_many_arguments)]
+/// * `updates` - patchable fields. Each `Some` value is applied; `None` leaves the corresponding
+///   field unchanged.
 pub(crate) async fn update_pipeline(
     txn: &Transaction<'_>,
     is_compiler_update: bool,
     tenant_id: TenantId,
     original_name: &str,
-    name: &Option<String>,
-    description: &Option<String>,
+    updates: &PipelineFieldUpdates<'_>,
     platform_version: &str,
     mut bump_platform_version: bool,
-    runtime_config: &Option<serde_json::Value>,
-    program_code: &Option<String>,
-    udf_rust: &Option<String>,
-    udf_toml: &Option<String>,
-    program_config: &Option<serde_json::Value>,
 ) -> Result<Version, DBError> {
+    // Dereference in the pattern so each binding has the original reference
+    // type (e.g. `name: &Option<String>`) rather than `&&Option<String>`.
+    let &PipelineFieldUpdates {
+        name,
+        client_metadata,
+        runtime_config,
+        program_code,
+        udf_rust,
+        udf_toml,
+        program_config,
+    } = updates;
     if let Some(name) = name {
         validate_pipeline_name(name)?;
     }
@@ -344,23 +369,59 @@ pub(crate) async fn update_pipeline(
     // This will also return an error if the pipeline does not exist.
     let current = get_pipeline(txn, tenant_id, original_name).await?;
 
+    // Build the current client metadata and merge the patch into it to get the
+    // new value. `current.client_metadata()` uses an exhaustive `ClientMetadata`
+    // literal, so adding a client-metadata field cannot be omitted from this
+    // change detection: it is automatically covered by the struct comparison
+    // below. Client metadata never appears in `core_changed`, so such a field
+    // also can never wrongly bump the version.
+    let current_client_metadata = current.client_metadata();
+    let mut new_client_metadata = current_client_metadata.clone();
+    new_client_metadata.apply_patch(client_metadata);
+    let client_metadata_changed = new_client_metadata != current_client_metadata;
+    // Validate only the fields the client is actually changing, so values
+    // stored before a constraint existed (e.g. a long migrated description)
+    // stay readable and patchable until they are themselves modified.
+    new_client_metadata.validate_changes(&current_client_metadata)?;
+
+    // Determine whether any "core" (version-bumping) field will actually
+    // change. A `Some(v)` value with `v == current` is *not* a change.
+    let core_changed = name.as_ref().is_some_and(|v| *v != current.name)
+        || (bump_platform_version && platform_version != current.platform_version.as_str())
+        || runtime_config
+            .as_ref()
+            .is_some_and(|v| *v != current.runtime_config)
+        || program_code
+            .as_ref()
+            .is_some_and(|v| *v != current.program_code)
+        || udf_rust.as_ref().is_some_and(|v| *v != current.udf_rust)
+        || udf_toml.as_ref().is_some_and(|v| *v != current.udf_toml)
+        || program_config
+            .as_ref()
+            .is_some_and(|v| *v != current.program_config);
+
     // Pipeline update is allowed if either:
     // - Current status is `Stopped` AND desired status is `Stopped`
     // - Current status is `Stopped` AND desired status is `Provisioned` AND it is the
     //   compiler doing the update to bump platform version (the early start mechanism)
-    if !matches!(
-        (
-            is_compiler_update,
-            current.deployment_resources_status,
-            current.deployment_resources_desired_status
-        ),
-        (_, ResourcesStatus::Stopped, ResourcesDesiredStatus::Stopped)
-            | (
-                true,
-                ResourcesStatus::Stopped,
-                ResourcesDesiredStatus::Provisioned
+    // - The update touches only `client_metadata`. Client metadata
+    //   (description, tags, ...) is client-generated data
+    //   with no deployment semantics, so it can be patched at any time.
+    if core_changed
+        && !matches!(
+            (
+                is_compiler_update,
+                current.deployment_resources_status,
+                current.deployment_resources_desired_status
             ),
-    ) {
+            (_, ResourcesStatus::Stopped, ResourcesDesiredStatus::Stopped)
+                | (
+                    true,
+                    ResourcesStatus::Stopped,
+                    ResourcesDesiredStatus::Provisioned
+                ),
+        )
+    {
         return Err(DBError::UpdateRestrictedToStopped);
     }
 
@@ -369,7 +430,7 @@ pub(crate) async fn update_pipeline(
         !is_compiler_update
             || (bump_platform_version
                 && name.is_none()
-                && description.is_none()
+                && client_metadata.contains_only_nones()
                 && runtime_config.is_none()
                 && program_code.is_none()
                 && udf_rust.is_none()
@@ -377,28 +438,56 @@ pub(crate) async fn update_pipeline(
                 && program_config.is_none())
     );
 
-    // If nothing changes in any of the core fields, return the current version
-    if (name.is_none() || name.as_ref().is_some_and(|v| *v == current.name))
-        && (description.is_none()
-            || description
-                .as_ref()
-                .is_some_and(|v| *v == current.description))
-        && (!bump_platform_version || platform_version == current.platform_version.as_str())
-        && (runtime_config.is_none()
-            || runtime_config
-                .as_ref()
-                .is_some_and(|v| *v == current.runtime_config))
-        && (program_code.is_none()
-            || program_code
-                .as_ref()
-                .is_some_and(|v| *v == current.program_code))
-        && (udf_rust.is_none() || udf_rust.as_ref().is_some_and(|v| *v == current.udf_rust))
-        && (udf_toml.is_none() || udf_toml.as_ref().is_some_and(|v| *v == current.udf_toml))
-        && (program_config.is_none()
-            || program_config
-                .as_ref()
-                .is_some_and(|v| *v == current.program_config))
-    {
+    // No-op patch: nothing changed anywhere.
+    if !core_changed && !client_metadata_changed {
+        return Ok(current.version);
+    }
+
+    // Client-metadata-only fast path. Client metadata (description, tags, ...)
+    // is client-generated data with no deployment semantics, so patching it
+    // must not disturb anything watching the pipeline's state:
+    //
+    // - `version` is *not* incremented. The runner automaton uses it as a guard
+    //   on every resources-status transition (see `pipeline_automata.rs`); only
+    //   `TransitionToProvisioning` retries on `OutdatedPipelineVersion`, every
+    //   other transition surfaces it as a hard error. Bumping `version` here
+    //   would crash mid-flight transitions whenever a metadata patch landed
+    //   concurrently.
+    // - `refresh_version` is *not* incremented. It is the client-visible
+    //   "material change happened" counter; client-metadata edits are not
+    //   material.
+    //
+    // Note that this UPDATE still fires the row-level `pipeline_notify` trigger,
+    // which issues a Postgres `NOTIFY` on the `pipeline` channel
+    // just like any other write to the row. We do not try to suppress
+    // it: the woken runner simply re-reads the pipeline, sees that neither
+    // `version` nor `refresh_version` changed, and goes back to sleep.
+    // (The `pipeline_monitor_event` table is a separate audit log
+    // and plays no part in this wake-up.)
+    //
+    // Consequently this branch issues a narrow `UPDATE pipeline SET
+    // client_metadata` (no version columns touched) and returns
+    // `current.version` unchanged.
+    if !core_changed {
+        let stmt = txn
+            .prepare_cached(
+                "UPDATE pipeline
+                     SET client_metadata = $1
+                     WHERE tenant_id = $2 AND name = $3",
+            )
+            .await?;
+        let rows_affected = txn
+            .execute(
+                &stmt,
+                &[
+                    &new_client_metadata.to_db_string(),
+                    &tenant_id.0,
+                    &original_name,
+                ],
+            )
+            .await
+            .map_err(maybe_unique_violation)?;
+        assert_eq!(rows_affected, 1); // The row must exist as it has been retrieved above
         return Ok(current.version);
     }
 
@@ -408,13 +497,9 @@ pub(crate) async fn update_pipeline(
         if name.as_ref().is_some_and(|v| *v != current.name) {
             not_allowed.push("`name`")
         }
-        if description
-            .as_ref()
-            .is_some_and(|v| *v != current.description)
-        {
-            not_allowed.push("`description`")
-        }
-        // `platform_version` can be updated
+        // `platform_version` can be updated.
+        // `client_metadata` (description, tags, ...) is client-generated
+        // and strongly-typed at the API level; it is written below alongside any core changes.
         // Some fields of `runtime_config` are not allowed to be updated
         if let Some(runtime_config) = &runtime_config {
             if runtime_config.get("workers") != current.runtime_config.get("workers") {
@@ -493,7 +578,7 @@ pub(crate) async fn update_pipeline(
         .prepare_cached(
             "UPDATE pipeline
                  SET name = COALESCE($1, name),
-                     description = COALESCE($2, description),
+                     client_metadata = $2,
                      platform_version = COALESCE($3, platform_version),
                      runtime_config = COALESCE($4, runtime_config),
                      program_code = COALESCE($5, program_code),
@@ -510,7 +595,7 @@ pub(crate) async fn update_pipeline(
             &stmt,
             &[
                 &name,
-                &description,
+                &new_client_metadata.to_db_string(),
                 &if bump_platform_version {
                     Some(platform_version.to_string())
                 } else {

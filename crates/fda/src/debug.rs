@@ -391,6 +391,7 @@ async fn unbundle_support_bundle(
                 .post_pipeline()
                 .body(PostPutPipeline {
                     description,
+                    tags: Vec::new(),
                     name: pipeline_name.clone(),
                     program_code: program_code.to_string(),
                     udf_rust,
