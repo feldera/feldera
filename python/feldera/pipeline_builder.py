@@ -48,6 +48,9 @@ class PipelineBuilder:
         self.runtime_version: Optional[str] = os.environ.get(
             "FELDERA_RUNTIME_VERSION", runtime_version
         )
+        self.use_platform_compiler: bool = (
+            os.environ.get("FELDERA_USE_PLATFORM_COMPILER") == "true"
+        )
 
     def create(self, wait: bool = True) -> Pipeline:
         """
@@ -79,6 +82,7 @@ class PipelineBuilder:
             program_config={
                 "profile": self.compilation_profile.value,
                 "runtime_version": self.runtime_version,
+                "use_platform_compiler": self.use_platform_compiler,
             },
             runtime_config=self.runtime_config.to_dict(),
         )
@@ -122,6 +126,7 @@ class PipelineBuilder:
             program_config={
                 "profile": self.compilation_profile.value,
                 "runtime_version": self.runtime_version,
+                "use_platform_compiler": self.use_platform_compiler,
             },
             runtime_config=self.runtime_config.to_dict(),
         )

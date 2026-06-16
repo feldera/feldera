@@ -682,6 +682,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             name,
             program_path,
             runtime_version,
+            use_platform_compiler,
             profile,
             udf_rs,
             udf_toml,
@@ -704,7 +705,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                             cache: true,
                             profile: Some(profile),
                             runtime_version,
-                            use_platform_compiler: false,
+                            use_platform_compiler,
                         }),
                         runtime_config: None,
                     })
@@ -2502,6 +2503,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
             name,
             profile,
             runtime_version,
+            use_platform_compiler,
         } => {
             let pp = PatchPipeline {
                 description: None,
@@ -2513,7 +2515,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                     profile,
                     cache: true,
                     runtime_version,
-                    use_platform_compiler: false,
+                    use_platform_compiler,
                 }),
                 runtime_config: None,
             };
