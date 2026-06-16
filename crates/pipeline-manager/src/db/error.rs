@@ -126,6 +126,18 @@ pub enum DBError {
         pattern: String,
         pattern_description: String,
     },
+    InvalidTag {
+        tag: String,
+        reason: String,
+    },
+    TooManyTags {
+        count: usize,
+        maximum: usize,
+    },
+    TooLongDescription {
+        length: usize,
+        maximum: usize,
+    },
     // Tenant-related errors
     UnknownTenant {
         tenant_id: TenantId,
@@ -538,6 +550,21 @@ impl Display for DBError {
                     "Name '{name}' should {pattern_description} (pattern: '{pattern}')"
                 )
             }
+            DBError::InvalidTag { tag, reason } => {
+                write!(f, "Tag '{tag}' is invalid: {reason}")
+            }
+            DBError::TooManyTags { count, maximum } => {
+                write!(
+                    f,
+                    "Pipeline has more tags ({count}) than the maximum allowed ({maximum})"
+                )
+            }
+            DBError::TooLongDescription { length, maximum } => {
+                write!(
+                    f,
+                    "Description is longer ({length}) than maximum allowed ({maximum})"
+                )
+            }
             DBError::UnknownTenant { tenant_id } => {
                 write!(f, "Unknown tenant id '{tenant_id}'")
             }
@@ -829,6 +856,9 @@ impl DetailedError for DBError {
             Self::EmptyName => Cow::from("EmptyName"),
             Self::TooLongName { .. } => Cow::from("TooLongName"),
             Self::NameDoesNotMatchPattern { .. } => Cow::from("NameDoesNotMatchPattern"),
+            Self::InvalidTag { .. } => Cow::from("InvalidTag"),
+            Self::TooManyTags { .. } => Cow::from("TooManyTags"),
+            Self::TooLongDescription { .. } => Cow::from("TooLongDescription"),
             Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
             Self::UnknownApiKey { .. } => Cow::from("UnknownApiKey"),
             Self::InvalidApiKey => Cow::from("InvalidApiKey"),
@@ -937,6 +967,9 @@ impl ResponseError for DBError {
             Self::EmptyName => StatusCode::BAD_REQUEST,
             Self::TooLongName { .. } => StatusCode::BAD_REQUEST,
             Self::NameDoesNotMatchPattern { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidTag { .. } => StatusCode::BAD_REQUEST,
+            Self::TooManyTags { .. } => StatusCode::BAD_REQUEST,
+            Self::TooLongDescription { .. } => StatusCode::BAD_REQUEST,
             Self::UnknownTenant { .. } => StatusCode::UNAUTHORIZED, // TODO: should we report not found instead?
             Self::UnknownApiKey { .. } => StatusCode::NOT_FOUND,
             Self::InvalidApiKey => StatusCode::UNAUTHORIZED,

@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import List, Optional
 
 from feldera.enums import CompilationProfile, PipelineFieldSelector
 from feldera.pipeline import Pipeline
@@ -16,6 +16,7 @@ class PipelineBuilder:
     :param client: The :class:`.FelderaClient` instance
     :param name: The name of the pipeline
     :param description: The description of the pipeline
+    :param tags: Free-form labels used to organize, group, and filter pipelines
     :param sql: The SQL code of the pipeline
     :param udf_rust: Rust code for UDFs
     :param udf_toml: Rust dependencies required by UDFs (in the TOML format)
@@ -33,6 +34,7 @@ class PipelineBuilder:
         udf_rust: str = "",
         udf_toml: str = "",
         description: str = "",
+        tags: Optional[List[str]] = None,
         compilation_profile: CompilationProfile = CompilationProfile.OPTIMIZED,
         runtime_config: RuntimeConfig = RuntimeConfig.default(),
         runtime_version: Optional[str] = None,
@@ -40,6 +42,7 @@ class PipelineBuilder:
         self.client: FelderaClient = client
         self.name: str | None = name
         self.description: str = description
+        self.tags: List[str] = tags or []
         self.sql: str = sql
         self.udf_rust: str = udf_rust
         self.udf_toml: str = udf_toml
@@ -76,6 +79,7 @@ class PipelineBuilder:
         inner = InnerPipeline(
             self.name,
             description=self.description,
+            tags=self.tags,
             sql=self.sql,
             udf_rust=self.udf_rust,
             udf_toml=self.udf_toml,
@@ -120,6 +124,7 @@ class PipelineBuilder:
         inner = InnerPipeline(
             self.name,
             description=self.description,
+            tags=self.tags,
             sql=self.sql,
             udf_rust=self.udf_rust,
             udf_toml=self.udf_toml,

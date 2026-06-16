@@ -4,7 +4,7 @@ import pathlib
 import time
 import warnings
 from decimal import Decimal
-from typing import Any, Dict, Generator, Mapping, Optional
+from typing import Any, Dict, Generator, List, Mapping, Optional
 from urllib.parse import quote
 
 import pyarrow as pa
@@ -332,6 +332,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             "program_config": pipeline.program_config,
             "runtime_config": pipeline.runtime_config,
             "description": pipeline.description or "",
+            "tags": pipeline.tags,
         }
 
         self.http.post(
@@ -364,6 +365,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             "program_config": pipeline.program_config,
             "runtime_config": pipeline.runtime_config,
             "description": pipeline.description or "",
+            "tags": pipeline.tags,
         }
 
         self.http.put(
@@ -385,11 +387,17 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         program_config: Optional[Mapping[str, Any]] = None,
         runtime_config: Optional[Mapping[str, Any]] = None,
         description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
     ):
         """
         Incrementally update pipeline
 
         :param name: The name of the pipeline
+
+        Each field is patched independently: a provided value overwrites the
+        stored one, and a field left as ``None`` is omitted from the request and
+        leaves the stored value untouched. To clear the description or tags, pass
+        an empty string or empty list, respectively.
         """
 
         self.http.patch(
@@ -401,6 +409,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 "program_config": program_config,
                 "runtime_config": runtime_config,
                 "description": description,
+                "tags": tags,
             },
         )
 
