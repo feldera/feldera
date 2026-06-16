@@ -59,6 +59,10 @@ use feldera_ir::{LirCircuit, LirNodeId};
 use feldera_samply::Span;
 use feldera_storage::{FileCommitter, StoragePath};
 use itertools::Itertools;
+use nix::{
+    sys::time::TimeValLike,
+    time::{ClockId, clock_gettime},
+};
 use pin_project_lite::pin_project;
 use serde::{Deserialize, Serialize, Serializer, de::DeserializeOwned};
 use std::{
@@ -3783,20 +3787,26 @@ where
             circuit.nodes.borrow()[id.0].borrow().as_ref(),
         ));
 
-        let span = Span::new("eval")
-            .with_category("Operator")
-            .with_tooltip(|| {
-                let nodes = circuit.nodes.borrow();
-                let node = nodes[id.0].borrow();
-                format!("{} {}", node.name(), node.global_id().node_identifier())
-            });
-        let (result, duration) = Timed::new(circuit.nodes.borrow()[id.0].borrow_mut().eval()).await;
+        let span = Span::new("eval").with_category("Operator");
+        let (result, elapsed_time) =
+            Timed::new(circuit.nodes.borrow()[id.0].borrow_mut().eval()).await;
         let progress = result?;
-        span.record();
+        span.with_tooltip(|| {
+            let nodes = circuit.nodes.borrow();
+            let node = nodes[id.0].borrow();
+            format!(
+                "{} {} used {}μs real time, {}μs CPU time",
+                node.name(),
+                node.global_id().node_identifier(),
+                elapsed_time.real.as_micros(),
+                elapsed_time.cpu.as_micros(),
+            )
+        })
+        .record();
 
         circuit.log_scheduler_event(&SchedulerEvent::eval_end(
             circuit.nodes.borrow()[id.0].borrow().as_ref(),
-            duration,
+            elapsed_time,
         ));
 
         Ok(progress)
@@ -7841,14 +7851,24 @@ impl CircuitHandle {
     }
 }
 
+/// Real time and CPU time.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct ElapsedTime {
+    /// Real time running a task.
+    pub real: Duration,
+
+    /// CPU time running a task.
+    pub cpu: Duration,
+}
+
 pin_project! {
     /// An async task that measures its runtime.
     ///
     /// This uses the same wrapper technique as [tokio_metrics::Instrumented] or
     /// [tracing::Instrument]: by implementing [Future] manually, it wraps each
-    /// poll with elapsed time measurement.  When the future eventually
-    /// completes, it outputs the wrapped future's output value plus the total
-    /// elapsed time.
+    /// poll with elapsed real and CPU time measurement.  When the future
+    /// eventually completes, it outputs the wrapped future's output value plus
+    /// the [ElapsedTime].
     ///
     /// [tokio_metrics::Instrumented]: https://docs.rs/tokio-metrics/latest/tokio_metrics/struct.Instrumented.html
     /// [tracing::Instrument]: https://docs.rs/tracing/latest/tracing/trait.Instrument.html
@@ -7858,8 +7878,8 @@ pin_project! {
         #[pin]
         task: T,
 
-        // Time spent running this task.
-        elapsed: Duration,
+        // Elapsed time running this task.
+        elapsed: ElapsedTime,
     }
 }
 
@@ -7867,7 +7887,7 @@ impl<T> Timed<T> {
     fn new(task: T) -> Self {
         Self {
             task,
-            elapsed: Duration::ZERO,
+            elapsed: ElapsedTime::default(),
         }
     }
 }
@@ -7876,13 +7896,20 @@ impl<T> Future for Timed<T>
 where
     T: Future,
 {
-    type Output = (T::Output, Duration);
+    type Output = (T::Output, ElapsedTime);
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let start = Instant::now();
+        let start_cputime = clock_gettime(ClockId::CLOCK_THREAD_CPUTIME_ID)
+            .unwrap()
+            .num_nanoseconds();
         let ret = this.task.poll(cx);
-        *this.elapsed += start.elapsed();
+        this.elapsed.real += start.elapsed();
+        let end_cputime = clock_gettime(ClockId::CLOCK_THREAD_CPUTIME_ID)
+            .unwrap()
+            .num_nanoseconds();
+        this.elapsed.cpu += Duration::from_nanos((end_cputime - start_cputime).max(0) as u64);
         ret.map(|value| (value, take(&mut *this.elapsed)))
     }
 }

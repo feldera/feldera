@@ -160,6 +160,9 @@ pub const MERGE_BACKPRESSURE_WAIT_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("merge_backpressure_wait_time_seconds"));
 pub const INVOCATIONS_COUNT: MetricId = MetricId(Cow::Borrowed("invocations_count"));
 pub const RUNTIME_SECONDS: MetricId = MetricId(Cow::Borrowed("runtime_seconds"));
+/// The fraction of an operator's runtime that it is actually running as opposed
+/// to blocking in the kernel (e.g. because it is waiting for I/O).
+pub const RUNTIME_NONBLOCKING_PERCENT: MetricId = MetricId(Cow::Borrowed("nonblocking_percent"));
 pub const RUNTIME_PERCENT: MetricId = MetricId(Cow::Borrowed("runtime_percent"));
 pub const CIRCUIT_WAIT_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("circuit_wait_time_seconds"));
