@@ -35,10 +35,6 @@ fn default_write_mode() -> DynamoDBWriteMode {
     DynamoDBWriteMode::Batch
 }
 
-fn default_allow_cross_step_write_overlap() -> bool {
-    false
-}
-
 /// DynamoDB write API used by the output connector.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -129,19 +125,6 @@ pub struct DynamoDBWriterConfig {
     #[serde(default = "default_threads")]
     #[schema(default = default_threads)]
     pub threads: usize,
-
-    /// Allow write requests from later DBSP steps to be submitted before all
-    /// write requests from previous steps have completed.
-    ///
-    /// The default is `false`, each `batch_end` waits until all writes for that
-    /// batch have drained before the next step can be encoded. Setting this to
-    /// `true` can increase throughput for small steps by keeping DynamoDB requests
-    /// in flight across step boundaries. This allows writes from different steps to
-    /// overlap; use it for insert-only or mostly disjoint-key workloads where cross-step
-    /// write ordering to the same DynamoDB item is not required.
-    #[serde(default = "default_allow_cross_step_write_overlap")]
-    #[schema(default = default_allow_cross_step_write_overlap)]
-    pub allow_cross_step_write_overlap: bool,
 
     /// Maximum number of retries for a failed or partially-applied DynamoDB write chunk.
     ///
@@ -248,7 +231,6 @@ mod tests {
             max_buffer_size_bytes: 1024 * 1024,
             max_concurrent_requests: 16,
             threads: 1,
-            allow_cross_step_write_overlap: false,
             max_retries: Some(10u8),
         }
     }

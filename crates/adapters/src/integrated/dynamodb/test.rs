@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::thread::sleep;
@@ -19,6 +20,7 @@ use feldera_macros::IsNone;
 use feldera_sqllib::{
     ByteArray, Date, F32, F64, SqlDecimal, SqlString, Time, Timestamp, Uuid, Variant,
 };
+use feldera_types::config::PipelineConfig;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::transport::dynamodb::{DynamoDBWriteMode, DynamoDBWriterConfig};
 use feldera_types::{
@@ -26,13 +28,16 @@ use feldera_types::{
 };
 use rand::Rng;
 use rand::distributions::Alphanumeric;
+use serde_json::json;
 use size_of::SizeOf;
+use tempfile::NamedTempFile;
 
+use crate::Controller;
 use crate::catalog::RecordFormat;
 use crate::controller::EndpointId;
 use crate::format::Encoder;
 use crate::static_compile::seroutput::SerBatchImpl;
-use crate::test::TestStruct;
+use crate::test::{TestStruct, test_circuit_with_index, wait};
 
 use super::helpers::make_client;
 use super::metrics::DynamoDBOutputMetrics;
@@ -317,7 +322,6 @@ fn config(batch_size: usize) -> DynamoDBWriterConfig {
         max_buffer_size_bytes: 1024 * 1024,
         max_concurrent_requests: 16,
         threads: 1,
-        allow_cross_step_write_overlap: false,
         max_retries: Some(10),
     }
 }
@@ -346,7 +350,6 @@ fn endpoint_config(
         max_buffer_size_bytes: 1024 * 1024,
         max_concurrent_requests: 16,
         threads,
-        allow_cross_step_write_overlap: false,
         max_retries: Some(10),
     }
 }
@@ -658,6 +661,35 @@ fn encoder_flushes_when_record_threshold_is_reached() {
     stage_batch(&mut worker, &batch);
     // Reaching the record threshold drains `pending` via a mid-encode flush.
     assert!(worker.pending.is_empty());
+}
+
+#[test]
+fn encoder_pending_never_buffers_whole_batch() {
+    // `push_request` flushes every `batch_size` records, so a batch far larger
+    // than `batch_size` is never buffered whole in `pending`: only the
+    // sub-`batch_size` remainder stays staged until `batch_end`.
+    const BATCH_SIZE: usize = 10;
+    const RECORDS: i32 = 25;
+
+    let mut config = config(BATCH_SIZE);
+    // Enough permits that no flush blocks, and `usize::MAX` bytes so the
+    // count-based flush is exercised in isolation from the byte-based one.
+    config.max_concurrent_requests = 64;
+    config.max_buffer_size_bytes = usize::MAX;
+    let mut worker = worker_with_config(config);
+
+    let batch = build_batch(
+        (0..RECORDS)
+            .map(|id| (record(id, "bulk", Some(id as i64), "r"), 1))
+            .collect(),
+    );
+    stage_batch(&mut worker, &batch);
+
+    // The 25 records flush at 10 and 20; only the trailing 5 remain staged, so
+    // `pending` holds the remainder rather than the entire batch.
+    assert_eq!(worker.pending.len(), RECORDS as usize % BATCH_SIZE);
+    assert!(worker.pending.len() < BATCH_SIZE);
+    assert!(worker.pending.len() < RECORDS as usize);
 }
 
 #[test]
@@ -1298,6 +1330,79 @@ fn dynamodb_endpoint(
     .unwrap()
 }
 
+fn write_raw_json_input(records: &[TestRecord]) -> NamedTempFile {
+    let mut input_file = NamedTempFile::new().unwrap();
+    for record in records {
+        input_file
+            .as_file_mut()
+            .write_all(&serde_json::to_vec(record).unwrap())
+            .unwrap();
+        input_file.write_all(b"\n").unwrap();
+    }
+    input_file
+}
+
+fn dynamodb_buffered_output_pipeline(
+    table: &str,
+    endpoint_url: Option<&str>,
+    input_file: &NamedTempFile,
+    max_output_buffer_size_records: usize,
+    max_output_buffer_time_millis: u64,
+) -> Controller {
+    let output_config = endpoint_config(table.to_string(), endpoint_url.map(str::to_string), 1);
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 1,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_file.path() }
+                },
+                "format": {
+                    "name": "json",
+                    "config": { "update_format": "raw" }
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "index": "idx1",
+                "enable_output_buffer": true,
+                "max_output_buffer_size_records": max_output_buffer_size_records,
+                "max_output_buffer_time_millis": max_output_buffer_time_millis,
+                "transport": {
+                    "name": "dynamodb_output",
+                    "config": output_config
+                }
+            }
+        }
+    }))
+    .unwrap();
+
+    let schema = value_relation().fields;
+    Controller::with_test_config(
+        move |workers| {
+            Ok(test_circuit_with_index::<TestRecord, TestKey, _>(
+                workers,
+                &schema,
+                &[SqlIdentifier::from("id"), SqlIdentifier::from("sort")],
+                |x: &TestRecord| TestKey {
+                    id: x.id,
+                    sort: x.sort.clone(),
+                },
+                &[None],
+                false,
+            ))
+        },
+        &config,
+        Box::new(move |e, _| panic!("dynamodb output buffer test: error: {e}")),
+    )
+    .unwrap()
+}
+
 fn dynamodb_all_types_endpoint(table: &str, endpoint_url: Option<&str>) -> DynamoDBOutputEndpoint {
     let config = endpoint_config(table.to_string(), endpoint_url.map(str::to_string), 2);
     DynamoDBOutputEndpoint::new(
@@ -1420,6 +1525,49 @@ fn dynamodb_all_supported_sql_types_round_trip() {
     let rows = scan_table(&client, &table);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0], expected_all_types_item());
+}
+
+#[test]
+fn dynamodb_output_buffer_flushes_by_size() {
+    let endpoint_url = dynamodb_endpoint_url();
+    let client = dynamodb_client(endpoint_url.as_deref());
+    wait_for_dynamodb(&client);
+
+    let table = test_table_name("output_buffer_size");
+    let _table_guard = TempDynamoTable::new(&client, &table, true);
+    let input_file = write_raw_json_input(&[
+        record(1, "a", Some(10), "one"),
+        record(2, "b", Some(20), "two"),
+        record(3, "c", Some(30), "three"),
+    ]);
+    let controller =
+        dynamodb_buffered_output_pipeline(&table, endpoint_url.as_deref(), &input_file, 3, 60_000);
+
+    controller.start();
+    wait(|| scan_table(&client, &table).len() == 3, 60_000)
+        .expect("timeout waiting for size-triggered output buffer flush");
+    controller.stop().unwrap();
+}
+
+#[test]
+fn dynamodb_output_buffer_flushes_by_time() {
+    let endpoint_url = dynamodb_endpoint_url();
+    let client = dynamodb_client(endpoint_url.as_deref());
+    wait_for_dynamodb(&client);
+
+    let table = test_table_name("output_buffer_time");
+    let _table_guard = TempDynamoTable::new(&client, &table, true);
+    let input_file = write_raw_json_input(&[
+        record(1, "a", Some(10), "one"),
+        record(2, "b", Some(20), "two"),
+    ]);
+    let controller =
+        dynamodb_buffered_output_pipeline(&table, endpoint_url.as_deref(), &input_file, 1_000, 200);
+
+    controller.start();
+    wait(|| scan_table(&client, &table).len() == 2, 60_000)
+        .expect("timeout waiting for time-triggered output buffer flush");
+    controller.stop().unwrap();
 }
 
 /// Encodes a batch holding two normal-sized records and one record that exceeds

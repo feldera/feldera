@@ -76,7 +76,6 @@ pub(crate) struct DynamoDBWorker {
     controller: Weak<ControllerInner>,
     table: String,
     write_mode: DynamoDBWriteMode,
-    allow_cross_step_write_overlap: bool,
     batch_size: usize,
     max_retries: Option<u8>,
     client: Client,
@@ -143,7 +142,6 @@ impl DynamoDBWorker {
             controller,
             table: config.table.clone(),
             write_mode: config.write_mode,
-            allow_cross_step_write_overlap: config.allow_cross_step_write_overlap,
             batch_size: config.effective_batch_size(),
             max_retries: config.max_retries,
             client,
@@ -209,11 +207,7 @@ impl DynamoDBWorker {
     pub(crate) fn batch_end_inner(&mut self) -> AnyResult<u64> {
         let flush_result = self.flush();
 
-        let (total_retries, mut errors) = if self.allow_cross_step_write_overlap {
-            self.drain_completed_writes()
-        } else {
-            self.drain_pending_writes()
-        };
+        let (total_retries, mut errors) = self.drain_pending_writes();
 
         if let Err(e) = flush_result {
             errors.push(e);
@@ -274,9 +268,6 @@ impl DynamoDBWorker {
         let table = self.table.clone();
         let write_mode = self.write_mode;
         let max_retries: Option<usize> = self.max_retries.map(|n| n as usize);
-        let allow_cross_step_write_overlap = self.allow_cross_step_write_overlap;
-        let endpoint_id = self.endpoint_id;
-        let task_controller = self.controller.clone();
         self.metrics.record_write_chunk();
         let task_metrics = self.metrics.clone();
         let task_records_written = self.records_written.clone();
@@ -328,34 +319,9 @@ impl DynamoDBWorker {
                         task_records_written.fetch_add(rows as u64, Ordering::Relaxed);
                         task_bytes_written.fetch_add(bytes as u64, Ordering::Relaxed);
                         task_metrics.record_retries(retries);
-                        if allow_cross_step_write_overlap
-                            && let Some(controller) = task_controller.upgrade()
-                        {
-                            controller.status.output_buffer(endpoint_id, bytes, rows);
-                        }
                         Ok(retries)
                     }
-                    Err(error) => {
-                        if allow_cross_step_write_overlap {
-                            if let Some(controller) = task_controller.upgrade() {
-                                controller.output_transport_error(
-                                    endpoint_id,
-                                    &endpoint_name,
-                                    false,
-                                    error,
-                                    Some("dynamodb_async_write"),
-                                );
-                            } else {
-                                warn!(
-                                    endpoint = %endpoint_name,
-                                    "dynamodb: write failed after endpoint shutdown"
-                                );
-                            }
-                            Ok(0)
-                        } else {
-                            Err(error)
-                        }
-                    }
+                    Err(error) => Err(error),
                 }
             },
             TOKIO.handle(),
@@ -751,9 +717,7 @@ impl OutputConsumer for DynamoDBOutputEndpoint {
                 let num_rows = self.records_written.load(Ordering::Relaxed);
                 let num_bytes = self.bytes_written.load(Ordering::Relaxed);
 
-                if !self.config.allow_cross_step_write_overlap
-                    && let Some(controller) = self.controller.upgrade()
-                {
+                if let Some(controller) = self.controller.upgrade() {
                     controller.status.output_buffer(
                         self.endpoint_id,
                         num_bytes as usize,

@@ -29,7 +29,6 @@ the index must include both columns.
 | `max_buffer_size_bytes`          | integer | `1048576` | Maximum number of bytes buffered by each worker thread before flushing to DynamoDB. Default is 1 MiB (`1048576` bytes).                                                                                                                                                                                                                                                                                 |
 | `max_concurrent_requests`        | integer | `64`      | Maximum number of DynamoDB write requests in flight per worker thread at any one time. The connector blocks the encoding thread when this limit is reached, applying backpressure to the pipeline.                                                                                                                                                                                                      |
 | `threads`                        | integer | `1`       | Number of parallel worker threads used to encode and write disjoint key ranges. Each thread makes its own DynamoDB API calls. Increasing this value can improve throughput for large batches.                                                                                                                                                                                                           |
-| `allow_cross_step_write_overlap` | boolean | `false`   | Allow writes from later DBSP steps to be submitted before all writes from earlier steps have completed. This can improve throughput for small steps by keeping DynamoDB requests in flight across step boundaries. Use for mostly disjoint-key workloads where cross-step write ordering to the same DynamoDB item is not required.                                                                     |
 | `max_retries`                    | integer | `10`      | Maximum number of retries for a failed or partially-applied DynamoDB write. For `batch` mode, retries apply to items returned as unprocessed in a successful response. For `transactional` mode, retries apply to failed `TransactWriteItems` calls. Set to `null` to retry indefinitely. Transient errors such as throttling are handled separately by the AWS SDK and do not count toward this limit. |
 
 [*]: Required fields
@@ -68,21 +67,27 @@ same batch are still written. Dropped records are reported through the
 
 ## Performance
 
+:::note
+
+The connector waits for every write request of a DBSP step to complete before it
+starts the next step. This serialization can limit write throughput, especially
+for pipelines that produce many small steps. To reduce its impact, enable the
+[output buffer](/connectors#configuring-the-output-buffer) so the pipeline
+accumulates more changes into each step before writing them to DynamoDB.
+
+:::
+
 The following samples were measured using a Feldera pipeline writing
 well-distributed records smaller than 1 KiB to a DynamoDB table provisioned with
 40k WCU.
 
-| `threads` | `max_concurrent_requests` | WCU/s without overlap | WCU/s with overlap |
-| --------- | ------------------------- | --------------------- | ------------------ |
-| 1         | 64                        | ~7.7k                 | ~16.9k             |
-| 1         | 128                       | ~27.2k                | ~37.1k             |
+| `threads` | `max_concurrent_requests` | WCU/s   |
+| --------- | ------------------------- | ------- |
+| 1         | 64                        | ~7.7k   |
+| 1         | 128                       | ~27.2k  |
 
 Suggestions:
 
-- Enable `allow_cross_step_write_overlap` to keep DynamoDB requests in flight
-  across step boundaries instead of draining the entire write pipeline at every
-  `batch_end`; in these measurements, it more than doubled WCU/s at `threads=1`,
-  `max_concurrent_requests=64`.
 - Increase `max_concurrent_requests` when DynamoDB still has unused capacity.
 - If increasing `threads` or `max_concurrent_requests` does not improve
   throughput, check whether the pipeline is stalling because output buffers are
