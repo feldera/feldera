@@ -382,6 +382,10 @@ impl ExchangeClient {
             })
             .expect("remote exchange failed")
     }
+
+    pub async fn wait(&self) {
+        self.tx.bound.wait().await;
+    }
 }
 
 /// Uniquely identifies an `Exchange` or `ShardedAccumulator` within a circuit.
@@ -585,6 +589,16 @@ impl ExchangeClients {
         cell[message_type]
             .get_or_init(|| ExchangeClient::new(host.address, &host.workers))
             .await
+    }
+
+    pub async fn wait(&self) {
+        for (_, clients) in &self.clients {
+            for client in clients.values() {
+                if let Some(client) = client.get() {
+                    client.wait().await;
+                }
+            }
+        }
     }
 }
 
