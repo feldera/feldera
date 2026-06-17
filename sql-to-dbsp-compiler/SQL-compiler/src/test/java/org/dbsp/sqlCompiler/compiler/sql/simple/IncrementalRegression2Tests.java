@@ -1,7 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -799,6 +802,133 @@ public class IncrementalRegression2Tests extends SqlIoTest {
             @Override
             public void endVisit() {
                 Assert.assertEquals(2, this.retains);
+            }
+        });
+    }
+
+    @Test
+    public void issue6279() {
+        // Results were validated using Postgres
+        String prefix = """
+                CREATE TABLE T(x INT, y INT);
+                CREATE TABLE S(x INT, z INT);
+                CREATE LOCAL VIEW V AS SELECT * FROM T JOIN S ON T.x = S.x;
+                """;
+
+        String insert = """
+                INSERT INTO T(x, y) VALUES
+                  (1, 5),
+                  (1, 12),
+                  (2, 3),
+                  (3, 20),
+                  (4, 7);
+                INSERT INTO S(x, z) VALUES
+                  (1, 100),
+                  (2, 200),
+                  (5, 300);""";
+
+        // Pull filter above left input of join
+        var ccs = this.getCCS(prefix + "CREATE VIEW W AS SELECT * FROM V WHERE y < 10;");
+        ccs.stepWeightOne(insert, """
+                 T.x | y | S.x | z
+                -----------------------
+                 1   | 5 | 1   | 100
+                 2   | 3 | 2   | 200""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPFilterOperator node) {
+                Assert.fail("Should have been eliminated");
+            }
+
+            @Override
+            public void postorder(DBSPJoinFilterMapOperator node) {
+                Assert.fail("Should not be present");
+            }
+        });
+
+        // Pull filter above right input of join
+        ccs = this.getCCS(prefix + "CREATE VIEW W AS SELECT * FROM V WHERE z > 10;");
+        ccs.stepWeightOne(insert, """
+                 T.x |  y | S.x | z
+                -----------------------
+                 1   |  5 | 1   | 100
+                 2   |  3 | 2   | 200
+                 1   | 12 | 1   | 100""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPFilterOperator node) {
+                Assert.fail("Should have been eliminated");
+            }
+
+            @Override
+            public void postorder(DBSPJoinFilterMapOperator node) {
+                Assert.fail("Should not be present");
+            }
+        });
+
+        // Pull filter above both input of join
+        ccs = this.getCCS(prefix + "CREATE VIEW W AS SELECT * FROM V WHERE x < 10;");
+        ccs.stepWeightOne(insert, """
+                 T.x |  y | S.x | z
+                -----------------------
+                 1   |  5 | 1   | 100
+                 2   |  3 | 2   | 200
+                 1   | 12 | 1   | 100""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPFilterOperator node) {
+                Assert.fail("Should have been eliminated");
+            }
+
+            @Override
+            public void postorder(DBSPJoinFilterMapOperator node) {
+                Assert.fail("Should not be present");
+            }
+        });
+
+        // Pull key filter only above left input of left join
+        ccs = this.getCCS(""" 
+                CREATE TABLE T(x INT, y INT);
+                CREATE TABLE S(x INT, z INT);
+                CREATE LOCAL VIEW V AS SELECT * FROM T LEFT JOIN S ON T.x = S.x;
+                CREATE VIEW W AS SELECT * FROM V WHERE x < 10;""");
+        ccs.stepWeightOne(insert, """
+                 T.x |  y | S.x | z
+                -----------------------
+                 1   |  5 | 1   | 100
+                 1   | 12 | 1   | 100
+                 2   |  3 | 2   | 200
+                 3   | 20 |NULL |NULL
+                 4   |  7 |NULL |NULL""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPFilterOperator node) {
+                Assert.fail("Should have been eliminated");
+            }
+
+            @Override
+            public void postorder(DBSPLeftJoinFilterMapOperator node) {
+                Assert.fail("Should not be present");
+            }
+        });
+
+        // Do not pull filter above right input of left join
+        ccs = this.getCCS(""" 
+                CREATE TABLE T(x INT, y INT);
+                CREATE TABLE S(x INT, z INT);
+                CREATE LOCAL VIEW V AS SELECT * FROM T LEFT JOIN S ON T.x = S.x;
+                CREATE VIEW W AS SELECT * FROM V WHERE z > 10;""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int filters = 0;
+
+            @Override
+            public void postorder(DBSPLeftJoinFilterMapOperator node) {
+                this.filters++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.filters);
             }
         });
     }

@@ -92,7 +92,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
                         () -> "Replacing operator with type\n" + oldPort.outputType() +
                                 " with new type\n" + newPort.outputType());
             }
-            Logger.INSTANCE.belowLevel(this, 1)
+            Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(this::toString)
                     .append(":")
                     .appendSupplier(oldPort::toString)
@@ -591,7 +591,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
             DBSPNode.discardOuterNode(result);
             result = circuit;
         } else {
-            Logger.INSTANCE.belowLevel(this, 1)
+            Logger.INSTANCE.belowLevel(this, 2)
                     .append("Circuit has changed").newline();
         }
         this.map(circuit, result);
