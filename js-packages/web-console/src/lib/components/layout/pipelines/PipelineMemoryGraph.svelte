@@ -15,7 +15,7 @@
   import { getThemeColor } from '$lib/functions/common/color'
   import { humanSize } from '$lib/functions/common/string'
   import { tuple } from '$lib/functions/common/tuple'
-  import { timeSeriesAxisMax } from '$lib/functions/pipelineMetrics'
+  import { multihostMemoryLimitMb, timeSeriesAxisMax } from '$lib/functions/pipelineMetrics'
   import type { Pipeline } from '$lib/services/pipelineManager'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
 
@@ -49,8 +49,14 @@
   const yMaxStep = $derived(2 ** Math.ceil(Math.log2(valueMax * 1.25)))
   const yMax = $derived(valueMax !== 0 ? yMaxStep : 1024 * 2048)
   const yMin = 0
+  // The reported memory metric (`m`) is the sum across all hosts in a multihost
+  // deployment, while `memory_mb_max` is the per-host limit. Scale the limit by
+  // the number of hosts.
   const maxMemoryMb = $derived(
-    pipeline.current.runtimeConfig?.resources?.memory_mb_max ?? undefined
+    multihostMemoryLimitMb(
+      pipeline.current.runtimeConfig?.resources?.memory_mb_max,
+      pipeline.current.runtimeConfig?.hosts
+    )
   )
 
   const primaryColor = getThemeColor('--color-primary-500').format('hex')
@@ -92,9 +98,7 @@
         {
           markline: {
             data: maxMemoryMb
-              ? [
-                  { yAxis: maxMemoryMb * 1000 * 1000, lineStyle: { color: 'red', cap: 'square' } } // example 1
-                ]
+              ? [{ yAxis: maxMemoryMb * 1000 * 1000, lineStyle: { color: 'red', cap: 'square' } }]
               : []
           }
         }
@@ -182,9 +186,7 @@
           symbol: ['none', 'none'],
           // svelte-ignore state_referenced_locally
           data: maxMemoryMb
-            ? [
-                { yAxis: maxMemoryMb * 1000 * 1000, lineStyle: { color: 'red', cap: 'square' } } // example 1
-              ]
+            ? [{ yAxis: maxMemoryMb * 1000 * 1000, lineStyle: { color: 'red', cap: 'square' } }]
             : []
         },
         triggerLineEvent: true

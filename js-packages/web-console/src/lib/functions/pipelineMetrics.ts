@@ -215,6 +215,23 @@ export const timeSeriesAxisMax = (metrics: TimeSeriesEntry[], now: () => number 
   metrics.at(-1)?.t ?? now()
 
 /**
+ * Memory limit on a multi-host deployment, in MB.
+ *
+ * `memory_mb_max` is the individual host's limit, but the reported memory metric
+ * is the sum of resident memory across all hosts in a multihost deployment.
+ * To keep the limit line meaningful, multiply the per-host limit by the number of hosts.
+ *
+ * @param perHostMemoryMb - Per-host limit `runtimeConfig.resources.memory_mb_max`, in MB.
+ * @param hosts - Number of hosts `runtimeConfig.hosts`; treated as at least 1.
+ * @returns The aggregate limit in MB, or undefined when no limit is configured.
+ */
+export const multihostMemoryLimitMb = (
+  perHostMemoryMb: number | null | undefined,
+  hosts: number | null | undefined
+): number | undefined =>
+  perHostMemoryMb ? perHostMemoryMb * Math.max(hosts ?? 1, 1) : undefined
+
+/**
  * @returns Time series of throughput with smoothing window over 3 data intervals
  */
 export const calcPipelineThroughput = (metrics: TimeSeriesEntry[]) => {
