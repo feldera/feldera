@@ -55,6 +55,9 @@
      *  Hosts typically focus their search input here. When omitted, the browser's native
      *  find-in-page is left to handle the shortcut. */
     onSearchShortcut?: () => void
+    /** Fired whenever stick-to-bottom toggles: `true` when the view re-anchors to the
+     *  bottom, `false` when the user scrolls up off the bottom. */
+    onStickToBottomChange?: (stickToBottom: boolean) => void
   }
 
   let {
@@ -67,7 +70,8 @@
     style,
     header,
     getCopyContent,
-    onSearchShortcut
+    onSearchShortcut,
+    onStickToBottomChange
   }: Props = $props()
 
   // Reverse-scroll lives here (not in wrappers) so search behaviour and auto-scroll behaviour
@@ -82,7 +86,10 @@
   // svelte-ignore state_referenced_locally
   const reverseScroll = useReverseScrollContainer({
     observeContentElement: (e) => e.firstElementChild!,
-    initialStickToBottom: streaming
+    initialStickToBottom: streaming,
+    // Surface stick-to-bottom transitions (the signal that drives ScrollDownFab) to the host
+    // so a streaming feed can pause when the user scrolls up and resume on the way back.
+    onStickToBottomChange: (stickToBottom) => onStickToBottomChange?.(stickToBottom)
   })
 
   let scrollContainer: HTMLDivElement | undefined = $state()

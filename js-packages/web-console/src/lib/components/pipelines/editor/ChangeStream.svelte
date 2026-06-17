@@ -26,16 +26,25 @@
   import type { SQLValueJS } from '$lib/types/sql'
 
   let {
-    changeStream
+    changeStream,
+    onScrollPausedChange
   }: {
     changeStream: ChangeStreamData
+    /** Fired whenever scroll-pause toggles: `true` when the user scrolls up off the
+     *  bottom, `false` when the view sticks to the bottom again. */
+    onScrollPausedChange?: (paused: boolean) => void
   } = $props()
 
   let popupRef: HTMLElement | undefined = $state()
   let tooltip = usePopoverTooltip<SQLValueJS>(() => popupRef)
 
+  // Pause the stream when the view stops sticking to the bottom (scrolled up off it) and
+  // resume when it sticks again — the same threshold that toggles `ScrollDownFab`, so
+  // pause/resume and FAB visibility stay in lockstep. Driven by the scroll container's own
+  // notification rather than a reactive read, so the host callback always fires.
   const reverseScroll = useReverseScrollContainer({
-    observeContentSize: () => changeStream.rows.length
+    observeContentSize: () => changeStream.rows.length,
+    onStickToBottomChange: (stickToBottom) => onScrollPausedChange?.(!stickToBottom)
   })
 </script>
 

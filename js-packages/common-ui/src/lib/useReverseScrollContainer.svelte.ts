@@ -14,6 +14,9 @@ export const useReverseScrollContainer = (
      *  the bottom, re-stick as content grows). Pass `false` for static content that should
      *  start at the top and never auto-scroll on mount. */
     initialStickToBottom?: boolean
+    /** Fired on a stick-to-bottom transition: `true` when the view anchors to the bottom,
+     *  `false` when the user scrolls up off it. */
+    onStickToBottomChange?: (stickToBottom: boolean) => void
   }
 ) => {
   let ref = <HTMLDivElement>undefined!
@@ -52,6 +55,17 @@ export const useReverseScrollContainer = (
   }
 
   const debouncedStickToBottom = new Debounced(() => stickToBottom, 50)
+
+  // Notify the parent on stick-to-bottom transitions.
+  // The effect re-runs only when the debounced value actually changes.
+  let lastNotifiedStick = debouncedStickToBottom.current
+  $effect(() => {
+    const stick = debouncedStickToBottom.current
+    if (stick !== lastNotifiedStick) {
+      lastNotifiedStick = stick
+      params.onStickToBottomChange?.(stick)
+    }
+  })
 
   return {
     action: ((

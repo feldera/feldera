@@ -229,6 +229,8 @@ export const parseStream = <T>(
     cancel: () => {
       cancelled = true
       closedReason = 'cancelled'
+      // Drop everything parsed-but-not-yet-flushed.
+      outBuffer.length = 0
       Promise.resolve(decoder.cancel?.())
         .catch(() => {})
         .finally(() => {

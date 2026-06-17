@@ -12,13 +12,16 @@
   const {
     logs,
     search = emptySearchState,
-    onSearchShortcut
+    onSearchShortcut,
+    onStickToBottomChange
   }: {
     logs: { rows: string[]; totalSkippedBytes: number; firstRowIndex: number }
     /** Current search state (see {@link SearchState}), advanced by the host. */
     search?: SearchState
     /** Forwarded to {@link LogList}; invoked on Ctrl-F / Cmd-F inside the list. */
     onSearchShortcut?: () => void
+    /** Forwarded to {@link LogList}; fires when stick-to-bottom toggles. */
+    onStickToBottomChange?: (stickToBottom: boolean) => void
   } = $props()
 
   const getCopyContent = (slice: CopySlice) =>
@@ -33,6 +36,7 @@
   streaming
   {getCopyContent}
   {onSearchShortcut}
+  {onStickToBottomChange}
   class="bg-white-dark rounded pl-2"
 >
   {#snippet header()}
