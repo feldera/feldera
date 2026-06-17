@@ -328,10 +328,10 @@ impl DynamoDBWorker {
                         task_records_written.fetch_add(rows as u64, Ordering::Relaxed);
                         task_bytes_written.fetch_add(bytes as u64, Ordering::Relaxed);
                         task_metrics.record_retries(retries);
-                        if allow_cross_step_write_overlap {
-                            if let Some(controller) = task_controller.upgrade() {
-                                controller.status.output_buffer(endpoint_id, bytes, rows);
-                            }
+                        if allow_cross_step_write_overlap
+                            && let Some(controller) = task_controller.upgrade()
+                        {
+                            controller.status.output_buffer(endpoint_id, bytes, rows);
                         }
                         Ok(retries)
                     }
