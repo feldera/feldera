@@ -70,39 +70,6 @@ A Feldera Instance Monitoring dashboard will be created in Grafana.
 The dashboard is a template and may need to be adjusted to fit your specific needs.
 Look for the `feldera_*` metrics in Grafana to add more metrics to the dashboard.
 
-## Tracing with Jaeger
-
-A Feldera pipeline can be traced using Jaeger. Tracing is useful if you need to analyze
-throughput or latency bottlenecks of your pipeline, as it instruments every step of the
-pipeline execution and provides detailed information about the execution time of each
-step.
-
-### Setup
-
-1. **Jaeger:** You must have [Jaeger installed](https://www.jaegertracing.io).
-2. Start Jaeger using the `jaeger-all-in-one` script:
-    ```bash
-    ./jaeger-all-in-one
-    ```
-3. **Tracing a Feldera pipeline**
-    - Enable/disable tracing and specify the Jaeger endpoint in the pipeline `runtime_config`:
-   ```bash
-   curl -i -X PATCH http://127.0.0.1:8080/v0/pipelines/tracing-pipeline \
-   -H 'Content-Type: application/json' \
-   -d '{
-     "runtime_config": {"tracing": true, "tracing_endpoint_jaeger": "host.docker.internal:6831", <other config settings> }
-   }'
-   ```
-    - Use `host.docker.internal:6831` if you are running Feldera in docker or
-      `127.0.0.1:6831` if you run Feldera directly.
-    - Make sure to specify other settings you changed from non-default values in the `runtime_config` as well.
-      `runtime_config` can be retrieved with:
-   ```bash
-   curl -X 'GET' \
-   'http://127.0.0.1:8080/v0/pipelines/tracing-pipeline' \
-   -H 'accept: application/json'
-   ```
-
 ## DBSP Profiles
 
 A DBSP profile is a graph of the pipeline's circuit where each node represents an

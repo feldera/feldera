@@ -4,12 +4,6 @@
 This feature is only available in Feldera Enterprise Edition.
 :::
 
-:::warning
-This is an experimental feature and may undergo significant
-changes, including non-backward-compatible modifications, in future releases of
-Feldera.
-:::
-
 ## Overview
 
 Feldera supports **incremental pipeline modification** through a feature called **bootstrapping**.

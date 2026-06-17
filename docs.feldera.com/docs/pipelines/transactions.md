@@ -3,12 +3,6 @@ import TabItem from '@theme/TabItem';
 
 # Efficient Bulk Data Processing using Transactions
 
-:::warning
-Transaction support is an experimental feature and may undergo significant
-changes, including non-backward-compatible modifications in future releases of
-Feldera.
-:::
-
 Transactions enable Feldera pipelines to ingest and process large volumes of data atomically—in
 one logical unit of work rather than piece-by-piece.  Transactions are used to achieve:
 

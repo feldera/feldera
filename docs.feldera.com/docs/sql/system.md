@@ -5,13 +5,6 @@ built-in.  Their contents is pre-populated by the runtime.
 
 ## `ERROR_VIEW`
 
-:::warning
-
-The `ERROR_VIEW` is still experimental; the schema and name of this
-view may change.
-
-:::
-
 `ERROR_VIEW` is a view that signals runtime errors.  The schema is
 given by the following (illegal) SQL declaration:
 
