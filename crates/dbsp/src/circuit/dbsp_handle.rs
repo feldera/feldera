@@ -1006,6 +1006,17 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::BootstrapCommitProgress) => {
+                        let status = match bootstrap_circuit.as_ref() {
+                            Some(circuit) => {
+                                Ok(Response::CommitProgress(circuit.commit_progress()))
+                            }
+                            None => Err(no_bootstrap_circuit()),
+                        };
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
                     Ok(Command::DestroyBootstrapCircuit) => {
                         // Dropping the handle runs the circuit's teardown
                         // (`clock_end` plus breaking `Rc` cycles).
@@ -1211,6 +1222,8 @@ enum Command {
     StartBootstrapTransaction,
     CommitBootstrapTransaction,
     StepBootstrapCircuit,
+    /// Report the bootstrap circuit's transaction-commit progress.
+    BootstrapCommitProgress,
     DestroyBootstrapCircuit,
     /// Restore the main circuit from a checkpoint for concurrent
     /// bootstrapping (see [`CircuitHandle::restore_concurrent`]).
@@ -1271,6 +1284,7 @@ impl Debug for Command {
             Command::StartBootstrapTransaction => write!(f, "StartBootstrapTransaction"),
             Command::CommitBootstrapTransaction => write!(f, "CommitBootstrapTransaction"),
             Command::StepBootstrapCircuit => write!(f, "StepBootstrapCircuit"),
+            Command::BootstrapCommitProgress => write!(f, "BootstrapCommitProgress"),
             Command::DestroyBootstrapCircuit => write!(f, "DestroyBootstrapCircuit"),
             Command::RestoreConcurrent(path) => {
                 f.debug_tuple("RestoreConcurrent").field(path).finish()
@@ -2117,6 +2131,35 @@ impl DBSPHandle {
         let mut progress = WorkersCommitProgress::new();
 
         self.broadcast_command(Command::CommitProgress, |worker, response| {
+            let Response::CommitProgress(worker_progress) = response else {
+                panic!("Expected CommitProgress response, got {response:?}");
+            };
+            progress.insert(worker as u16, worker_progress);
+        })?;
+
+        Ok(progress)
+    }
+
+    /// The bootstrap circuit's transaction-commit progress, aggregated across
+    /// workers.
+    ///
+    /// Reports the commit progress of the bootstrap circuit's in-flight
+    /// transaction -- the backfill transaction during a concurrent bootstrap,
+    /// then the synchronization transaction. The summary is empty while no
+    /// commit is in progress (e.g. inputs are still being replayed).
+    pub fn bootstrap_commit_progress(&mut self) -> Result<WorkersCommitProgress, DbspError> {
+        self.check_bootstrap_circuit_state(
+            &[
+                BootstrapCircuitState::Idle,
+                BootstrapCircuitState::InTransaction,
+                BootstrapCircuitState::Committing,
+            ],
+            "report commit progress",
+        )?;
+
+        let mut progress = WorkersCommitProgress::new();
+
+        self.broadcast_command(Command::BootstrapCommitProgress, |worker, response| {
             let Response::CommitProgress(worker_progress) = response else {
                 panic!("Expected CommitProgress response, got {response:?}");
             };

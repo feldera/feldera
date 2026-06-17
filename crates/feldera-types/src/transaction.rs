@@ -63,3 +63,60 @@ impl Display for CommitProgressSummary {
         )
     }
 }
+
+/// Phase of an in-progress concurrent bootstrap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub enum ConcurrentBootstrapPhase {
+    /// New and modified views are backfilling in the background while the
+    /// pre-existing views stay live and serving.
+    ConcurrentBootstrapping,
+
+    /// The cutover window: inputs are paused while recorded changes are
+    /// synchronized into the new views.
+    Synchronizing,
+
+    /// The new views have been cut over; a final transaction is initializing
+    /// their snapshots before the pipeline is reported as running.
+    Finalizing,
+}
+
+impl Display for ConcurrentBootstrapPhase {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConcurrentBootstrapPhase::ConcurrentBootstrapping => {
+                write!(f, "concurrent bootstrapping")
+            }
+            ConcurrentBootstrapPhase::Synchronizing => write!(f, "synchronizing"),
+            ConcurrentBootstrapPhase::Finalizing => write!(f, "finalizing"),
+        }
+    }
+}
+
+/// Progress of an in-progress concurrent bootstrap.
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct ConcurrentBootstrapProgress {
+    /// The current phase of the concurrent bootstrap.
+    pub phase: ConcurrentBootstrapPhase,
+
+    /// Progress of the bootstrap circuit's transaction commit, when a commit is
+    /// in progress: the backfill transaction during `ConcurrentBootstrapping`
+    /// and the synchronization transaction during `Synchronizing`. `None` while
+    /// no commit is in progress (e.g. inputs are still being replayed, or
+    /// during `Finalizing`, when the bootstrap circuit no longer exists).
+    pub commit_progress: Option<CommitProgressSummary>,
+}
+
+impl Display for ConcurrentBootstrapProgress {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.commit_progress {
+            Some(progress) => {
+                write!(
+                    f,
+                    "{}: committing bootstrap transaction ({progress})",
+                    self.phase
+                )
+            }
+            None => write!(f, "{}", self.phase),
+        }
+    }
+}

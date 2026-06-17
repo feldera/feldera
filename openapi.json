@@ -8016,6 +8016,35 @@
           }
         }
       },
+      "ConcurrentBootstrapPhase": {
+        "type": "string",
+        "description": "Phase of an in-progress concurrent bootstrap.",
+        "enum": [
+          "ConcurrentBootstrapping",
+          "Synchronizing",
+          "Finalizing"
+        ]
+      },
+      "ConcurrentBootstrapProgress": {
+        "type": "object",
+        "description": "Progress of an in-progress concurrent bootstrap.",
+        "required": [
+          "phase"
+        ],
+        "properties": {
+          "commit_progress": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommitProgressSummary"
+              }
+            ],
+            "nullable": true
+          },
+          "phase": {
+            "$ref": "#/components/schemas/ConcurrentBootstrapPhase"
+          }
+        }
+      },
       "Condition": {
         "type": "object",
         "properties": {
@@ -9546,6 +9575,14 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/CommitProgressSummary"
+              }
+            ],
+            "nullable": true
+          },
+          "concurrent_bootstrap_progress": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConcurrentBootstrapProgress"
               }
             ],
             "nullable": true

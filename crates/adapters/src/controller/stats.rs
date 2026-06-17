@@ -67,7 +67,7 @@ use feldera_types::{
     memory_pressure::MemoryPressure,
     suspend::{PermanentSuspendError, SuspendError},
     time_series::SampleStatistics,
-    transaction::CommitProgressSummary,
+    transaction::{CommitProgressSummary, ConcurrentBootstrapProgress},
 };
 use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
@@ -189,6 +189,9 @@ pub struct GlobalControllerMetrics {
 
     /// Transaction commit progress, if a transaction is committing.
     pub commit_progress: Mutex<Option<CommitProgressSummary>>,
+
+    /// Progress of a concurrent bootstrap, if one is in progress.
+    pub concurrent_bootstrap_progress: Mutex<Option<ConcurrentBootstrapProgress>>,
 
     /// Time at which the pipeline process started, in seconds since the epoch.
     pub start_time: DateTime<Utc>,
@@ -313,6 +316,7 @@ impl GlobalControllerMetrics {
             concurrent_backfill_in_progress: AtomicBool::new(false),
             concurrent_synchronize_in_progress: AtomicBool::new(false),
             commit_progress: Mutex::new(None),
+            concurrent_bootstrap_progress: Mutex::new(None),
             start_time,
             incarnation_uuid,
             initial_start_time,
@@ -446,6 +450,10 @@ impl GlobalControllerMetrics {
 
     pub fn set_commit_progress(&self, commit_progress: Option<CommitProgressSummary>) {
         *self.commit_progress.lock().unwrap() = commit_progress;
+    }
+
+    pub fn set_concurrent_bootstrap_progress(&self, progress: Option<ConcurrentBootstrapProgress>) {
+        *self.concurrent_bootstrap_progress.lock().unwrap() = progress;
     }
 
     pub fn update_output_stall_start(&self, stalled: bool) {
@@ -1404,6 +1412,12 @@ impl ControllerStatus {
                 0
             },
             commit_progress: self.global_metrics.commit_progress.lock().unwrap().clone(),
+            concurrent_bootstrap_progress: self
+                .global_metrics
+                .concurrent_bootstrap_progress
+                .lock()
+                .unwrap()
+                .clone(),
             transaction_initiators: ctx.transaction_info.initiators.to_api_type(),
             start_time: self.global_metrics.start_time,
             incarnation_uuid: self.global_metrics.incarnation_uuid,

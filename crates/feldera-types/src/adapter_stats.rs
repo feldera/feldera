@@ -11,7 +11,7 @@ use crate::{
     coordination::Step,
     memory_pressure::MemoryPressure,
     suspend::{PermanentSuspendError, SuspendError},
-    transaction::{CommitProgressSummary, TransactionId},
+    transaction::{CommitProgressSummary, ConcurrentBootstrapProgress, TransactionId},
 };
 
 /// Pipeline state.
@@ -361,6 +361,8 @@ pub struct ExternalGlobalControllerMetrics {
     /// Entities that initiated the current transaction.
     #[schema(value_type = TransactionInitiators)]
     pub transaction_initiators: ExternalTransactionInitiators,
+    /// Progress of a concurrent bootstrap, if one is in progress.
+    pub concurrent_bootstrap_progress: Option<ConcurrentBootstrapProgress>,
     /// Resident set size of the pipeline process, in bytes.
     pub rss_bytes: u64,
     /// Memory pressure.

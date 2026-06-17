@@ -455,6 +455,8 @@ It contains the following fields:
         feldera_types::postprocess::PostprocessorConfig,
         feldera_types::transaction::StartTransactionResponse,
         feldera_types::transaction::CommitProgressSummary,
+        feldera_types::transaction::ConcurrentBootstrapProgress,
+        feldera_types::transaction::ConcurrentBootstrapPhase,
         feldera_types::transport::clock::ClockAdvanceRequest,
         feldera_types::transport::clock::ClockAdvanceResponse,
         feldera_types::time_series::TimeSeries,
