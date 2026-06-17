@@ -68,9 +68,6 @@ def _consume_all(topic: str, timeout_s: float = 30.0) -> list[dict]:
 # Kafka lets us verify the scaled values it wrote.
 class TestPostprocessor(PipelineTestCase):
     def test_postprocessor(self):
-        if True:
-            # Disabled https://github.com/feldera/feldera/issues/6460
-            return
         admin = AdminClient({"bootstrap.servers": KAFKA_BOOTSTRAP})
         output_topic = _random_topic("postprocessor-out")
         _create_topic(admin, output_topic)
