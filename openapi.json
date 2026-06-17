@@ -8928,11 +8928,6 @@
           "region"
         ],
         "properties": {
-          "allow_cross_step_write_overlap": {
-            "type": "boolean",
-            "description": "Allow write requests from later DBSP steps to be submitted before all\nwrite requests from previous steps have completed.\n\nThe default is `false`, each `batch_end` waits until all writes for that\nbatch have drained before the next step can be encoded. Setting this to\n`true` can increase throughput for small steps by keeping DynamoDB requests\nin flight across step boundaries. This allows writes from different steps to\noverlap; use it for insert-only or mostly disjoint-key workloads where cross-step\nwrite ordering to the same DynamoDB item is not required.",
-            "default": false
-          },
           "aws_access_key_id": {
             "type": "string",
             "description": "AWS access key ID.\n\nIf both `aws_access_key_id` and `aws_secret_access_key` are specified,\nthe connector uses these static credentials. Otherwise it uses the\ndefault AWS credential provider chain, including IAM Roles for Service\nAccounts (IRSA) in EKS.\n\nStatic credentials are treated as long-lived IAM keys: no session token\nis sent, so STS-issued temporary credentials are not supported via these\nfields. To use temporary credentials, rely on the default provider chain\ninstead (leave these unset).",
