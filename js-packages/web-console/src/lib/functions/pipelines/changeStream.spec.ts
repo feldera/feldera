@@ -164,6 +164,52 @@ describe('parseStream', () => {
     // JS Number would coerce this to 1e19; BigNumber preserves it verbatim.
     expect(values[0].v.toFixed()).toBe(huge)
   })
+
+  it('drops parsed-but-unflushed rows when cancelled (scroll-pause: no data after stop)', async () => {
+    // Regression guard for scroll-pause: when the consumer cancels, rows the decoder
+    // already parsed into the internal buffer but the flush timer hasn't emitted yet
+    // must be discarded, not delivered on the next tick. Without this, scrolling up to
+    // pause would still drip the already-buffered rows into the (frozen) view.
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+    const values: BigNumber[] = []
+    let endedReason: 'ended' | 'cancelled' | undefined
+    const parser = createBigNumberStreamParser<{ a: BigNumber }>({ paths: ['$'], separator: '' })
+
+    // A stream that yields one chunk then stays open forever, so the decode loop parks on
+    // its next `read()` — the only thing that stops it is the cancel under test.
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"a":1}\n{"a":2}\n{"a":3}\n'))
+      }
+    })
+
+    const { cancel } = parseStream<{ a: BigNumber }>(
+      { stream, cancel: () => {} },
+      newlineJsonDecoder(parser),
+      {
+        pushChanges: (vs) => values.push(...vs.map((v) => v.a)),
+        onParseEnded: (reason) => {
+          endedReason = reason
+        }
+      },
+      // Long flush interval: the three rows sit parsed-but-unflushed in the buffer when we cancel.
+      { flushIntervalMs: 500 }
+    )
+
+    // Let the decoder parse and admit all three rows into the internal buffer. The flush
+    // timer hasn't fired yet (500ms), so nothing has reached the consumer.
+    await sleep(100)
+    expect(values).toEqual([])
+
+    cancel()
+
+    // Wait past the flush interval: the post-cancel tick must emit nothing (buffer cleared)
+    // and then report the cancellation.
+    await sleep(600)
+    expect(values).toEqual([])
+    expect(endedReason).toBe('cancelled')
+  })
 })
 
 // Same shape as `runParseStream`, but drives `newlineTextDecoder` over the same
