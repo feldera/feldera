@@ -147,8 +147,9 @@ tables and views:
 * **LATENESS does NOT delay computation**.  Feldera does not delay computation
   until all out-of-order records have been received.  It always computes the
   output of the queries given all inputs received so far and incrementally updates
-  these outputs as new out-of-order inputs arrive.  (See [below](#delaying-inputs-with-watermark)
-  for an experimental feture that allows delaying inputs on demand).
+  these outputs as new out-of-order inputs arrive.
+  <!-- (See [below](#delaying-inputs-with-watermark)
+  for an experimental feature that allows delaying inputs on demand). -->
 
 * **Inputs that violate lateness are discarded.**  When a program receives a record
   that is more than lateness time units behind the most recent timestamp value
@@ -399,7 +400,7 @@ The use of `emit_final` is subject to the following restrictions:
   for the view used as output.  If the view is used in defining
   other views, these derived views will receive the non-delayed data.
 
-## Delaying inputs with `WATERMARK`
+<!-- ## Delaying inputs with `WATERMARK`
 
 :::warning
 
@@ -442,7 +443,7 @@ CREATE TABLE purchase_watermark (
 The current version of the SQL compiler does not support multiple
 `WATERMARK` columns in a single table.
 
-:::
+::: -->
 
 ## Append-only tables
 

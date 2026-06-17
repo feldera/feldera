@@ -1,9 +1,5 @@
 # Checkpoint Sync to Object Store
 
-:::caution Experimental feature
-Synchronizing checkpoints to object store is a highly experimental feature.
-:::
-
 Feldera can synchronize pipeline checkpoints to an S3-compatible object store
 and restore them at startup. This enables disaster recovery scenarios where
 local storage may be lost, and supports running standby pipelines that can

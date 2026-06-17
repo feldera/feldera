@@ -15,16 +15,9 @@ AS (str LIKE ('%' || CAST(value AS VARCHAR) || '%'));
 CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5' AS VARCHAR), 5)
 ```
 
-## User-defined functions written in Rust
-
-:::warning Experimental feature
-
-Rust UDF support is currently experimental and may undergo significant changes, including
-non-backward-compatible modifications, in future releases of Feldera.
-
-:::
-
 :::danger
+
+## User-defined functions written in Rust
 
 * Feldera's incremental query engine assumes that all computations are deterministic. Using
   a non-deterministic UDF is likely to result in incorrect outputs. The SQL compiler cannot verify
@@ -253,10 +246,6 @@ curl -i -X PUT http://127.0.0.1:8080/v0/pipelines/udf_api_test \
 </details>
 
 ### SQL type representation in Rust
-
-:::caution Experimental feature
-
-:::
 
 The following table shows the Rust representation of standard SQL data
 types.  A nullable SQL type is represented by the corresponding rust

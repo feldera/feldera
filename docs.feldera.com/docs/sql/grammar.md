@@ -73,7 +73,6 @@ columnConstraint
   :   PRIMARY KEY
   |   FOREIGN KEY REFERENCES identifier '(' identifier ')'
   |   LATENESS expression
-  |   WATERMARK expression
   |   DEFAULT expression
 
 tableConstraint
@@ -272,9 +271,9 @@ latenessStatement
 
 See [Streaming SQL Extensions, LATENESS](streaming.md#lateness-expressions)
 
-### WATERMARKS
+<!-- ### WATERMARKS
 
-See [Streaming SQL Extensions, WATERMARKS](streaming.md#watermark-expressions)
+See [Streaming SQL Extensions, WATERMARKS](streaming.md#watermark-expressions) -->
 
 ## Creating user-defined functions.
 
@@ -545,7 +544,7 @@ hintOption
 
 :::warning
 
-These hints are considered still experimental, and they may change
+These hints are considered experimental, and they may change
 
 :::
 

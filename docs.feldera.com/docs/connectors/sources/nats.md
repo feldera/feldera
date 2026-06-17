@@ -6,12 +6,6 @@ with the `nats_input` connector.
 The NATS input connector supports exactly-once [fault
 tolerance](/pipelines/fault-tolerance) using JetStream's ordered pull consumer.
 
-:::warning
-
-NATS support is still experimental, and it may be substantially modified in the future.
-
-:::
-
 ## How it works
 
 The NATS input connector uses JetStream's **ordered pull consumer**, which provides:
