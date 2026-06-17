@@ -3935,31 +3935,12 @@ where
         SndOp: SinkOperator<I>,
         RcvOp: SourceOperator<O>,
     {
-        let sender_id = self.add_node(|id| {
-            self.log_circuit_event(&CircuitEvent::operator(
-                GlobalNodeId::child_of(self, id),
-                sender.name(),
-                sender.location(),
-            ));
-
-            let node = SinkNode::new(sender, input_stream.clone(), self.clone(), id);
-            self.connect_stream(input_stream, id, input_preference);
-            (node, id)
-        });
-
-        let output_stream = self.add_node(|id| {
-            self.log_circuit_event(&CircuitEvent::operator(
-                GlobalNodeId::child_of(self, id),
-                receiver.name(),
-                receiver.location(),
-            ));
-
-            let node = SourceNode::new(receiver, self.clone(), id);
-            let output_stream = node.output_stream();
-            (node, output_stream)
-        });
-
-        self.add_dependency(sender_id, output_stream.local_node_id());
+        let sender_id = self.add_sink_with_preference(sender, input_stream, input_preference);
+        let output_stream = self.add_source(receiver);
+        self.add_dependency(
+            sender_id.local_node_id().unwrap(),
+            output_stream.local_node_id(),
+        );
         output_stream
     }
 
