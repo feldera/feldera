@@ -2770,10 +2770,8 @@ impl CircuitThread {
             .storage
             .as_ref()
             .and_then(|storage| storage.init_checkpoint);
-        if concurrent_bootstrap {
-            if let Some(storage) = circuit_config.storage.as_mut() {
-                storage.defer_restore = true;
-            }
+        if concurrent_bootstrap && let Some(storage) = circuit_config.storage.as_mut() {
+            storage.defer_restore = true;
         }
 
         let (mut circuit, catalog) = circuit_factory(circuit_config)?;
@@ -2847,43 +2845,41 @@ impl CircuitThread {
         // concurrently fails the pipeline (no fallback): the user restarts with
         // `concurrent_bootstrap=false` for a stop-the-world bootstrap.
         let mut concurrent_phase = ConcurrentPhase::Inactive;
-        if concurrent_bootstrap {
-            if let Some(base) = concurrent_base {
-                match circuit.start_concurrent_bootstrap(base.to_string().into())? {
-                    ConcurrentRestoreOutcome::UpToDate => {}
-                    ConcurrentRestoreOutcome::FellBack { reason, .. } => {
-                        return Err(ControllerError::BootstrapNotAllowed {
-                            error: format!(
-                                "the pipeline cannot be bootstrapped concurrently: {reason}. \
+        if concurrent_bootstrap && let Some(base) = concurrent_base {
+            match circuit.start_concurrent_bootstrap(base.to_string().into())? {
+                ConcurrentRestoreOutcome::UpToDate => {}
+                ConcurrentRestoreOutcome::FellBack { reason, .. } => {
+                    return Err(ControllerError::BootstrapNotAllowed {
+                        error: format!(
+                            "the pipeline cannot be bootstrapped concurrently: {reason}. \
                                  Restart with `concurrent_bootstrap=false` for a stop-the-world \
                                  bootstrap."
-                            ),
-                        });
-                    }
-                    ConcurrentRestoreOutcome::Concurrent(info) => {
-                        // The non-materialized-table check (above) was skipped
-                        // because the deferred restore left `bootstrap_info()`
-                        // empty; run it now against the concurrent bootstrap's
-                        // own `BootstrapInfo`.
-                        if let Some(diff) = &pipeline_diff {
-                            let non_materialized_tables =
-                                non_materialized_replay_sources(&info, &pipeline_config, diff);
-                            if !non_materialized_tables.is_empty() {
-                                return Err(ControllerError::BootstrapNotAllowed {
-                                    error: format!(
-                                        "- The following tables are not materialized, but some of the views that depend on these tables require bootstrapping: {}. We recommend materializing all tables in the program to avoid such errors in the future",
-                                        non_materialized_tables
-                                            .iter()
-                                            .map(|t| format!("'{t}'"))
-                                            .collect::<Vec<_>>()
-                                            .join(", ")
-                                    ),
-                                });
-                            }
+                        ),
+                    });
+                }
+                ConcurrentRestoreOutcome::Concurrent(info) => {
+                    // The non-materialized-table check (above) was skipped
+                    // because the deferred restore left `bootstrap_info()`
+                    // empty; run it now against the concurrent bootstrap's
+                    // own `BootstrapInfo`.
+                    if let Some(diff) = &pipeline_diff {
+                        let non_materialized_tables =
+                            non_materialized_replay_sources(&info, &pipeline_config, diff);
+                        if !non_materialized_tables.is_empty() {
+                            return Err(ControllerError::BootstrapNotAllowed {
+                                error: format!(
+                                    "- The following tables are not materialized, but some of the views that depend on these tables require bootstrapping: {}. We recommend materializing all tables in the program to avoid such errors in the future",
+                                    non_materialized_tables
+                                        .iter()
+                                        .map(|t| format!("'{t}'"))
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                ),
+                            });
                         }
-                        info!("Bootstrapping new and modified views concurrently.");
-                        concurrent_phase = ConcurrentPhase::Backfill;
                     }
+                    info!("Bootstrapping new and modified views concurrently.");
+                    concurrent_phase = ConcurrentPhase::Backfill;
                 }
             }
         }

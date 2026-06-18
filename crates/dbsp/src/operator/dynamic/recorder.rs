@@ -162,7 +162,7 @@ where
     /// # Panics
     ///
     /// Panics if the recorded contents were lost to a cancelled evaluation
-    /// (see [`RecordingState`]): recording silently losing data would
+    /// (see `RecordingState`): recording silently losing data would
     /// corrupt the bootstrap synchronization that consumes it.
     pub fn stop_recording(&self) -> Option<Spine<B>> {
         let mut inner = self.0.borrow_mut();

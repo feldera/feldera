@@ -254,7 +254,7 @@ pub trait Trace: BatchReader {
     /// circuit's replay sources with the state of the live circuit's
     /// integrals.
     ///
-    /// Implementations may require a DBSP runtime: [`Spine`](crate::trace::Spine)
+    /// Implementations may require a DBSP runtime: [`Spine`]
     /// panics outside one, and associates the fork's background merge tasks
     /// with the calling thread's worker, so a fork should be created on the
     /// worker thread that will own it.

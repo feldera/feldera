@@ -1136,10 +1136,10 @@ impl Runtime {
         // (`start_concurrent_bootstrap`) instead of the automatic stop-the-world
         // restore; the circuit comes up un-restored and the caller supplies the
         // checkpoint base itself.
-        if let Some(init_checkpoint) = init_checkpoint {
-            if !defer_restore {
-                dbsp.send_restore(init_checkpoint.to_string().into())?;
-            }
+        if let Some(init_checkpoint) = init_checkpoint
+            && !defer_restore
+        {
+            dbsp.send_restore(init_checkpoint.to_string().into())?;
         }
 
         Ok((dbsp, ret))

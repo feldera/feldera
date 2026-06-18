@@ -1151,7 +1151,7 @@ pub trait Node: Any {
     fn end_replay(&mut self) -> Result<(), DbspError>;
 
     /// Start replaying `trace` to the node's replay stream (see
-    /// [`Operator::start_sync_replay`]).
+    /// [`Operator::start_sync_replay`](super::operator_traits::Operator::start_sync_replay)).
     ///
     /// # Panics
     ///
@@ -1162,7 +1162,7 @@ pub trait Node: Any {
     }
 
     /// Swap the node's operator state with `other`, a node of the same
-    /// concrete type (see [`Operator::swap_state`]).
+    /// concrete type (see [`Operator::swap_state`](super::operator_traits::Operator::swap_state)).
     ///
     /// For strict (feedback) operators, whose two node halves share one
     /// operator, the input half is a no-op: the output half's swap moves the
@@ -1170,7 +1170,7 @@ pub trait Node: Any {
     fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError>;
 
     /// True if [`Self::swap_state_with`] can transfer this node's state
-    /// (see [`Operator::supports_state_transfer`]).
+    /// (see [`Operator::supports_state_transfer`](super::operator_traits::Operator::supports_state_transfer)).
     fn supports_state_transfer(&self) -> bool {
         true
     }
@@ -1482,7 +1482,7 @@ impl OwnershipPreference {
     /// scheduled before any consumer of the same stream that prefers one.
     ///
     /// The owned value of a stream is delivered to whichever consumer runs
-    /// last ([`StreamValue::take`]), so an auxiliary tap evaluated after a
+    /// last (`StreamValue::take`), so an auxiliary tap evaluated after a
     /// [`Self::PREFER_OWNED`] consumer would intercept the owned value that
     /// the latter asked for, forcing it to clone its input.  This preference
     /// tells the scheduler to evaluate the tap first (see
@@ -1657,7 +1657,7 @@ pub trait WithClock {
     /// the live copy excluded the subcircuit from its schedule, so its clock
     /// never advanced, while the transferred state is timestamped at the
     /// transactions the bootstrap copy replayed.  See
-    /// [`ChildNode::swap_state_with`].
+    /// `ChildNode::swap_state_with`.
     fn set_time(&self, time: Self::Time);
 }
 
@@ -7936,7 +7936,6 @@ impl CircuitHandle {
         })
     }
 
-    ///
     /// Restore the circuit from a checkpoint and prepare it to backfill new and
     /// modified parts of the circuit if necessary.
     ///
@@ -7957,8 +7956,6 @@ impl CircuitHandle {
     /// * After calling this function, the client can invoke `step` repeatedly for replay to make progress.
     /// * Use `is_replay_complete` to determine whether the circuit has finished the replay.
     /// * Use `complete_replay` to finalize the replay phase and prepare the circuit for normal operation after replay is complete.
-    /// Restore the circuit from a checkpoint and put it into replay mode (see
-    /// [`Self::prepare_replay`]).
     ///
     /// `for_concurrent_bootstrap` is `true` when this circuit is the bootstrap
     /// copy (copy 2) of a concurrent bootstrap, in which case the backfilled
