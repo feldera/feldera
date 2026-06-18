@@ -1,5 +1,8 @@
 package org.dbsp.util;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,6 +25,20 @@ public class JsonStream {
         this.stream = stream;
     }
 
+    public JsonStream append(SourcePositionRange range) {
+        this.beginObject();
+        this.label("start_line_number");
+        this.append(range.start.line);
+        this.label("start_column");
+        this.append(range.start.column);
+        this.label("end_line_number");
+        this.append(range.end.line);
+        this.label("end_column");
+        this.append(range.end.column);
+        this.endObject();
+        return this;
+    }
+    
     public JsonStream append(String string) {
         this.value();
         try {
