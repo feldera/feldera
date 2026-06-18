@@ -341,15 +341,6 @@ pub trait Operator: 'static {
         Ok(())
     }
 
-    /// True if [`Self::swap_state`] can transfer this operator's state.
-    ///
-    /// Operators whose `swap_state` returns an error must return false, so
-    /// that a concurrent bootstrap can refuse up front instead of failing
-    /// at cutover, after the backfill work is done.
-    fn supports_state_transfer(&self) -> bool {
-        true
-    }
-
     /// Notify the operator about start of a transaction.
     ///
     /// The operator can initialize any state needed for the transaction.

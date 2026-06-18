@@ -179,10 +179,6 @@ where
         Ok(())
     }
 
-    fn supports_state_transfer(&self) -> bool {
-        true
-    }
-
     fn flush(&mut self) {
         self.0.borrow_mut().flush = true;
     }

@@ -612,10 +612,6 @@ where
         }
     }
 
-    fn supports_state_transfer(&self) -> bool {
-        true
-    }
-
     fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
         // Transfer the cached output from the bootstrap circuit (`other`) to
         // this live operator.  Only the bootstrap circuit caches, so `self`'s

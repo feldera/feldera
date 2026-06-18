@@ -1169,12 +1169,6 @@ pub trait Node: Any {
     /// shared operator's entire state, and swapping twice would put it back.
     fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError>;
 
-    /// True if [`Self::swap_state_with`] can transfer this node's state
-    /// (see [`Operator::supports_state_transfer`](super::operator_traits::Operator::supports_state_transfer)).
-    fn supports_state_transfer(&self) -> bool {
-        true
-    }
-
     /// Takes a fingerprint of the node's inner operator adds it to `fip`.
     fn fingerprint(&self, fip: &mut Fingerprinter) {
         fip.hash(type_name_of_val(self));
@@ -4938,10 +4932,6 @@ where
         self.operator.swap_state(&mut other.operator)
     }
 
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
-    }
-
     fn end_replay(&mut self) -> Result<(), DbspError> {
         self.operator.end_replay()
     }
@@ -5114,10 +5104,6 @@ where
             .downcast_mut::<Self>()
             .expect("swap_state_with: node type mismatch");
         self.operator.swap_state(&mut other.operator)
-    }
-
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -5304,10 +5290,6 @@ where
         self.operator.swap_state(&mut other.operator)
     }
 
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
-    }
-
     fn is_replay_complete(&self) -> bool {
         self.operator.is_replay_complete()
     }
@@ -5483,10 +5465,6 @@ where
             .downcast_mut::<Self>()
             .expect("swap_state_with: node type mismatch");
         self.operator.swap_state(&mut other.operator)
-    }
-
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -5723,10 +5701,6 @@ where
         self.operator.swap_state(&mut other.operator)
     }
 
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
-    }
-
     fn is_replay_complete(&self) -> bool {
         self.operator.is_replay_complete()
     }
@@ -5935,10 +5909,6 @@ where
             .downcast_mut::<Self>()
             .expect("swap_state_with: node type mismatch");
         self.operator.swap_state(&mut other.operator)
-    }
-
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -6175,10 +6145,6 @@ where
         self.operator.swap_state(&mut other.operator)
     }
 
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
-    }
-
     fn is_replay_complete(&self) -> bool {
         self.operator.is_replay_complete()
     }
@@ -6385,10 +6351,6 @@ where
             .downcast_mut::<Self>()
             .expect("swap_state_with: node type mismatch");
         self.operator.swap_state(&mut other.operator)
-    }
-
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -6620,10 +6582,6 @@ where
         self.operator.swap_state(&mut other.operator)
     }
 
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
-    }
-
     fn is_replay_complete(&self) -> bool {
         self.operator.is_replay_complete()
     }
@@ -6838,10 +6796,6 @@ where
         self.operator.swap_state(&mut other.operator)
     }
 
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
-    }
-
     fn is_replay_complete(&self) -> bool {
         self.operator.is_replay_complete()
     }
@@ -7042,10 +6996,6 @@ where
         self.operator
             .borrow_mut()
             .swap_state(&mut other.operator.borrow_mut())
-    }
-
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.borrow().supports_state_transfer()
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -7511,17 +7461,6 @@ where
             .expect("swap_state_with: node type mismatch");
         self.circuit.set_time(other.circuit.time());
         Ok(())
-    }
-
-    fn supports_state_transfer(&self) -> bool {
-        // A nested circuit can transfer its state iff every child can.
-        let mut supported = true;
-        for child_id in self.circuit.node_ids() {
-            self.circuit.map_node_relative(&[child_id], &mut |child| {
-                supported = supported && child.supports_state_transfer();
-            });
-        }
-        supported
     }
 
     fn set_label(&mut self, key: &str, value: &str) {
@@ -8281,25 +8220,6 @@ impl CircuitHandle {
                 return Some(format!(
                     "a stream feeding the bootstrapped region has no replay source \
                      (input operator {node_id} ({name}) is an unmaterialized table?)"
-                ));
-            }
-        }
-
-        // The cutover must transfer the state of every excluded node from
-        // the bootstrap circuit; checking up front avoids discarding a
-        // completed backfill at cutover time.
-        let excluded = self.propagate_need_backfill_forward(analysis.need_backfill.clone());
-        for node_id in excluded.iter() {
-            let supported = self
-                .circuit
-                .map_local_node_mut(*node_id, &mut |node| node.supports_state_transfer());
-            if !supported {
-                let name = self
-                    .circuit
-                    .map_local_node_mut(*node_id, &mut |node| node.name().into_owned());
-                return Some(format!(
-                    "the state of operator {node_id} ({name}) cannot be transferred \
-                     between circuit copies"
                 ));
             }
         }

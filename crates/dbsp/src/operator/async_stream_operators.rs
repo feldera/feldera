@@ -154,10 +154,6 @@ where
             .swap_state(Rc::get_mut(&mut other.operator).unwrap())
     }
 
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
-    }
-
     fn is_replay_complete(&self) -> bool {
         self.operator.is_replay_complete()
     }
@@ -338,10 +334,6 @@ where
         Rc::get_mut(&mut self.operator)
             .unwrap()
             .swap_state(Rc::get_mut(&mut other.operator).unwrap())
-    }
-
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -531,10 +523,6 @@ where
             .swap_state(Rc::get_mut(&mut other.operator).unwrap())
     }
 
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
-    }
-
     fn is_replay_complete(&self) -> bool {
         self.operator.is_replay_complete()
     }
@@ -720,10 +708,6 @@ where
             .swap_state(Rc::get_mut(&mut other.operator).unwrap())
     }
 
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
-    }
-
     fn is_replay_complete(&self) -> bool {
         self.operator.is_replay_complete()
     }
@@ -905,10 +889,6 @@ where
         Rc::get_mut(&mut self.operator)
             .unwrap()
             .swap_state(Rc::get_mut(&mut other.operator).unwrap())
-    }
-
-    fn supports_state_transfer(&self) -> bool {
-        self.operator.supports_state_transfer()
     }
 
     fn is_replay_complete(&self) -> bool {

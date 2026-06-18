@@ -1292,10 +1292,6 @@ where
 
         Ok(())
     }
-
-    fn supports_state_transfer(&self) -> bool {
-        true
-    }
 }
 
 impl<B, C> StreamingTernarySinkOperator<B, EmptyCheckpoint<Vec<Arc<B>>>, TimedSpine<B, C>>
