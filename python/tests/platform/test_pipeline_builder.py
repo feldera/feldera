@@ -64,6 +64,16 @@ class TestPipelineBuilder(PipelineTestCase):
 
     def test_tags(self):
         sql = "CREATE TABLE t (col1 INT);"
+
+        # Omitting tags defaults to an empty list, never None.
+        default_name = self.register_for_cleanup("test_builder_tags_default")
+        default_pipeline = PipelineBuilder(
+            TEST_CLIENT,
+            default_name,
+            sql=sql,
+        ).create_or_replace()
+        assert default_pipeline.tags() == []
+
         pipeline_name = self.register_for_cleanup("test_builder_tags")
 
         # Tags supplied to the builder are persisted and round-trip on read.
@@ -89,18 +99,6 @@ class TestPipelineBuilder(PipelineTestCase):
 
         # An empty list is a real value: it clears the tags.
         pipeline.modify(tags=[])
-        assert pipeline.tags() == []
-
-    def test_tags_default_empty(self):
-        sql = "CREATE TABLE t (col1 INT);"
-        pipeline_name = self.register_for_cleanup("test_builder_tags_default")
-
-        # Omitting tags defaults to an empty list, never None.
-        pipeline = PipelineBuilder(
-            TEST_CLIENT,
-            pipeline_name,
-            sql=sql,
-        ).create_or_replace()
         assert pipeline.tags() == []
 
 

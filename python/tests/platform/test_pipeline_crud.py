@@ -536,7 +536,7 @@ def test_pipeline_tags(pipeline_name):
 
 
 @gen_pipeline_name
-def test_pipeline_tags_invalid(pipeline_name):
+def test_pipeline_metadata_validation(pipeline_name):
     cleanup_pipeline(pipeline_name)
 
     # Each of these tags violates the constraints (disallowed character, too
@@ -556,49 +556,36 @@ def test_pipeline_tags_invalid(pipeline_name):
             f"tags {tags} should be rejected"
         )
 
-    # A valid set of tags (every allowed character class) is accepted.
+    # A description one character over the 300-char limit is rejected too.
+    r = post_json(
+        f"{API_PREFIX}/pipelines",
+        {"name": pipeline_name, "description": "a" * 301, "program_code": ""},
+    )
+    assert r.status_code == HTTPStatus.BAD_REQUEST
+
+    # Valid metadata is accepted: a tag set covering every allowed character
+    # class, plus a description of exactly the maximum length.
     r = post_json(
         f"{API_PREFIX}/pipelines",
         {
             "name": pipeline_name,
             "tags": ["a-z_0/9", "with space", "pipe|sep", "back\\slash", "dot.dot"],
+            "description": "a" * 300,
             "program_code": "",
         },
     )
     assert r.status_code == HTTPStatus.CREATED
 
-    # Patching to an invalid tag is rejected too.
+    # Patching to an invalid tag is rejected.
     r = patch_json(
         f"{API_PREFIX}/pipelines/{pipeline_name}",
         {"tags": ["bad?tag"]},
     )
     assert r.status_code == HTTPStatus.BAD_REQUEST
 
-
-@gen_pipeline_name
-def test_pipeline_description_length(pipeline_name):
-    name_ok = pipeline_name + "-ok"
-    name_long = pipeline_name + "-long"
-    cleanup_pipeline(name_ok)
-    cleanup_pipeline(name_long)
-
-    # A description of exactly the maximum length (300) is accepted.
-    r = post_json(
-        f"{API_PREFIX}/pipelines",
-        {"name": name_ok, "description": "a" * 300, "program_code": ""},
-    )
-    assert r.status_code == HTTPStatus.CREATED
-
-    # One character over the limit is rejected on creation.
-    r = post_json(
-        f"{API_PREFIX}/pipelines",
-        {"name": name_long, "description": "a" * 301, "program_code": ""},
-    )
-    assert r.status_code == HTTPStatus.BAD_REQUEST
-
-    # Patching an existing pipeline to an over-long description is rejected.
+    # Patching to an over-long description is rejected.
     r = patch_json(
-        f"{API_PREFIX}/pipelines/{name_ok}",
+        f"{API_PREFIX}/pipelines/{pipeline_name}",
         {"description": "a" * 301},
     )
     assert r.status_code == HTTPStatus.BAD_REQUEST

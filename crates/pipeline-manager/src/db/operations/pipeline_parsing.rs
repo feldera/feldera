@@ -22,6 +22,8 @@ use tokio_postgres::Row;
 use tracing::error;
 use uuid::Uuid;
 
+/// Every pipeline table column, in the order expected when parsing a row into a
+/// complete [`ExtendedPipelineDescr`] (used by detailed single-pipeline reads).
 pub const PIPELINE_COLUMNS_ALL: &str =
     "p.id, p.name, p.client_metadata, p.created_at, p.version, p.platform_version, p.runtime_config,
      p.program_code, p.udf_rust, p.udf_toml, p.program_config, p.program_version, p.program_status,
@@ -35,6 +37,9 @@ pub const PIPELINE_COLUMNS_ALL: &str =
      p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy
      ";
 
+/// Subset of pipeline columns needed to parse a row into an
+/// [`ExtendedPipelineDescrMonitoring`]. It drops the heavy program-source and
+/// deployment-config fields that monitoring does not need.
 pub const PIPELINE_COLUMNS_MONITORING: &str =
     "p.id, p.name, p.client_metadata, p.created_at, p.version, p.platform_version, p.runtime_config,
      p.program_config, p.program_version, p.program_status, p.program_status_since,
@@ -46,6 +51,9 @@ pub const PIPELINE_COLUMNS_MONITORING: &str =
      p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy
      ";
 
+/// Minimal subset of pipeline columns used to parse a row into an
+/// [`ExtendedPipelineDescrEventInfo`]: only the status fields recorded with a
+/// pipeline monitor event.
 pub const PIPELINE_COLUMNS_EVENT_INFO: &str = "p.id,
      p.program_status,
      p.storage_status,
@@ -544,10 +552,24 @@ mod tests {
     use std::collections::BTreeSet;
     use uuid::Uuid;
 
-    /// Splits the provided columns string into individual columns.
+    /// Expands a selected column into the descriptor fields it populates.
+    ///
+    /// The `client_metadata` column is a single JSON column holding both
+    /// `description` and `tags`, so it maps to those two descriptor fields.
+    /// Every other column maps to a field of the same name. This lets a column
+    /// set be compared directly against the serialized descriptor field names.
+    fn column_to_descriptor_fields(column: String) -> Vec<String> {
+        match column.as_str() {
+            "client_metadata" => vec!["description".to_string(), "tags".to_string()],
+            _ => vec![column],
+        }
+    }
+
+    /// Splits the provided columns string into individual descriptor fields.
     fn split_columns(s: &str) -> Vec<String> {
         s.split(",")
             .map(|s| s.split(".").collect_vec()[1].trim().to_string())
+            .flat_map(column_to_descriptor_fields)
             .collect()
     }
 
