@@ -482,6 +482,9 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMain.execute("--jit", "-o", json.getPath(), file.getPath());
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(json);
+        String contents = Utilities.readFile(json.getPath());
+        // File contains source position information
+        Assert.assertTrue(contents.contains("position"));
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
         JsonDecoder decoder = new JsonDecoder(compiler.sqlToRelCompiler.typeFactory);
         DBSPCircuit result = decoder.decodeOuter(parsed, DBSPCircuit.class);

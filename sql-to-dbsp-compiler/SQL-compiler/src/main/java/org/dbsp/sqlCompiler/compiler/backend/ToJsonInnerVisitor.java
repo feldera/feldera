@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.backend;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -109,6 +110,14 @@ public class ToJsonInnerVisitor extends InnerVisitor {
             this.property("id");
             this.stream.append(node.getId());
             this.serialized.add(node.getId());
+
+            if (this.verbosity > 0) {
+                SourcePositionRange range = node.getNode().getPositionRange();
+                if (range.isValid()) {
+                    this.property("position");
+                    this.stream.append(range);
+                }
+            }
         }
         super.push(node);
     }
