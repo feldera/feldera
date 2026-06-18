@@ -161,7 +161,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiKeyDescr"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyDescr"
+                  }
                 }
               }
             }
@@ -1857,7 +1860,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CheckpointResponse"
+                  "type": "string"
                 }
               }
             }
@@ -1982,12 +1985,12 @@
           }
         ],
         "responses": {
-          "202": {
-            "description": "Pipeline activation initiated",
+          "200": {
+            "description": "Bootstrap approved",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CheckpointResponse"
+                  "type": "string"
                 }
               }
             }
@@ -2224,12 +2227,12 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Checkpoint synced to object store",
+          "202": {
+            "description": "Checkpoint sync to object store initiated",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CheckpointResponse"
+                  "$ref": "#/components/schemas/CheckpointSyncResponse"
                 }
               }
             }
@@ -2592,7 +2595,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CheckpointMetadata"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CheckpointMetadata"
+                  }
                 }
               }
             }
@@ -7499,6 +7505,19 @@
             "type": "string",
             "format": "uuid",
             "description": "UUID of the failed checkpoint."
+          }
+        }
+      },
+      "CheckpointSyncResponse": {
+        "type": "object",
+        "description": "Response to a sync checkpoint request.",
+        "required": [
+          "checkpoint_uuid"
+        ],
+        "properties": {
+          "checkpoint_uuid": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },

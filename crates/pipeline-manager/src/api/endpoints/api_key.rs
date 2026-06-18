@@ -81,7 +81,7 @@ pub(crate) async fn list_api_keys(
     responses(
         (status = OK,
             description = "API key retrieved successfully",
-            body = ApiKeyDescr),
+            body = [ApiKeyDescr]),
         (status = NOT_FOUND
             , description = "API key with that name does not exist"
             , body = ErrorResponse
