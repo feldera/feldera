@@ -1070,9 +1070,9 @@ pub(crate) async fn post_pipeline_start_compaction(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
     responses(
-        (status = OK
-            , description = "Checkpoint synced to object store"
-            , body = CheckpointResponse),
+        (status = ACCEPTED
+            , description = "Checkpoint sync to object store initiated"
+            , body = CheckpointSyncResponse),
         (status = NOT_FOUND
             , description = "No checkpoints found"
             , body = ErrorResponse
@@ -1332,7 +1332,7 @@ pub(crate) async fn get_checkpoint_sync_status(
                           from all hosts; the shape of this response may \
                           change in a future release."
          , content_type = "application/json"
-         , body = CheckpointMetadata),
+         , body = Vec<CheckpointMetadata>),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
@@ -1765,7 +1765,8 @@ pub(crate) async fn post_pipeline_resume(
     responses(
         (status = ACCEPTED
             , description = "Pipeline activation initiated"
-            , body = CheckpointResponse),
+            , content_type = "application/json"
+            , body = String),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
@@ -1853,9 +1854,10 @@ pub(crate) async fn post_pipeline_activate(
         ApproveParameters,
     ),
     responses(
-        (status = ACCEPTED
-            , description = "Pipeline activation initiated"
-            , body = CheckpointResponse),
+        (status = OK
+            , description = "Bootstrap approved"
+            , content_type = "application/json"
+            , body = String),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse

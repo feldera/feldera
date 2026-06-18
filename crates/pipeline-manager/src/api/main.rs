@@ -444,6 +444,7 @@ It contains the following fields:
         feldera_types::checkpoint::CheckpointStatus,
         feldera_types::checkpoint::CheckpointSyncStatus,
         feldera_types::checkpoint::CheckpointResponse,
+        feldera_types::checkpoint::CheckpointSyncResponse,
         feldera_types::checkpoint::CheckpointActivity,
         feldera_types::checkpoint::CheckpointFailure,
         feldera_types::checkpoint::CheckpointSyncFailure,
