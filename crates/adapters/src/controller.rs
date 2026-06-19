@@ -98,7 +98,7 @@ use feldera_types::secret_resolver::resolve_secret_references_in_connector_confi
 use feldera_types::suspend::{PermanentSuspendError, SuspendError, TemporarySuspendError};
 use feldera_types::time_series::SampleStatistics;
 use feldera_types::transaction::{
-    ConcurrentBootstrapPhase, ConcurrentBootstrapProgress, StartTransactionResponse, TransactionId,
+    ConcurrentBootstrapPhase, StartTransactionResponse, TransactionId,
 };
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
@@ -3071,7 +3071,7 @@ impl CircuitThread {
         if self.concurrent_phase == ConcurrentPhase::Backfill {
             self.controller
                 .status
-                .set_concurrent_backfill_in_progress(true);
+                .set_concurrent_bootstrap_phase(ConcurrentBootstrapPhase::ConcurrentBootstrapping);
         }
 
         // Run a single step, which is probably empty, before reporting that
@@ -3215,10 +3215,7 @@ impl CircuitThread {
             self.concurrent_phase = ConcurrentPhase::Inactive;
             self.controller
                 .status
-                .set_concurrent_backfill_in_progress(false);
-            self.controller
-                .status
-                .set_concurrent_synchronize_in_progress(false);
+                .set_concurrent_bootstrap_phase(ConcurrentBootstrapPhase::Inactive);
             self.clear_concurrent_bootstrap_progress();
         }
         result
@@ -3228,9 +3225,7 @@ impl CircuitThread {
         match self.concurrent_phase {
             ConcurrentPhase::Inactive => {}
             ConcurrentPhase::Backfill => {
-                self.report_concurrent_bootstrap_progress(
-                    ConcurrentBootstrapPhase::ConcurrentBootstrapping,
-                );
+                self.report_concurrent_bootstrap_progress();
                 // Advance the background backfill on every step, interleaved
                 // with the primary circuit. The two circuits are independent
                 // (`step_bootstrap_circuit` does not depend on the main
@@ -3244,10 +3239,7 @@ impl CircuitThread {
                     // primary circuit has drained any in-flight transaction.
                     self.controller
                         .status
-                        .set_concurrent_backfill_in_progress(false);
-                    self.controller
-                        .status
-                        .set_concurrent_synchronize_in_progress(true);
+                        .set_concurrent_bootstrap_phase(ConcurrentBootstrapPhase::Synchronizing);
                     self.controller.unpark_backpressure();
                     self.concurrent_phase = ConcurrentPhase::AwaitingSync;
                     info!(
@@ -3257,7 +3249,7 @@ impl CircuitThread {
                 }
             }
             ConcurrentPhase::AwaitingSync => {
-                self.report_concurrent_bootstrap_progress(ConcurrentBootstrapPhase::Synchronizing);
+                self.report_concurrent_bootstrap_progress();
                 // Inputs are paused; the `step()` call that precedes this pump
                 // in the run loop drives the primary circuit to finish its
                 // in-flight transaction. Once it is idle, start the
@@ -3272,7 +3264,7 @@ impl CircuitThread {
                 }
             }
             ConcurrentPhase::Synchronize => {
-                self.report_concurrent_bootstrap_progress(ConcurrentBootstrapPhase::Synchronizing);
+                self.report_concurrent_bootstrap_progress();
                 // Drain the recorded deltas into the new views one chunk per
                 // invocation (not a tight loop), so the circuit thread returns
                 // to its command loop between chunks and keeps servicing
@@ -3285,9 +3277,9 @@ impl CircuitThread {
                     // views were excluded from the live schedule during the
                     // backfill, so their queryable integrals are not yet in the
                     // ad-hoc snapshot. Enter `Finalizing`, which keeps the
-                    // status non-`Running` and inputs paused
-                    // (`concurrent_synchronize_in_progress` stays set) for one
-                    // more step that refreshes the snapshot.
+                    // status non-`Running` and inputs paused (the phase stays at
+                    // `Synchronizing`) for one more step that refreshes the
+                    // snapshot.
                     self.circuit.complete_concurrent_bootstrap()?;
                     self.concurrent_phase = ConcurrentPhase::Finalizing;
                     info!(
@@ -3297,7 +3289,6 @@ impl CircuitThread {
                 }
             }
             ConcurrentPhase::Finalizing => {
-                self.report_concurrent_bootstrap_progress(ConcurrentBootstrapPhase::Finalizing);
                 // Wait for the post-cutover transaction to COMMIT before
                 // reporting `Running`. The ad-hoc snapshot is refreshed by
                 // `update_snapshot`, which runs only at a transaction boundary
@@ -3313,7 +3304,7 @@ impl CircuitThread {
                     self.concurrent_phase = ConcurrentPhase::Inactive;
                     self.controller
                         .status
-                        .set_concurrent_synchronize_in_progress(false);
+                        .set_concurrent_bootstrap_phase(ConcurrentBootstrapPhase::Inactive);
                     self.controller.unpark_backpressure();
                     // Capture the unified circuit; checkpoints were deferred
                     // during the bootstrap.
@@ -3329,12 +3320,12 @@ impl CircuitThread {
     /// Logs concurrent-bootstrap progress (throttled to every
     /// [`COMMIT_DISPLAY_INTERVAL`]) and refreshes the
     /// `concurrent_bootstrap_progress` metric (at the faster status cadence),
-    /// mirroring the regular transaction-commit progress reporting. `progress`
-    /// includes the bootstrap circuit's commit progress while it is committing
-    /// (the backfill transaction, then the synchronization transaction); during
-    /// `Finalizing` the bootstrap circuit no longer exists, so only the phase is
-    /// reported.
-    fn report_concurrent_bootstrap_progress(&mut self, phase: ConcurrentBootstrapPhase) {
+    /// mirroring the regular transaction-commit progress reporting. The metric
+    /// holds the bootstrap circuit's commit progress while it is committing (the
+    /// backfill transaction, then the synchronization transaction) and is `None`
+    /// otherwise. The phase is reported separately, set atomically at each phase
+    /// transition (see [`GlobalControllerMetrics::concurrent_bootstrap_phase`]).
+    fn report_concurrent_bootstrap_progress(&mut self) {
         let (update, display) = {
             let updates = self.concurrent_bootstrap_updates.get_or_insert_default();
             if updates.should_update_status() {
@@ -3349,39 +3340,37 @@ impl CircuitThread {
 
         // The bootstrap circuit is gone once we cut over, so its commit progress
         // is only meaningful before `Finalizing`.
-        let commit_progress = if phase == ConcurrentBootstrapPhase::Finalizing {
-            None
-        } else {
-            match self.circuit.bootstrap_commit_progress() {
-                Ok(progress) => {
-                    let summary = progress.summary();
-                    // Report a commit summary only while a commit is actually in
-                    // progress (the bootstrap transaction is otherwise still
-                    // replaying its inputs).
-                    if summary.completed + summary.in_progress + summary.remaining > 0 {
-                        Some(summary)
-                    } else {
-                        None
-                    }
-                }
-                Err(e) => {
-                    error!("Concurrent bootstrap: error retrieving commit progress ({e})");
+        let commit_progress = match self.circuit.bootstrap_commit_progress() {
+            Ok(progress) => {
+                let summary = progress.summary();
+                // Report a commit summary only while a commit is actually in
+                // progress (the bootstrap transaction is otherwise still
+                // replaying its inputs).
+                if summary.completed + summary.in_progress + summary.remaining > 0 {
+                    Some(summary)
+                } else {
                     None
                 }
             }
+            Err(e) => {
+                error!("Concurrent bootstrap: error retrieving commit progress ({e})");
+                None
+            }
         };
 
-        let progress = ConcurrentBootstrapProgress {
-            phase,
-            commit_progress,
-        };
         if display {
-            info!("Concurrent bootstrap in progress ({progress})");
+            let phase = self.controller.status.concurrent_bootstrap_phase();
+            match &commit_progress {
+                Some(progress) => info!(
+                    "Concurrent bootstrap in progress ({phase}: committing bootstrap transaction ({progress}))"
+                ),
+                None => info!("Concurrent bootstrap in progress ({phase})"),
+            }
         }
         self.controller
             .status
             .global_metrics
-            .set_concurrent_bootstrap_progress(Some(progress));
+            .set_concurrent_bootstrap_progress(commit_progress);
     }
 
     /// Resets concurrent-bootstrap progress logging state and clears the metric.
@@ -3961,10 +3950,11 @@ impl CircuitThread {
         // No ingestion during a stop-the-world bootstrap, a committing
         // transaction, or the concurrent-bootstrap synchronize/finalize window
         // (inputs flow normally during a concurrent backfill). The finalize
-        // step -- which refreshes the ad-hoc snapshot after cutover -- keeps
-        // `concurrent_synchronize_in_progress` set so it runs empty here.
+        // step -- which refreshes the ad-hoc snapshot after cutover -- keeps the
+        // phase at `Synchronizing` so it runs empty here.
         if self.controller.status.bootstrap_in_progress()
-            || self.controller.status.concurrent_synchronize_in_progress()
+            || self.controller.status.concurrent_bootstrap_phase()
+                == ConcurrentBootstrapPhase::Synchronizing
             || self.controller.transaction_commit_in_progress()
         {
             return Ok(Some(BufferSize::empty()));
@@ -5402,7 +5392,8 @@ impl BackpressureThread {
             // Inputs keep flowing during a concurrent backfill (old views stay
             // live); they pause only during the brief synchronize/cutover
             // window.
-            let concurrent_synchronize = controller.status.concurrent_synchronize_in_progress();
+            let concurrent_synchronize = controller.status.concurrent_bootstrap_phase()
+                == ConcurrentBootstrapPhase::Synchronizing;
 
             for (epid, ep) in controller.status.input_status().iter() {
                 let should_run = globally_running

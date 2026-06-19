@@ -8018,32 +8018,12 @@
       },
       "ConcurrentBootstrapPhase": {
         "type": "string",
-        "description": "Phase of an in-progress concurrent bootstrap.",
+        "description": "Phase of a concurrent bootstrap.\n\n`#[repr(u8)]` + `NoUninit` so it can be stored in a lock-free `Atomic`.",
         "enum": [
+          "Inactive",
           "ConcurrentBootstrapping",
-          "Synchronizing",
-          "Finalizing"
+          "Synchronizing"
         ]
-      },
-      "ConcurrentBootstrapProgress": {
-        "type": "object",
-        "description": "Progress of an in-progress concurrent bootstrap.",
-        "required": [
-          "phase"
-        ],
-        "properties": {
-          "commit_progress": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CommitProgressSummary"
-              }
-            ],
-            "nullable": true
-          },
-          "phase": {
-            "$ref": "#/components/schemas/ConcurrentBootstrapPhase"
-          }
-        }
       },
       "Condition": {
         "type": "object",
@@ -9531,6 +9511,7 @@
           "transaction_status",
           "transaction_id",
           "transaction_initiators",
+          "concurrent_bootstrap_phase",
           "rss_bytes",
           "memory_pressure",
           "memory_pressure_epoch",
@@ -9579,10 +9560,13 @@
             ],
             "nullable": true
           },
+          "concurrent_bootstrap_phase": {
+            "$ref": "#/components/schemas/ConcurrentBootstrapPhase"
+          },
           "concurrent_bootstrap_progress": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/ConcurrentBootstrapProgress"
+                "$ref": "#/components/schemas/CommitProgressSummary"
               }
             ],
             "nullable": true

@@ -79,6 +79,7 @@ use feldera_types::runtime_status::{
 };
 use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::time_series::TimeSeries;
+use feldera_types::transaction::ConcurrentBootstrapPhase;
 use feldera_types::transport::http::HttpOutputConfig;
 use feldera_types::{
     checkpoint::CheckpointMetadata, config::TransportConfig, transport::http::HttpInputConfig,
@@ -1476,16 +1477,20 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
                     // Order matters: the concurrent-bootstrap phases are more
                     // specific than the (stop-the-world) `bootstrap_in_progress`
                     // flag, which stays false on the concurrent path.
-                    runtime_status: if controller.status().concurrent_synchronize_in_progress() {
-                        RuntimeStatus::Synchronizing
-                    } else if controller.status().concurrent_backfill_in_progress() {
-                        RuntimeStatus::ConcurrentBootstrapping
-                    } else if controller.status().bootstrap_in_progress() {
-                        RuntimeStatus::Bootstrapping
-                    } else if controller.is_replaying() {
-                        RuntimeStatus::Replaying
-                    } else {
-                        default_status
+                    runtime_status: match controller.status().concurrent_bootstrap_phase() {
+                        ConcurrentBootstrapPhase::Synchronizing => RuntimeStatus::Synchronizing,
+                        ConcurrentBootstrapPhase::ConcurrentBootstrapping => {
+                            RuntimeStatus::ConcurrentBootstrapping
+                        }
+                        ConcurrentBootstrapPhase::Inactive => {
+                            if controller.status().bootstrap_in_progress() {
+                                RuntimeStatus::Bootstrapping
+                            } else if controller.is_replaying() {
+                                RuntimeStatus::Replaying
+                            } else {
+                                default_status
+                            }
+                        }
                     },
                     runtime_status_details: json!(""),
                     runtime_desired_status,
