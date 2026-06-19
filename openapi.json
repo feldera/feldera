@@ -13658,6 +13658,11 @@
             "nullable": true,
             "minimum": 0
           },
+          "optimize_download_resources": {
+            "type": "boolean",
+            "description": "When true, checkpoint downloads use the maximum resources available on\nthe host: `transfers` and `checkers` are scaled to the number of CPUs,\nand the download buffer is allowed to grow up to most of the available\nmemory. This maximizes download throughput at the cost of higher CPU and\nmemory usage during a pull.\n\nWhen false, downloads use the values configured via `transfers`,\n`checkers`, and the rclone defaults instead.\n\nDefault: true",
+            "default": true
+          },
           "provider": {
             "type": "string",
             "description": "The name of the cloud storage provider (e.g., `\"AWS\"`, `\"Minio\"`).\n\nUsed for provider-specific behavior in rclone.\nIf omitted, defaults to `\"Other\"`.\n\nSee [rclone S3 provider documentation](https://rclone.org/s3/#s3-provider)",
