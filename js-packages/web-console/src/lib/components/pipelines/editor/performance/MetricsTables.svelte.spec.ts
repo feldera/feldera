@@ -402,13 +402,23 @@ describe('MetricsTables.svelte', () => {
       // Initially collapsed
       await expect.element(page.getByTestId('box-connector-row-alpha')).not.toBeInTheDocument()
 
+      const toggle = page.getByTestId('box-relation-row-t1').getByText('t1', { exact: true })
+
+      // `force` bypasses the pointer hit-test. Once expanded, the connector rows render
+      // icon tooltips (placement="top") that float up over this row; while the pointer
+      // travels toward the label it can open one, and the portaled tooltip's high z-index
+      // intercepts the hit-test so the click never resolves (flaky CI timeout on the
+      // second click). The toggle is wired to the row's onclick, so the forced dispatch
+      // still fires it. `position` keeps the dispatch over the chevron, clear of tooltips.
+      const click = { position: { x: 1, y: 1 }, force: true }
+
       // Click to expand
-      await page.getByTestId('box-relation-row-t1').click({ position: { x: 1, y: 0 } })
+      await toggle.click(click)
       await expect.element(page.getByTestId('box-connector-row-alpha')).toBeInTheDocument()
       await expect.element(page.getByTestId('box-connector-row-beta')).toBeInTheDocument()
 
       // Click again to collapse
-      await page.getByTestId('box-relation-row-t1').click({ position: { x: 1, y: 0 } })
+      await toggle.click(click)
       await expect.element(page.getByTestId('box-connector-row-alpha')).not.toBeInTheDocument()
     })
 
