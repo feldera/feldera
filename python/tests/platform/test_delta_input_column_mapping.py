@@ -110,9 +110,7 @@ def _run_column_mapping_test(
         stable_subpath=f"column_mapping_{mapping_mode}_{FIXTURE_VERSION}",
     )
     try:
-        ensure_delta_spark_fixture(
-            loc, _FIXTURE_BUILDER, builder_args=(mapping_mode,)
-        )
+        ensure_delta_spark_fixture(loc, _FIXTURE_BUILDER, builder_args=(mapping_mode,))
 
         pipeline = PipelineBuilder(
             TEST_CLIENT,
@@ -195,9 +193,7 @@ def test_delta_input_column_mapping_name_cdc(pipeline_name):
 
 def test_delta_input_column_mapping_id_cdc(pipeline_name):
     """CDC-replay a column-mapped (``mode = 'id'``) table across evolution."""
-    _run_column_mapping_test(
-        pipeline_name, "id", mode="cdc", extra_config=_CDC_CONFIG
-    )
+    _run_column_mapping_test(pipeline_name, "id", mode="cdc", extra_config=_CDC_CONFIG)
 
 
 # Replaying a window that ends before the table's latest version must resolve

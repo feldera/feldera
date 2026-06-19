@@ -88,9 +88,7 @@ def build(table_path: str, mode: str = "name") -> None:
         spark.sql(f"INSERT INTO {t} VALUES (1,'alice',10.0),(2,'bob',20.0)")
         spark.sql(f"ALTER TABLE {t} RENAME COLUMN name TO full_name")
         spark.sql(f"ALTER TABLE {t} ADD COLUMN (country STRING)")
-        spark.sql(
-            f"INSERT INTO {t} VALUES (3,'carol',30.0,'US'),(4,'dave',40.0,'UK')"
-        )
+        spark.sql(f"INSERT INTO {t} VALUES (3,'carol',30.0,'US'),(4,'dave',40.0,'UK')")
         spark.sql(f"ALTER TABLE {t} DROP COLUMN amount")
         spark.sql(f"INSERT INTO {t} VALUES (5,'erin','FR')")
     finally:
