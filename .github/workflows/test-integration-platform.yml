@@ -84,7 +84,7 @@ jobs:
       - name: Start pipeline-manager in background
         run: |
           mkdir test-tls
-          echo -e "[x509_v3]\nsubjectAltName = @alt_names\nbasicConstraints = critical,CA:TRUE\n\n[alt_names]\nDNS.1 = localhost\nIP.1 = 127.0.0.1\n" > test-tls/x509_v3_test.ext
+          echo -e "[x509_v3]\nsubjectAltName = @alt_names\n\n[alt_names]\nDNS.1 = localhost\nIP.1 = 127.0.0.1\n" > test-tls/x509_v3_test.ext
           openssl req -x509 -newkey rsa:4096 -nodes -keyout test-tls/tls_test.key -out test-tls/tls_test.crt -days 365 \
             -subj '/CN=localhost' -config test-tls/x509_v3_test.ext -extensions x509_v3
           chmod 644 test-tls/tls_test.key
