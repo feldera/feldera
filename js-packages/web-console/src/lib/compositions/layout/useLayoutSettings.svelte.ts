@@ -12,6 +12,10 @@ export const useLayoutSettings = () => {
   const hideWarnings = useLocalStorage('layout/pipelines/logs/hideWarnings', false)
   const verbatimErrors = useLocalStorage('layout/pipelines/logs/verbatimErrors', false)
   const sqlPanelFullHeight = useLocalStorage('layout/profile-bundle/sqlPanelFullHeight', false)
+  const pipelinesTableSort = useLocalStorage<{ column: string; direction: 'asc' | 'desc' }>(
+    'layout/pipelines/table/sort',
+    { column: 'name', direction: 'asc' }
+  )
 
   return {
     showPipelinesPanel,
@@ -19,6 +23,7 @@ export const useLayoutSettings = () => {
     showInteractionPanel,
     hideWarnings,
     verbatimErrors,
-    sqlPanelFullHeight
+    sqlPanelFullHeight,
+    pipelinesTableSort
   }
 }

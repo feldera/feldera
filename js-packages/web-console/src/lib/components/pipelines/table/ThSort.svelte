@@ -5,18 +5,34 @@
   const {
     table,
     field,
+    direction,
+    onSort,
     children,
     class: _class
   }: {
     table: TableHandlerInterface<T>
     field: Field<T>
+    /** Initial sort direction, applied once when the column mounts. */
+    direction?: 'asc' | 'desc'
+    /** Notifies the parent when the user changes this column's sort, e.g. to persist it. */
+    onSort?: (direction: 'asc' | 'desc') => void
     children: Snippet
     class?: string
   } = $props()
-  const sort = table.createSort(field)
+
+  // Create the sort once and apply its initial direction, mirroring @vincjo/datatables' ThSort.
+  // svelte-ignore state_referenced_locally
+  const sort = table.createSort(field).init(direction)
+
+  const setSort = () => {
+    sort.set()
+    if (sort.direction === 'asc' || sort.direction === 'desc') {
+      onSort?.(sort.direction)
+    }
+  }
 </script>
 
-<th onclick={() => sort.set()} class={_class} class:active={sort.isActive}>
+<th onclick={setSort} class={_class} class:active={sort.isActive}>
   <div class="flex">
     {@render children()}
     <span class:asc={sort.direction === 'asc'} class:desc={sort.direction === 'desc'}> </span>
