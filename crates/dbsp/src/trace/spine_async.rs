@@ -251,13 +251,15 @@ impl<B> Slot<B>
 where
     B: Batch,
 {
-    /// If this slot doesn't currently have an ongoing merge, and it does have
-    /// at least MERGE_COUNTS[level].start() loose batches, picks an upper limit
-    /// of the loose batches and makes them into merging batches, and returns
-    /// those batches. Otherwise, returns `None` without changing anything.
+    /// If this slot has at least enough loose batches to start a merge, drains
+    /// and return batches for merging. Otherwise, returns `None` without
+    /// changing anything.
     ///
     /// We merge the least recently added batches (ensuring that batches
     /// eventually get merged).
+    ///
+    /// The caller is responsible for checking and updating
+    /// `self.merging_batches`.
     fn try_start_merge(&mut self, level: usize) -> Option<Vec<Arc<B>>> {
         /// Minimum and maximum numbers of batches to merge at each level.
         ///
@@ -275,29 +277,27 @@ where
             2..=64,
         ];
 
-        let merge_counts = &MERGE_COUNTS[level];
+        let (min_merge, max_merge) = MERGE_COUNTS[level].clone().into_inner();
 
-        // Start a merge if there is no ongoing merge and there are either enough loose batches to start a merge,
-        // or we are under high memory pressure and there's at least one in-memory batch in this slot, or
-        // compaction has been requested and there are more than one batches in the slot.
-        if self.merging_batches.is_none()
-            && (self.loose_batches.len() >= *merge_counts.start()
-                || self.must_relieve_memory_pressure()
-                || (self.compaction_status == CompactionStatus::Requested
-                    && self.loose_batches.len() > 1))
+        // Start a merge if there are either enough loose batches to start a
+        // merge, or we are under high memory pressure and there's at least one
+        // in-memory batch in this slot, or compaction has been requested and
+        // there are more than one batches in the slot.
+        if self.loose_batches.len() >= min_merge
+            || self.must_relieve_memory_pressure()
+            || (self.compaction_status == CompactionStatus::Requested
+                && self.loose_batches.len() > 1)
         {
             // Compaction requested - merge all batches in the slot.
             let max_batches = if self.compaction_status == CompactionStatus::Requested {
                 self.compaction_status = CompactionStatus::InProgress;
                 usize::MAX
             } else {
-                *merge_counts.end()
+                max_merge
             };
 
             let n = std::cmp::min(max_batches, self.loose_batches.len());
-            let batches = self.loose_batches.drain(..n).collect::<Vec<_>>();
-            self.merging_batches = Some(batches.clone());
-            Some(batches)
+            Some(self.loose_batches.drain(..n).collect::<Vec<_>>())
         } else {
             None
         }
@@ -444,14 +444,16 @@ where
     fn merge_complete(
         &mut self,
         level: usize,
-        new_batch: Arc<B>,
-        new_level: usize,
-        start: Instant,
-        elapsed: ElapsedTime,
-        n_steps: usize,
+        batches: Vec<Arc<B>>,
+        FinishedMerge {
+            new_batch,
+            new_level,
+            start,
+            elapsed,
+            n_steps,
+        }: FinishedMerge<B>,
     ) {
         let slot = &mut self.slots[level];
-        let batches = slot.merging_batches.take().unwrap();
         slot.n_merged += 1;
         slot.n_merged_batches += batches.len();
         slot.elapsed += elapsed;
@@ -555,6 +557,19 @@ where
         slot.compaction_status = CompactionStatus::Requested;
         slot.notify.notify_one();
     }
+
+    fn merge_params(&self) -> MergeParams<B> {
+        MergeParams {
+            key_filter: self.key_filter.clone(),
+            value_filter: self.value_filter.clone(),
+            frontier: self.frontier.clone(),
+            snapshot: self
+                .value_filter
+                .as_ref()
+                .is_some_and(|value_filter| value_filter.requires_snapshot())
+                .then(|| Arc::new(self.get_snapshot())),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -647,9 +662,6 @@ where
     /// Allows us to wait for the background worker to become idle.
     idle: Arc<Condvar>,
 
-    /// Maximum batch size in records for level 0 merges.
-    max_level0_batch_size_records: usize,
-
     /// The background mergers.
     merge_workers: Arc<MergeWorkers<B>>,
 }
@@ -668,29 +680,17 @@ where
         let no_backpressure = Arc::new(Notify::new());
         let state = Arc::new(Mutex::new(SharedState::new(factories, name)));
 
-        let max_level0_batch_size_records = max_level0_batch_size_records() as usize;
-        assert!(
-            max_level0_batch_size_records > 0,
-            "max_level0_batch_size_records must be greater than 0"
-        );
-        assert!(
-            max_level0_batch_size_records <= 99_999,
-            "max_level0_batch_size_records must be less than or equal to 99_999"
-        );
-
         Self {
             merge_workers: Arc::new(MergeWorkers::new(
                 state.clone(),
                 idle.clone(),
                 no_backpressure.clone(),
                 runtime,
-                max_level0_batch_size_records,
                 worker_index,
             )),
             state,
             idle,
             no_backpressure,
-            max_level0_batch_size_records,
         }
     }
 
@@ -712,7 +712,7 @@ where
         merge: bool,
     ) -> std::sync::MutexGuard<'_, SharedState<B>> {
         debug_assert!(!batch.is_empty());
-        let level = Spine::<B>::size_to_level(&batch, self.max_level0_batch_size_records, merge);
+        let level = Spine::<B>::size_to_level(&batch, merge);
         self.merge_workers.start(level);
 
         let mut state = self.state.lock().unwrap();
@@ -817,8 +817,7 @@ where
     /// [Self::pause] or [Self::pause_new_merges] returned.
     fn resume(&self, batches: impl IntoIterator<Item = Arc<B>>) {
         self.add_batches(batches.into_iter().map(|batch| {
-            let level =
-                Spine::<B>::size_to_level(&batch, self.max_level0_batch_size_records, false);
+            let level = Spine::<B>::size_to_level(&batch, false);
             (batch, level)
         }));
     }
@@ -1086,6 +1085,27 @@ where
         let mut state = self.state.lock().unwrap();
         state.initiate_compaction();
     }
+
+    fn start_merge_level0(&self) -> Option<(Merge<B>, Vec<Arc<B>>)> {
+        let mut state = self.state.lock().unwrap();
+        let batches = state.slots[0].try_start_merge(0)?;
+        let merge_params = state.merge_params();
+        drop(state);
+
+        let merger_type = Runtime::with_dev_tweaks(|tweaks| tweaks.merger());
+        Some((
+            Merge::new(merger_type, batches.clone(), merge_params),
+            batches,
+        ))
+    }
+
+    fn finish_merge_level0(&self, batches: Vec<Arc<B>>, finished_merge: FinishedMerge<B>) {
+        //self.worker_state.report_slot0_merge(merger.fuel);
+        self.state
+            .lock()
+            .unwrap()
+            .merge_complete(0, batches, finished_merge);
+    }
 }
 
 impl<B> Drop for AsyncMerger<B>
@@ -1123,7 +1143,6 @@ where
     idle: Arc<Condvar>,
     no_backpressure: Arc<Notify>,
     runtime: Runtime,
-    max_level0_batch_size_records: usize,
     worker_index: usize,
 }
 
@@ -1136,7 +1155,6 @@ where
         idle: Arc<Condvar>,
         no_backpressure: Arc<Notify>,
         runtime: Runtime,
-        max_level0_batch_size_records: usize,
         worker_index: usize,
     ) -> Self {
         Self {
@@ -1146,7 +1164,6 @@ where
             idle,
             no_backpressure,
             runtime,
-            max_level0_batch_size_records,
             worker_index,
         }
     }
@@ -1238,7 +1255,10 @@ where
             // Get all the state we need to create the merger, then drop the
             // lock.
             let mut state = self.state.lock().unwrap();
-            let batches = if let Some(batches) = state.slots[level].try_start_merge(level) {
+            let batches = if state.slots[level].merging_batches.is_none()
+                && let Some(batches) = state.slots[level].try_start_merge(level)
+            {
+                state.slots[level].merging_batches = Some(batches.clone());
                 batches
             } else {
                 // There is nothing to merge at the current level - initiate compaction at the next level.
@@ -1256,28 +1276,14 @@ where
                 }
                 return false;
             };
-
-            let key_filter = state.key_filter.clone();
-            let value_filter = state.value_filter.clone();
-            let frontier = state.frontier.clone();
-            let snapshot = value_filter
-                .as_ref()
-                .is_some_and(|value_filter| value_filter.requires_snapshot())
-                .then(|| Arc::new(state.get_snapshot()));
+            let merge_params = state.merge_params();
             drop(state);
 
             // Create the merger.
             //
             // Creating the merger might require doing I/O, so it's important
             // not to hold the lock.
-            opt_merger.insert(Merge::new(
-                merger_type,
-                batches,
-                &key_filter,
-                &value_filter,
-                snapshot,
-                frontier,
-            ))
+            opt_merger.insert(Merge::new(merger_type, batches, merge_params))
         };
 
         // Run level-0 merges to completion.  For other levels, we
@@ -1291,23 +1297,19 @@ where
         } else {
             self.worker_state.avg_slot0_merge_fuel()
         };
-        merger.merge(fuel);
+        merger.merge_step(fuel);
         if merger.done {
             if level == 0 {
                 self.worker_state.report_slot0_merge(merger.fuel);
             }
-            let merger = opt_merger.take().unwrap();
-            let new_batch = Arc::new(merger.builder.done());
-            let new_level =
-                Spine::<B>::size_to_level(&new_batch, self.max_level0_batch_size_records, true);
-            self.state.lock().unwrap().merge_complete(
-                level,
-                new_batch,
-                new_level,
-                merger.start,
-                merger.elapsed,
-                merger.n_steps,
-            );
+            let finished_merge = opt_merger.take().unwrap().finish();
+            let new_level = finished_merge.new_level;
+
+            let mut state = self.state.lock().unwrap();
+            let batches = state.slots[level].merging_batches.take().unwrap();
+            state.merge_complete(level, batches, finished_merge);
+            drop(state);
+
             self.start(new_level);
         }
         true
@@ -1345,7 +1347,7 @@ impl WorkerState {
 }
 
 /// A single merge in progress in an [AsyncMerger].
-struct Merge<B>
+pub struct Merge<B>
 where
     B: Batch,
 {
@@ -1374,6 +1376,23 @@ where
     inner: MergeInner<B>,
 }
 
+pub struct FinishedMerge<B> {
+    /// Batch resulting from the merge.
+    new_batch: Arc<B>,
+
+    /// Level for the new batch.
+    new_level: usize,
+
+    /// Creation time.
+    start: Instant,
+
+    /// Time spent running merge steps.
+    elapsed: ElapsedTime,
+
+    /// Number of merge steps executed.
+    n_steps: usize,
+}
+
 enum MergeInner<B>
 where
     B: Batch,
@@ -1382,18 +1401,21 @@ where
     PushMerger(ArcPushMerger<B>),
 }
 
+struct MergeParams<B>
+where
+    B: Batch,
+{
+    key_filter: Option<Filter<B::Key>>,
+    value_filter: Option<GroupFilter<B::Val>>,
+    snapshot: Option<Arc<SpineSnapshot<B>>>,
+    frontier: B::Time,
+}
+
 impl<B> Merge<B>
 where
     B: Batch,
 {
-    fn new(
-        merger_type: MergerType,
-        batches: Vec<Arc<B>>,
-        key_filter: &Option<Filter<B::Key>>,
-        value_filter: &Option<GroupFilter<B::Val>>,
-        snapshot: Option<Arc<SpineSnapshot<B>>>,
-        frontier: B::Time,
-    ) -> Self {
+    fn new(merger_type: MergerType, batches: Vec<Arc<B>>, params: MergeParams<B>) -> Self {
         let factories = batches[0].factories();
         let batch_refs: Vec<&B> = batches.iter().map(|b| b.as_ref()).collect();
         let builder = B::Builder::for_merge(&factories, batch_refs, None);
@@ -1404,18 +1426,22 @@ where
             elapsed: ElapsedTime::default(),
             n_steps: 0,
             done: false,
-            frontier,
+            frontier: params.frontier,
             inner: match merger_type {
                 MergerType::ListMerger => MergeInner::ListMerger(ArcListMerger::new(
                     &factories,
                     batches,
-                    key_filter,
-                    value_filter,
-                    snapshot,
+                    &params.key_filter,
+                    &params.value_filter,
+                    params.snapshot,
                 )),
                 MergerType::PushMerger => {
-                    let mut inner =
-                        ArcPushMerger::new(&factories, batches, key_filter, value_filter);
+                    let mut inner = ArcPushMerger::new(
+                        &factories,
+                        batches,
+                        params.key_filter,
+                        params.value_filter,
+                    );
                     inner.run();
                     MergeInner::PushMerger(inner)
                 }
@@ -1423,7 +1449,7 @@ where
         }
     }
 
-    fn merge(&mut self, mut fuel: isize) -> isize {
+    fn merge_step(&mut self, mut fuel: isize) -> isize {
         debug_assert!(fuel > 0);
         let supplied_fuel = fuel;
         let start = Instant::now();
@@ -1451,6 +1477,23 @@ where
         let consumed_fuel = supplied_fuel - fuel;
         self.fuel += consumed_fuel;
         consumed_fuel
+    }
+
+    fn finish(self) -> FinishedMerge<B> {
+        let new_batch = Arc::new(self.builder.done());
+        let new_level = Spine::<B>::size_to_level(&new_batch, true);
+        FinishedMerge {
+            new_level,
+            new_batch,
+            start: self.start,
+            elapsed: self.elapsed,
+            n_steps: self.n_steps,
+        }
+    }
+
+    pub fn merge_to_completion(mut self) -> FinishedMerge<B> {
+        self.merge_step(isize::MAX);
+        self.finish()
     }
 }
 
@@ -1517,6 +1560,14 @@ impl<B> Spine<B>
 where
     B: Batch,
 {
+    pub fn start_merge_level0(&self) -> Option<(Merge<B>, Vec<Arc<B>>)> {
+        self.merger.start_merge_level0()
+    }
+
+    pub fn finish_merge_level0(&self, batches: Vec<Arc<B>>, finished_merge: FinishedMerge<B>) {
+        self.merger.finish_merge_level0(batches, finished_merge);
+    }
+
     pub fn get_batches(&self) -> Vec<Arc<B>> {
         self.merger.get_batches()
     }
@@ -2137,9 +2188,8 @@ where
     B: Batch,
 {
     /// Given a batch size figure out which level it should reside in.
-    fn size_to_level(batch: &B, max_level0_batch_size_records: usize, merge: bool) -> usize {
+    fn size_to_level(batch: &B, merge: bool) -> usize {
         debug_assert_eq!(MAX_LEVELS, 9);
-        debug_assert!(max_level0_batch_size_records > 0 && max_level0_batch_size_records <= 99_999);
 
         let len = batch.len();
 
@@ -2162,11 +2212,14 @@ where
             len
         };
 
-        if effective_len <= max_level0_batch_size_records {
-            return 0;
-        }
         match effective_len {
-            0..=99_999 => 1,
+            0..=99_999 => {
+                if effective_len <= max_level0_batch_size_records() {
+                    0
+                } else {
+                    1
+                }
+            }
             100_000..=999_999 => 2,
             1_000_000..=9_999_999 => 3,
             10_000_000..=99_999_999 => 4,

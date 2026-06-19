@@ -36,8 +36,8 @@ where
     pub fn new(
         factories: &B::Factories,
         batches: Vec<Arc<B>>,
-        key_filter: &Option<Filter<B::Key>>,
-        value_filter: &Option<GroupFilter<B::Val>>,
+        key_filter: Option<Filter<B::Key>>,
+        value_filter: Option<GroupFilter<B::Val>>,
     ) -> Self {
         Self(
             ArcPushMergerInnerBuilder {
@@ -46,8 +46,8 @@ where
                     PushMerger::new(
                         factories,
                         batches.iter().map(|b| b.push_cursor()).collect(),
-                        key_filter.clone(),
-                        value_filter.clone(),
+                        key_filter,
+                        value_filter,
                     )
                 },
             }

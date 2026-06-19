@@ -343,6 +343,30 @@ where
         self.rxq(receiver).receive()
     }
 
+    fn merge_level0(&self) {
+        let receiver = Runtime::worker_index();
+
+        // This is assigned outside of the `if let` so that the lock doesn't get
+        // held inside the `if let` body:
+        let merge_batches = self
+            .rxq(receiver)
+            .spines
+            .front()
+            .unwrap()
+            .spine
+            .start_merge_level0();
+
+        if let Some((merge, batches)) = merge_batches {
+            let finished_merge = merge.merge_to_completion();
+            self.rxq(receiver)
+                .spines
+                .front()
+                .unwrap()
+                .spine
+                .finish_merge_level0(batches, finished_merge);
+        }
+    }
+
     fn set_name(&self, global_id: &GlobalNodeId) {
         self.name.init(global_id);
         for rxq in &self.rxq {
@@ -700,6 +724,7 @@ where
     B: Batch<Time = ()>,
 {
     async fn eval(&mut self) -> Option<Spine<B>> {
+        self.exchange.merge_level0();
         let output = self.exchange.receive();
         if let Some(spine) = &output {
             self.output_batch_stats.add_batch(spine.len());
