@@ -414,11 +414,20 @@ pub fn adaptive_joins_enabled() -> bool {
     Runtime::with_dev_tweaks(|d| d.adaptive_joins())
 }
 
-pub fn max_level0_batch_size_records() -> u16 {
-    Runtime::with_dev_tweaks(|d| {
+pub fn max_level0_batch_size_records() -> usize {
+    let max_level0_batch_size_records = Runtime::with_dev_tweaks(|d| {
         d.max_level0_batch_size_records
             .unwrap_or(MAX_LEVEL0_BATCH_SIZE_RECORDS)
-    })
+    }) as usize;
+    assert!(
+        max_level0_batch_size_records > 0,
+        "max_level0_batch_size_records must be greater than 0"
+    );
+    assert!(
+        max_level0_batch_size_records <= 99_999,
+        "max_level0_batch_size_records must be less than or equal to 99_999"
+    );
+    max_level0_batch_size_records
 }
 
 pub fn negative_weight_multiplier() -> u16 {
