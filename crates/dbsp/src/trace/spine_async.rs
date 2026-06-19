@@ -9,7 +9,7 @@
 use crate::{
     Error, NumEntries, Runtime,
     circuit::{
-        max_level0_batch_size_records,
+        ElapsedTime, ThreadCpuTime, max_level0_batch_size_records,
         metadata::{
             BLOOM_FILTER_BITS_PER_KEY, BLOOM_FILTER_HIT_RATE_PERCENT, BLOOM_FILTER_HITS_COUNT,
             BLOOM_FILTER_MISSES_COUNT, BLOOM_FILTER_SIZE_BYTES, COMPACTION_STATE, COMPLETED_MERGES,
@@ -208,8 +208,8 @@ where
     /// Invariant: the batches must be non-empty.
     loose_batches: VecDeque<Arc<B>>,
 
-    /// Amount of time spent merging batches at this level.
-    elapsed: Duration,
+    /// Time spent merging batches at this level.
+    elapsed: ElapsedTime,
 
     /// Number of completed merges at this level.
     n_merged: usize,
@@ -237,7 +237,7 @@ where
         Self {
             merging_batches: None,
             loose_batches: VecDeque::new(),
-            elapsed: Duration::ZERO,
+            elapsed: ElapsedTime::default(),
             n_merged: 0,
             n_merged_batches: 0,
             n_steps: 0,
@@ -447,7 +447,7 @@ where
         new_batch: Arc<B>,
         new_level: usize,
         start: Instant,
-        elapsed: Duration,
+        elapsed: ElapsedTime,
         n_steps: usize,
     ) {
         let slot = &mut self.slots[level];
@@ -468,11 +468,13 @@ where
             .with_start(start)
             .with_tooltip(|| {
                 format!(
-                    "{} in worker {} merged {} batches ({pre_len} -> {post_len}) in {n_steps} steps using {:.1} ms CPU",
+                    "{} in worker {} merged {} batches ({pre_len} -> {post_len}) in {} steps using {:.1} ms real time and {:.1} ms CPU time",
                     &self.name,
                     Runtime::worker_index(),
                     batches.len(),
-                    elapsed.as_secs_f64() * 1000.0
+                    n_steps,
+                    elapsed.real.as_secs_f64() * 1000.0,
+                    elapsed.cpu.as_secs_f64() * 1000.0
                 )
             })
             .record();
@@ -891,7 +893,11 @@ where
                         (Cow::Borrowed("steps"), MetaItem::Count(slot.n_steps)),
                         (
                             Cow::Borrowed("avg_step_time"),
-                            MetaItem::Duration(slot.elapsed / slot.n_steps as u32),
+                            MetaItem::Duration(slot.elapsed.real / slot.n_steps as u32),
+                        ),
+                        (
+                            Cow::Borrowed("avg_step_cpu_time"),
+                            MetaItem::Duration(slot.elapsed.cpu / slot.n_steps as u32),
                         ),
                     ])),
                 )]);
@@ -1356,7 +1362,7 @@ where
     start: Instant,
 
     /// Time spent running merge steps.
-    elapsed: Duration,
+    elapsed: ElapsedTime,
 
     /// Number of merge steps executed.
     n_steps: usize,
@@ -1395,7 +1401,7 @@ where
             builder,
             fuel: 0,
             start: Instant::now(),
-            elapsed: Duration::ZERO,
+            elapsed: ElapsedTime::default(),
             n_steps: 0,
             done: false,
             frontier,
@@ -1421,6 +1427,7 @@ where
         debug_assert!(fuel > 0);
         let supplied_fuel = fuel;
         let start = Instant::now();
+        let start_cpu = ThreadCpuTime::now();
         match &mut self.inner {
             MergeInner::ListMerger(merger) => {
                 merger.work(&mut self.builder, &self.frontier, &mut fuel);
@@ -1436,7 +1443,10 @@ where
                 }
             }
         };
-        self.elapsed += start.elapsed();
+        self.elapsed += ElapsedTime {
+            real: start.elapsed(),
+            cpu: start_cpu.elapsed(),
+        };
         self.n_steps += 1;
         let consumed_fuel = supplied_fuel - fuel;
         self.fuel += consumed_fuel;

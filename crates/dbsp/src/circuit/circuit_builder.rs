@@ -65,6 +65,7 @@ use nix::{
 };
 use pin_project_lite::pin_project;
 use serde::{Deserialize, Serialize, Serializer, de::DeserializeOwned};
+use size_of::SizeOf;
 use std::{
     any::{Any, TypeId, type_name_of_val},
     borrow::Cow,
@@ -75,7 +76,7 @@ use std::{
     io::ErrorKind,
     marker::PhantomData,
     mem::{take, transmute},
-    ops::Deref,
+    ops::{AddAssign, Deref},
     panic::Location,
     pin::Pin,
     rc::Rc,
@@ -7852,13 +7853,24 @@ impl CircuitHandle {
 }
 
 /// Real time and CPU time.
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, SizeOf)]
 pub struct ElapsedTime {
     /// Real time running a task.
     pub real: Duration,
 
     /// CPU time running a task.
+    ///
+    /// In the ordinary course, if `cpu` is much less than `real`, then it
+    /// indicates that the task blocked its thread, e.g. for synchronous I/O,
+    /// without yielding to the tokio scheduler.
     pub cpu: Duration,
+}
+
+impl AddAssign for ElapsedTime {
+    fn add_assign(&mut self, rhs: Self) {
+        self.real += rhs.real;
+        self.cpu += rhs.cpu;
+    }
 }
 
 pin_project! {
@@ -7892,6 +7904,30 @@ impl<T> Timed<T> {
     }
 }
 
+/// Amount of time elapsed running a thread.
+pub struct ThreadCpuTime(pub Duration);
+
+impl ThreadCpuTime {
+    /// Returns the current time elapsed running the current thread.
+    pub fn now() -> Self {
+        let nanos = clock_gettime(ClockId::CLOCK_THREAD_CPUTIME_ID)
+            .unwrap()
+            .num_nanoseconds();
+        Self(Duration::from_nanos(nanos.max(0).cast_unsigned()))
+    }
+
+    /// Returns the time elapsed running the current thread since this
+    /// `ThreadCpuTime`.
+    ///
+    /// This only makes sense if this `ThreadCpuTime` was for the currently
+    /// running thread.
+    ///
+    /// Returns zero if the current time is earlier than self.
+    pub fn elapsed(&self) -> Duration {
+        Self::now().0.saturating_sub(self.0)
+    }
+}
+
 impl<T> Future for Timed<T>
 where
     T: Future,
@@ -7901,15 +7937,10 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let start = Instant::now();
-        let start_cputime = clock_gettime(ClockId::CLOCK_THREAD_CPUTIME_ID)
-            .unwrap()
-            .num_nanoseconds();
+        let start_cputime = ThreadCpuTime::now();
         let ret = this.task.poll(cx);
         this.elapsed.real += start.elapsed();
-        let end_cputime = clock_gettime(ClockId::CLOCK_THREAD_CPUTIME_ID)
-            .unwrap()
-            .num_nanoseconds();
-        this.elapsed.cpu += Duration::from_nanos((end_cputime - start_cputime).max(0) as u64);
+        this.elapsed.cpu += start_cputime.elapsed();
         ret.map(|value| (value, take(&mut *this.elapsed)))
     }
 }
