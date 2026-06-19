@@ -528,6 +528,20 @@ pub struct SyncConfig {
     /// Default: 100M
     pub multi_thread_cutoff: Option<String>,
 
+    /// When true, checkpoint downloads use the maximum resources available on
+    /// the host: `transfers` and `checkers` are scaled to the number of CPUs,
+    /// and the download buffer is allowed to grow up to most of the available
+    /// memory. This maximizes download throughput at the cost of higher CPU and
+    /// memory usage during a pull.
+    ///
+    /// When false, downloads use the values configured via `transfers`,
+    /// `checkers`, and the rclone defaults instead.
+    ///
+    /// Default: true
+    #[schema(default = default_optimize_download_resources)]
+    #[serde(default = "default_optimize_download_resources")]
+    pub optimize_download_resources: bool,
+
     /// The number of chunks of the same file that are uploaded for multipart uploads.
     /// Default: 10
     pub upload_concurrency: Option<u8>,
@@ -604,6 +618,10 @@ fn default_retention_min_count() -> u32 {
 
 fn default_retention_min_age() -> u32 {
     30
+}
+
+fn default_optimize_download_resources() -> bool {
+    true
 }
 
 impl SyncConfig {
