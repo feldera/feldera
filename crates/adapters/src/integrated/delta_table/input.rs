@@ -7,7 +7,7 @@ use crate::util::JobQueue;
 use crate::{ControllerError, InputConsumer, InputReader, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use arrow::array::BooleanArray;
-use arrow::datatypes::Schema as ArrowSchema;
+use arrow::datatypes::{FieldRef, Schema as ArrowSchema, SchemaRef};
 use chrono::{DateTime, Utc};
 use datafusion::catalog::TableProvider;
 use datafusion::common::DataFusionError;
@@ -19,10 +19,11 @@ use datafusion::datasource::listing::{
 use datafusion::physical_plan::{PhysicalExpr, displayable};
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
 use dbsp::circuit::tokio::TOKIO;
+use delta_kernel::schema::{ColumnMetadataKey, MetadataValue};
 use deltalake::datafusion::dataframe::DataFrame;
 use deltalake::datafusion::execution::context::SQLOptions;
 use deltalake::datafusion::logical_expr::SortExpr;
-use deltalake::datafusion::prelude::SessionContext;
+use deltalake::datafusion::prelude::{Expr, SessionContext, col};
 use deltalake::datafusion::sql::sqlparser::dialect::GenericDialect;
 use deltalake::datafusion::sql::sqlparser::parser::Parser;
 use deltalake::datafusion::sql::sqlparser::tokenizer::Token;
@@ -940,6 +941,21 @@ struct DeltaTableInputEndpointInner {
     /// even when marked unused, so the expressions can resolve them. Derived
     /// once from the immutable config.
     config_referenced_columns: OnceLock<ColumnNameSet>,
+
+    /// Table handle whose snapshot supplies the schema used to read the table's
+    /// data files. Set to the open table once it is loaded, so it is always
+    /// present before any data is read. The version it reflects only ever moves
+    /// forward (see [`schema_snapshot`](Self::schema_snapshot)):
+    ///
+    /// * Snapshot mode leaves it at the opened version.
+    /// * Following pins it to the highest version it will ingest (the latest
+    ///   committed version, or `end_version` when that is lower), so replayed
+    ///   history resolves against that window's final schema: a renamed column
+    ///   keeps its physical `col-<uuid>` name and still matches, an added column
+    ///   null-fills, a dropped column is ignored.
+    /// * A commit that changes the schema beyond that version advances it, so a
+    ///   column added to the table while we follow is picked up.
+    schema_table: Mutex<Option<Arc<DeltaTable>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -989,6 +1005,7 @@ impl DeltaTableInputEndpointInner {
             catchup_follow_state: Mutex::new(CatchupFollowState::default()),
             used_sql_columns: OnceLock::new(),
             config_referenced_columns: OnceLock::new(),
+            schema_table: Mutex::new(None),
         }
     }
 
@@ -1206,9 +1223,9 @@ impl DeltaTableInputEndpointInner {
     ///
     /// Delta schemas carry no case-sensitivity information, so column names are
     /// matched both as-is and lowercased (see [`ColumnNameSet`]).
-    fn used_columns(&self, table: &DeltaTable) -> Vec<String> {
+    fn used_columns(&self) -> Vec<String> {
         let used = self.used_sql_columns();
-        table
+        self.schema_snapshot()
             .snapshot()
             .expect("Delta table snapshot must be loaded before computing used columns")
             .schema()
@@ -1218,8 +1235,8 @@ impl DeltaTableInputEndpointInner {
             .collect()
     }
 
-    fn used_column_list(&self, table: &DeltaTable) -> String {
-        let columns = self.used_columns(table);
+    fn used_column_list(&self) -> String {
+        let columns = self.used_columns();
 
         columns
             .iter()
@@ -1344,7 +1361,7 @@ impl DeltaTableInputEndpointInner {
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) -> AnyResult<usize> {
-        let column_names = self.used_column_list(table);
+        let column_names = self.used_column_list();
 
         let mut snapshot_query = format!("select {column_names} from snapshot");
         if let Some(filter) = self.effective_snapshot_filter() {
@@ -1514,7 +1531,7 @@ impl DeltaTableInputEndpointInner {
             )
         })?;
 
-        let columns = self.used_columns(table);
+        let columns = self.used_columns();
         let column_names = columns
             .iter()
             .map(quote_sql_identifier)
@@ -1660,6 +1677,10 @@ impl DeltaTableInputEndpointInner {
 
         let table = Arc::new(table);
 
+        // The opened table is the schema source until following pins it to the
+        // latest version; this makes it available to the snapshot reads below.
+        *self.schema_table.lock().unwrap() = Some(Arc::clone(&table));
+
         if let Err(e) = self.prepare_snapshot_query(&table).await {
             let _ = init_status_sender.send(Err(e)).await;
             return;
@@ -1732,6 +1753,15 @@ impl DeltaTableInputEndpointInner {
 
         // Start following the table if required by the configuration.
         if self.config.follow() {
+            // Pin the schema used to read data files to the highest version we
+            // will ingest, so replayed history resolves against the window's
+            // final schema; later commits that change it advance it forward
+            // (`advance_schema`).
+            if let Err(e) = self.pin_follow_schema(&table).await {
+                self.consumer.error(true, e, None);
+                return;
+            }
+
             // Log the appropriate message based on whether we just completed a snapshot
             if self.config.snapshot() && snapshot_incomplete {
                 // We just completed reading a snapshot, now switching to follow mode
@@ -2695,6 +2725,10 @@ impl DeltaTableInputEndpointInner {
             );
         }
 
+        // Adopt a schema change carried by this commit before reading its data,
+        // so the files are interpreted against the right schema.
+        self.advance_schema(new_version, actions).await?;
+
         // Use the time when we _started_ reading transaction data as the ingestion timestamp.
         let timestamp = Utc::now();
 
@@ -2712,7 +2746,7 @@ impl DeltaTableInputEndpointInner {
             // Compute the projected read set once for the whole transaction; each
             // `process_action` borrows the `&str` view rather than re-collecting it
             // per Add/Remove. `used_column_names` owns the strings the view points at.
-            let used_column_names = self.used_columns(table);
+            let used_column_names = self.used_columns();
             let used_columns: Vec<&str> = used_column_names.iter().map(String::as_str).collect();
 
             // TODO: consider processing all Add actions and all Remove actions in one
@@ -2891,21 +2925,173 @@ impl DeltaTableInputEndpointInner {
         Ok(())
     }
 
-    /// Create a table provider from a list of Parquet files.
-    async fn create_parquet_table(
-        &self,
-        table: &DeltaTable,
-        files: Vec<String>,
-        description: &str,
-    ) -> AnyResult<ListingTable> {
-        // `DeltaTable::snapshot()` returns the table state; calling `.snapshot()`
-        // on that state hands back the eager snapshot, which exposes the Arrow
-        // schema.
-        let schema = table
+    /// The table handle whose snapshot defines the current schema (see the
+    /// [`schema_table`](Self#structfield.schema_table) field). Set before any
+    /// data is read; the `expect` guards against a future caller reading the
+    /// schema too early.
+    fn schema_snapshot(&self) -> Arc<DeltaTable> {
+        Arc::clone(
+            self.schema_table
+                .lock()
+                .unwrap()
+                .as_ref()
+                .expect("schema table must be set before reading the table schema"),
+        )
+    }
+
+    /// Reload the table at `version` and adopt it as the schema source, unless
+    /// the current schema is already at `version`. Mirrors
+    /// [`open_table`](Self::open_table)'s storage configuration without its
+    /// resume/version-selection logic.
+    async fn pin_schema_to_version(&self, version: u64) -> AnyResult<()> {
+        if self.schema_snapshot().version() == Some(version) {
+            return Ok(());
+        }
+        let url = ensure_table_uri(&self.config.uri)
+            .map_err(|e| anyhow!("invalid Delta table uri '{}': {e}", &self.config.uri))?;
+        let table = self
+            .retry(
+                &format!("error loading Delta table schema at version {version}"),
+                Some("delta-schema-load"),
+                || async {
+                    // DeltaTableBuilder isn't Clone, so build it anew on each retry.
+                    DeltaTableBuilder::from_url(url.clone())
+                        .map_err(|e| anyhow!("invalid Delta table URL '{url}': {e}"))?
+                        .with_storage_options(self.config.object_store_config.clone())
+                        .with_io_runtime(IORuntime::RT(TOKIO_DEDICATED_IO.handle().clone()))
+                        .with_version(version)
+                        .load()
+                        .await
+                        .map_err(|e| anyhow!("{e}"))
+                },
+            )
+            .await?;
+        *self.schema_table.lock().unwrap() = Some(Arc::new(table));
+        Ok(())
+    }
+
+    /// Pin the schema source to the highest version we will ingest (the latest
+    /// committed version, or `end_version` when that is lower) before the follow
+    /// loop starts. The whole window then resolves against its own final schema,
+    /// not a later schema from the tail we never ingest.
+    async fn pin_follow_schema(&self, table: &Arc<DeltaTable>) -> AnyResult<()> {
+        let target = self.catchup_target_version(Arc::clone(table)).await? as u64;
+        self.pin_schema_to_version(target).await
+    }
+
+    /// Advance the schema source when a commit carries a schema change.
+    ///
+    /// Moves forward only. A `metaData` action at or before the current schema
+    /// version is replay, already covered by the schema pinned at startup, so we
+    /// ignore it. A change beyond it is adopted, picking up a column added to the
+    /// table while we follow.
+    async fn advance_schema(&self, new_version: i64, actions: &[Action]) -> AnyResult<()> {
+        let changes_schema = actions.iter().any(|a| matches!(a, Action::Metadata(_)));
+        let current_version = self.schema_snapshot().version();
+        if !changes_schema || current_version.is_some_and(|v| new_version <= v as i64) {
+            return Ok(());
+        }
+        self.pin_schema_to_version(new_version as u64).await
+    }
+
+    /// Logical-to-physical column-name pairs under Delta column mapping.
+    ///
+    /// With `delta.columnMapping.mode = 'name'` or `'id'` each column lives on
+    /// disk under an opaque physical name (`col-<uuid>`, from the field's
+    /// `physicalName` metadata) while the SQL schema and connector expressions
+    /// use logical names. Returns one pair per renamed field; empty when mapping
+    /// is off, so callers skip remapping.
+    fn column_mapping(&self) -> AnyResult<Vec<(String, String)>> {
+        let schema_table = self.schema_snapshot();
+        let state = schema_table
+            .snapshot()
+            .map_err(|e| anyhow!("error accessing Delta table snapshot: {e}"))?;
+        Ok(state
+            .schema()
+            .fields()
+            .filter_map(|field| {
+                match field.get_config_value(&ColumnMetadataKey::ColumnMappingPhysicalName) {
+                    Some(MetadataValue::String(physical)) if physical != field.name() => {
+                        Some((field.name().to_string(), physical.clone()))
+                    }
+                    _ => None,
+                }
+            })
+            .collect())
+    }
+
+    /// The Arrow schema to force on the raw data files, named as they appear on
+    /// disk: the table's logical schema restricted to the columns `keep` accepts
+    /// (in schema order, so unions with another read side line up), with each
+    /// column-mapped field renamed to its physical (`col-<uuid>`) name so
+    /// DataFusion's by-name matching finds them. [`project_physical_to_logical`]
+    /// renames them back. Equals the kept logical schema when mapping is off.
+    ///
+    /// Used by both follow/CDC read paths: [`create_parquet_table`] (keeps every
+    /// column) and [`masked_file_provider`] (keeps the columns it reads).
+    fn physical_read_schema(&self, keep: impl Fn(&str) -> bool) -> AnyResult<SchemaRef> {
+        let schema_table = self.schema_snapshot();
+        let logical = schema_table
             .snapshot()
             .map_err(|e| anyhow!("error accessing Delta table snapshot: {e}"))?
             .snapshot()
             .arrow_schema();
+        let pairs = self.column_mapping()?;
+        let to_physical: HashMap<&str, &str> = pairs
+            .iter()
+            .map(|(l, p)| (l.as_str(), p.as_str()))
+            .collect();
+        let fields: Vec<FieldRef> = logical
+            .fields()
+            .iter()
+            .filter(|f| keep(f.name()))
+            .map(|f| match to_physical.get(f.name().as_str()) {
+                Some(physical) => Arc::new(f.as_ref().clone().with_name(*physical)),
+                None => Arc::clone(f),
+            })
+            .collect();
+        Ok(Arc::new(
+            ArrowSchema::new(fields).with_metadata(logical.metadata().clone()),
+        ))
+    }
+
+    /// Rename a data file's physical columns back to their logical names.
+    ///
+    /// Follow/CDC reads force [`physical_read_schema`](Self::physical_read_schema),
+    /// so a column-mapped frame arrives with physical (`col-<uuid>`) names; the rest
+    /// of the pipeline expects logical names. Unmapped columns (already logical,
+    /// or Delta metadata like `__feldera_op`) pass through. A no-op when mapping
+    /// is off.
+    fn project_physical_to_logical(&self, df: DataFrame) -> AnyResult<DataFrame> {
+        let pairs = self.column_mapping()?;
+        if pairs.is_empty() {
+            return Ok(df);
+        }
+        let to_logical: HashMap<&str, &str> = pairs
+            .iter()
+            .map(|(l, p)| (p.as_str(), l.as_str()))
+            .collect();
+        let exprs: Vec<Expr> = df
+            .schema()
+            .fields()
+            .iter()
+            .map(|f| match to_logical.get(f.name().as_str()) {
+                Some(logical) => col(f.name()).alias(*logical),
+                None => col(f.name()),
+            })
+            .collect();
+        df.select(exprs)
+            .map_err(|e| anyhow!("error remapping column-mapped names: {e}"))
+    }
+
+    async fn create_parquet_table(
+        &self,
+        files: Vec<String>,
+        description: &str,
+    ) -> AnyResult<ListingTable> {
+        // Force the on-disk (physical) schema so the reader matches each file's
+        // columns; `project_physical_to_logical` renames them back afterwards.
+        let schema = self.physical_read_schema(|_| true)?;
 
         let mut urls = Vec::with_capacity(files.len());
         for file in files.iter() {
@@ -2955,25 +3141,9 @@ impl DeltaTableInputEndpointInner {
             )
             .await?;
 
-        let snapshot_schema = table
-            .snapshot()
-            .map_err(|e| anyhow!("error accessing Delta table snapshot for {description}: {e}"))?
-            .snapshot()
-            .arrow_schema();
-
-        // Restrict the schema to the kept columns, preserving field order so
-        // unions with the unmasked side line up.
-        let fields: Vec<_> = snapshot_schema
-            .fields()
-            .iter()
-            .filter(|f| keep_column(f.name()))
-            .cloned()
-            .collect();
-        let logical_schema = if fields.len() == snapshot_schema.fields().len() {
-            snapshot_schema
-        } else {
-            Arc::new(ArrowSchema::new(fields))
-        };
+        // The provider declares the kept columns under their physical names so
+        // it lines up with the unmasked side; the caller renames them back.
+        let read_schema = self.physical_read_schema(keep_column)?;
 
         // `Add.path` is URL-encoded per the Delta spec; decode it into a
         // real object-store key.
@@ -2984,7 +3154,7 @@ impl DeltaTableInputEndpointInner {
             table.log_store().object_store(None),
             file_path,
             bitmap,
-            logical_schema,
+            read_schema,
         )
         .await
     }
@@ -3030,11 +3200,11 @@ impl DeltaTableInputEndpointInner {
                 .iter()
                 .map(|p| format!("{}{}", root_url.as_str(), p))
                 .collect();
-            let listing_table =
-                Arc::new(self.create_parquet_table(table, files, description).await?);
+            let listing_table = Arc::new(self.create_parquet_table(files, description).await?);
             let df = self.datafusion.read_table(listing_table).map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading Parquet files: {e}")
             })?;
+            let df = self.project_physical_to_logical(df)?;
             // Drop unused columns when `skip_unused_columns` is set, so
             // DataFusion never reads them off disk.
             dfs.push(self.project_cdc_columns(df).map_err(|e| {
@@ -3055,9 +3225,10 @@ impl DeltaTableInputEndpointInner {
                     description,
                 )
                 .await?;
-            dfs.push(self.datafusion.read_table(provider).map_err(|e| {
+            let df = self.datafusion.read_table(provider).map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading masked file '{path}': {e}")
-            })?);
+            })?;
+            dfs.push(self.project_physical_to_logical(df)?);
         }
 
         let mut dfs = dfs.into_iter();
@@ -3115,12 +3286,11 @@ impl DeltaTableInputEndpointInner {
         }
     }
 
-    // NOTE: Column projection (follow mode here, CDC mode in `process_cdc_transaction`) projects
-    // against the startup snapshot schema, which `create_parquet_table` forces onto every Parquet
-    // file we read. This assumes a stable schema across the log versions we follow. DataFusion's
-    // schema adapter handles additive evolution (new columns ignored, missing columns read as NULL);
-    // a renamed/dropped column also reads as NULL, and an uncastable type change errors at read time.
-    // Real per-version evolution would require reloading the table and re-deriving the column set.
+    // NOTE: Column projection (follow here, CDC in `process_cdc_transaction`) runs against the
+    // schema in `schema_table`, which `create_parquet_table` forces onto every Parquet file we read
+    // (see the field's docs for how that schema tracks evolution). Column-mapped physical names are
+    // stable across a rename, so it reads every followed version's files: DataFusion's schema adapter
+    // null-fills added columns and ignores dropped ones; an uncastable type change errors at read time.
     #[allow(clippy::too_many_arguments)]
     async fn add_with_polarity(
         &self,
@@ -3155,21 +3325,20 @@ impl DeltaTableInputEndpointInner {
                 // don't use `object_store_url()` here.
                 let full_path = format!("{}{}", table.log_store().root_url().as_str(), path);
                 Arc::new(
-                    self.create_parquet_table(table, vec![full_path], &description)
+                    self.create_parquet_table(vec![full_path], &description)
                         .await?,
                 )
             };
 
-        let df = self
-            .datafusion
-            .read_table(provider)
-            .map_err(|e| {
-                anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading Parquet file: {e}")
-            })?
-            .select_columns(used_columns)
-            .map_err(|e| {
-                anyhow!("internal error processing {description}; {REPORT_ERROR}; error selecting columns: {e}")
-            })?;
+        let df = self.datafusion.read_table(provider).map_err(|e| {
+            anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading Parquet file: {e}")
+        })?;
+        // Translate column-mapped physical names back to logical before any
+        // logical-name projection or filter.
+        let df = self.project_physical_to_logical(df)?;
+        let df = df.select_columns(used_columns).map_err(|e| {
+            anyhow!("internal error processing {description}; {REPORT_ERROR}; error selecting columns: {e}")
+        })?;
 
         let df = if let Some(filter) = &self.config.filter {
             let expr = df
