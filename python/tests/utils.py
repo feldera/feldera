@@ -310,6 +310,7 @@ def ensure_delta_spark_fixture(
     *,
     delta_spark_spec: str = "delta-spark>=4.2,<5",
     is_present: Callable[[DeltaTestLocation], bool] | None = None,
+    max_attempts: int = 3,
 ) -> None:
     """Ensure a PySpark-authored Delta fixture exists at ``loc`` (cached).
 
@@ -336,6 +337,11 @@ def ensure_delta_spark_fixture(
         primitives; ``None`` would become the literal string ``"None"``.
     :param is_present: Predicate deciding whether the fixture already exists;
         also re-checked after upload to catch partial uploads.
+    :param max_attempts: How many times to run the builder before giving up.
+        Spark resolves the delta-spark dependency tree from Maven Central on
+        this path; that download is prone to transient failures (0-byte
+        artifacts, half-written Ivy cache files, gateway timeouts) that clear on
+        a fresh attempt, so retry rather than fail the test on infra flakiness.
     """
     present = (
         is_present if is_present is not None else DeltaTestLocation.delta_log_exists
@@ -349,25 +355,39 @@ def ensure_delta_spark_fixture(
             f"(builder runs via `uv run --with {delta_spark_spec}`)."
         )
 
-    staging = pathlib.Path(tempfile.mkdtemp(prefix="feldera_delta_fixture_"))
-    try:
-        subprocess.run(
-            [
-                "uv",
-                "run",
-                "--no-project",
-                "--with",
-                delta_spark_spec,
-                "python",
-                str(builder_script),
-                str(staging),
-                *(str(arg) for arg in builder_args),
-            ],
-            check=True,
-        )
-        loc._place_tree(staging)
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
+    for attempt in range(1, max_attempts + 1):
+        # Fresh staging each attempt: a builder that died mid-write must not
+        # leak a partial tree into the next attempt or the upload.
+        staging = pathlib.Path(tempfile.mkdtemp(prefix="feldera_delta_fixture_"))
+        try:
+            subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "--no-project",
+                    "--with",
+                    delta_spark_spec,
+                    "python",
+                    str(builder_script),
+                    str(staging),
+                    *(str(arg) for arg in builder_args),
+                ],
+                check=True,
+            )
+            loc._place_tree(staging)
+            break
+        except subprocess.CalledProcessError:
+            if attempt == max_attempts:
+                raise
+            logging.warning(
+                "PySpark Delta fixture build failed (attempt %d/%d); retrying. "
+                "Usually a transient Maven/Ivy download failure.",
+                attempt,
+                max_attempts,
+            )
+            time.sleep(5 * attempt)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
 
     if not present(loc):
         raise RuntimeError(
