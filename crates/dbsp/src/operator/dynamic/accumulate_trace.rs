@@ -1107,6 +1107,12 @@ where
             trace.initiate_compaction()
         }
     }
+
+    fn is_compaction_complete(&self) -> bool {
+        self.trace
+            .as_ref()
+            .is_none_or(|t| t.is_compaction_complete())
+    }
 }
 
 impl<C, B, T> StrictOperator<T> for AccumulateZ1Trace<C, B, T>

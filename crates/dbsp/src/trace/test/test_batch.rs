@@ -1407,6 +1407,10 @@ where
     }
 
     fn initiate_compaction(&self) {}
+
+    fn is_compaction_complete(&self) -> bool {
+        true
+    }
 }
 
 /// Test random sampling methods.

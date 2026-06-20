@@ -312,6 +312,12 @@ pub trait Operator: 'static {
     ///
     /// Only defined for operators that support compaction. No-op for all other operators.
     fn start_compaction(&mut self) {}
+
+    /// Returns `true` when the operator's background compaction has fully
+    /// converged.  Operators without a trace always return `true`.
+    fn is_compaction_complete(&self) -> bool {
+        true
+    }
 }
 
 /// A source operator that injects data from the outside world or from the

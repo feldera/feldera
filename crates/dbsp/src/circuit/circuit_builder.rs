@@ -1102,6 +1102,9 @@ pub trait Node: Any {
     /// Call [`Operator::start_compaction`](super::operator_traits::Operator::start_compaction) on the operator this node encapsulates.
     fn start_compaction(&mut self);
 
+    /// Call [`Operator::is_compaction_complete`](super::operator_traits::Operator::is_compaction_complete) on the operator this node encapsulates.
+    fn is_compaction_complete(&self) -> bool;
+
     /// Place operator in the replay mode.
     ///
     /// In the replay mode the operator streams its stored state to a temporary
@@ -1885,6 +1888,10 @@ pub trait CircuitBase: 'static {
     fn rebalance(&self);
 
     fn start_compaction(&self);
+
+    /// Returns `true` when all operators' background compaction has fully
+    /// converged.
+    fn is_compaction_complete(&self) -> bool;
 }
 
 /// The circuit interface.  All DBSP computation takes place within a circuit.
@@ -3595,6 +3602,15 @@ where
             Ok(())
         });
     }
+
+    fn is_compaction_complete(&self) -> bool {
+        let mut complete = true;
+        let _ = self.map_local_nodes(&mut |node| {
+            complete &= node.is_compaction_complete();
+            Ok(())
+        });
+        complete
+    }
 }
 
 impl<P, T> Circuit for ChildCircuit<P, T>
@@ -4775,6 +4791,10 @@ where
         self.operator.start_compaction()
     }
 
+    fn is_compaction_complete(&self) -> bool {
+        self.operator.is_compaction_complete()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
@@ -4924,6 +4944,10 @@ where
 
     fn start_compaction(&mut self) {
         self.operator.start_compaction()
+    }
+
+    fn is_compaction_complete(&self) -> bool {
+        self.operator.is_compaction_complete()
     }
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
@@ -5091,6 +5115,10 @@ where
         self.operator.start_compaction()
     }
 
+    fn is_compaction_complete(&self) -> bool {
+        self.operator.is_compaction_complete()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
@@ -5247,6 +5275,10 @@ where
 
     fn start_compaction(&mut self) {
         self.operator.start_compaction()
+    }
+
+    fn is_compaction_complete(&self) -> bool {
+        self.operator.is_compaction_complete()
     }
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
@@ -5464,6 +5496,10 @@ where
         self.operator.start_compaction()
     }
 
+    fn is_compaction_complete(&self) -> bool {
+        self.operator.is_compaction_complete()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
@@ -5653,6 +5689,10 @@ where
 
     fn start_compaction(&mut self) {
         self.operator.start_compaction()
+    }
+
+    fn is_compaction_complete(&self) -> bool {
+        self.operator.is_compaction_complete()
     }
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
@@ -5870,6 +5910,10 @@ where
         self.operator.start_compaction()
     }
 
+    fn is_compaction_complete(&self) -> bool {
+        self.operator.is_compaction_complete()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
@@ -6057,6 +6101,10 @@ where
 
     fn start_compaction(&mut self) {
         self.operator.start_compaction()
+    }
+
+    fn is_compaction_complete(&self) -> bool {
+        self.operator.is_compaction_complete()
     }
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
@@ -6269,6 +6317,10 @@ where
         self.operator.start_compaction()
     }
 
+    fn is_compaction_complete(&self) -> bool {
+        self.operator.is_compaction_complete()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
@@ -6464,6 +6516,10 @@ where
         self.operator.start_compaction()
     }
 
+    fn is_compaction_complete(&self) -> bool {
+        self.operator.is_compaction_complete()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
@@ -6649,6 +6705,10 @@ where
         self.operator.borrow_mut().start_compaction()
     }
 
+    fn is_compaction_complete(&self) -> bool {
+        self.operator.borrow().is_compaction_complete()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.borrow_mut().clear_state()
     }
@@ -6815,6 +6875,10 @@ where
     }
 
     fn start_compaction(&mut self) {}
+
+    fn is_compaction_complete(&self) -> bool {
+        true
+    }
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
         Ok(())
@@ -7046,6 +7110,10 @@ where
 
     fn start_compaction(&mut self) {
         self.circuit.start_compaction();
+    }
+
+    fn is_compaction_complete(&self) -> bool {
+        self.circuit.is_compaction_complete()
     }
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
@@ -7838,6 +7906,10 @@ impl CircuitHandle {
 
     pub fn start_compaction(&self) {
         self.circuit.start_compaction()
+    }
+
+    pub fn is_compaction_complete(&self) -> bool {
+        self.circuit.is_compaction_complete()
     }
 }
 
