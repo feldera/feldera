@@ -1771,15 +1771,18 @@ impl DBSPHandle {
     }
 
     /// Block until background compaction has fully converged on every worker,
-    /// or until `timeout` elapses.  This method is designed for use in tests.
+    /// or until `timeout` elapses.
     ///
     /// Polls [`is_compaction_complete`](Self::is_compaction_complete) with
     /// exponential back-off, starting at 1 ms and doubling each iteration up
     /// to a cap of 1 s.
     ///
-    /// Returns `Ok(())` when compaction is complete, or
-    /// `Err(`[`DbspError::Constructor`]`)` when the timeout expires.
-    pub fn wait_for_compaction(&mut self, timeout: std::time::Duration) -> Result<(), DbspError> {
+    /// Returns `Ok(())` when compaction is complete, or an error if the
+    /// circuit fails or the timeout expires.
+    pub fn wait_for_compaction(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> Result<(), anyhow::Error> {
         use std::thread;
         use std::time::Instant;
 
@@ -1795,9 +1798,7 @@ impl DBSPHandle {
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                return Err(DbspError::Constructor(anyhow::anyhow!(
-                    "timed out after {timeout:?} waiting for compaction to complete"
-                )));
+                anyhow::bail!("timed out after {timeout:?} waiting for compaction to complete");
             }
             let sleep = std::time::Duration::from_millis(sleep_ms).min(remaining);
             thread::sleep(sleep);

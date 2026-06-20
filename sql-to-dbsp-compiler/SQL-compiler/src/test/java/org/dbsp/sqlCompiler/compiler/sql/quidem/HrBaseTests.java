@@ -52,6 +52,13 @@ public class HrBaseTests extends SqlIoTest {
                 --(30, 'Marketing', ARRAY()),
                 --(40, 'HR', ARRAY[Employee(200, 20, 'Eric', 8000, 500)])
                 --;
+
+                -- Postgres syntax
+                --INSERT INTO Depts VALUES
+                --(10, 'Sales', ARRAY[ROW(100, 10, 'Bill', 10000, 1000)::Employee, ROW(150, 10, 'Sebastian', 7000, null)::Employee]),
+                --(30, 'Marketing', ARRAY[]::Employee ARRAY),
+                --(40, 'HR', ARRAY[ROW(200, 20, 'Eric', 8000, 500)::Employee])
+                --;
                 """);
     }
 }

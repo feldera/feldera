@@ -690,7 +690,6 @@ public class IncrementalRegression2Tests extends SqlIoTest {
         }
     }
 
-
     @Test
     public void testSumCase() {
         var ccs = this.getCCS("""
@@ -727,6 +726,32 @@ public class IncrementalRegression2Tests extends SqlIoTest {
                  0  | 0   | 0 | -1""");
     }
 
+    @Test
+    public void issue2808() {
+        // Check the API for blocking until compaction is completed
+        var ccs = this.getCCS("""
+                CREATE TABLE T(id INT, bid INT, ts TIMESTAMP, ts0 TIMESTAMP, s INT);
+                CREATE VIEW V AS
+                SELECT id, bid,
+                    SUM(
+                        CASE
+                            WHEN ts >= (ts0 - INTERVAL '180' DAY)
+                            AND NOT s IS NULL THEN 1
+                            ELSE 0
+                        END
+                    )
+                FROM T GROUP BY id, bid;
+                """);
+        ccs.stepWeightOne("", """
+                 id | bid | sum
+                ----------------""");
+        ccs.blockForCompaction();
+        ccs.stepWeightOne("INSERT INTO T VALUES(1, 1, 0, 0, 0);", """
+                 id | bid | sum
+                ----------------
+                 1  | 1   | 1""");
+        ccs.blockForCompaction();
+    }
 
     @Test
     public void issue6350a() {

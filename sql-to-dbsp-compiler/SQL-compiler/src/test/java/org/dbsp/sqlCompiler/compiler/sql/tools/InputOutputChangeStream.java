@@ -16,28 +16,35 @@ public class InputOutputChangeStream {
     /** If non-empty it may be used to permute changes.
      * In this case outputs changes correspond to the views. */
     public final List<String> outputTables;
-    public final List<InputOutputChange> changes;
+    public final List<IStreamCommand> commands;
 
     public InputOutputChangeStream(List<String> inputTables, List<String> outputTables) {
-        this.changes = new ArrayList<>();
+        this.commands = new ArrayList<>();
         this.inputTables = inputTables;
         this.outputTables = outputTables;
     }
 
     public InputOutputChangeStream() {
-        this.changes = new ArrayList<>();
+        this.commands = new ArrayList<>();
         this.inputTables = new ArrayList<>();
         this.outputTables = new ArrayList<>();
     }
 
+    public InputOutputChangeStream addBlockForCompaction() {
+        // We don't expect "block" to be the first command
+        Utilities.enforce(! this.commands.isEmpty());
+        this.commands.add(new BlockForCompaction());
+        return this;
+    }
+
     public InputOutputChangeStream addChange(InputOutputChange change) {
-        Utilities.enforce(this.changes.isEmpty() || this.changes.get(0).compatible(change),
+        Utilities.enforce(this.commands.isEmpty() || this.commands.get(0).compatible(change),
                 () -> "Incompatible change");
         Utilities.enforce(this.inputTables.isEmpty() || change.inputs.getSetCount() == this.inputTables.size(),
                 () -> "Change does not have the same number of input tables as specified");
         Utilities.enforce(this.outputTables.isEmpty() || change.outputs.getSetCount() == this.outputTables.size(),
                 () -> "Change does not have the same number of output tables as specified");
-        this.changes.add(change);
+        this.commands.add(change);
         return this;
     }
 
