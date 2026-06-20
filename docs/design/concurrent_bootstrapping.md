@@ -6,7 +6,8 @@ Bootstrapping (`CircuitHandle::restore`, `circuit_builder.rs`) proceeds as follo
 
 1. Determine the operators that require backfill: every node whose `restore()`
    fails with `NotFound` (its persistent-id state file is missing from the
-   checkpoint), plus balancer-invalidated clusters and their transitive
+   checkpoint), plus balancer-invalidated clusters (clusters whose checkpointed
+   balancing policy becomes inconsistent in the modified circuit) and their transitive
    successors.
 2. Walk back from these operators (`compute_replay_nodes_step`) to compute the
    *replay nodes* used to bootstrap the new parts of the circuit and the larger
@@ -46,7 +47,7 @@ The algorithm:
   * **Copy 2** enables only the participating operators and wires the replay nodes
     — the exact circuit of the old step 3. Operators that do not participate are
     `clear_state()`d, and their state is not restored in the first place.
-- **Step 4 (backfill)**: two circuits with separate schedulers. Copy 1 is driven
+- **Step 4 (backfill)**: two circuits run with separate schedulers. Copy 1 is driven
   through the normal interface (`start_transaction`/`step`/`start_commit`/…); copy
   2 runs one large transaction in the background.
 - **Step 5 (synchronization)**: replay the recorded changes into copy 2 to catch it
@@ -80,11 +81,7 @@ copy 1 until cutover.
    moves operator state (spines, scalar Z⁻¹ values, window bounds, …) from copy 2's
    nodes into copy 1's, pairwise by `NodeId` (identical across copies, because both
    are built from the same constructor closure). Same thread, O(#batches) `Arc`
-   moves, no I/O. The checkpoint-roundtrip alternative was rejected: it persists
-   every in-memory batch and entangles with checkpoint GC and the shared
-   persistent-id namespace. Transfer must reconcile trace frontiers/logical time
-   (`Z1Trace::time`, `set_frontier`), since the copies commit different numbers of
-   transactions.
+   moves, no I/O.
 
 3. **Synchronization: single pass in v1.** One sync transaction with copy 1 paused;
    downtime is proportional to the changes recorded since backfill began. The
@@ -114,23 +111,15 @@ copy 1 until cutover.
 
 ## Invariants and risks
 
-- **Exchange-id determinism** is the sharpest edge: every copy-2 lifecycle event
-  (build, prepare, teardown) must happen in lockstep on all workers, or exchanges
-  silently cross-wire.
 - **Checkpointing while two copies exist is undefined** (shared persistent-id
   namespace). Checkpoints are suppressed until cutover. A crash mid-bootstrap
   restarts bootstrapping from the old checkpoint — as today, but the window is
   longer and copy 1 ingests live data; the FT journal stays disabled in v1 (input
   connectors resume from pre-bootstrap offsets after a crash).
-- **Memory** = forked overlap-region state + all recorded deltas for the bootstrap
-  duration. Recorders apply no retention filters.
 - **Step-5 downtime is not zero** — it is proportional to the recorded changes. The
   iterative variant (decision 3) is the eventual mitigation.
 - The two copies have **separate StreamId spaces and circuit caches**; all
   cross-copy correlation goes through `NodeId`/persistent id.
-- Replay streams alias the original stream's value slot; within each copy at most
-  one of {original producer, replay source} may be scheduled — the per-copy
-  `prepare(Some(set))` calls guarantee this exactly as today.
 
 ## Balanced joins
 

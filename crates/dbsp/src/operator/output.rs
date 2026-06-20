@@ -601,11 +601,9 @@ where
 
         // The bootstrap circuit has no connector reading this view, so its
         // paired accumulator would otherwise stay disabled and discard the
-        // view's contents.  Force-enable it once.  The accumulator samples
-        // its enable count on the first non-empty batch of a transaction, and
-        // the backfill transaction has not started yet, so this is observed in
-        // time.  The bump is local to the bootstrap circuit's enable count and
-        // is harmless if the accumulator was already enabled.
+        // view's contents.  Force-enable it once. The bump is local to the
+        // bootstrap circuit's enable count and is harmless if the accumulator
+        // was already enabled.
         if !self.bootstrap_enabled {
             self.bootstrap_enabled = true;
             self.enable_count.fetch_add(1, Ordering::AcqRel);

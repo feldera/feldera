@@ -2342,6 +2342,11 @@ fn lir() {
       "to": "4"
     },
     {
+      "from": "3",
+      "stream_id": 3,
+      "to": "9"
+    },
+    {
       "from": "4",
       "stream_id": 4,
       "to": "5"
@@ -2354,7 +2359,7 @@ fn lir() {
     {
       "from": "4",
       "stream_id": 4,
-      "to": "11"
+      "to": "12"
     },
     {
       "from": "6",
@@ -2374,22 +2379,22 @@ fn lir() {
     {
       "from": "7",
       "stream_id": 8,
-      "to": "9"
+      "to": "10"
     },
     {
       "from": "7",
       "stream_id": 8,
-      "to": "12"
-    },
-    {
-      "from": "9",
-      "stream_id": 9,
-      "to": "10"
-    },
-    {
-      "from": "12",
-      "stream_id": 10,
       "to": "13"
+    },
+    {
+      "from": "10",
+      "stream_id": 9,
+      "to": "11"
+    },
+    {
+      "from": "13",
+      "stream_id": 10,
+      "to": "14"
     }
   ],
   "nodes": [
@@ -2462,34 +2467,39 @@ fn lir() {
     },
     {
       "id": "9",
-      "implements": [
-        "input.output"
-      ],
-      "operation": "Apply"
+      "implements": [],
+      "operation": "Recorder"
     },
     {
       "id": "10",
       "implements": [
         "input.output"
       ],
-      "operation": "Output"
+      "operation": "Apply"
     },
     {
       "id": "11",
       "implements": [
-        "output"
+        "input.output"
       ],
-      "operation": "AccumulateOutput"
+      "operation": "Output"
     },
     {
       "id": "12",
       "implements": [
         "output"
       ],
-      "operation": "Apply"
+      "operation": "AccumulateOutput"
     },
     {
       "id": "13",
+      "implements": [
+        "output"
+      ],
+      "operation": "Apply"
+    },
+    {
+      "id": "14",
       "implements": [
         "output"
       ],

@@ -1275,7 +1275,7 @@ where
         // sharded under its `current_policy`, and that integral is transferred
         // by the integral node's own `swap_state`, so the policy must travel
         // with it.  We only move the policy-bearing state; the `balancer` and
-        // `metadata_exchange` references are per-copy wiring and stay put.
+        // `metadata_exchange` references are per-copy and stay put.
         self.current_policy.swap(&other.current_policy);
         std::mem::swap(
             &mut *self.key_distribution.borrow_mut(),

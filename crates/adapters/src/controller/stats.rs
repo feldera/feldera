@@ -431,6 +431,10 @@ impl GlobalControllerMetrics {
             .store(phase, Ordering::Release);
     }
 
+    fn concurrent_bootstrap_in_progress(&self) -> bool {
+        self.concurrent_bootstrap_phase() != ConcurrentBootstrapPhase::Inactive
+    }
+
     fn set_step_requested(&self) -> bool {
         self.step_requested.swap(true, Ordering::AcqRel)
     }
@@ -771,6 +775,10 @@ impl ControllerStatus {
 
     pub fn set_concurrent_bootstrap_phase(&self, phase: ConcurrentBootstrapPhase) {
         self.global_metrics.set_concurrent_bootstrap_phase(phase);
+    }
+
+    pub fn concurrent_bootstrap_in_progress(&self) -> bool {
+        self.global_metrics.concurrent_bootstrap_in_progress()
     }
 
     pub fn request_step(&self, circuit_thread_unparker: &Unparker) {

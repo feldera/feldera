@@ -7174,7 +7174,7 @@ where
     }
 
     fn swap_state_with(&mut self, _other: &mut dyn Node) -> Result<(), DbspError> {
-        // The input half of a strict operator shares its operator with the
+        // The input half of a feedback node shares its operator with the
         // output half, whose `swap_state_with` moves the operator's entire
         // state; swapping here too would put it back.
         Ok(())
@@ -8151,7 +8151,7 @@ impl CircuitHandle {
 
         // Tell the balancer which nodes the bootstrap copy is reconstructing, so
         // it freezes the policy of any cluster that copy is also solving.  A new
-        // join over kept, shared streams runs live in this copy yet is
+        // join over shared streams runs live in this copy yet is
         // re-evaluated in the bootstrap copy; without this the live copy could
         // rebalance the shared cluster and diverge from the bootstrap copy.
         if self.circuit.root_scope() == 0 {

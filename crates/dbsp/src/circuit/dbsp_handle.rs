@@ -918,7 +918,8 @@ impl Runtime {
                         let complete = circuit.is_compaction_complete();
                         if status_sender
                             .send(Ok(Response::IsCompactionComplete(complete)))
-                            .is_err() {
+                            .is_err()
+                        {
                             return;
                         }
                     }
@@ -1346,11 +1347,6 @@ pub struct DBSPHandle {
 
     /// The bootstrap circuit's lifecycle state (see
     /// [`Self::create_bootstrap_circuit`]).
-    ///
-    /// This handle is the only source of worker commands, so the mirror
-    /// cannot diverge from the workers' state.  Checking preconditions here
-    /// keeps them non-fatal: an `Err` response from a worker kills the
-    /// circuit (see [`Self::broadcast_command`]).
     bootstrap_circuit_state: BootstrapCircuitState,
 
     /// Information about an in-progress *concurrent* bootstrap (see
@@ -1362,21 +1358,15 @@ pub struct DBSPHandle {
     /// circuit and completes through its own commit.
     concurrent_bootstrap_info: Option<BootstrapInfo>,
 
-    /// The phase of the in-progress concurrent bootstrap, `None` outside
-    /// one.  Orders [`Self::sync_concurrent_bootstrap`] and
-    /// [`Self::complete_concurrent_bootstrap`].
+    /// The phase of the in-progress concurrent bootstrap if there is one in progress.
     concurrent_bootstrap_phase: Option<ConcurrentBootstrapPhase>,
 
     /// True while a transaction is open on the main circuit (started with
-    /// [`Self::start_transaction`] and not yet committed).  This handle is
-    /// the only source of worker commands, so the mirror cannot diverge.
+    /// [`Self::start_transaction`] and not yet committed).
     main_transaction_open: bool,
 
     /// Sticky flag set when a concurrent bootstrap is aborted (see
-    /// [`Self::destroy_bootstrap_circuit`]).  The backfilled nodes hold no
-    /// state, so a checkpoint taken now would record them as empty and
-    /// permanently mask the missing backfill; checkpoints stay blocked
-    /// until the process restarts from a checkpoint.
+    /// [`Self::destroy_bootstrap_circuit`]).
     concurrent_bootstrap_aborted: bool,
 }
 pub struct WorkersCommitProgress(BTreeMap<u16, CommitProgress>);
@@ -1610,12 +1600,6 @@ impl DBSPHandle {
         Ok(())
     }
 
-    /// Start and instantly commit a transaction, waiting for the commit to complete.
-    /// Returns an error if the main circuit must not process transactions
-    /// right now: during the synchronization phase of a concurrent
-    /// bootstrap, deltas applied to the boundary streams are no longer
-    /// recorded, so they would be silently missing from the bootstrapped
-    /// views after cutover.
     fn check_main_circuit_available(&self) -> Result<(), DbspError> {
         if self.concurrent_bootstrap_phase == Some(ConcurrentBootstrapPhase::Synchronizing) {
             return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
@@ -1627,6 +1611,12 @@ impl DBSPHandle {
         Ok(())
     }
 
+    /// Start and instantly commit a transaction, waiting for the commit to complete.
+    /// Returns an error if the main circuit must not process transactions
+    /// right now: during the synchronization phase of a concurrent
+    /// bootstrap deltas applied to the boundary streams are no longer
+    /// recorded, so they would be silently missing from the bootstrapped
+    /// views after cutover.
     pub fn transaction(&mut self) -> Result<(), DbspError> {
         self.check_main_circuit_available()?;
         DBSP_STEP.fetch_add(1, Ordering::Relaxed);
@@ -1734,7 +1724,7 @@ impl DBSPHandle {
     ///
     /// Concurrent bootstrapping uses the bootstrap circuit to backfill new
     /// and modified operators from a checkpoint while the main circuit keeps
-    /// serving pre-existing views.  The copy's nodes have the same `NodeId`s
+    /// updating pre-existing views.  The copy's nodes have the same `NodeId`s
     /// as the main circuit's (both are built by the same constructor), which
     /// is what lets bootstrapped state move between the copies when the
     /// backfill completes.
@@ -1805,10 +1795,7 @@ impl DBSPHandle {
     /// Returns [`ConcurrentRestoreOutcome::UpToDate`], leaving the circuit
     /// fully active with no bootstrap circuit created, if the checkpoint
     /// matches the circuit; returns [`ConcurrentRestoreOutcome::FellBack`]
-    /// if the bootstrapped region cannot be processed concurrently, in
-    /// which case the main circuit runs a non-concurrent bootstrap that
-    /// completes through the standard machinery (drive it with
-    /// [`Self::transaction`] until [`Self::bootstrap_in_progress`] clears).
+    /// if the bootstrapped region cannot be processed concurrently.
     ///
     /// On [`ConcurrentRestoreOutcome::Concurrent`], complete the bootstrap
     /// with [`Self::step_bootstrap_circuit`] (pump until `true`),
@@ -2243,8 +2230,8 @@ impl DBSPHandle {
         &mut self,
         except: HashSet<uuid::Uuid>,
     ) -> Result<HashSet<uuid::Uuid>, DbspError> {
-        // The bootstrap circuit reads batch files belonging to the
-        // checkpoint it restores from; checkpoint GC could delete them.
+        // Make sure we don't GC during concurrent bootstrapping. The bootstrapping
+        // circuit may hold on to batches no longer used by the primary circuit.
         self.check_bootstrap_circuit_state(
             &[BootstrapCircuitState::None],
             "garbage-collect checkpoints",
@@ -2583,6 +2570,7 @@ impl<'a> CheckpointBuilder<'a> {
     /// Prepares the checkpoint and returns a committer that can be used to
     /// commit it later.
     pub fn prepare(self) -> Result<CheckpointCommitter, DbspError> {
+        // Don't allow checkpointing during concurrent bootstrapping.
         // Both circuit copies derive checkpoint file names from the same
         // persistent ids, so checkpointing while a bootstrap circuit exists
         // is undefined; additionally, the bootstrap circuit reads batch
@@ -2720,7 +2708,7 @@ pub(crate) mod tests {
         assert!(dbsp.create_bootstrap_circuit().is_err());
 
         // Out-of-order transaction commands on an idle bootstrap circuit
-        // are rejected on the coordinator (a worker-side scheduler error
+        // are rejected by the coordinator (a worker-side scheduler error
         // would kill the pipeline).
         assert!(dbsp.step_bootstrap_circuit().is_err());
         assert!(dbsp.start_commit_bootstrap_transaction().is_err());

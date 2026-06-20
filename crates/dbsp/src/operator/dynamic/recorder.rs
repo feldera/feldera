@@ -353,8 +353,8 @@ mod test {
     }
 
     /// Checks the recorder's lifecycle against the deltas of an input stream:
-    /// disabled recorders record nothing; recording spans transactions and
-    /// consolidates retractions; stopping returns the contents exactly once;
+    /// disabled recorders record nothing; recording computes the sum of all
+    /// updates across multiple transactions; stopping returns the contents exactly once;
     /// restarting begins from a clean slate.
     #[test]
     fn test_recorder() {

@@ -350,7 +350,7 @@ struct BalancerInner {
     /// Unlike `active_nodes`, this captures nodes that run *live* in this copy
     /// while *also* being re-evaluated in the bootstrap copy (e.g. a new join
     /// over kept, shared streams), which `active_nodes` alone cannot detect.
-    bootstrap_backfill_region: Option<BTreeSet<NodeId>>,
+    bootstrap_backfill_nodes: Option<BTreeSet<NodeId>>,
 }
 
 impl BalancerInner {
@@ -367,7 +367,7 @@ impl BalancerInner {
             transaction_in_progress: false,
             auto_rebalance_enabled: true,
             active_nodes: None,
-            bootstrap_backfill_region: None,
+            bootstrap_backfill_nodes: None,
         }
     }
 
@@ -962,7 +962,7 @@ impl BalancerInner {
         // checkpoint policy for a kept stream (freezing it) and `None` for a
         // genuinely new stream (leaving the copy in which it is active free to
         // choose), so this single rule does the right thing in both copies.
-        if let Some(backfill_region) = &self.bootstrap_backfill_region {
+        if let Some(backfill_region) = &self.bootstrap_backfill_nodes {
             let cluster_in_backfill =
                 self.stream_to_cluster
                     .get(&stream)
@@ -1220,7 +1220,7 @@ impl Balancer {
             // live again and free to rebalance.
             let mut inner = self.inner.borrow_mut();
             inner.active_nodes = None;
-            inner.bootstrap_backfill_region = None;
+            inner.bootstrap_backfill_nodes = None;
         }
         if Runtime::worker_index() == 0 {
             info!("Join balancer state:\n{}", indent(&self.display(), 2));
@@ -1231,7 +1231,7 @@ impl Balancer {
     /// during a concurrent bootstrap.  Clusters that intersect this set are
     /// frozen in the live copy until cutover (see `get_fixed_policy`).
     pub fn set_bootstrap_backfill_region(&self, region: &BTreeSet<NodeId>) {
-        self.inner.borrow_mut().bootstrap_backfill_region = Some(region.clone());
+        self.inner.borrow_mut().bootstrap_backfill_nodes = Some(region.clone());
     }
 
     pub fn prepare_for_bootstrapping(&self, active_nodes: &BTreeSet<NodeId>) {
