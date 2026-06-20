@@ -335,6 +335,11 @@ pub trait Trace: BatchReader {
     fn metadata(&self, _meta: &mut OperatorMeta) {}
 
     fn initiate_compaction(&self);
+
+    /// Returns `true` when compaction has fully converged: all compaction
+    /// requests have been processed, no background merge is in progress, and
+    /// the trace has been reduced to at most one batch.
+    fn is_compaction_complete(&self) -> bool;
 }
 
 /// Where a batch is stored.

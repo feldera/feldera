@@ -438,6 +438,23 @@ where
         self.slots.iter().any(|slot| slot.merging_batches.is_some())
     }
 
+    /// Returns `true` if compaction has fully converged: all compaction
+    /// requests have been processed, no merge is in progress, and the spine
+    /// has been reduced to at most one batch.
+    ///
+    /// A single batch (or zero batches) is the desired steady state after a
+    /// compaction sweep completes.  Note that "ran out of fuel" is **not**
+    /// the same as complete: a spine with several batches and no pending work
+    /// may still need further merges once new batches arrive.
+    fn is_compaction_complete(&self) -> bool {
+        let all_requests_processed = self
+            .slots
+            .iter()
+            .all(|s| s.compaction_status == CompactionStatus::None);
+        let total_batches: usize = self.slots.iter().map(Slot::n_batches).sum();
+        all_requests_processed && !self.is_merging() && total_batches <= 1
+    }
+
     /// Finishes up the ongoing merge at the given `level`, which completed in
     /// `elapsed` time over `n_steps` steps, with `new_batch` at `new_level` as
     /// the result.
@@ -1079,6 +1096,10 @@ where
     fn initiate_compaction(&self) {
         let mut state = self.state.lock().unwrap();
         state.initiate_compaction();
+    }
+
+    fn is_compaction_complete(&self) -> bool {
+        self.state.lock().unwrap().is_compaction_complete()
     }
 }
 
@@ -2119,6 +2140,10 @@ where
 
     fn initiate_compaction(&self) {
         self.merger.initiate_compaction();
+    }
+
+    fn is_compaction_complete(&self) -> bool {
+        self.merger.is_compaction_complete()
     }
 }
 

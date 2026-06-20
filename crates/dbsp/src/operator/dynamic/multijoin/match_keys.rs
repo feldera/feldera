@@ -867,6 +867,10 @@ where
 
     fn start_compaction(&mut self) {}
 
+    fn is_compaction_complete(&self) -> bool {
+        true
+    }
+
     fn eval<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
