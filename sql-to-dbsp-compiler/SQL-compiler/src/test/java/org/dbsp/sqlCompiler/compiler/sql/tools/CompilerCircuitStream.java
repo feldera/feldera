@@ -76,6 +76,13 @@ public class CompilerCircuitStream extends CompilerCircuit {
         this.stream.addPair(input, output);
     }
 
+    /**
+     * Block the circuit until compaction is finished.
+     */
+    public void blockForCompaction() {
+        this.stream.addBlockForCompaction();
+    }
+
     /** Like step, but every record in the output has weight one, and the
      * weight column is omitted for the expected output. */
     public void stepWeightOne(String script, String expected) {
