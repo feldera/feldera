@@ -163,6 +163,7 @@
 * `MAKE_TIMESTAMP`: [datetime](datetime.md#make_timestamp)
 * `MAP` (aggregate): [aggregates](aggregates.md#map)
 * `MAP`: [map](map.md#map-literals)
+* `MAP_CONCAT`: [map](map.md#map_concat)
 * `MAP_CONTAINS_KEY`: [map](map.md#map_contains_key)
 * `MAP_KEYS`: [map](map.md#map_keys)
 * `MAP_VALUES`: [map](map.md#map_values)

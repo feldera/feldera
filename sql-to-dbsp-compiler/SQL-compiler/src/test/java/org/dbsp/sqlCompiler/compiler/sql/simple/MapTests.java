@@ -3,11 +3,10 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChangeStream;
-import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
+import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
@@ -22,7 +21,7 @@ import org.junit.Test;
 
 import java.nio.charset.Charset;
 
-public class MapTests extends BaseSQLTests {
+public class MapTests extends SqlIoTest {
     public DBSPCompiler compileQuery(String statements, String query) {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.optimizationLevel = 0;
@@ -32,14 +31,14 @@ public class MapTests extends BaseSQLTests {
         return compiler;
     }
 
-    void testQuery(String statements, String query, InputOutputChangeStream streams) {
+    void testQuery(String query, InputOutputChangeStream streams) {
         query = "CREATE VIEW V AS " + query;
-        DBSPCompiler compiler = this.compileQuery(statements, query);
+        DBSPCompiler compiler = this.compileQuery("", query);
         this.getCCS(compiler, streams);
     }
 
     private void testQuery(String query, DBSPZSetExpression expression) {
-        this.testQuery("", query,
+        this.testQuery(query,
                 new InputOutputChangeStream().addChange(
                         new InputOutputChange(new Change(), new Change("V", expression))));
     }
@@ -47,30 +46,27 @@ public class MapTests extends BaseSQLTests {
     @Test
     public void testDuplicateKeys() {
         var compiler = this.compileQuery("", "CREATE VIEW V AS SELECT MAP['hi', 1, 'hi', 2]");
-        TestUtil.assertMessagesContain(compiler, "Duplicate MAP key");
+        TestUtil.assertMessagesContain(compiler, "warning: Duplicate MAP key");
     }
 
     @Test
     public void mapLiteralTest() {
-        String query = "SELECT MAP['hi',2]";
-        DBSPType str = DBSPTypeString.varchar(false);
-        this.testQuery(query, new DBSPZSetExpression(
-                new DBSPTupleExpression(new DBSPMapExpression(
-                        new DBSPTypeMap(
-                                str,
-                                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false),
-                                false),
-                        Linq.list(new DBSPStringLiteral(CalciteObject.EMPTY, str, "hi", Charset.defaultCharset()),
-                                new DBSPI32Literal(2))))));
+        this.qst("""
+                 SELECT MAP['hi',2];
+                  r
+                 ---
+                  { hi: 2 }
+                 (1 row)""");
     }
 
     @Test
     public void mapIndexTest() {
-        String query = "SELECT MAP['hi',2]['hi'], MAP['hi',2]['x']";
-        this.testQuery(query, new DBSPZSetExpression(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(2, true),
-                        new DBSPI32Literal())));
+        this.qst(""" 
+                 SELECT MAP['hi',2]['hi'], MAP['hi',2]['x'];
+                  e0 | e1
+                 ---------
+                  2  |
+                 (1 row)""");
     }
 
     @Test
@@ -89,88 +85,50 @@ public class MapTests extends BaseSQLTests {
 
     @Test
     public void mapCardinalityTest() {
-        String query = "SELECT CARDINALITY(MAP['hi',2])";
-        this.testQuery(query, new DBSPZSetExpression(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(1))));
+        this.qst("""
+                SELECT CARDINALITY(MAP['hi',2]);
+                 r
+                ---
+                 1
+                (1 row)""");
     }
 
     @Test
     public void testMapSubquery() {
-        String ddl = "CREATE TABLE T(v varchar, x int)";
-        String query = "SELECT MAP(SELECT * FROM T)";
-        DBSPZSetExpression input = new DBSPZSetExpression(
-                new DBSPTupleExpression(
-                        new DBSPStringLiteral("hello", true),
-                        new DBSPI32Literal(10, true)),
-                new DBSPTupleExpression(
-                        new DBSPStringLiteral("there", true),
-                        new DBSPI32Literal(5, true)));
-        DBSPTypeMap mapType = new DBSPTypeMap(
-                DBSPTypeString.varchar(true),
-                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true ,true), false);
-        DBSPZSetExpression result = new DBSPZSetExpression(
-                new DBSPTupleExpression(
-                        new DBSPMapExpression(
-                                mapType,
-                                Linq.list(
-                                        new DBSPStringLiteral("there", true),
-                                        new DBSPI32Literal(5, true),
-                                        new DBSPStringLiteral("hello", true),
-                                        new DBSPI32Literal(10, true))
-                        )));
-        this.testQuery(ddl, query,
-                new InputOutputChangeStream().addPair(new Change("T", input), new Change("V", result)));
+        var ccs = this.getCCS("""
+               CREATE TABLE T(v varchar, x int);
+               CREATE VIEW V AS SELECT MAP(SELECT * FROM T);""");
+        ccs.stepWeightOne("INSERT INTO T VALUES('hello', 10), ('there', 5)", """
+          map
+        -------
+         { hello: 10, there: 5 }""");
     }
 
     @Test
     public void testUnnestMap() {
-        String sql = "select * from UNNEST(map['a', 12])";
-        DBSPZSetExpression result = new DBSPZSetExpression(
-                new DBSPTupleExpression(
-                    new DBSPStringLiteral("a", false),
-                    new DBSPI32Literal(12, false)));
-        this.testQuery("", sql,
-                new InputOutputChangeStream().addPair(new Change(), new Change("V", result)));
-    }
-
-    @Test
-    public void testUnnestMap2() {
-        String sql = "select * from UNNEST(map['a', 12, 'b', 15, 'c', NULL])";
-        DBSPZSetExpression result = new DBSPZSetExpression(
-                new DBSPTupleExpression(
-                        new DBSPStringLiteral("a", false),
-                        new DBSPI32Literal(12, true)),
-                new DBSPTupleExpression(
-                        new DBSPStringLiteral("b", false),
-                        new DBSPI32Literal(15, true)),
-                new DBSPTupleExpression(
-                        new DBSPStringLiteral("c", false),
-                        new DBSPI32Literal()));
-        this.testQuery("", sql,
-                new InputOutputChangeStream().addPair(new Change(), new Change("V", result)));
-    }
-
-    @Test
-    public void testUnnestMapFields() {
-        String sql =
-                "WITH T(i, m) as (VALUES(1, MAP[1, 2, 3, 4]), (2, MAP[5, NULL])) " +
-                "SELECT T.i, k, v FROM T CROSS JOIN UNNEST(T.m) AS pair(k, v)";
-        DBSPZSetExpression result = new DBSPZSetExpression(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(1, false),
-                        new DBSPI32Literal(1, false),
-                        new DBSPI32Literal(2, true)),
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(1, false),
-                        new DBSPI32Literal(3, false),
-                        new DBSPI32Literal(4, true)),
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(2, false),
-                        new DBSPI32Literal(5, false),
-                        new DBSPI32Literal()));
-        this.testQuery("", sql, new InputOutputChangeStream()
-                .addPair(new Change(), new Change("V", result)));
+        this.qst("""
+                 select * from UNNEST(map['a', 12]);
+                  k | v
+                 -------
+                  a | 12
+                 (1 row)
+                 
+                 select * from UNNEST(map['a', 12, 'b', 15, 'c', NULL]);
+                  k | v
+                 -------
+                  a | 12
+                  b | 15
+                  c |
+                 (3 rows)
+                 
+                 WITH T(i, m) as (VALUES(1, MAP[1, 2, 3, 4]), (2, MAP[5, NULL]))
+                 SELECT T.i, k, v FROM T CROSS JOIN UNNEST(T.m) AS pair(k, v);
+                  i | k | v
+                 -----------
+                  1 | 1 | 2
+                  1 | 3 | 4
+                  2 | 5 |
+                 (3 rows)""");
     }
 
     @Test
@@ -181,14 +139,12 @@ public class MapTests extends BaseSQLTests {
 
     @Test
     public void testMapKeys() {
-        String sql = "SELECT map_keys(map['foo', 1, 'bar', 2])";
-        DBSPZSetExpression result = new DBSPZSetExpression(
-                new DBSPTupleExpression(new DBSPArrayExpression(
-                        false,
-                        new DBSPStringLiteral("bar"),
-                        new DBSPStringLiteral("foo"))));
-        this.testQuery("", sql, new InputOutputChangeStream()
-                .addPair(new Change(), new Change("V", result)));
+        this.qst("""
+                SELECT map_keys(map['foo', 1, 'bar', 2]);
+                 keys
+                --------------
+                 { bar, foo }
+                (1 row)""");
     }
 
     @Test
@@ -218,14 +174,12 @@ public class MapTests extends BaseSQLTests {
 
     @Test
     public void testMapValues() {
-        String sql = "SELECT map_values(map['foo', 1, 'bar', 2])";
-        DBSPZSetExpression result = new DBSPZSetExpression(
-                new DBSPTupleExpression(new DBSPArrayExpression(
-                        false,
-                        new DBSPI32Literal(2),
-                        new DBSPI32Literal(1))));
-        this.testQuery("", sql, new InputOutputChangeStream()
-                .addPair(new Change(), new Change("V", result)));
+        this.qst("""
+                 SELECT map_values(map['foo', 1, 'bar', 2]);
+                  r
+                 --------
+                  { 2, 1 }
+                 (1 row)""");
     }
 
     @Test
@@ -251,5 +205,50 @@ public class MapTests extends BaseSQLTests {
                  [1,2,3]
                  null
                  {"f":1}""");
+    }
+
+    @Test
+    public void testMapConcat() {
+        this.qst("""
+                SELECT MAP_CONCAT(
+                  MAP[ 1, 'a' ],
+                  MAP[ 2, 'b' ]
+                );
+                +--------------+
+                | EXPR$0       |
+                +--------------+
+                | {1: a, 2: b} |
+                +--------------+
+                (1 row)
+                
+                SELECT MAP_CONCAT(CAST(NULL AS MAP<INT, INT>), MAP[1, 2]);
+                 r
+                ----
+                NULL
+                (1 row)
+                
+                SELECT MAP_CONCAT(MAP[1, 'a'], MAP[1, 'b']);
+                 r
+                ----
+                 {1: b}
+                (1 row)
+                
+                SELECT MAP_CONCAT(MAP[1, 2], MAP[1.0, NULL]);
+                 r
+                ---
+                 {1.0: NULL}
+                (1 row)
+                
+                SELECT MAP_CONCAT(MAP[1, 2]);
+                 r
+                ---
+                 {1: 2}
+                (1 row)
+                
+                SELECT MAP_CONCAT(MAP[1, 2], MAP[1, 3], MAP[1, 4]);
+                 r
+                ---
+                 {1: 4}
+                (1 row)""");
     }
 }

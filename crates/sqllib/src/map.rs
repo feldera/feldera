@@ -313,3 +313,23 @@ where
 }
 
 some_function1!(map_values [I: Ord + Clone, T: Clone], Map<I, T>, Array<T>);
+
+#[doc(hidden)]
+pub fn map_concat__<I, T>(left: Map<I, T>, right: Map<I, T>) -> Map<I, T>
+where
+    I: Ord + Clone,
+    T: Clone,
+{
+    if right.is_empty() {
+        return left;
+    }
+    if left.is_empty() {
+        return right;
+    }
+    let mut out = BTreeMap::new();
+    out.extend(left.iter().map(|(k, v)| (k.clone(), v.clone())));
+    out.extend(right.iter().map(|(k, v)| (k.clone(), v.clone())));
+    out.into()
+}
+
+some_function2!(map_concat [I: Ord + Clone, T: Clone], Map<I, T>, Map<I, T>, Map<I, T>);

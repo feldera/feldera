@@ -2233,11 +2233,34 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return next;
             }
             case MAP_KEYS:
-            case MAP_VALUES:
+            case MAP_VALUES: {
                 validateArgCount(node, operationName, ops.size(), 1);
                 DBSPExpression arg0 = ops.get(0);
                 String method = getArrayOrMapCallName(call, arg0);
                 return new DBSPApplyExpression(node, method, type, arg0);
+            }
+            case MAP_CONCAT: {
+                if (ops.isEmpty()) {
+                    throw new CompilationError("Function " + Utilities.singleQuote(operationName) +
+                            " with 0 arguments is not supported", node);
+                }
+                if (ops.size() == 1) {
+                    return ops.get(0);
+                }
+                for (int i = 0; i < ops.size(); i++) {
+                    DBSPExpression argi = ops.get(i);
+                    // Types may not match exactly
+                    argi = argi.cast(argi.getNode(), type, DBSPCastExpression.CastType.SqlUnsafe);
+                    ops.set(i, argi);
+                }
+                DBSPExpression current = ops.get(0);
+                for (int i = 1; i < ops.size(); i++) {
+                    DBSPExpression argi = ops.get(i);
+                    String method = getArrayOrMapCallName(call, current, argi);
+                    current = new DBSPApplyExpression(node, method, type, current, argi);
+                }
+                return current;
+            }
             case DOT:
             default:
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())

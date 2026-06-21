@@ -79,12 +79,10 @@ Several `MAP` functions are not yet implemented:
 
 | Function | Status |
 |----------|--------|
-| `MAP_CONCAT` | Not supported |
 | `MAP_ENTRIES` | Not supported |
 | `MAP_FROM_ARRAYS` | Not supported |
 | `MAP_FROM_ENTRIES` | Not supported |
 | `STR_TO_MAP` | Not supported |
-| Building a `MAP` from a subquery returning a pair of columns | Not supported |
 
 A list of supported MAP operations is available [here](./map.md).
 See [#1907](https://github.com/feldera/feldera/issues/1907).
