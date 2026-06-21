@@ -7,7 +7,7 @@ public class SelectTests extends ScottBaseTests {
     @Test
     public void testExclude() {
         // issue 5216
-        this.qs("""
+        this.qst("""
                 select * exclude(empno, ename, job, mgr) from emp order by hiredate limit 1;
                 +------------+--------+------+--------+
                 | HIREDATE   | SAL    | COMM | DEPTNO |

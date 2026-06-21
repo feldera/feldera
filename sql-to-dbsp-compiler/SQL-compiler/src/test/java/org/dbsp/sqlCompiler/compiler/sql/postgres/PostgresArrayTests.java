@@ -9,7 +9,7 @@ public class PostgresArrayTests extends SqlIoTest {
     @Test
     public void testSplit() {
         // Renamed 'string_to_array' to 'split'
-        this.qs("""
+        this.qst("""
                 select split('1|2|3', '|');
                  split
                 -----------------
@@ -82,7 +82,7 @@ public class PostgresArrayTests extends SqlIoTest {
     @Test
     public void testArrayToString() {
         // In Calcite array_to_string requires all arguments to be strings
-        this.qs("""
+        this.qst("""
                 select array_to_string(NULL::TEXT ARRAY, ',') IS NULL;
                  ?column?
                 ----------

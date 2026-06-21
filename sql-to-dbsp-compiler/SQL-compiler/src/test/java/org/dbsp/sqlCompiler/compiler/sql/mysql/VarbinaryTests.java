@@ -116,7 +116,7 @@ public class VarbinaryTests extends SqlIoTest {
 
     @Test
     public void testConcatBinary() {
-        this.qs("""
+        this.qst("""
                 SELECT x'0a' || x'bc';
                 result
                 ------
@@ -145,7 +145,7 @@ public class VarbinaryTests extends SqlIoTest {
     // While Postgres doesn't allow negative "overlay from" value, we treat it as 0
     @Test
     public void testOverlay() {
-        this.qs("""
+        this.qst("""
                 SELECT overlay(x'1234567890'::bytea placing x'0203' from 2 for 3);
                  overlay
                 ---------
@@ -186,7 +186,7 @@ public class VarbinaryTests extends SqlIoTest {
 
     @Test
     public void testIntToBinaryCasts() {
-        this.qs("""
+        this.qst("""
                 SELECT CAST(10 AS BINARY(4));
                  r
                 ---
@@ -256,7 +256,7 @@ public class VarbinaryTests extends SqlIoTest {
 
     @Test
     public void testCast() {
-        this.qs("""
+        this.qst("""
                 SELECT CAST('abcd1234' AS VARBINARY);
                  r
                 ---
@@ -278,7 +278,7 @@ public class VarbinaryTests extends SqlIoTest {
 
     @Test
     public void testLeftAndRight() {
-        this.qs("""
+        this.qst("""
                 SELECT right(x'ABCdef', 1);
                 result
                 -------
@@ -349,7 +349,7 @@ public class VarbinaryTests extends SqlIoTest {
     // Tested on Postgres
     @Test
     public void testSubstring() {
-        this.qs("""
+        this.qst("""
                 SELECT substring(x'123456', 0);
                  substring
                 -----------
@@ -389,7 +389,7 @@ public class VarbinaryTests extends SqlIoTest {
 
     @Test
     public void testSubstringFail() {
-        this.qs("""
+        this.qst("""
                 SELECT substring(x'123456', 3, -1);
                 result
                 ------
@@ -399,7 +399,7 @@ public class VarbinaryTests extends SqlIoTest {
 
     @Test
     public void testOctetLength() {
-        this.qs("""
+        this.qst("""
                 SELECT octet_length(x'123456'::bytea);
                  length
                 --------
@@ -429,7 +429,7 @@ public class VarbinaryTests extends SqlIoTest {
 
     @Test
     public void testPosition() {
-        this.qs("""
+        this.qst("""
                 SELECT position(x'20' IN x'102023'::bytea);
                  position
                 ----------

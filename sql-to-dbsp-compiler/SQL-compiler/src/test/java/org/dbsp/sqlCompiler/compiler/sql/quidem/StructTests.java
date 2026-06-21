@@ -6,7 +6,7 @@ import org.junit.Test;
 public class StructTests extends ScottBaseTests {
     @Test
     public void isNullRow() {
-        this.qs("""
+        this.qst("""
                 SELECT ROW(NULL) IS NULL;
                  r
                 ---
@@ -16,7 +16,7 @@ public class StructTests extends ScottBaseTests {
 
     @Test
     public void testRow() {
-        this.qs("""
+        this.qst("""
                 -- struct.iq - Queries involving structured types
                 -- [CALCITE-2677] Struct types with one field are not mapped correctly to Java Classes
                 select * from (values
@@ -87,10 +87,10 @@ public class StructTests extends ScottBaseTests {
                 +--------+----------+---+
                 | DEPTNO | JOB      | X |
                 +--------+----------+---+
-                |     20 | CLERK|     1 |
-                |     20 | MANAGER|   3 |
-                |     30 | SALESMAN|  2 |
-                |     30 | SALESMAN|  2 |
+                |     20 | CLERK    | 1 |
+                |     20 | MANAGER  | 3 |
+                |     30 | SALESMAN | 2 |
+                |     30 | SALESMAN | 2 |
                 +--------+----------+---+
                 (4 rows)
                 
@@ -106,10 +106,10 @@ public class StructTests extends ScottBaseTests {
                 +--------+----------+---+
                 | DEPTNO | JOB      | X |
                 +--------+----------+---+
-                |     20 | CLERK|     1 |
-                |     20 | MANAGER|   3 |
-                |     30 | SALESMAN|  2 |
-                |     30 | SALESMAN|  2 |
+                |     20 | CLERK    | 1 |
+                |     20 | MANAGER  | 3 |
+                |     30 | SALESMAN | 2 |
+                |     30 | SALESMAN | 2 |
                 +--------+----------+---+
                 (4 rows)
                 

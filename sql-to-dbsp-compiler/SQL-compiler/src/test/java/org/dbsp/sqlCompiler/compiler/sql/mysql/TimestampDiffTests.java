@@ -25,7 +25,7 @@ public class TimestampDiffTests extends SqlIoTest {
 
     @Test
     public void issue4610() {
-        this.qs("""
+        this.qst("""
                 SELECT CAST(TIME '10:00:00' AS TIMESTAMP);
                  t
                 ---
@@ -49,7 +49,7 @@ public class TimestampDiffTests extends SqlIoTest {
     // https://github.com/mysql/mysql-server/blob/mysql-test/r/func_time.result#L715
     @Test
     public void testTimestampDiff0() {
-        this.qs("""
+        this.qst("""
                 select timestampdiff(MONTH, DATE '2001-02-01', DATE '2001-05-01') as a;
                 a
                 -----
@@ -102,7 +102,7 @@ public class TimestampDiffTests extends SqlIoTest {
     @Test
     public void testDateDiff() {
         // same as testTimestampDiff0 above, but using DATEDIFF as a function
-        this.qs("""
+        this.qst("""
                 select datediff(MONTH, DATE '2001-02-01', DATE '2001-05-01') as a;
                 a
                 -----
@@ -155,7 +155,7 @@ public class TimestampDiffTests extends SqlIoTest {
     @Test
     public void testDateAdd() {
         // This is manually written and validated using MySQL
-        this.qs("""
+        this.qst("""
                 select timestampadd(MONTH, 3, DATE '2001-02-01') as a;
                 a
                 -----
@@ -207,7 +207,7 @@ public class TimestampDiffTests extends SqlIoTest {
 
     @Test
     public void testDateDayDiff() {
-        this.qs("""
+        this.qst("""
                 select timestampdiff(SQL_TSI_DAY, DATE '1986-02-01', DATE '1986-03-01') as a1,
                 timestampdiff(SQL_TSI_DAY, DATE '1900-02-01', DATE '1900-03-01') as a2,
                 timestampdiff(SQL_TSI_DAY, DATE '1996-02-01', DATE '1996-03-01') as a3,
@@ -220,7 +220,7 @@ public class TimestampDiffTests extends SqlIoTest {
 
     @Test
     public void testTimestampDiff() {
-        this.qs("""
+        this.qst("""
                 select timestampdiff(SQL_TSI_MINUTE, TIMESTAMP '2001-02-01 12:59:59', TIMESTAMP '2001-05-01 12:58:59') as a;
                 a
                 -----
@@ -380,7 +380,7 @@ public class TimestampDiffTests extends SqlIoTest {
 
     @Test
     public void testMonthDiff() {
-        this.qs("""
+        this.qst("""
                 select timestampdiff(month, DATE '2004-09-11', DATE '2004-09-11');
                 timestampdiff(month, DATE '2004-09-11', DATE '2004-09-11')
                 -----
@@ -487,7 +487,7 @@ public class TimestampDiffTests extends SqlIoTest {
 
     @Test
     public void diffTests() {
-        this.qs("""
+        this.qst("""
                 select (DATE '2024-01-01' - DATE '2023-12-31') DAYS;
                  days
                 ------
@@ -509,7 +509,7 @@ public class TimestampDiffTests extends SqlIoTest {
 
     @Test
     public void diffTests2() {
-        this.qs("""
+        this.qst("""
                 select TIMESTAMPDIFF(DAY, DATE '2024-01-01', DATE '2023-12-31');
                  days
                 ------
@@ -532,7 +532,7 @@ public class TimestampDiffTests extends SqlIoTest {
 
     @Test
     public void issue5986() {
-        this.qs("""
+        this.qst("""
                 SELECT CONVERT_TIMEZONE('America/New_York', 'America/Los_Angeles', TIMESTAMP '2008-03-05 12:25:29');
                  r
                 ---

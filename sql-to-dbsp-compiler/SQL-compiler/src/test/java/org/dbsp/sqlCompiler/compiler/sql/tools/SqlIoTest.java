@@ -290,6 +290,10 @@ public abstract class SqlIoTest extends BaseSQLTests {
         this.qs(queriesWithOutputs, TestOptimizations.Both, true);
     }
 
+    public void qst(String queriesWithOutputs, TestOptimizations to) {
+        this.qs(queriesWithOutputs, to, true);
+    }
+
     public void qs(String queriesWithOutputs) {
         this.qs(queriesWithOutputs, TestOptimizations.Both, false);
     }

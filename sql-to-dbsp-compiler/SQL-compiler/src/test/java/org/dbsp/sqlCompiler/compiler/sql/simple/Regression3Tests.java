@@ -618,7 +618,7 @@ public class Regression3Tests extends SqlIoTest {
 
     @Test
     public void issue6352() {
-        this.qs("""
+        this.qst("""
                  SELECT SAFE_CAST('true' AS BOOL);
                  r
                 ---
@@ -643,7 +643,7 @@ public class Regression3Tests extends SqlIoTest {
                 NULL
                 (1 row)""");
 
-        this.qs("""
+        this.qst("""
                  SELECT SAFE_CAST('0.0' AS DOUBLE);
                  r
                 ---
@@ -662,7 +662,7 @@ public class Regression3Tests extends SqlIoTest {
                 NULL
                 (1 row)""");
 
-        this.qs("""
+        this.qst("""
                  SELECT SAFE_CAST('0.0' AS REAL);
                  r
                 ---

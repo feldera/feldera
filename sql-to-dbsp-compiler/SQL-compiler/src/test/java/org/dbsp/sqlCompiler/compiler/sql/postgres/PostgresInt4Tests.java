@@ -23,7 +23,7 @@ public class PostgresInt4Tests extends SqlIoTest {
 
     @Test
     public void testSelect() {
-        this.qs(
+        this.qst(
                 """
                         SELECT i.* FROM INT4_TBL i WHERE i.f1 <> '0'::INT2;
                              f1

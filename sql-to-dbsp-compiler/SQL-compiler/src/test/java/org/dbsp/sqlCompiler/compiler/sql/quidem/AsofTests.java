@@ -8,7 +8,7 @@ import org.junit.Test;
 public class AsofTests extends StreamingTestBase {
     @Test @Ignore("Only left implemented")
     public void testAsof() {
-        this.qs("""
+        this.qst("""
                 SELECT *
                 FROM (VALUES (NULL, 0), (1, NULL), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 3), (3, 4)) AS t1(k, t)
                 ASOF JOIN (VALUES (1, NULL), (1, 2), (1, 3), (2, 10), (2, 0)) AS t2(k, t)
@@ -86,7 +86,7 @@ public class AsofTests extends StreamingTestBase {
 
     @Test
     public void testLeftAsofGE() {
-        this.qs("""
+        this.qst("""
                 SELECT *
                 FROM (VALUES (NULL, 0), (1, NULL), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 3), (3, 4)) AS t1(k, t)
                 LEFT ASOF JOIN (VALUES (1, NULL), (1, 2), (1, 3), (2, 10), (2, 0)) AS t2(k, t)
@@ -110,7 +110,7 @@ public class AsofTests extends StreamingTestBase {
 
     @Test @Ignore("Not all comparisons supported")
     public void testLeftAsof() {
-        this.qs("""
+        this.qst("""
                 SELECT *
                 FROM (VALUES (NULL, 0), (1, NULL), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 3), (3, 4)) AS t1(k, t)
                 LEFT ASOF JOIN (VALUES (1, NULL), (1, 2), (1, 3), (2, 10), (2, 0)) AS t2(k, t)

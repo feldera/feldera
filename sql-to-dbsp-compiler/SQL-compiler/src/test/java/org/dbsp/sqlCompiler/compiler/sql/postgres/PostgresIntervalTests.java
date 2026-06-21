@@ -40,7 +40,7 @@ public class PostgresIntervalTests extends SqlIoTest {
         // Had to add the symbolic intervals by hand in many places
         // Postgres allows individual signs on fragments, the
         // standard doesn't
-        this.qs("""
+        this.qst("""
                 SELECT INTERVAL '01:00' HOUR TO MINUTE AS "One hour";
                  One hour
                 ----------
@@ -94,7 +94,7 @@ public class PostgresIntervalTests extends SqlIoTest {
 
     @Test
     public void testIntervalOperators() {
-        this.qs("""
+        this.qst("""
                 SELECT * FROM SHORT_INTERVAL_TBL;
                  i
                 ---
@@ -174,7 +174,7 @@ public class PostgresIntervalTests extends SqlIoTest {
 
     @Test
     public void testIntervalOperations() {
-        this.qs("""
+        this.qst("""
                 SELECT r1.*, r2.*
                 FROM SHORT_INTERVAL_TBL r1, SHORT_INTERVAL_TBL r2
                 WHERE r1.i > r2.i;
@@ -227,7 +227,7 @@ public class PostgresIntervalTests extends SqlIoTest {
     @Test
     public void testLimitsPositive() {
         // Our limits are smaller than postgres, so this has been adapted
-        this.qs("""
+        this.qst("""
                 SELECT -(INTERVAL -2147483 months);
                         ?column?
                 ------------------------
@@ -249,7 +249,7 @@ public class PostgresIntervalTests extends SqlIoTest {
 
     @Test
     public void testIntervalSub() {
-        this.qs("""
+        this.qst("""
                 SELECT i - i FROM SHORT_INTERVAL_TBL;
                  ?column?
                 ----------
@@ -271,7 +271,7 @@ public class PostgresIntervalTests extends SqlIoTest {
     
     @Test
     public void literals() {
-        this.qs("""
+        this.qst("""
                 SELECT interval '999' second;  -- oversize leading field is ok
                  interval
                 ----------
@@ -398,7 +398,7 @@ public class PostgresIntervalTests extends SqlIoTest {
     @Test
     public void testCast() {
         // Have to check the spec for the expected result
-        this.qs("""
+        this.qst("""
                 SELECT CAST(i AS INTERVAL YEAR) FROM LONG_INTERVAL_TBL;
                  i
                 ---
@@ -413,7 +413,7 @@ public class PostgresIntervalTests extends SqlIoTest {
     @Test
     public void checkExtract() {
         // I think our definition of EXTRACT(EPOCH) is saner than Postgres
-        this.qs("""
+        this.qst("""
                 SELECT i,
                     EXTRACT(MICROSECOND FROM i) AS MICROSECOND,
                     EXTRACT(MILLISECOND FROM i) AS MILLISECOND,
@@ -459,7 +459,7 @@ public class PostgresIntervalTests extends SqlIoTest {
 
     @Test
     public void testLongExtract() {
-        this.qs("""
+        this.qst("""
                 SELECT EXTRACT(DECADE FROM INTERVAL '100' years);
                  extract
                 ---------
@@ -512,7 +512,7 @@ public class PostgresIntervalTests extends SqlIoTest {
     @Test
     public void testCastString() {
         // These are not from postgres
-        this.qs("""
+        this.qst("""
                 SELECT CAST(INTERVAL 1 YEARS AS VARCHAR);
                  x
                 ---
@@ -552,7 +552,7 @@ public class PostgresIntervalTests extends SqlIoTest {
 
     @Test
     public void doubleCastTest() {
-        this.qs("""
+        this.qst("""
                 SELECT CAST(CAST(INTERVAL '1 02:03:04.5' DAYS TO SECONDS AS INTERVAL DAYS) AS VARCHAR);
                  x
                 ---
@@ -616,7 +616,7 @@ public class PostgresIntervalTests extends SqlIoTest {
 
     @Test
     public void testCastShortIntervalToString() {
-        this.qs("""                
+        this.qst("""                
                 SELECT CAST(INTERVAL '1 02:03:04.5' DAYS TO SECONDS AS VARCHAR);
                  x
                 ---
@@ -729,7 +729,7 @@ public class PostgresIntervalTests extends SqlIoTest {
     @Test
     public void testCastToInterval() {
         // These are not from postgres
-        this.qs("""
+        this.qst("""
                 SELECT CAST(1 AS INTERVAL YEARS);
                  x
                 ---

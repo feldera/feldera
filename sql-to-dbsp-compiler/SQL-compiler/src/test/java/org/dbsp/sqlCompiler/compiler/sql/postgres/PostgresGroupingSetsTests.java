@@ -17,7 +17,7 @@ public class PostgresGroupingSetsTests extends SqlIoTest {
     @Test
     public void testRollup() {
         // commented out order by
-        this.qs("""
+        this.qst("""
                 select a, b, grouping(a,b), sum(v), count(*), max(v)
                   from gstest1 group by rollup (a,b);
                  a | b | grouping | sum | count | max

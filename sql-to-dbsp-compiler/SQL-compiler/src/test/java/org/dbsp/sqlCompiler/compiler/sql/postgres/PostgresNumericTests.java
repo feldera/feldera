@@ -773,7 +773,7 @@ public class PostgresNumericTests extends SqlIoTest {
     // this is not a postgres test
     @Test
     public void testModuloMinusOne() {
-        this.qs("""
+        this.qst("""
                 SELECT 2::DECIMAL % -1::DECIMAL;
                  decimal
                 ---------
@@ -791,7 +791,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testModulo() {
-        this.qs("""
+        this.qst("""
                 select 1.12 % 0.3;
                  ?column?
                 ----------
@@ -873,7 +873,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testExp() {
-        this.qs("""
+        this.qst("""
                 --
                 -- Tests for EXP()
                 --
@@ -920,7 +920,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testSqrtError() {
-        this.qs("""
+        this.qst("""
                 SELECT sqrt('-1'::numeric), sqrt(-1e0);
                  d   | d
                 -----------

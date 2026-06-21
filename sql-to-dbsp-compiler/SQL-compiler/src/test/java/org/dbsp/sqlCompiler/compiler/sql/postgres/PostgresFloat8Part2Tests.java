@@ -24,7 +24,7 @@ public class PostgresFloat8Part2Tests extends SqlIoTest {
 
     @Test
     public void testSelect() {
-        this.qs("""
+        this.qst("""
                 SELECT * FROM FLOAT8_TBL;
                           f1
                 -----------------------
@@ -46,7 +46,7 @@ public class PostgresFloat8Part2Tests extends SqlIoTest {
 
     @Test
     public void testsThatFailInPostgres() {
-        this.qs("""
+        this.qst("""
                 -- this fails in Postgres with overflow but we return -inf
                 SELECT f.f1 * '1e200' from FLOAT8_TBL f;
                             f1
@@ -95,7 +95,7 @@ public class PostgresFloat8Part2Tests extends SqlIoTest {
     // https://github.com/feldera/feldera/issues/1363
     @Test
     public void testLn() {
-        this.qs("""
+        this.qst("""
                 -- postgres doesn't allow ln(0)
                 SELECT log10(f.f1) from FLOAT8_TBL f where f.f1 = '0.0';
                             f1

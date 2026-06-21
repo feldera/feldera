@@ -113,29 +113,29 @@ public class PostgresWindowTests extends SqlIoTest {
 
     @Test
     public void testWindow() {
-        this.qs("""
+        this.qst("""
                 SELECT depname, empno, salary, sum(salary)
                 OVER (PARTITION BY depname)
                 FROM empsalary -- ORDER BY depname, salary
                 ;
                   depname  | empno | salary |  sum
                 -----------+-------+--------+-------
-                 develop|        7 |   4200 | 25100
-                 develop|        9 |   4500 | 25100
-                 develop|       11 |   5200 | 25100
-                 develop|       10 |   5200 | 25100
-                 develop|        8 |   6000 | 25100
-                 personnel|      5 |   3500 |  7400
-                 personnel|      2 |   3900 |  7400
-                 sales|          3 |   4800 | 14600
-                 sales|          4 |   4800 | 14600
-                 sales|          1 |   5000 | 14600
+                 develop   |     7 |   4200 | 25100
+                 develop   |     9 |   4500 | 25100
+                 develop   |    11 |   5200 | 25100
+                 develop   |    10 |   5200 | 25100
+                 develop   |     8 |   6000 | 25100
+                 personnel |     5 |   3500 |  7400
+                 personnel |     2 |   3900 |  7400
+                 sales     |     3 |   4800 | 14600
+                 sales     |     4 |   4800 | 14600
+                 sales     |     1 |   5000 | 14600
                 (10 rows)""");
     }
 
     @Test
     public void testLeadLag() {
-        this.qs("""
+        this.qst("""
                 SELECT lag(ten) OVER (PARTITION BY four ORDER BY ten), ten, four
                 FROM tenk1_2_small WHERE unique2 < 10;
                  lag | ten | four
@@ -206,7 +206,7 @@ public class PostgresWindowTests extends SqlIoTest {
 
     @Test
     public void testPreceding() {
-        this.qs("""
+        this.qst("""
                 SELECT sum(unique1) over (order by four range between 2::int8 preceding and 1::int2 preceding),
                 	unique1, four
                 FROM tenk1_1_small WHERE unique1 < 10;
@@ -245,7 +245,7 @@ public class PostgresWindowTests extends SqlIoTest {
 
     @Test
     public void testWindowDescOrder() {
-        this.qs("""
+        this.qst("""
                 SELECT sum(unique1) over (order by four desc range between 2::int8 preceding and 1::int2 preceding),
                 	unique1, four
                 FROM tenk1_1_small WHERE unique1 < 10;
@@ -268,7 +268,7 @@ public class PostgresWindowTests extends SqlIoTest {
     public void dateWindow() {
         // around line 1534
         // Converted INTERVAL 1 YEAR to INTERVAL 365 DAYS
-        this.qs("""
+        this.qst("""
                 select sum(salary)
                 OVER (order by enroll_date range between INTERVAL 365 DAYS preceding and INTERVAL 365 DAYS following),
                 	salary, enroll_date FROM empsalary;
@@ -308,7 +308,7 @@ public class PostgresWindowTests extends SqlIoTest {
 
     @Test
     public void degenerateCases() {
-        this.qs("""
+        this.qst("""
                 select f1, sum(f1) over (partition by f1 order by f2
                                          range between 1 preceding and 1 following)
                 from t1 where f1 = f2;
@@ -339,7 +339,7 @@ public class PostgresWindowTests extends SqlIoTest {
 
     @Test
     public void testTopK() {
-        this.qs("""
+        this.qst("""
                 SELECT * FROM
                   (SELECT empno,
                           row_number() OVER (ORDER BY empno) rn
@@ -431,12 +431,12 @@ public class PostgresWindowTests extends SqlIoTest {
                 WHERE rn < 3;
                  empno |  depname  | rn
                 -------+-----------+----
-                     7 | develop|     1
-                     8 | develop|     2
-                     2 | personnel|   1
-                     5 | personnel|   2
-                     1 | sales|       1
-                     3 | sales|       2
+                     7 | develop   |  1
+                     8 | develop   |  2
+                     2 | personnel |  1
+                     5 | personnel |  2
+                     1 | sales     |  1
+                     3 | sales     |  2
                 (6 rows)
 
                 SELECT * FROM
@@ -448,21 +448,21 @@ public class PostgresWindowTests extends SqlIoTest {
                 WHERE c <= 3;
                  empno |  depname  | salary | c
                 -------+-----------+--------+---
-                     8 | develop|      6000 | 1
-                    10 | develop|      5200 | 3
-                    11 | develop|      5200 | 3
-                     2 | personnel|    3900 | 1
-                     5 | personnel|    3500 | 2
-                     1 | sales|        5000 | 1
-                     4 | sales|        4800 | 3
-                     3 | sales|        4800 | 3
+                     8 | develop   |   6000 | 1
+                    10 | develop   |   5200 | 3
+                    11 | develop   |   5200 | 3
+                     2 | personnel |   3900 | 1
+                     5 | personnel |   3500 | 2
+                     1 | sales     |   5000 | 1
+                     4 | sales     |   4800 | 3
+                     3 | sales     |   4800 | 3
                 (8 rows)
                 """);
     }
 
     @Test @Ignore("Lead with variable amounts not supported")
     public void testLeadLagVariable() {
-        this.qs("""
+        this.qst("""
                 select x, lag(x, 1) over (order by x), lead(x, 3) over (order by x)
                 from series;
                  x  | lag | lead

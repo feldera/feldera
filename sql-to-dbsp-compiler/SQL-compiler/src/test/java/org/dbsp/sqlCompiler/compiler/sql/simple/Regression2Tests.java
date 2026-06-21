@@ -605,7 +605,7 @@ public class Regression2Tests extends SqlIoTest {
 
     @Test
     public void testBetween() {
-        this.qs("""
+        this.qst("""
                 SELECT 1 BETWEEN 2 AND 0;
                  r
                 ---
@@ -627,7 +627,7 @@ public class Regression2Tests extends SqlIoTest {
 
     @Test
     public void testStdDevPop() {
-        this.qs("""
+        this.qst("""
                 WITH T(x) as (VALUES(CAST(NULL AS DECIMAL(5, 2)))) SELECT STDDEV_POP(x) FROM T;
                  r
                 ---
@@ -911,7 +911,7 @@ public class Regression2Tests extends SqlIoTest {
 
     @Test
     public void issue5981() {
-        this.qs("""
+        this.qst("""
                 SELECT TO_HEX(x'48656c6c6f');
                  r
                 ---
@@ -992,7 +992,7 @@ public class Regression2Tests extends SqlIoTest {
 
     @Test
     public void testXxHash() {
-        this.qs("""
+        this.qst("""
                 SELECT XXHASH('abc', 2);
                  r
                 ---
@@ -1061,7 +1061,7 @@ public class Regression2Tests extends SqlIoTest {
 
     @Test
     public void testFiniteOrNull() {
-        this.qs("""
+        this.qst("""
                 SELECT FINITE_OR_NULL(1e0);
                  r
                 ---
@@ -1100,7 +1100,7 @@ public class Regression2Tests extends SqlIoTest {
                  r
                 ---
                 NULL""");
-        this.qs("""
+        this.qst("""
                SELECT INTERVAL '+1' HOURS / 5;
                 r
                ---
@@ -1687,7 +1687,7 @@ public class Regression2Tests extends SqlIoTest {
     @Test
     public void issue4146a() {
         // Validated on postgres
-        this.qs("""
+        this.qst("""
                 SELECT COALESCE(NULL, TIMESTAMP WITH TIME ZONE '2020-01-01 10:10:10 America/New_York');
                  r
                 ---

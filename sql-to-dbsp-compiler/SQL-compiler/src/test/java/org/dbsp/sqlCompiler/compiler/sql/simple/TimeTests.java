@@ -253,7 +253,7 @@ public class TimeTests extends SqlIoTest {
 
     @Test
     public void testMakeTime() {
-        this.qs("""
+        this.qst("""
                 SELECT MAKE_TIME(1, 2, 3);
                  r
                 ---

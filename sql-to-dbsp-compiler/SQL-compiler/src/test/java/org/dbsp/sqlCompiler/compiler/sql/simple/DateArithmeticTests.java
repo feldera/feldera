@@ -6,7 +6,7 @@ import org.junit.Test;
 public class DateArithmeticTests extends SqlIoTest {
     @Test
     public void testTimeAddInterval() {
-        this.qs("""
+        this.qst("""
                 SELECT DATE '2024-01-01' + INTERVAL '10' MINUTES;
                    date
                 ----------
@@ -186,7 +186,7 @@ public class DateArithmeticTests extends SqlIoTest {
 
     @Test
     public void testTimeSubInterval() {
-        this.qs("""
+        this.qst("""
                 SELECT DATE '2024-01-01' - INTERVAL '10' MINUTES;
                    date
                 ----------
@@ -358,7 +358,7 @@ public class DateArithmeticTests extends SqlIoTest {
 
     @Test
     public void testDateSub() {
-        this.qs("""
+        this.qst("""
                 SELECT (date '2023-12-01' - date '2022-12-01') days;
                  diff
                 ------
@@ -394,7 +394,7 @@ public class DateArithmeticTests extends SqlIoTest {
                 ------
                  334 days ago
                 (1 row)""");
-        this.qs("""
+        this.qst("""
                 SELECT (TIMESTAMP '2023-01-01 10:00:00' - TIMESTAMP '2023-12-01 10:00:00') month;
                  diff
                 ------
@@ -404,7 +404,7 @@ public class DateArithmeticTests extends SqlIoTest {
 
     @Test
     public void makeDateTests() {
-        this.qs("""
+        this.qst("""
                 SELECT MAKE_DATE(2020, 1, 1);
                  r
                 ---
@@ -465,7 +465,7 @@ public class DateArithmeticTests extends SqlIoTest {
 
     @Test
     public void makeTimestampTests() {
-        this.qs("""
+        this.qst("""
                 SELECT MAKE_TIMESTAMP(2020, 1, 1, 10, 0, 0);
                  r
                 ---

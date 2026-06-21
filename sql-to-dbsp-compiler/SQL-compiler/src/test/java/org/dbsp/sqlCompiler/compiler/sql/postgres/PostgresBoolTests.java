@@ -82,7 +82,7 @@ public class PostgresBoolTests extends SqlIoTest {
 
     @Test
     public void testIs() {
-        this.q("""
+        this.qst("""
                 SELECT
                     d,
                     b IS TRUE AS istrue,
@@ -94,15 +94,16 @@ public class PostgresBoolTests extends SqlIoTest {
                 FROM booltbl3;
                    d   | istrue | isnottrue | isfalse | isnotfalse | isunknown | isnotunknown
                 -------+--------+-----------+---------+------------+-----------+--------------
-                 true|   t      | f         | f       | t          | f         | t
-                 false|  f      | t         | t       | f          | f         | t
-                 null|   f      | t         | f       | t          | t         | f""");
+                 true  | t      | f         | f       | t          | f         | t
+                 false | f      | t         | t       | f          | f         | t
+                 null  | f      | t         | f       | t          | t         | f
+                (3 rows)""");
     }
 
     @Test
     public void testShortcut() {
         // This is not from Postgres
-        this.q("""
+        this.qst("""
                 SELECT v0, v1, v0 OR v1 FROM (SELECT b AS v0 FROM BOOLTBL3) CROSS JOIN (SELECT b as v1 FROM BOOLTBL3);
                  v0 | v1 | v0 OR v1
                 --------------------
@@ -114,8 +115,9 @@ public class PostgresBoolTests extends SqlIoTest {
                 null| f  |null
                  t  |null| t
                  f  |null|null
-                null|null|null""");
-        this.q("""
+                null|null|null
+                (9 rows)
+
                 SELECT v0, v1, v0 AND v1 FROM (SELECT b AS v0 FROM BOOLTBL3) CROSS JOIN (SELECT b as v1 FROM BOOLTBL3);
                  v0 | v1 | v0 AND v1
                 --------------------
@@ -127,19 +129,21 @@ public class PostgresBoolTests extends SqlIoTest {
                 null| f  | f
                  t  |null|null
                  f  |null| f
-                null|null|null""");
-        this.q("""
+                null|null|null
+                (9 rows)
+
                 SELECT v0, NOT v0 FROM (SELECT b AS v0 FROM BOOLTBL3);
                  v0 | NOT v0
                 ---------------
                  t  | f
                  f  | t
-                null|null""");
+                null|null
+                (3 rows)""");
     }
 
     @Test
     public void testBool() {
-        this.qs("""
+        this.qst("""
                 SELECT istrue AND isnul AND istrue FROM booltbl4;
                  ?column?
                 ----------

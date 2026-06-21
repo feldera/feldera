@@ -31,7 +31,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
 
     @Test
     public void testSelect() {
-        this.qs("""
+        this.qst("""
                 -- special inputs
                 SELECT 'NaN'::float8;
                  float8
@@ -843,7 +843,7 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
     // Postgres gives a runtime error, but rust returns inf
     @Test
     public void testPower2() {
-        this.qs("""
+        this.qst("""
                 SELECT power('0'::DOUBLE, '-inf'::DOUBLE);
                  power
                 -------
@@ -874,7 +874,7 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
 
     @Test
     public void nonPostgresTests() {
-        this.qs("""
+        this.qst("""
                 SELECT ln(1);
                  ln
                 ----
@@ -1092,7 +1092,7 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
 
     @Test
     public void testModulo() {
-        this.qs("""
+        this.qst("""
                 select 1.12::DOUBLE % 0.3::DOUBLE;
                  ?column?
                 ----------

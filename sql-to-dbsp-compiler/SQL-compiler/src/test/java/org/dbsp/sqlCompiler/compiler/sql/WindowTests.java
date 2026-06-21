@@ -159,7 +159,7 @@ public class WindowTests extends ScottBaseTests {
         PermutationTest test = q0.createTest();
         List<String> permutations = test.generateAll();
         for (var t : permutations) {
-            this.qs(t, TestOptimizations.Optimized);
+            this.qst(t, TestOptimizations.Optimized);
         }
     }
 
@@ -168,7 +168,7 @@ public class WindowTests extends ScottBaseTests {
         PermutationTest test = q1.createTest();
         List<String> permutations = test.generateAll();
         for (var t : permutations) {
-            this.qs(t, TestOptimizations.Optimized);
+            this.qst(t, TestOptimizations.Optimized);
         }
     }
 

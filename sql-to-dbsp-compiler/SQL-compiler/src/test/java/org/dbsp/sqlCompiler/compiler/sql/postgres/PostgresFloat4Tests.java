@@ -149,7 +149,7 @@ public class PostgresFloat4Tests extends SqlIoTest {
 
     @Test
     public void testComp() {
-        this.qs("""
+        this.qst("""
                 SELECT f.* FROM FLOAT4_TBL f WHERE f.f1 <> '1004.3';
                       f1
                 ---------------
@@ -203,7 +203,7 @@ public class PostgresFloat4Tests extends SqlIoTest {
     @Test
     public void testFPArithmetic() {
         // Skipped the unary 'abs' Postgres operator written as '@'
-        this.qs("SELECT f.f1, f.f1 * '-10' AS x FROM FLOAT4_TBL f\n" +
+        this.qst("SELECT f.f1, f.f1 * '-10' AS x FROM FLOAT4_TBL f\n" +
                 "   WHERE f.f1 > '0.0';\n" +
                 "      f1       |       x        \n" +
                 "---------------+----------------\n" +

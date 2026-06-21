@@ -54,7 +54,7 @@ public class AggregateTests extends SqlIoTest {
 
     @Test
     public void issue2042() {
-        this.qs("""
+        this.qst("""
                 SELECT ARG_MAX(I, I), ARG_MAX(I, J), ARG_MAX(J, I), ARG_MAX(J, J)
                 FROM NN;
                  ii | ij | ji   | jj
@@ -89,7 +89,7 @@ public class AggregateTests extends SqlIoTest {
     @Test
     public void testIssue1957() {
         // validated using Postgres
-        this.qs("""
+        this.qst("""
                 SELECT
                   id,
                   (SELECT ARRAY_AGG(id) FROM (
@@ -111,7 +111,7 @@ public class AggregateTests extends SqlIoTest {
     @Test
     public void issue4777() {
         // validated using Postgres, but second result is not deterministic
-        this.qs("""
+        this.qst("""
                 SELECT ARRAY_AGG(parentId ORDER BY id)
                 FROM warehouse;
                   array
@@ -207,7 +207,7 @@ public class AggregateTests extends SqlIoTest {
 
     @Test
     public void testArrayConstructor() {
-        this.qs("""
+        this.qst("""
                 SELECT
                   id,
                   (SELECT ARRAY(
@@ -225,7 +225,7 @@ public class AggregateTests extends SqlIoTest {
                  30 | { 3, 5, 20 }
                 (6 rows)""");
 
-        this.qs("""
+        this.qst("""
                 SELECT
                   id,
                   (SELECT ARRAY(
@@ -247,7 +247,7 @@ public class AggregateTests extends SqlIoTest {
 
     @Test
     public void testOneArgMin() {
-        this.qs("""
+        this.qst("""
                 SELECT ARG_MIN(V, B)
                 FROM T;
                  B
@@ -296,13 +296,13 @@ public class AggregateTests extends SqlIoTest {
 
     @Test
     public void testArgMin() {
-        this.qs("""
+        this.qst("""
                 SELECT ARG_MIN(V, B), ARG_MIN(V, I), ARG_MIN(V, S), ARG_MIN(V, T),
                 ARG_MIN(V, R), ARG_MIN(V, D), ARG_MIN(V, E)
                 FROM T;
                  B | I | S | T | R | D | E
                 ---------------------------
-                 0| 0| 0| 0| 0| 0| 0
+                 0 | 0 | 0 | 0 | 0 | 0 | 0
                 (1 row)
 
                 SELECT ARG_MAX(V, B), ARG_MAX(V, I), ARG_MAX(V, S), ARG_MAX(V, T),
@@ -310,13 +310,13 @@ public class AggregateTests extends SqlIoTest {
                 FROM T;
                  B | I | S | T | R | D | E
                 ---------------------------
-                 2| 2| 2| 2| 2| 2| 2
+                 2 | 2 | 2 | 2 | 2 | 2 | 2
                 (1 row)""");
     }
 
     @Test
     public void testAggregates() {
-        this.qs("""
+        this.qst("""
                 SELECT COUNT(*), COUNT(B), COUNT(I), COUNT(S), COUNT(T), COUNT(R), COUNT(D), COUNT(E) FROM T;
                  * | B | I | S | T | R | D | E
                 -------------------------------
@@ -386,7 +386,7 @@ public class AggregateTests extends SqlIoTest {
 
     @Test
     public void testDistinctAggregates() {
-        this.qs("""
+        this.qst("""
                 SELECT COUNT(*), COUNT(DISTINCT B), COUNT(DISTINCT I), COUNT(DISTINCT S), COUNT(DISTINCT T), COUNT(DISTINCT R), COUNT(DISTINCT D), COUNT(DISTINCT E) FROM T;
                  * | B | I | S | T | R | D | E
                 -------------------------------

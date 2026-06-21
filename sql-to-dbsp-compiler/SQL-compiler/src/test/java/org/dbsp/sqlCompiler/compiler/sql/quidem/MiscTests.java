@@ -7,7 +7,7 @@ import org.junit.Test;
 public class MiscTests extends ScottBaseTests {
     @Test
     public void uuidTests() {
-        this.qs("""
+        this.qst("""
                 SELECT UUID '123e4567-e89b-12d3-a456-426655440000';
                 +--------------------------------------+
                 | EXPR$0                               |
@@ -72,7 +72,7 @@ public class MiscTests extends ScottBaseTests {
 
     @Test
     public void rowTests() {
-        this.qs("""
+        this.qst("""
                 -- Implicit ROW
                 select deptno, (empno, deptno) as r
                 from emp;
@@ -133,7 +133,7 @@ public class MiscTests extends ScottBaseTests {
     @Test
     @Ignore("Requires MULTISET")
     public void testRowCoalesce() {
-        this.qs("""
+        this.qst("""
                 -- [CALCITE-877] Allow ROW as argument to COLLECT
                 select deptno, collect(r) as empnos
                 from (select deptno, (empno, deptno) as r
@@ -152,7 +152,7 @@ public class MiscTests extends ScottBaseTests {
     @Test
     public void intervalTests() {
         // Added tests with decimal and FP
-        this.qs("""
+        this.qst("""
                 -- [CALCITE-922] Value of INTERVAL literal
                 select deptno * interval '2' day as d2,
                  deptno * interval -'3' hour as h3,
@@ -212,7 +212,7 @@ public class MiscTests extends ScottBaseTests {
     @Test
     public void intervalDivision() {
         // Tested on Postgres, the long interval results differ, since postgres computes on days
-        this.qs("""
+        this.qst("""
                 select interval '2' day / deptno as d2,
                  interval -'3' hour / deptno as h3,
                  interval -'-4' hour / deptno as h4,

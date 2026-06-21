@@ -23,7 +23,7 @@ public class PostgresInt2Tests extends SqlIoTest {
 
     @Test
     public void testSelect() {
-        this.qs(
+      this.qst(
                 """
                         SELECT * FROM INT2_TBL;
                          f1

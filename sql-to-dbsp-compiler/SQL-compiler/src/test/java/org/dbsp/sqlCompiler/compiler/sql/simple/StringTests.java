@@ -14,7 +14,7 @@ public class StringTests extends SqlIoTest {
 
     @Test
     public void testReverse() {
-        this.qs("""
+        this.qst("""
                 SELECT REVERSE('Feldera');
                  r
                 ---

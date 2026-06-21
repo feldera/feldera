@@ -16,19 +16,20 @@ public class FoodmartTests extends FoodmartBaseTests {
 
     @Test
     public void testSelect() {
-        this.q("""
+        this.qst("""
                 SELECT * FROM DEPT;
-                DEPT NO | DNAME | LOC
-                ---------------------
-                10 | ACCOUNTING| NEW YORK
-                20 | RESEARCH| DALLAS
-                30 | SALES| CHICAGO
-                40 | OPERATIONS| BOSTON""");
+                DEPT NO | DNAME      | LOC
+                ---------------------------------
+                10      | ACCOUNTING | NEW YORK
+                20      | RESEARCH   | DALLAS
+                30      | SALES      | CHICAGO
+                40      | OPERATIONS | BOSTON
+                (4 rows)""");
     }
 
     @Test
     public void testScalar() {
-        this.qs("""
+        this.qst("""
                 select deptno, (select min(empno) from emp where deptno = dept.deptno) as x from dept;
                 +--------+------+
                 | DEPTNO | X    |
@@ -143,7 +144,7 @@ public class FoodmartTests extends FoodmartBaseTests {
 
     @Test @Ignore("Cannot be decorrelated (generates LATERAL)")
     public void limitTests() {
-        this.qs("""
+        this.qst("""
                 select deptno, (select sum(empno) from emp where deptno = dept.deptno limit 1) as x from dept;
                 +--------+----------------------+
                 | DEPTNO |          X           |

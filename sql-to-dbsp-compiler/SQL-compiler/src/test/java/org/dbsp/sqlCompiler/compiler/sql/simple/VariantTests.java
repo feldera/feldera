@@ -501,7 +501,7 @@ public class VariantTests extends SqlIoTest {
     @Test
     public void issue5938() {
         // type -> Variant -> string
-        this.qs("""
+        this.qst("""
                 SELECT CAST(CAST(1 AS VARIANT) AS VARCHAR);
                  r
                 ---
@@ -573,7 +573,7 @@ public class VariantTests extends SqlIoTest {
     @Test
     public void issue5938a() {
         // String -> Variant -> type
-        this.qs("""
+        this.qst("""
                 SELECT CAST(CAST('1' AS VARIANT) AS INT);
                  r
                 ---
