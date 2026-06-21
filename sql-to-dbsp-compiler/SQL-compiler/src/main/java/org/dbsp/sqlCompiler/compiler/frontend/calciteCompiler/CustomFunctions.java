@@ -83,6 +83,8 @@ public class CustomFunctions {
         this.functions.add(new MakeDateFunction());
         this.functions.add(new MakeTimeFunction());
         this.functions.add(new MakeTimestampFunction());
+        this.functions.add(new MapKeysFunction());
+        this.functions.add(new MapValuesFunction());
         this.functions.add(new NowFunction());
         this.functions.add(new ParseDateFunction());
         this.functions.add(new ParseJsonFunction());
@@ -182,6 +184,20 @@ public class CustomFunctions {
 
         public CalciteFunctionClone(SqlFunction calciteFunction, String documentationFile, String testedBy) {
             this(calciteFunction.getName(), calciteFunction, documentationFile, testedBy);
+        }
+    }
+
+    static class MapKeysFunction extends CalciteFunctionClone {
+        // Cannot be folded by Calcite since the result order is not deterministic in Calcite
+        private MapKeysFunction() {
+            super(SqlLibraryOperators.MAP_KEYS, "map#map_keys", "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py");
+        }
+    }
+
+    static class MapValuesFunction extends CalciteFunctionClone {
+        // Cannot be folded by Calcite since the result order is not deterministic in Calcite
+        private MapValuesFunction() {
+            super(SqlLibraryOperators.MAP_VALUES, "map#map_values", FunctionDocumentation.NO_FILE);
         }
     }
 

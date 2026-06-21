@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -37,6 +38,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.Linq;
@@ -407,6 +409,32 @@ public class TableParser {
                         for (DBSPType ft : tuple.tupFields)
                             fields.add(parseValue(ft, parts[index++], trimTrailingSpaces));
                         yield new DBSPTupleExpression(CalciteObject.EMPTY, tuple, fields);
+                    }
+                }
+                case MAP -> {
+                    // This is rather fragile, but there is not fool-proof solution for parsing this
+                    DBSPTypeMap map = fieldType.to(DBSPTypeMap.class);
+                    if (trimmed.equals("NULL")) {
+                        yield map.none();
+                    } else {
+                        if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
+                            throw new UnimplementedException("Expected map constant to be bracketed: " + trimmed);
+                        trimmed = trimmed.substring(1, trimmed.length() - 1);
+                        Utilities.enforce(!trimmed.isEmpty());
+
+                        String[] parts = trimmed.split(",");
+                        List<DBSPExpression> keys = new ArrayList<>();
+                        List<DBSPExpression> values = new ArrayList<>();
+                        for (String part: parts) {
+                            String[] kv = part.split(":");
+                            Utilities.enforce(kv.length == 2, () -> "Map entry is not in 'key: value' form");
+                            DBSPExpression key = parseValue(map.getKeyType(), kv[0], trimTrailingSpaces);
+                            keys.add(key);
+                            DBSPExpression value = parseValue(map.getValueType(), kv[1], trimTrailingSpaces);
+                            values.add(value);
+                        }
+
+                        yield new DBSPMapExpression(map, keys, values);
                     }
                 }
                 default -> throw new UnimplementedException(

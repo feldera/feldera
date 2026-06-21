@@ -692,11 +692,8 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
             new Func(SqlLibraryOperators.IFNULL, "IFNULL", SqlLibrary.BIG_QUERY,
                     "comparisons#ifnull", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.MAP_KEYS, "MAP_KEYS", SqlLibrary.SPARK,
-                    "map#map_keys",
-                    "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
-            new Func(SqlLibraryOperators.MAP_VALUES, "MAP_VALUES", SqlLibrary.SPARK,
-                    "map#map_values", FunctionDocumentation.NO_FILE, false)
+            new Func(SqlLibraryOperators.MAP_CONCAT, "MAP_CONCAT", SqlLibrary.SPARK,
+                    "map#map_concat", FunctionDocumentation.NO_FILE, false),
             // new Func(SqlLibraryOperators.SAFE_ORDINAL, "SAFE_ORDINAL", SqlLibrary.BIG_QUERY, "array", FunctionDocumentation.NO_FILE, false),
     };
 
