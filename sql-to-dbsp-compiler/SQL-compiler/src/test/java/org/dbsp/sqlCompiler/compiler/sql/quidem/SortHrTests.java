@@ -6,15 +6,15 @@ import org.junit.Test;
 public class SortHrTests extends HrBaseTests {
     @Test
     public void testSort() {
-        this.qs("""
+        this.qst("""
                 select * from "emps" offset 0;
                 +-------+--------+-----------+---------+------------+
                 | empid | deptno | name      | salary  | commission |
                 +-------+--------+-----------+---------+------------+
-                |   100 |     10 | Bill|       10000.0 |       1000 |
-                |   110 |     10 | Theodore|   11500.0 |        250 |
-                |   150 |     10 | Sebastian|   7000.0 |            |
-                |   200 |     20 | Eric|        8000.0 |        500 |
+                |   100 |     10 | Bill      | 10000.0 |       1000 |
+                |   110 |     10 | Theodore  | 11500.0 |        250 |
+                |   150 |     10 | Sebastian |  7000.0 |            |
+                |   200 |     20 | Eric      |  8000.0 |        500 |
                 +-------+--------+-----------+---------+------------+
                 (4 rows)
                 

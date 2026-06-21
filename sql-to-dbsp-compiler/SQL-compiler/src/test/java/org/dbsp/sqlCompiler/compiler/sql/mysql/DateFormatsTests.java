@@ -38,7 +38,7 @@ public class DateFormatsTests extends SqlIoTest {
 
     @Test
     public void testParseDate() {
-        this.qs("""
+        this.qst("""
                 SELECT PARSE_DATE(' %Y-%m-%d', '   2020-10-01');
                  d
                 ---
@@ -110,7 +110,7 @@ public class DateFormatsTests extends SqlIoTest {
     public void testCorners() {
         // Year 0 is not legal, replaced with year 1
         // %Y in MySql is %y
-        this.qs("""
+        this.qst("""
                 SELECT format_date('%Y-%m', DATE '2020-10-10');
                 valid_date
                 ------------

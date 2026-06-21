@@ -26,7 +26,7 @@ public class PostgresTimeTests extends SqlIoTest {
 
     @Test
     public void testTime() {
-        this.qs("""
+        this.qst("""
                 SELECT f1 AS "Time" FROM TIME_TBL;
                     Time
                 -------------
@@ -85,7 +85,7 @@ public class PostgresTimeTests extends SqlIoTest {
 
     @Test
     public void testConstants() {
-        this.qs("""
+        this.qst("""
                 -- Check edge cases
                 SELECT '23:59:59.999999'::time;
                       time
@@ -123,7 +123,7 @@ public class PostgresTimeTests extends SqlIoTest {
     public void testUnits() {
         // Removed dates
         // Extract second and millisecond return integers in Calcite instead of DECIMAL
-        this.qs("""
+        this.qst("""
                 SELECT EXTRACT(MICROSECOND FROM TIME '13:30:25.575401');
                  extract
                 ----------
@@ -180,7 +180,7 @@ public class PostgresTimeTests extends SqlIoTest {
 
     @Test
     public void testDatePart() {
-        this.qs("""
+        this.qst("""
                 SELECT date_part(microsecond, TIME '13:30:25.575401');
                  date_part
                 -----------

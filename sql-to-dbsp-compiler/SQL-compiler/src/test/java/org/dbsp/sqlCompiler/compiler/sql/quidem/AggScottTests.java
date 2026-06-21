@@ -8,7 +8,7 @@ import org.junit.Test;
 public class AggScottTests extends ScottBaseTests {
     @Test
     public void testCalcite6403() {
-        this.qs("""
+        this.qst("""
                 SELECT COUNT(*), COUNT(DISTINCT deptno) FROM emp WHERE false;
                  c0 | c1
                 ---------
@@ -18,7 +18,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test
     public void testPairs() {
-        this.qs("""
+        this.qst("""
                 select comm, (comm, comm) in ((500, 500), (300, 300), (0, 0)) from emp;
                  comm | in
                 -----------
@@ -42,7 +42,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test @Ignore("Cannot decorrelate LATERAL join")
     public void testLateral() {
-        this.qs("""
+        this.qst("""
                 SELECT deptno, ename
                 FROM
                   (SELECT DISTINCT deptno FROM emp) t1,
@@ -435,7 +435,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test
     public void testSimple() {
-        this.qs("""
+        this.qst("""
                   -- [KYLIN-751] Max on negative double values is not working
                   -- [CALCITE-735] Primitive.DOUBLE.min should be large and negative
                   select max(v) as x, min(v) as n
@@ -513,7 +513,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test @Ignore("fusion, collect not yet implemented")
     public void testFusion() {
-        this.qs("""
+        this.qst("""
                 -- FUSION rolled up using CARDINALITY
                 select cardinality(fusion(empnos)) as f_empnos_length
                 from (
@@ -611,7 +611,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test
     public void testConditionalAggregate() {
-        this.qs("""
+        this.qst("""
                 -- Aggregate FILTER
                 select deptno,
                   sum(sal) filter (where job = 'CLERK') c_sal,
@@ -665,7 +665,7 @@ public class AggScottTests extends ScottBaseTests {
     // select the ordered field is compiled incorrectly
     @Test
     public void testOrderByFilter() {
-        this.qs("""
+        this.qst("""
                 -- Aggregate FILTER with ORDER BY
                 select deptno
                 from emp
@@ -683,7 +683,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test
     public void testAggregates() {
-        this.qs("""
+        this.qst("""
                 -- Aggregate FILTER with JOIN
                 select dept.deptno,
                   sum(sal) filter (where 1 < 2) as s,
@@ -797,7 +797,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test
     public void testCompositeCount() {
-        this.qs("""
+        this.qst("""
                 -- Composite COUNT and FILTER
                 select count(*) as c,
                   count(*) filter (where z > 1) as cf,
@@ -816,7 +816,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test
     public void testAggregates2() {
-        this.qs("""
+        this.qst("""
                 select count(distinct deptno) as cd, count(*) as c
                 from emp
                 group by deptno;
@@ -832,7 +832,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test
     public void testDistinctAggregates() {
-        this.qs("""
+        this.qst("""
                 select deptno, count(distinct deptno) as c
                 from emp
                 group by deptno;
@@ -860,7 +860,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test
     public void testCubeDistinct() {
-        this.qs("""
+        this.qst("""
                 select count(distinct deptno) as cd, count(*) as c
                 from emp
                 group by cube(deptno);
@@ -878,7 +878,7 @@ public class AggScottTests extends ScottBaseTests {
     @Test
     public void testDistinctCount() {
         // These tests cannot be run without optimizations.
-        this.qs("""
+        this.qst("""
                 -- Multiple distinct count and non-distinct aggregates
                 select deptno,
                  count(distinct job) as dj,
@@ -926,7 +926,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test
     public void testAvg() {
-        this.qs("""
+        this.qst("""
                 select avg(comm) as a, count(comm) as c from
                 emp where empno < 7844;
                 +-------------------+---+
@@ -939,7 +939,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test
     public void testAggregates3() {
-        this.qs("""
+        this.qst("""
                 -- [CALCITE-846] Push aggregate with FILTER through UNION ALL
                 select deptno, count(*) filter (where job = 'CLERK') as cf, count(*) as c
                 from (
@@ -1177,7 +1177,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test
     public void testNestedOrderby() {
-        this.qs("""
+        this.qst("""
                 -- Collation of LogicalAggregate ([CALCITE-783] and [CALCITE-822])
                 select  sum(x) as sum_cnt,
                   count(distinct y) as cnt_dist
@@ -1206,7 +1206,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test
     public void testAggregates4() {
-        this.qs("""
+        this.qst("""
                 -- [CALCITE-938] Aggregate row count
                 select empno, d.deptno
                 from emp
@@ -1641,7 +1641,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test
     public void testAgg4() {
-        this.qs("""
+        this.qst("""
                 -- [CALCITE-1930] AggregateExpandDistinctAggregateRules should handle multiple aggregate calls with same input ref
                 select count(distinct EMPNO), COUNT(SAL), MIN(SAL), MAX(SAL) from emp;
                 +--------+--------+--------+---------+
@@ -1693,7 +1693,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test @Ignore("Several not-implemented aggregation functions")
     public void testRegrValue() {
-        this.qs("""
+        this.qst("""
                 -- [CALCITE-1776, CALCITE-2402] REGR_COUNT
                 SELECT regr_count(COMM, SAL) as "REGR_COUNT(COMM, SAL)",
                    regr_count(EMPNO, SAL) as "REGR_COUNT(EMPNO, SAL)"
@@ -1736,7 +1736,7 @@ public class AggScottTests extends ScottBaseTests {
 
     @Test
     public void bitTests() {
-        this.qs("""
+        this.qst("""
                 -- BIT_AND, BIT_OR, BIT_XOR aggregate functions
                 select bit_and(deptno), bit_or(deptno), bit_xor(deptno) from emp;
                 +--------+--------+--------+

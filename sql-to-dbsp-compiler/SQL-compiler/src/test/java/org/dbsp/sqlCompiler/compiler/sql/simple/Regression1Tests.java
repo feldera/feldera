@@ -255,7 +255,7 @@ public class Regression1Tests extends SqlIoTest {
 
     @Test
     public void issue4562() {
-        this.qs("""
+        this.qst("""
                 SELECT TIMESTAMPADD(MINUTE, 2, '2020-06-21 14:23:44.123'::TIMESTAMP);
                  r
                 ---
@@ -508,7 +508,7 @@ public class Regression1Tests extends SqlIoTest {
 
     @Test
     public void issue4264() {
-        this.qs("""
+        this.qst("""
                 SELECT TRIM(trailing '' FROM 'x');
                  result
                 --------
@@ -757,6 +757,7 @@ public class Regression1Tests extends SqlIoTest {
 
     @Test
     public void issue5087() {
+        // Spaces are significant
         this.qs("""
                 SELECT '1
                 2' AS r;
@@ -1422,7 +1423,7 @@ public class Regression1Tests extends SqlIoTest {
 
     @Test
     public void testBinaryStringCast() {
-        this.qs("""
+        this.qst("""
                 SELECT bin2utf8(x'404141');
                  r
                 ---
@@ -1632,7 +1633,7 @@ public class Regression1Tests extends SqlIoTest {
 
     @Test
     public void issue5352_a() {
-        this.qs("""
+        this.qst("""
              SELECT 'TRUE'::BOOLEAN;
               r
              ---
@@ -1876,7 +1877,7 @@ public class Regression1Tests extends SqlIoTest {
 
     @Test
     public void safeArrayCast() {
-        this.qs("""
+        this.qst("""
                 SELECT SAFE_CAST(ARRAY['a'] AS INT ARRAY);
                  r
                 ---
@@ -1892,7 +1893,7 @@ public class Regression1Tests extends SqlIoTest {
 
     @Test
     public void safeNestedArrayCast() {
-        this.qs("""
+        this.qst("""
                 SELECT SAFE_CAST(ARRAY[ARRAY['a']] AS INT ARRAY ARRAY);
                  r
                 ---

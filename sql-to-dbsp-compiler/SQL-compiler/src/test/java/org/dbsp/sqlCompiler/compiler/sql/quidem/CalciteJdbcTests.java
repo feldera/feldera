@@ -8,16 +8,16 @@ public class CalciteJdbcTests extends HrBaseTests {
     // validated on Postgres
     @Test
     public void testWinAggFirstValue() {
-        this.qs("""
+        this.qst("""
                 select deptno, empid, commission,
                 first_value(commission) over (partition by deptno order by empid) as r
                 from emps;
                  deptno | empid | commission | R
                 ---------------------------------
-                 10    | 100   | 1000       | 1000
-                 10    | 110   | 250        | 1000
-                 10    | 150   | null       | 1000
-                 20    | 200   | 500        | 500
+                 10     | 100   | 1000       | 1000
+                 10     | 110   | 250        | 1000
+                 10     | 150   | null       | 1000
+                 20     | 200   | 500        | 500
                 (4 rows)
                 
                 select  deptno, empid, commission,
@@ -40,10 +40,10 @@ public class CalciteJdbcTests extends HrBaseTests {
                 from emps;
                  deptno | empid | commission | R
                 ---------------------------------
-                 10    | 100   | 1000       | 1000
-                 10    | 110   | 250        | 1000
-                 10    | 150   | null       | 1000
-                 20    | 200   | 500        | 500
+                 10     | 100   | 1000       | 1000
+                 10     | 110   | 250        | 1000
+                 10     | 150   | null       | 1000
+                 20     | 200   | 500        | 500
                 (4 rows)
                 
                 -- same query with different explicit bounds
@@ -55,10 +55,10 @@ public class CalciteJdbcTests extends HrBaseTests {
                 from emps;
                  deptno | empid | commission | R
                 ---------------------------------
-                 10    | 100   | 1000       | 1000
-                 10    | 110   | 250        | 1000
-                 10    | 150   | null       | 1000
-                 20    | 200   | 500        | 500
+                 10     | 100   | 1000       | 1000
+                 10     | 110   | 250        | 1000
+                 10     | 150   | null       | 1000
+                 20     | 200   | 500        | 500
                 (4 rows)
                 
                 -- same query with range explicit bounds
@@ -70,10 +70,10 @@ public class CalciteJdbcTests extends HrBaseTests {
                 from emps;
                  deptno | empid | commission | R
                 ---------------------------------
-                 10    | 100   | 1000       | 1000
-                 10    | 110   | 250        | 1000
-                 10    | 150   | null       | 1000
-                 20    | 200   | 500        | 500
+                 10     | 100   | 1000       | 1000
+                 10     | 110   | 250        | 1000
+                 10     | 150   | null       | 1000
+                 20     | 200   | 500        | 500
                 (4 rows)
                 
                 -- same query with a different explicit bounds
@@ -85,17 +85,17 @@ public class CalciteJdbcTests extends HrBaseTests {
                 from emps;
                  deptno | empid | commission | R
                 ---------------------------------
-                 10    | 100   | 1000       | 1000
-                 10    | 110   | 250        | 1000
-                 10    | 150   | null       | 1000
-                 20    | 200   | 500        | 500
+                 10     | 100   | 1000       | 1000
+                 10     | 110   | 250        | 1000
+                 10     | 150   | null       | 1000
+                 20     | 200   | 500        | 500
                 (4 rows)""");
     }
 
     @Test
     public void testWinAggLastValue() {
         // validated on postgres
-        this.qs("""
+        this.qst("""
                 -- same query with different explicit bounds
                 select deptno, empid, commission,
                 last_value(commission) over (
@@ -105,10 +105,10 @@ public class CalciteJdbcTests extends HrBaseTests {
                 from emps;
                  deptno | empid | commission | R
                 ---------------------------------
-                 10    | 100   | 1000       | NULL
-                 10    | 110   | 250        | NULL
-                 10    | 150   | null       | NULL
-                 20    | 200   | 500        | 500
+                 10     | 100   | 1000       | NULL
+                 10     | 110   | 250        | NULL
+                 10     | 150   | null       | NULL
+                 20     | 200   | 500        | 500
                 (4 rows)
                 
                 -- same query with range explicit bounds
@@ -120,10 +120,10 @@ public class CalciteJdbcTests extends HrBaseTests {
                 from emps;
                  deptno | empid | commission | R
                 ---------------------------------
-                 10    | 100   | 1000       | NULL
-                 10    | 110   | 250        | NULL
-                 10    | 150   | null       | NULL
-                 20    | 200   | 500        | 500
+                 10     | 100   | 1000       | NULL
+                 10     | 110   | 250        | NULL
+                 10     | 150   | null       | NULL
+                 20     | 200   | 500        | 500
                 (4 rows)
                 
                 -- same query with a different explicit bounds
@@ -135,10 +135,10 @@ public class CalciteJdbcTests extends HrBaseTests {
                 from emps;
                  deptno | empid | commission | R
                 ---------------------------------
-                 10    | 100   | 1000       | NULL
-                 10    | 110   | 250        | NULL
-                 10    | 150   | null       | NULL
-                 20    | 200   | 500        | 500
+                 10     | 100   | 1000       | NULL
+                 10     | 110   | 250        | NULL
+                 10     | 150   | null       | NULL
+                 20     | 200   | 500        | 500
                 (4 rows)
                 
                 -- same query with a different explicit bounds
@@ -150,16 +150,16 @@ public class CalciteJdbcTests extends HrBaseTests {
                 from emps;
                  deptno | empid | commission | R
                 ---------------------------------
-                 10    | 100   | 1000       | NULL
-                 10    | 110   | 250        | NULL
-                 10    | 150   | null       | NULL
-                 20    | 200   | 500        | 500
+                 10     | 100   | 1000       | NULL
+                 10     | 110   | 250        | NULL
+                 10     | 150   | null       | NULL
+                 20     | 200   | 500        | 500
                 (4 rows)""");
     }
 
     @Test @Ignore("FIRST_VALUE with bounded range not supported")
     public void testBoundedFirstValue() {
-        this.qs("""
+        this.qst("""
                  select deptno, empid, commission,
                  first_value(commission) over
                  (partition by deptno order by empid desc range between 1000 preceding and 999 preceding) as r

@@ -222,7 +222,7 @@ public class PostgresStringTests extends SqlIoTest {
 
     @Test
     public void testTrimConstant() {
-        this.qs("""
+        this.qst("""
                 SELECT TRIM(BOTH FROM '  bunch o blanks  ') = 'bunch o blanks' AS "bunch o blanks";
                  bunch o blanks
                 ----------------
@@ -251,7 +251,7 @@ public class PostgresStringTests extends SqlIoTest {
 
     @Test
     public void testTrim() {
-        this.qs("""
+        this.qst("""
                 SELECT TRIM(BOTH FROM '  bunch o blanks  ') = 'bunch o blanks' AS "bunch o blanks";
                  bunch o blanks
                 ----------------
@@ -283,7 +283,7 @@ public class PostgresStringTests extends SqlIoTest {
 
     @Test
     public void testSubstring() {
-        this.qs("""
+        this.qst("""
                SELECT SUBSTRING('1234567890' FROM 3) = '34567890' AS "34567890";
                 34567890
                ----------
@@ -381,7 +381,7 @@ public class PostgresStringTests extends SqlIoTest {
 
     @Test @Ignore("regexp_replace with 4 arguments not implemented")
     public void testRegexpReplace() {
-        this.qs("""
+        this.qst("""
                 SELECT regexp_replace('1112223333', E'(\\\\d{3})(\\\\d{3})(\\\\d{4})', E'(\\\\1) \\\\2-\\\\3');
                  regexp_replace
                 ----------------
@@ -491,7 +491,7 @@ public class PostgresStringTests extends SqlIoTest {
 
     @Test
     public void testLike2() {
-        this.qs("""
+        this.qst("""
                 SELECT 'hawkeye' LIKE 'h%' AS "true";
                  true
                 ------
@@ -580,7 +580,7 @@ public class PostgresStringTests extends SqlIoTest {
     @Test
     public void testRlike() {
         // This is not a postgres operator
-        this.qs("""
+        this.qst("""
                 SELECT 'hawkeye' RLIKE 'h.*' AS "true";
                  true
                 ------
@@ -867,36 +867,41 @@ public class PostgresStringTests extends SqlIoTest {
 
     @Test
     public void testLikeCombinations() {
-        this.q("""
+        this.qs("""
                 SELECT 'foo' LIKE '_%' as t, 'f' LIKE '_%' as t0, '' LIKE '_%' as f;
                  t | t0 | f
                 ---+----+---
-                 t | t  | f""");
-        this.q("""
+                 t | t  | f
+                (1 row)
+
                 SELECT 'foo' LIKE '%_' as t, 'f' LIKE '%_' as t0, '' LIKE '%_' as f;
                  t | t0 | f
                 ---+----+---
-                 t | t  | f""");
-        this.q("""
+                 t | t  | f
+                (1 row)
+
                 SELECT 'foo' LIKE '__%' as t, 'foo' LIKE '___%' as t0, 'foo' LIKE '____%' as f;
                  t | t0 | f
                 ---+----+---
-                 t | t  | f""");
-        this.q("""
+                 t | t  | f
+                (1 row)
+                
                 SELECT 'foo' LIKE '%__' as t, 'foo' LIKE '%___' as t0, 'foo' LIKE '%____' as f;
                  t | t0 | f
                 ---+----+---
-                 t | t  | f""");
-        this.q("""
+                 t | t  | f
+                (1 row)
+                
                 SELECT 'jack' LIKE '%____%' AS t;
                  t
                 ---
-                 t""");
+                 t
+                (1 row)""");
     }
 
     @Test
     public void testLikeNull() {
-        this.qs("""
+        this.qst("""
                 SELECT NULL LIKE '%';
                  result
                 -------
@@ -986,7 +991,7 @@ public class PostgresStringTests extends SqlIoTest {
     @Test
     public void testLength() {
         // added a few more aliases supported from other dialects
-        this.qs("""
+        this.qst("""
                 SELECT char_length('abcdef') AS "length_6";
                  length_6
                 ----------
@@ -1069,7 +1074,7 @@ public class PostgresStringTests extends SqlIoTest {
 
     @Test
     public void testSplitPart() {
-        this.qs("""
+        this.qst("""
             SELECT split_part('abc~@~def~@~ghi', '~@~', 1) AS result;
              result
             -------

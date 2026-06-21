@@ -16,26 +16,26 @@ public class AggTests extends PostBaseTests {
 
     @Test
     public void calciteIssue6520() {
-        this.qs("""
+        this.qst("""
                 SELECT ENAME, ENAME in ('Adam', 'Alice', 'Eve') FROM EMP;
                  ename | expr
                 --------------
-                 Adam| true
-                 Alice| true
-                 Bob| false
-                 Eric| false
-                 Eve| true
-                 Grace| false
-                 Jane| false
-                 Susan| false
-                 Wilma| false
+                 Adam  | true
+                 Alice | true
+                 Bob   | false
+                 Eric  | false
+                 Eve   | true
+                 Grace | false
+                 Jane  | false
+                 Susan | false
+                 Wilma | false
                 ---------------
                 (9 rows)""");
     }
 
     @Test
     public void testCompositeCount() {
-        this.qs("""
+        this.qst("""
                 -- composite count
                 select count(deptno, ename, 1, deptno) as c from emp;
                 +---+
@@ -67,9 +67,9 @@ public class AggTests extends PostBaseTests {
                 +----+---+
                 | M  | C |
                 +----+---+
-                |  0 | F|
+                |  0 | F |
                 | 10 |NULL|
-                |  0 | M|
+                |  0 | M |
                 +----+---+
                 (3 rows)
 
@@ -93,7 +93,7 @@ public class AggTests extends PostBaseTests {
 
     @Test
     public void testAggregates() {
-        this.qs("""
+        this.qst("""
                 -- count(*) returns number of rows in table
                 select count(ename) as c from emp;
                 +---+
@@ -194,7 +194,7 @@ public class AggTests extends PostBaseTests {
 
     @Test
     public void issue1901() {
-        this.qs("""
+        this.qst("""
                 select stddev(value) FROM (VALUES (.1e0), (.1e0), (.1e0)) t1(value) WHERE true;
                 result
                 ------
@@ -204,7 +204,7 @@ public class AggTests extends PostBaseTests {
 
     @Test
     public void stddevTests() {
-        this.qs("""
+        this.qst("""
                 -- Our own test, for denominator of 0 in SAMP
                 select stddev_samp(deptno) as s from emp WHERE deptno = 60;
                 +----+
@@ -263,8 +263,8 @@ public class AggTests extends PostBaseTests {
                 +--------+----+----+----+---+
                 | GENDER | P  | S  | SS | C |
                 +--------+----+----+----+---+
-                | F|       17 | 19 | 19 | 5 |
-                | M|       17 | 20 | 20 | 3 |
+                | F      | 17 | 19 | 19 | 5 |
+                | M      | 17 | 20 | 20 | 3 |
                 +--------+----+----+----+---+
                 (2 rows)""");
     }
@@ -272,7 +272,7 @@ public class AggTests extends PostBaseTests {
     @Test
     @Ignore("multiset not yet implemented")
     public void testIntersection() {
-        this.qs("""
+        this.qst("""
                 -- [CALCITE-3815] Add missing SQL standard aggregate
                 -- functions: EVERY, SOME, INTERSECTION
                 select some(deptno = 100), every(deptno > 0), intersection(multiset[1, 2]) from emp;
@@ -286,7 +286,7 @@ public class AggTests extends PostBaseTests {
 
     @Test
     public void testEvery() {
-        this.qs("""
+        this.qst("""
                 select some(deptno > 100), every(deptno > 0) from emp where deptno > 1000;
                 +--------+--------+
                 | EXPR$0 | EXPR$1 |
@@ -299,16 +299,16 @@ public class AggTests extends PostBaseTests {
 
     @Test
     public void simpleTests() {
-        this.qs("""
+        this.qst("""
                 select city, gender as c from emps;
                 +---------------+---+
                 | CITY          | C |
                 +---------------+---+
-                | Vancouver| F|
-                | San Francisco| M|
-                |NULL|NULL|
-                | Vancouver| M|
-                |NULL| F|
+                | Vancouver     | F |
+                | San Francisco | M |
+                |NULL           |NULL|
+                | Vancouver     | M |
+                |NULL           | F |
                 +---------------+---+
                 (5 rows)
 
@@ -317,11 +317,11 @@ public class AggTests extends PostBaseTests {
                 +---------------+--------+
                 | CITY          | GENDER |
                 +---------------+--------+
-                |NULL|NULL|
-                | Vancouver| M|
-                |NULL| F|
-                | San Francisco| M|
-                | Vancouver| F|
+                |NULL           |NULL    |
+                | Vancouver     | M      |
+                |NULL           | F      |
+                | San Francisco | M      |
+                | Vancouver     | F      |
                 +---------------+--------+
                 (5 rows)
 
@@ -344,7 +344,7 @@ public class AggTests extends PostBaseTests {
 
     @Test
     public void testGroupingSets() {
-        this.qs("""
+        this.qst("""
                 -- Basic GROUPING SETS
                 select deptno, count(*) as c from emps group by grouping sets ((), (deptno));
                 +--------+---+
@@ -385,7 +385,7 @@ public class AggTests extends PostBaseTests {
 
     @Test
     public void testRollup() {
-        this.qs("""
+        this.qst("""
                 -- CUBE
                 select deptno + 1, count(*) as c from emp group by cube(deptno, gender);
                 +--------+---+
@@ -435,21 +435,21 @@ public class AggTests extends PostBaseTests {
                 +--------+--------+---+
                 | GENDER | EXPR$1 | C |
                 +--------+--------+---+
-                | M|           21 | 1 |
-                | F|           11 | 1 |
-                | F|           31 | 2 |
-                | F|           51 | 1 |
-                | F|           61 | 1 |
-                | F|              | 1 |
-                | M|           11 | 1 |
-                | M|           51 | 1 |
-                |NULL|         11 | 2 |
-                |NULL|         21 | 1 |
-                |NULL|         31 | 2 |
-                |NULL|         51 | 2 |
-                |NULL|         61 | 1 |
-                |NULL|            | 1 |
-                |NULL|            | 9 |
+                | M      |     21 | 1 |
+                | F      |     11 | 1 |
+                | F      |     31 | 2 |
+                | F      |     51 | 1 |
+                | F      |     61 | 1 |
+                | F      |        | 1 |
+                | M      |     11 | 1 |
+                | M      |     51 | 1 |
+                |NULL    |     11 | 2 |
+                |NULL    |     21 | 1 |
+                |NULL    |     31 | 2 |
+                |NULL    |     51 | 2 |
+                |NULL    |     61 | 1 |
+                |NULL    |        | 1 |
+                |NULL    |        | 9 |
                 +--------+--------+---+
                 (15 rows)
 
@@ -461,9 +461,9 @@ public class AggTests extends PostBaseTests {
                 +--------+---+
                 | GENDER | C |
                 +--------+---+
-                | F|       6 |
-                | M|       3 |
-                |NULL|     9 |
+                | F      | 6 |
+                | M      | 3 |
+                |NULL    | 9 |
                 +--------+---+
                 (3 rows)
 
@@ -476,9 +476,9 @@ public class AggTests extends PostBaseTests {
                 +--------+---+
                 | GENDER | C |
                 +--------+---+
-                |NULL|     9 |
-                | F|       6 |
-                | M|       3 |
+                |NULL    | 9 |
+                | F      | 6 |
+                | M      | 3 |
                 +--------+---+
                 (3 rows)
 
@@ -605,18 +605,18 @@ public class AggTests extends PostBaseTests {
                 +--------+--------+--------+
                 | DEPTNO | GENDER | EXPR$2 |
                 +--------+--------+--------+
-                |     20 | M|            1 |
-                |     20 | M|            1 |
-                |     20 | M|            1 |
-                |     20 | M|            1 |
-                |     20 | M|            1 |
-                |     20 | M|            1 |
-                |     20 | M|            1 |
-                |     20 |NULL|          1 |
-                |     20 |NULL|          1 |
-                |     20 |NULL|          1 |
-                |        | M|            1 |
-                |        |NULL|          1 |
+                |     20 | M      |      1 |
+                |     20 | M      |      1 |
+                |     20 | M      |      1 |
+                |     20 | M      |      1 |
+                |     20 | M      |      1 |
+                |     20 | M      |      1 |
+                |     20 | M      |      1 |
+                |     20 |NULL    |      1 |
+                |     20 |NULL    |      1 |
+                |     20 |NULL    |      1 |
+                |        | M      |      1 |
+                |        |NULL    |      1 |
                 +--------+--------+--------+
                 (12 rows)
 
@@ -625,17 +625,17 @@ public class AggTests extends PostBaseTests {
                 +--------+--------+--------+
                 | DEPTNO | GENDER | EXPR$2 |
                 +--------+--------+--------+
-                |     20 | M|            1 |
-                |     20 |NULL|          1 |
-                |        | M|            1 |
-                |        |NULL|          1 |
+                |     20 | M      |      1 |
+                |     20 |NULL    |      1 |
+                |        | M      |      1 |
+                |        |NULL    |      1 |
                 +--------+--------+--------+
                 (4 rows)""");
     }
 
     @Test
     public void testCornerCases() {
-        this.qs("""
+        this.qst("""
                 -- GROUP BY over empty columns
                 select count(*) from emp where deptno = 20 group by ();
                 +--------+
@@ -666,7 +666,7 @@ public class AggTests extends PostBaseTests {
 
     @Test
     public void testGrouping() {
-        this.qs("""
+        this.qst("""
                 -- CUBE and JOIN
                 select e.deptno, e.gender, min(e.ename) as min_name
                 from emp as e join dept as d using (deptno)
@@ -675,10 +675,10 @@ public class AggTests extends PostBaseTests {
                 +--------+--------+----------+
                 | DEPTNO | GENDER | MIN_NAME |
                 +--------+--------+----------+
-                |     10 | M| Bob|
-                |     10 | M| Bob|
-                |        | F| Alice|
-                |        |NULL| Alice|
+                |     10 | M      | Bob      |
+                |     10 | M      | Bob      |
+                |        | F      | Alice    |
+                |        |NULL    | Alice    |
                 +--------+--------+----------+
                 (4 rows)
 
@@ -785,11 +785,11 @@ public class AggTests extends PostBaseTests {
                 +--------+--------+--------+---+
                 | DEPTNO | GENDER | EXPR$2 | C |
                 +--------+--------+--------+---+
-                |     10 | F|      0 | 1 |
-                |     10 | M|      0 | 1 |
-                |        | F|      5 | 1 |
-                |        | M|      5 | 1 |
-                |        |NULL|      7 | 2 |
+                |     10 | F      |      0 | 1 |
+                |     10 | M      |      0 | 1 |
+                |        | F      |      5 | 1 |
+                |        | M      |      5 | 1 |
+                |        |NULL    |      7 | 2 |
                 +--------+--------+--------+---+
                 (5 rows)
 
@@ -819,30 +819,30 @@ public class AggTests extends PostBaseTests {
                 +--------+--------+----+----+----+----+-----+---+
                 | DEPTNO | GENDER | GD | GG | DG | GD | GID | C |
                 +--------+--------+----+----+----+----+-----+---+
-                |     10 | F|        0 |  0 |  0 |  0 |   0 | 1 |
-                |     10 | M|        0 |  0 |  0 |  0 |   0 | 1 |
-                |     20 | M|        0 |  0 |  0 |  0 |   0 | 1 |
-                |     30 | F|        0 |  0 |  0 |  0 |   0 | 2 |
-                |     50 | F|        0 |  0 |  0 |  0 |   0 | 1 |
-                |     50 | M|        0 |  0 |  0 |  0 |   0 | 1 |
-                |     60 | F|        0 |  0 |  0 |  0 |   0 | 1 |
-                |        | F|        0 |  0 |  0 |  0 |   0 | 1 |
-                |        |NULL|      1 |  1 |  3 |  3 |   0 | 9 |
-                |     10 |NULL|      0 |  1 |  1 |  2 |   0 | 2 |
-                |     20 |NULL|      0 |  1 |  1 |  2 |   0 | 1 |
-                |     30 |NULL|      0 |  1 |  1 |  2 |   0 | 2 |
-                |     50 |NULL|      0 |  1 |  1 |  2 |   0 | 2 |
-                |     60 |NULL|      0 |  1 |  1 |  2 |   0 | 1 |
-                |        | F|        1 |  0 |  2 |  1 |   0 | 6 |
-                |        | M|        1 |  0 |  2 |  1 |   0 | 3 |
-                |        |NULL|      0 |  1 |  1 |  2 |   0 | 1 |
+                |     10 | F      |  0 |  0 |  0 |  0 |   0 | 1 |
+                |     10 | M      |  0 |  0 |  0 |  0 |   0 | 1 |
+                |     20 | M      |  0 |  0 |  0 |  0 |   0 | 1 |
+                |     30 | F      |  0 |  0 |  0 |  0 |   0 | 2 |
+                |     50 | F      |  0 |  0 |  0 |  0 |   0 | 1 |
+                |     50 | M      |  0 |  0 |  0 |  0 |   0 | 1 |
+                |     60 | F      |  0 |  0 |  0 |  0 |   0 | 1 |
+                |        | F      |  0 |  0 |  0 |  0 |   0 | 1 |
+                |        |NULL    |  1 |  1 |  3 |  3 |   0 | 9 |
+                |     10 |NULL    |  0 |  1 |  1 |  2 |   0 | 2 |
+                |     20 |NULL    |  0 |  1 |  1 |  2 |   0 | 1 |
+                |     30 |NULL    |  0 |  1 |  1 |  2 |   0 | 2 |
+                |     50 |NULL    |  0 |  1 |  1 |  2 |   0 | 2 |
+                |     60 |NULL    |  0 |  1 |  1 |  2 |   0 | 1 |
+                |        | F      |  1 |  0 |  2 |  1 |   0 | 6 |
+                |        | M      |  1 |  0 |  2 |  1 |   0 | 3 |
+                |        |NULL    |  0 |  1 |  1 |  2 |   0 | 1 |
                 +--------+--------+----+----+----+----+-----+---+
                 (17 rows)""");
     }
 
     @Test
     public void testAgg() {
-        this.qs("""
+        this.qst("""
                 -- [CALCITE-1781] Allow expression in CUBE and ROLLUP
                 select deptno + 1 as d1, deptno + 1 - 1 as d0, count(*) as c
                 from emp
@@ -866,16 +866,16 @@ public class AggTests extends PostBaseTests {
                 +----+---+---+
                 | D  | C | G |
                 +----+---+---+
-                |  0 | 1 | F|
-                |  0 | 1 | M|
+                |  0 | 1 | F |
+                |  0 | 1 | M |
                 |  0 | 2 |NULL|
-                | 10 | 2 | M|
-                | 10 | 4 | F|
+                | 10 | 2 | M |
+                | 10 | 4 | F |
                 | 10 | 6 |NULL|
-                |    | 1 | F|
+                |    | 1 | F |
                 |    | 1 |NULL|
-                |    | 3 | M|
-                |    | 6 | F|
+                |    | 3 | M |
+                |    | 6 | F |
                 |    | 9 |NULL|
                 +----+---+---+
                 (11 rows)
@@ -886,13 +886,13 @@ public class AggTests extends PostBaseTests {
                 +----+---+---+
                 | D  | C | G |
                 +----+---+---+
-                |  0 | 1 | F|
-                |  0 | 1 | M|
+                |  0 | 1 | F |
+                |  0 | 1 | M |
                 |  0 | 2 |NULL|
-                | 10 | 2 | M|
-                | 10 | 4 | F|
+                | 10 | 2 | M |
+                | 10 | 4 | F |
                 | 10 | 6 |NULL|
-                |    | 1 | F|
+                |    | 1 | F |
                 |    | 1 |NULL|
                 |    | 9 |NULL|
                 +----+---+---+
@@ -926,13 +926,13 @@ public class AggTests extends PostBaseTests {
     }
 
     @Test public void t0() {
-        this.qs("""
+        this.qst("""
                 select distinct '1'
                 from (values (1,2),(3,4));
                 +--------+
                 | EXPR$0 |
                 +--------+
-                | 1|
+                | 1      |
                 +--------+
                 (1 row)
 
@@ -960,7 +960,7 @@ public class AggTests extends PostBaseTests {
    TODO: setup more tests
    @Test
    public void testAggregates() {
-       this.qs("""
+       this.qst("""
                 !use orinoco
 
                 -- FLOOR to achieve a 2-hour window
@@ -1357,7 +1357,7 @@ public class AggTests extends PostBaseTests {
 
     @Test
     public void testRowNumber() {
-        this.qs("""
+        this.qst("""
                 -- Test case for [CALCITE-5388] tempList expression inside EnumerableWindow.getPartitionIterator should be unoptimized
                 with
                     CTE1(rownr1, val1) as ( select ROW_NUMBER() OVER(ORDER BY id ASC), id from (values (1), (2)) as Vals1(id) ),

@@ -22,7 +22,7 @@ public class TinyintTests extends SqlIoTest {
 
     @Test
     public void testSelect() {
-        this.qs(
+        this.qst(
                 """
                         SELECT * FROM INT_TBL;
                          f1

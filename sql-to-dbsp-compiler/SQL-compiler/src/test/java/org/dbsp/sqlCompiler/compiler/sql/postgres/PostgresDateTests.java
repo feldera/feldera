@@ -244,101 +244,68 @@ public class PostgresDateTests extends SqlIoTest {
     }
 
     @Test
-    public void testEpoch() {
-        this.q("""
+    public void testExtract1() {
+        this.qst("""
                 SELECT EXTRACT(EPOCH FROM DATE '1970-01-01');
                  extract
                 ---------
-                       0""");
-    }
+                       0
+                (1 row)
 
-    @Test
-    public void testCentury() {
-        this.q("""
                 SELECT EXTRACT(CENTURY FROM DATE '0001-01-01');
                  extract
                 ---------
-                       1""");
-    }
-
-    @Test
-    public void testCentury1() {
-        this.q("""
+                       1
+                (1 row)
+    
                 SELECT EXTRACT(CENTURY FROM DATE '1900-12-31');
                  extract
                 ---------
-                      19""");
-    }
-
-    @Test
-    public void testCentury2() {
-        this.q("""
+                      19
+                (1 row)
+    
                 SELECT EXTRACT(CENTURY FROM DATE '1901-01-01');
                  extract
                 ---------
-                      20""");
-    }
+                      20
+                (1 row)
 
-    @Test
-    public void testCentury3() {
-        this.q("""
                 SELECT EXTRACT(CENTURY FROM DATE '2000-12-31');
                  extract
                 ---------
-                      20""");
-    }
+                      20
+                (1 row)
 
-    @Test
-    public void testCentury4() {
-        this.q("""
                 SELECT EXTRACT(CENTURY FROM DATE '2001-01-01');
                  extract
                 ---------
-                      21""");
-    }
-
-    @Test
-    public void testMillennium() {
-        this.q("""
+                      21
+                (1 row)
+    
                 SELECT EXTRACT(MILLENNIUM FROM DATE '0001-01-01');
                  extract
                 ---------
-                       1""");
-    }
+                       1
+                (1 row)
 
-    @Test
-    public void testMillennium1() {
-        this.q("""
                 SELECT EXTRACT(MILLENNIUM FROM DATE '1000-12-31');
                  extract
                 ---------
-                       1""");
-    }
+                       1
+                (1 row)
 
-    @Test
-    public void testMillennium2() {
-        this.q("""
                 SELECT EXTRACT(MILLENNIUM FROM DATE '2000-12-31');
                  extract
                 ---------
-                       2""");
-    }
-
-    // CURRENT_DATE not supported
-    // SELECT EXTRACT(CENTURY FROM CURRENT_DATE)>=21 AS True;     -- true
-
-    @Test
-    public void testMillennium3() {
-        this.q("""
+                       2
+                (1 row)
+                
                 SELECT EXTRACT(MILLENNIUM FROM DATE '2001-01-01');
                  extract
                 ---------
-                       3""");
-    }
+                       3
+                (1 row)
 
-    @Test
-    public void testDecade() {
-        this.qs("""
                 SELECT EXTRACT(DECADE FROM DATE '1994-12-25');
                  extract
                 ---------
@@ -355,205 +322,139 @@ public class PostgresDateTests extends SqlIoTest {
                  extract
                 ---------
                        0
-                (1 row)""");
-    }
-
-    @Test
-    public void testMicroseconds() {
-        this.q("""
+                (1 row)
+    
                 SELECT EXTRACT(MICROSECOND FROM DATE '2020-08-11');
                  extract
                 ---------
-                       0""");
-    }
+                       0
+                (1 row)
 
-    @Test
-    public void testMilliseconds() {
-        this.q("""
                 SELECT EXTRACT(MILLISECOND FROM DATE '2020-08-11');
                  extract
                 ---------
-                       0""");
-    }
-
-    @Test
-    public void testSeconds() {
-        this.q("""
+                       0
+                (1 row)
+                
                 SELECT EXTRACT(SECOND FROM DATE '2020-08-11');
                  extract
                 ---------
-                       0""");
-    }
+                       0
+                (1 row)
 
-    @Test
-    public void testSeconds0() {
-        this.q("""
                 SELECT SECOND(DATE '2020-08-11');
                  extract
                 ---------
-                       0""");
-    }
-
-    @Test
-    public void testMinutes() {
-        this.q("""
+                       0
+                (1 row)
+    
                 SELECT EXTRACT(MINUTE FROM DATE '2020-08-11');
                  extract
                 ---------
-                       0""");
-    }
-
-    @Test
-    public void testMinutes1() {
-        this.q("""
+                       0
+                (1 row)
+    
                 SELECT MINUTE(DATE '2020-08-11');
                  extract
                 ---------
-                       0""");
-    }
-
-    @Test
-    public void testHour() {
-        this.q("""
+                       0
+                (1 row)
+    
                 SELECT EXTRACT(HOUR FROM DATE '2020-08-11');
                  extract
                 ---------
-                       0""");
-    }
-
-    @Test
-    public void testHour1() {
-        this.q("""
+                       0
+                (1 row)
+    
                 SELECT HOUR(DATE '2020-08-11');
                  extract
                 ---------
-                       0""");
-    }
+                       0
+                (1 row)
 
-    @Test
-    public void testDay() {
-        this.q("""
                 SELECT EXTRACT(DAY FROM DATE '2020-08-11');
                  extract
                 ---------
-                       11""");
-    }
+                       11
+                (1 row)
 
-    @Test
-    public void testDay1() {
-        this.q("""
                 SELECT DAYOFMONTH(DATE '2020-08-11');
                  extract
                 ---------
-                       11""");
-    }
+                       11
+                (1 row)
 
-    @Test
-    public void testMonth() {
-        this.q("""
                 SELECT EXTRACT(MONTH FROM DATE '2020-08-11');
                  extract
                 ---------
-                       8""");
-    }
+                       8
+                (1 row)
 
-    @Test
-    public void testMonth1() {
-        this.q("""
                 SELECT MONTH(DATE '2020-08-11');
                  extract
                 ---------
-                       8""");
-    }
-
-    @Test
-    public void testYear() {
-        this.q("""
+                       8
+                (1 row)
+    
                 SELECT EXTRACT(YEAR FROM DATE '2020-08-11');
                  extract
                 ---------
-                     2020""");
-    }
+                     2020
+                (1 row)
 
-    @Test
-    public void testYear1() {
-        this.q("""
                 SELECT YEAR(DATE '2020-08-11');
                  extract
                 ---------
-                     2020""");
-    }
+                     2020
+                (1 row)
 
-    @Test
-    public void testDecade5() {
-        this.q("""
                 SELECT EXTRACT(DECADE FROM DATE '2020-08-11');
                  extract
                 ---------
-                     202""");
-    }
+                     202
+                (1 row)
 
-    @Test
-    public void testCentury5() {
-        this.q("""
                 SELECT EXTRACT(CENTURY FROM DATE '2020-08-11');
                  extract
                 ---------
-                     21""");
-    }
-
-    @Test
-    public void testMillennium5() {
-        this.q("""
+                     21
+                (1 row)
+    
                 SELECT EXTRACT(MILLENNIUM FROM DATE '2020-08-11');
                  extract
                 ---------
-                     3""");
-    }
-
-    @Test
-    public void testIsoYear() {
-        this.q("""
+                     3
+                (1 row)
+    
                 SELECT EXTRACT(ISOYEAR FROM DATE '2020-08-11');
                  extract
                 ---------
-                     2020""");
-    }
-
-    @Test
-    public void testQuarter() {
-        this.q("""
+                     2020
+                (1 row)
+    
                 SELECT EXTRACT(QUARTER FROM DATE '2020-08-11');
                  extract
                 ---------
-                     3""");
-    }
-
-    @Test
-    public void testWeek() {
-        this.q("""
+                     3
+                (1 row)
+    
                 SELECT EXTRACT(WEEK FROM DATE '2020-08-11');
                  extract
                 ---------
-                     33""");
-    }
+                     33
+                (1 row)
 
-    @Test
-    public void testDow() {
-        this.q("""
                 SELECT EXTRACT(DOW FROM DATE '2020-08-11');
                  extract
                 ---------
-                     3""");
-    }
+                     3
+                (1 row)
 
-    @Test
-    public void testDow2() {
-        this.q("""
                 SELECT DAYOFWEEK(DATE '2020-08-11');
                  extract
                 ---------
-                     3""");
+                     3
+                (1 row)""");
     }
 
     /*
@@ -599,7 +500,7 @@ public class PostgresDateTests extends SqlIoTest {
     public void testDateTrunc() {
         // In the BigQuery library there is a DATE_TRUNC, but arguments are swapped
         // I added many more tests
-        this.qs("""
+        this.qst("""
                  SELECT DATE_TRUNC(DATE '1970-03-20', MILLENNIUM);
                   date_trunc
                 --------------------------
@@ -693,7 +594,7 @@ public class PostgresDateTests extends SqlIoTest {
 
     @Test
     public void testLimitTimestamps() {
-        this.qs("""
+        this.qst("""
                 SELECT TIMESTAMP '9999-12-12 23:59:59', TIMESTAMP '0001-01-01 00:00:00';
                  ts0 | ts1
                 -----------
@@ -704,7 +605,7 @@ public class PostgresDateTests extends SqlIoTest {
     @Test
     public void testTimeststampTrunc() {
         // Not in Postgres
-        this.qs("""
+        this.qst("""
                 SELECT timestamp_trunc(TIMESTAMP '1970-03-20 04:30:00.00000', MILLENNIUM);
                         timestamp_trunc
                 --------------------------
@@ -763,7 +664,7 @@ public class PostgresDateTests extends SqlIoTest {
     @Test
     public void testTimeTrunc() {
         // Not in Postgres
-        this.qs("""
+        this.qst("""
                 SELECT time_trunc(time '12:34:56.78', hour);
                   trunc
                 --------

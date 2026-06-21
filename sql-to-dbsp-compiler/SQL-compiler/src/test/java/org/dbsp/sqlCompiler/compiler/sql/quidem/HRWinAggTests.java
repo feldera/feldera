@@ -8,7 +8,7 @@ public class HRWinAggTests extends HrBaseTests {
     @Test
     @Ignore("ORDER BY strings not supported https://github.com/feldera/feldera/issues/457, first_value")
     public void testWin() {
-            this.qs("""
+            this.qst("""
                 -- [CALCITE-2081] Two windows under a JOIN
                 select a.deptno, a.r as ar, b.r as br
                 from (
@@ -56,7 +56,7 @@ public class HRWinAggTests extends HrBaseTests {
 
     @Test
     public void test1() {
-        this.qs("""
+        this.qst("""
                 select * from (
                   select "empid", count(*) over () c
                     from "emps"

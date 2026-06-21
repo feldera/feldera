@@ -7,7 +7,7 @@ import org.junit.Test;
 public class BigQueryTests extends SqlIoTest {
     @Test
     public void testSafeCast() {
-        this.qs("""
+        this.qst("""
                 -- SAFE_CAST(x AS type)
                 -- Identical to CAST(), except it returns NULL instead of raising an error.
                 WITH Casted AS (
@@ -23,11 +23,11 @@ public class BigQueryTests extends SqlIoTest {
                 +------------+-------------+------------+
                 | casted     | input       | as         |
                 +------------+-------------+------------+
-                |NULL        | a| int|
-                | a| a| varchar(1)|
-                | 2023-03-07| 2023-03-07| date|
-                |NULL        | 2023-03-07a| date|
-                | FALSE| 0| boolean|
+                |NULL        | a           | int        |
+                | a          | a           | varchar(1) |
+                | 2023-03-07 | 2023-03-07  | date       |
+                |NULL        | 2023-03-07a | date       |
+                | FALSE      | 0           | boolean    |
                 +------------+-------------+------------+
                 (5 rows)
                 
@@ -42,8 +42,8 @@ public class BigQueryTests extends SqlIoTest {
                 +----------+-----------+-----+
                 | casted   | input     | as  |
                 +----------+-----------+-----+
-                | 12:12:11 | 12:12:11| time|
-                |          | 12:12:11a| time|
+                | 12:12:11 | 12:12:11  | time|
+                |          | 12:12:11a | time|
                 +----------+-----------+-----+
                 (2 rows)
                 
@@ -59,8 +59,8 @@ public class BigQueryTests extends SqlIoTest {
                 +--------+-------+--------+
                 | casted | input | as     |
                 +--------+-------+--------+
-                | true   | true| boolean|
-                | false  | false| boolean|
+                | true   | true  | boolean|
+                | false  | false | boolean|
                 +--------+-------+--------+
                 (2 rows)
                 
@@ -78,9 +78,9 @@ public class BigQueryTests extends SqlIoTest {
                 +--------+------------------+--------------+
                 | casted | input            | as           |
                 +--------+------------------+--------------+
-                | 1 year | interval 1 month| interval year|
-                |        | a| interval year|
-                |        | null| interval year|
+                | 1 year | interval 1 month | interval year|
+                |        | a                | interval year |
+                |        | null             | interval year|
                 +--------+------------------+--------------+
                 (3 rows)
                 
@@ -97,8 +97,8 @@ public class BigQueryTests extends SqlIoTest {
                 +---------------+-----------------------------+--------------------------+
                 | casted        | input                       | as                       |
                 +---------------+-----------------------------+--------------------------+
-                | 61 mins       | interval 1:1 hour to minute| interval minute to second|
-                |               | a| interval minute to second|
+                | 61 mins       | interval 1:1 hour to minute | interval minute to second|
+                |               | a                           | interval minute to second|
                 +---------------+-----------------------------+--------------------------+
                 (2 rows)
                 
@@ -116,16 +116,16 @@ public class BigQueryTests extends SqlIoTest {
                 +--------+-------+-------+
                 | casted | input | as    |
                 +--------+-------+-------+
-                |        | true| bigint|
-                |      1 | 1.0| bigint|
-                |      1 | 1| bigint|
+                |        | true  | bigint|
+                |      1 | 1.0   | bigint|
+                |      1 | 1     | bigint|
                 +--------+-------+-------+
                 (3 rows)""");
     }
 
     @Test
     public void testRegexpReplace() {
-        this.qs("""
+        this.qst("""
                 -- REGEXP_REPLACE(value, regexp, replacement)
                 --
                 -- Returns a STRING where all substrings of value that match regexp are replaced with replacement.
@@ -166,7 +166,7 @@ public class BigQueryTests extends SqlIoTest {
         // pattern insufficient for hour
         this.qf("SELECT PARSE_TIMESTAMP('%a %b %e %I:%M:%S %Y', 'Thu Dec 25 07:30:00 2008')",
             "Invalid format in PARSE_TIMESTAMP");
-        this.qs("""
+        this.qst("""
                 -- 30 hour is out of range
                 SELECT PARSE_TIME('%S:%I:%M', '07:30:00');
                  r
@@ -212,7 +212,7 @@ public class BigQueryTests extends SqlIoTest {
     @Test
     public void testParseDate() {
         // These have been adapted, since these functions are not compatible with BigQuery.
-        this.qs("""
+        this.qst("""
                 SELECT PARSE_DATE('%A %b %e %Y', 'Thursday Dec 25 2008');
                 +------------+
                 | EXPR$0     |

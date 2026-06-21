@@ -15,7 +15,7 @@ public class LateralAliasTests extends SqlIoTest {
     @Test
     public void lateralTest() {
         // Tests from the SQL documentation in docs/sql/identifiers.md
-        this.qs("""
+        this.qst("""
                 SELECT 1 as X, X+X as Y;
                  x | y
                 -------

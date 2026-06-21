@@ -6,7 +6,7 @@ import org.junit.Test;
 public class TimeArithmeticTests extends SqlIoTest {
     @Test
     public void testTimestampAddLongInterval() {
-        this.qs("""
+        this.qst("""
                 SELECT TIMESTAMP '2024-01-01 10:23:45' + INTERVAL 10 MONTHS;
                         ts
                 ---------------------
@@ -118,7 +118,7 @@ public class TimeArithmeticTests extends SqlIoTest {
 
     @Test
     public void testTimeAddInterval() {
-        this.qs("""
+        this.qst("""
                 SELECT '23:00:00'::time + INTERVAL '10' MINUTES;
                    time
                 ----------
@@ -316,7 +316,7 @@ public class TimeArithmeticTests extends SqlIoTest {
 
     @Test
     public void testTimeSubInterval() {
-        this.qs("""
+        this.qst("""
                 SELECT '00:00:00'::time - INTERVAL '10' MINUTES;
                    time
                 --------
@@ -417,7 +417,7 @@ public class TimeArithmeticTests extends SqlIoTest {
 
     @Test
     public void testTimeAddInterval1() {
-        this.qs("""
+        this.qst("""
                 SELECT '12:34:56'::time + INTERVAL '25' DAYS;
                    time
                 ---------

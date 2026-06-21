@@ -7,7 +7,7 @@ import org.junit.Test;
 public class WinAggTests extends ScottBaseTests {
     @Test
     public void testWindows0() {
-        this.qs("""
+        this.qst("""
                 select empno, deptno,
                  count(*) over (order by deptno) c1,
                  count(*) over (order by deptno range unbounded preceding) c2,
@@ -37,7 +37,7 @@ public class WinAggTests extends ScottBaseTests {
 
     @Test @Ignore("ROWS not yet implemented in WINDOW https://github.com/feldera/feldera/issues/457")
     public void testWindows() {
-        this.qs("""
+        this.qst("""
                 -- Check default brackets. Note that:
                 -- c2 and c3 are equivalent to c1;
                 -- c5 is equivalent to c4;

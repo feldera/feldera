@@ -7,7 +7,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testSin() {
-        this.qs(
+        this.qst(
                 """
                         SELECT sin(null);
                          sin
@@ -56,7 +56,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testSinDouble() {
-        this.qs(
+        this.qst(
                 """
                         SELECT sin(CAST(0 AS DOUBLE));
                          sin
@@ -93,7 +93,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testCos() {
-        this.qs(
+        this.qst(
                 """
                         SELECT cos(null);
                          cos
@@ -142,7 +142,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testCosDouble() {
-        this.qs(
+        this.qst(
                 """
                         SELECT cos(CAST(0 AS DOUBLE));
                          cos
@@ -191,7 +191,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testTan() {
-        this.qs(
+        this.qst(
                 """
                         SELECT tan(null);
                          tan
@@ -240,7 +240,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testTanDouble() {
-        this.qs(
+        this.qst(
                 """
                         SELECT tan(CAST(null as DOUBLE));
                          tan
@@ -283,7 +283,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testCot() {
-        this.qs(
+        this.qst(
                 """
                         SELECT cot(0);
                          cot
@@ -332,7 +332,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testCotDouble() {
-        this.qs(
+        this.qst(
                 """
                         SELECT cot(CAST(0 AS DOUBLE));
                          cot
@@ -383,7 +383,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Right now, we return a NaN, instead of throwing an error
     @Test
     public void testAsin() {
-        this.qs(
+        this.qst(
                 """
                         SELECT asin(null);
                          asin
@@ -464,7 +464,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Right now, we return a NaN, instead of throwing an error
     @Test
     public void testAsinDouble() {
-        this.qs(
+        this.qst(
                 """
                         SELECT asin(CAST(-2 AS DOUBLE));
                          asin
@@ -539,7 +539,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Right now, we return a NaN, instead of throwing an error
     @Test
     public void testAcos() {
-        this.qs(
+        this.qst(
                 """
                         SELECT acos(null);
                          acos
@@ -620,7 +620,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Right now, we return a NaN, instead of throwing an error
     @Test
     public void testAcosDouble() {
-        this.qs(
+        this.qst(
                 """
                         SELECT acos(CAST(-2 AS DOUBLE));
                          acos
@@ -693,7 +693,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testAtan() {
-        this.qs(
+        this.qst(
                 """
                         SELECT atan(null);
                          atan
@@ -760,7 +760,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testAtanDouble() {
-        this.qs(
+        this.qst(
                 """
                         SELECT atan(CAST(null as DOUBLE));
                          atan
@@ -827,7 +827,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testAtan2() {
-        this.qs(
+        this.qst(
                 """
                         SELECT atan2(null, null);
                          atan2
@@ -870,7 +870,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testAtan2Double() {
-        this.qs(
+        this.qst(
                 """
                         SELECT atan2(CAST(0 AS DOUBLE), CAST(0 AS DOUBLE));
                          atan2
@@ -901,7 +901,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testRadians() {
-        this.qs(
+        this.qst(
                 """
                         SELECT radians(null);
                          radians
@@ -956,7 +956,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testRadiansDouble() {
-        this.qs(
+        this.qst(
                 """
                         SELECT radians(CAST(null AS DOUBLE));
                          radians
@@ -1011,7 +1011,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested using Postgres 15.2
     @Test
     public void testDegrees() {
-        this.qs(
+        this.qst(
                 """
                         SELECT degrees(null);
                          degrees
@@ -1066,7 +1066,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested on Postgres
     @Test
     public void validInputs() {
-        this.qs(
+        this.qst(
                 """
                         SELECT sin('-3');
                          sin
@@ -1121,7 +1121,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested on Apache Spark
     @Test
     public void testSec() {
-        this.qs("""
+        this.qst("""
                 SELECT ROUND(sec(0.6), 12);
                       sec
                 -----------------
@@ -1152,7 +1152,7 @@ public class TrigonometryTests extends SqlIoTest {
     // Tested on Apache Spark
     @Test
     public void testCsc() {
-        this.qs("""
+        this.qst("""
                 SELECT csc(0.6);
                       csc
                 -----------------
@@ -1176,7 +1176,7 @@ public class TrigonometryTests extends SqlIoTest {
 
     @Test
     public void testHyperbolicFns() {
-        this.qs(
+        this.qst(
                 """
                         SELECT ROUND(sinh(1), 12);
                               sinh
@@ -1249,7 +1249,7 @@ public class TrigonometryTests extends SqlIoTest {
 
     @Test
     public void testArcHyperbolic() {
-        this.qs("""
+        this.qst("""
                 SELECT asinh('Infinity'::float8);
                   asinh
                 ----------

@@ -43,7 +43,7 @@ public class PostgresLimitTests extends SqlIoTest {
     @Test
     public void testLimit() {
         // removed empty columns from test.
-        this.qs("""
+        this.qst("""
                 SELECT unique1, unique2, stringu1
                         FROM onek WHERE unique1 > 50
                         ORDER BY unique1 LIMIT 2;
@@ -77,7 +77,7 @@ public class PostgresLimitTests extends SqlIoTest {
 
     @Test
     public void testOffset() {
-        this.qs("""
+        this.qst("""
                 SELECT unique1, unique2, stringu1
                         FROM onek WHERE unique1 > 100
                         ORDER BY unique1 LIMIT 3 OFFSET 20;

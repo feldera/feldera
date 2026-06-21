@@ -24,7 +24,7 @@ public class PostgresInt8Tests extends SqlIoTest {
 
     @Test
     public void precisionLossTest() {
-        this.qs("""
+        this.qst("""
                 SELECT CAST('36854775807.0'::float4 AS int64);
                     int8
                 -------------
@@ -34,7 +34,7 @@ public class PostgresInt8Tests extends SqlIoTest {
 
     @Test
     public void testSelect() {
-        this.qs(
+        this.qst(
                 """
                         SELECT * FROM INT8_TBL;
                                 q1        |        q2

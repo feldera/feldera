@@ -6,7 +6,7 @@ import org.junit.Test;
 public class ArrayFunctionsTests extends SqlIoTest {
     @Test
     public void testArrayAppend() {
-        this.qs("""
+        this.qst("""
                 SELECT array_append(ARRAY [1, 2], null::int);
                  array_append
                 --------------
@@ -38,7 +38,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
     public void testArrayConcat() {
         this.statementsFailingInCompilation("CREATE VIEW V AS SELECT array_concat()",
                 "Invalid number of arguments to function");
-        this.qs("""
+        this.qst("""
                 SELECT array_concat(array[1, 2], array[2, 3]);
                  r
                 ---
@@ -66,7 +66,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayExcept() {
-        this.qs("""
+        this.qst("""
                 SELECT array_except(array[2, 3, 3], array[2]);
                  r
                 ---
@@ -106,7 +106,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
     
     @Test
     public void testArrayUnion() {
-        this.qs("""
+        this.qst("""
                 select array_union(array[2, 3, 3], array[3]);
                  r
                 ---
@@ -140,7 +140,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayRepeat() {
-        this.qs("""
+        this.qst("""
                 SELECT array_repeat(3, 3);
                  array_repeat
                 --------------
@@ -176,7 +176,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayRepeat2() {
-        this.qs("""
+        this.qst("""
                 SELECT array_repeat(123, null);
                  array_repeat
                 --------------
@@ -188,7 +188,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayRepeat3() {
-        this.qs("""
+        this.qst("""
                 SELECT array_repeat('a', 6);
                  array_repeat
                 --------------
@@ -200,7 +200,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayPosition() {
-        this.qs("""
+        this.qst("""
                 SELECT array_position(ARRAY [2, 4, 6, 8, null], null);
                  array_position
                 ----------------
@@ -255,7 +255,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayContains() {
-        this.qs("""
+        this.qst("""
             SELECT array_contains(ARRAY [2, 4, 6, 8, null], 4);
              array_contains
             ---------------
@@ -297,7 +297,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayPositionDiffTypes() {
-        this.qs("""
+        this.qst("""
                 SELECT array_position(ARRAY [1, 2, 3, 4], 1e0);
                  result
                 --------
@@ -319,7 +319,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayContainsDiffTypes() {
-        this.qs("""
+        this.qst("""
                 SELECT array_contains(ARRAY [1, 2, 3, 4], 1e0);
                  result
                 --------
@@ -341,7 +341,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayRemoveDiffTypes() {
-        this.qs("""
+        this.qst("""
                 SELECT array_remove(ARRAY [1, 2, 3, 4], 1e0);
                  result
                 --------
@@ -363,7 +363,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayRemove() {
-        this.qs("""
+        this.qst("""
                 SELECT array_remove(ARRAY [2, 2, 6, 6, 8, 2], 2);
                  array_remove
                 --------------
@@ -431,7 +431,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayPrepend() {
-        this.qs("""
+        this.qst("""
                 SELECT array_prepend(ARRAY [2, 3], 1);
                  array_prepend
                 ---------------
@@ -479,7 +479,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testCardinality() {
-        this.qs("""
+        this.qst("""
                 SELECT cardinality(ARRAY [1]);
                  cardinality
                 -------------
@@ -503,7 +503,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testSortArray() {
-        this.qs("""
+        this.qst("""
                 SELECT sort_array(ARRAY [7, 1, 4, 3]);
                  sort_array
                 ------------
@@ -569,7 +569,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArraySize() {
-        this.qs("""
+        this.qst("""
                 SELECT cardinality(ARRAY [1, 2, 3]);
                  array_size
                 ------------
@@ -616,7 +616,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayReverse() {
-        this.qs("""
+        this.qst("""
                 SELECT ARRAY_REVERSE(ARRAY [2, 3, 3]);
                  array_reverse
                 ---------------
@@ -652,7 +652,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayMinMax() {
-        this.qs("""
+        this.qst("""
                 SELECT array_max(ARRAY [9, 1, 2, 4, 8]);
                  array_max
                 -----------
@@ -683,7 +683,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
     // Test for https://github.com/feldera/feldera/issues/1472
     @Test
     public void testArrayCompact2() {
-        this.qs("""
+        this.qst("""
                 SELECT array_compact(ARRAY [NULL]);
                  array_compact
                 ---------------
@@ -694,7 +694,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayCompact() {
-        this.qs("""
+        this.qst("""
                 SELECT array_compact(ARRAY [1, null, 2, null]);
                  array_compact
                 ---------------
@@ -754,7 +754,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArrayDistinct() {
-        this.qs("""
+        this.qst("""
                 SELECT array_distinct(ARRAY [1, 1, 2, 2, 3, 3]);
                  array_distinct
                 ----------------
@@ -829,7 +829,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testArraysOverlap() {
-        this.qs("""
+        this.qst("""
                 SELECT ARRAYS_OVERLAP(null, null);
                  arrays_overlap
                 ----------------
@@ -929,7 +929,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
     @Test
     public void testArrayAgg() {
         // Tests from https://cloud.google.com/bigquery/docs/reference/standard-sql/aggregate_functions#array_agg
-        this.qs("""
+        this.qst("""
                 SELECT ARRAY_AGG(x) AS array_agg FROM UNNEST(ARRAY [2, 1,-2, 3, -2, 1, 2]) AS x;
                 +-------------------------+
                 | array_agg               |
@@ -978,7 +978,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
     @Test
     public void testOverArrayAgg() {
         // The order of the elements in the array is non-deterministic
-        this.qs("""
+        this.qst("""
                 SELECT
                   x,
                   ARRAY_AGG(x) OVER (ORDER BY ABS(x)) AS array_agg
@@ -999,7 +999,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
     
     @Test
     public void testArrayIntersect() {
-        this.qs("""
+        this.qst("""
                 select array_intersect(array[2, 3, 3], array[3]);
                  r
                 ---
@@ -1039,7 +1039,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
     
     @Test
     public void testArrayInsert() {
-        this.qs("""
+        this.qst("""
                 select array_insert(cast(null as integer array), 3, 4);
                  r
                 ---
@@ -1144,7 +1144,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testExists() {
-        this.qs("""
+        this.qst("""
                 SELECT array_EXISTS(array[1, 2, 3], x -> x > 2);
                 result
                 ------
@@ -1265,7 +1265,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
 
     @Test
     public void testTransform() {
-        this.qs("""
+        this.qst("""
                 SELECT transform(array[1, 2, 3], x -> x + 3);
                 result
                 ------

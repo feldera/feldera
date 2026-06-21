@@ -38,21 +38,18 @@ public class PivotTests extends SqlIoTest {
 
     @Test
     public void testGroupby() {
-        this.q("""
+        this.qst("""
                 SELECT CourseName, Sum(Price)
                 FROM GG
                 GROUP BY CourseName;
-                CourseName | Price
-                -----------------
-                 C| 5000
-                 JAVA| 6000
-                 PLACEMENT 100| 5000
-                 PYTHON| 8000""");
-    }
-
-    @Test
-    public void testGGPivot() {
-        this.q("""
+                CourseName     | Price
+                ----------------------
+                 C             | 5000
+                 JAVA          | 6000
+                 PLACEMENT 100 | 5000
+                 PYTHON        | 8000
+                (4 rows)
+                
                 SELECT CourseName, PG, IV
                 FROM GG
                 PIVOT (
@@ -61,17 +58,18 @@ public class PivotTests extends SqlIoTest {
                      'INTERVIEWPREPARATION' AS IV
                    )
                 ) AS PivotTable;
-                CourseName | PG | IV
-                -----------------
-                 C| 5000 | NULL
-                 JAVA| 6000 | NULL
-                 PLACEMENT 100| NULL | 5000
-                 PYTHON| 8000 | NULL""");
+                CourseName     | PG   | IV
+                -----------------------------
+                 C             | 5000 | NULL
+                 JAVA          | 6000 | NULL
+                 PLACEMENT 100 | NULL | 5000
+                 PYTHON        | 8000 | NULL
+                (4 rows)""");
     }
 
     @Test
     public void testSparkPivot() {
-        this.q("""
+        this.qst("""
                 SELECT * FROM person
                     PIVOT (
                         SUM(age) AS a, AVG(class) AS cc
@@ -80,13 +78,13 @@ public class PivotTests extends SqlIoTest {
                 +------+-----------+---------+---------+---------+---------+
                 |  id  |  address  | john_a  | john_cc | mike_a  | mike_cc |
                 +------+-----------+---------+---------+---------+---------+
-                | 200  | Street 2|   NULL    | NULL    | NULL    | NULL    |
-                | 100  | Street 1|   30      | 1       | NULL    | NULL    |
-                | 300  | Street 3|   NULL    | NULL    | 80      | 3       |
-                | 400  | Street 4|   NULL    | NULL    | NULL    | NULL    |
+                | 200  | Street 2  | NULL    | NULL    | NULL    | NULL    |
+                | 100  | Street 1  | 30      | 1       | NULL    | NULL    |
+                | 300  | Street 3  | NULL    | NULL    | 80      | 3       |
+                | 400  | Street 4  | NULL    | NULL    | NULL    | NULL    |
                 +------+-----------+---------+---------+---------+---------+
-                """);
-        this.q("""
+                (4 rows)
+
                 SELECT * FROM person
                     PIVOT (
                         SUM(age) AS a, AVG(class) AS cc
@@ -95,25 +93,27 @@ public class PivotTests extends SqlIoTest {
                 +------+-----------+-------+-------+-------+-------+
                 |  id  |  address  | c1_a  | c1_cc | c2_a  | c2_cc |
                 +------+-----------+-------+-------+-------+-------+
-                | 200  | Street 2|   NULL  | NULL  | NULL  | NULL  |
-                | 100  | Street 1|   30    | 1     | NULL  | NULL  |
-                | 300  | Street 3|   NULL  | NULL  | NULL  | NULL  |
-                | 400  | Street 4|   NULL  | NULL  | NULL  | NULL  |
-                +------+-----------+-------+-------+-------+-------+""");
+                | 200  | Street 2  | NULL  | NULL  | NULL  | NULL  |
+                | 100  | Street 1  | 30    | 1     | NULL  | NULL  |
+                | 300  | Street 3  | NULL  | NULL  | NULL  | NULL  |
+                | 400  | Street 4  | NULL  | NULL  | NULL  | NULL  |
+                +------+-----------+-------+-------+-------+-------+
+                (4 rows)""");
     }
 
     @Test
     public void testPivotDoc() {
-        this.q("""
+        this.qst("""
                 SELECT year, type, SUM(count) FROM FURNITURE GROUP BY year, type;
                 year | type  | sum
                 -----------------
-                2020 | chair| 4
-                2021 | table| 3
-                2021 | chair| 4
-                2023 | desk| 1
-                2023 | table| 2""");
-        this.q("""
+                2020 | chair | 4
+                2021 | table | 3
+                2021 | chair | 4
+                2023 | desk  | 1
+                2023 | table | 2
+                (5 rows)
+
                 SELECT * FROM FURNITURE
                 PIVOT (
                     SUM(count) AS ct
@@ -124,6 +124,6 @@ public class PivotTests extends SqlIoTest {
                 2020 |       |        |    4
                 2021 |       |     3  |    4
                 2023 |     1 |     2  |
-                """);
+                (3 rows)""");
     }
 }

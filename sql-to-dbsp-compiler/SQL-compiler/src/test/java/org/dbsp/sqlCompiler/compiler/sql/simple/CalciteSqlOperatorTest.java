@@ -7,7 +7,7 @@ import org.junit.Test;
 public class CalciteSqlOperatorTest extends SqlIoTest {
     @Test
     public void testIf() {
-        this.qs("""
+        this.qst("""
                 SELECT if(1 = 2, 1, 2);
                  result
                 --------
@@ -53,7 +53,7 @@ public class CalciteSqlOperatorTest extends SqlIoTest {
 
     @Test
     public void testRegexReplace2Func() {
-        this.qs("""
+        this.qst("""
                 select regexp_replace('a b c', 'b');
                  r
                 ---
@@ -81,6 +81,7 @@ public class CalciteSqlOperatorTest extends SqlIoTest {
 
     @Test
     public void testRegexReplace3Func() {
+        // Spaces are significant in these outputs
         this.qs("""
                 select regexp_replace('a b c', 'b', 'X');
                  r
@@ -181,7 +182,7 @@ public class CalciteSqlOperatorTest extends SqlIoTest {
 
     @Test
     public void testDocs() {
-        this.qs("""
+        this.qst("""
                 select regexp_replace('1078910', '[^01]');
                  r
                 -----
@@ -209,7 +210,7 @@ public class CalciteSqlOperatorTest extends SqlIoTest {
     
     @Test
     public void testConcatWithSeparator() {
-        this.qs("""
+        this.qst("""
                 select concat_ws(',', 'a');
                  r
                 ---
@@ -276,7 +277,7 @@ public class CalciteSqlOperatorTest extends SqlIoTest {
 
     @Test
     public void testMapContainsKey() {
-        this.qs("""
+        this.qst("""
                 select map_contains_key(map[1, 'a', 2, 'b'], 1);
                  r
                 ---

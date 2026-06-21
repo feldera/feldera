@@ -35,25 +35,25 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testBround() {
-        this.qs("""
+        this.qst("""
                 SELECT BROUND(1.123, 0), BROUND(1.123, 1), BROUND(1.123, 2), BROUND(1.123, 3);
                  a |   b |    c |     d
                 ------------------------
                  1 | 1.1 | 1.12 | 1.123
                 (1 row)
-                
+
                 SELECT BROUND(1.15, 1), BROUND(1.25, 1), BROUND(1.55, 1);
                  a   |   b |   c
                 -----------------
                  1.2 | 1.2 | 1.6
                 (1 row)
-                
+
                 SELECT BROUND(11.15, -1), BROUND(15.25, -1), BROUND(25.55, -1);
                  a  |  b |  c
                 --------------
                  10 | 20 | 30
                 (1 row)
-                
+
                 SELECT BROUND(11, -4), BROUND(11.25e0, 1), BROUND(0, CAST(1 AS TINYINT));
                  a   |    b | c
                 ----------------
@@ -63,7 +63,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testBetween() {
-        this.qs("""
+        this.qst("""
                 SELECT TIMESTAMP '2020-02-02 10:00:00' between TIMESTAMP '2020-02-02 09:00:00' and TIMESTAMP '2020-02-02 11:00:00';
                  result
                 --------
@@ -126,7 +126,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void issue1520() {
-        this.qs("""
+        this.qst("""
                 select 3.456::decimal(25, 3) + 1.123::decimal(4, 0);
                  ?column?
                 ----------
@@ -228,7 +228,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testLeft() {
-        this.qs("""
+        this.qst("""
                 SELECT LEFT('string', 1);
                 result
                 ---------
@@ -246,13 +246,13 @@ public class FunctionsTest extends SqlIoTest {
                 ---------
                  string
                 (1 row)
-                
+
                 SELECT LEFT('string', -2);
                 result
                 ---------
                 \s
                 (1 row)
-                
+
                 SELECT LEFT('string', NULL);
                 result
                 ---------
@@ -262,7 +262,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testRight() {
-        this.qs("""
+        this.qst("""
                 SELECT RIGHT('string', 1);
                 result
                 ---------
@@ -280,13 +280,13 @@ public class FunctionsTest extends SqlIoTest {
                 ---------
                  string
                 (1 row)
-                
+
                 SELECT RIGHT('string', -2);
                 result
                 ---------
                 \s
                 (1 row)
-                
+
                 SELECT RIGHT('string', NULL);
                 result
                 ---------
@@ -296,13 +296,13 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testBinaryCast() {
-        this.qs("""
+        this.qst("""
                 SELECT CAST('1234567890' AS VARBINARY) as val;
                  val
                 -----
                  31323334353637383930
                 (1 row)
-                
+
                 SELECT '1234567890'::VARBINARY as val;
                  val
                 -----
@@ -328,7 +328,7 @@ public class FunctionsTest extends SqlIoTest {
     // INT::MIN % -1 instead of just returning 0
     @Test
     public void issue1187modulo() {
-        this.qs(
+        this.qst(
                 """
                 SELECT (-128)::tinyint % (-1)::tinyint as x;
                  x
@@ -493,7 +493,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testConcat() {
-        this.qs("""
+        this.qst("""
                 SELECT CONCAT('string', 1);
                 result
                 ---------
@@ -539,7 +539,7 @@ public class FunctionsTest extends SqlIoTest {
     // Calcite rounds differently from Postgres and other databases
     @Test
     public void testRounding() {
-        this.qs("""
+        this.qst("""
                 select CAST((CAST('1234.1264' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
                  cast
                 ------
@@ -683,7 +683,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testLn() {
-        this.qs("""
+        this.qst("""
                 SELECT ROUND(ln(2e0), 12);
                  ln
                 ----
@@ -701,7 +701,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testIsInf() {
-        this.qs(
+        this.qst(
                 """
                         SELECT IS_INF(null);
                         is_inf
@@ -770,7 +770,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testIsInfReal() {
-        this.qs("""
+        this.qst("""
                 -- f64::MAX
                 SELECT is_inf(1.7976931348623157e308::real);
                 real
@@ -790,7 +790,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testIsNan() {
-        this.qs("""
+        this.qst("""
                 SELECT is_nan(null);
                  is_nan
                 --------
@@ -838,7 +838,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testPower() {
-        this.qs("""
+        this.qst("""
                 SELECT power(2e0, 2);
                  power
                 -------
@@ -904,7 +904,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testSqrtDouble() {
-        this.qs("""
+        this.qst("""
                 SELECT sqrt(9e0);
                  sqrt
                 ------
@@ -928,7 +928,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testRound() {
-        this.qs("""
+        this.qst("""
                 select round(15.1);
                  round(15.1)
                 ------------
@@ -1450,7 +1450,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testTruncate() {
-        this.qs("""
+        this.qst("""
                 select truncate(5678.123451);
                 truncate(5678.123451)
                 -----
@@ -1746,7 +1746,7 @@ public class FunctionsTest extends SqlIoTest {
     @Test
     public void testRoundTruncateEdgeCases() {
         // Calcite normalizes the sign here
-        this.qs("""
+        this.qst("""
                 select truncate(-0.00123::DOUBLE, 2);
                  truncate
                 ----------
@@ -1794,7 +1794,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testExp() {
-        this.qs("""
+        this.qst("""
                 SELECT EXP(0.0);
                  exp
                 -----
@@ -1830,7 +1830,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testExpEdgeCase() {
-        this.qs("""
+        this.qst("""
                 -- changed the type from numeric to double
                 -- therefore the value has also slightly changed
                 -- cases that used to generate inaccurate results in Postgres
@@ -1845,7 +1845,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testGunzip() {
-        this.qs("""
+        this.qst("""
                 SELECT GUNZIP(x'1f8b08000000000000ff4b4bcd49492d4a0400218115ac07000000'::bytea);
                  gunzip
                 ------------
@@ -1881,13 +1881,13 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testNulls() {
-        this.qs("""
+        this.qst("""
                 SELECT sign(null);
                  sign
                 ------------
                  null
                 (1 row)
-                
+
                 SELECT st_distance(null, st_point(0,0));
                  sign
                 ------------
@@ -1898,7 +1898,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testMD5() {
-        this.qs("""
+        this.qst("""
                 SELECT MD5(x'0123456789ABCDEF');
                  md5
                 ------------
@@ -1934,7 +1934,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testIssue1505() {
-        this.qs("""
+        this.qst("""
                 SELECT ROUND(123.1234::DOUBLE, 2);
                  round
                 -------
@@ -1964,7 +1964,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testRlike() {
-        this.qs("""
+        this.qst("""
                 SELECT RLIKE('string', 's..i.*');
                  rlike
                 -------
@@ -2004,7 +2004,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testSequence() {
-        this.qs("""
+        this.qst("""
                 SELECT SEQUENCE(1, 10);
                  sequence
                 ----------
@@ -2088,7 +2088,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testCeilInt() {
-        this.qs("""
+        this.qst("""
                 SELECT ceil(2::tinyint);
                  ceil
                 ------
@@ -2148,7 +2148,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testFloorInt() {
-        this.qs("""
+        this.qst("""
                 SELECT floor(2::tinyint);
                  floor
                 ------
@@ -2208,44 +2208,44 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testBlackboxFunction() {
-        this.qs("""
+        this.qst("""
                 SELECT blackbox(1);
                  blackbox
                 ----------
                  1
                 (1 row)
-                
+
                 SELECT blackbox('blah');
                  blackbox
                 ----------
                  blah
                 (1 row)
-                
+
                 SELECT blackbox(true);
                  blackbox
                 ----------
                  true
                 (1 row)
-                
+
                 SELECT blackbox(1e0);
                  blackbox
                 ----------
                  1e0
                 (1 row)
-                
+
                 SELECT blackbox(1.0);
                  blackbox
                 ----------
                  1.0
                 (1 row)
-                
+
                 SELECT blackbox(vals) from arr_table;
                  blackbox
                 ----------
                  {1,2,3}
                  {1,2,3}
                 (2 rows)
-                
+
                 SELECT blackbox(1.0) as c0, blackbox(true) as c1;
                   c0 | c1
                 -----+-----
@@ -2257,25 +2257,25 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testInitcapSpaces() {
-        this.qs("""
+        this.qst("""
                 SELECT INITCAP_SPACES('hi man');
                  r
                 ---
                  Hi Man
                 (1 row)
-               
+
                 SELECT INITCAP_SPACES('hi THOMAS-SON');
                  r
                 ---
                  Hi Thomas-son
                 (1 row)
-                
+
                 SELECT INITCAP_SPACES(NULL);
                  r
                 ---
                 NULL
                 (1 row)
-                
+
                 SELECT INITCAP('ggj12341jhg12341=-012341asdf');
                  r
                 ---
@@ -2287,7 +2287,7 @@ public class FunctionsTest extends SqlIoTest {
     public void issue4559() {
         var ccs = this.getCCS("""
                 CREATE TABLE str_tbl(id INT, str VARCHAR);
-                
+
                 CREATE MATERIALIZED VIEW trim_legal AS SELECT
                 TRIM(trailing 'い' from str)
                 FROM str_tbl;""");

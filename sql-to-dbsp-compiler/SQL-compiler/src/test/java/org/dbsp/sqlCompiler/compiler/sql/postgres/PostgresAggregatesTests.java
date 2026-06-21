@@ -34,7 +34,7 @@ public class PostgresAggregatesTests extends SqlIoTest {
 
     @Test
     public void testBitAggs() {
-        this.qs("""
+        this.qst("""
                 -- empty case
                 SELECT
                   BIT_AND(i2),
@@ -43,7 +43,7 @@ public class PostgresAggregatesTests extends SqlIoTest {
                 FROM (SELECT * FROM bitwise_test WHERE FALSE);
                  a | o | x
                 ---+---+---
-                   |   | \s
+                   |   |
                 (1 row)
 
                 SELECT
@@ -74,7 +74,7 @@ public class PostgresAggregatesTests extends SqlIoTest {
 
     @Test
     public void testBoolAgg() {
-        this.qs("""
+        this.qst("""
                 -- empty case
                 SELECT
                   BOOL_AND(b1)   AS "n0",

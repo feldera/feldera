@@ -7,7 +7,7 @@ import org.junit.Test;
 public class PostgresTests extends SqlIoTest {
     @Test
     public void testGreatestIgnoreNulls() {
-        this.qs("""
+        this.qst("""
                 SELECT greatest_ignore_nulls(1, 2, 3) as x;
                  X
                 ---
@@ -41,7 +41,7 @@ public class PostgresTests extends SqlIoTest {
 
     @Test
     public void testGreatest() {
-        this.qs("""
+        this.qst("""
                 SELECT greatest(1, 2, 3) as x;
                  X
                 ---

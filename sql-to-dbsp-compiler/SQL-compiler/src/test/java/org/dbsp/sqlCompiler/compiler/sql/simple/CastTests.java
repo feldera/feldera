@@ -156,7 +156,7 @@ public class CastTests extends SqlIoTest {
 
     @Test
     public void mixedTypesTest() {
-        this.qs("SELECT CAST(100 AS UNSIGNED) - 10;" +
+        this.qst("SELECT CAST(100 AS UNSIGNED) - 10;" +
                 """
                  t
                 ---
@@ -202,7 +202,7 @@ public class CastTests extends SqlIoTest {
 
     @Test
     public void timeCastTests() {
-        this.qs("""
+        this.qst("""
                 SELECT CAST(1000 AS TIMESTAMP);
                  t
                 ---
@@ -254,7 +254,7 @@ public class CastTests extends SqlIoTest {
 
     @Test
     public void testCastStringToComplexLongInterval() {
-        this.qs("""
+        this.qst("""
                 SELECT CAST('1-1' AS INTERVAL YEAR TO MONTH);
                  i
                 ---
@@ -276,7 +276,7 @@ public class CastTests extends SqlIoTest {
 
     @Test
     public void testCastStringToComplexShortInterval() {
-        this.qs("""
+        this.qst("""
                 SELECT CAST('100 1' AS INTERVAL DAY TO HOUR);
                  i
                 ---
@@ -304,7 +304,7 @@ public class CastTests extends SqlIoTest {
 
     @Test
     public void testCastStringToComplexShortInterval2() {
-        this.qs("""
+        this.qst("""
                 SELECT CAST('10 10:1' AS INTERVAL DAYS TO MINUTES);
                  i
                 ---
@@ -344,7 +344,7 @@ public class CastTests extends SqlIoTest {
 
     @Test
     public void testCastStringToComplexShortInterval1() {
-        this.qs("""
+        this.qst("""
                 SELECT CAST('100:1' AS INTERVAL MINUTES TO SECONDS);
                  i
                 ---
@@ -384,7 +384,7 @@ public class CastTests extends SqlIoTest {
 
     @Test
     public void testCastStringToSimpleInterval() {
-        this.qs("""
+        this.qst("""
                 SELECT CAST('1' AS INTERVAL YEAR);
                  i
                 ---
@@ -718,7 +718,7 @@ public class CastTests extends SqlIoTest {
 
     @Test
     public void issue5894() {
-        this.qs("""
+        this.qst("""
                 SELECT INTERVAL '1' YEAR;
                  r
                 ---
@@ -762,7 +762,7 @@ public class CastTests extends SqlIoTest {
     @Test
     public void issue6257() {
         // Calcite rounds by truncating, so we are tied to that behavior
-        this.qs("""
+        this.qst("""
                 SELECT CAST(INTERVAL '10' DAY AS BIGINT);
                  r
                 ---

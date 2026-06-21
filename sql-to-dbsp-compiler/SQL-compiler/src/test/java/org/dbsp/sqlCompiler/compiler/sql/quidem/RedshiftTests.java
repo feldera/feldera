@@ -7,7 +7,7 @@ import org.junit.Test;
 public class RedshiftTests extends ScottBaseTests {
     @Test
     public void testFirstValue() {
-        this.qs("""
+        this.qst("""
                 select empno, first_value(sal) over (order by empno range between unbounded preceding and unbounded following)
                 from emp where deptno = 30 order by 1;
                 EMPNO | EXPR$1
@@ -23,7 +23,7 @@ public class RedshiftTests extends ScottBaseTests {
 
     @Test
     public void testRank() {
-        this.qs("""
+        this.qst("""
                 select rank() over (partition by deptno order by sal) from emp;
                  EXPR$0
                 --------
@@ -46,7 +46,7 @@ public class RedshiftTests extends ScottBaseTests {
 
     @Test
     public void testLag() {
-        this.qs("""
+        this.qst("""
                 select empno, lag(sal) respect nulls over (order by empno)
                 from emp where deptno = 30 order by 1;
                 EMPNO | EXPR$1
@@ -75,7 +75,7 @@ public class RedshiftTests extends ScottBaseTests {
 
     @Test
     public void testRegexpReplace() {
-        this.qs("""
+        this.qst("""
                 select regexp_replace('DonecFri@semperpretiumneque.com', '@.*\\.(org|gov|com)$');
                  result
                 --------

@@ -5,16 +5,16 @@ import org.junit.Test;
 /** Tests from Calcite's sort.iq */
 public class SortTests extends FoodmartBaseTests {
     @Test public void testSortOffset() {
-        this.qs("""
+        this.qst("""
                 select *
                 from dept
                 order by deptno offset 1;
                 +--------+------------+---------+
                 | DEPTNO | DNAME      | LOC     |
                 +--------+------------+---------+
-                |     20 | RESEARCH| DALLAS|
-                |     30 | SALES| CHICAGO|
-                |     40 | OPERATIONS| BOSTON|
+                |     20 | RESEARCH   | DALLAS  |
+                |     30 | SALES      | CHICAGO |
+                |     40 | OPERATIONS | BOSTON  |
                 +--------+------------+---------+
                 (3 rows)
                 
@@ -24,46 +24,46 @@ public class SortTests extends FoodmartBaseTests {
                 +--------+------------+---------+
                 | DEPTNO | DNAME      | LOC     |
                 +--------+------------+---------+
-                |     20 | RESEARCH| DALLAS|
-                |     30 | SALES| CHICAGO|
-                |     40 | OPERATIONS| BOSTON|
+                |     20 | RESEARCH   | DALLAS  |
+                |     30 | SALES      | CHICAGO |
+                |     40 | OPERATIONS | BOSTON  |
                 +--------+------------+---------+
                 (3 rows)""");
     }
 
     @Test
     public void testSort() {
-        this.qs("""
+        this.qst("""
                 select * from "days" order by "day";
                 +-----+----------+
                 | day | week_day |
-                +-----+-------+
-                |   1 | Sunday|
-                |   2 | Monday|
-                |   3 | Tuesday|
+                +-----+----------+
+                |   1 | Sunday   |
+                |   2 | Monday   |
+                |   3 | Tuesday  |
                 |   4 | Wednesday|
-                |   5 | Thursday|
-                |   6 | Friday|
-                |   7 | Saturday|
-                +-----+-------+
+                |   5 | Thursday |
+                |   6 | Friday   |
+                |   7 | Saturday |
+                +-----+----------+
                 (7 rows)
                 
                 select * from "days" order by "day" limit 2;
                 +-----+----------+
                 | day | week_day |
-                +-----+-------+
-                |   1 | Sunday|
-                |   2 | Monday|
-                +-----+-------+
+                +-----+----------+
+                |   1 | Sunday   |
+                |   2 | Monday   |
+                +-----+----------+
                 (2 rows)
                 
                 select * from "days" where "day" between 2 and 4 order by "day";
                 +-----+-----------+
                 | day | week_day  |
                 +-----+-----------+
-                |   2 | Monday|
-                |   3 | Tuesday|
-                |   4 | Wednesday|
+                |   2 | Monday    |
+                |   3 | Tuesday   |
+                |   4 | Wednesday |
                 +-----+-----------+
                 (3 rows)
                 
@@ -121,10 +121,10 @@ public class SortTests extends FoodmartBaseTests {
                 +--------+------------+----------+
                 | DEPTNO | DNAME      | LOC      |
                 +--------+------------+----------+
-                |     40 | OPERATIONS| BOSTON|
-                |     30 | SALES| CHICAGO|
-                |     20 | RESEARCH| DALLAS|
-                |     10 | ACCOUNTING| NEW YORK|
+                |     40 | OPERATIONS | BOSTON   |
+                |     30 | SALES      | CHICAGO  |
+                |     20 | RESEARCH   | DALLAS   |
+                |     10 | ACCOUNTING | NEW YORK |
                 +--------+------------+----------+
                 (4 rows)
                 
@@ -134,8 +134,8 @@ public class SortTests extends FoodmartBaseTests {
                 +--------+----------+---------+
                 | DEPTNO | DNAME    | LOC     |
                 +--------+----------+---------+
-                |     20 | RESEARCH| DALLAS|
-                |     30 | SALES| CHICAGO|
+                |     20 | RESEARCH | DALLAS  |
+                |     30 | SALES    | CHICAGO |
                 +--------+----------+---------+
                 (2 rows)
                 
@@ -145,8 +145,8 @@ public class SortTests extends FoodmartBaseTests {
                 +--------+----------+---------+
                 | DEPTNO | DNAME    | LOC     |
                 +--------+----------+---------+
-                |     20 | RESEARCH| DALLAS|
-                |     30 | SALES| CHICAGO|
+                |     20 | RESEARCH | DALLAS  |
+                |     30 | SALES    | CHICAGO |
                 +--------+----------+---------+
                 (2 rows)
                 
@@ -156,8 +156,8 @@ public class SortTests extends FoodmartBaseTests {
                 +--------+------------+----------+
                 | DEPTNO | DNAME      | LOC      |
                 +--------+------------+----------+
-                |     10 | ACCOUNTING| NEW YORK|
-                |     20 | RESEARCH| DALLAS|
+                |     10 | ACCOUNTING | NEW YORK |
+                |     20 | RESEARCH   | DALLAS   |
                 +--------+------------+----------+
                 (2 rows)
                 
@@ -167,8 +167,8 @@ public class SortTests extends FoodmartBaseTests {
                 +--------+------------+----------+
                 | DEPTNO | DNAME      | LOC      |
                 +--------+------------+----------+
-                |     10 | ACCOUNTING| NEW YORK|
-                |     20 | RESEARCH| DALLAS|
+                |     10 | ACCOUNTING | NEW YORK |
+                |     20 | RESEARCH   | DALLAS   |
                 +--------+------------+----------+
                 (2 rows)
                 
@@ -178,10 +178,10 @@ public class SortTests extends FoodmartBaseTests {
                 +--------+------------+----------+
                 | DEPTNO | DNAME      | LOC      |
                 +--------+------------+----------+
-                |     10 | ACCOUNTING| NEW YORK|
-                |     20 | RESEARCH| DALLAS|
-                |     30 | SALES| CHICAGO|
-                |     40 | OPERATIONS| BOSTON|
+                |     10 | ACCOUNTING | NEW YORK |
+                |     20 | RESEARCH   | DALLAS   |
+                |     30 | SALES      | CHICAGO  |
+                |     40 | OPERATIONS | BOSTON   |
                 +--------+------------+----------+
                 (4 rows)
                 
@@ -191,8 +191,8 @@ public class SortTests extends FoodmartBaseTests {
                 +--------+----------+---------+
                 | DEPTNO | DNAME    | LOC     |
                 +--------+----------+---------+
-                |     20 | RESEARCH| DALLAS|
-                |     30 | SALES| CHICAGO|
+                |     20 | RESEARCH | DALLAS  |
+                |     30 | SALES    | CHICAGO |
                 +--------+----------+---------+
                 (2 rows)
                 
@@ -202,8 +202,8 @@ public class SortTests extends FoodmartBaseTests {
                 +--------+----------+---------+
                 | DEPTNO | DNAME    | LOC     |
                 +--------+----------+---------+
-                |     20 | RESEARCH| DALLAS|
-                |     30 | SALES| CHICAGO|
+                |     20 | RESEARCH | DALLAS  |
+                |     30 | SALES    | CHICAGO |
                 +--------+----------+---------+
                 (2 rows)
                 
@@ -213,8 +213,8 @@ public class SortTests extends FoodmartBaseTests {
                 +--------+------------+----------+
                 | DEPTNO | DNAME      | LOC      |
                 +--------+------------+----------+
-                |     10 | ACCOUNTING| NEW YORK|
-                |     20 | RESEARCH| DALLAS|
+                |     10 | ACCOUNTING | NEW YORK |
+                |     20 | RESEARCH   | DALLAS   |
                 +--------+------------+----------+
                 (2 rows)
                 
@@ -224,10 +224,10 @@ public class SortTests extends FoodmartBaseTests {
                 +--------+------------+----------+
                 | DEPTNO | DNAME      | LOC      |
                 +--------+------------+----------+
-                |     10 | ACCOUNTING| NEW YORK|
-                |     20 | RESEARCH| DALLAS|
-                |     30 | SALES| CHICAGO|
-                |     40 | OPERATIONS| BOSTON|
+                |     10 | ACCOUNTING | NEW YORK |
+                |     20 | RESEARCH   | DALLAS   |
+                |     30 | SALES      | CHICAGO  |
+                |     40 | OPERATIONS | BOSTON   |
                 +--------+------------+----------+
                 (4 rows)
                 """);

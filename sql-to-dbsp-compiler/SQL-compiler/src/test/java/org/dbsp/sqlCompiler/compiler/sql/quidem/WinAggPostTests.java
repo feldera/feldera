@@ -7,7 +7,7 @@ import org.junit.Test;
 public class WinAggPostTests extends PostBaseTests {
     @Test @Ignore("ORDER BY strings not supported https://github.com/feldera/feldera/issues/457")
     public void test() {
-        this.qs("""
+        this.qst("""
                 select deptno,
                   ename,
                   mode(gender) over (partition by deptno order by ENAME) as m
@@ -148,19 +148,19 @@ public class WinAggPostTests extends PostBaseTests {
     public void test0() {
         // Constant argument to aggregate, issue 4010
         // validated on Postgres
-        this.qs(""" 
+        this.qst(""" 
                 select *, first_value(ename) over (partition by deptno order by gender range unbounded preceding) from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
-                 Jane|       10 | F| Jane
-                 Bob|        10 | M| Jane
-                 Eric|       20 | M| Eric
-                 Alice|      30 | F| Alice
-                 Susan|      30 | F| Alice
-                 Eve|        50 | F| Eve
-                 Adam|       50 | M| Eve
-                 Grace|      60 | F| Grace
-                 Wilma|         | F| Wilma
+                 Jane  |     10 | F      | Jane
+                 Bob   |     10 | M      | Jane
+                 Eric  |     20 | M      | Eric
+                 Alice |     30 | F      | Alice
+                 Susan |     30 | F      | Alice
+                 Eve   |     50 | F      | Eve
+                 Adam  |     50 | M      | Eve
+                 Grace |     60 | F      | Grace
+                 Wilma |        | F      | Wilma
                 (9 rows)
                 
                 select gender,deptno,
@@ -169,18 +169,18 @@ public class WinAggPostTests extends PostBaseTests {
                 +--------+--------+--------+
                 | gender | deptno | count1 |
                 +--------+--------+--------+
-                | F|       10     | 1      |
-                | F|       30     | 2      |
-                | F|       30     | 2      |
-                | F|       50     | 1      |
-                | F|       60     | 1      |
-                | F|              | 1      |
-                | M|       10     | 1      |
-                | M|       20     | 1      |
-                | M|       50     | 1      |
+                | F      | 10     | 1      |
+                | F      | 30     | 2      |
+                | F      | 30     | 2      |
+                | F      | 50     | 1      |
+                | F      | 60     | 1      |
+                | F      |        | 1      |
+                | M      | 10     | 1      |
+                | M      | 20     | 1      |
+                | M      | 50     | 1      |
                 +--------+--------+--------+
                 (9 rows)""");
-        this.qs("""
+        this.qst("""
                 -- [CALCITE-1540] Support multiple columns in PARTITION BY clause of window function
                 select gender,deptno,
                   count(*) over (partition by gender,deptno) as count1
@@ -188,15 +188,15 @@ public class WinAggPostTests extends PostBaseTests {
                 +--------+--------+--------+
                 | GENDER | DEPTNO | COUNT1 |
                 +--------+--------+--------+
-                | F|           10 |      1 |
-                | F|           30 |      2 |
-                | F|           30 |      2 |
-                | F|           50 |      1 |
-                | F|           60 |      1 |
-                | F|              |      1 |
-                | M|           10 |      1 |
-                | M|           20 |      1 |
-                | M|           50 |      1 |
+                | F      |     10 |      1 |
+                | F      |     30 |      2 |
+                | F      |     30 |      2 |
+                | F      |     50 |      1 |
+                | F      |     60 |      1 |
+                | F      |        |      1 |
+                | M      |     10 |      1 |
+                | M      |     20 |      1 |
+                | M      |     50 |      1 |
                 +--------+--------+--------+
                 (9 rows)
 
@@ -208,15 +208,15 @@ public class WinAggPostTests extends PostBaseTests {
                 +--------+--------+--------+
                 | GENDER | DEPTNO | COUNT1 |
                 +--------+--------+--------+
-                | F|           10 |      6 |
-                | F|           30 |      6 |
-                | F|           30 |      6 |
-                | F|           50 |      6 |
-                | F|           60 |      6 |
-                | F|              |      6 |
-                | M|           10 |      3 |
-                | M|           20 |      3 |
-                | M|           50 |      3 |
+                | F      |     10 |      6 |
+                | F      |     30 |      6 |
+                | F      |     30 |      6 |
+                | F      |     50 |      6 |
+                | F      |     60 |      6 |
+                | F      |        |      6 |
+                | M      |     10 |      3 |
+                | M      |     20 |      3 |
+                | M      |     50 |      3 |
                 +--------+--------+--------+
                 (9 rows)""");
     }
@@ -227,53 +227,53 @@ public class WinAggPostTests extends PostBaseTests {
         // deterministic in our implementation, but they give a different result
         // than other SQL dialects.
         // Here the sorting is implicit on ename, deptno, gender
-        this.qs("""
+        this.qst("""
                 select *, first_value(deptno) over () from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
-                 Jane|       10 | F|                50
-                 Bob|        10 | M|                50
-                 Eric|       20 | M|                50
-                 Susan|      30 | F|                50
-                 Alice|      30 | F|                50
-                 Adam|       50 | M|                50
-                 Eve|        50 | F|                50
-                 Grace|      60 | F|                50
-                 Wilma|         | F|                50
+                 Jane  |     10 | F      |          50
+                 Bob   |     10 | M      |          50
+                 Eric  |     20 | M      |          50
+                 Susan |     30 | F      |          50
+                 Alice |     30 | F      |          50
+                 Adam  |     50 | M      |          50
+                 Eve   |     50 | F      |          50
+                 Grace |     60 | F      |          50
+                 Wilma |        | F      |          50
                 (9 rows)""");
-        this.qs("""
+        this.qst("""
                 select *, first_value(ename) over () from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
-                 Jane|       10 | F| Adam
-                 Bob|        10 | M| Adam
-                 Eric|       20 | M| Adam
-                 Susan|      30 | F| Adam
-                 Alice|      30 | F| Adam
-                 Adam|       50 | M| Adam
-                 Eve|        50 | F| Adam
-                 Grace|      60 | F| Adam
-                 Wilma|         | F| Adam
+                 Jane  |     10 | F      | Adam
+                 Bob   |     10 | M      | Adam
+                 Eric  |     20 | M      | Adam
+                 Susan |     30 | F      | Adam
+                 Alice |     30 | F      | Adam
+                 Adam  |     50 | M      | Adam
+                 Eve   |     50 | F      | Adam
+                 Grace |     60 | F      | Adam
+                 Wilma |        | F      | Adam
                 (9 rows)
 
                 select *, first_value(ename) over (partition by deptno) from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
-                 Jane|       10 | F| Bob
-                 Bob|        10 | M| Bob
-                 Eric|       20 | M| Eric
-                 Susan|      30 | F| Alice
-                 Alice|      30 | F| Alice
-                 Adam|       50 | M| Adam
-                 Eve|        50 | F| Adam
-                 Grace|      60 | F| Grace
-                 Wilma|         | F| Wilma
+                 Jane  |     10 | F      | Bob
+                 Bob   |     10 | M      | Bob
+                 Eric  |     20 | M      | Eric
+                 Susan |     30 | F      | Alice
+                 Alice |     30 | F      | Alice
+                 Adam  |     50 | M      | Adam
+                 Eve   |     50 | F      | Adam
+                 Grace |     60 | F      | Grace
+                 Wilma |        | F      | Wilma
                 (9 rows)""");
     }
 
     @Test
     public void test3() {
-        this.qs("""
+        this.qst("""
                 -- No ORDER BY, windows defined in WINDOW clause.
                 select deptno, gender, min(gender) over w1 as a, min(gender) over w2 as d
                 from emp
@@ -282,15 +282,15 @@ public class WinAggPostTests extends PostBaseTests {
                 +--------+--------+---+---+
                 | DEPTNO | GENDER | A | D |
                 +--------+--------+---+---+
-                |     10 | F| F| F|
-                |     10 | M| F| F|
-                |     20 | M| F| M|
-                |     30 | F| F| F|
-                |     30 | F| F| F|
-                |     50 | F| F| F|
-                |     50 | M| F| F|
-                |     60 | F| F| F|
-                |        | F| F| F|
+                |     10 | F      | F | F |
+                |     10 | M      | F | F |
+                |     20 | M      | F | M |
+                |     30 | F      | F | F |
+                |     30 | F      | F | F |
+                |     50 | F      | F | F |
+                |     50 | M      | F | F |
+                |     60 | F      | F | F |
+                |        | F      | F | F |
                 +--------+--------+---+---+
                 (9 rows)
 
@@ -299,15 +299,15 @@ public class WinAggPostTests extends PostBaseTests {
                 +-------+--------+--------+---+
                 | ENAME | DEPTNO | GENDER | C |
                 +-------+--------+--------+---+
-                | Adam|       50 | M| 2       |
-                | Alice|      30 | F| 2       |
-                | Bob|        10 | M| 2       |
-                | Eric|       20 | M| 1       |
-                | Eve|        50 | F| 2       |
-                | Grace|      60 | F| 1       |
-                | Jane|       10 | F| 2       |
-                | Susan|      30 | F| 2       |
-                | Wilma|         | F| 1       |
+                | Adam  |     50 | M      | 2 |
+                | Alice |     30 | F      | 2 |
+                | Bob   |     10 | M      | 2 |
+                | Eric  |     20 | M      | 1 |
+                | Eve   |     50 | F      | 2 |
+                | Grace |     60 | F      | 1 |
+                | Jane  |     10 | F      | 2 |
+                | Susan |     30 | F      | 2 |
+                | Wilma |        | F      | 1 |
                 +-------+--------+--------+---+
                 (9 rows)
 
@@ -318,22 +318,22 @@ public class WinAggPostTests extends PostBaseTests {
                 +--------+--------+---+
                 | DEPTNO | GENDER | A |
                 +--------+--------+---+
-                |     10 | F| 8       |
-                |     10 | M| 8       |
-                |     20 | M| 8       |
-                |     30 | F| 8       |
-                |     30 | F| 8       |
-                |     50 | F| 8       |
-                |     50 | M| 8       |
-                |     60 | F| 8       |
-                |        | F| 8       |
+                |     10 | F      | 8 |
+                |     10 | M      | 8 |
+                |     20 | M      | 8 |
+                |     30 | F      | 8 |
+                |     30 | F      | 8 |
+                |     50 | F      | 8 |
+                |     50 | M      | 8 |
+                |     60 | F      | 8 |
+                |        | F      | 8 |
                 +--------+--------+---+
                 (9 rows)""");
     }
 
     @Test @Ignore("unsupported aggregate functions")
     public void test4() {
-        this.qs("""
+        this.qst("""
                 -- NTH_VALUE
                 select emp."ENAME", emp."DEPTNO",
                  nth_value(emp."DEPTNO", 1) over() as "first_value",
@@ -345,15 +345,15 @@ public class WinAggPostTests extends PostBaseTests {
                 +-------+--------+-------------+--------------+-------------+--------------+-------------+
                 | ENAME | DEPTNO | first_value | second_value | fifth_value | eighth_value | tenth_value |
                 +-------+--------+-------------+--------------+-------------+--------------+-------------+
-                | Adam|       50 |          10 |           10 |          30 |           60 |             |
-                | Alice|      30 |          10 |           10 |          30 |           60 |             |
-                | Bob|        10 |          10 |           10 |          30 |           60 |             |
-                | Eric|       20 |          10 |           10 |          30 |           60 |             |
-                | Eve|        50 |          10 |           10 |          30 |           60 |             |
-                | Grace|      60 |          10 |           10 |          30 |           60 |             |
-                | Jane|       10 |          10 |           10 |          30 |           60 |             |
-                | Susan|      30 |          10 |           10 |          30 |           60 |             |
-                | Wilma|         |          10 |           10 |          30 |           60 |             |
+                | Adam  |     50 |          10 |           10 |          30 |           60 |             |
+                | Alice |     30 |          10 |           10 |          30 |           60 |             |
+                | Bob   |     10 |          10 |           10 |          30 |           60 |             |
+                | Eric  |     20 |          10 |           10 |          30 |           60 |             |
+                | Eve   |     50 |          10 |           10 |          30 |           60 |             |
+                | Grace |     60 |          10 |           10 |          30 |           60 |             |
+                | Jane  |     10 |          10 |           10 |          30 |           60 |             |
+                | Susan |     30 |          10 |           10 |          30 |           60 |             |
+                | Wilma |        |          10 |           10 |          30 |           60 |             |
                 +-------+--------+-------------+--------------+-------------+--------------+-------------+
                 (9 rows)
 
@@ -502,38 +502,38 @@ public class WinAggPostTests extends PostBaseTests {
     @Test
     public void testWindows1() {
         // Adjusted and validated using MySQL
-        this.qs("""
+        this.qst("""
                 select *, count(*) over (order by deptno) as c from emp;
                  ENAME | DEPTNO | GENDER | C
                 -------+--------+--------+---
-                 Jane|       10 | F| 3
-                 Bob|        10 | M| 3
-                 Eric|       20 | M| 4
-                 Susan|      30 | F| 6
-                 Alice|      30 | F| 6
-                 Adam|       50 | M| 8
-                 Eve|        50 | F| 8
-                 Grace|      60 | F| 9
-                 Wilma|         | F| 1
+                 Jane  |     10 | F      | 3
+                 Bob   |     10 | M      | 3
+                 Eric  |     20 | M      | 4
+                 Susan |     30 | F      | 6
+                 Alice |     30 | F      | 6
+                 Adam  |     50 | M      | 8
+                 Eve   |     50 | F      | 8
+                 Grace |     60 | F      | 9
+                 Wilma |        | F      | 1
                 (9 rows)""");
     }
 
     @Test
     public void testRank() {
-        this.qs("""
+        this.qst("""
                 select *, rank() over (order by deptno NULLS LAST) as c from emp;
                 +-------+--------+--------+---+
                 | ENAME | DEPTNO | GENDER | C |
                 +-------+--------+--------+---+
-                | Adam|       50 | M|       6 |
-                | Alice|      30 | F|       4 |
-                | Bob|        10 | M|       1 |
-                | Eric|       20 | M|       3 |
-                | Eve|        50 | F|       6 |
-                | Grace|      60 | F|       8 |
-                | Jane|       10 | F|       1 |
-                | Susan|      30 | F|       4 |
-                | Wilma|         | F|       9 |
+                | Adam  |     50 | M      | 6 |
+                | Alice |     30 | F      | 4 |
+                | Bob   |     10 | M      | 1 |
+                | Eric  |     20 | M      | 3 |
+                | Eve   |     50 | F      | 6 |
+                | Grace |     60 | F      | 8 |
+                | Jane  |     10 | F      | 1 |
+                | Susan |     30 | F      | 4 |
+                | Wilma |        | F      | 9 |
                 +-------+--------+--------+---+
                 (9 rows)
                 
@@ -542,15 +542,15 @@ public class WinAggPostTests extends PostBaseTests {
                 +-------+--------+--------+---+
                 | ENAME | DEPTNO | GENDER | C |
                 +-------+--------+--------+---+
-                | Adam|       50 | M|       4 |
-                | Alice|      30 | F|       3 |
-                | Bob|        10 | M|       1 |
-                | Eric|       20 | M|       2 |
-                | Eve|        50 | F|       4 |
-                | Grace|      60 | F|       5 |
-                | Jane|       10 | F|       1 |
-                | Susan|      30 | F|       3 |
-                | Wilma|         | F|       6 |
+                | Adam  |     50 | M      | 4 |
+                | Alice |     30 | F      | 3 |
+                | Bob   |     10 | M      | 1 |
+                | Eric  |     20 | M      | 2 |
+                | Eve   |     50 | F      | 4 |
+                | Grace |     60 | F      | 5 |
+                | Jane  |     10 | F      | 1 |
+                | Susan |     30 | F      | 3 |
+                | Wilma |        | F      | 6 |
                 +-------+--------+--------+---+
                 (9 rows)""");
     }
@@ -558,7 +558,7 @@ public class WinAggPostTests extends PostBaseTests {
     @Test
     public void testRowDifferentPartitions() {
         // Validated on Postgres by making the query deterministic
-        this.qs("""
+        this.qst("""
                 select *,
                   row_number() over (order by deptno /*, ename, gender */) as r1,
                   row_number() over (partition by deptno order by gender desc /*, ename */) as r2
@@ -566,15 +566,15 @@ public class WinAggPostTests extends PostBaseTests {
                 +-------+--------+--------+----+----+
                 | ENAME | DEPTNO | GENDER | R1 | R2 |
                 +-------+--------+--------+----+----+
-                | Wilma|         | F|        1 |  1 |
-                | Bob|        10 | M|        2 |  1 |
-                | Jane|       10 | F|        3 |  2 |
-                | Eric|       20 | M|        4 |  1 |
-                | Alice|      30 | F|        5 |  1 |
-                | Susan|      30 | F|        6 |  2 |
-                | Adam|       50 | M|        7 |  1 |
-                | Eve|        50 | F|        8 |  2 |
-                | Grace|      60 | F|        9 |  1 |
+                | Wilma |        | F      |  1 |  1 |
+                | Bob   |     10 | M      |  2 |  1 |
+                | Jane  |     10 | F      |  3 |  2 |
+                | Eric  |     20 | M      |  4 |  1 |
+                | Alice |     30 | F      |  5 |  1 |
+                | Susan |     30 | F      |  6 |  2 |
+                | Adam  |     50 | M      |  7 |  1 |
+                | Eve   |     50 | F      |  8 |  2 |
+                | Grace |     60 | F      |  9 |  1 |
                 +-------+--------+--------+----+----+
                 (9 rows)""");
     }
@@ -585,7 +585,7 @@ public class WinAggPostTests extends PostBaseTests {
         // Had to adjust results, since sorting is deterministic in Feldera.
         // Validated on Postgres by making the query deterministic by uncommenting
         // the commented-out sort helpers
-        this.qs("""
+        this.qst("""
                 -- [CALCITE-806] ROW_NUMBER should emit distinct values
                 select *,
                   row_number() over (order by deptno /* nulls first, ename, gender */) as r1,
@@ -597,15 +597,15 @@ public class WinAggPostTests extends PostBaseTests {
                 +-------+--------+--------+----+----+----+----+---+
                 | ENAME | DEPTNO | GENDER | R1 | R2 | R3 | R4 | R |
                 +-------+--------+--------+----+----+----+----+---+
-                | Wilma|         | F|        1 |  1 |  1 |  6 | 9 |
-                | Bob|        10 | M|        2 |  1 |  2 |  2 | 3 |
-                | Jane|       10 | F|        3 |  2 |  1 |  4 | 7 |
-                | Eric|       20 | M|        4 |  1 |  1 |  3 | 4 |
-                | Alice|      30 | F|        5 |  1 |  1 |  1 | 2 |
-                | Susan|      30 | F|        6 |  2 |  2 |  5 | 8 |
-                | Adam|       50 | M|        7 |  1 |  2 |  1 | 1 |
-                | Eve|        50 | F|        8 |  2 |  1 |  2 | 5 |
-                | Grace|      60 | F|        9 |  1 |  1 |  3 | 6 |
+                | Wilma |        | F      |  1 |  1 |  1 |  6 | 9 |
+                | Bob   |     10 | M      |  2 |  1 |  2 |  2 | 3 |
+                | Jane  |     10 | F      |  3 |  2 |  1 |  4 | 7 |
+                | Eric  |     20 | M      |  4 |  1 |  1 |  3 | 4 |
+                | Alice |     30 | F      |  5 |  1 |  1 |  1 | 2 |
+                | Susan |     30 | F      |  6 |  2 |  2 |  5 | 8 |
+                | Adam  |     50 | M      |  7 |  1 |  2 |  1 | 1 |
+                | Eve   |     50 | F      |  8 |  2 |  1 |  2 | 5 |
+                | Grace |     60 | F      |  9 |  1 |  1 |  3 | 6 |
                 +-------+--------+--------+----+----+----+----+---+
                 (9 rows)
 
@@ -619,19 +619,19 @@ public class WinAggPostTests extends PostBaseTests {
                 +--------+-------+---+
                 | DEPTNO | ENAME | R |
                 +--------+-------+---+
-                |     10 | Jane|   1 |
-                |     30 | Alice|  1 |
-                |     30 | Susan|  2 |
-                |     50 | Eve|    1 |
-                |     60 | Grace|  1 |
-                |        | Wilma|  1 |
+                |     10 | Jane  | 1 |
+                |     30 | Alice | 1 |
+                |     30 | Susan | 2 |
+                |     50 | Eve   | 1 |
+                |     60 | Grace | 1 |
+                |        | Wilma | 1 |
                 +--------+-------+---+
                 (6 rows)""");
     }
 
     @Test
     public void testWindows3() {
-        this.qs("""
+        this.qst("""
                 -- [CALCITE-2271] Two windows under a JOIN 2
                 select
                  t1.l, t1.key as key1, t2.key as key2
@@ -665,7 +665,7 @@ public class WinAggPostTests extends PostBaseTests {
 
     @Test
     public void testCountIf() {
-        this.qs("""
+        this.qst("""
                 -- COUNTIF(b) (BigQuery) is equivalent to COUNT(*) FILTER (WHERE b)
                 select deptno, countif(gender = 'F') as f
                 from emp
@@ -703,7 +703,7 @@ public class WinAggPostTests extends PostBaseTests {
 
     @Test
     public void testGrouping3() {
-        this.qs("""
+        this.qst("""
                 -- [CALCITE-4665] Allow Aggregate.groupKey to be a strict superset of
              -- Aggregate.groupKeys
              -- Use a condition on grouping_id to filter out the superset grouping sets.
@@ -718,15 +718,15 @@ public class WinAggPostTests extends PostBaseTests {
              +-------+--------+--------+-----+-----+-----+
              | ENAME | DEPTNO | GENDER | G_E | G_D | G_G |
              +-------+--------+--------+-----+-----+-----+
-             | Adam|       50 |NULL|       0 |   0 |   1 |
-             | Adam|          |NULL|       0 |   1 |   1 |
-             | Bob|        10 |NULL|       0 |   0 |   1 |
-             | Bob|           |NULL|       0 |   1 |   1 |
-             | Eric|       20 |NULL|       0 |   0 |   1 |
-             | Eric|          |NULL|       0 |   1 |   1 |
-             |NULL|        10 |NULL|       1 |   0 |   1 |
-             |NULL|        20 |NULL|       1 |   0 |   1 |
-             |NULL|        50 |NULL|       1 |   0 |   1 |
+             | Adam  |     50 |NULL    |   0 |   0 |   1 |
+             | Adam  |        |NULL    |   0 |   1 |   1 |
+             | Bob   |     10 |NULL    |   0 |   0 |   1 |
+             | Bob   |        |NULL    |   0 |   1 |   1 |
+             | Eric  |     20 |NULL    |   0 |   0 |   1 |
+             | Eric  |        |NULL    |   0 |   1 |   1 |
+             |NULL   |     10 |NULL    |   1 |   0 |   1 |
+             |NULL   |     20 |NULL    |   1 |   0 |   1 |
+             |NULL   |     50 |NULL    |   1 |   0 |   1 |
              +-------+--------+--------+-----+-----+-----+
              (9 rows)
              
@@ -740,15 +740,15 @@ public class WinAggPostTests extends PostBaseTests {
              +-------+--------+-----+-----+
              | ENAME | DEPTNO | G_E | G_D |
              +-------+--------+-----+-----+
-             | Adam|       50 |   0 |   0 |
-             | Adam|          |   0 |   1 |
-             | Bob|        10 |   0 |   0 |
-             | Bob|           |   0 |   1 |
-             | Eric|       20 |   0 |   0 |
-             | Eric|          |   0 |   1 |
-             |NULL|        10 |   1 |   0 |
-             |NULL|        20 |   1 |   0 |
-             |NULL|        50 |   1 |   0 |
+             | Adam  |     50 |   0 |   0 |
+             | Adam  |        |   0 |   1 |
+             | Bob   |     10 |   0 |   0 |
+             | Bob   |        |   0 |   1 |
+             | Eric  |     20 |   0 |   0 |
+             | Eric  |        |   0 |   1 |
+             |NULL   |     10 |   1 |   0 |
+             |NULL   |     20 |   1 |   0 |
+             |NULL   |     50 |   1 |   0 |
              +-------+--------+-----+-----+
              (9 rows)
              

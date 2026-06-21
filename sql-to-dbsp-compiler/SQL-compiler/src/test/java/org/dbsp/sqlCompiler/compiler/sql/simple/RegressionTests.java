@@ -1714,7 +1714,7 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void testDiv() {
-        this.qs("""
+        this.qst("""
             SELEct 95.0/100;
              r
             ----

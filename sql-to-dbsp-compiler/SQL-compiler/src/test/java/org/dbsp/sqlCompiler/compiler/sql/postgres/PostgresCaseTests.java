@@ -32,14 +32,14 @@ public class PostgresCaseTests extends SqlIoTest {
 
     @Test
     public void testCase() {
-        this.qs("""
+        this.qst("""
                 SELECT '3' AS "One",
                   CASE
                     WHEN 1 < 2 THEN 3
                   END AS "Simple WHEN";
                  One | Simple WHEN
                 -----+-------------
-                 3|           3
+                 3   |          3
                 (1 row)
 
                 SELECT '<NULL>' AS "One",
@@ -48,7 +48,7 @@ public class PostgresCaseTests extends SqlIoTest {
                   END AS "Simple default";
                   One   | Simple default
                 --------+----------------
-                 <NULL>|              \s
+                 <NULL> |
                 (1 row)
 
                 SELECT '3' AS "One",
@@ -58,7 +58,7 @@ public class PostgresCaseTests extends SqlIoTest {
                   END AS "Simple ELSE";
                  One | Simple ELSE
                 -----+-------------
-                 3|           3
+                 3   |           3
                 (1 row)
 
                 SELECT '4' AS "One",
@@ -68,7 +68,7 @@ public class PostgresCaseTests extends SqlIoTest {
                   END AS "ELSE default";
                  One | ELSE default
                 -----+--------------
-                 4|            4
+                 4   |           4
                 (1 row)
 
                 SELECT '6' AS "One",
@@ -79,7 +79,7 @@ public class PostgresCaseTests extends SqlIoTest {
                   END AS "Two WHEN with default";
                  One | Two WHEN with default
                 -----+-----------------------
-                 6|                     6
+                 6   |                     6
                 (1 row)
 
                 SELECT '7' AS "None",
@@ -87,7 +87,7 @@ public class PostgresCaseTests extends SqlIoTest {
                    END AS "NULL on no matches";
                  None | NULL on no matches
                 ------+--------------------
-                 7|                  \s
+                 7    |
                 (1 row)
 
                 -- Constant-expression folding shouldn't evaluate unreachable subexpressions
@@ -107,7 +107,7 @@ public class PostgresCaseTests extends SqlIoTest {
     @Test
     public void testCases2() {
         // changed error to null output
-        this.qs("""
+        this.qst("""
                         SELECT CASE WHEN i > 100 THEN 1/0 ELSE 0 END FROM case_tbl;
                         case
                         ------

@@ -112,7 +112,7 @@ public class OuterJoinTests extends SqlIoTest {
     @Test
     public void testPredicatePullLeftJoin() {
         // validated on postgres
-        this.qs("""
+        this.qst("""
             SELECT * FROM A AS L LEFT JOIN A AS R ON L.X = R.X and L.Y = 0;
              lx | ly | lx | ly
             -------------------
@@ -241,7 +241,7 @@ public class OuterJoinTests extends SqlIoTest {
     @Test
     public void testPredicatePullRightJoin() {
         // validated on postgres
-        this.qs("""
+        this.qst("""
             SELECT * FROM A AS L RIGHT JOIN A AS R ON L.X = R.X and L.Y = 0;
              lx | ly | lx | ly
             -------------------
@@ -362,7 +362,7 @@ public class OuterJoinTests extends SqlIoTest {
     @Test
     public void testStandadJoinCondition() {
         // validated on postgres
-        this.qs("""
+        this.qst("""
             SELECT * FROM A AS L LEFT JOIN A AS R ON L.X = R.X and L.Y = R.Y;
              lx | ly | lx | ly
             -------------------
@@ -483,7 +483,7 @@ public class OuterJoinTests extends SqlIoTest {
     @Test
     public void testNonEqui() {
         // validated on postgres
-        this.qs("""
+        this.qst("""
             SELECT * FROM A AS L LEFT JOIN A AS R ON L.X < R.X and L.Y = R.Y;
              lx | ly | lx | ly
             -------------------
@@ -604,7 +604,7 @@ public class OuterJoinTests extends SqlIoTest {
     @Test
     public void testDistinct() {
         // validated on postgres
-        this.qs("""
+        this.qst("""
             SELECT * FROM A AS L LEFT JOIN A AS R ON L.X IS NOT DISTINCT FROM R.X and L.Y IS NOT DISTINCT FROM R.Y;
              lx | ly | lx | ly
             -------------------
@@ -725,7 +725,7 @@ public class OuterJoinTests extends SqlIoTest {
     @Test
     public void testMix() {
         // validated on postgres
-        this.qs("""
+        this.qst("""
             SELECT * FROM A AS L LEFT JOIN A AS R ON L.X = R.X and L.Y IS NOT DISTINCT FROM R.Y;
              lx | ly | lx | ly
             -------------------
