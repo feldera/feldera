@@ -109,7 +109,6 @@ use serde_json::Value as JsonValue;
 use size_of::HumanBytes;
 use stats::{BufferedInput, StepResults};
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::btree_map::Entry;
@@ -4765,6 +4764,10 @@ impl ControllerInit {
             )
         }
 
+        // Preserve the pipeline manager's input configs before HTTP input
+        // endpoints are transferred from the checkpoint below.  The final
+        // replay config still needs replay-safe limits from the new config.
+        let new_inputs = config.inputs.clone();
         // Transfer HTTP input endpoints that are not affected by the program diff from the checkpoint to the new configuration.
         checkpoint_config
             .inputs
@@ -4839,7 +4842,7 @@ impl ControllerInit {
             inputs: if !modified {
                 Self::checkpoint_inputs_with_replay_safe_config(
                     checkpoint_config.inputs,
-                    &config.inputs,
+                    &new_inputs,
                 )
             } else {
                 config.inputs
@@ -8469,23 +8472,17 @@ mod controller_init_tests {
 
     #[test]
     fn checkpoint_inputs_adopt_replay_safe_config() {
-        fn input_config(max_queued_records: u64) -> InputEndpointConfig {
-            serde_json::from_value(json!({
-                "stream": "test_input",
-                "transport": {"name": "empty_input"},
-                "max_queued_records": max_queued_records,
-                "max_queued_bytes": max_queued_records * 2,
-                "max_batch_size": max_queued_records + 1,
-                "max_worker_batch_size": max_queued_records + 2,
-            }))
-            .unwrap()
-        }
-
         let mut checkpoint_inputs = BTreeMap::new();
-        checkpoint_inputs.insert(Cow::Borrowed("test_input.connector"), input_config(100));
+        checkpoint_inputs.insert(
+            Cow::Borrowed("test_input.connector"),
+            input_config(json!({"name": "empty_input"}), 100),
+        );
 
         let mut new_inputs = BTreeMap::new();
-        new_inputs.insert(Cow::Borrowed("test_input.connector"), input_config(200));
+        new_inputs.insert(
+            Cow::Borrowed("test_input.connector"),
+            input_config(json!({"name": "empty_input"}), 200),
+        );
 
         let merged = ControllerInit::checkpoint_inputs_with_replay_safe_config(
             checkpoint_inputs,
@@ -8497,5 +8494,56 @@ mod controller_init_tests {
         assert_eq!(connector_config.max_queued_bytes, Some(400));
         assert_eq!(connector_config.max_batch_size, Some(201));
         assert_eq!(connector_config.max_worker_batch_size, Some(202));
+    }
+
+    #[test]
+    fn checkpoint_http_inputs_adopt_replay_safe_config() {
+        let mut checkpoint_inputs = BTreeMap::new();
+        checkpoint_inputs.insert(
+            Cow::Borrowed("test_input.connector"),
+            input_config(
+                json!({
+                    "name": "http_input",
+                    "config": {"name": "test_input.connector"}
+                }),
+                100,
+            ),
+        );
+
+        let mut new_inputs = BTreeMap::new();
+        new_inputs.insert(
+            Cow::Borrowed("test_input.connector"),
+            input_config(
+                json!({
+                    "name": "http_input",
+                    "config": {"name": "test_input.connector"}
+                }),
+                200,
+            ),
+        );
+
+        let merged = ControllerInit::checkpoint_inputs_with_replay_safe_config(
+            checkpoint_inputs,
+            &new_inputs,
+        );
+        let connector_config = &merged["test_input.connector"].connector_config;
+
+        assert!(connector_config.transport.is_http_input());
+        assert_eq!(connector_config.max_queued_records, 200);
+        assert_eq!(connector_config.max_queued_bytes, Some(400));
+        assert_eq!(connector_config.max_batch_size, Some(201));
+        assert_eq!(connector_config.max_worker_batch_size, Some(202));
+    }
+
+    fn input_config(transport: serde_json::Value, max_queued_records: u64) -> InputEndpointConfig {
+        serde_json::from_value(json!({
+            "stream": "test_input",
+            "transport": transport,
+            "max_queued_records": max_queued_records,
+            "max_queued_bytes": max_queued_records * 2,
+            "max_batch_size": max_queued_records + 1,
+            "max_worker_batch_size": max_queued_records + 2,
+        }))
+        .unwrap()
     }
 }
