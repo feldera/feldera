@@ -2,14 +2,14 @@ use anyhow::{Error as AnyError, Result as AnyResult};
 use chrono::{DateTime, Utc};
 use dyn_clone::DynClone;
 use feldera_types::adapter_stats::ConnectorHealth;
-use feldera_types::config::FtModel;
+use feldera_types::config::{FtModel, TransportConfig};
 use feldera_types::coordination::Completion;
 use feldera_types::program_schema::Relation;
 use rmpv::{Value as RmpValue, ext::Error as RmpDecodeError};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Display;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -73,6 +73,50 @@ pub trait TransportInputEndpoint: InputEndpoint {
         schema: Relation,
         resume_info: Option<JsonValue>,
     ) -> AnyResult<Box<dyn InputReader>>;
+}
+
+/// Factory for creating input transport endpoints from transport configuration.
+pub trait InputTransportEndpointFactory: Send + Sync {
+    fn create(
+        &self,
+        config: &TransportConfig,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>>;
+}
+
+/// Registry of input transport endpoint factories keyed by transport name.
+#[derive(Default)]
+pub struct InputTransportRegistry {
+    registered: BTreeMap<&'static str, Arc<dyn InputTransportEndpointFactory>>,
+}
+
+impl InputTransportRegistry {
+    pub fn new() -> Self {
+        Self {
+            registered: BTreeMap::new(),
+        }
+    }
+
+    pub fn register(
+        &mut self,
+        name: &'static str,
+        factory: Box<dyn InputTransportEndpointFactory>,
+    ) {
+        self.registered.insert(name, Arc::from(factory));
+    }
+
+    pub fn get(&self, name: &str) -> Option<Arc<dyn InputTransportEndpointFactory>> {
+        self.registered.get(name).cloned()
+    }
+
+    pub fn create_endpoint(
+        &self,
+        config: &TransportConfig,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+        let Some(factory) = self.get(&config.name()) else {
+            return Ok(None);
+        };
+        factory.create(config)
+    }
 }
 
 #[doc(hidden)]
@@ -1091,6 +1135,54 @@ pub trait OutputEndpoint: Send {
     /// substantial amount of memory, so the default implementation returns 0.
     fn memory(&self) -> usize {
         0
+    }
+}
+
+/// Factory for creating output transport endpoints from transport configuration.
+pub trait OutputTransportEndpointFactory: Send + Sync {
+    fn create(
+        &self,
+        config: &TransportConfig,
+        endpoint_name: &str,
+        fault_tolerant: bool,
+    ) -> AnyResult<Option<Box<dyn OutputEndpoint>>>;
+}
+
+/// Registry of output transport endpoint factories keyed by transport name.
+#[derive(Default)]
+pub struct OutputTransportRegistry {
+    registered: BTreeMap<&'static str, Arc<dyn OutputTransportEndpointFactory>>,
+}
+
+impl OutputTransportRegistry {
+    pub fn new() -> Self {
+        Self {
+            registered: BTreeMap::new(),
+        }
+    }
+
+    pub fn register(
+        &mut self,
+        name: &'static str,
+        factory: Box<dyn OutputTransportEndpointFactory>,
+    ) {
+        self.registered.insert(name, Arc::from(factory));
+    }
+
+    pub fn get(&self, name: &str) -> Option<Arc<dyn OutputTransportEndpointFactory>> {
+        self.registered.get(name).cloned()
+    }
+
+    pub fn create_endpoint(
+        &self,
+        config: &TransportConfig,
+        endpoint_name: &str,
+        fault_tolerant: bool,
+    ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
+        let Some(factory) = self.get(&config.name()) else {
+            return Ok(None);
+        };
+        factory.create(config, endpoint_name, fault_tolerant)
     }
 }
 
