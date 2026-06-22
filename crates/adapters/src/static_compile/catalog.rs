@@ -4,6 +4,7 @@ use crate::{Catalog, ControllerError, catalog::OutputCollectionHandles};
 use dbsp::circuit::Layout;
 use dbsp::circuit::circuit_builder::CircuitBase;
 use dbsp::dynamic::DynData;
+use dbsp::operator::dynamic::accumulator::EnableCount;
 use dbsp::trace::spine_async::WithSnapshot;
 use dbsp::typed_batch::{Spine, TypedBatch};
 use dbsp::utils::Tup1;
@@ -23,7 +24,6 @@ use std::any::TypeId;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::mem::transmute;
-use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
 const INTERNED_STRING_RELATION_NAME: &str = "feldera_interned_strings";
@@ -79,7 +79,7 @@ impl Catalog {
         integrate: bool,
     ) -> (
         Stream<RootCircuit, Option<Spine<Z>>>,
-        Arc<AtomicUsize>,
+        EnableCount,
         Option<Stream<RootCircuit, Spine<Z>>>,
     )
     where
@@ -110,7 +110,7 @@ impl Catalog {
 
             // TODO: we currently don't support a form of shard_workers_accumulate that can be enabled at
             // runtime, so we return a bogus enabled flag that controls nothing.
-            (accumulated_stream, Arc::new(AtomicUsize::new(0)), integral)
+            (accumulated_stream, EnableCount::default(), integral)
         } else if shard {
             let accumulated_stream = stream.shard_accumulate();
 
@@ -122,7 +122,7 @@ impl Catalog {
 
             // TODO: we currently don't support a form of shard_accumulate that can be enabled at
             // runtime, so we return a bogus enabled flag that controls nothing.
-            (accumulated_stream, Arc::new(AtomicUsize::new(0)), integral)
+            (accumulated_stream, EnableCount::default(), integral)
         } else {
             let (accumulated_stream, enabled_count) = stream.accumulate_with_enable_count();
             let integral = if integrate {
@@ -1039,7 +1039,7 @@ fn index_schema(
 
 #[cfg(test)]
 mod test {
-    use std::{io::Write, ops::Deref, sync::atomic::Ordering};
+    use std::{io::Write, ops::Deref};
 
     use crate::{Catalog, CircuitCatalog, catalog::RecordFormat, test::TestStruct};
     use dbsp::Runtime;
@@ -1101,9 +1101,7 @@ mod test {
             .unwrap();
 
         let output_stream_handles = catalog.output_handles(&("Input_map".into())).unwrap();
-        output_stream_handles
-            .enable_count
-            .fetch_add(1, Ordering::AcqRel);
+        output_stream_handles.enable_count.enable();
 
         // Step 1: insert a couple of values.
 

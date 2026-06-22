@@ -5313,9 +5313,7 @@ impl OutputEndpoints {
         handles: OutputCollectionHandles,
         endpoint_descr: OutputEndpointDescr,
     ) {
-        // Enable the accumulator for this output stream.
-        // See `struct Accumulator::enable_count` for more details.
-        handles.enable_count.fetch_add(1, Ordering::Relaxed);
+        handles.enable_count.enable();
         self.by_stream
             .entry(endpoint_descr.stream_name.clone())
             .or_insert_with(|| (handles, BTreeSet::new()))
@@ -5329,9 +5327,7 @@ impl OutputEndpoints {
             self.by_stream
                 .get_mut(&descr.stream_name)
                 .map(|(handles, endpoints)| {
-                    // Disable the accumulator for this output stream.
-                    let count = handles.enable_count.fetch_sub(1, Ordering::Relaxed);
-                    assert!(count > 0);
+                    handles.enable_count.disable();
                     endpoints.remove(endpoint_id)
                 });
         })
