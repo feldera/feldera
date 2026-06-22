@@ -3,7 +3,6 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter};
-use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result as AnyResult;
@@ -19,6 +18,7 @@ use aws_sdk_dynamodb::types::AttributeValue;
 use dbsp::circuit::NodeId;
 use dbsp::dynamic::{ClonableTrait, DynData, DynVec, Erase, Factory};
 use dbsp::operator::StagedBuffers;
+use dbsp::operator::dynamic::accumulator::EnableCount;
 use dyn_clone::DynClone;
 use feldera_sqllib::Variant;
 use feldera_types::format::csv::CsvFormatConfig;
@@ -1224,7 +1224,7 @@ pub struct OutputCollectionHandles {
     /// Reference to the enable count of the accumulator used to collect updates to this stream.
     /// Incremented every time an output connector is attached to this stream; decremented when
     /// the output connector is detached.
-    pub enable_count: Arc<AtomicUsize>,
+    pub enable_count: EnableCount,
 }
 
 impl OutputCollectionHandles {
