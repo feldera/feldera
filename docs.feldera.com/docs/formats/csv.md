@@ -177,4 +177,15 @@ create table FAILED_BANKS (
 ```
 
 - `delimiter`: A single character that delimits fields. The default is `","`.
-- `headers`: Whether the first line of input is a header line. If this is set to true, Feldera ignores the first line. This applies only to input connectors (Feldera never writes a header line for CSV output). The default is `false`.
+- `headers`: Whether the first line of input is a header line. If this is set to `true`, Feldera ignores the first line. This applies only to input connectors (Feldera never writes a header line for CSV output). The default is `false`.
+- `quote`: The quote character used to wrap fields that contain the delimiter or newlines. Must be an ASCII character. The default is `'"'`. Set `quoting` to `false` to disable quoting entirely.
+- `escape`: An escape character that can precede a quote inside a quoted field to produce a literal quote byte (e.g., `"\\"`  for backslash). When unset (the default), the `double_quote` convention is used instead.
+- `double_quote`: When `true` (the default), a quote character inside a quoted field may be escaped by doubling it (e.g., `""` represents a single `"`). Setting this to `false` disables that convention; use `escape` to escape quotes in that case.
+- `quoting`: When `true` (the default), the `quote` and `escape` characters have their special meaning. When `false`, every newline terminates a record regardless of context, and neither `quote` nor `escape` is treated specially.
+- `comment`: A single ASCII character that marks a line as a comment. Lines whose first byte matches this character are skipped entirely. Unset by default.
+- `flexible`: When `true` (the default), records may have fewer or more fields than expected. Missing fields receive empty values. When `false`, every record must have exactly the same number of fields as the first record; a mismatch is reported as an error.
+- `trim`: Controls whitespace trimming. Allowed values:
+  - `"none"` (default) — no trimming.
+  - `"fields"` — strip leading and trailing ASCII whitespace from every field value.
+  - `"headers"` — strip whitespace from header names only (effective only when `headers` is `true`).
+  - `"all"` — strip whitespace from both field values and header names.
