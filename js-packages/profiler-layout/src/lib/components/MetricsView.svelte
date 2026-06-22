@@ -28,8 +28,10 @@
 
 <script lang="ts">
   import type { TooltipData } from './ProfilerTooltip.svelte'
+  import KeyValueBlock from './metrics/blocks/KeyValueBlock.svelte'
   import MetricsDistributionBlock from './metrics/blocks/MetricsDistributionBlock.svelte'
   import { buildBlocks, type RenderableBlock } from './metrics/dispatch'
+  import { buildGlobalMetrics, type GlobalMetrics } from '../functions/globalMetrics'
   import type { LookupCoordinator } from '../functions/lookup'
 
   interface Props {
@@ -37,6 +39,8 @@
     tooltipData: TooltipData | null
     /** The loaded profile's toplevel node id, used to recognise overview data. */
     rootNodeId: string | undefined
+    /** Cumulative pipeline-wide metrics from `stats.json`; shown as a tile atop the overview. */
+    globalMetrics?: GlobalMetrics
     /** When true, metrics flagged `advanced` in the profile metadata are included. */
     showAdvanced: boolean
     /** Lookup coordinator; the view registers an imperative handler so each Enter on the
@@ -47,7 +51,14 @@
     onSearchNode?: (query: string) => void
   }
 
-  const { mode, tooltipData, rootNodeId, showAdvanced, lookup, onSearchNode }: Props = $props()
+  const { mode, tooltipData, rootNodeId, globalMetrics, showAdvanced, lookup, onSearchNode }: Props =
+    $props()
+
+  // Pipeline-wide totals for the overview's "Global stats" tile. Empty (so the tile is hidden) on
+  // any non-overview view or when the bundle carried no stats.
+  const globalMetricEntries = $derived(
+    mode === 'overview' ? buildGlobalMetrics(globalMetrics) : []
+  )
 
   const nodeAttributes = $derived(
     tooltipData && 'nodeAttributes' in tooltipData ? tooltipData.nodeAttributes : null
@@ -131,7 +142,7 @@
 </script>
 
 {#snippet attributesView()}
-  {#if !nodeAttributes}
+  {#if !nodeAttributes && globalMetricEntries.length === 0}
     <div class="flex flex-1 items-center justify-center text-sm text-surface-600-400">
       {#if mode === 'node'}
         Click a node in the graph to see its metrics.
@@ -140,7 +151,7 @@
       {/if}
     </div>
   {:else}
-    {#if isNodeView}
+    {#if nodeAttributes && isNodeView}
       <div class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-base">
         <button
           type="button"
@@ -160,6 +171,14 @@
          otherwise one column. CSS multi-column flow auto-distributes blocks; the column
          count is driven by the ResizeObserver on the scroll container. -->
     <div class="gap-3" style="column-count: {useTwoColumns ? 2 : 1};">
+      <!-- Overview-only cumulative pipeline metrics from `stats.json`, tiled alongside the node
+           blocks. Driven by the bundle's global metrics, not the selected node, so it shows in the
+           overview even when the root node carries no attributes and no node tooltip is produced. -->
+      {#if globalMetricEntries.length > 0}
+        <div class="mb-3 break-inside-avoid">
+          <KeyValueBlock id="global-metrics" title="Global stats" entries={globalMetricEntries} />
+        </div>
+      {/if}
       {#each blocks as b (b.id)}
         <div class="mb-3 break-inside-avoid">
           <MetricsDistributionBlock id={b.id} title={b.title} entries={b.entries} />

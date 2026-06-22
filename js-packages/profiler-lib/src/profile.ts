@@ -941,6 +941,9 @@ export class Measurement {
                 return [new Measurement(metric_id, Option.some(perc))];
             }
             case "seconds": {
+                if (metric.value === undefined) {
+                    return []
+                }
                 let s = metric.value as DurationMetricValue;
                 let duration = TimeValue.fromDurationMetric(s);
                 return [new Measurement(metric_id, Option.some(duration))];

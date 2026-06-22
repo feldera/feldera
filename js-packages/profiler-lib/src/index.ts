@@ -19,6 +19,10 @@ export {
     CircuitProfile,
     PropertyValue,
     MissingValue,
+    BytesValue,
+    CountValue,
+    TimeValue,
+    BooleanValue,
     type JsonProfiles
 } from './profile.js';
 export { type Dataflow, type SourcePositionRange } from './dataflow.js';

@@ -2,6 +2,7 @@
   import {
     createLoadGuard,
     getSuitableProfiles,
+    type GlobalMetrics,
     processProfileFiles,
     SupportBundleViewerLayout,
     type ZipItem
@@ -23,6 +24,7 @@
     dataflow: Dataflow | undefined
     sources: string[] | undefined
     logText: string | undefined
+    globalMetrics: GlobalMetrics | undefined
   } | null = $state(null)
 
   let fileInput: HTMLInputElement | null = $state(null)
@@ -44,7 +46,8 @@
       profile: data.profile,
       dataflow: data.dataflow,
       sources: data.sources,
-      logText: data.logText
+      logText: data.logText,
+      globalMetrics: data.globalMetrics
     }
   }
 
@@ -111,6 +114,7 @@
       dataflowData={profileData.dataflow}
       programCode={profileData.sources}
       logText={profileData.logText}
+      globalMetrics={profileData.globalMetrics}
       triageResults={new TriageResults()}
       {profileFiles}
       {selectedTimestamp}
