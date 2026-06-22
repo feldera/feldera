@@ -1,4 +1,5 @@
 use anyhow::Result;
+use dbsp::OrdZSet;
 use dbsp::typed_batch::IndexedZSetReader;
 use dbsp::{
     Circuit, NestedCircuit, OrdIndexedZSet, Runtime, Stream, indexed_zset,
@@ -32,7 +33,7 @@ fn main() -> Result<()> {
                 //  |                                   |
                 //  ------------------3------------------
                 zset_set! { Tup3(4, 0, 3)}
-            ] as [_; STEPS])
+            ] as [OrdZSet<Tup3<usize, usize, usize>>; STEPS])
                 .into_iter();
 
             let edges = root_circuit.add_source(Generator::new(move || edges_data.next().unwrap()));

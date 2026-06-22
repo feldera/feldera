@@ -1,0 +1,53 @@
+//============================================================================
+// Run: souffle program_analysis.dl --fact-dir data_step_{1,2,3}
+//============================================================================
+
+//--------------------------- Input relations (EDB) --------------------------
+.decl Alloc(var:symbol, obj:symbol)                         // var = new ...   (obj = alloc site)
+.input Alloc(delimiter=",", headers=true)
+.decl Assign(dst:symbol, src:symbol)                        // dst = src
+.input Assign(delimiter=",", headers=true)
+.decl VirtualCall(site:symbol, recv:symbol, sig:symbol)     // recv.sig(...) at `site`
+.input VirtualCall(delimiter=",", headers=true)
+.decl HeapType(obj:symbol, ty:symbol)                       // runtime type of an allocated object
+.input HeapType(delimiter=",", headers=true)
+.decl Dispatch(ty:symbol, sig:symbol, meth:symbol)          // type + signature -> method
+.input Dispatch(delimiter=",", headers=true)
+.decl ActualArg(site:symbol, arg:symbol)                    // argument variable passed at a call
+.input ActualArg(delimiter=",", headers=true)
+.decl FormalParam(meth:symbol, param:symbol)                // a method's parameter variable
+.input FormalParam(delimiter=",", headers=true)
+
+//------------------------- Derived relations (IDB) --------------------------
+.decl VarPointsTo(var:symbol, obj:symbol)
+.decl CallGraph(site:symbol, meth:symbol)
+.output VarPointsTo(IO=stdout)
+.output CallGraph(IO=stdout)
+
+//--------------------------------- Rules ------------------------------------
+
+// A variable points to whatever it was directly allocated.
+VarPointsTo(V, Obj) :- Alloc(V, Obj).
+
+// Copies propagate points-to facts (transitively).
+VarPointsTo(Dst, Obj) :-
+    Assign(Dst, Src),
+    VarPointsTo(Src, Obj).
+
+// Once a call edge exists, the actual arguments flow into the callee's
+// formal parameters.
+//   --> this rule READS CallGraph and WRITES VarPointsTo, closing the loop.
+VarPointsTo(Param, Obj) :-
+    CallGraph(Site, Meth),
+    ActualArg(Site, Arg),
+    FormalParam(Meth, Param),
+    VarPointsTo(Arg, Obj).
+
+// Resolve a virtual call: look at what the receiver points to, take that
+// object's type, and dispatch the signature on that type.
+//   --> this rule READS VarPointsTo.
+CallGraph(Site, Meth) :-
+    VirtualCall(Site, Recv, Sig),
+    VarPointsTo(Recv, Obj),
+    HeapType(Obj, Ty),
+    Dispatch(Ty, Sig, Meth).

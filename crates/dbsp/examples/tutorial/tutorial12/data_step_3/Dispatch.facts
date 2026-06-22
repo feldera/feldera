@@ -1,0 +1,5 @@
+site,recv,sig
+Greeter,greet,Greeter.greet
+Dog,speak,Dog.speak
+Cat,speak,Cat.speak
+Mouse,speak,Mouse.speak

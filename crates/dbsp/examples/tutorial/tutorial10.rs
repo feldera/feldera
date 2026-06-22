@@ -34,7 +34,7 @@ fn main() -> Result<()> {
                 //  |                                   |
                 //  ------------------3------------------
                 // zset_set! { Tup3(1,2,1), Tup3(4, 0, 3)}
-            ] as [_; STEPS])
+            ] as [OrdZSet<Tup3<usize, usize, usize>>; STEPS])
                 .into_iter();
 
             let edges = root_circuit.add_source(Generator::new(move || edges_data.next().unwrap()));
@@ -99,7 +99,7 @@ fn main() -> Result<()> {
         // This does not matter, as the computation does not terminate
         // anymore due to the cycle.
         // zset! {},
-    ] as [_; STEPS])
+    ] as [OrdZSet<Tup4<usize, usize, usize, usize>>; STEPS])
         .into_iter();
 
     for i in 0..STEPS {

@@ -218,6 +218,10 @@ name = "tutorial11"
 path = "examples/tutorial/tutorial11.rs"
 
 [[example]]
+name = "tutorial12"
+path = "examples/tutorial/tutorial12/tutorial12.rs"
+
+[[example]]
 name = "coord"
 path = "examples/dist/coord.rs"
 
