@@ -55,7 +55,7 @@ public class CircuitOptimizer extends Passes {
         super("Optimizer", compiler);
         this.createOptimizer();
     }
-    
+
     static class StopOnError extends CircuitVisitor {
         public StopOnError(DBSPCompiler compiler) {
             super(compiler);
@@ -125,6 +125,8 @@ public class CircuitOptimizer extends Passes {
         this.add(new OptimizeWithGraph(compiler, g -> new CloneOperatorsWithFanout(compiler, g)));
         this.add(new LinearPostprocessRetainKeys(compiler));
         this.add(new ExpandIndexedInputs(compiler));
+        this.add(new Conditional(compiler, new InsertWeightValidation(compiler),
+                this.compiler.metadata::enforcePositiveInputs));
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
         this.add(new DeadCode(compiler, true));
         this.add(new Simplify(compiler).circuitRewriter(true));
