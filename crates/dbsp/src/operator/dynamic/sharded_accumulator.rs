@@ -586,7 +586,7 @@ where
     }
 
     async fn eval_owned(&mut self, batch: B) {
-        self.input_batch_stats.add_batch(batch.num_entries_deep());
+        self.input_batch_stats.add_batch(batch.len());
         self.exchange
             .send(self.name.get(), batch, self.flushed)
             .await;
