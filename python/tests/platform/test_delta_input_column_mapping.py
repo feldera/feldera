@@ -260,3 +260,51 @@ def test_delta_input_column_mapping_follow_end_version(pipeline_name):
         pipeline.stop(force=True)
     finally:
         loc.cleanup()
+
+
+# Resuming a pipeline mid-history: ``version`` is a non-zero already-consumed
+# baseline, so the connector replays only the commits after it. Starting at v2
+# (after the rename, before ADD country) skips the v1 rows (1 and 2) and applies
+# v3..v6. The schema still pins to the latest version (v6), so the replayed
+# files -- including the v4 rows written under the pre-drop schema -- resolve
+# against the final logical schema. This is the restart-a-pipeline path: a
+# stored resume version other than v0.
+_MID_HISTORY_EXPECTED_ROWS = [
+    {"id": 3, "full_name": "carol", "country": "US"},
+    {"id": 4, "full_name": "dave", "country": "UK"},
+    {"id": 5, "full_name": "erin", "country": "FR"},
+]
+
+
+def test_delta_input_column_mapping_follow_resume_mid_history(pipeline_name):
+    """Resume following from a non-zero version: replay only the later commits."""
+    loc = DeltaTestLocation.create(
+        pipeline_name,
+        mode="snapshot_and_follow",
+        stable_subpath=f"column_mapping_name_{FIXTURE_VERSION}",
+    )
+    try:
+        ensure_delta_spark_fixture(loc, _FIXTURE_BUILDER, builder_args=("name",))
+
+        pipeline = PipelineBuilder(
+            TEST_CLIENT,
+            pipeline_name,
+            sql=_build_sql(loc, extra_config={"version": 2, "end_version": 6}),
+            runtime_config=RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                logging="debug",
+            ),
+        ).create_or_replace()
+        pipeline.start()
+        pipeline.wait_for_completion(force_stop=False, timeout_s=600)
+
+        rows = _snapshot_rows(pipeline)
+        assert rows == _MID_HISTORY_EXPECTED_ROWS, (
+            "resuming at v2 must replay only v3..v6 (rows 1 and 2 already "
+            f"consumed) and resolve them against the final schema; got {rows}"
+        )
+
+        pipeline.stop(force=True)
+    finally:
+        loc.cleanup()

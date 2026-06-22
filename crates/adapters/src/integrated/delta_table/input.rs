@@ -2927,8 +2927,7 @@ impl DeltaTableInputEndpointInner {
 
     /// The table handle whose snapshot defines the current schema (see the
     /// [`schema_table`](Self#structfield.schema_table) field). Set before any
-    /// data is read; the `expect` guards against a future caller reading the
-    /// schema too early.
+    /// data is read.
     fn schema_snapshot(&self) -> Arc<DeltaTable> {
         Arc::clone(
             self.schema_table
@@ -2975,16 +2974,19 @@ impl DeltaTableInputEndpointInner {
     /// loop starts. The whole window then resolves against its own final schema,
     /// not a later schema from the tail we never ingest.
     async fn pin_follow_schema(&self, table: &Arc<DeltaTable>) -> AnyResult<()> {
-        let target = self.catchup_target_version(Arc::clone(table)).await? as u64;
+        let target = self.catchup_target_version(Arc::clone(table)).await?;
+        let target = u64::try_from(target)
+            .map_err(|_| anyhow!("unexpected negative Delta table version {target}"))?;
         self.pin_schema_to_version(target).await
     }
 
     /// Advance the schema source when a commit carries a schema change.
     ///
-    /// Moves forward only. A `metaData` action at or before the current schema
-    /// version is replay, already covered by the schema pinned at startup, so we
-    /// ignore it. A change beyond it is adopted, picking up a column added to the
-    /// table while we follow.
+    /// A commit that changes the schema writes a `metaData` action. We reload
+    /// the schema at that commit so its data, and every later commit's, is read
+    /// against the new schema. Moves forward only: a `metaData` action at or
+    /// before the current schema version is replay, already covered by the
+    /// schema pinned at startup, so we ignore it.
     async fn advance_schema(&self, new_version: i64, actions: &[Action]) -> AnyResult<()> {
         let changes_schema = actions.iter().any(|a| matches!(a, Action::Metadata(_)));
         let current_version = self.schema_snapshot().version();
@@ -3020,15 +3022,12 @@ impl DeltaTableInputEndpointInner {
             .collect())
     }
 
-    /// The Arrow schema to force on the raw data files, named as they appear on
-    /// disk: the table's logical schema restricted to the columns `keep` accepts
-    /// (in schema order, so unions with another read side line up), with each
-    /// column-mapped field renamed to its physical (`col-<uuid>`) name so
-    /// DataFusion's by-name matching finds them. [`project_physical_to_logical`]
-    /// renames them back. Equals the kept logical schema when mapping is off.
-    ///
-    /// Used by both follow/CDC read paths: [`create_parquet_table`] (keeps every
-    /// column) and [`masked_file_provider`] (keeps the columns it reads).
+    /// Returns the Arrow schema to use when reading the raw data files, named as
+    /// they appear on disk: the table's logical schema restricted to the columns
+    /// `keep` accepts (in schema order, so unions with another read side line
+    /// up), with each column-mapped field renamed to its physical (`col-<uuid>`)
+    /// name so DataFusion's by-name matching finds them. The same as the kept
+    /// logical schema when column mapping is off.
     fn physical_read_schema(&self, keep: impl Fn(&str) -> bool) -> AnyResult<SchemaRef> {
         let schema_table = self.schema_snapshot();
         let logical = schema_table
@@ -3055,13 +3054,13 @@ impl DeltaTableInputEndpointInner {
         ))
     }
 
-    /// Rename a data file's physical columns back to their logical names.
+    /// Renames a DataFrame's physical columns back to their logical names.
     ///
-    /// Follow/CDC reads force [`physical_read_schema`](Self::physical_read_schema),
-    /// so a column-mapped frame arrives with physical (`col-<uuid>`) names; the rest
-    /// of the pipeline expects logical names. Unmapped columns (already logical,
-    /// or Delta metadata like `__feldera_op`) pass through. A no-op when mapping
-    /// is off.
+    /// Follow/CDC reads apply [`physical_read_schema`](Self::physical_read_schema),
+    /// so a column-mapped DataFrame arrives with physical (`col-<uuid>`) names,
+    /// while the rest of the pipeline expects logical names. Unmapped columns
+    /// (already logical, or Delta metadata like `__feldera_op`) pass through.
+    /// This function is a no-op when column mapping is off.
     fn project_physical_to_logical(&self, df: DataFrame) -> AnyResult<DataFrame> {
         let pairs = self.column_mapping()?;
         if pairs.is_empty() {
@@ -3089,7 +3088,7 @@ impl DeltaTableInputEndpointInner {
         files: Vec<String>,
         description: &str,
     ) -> AnyResult<ListingTable> {
-        // Force the on-disk (physical) schema so the reader matches each file's
+        // Use the on-disk (physical) schema so the reader matches each file's
         // columns; `project_physical_to_logical` renames them back afterwards.
         let schema = self.physical_read_schema(|_| true)?;
 
@@ -3287,10 +3286,11 @@ impl DeltaTableInputEndpointInner {
     }
 
     // NOTE: Column projection (follow here, CDC in `process_cdc_transaction`) runs against the
-    // schema in `schema_table`, which `create_parquet_table` forces onto every Parquet file we read
+    // schema in `schema_table`, which `create_parquet_table` applies to every Parquet file we read
     // (see the field's docs for how that schema tracks evolution). Column-mapped physical names are
-    // stable across a rename, so it reads every followed version's files: DataFusion's schema adapter
-    // null-fills added columns and ignores dropped ones; an uncastable type change errors at read time.
+    // stable across a rename, so the reader handles every followed version's files: DataFusion's
+    // schema adapter null-fills added columns and ignores dropped ones; a type change produces an
+    // error at read time when a value cannot be converted to the target type.
     #[allow(clippy::too_many_arguments)]
     async fn add_with_polarity(
         &self,
