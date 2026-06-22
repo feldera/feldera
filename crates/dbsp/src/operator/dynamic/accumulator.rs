@@ -26,7 +26,7 @@ use crate::{
     trace::{Batch, BatchReader, Spine, Trace},
 };
 
-circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>)));
+circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, EnableCount)));
 circuit_cache_key!(ShardedAccumulatorId<C, B: Batch>(StreamId => Stream<C, Option<Spine<B>>>));
 
 /// `TypedMapKey` entry used to share `enable_count` across instances of the same accumulator in multiple workers.
@@ -41,8 +41,52 @@ impl EnableCountId {
     }
 }
 
+/// Used to enable/disable an accumulator during a transaction.
+///
+/// Most accumulators (created with dyn_accumulate()) are always enabled.
+/// One special case is when the accumulator is used as part of an output handle
+/// to collect updates to the output stream within a transaction. In this case,
+/// if there is no output connector attached to the stream, there is no need to
+/// store the updates (which during backfill can amount to storing a complete copy
+/// of the table or view).
+///
+/// This flag enables this optimization by keeping track of the number of consumers
+/// of the accumulator's output. It is equal to the number of attached output connectors
+/// plus the number of times the same accumulator was instantiated as part of a regular
+/// (non-output) operator with dyn_accumulate().
+#[derive(Clone, Debug, Default)]
+pub struct EnableCount(Arc<AtomicUsize>);
+
+impl EnableCount {
+    /// Creates a new `EnableCount` that is initially disabled.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns true if this `EnableCount` is enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.0.load(Ordering::Acquire) > 0
+    }
+
+    /// Enable the accumulator for this output stream.
+    ///
+    /// This may be paired with a later call to [EnableCount::disable], if the
+    /// stream should eventually be disabled.
+    pub fn enable(&self) {
+        self.0.fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Disable the accumulator for this output stream.
+    ///
+    /// This must be paired with a prior call to [EnableCount::enable].
+    pub fn disable(&self) {
+        let old = self.0.fetch_add(1, Ordering::AcqRel);
+        assert!(old > 0);
+    }
+}
+
 impl TypedMapKey<LocalStoreMarker> for EnableCountId {
-    type Value = Arc<AtomicUsize>;
+    type Value = EnableCount;
 }
 
 impl<C, B> Stream<C, B>
@@ -53,7 +97,7 @@ where
     /// See [`Stream::accumulate`].
     pub fn dyn_accumulate(&self, factories: &B::Factories) -> Stream<C, Option<Spine<B>>> {
         let (stream, enable_count) = self.dyn_accumulate_with_enable_count(factories);
-        enable_count.fetch_add(1, Ordering::AcqRel);
+        enable_count.enable();
 
         stream
     }
@@ -62,7 +106,7 @@ where
     pub fn dyn_accumulate_with_enable_count(
         &self,
         factories: &B::Factories,
-    ) -> (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>) {
+    ) -> (Stream<C, Option<Spine<B>>>, EnableCount) {
         self.circuit()
             .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {
                 let accumulator = Accumulator::<B>::new(factories, Location::caller());
@@ -94,20 +138,8 @@ where
     // Output batch sizes.
     output_batch_stats: BatchSizeStats,
 
-    /// Used to enable/disable the accumulator during a transaction.
-    ///
-    /// Most accumulators (created with dyn_accumulate()) are always enabled.
-    /// One special case is when the accumulator is used as part of an output handle
-    /// to collect updates to the output stream within a transaction. In this case,
-    /// if there is no output connector attached to the stream, there is no need to
-    /// store the updates (which during backfill can amount to storing a complete copy
-    /// of the table or view).
-    ///
-    /// This flag enables this optimization by keeping track of the number of consumers
-    /// of the accumulator's output. It is equal to the number of attached output connectors
-    /// plus the number of times the same accumulator was instantiated as part of a regular
-    /// (non-output) operator with dyn_accumulate().
-    enable_count: Arc<AtomicUsize>,
+    /// Used to enable/disable an accumulator during a transaction.
+    enable_count: EnableCount,
 
     /// Whether the accumulator is enabled during the current transaction.
     ///
@@ -124,13 +156,13 @@ where
 {
     pub fn new(factories: &B::Factories, location: &'static Location<'static>) -> Self {
         let enable_count = match Runtime::runtime() {
-            None => Arc::new(AtomicUsize::new(0)),
+            None => EnableCount::default(),
             Some(runtime) => {
                 let accumulator_id = runtime.sequence_next();
                 runtime
                     .local_store()
                     .entry(EnableCountId::new(accumulator_id))
-                    .or_insert_with(|| Arc::new(AtomicUsize::new(0)))
+                    .or_insert_with(|| EnableCount::default())
                     .value()
                     .clone()
             }
@@ -233,8 +265,7 @@ where
 
         if len > 0 {
             if self.enabled_during_current_transaction.is_none() {
-                self.enabled_during_current_transaction =
-                    Some(self.enable_count.load(Ordering::Acquire) > 0);
+                self.enabled_during_current_transaction = Some(self.enable_count.is_enabled());
             }
 
             if self.enabled_during_current_transaction == Some(true) {

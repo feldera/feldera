@@ -1,9 +1,4 @@
-use std::{
-    borrow::Cow,
-    marker::PhantomData,
-    panic::Location,
-    sync::{Arc, atomic::AtomicUsize},
-};
+use std::{borrow::Cow, marker::PhantomData, panic::Location};
 
 use crate::{
     Batch, BatchReader, Circuit, Scope, Stream,
@@ -11,6 +6,7 @@ use crate::{
         metadata::OperatorLocation,
         operator_traits::{BinaryOperator, Operator},
     },
+    operator::dynamic::accumulator::EnableCount,
     trace::{
         Batch as DynBatch, BatchReaderFactories, Spine as DynSpine, SpineSnapshot, WithSnapshot,
     },
@@ -46,7 +42,7 @@ where
     ///
     /// Used to instantiate accumulators for output connectors. See `Accumulator::enable_count` documentation.
     #[track_caller]
-    pub fn accumulate_with_enable_count(&self) -> (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>) {
+    pub fn accumulate_with_enable_count(&self) -> (Stream<C, Option<Spine<B>>>, EnableCount) {
         let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
 
         let (result, enable_count) = self.inner().dyn_accumulate_with_enable_count(&factories);

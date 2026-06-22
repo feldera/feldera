@@ -7,6 +7,7 @@ use crate::{
         metadata::{BatchSizeStats, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::{BinarySinkOperator, Operator, SinkOperator},
     },
+    operator::dynamic::accumulator::EnableCount,
     storage::file::to_bytes,
     trace::{
         BatchReader as DynBatchReader, BatchReaderFactories, SpineSnapshot as DynSpineSnapshot,
@@ -20,10 +21,7 @@ use std::{
     hash::{Hash, Hasher},
     marker::PhantomData,
     mem::transmute,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::Arc,
 };
 use typedmap::TypedMapKey;
 
@@ -93,7 +91,7 @@ where
         persistent_id: Option<&str>,
     ) -> OutputHandle<SpineSnapshot<B>> {
         let (handle, enable_count, _) = self.accumulate_output_persistent_with_gid(persistent_id);
-        enable_count.fetch_add(1, Ordering::AcqRel);
+        enable_count.enable();
         handle
     }
 
@@ -107,11 +105,7 @@ where
     pub fn accumulate_output_persistent_with_gid(
         &self,
         persistent_id: Option<&str>,
-    ) -> (
-        OutputHandle<SpineSnapshot<B>>,
-        Arc<AtomicUsize>,
-        GlobalNodeId,
-    ) {
+    ) -> (OutputHandle<SpineSnapshot<B>>, EnableCount, GlobalNodeId) {
         let (accumulated, enable_count) = self.accumulate_with_enable_count();
         let (output_handle, gid) = self
             .circuit()
