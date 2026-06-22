@@ -82,33 +82,33 @@ pub use feldera_adapterlib::transport::*;
 
 pub fn builtin_input_transport_registry() -> InputTransportRegistry {
     let mut registry = InputTransportRegistry::new();
-    registry.register("file_input", Box::new(FileInputFactory));
+    registry.register(TransportConfig::FILE_INPUT, Box::new(FileInputFactory));
     #[cfg(feature = "with-kafka")]
-    registry.register("kafka_input", Box::new(KafkaInputFactory));
+    registry.register(TransportConfig::KAFKA_INPUT, Box::new(KafkaInputFactory));
     #[cfg(feature = "with-nats")]
-    registry.register("nats_input", Box::new(NatsInputFactory));
+    registry.register(TransportConfig::NATS_INPUT, Box::new(NatsInputFactory));
     #[cfg(feature = "with-pubsub")]
-    registry.register("pub_sub_input", Box::new(PubSubInputFactory));
-    registry.register("url_input", Box::new(UrlInputFactory));
-    registry.register("s3_input", Box::new(S3InputFactory));
-    registry.register("datagen", Box::new(DatagenInputFactory));
+    registry.register(TransportConfig::PUB_SUB_INPUT, Box::new(PubSubInputFactory));
+    registry.register(TransportConfig::URL_INPUT, Box::new(UrlInputFactory));
+    registry.register(TransportConfig::S3_INPUT, Box::new(S3InputFactory));
+    registry.register(TransportConfig::DATAGEN, Box::new(DatagenInputFactory));
     #[cfg(feature = "with-nexmark")]
-    registry.register("nexmark", Box::new(NexmarkInputFactory));
-    registry.register("http_input", Box::new(HttpInputFactory));
-    registry.register("adhoc_input", Box::new(AdHocInputFactory));
-    registry.register("clock", Box::new(ClockInputFactory));
-    registry.register("empty_input", Box::new(EmptyInputFactory));
+    registry.register(TransportConfig::NEXMARK, Box::new(NexmarkInputFactory));
+    registry.register(TransportConfig::HTTP_INPUT, Box::new(HttpInputFactory));
+    registry.register(TransportConfig::ADHOC_INPUT, Box::new(AdHocInputFactory));
+    registry.register(TransportConfig::CLOCK, Box::new(ClockInputFactory));
+    registry.register(TransportConfig::EMPTY_INPUT, Box::new(EmptyInputFactory));
     registry
 }
 
 pub fn builtin_output_transport_registry() -> OutputTransportRegistry {
     let mut registry = OutputTransportRegistry::new();
-    registry.register("file_output", Box::new(FileOutputFactory));
+    registry.register(TransportConfig::FILE_OUTPUT, Box::new(FileOutputFactory));
     #[cfg(feature = "with-kafka")]
-    registry.register("kafka_output", Box::new(KafkaOutputFactory));
+    registry.register(TransportConfig::KAFKA_OUTPUT, Box::new(KafkaOutputFactory));
     #[cfg(feature = "with-redis")]
-    registry.register("redis_output", Box::new(RedisOutputFactory));
-    registry.register("null_output", Box::new(NullOutputFactory));
+    registry.register(TransportConfig::REDIS_OUTPUT, Box::new(RedisOutputFactory));
+    registry.register(TransportConfig::NULL_OUTPUT, Box::new(NullOutputFactory));
     registry
 }
 
@@ -488,7 +488,7 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        input_registry.register("empty_input", Box::new(EmptyInputFactory));
+        input_registry.register(TransportConfig::EMPTY_INPUT, Box::new(EmptyInputFactory));
         assert!(
             input_registry
                 .create_endpoint(&TransportConfig::EmptyInput)
@@ -503,12 +503,41 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        output_registry.register("null_output", Box::new(NullOutputFactory));
+        output_registry.register(TransportConfig::NULL_OUTPUT, Box::new(NullOutputFactory));
         assert!(
             output_registry
                 .create_endpoint(&TransportConfig::NullOutput, "null", true)
                 .unwrap()
                 .is_some()
         );
+    }
+
+    #[test]
+    fn builtin_transport_registries_include_compiled_transport_names() {
+        let input_registry = builtin_input_transport_registry();
+        assert!(input_registry.get(TransportConfig::FILE_INPUT).is_some());
+        #[cfg(feature = "with-kafka")]
+        assert!(input_registry.get(TransportConfig::KAFKA_INPUT).is_some());
+        #[cfg(feature = "with-nats")]
+        assert!(input_registry.get(TransportConfig::NATS_INPUT).is_some());
+        #[cfg(feature = "with-pubsub")]
+        assert!(input_registry.get(TransportConfig::PUB_SUB_INPUT).is_some());
+        assert!(input_registry.get(TransportConfig::URL_INPUT).is_some());
+        assert!(input_registry.get(TransportConfig::S3_INPUT).is_some());
+        assert!(input_registry.get(TransportConfig::DATAGEN).is_some());
+        #[cfg(feature = "with-nexmark")]
+        assert!(input_registry.get(TransportConfig::NEXMARK).is_some());
+        assert!(input_registry.get(TransportConfig::HTTP_INPUT).is_some());
+        assert!(input_registry.get(TransportConfig::ADHOC_INPUT).is_some());
+        assert!(input_registry.get(TransportConfig::CLOCK).is_some());
+        assert!(input_registry.get(TransportConfig::EMPTY_INPUT).is_some());
+
+        let output_registry = builtin_output_transport_registry();
+        assert!(output_registry.get(TransportConfig::FILE_OUTPUT).is_some());
+        #[cfg(feature = "with-kafka")]
+        assert!(output_registry.get(TransportConfig::KAFKA_OUTPUT).is_some());
+        #[cfg(feature = "with-redis")]
+        assert!(output_registry.get(TransportConfig::REDIS_OUTPUT).is_some());
+        assert!(output_registry.get(TransportConfig::NULL_OUTPUT).is_some());
     }
 }
