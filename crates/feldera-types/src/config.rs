@@ -1861,32 +1861,57 @@ pub enum TransportConfig {
 }
 
 impl TransportConfig {
+    pub const FILE_INPUT: &'static str = "file_input";
+    pub const FILE_OUTPUT: &'static str = "file_output";
+    pub const NATS_INPUT: &'static str = "nats_input";
+    pub const KAFKA_INPUT: &'static str = "kafka_input";
+    pub const KAFKA_OUTPUT: &'static str = "kafka_output";
+    pub const PUB_SUB_INPUT: &'static str = "pub_sub_input";
+    pub const URL_INPUT: &'static str = "url_input";
+    pub const S3_INPUT: &'static str = "s3_input";
+    pub const DELTA_TABLE_INPUT: &'static str = "delta_table_input";
+    pub const DELTA_TABLE_OUTPUT: &'static str = "delta_table_output";
+    pub const DYNAMODB_OUTPUT: &'static str = "dynamodb_output";
+    pub const REDIS_OUTPUT: &'static str = "redis_output";
+    pub const ICEBERG_INPUT: &'static str = "iceberg_input";
+    pub const POSTGRES_INPUT: &'static str = "postgres_input";
+    pub const POSTGRES_CDC_INPUT: &'static str = "postgres_cdc_input";
+    pub const POSTGRES_OUTPUT: &'static str = "postgres_output";
+    pub const DATAGEN: &'static str = "datagen";
+    pub const NEXMARK: &'static str = "nexmark";
+    pub const HTTP_INPUT: &'static str = "http_input";
+    pub const HTTP_OUTPUT: &'static str = "http_output";
+    pub const ADHOC_INPUT: &'static str = "adhoc_input";
+    pub const CLOCK: &'static str = "clock";
+    pub const NULL_OUTPUT: &'static str = "null_output";
+    pub const EMPTY_INPUT: &'static str = "empty_input";
+
     pub fn name(&self) -> String {
         match self {
-            TransportConfig::FileInput(_) => "file_input".to_string(),
-            TransportConfig::FileOutput(_) => "file_output".to_string(),
-            TransportConfig::NatsInput(_) => "nats_input".to_string(),
-            TransportConfig::KafkaInput(_) => "kafka_input".to_string(),
-            TransportConfig::KafkaOutput(_) => "kafka_output".to_string(),
-            TransportConfig::PubSubInput(_) => "pub_sub_input".to_string(),
-            TransportConfig::UrlInput(_) => "url_input".to_string(),
-            TransportConfig::S3Input(_) => "s3_input".to_string(),
-            TransportConfig::DeltaTableInput(_) => "delta_table_input".to_string(),
-            TransportConfig::DeltaTableOutput(_) => "delta_table_output".to_string(),
-            TransportConfig::DynamoDBOutput(_) => "dynamodb_output".to_string(),
-            TransportConfig::IcebergInput(_) => "iceberg_input".to_string(),
-            TransportConfig::PostgresInput(_) => "postgres_input".to_string(),
-            TransportConfig::PostgresCdcInput(_) => "postgres_cdc_input".to_string(),
-            TransportConfig::PostgresOutput(_) => "postgres_output".to_string(),
-            TransportConfig::Datagen(_) => "datagen".to_string(),
-            TransportConfig::Nexmark(_) => "nexmark".to_string(),
-            TransportConfig::HttpInput(_) => "http_input".to_string(),
-            TransportConfig::HttpOutput(_) => "http_output".to_string(),
-            TransportConfig::AdHocInput(_) => "adhoc_input".to_string(),
-            TransportConfig::RedisOutput(_) => "redis_output".to_string(),
-            TransportConfig::ClockInput(_) => "clock".to_string(),
-            TransportConfig::NullOutput => "null_output".to_string(),
-            TransportConfig::EmptyInput => "empty_input".to_string(),
+            TransportConfig::FileInput(_) => Self::FILE_INPUT.to_string(),
+            TransportConfig::FileOutput(_) => Self::FILE_OUTPUT.to_string(),
+            TransportConfig::NatsInput(_) => Self::NATS_INPUT.to_string(),
+            TransportConfig::KafkaInput(_) => Self::KAFKA_INPUT.to_string(),
+            TransportConfig::KafkaOutput(_) => Self::KAFKA_OUTPUT.to_string(),
+            TransportConfig::PubSubInput(_) => Self::PUB_SUB_INPUT.to_string(),
+            TransportConfig::UrlInput(_) => Self::URL_INPUT.to_string(),
+            TransportConfig::S3Input(_) => Self::S3_INPUT.to_string(),
+            TransportConfig::DeltaTableInput(_) => Self::DELTA_TABLE_INPUT.to_string(),
+            TransportConfig::DeltaTableOutput(_) => Self::DELTA_TABLE_OUTPUT.to_string(),
+            TransportConfig::DynamoDBOutput(_) => Self::DYNAMODB_OUTPUT.to_string(),
+            TransportConfig::IcebergInput(_) => Self::ICEBERG_INPUT.to_string(),
+            TransportConfig::PostgresInput(_) => Self::POSTGRES_INPUT.to_string(),
+            TransportConfig::PostgresCdcInput(_) => Self::POSTGRES_CDC_INPUT.to_string(),
+            TransportConfig::PostgresOutput(_) => Self::POSTGRES_OUTPUT.to_string(),
+            TransportConfig::Datagen(_) => Self::DATAGEN.to_string(),
+            TransportConfig::Nexmark(_) => Self::NEXMARK.to_string(),
+            TransportConfig::HttpInput(_) => Self::HTTP_INPUT.to_string(),
+            TransportConfig::HttpOutput(_) => Self::HTTP_OUTPUT.to_string(),
+            TransportConfig::AdHocInput(_) => Self::ADHOC_INPUT.to_string(),
+            TransportConfig::RedisOutput(_) => Self::REDIS_OUTPUT.to_string(),
+            TransportConfig::ClockInput(_) => Self::CLOCK.to_string(),
+            TransportConfig::NullOutput => Self::NULL_OUTPUT.to_string(),
+            TransportConfig::EmptyInput => Self::EMPTY_INPUT.to_string(),
         }
     }
 
