@@ -228,8 +228,7 @@ export const timeSeriesAxisMax = (metrics: TimeSeriesEntry[], now: () => number 
 export const multihostMemoryLimitMb = (
   perHostMemoryMb: number | null | undefined,
   hosts: number | null | undefined
-): number | undefined =>
-  perHostMemoryMb ? perHostMemoryMb * Math.max(hosts ?? 1, 1) : undefined
+): number | undefined => (perHostMemoryMb ? perHostMemoryMb * Math.max(hosts ?? 1, 1) : undefined)
 
 /**
  * @returns Time series of throughput with smoothing window over 3 data intervals
