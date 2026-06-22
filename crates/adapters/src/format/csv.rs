@@ -31,6 +31,34 @@ use super::{InputBuffer, Splitter};
 /// truncate it to `MAX_RECORD_LEN_IN_ERRMSG` bytes.
 static MAX_RECORD_LEN_IN_ERRMSG: usize = 4096;
 
+fn csv_trim(t: &feldera_types::format::csv::CsvTrim) -> csv::Trim {
+    use feldera_types::format::csv::CsvTrim;
+    match t {
+        CsvTrim::None => csv::Trim::None,
+        CsvTrim::Headers => csv::Trim::Headers,
+        CsvTrim::Fields => csv::Trim::Fields,
+        CsvTrim::All => csv::Trim::All,
+    }
+}
+
+/// Build a [`csv::ReaderBuilder`] fully configured from `config`.
+///
+/// `has_headers` is always `false` — the adapter layer skips the header row
+/// itself and must not pass it to the underlying CSV reader.
+pub(crate) fn csv_reader_builder(config: &CsvParserConfig) -> csv::ReaderBuilder {
+    let mut b = csv::ReaderBuilder::new();
+    b.has_headers(false)
+        .delimiter(config.delimiter().0)
+        .quote(config.quote as u8)
+        .escape(config.escape.map(|c| c as u8))
+        .double_quote(config.double_quote)
+        .quoting(config.quoting)
+        .comment(config.comment.map(|c| c as u8))
+        .flexible(config.flexible)
+        .trim(csv_trim(&config.trim));
+    b
+}
+
 /// CSV format parser.
 pub struct CsvInputFormat;
 
@@ -65,11 +93,10 @@ impl InputFormat for CsvInputFormat {
             )
         })?;
 
-        let headers = config.headers;
         let input_stream = input_stream
             .handle
-            .configure_deserializer(RecordFormat::Csv(config))?;
-        Ok(Box::new(CsvParser::new(input_stream, headers)) as Box<dyn Parser>)
+            .configure_deserializer(RecordFormat::Csv(config.clone()))?;
+        Ok(Box::new(CsvParser::new(input_stream, &config)) as Box<dyn Parser>)
     }
 }
 
@@ -80,16 +107,35 @@ struct CsvParser {
     /// Whether the input starts with a header row.
     headers: bool,
 
+    /// Quote character (as a byte), used for record splitting.
+    quote: u8,
+
+    /// Whether quoting is enabled.  When `false`, every newline ends a record.
+    quoting: bool,
+
+    /// Optional comment character.  Lines whose first byte matches this value
+    /// are skipped and never passed to the deserializer.
+    comment: Option<u8>,
+
     last_event_number: u64,
 }
 
 impl CsvParser {
-    fn new(input_stream: Box<dyn DeCollectionStream>, headers: bool) -> Self {
+    fn new(input_stream: Box<dyn DeCollectionStream>, config: &CsvParserConfig) -> Self {
         Self {
             input_stream,
             last_event_number: 0,
-            headers,
+            headers: config.headers,
+            quote: config.quote as u8,
+            quoting: config.quoting,
+            comment: config.comment.map(|c| c as u8),
         }
+    }
+
+    /// Returns `true` if `record` is a comment line (its first byte matches
+    /// the configured comment character).
+    fn is_comment(&self, record: &[u8]) -> bool {
+        self.comment.is_some_and(|c| record.first() == Some(&c))
     }
 
     fn parse_record(
@@ -118,26 +164,15 @@ impl CsvParser {
 
     /// Tries to split `buffer` into a CSV record followed by any remaining text.
     ///
-    /// A CSV record is usually one line that ends in a new-line, but it can
-    /// span multiple lines if new-lines are enclosed in double quotes.
+    /// A CSV record is usually one line that ends in a newline, but it can
+    /// span multiple lines if newlines appear inside a quoted field.
     fn split_record<'a>(&mut self, buffer: &'a [u8]) -> Option<(&'a [u8], &'a [u8])> {
-        // This uses the simple rule that a new-line ends a record if it is not
-        // in double quotes.  The "standard" format for CSV escapes double
-        // quotes by doubling them (e.g. `"a""b""c"` unescapes to `a"b"c`), so
-        // that any even number of quotes followed by a new-line ends a reocrd,
-        // but any odd number followed by a new-line is a continuation of the
-        // field.  This means that this rule properly handles escapes.
-        //
-        // If we allow the user to configure the CSV format used, we'll need to
-        // adjust this to match the configuration.
         let mut quoted = false;
-        for (offset, c) in buffer.iter().enumerate() {
-            match c {
-                b'"' => quoted = !quoted,
-                b'\n' if !quoted => {
-                    return Some(buffer.split_at(offset + 1));
-                }
-                _ => (),
+        for (offset, &c) in buffer.iter().enumerate() {
+            if self.quoting && c == self.quote {
+                quoted = !quoted;
+            } else if c == b'\n' && !quoted {
+                return Some(buffer.split_at(offset + 1));
             }
         }
         None
@@ -146,11 +181,23 @@ impl CsvParser {
 
 impl Parser for CsvParser {
     fn fork(&self) -> Box<dyn Parser> {
-        Box::new(Self::new(self.input_stream.fork(), self.headers))
+        Box::new(Self {
+            input_stream: self.input_stream.fork(),
+            headers: self.headers,
+            quote: self.quote,
+            quoting: self.quoting,
+            comment: self.comment,
+            last_event_number: 0,
+        })
     }
 
     fn splitter(&self) -> Box<dyn super::Splitter> {
-        Box::new(CsvSplitter::new(self.headers))
+        Box::new(CsvSplitter::new(
+            self.headers,
+            self.quote,
+            self.quoting,
+            self.comment,
+        ))
     }
 
     fn parse(
@@ -162,11 +209,13 @@ impl Parser for CsvParser {
 
         let mut errors = Vec::new();
         while let Some((record, rest)) = self.split_record(data) {
-            self.parse_record(record, &metadata, &mut errors);
-            self.last_event_number += 1;
+            if !self.is_comment(record) {
+                self.parse_record(record, &metadata, &mut errors);
+                self.last_event_number += 1;
+            }
             data = rest;
         }
-        if !data.is_empty() {
+        if !data.is_empty() && !self.is_comment(data) {
             self.parse_record(data, &metadata, &mut errors);
         }
         (self.input_stream.take_all(), errors)
@@ -180,39 +229,61 @@ impl Parser for CsvParser {
 struct CsvSplitter {
     quoted: bool,
     headers: bool,
+    quote: u8,
+    quoting: bool,
+    /// Optional comment character: lines whose first byte matches this value
+    /// are skipped entirely.
+    comment: Option<u8>,
+    /// True when the next byte to be processed begins a new line.
+    at_line_start: bool,
+    /// True while consuming a comment line (until the terminating newline).
+    in_comment: bool,
 }
 
 impl CsvSplitter {
-    fn new(headers: bool) -> Self {
+    fn new(headers: bool, quote: u8, quoting: bool, comment: Option<u8>) -> Self {
         Self {
             quoted: false,
             headers,
+            quote,
+            quoting,
+            comment,
+            at_line_start: true,
+            in_comment: false,
         }
     }
 }
 
 impl Splitter for CsvSplitter {
     fn input(&mut self, data: &[u8]) -> Option<usize> {
-        // This uses the simple rule that a new-line ends a record if it is not
-        // in double quotes.  The "standard" format for CSV escapes double
-        // quotes by doubling them (e.g. `"a""b""c"` unescapes to `a"b"c`), so
-        // that any even number of quotes followed by a new-line ends a reocrd,
-        // but any odd number followed by a new-line is a continuation of the
-        // field.  This means that this rule properly handles escapes.
-        //
-        // If we allow the user to configure the CSV format used, we'll need to
-        // adjust this to match the configuration.
-        for (offset, c) in data.iter().enumerate() {
-            match c {
-                b'"' => self.quoted = !self.quoted,
-                b'\n' if !self.quoted => {
-                    if self.headers {
-                        self.headers = false;
-                    } else {
-                        return Some(offset + 1);
-                    }
+        for (offset, &c) in data.iter().enumerate() {
+            // While inside a comment line, skip everything up to the newline.
+            if self.in_comment {
+                if c == b'\n' {
+                    self.in_comment = false;
+                    self.at_line_start = true;
                 }
-                _ => (),
+                continue;
+            }
+
+            // At the start of a line: check whether this is a comment line.
+            if self.at_line_start {
+                self.at_line_start = false;
+                if self.comment == Some(c) {
+                    self.in_comment = true;
+                    continue;
+                }
+            }
+
+            if self.quoting && c == self.quote {
+                self.quoted = !self.quoted;
+            } else if c == b'\n' && !self.quoted {
+                self.at_line_start = true;
+                if self.headers {
+                    self.headers = false;
+                } else {
+                    return Some(offset + 1);
+                }
             }
         }
         None
@@ -220,6 +291,8 @@ impl Splitter for CsvSplitter {
 
     fn clear(&mut self) {
         self.quoted = false;
+        self.in_comment = false;
+        self.at_line_start = true;
     }
 }
 
@@ -407,6 +480,10 @@ mod test {
     use feldera_types::deserialize_table_record;
     use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 
+    use super::CsvSplitter;
+    use crate::format::Splitter;
+    use feldera_types::format::csv::{CsvParserConfig, CsvTrim};
+
     #[derive(Debug, Eq, PartialEq)]
     #[allow(non_snake_case)]
     struct CaseSensitive {
@@ -452,5 +529,311 @@ true,bar,buzz"#;
                     .to_string()
             )
         );
+    }
+
+    // ---- CsvSplitter option tests ----
+
+    // `headers = true`: the first newline ends the header row and is consumed
+    // without producing a record; subsequent newlines are record boundaries.
+    #[test]
+    fn splitter_headers() {
+        let mut s = CsvSplitter::new(true, b'"', true, None);
+        // Header row: consumed silently, no record returned.
+        assert_eq!(s.input(b"col1,col2\n"), None);
+        // First data record.
+        assert_eq!(s.input(b"foo,bar\n"), Some(8));
+    }
+
+    // `headers = true` with a comment before the header line.
+    #[test]
+    fn splitter_headers_with_leading_comment() {
+        let mut s = CsvSplitter::new(true, b'"', true, Some(b'#'));
+        // Comment before the header: skipped.
+        assert_eq!(s.input(b"# preamble\n"), None);
+        // Header row: consumed silently.
+        assert_eq!(s.input(b"col1,col2\n"), None);
+        // First data record.
+        assert_eq!(s.input(b"foo,bar\n"), Some(8));
+    }
+
+    // Default quoting: a newline inside a double-quoted span does not split.
+    #[test]
+    fn splitter_default_no_split_inside_quotes() {
+        let mut s = CsvSplitter::new(false, b'"', true, None);
+        // Opening quote is present; newline is inside the quoted span.
+        assert_eq!(s.input(b"\"foo\n"), None);
+        // Closing quote followed by newline terminates the record.
+        assert_eq!(s.input(b"bar\"\n"), Some(5));
+    }
+
+    // Custom quote character: single-quote acts as the quoting delimiter.
+    #[test]
+    fn splitter_custom_quote() {
+        let mut s = CsvSplitter::new(false, b'\'', true, None);
+        // Newline inside single-quoted span — no split.
+        assert_eq!(s.input(b"foo,'bar\n"), None);
+        // Closing single-quote then newline — split.
+        assert_eq!(s.input(b"baz'\n"), Some(5));
+    }
+
+    // `quoting = false`: every newline ends a record even when inside quotes.
+    #[test]
+    fn splitter_quoting_disabled() {
+        let mut s = CsvSplitter::new(false, b'"', false, None);
+        // Newline inside "quotes" splits immediately because quoting is off.
+        assert_eq!(s.input(b"\"foo\n"), Some(5));
+    }
+
+    // `comment`: comment lines are skipped; the next real record is returned.
+    #[test]
+    fn splitter_comment() {
+        let mut s = CsvSplitter::new(false, b'"', true, Some(b'#'));
+        // A comment line is consumed without being returned as a record.
+        assert_eq!(s.input(b"# comment\n"), None);
+        // The following data record is returned normally.
+        assert_eq!(s.input(b"foo,bar\n"), Some(8));
+    }
+
+    // Comment line interleaved with data records in a single chunk.
+    #[test]
+    fn splitter_comment_interleaved() {
+        let mut s = CsvSplitter::new(false, b'"', true, Some(b'#'));
+        // First record returned; comment + second record still pending.
+        assert_eq!(s.input(b"a,b\n# skip\nc,d\n"), Some(4));
+        // After the first record is consumed, the comment is skipped and the
+        // second record is returned.
+        assert_eq!(s.input(b"# skip\nc,d\n"), Some(11));
+    }
+
+    // ---- End-to-end tests via mock_parser_pipeline ----
+    //
+    // These tests push bytes through a real CsvParser (the same code path that
+    // a live input connector uses) and verify the deserialized records.
+
+    use crate::FormatConfig;
+    use crate::format::InputBuffer;
+    use crate::test::mock_parser_pipeline;
+    use feldera_adapterlib::format::Parser;
+    use feldera_types::deserialize_without_context;
+    use feldera_types::program_schema::Relation;
+    use serde::{Deserialize, Serialize};
+    use std::borrow::Cow;
+
+    /// Two-string record used by the end-to-end tests below.
+    #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone)]
+    struct TwoStrings {
+        first: String,
+        second: String,
+    }
+
+    deserialize_without_context!(TwoStrings);
+
+    /// Push `data` through a fully-configured `CsvParser` and return the
+    /// inserted `TwoStrings` records.
+    fn e2e_parse_csv(config: CsvParserConfig, data: &[u8]) -> Vec<TwoStrings> {
+        let format_config = FormatConfig {
+            name: Cow::from("csv"),
+            config: serde_json::to_value(config).unwrap(),
+        };
+        let (_, mut parser, input_handle) =
+            mock_parser_pipeline::<TwoStrings, TwoStrings>(&Relation::empty(), &format_config)
+                .unwrap();
+        let (buf, errors) = parser.parse(data, None);
+        assert!(errors.is_empty(), "unexpected parse errors: {errors:?}");
+        if let Some(mut buf) = buf {
+            buf.flush();
+        }
+        input_handle
+            .state()
+            .flushed
+            .iter()
+            .map(|upd| upd.unwrap_insert().clone())
+            .collect()
+    }
+
+    // `quote`: single-quote wraps a field containing a comma.
+    #[test]
+    fn csv_e2e_quote() {
+        let rows = e2e_parse_csv(
+            CsvParserConfig {
+                quote: '\'',
+                ..Default::default()
+            },
+            b"foo,'bar,baz'\nqux,'quux,corge'\n",
+        );
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0],
+            TwoStrings {
+                first: "foo".into(),
+                second: "bar,baz".into()
+            }
+        );
+        assert_eq!(
+            rows[1],
+            TwoStrings {
+                first: "qux".into(),
+                second: "quux,corge".into()
+            }
+        );
+    }
+
+    // `escape` + `double_quote = false`: backslash escapes a literal quote.
+    #[test]
+    fn csv_e2e_escape() {
+        let rows = e2e_parse_csv(
+            CsvParserConfig {
+                escape: Some('\\'),
+                double_quote: false,
+                ..Default::default()
+            },
+            // "foo\"bar" → foo"bar
+            b"\"foo\\\"bar\",baz\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].first, "foo\"bar");
+        assert_eq!(rows[0].second, "baz");
+    }
+
+    // `double_quote = true` (default): `""` inside a quoted field is one `"`.
+    #[test]
+    fn csv_e2e_double_quote() {
+        let rows = e2e_parse_csv(
+            CsvParserConfig::default(),
+            // "foo""bar" → foo"bar
+            b"\"foo\"\"bar\",baz\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].first, "foo\"bar");
+        assert_eq!(rows[0].second, "baz");
+    }
+
+    // `double_quote = false`: `""` is not collapsed; the first `"` ends the
+    // quoted field, and the remainder of the token is appended unquoted.
+    // (Matches csv-core's `quote_escapes_no_double` test: `"a""b"` → `a"b"`.)
+    #[test]
+    fn csv_e2e_double_quote_disabled() {
+        let rows = e2e_parse_csv(
+            CsvParserConfig {
+                double_quote: false,
+                ..Default::default()
+            },
+            b"\"foo\"\"bar\",baz\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_ne!(rows[0].first, "foo\"bar"); // not collapsed
+        assert_eq!(rows[0].second, "baz");
+    }
+
+    // `trim = None` (default): leading and trailing whitespace is preserved.
+    #[test]
+    fn csv_e2e_trim_none() {
+        let rows = e2e_parse_csv(CsvParserConfig::default(), b"  foo  ,  bar  \n");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].first, "  foo  ");
+        assert_eq!(rows[0].second, "  bar  ");
+    }
+
+    // `quoting = false`: quote characters are treated as ordinary bytes.
+    #[test]
+    fn csv_e2e_quoting_disabled() {
+        let rows = e2e_parse_csv(
+            CsvParserConfig {
+                quoting: false,
+                ..Default::default()
+            },
+            // The outer " chars are kept verbatim in the field value.
+            b"\"hello\",world\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].first, "\"hello\"");
+        assert_eq!(rows[0].second, "world");
+    }
+
+    // `comment`: lines starting with `#` are skipped.
+    #[test]
+    fn csv_e2e_comment() {
+        let rows = e2e_parse_csv(
+            CsvParserConfig {
+                comment: Some('#'),
+                ..Default::default()
+            },
+            b"# opening comment\nfoo,bar\n# mid comment\nbaz,qux\n",
+        );
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].first, "foo");
+        assert_eq!(rows[1].first, "baz");
+    }
+
+    // `flexible = true` (default): a record with extra fields is accepted;
+    // only the first two are used for deserialization.
+    #[test]
+    fn csv_e2e_flexible_true() {
+        let rows = e2e_parse_csv(
+            CsvParserConfig::default(), // flexible=true
+            b"foo,bar\nqux,quux,extra\n",
+        );
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].first, "foo");
+        assert_eq!(rows[1].first, "qux");
+        assert_eq!(rows[1].second, "quux");
+    }
+
+    // `flexible = false`: a record whose field count differs from the first
+    // record's count produces a parse error.
+    #[test]
+    fn csv_e2e_flexible_false() {
+        let format_config = FormatConfig {
+            name: Cow::from("csv"),
+            config: serde_json::to_value(CsvParserConfig {
+                flexible: false,
+                ..Default::default()
+            })
+            .unwrap(),
+        };
+        let (_, mut parser, _) =
+            mock_parser_pipeline::<TwoStrings, TwoStrings>(&Relation::empty(), &format_config)
+                .unwrap();
+
+        // Suppress the default panic-on-error so we can inspect the error list.
+        parser.on_error(Some(Box::new(|_fatal, _err| {})));
+
+        // Record 1: 2 fields (sets the expected count).
+        // Record 2: 3 fields (different count → error with flexible=false).
+        let (_buf, errors) = parser.parse(b"foo,bar\nqux,quux,extra\n", None);
+        assert!(
+            !errors.is_empty(),
+            "expected a parse error for flexible=false with mismatched field counts"
+        );
+    }
+
+    // `trim = Fields`: leading/trailing whitespace is stripped from field values.
+    #[test]
+    fn csv_e2e_trim_fields() {
+        let rows = e2e_parse_csv(
+            CsvParserConfig {
+                trim: CsvTrim::Fields,
+                ..Default::default()
+            },
+            b"  foo  ,  bar  \n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].first, "foo");
+        assert_eq!(rows[0].second, "bar");
+    }
+
+    // `headers = true`: the first line is a header row and is skipped.
+    #[test]
+    fn csv_e2e_headers() {
+        let rows = e2e_parse_csv(
+            CsvParserConfig {
+                headers: true,
+                ..Default::default()
+            },
+            b"first,second\nfoo,bar\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].first, "foo");
+        assert_eq!(rows[0].second, "bar");
     }
 }

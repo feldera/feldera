@@ -2,7 +2,7 @@
 use crate::catalog::AvroStream;
 #[cfg(feature = "with-avro")]
 use crate::format::avro::from_avro_value;
-use crate::format::csv::deserializer::ByteRecordDeserializer;
+use crate::format::csv::{csv_reader_builder, deserializer::ByteRecordDeserializer};
 use crate::format::raw::{RawDeserializer, raw_serde_config};
 use crate::{
     ControllerError, DeCollectionHandle,
@@ -97,13 +97,9 @@ pub struct CsvDeserializerFromBytes {
 impl DeserializerFromBytes<(SqlSerdeConfig, CsvParserConfig)> for CsvDeserializerFromBytes {
     fn create((serde_config, csv_config): (SqlSerdeConfig, CsvParserConfig)) -> Self {
         CsvDeserializerFromBytes {
-            reader: csv::ReaderBuilder::new()
-                // We skip the headers ourselves, without passing them to the
-                // reader, so we unconditionally turn off headers in the reader.
-                .has_headers(false)
-                .flexible(true)
-                .delimiter(csv_config.delimiter().0)
-                .from_reader(VecDeque::new()),
+            // `csv_reader_builder` sets `has_headers(false)` — the adapter
+            // layer handles header-row skipping itself.
+            reader: csv_reader_builder(&csv_config).from_reader(VecDeque::new()),
             record: csv::ByteRecord::new(),
             config: serde_config,
         }
