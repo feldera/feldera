@@ -1,0 +1,4 @@
+site,recv,sig
+s1,g,greet
+s2,g,greet
+s3,x,speak
