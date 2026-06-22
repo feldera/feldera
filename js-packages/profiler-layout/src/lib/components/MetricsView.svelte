@@ -28,8 +28,10 @@
 
 <script lang="ts">
   import type { TooltipData } from './ProfilerTooltip.svelte'
+  import KeyValueBlock from './metrics/blocks/KeyValueBlock.svelte'
   import MetricsDistributionBlock from './metrics/blocks/MetricsDistributionBlock.svelte'
   import { buildBlocks, type RenderableBlock } from './metrics/dispatch'
+  import { buildGlobalMetrics, type GlobalMetrics } from '../functions/globalMetrics'
   import type { LookupCoordinator } from '../functions/lookup'
 
   interface Props {
@@ -37,6 +39,8 @@
     tooltipData: TooltipData | null
     /** The loaded profile's toplevel node id, used to recognise overview data. */
     rootNodeId: string | undefined
+    /** Cumulative pipeline-wide metrics from `stats.json`; shown as a tile atop the overview. */
+    globalMetrics?: GlobalMetrics
     /** When true, metrics flagged `advanced` in the profile metadata are included. */
     showAdvanced: boolean
     /** Lookup coordinator; the view registers an imperative handler so each Enter on the
@@ -47,7 +51,14 @@
     onSearchNode?: (query: string) => void
   }
 
-  const { mode, tooltipData, rootNodeId, showAdvanced, lookup, onSearchNode }: Props = $props()
+  const { mode, tooltipData, rootNodeId, globalMetrics, showAdvanced, lookup, onSearchNode }: Props =
+    $props()
+
+  // Pipeline-wide totals for the overview tile. Empty (so the tile is hidden) on any non-overview
+  // view or when the bundle carried no stats.
+  const globalMetricEntries = $derived(
+    mode === 'overview' ? buildGlobalMetrics(globalMetrics) : []
+  )
 
   const nodeAttributes = $derived(
     tooltipData && 'nodeAttributes' in tooltipData ? tooltipData.nodeAttributes : null
@@ -140,6 +151,12 @@
       {/if}
     </div>
   {:else}
+    <!-- Overview-only tile of cumulative pipeline metrics, rendered above the (root) node title. -->
+    {#if globalMetricEntries.length > 0}
+      <div class="mb-3">
+        <KeyValueBlock id="global-metrics" title="Pipeline metrics" entries={globalMetricEntries} />
+      </div>
+    {/if}
     {#if isNodeView}
       <div class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-base">
         <button

@@ -4,6 +4,7 @@
   import {
     createLoadGuard,
     getSuitableProfiles,
+    type GlobalMetrics,
     processProfileFiles,
     SupportBundleViewerLayout,
     type ZipItem
@@ -48,6 +49,7 @@
         dataflow: Dataflow | undefined
         sources: string[] | undefined
         logText: string | undefined
+        globalMetrics: GlobalMetrics | undefined
       })
     | null = $state(null)
   let triageResults: TriageResults = $state(new TriageResults())
@@ -101,7 +103,8 @@
       profile: processed.profile,
       dataflow: processed.dataflow,
       sources: processed.sources,
-      logText: processed.logText
+      logText: processed.logText,
+      globalMetrics: processed.globalMetrics
     })
   }
 
@@ -280,13 +283,14 @@
       {/if}
     </div>
   {:else if getProfileData}
-    {@const { profile, dataflow, sources, logText } = getProfileData()}
+    {@const { profile, dataflow, sources, logText, globalMetrics } = getProfileData()}
     <div class="min-h-0 flex-1 px-4 pb-4">
       <SupportBundleViewerLayout
         profileData={profile}
         dataflowData={dataflow}
         programCode={sources}
         {logText}
+        {globalMetrics}
         {triageResults}
         profileFiles={getProfileFiles()}
         selectedTimestamp={selectedProfile}
