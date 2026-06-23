@@ -26,8 +26,53 @@ use crate::{
     trace::{Batch, BatchReader, Spine, Trace},
 };
 
-circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, EnableCount)));
+circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => Accumulation<Stream<C, Option<Spine<B>>>>));
 circuit_cache_key!(ShardedAccumulatorId<C, B: Batch>(StreamId => Stream<C, Option<Spine<B>>>));
+
+/// A stream produced by accumulating batches into a spine.
+///
+/// This is the type returned by [Stream::dyn_accumulate] and similar methods.
+#[derive(Clone, Debug)]
+pub struct Accumulation<T> {
+    /// The result stream.
+    pub stream: T,
+
+    /// An [EnableCount].
+    ///
+    /// During a transaction when the enable count is disabled, the accumulator
+    /// will simply discard the input batches instead of accumulating them.
+    /// This is useful to increase performance when an output stream currently
+    /// has nothing listening to it.
+    pub enable_count: EnableCount,
+}
+
+impl<T> Accumulation<T> {
+    /// Enables the [EnableCount] and returns the stream.
+    ///
+    /// Because this discards the `EnableCount`, this is intended for situations
+    /// where the accumulator should be enabled permanently.
+    pub fn into_enabled_stream(self) -> T {
+        self.enable_count.enable();
+        self.stream
+    }
+
+    /// Returns the stream and the enable count inside this `Accumulation`.
+    pub fn into_parts(self) -> (T, EnableCount) {
+        (self.stream, self.enable_count)
+    }
+
+    /// Returns an equivalent `Accumulation` with `f` applied to the inner
+    /// stream.
+    pub fn map<F, R>(self, f: F) -> Accumulation<R>
+    where
+        F: FnOnce(T) -> R,
+    {
+        Accumulation {
+            stream: f(self.stream),
+            enable_count: self.enable_count,
+        }
+    }
+}
 
 /// `TypedMapKey` entry used to share `enable_count` across instances of the same accumulator in multiple workers.
 #[derive(Hash, PartialEq, Eq)]
@@ -95,18 +140,10 @@ where
     B: Batch,
 {
     /// See [`Stream::accumulate`].
-    pub fn dyn_accumulate(&self, factories: &B::Factories) -> Stream<C, Option<Spine<B>>> {
-        let (stream, enable_count) = self.dyn_accumulate_with_enable_count(factories);
-        enable_count.enable();
-
-        stream
-    }
-
-    /// See [`Stream::accumulate_with_enable_count`].
-    pub fn dyn_accumulate_with_enable_count(
+    pub fn dyn_accumulate(
         &self,
         factories: &B::Factories,
-    ) -> (Stream<C, Option<Spine<B>>>, EnableCount) {
+    ) -> Accumulation<Stream<C, Option<Spine<B>>>> {
         self.circuit()
             .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {
                 let accumulator = Accumulator::<B>::new(factories, Location::caller());
@@ -116,7 +153,10 @@ where
                     .circuit()
                     .add_unary_operator(accumulator, &self.try_sharded_version());
                 stream.mark_sharded_if(self);
-                (stream, enable_count)
+                Accumulation {
+                    stream,
+                    enable_count,
+                }
             })
             .clone()
     }

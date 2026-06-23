@@ -719,7 +719,9 @@ where
                     Location::caller(),
                     self.circuit().clone(),
                 )),
-                &left.dyn_shard_accumulate(&factories.left_factories),
+                &left
+                    .dyn_shard_accumulate(&factories.left_factories)
+                    .into_enabled_stream(),
                 &right_trace,
             );
 
@@ -734,7 +736,9 @@ where
                     Location::caller(),
                     self.circuit().clone(),
                 )),
-                &right.dyn_shard_accumulate(&factories.right_factories),
+                &right
+                    .dyn_shard_accumulate(&factories.right_factories)
+                    .into_enabled_stream(),
                 &left_trace.accumulate_delay_trace(),
             );
 
@@ -829,12 +833,14 @@ where
                                 (
                                     self.dyn_shard_accumulate(
                                         &factories.join_factories.left_factories,
-                                    ),
+                                    )
+                                    .into_enabled_stream(),
                                     true,
                                 ),
                                 (
                                     join_stream
-                                        .dyn_accumulate(&factories.join_factories.left_factories),
+                                        .dyn_accumulate(&factories.join_factories.left_factories)
+                                        .into_enabled_stream(),
                                     false,
                                 ),
                             ],

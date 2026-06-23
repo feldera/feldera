@@ -184,7 +184,9 @@ where
             // The above map_index preserves sharding.
             stream.mark_sharded_if(self);
 
-            let accumulated = stream.dyn_shard_accumulate(&factories.inner_factories);
+            let accumulated = stream
+                .dyn_shard_accumulate(&factories.inner_factories)
+                .into_enabled_stream();
 
             let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
                 persistent_id
@@ -222,7 +224,9 @@ where
                     >>::new(&factories.ranked_factories, circuit.clone()),
                     (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
                     (
-                        &delta.dyn_accumulate(&factories.ranked_factories),
+                        &delta
+                            .dyn_accumulate(&factories.ranked_factories)
+                            .into_enabled_stream(),
                         OwnershipPreference::PREFER_OWNED,
                     ),
                 );

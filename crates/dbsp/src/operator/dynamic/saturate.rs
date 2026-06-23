@@ -87,7 +87,7 @@ where
 
                         let ghost = self.circuit().add_binary_operator(
                             StreamingBinaryWrapper::new(Saturate::new(factories)),
-                            &self.dyn_shard_accumulate(factories),
+                            &self.dyn_shard_accumulate(factories).into_enabled_stream(),
                             &delayed_trace,
                         );
 
@@ -106,8 +106,8 @@ where
                                 },
                                 Location::caller(),
                             ),
-                            &self.dyn_shard_accumulate(factories),
-                            &ghost.dyn_accumulate(factories),
+                            &self.dyn_shard_accumulate(factories).into_enabled_stream(),
+                            &ghost.dyn_accumulate(factories).into_enabled_stream(),
                         );
 
                         // `result` is also the saturated version of the sharded stream.
@@ -163,7 +163,7 @@ where
                                 Location::caller(),
                             ),
                             &accumulator,
-                            &ghost.dyn_accumulate(factories),
+                            &ghost.dyn_accumulate(factories).into_enabled_stream(),
                         )
                     })
                     .clone()

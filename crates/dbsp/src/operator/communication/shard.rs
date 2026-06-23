@@ -2,6 +2,7 @@ use std::ops::Range;
 
 use crate::{
     Circuit, Stream,
+    operator::dynamic::accumulator::Accumulation,
     trace::BatchReaderFactories,
     typed_batch::{Batch, Spine},
 };
@@ -88,23 +89,24 @@ where
 {
     /// Shard the stream across all workers and accumulate the result.
     #[track_caller]
-    pub fn shard_accumulate(&self) -> Stream<C, Option<Spine<B>>> {
+    pub fn shard_accumulate(&self) -> Accumulation<Stream<C, Option<Spine<B>>>> {
         let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
 
-        let result = self.inner().dyn_shard_accumulate(&factories);
-
-        unsafe { result.transmute_payload() }
+        self.inner()
+            .dyn_shard_accumulate(&factories)
+            .map(|stream| unsafe { stream.transmute_payload() })
     }
 
     /// Shard the stream across workers in the specifie range and accumulate the result.
     #[track_caller]
-    pub fn shard_workers_accumulate(&self, workers: Range<usize>) -> Stream<C, Option<Spine<B>>> {
+    pub fn shard_workers_accumulate(
+        &self,
+        workers: Range<usize>,
+    ) -> Accumulation<Stream<C, Option<Spine<B>>>> {
         let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
 
-        let result = self
-            .inner()
-            .dyn_shard_workers_accumulate(&factories, workers);
-
-        unsafe { result.transmute_payload() }
+        self.inner()
+            .dyn_shard_workers_accumulate(&factories, workers)
+            .map(|stream| unsafe { stream.transmute_payload() })
     }
 }

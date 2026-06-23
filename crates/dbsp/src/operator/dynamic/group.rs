@@ -348,7 +348,9 @@ where
         let output = circuit
             .add_ternary_operator(
                 StreamingTernaryWrapper::new(GroupTransform::new(output_factories, transform)),
-                &self.dyn_shard_accumulate(input_factories),
+                &self
+                    .dyn_shard_accumulate(input_factories)
+                    .into_enabled_stream(),
                 &self
                     .dyn_shard_accumulate_integrate_trace(input_factories)
                     .accumulate_delay_trace(),

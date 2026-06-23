@@ -69,7 +69,7 @@ where
     pub fn accumulate_differentiate(
         &self,
     ) -> Stream<ChildCircuit<C, T>, TypedBatch<K, V, ZWeight, B>> {
-        let stream = self.accumulate().apply(|spine| {
+        let stream = self.accumulate().into_enabled_stream().apply(|spine| {
             spine
                 .as_ref()
                 .map(|spine| spine.ro_snapshot().consolidate())
