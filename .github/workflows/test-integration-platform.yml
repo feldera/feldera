@@ -234,7 +234,7 @@ jobs:
           CI_K8S_MINIO_SECRET_ACCESS_KEY: ${{ secrets.CI_K8S_MINIO_TEST_BUCKET_SECRET_ACCESS_KEY }}
 
       - name: Download fda binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: fda-${{ matrix.target }}
           path: build
