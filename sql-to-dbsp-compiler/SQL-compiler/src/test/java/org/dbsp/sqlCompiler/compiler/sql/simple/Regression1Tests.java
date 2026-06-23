@@ -78,14 +78,14 @@ public class Regression1Tests extends SqlIoTest {
     public void issue3952() {
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(t0 TIMESTAMP, t1 TIMESTAMP NOT NULL);
-                
+
                 CREATE LOCAL VIEW intervalv AS SELECT
                 (t0 - TIMESTAMP '2025-06-21 14:23:44') YEAR AS yr0,
                 (TIMESTAMP '2025-06-21 14:23:44' - t1) YEAR AS yr1,
                 (t0 - TIMESTAMP '2025-06-21 14:23:44') DAYS AS d0,
                 (TIMESTAMP '2025-06-21 14:23:44' - t1) DAYS AS d1
                 FROM tbl;
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 CAST(ABS(yr0) AS BIGINT), CAST(ABS(yr1) AS BIGINT),
                 CAST(ABS(d0) AS BIGINT), CAST(ABS(d1) AS BIGINT)
@@ -108,7 +108,7 @@ public class Regression1Tests extends SqlIoTest {
                     bg DOUBLE,
                     bk SMALLINT
                 );
-                
+
                 CREATE VIEW bl AS
                 SELECT
                     bm.c AS bn,
@@ -267,7 +267,7 @@ public class Regression1Tests extends SqlIoTest {
     public void issue4650() {
         var ccs = this.getCCS("""
                 CREATE TABLE t(tmestmp TIMESTAMP);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 TIMESTAMPDIFF(MINUTE, tmestmp, TIMESTAMP '2022-01-22 20:24:44.332') AS min,
                 TIMESTAMPDIFF(SECOND, tmestmp, TIMESTAMP '2022-01-22 20:24:44.332') AS sec,
@@ -305,7 +305,7 @@ public class Regression1Tests extends SqlIoTest {
                     -- Lateness annotation: customer records cannot arrive more than 7 days out of order.
                     ts TIMESTAMP LATENESS INTERVAL 7 DAYS
                 );
-                
+
                 -- Credit card transactions.
                 CREATE TABLE transaction (
                     -- Lateness annotation: transactions cannot arrive more than 1 day out of order.
@@ -314,7 +314,7 @@ public class Regression1Tests extends SqlIoTest {
                     customer_id BIGINT NOT NULL,
                     state VARCHAR
                 );
-                
+
                 -- Data enrichment:
                 -- * Use ASOF JOIN to find the most recent customer record for each transaction.
                 -- * Compute 'out_of_state' flag, which indicates that the transaction was performed outside
@@ -327,7 +327,7 @@ public class Regression1Tests extends SqlIoTest {
                     transaction LEFT ASOF JOIN customer
                     MATCH_CONDITION ( transaction.ts >= customer.ts )
                     ON transaction.customer_id = customer.id;
-                
+
                 -- Rolling aggregation: Compute the number of out-of-state transactions in the last 30 days for each transaction.
                 CREATE VIEW transaction_with_history AS
                 SELECT
@@ -382,15 +382,15 @@ public class Regression1Tests extends SqlIoTest {
         String sql = """
                 CREATE TABLE F(ARG0 VARCHAR, ARG1 INT NOT NULL);
                 CREATE TABLE G(ARG1 INT NOT NULL);
-                
+
                 CREATE LOCAL VIEW V0 AS SELECT true
                 FROM G WHERE NOT EXISTS(
                 SELECT true
                 FROM F
                 WHERE F.arg1 = G.arg1);
-                
+
                 CREATE LOCAL VIEW V1 AS SELECT true FROM ((SELECT arg1 FROM G) EXCEPT (SELECT arg1 FROM F));
-                
+
                 CREATE VIEW DIFF AS (SELECT * FROM V0 EXCEPT SELECT * FROM V1) UNION ALL (SELECT * FROM V1 EXCEPT SELECT * FROM V0)""";
 
         for (int i = 0; i < 2; i++) {
@@ -514,13 +514,13 @@ public class Regression1Tests extends SqlIoTest {
                 --------
                  x
                 (1 row)
-                
+
                 SELECT TRIM(leading 'abc' FROM 'abacabadaba');
                  result
                 --------
                  daba
                 (1 row)
-                
+
                 SELECT TRIM(both 'abc' FROM 'abacabadaba');
                  result
                 --------
@@ -567,7 +567,7 @@ public class Regression1Tests extends SqlIoTest {
                 id INT,
                 c1 MAP<VARCHAR, INT> NOT NULL,
                 c2 MAP<VARCHAR, INT>);
-                
+
                 CREATE VIEW map_arg_max_distinct_gby AS SELECT
                 id, ARG_MAX(DISTINCT c1, c2) AS c1
                 FROM map_tbl GROUP BY id;""");
@@ -703,7 +703,8 @@ public class Regression1Tests extends SqlIoTest {
 
     @Test
     public void issue4446() {
-        this.getCC("""
+        // Also issue 6524
+        this.getCCS("""
                 create table t (d decimal(8,3));
                 create view v as select trunc(d) from t;""");
     }
@@ -765,13 +766,13 @@ public class Regression1Tests extends SqlIoTest {
                 ---
                  1\\n2
                 (1 row)
-                
+
                 SELECT U&'hello\\0041';
                  r
                 ---
                  helloA
                 (1 row)
-                
+
                 SELECT U&'hello!0041' UESCAPE '!';
                  r
                 ---
@@ -810,7 +811,7 @@ public class Regression1Tests extends SqlIoTest {
                 tmestmp TIMESTAMP,
                 datee DATE,
                 tme TIME);
-                
+
                 CREATE MATERIALIZED VIEW v0 AS SELECT
                 FLOOR(tmestmp TO YEAR) AS yr,
                 FLOOR(datee TO MONTH) AS mth,
@@ -820,7 +821,7 @@ public class Regression1Tests extends SqlIoTest {
                 FLOOR(tme TO MILLISECOND) AS millsec1,
                 FLOOR(tme TO MICROSECOND) AS microsec
                 FROM t;
-                
+
                 CREATE MATERIALIZED VIEW v1 AS SELECT
                 CEIL(tmestmp TO YEAR) AS yr,
                 CEIL(datee TO MONTH) AS mth,
@@ -920,7 +921,7 @@ public class Regression1Tests extends SqlIoTest {
     public void issue4649() {
         var ccs = this.getCCS("""
                 CREATE TABLE t(booll BOOL);
-                
+
                 CREATE MATERIALIZED VIEW equality_illegal AS SELECT
                 booll = 456 AS booll,
                 FALSE = 456 AS booll2
@@ -947,7 +948,7 @@ public class Regression1Tests extends SqlIoTest {
     public void issue4708() {
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(intt INT);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 intt <=> -12 AS intt FROM tbl;""");
         ccs.stepWeightOne("INSERT INTO tbl VALUES(NULL), (-12)", """
@@ -966,7 +967,7 @@ public class Regression1Tests extends SqlIoTest {
     public void issue4752() {
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(arr VARCHAR ARRAY);
-                
+
                 CREATE MATERIALIZED VIEW v1 AS SELECT
                 arr BETWEEN ARRAY['bye', '14'] AND ARRAY['bye', '14'] AS arr
                 FROM tbl;""");
@@ -978,7 +979,7 @@ public class Regression1Tests extends SqlIoTest {
 
         this.getCCS("""
                 CREATE TABLE tbl(bin BINARY);
-                
+
                 CREATE MATERIALIZED VIEW v2 AS SELECT
                 bin BETWEEN X'0B1620' AND X'0B1620' AS bin
                 FROM tbl;""");
@@ -997,7 +998,7 @@ public class Regression1Tests extends SqlIoTest {
     public void issue4815() {
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(bin BINARY(3));
-                
+
                 CREATE VIEW G AS SELECT
                 LEAST(bin, X'1F8B0800') AS res,
                 LEAST(X'0B1620', X'1F8B0800') AS res1
@@ -1035,7 +1036,7 @@ public class Regression1Tests extends SqlIoTest {
     public void issue4817() {
         this.getCCS("""
                 CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 LEAST_IGNORE_NULLS(mapp, MAP['a', 13, 'b', 17]) AS mapp
                 FROM tbl;""");
@@ -1045,7 +1046,7 @@ public class Regression1Tests extends SqlIoTest {
     public void issue4814() {
         this.getCCS("""
                 CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 LEAST(mapp, MAP['a', 13, 'b', 17]) AS mapp
                 FROM tbl;""");
@@ -1057,11 +1058,11 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE TABLE tbl(
                 arr VARCHAR ARRAY NULL,
                 mapp MAP<VARCHAR, INT> NULL);
-                
+
                 CREATE MATERIALIZED VIEW v1 AS SELECT
                 COALESCE(NULL, arr, ARRAY ['bye']) AS arr
                 FROM tbl;
-                
+
                 CREATE MATERIALIZED VIEW v2 AS SELECT
                 COALESCE(NULL, mapp, MAP['a', 15, 'b', NULL]) AS mapp
                 FROM tbl;""");
@@ -1073,7 +1074,7 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE TABLE tbl(
                 arr VARCHAR ARRAY NULL,
                 mapp MAP<VARCHAR, INT> NULL);
-                
+
                 CREATE MATERIALIZED VIEW v3 AS SELECT
                 COALESCE(mapp, MAP['a', 15, 'b', NULL]) AS mapp
                 FROM tbl;""");
@@ -1092,7 +1093,7 @@ public class Regression1Tests extends SqlIoTest {
         // Validated on Postgres
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(id INT, tiny_int TINYINT UNSIGNED);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 STDDEV(tiny_int) AS tiny_int
                 FROM tbl;""");
@@ -1125,7 +1126,7 @@ public class Regression1Tests extends SqlIoTest {
     public void notDistinctFromTest() {
         this.getCCS("""
                 CREATE TABLE illegal_tbl(tmestmp TIMESTAMP);
-                
+
                 CREATE MATERIALIZED VIEW equality_null_legal AS SELECT
                 tmestmp <=> NULL AS tmestmp FROM illegal_tbl;""");
     }
@@ -1140,7 +1141,7 @@ public class Regression1Tests extends SqlIoTest {
                     PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S Z', d),
                     -- ISO 8601 with timezone offset (+/-HHMM or +/-HH:MM)
                     PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S.%3f%:z', d)));
-                
+
                 CREATE materialized VIEW V0 AS SELECT X('2011-12-01 00:00:00');""");
     }
 
@@ -1149,7 +1150,7 @@ public class Regression1Tests extends SqlIoTest {
         this.getCC("""
                 CREATE TABLE tbl(
                 roww ROW(i1 INT, v1 VARCHAR NULL));
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 COALESCE(NULL, roww, ROW(4,'cat')) AS roww
                 FROM tbl;""");
@@ -1160,11 +1161,11 @@ public class Regression1Tests extends SqlIoTest {
         this.getCC("""
                 CREATE TABLE tbl(
                 roww ROW(i1 INT, v1 VARCHAR NULL));
-                
+
                 CREATE MATERIALIZED VIEW v1 AS SELECT
                 GREATEST_IGNORE_NULLS(NULL, roww, ROW(5, NULL)) AS roww
                 FROM tbl;
-                
+
                 CREATE MATERIALIZED VIEW v2 AS SELECT
                 LEAST_IGNORE_NULLS(NULL, roww, ROW(5, NULL)) AS roww
                 FROM tbl;""");
@@ -1184,7 +1185,7 @@ public class Regression1Tests extends SqlIoTest {
         this.getCCS("""
                 CREATE TABLE tbl(
                 roww ROW(i1 INT, v1 VARCHAR NULL));
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 ARRAY(SELECT roww, roww FROM tbl) AS arr;""");
     }
@@ -1193,10 +1194,10 @@ public class Regression1Tests extends SqlIoTest {
     public void mapVariant() {
         var ccs = this.getCCS("""
                 create table j(j VARCHAR);
-                
+
                 create LOCAL view user_props AS
                 SELECT PARSE_JSON(j) AS contacts FROM j;
-                
+
                 create view abc as
                 WITH ref_profile AS (
                 SELECT cast(contacts as MAP<varchar, variant>) contacts
@@ -1219,11 +1220,11 @@ public class Regression1Tests extends SqlIoTest {
         this.getCC("""
                 CREATE TABLE tbl(
                 roww ROW(i1 INT, v1 VARCHAR NULL));
-                
+
                 CREATE MATERIALIZED VIEW v1 AS SELECT
                 roww IN (ROW(4,'cat')) AS roww
                 FROM tbl;
-                
+
                 CREATE MATERIALIZED VIEW v2 AS SELECT
                 roww IN (ROW(4,'cat')) AS roww
                 FROM tbl;""");
@@ -1234,11 +1235,11 @@ public class Regression1Tests extends SqlIoTest {
         this.getCC("""
                 CREATE TABLE tbl(
                 roww ROW(i1 INT, v1 VARCHAR NULL));
-                
+
                 CREATE MATERIALIZED VIEW v1 AS SELECT
                 roww IN (roww) AS roww
                 FROM tbl;
-                
+
                 CREATE MATERIALIZED VIEW v2 AS SELECT
                 roww NOT IN (roww) AS roww
                 FROM tbl;""");
@@ -1248,9 +1249,9 @@ public class Regression1Tests extends SqlIoTest {
     public void issue4975() {
         this.getCCS("""
                 CREATE TABLE tbl1(id INT, c2 VARCHAR);
-                
+
                 CREATE TABLE tbl2(id INT, c2 VARCHAR);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 i.id, i.c2 AS i_c2, v.c2 AS v_c2
                 FROM tbl1 i
@@ -1268,7 +1269,7 @@ public class Regression1Tests extends SqlIoTest {
                     en VARCHAR,
                     ss INT,
                     ts BIGINT NOT NULL);
-                
+
                 CREATE VIEW s AS
                 SELECT
                     *,
@@ -1323,16 +1324,16 @@ public class Regression1Tests extends SqlIoTest {
                 """
                  id | step | en   | ss | ts  | x |     y |     z
                 ---------------------------------------------------
-                 1 | true  | beta|	10 | 116 | 0 | false | true
-                 1 | true  | alpha|	10 | 590 | 47| true  | true
-                 1 | true  | alpha|	10 | 597 | 0 | true  | false
-                 1 | true  | gamma|	10 | 604 | 0 | true  | true
+                 1 | true  | beta|      10 | 116 | 0 | false | true
+                 1 | true  | alpha|     10 | 590 | 47| true  | true
+                 1 | true  | alpha|     10 | 597 | 0 | true  | false
+                 1 | true  | gamma|     10 | 604 | 0 | true  | true
                  1 | true  | delta| 20 | 618 | 1 | true  | false
-                 2 | false | beta|	10 | 593 | 0 | false | true
-                 2 | false | alpha|	25 | 600 | 0 | false | false
-                 2 | false | eta|	12 | 608 | 0 | false | false
-                 2 | false | gamma|	25 | 615 | 0 | false | false
-                 2 | false | gamma|	25 | 622 | 0 | false | false""");
+                 2 | false | beta|      10 | 593 | 0 | false | true
+                 2 | false | alpha|     25 | 600 | 0 | false | false
+                 2 | false | eta|       12 | 608 | 0 | false | false
+                 2 | false | gamma|     25 | 615 | 0 | false | false
+                 2 | false | gamma|     25 | 622 | 0 | false | false""");
     }
 
     @Test
@@ -1340,7 +1341,7 @@ public class Regression1Tests extends SqlIoTest {
         this.getCC("""
                 CREATE TABLE tab0(
                 pk INTEGER, col0 INTEGER, col1 REAL, col2 TEXT, col3 INTEGER, col4 REAL, col5 TEXT);
-                
+
                 CREATE VIEW V AS SELECT pk FROM tab0 WHERE col4 IS NULL AND ((col3 >= 4) OR col1 < 6.94 OR
                  (((col1 BETWEEN 7.86 AND 3.33) AND (col3 > 3 AND col1 <= 3.18 AND col0 > 4 AND col4 < 2.65)
                  AND (col0 IS NULL))) OR col4 BETWEEN 2.56 AND 1.46 AND col3 < 5) OR col1 BETWEEN 0.15 AND 9.37 AND
@@ -1357,27 +1358,27 @@ public class Regression1Tests extends SqlIoTest {
                 id INT NOT NULL,
                 c1 TIMESTAMP,
                 c2 TIMESTAMP);
-                
+
                 CREATE LOCAL VIEW atbl_interval_months AS SELECT
                 id,
                 (c1 - c2)MONTH AS c1_minus_c2
                 FROM interval_tbl;
-                
+
                 CREATE LOCAL VIEW atbl_interval_seconds AS SELECT
                 id,
                 (c1 - c2)SECOND AS c1_minus_c2
                 FROM interval_tbl;
-                
+
                 CREATE LOCAL VIEW atbl_interval_seconds_res AS SELECT
                 id,
                 CAST(c1_minus_c2 AS VARCHAR) AS f_c1
                 FROM atbl_interval_seconds;
-                
+
                 CREATE LOCAL VIEW atbl_interval_months_res AS SELECT
                 id,
                 CAST(c1_minus_c2 AS VARCHAR) AS f_c1
                 FROM atbl_interval_months;
-                
+
                 CREATE VIEW V AS (SELECT * FROM atbl_interval_seconds_res) UNION ALL (SELECT * FROM atbl_interval_months_res);""");
         ccs.stepWeightOne("INSERT INTO interval_tbl VALUES(0, '2014-11-05 08:27:00', '2024-12-05 12:45:00')", """
                  id | f_c1
@@ -1391,7 +1392,7 @@ public class Regression1Tests extends SqlIoTest {
         var ccs = this.getCCS("""
                 CREATE TYPE S AS(i1 INT NOT NULL, i2 INT);
                 CREATE TABLE tbl(id INT, c1_arr S ARRAY);
-                
+
                 CREATE VIEW v AS SELECT
                 id,  i1_val + 1, i2_val + 1,  idx
                 FROM tbl,
@@ -1407,7 +1408,7 @@ public class Regression1Tests extends SqlIoTest {
         ccs = this.getCCS("""
                 CREATE TABLE tbl(id INT,
                 c1_arr ROW(i1 INT NOT NULL, i2 INT NULL)  ARRAY NOT NULL);
-                
+
                 CREATE VIEW v AS SELECT
                 id,  i1_val + 1, i2_val + 1,  idx
                 FROM tbl,
@@ -1429,26 +1430,26 @@ public class Regression1Tests extends SqlIoTest {
                 ---
                  @AA
                 (1 row)
-                
+
                 SELECT bin2utf8(NULL);
                  r
                 ---
                 NULL
                 (1 row)
-                
+
                 -- FF is invalid
                 SELECT bin2utf8(x'FF');
                  r
                 ---
                 NULL
                 (1 row)
-                
+
                 SELECT bin2utf8(x'f09f918b');
                  r
                 ---
                  👋
                 (1 row)
-                
+
                 SELECT bin2utf8(CAST('👋' AS VARBINARY));
                  r
                 ---
@@ -1477,14 +1478,14 @@ public class Regression1Tests extends SqlIoTest {
             CREATE TYPE LEVEL_1 AS (
               col VARCHAR
             );
-            
+
             CREATE TYPE LEVEL_0 AS (
               col LEVEL_1
             );
-            
+
             CREATE TABLE T(l LEVEL_0, X INT);
             CREATE TABLE S(X INT);
-            
+
             CREATE VIEW V AS
             (SELECT * FROM T) UNION (SELECT NULL, X FROM S)""");
     }
@@ -1495,11 +1496,11 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE TYPE LEVEL_1 AS (
                   col VARCHAR
                 );
-                
+
                 CREATE TYPE LEVEL_0 AS (
                   col LEVEL_1
                 );
-                
+
                 CREATE LOCAL VIEW V AS
                 SELECT CAST(NULL AS LEVEL_0)""");
     }
@@ -1511,7 +1512,7 @@ public class Regression1Tests extends SqlIoTest {
                 id INT,
                 intt INT,
                 roww ROW(i1 INT, v1 VARCHAR NULL) NULL);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 AVG(roww[1]) AS roww FROM tbl
                 WHERE id = 0;""");
@@ -1541,7 +1542,7 @@ public class Regression1Tests extends SqlIoTest {
     public void issue5299() {
         this.getCC("""
                 CREATE LINEAR AGGREGATE u256_sum(value BINARY(32)) RETURNS BINARY(32);
-                
+
                 CREATE TABLE A (
                     id VARCHAR(20) NOT NULL PRIMARY KEY,
                     a VARCHAR(64),
@@ -1551,7 +1552,7 @@ public class Regression1Tests extends SqlIoTest {
                     num1 BINARY(32),
                     num2 BINARY(32)
                 ) WITH ('append_only' = 'true');
-                
+
                 CREATE VIEW b AS
                 SELECT u256_sum(num1), u256_sum(num2), SUM(small), MAX(sno)
                 FROM A""");
@@ -1563,11 +1564,11 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE TYPE LEVEL_1 AS (
                   col VARCHAR NOT NULL
                 );
-                
+
                 CREATE TYPE LEVEL_0 AS (
                   col LEVEL_1
                 );
-                
+
                 CREATE LOCAL VIEW V AS
                 SELECT NULL::LEVEL_0 AS null_col""");
     }
@@ -1620,7 +1621,7 @@ public class Regression1Tests extends SqlIoTest {
     public void issue5352() {
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(str VARCHAR);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 str::BOOLEAN IS FALSE AS arr,
                 str::BOOLEAN IS TRUE AS arr1
@@ -1639,79 +1640,79 @@ public class Regression1Tests extends SqlIoTest {
              ---
               true
              (1 row)
-             
+
              SELECT 'true'::BOOLEAN;
               r
              ---
               true
              (1 row)
-             
+
              SELECT 'TrUe'::BOOLEAN;
               r
              ---
               true
              (1 row)
-             
+
              SELECT NULL::BOOLEAN;
               r
              ---
              NULL
              (1 row)
-             
+
              SELECT SAFE_CAST('TRUE' AS BOOLEAN);
               r
              ---
               true
              (1 row)
-             
+
              SELECT SAFE_CAST('true' AS BOOLEAN);
               r
              ---
               true
              (1 row)
-             
+
              SELECT SAFE_CAST('TrUe' AS BOOLEAN);
               r
              ---
               true
              (1 row)
-             
+
              SELECT SAFE_CAST('t' AS BOOLEAN);
               r
              ---
              NULL
              (1 row)
-             
+
              SELECT SAFE_CAST('no' AS BOOLEAN);
               r
              ---
              NULL
              (1 row)
-             
+
              SELECT SAFE_CAST('N' AS BOOLEAN);
               r
              ---
              NULL
              (1 row)
-             
+
              SELECT SAFE_CAST('1' AS BOOLEAN);
               r
              ---
              NULL
              (1 row)
-             
+
              SELECT SAFE_CAST('0' AS BOOLEAN);
               r
              ---
              NULL
              (1 row)
-             
+
              SELECT SAFE_CAST('yes' AS BOOLEAN);
               r
              ---
              NULL
              (1 row)
-             
+
              SELECT SAFE_CAST(NULL AS BOOLEAN);
               r
              ---
@@ -1744,7 +1745,7 @@ public class Regression1Tests extends SqlIoTest {
         this.statementsFailingInCompilation("""
                 CREATE TABLE asof_tbl1(intt INT, arr VARCHAR ARRAY);
                 CREATE TABLE asof_tbl2(intt INT, arr VARCHAR ARRAY);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT *
                 FROM asof_tbl1 t1
                 LEFT ASOF JOIN asof_tbl2 t2
@@ -1758,7 +1759,7 @@ public class Regression1Tests extends SqlIoTest {
         this.statementsFailingInCompilation("""
                 CREATE TYPE user_def AS(i1 INT, v1 VARCHAR NULL);
                 CREATE TABLE tbl(mapp1 MAP<user_def, ROW(v VARCHAR NULL)>);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 CAST(mapp1 AS MAP<VARCHAR, INT>) AS to_map
                 FROM tbl;""", "Cast function cannot convert value of type ");
@@ -1772,12 +1773,12 @@ public class Regression1Tests extends SqlIoTest {
                     key VARCHAR NOT NULL INTERNED,
                     version BIGINT
                 ) WITH ('append_only' = 'true');
-                
+
                 CREATE TABLE lookup (
                     key VARCHAR NOT NULL INTERNED PRIMARY KEY,
                     metadata VARCHAR
                 );
-                
+
                 CREATE LOCAL VIEW v
                 AS
                 SELECT
@@ -1785,7 +1786,7 @@ public class Regression1Tests extends SqlIoTest {
                     MAX(key) as key
                 FROM source
                 GROUP BY id;
-                
+
                 CREATE VIEW result
                 AS
                 SELECT
@@ -1838,7 +1839,7 @@ public class Regression1Tests extends SqlIoTest {
     public void issue5378() {
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 MAP_KEYS(SAFE_CAST(mapp AS MAP<INT, INT>)),
                 MAP_VALUES(SAFE_CAST(mapp AS MAP<INT, INT>))
@@ -1857,7 +1858,7 @@ public class Regression1Tests extends SqlIoTest {
     public void issue5379() {
         this.statementsFailingInCompilation("""
                 CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 CAST(mapp AS MAP<VARCHAR, ROW(v VARCHAR)>) AS to_map,
                 SAFE_CAST(mapp AS MAP<VARCHAR, ROW(v VARCHAR)>) AS to_map1
@@ -1869,7 +1870,7 @@ public class Regression1Tests extends SqlIoTest {
     public void issue5380() {
         this.statementsFailingInCompilation("""
                 CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 CAST(mapp AS MAP<VARCHAR, INT ARRAY>) AS to_map
                 FROM tbl;""", "Cast function cannot convert value of type (VARCHAR CHARACTER SET \"UTF-8\" NOT NULL, INTEGER) MAP");
@@ -1883,7 +1884,7 @@ public class Regression1Tests extends SqlIoTest {
                 ---
                 NULL
                 (1 row)
-                
+
                 SELECT SAFE_CAST(ARRAY['1'] AS INT ARRAY);
                  r
                 ---
@@ -1899,7 +1900,7 @@ public class Regression1Tests extends SqlIoTest {
                 ---
                 NULL
                 (1 row)
-                
+
                 SELECT ELEMENT(SAFE_CAST(ARRAY[ARRAY['1']] AS INT ARRAY ARRAY));
                  r
                 ---
@@ -1923,7 +1924,7 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE TYPE user_def_array AS (val VARCHAR ARRAY);
                 CREATE TYPE user_def_row AS (val ROW(i1 INT, v1 VARCHAR NULL));
                 CREATE TYPE user_def_udt AS (val user_def);
-                
+
                 CREATE TABLE tbl(arr VARCHAR ARRAY, mapp MAP<VARCHAR, INT>,
                                  roww ROW(i1 INT, v1 VARCHAR NULL) NULL, udt user_def);
                 CREATE MATERIALIZED VIEW v AS SELECT
@@ -1945,11 +1946,11 @@ public class Regression1Tests extends SqlIoTest {
         this.getCCS("""
                 CREATE TABLE varnt_cmpx_tbl(
                 roww ROW(int INT, var VARCHAR));
-                
+
                 CREATE MATERIALIZED VIEW cmpx_to_variant AS SELECT
                 CAST(roww AS VARIANT) AS roww_varnt
                 FROM varnt_cmpx_tbl;
-                
+
                 CREATE MATERIALIZED VIEW variant_to_cmpx AS SELECT
                 CAST(roww_varnt AS ROW(int INT, var VARCHAR)) AS roww
                 FROM cmpx_to_variant;""");
@@ -1960,7 +1961,7 @@ public class Regression1Tests extends SqlIoTest {
         // Also test for issue 5449
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(intt INTEGER UNSIGNED, x INT);
-                
+
                 CREATE MATERIALIZED VIEW v AS SELECT
                 ABS(intt) AS a, SIGN(x) as s, SIGN(intt) as i FROM tbl;""");
         ccs.stepWeightOne("INSERT INTO tbl VALUES(0, 0), (1, 1), (2, -1)", """
@@ -1978,13 +1979,13 @@ public class Regression1Tests extends SqlIoTest {
                   str   VARCHAR,
                   data  INT NOT NULL
                 );
-                
+
                 CREATE LOCAL VIEW V AS SELECT
                     T.str AS str,
                     ARRAY_AGG(ROW(T.data)) AS e
                   FROM T
                   GROUP BY T.str;
-                
+
                 CREATE VIEW W AS SELECT
                     CASE WHEN V.str IS NOT NULL THEN V.e
                     ELSE NULL
