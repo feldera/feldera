@@ -294,7 +294,9 @@ where
                         StreamingTernaryWrapper::new(PartitionedRadixTreeAggregate::new(
                             factories, aggregator,
                         )),
-                        &self.dyn_shard_accumulate(&factories.input_factories),
+                        &self
+                            .dyn_shard_accumulate(&factories.input_factories)
+                            .into_enabled_stream(),
                         &self.dyn_shard_accumulate_integrate_trace(&factories.stored_factories),
                         &feedback.delayed_trace,
                     )

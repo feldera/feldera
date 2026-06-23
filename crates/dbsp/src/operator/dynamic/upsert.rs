@@ -281,7 +281,9 @@ where
                 ),
                 (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
                 (
-                    &delta.dyn_accumulate(&factories.batch_factories),
+                    &delta
+                        .dyn_accumulate(&factories.batch_factories)
+                        .into_enabled_stream(),
                     OwnershipPreference::PREFER_OWNED,
                 ),
             );

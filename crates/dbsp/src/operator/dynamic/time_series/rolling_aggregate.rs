@@ -701,7 +701,9 @@ impl<B> Stream<RootCircuit, B> {
                         aggregator,
                     ),
                 ),
-                &self.dyn_shard_accumulate(&factories.input_factories),
+                &self
+                    .dyn_shard_accumulate(&factories.input_factories)
+                    .into_enabled_stream(),
                 &input_trace,
                 &tree,
                 &feedback.delayed_trace,

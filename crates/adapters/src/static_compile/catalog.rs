@@ -97,8 +97,9 @@ impl Catalog {
                 .copied()
                 .unwrap_or_default();
 
-            let accumulated_stream =
-                stream.shard_workers_accumulate(hosts[ordinal].workers.clone());
+            let (accumulated_stream, enabled_count) = stream
+                .shard_workers_accumulate(hosts[ordinal].workers.clone())
+                .into_parts();
 
             let integral = if integrate {
                 Some(
@@ -108,11 +109,9 @@ impl Catalog {
                 None
             };
 
-            // TODO: we currently don't support a form of shard_workers_accumulate that can be enabled at
-            // runtime, so we return a bogus enabled flag that controls nothing.
-            (accumulated_stream, EnableCount::default(), integral)
+            (accumulated_stream, enabled_count, integral)
         } else if shard {
-            let accumulated_stream = stream.shard_accumulate();
+            let (accumulated_stream, enabled_count) = stream.shard_accumulate().into_parts();
 
             let integral = if integrate {
                 Some(stream.shard_accumulate_integrate_trace())
@@ -120,11 +119,9 @@ impl Catalog {
                 None
             };
 
-            // TODO: we currently don't support a form of shard_accumulate that can be enabled at
-            // runtime, so we return a bogus enabled flag that controls nothing.
-            (accumulated_stream, EnableCount::default(), integral)
+            (accumulated_stream, enabled_count, integral)
         } else {
-            let (accumulated_stream, enabled_count) = stream.accumulate_with_enable_count();
+            let (accumulated_stream, enabled_count) = stream.accumulate().into_parts();
             let integral = if integrate {
                 Some(stream.accumulate_integrate_trace())
             } else {

@@ -106,7 +106,7 @@ where
         &self,
         persistent_id: Option<&str>,
     ) -> (OutputHandle<SpineSnapshot<B>>, EnableCount, GlobalNodeId) {
-        let (accumulated, enable_count) = self.accumulate_with_enable_count();
+        let (accumulated, enable_count) = self.accumulate().into_parts();
         let (output_handle, gid) = self
             .circuit()
             .output_accumulated_stream_persistent_with_gid::<B>(&accumulated, persistent_id);

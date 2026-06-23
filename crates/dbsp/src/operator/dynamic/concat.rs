@@ -81,7 +81,7 @@ where
 
     let accumulated_streams = streams
         .iter()
-        .map(|stream| stream.dyn_accumulate(input_factories))
+        .map(|stream| stream.dyn_accumulate(input_factories).into_enabled_stream())
         .collect::<Vec<_>>();
 
     let circuit = streams[0].circuit();

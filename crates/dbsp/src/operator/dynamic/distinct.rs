@@ -322,7 +322,9 @@ where
                     Location::caller(),
                     &factories.input_factories,
                 )),
-                &self.dyn_shard_accumulate(&factories.input_factories),
+                &self
+                    .dyn_shard_accumulate(&factories.input_factories)
+                    .into_enabled_stream(),
                 &self
                     .dyn_shard_accumulate_integrate_trace(&factories.input_factories)
                     .accumulate_delay_trace(),
@@ -343,7 +345,9 @@ where
                     &factories.aux_factories,
                     circuit.clone(),
                 )),
-                &self.dyn_shard_accumulate(&factories.input_factories),
+                &self
+                    .dyn_shard_accumulate(&factories.input_factories)
+                    .into_enabled_stream(),
                 // TODO use OrdIndexedZSetSpine if `Z::Val = ()`
                 &self.dyn_shard_accumulate_trace(
                     &factories.trace_factories,

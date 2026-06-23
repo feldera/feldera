@@ -81,7 +81,9 @@ where
                             finit,
                             fupdate,
                         )),
-                        &self.dyn_shard_accumulate(input_factories),
+                        &self
+                            .dyn_shard_accumulate(input_factories)
+                            .into_enabled_stream(),
                         &feedback.delayed_trace,
                     )
                     .mark_sharded();

@@ -206,9 +206,13 @@ where
                     join_func,
                     Location::caller(),
                 )),
-                &left.dyn_shard_accumulate(&factories.left_factories),
+                &left
+                    .dyn_shard_accumulate(&factories.left_factories)
+                    .into_enabled_stream(),
                 &left_trace,
-                &right.dyn_shard_accumulate(&factories.right_factories),
+                &right
+                    .dyn_shard_accumulate(&factories.right_factories)
+                    .into_enabled_stream(),
                 &right_trace,
             )
         })
