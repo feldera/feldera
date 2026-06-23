@@ -50,7 +50,7 @@ public class Regression3Tests extends SqlIoTest {
                   id INT,
                   col ROW(field1 VARCHAR, field2 INT)
                 );
-                
+
                 CREATE VIEW V AS
                 SELECT id FROM T t ORDER BY (t.col).field2;""");
     }
@@ -145,8 +145,8 @@ public class Regression3Tests extends SqlIoTest {
                 ) WITH (
                 'append_only' = 'true'
                 );
-                
-                
+
+
                 CREATE MATERIALIZED VIEW v1
                 WITH ('emit_final' = 'a_ts')
                 AS
@@ -156,7 +156,7 @@ public class Regression3Tests extends SqlIoTest {
                 FROM purchase a
                 JOIN purchase b
                 ON a.ts = b.ts;
-                
+
                 CREATE MATERIALIZED VIEW v2
                 WITH ('emit_final' = 'a_ts')
                 AS
@@ -177,7 +177,7 @@ public class Regression3Tests extends SqlIoTest {
                   amount INT,
                   seq BOOL
                 );
-                
+
                 CREATE VIEW V AS SELECT
                   customer_id,
                   SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous
@@ -205,17 +205,17 @@ public class Regression3Tests extends SqlIoTest {
         String expected = """
                  customer_id | previous
                 ------------------------
-                 1 	         | 3
-                 1 	         | 33
-                 1 	         | 33
-                 1 	         | 28
-                 2 	         | 3
-                 2 	         | 3
-                 2 	         | 10
-                 3 	         | 100
-                 4 	         | 3
-                 4 	         | 3
-                 4 	         | 6""";
+                 1               | 3
+                 1               | 33
+                 1               | 33
+                 1               | 28
+                 2               | 3
+                 2               | 3
+                 2               | 10
+                 3               | 100
+                 4               | 3
+                 4               | 3
+                 4               | 6""";
 
         var ccs = this.getCCS(program);
         ccs.stepWeightOne(data, expected);
@@ -229,17 +229,17 @@ public class Regression3Tests extends SqlIoTest {
         String expected2 = """
                  customer_id | previous
                 ------------------------
-                 1 	         | 30
-                 1 	         | 30
-                 1 	         | 25
-                 1 	         | 28
-                 2 	         | 3
-                 2 	         | 3
-                 2 	         | 10
-                 3 	         | 100
-                 4 	         | 3
-                 4 	         | 3
-                 4 	         | 6""";
+                 1               | 30
+                 1               | 30
+                 1               | 25
+                 1               | 28
+                 2               | 3
+                 2               | 3
+                 2               | 10
+                 3               | 100
+                 4               | 3
+                 4               | 3
+                 4               | 6""";
         ccs.stepWeightOne(data, expected2);
     }
 
@@ -253,7 +253,7 @@ public class Regression3Tests extends SqlIoTest {
                   d1 TIMESTAMP,
                   d2 TIMESTAMP
                 );
-                
+
                 CREATE VIEW V AS SELECT
                   customer_id,
                   SUM(amount) OVER (PARTITION BY customer_id ORDER BY (d1 - d2) HOURS) AS previous
@@ -281,17 +281,17 @@ public class Regression3Tests extends SqlIoTest {
         String expected = """
                  customer_id | previous
                 ------------------------
-                 1 	         | 3
-                 1 	         | 13
-                 1 	         | 33
-                 1 	         | 28
-                 2 	         | 3
-                 2 	         | 3
-                 2 	         | 10
-                 3 	         | 100
-                 4 	         | 6
-                 4 	         | 6
-                 4 	         | 6""";
+                 1               | 3
+                 1               | 13
+                 1               | 33
+                 1               | 28
+                 2               | 3
+                 2               | 3
+                 2               | 10
+                 3               | 100
+                 4               | 6
+                 4               | 6
+                 4               | 6""";
 
         var ccs = this.getCCS(program);
         ccs.stepWeightOne(data, expected);
@@ -305,17 +305,17 @@ public class Regression3Tests extends SqlIoTest {
         String expected2 = """
                  customer_id | previous
                 ------------------------
-                 1 	         | 10
-                 1 	         | 30
-                 1 	         | 25
-                 1 	         | 28
-                 2 	         | 3
-                 2 	         | 3
-                 2 	         | 10
-                 3 	         | 100
-                 4 	         | 6
-                 4 	         | 6
-                 4 	         | 6""";
+                 1               | 10
+                 1               | 30
+                 1               | 25
+                 1               | 28
+                 2               | 3
+                 2               | 3
+                 2               | 10
+                 3               | 100
+                 4               | 6
+                 4               | 6
+                 4               | 6""";
         ccs.stepWeightOne(data, expected2);
     }
 
@@ -329,7 +329,7 @@ public class Regression3Tests extends SqlIoTest {
                   d1 TIMESTAMP,
                   d2 TIMESTAMP
                 );
-                
+
                 CREATE VIEW V AS SELECT
                   customer_id,
                   SUM(amount) OVER (PARTITION BY customer_id ORDER BY (d1 - d2) MONTHS) AS previous
@@ -357,17 +357,17 @@ public class Regression3Tests extends SqlIoTest {
         String expected = """
                  customer_id | previous
                 ------------------------
-                 1 	         | 3
-                 1 	         | 13
-                 1 	         | 33
-                 1 	         | 28
-                 2 	         | 3
-                 2 	         | 3
-                 2 	         | 10
-                 3 	         | 100
-                 4 	         | 6
-                 4 	         | 6
-                 4 	         | 6""";
+                 1               | 3
+                 1               | 13
+                 1               | 33
+                 1               | 28
+                 2               | 3
+                 2               | 3
+                 2               | 10
+                 3               | 100
+                 4               | 6
+                 4               | 6
+                 4               | 6""";
 
         var ccs = this.getCCS(program);
         ccs.stepWeightOne(data, expected);
@@ -381,17 +381,17 @@ public class Regression3Tests extends SqlIoTest {
         String expected2 = """
                  customer_id | previous
                 ------------------------
-                 1 	         | 10
-                 1 	         | 30
-                 1 	         | 25
-                 1 	         | 28
-                 2 	         | 3
-                 2 	         | 3
-                 2 	         | 10
-                 3 	         | 100
-                 4 	         | 6
-                 4 	         | 6
-                 4 	         | 6""";
+                 1               | 10
+                 1               | 30
+                 1               | 25
+                 1               | 28
+                 2               | 3
+                 2               | 3
+                 2               | 10
+                 3               | 100
+                 4               | 6
+                 4               | 6
+                 4               | 6""";
         ccs.stepWeightOne(data, expected2);
     }
 
@@ -406,7 +406,7 @@ public class Regression3Tests extends SqlIoTest {
                   d1 TIMESTAMP NOT NULL,
                   d2 TIMESTAMP NOT NULL
                 );
-                
+
                 CREATE VIEW V AS SELECT
                   customer_id,
                 """;
@@ -419,7 +419,7 @@ public class Regression3Tests extends SqlIoTest {
                   amount INT,
                   seq BOOL NOT NULL
                 );
-                
+
                 CREATE VIEW V AS SELECT
                   customer_id,
                   SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous FROM T;""");
@@ -448,7 +448,7 @@ public class Regression3Tests extends SqlIoTest {
                   amount INT,
                   seq BINARY(1)
                 );
-                
+
                 CREATE VIEW V AS SELECT
                   customer_id,
                   SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous
@@ -477,17 +477,17 @@ public class Regression3Tests extends SqlIoTest {
         String expected = """
                  customer_id | previous
                 ------------------------
-                 1 	         | 3
-                 1 	         | 13
-                 1 	         | 33
-                 1 	         | 28
-                 2 	         | 0
-                 2 	         | 7
-                 2 	         | 10
-                 3 	         | 100
-                 4 	         | 3
-                 4 	         | 3
-                 4 	         | 6""";
+                 1               | 3
+                 1               | 13
+                 1               | 33
+                 1               | 28
+                 2               | 0
+                 2               | 7
+                 2               | 10
+                 3               | 100
+                 4               | 3
+                 4               | 3
+                 4               | 6""";
 
         var ccs = this.getCCS(program);
         ccs.stepWeightOne(data, expected);
@@ -501,17 +501,17 @@ public class Regression3Tests extends SqlIoTest {
         String expected2 = """
                  customer_id | previous
                 ------------------------
-                 1 	         | 10
-                 1 	         | 30
-                 1 	         | 25
-                 1 	         | 28
-                 2 	         | 0
-                 2 	         | 7
-                 2 	         | 10
-                 3 	         | 100
-                 4 	         | 3
-                 4 	         | 3
-                 4 	         | 6""";
+                 1               | 10
+                 1               | 30
+                 1               | 25
+                 1               | 28
+                 2               | 0
+                 2               | 7
+                 2               | 10
+                 3               | 100
+                 4               | 3
+                 4               | 3
+                 4               | 6""";
         ccs.stepWeightOne(data, expected2);
     }
 
@@ -525,7 +525,7 @@ public class Regression3Tests extends SqlIoTest {
                   amount INT,
                   seq BINARY(1) NOT NULL
                 );
-                
+
                 CREATE VIEW V AS SELECT
                   customer_id,
                   SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous
@@ -552,16 +552,16 @@ public class Regression3Tests extends SqlIoTest {
         String expected = """
                  customer_id | previous
                 ------------------------
-                 1 	         | 10
-                 1 	         | 30
-                 1 	         | 25
-                 2 	         | 0
-                 2 	         | 7
-                 2 	         | 10
-                 3 	         | 100
-                 4 	         | 3
-                 4 	         | 3
-                 4 	         | 6""";
+                 1               | 10
+                 1               | 30
+                 1               | 25
+                 2               | 0
+                 2               | 7
+                 2               | 10
+                 3               | 100
+                 4               | 3
+                 4               | 3
+                 4               | 6""";
 
         var ccs = this.getCCS(program);
         ccs.stepWeightOne(data, expected);
@@ -575,16 +575,16 @@ public class Regression3Tests extends SqlIoTest {
         String expected2 = """
                  customer_id | previous
                 ------------------------
-                 1 	         | 10
-                 1 	         | 30
-                 1 	         | 25
-                 2 	         | 0
-                 2 	         | 7
-                 2 	         | 10
-                 3 	         | 100
-                 4 	         | 3
-                 4 	         | 3
-                 4 	         | 6""";
+                 1               | 10
+                 1               | 30
+                 1               | 25
+                 2               | 0
+                 2               | 7
+                 2               | 10
+                 3               | 100
+                 4               | 3
+                 4               | 3
+                 4               | 6""";
         ccs.stepWeightOne(data, expected2);
     }
 
@@ -597,7 +597,7 @@ public class Regression3Tests extends SqlIoTest {
                   amount INT,
                   seq BINARY(16)
                 );
-                
+
                 CREATE VIEW V AS SELECT
                   customer_id,
                   SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous
@@ -609,7 +609,7 @@ public class Regression3Tests extends SqlIoTest {
                   amount INT,
                   seq VARBINARY
                 );
-                
+
                 CREATE VIEW V AS SELECT
                   customer_id,
                   SUM(amount) OVER (PARTITION BY customer_id ORDER BY seq) AS previous
@@ -624,19 +624,19 @@ public class Regression3Tests extends SqlIoTest {
                 ---
                  t
                 (1 row)
-                
+
                 SELECT SAFE_CAST('false' AS BOOL);
                  r
                 ---
                  f
                 (1 row)
-                
+
                 SELECT SAFE_CAST('blah' AS BOOL);
                  r
                 ---
                 NULL
                 (1 row)
-                
+
                 SELECT SAFE_CAST('t' AS BOOL);
                  r
                 ---
@@ -649,13 +649,13 @@ public class Regression3Tests extends SqlIoTest {
                 ---
                  0
                 (1 row)
-                
+
                 SELECT SAFE_CAST('false' AS DOUBLE);
                  r
                 ---
                 NULL
                 (1 row)
-                
+
                 SELECT SAFE_CAST(NULL AS DOUBLE);
                  r
                 ---
@@ -668,19 +668,19 @@ public class Regression3Tests extends SqlIoTest {
                 ---
                  0
                 (1 row)
-                
+
                 SELECT SAFE_CAST('false' AS REAL);
                  r
                 ---
                 NULL
                 (1 row)
-                
+
                 SELECT SAFE_CAST('Infinity' AS REAL);
                  r
                 ---
                  Infinity
                 (1 row)
-                
+
                 SELECT SAFE_CAST(NULL AS REAL);
                  r
                 ---
@@ -714,7 +714,7 @@ public class Regression3Tests extends SqlIoTest {
                   b VARCHAR,
                   r ROW (b VARCHAR)
                 );
-                
+
                 CREATE VIEW Z AS SELECT b, r.b, t.b FROM T;""");
     }
 }

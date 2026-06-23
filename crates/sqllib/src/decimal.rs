@@ -237,11 +237,21 @@ pub fn bround_SqlDecimal_i32<const P: usize, const S: usize>(
 some_polymorphic_function2!(bround [const P: usize, const S: usize], SqlDecimal, SqlDecimal<P, S>, i32, i32, SqlDecimal<P, S>);
 
 #[doc(hidden)]
-pub fn truncate_SqlDecimal_i32<const P: usize, const S: usize>(
+pub fn trunc_SqlDecimal_i32<const P: usize, const S: usize>(
     value: SqlDecimal<P, S>,
     digits: i32,
 ) -> SqlDecimal<P, S> {
     value.trunc_digits(digits)
+}
+
+some_polymorphic_function2!(trunc [const P: usize, const S: usize], SqlDecimal, SqlDecimal<P, S>, i32, i32, SqlDecimal<P, S>);
+
+#[doc(hidden)]
+pub fn truncate_SqlDecimal_i32<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+    digits: i32,
+) -> SqlDecimal<P, S> {
+    trunc_SqlDecimal_i32(value, digits)
 }
 
 some_polymorphic_function2!(truncate [const P: usize, const S: usize], SqlDecimal, SqlDecimal<P, S>, i32, i32, SqlDecimal<P, S>);
