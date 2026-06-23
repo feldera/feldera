@@ -320,6 +320,12 @@ pub enum PipelineAction {
         /// The compilation profile to use.
         #[arg(default_value = "optimized")]
         profile: CompilationProfile,
+        /// A tag to assign to the pipeline.
+        ///
+        /// Repeat the flag to assign several tags, e.g. `--tag prod --tag team-billing`.
+        /// Tags are deduplicated and stored in sorted order.
+        #[arg(long = "tag", value_hint = ValueHint::Other)]
+        tags: Vec<String>,
         /// Read the program code from stdin.
         ///
         /// EXAMPLES:
@@ -514,6 +520,31 @@ pub enum PipelineAction {
         key: RuntimeConfigKey,
         /// The new value for the configuration.
         value: String,
+    },
+    /// Retrieve the tags of a pipeline.
+    ///
+    /// Prints the tags as a comma-separated list, in sorted order.
+    Tags {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
+    /// Replace the tags of a pipeline.
+    ///
+    /// Takes the new tags as a single comma-separated list, replacing whatever the
+    /// pipeline carried before; pass an empty list to clear all tags. To append
+    /// instead, include the current tags, e.g.
+    /// `fda set-tags my-pipeline $(fda tags my-pipeline),d,e`.
+    ///
+    /// A tag containing spaces must be quoted, e.g. `"team billing",prod`. Each tag
+    /// may be named alone; its color is filled in from the same tag used elsewhere.
+    SetTags {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// The new tags, as a comma-separated list. Omit to clear all tags.
+        #[arg(default_value = "")]
+        tags: String,
     },
     /// Recompile a pipeline with the Feldera runtime version included in the
     /// currently installed Feldera platform.

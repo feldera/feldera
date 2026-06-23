@@ -261,6 +261,15 @@ Enable storage for `p1`:
 fda set-config p1 storage true
 ```
 
+View and set the tags of `p1`:
+
+```bash
+fda tags p1                        # prints the tags as a comma-separated list
+fda set-tags p1 prod,team-billing
+fda set-tags p1 `fda tags p1`,qa   # append to the existing tags
+fda set-tags p1                    # clear all tags
+```
+
 Add Rust UDF code to `p1`:
 
 ```bash

@@ -33,6 +33,7 @@ mod bench;
 mod cli;
 mod debug;
 mod shell;
+mod tags;
 
 pub(crate) const UPGRADE_NOTICE: &str = "Try upgrading to the latest CLI version to resolve this issue. Also make sure the pipeline is recompiled with the latest version of feldera. Report it on github.com/feldera/feldera if the issue persists.";
 
@@ -677,6 +678,98 @@ async fn wait_for_checkpoint(client: &Client, name: String, seq_number: u64, wai
     }
 }
 
+/// Fetch a pipeline's current tags.
+async fn get_pipeline_tags(client: &Client, name: &str) -> Vec<String> {
+    client
+        .get_pipeline()
+        .pipeline_name(name)
+        .send()
+        .await
+        .map_err(handle_errors_fatal(
+            client.baseurl().clone(),
+            "Failed to get pipeline tags",
+            1,
+        ))
+        .unwrap()
+        .into_inner()
+        .tags
+}
+
+/// Collect the tags used across every pipeline.
+///
+/// This is the pool of "known tags": when a tag name is colored on one pipeline,
+/// setting it on another borrows that color so the name stays one consistent
+/// color everywhere.
+async fn get_known_tags(client: &Client) -> Vec<String> {
+    client
+        .list_pipelines()
+        .send()
+        .await
+        .map_err(handle_errors_fatal(
+            client.baseurl().clone(),
+            "Failed to list pipeline tags",
+            1,
+        ))
+        .unwrap()
+        .into_inner()
+        .into_iter()
+        .flat_map(|pipeline| pipeline.tags)
+        .collect()
+}
+
+/// Replace a pipeline's tags and return the stored result.
+async fn set_pipeline_tags(client: &Client, name: &str, tags: Vec<String>) -> Vec<String> {
+    client
+        .patch_pipeline()
+        .pipeline_name(name)
+        .body(PatchPipeline {
+            description: None,
+            tags: Some(tags),
+            name: None,
+            program_code: None,
+            udf_rust: None,
+            udf_toml: None,
+            program_config: None,
+            runtime_config: None,
+        })
+        .send()
+        .await
+        .map_err(handle_errors_fatal(
+            client.baseurl().clone(),
+            "Failed to update pipeline tags",
+            1,
+        ))
+        .unwrap()
+        .into_inner()
+        .tags
+}
+
+/// Print a pipeline's tags as a comma-separated list of display names, or as a
+/// JSON array of the raw stored strings.
+///
+/// Text output shows display names: the color suffix that encodes a tag's color
+/// is stripped, since it is noise to a human reader and the same comma-separated
+/// list feeds straight back into `set-tags`. JSON output keeps the raw strings,
+/// so a tag's color round-trips for machine consumers.
+fn print_pipeline_tags(format: OutputFormat, tags: &[String]) {
+    match format {
+        OutputFormat::Text => {
+            let names: Vec<&str> = tags.iter().map(|tag| tags::tag_display_name(tag)).collect();
+            println!("{}", names.join(","));
+        }
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(tags).expect("Failed to serialize tags")
+            );
+        }
+        _ => {
+            eprintln!("Unsupported output format: {}", format);
+            std::process::exit(1);
+        }
+    }
+}
+
 async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) {
     match action {
         PipelineAction::Create {
@@ -685,6 +778,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             runtime_version,
             use_platform_compiler,
             profile,
+            tags,
             udf_rs,
             udf_toml,
             stdin,
@@ -694,11 +788,19 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 read_file(udf_rs).await,
                 read_file(udf_toml).await,
             ) {
+                // Each `--tag` borrows its color from the tags already used across
+                // pipelines, keeping a name one consistent color. The lookup is
+                // skipped when no tags were given.
+                let tags = if tags.is_empty() {
+                    Vec::new()
+                } else {
+                    tags::set_tags(tags, &get_known_tags(&client).await)
+                };
                 let response = client
                     .post_pipeline()
                     .body(PostPutPipeline {
                         description: None,
-                        tags: Vec::new(),
+                        tags,
                         name: name.to_string(),
                         program_code: program_code.unwrap_or_default(),
                         udf_rust,
@@ -1437,6 +1539,22 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     std::process::exit(1);
                 }
             }
+        }
+        PipelineAction::Tags { name } => {
+            let current = get_pipeline_tags(&client, &name).await;
+            print_pipeline_tags(format, &current);
+        }
+        PipelineAction::SetTags { name, tags } => {
+            let requested = tags::split_tag_list(&tags);
+            // A tag may be named alone; its color is borrowed from the same tag
+            // used across pipelines.
+            let known = get_known_tags(&client).await;
+            let updated =
+                set_pipeline_tags(&client, &name, tags::set_tags(requested, &known)).await;
+            if matches!(format, OutputFormat::Text) {
+                println!("Tags updated successfully.");
+            }
+            print_pipeline_tags(format, &updated);
         }
         PipelineAction::UpdateRuntime { name } => {
             let response = client
