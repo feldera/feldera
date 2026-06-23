@@ -485,7 +485,9 @@ where
                             aggregator,
                             circuit.clone(),
                         )),
-                        &self.dyn_shard_accumulate(&factories.input_factories),
+                        &self
+                            .dyn_shard_accumulate(&factories.input_factories)
+                            .into_enabled_stream(),
                         &self.dyn_shard_accumulate_trace(
                             &factories.trace_factories,
                             &factories.input_factories,

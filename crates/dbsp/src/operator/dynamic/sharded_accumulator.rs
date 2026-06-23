@@ -30,14 +30,17 @@ use crate::{
         communication::{
             ExchangeClients, ExchangeDelivery, ExchangeDirectory, ExchangeId, pop_flushed,
         },
-        dynamic::shard_batch,
+        dynamic::{
+            accumulator::{Accumulation, EnableCount},
+            shard_batch,
+        },
     },
     trace::{Batch, BatchReader as _, Spine, Trace, deserialize_indexed_wset},
 };
 
 circuit_cache_key!(local StreamingExchangeCacheId<B: Batch>(ExchangeId => Arc<ShardedAccumulator<B>>));
 
-circuit_cache_key!(ShardedAccumulatorId<C, B: Batch>(StreamId => Stream<C, Option<Spine<B>>>));
+circuit_cache_key!(ShardedAccumulatorId<C, B: Batch>(StreamId => Accumulation<Stream<C, Option<Spine<B>>>>));
 
 impl<C, B> Stream<C, B>
 where
@@ -47,7 +50,10 @@ where
     /// Implements a fused shard-accumulator operation, equivalent to
     /// `self.dyn_shard().dyn_accumulate()` but intended to be more efficient.
     #[track_caller]
-    pub fn dyn_shard_accumulate(&self, factories: &B::Factories) -> Stream<C, Option<Spine<B>>>
+    pub fn dyn_shard_accumulate(
+        &self,
+        factories: &B::Factories,
+    ) -> Accumulation<Stream<C, Option<Spine<B>>>>
     where
         B: Batch<Time = ()>,
     {
@@ -71,7 +77,9 @@ where
                                 exchange_id,
                                 factories,
                             );
-                            self.circuit()
+                            let enable_count = exchange.enable_count.clone();
+                            let stream = self
+                                .circuit()
                                 .add_exchange(
                                     ShardedAccumulatorSender::new(
                                         Some(Location::caller()),
@@ -83,7 +91,11 @@ where
                                     ),
                                     self,
                                 )
-                                .mark_sharded()
+                                .mark_sharded();
+                            Accumulation {
+                                stream,
+                                enable_count,
+                            }
                         }
                         StepSize::FullSteps => self.dyn_shard(factories).dyn_accumulate(factories),
                     }
@@ -97,7 +109,7 @@ where
         &self,
         factories: &B::Factories,
         workers: Range<usize>,
-    ) -> Stream<C, Option<Spine<B>>>
+    ) -> Accumulation<Stream<C, Option<Spine<B>>>>
     where
         B: Batch<Time = ()>,
     {
@@ -133,6 +145,8 @@ where
     clients: Arc<ExchangeClients>,
 
     rxq: Vec<Mutex<Rxq<B>>>,
+
+    enable_count: EnableCount,
 }
 
 impl<B> ShardedAccumulator<B>
@@ -200,6 +214,7 @@ where
                 })
                 .collect(),
             name,
+            enable_count: EnableCount::default(),
         });
 
         directory.insert(exchange_id, exchange.clone());
@@ -849,7 +864,10 @@ mod tests {
         >,
     )> {
         let (input, input_handle) = circuit.add_input_zset::<usize>();
-        let output_handle = input.shard_accumulate().latest_output();
+        let output_handle = input
+            .shard_accumulate()
+            .into_enabled_stream()
+            .latest_output();
         Ok((input_handle, output_handle))
     }
 

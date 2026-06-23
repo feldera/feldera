@@ -120,7 +120,10 @@ where
     ) -> (Stream<C, Option<Spine<B>>>, Stream<C, TimedSpine<B, C>>) {
         if Runtime::num_workers() == 1 {
             let trace = self.dyn_accumulate_trace(trace_factories, batch_factories);
-            return (self.dyn_accumulate(batch_factories), trace);
+            return (
+                self.dyn_accumulate(batch_factories).into_enabled_stream(),
+                trace,
+            );
         }
 
         let location = Location::caller();

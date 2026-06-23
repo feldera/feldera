@@ -164,7 +164,9 @@ where
                     &factories.output_factories,
                     aggregator,
                 ),
-                &stream.dyn_accumulate(&factories.input_factories),
+                &stream
+                    .dyn_accumulate(&factories.input_factories)
+                    .into_enabled_stream(),
                 &stream.dyn_accumulate_integrate_trace(&factories.input_factories),
                 &feedback.delayed_trace,
             );

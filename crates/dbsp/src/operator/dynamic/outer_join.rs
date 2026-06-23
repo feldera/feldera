@@ -113,7 +113,9 @@ where
                     Location::caller(),
                     self.circuit().clone(),
                 )),
-                &left.dyn_shard_accumulate(&factories.left_factories),
+                &left
+                    .dyn_shard_accumulate(&factories.left_factories)
+                    .into_enabled_stream(),
                 &right_trace,
             );
 

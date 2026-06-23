@@ -87,8 +87,9 @@ where
             .cache_get_or_insert_with(ShardedAccumulateTraceId::new(self.stream_id()), || {
                 let circuit = self.circuit();
 
-                let accumulated: Stream<C, Option<Spine<B>>> =
-                    self.dyn_shard_accumulate(batch_factories);
+                let accumulated: Stream<C, Option<Spine<B>>> = self
+                    .dyn_shard_accumulate(batch_factories)
+                    .into_enabled_stream();
 
                 circuit.region("shard_accumulate_trace", || {
                     let persistent_id = self.get_persistent_id();
@@ -159,7 +160,7 @@ where
             .cache_get_or_insert_with(AccumulateTraceId::new(self.stream_id()), || {
                 let circuit = self.circuit();
 
-                let accumulated = self.dyn_accumulate(batch_factories);
+                let accumulated = self.dyn_accumulate(batch_factories).into_enabled_stream();
 
                 circuit.region("accumulate_trace", || {
                     let persistent_id = self.get_persistent_id();
@@ -395,7 +396,7 @@ where
                         bounds,
                     );
 
-                    let accumulated = self.dyn_shard_accumulate(factories);
+                    let accumulated = self.dyn_shard_accumulate(factories).into_enabled_stream();
 
                     let (
                         ExportStream {
@@ -473,7 +474,9 @@ where
                     bounds,
                 );
 
-                let accumulated = self.dyn_shard_workers_accumulate(factories, workers);
+                let accumulated = self
+                    .dyn_shard_workers_accumulate(factories, workers)
+                    .into_enabled_stream();
 
                 let (
                     ExportStream {
@@ -557,7 +560,7 @@ where
                         bounds,
                     );
 
-                    let accumulated = self.dyn_accumulate(input_factories);
+                    let accumulated = self.dyn_accumulate(input_factories).into_enabled_stream();
 
                     let (
                         ExportStream {
@@ -627,7 +630,7 @@ where
         factories: &<T::Batch as BatchReader>::Factories,
     ) {
         let circuit = self.delayed_trace.circuit();
-        let accumulated = stream.dyn_accumulate(factories);
+        let accumulated = stream.dyn_accumulate(factories).into_enabled_stream();
 
         let replay_stream = self.feedback.operator_mut().prepare_replay_stream(stream);
 

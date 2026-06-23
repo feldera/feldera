@@ -76,7 +76,7 @@ where
                         factories, inclusive,
                     )),
                     &trace,
-                    &self.dyn_accumulate(factories),
+                    &self.dyn_accumulate(factories).into_enabled_stream(),
                     bounds,
                 )
             })

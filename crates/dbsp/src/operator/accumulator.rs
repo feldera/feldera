@@ -6,7 +6,7 @@ use crate::{
         metadata::OperatorLocation,
         operator_traits::{BinaryOperator, Operator},
     },
-    operator::dynamic::accumulator::EnableCount,
+    operator::dynamic::accumulator::Accumulation,
     trace::{
         Batch as DynBatch, BatchReaderFactories, Spine as DynSpine, SpineSnapshot, WithSnapshot,
     },
@@ -30,24 +30,12 @@ where
     /// Using `Spine` to accumulate changes ensures that during a long transaction changes
     /// are pushed to storage and get compacted by background workers.
     #[track_caller]
-    pub fn accumulate(&self) -> Stream<C, Option<Spine<B>>> {
+    pub fn accumulate(&self) -> Accumulation<Stream<C, Option<Spine<B>>>> {
         let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
 
-        let result = self.inner().dyn_accumulate(&factories);
-
-        unsafe { result.transmute_payload() }
-    }
-
-    /// Like [`Self::accumulate`], but also returns a reference to the enable count of the accumulator.
-    ///
-    /// Used to instantiate accumulators for output connectors. See `Accumulator::enable_count` documentation.
-    #[track_caller]
-    pub fn accumulate_with_enable_count(&self) -> (Stream<C, Option<Spine<B>>>, EnableCount) {
-        let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
-
-        let (result, enable_count) = self.inner().dyn_accumulate_with_enable_count(&factories);
-
-        (unsafe { result.transmute_payload() }, enable_count)
+        self.inner()
+            .dyn_accumulate(&factories)
+            .map(|stream| unsafe { stream.transmute_payload() })
     }
 
     #[track_caller]
@@ -68,8 +56,14 @@ where
         let factories1 = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
         let factories2 = BatchReaderFactories::new::<B2::Key, B2::Val, B2::R>();
 
-        let stream1 = self.inner().dyn_accumulate(&factories1);
-        let stream2 = other.inner().dyn_accumulate(&factories2);
+        let stream1 = self
+            .inner()
+            .dyn_accumulate(&factories1)
+            .into_enabled_stream();
+        let stream2 = other
+            .inner()
+            .dyn_accumulate(&factories2)
+            .into_enabled_stream();
 
         stream1.circuit().add_binary_operator(
             AccumulateApply2::<B::Inner, B2::Inner, _>::new(

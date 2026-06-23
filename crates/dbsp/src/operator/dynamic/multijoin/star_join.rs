@@ -576,7 +576,9 @@ where
                                 &match_factories,
                                 self.circuit().global_node_id().child(node_id),
                                 self.circuit().clone(),
-                                stream.dyn_shard_accumulate(batch_factories),
+                                stream
+                                    .dyn_shard_accumulate(batch_factories)
+                                    .into_enabled_stream(),
                                 StarJoinMatchFunc::new(join_func, others.len()),
                             )
                         };
@@ -685,7 +687,9 @@ where
                             &match_factories,
                             self.circuit().global_node_id().child(node_id),
                             self.circuit().clone(),
-                            stream.dyn_shard_accumulate(batch_factories),
+                            stream
+                                .dyn_shard_accumulate(batch_factories)
+                                .into_enabled_stream(),
                             StarJoinMatchFunc::new(join_func, others.len()),
                         );
                         delayed.iter().for_each(|(trace, batch_factories)| {
