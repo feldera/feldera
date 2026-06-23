@@ -16,7 +16,7 @@ use feldera_types::error::ErrorResponse;
 use refinery::Error as RefineryError;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{backtrace::Backtrace, borrow::Cow, error::Error as StdError, fmt, fmt::Display};
-use tokio_postgres::error::Error as PgError;
+use tokio_postgres::error::{Error as PgError, SqlState};
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
@@ -256,6 +256,8 @@ pub enum DBError {
         event_id: PipelineMonitorEventId,
     },
     NoPipelineMonitorEventsAvailable,
+    LockTookTooLong,
+    DeadlockDetected,
 }
 
 impl DBError {
@@ -394,6 +396,13 @@ where
 
 impl From<PgError> for DBError {
     fn from(error: PgError) -> Self {
+        if let Some(error) = error.as_db_error() {
+            if matches!(error.code(), &SqlState::LOCK_NOT_AVAILABLE) {
+                return DBError::LockTookTooLong;
+            } else if matches!(error.code(), &SqlState::T_R_DEADLOCK_DETECTED) {
+                return DBError::DeadlockDetected;
+            }
+        }
         Self::PostgresError {
             error: Box::new(error),
             backtrace: Backtrace::capture(),
@@ -812,6 +821,12 @@ impl Display for DBError {
             DBError::NoPipelineMonitorEventsAvailable => {
                 write!(f, "There are not yet any pipeline monitor events recorded")
             }
+            DBError::LockTookTooLong => {
+                write!(f, "The lock required for this operation took too long to acquire. Try this operation again later.")
+            }
+            DBError::DeadlockDetected => {
+                write!(f, "A deadlock was detected while performing the operation. Try this operation again later. Please also file a bug report, as this error should not happen.")
+            }
         }
     }
 }
@@ -931,6 +946,8 @@ impl DetailedError for DBError {
             }
             Self::UnknownPipelineMonitorEvent { .. } => Cow::from("UnknownPipelineMonitorEvent"),
             Self::NoPipelineMonitorEventsAvailable => Cow::from("NoPipelineMonitorEventsAvailable"),
+            Self::LockTookTooLong => Cow::from("LockTookTooLong"),
+            Self::DeadlockDetected => Cow::from("DeadlockDetected"),
         }
     }
 }
@@ -1014,6 +1031,8 @@ impl ResponseError for DBError {
             Self::UnnecessaryResourcesStatusTransition { .. } => StatusCode::BAD_REQUEST,
             Self::UnknownPipelineMonitorEvent { .. } => StatusCode::NOT_FOUND,
             Self::NoPipelineMonitorEventsAvailable => StatusCode::NOT_FOUND,
+            Self::LockTookTooLong => StatusCode::SERVICE_UNAVAILABLE,
+            Self::DeadlockDetected => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 

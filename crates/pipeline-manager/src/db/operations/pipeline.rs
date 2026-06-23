@@ -38,6 +38,12 @@ use tokio_postgres::Row;
 use tracing::warn;
 use uuid::Uuid;
 
+/// This expression converts the first 8 bytes of the pipeline UUID to a BIGINT,
+/// and takes its absolute value. It is used to determine which compiler server
+/// worker the pipeline is assigned to.
+const PIPELINE_ID_SQL_HASH_FUNCTION_CALL: &str =
+    "abs(('x' || substr(replace(p.id::text, '-', ''), 1, 16))::bit(64)::bigint)";
+
 pub(crate) async fn list_pipelines(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
@@ -78,17 +84,25 @@ pub(crate) async fn list_pipelines_for_monitoring(
     Ok(result)
 }
 
+/// Retrieve pipeline complete descriptor by its name.
+///
+/// Set `row_lock` to `true` when using the retrieved row in the decision logic in the
+/// rest of the transaction (for example, whether/how to update its fields). It will
+/// acquire a FOR UPDATE lock on the retrieved row in that case.
 pub(crate) async fn get_pipeline(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     name: &str,
+    row_lock: bool,
 ) -> Result<ExtendedPipelineDescr, DBError> {
     let stmt = txn
         .prepare_cached(&format!(
             "SELECT {PIPELINE_COLUMNS_ALL}
              FROM pipeline AS p
              WHERE p.tenant_id = $1 AND p.name = $2
-            "
+             {}
+            ",
+            if row_lock { "FOR UPDATE" } else { "" }
         ))
         .await?;
     let row = txn.query_opt(&stmt, &[&tenant_id.0, &name]).await?.ok_or(
@@ -99,17 +113,25 @@ pub(crate) async fn get_pipeline(
     parse_pipeline_row_all(&row)
 }
 
+/// Retrieve pipeline monitoring descriptor (only contains status-related fields) by its name.
+///
+/// Set `row_lock` to `true` when using the retrieved row in the decision logic in the
+/// rest of the transaction (for example, whether/how to update its fields). It will
+/// acquire a FOR UPDATE lock on the retrieved row in that case.
 pub(crate) async fn get_pipeline_for_monitoring(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     name: &str,
+    row_lock: bool,
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
     let stmt = txn
         .prepare_cached(&format!(
             "SELECT {PIPELINE_COLUMNS_MONITORING}
              FROM pipeline AS p
              WHERE p.tenant_id = $1 AND p.name = $2
-            "
+             {}
+            ",
+            if row_lock { "FOR UPDATE" } else { "" }
         ))
         .await?;
     let row = txn.query_opt(&stmt, &[&tenant_id.0, &name]).await?.ok_or(
@@ -120,18 +142,27 @@ pub(crate) async fn get_pipeline_for_monitoring(
     parse_pipeline_row_monitoring(&row)
 }
 
+/// Retrieve pipeline by its identifier; internal helper that allows specifying which `fields`
+/// to retrieve.
+///
+/// Set `row_lock` to `true` when using the retrieved row in the decision logic in the
+/// rest of the transaction (for example, whether/how to update its fields). It will
+/// acquire a FOR UPDATE lock on the retrieved row in that case.
 async fn internal_get_pipeline_by_id(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
     fields: &'static str,
+    row_lock: bool,
 ) -> Result<Row, DBError> {
     let stmt = txn
         .prepare_cached(&format!(
             "SELECT {fields}
              FROM pipeline AS p
              WHERE p.tenant_id = $1 AND p.id = $2
-            "
+             {}
+            ",
+            if row_lock { "FOR UPDATE" } else { "" }
         ))
         .await?;
     txn.query_opt(&stmt, &[&tenant_id.0, &pipeline_id.0])
@@ -139,33 +170,65 @@ async fn internal_get_pipeline_by_id(
         .ok_or(DBError::UnknownPipeline { pipeline_id })
 }
 
+/// Retrieve pipeline complete descriptor by its identifier.
+///
+/// Set `row_lock` to `true` when using the retrieved row in the decision logic in the
+/// rest of the transaction (for example, whether/how to update its fields). It will
+/// acquire a FOR UPDATE lock on the retrieved row in that case.
 pub async fn get_pipeline_by_id(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
+    row_lock: bool,
 ) -> Result<ExtendedPipelineDescr, DBError> {
     let row =
-        internal_get_pipeline_by_id(txn, tenant_id, pipeline_id, PIPELINE_COLUMNS_ALL).await?;
+        internal_get_pipeline_by_id(txn, tenant_id, pipeline_id, PIPELINE_COLUMNS_ALL, row_lock)
+            .await?;
     parse_pipeline_row_all(&row)
 }
 
+/// Retrieve pipeline monitoring descriptor (only contains status-related fields) by its identifier.
+///
+/// Set `row_lock` to `true` when using the retrieved row in the decision logic in the
+/// rest of the transaction (for example, whether/how to update its fields). It will
+/// acquire a FOR UPDATE lock on the retrieved row in that case.
 pub async fn get_pipeline_by_id_for_monitoring(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
+    row_lock: bool,
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
-    let row = internal_get_pipeline_by_id(txn, tenant_id, pipeline_id, PIPELINE_COLUMNS_MONITORING)
-        .await?;
+    let row = internal_get_pipeline_by_id(
+        txn,
+        tenant_id,
+        pipeline_id,
+        PIPELINE_COLUMNS_MONITORING,
+        row_lock,
+    )
+    .await?;
     parse_pipeline_row_monitoring(&row)
 }
 
+/// Retrieve pipeline descriptor by its identifier, getting only the fields needed to construct
+/// an event.
+///
+/// Set `row_lock` to `true` when using the retrieved row in the decision logic in the
+/// rest of the transaction (for example, whether/how to update its fields). It will
+/// acquire a FOR UPDATE lock on the retrieved row in that case.
 pub async fn get_pipeline_by_id_for_event_info(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
+    row_lock: bool,
 ) -> Result<ExtendedPipelineDescrEventInfo, DBError> {
-    let row = internal_get_pipeline_by_id(txn, tenant_id, pipeline_id, PIPELINE_COLUMNS_EVENT_INFO)
-        .await?;
+    let row = internal_get_pipeline_by_id(
+        txn,
+        tenant_id,
+        pipeline_id,
+        PIPELINE_COLUMNS_EVENT_INFO,
+        row_lock,
+    )
+    .await?;
     parse_pipeline_row_event_info(&row)
 }
 
@@ -367,7 +430,7 @@ pub(crate) async fn update_pipeline(
 
     // Fetch current pipeline to decide how to update.
     // This will also return an error if the pipeline does not exist.
-    let current = get_pipeline(txn, tenant_id, original_name).await?;
+    let current = get_pipeline(txn, tenant_id, original_name, true).await?;
 
     // Build the current client metadata and merge the patch into it to get the
     // new value. `current.client_metadata()` uses an exhaustive `ClientMetadata`
@@ -655,7 +718,7 @@ pub(crate) async fn delete_pipeline(
     tenant_id: TenantId,
     name: &str,
 ) -> Result<PipelineId, DBError> {
-    let current = get_pipeline(txn, tenant_id, name).await?;
+    let current = get_pipeline(txn, tenant_id, name, true).await?;
 
     // Pipeline deletion is only possible if it is fully stopped
     if current.deployment_resources_status != ResourcesStatus::Stopped
@@ -696,7 +759,7 @@ pub(crate) async fn set_program_status(
     new_program_binary_integrity_checksum: &Option<String>,
     new_program_info_integrity_checksum: &Option<String>,
 ) -> Result<(), DBError> {
-    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
+    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id, true).await?;
 
     // Only if the program whose status is being transitioned is the same one can it be updated
     if current.program_version != program_version_guard {
@@ -959,7 +1022,7 @@ pub(crate) async fn dismiss_deployment_error(
     tenant_id: TenantId,
     pipeline_name: &str,
 ) -> Result<(), DBError> {
-    let current = get_pipeline(txn, tenant_id, pipeline_name).await?;
+    let current = get_pipeline(txn, tenant_id, pipeline_name, true).await?;
 
     // If an error has to be cleared, then it is only possible if it is fully stopped
     if (current.deployment_resources_status != ResourcesStatus::Stopped
@@ -997,7 +1060,7 @@ pub(crate) async fn set_deployment_resources_desired_status(
     bootstrap_config: Option<BootstrapConfig>,
     dismiss_error: bool,
 ) -> Result<PipelineId, DBError> {
-    let current = get_pipeline(txn, tenant_id, pipeline_name).await?;
+    let current = get_pipeline(txn, tenant_id, pipeline_name, true).await?;
 
     // Deployment error will be automatically dismissed if this is wanted
     let final_deployment_error = if dismiss_error {
@@ -1139,7 +1202,7 @@ async fn check_version_guard_and_transition_deployment_resources_status(
     new_deployment_resources_status: ResourcesStatus,
     remain: bool,
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
-    let current = get_pipeline_by_id_for_monitoring(txn, tenant_id, pipeline_id).await?;
+    let current = get_pipeline_by_id_for_monitoring(txn, tenant_id, pipeline_id, true).await?;
 
     // Use the version guard to check that the deployment is the intended one
     if current.version != version_guard {
@@ -1209,7 +1272,7 @@ pub(crate) async fn set_deployment_resources_status_stopped(
         false,
     )
     .await?;
-    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
+    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id, true).await?;
 
     set_deployment_resources_status(
         txn,
@@ -1285,7 +1348,7 @@ pub(crate) async fn set_deployment_resources_status_provisioning(
         false,
     )
     .await?;
-    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
+    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id, true).await?;
 
     set_deployment_resources_status(
         txn,
@@ -1358,7 +1421,7 @@ pub(crate) async fn set_deployment_resources_status_provisioned(
         false,
     )
     .await?;
-    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
+    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id, true).await?;
 
     set_deployment_resources_status(
         txn,
@@ -1432,7 +1495,7 @@ pub(crate) async fn set_deployment_resources_status_stopping(
         false,
     )
     .await?;
-    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
+    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id, true).await?;
 
     set_deployment_resources_status(
         txn,
@@ -1655,7 +1718,7 @@ pub(crate) async fn set_storage_status(
     pipeline_id: PipelineId,
     new_storage_status: StorageStatus,
 ) -> Result<(), DBError> {
-    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
+    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id, true).await?;
 
     // Check that the transition is permitted
     validate_storage_status_transition(
@@ -1771,6 +1834,104 @@ pub(crate) async fn list_pipelines_across_all_tenants_for_monitoring(
     Ok(result)
 }
 
+/// Retrieves a list of pipelines across all tenants that belong to the worker ID which are
+/// `Stopped` and are either:
+/// - of the same platform version and are `CompilingSql`
+/// - of a different platform version and are either `Pending` or `CompilingSql`
+///
+/// The SQL compiler worker will use the result of this to reset the compilation of those
+/// pipelines in the database, before picking up its next job.
+pub(crate) async fn list_pipelines_across_all_tenants_needing_sql_compilation_clear(
+    txn: &Transaction<'_>,
+    platform_version: &str,
+    worker_id: usize,
+    total_workers: usize,
+) -> Result<Vec<(TenantId, ExtendedPipelineDescrMonitoring)>, DBError> {
+    let stmt = txn
+        .prepare_cached(&format!(
+            "SELECT p.tenant_id, {PIPELINE_COLUMNS_MONITORING}
+             FROM pipeline AS p
+             WHERE p.deployment_resources_status = 'stopped'
+                   AND (
+                      (p.platform_version = $1 AND p.program_status = 'compiling_sql')
+                      OR
+                      (p.platform_version != $1 AND (p.program_status = 'pending' OR p.program_status = 'compiling_sql'))
+                   )
+                   AND ({PIPELINE_ID_SQL_HASH_FUNCTION_CALL} % $2) = $3
+             ORDER BY p.id ASC
+             FOR UPDATE
+            "
+        ))
+        .await?;
+    let rows: Vec<Row> = txn
+        .query(
+            &stmt,
+            &[
+                &platform_version.to_string(),
+                &(total_workers as i64),
+                &(worker_id as i64),
+            ],
+        )
+        .await?;
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        result.push((
+            TenantId(row.get("tenant_id")),
+            parse_pipeline_row_monitoring(&row)?,
+        ));
+    }
+    Ok(result)
+}
+
+/// Retrieves a list of pipelines across all tenants that belong to the worker ID which are
+/// `Stopped` and are either:
+/// - of the same platform version and are `CompilingRust`
+/// - of a different platform version and are either `SqlCompiled` or `CompilingRust`
+///
+/// The Rust compiler worker will use the result of this to reset the compilation of those
+/// pipelines in the database, before picking up its next job.
+pub(crate) async fn list_pipelines_across_all_tenants_needing_rust_compilation_clear(
+    txn: &Transaction<'_>,
+    platform_version: &str,
+    worker_id: usize,
+    total_workers: usize,
+) -> Result<Vec<(TenantId, ExtendedPipelineDescrMonitoring)>, DBError> {
+    let stmt = txn
+        .prepare_cached(&format!(
+            "SELECT p.tenant_id, {PIPELINE_COLUMNS_MONITORING}
+             FROM pipeline AS p
+             WHERE p.deployment_resources_status = 'stopped'
+                   AND (
+                      (p.platform_version = $1 AND p.program_status = 'compiling_rust')
+                      OR
+                      (p.platform_version != $1 AND (p.program_status = 'sql_compiled' OR p.program_status = 'compiling_rust'))
+                   )
+                   AND ({PIPELINE_ID_SQL_HASH_FUNCTION_CALL} % $2) = $3
+             ORDER BY p.id ASC
+             FOR UPDATE
+            "
+        ))
+        .await?;
+    let rows: Vec<Row> = txn
+        .query(
+            &stmt,
+            &[
+                &platform_version.to_string(),
+                &(total_workers as i64),
+                &(worker_id as i64),
+            ],
+        )
+        .await?;
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        result.push((
+            TenantId(row.get("tenant_id")),
+            parse_pipeline_row_monitoring(&row)?,
+        ));
+    }
+    Ok(result)
+}
+
 /// Retrieves the pipeline which is stopped, whose program status has been Pending
 /// for the longest, and is of the current platform version. Returns `None` if none is found.
 pub(crate) async fn get_next_sql_compilation(
@@ -1779,9 +1940,6 @@ pub(crate) async fn get_next_sql_compilation(
     worker_id: usize,
     total_workers: usize,
 ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
-    // The expression `abs(('x' || substr(replace(p.id::text, '-', ''), 1, 16))::bit(64)::bigint) % $2) = $3`
-    // converts the first 8 bytes of the UUID to a bigint, takes its absolute value,
-    // and computes the modulo with the total number of workers.
     let stmt = txn
         .prepare_cached(&format!(
             "SELECT p.tenant_id, {PIPELINE_COLUMNS_ALL}
@@ -1789,7 +1947,7 @@ pub(crate) async fn get_next_sql_compilation(
              WHERE p.deployment_resources_status = 'stopped'
                    AND p.program_status = 'pending'
                    AND p.platform_version = $1
-                   AND (abs(('x' || substr(replace(p.id::text, '-', ''), 1, 16))::bit(64)::bigint) % $2) = $3
+                   AND ({PIPELINE_ID_SQL_HASH_FUNCTION_CALL} % $2) = $3
              ORDER BY p.program_status_since ASC, p.id ASC
              LIMIT 1
             "
@@ -1822,9 +1980,6 @@ pub(crate) async fn get_next_rust_compilation(
     worker_id: usize,
     total_workers: usize,
 ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
-    // The expression `abs(('x' || substr(replace(p.id::text, '-', ''), 1, 16))::bit(64)::bigint) % $2) = $3`
-    // converts the first 8 bytes of the UUID to a bigint, takes its absolute value,
-    // and computes the modulo with the total number of workers.
     let stmt = txn
         .prepare_cached(&format!(
             "SELECT p.tenant_id, {PIPELINE_COLUMNS_ALL}
@@ -1832,7 +1987,7 @@ pub(crate) async fn get_next_rust_compilation(
              WHERE p.deployment_resources_status = 'stopped'
                    AND p.program_status = 'sql_compiled'
                    AND p.platform_version = $1
-                   AND (abs(('x' || substr(replace(p.id::text, '-', ''), 1, 16))::bit(64)::bigint) % $2) = $3
+                   AND ({PIPELINE_ID_SQL_HASH_FUNCTION_CALL} % $2) = $3
              ORDER BY p.program_status_since ASC, p.id ASC
              LIMIT 1
             "
