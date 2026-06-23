@@ -119,12 +119,8 @@ impl InputTransportEndpointFactory for FileInputFactory {
         &self,
         config: &TransportConfig,
     ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-        match config {
-            TransportConfig::FileInput(config) => {
-                Ok(Some(Box::new(FileInputEndpoint::new(config))))
-            }
-            _ => Ok(None),
-        }
+        let config = config.deserialize_config()?;
+        Ok(Some(Box::new(FileInputEndpoint::new(config))))
     }
 }
 
@@ -137,12 +133,8 @@ impl InputTransportEndpointFactory for KafkaInputFactory {
         &self,
         config: &TransportConfig,
     ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-        match config {
-            TransportConfig::KafkaInput(config) => {
-                Ok(Some(Box::new(KafkaFtInputEndpoint::new(config)?)))
-            }
-            _ => Ok(None),
-        }
+        let config = config.deserialize_config()?;
+        Ok(Some(Box::new(KafkaFtInputEndpoint::new(config)?)))
     }
 }
 
@@ -155,12 +147,8 @@ impl InputTransportEndpointFactory for NatsInputFactory {
         &self,
         config: &TransportConfig,
     ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-        match config {
-            TransportConfig::NatsInput(config) => {
-                Ok(Some(Box::new(NatsInputEndpoint::new(config)?)))
-            }
-            _ => Ok(None),
-        }
+        let config = config.deserialize_config()?;
+        Ok(Some(Box::new(NatsInputEndpoint::new(config)?)))
     }
 }
 
@@ -173,12 +161,8 @@ impl InputTransportEndpointFactory for PubSubInputFactory {
         &self,
         config: &TransportConfig,
     ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-        match config {
-            TransportConfig::PubSubInput(config) => {
-                Ok(Some(Box::new(PubSubInputEndpoint::new(config.clone())?)))
-            }
-            _ => Ok(None),
-        }
+        let config = config.deserialize_config()?;
+        Ok(Some(Box::new(PubSubInputEndpoint::new(config)?)))
     }
 }
 
@@ -189,10 +173,8 @@ impl InputTransportEndpointFactory for UrlInputFactory {
         &self,
         config: &TransportConfig,
     ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-        match config {
-            TransportConfig::UrlInput(config) => Ok(Some(Box::new(UrlInputEndpoint::new(config)))),
-            _ => Ok(None),
-        }
+        let config = config.deserialize_config()?;
+        Ok(Some(Box::new(UrlInputEndpoint::new(config))))
     }
 }
 
@@ -203,10 +185,8 @@ impl InputTransportEndpointFactory for S3InputFactory {
         &self,
         config: &TransportConfig,
     ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-        match config {
-            TransportConfig::S3Input(config) => Ok(Some(Box::new(S3InputEndpoint::new(config)?))),
-            _ => Ok(None),
-        }
+        let config = config.deserialize_config()?;
+        Ok(Some(Box::new(S3InputEndpoint::new(config)?)))
     }
 }
 
@@ -217,12 +197,8 @@ impl InputTransportEndpointFactory for DatagenInputFactory {
         &self,
         config: &TransportConfig,
     ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-        match config {
-            TransportConfig::Datagen(config) => {
-                Ok(Some(Box::new(GeneratorEndpoint::new(config.clone()))))
-            }
-            _ => Ok(None),
-        }
+        let config = config.deserialize_config()?;
+        Ok(Some(Box::new(GeneratorEndpoint::new(config))))
     }
 }
 
@@ -235,12 +211,8 @@ impl InputTransportEndpointFactory for NexmarkInputFactory {
         &self,
         config: &TransportConfig,
     ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-        match config {
-            TransportConfig::Nexmark(config) => {
-                Ok(Some(Box::new(NexmarkEndpoint::new(config.clone()))))
-            }
-            _ => Ok(None),
-        }
+        let config = config.deserialize_config()?;
+        Ok(Some(Box::new(NexmarkEndpoint::new(config))))
     }
 }
 
@@ -251,12 +223,8 @@ impl InputTransportEndpointFactory for HttpInputFactory {
         &self,
         config: &TransportConfig,
     ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-        match config {
-            TransportConfig::HttpInput(config) => {
-                Ok(Some(Box::new(HttpInputEndpoint::new(config))))
-            }
-            _ => Ok(None),
-        }
+        let config = config.deserialize_config()?;
+        Ok(Some(Box::new(HttpInputEndpoint::new(config))))
     }
 }
 
@@ -267,12 +235,8 @@ impl InputTransportEndpointFactory for AdHocInputFactory {
         &self,
         config: &TransportConfig,
     ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-        match config {
-            TransportConfig::AdHocInput(config) => {
-                Ok(Some(Box::new(AdHocInputEndpoint::new(config))))
-            }
-            _ => Ok(None),
-        }
+        let config = config.deserialize_config()?;
+        Ok(Some(Box::new(AdHocInputEndpoint::new(config))))
     }
 }
 
@@ -283,10 +247,8 @@ impl InputTransportEndpointFactory for ClockInputFactory {
         &self,
         config: &TransportConfig,
     ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-        match config {
-            TransportConfig::ClockInput(config) => Ok(Some(Box::new(ClockEndpoint::new(config)?))),
-            _ => Ok(None),
-        }
+        let config = config.deserialize_config()?;
+        Ok(Some(Box::new(ClockEndpoint::new(config)?)))
     }
 }
 
@@ -297,10 +259,7 @@ impl InputTransportEndpointFactory for EmptyInputFactory {
         &self,
         config: &TransportConfig,
     ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-        match config {
-            TransportConfig::EmptyInput => Ok(Some(Box::new(EmptyInputEndpoint))),
-            _ => Ok(None),
-        }
+        Ok(Some(Box::new(EmptyInputEndpoint)))
     }
 }
 
@@ -313,12 +272,8 @@ impl OutputTransportEndpointFactory for FileOutputFactory {
         _endpoint_name: &str,
         _fault_tolerant: bool,
     ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
-        match config {
-            TransportConfig::FileOutput(config) => {
-                Ok(Some(Box::new(FileOutputEndpoint::new(config)?)))
-            }
-            _ => Ok(None),
-        }
+        let config = config.deserialize_config()?;
+        Ok(Some(Box::new(FileOutputEndpoint::new(config)?)))
     }
 }
 
@@ -333,15 +288,13 @@ impl OutputTransportEndpointFactory for KafkaOutputFactory {
         endpoint_name: &str,
         fault_tolerant: bool,
     ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
-        match config {
-            TransportConfig::KafkaOutput(config) => match fault_tolerant {
-                false => Ok(Some(Box::new(KafkaOutputEndpoint::new(
-                    config,
-                    endpoint_name,
-                )?))),
-                true => Ok(Some(Box::new(KafkaFtOutputEndpoint::new(config)?))),
-            },
-            _ => Ok(None),
+        let config = config.deserialize_config()?;
+        match fault_tolerant {
+            false => Ok(Some(Box::new(KafkaOutputEndpoint::new(
+                config,
+                endpoint_name,
+            )?))),
+            true => Ok(Some(Box::new(KafkaFtOutputEndpoint::new(config)?))),
         }
     }
 }
@@ -357,12 +310,8 @@ impl OutputTransportEndpointFactory for RedisOutputFactory {
         _endpoint_name: &str,
         _fault_tolerant: bool,
     ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
-        match config {
-            TransportConfig::RedisOutput(config) => {
-                Ok(Some(Box::new(RedisOutputEndpoint::new(config)?)))
-            }
-            _ => Ok(None),
-        }
+        let config = config.deserialize_config()?;
+        Ok(Some(Box::new(RedisOutputEndpoint::new(config)?)))
     }
 }
 
@@ -375,10 +324,7 @@ impl OutputTransportEndpointFactory for NullOutputFactory {
         _endpoint_name: &str,
         _fault_tolerant: bool,
     ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
-        match config {
-            TransportConfig::NullOutput => Ok(Some(Box::new(NullOutputEndpoint))),
-            _ => Ok(None),
-        }
+        Ok(Some(Box::new(NullOutputEndpoint)))
     }
 }
 
@@ -427,7 +373,7 @@ mod tests {
         let secrets_dir = tempfile::tempdir().unwrap();
 
         let endpoint = input_transport_config_to_endpoint(
-            &TransportConfig::EmptyInput,
+            &TransportConfig::without_config(TransportConfig::EMPTY_INPUT),
             "empty",
             secrets_dir.path(),
         )
@@ -442,7 +388,7 @@ mod tests {
         let secrets_dir = tempfile::tempdir().unwrap();
 
         let endpoint = output_transport_config_to_endpoint(
-            &TransportConfig::NullOutput,
+            &TransportConfig::without_config(TransportConfig::NULL_OUTPUT),
             "null",
             true,
             secrets_dir.path(),
@@ -460,7 +406,7 @@ mod tests {
 
         assert!(
             input_transport_config_to_endpoint(
-                &TransportConfig::NullOutput,
+                &TransportConfig::without_config(TransportConfig::NULL_OUTPUT),
                 "null",
                 secrets_dir.path()
             )
@@ -469,7 +415,7 @@ mod tests {
         );
         assert!(
             output_transport_config_to_endpoint(
-                &TransportConfig::EmptyInput,
+                &TransportConfig::without_config(TransportConfig::EMPTY_INPUT),
                 "empty",
                 false,
                 secrets_dir.path()
@@ -484,32 +430,48 @@ mod tests {
         let mut input_registry = InputTransportRegistry::new();
         assert!(
             input_registry
-                .create_endpoint(&TransportConfig::EmptyInput)
+                .create_endpoint(&TransportConfig::without_config(
+                    TransportConfig::EMPTY_INPUT
+                ))
                 .unwrap()
                 .is_none()
         );
         input_registry.register(TransportConfig::EMPTY_INPUT, Box::new(EmptyInputFactory));
         assert!(
             input_registry
-                .create_endpoint(&TransportConfig::EmptyInput)
+                .create_endpoint(&TransportConfig::without_config(
+                    TransportConfig::EMPTY_INPUT
+                ))
                 .unwrap()
                 .is_some()
         );
+        input_registry.register(String::from("dynamic_input"), Box::new(EmptyInputFactory));
+        assert!(input_registry.get("dynamic_input").is_some());
 
         let mut output_registry = OutputTransportRegistry::new();
         assert!(
             output_registry
-                .create_endpoint(&TransportConfig::NullOutput, "null", true)
+                .create_endpoint(
+                    &TransportConfig::without_config(TransportConfig::NULL_OUTPUT),
+                    "null",
+                    true
+                )
                 .unwrap()
                 .is_none()
         );
         output_registry.register(TransportConfig::NULL_OUTPUT, Box::new(NullOutputFactory));
         assert!(
             output_registry
-                .create_endpoint(&TransportConfig::NullOutput, "null", true)
+                .create_endpoint(
+                    &TransportConfig::without_config(TransportConfig::NULL_OUTPUT),
+                    "null",
+                    true
+                )
                 .unwrap()
                 .is_some()
         );
+        output_registry.register(String::from("dynamic_output"), Box::new(NullOutputFactory));
+        assert!(output_registry.get("dynamic_output").is_some());
     }
 
     #[test]

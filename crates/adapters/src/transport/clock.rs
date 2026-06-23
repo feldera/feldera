@@ -67,14 +67,17 @@ pub fn now_endpoint_config(config: &PipelineConfig) -> InputEndpointConfig {
     InputEndpointConfig::new(
         "now",
         ConnectorConfig::new(
-            TransportConfig::ClockInput(ClockConfig {
-                clock_resolution_usecs: config
-                    .global
-                    .clock_resolution_usecs
-                    .unwrap_or(DEFAULT_CLOCK_RESOLUTION_USECS),
-                now_offset_ms: config.global.dev_tweaks.now_offset_ms(),
-                http_driven: config.global.dev_tweaks.now_http_driven(),
-            }),
+            TransportConfig::new(
+                TransportConfig::CLOCK,
+                ClockConfig {
+                    clock_resolution_usecs: config
+                        .global
+                        .clock_resolution_usecs
+                        .unwrap_or(DEFAULT_CLOCK_RESOLUTION_USECS),
+                    now_offset_ms: config.global.dev_tweaks.now_offset_ms(),
+                    http_driven: config.global.dev_tweaks.now_http_driven(),
+                },
+            ),
             Some(FormatConfig {
                 name: Cow::Borrowed("json"),
                 config: serde_json::to_value(JsonParserConfig {
@@ -722,10 +725,15 @@ mod test {
         let target_of = |body: serde_json::Value| -> Option<i64> {
             let config: PipelineConfig = serde_json::from_value(body).unwrap();
             let endpoint = super::now_endpoint_config(&config);
-            let TransportConfig::ClockInput(clock_config) = &endpoint.connector_config.transport
-            else {
-                panic!("expected ClockInput transport");
-            };
+            assert_eq!(
+                endpoint.connector_config.transport.name(),
+                TransportConfig::CLOCK
+            );
+            let clock_config: ClockConfig = endpoint
+                .connector_config
+                .transport
+                .deserialize_config()
+                .unwrap();
             clock_config.now_offset_ms
         };
 

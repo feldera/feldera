@@ -254,7 +254,7 @@ fn resolve_potential_secret_reference_string(
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{ConnectorConfig, TransportConfig};
+    use crate::config::ConnectorConfig;
     use crate::secret_ref::{MaybeSecretRef, SecretRef};
     use crate::secret_resolver::{
         SecretRefResolutionError, discover_secret_references_in_connector_config,
@@ -562,17 +562,9 @@ mod tests {
             resolve_secret_references_in_connector_config(dir_path, &connector_config).unwrap();
 
         // Transport configuration resolution
-        let TransportConfig::Datagen(datagen_input_config) =
-            connector_config_secrets_resolved.transport
-        else {
-            unreachable!();
-        };
         assert_eq!(
-            datagen_input_config.plan[0].fields["col2"]
-                .values
-                .as_ref()
-                .unwrap(),
-            &vec![json!("example1"), json!("example2")]
+            connector_config_secrets_resolved.transport.config["plan"][0]["fields"]["col2"]["values"],
+            json!(["example1", "example2"])
         );
 
         // Format configuration resolution
@@ -669,15 +661,9 @@ mod tests {
         let resolved =
             resolve_secret_references_in_connector_config(dir.path(), &connector_config).unwrap();
 
-        let TransportConfig::Datagen(datagen_input_config) = resolved.transport else {
-            unreachable!();
-        };
         assert_eq!(
-            datagen_input_config.plan[0].fields["col2"]
-                .values
-                .as_ref()
-                .unwrap(),
-            &vec![json!("resolved_value_a"), json!("resolved_value_b")]
+            resolved.transport.config["plan"][0]["fields"]["col2"]["values"],
+            json!(["resolved_value_a", "resolved_value_b"])
         );
 
         let Some(format_config) = resolved.format else {

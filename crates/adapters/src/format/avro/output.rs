@@ -92,19 +92,25 @@ impl OutputFormat for AvroOutputFormat {
             )
         })?;
 
-        if matches!(
-            config.transport,
-            feldera_types::config::TransportConfig::RedisOutput(_)
-        ) {
+        if config.transport.name() == TransportConfig::REDIS_OUTPUT {
             return Err(ControllerError::invalid_encoder_configuration(
                 endpoint_name,
                 "'avro' format not yet supported with Redis connector",
             ));
         }
 
-        let topic = match &config.transport {
-            TransportConfig::KafkaOutput(kafka_config) => Some(kafka_config.topic.clone()),
-            _ => None,
+        let topic = if config.transport.name() == TransportConfig::KAFKA_OUTPUT {
+            let kafka_config: feldera_types::transport::kafka::KafkaOutputConfig =
+                config.transport.deserialize_config().map_err(|e| {
+                    ControllerError::encoder_config_parse_error(
+                        endpoint_name,
+                        &e,
+                        &serde_json::to_string(config).unwrap_or_default(),
+                    )
+                })?;
+            Some(kafka_config.topic)
+        } else {
+            None
         };
 
         if avro_config.threads == 0 {

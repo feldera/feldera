@@ -293,7 +293,7 @@ impl DataSink for AdHocTableSink {
         let config = InputEndpointConfig::new(
             self.name.to_string(),
             ConnectorConfig::new(
-                TransportConfig::AdHocInput(config),
+                TransportConfig::new(TransportConfig::ADHOC_INPUT, config),
                 Some(FormatConfig {
                     name: Cow::from("parquet"),
                     config: serde_json::Value::Null,

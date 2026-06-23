@@ -830,10 +830,17 @@ fn missing_config_does_something_sane() {
     }))
     .unwrap();
 
-    if let TransportConfig::Datagen(dtg) = config.connector_config.transport {
-        assert_eq!(dtg.plan.len(), 1);
-        assert_eq!(dtg.plan[0], GenerationPlan::default());
-    }
+    assert_eq!(
+        config.connector_config.transport.name(),
+        TransportConfig::DATAGEN
+    );
+    let dtg: feldera_types::transport::datagen::DatagenInputConfig = config
+        .connector_config
+        .transport
+        .deserialize_config()
+        .unwrap();
+    assert_eq!(dtg.plan.len(), 1);
+    assert_eq!(dtg.plan[0], GenerationPlan::default());
 }
 
 #[test]

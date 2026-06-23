@@ -8,24 +8,6 @@
 use crate::postprocess::PostprocessorConfig;
 use crate::preprocess::PreprocessorConfig;
 use crate::secret_resolver::default_secrets_directory;
-use crate::transport::adhoc::AdHocInputConfig;
-use crate::transport::clock::ClockConfig;
-use crate::transport::datagen::DatagenInputConfig;
-use crate::transport::delta_table::{DeltaTableReaderConfig, DeltaTableWriterConfig};
-use crate::transport::dynamodb::DynamoDBWriterConfig;
-use crate::transport::file::{FileInputConfig, FileOutputConfig};
-use crate::transport::http::{HttpInputConfig, HttpOutputConfig};
-use crate::transport::iceberg::IcebergReaderConfig;
-use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
-use crate::transport::nats::NatsInputConfig;
-use crate::transport::nexmark::NexmarkInputConfig;
-use crate::transport::postgres::{
-    PostgresCdcReaderConfig, PostgresReaderConfig, PostgresWriterConfig,
-};
-use crate::transport::pubsub::PubSubInputConfig;
-use crate::transport::redis::RedisOutputConfig;
-use crate::transport::s3::S3InputConfig;
-use crate::transport::url::UrlInputConfig;
 use core::fmt;
 use feldera_ir::{MirNode, MirNodeId};
 use serde::de::{self, MapAccess, Visitor};
@@ -1210,8 +1192,11 @@ mod test {
     use super::deserialize_fault_tolerance;
     use crate::config::{
         DEFAULT_DATAFUSION_MEMORY_MB_CEILING, FtConfig, FtModel, ResourceConfig, RuntimeConfig,
+        TransportConfig,
     };
+    use crate::transport::datagen::DatagenInputConfig;
     use serde::{Deserialize, Serialize};
+    use serde_json::json;
 
     #[test]
     fn resolved_datafusion_memory_explicit_passes_through() {
@@ -1337,6 +1322,42 @@ mod test {
                 model: Some(FtModel::default()),
                 checkpoint_interval_secs: None
             }
+        );
+    }
+
+    #[test]
+    fn transport_config_deserializes_existing_config_payload_shape() {
+        let transport: TransportConfig = serde_json::from_value(json!({
+            "name": "datagen",
+            "config": {
+                "workers": 3
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(transport.name(), TransportConfig::DATAGEN);
+        assert_eq!(transport.config, json!({"workers": 3}));
+        let typed_config: DatagenInputConfig = transport.deserialize_config().unwrap();
+        assert_eq!(typed_config.workers, 3);
+    }
+
+    #[test]
+    fn transport_config_deserializes_existing_unit_variant_shape() {
+        let transport: TransportConfig =
+            serde_json::from_value(json!({"name": "null_output"})).unwrap();
+
+        assert_eq!(transport.name(), TransportConfig::NULL_OUTPUT);
+        assert!(transport.config.is_null());
+    }
+
+    #[test]
+    fn transport_config_serializes_unit_transports_without_config_field() {
+        assert_eq!(
+            serde_json::to_value(TransportConfig::without_config(
+                TransportConfig::EMPTY_INPUT
+            ))
+            .unwrap(),
+            json!({"name": "empty_input"})
         );
     }
 }
@@ -1819,45 +1840,19 @@ impl OutputEndpointConfig {
     }
 }
 
-/// Transport-specific endpoint configuration passed to
-/// `crate::OutputTransport::new_endpoint`
-/// and `crate::InputTransport::new_endpoint`.
+/// Transport-specific endpoint configuration.
+///
+/// The `name` field selects a transport factory. The `config` field is an
+/// opaque transport-specific JSON payload parsed by that factory.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
-#[serde(tag = "name", content = "config", rename_all = "snake_case")]
-pub enum TransportConfig {
-    FileInput(FileInputConfig),
-    FileOutput(FileOutputConfig),
-    NatsInput(NatsInputConfig),
-    KafkaInput(KafkaInputConfig),
-    KafkaOutput(KafkaOutputConfig),
-    PubSubInput(PubSubInputConfig),
-    UrlInput(UrlInputConfig),
-    S3Input(S3InputConfig),
-    DeltaTableInput(DeltaTableReaderConfig),
-    DeltaTableOutput(DeltaTableWriterConfig),
-    // Snake case would rename "DynamoDBOutput" to `dynamo_db_output`.
-    // However, DynamoDB is a single word, so override the tag to `dynamodb_output`.
-    #[serde(rename = "dynamodb_output")]
-    DynamoDBOutput(DynamoDBWriterConfig),
-    RedisOutput(RedisOutputConfig),
-    // Prevent rust from complaining about large size difference between enum variants.
-    IcebergInput(Box<IcebergReaderConfig>),
-    PostgresInput(PostgresReaderConfig),
-    PostgresCdcInput(PostgresCdcReaderConfig),
-    PostgresOutput(PostgresWriterConfig),
-    Datagen(DatagenInputConfig),
-    Nexmark(NexmarkInputConfig),
-    /// Direct HTTP input: cannot be instantiated through API
-    HttpInput(HttpInputConfig),
-    /// Direct HTTP output: cannot be instantiated through API
-    HttpOutput(HttpOutputConfig),
-    /// Ad hoc input: cannot be instantiated through API
-    AdHocInput(AdHocInputConfig),
-    ClockInput(ClockConfig),
-    /// Output connector that discards all data.
-    NullOutput,
-    /// Input connector that produces no data.
-    EmptyInput,
+pub struct TransportConfig {
+    /// Transport name, e.g. "kafka_input", "file_output", etc.
+    pub name: Cow<'static, str>,
+
+    /// Transport-specific configuration.
+    #[serde(default, skip_serializing_if = "JsonValue::is_null")]
+    #[schema(value_type = Object)]
+    pub config: JsonValue,
 }
 
 impl TransportConfig {
@@ -1886,49 +1881,48 @@ impl TransportConfig {
     pub const NULL_OUTPUT: &'static str = "null_output";
     pub const EMPTY_INPUT: &'static str = "empty_input";
 
-    pub fn name(&self) -> String {
-        match self {
-            TransportConfig::FileInput(_) => Self::FILE_INPUT.to_string(),
-            TransportConfig::FileOutput(_) => Self::FILE_OUTPUT.to_string(),
-            TransportConfig::NatsInput(_) => Self::NATS_INPUT.to_string(),
-            TransportConfig::KafkaInput(_) => Self::KAFKA_INPUT.to_string(),
-            TransportConfig::KafkaOutput(_) => Self::KAFKA_OUTPUT.to_string(),
-            TransportConfig::PubSubInput(_) => Self::PUB_SUB_INPUT.to_string(),
-            TransportConfig::UrlInput(_) => Self::URL_INPUT.to_string(),
-            TransportConfig::S3Input(_) => Self::S3_INPUT.to_string(),
-            TransportConfig::DeltaTableInput(_) => Self::DELTA_TABLE_INPUT.to_string(),
-            TransportConfig::DeltaTableOutput(_) => Self::DELTA_TABLE_OUTPUT.to_string(),
-            TransportConfig::DynamoDBOutput(_) => Self::DYNAMODB_OUTPUT.to_string(),
-            TransportConfig::IcebergInput(_) => Self::ICEBERG_INPUT.to_string(),
-            TransportConfig::PostgresInput(_) => Self::POSTGRES_INPUT.to_string(),
-            TransportConfig::PostgresCdcInput(_) => Self::POSTGRES_CDC_INPUT.to_string(),
-            TransportConfig::PostgresOutput(_) => Self::POSTGRES_OUTPUT.to_string(),
-            TransportConfig::Datagen(_) => Self::DATAGEN.to_string(),
-            TransportConfig::Nexmark(_) => Self::NEXMARK.to_string(),
-            TransportConfig::HttpInput(_) => Self::HTTP_INPUT.to_string(),
-            TransportConfig::HttpOutput(_) => Self::HTTP_OUTPUT.to_string(),
-            TransportConfig::AdHocInput(_) => Self::ADHOC_INPUT.to_string(),
-            TransportConfig::RedisOutput(_) => Self::REDIS_OUTPUT.to_string(),
-            TransportConfig::ClockInput(_) => Self::CLOCK.to_string(),
-            TransportConfig::NullOutput => Self::NULL_OUTPUT.to_string(),
-            TransportConfig::EmptyInput => Self::EMPTY_INPUT.to_string(),
+    pub fn new(name: impl Into<Cow<'static, str>>, config: impl Serialize) -> Self {
+        Self {
+            name: name.into(),
+            config: serde_json::to_value(config)
+                .expect("transport configuration should be JSON-serializable"),
         }
+    }
+
+    pub fn without_config(name: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            name: name.into(),
+            config: JsonValue::Null,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    pub fn deserialize_config<T>(&self) -> Result<T, serde_json::Error>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        let config = if self.config.is_null() {
+            JsonValue::Object(Default::default())
+        } else {
+            self.config.clone()
+        };
+        serde_json::from_value(config)
     }
 
     /// Returns true if the connector is transient, i.e., is created and destroyed
     /// at runtime on demand, rather than being configured as part of the pipeline.
     pub fn is_transient(&self) -> bool {
         matches!(
-            self,
-            TransportConfig::AdHocInput(_)
-                | TransportConfig::HttpInput(_)
-                | TransportConfig::HttpOutput(_)
-                | TransportConfig::ClockInput(_)
+            self.name(),
+            Self::ADHOC_INPUT | Self::HTTP_INPUT | Self::HTTP_OUTPUT | Self::CLOCK
         )
     }
 
     pub fn is_http_input(&self) -> bool {
-        matches!(self, TransportConfig::HttpInput(_))
+        self.name() == Self::HTTP_INPUT
     }
 }
 

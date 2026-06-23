@@ -74,7 +74,7 @@ impl OutputFormat for JsonOutputFormat {
             )
         })?;
 
-        if matches!(&config.transport, TransportConfig::RedisOutput(_)) {
+        if config.transport.name() == TransportConfig::REDIS_OUTPUT {
             json_config.update_format = JsonUpdateFormat::Redis;
         };
 
@@ -88,9 +88,18 @@ impl OutputFormat for JsonOutputFormat {
             json_config.buffer_size_records = 1;
         }
 
-        let key_separator = match &config.transport {
-            TransportConfig::RedisOutput(config) => Some(config.key_separator.clone()),
-            _ => None,
+        let key_separator = if config.transport.name() == TransportConfig::REDIS_OUTPUT {
+            let redis_config: feldera_types::transport::redis::RedisOutputConfig =
+                config.transport.deserialize_config().map_err(|e| {
+                    ControllerError::encoder_config_parse_error(
+                        endpoint_name,
+                        &e,
+                        &serde_json::to_string(config).unwrap_or_default(),
+                    )
+                })?;
+            Some(redis_config.key_separator)
+        } else {
+            None
         };
 
         Ok(Box::new(JsonEncoder::new(

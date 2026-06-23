@@ -4842,10 +4842,7 @@ impl ControllerInit {
                     .filter(|(_, config)| {
                         // The clock input connector will be automatically recreated and initialized
                         // with the clock resolution from the pipeline config.
-                        !matches!(
-                            config.connector_config.transport,
-                            TransportConfig::ClockInput(_)
-                        )
+                        config.connector_config.transport.name() != TransportConfig::CLOCK
                     })
                     .collect()
             } else {
@@ -6279,7 +6276,7 @@ impl ControllerInner {
             .input_transport_registry()
             .lock()
             .unwrap()
-            .get(&transport_config.name());
+            .get(transport_config.name());
         let endpoint = match factory {
             Some(factory) => factory
                 .create(&transport_config)
@@ -6412,17 +6409,19 @@ impl ControllerInner {
                     &resolved_connector_config.transport,
                     &resolved_connector_config.format,
                 ) {
-                    (TransportConfig::Datagen(_), None) => FormatConfig {
-                        name: Cow::from("json"),
-                        config: serde_json::to_value(JsonParserConfig {
-                            update_format: JsonUpdateFormat::Raw,
-                            json_flavor: JsonFlavor::Datagen,
-                            array: true,
-                            lines: JsonLines::Multiple,
-                        })
-                        .unwrap(),
-                    },
-                    (TransportConfig::Datagen(_), Some(_)) => {
+                    (transport, None) if transport.name() == TransportConfig::DATAGEN => {
+                        FormatConfig {
+                            name: Cow::from("json"),
+                            config: serde_json::to_value(JsonParserConfig {
+                                update_format: JsonUpdateFormat::Raw,
+                                json_flavor: JsonFlavor::Datagen,
+                                array: true,
+                                lines: JsonLines::Multiple,
+                            })
+                            .unwrap(),
+                        }
+                    }
+                    (transport, Some(_)) if transport.name() == TransportConfig::DATAGEN => {
                         return Err(ControllerError::input_format_not_supported(
                             endpoint_name,
                             "datagen endpoints do not support custom formats: remove the 'format' section from connector specification",
@@ -6610,7 +6609,7 @@ impl ControllerInner {
             .output_transport_registry()
             .lock()
             .unwrap()
-            .get(&transport_config.name());
+            .get(transport_config.name());
         let endpoint = match factory {
             Some(factory) => factory
                 .create(

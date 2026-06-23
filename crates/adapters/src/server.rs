@@ -2254,8 +2254,11 @@ async fn get_or_create_http_input_endpoint(
     // Create endpoint config.
     let config = InputEndpointConfig::new(
         table_name,
-        ConnectorConfig::new(TransportConfig::HttpInput(config), Some(format))
-            .with_max_queued_records(HttpInputTransport::default_max_buffered_records()),
+        ConnectorConfig::new(
+            TransportConfig::new(TransportConfig::HTTP_INPUT, config),
+            Some(format),
+        )
+        .with_max_queued_records(HttpInputTransport::default_max_buffered_records()),
     );
 
     controller
@@ -2436,8 +2439,11 @@ async fn output_endpoint(
         {
             object.insert(
                 String::from("transport"),
-                serde_json::to_value(TransportConfig::HttpOutput(HttpOutputConfig::default()))
-                    .unwrap(),
+                serde_json::to_value(TransportConfig::new(
+                    TransportConfig::HTTP_OUTPUT,
+                    HttpOutputConfig::default(),
+                ))
+                .unwrap(),
             );
         }
         serde_json::from_value(json).map_err(|e| PipelineError::InvalidParam {
@@ -2447,9 +2453,12 @@ async fn output_endpoint(
         let format =
             encoder_config_from_http_request(&table_name, args.format.unwrap_or_default(), &req)?;
         let mut connector_config = ConnectorConfig::new(
-            TransportConfig::HttpOutput(HttpOutputConfig {
-                backpressure: args.backpressure.unwrap_or_default(),
-            }),
+            TransportConfig::new(
+                TransportConfig::HTTP_OUTPUT,
+                HttpOutputConfig {
+                    backpressure: args.backpressure.unwrap_or_default(),
+                },
+            ),
             Some(format),
         )
         .with_max_queued_records(HttpOutputTransport::default_max_buffered_records());
@@ -2458,14 +2467,20 @@ async fn output_endpoint(
     };
     let config = OutputEndpointConfig::new(table_name, connector_config);
 
-    let http_output_config = match &config.connector_config.transport {
-        TransportConfig::HttpOutput(config) => config.clone(),
-        _ => {
+    let http_output_config =
+        if config.connector_config.transport.name() == TransportConfig::HTTP_OUTPUT {
+            config
+                .connector_config
+                .transport
+                .deserialize_config()
+                .map_err(|e| PipelineError::InvalidParam {
+                    error: format!("Invalid HTTP output transport configuration: {e}"),
+                })?
+        } else {
             return Err(PipelineError::InvalidParam {
                 error: "Transport configuration must be `http_output`".to_string(),
             });
-        }
-    };
+        };
     let format = match &config.connector_config.format {
         Some(format) if format.name == "csv" => HttpOutputFormat::Csv,
         Some(format) if format.name == "json" => {
