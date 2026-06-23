@@ -189,6 +189,7 @@ public class CalciteOptimizer implements IWritesLogs {
                     rel = optimized;
                 }
             } catch (Throwable ex) {
+                // System.out.println("CALCITE OPTIMIZER THREW " + ex.getClass().getSimpleName() + " in " + step.getName());
                 this.reporter.reportWarning(
                         SourcePositionRange.INVALID, "Calcite optimizer exception caught",
                         "Calcite optimizer failed during '" + step.getName() +
