@@ -75,6 +75,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.dbsp.util.Utilities;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -132,9 +133,20 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
                     mq.getPulledUpPredicates(filter.getInput());
             if (reduceExpressions(filter, expList, predicates, true,
                     config.matchNullability(), config.treatDynamicCallsAsConstant())) {
-                assert expList.size() == 1;
-                newConditionExp = expList.get(0);
-                reduced = true;
+                Utilities.enforce(expList.size() == 1);
+                // Kludge workaroud for https://issues.apache.org/jira/browse/CALCITE-7619
+                // Attempting to build a filter with this expression will actually
+                // trip an assertion failure in Calcite, in Filter.isValid, but unfortunately assertions
+                // are disabled in release builds, so the filter is built with the wrong
+                // expression anyway.
+                boolean isValid = !RexUtil.isNullabilityCast(filter.getCluster().getTypeFactory(), expList.get(0));
+                if (isValid) {
+                    newConditionExp = expList.get(0);
+                    reduced = true;
+                } else {
+                    newConditionExp = filter.getCondition();
+                    reduced = false;
+                }
             } else {
                 // No reduction, but let's still test the original
                 // predicate to see if it was already a constant,

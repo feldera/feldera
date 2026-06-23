@@ -7,7 +7,6 @@ import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class Regression3Tests extends SqlIoTest {
@@ -716,5 +715,16 @@ public class Regression3Tests extends SqlIoTest {
                 );
                 
                 CREATE VIEW Z AS SELECT b, r.b, t.b FROM T;""");
+    }
+
+    @Test
+    public void testNullableIsFalse() {
+        // Test case exercising https://issues.apache.org/jira/browse/CALCITE-7619
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT, b BOOLEAN);
+                CREATE VIEW V AS SELECT x FROM T WHERE b IS FALSE;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(0, NULL);", """
+                 r
+                ---""");
     }
 }

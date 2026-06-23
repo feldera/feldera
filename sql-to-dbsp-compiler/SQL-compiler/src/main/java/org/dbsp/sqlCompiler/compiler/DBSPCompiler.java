@@ -705,7 +705,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             if (circuit == null)
                 return null;
             if (this.getDebugLevel() > 0)
-                ToDot.dump(this, "initial.png", this.getDebugLevel(), "png", circuit);
+                ToDot.dump(this, "initial.svg", this.getDebugLevel(), "svg", circuit);
 
             this.validateForeignKeys(circuit, foreignKeys);
             if (!this.options.ioOptions.inputCircuit)
@@ -887,7 +887,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             System.out.println("Compilation took " + elapsedTimeInMs() + "ms");
 
         if (this.getDebugLevel() > 0 && !temporary && circuit != null) {
-            ToDot.dump(this, "final.png", this.getDebugLevel(), "png", circuit);
+            ToDot.dump(this, "final.svg", this.getDebugLevel(), "svg", circuit);
         }
         Logger.INSTANCE.belowLevel(this, 2)
                 .appendSupplier(() -> InnerVisitor.profiles.toString("Inner", 10))
