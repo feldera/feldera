@@ -18,6 +18,7 @@ from feldera.rest.config import Config
 from feldera.rest.errors import FelderaAPIError, FelderaTimeoutError
 from feldera.rest.feldera_config import FelderaConfig
 from feldera.rest.pipeline import Pipeline
+from feldera.tags import normalize_tags
 from feldera.rest.retry import RetryConfig
 
 logger = logging.getLogger(__name__)
@@ -332,7 +333,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             "program_config": pipeline.program_config,
             "runtime_config": pipeline.runtime_config,
             "description": pipeline.description or "",
-            "tags": pipeline.tags,
+            "tags": normalize_tags(pipeline.tags),
         }
 
         self.http.post(
@@ -365,7 +366,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             "program_config": pipeline.program_config,
             "runtime_config": pipeline.runtime_config,
             "description": pipeline.description or "",
-            "tags": pipeline.tags,
+            "tags": normalize_tags(pipeline.tags),
         }
 
         self.http.put(
@@ -398,6 +399,10 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         stored one, and a field left as ``None`` is omitted from the request and
         leaves the stored value untouched. To clear the description or tags, pass
         an empty string or empty list, respectively.
+
+        Tags, when provided, are normalized before being sent: color variants of
+        the same display name are collapsed and the result is stored in
+        lexicographic order (see :mod:`feldera.tags`).
         """
 
         self.http.patch(
@@ -409,7 +414,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 "program_config": program_config,
                 "runtime_config": runtime_config,
                 "description": description,
-                "tags": tags,
+                "tags": normalize_tags(tags) if tags is not None else None,
             },
         )
 
