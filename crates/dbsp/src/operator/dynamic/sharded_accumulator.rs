@@ -537,7 +537,15 @@ where
     name: OperatorName,
     exchange: Arc<ShardedAccumulator<B>>,
 
-    // Input batch sizes.
+    /// Whether the accumulator is enabled during the current transaction.
+    ///
+    /// An output connector can be attached in the middle of a transaction; however if the
+    /// accumulator was disabled at the start of the transaction, it shouldn't produce
+    /// partial outputs. This flag remembers the status of the accumulator at the start of the
+    /// transaction.
+    enabled_during_current_transaction: Option<bool>,
+
+    /// Input batch sizes.
     input_batch_stats: BatchSizeStats,
 
     flushed: bool,
@@ -552,6 +560,7 @@ where
             location,
             name: OperatorName::new("ShardedAccumulatorSender"),
             exchange,
+            enabled_during_current_transaction: None,
             input_batch_stats: BatchSizeStats::new(),
             flushed: false,
         }
@@ -592,20 +601,52 @@ where
     }
 }
 
+impl<B> ShardedAccumulatorSender<B>
+where
+    B: Batch<Time = ()>,
+{
+    async fn eval_inner<'a>(&mut self, batch: Cow<'a, B>) {
+        // We don't have a start-of-transaction signal, so we sample enable_count when
+        // we get the first non-empty batch.  This batch should belong to the next transaction
+        // after the last one that was flushed, since the accumulator should not receive any
+        // non-empty batches from the previous transaction at that point (in the top-level circuit).
+        // This may not be the first batch in the transaction, but it's ok to admit some empty batches.
+        let len = batch.len();
+        if (len > 0 || self.flushed) && self.enabled_during_current_transaction.is_none() {
+            self.enabled_during_current_transaction = Some(self.exchange.enable_count.is_enabled());
+        }
+        let Some(enabled) = self.enabled_during_current_transaction else {
+            return;
+        };
+
+        if enabled {
+            self.input_batch_stats.add_batch(len);
+            self.exchange
+                .send(self.name.get(), batch.into_owned(), self.flushed)
+                .await;
+        }
+
+        if self.flushed {
+            if !enabled {
+                let batch = B::dyn_empty(&self.exchange.factories);
+                self.exchange.send(self.name.get(), batch, true).await;
+            }
+            self.flushed = false;
+            self.enabled_during_current_transaction = None;
+        }
+    }
+}
+
 impl<B> SinkOperator<B> for ShardedAccumulatorSender<B>
 where
     B: Batch<Time = ()>,
 {
     async fn eval(&mut self, batch: &B) {
-        self.eval_owned(batch.clone()).await
+        self.eval_inner(Cow::Borrowed(batch)).await
     }
 
     async fn eval_owned(&mut self, batch: B) {
-        self.input_batch_stats.add_batch(batch.len());
-        self.exchange
-            .send(self.name.get(), batch, self.flushed)
-            .await;
-        self.flushed = false;
+        self.eval_inner(Cow::Owned(batch)).await
     }
 
     fn input_preference(&self) -> OwnershipPreference {
