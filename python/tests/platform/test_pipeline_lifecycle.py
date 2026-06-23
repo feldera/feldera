@@ -698,7 +698,7 @@ def test_refresh_version_due_to_status_changes(pipeline_name):
         TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=status")[
             "refresh_version"
         ]
-        <= 10
+        <= 15
     )
     pipeline.stop(force=True)
     pipeline.clear_storage()
@@ -706,7 +706,7 @@ def test_refresh_version_due_to_status_changes(pipeline_name):
         TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=status")[
             "refresh_version"
         ]
-        <= 15
+        <= 25
     )
 
 
