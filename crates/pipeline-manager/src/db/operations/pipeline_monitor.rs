@@ -25,7 +25,7 @@ pub(crate) async fn get_pipeline_monitor_event_short(
     pipeline_name: String,
     event_id: PipelineMonitorEventId,
 ) -> Result<PipelineMonitorEvent, DBError> {
-    let pipeline_id = get_pipeline_for_monitoring(txn, tenant_id, &pipeline_name)
+    let pipeline_id = get_pipeline_for_monitoring(txn, tenant_id, &pipeline_name, false)
         .await?
         .id;
 
@@ -51,7 +51,7 @@ pub(crate) async fn get_pipeline_monitor_event_extended(
     pipeline_name: String,
     event_id: PipelineMonitorEventId,
 ) -> Result<ExtendedPipelineMonitorEvent, DBError> {
-    let pipeline_id = get_pipeline_for_monitoring(txn, tenant_id, &pipeline_name)
+    let pipeline_id = get_pipeline_for_monitoring(txn, tenant_id, &pipeline_name, false)
         .await?
         .id;
 
@@ -76,7 +76,7 @@ pub(crate) async fn get_latest_pipeline_monitor_event_short(
     tenant_id: TenantId,
     pipeline_name: String,
 ) -> Result<PipelineMonitorEvent, DBError> {
-    let pipeline_id = get_pipeline_for_monitoring(txn, tenant_id, &pipeline_name)
+    let pipeline_id = get_pipeline_for_monitoring(txn, tenant_id, &pipeline_name, false)
         .await?
         .id;
 
@@ -103,7 +103,7 @@ pub(crate) async fn get_latest_pipeline_monitor_event_extended(
     tenant_id: TenantId,
     pipeline_name: String,
 ) -> Result<ExtendedPipelineMonitorEvent, DBError> {
-    let pipeline_id = get_pipeline_for_monitoring(txn, tenant_id, &pipeline_name)
+    let pipeline_id = get_pipeline_for_monitoring(txn, tenant_id, &pipeline_name, false)
         .await?
         .id;
 
@@ -130,7 +130,7 @@ pub(crate) async fn list_pipeline_monitor_events_short(
     tenant_id: TenantId,
     pipeline_name: String,
 ) -> Result<Vec<PipelineMonitorEvent>, DBError> {
-    let pipeline_id = get_pipeline_for_monitoring(txn, tenant_id, &pipeline_name)
+    let pipeline_id = get_pipeline_for_monitoring(txn, tenant_id, &pipeline_name, false)
         .await?
         .id;
 
@@ -157,7 +157,7 @@ pub(crate) async fn list_pipeline_monitor_events_extended(
     tenant_id: TenantId,
     pipeline_name: String,
 ) -> Result<Vec<ExtendedPipelineMonitorEvent>, DBError> {
-    let pipeline_id = get_pipeline_for_monitoring(txn, tenant_id, &pipeline_name)
+    let pipeline_id = get_pipeline_for_monitoring(txn, tenant_id, &pipeline_name, false)
         .await?
         .id;
 
@@ -185,7 +185,7 @@ pub(crate) async fn new_pipeline_monitor_event(
     pipeline_id: PipelineId,
     new_event_id: Uuid,
 ) -> Result<(), DBError> {
-    let pipeline = get_pipeline_by_id_for_event_info(txn, tenant_id, pipeline_id).await?;
+    let pipeline = get_pipeline_by_id_for_event_info(txn, tenant_id, pipeline_id, true).await?;
 
     let stmt = txn
         .prepare_cached(
