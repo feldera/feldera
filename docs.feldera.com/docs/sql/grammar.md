@@ -337,7 +337,7 @@ query
       |   query UNION [ ALL | DISTINCT ] query
       |   query EXCEPT [ DISTINCT ] query
       |   query MINUS [ DISTINCT ] query
-      |   query INTERSECT [ DISTINCT ] query
+      |   query INTERSECT [ ALL | DISTINCT ] query
       }
       [ ORDER BY orderItem [, orderItem ]* ]
       [ LIMIT [ start, ] { count | ALL } ]
@@ -351,8 +351,7 @@ withItem
       AS '(' query ')'
 ```
 
-`MINUS` is equivalent to `EXCEPT`.  Note that `EXCEPT ALL` and
-`INTERSECT ALL` are currently not implemented.
+`MINUS` is equivalent to `EXCEPT`.
 
 <a id="values"></a>
 ```

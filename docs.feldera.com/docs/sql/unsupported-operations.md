@@ -100,9 +100,6 @@ supported.
 columns. Refer to [PIVOT documentation](./aggregates.md#pivots) for
 example usage.  Dynamic `PIVOT` is not yet supported.
 
-## `INTERSECT ALL` and `EXCEPT ALL`
-`INTERSECT ALL` and `EXCEPT ALL` operations are not yet supported.
-
 ## `MULTISET` Data Type
 The `MULTISET` data type is not currently supported.
 
