@@ -8,8 +8,10 @@ def test_display_name_strips_color_suffix():
     assert tag_display_name("prod") == "prod"
     assert tag_display_name("prod|ef4444") == "prod"
     assert tag_display_name("team billing|22c55e") == "team billing"
-    # Uppercase hex digits are a valid color.
-    assert tag_display_name("prod|ABCDEF") == "prod"
+    # Only lowercase hex is a color; uppercase hex stays part of the name.
+    assert tag_display_name("prod|ef4444") == "prod"
+    assert tag_display_name("prod|ABCDEF") == "prod|ABCDEF"
+    assert tag_display_name("prod|EF4444") == "prod|EF4444"
     # A name containing "|" but no valid trailing color is returned whole.
     assert tag_display_name("a|b") == "a|b"
     assert tag_display_name("env|staging") == "env|staging"

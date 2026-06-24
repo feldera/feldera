@@ -401,8 +401,8 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         an empty string or empty list, respectively.
 
         Tags, when provided, are normalized before being sent: color variants of
-        the same display name are collapsed and the result is stored in
-        lexicographic order (see :mod:`feldera.tags`).
+        the same display name are collapsed and the result is stored in API server database
+        in lexicographic order (see :mod:`feldera.tags`).
         """
 
         self.http.patch(

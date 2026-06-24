@@ -35,10 +35,12 @@ export type TagColor = (typeof tagColorPalette)[number]
 export const defaultTagColor = '#9ca3af'
 
 /**
- * The stored color suffix: a `|` followed by exactly six hex digits at the end of
- * the string. No `#`, which the backend's tag character set disallows.
+ * The stored color suffix: a `|` followed by exactly six lowercase hex digits at
+ * the end of the string. No `#`, which the backend's tag character set disallows.
+ * Lowercase is the one canonical form (the palette below is lowercase); uppercase
+ * hex is not recognized as a color and stays part of the name.
  */
-const storedColorSuffix = /\|([0-9a-fA-F]{6})$/
+const storedColorSuffix = /\|([0-9a-f]{6})$/
 
 /**
  * Split a tag into its name and optional color. The suffix is recognized only
@@ -63,12 +65,13 @@ export const tagColorOf = (tag: string): string => parseTag(tag).color ?? defaul
 /**
  * Encode `color` (a CSS `#rrggbb` value) into a tag as a `|rrggbb` suffix,
  * dropping the leading `#` the backend disallows and replacing any existing
- * suffix first so re-coloring is idempotent. A null or undefined color yields the
- * bare name.
+ * suffix first so re-coloring is idempotent. The hex is lowercased so the result
+ * is recognized as a color even when given an uppercase CSS value. A null or
+ * undefined color yields the bare name.
  */
 export const tagWithColor = (tag: string, color?: string | null): string => {
   const name = tagDisplayName(tag)
-  return color ? `${name}|${color.replace(/^#/, '')}` : name
+  return color ? `${name}|${color.replace(/^#/, '').toLowerCase()}` : name
 }
 
 /** Maximum length of a single stored tag, mirroring the backend. */
@@ -76,9 +79,8 @@ export const maximumTagLength = 50
 
 /**
  * Characters a tag may contain, mirroring the backend's `PATTERN_VALID_TAG`
- * (crates/pipeline-manager/src/db/types/utils.rs); kept in sync by hand. The
- * color suffix draws only from this set, so a fully encoded tag is valid whenever
- * its name is.
+ * (crates/pipeline-manager/src/db/types/utils.rs).
+ * The color suffix is a subset of this character set.
  */
 export const tagPattern = /^[a-zA-Z0-9 ._/|\\:=-]+$/
 

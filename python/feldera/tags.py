@@ -14,18 +14,20 @@ invariants whenever a pipeline's tags are written:
 
 * **Variant exclusivity.** A pipeline carries at most one tag per display name.
   When a list holds several color variants of the same name, the last one wins.
-* **Lexicographic order.** Tags are stored sorted,
-  so the stored order is stable regardless of the order they were supplied in.
+* **Lexicographic order.** Tags are sorted lexicographically by the SDK
+  before sending to the API server.
 """
 
 import re
 from typing import Iterable, List
 
-# A tag's color suffix: a ``|`` followed by exactly six hex digits at the end of
-# the string (no ``#``, which the backend's tag character set disallows).
-# Recognized only in this exact form, so a name that itself contains ``|``
-# (without a trailing color) keeps its full text.
-_COLOR_SUFFIX = re.compile(r"\|[0-9a-fA-F]{6}$")
+# A tag's color suffix: a ``|`` followed by exactly six lowercase hex digits at
+# the end of the string (no ``#``, which the backend's tag character set
+# disallows). Lowercase is the one canonical form; uppercase hex is therefore
+# not recognized as a color and stays part of the name.
+# Recognized only in this exact form, so a name that itself contains
+# ``|`` (without a trailing color) keeps its full text.
+_COLOR_SUFFIX = re.compile(r"\|[0-9a-f]{6}$")
 
 
 def tag_display_name(tag: str) -> str:

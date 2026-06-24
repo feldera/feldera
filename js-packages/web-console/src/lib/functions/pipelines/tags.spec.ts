@@ -19,8 +19,9 @@ describe('parseTag', () => {
     expect(parseTag('x|22c55e').color).toBe('#22c55e')
   })
 
-  it('accepts uppercase hex', () => {
-    expect(parseTag('prod|ABCDEF')).toEqual({ name: 'prod', color: '#ABCDEF' })
+  it('rejects uppercase hex, keeping it as part of the name', () => {
+    expect(parseTag('prod|ABCDEF')).toEqual({ name: 'prod|ABCDEF' })
+    expect(parseTag('prod|EF4444')).toEqual({ name: 'prod|EF4444' })
   })
 
   it('returns no color for a bare name', () => {
@@ -87,6 +88,11 @@ describe('tagWithColor', () => {
     expect(parseTag(tagWithColor('a|b', '#ef4444'))).toEqual({ name: 'a|b', color: '#ef4444' })
   })
 
+  it('lowercases an uppercase CSS color so it stays recognizable', () => {
+    expect(tagWithColor('prod', '#ABCDEF')).toBe('prod|abcdef')
+    expect(parseTag(tagWithColor('prod', '#ABCDEF'))).toEqual({ name: 'prod', color: '#abcdef' })
+  })
+
   it('uses every palette color as a valid encoded tag', () => {
     for (const { color } of tagColorPalette) {
       const tag = tagWithColor('prod', color)
@@ -131,10 +137,10 @@ describe('validateTag', () => {
 })
 
 describe('palette', () => {
-  it('is non-empty and every entry is a #rrggbb hex color', () => {
+  it('is non-empty and every entry is a lowercase #rrggbb hex color', () => {
     expect(tagColorPalette.length).toBeGreaterThan(0)
     for (const { color } of tagColorPalette) {
-      expect(color).toMatch(/^#[0-9a-fA-F]{6}$/)
+      expect(color).toMatch(/^#[0-9a-f]{6}$/)
     }
   })
 })

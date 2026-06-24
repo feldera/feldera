@@ -12,7 +12,7 @@
    * and the slide direction is derived from each page's index in `pages`. Moving to
    * a larger index the new page enters from the right, moving to a smaller index
    * slides the page from the left. Comparing indices is a lightweight stand-in
-   * for an actual navigation-history stack, which has not been needed in practice.
+   * for an actual navigation-history stack, which has not been needed in web-console.
    * `pages` must be ordered from the outermost page (root, index 0) to the deepest.
    *
    */
@@ -64,8 +64,7 @@
       <div
         in:fly={{ x: direction * width, duration }}
         out:fly={{ x: -direction * width, duration }}
-        class="col-start-1 row-start-1 flex flex-col"
-      >
+        class="col-start-1 row-start-1 flex flex-col">
         {@render page.content()}
       </div>
     {/if}

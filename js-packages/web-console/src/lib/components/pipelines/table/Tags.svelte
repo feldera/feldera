@@ -39,7 +39,7 @@
   // API returns tags already sorted - every client sorts before writing, so a
   // pipeline's stored tag list is stable regardless of insertion order.
   // This comparator is used only to
-  // (1) re-establish that order when *writing*edited tags and
+  // (1) re-establish that order when writing edited tags and
   // (2) order the combined assigned/unassigned picker,
   // which is built from the unordered cross-pipeline tag pool.
   const byText = (a: string, b: string) => a.localeCompare(b)
@@ -50,16 +50,17 @@
   const pipelineList = usePipelineList()
   const { toastError } = useToast()
 
-  // Sort the edited tags so storage stays sorted (the backend keeps the order),
+  // Sort the edited tags to store them in the backend,
   // cache that same order optimistically, and return it as the patch body.
   // This is the one place the client orders tags; readers trust the result.
-  const applyTagsLocally = (name: string, next: string[]) => {
+  const applyTagsLocally = (pipelineName: string, next: string[]) => {
     const sorted = [...next].sort(byText)
-    updatePipeline(name, (p) => ({ ...p, tags: sorted }))
+    updatePipeline(pipelineName, (p) => ({ ...p, tags: sorted }))
     return sorted
   }
 
-  // Persist a single pipeline's tags. `api.patchPipeline` reports its own failures.
+  // Persist a single pipeline's tags.
+  // `api.patchPipeline` reports errors that may arise to the users in a toast popup.
   const setPipelineTags = (name: string, next: string[]) => {
     api.patchPipeline(name, { tags: applyTagsLocally(name, next) })
   }
@@ -290,19 +291,16 @@
         <button
           class="px-1 text-sm text-surface-600-400 hover:text-surface-950-50"
           onclick={open}
-          aria-label="Show all tags"
-        >
+          aria-label="Show all tags">
           +{overflowCount}
         </button>
         <Tooltip placement="top" class="max-w-[240px] text-wrap"
-          >{tags.map(tagDisplayName).join(', ')}</Tooltip
-        >
+          >{tags.map(tagDisplayName).join(', ')}</Tooltip>
       {/if}
       {#if tags.length === 0}
         <button
           class="flex h-5 items-center gap-1 rounded border border-dashed border-surface-500 px-2 text-sm text-surface-800-200 hover:border-surface-950-50 hover:text-surface-950-50"
-          onclick={open}
-        >
+          onclick={open}>
           <span class="fd fd-plus text-[16px]"></span>
           Tag
         </button>
@@ -312,8 +310,7 @@
   {#snippet content()}
     <div
       transition:slide={{ duration: 100 }}
-      class="bg-white-dark absolute top-8 left-0 z-30 flex w-[304px] flex-col overflow-hidden rounded shadow-md"
-    >
+      class="bg-white-dark absolute top-8 left-0 z-30 flex w-[304px] flex-col overflow-hidden rounded shadow-md">
       <SlidingPanels
         current={page}
         width={280}
@@ -322,8 +319,7 @@
           { key: 'create', content: createPage },
           { key: 'edit', content: editPage },
           { key: 'delete', content: deletePage }
-        ]}
-      />
+        ]} />
     </div>
 
     {#snippet listPage()}
@@ -340,8 +336,7 @@
       </div>
       <button
         class="flex items-center gap-2 border-t border-surface-100-900 px-3 py-2 text-left text-sm hover:bg-surface-50-950"
-        onclick={() => openCreate(search)}
-      >
+        onclick={() => openCreate(search)}>
         <span class="fd fd-plus text-[16px]"></span>
         Create a new tag
       </button>
@@ -375,8 +370,7 @@
           class="btn-icon h-7 w-7"
           onclick={() => (page = 'edit')}
           aria-label="Back"
-          title="Back"
-        >
+          title="Back">
           <span class="fd fd-chevron-left text-[20px]"></span>
         </button>
         <span class="text-sm font-medium">Delete tag</span>
@@ -405,8 +399,7 @@
 {#snippet chip(tag: string, open: () => void)}
   <button
     class="flex h-5 items-center gap-1.5 rounded border border-surface-200-800 px-2 text-sm whitespace-nowrap hover:bg-surface-50-950"
-    onclick={open}
-  >
+    onclick={open}>
     <span class="h-2 w-2 rounded-full" style="background-color: {tagColorOf(tag)}"></span>
     {tagDisplayName(tag)}
   </button>
@@ -416,14 +409,12 @@
   <div class="group/row flex items-center hover:bg-surface-50-950">
     <button
       class="flex flex-1 items-center gap-2 py-1.5 pl-3 text-left text-sm"
-      onclick={() => toggleTag(tag)}
-    >
+      onclick={() => toggleTag(tag)}>
       <input
         class="pointer-events-none checkbox"
         type="checkbox"
         checked={selected}
-        tabindex="-1"
-      />
+        tabindex="-1" />
       <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background-color: {tagColorOf(tag)}"
       ></span>
       <span class="truncate">{tagDisplayName(tag)}</span>
@@ -432,8 +423,7 @@
       class="invisible flex h-7 w-7 shrink-0 items-center justify-center text-surface-600-400 group-hover/row:visible hover:text-surface-950-50"
       onclick={() => openEdit(tag)}
       aria-label="Edit tag"
-      title="Edit tag"
-    >
+      title="Edit tag">
       <span class="fd fd-settings text-[16px]"></span>
     </button>
   </div>
@@ -460,8 +450,7 @@
         class="ml-auto btn-icon h-7 w-7 text-surface-600-400 hover:text-error-500"
         onclick={opts.onDelete}
         aria-label="Delete tag"
-        title="Delete tag"
-      >
+        title="Delete tag">
         <span class="fd fd-trash-2 text-[18px]"></span>
       </button>
     {/if}
@@ -474,8 +463,7 @@
         class:border-error-500={!!opts.validationError}
         type="text"
         bind:value={newTagName}
-        placeholder="Tag name"
-      />
+        placeholder="Tag name" />
       {#if opts.validationError}
         <span class="text-xs font-normal text-error-500">{opts.validationError}</span>
       {/if}
@@ -495,8 +483,7 @@
             title={paletteColor.name}
             aria-label={paletteColor.name}
             aria-pressed={paletteColor.color === selectedColor}
-            onclick={() => (newTagColor = paletteColor.color)}
-          >
+            onclick={() => (newTagColor = paletteColor.color)}>
             {#if paletteColor.color !== selectedColor}
               <span class="bg-white-dark block h-4 w-4 rounded-full opacity-80"></span>
             {/if}
@@ -507,8 +494,7 @@
     <button
       class="btn h-9! w-full preset-filled-primary-500"
       disabled={opts.submitDisabled}
-      onclick={opts.onSubmit}
-    >
+      onclick={opts.onSubmit}>
       {opts.submitLabel}
     </button>
     {#if opts.lockedColor !== undefined}
