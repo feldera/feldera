@@ -2,8 +2,8 @@
   font-family: "generic-icons";
   font-display: block;
   src:
-    url("generic-icons.woff2?204a1f3771f46f1024a2c650b43800c5") format("woff2"),
-    url("generic-icons.woff?204a1f3771f46f1024a2c650b43800c5") format("woff");
+    url("generic-icons.woff2?93adf303867ea39c2b4e5835c473116a") format("woff2"),
+    url("generic-icons.woff?93adf303867ea39c2b4e5835c473116a") format("woff");
 }
 
 .gc {
@@ -17,18 +17,18 @@
   vertical-align: top;
 }
 
-.gc-boiling-flask:before {
+.gc-layout-panel-right:before {
   content: "\f101";
 }
-.gc-http-get:before {
+.gc-circle-solid:before {
   content: "\f102";
 }
-.gc-circle-solid:before {
+.gc-loader-alt:before {
   content: "\f103";
 }
-.gc-loader-alt:before {
+.gc-boiling-flask:before {
   content: "\f104";
 }
-.gc-layout-panel-right:before {
+.gc-http-get:before {
   content: "\f105";
 }

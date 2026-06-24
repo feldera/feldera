@@ -2,6 +2,7 @@
   import { join } from 'array-join'
   import { match, P } from 'ts-pattern'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
+  import { duplicatePipeline, duplicatePipelineTooltip } from '$lib/compositions/duplicatePipeline'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
@@ -15,9 +16,10 @@
     pipelines,
     selectedPipelines = $bindable()
   }: { pipelines: PipelineThumb[]; selectedPipelines: string[] } = $props()
-  const { updatePipeline } = useUpdatePipelineList()
+  const { discardPendingListRefresh, updatePipeline, updatePipelines } = useUpdatePipelineList()
   const sortedSelectedPipelines = $derived([...selectedPipelines].sort())
   const availableActions = [
+    'duplicate' as const,
     'start' as const,
     'resume' as const,
     'pause' as const,
@@ -26,12 +28,14 @@
     'delete' as const,
     'clear' as const
   ]
+  type AvailableAction = (typeof availableActions)[number]
+  type StatusAction = Exclude<AvailableAction, 'duplicate'>
   const isPremium = usePremiumFeatures()
   const stop = isPremium.value ? ['stop' as const] : []
   const statusActions = ({ status, storageStatus }: (typeof selected)[number]) => {
     const storageAction = storageStatus === 'InUse' ? ['clear' as const] : []
     return match(status)
-      .returnType<(typeof availableActions)[number][]>()
+      .returnType<StatusAction[]>()
       .with(
         { Queued: P.any },
         { CompilingSql: P.any },
@@ -69,7 +73,7 @@
       (_, p) => p
     )
   )
-  const eligibleFor = (action: (typeof availableActions)[number]) =>
+  const eligibleFor = (action: StatusAction) =>
     selected
       .filter((pipeline) => statusActions(pipeline).includes(action))
       .map((p) => p.name)
@@ -78,11 +82,15 @@
     if (selected.length === 0) {
       return []
     }
-    const supportedByAny = new Set(selected.flatMap(statusActions))
+    const supportedByAny = new Set<AvailableAction>(selected.flatMap(statusActions))
+    if (selected.length === 1) {
+      supportedByAny.add('duplicate')
+    }
     return availableActions
       .filter((action) => supportedByAny.has(action))
       .map((action) =>
         match(action)
+          .with('duplicate', () => btnDuplicate)
           .with('start', () => btnStart)
           .with('resume', () => btnResume)
           .with('pause', () => btnPause)
@@ -96,7 +104,7 @@
 
   const globalDialog = useGlobalDialog()
   const api = usePipelineManager()
-  const postPipelinesAction = (action: Exclude<(typeof availableActions)[number], 'delete'>) => {
+  const postPipelinesAction = (action: Exclude<StatusAction, 'delete'>) => {
     selected
       .filter((pipeline) => statusActions(pipeline).includes(action))
       .forEach((pipeline) => {
@@ -125,6 +133,20 @@
         await waitFor().catch(toastError('Waiting for pipeline to clear state'))
       }
       return api.deletePipeline(pipeline.name)
+    })
+    selectedPipelines = []
+  }
+
+  const duplicateSelectedPipeline = async () => {
+    const pipeline = selected[0]
+    if (!pipeline) {
+      return
+    }
+
+    await duplicatePipeline(api, pipeline, pipelines, {
+      discardPendingListRefresh,
+      updatePipeline,
+      updatePipelines
     })
     selectedPipelines = []
   }
@@ -164,6 +186,16 @@
   <button class="btn preset-tonal-surface" onclick={() => (globalDialog.dialog = deleteDialog)}>
     <span class="fd fd-trash-2 text-[20px]"></span>
     Delete
+  </button>
+{/snippet}
+{#snippet btnDuplicate()}
+  <button
+    class="btn preset-tonal-surface"
+    title={duplicatePipelineTooltip}
+    onclick={() => void duplicateSelectedPipeline()}
+  >
+    <span class="fd fd-copy-plus text-[20px]"></span>
+    Duplicate
   </button>
 {/snippet}
 {#snippet btnClear()}
