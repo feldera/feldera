@@ -114,7 +114,8 @@ impl Catalog {
             let (accumulated_stream, enabled_count) = stream.shard_accumulate().into_parts();
 
             let integral = if integrate {
-                Some(stream.shard_accumulate_integrate_trace())
+                // Avoid bootstrapping when upgrading from an older Feldera version using shard().accumulate().
+                Some(stream.shard_accumulate_integrate_trace_legacy())
             } else {
                 None
             };
