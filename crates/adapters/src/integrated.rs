@@ -142,7 +142,7 @@ pub fn create_integrated_input_endpoint(
             endpoint_name,
             config,
             consumer,
-        )),
+        )?),
         transport => {
             return Err(ControllerError::unknown_input_transport(
                 endpoint_name,

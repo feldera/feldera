@@ -44,6 +44,7 @@ type CompactVec = SmallVec<[u8; THRESHOLD]>;
     Ord,
     Hash,
     Serialize,
+    Deserialize,
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,

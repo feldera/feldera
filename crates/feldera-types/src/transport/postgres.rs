@@ -92,6 +92,45 @@ pub struct PostgresCdcReaderConfig {
     pub tls: PostgresTlsConfig,
 }
 
+impl PostgresCdcReaderConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.publication.trim().is_empty() {
+            return Err("publication cannot be empty".to_string());
+        }
+
+        if self.source_table.trim().is_empty() {
+            return Err("source_table cannot be empty".to_string());
+        }
+
+        if self.tls.ssl_client_pem.is_some()
+            || self.tls.ssl_client_location.is_some()
+            || self.tls.ssl_client_key.is_some()
+            || self.tls.ssl_client_key_location.is_some()
+            || self.tls.ssl_certificate_chain_location.is_some()
+        {
+            return Err(
+                "client-certificate TLS options (ssl_client_pem, ssl_client_location, \
+                 ssl_client_key, ssl_client_key_location, ssl_certificate_chain_location) \
+                 are not supported by the Postgres CDC connector as the underlying etl crate \
+                 doesn't support client-certificate TLS yet. CA-based TLS via ssl_ca_pem \
+                 or ssl_ca_location is supported. Please file an issue if you require \
+                 client-certificate TLS support: https://github.com/feldera/feldera/issues/
+                 "
+                .to_string(),
+            );
+        }
+
+        if self.tls.verify_hostname == Some(false) {
+            return Err(
+                "disabling hostname verification is not supported by the Postgres CDC connector"
+                    .to_string(),
+            );
+        }
+
+        Ok(())
+    }
+}
+
 /// Postgres input connector configuration.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct PostgresReaderConfig {
@@ -259,5 +298,68 @@ impl PostgresWriterConfig {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn postgres_cdc_config(tls: PostgresTlsConfig) -> PostgresCdcReaderConfig {
+        PostgresCdcReaderConfig {
+            uri: "postgres://user:password@localhost:5432/database".to_string(),
+            publication: "publication".to_string(),
+            source_table: "public.table".to_string(),
+            tls,
+        }
+    }
+
+    #[test]
+    fn postgres_cdc_config_rejects_client_certificate_tls_options() {
+        let config = postgres_cdc_config(PostgresTlsConfig {
+            ssl_client_pem: Some("client".to_string()),
+            ..Default::default()
+        });
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("client-certificate TLS options"));
+        assert!(err.contains("client-certificate TLS support"));
+        assert!(!err.contains("doesn't support TLS yet"));
+    }
+
+    #[test]
+    fn postgres_cdc_config_rejects_disabled_hostname_verification() {
+        let config = postgres_cdc_config(PostgresTlsConfig {
+            verify_hostname: Some(false),
+            ..Default::default()
+        });
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("disabling hostname verification"));
+    }
+
+    #[test]
+    fn postgres_cdc_config_accepts_default_tls() {
+        let config = postgres_cdc_config(PostgresTlsConfig::default());
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn postgres_cdc_config_rejects_empty_publication() {
+        let mut config = postgres_cdc_config(PostgresTlsConfig::default());
+        config.publication = "   ".to_string();
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("publication cannot be empty"));
+    }
+
+    #[test]
+    fn postgres_cdc_config_rejects_empty_source_table() {
+        let mut config = postgres_cdc_config(PostgresTlsConfig::default());
+        config.source_table = "\t".to_string();
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("source_table cannot be empty"));
     }
 }
