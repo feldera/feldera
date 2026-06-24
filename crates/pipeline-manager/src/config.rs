@@ -900,6 +900,23 @@ pub struct ApiServerConfig {
     #[serde(default = "default_auth_audience")]
     #[arg(long, default_value = "feldera-api", env = "FELDERA_AUTH_AUDIENCE")]
     pub auth_audience: String,
+
+    /// URL path prefix that Feldera is served under.
+    ///
+    /// Set this when Feldera sits behind a reverse proxy that mounts it on a
+    /// subpath rather than at the origin root — for example, serving
+    /// `https://example.com/feldera/` instead of `https://example.com/`.
+    ///
+    /// The value must start with a `/` and must not end with one (e.g.
+    /// `/feldera`). Leave it empty (the default) to serve from the root path.
+    ///
+    /// When set, the HTTP API is mounted under `<base-path>/v0`, the web
+    /// console under `<base-path>/`, and the manager rewrites the embedded
+    /// console bundle at startup so its client-side router, links, and API
+    /// calls all use the prefix. No rebuild is required.
+    #[serde(default)]
+    #[arg(long, default_value = "", env = "FELDERA_HTTP_BASE_PATH")]
+    pub http_base_path: String,
 }
 
 impl ApiServerConfig {
@@ -929,6 +946,24 @@ impl ApiServerConfig {
         }
     }
 
+    /// The configured base path, normalized to either an empty string (a root
+    /// deployment) or a `/`-prefixed prefix without a trailing slash.
+    ///
+    /// Normalization is lenient: leading/trailing whitespace and trailing
+    /// slashes are trimmed, and a missing leading slash is added. Examples:
+    /// `""` → `""`, `"/"` → `""`, `"feldera"` → `"/feldera"`,
+    /// `"/feldera/"` → `"/feldera"`.
+    pub(crate) fn normalized_http_base_path(&self) -> String {
+        let trimmed = self.http_base_path.trim().trim_end_matches('/');
+        if trimmed.is_empty() {
+            String::new()
+        } else if trimmed.starts_with('/') {
+            trimmed.to_string()
+        } else {
+            format!("/{trimmed}")
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn test_config() -> Self {
         Self {
@@ -944,6 +979,7 @@ impl ApiServerConfig {
             individual_tenant: true,
             authorized_groups: vec![],
             auth_audience: "feldera-api".to_string(),
+            http_base_path: String::new(),
         }
     }
 }

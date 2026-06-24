@@ -1,4 +1,5 @@
 import * as AxaOidc from '@axa-fr/oidc-client'
+import { resolve } from '$lib/functions/svelte'
 
 const { OidcClient } = AxaOidc
 
@@ -138,10 +139,10 @@ export const triggerOidcLogin = async (): Promise<void> => {
   try {
     oidcClient = OidcClient.get()
   } catch {
-    window.location.href = '/'
+    window.location.href = resolve('/')
     return
   }
-  await oidcClient.loginAsync('/')
+  await oidcClient.loginAsync(resolve('/'))
 }
 
 /**

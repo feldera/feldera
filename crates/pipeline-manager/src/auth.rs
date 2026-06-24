@@ -1081,6 +1081,7 @@ mod test {
             individual_tenant: true,
             issuer_tenant: false,
             auth_audience: "feldera-api".to_string(),
+            http_base_path: String::new(),
         };
 
         let (conn, _temp) = crate::db::test::setup_pg().await;

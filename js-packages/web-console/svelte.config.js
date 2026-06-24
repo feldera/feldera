@@ -11,6 +11,15 @@ const config = {
       fallback: 'index.html',
       pages: process.env.BUILD_DIR || 'build' // built webapp static files output directory
     }),
+    // Base path the app is served from. Empty for a root deployment and for
+    // local `bun run dev`. When pipeline-manager builds the embedded bundle it
+    // sets WEBCONSOLE_BASE_PATH to a sentinel, which the manager rewrites at
+    // serve time to the operator-configured prefix (see crates/pipeline-manager
+    // and `felderaBasePathPlaceholder`). `paths.relative` stays at its default
+    // (true), so only this base literal — not asset URLs — carries the prefix.
+    paths: {
+      base: process.env.WEBCONSOLE_BASE_PATH || ''
+    },
     alias: {
       $assets: 'src/assets'
     },
