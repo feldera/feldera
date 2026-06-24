@@ -757,6 +757,17 @@ mod tests {
     use chrono::FixedOffset;
 
     #[test]
+    fn test_now_override() {
+        // A pinned override returns that exact instant; no override reads the wall clock.
+        assert_eq!(
+            now_from(Some(1_577_836_800_000)).milliseconds(),
+            1_577_836_800_000
+        );
+        let wall = now_from(None).milliseconds();
+        assert!(wall > 1_577_836_800_000, "wall clock is past the year 2020");
+    }
+
+    #[test]
     fn test_parse_tstz() {
         // Check that the parsing from string accepts the same formats
         // accepted by the SQL compiler for literals.
@@ -891,9 +902,26 @@ pub fn convert_timezone___(src_tz: Zone, dst_tz: Zone, ts: Timestamp) -> Option<
 
 some_nullable_function3!(convert_timezone, Zone, Zone, Timestamp, Timestamp);
 
+/// A fixed `now()` for deterministic harvests and tests: when `FELDERA_NOW_OVERRIDE_MS` holds an
+/// integer count of milliseconds since the Unix epoch, `now()` returns that instant instead of the
+/// wall clock, so every call in a run agrees. Read once at first use.
+static NOW_OVERRIDE_MS: std::sync::LazyLock<Option<i64>> = std::sync::LazyLock::new(|| {
+    std::env::var("FELDERA_NOW_OVERRIDE_MS")
+        .ok()
+        .and_then(|ms| ms.parse::<i64>().ok())
+});
+
+/// Resolve `now()` from an optional override: the pinned instant when set, the wall clock otherwise.
+fn now_from(override_ms: Option<i64>) -> Timestamp {
+    match override_ms {
+        Some(ms) => Timestamp::from_milliseconds(ms),
+        None => Timestamp::from_dateTime(Utc::now()),
+    }
+}
+
 #[doc(hidden)]
 pub fn now() -> Timestamp {
-    Timestamp::from_dateTime(Utc::now())
+    now_from(*NOW_OVERRIDE_MS)
 }
 
 #[doc(hidden)]
