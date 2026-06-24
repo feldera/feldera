@@ -210,6 +210,72 @@ fn test_start_after() {
     controller.stop().unwrap();
 }
 
+// A typo in the CSV parser config (e.g. "header" instead of "headers") must
+// be reported as an error rather than silently using the default value.
+#[test]
+fn test_csv_input_config_unknown_field() {
+    init_test_logger();
+
+    let temp_input_file = NamedTempFile::new().unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file.path(),
+                        "follow": false
+                    }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": {
+                        "header": true
+                    }
+                }
+            }
+        }
+    }))
+    .unwrap();
+
+    let Err(err) = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    ) else {
+        panic!("expected controller creation to fail due to unknown CSV config field 'header'")
+    };
+
+    let msg = err.to_string();
+    // Full error looks like:
+    //   invalid controller configuration: Error parsing format configuration
+    //   for input endpoint 'test_input1': unknown field `header`, expected
+    //   one of `delimiter`, `headers`, ...
+    //   Invalid configuration: {"header":true}
+    assert!(
+        msg.contains("Error parsing format configuration for input endpoint 'test_input1'"),
+        "error should identify the affected endpoint: {msg}"
+    );
+    assert!(
+        msg.contains("unknown field `header`"),
+        "error should name the unknown field: {msg}"
+    );
+    assert!(
+        msg.contains("`headers`"),
+        "error should suggest the correct field name: {msg}"
+    );
+}
+
 // TODO: Parameterize this with config string, so we can test different
 // input/output formats and transports when we support more than one.
 proptest! {

@@ -19,7 +19,7 @@ pub enum CsvTrim {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema, PartialEq)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct CsvParserConfig {
     /// Field delimiter (default `','`).
     ///
@@ -126,7 +126,7 @@ impl From<char> for CsvDelimiter {
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct CsvEncoderConfig {
     /// Field delimiter (default `','`).
     ///

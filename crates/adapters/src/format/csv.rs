@@ -836,4 +836,45 @@ true,bar,buzz"#;
         assert_eq!(rows[0].first, "foo");
         assert_eq!(rows[0].second, "bar");
     }
+
+    // ---- Config deserialization error tests ----
+
+    // A typo in a config field name ("header" instead of "headers") must
+    // produce an error rather than being silently ignored.
+    #[test]
+    fn parser_config_rejects_unknown_field() {
+        let bad = serde_json::json!({ "header": true });
+        let err = CsvParserConfig::deserialize(&bad)
+            .expect_err("expected error for unknown field 'header'")
+            .to_string();
+        // Serde names the offending key and lists all valid keys.
+        // Example: unknown field `header`, expected one of `delimiter`, `headers`, ...
+        assert!(
+            err.contains("unknown field `header`"),
+            "error should name the unknown field: {err}"
+        );
+        assert!(
+            err.contains("`headers`"),
+            "error should list 'headers' as a valid field: {err}"
+        );
+    }
+
+    #[test]
+    fn encoder_config_rejects_unknown_field() {
+        use feldera_types::format::csv::CsvEncoderConfig;
+        // intentional typo: "delimeter" instead of "delimiter"
+        let bad = serde_json::json!({ "delimeter": ";" });
+        let err = CsvEncoderConfig::deserialize(&bad)
+            .expect_err("expected error for unknown field 'delimeter'")
+            .to_string();
+        // Example: unknown field `delimeter`, expected `delimiter` or `buffer_size_records`
+        assert!(
+            err.contains("unknown field `delimeter`"),
+            "error should name the unknown field: {err}"
+        );
+        assert!(
+            err.contains("`delimiter`"),
+            "error should list 'delimiter' as a valid field: {err}"
+        );
+    }
 }
