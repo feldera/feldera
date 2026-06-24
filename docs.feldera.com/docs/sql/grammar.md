@@ -339,7 +339,7 @@ query
       |   query MINUS [ DISTINCT ] query
       |   query INTERSECT [ DISTINCT ] query
       }
-      [ ORDER BY orderItem [, orderItem ]* ]
+      [ ORDER BY { ALL [ ASC | DESC ] [ NULLS FIRST | NULLS LAST ] | orderItem [, orderItem]* } ]
       [ LIMIT [ start, ] { count | ALL } ]
       [ OFFSET start [ { ROW | ROWS } ] ]
       [ FETCH { FIRST | NEXT } [ count ] { ROW | ROWS } ONLY ]
@@ -360,14 +360,24 @@ values
   :   { VALUES | VALUE } expression [, expression ]*
 
 select
-  :   SELECT [ hintComment ] [ ALL | DISTINCT ]
-          { projectItem [, projectItem ]* }
+  :   SELECT [ hintComment ] [ ALL | DISTINCT [ ON '(' expression [ ',' expression ]* ')' ] ] { projectItem [, projectItem ]* }
       FROM tableExpression
       [ WHERE booleanExpression ]
-      [ GROUP BY [ ALL | DISTINCT ] { groupItem [, groupItem ]* } ]
+      [ GROUP BY { ALL | [ ALL | DISTINCT ] { groupItem [, groupItem ]* } } ]
       [ HAVING booleanExpression ]
       [ QUALIFY booleanExpression ]
 ```
+
+`DISTINCT ON` allows you to eliminate duplicate rows based on
+specified expressions, keeping the first row in each group as
+determined by the `ORDER BY` clause. When using `DISTINCT ON`, the
+expressions in the `DISTINCT ON` clause must match a prefix of the
+`ORDER BY` clause.
+
+`GROUP BY ALL` without any groupItem specified groups by every
+expression in the `SELECT` clause that is not an aggregate function.
+For example, `SELECT deptno, SUM(sal) FROM emp GROUP BY ALL` is
+equivalent to `SELECT deptno, SUM(sal) FROM emp GROUP BY deptno`.
 
 <a id="lateral"></a>
 ```
@@ -405,6 +415,12 @@ selectWithReplace
 orderItem
   :   expression [ ASC | DESC ] [ NULLS FIRST | NULLS LAST ]
 ```
+
+`ORDER BY ALL` will order on all expressions of the `SELECT`
+statement, in the order they appear.  E.g., `SELECT x, y FROM t ORDER
+BY ALL` is equivalent to `SELECT x, y FROM t ORDER BY x, y`.  An
+optional trailing `ASC/DESC/NULLS FIRST/NULLS LAST` applies to all
+expressions.
 
 <a id="as"></a>
 ```
