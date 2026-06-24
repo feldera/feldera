@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.ExpressionOracleHarvest;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.TableData;
@@ -301,6 +302,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         Utilities.enforce(circuit != null);
         circuit.setName("circuit" + suffix);
+        ExpressionOracleHarvest.maybeHarvest(circuit, compiler);
         DBSPNode.done();
 
         List<DBSPSinkOperator> sinks = Linq.list(circuit.sinkOperators.values());
