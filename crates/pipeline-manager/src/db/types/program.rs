@@ -697,7 +697,7 @@ impl ProgramInfo {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TransportDirection {
     Input,
     Output,
@@ -758,6 +758,12 @@ fn sql_connector_transport_direction(name: &str) -> Option<TransportDirection> {
     }
 }
 
+fn rejects_sql_connector_transport(name: &str, expected_direction: TransportDirection) -> bool {
+    let sql_direction = sql_connector_transport_direction(name);
+    matches!(sql_direction, Some(direction) if direction != expected_direction)
+        || (known_transport_direction(name).is_some() && sql_direction.is_none())
+}
+
 /// Generates the program info using the program schema.
 /// The info includes the schema and the input/output connectors derived from it.
 pub fn generate_program_info(
@@ -781,10 +787,7 @@ pub fn generate_program_info(
                 .clone()
                 .expect("Origin value cannot be None if connectors is non-empty");
             let transport_name = connector.config.transport.name();
-            let sql_direction = sql_connector_transport_direction(transport_name);
-            if sql_direction == Some(TransportDirection::Output)
-                || (known_transport_direction(transport_name).is_some() && sql_direction.is_none())
-            {
+            if rejects_sql_connector_transport(transport_name, TransportDirection::Input) {
                 return Err(ConnectorGenerationError::ExpectedInputConnector {
                     position: origin_value.value_position,
                     relation: input_relation.name.sql_name(),
@@ -825,10 +828,7 @@ pub fn generate_program_info(
                 .clone()
                 .expect("Origin value cannot be None if connectors is non-empty");
             let transport_name = connector.config.transport.name();
-            let sql_direction = sql_connector_transport_direction(transport_name);
-            if sql_direction == Some(TransportDirection::Input)
-                || (known_transport_direction(transport_name).is_some() && sql_direction.is_none())
-            {
+            if rejects_sql_connector_transport(transport_name, TransportDirection::Output) {
                 return Err(ConnectorGenerationError::ExpectedOutputConnector {
                     position: origin_value.value_position,
                     relation: output_relation.name.sql_name(),
@@ -905,7 +905,10 @@ pub fn generate_pipeline_config(
 
 #[cfg(test)]
 mod tests {
-    use super::{determine_connector_endpoint_names, generate_program_info, RuntimeSelector};
+    use super::{
+        determine_connector_endpoint_names, generate_program_info, known_transport_direction,
+        sql_connector_transport_direction, RuntimeSelector,
+    };
     use crate::db::types::program::ConnectorGenerationError::{
         ExpectedInputConnector, ExpectedOutputConnector, RelationConnectorNameCollision,
     };
@@ -1078,6 +1081,59 @@ mod tests {
                 "inputs": [],
                 "outputs": [relation],
             })
+        }
+    }
+
+    fn builtin_transport_names() -> [&'static str; 24] {
+        [
+            TransportConfig::FILE_INPUT,
+            TransportConfig::FILE_OUTPUT,
+            TransportConfig::NATS_INPUT,
+            TransportConfig::KAFKA_INPUT,
+            TransportConfig::KAFKA_OUTPUT,
+            TransportConfig::PUB_SUB_INPUT,
+            TransportConfig::URL_INPUT,
+            TransportConfig::S3_INPUT,
+            TransportConfig::DELTA_TABLE_INPUT,
+            TransportConfig::DELTA_TABLE_OUTPUT,
+            TransportConfig::DYNAMODB_OUTPUT,
+            TransportConfig::REDIS_OUTPUT,
+            TransportConfig::ICEBERG_INPUT,
+            TransportConfig::POSTGRES_INPUT,
+            TransportConfig::POSTGRES_CDC_INPUT,
+            TransportConfig::POSTGRES_OUTPUT,
+            TransportConfig::DATAGEN,
+            TransportConfig::NEXMARK,
+            TransportConfig::HTTP_INPUT,
+            TransportConfig::HTTP_OUTPUT,
+            TransportConfig::ADHOC_INPUT,
+            TransportConfig::CLOCK,
+            TransportConfig::NULL_OUTPUT,
+            TransportConfig::EMPTY_INPUT,
+        ]
+    }
+
+    #[test]
+    fn builtin_transports_have_known_direction() {
+        for transport_name in builtin_transport_names() {
+            assert!(
+                known_transport_direction(transport_name).is_some(),
+                "{transport_name} should have a known transport direction"
+            );
+        }
+    }
+
+    #[test]
+    fn sql_transport_directions_match_known_directions() {
+        for transport_name in builtin_transport_names() {
+            let Some(sql_direction) = sql_connector_transport_direction(transport_name) else {
+                continue;
+            };
+            assert_eq!(
+                known_transport_direction(transport_name),
+                Some(sql_direction),
+                "{transport_name} should have matching SQL and known transport directions"
+            );
         }
     }
 
