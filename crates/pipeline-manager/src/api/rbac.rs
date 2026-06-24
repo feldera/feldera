@@ -11,6 +11,7 @@
 //! here rather than handed on.
 
 use crate::auth::AuthenticatedPrincipal;
+use crate::config::BasePath;
 use crate::db::error::DBError;
 use crate::db::types::role::Role;
 use actix_web::body::{BoxBody, MessageBody};
@@ -310,6 +311,11 @@ fn audit(method: &Method, pattern: &str, principal: Option<&AuthenticatedPrincip
 /// Refuse any `/v0` request whose principal is below the role its route
 /// requires, and record the ones that pass. Runs after `auth_validator` has
 /// installed the principal, so the role is already resolved here.
+///
+/// The route table is authored against root-relative patterns, so a deployment
+/// mounted on a subpath has its base path stripped off the request path first:
+/// `/feldera/v0/pipelines` classifies as `/v0/pipelines`. Left on, the prefix
+/// makes every path miss the table and denies the entire API.
 pub(crate) async fn rbac_middleware(
     req: ServiceRequest,
     next: Next<impl MessageBody + 'static>,
@@ -320,10 +326,12 @@ pub(crate) async fn rbac_middleware(
     // percent-decoded path, so the guard reads that same view rather than the
     // raw URI, which the router could spell differently. `match_info().as_str()`
     // is actix's decoded path.
-    let path = req.match_info().as_str().to_string();
+    let routed_path = req.match_info().as_str().to_string();
     // Only picks 404 versus 403 for an unclassified path; it never lets a
-    // request through, so a wrong answer here cannot reach a handler.
-    let routed = req.resource_map().match_pattern(&path).is_some();
+    // request through, so a wrong answer here cannot reach a handler. The
+    // resource map is keyed by mounted path, so this matches before the strip.
+    let routed = req.resource_map().match_pattern(&routed_path).is_some();
+    let path = BasePath::strip_from(&req, &routed_path).to_string();
 
     match authorize(method.as_str(), routed, &path, principal.as_ref()) {
         Ok(pattern) => {
