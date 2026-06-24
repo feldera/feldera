@@ -25,7 +25,7 @@ use erased_serde::Deserializer as ErasedDeserializer;
 use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_adapterlib::format::{BufferSize, flatten_nested};
 use feldera_sqllib::Variant;
-use feldera_types::format::csv::CsvParserConfig;
+use feldera_types::format::csv::CsvFormatConfig;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
 use serde_json::de::SliceRead;
@@ -94,8 +94,8 @@ pub struct CsvDeserializerFromBytes {
     config: SqlSerdeConfig,
 }
 
-impl DeserializerFromBytes<(SqlSerdeConfig, CsvParserConfig)> for CsvDeserializerFromBytes {
-    fn create((serde_config, csv_config): (SqlSerdeConfig, CsvParserConfig)) -> Self {
+impl DeserializerFromBytes<(SqlSerdeConfig, CsvFormatConfig)> for CsvDeserializerFromBytes {
+    fn create((serde_config, csv_config): (SqlSerdeConfig, CsvFormatConfig)) -> Self {
         CsvDeserializerFromBytes {
             // `csv_reader_builder` sets `has_headers(false)` — the adapter
             // layer handles header-row skipping itself.

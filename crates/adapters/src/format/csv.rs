@@ -12,7 +12,7 @@ use feldera_adapterlib::{ConnectorMetadata, catalog::SerCursorFlattened};
 use feldera_sqllib::Variant;
 use feldera_types::{
     config::ConnectorConfig,
-    format::csv::{CsvEncoderConfig, CsvParserConfig},
+    format::csv::{CsvEncoderConfig, CsvFormatConfig},
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -45,7 +45,7 @@ fn csv_trim(t: &feldera_types::format::csv::CsvTrim) -> csv::Trim {
 ///
 /// `has_headers` is always `false` — the adapter layer skips the header row
 /// itself and must not pass it to the underlying CSV reader.
-pub(crate) fn csv_reader_builder(config: &CsvParserConfig) -> csv::ReaderBuilder {
+pub(crate) fn csv_reader_builder(config: &CsvFormatConfig) -> csv::ReaderBuilder {
     let mut b = csv::ReaderBuilder::new();
     b.has_headers(false)
         .delimiter(config.delimiter().0)
@@ -75,7 +75,7 @@ impl InputFormat for CsvInputFormat {
         _endpoint_name: &str,
         _request: &HttpRequest,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
-        Ok(Box::new(CsvParserConfig::default()))
+        Ok(Box::new(CsvFormatConfig::default()))
     }
 
     fn new_parser(
@@ -85,7 +85,7 @@ impl InputFormat for CsvInputFormat {
         config: &serde_json::Value,
     ) -> Result<Box<dyn Parser>, ControllerError> {
         let config = if config.is_null() { &json!({}) } else { config };
-        let config = CsvParserConfig::deserialize(config).map_err(|e| {
+        let config = CsvFormatConfig::deserialize(config).map_err(|e| {
             ControllerError::parser_config_parse_error(
                 endpoint_name,
                 &e,
@@ -121,7 +121,7 @@ struct CsvParser {
 }
 
 impl CsvParser {
-    fn new(input_stream: Box<dyn DeCollectionStream>, config: &CsvParserConfig) -> Self {
+    fn new(input_stream: Box<dyn DeCollectionStream>, config: &CsvFormatConfig) -> Self {
         Self {
             input_stream,
             last_event_number: 0,
@@ -404,13 +404,13 @@ impl Encoder for CsvEncoder {
 
         let mut cursor = if self.input_is_indexed {
             CursorWithPolarity::new(Box::new(SerCursorFlattened::new(batch.cursor(
-                RecordFormat::Csv(CsvParserConfig {
+                RecordFormat::Csv(CsvFormatConfig {
                     delimiter: self.config.delimiter,
                     ..Default::default()
                 }),
             )?)))
         } else {
-            CursorWithPolarity::new(batch.cursor(RecordFormat::Csv(CsvParserConfig {
+            CursorWithPolarity::new(batch.cursor(RecordFormat::Csv(CsvFormatConfig {
                 delimiter: self.config.delimiter,
                 ..Default::default()
             }))?)
@@ -482,7 +482,7 @@ mod test {
 
     use super::CsvSplitter;
     use crate::format::Splitter;
-    use feldera_types::format::csv::{CsvParserConfig, CsvTrim};
+    use feldera_types::format::csv::{CsvFormatConfig, CsvTrim};
 
     #[derive(Debug, Eq, PartialEq)]
     #[allow(non_snake_case)]
@@ -630,7 +630,7 @@ true,bar,buzz"#;
 
     /// Push `data` through a fully-configured `CsvParser` and return the
     /// inserted `TwoStrings` records.
-    fn e2e_parse_csv(config: CsvParserConfig, data: &[u8]) -> Vec<TwoStrings> {
+    fn e2e_parse_csv(config: CsvFormatConfig, data: &[u8]) -> Vec<TwoStrings> {
         let format_config = FormatConfig {
             name: Cow::from("csv"),
             config: serde_json::to_value(config).unwrap(),
@@ -655,7 +655,7 @@ true,bar,buzz"#;
     #[test]
     fn csv_e2e_quote() {
         let rows = e2e_parse_csv(
-            CsvParserConfig {
+            CsvFormatConfig {
                 quote: '\'',
                 ..Default::default()
             },
@@ -682,7 +682,7 @@ true,bar,buzz"#;
     #[test]
     fn csv_e2e_escape() {
         let rows = e2e_parse_csv(
-            CsvParserConfig {
+            CsvFormatConfig {
                 escape: Some('\\'),
                 double_quote: false,
                 ..Default::default()
@@ -699,7 +699,7 @@ true,bar,buzz"#;
     #[test]
     fn csv_e2e_double_quote() {
         let rows = e2e_parse_csv(
-            CsvParserConfig::default(),
+            CsvFormatConfig::default(),
             // "foo""bar" → foo"bar
             b"\"foo\"\"bar\",baz\n",
         );
@@ -714,7 +714,7 @@ true,bar,buzz"#;
     #[test]
     fn csv_e2e_double_quote_disabled() {
         let rows = e2e_parse_csv(
-            CsvParserConfig {
+            CsvFormatConfig {
                 double_quote: false,
                 ..Default::default()
             },
@@ -728,7 +728,7 @@ true,bar,buzz"#;
     // `trim = None` (default): leading and trailing whitespace is preserved.
     #[test]
     fn csv_e2e_trim_none() {
-        let rows = e2e_parse_csv(CsvParserConfig::default(), b"  foo  ,  bar  \n");
+        let rows = e2e_parse_csv(CsvFormatConfig::default(), b"  foo  ,  bar  \n");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].first, "  foo  ");
         assert_eq!(rows[0].second, "  bar  ");
@@ -738,7 +738,7 @@ true,bar,buzz"#;
     #[test]
     fn csv_e2e_quoting_disabled() {
         let rows = e2e_parse_csv(
-            CsvParserConfig {
+            CsvFormatConfig {
                 quoting: false,
                 ..Default::default()
             },
@@ -754,7 +754,7 @@ true,bar,buzz"#;
     #[test]
     fn csv_e2e_comment() {
         let rows = e2e_parse_csv(
-            CsvParserConfig {
+            CsvFormatConfig {
                 comment: Some('#'),
                 ..Default::default()
             },
@@ -770,7 +770,7 @@ true,bar,buzz"#;
     #[test]
     fn csv_e2e_flexible_true() {
         let rows = e2e_parse_csv(
-            CsvParserConfig::default(), // flexible=true
+            CsvFormatConfig::default(), // flexible=true
             b"foo,bar\nqux,quux,extra\n",
         );
         assert_eq!(rows.len(), 2);
@@ -785,7 +785,7 @@ true,bar,buzz"#;
     fn csv_e2e_flexible_false() {
         let format_config = FormatConfig {
             name: Cow::from("csv"),
-            config: serde_json::to_value(CsvParserConfig {
+            config: serde_json::to_value(CsvFormatConfig {
                 flexible: false,
                 ..Default::default()
             })
@@ -811,7 +811,7 @@ true,bar,buzz"#;
     #[test]
     fn csv_e2e_trim_fields() {
         let rows = e2e_parse_csv(
-            CsvParserConfig {
+            CsvFormatConfig {
                 trim: CsvTrim::Fields,
                 ..Default::default()
             },
@@ -826,7 +826,7 @@ true,bar,buzz"#;
     #[test]
     fn csv_e2e_headers() {
         let rows = e2e_parse_csv(
-            CsvParserConfig {
+            CsvFormatConfig {
                 headers: true,
                 ..Default::default()
             },

@@ -396,7 +396,7 @@ We exercise this circuit by inserting data using a CSV format:
 #[test]
 pub fn test() {
     use dbsp_adapters::{CircuitCatalog, RecordFormat};
-    use use feldera_types::format::csv::CsvParserConfig;
+    use feldera_types::format::csv::CsvFormatConfig;
 
     let (mut circuit, catalog) = circuit(2)
         .expect("Failed to build circuit");
@@ -430,7 +430,7 @@ pub fn test() {
     // Read the produced output
     let reader = adult.concat().consolidate();
     let mut cursor = reader
-        .cursor(RecordFormat::Csv(CsvParserConfig::default()))
+        .cursor(RecordFormat::Csv(CsvFormatConfig::default()))
         .unwrap();
     while cursor.key_valid() {
         let mut w = cursor.weight();

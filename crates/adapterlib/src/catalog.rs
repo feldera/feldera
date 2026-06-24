@@ -21,7 +21,7 @@ use dbsp::dynamic::{ClonableTrait, DynData, DynVec, Erase, Factory};
 use dbsp::operator::StagedBuffers;
 use dyn_clone::DynClone;
 use feldera_sqllib::Variant;
-use feldera_types::format::csv::CsvParserConfig;
+use feldera_types::format::csv::CsvFormatConfig;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::SqlSerdeConfig;
@@ -43,7 +43,7 @@ pub enum RecordFormat {
     // raw encoding of this column only.  This is particularly useful for
     // tables that store raw JSON or binary data to be parsed using SQL.
     Json(JsonFlavor),
-    Csv(CsvParserConfig),
+    Csv(CsvFormatConfig),
     Parquet(SqlSerdeConfig),
     #[cfg(feature = "with-avro")]
     Avro,

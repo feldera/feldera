@@ -20,19 +20,25 @@ pub enum CsvTrim {
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema, PartialEq)]
 #[serde(default)]
-pub struct CsvParserConfig {
+pub struct CsvFormatConfig {
     /// Field delimiter (default `','`).
     ///
     /// Must be an ASCII character.
+    ///
+    /// Used by: input and output.
     pub delimiter: char,
 
     /// Whether the input begins with a header line (which is skipped).
+    ///
+    /// Used by: input only.
     pub headers: bool,
 
     /// The quote character (default `'"'`).
     ///
     /// Must be an ASCII character.  Set `quoting` to `false` to disable
     /// quoting entirely.
+    ///
+    /// Used by: input only.
     pub quote: char,
 
     /// The escape character for quoted fields (default: `None`).
@@ -44,6 +50,8 @@ pub struct CsvParserConfig {
     /// escaping).
     ///
     /// Must be an ASCII character.
+    ///
+    /// Used by: input only.
     pub escape: Option<char>,
 
     /// Enable double-quote escaping (default `true`).
@@ -51,37 +59,47 @@ pub struct CsvParserConfig {
     /// When `true`, a quote character inside a quoted field may be escaped by
     /// doubling it.  Setting this to `false` disables double-quote escaping
     /// (an explicit `escape` character can still be used).
+    ///
+    /// Used by: input only.
     pub double_quote: bool,
 
     /// Enable quoting (default `true`).
     ///
     /// When `false`, the `quote` and `escape` characters have no special
     /// meaning and every newline terminates a record regardless of context.
+    ///
+    /// Used by: input only.
     pub quoting: bool,
 
     /// Comment character (default: `None`).
     ///
     /// When set, lines whose first byte matches this character are treated as
     /// comments and skipped entirely.  Must be an ASCII character.
+    ///
+    /// Used by: input only.
     pub comment: Option<char>,
 
     /// Allow records with a variable number of fields (default `true`).
     ///
     /// When `true`, records that have fewer or more fields than expected are
     /// accepted rather than treated as errors.
+    ///
+    /// Used by: input only.
     pub flexible: bool,
 
     /// Whitespace trimming policy (default [`CsvTrim::None`]).
+    ///
+    /// Used by: input only.
     pub trim: CsvTrim,
 }
 
-impl CsvParserConfig {
+impl CsvFormatConfig {
     pub fn delimiter(&self) -> CsvDelimiter {
         self.delimiter.into()
     }
 }
 
-impl Default for CsvParserConfig {
+impl Default for CsvFormatConfig {
     fn default() -> Self {
         Self {
             delimiter: CsvDelimiter::default().0.into(),
