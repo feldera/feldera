@@ -5,6 +5,7 @@ use crate::db::types::version::Version;
 use crate::db::{error::DBError, types::pipeline::PipelineId};
 use crate::has_unstable_feature;
 use crate::oidc::destination::TenantIssuerPolicy;
+use actix_web::dev::ServiceRequest;
 use actix_web::http::header;
 use anyhow::{Context, Error as AnyError, Result as AnyResult};
 use clap::Parser;
@@ -1172,6 +1173,23 @@ pub struct ApiServerConfig {
     #[serde(default = "default_provision_on_login")]
     #[arg(long, action = clap::ArgAction::Set, default_value_t = true, env = "FELDERA_AUTH_PROVISION_ON_LOGIN")]
     pub provision_on_login: bool,
+
+    /// URL path prefix that Feldera is served under.
+    ///
+    /// Set this when Feldera sits behind a reverse proxy that mounts it on a
+    /// subpath rather than at the origin root — for example, serving
+    /// `https://example.com/feldera/` instead of `https://example.com/`.
+    ///
+    /// The value must start with a `/` and must not end with one (e.g.
+    /// `/feldera`). Leave it empty (the default) to serve from the root path.
+    ///
+    /// When set, the HTTP API is mounted under `<base-path>/v0`, the web
+    /// console under `<base-path>/`, and the manager rewrites the embedded
+    /// console bundle at startup so its client-side router, links, and API
+    /// calls all use the prefix. No rebuild is required.
+    #[serde(default)]
+    #[arg(long, default_value = "", env = "FELDERA_HTTP_BASE_PATH")]
+    pub http_base_path: String,
 }
 
 /// A trust relationship granting the platform-wide `owner` role, declared at
@@ -1304,6 +1322,24 @@ impl ApiServerConfig {
         }
     }
 
+    /// The configured base path, normalized to either an empty string (a root
+    /// deployment) or a `/`-prefixed prefix without a trailing slash.
+    ///
+    /// Normalization is lenient: leading/trailing whitespace and trailing
+    /// slashes are trimmed, and a missing leading slash is added. Examples:
+    /// `""` → `""`, `"/"` → `""`, `"feldera"` → `"/feldera"`,
+    /// `"/feldera/"` → `"/feldera"`.
+    pub(crate) fn normalized_http_base_path(&self) -> String {
+        let trimmed = self.http_base_path.trim().trim_end_matches('/');
+        if trimmed.is_empty() {
+            String::new()
+        } else if trimmed.starts_with('/') {
+            trimmed.to_string()
+        } else {
+            format!("/{trimmed}")
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn test_config() -> Self {
         Self {
@@ -1327,6 +1363,50 @@ impl ApiServerConfig {
             default_role: Role::Read,
             first_user_role: Role::Admin,
             provision_on_login: true,
+            http_base_path: String::new(),
+        }
+    }
+}
+
+/// The URL prefix the API and web console are mounted under, registered as
+/// app data so middleware can recover a root-relative path from a request.
+///
+/// Actix reports the full URL path, so a manager served from `/feldera` sees
+/// `/feldera/v0/pipelines`, while every path-matching rule in the manager —
+/// the RBAC route table, the session-endpoint exemption — is authored against
+/// root-relative patterns like `/v0/pipelines`. Middleware calls
+/// [`BasePath::root_relative`] before matching.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct BasePath(pub String);
+
+impl BasePath {
+    /// `req`'s path as the manager's route tables spell it: root-relative, with
+    /// the deployment's base path removed.
+    ///
+    /// The prefix comes from app data, which `build_app` registers on the App.
+    /// A request that carries none is already root-relative.
+    pub(crate) fn root_relative(req: &ServiceRequest) -> &str {
+        match req.app_data::<BasePath>() {
+            Some(base_path) => base_path.strip(req.path()),
+            None => req.path(),
+        }
+    }
+
+    /// `path` with the base prefix removed.
+    ///
+    /// Callers see only paths actix already routed into a prefixed scope, so
+    /// the prefix is always present; a path without it comes back unchanged
+    /// rather than truncated into something else.
+    fn strip<'a>(&self, path: &'a str) -> &'a str {
+        if self.0.is_empty() {
+            return path;
+        }
+        match path.strip_prefix(self.0.as_str()) {
+            // The prefix has to end on a segment boundary, as actix's own scope
+            // matching requires: `/felderax` is a different mount point, not
+            // `/feldera` with a suffix.
+            Some(rest) if rest.is_empty() || rest.starts_with('/') => rest,
+            _ => path,
         }
     }
 }
@@ -1527,6 +1607,41 @@ impl LocalRunnerConfig {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    /// `root_relative` reads the prefix from app data. `build_app` always
+    /// registers it, so the fallback covers only a request built without it —
+    /// which is root-relative already.
+    #[test]
+    fn root_relative_path_falls_back_to_the_raw_path() {
+        let req = actix_web::test::TestRequest::get()
+            .uri("/v0/pipelines")
+            .to_srv_request();
+        assert_eq!(BasePath::root_relative(&req), "/v0/pipelines");
+
+        let req = actix_web::test::TestRequest::get()
+            .uri("/feldera/v0/pipelines")
+            .app_data(BasePath("/feldera".to_string()))
+            .to_srv_request();
+        assert_eq!(BasePath::root_relative(&req), "/v0/pipelines");
+    }
+
+    /// `strip` recovers the root-relative path the route tables are written
+    /// against. A root deployment is a pass-through, and a path that never
+    /// carried the prefix is left alone rather than mangled.
+    #[test]
+    fn base_path_strips_the_prefix() {
+        assert_eq!(
+            BasePath(String::new()).strip("/v0/pipelines"),
+            "/v0/pipelines"
+        );
+        let base = BasePath("/feldera".to_string());
+        assert_eq!(base.strip("/feldera/v0/pipelines"), "/v0/pipelines");
+        assert_eq!(base.strip("/feldera"), "");
+        assert_eq!(base.strip("/v0/pipelines"), "/v0/pipelines");
+        // The prefix must end on a segment boundary: `/felderax` is a different
+        // mount point, so its paths are none of this base path's business.
+        assert_eq!(base.strip("/felderax/v0"), "/felderax/v0");
+    }
 
     #[test]
     fn owner_trusts_parse_from_json() {
