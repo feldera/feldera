@@ -339,8 +339,18 @@ pub fn input_transport_config_to_endpoint(
     endpoint_name: &str,
     secrets_dir: &Path,
 ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+    let registry = builtin_input_transport_registry();
+    input_transport_config_to_endpoint_with_registry(config, endpoint_name, secrets_dir, &registry)
+}
+
+fn input_transport_config_to_endpoint_with_registry(
+    config: &TransportConfig,
+    _endpoint_name: &str,
+    secrets_dir: &Path,
+    registry: &InputTransportRegistry,
+) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
-    builtin_input_transport_registry().create_endpoint(&config)
+    registry.create_endpoint(&config)
 }
 
 /// Creates an output transport endpoint instance using an output transport
@@ -359,14 +369,68 @@ pub fn output_transport_config_to_endpoint(
     fault_tolerant: bool,
     secrets_dir: &Path,
 ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
+    let registry = builtin_output_transport_registry();
+    output_transport_config_to_endpoint_with_registry(
+        config,
+        endpoint_name,
+        fault_tolerant,
+        secrets_dir,
+        &registry,
+    )
+}
+
+fn output_transport_config_to_endpoint_with_registry(
+    config: &TransportConfig,
+    endpoint_name: &str,
+    fault_tolerant: bool,
+    secrets_dir: &Path,
+    registry: &OutputTransportRegistry,
+) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
-    builtin_output_transport_registry().create_endpoint(&config, endpoint_name, fault_tolerant)
+    registry.create_endpoint(&config, endpoint_name, fault_tolerant)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use feldera_types::config::FtModel;
+    use serde_json::json;
+    use std::fs::{File, create_dir_all};
+    use std::io::Write;
+    use std::path::Path;
+
+    struct SecretAssertingInputFactory;
+
+    impl InputTransportEndpointFactory for SecretAssertingInputFactory {
+        fn create(
+            &self,
+            config: &TransportConfig,
+        ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+            assert_eq!(config.config["path"], json!("resolved-input-path"));
+            Ok(None)
+        }
+    }
+
+    struct SecretAssertingOutputFactory;
+
+    impl OutputTransportEndpointFactory for SecretAssertingOutputFactory {
+        fn create(
+            &self,
+            config: &TransportConfig,
+            _endpoint_name: &str,
+            _fault_tolerant: bool,
+        ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
+            assert_eq!(config.config["path"], json!("resolved-output-path"));
+            Ok(None)
+        }
+    }
+
+    fn write_test_secret(secrets_dir: &Path, key: &str, value: &str) {
+        let name_dir = secrets_dir.join("kubernetes").join("transport");
+        create_dir_all(&name_dir).unwrap();
+        let mut file = File::create(name_dir.join(key)).unwrap();
+        file.write_all(value.as_bytes()).unwrap();
+    }
 
     #[test]
     fn builtin_input_registry_creates_empty_input_endpoint() {
@@ -472,6 +536,63 @@ mod tests {
         );
         output_registry.register(String::from("dynamic_output"), Box::new(NullOutputFactory));
         assert!(output_registry.get("dynamic_output").is_some());
+    }
+
+    #[test]
+    fn input_transport_secrets_are_resolved_before_factory_parsing() {
+        let secrets_dir = tempfile::tempdir().unwrap();
+        write_test_secret(secrets_dir.path(), "input", "resolved-input-path");
+
+        let config = TransportConfig::new(
+            "secret_asserting_input",
+            json!({"path": "${secret:kubernetes:transport/input}"}),
+        );
+
+        let mut input_registry = InputTransportRegistry::new();
+        input_registry.register(
+            "secret_asserting_input",
+            Box::new(SecretAssertingInputFactory),
+        );
+
+        assert!(
+            input_transport_config_to_endpoint_with_registry(
+                &config,
+                "input",
+                secrets_dir.path(),
+                &input_registry,
+            )
+            .unwrap()
+            .is_none()
+        )
+    }
+
+    #[test]
+    fn output_transport_secrets_are_resolved_before_factory_parsing() {
+        let secrets_dir = tempfile::tempdir().unwrap();
+        write_test_secret(secrets_dir.path(), "output", "resolved-output-path");
+
+        let config = TransportConfig::new(
+            "secret_asserting_output",
+            json!({"path": "${secret:kubernetes:transport/output}"}),
+        );
+
+        let mut output_registry = OutputTransportRegistry::new();
+        output_registry.register(
+            "secret_asserting_output",
+            Box::new(SecretAssertingOutputFactory),
+        );
+
+        assert!(
+            output_transport_config_to_endpoint_with_registry(
+                &config,
+                "output",
+                false,
+                secrets_dir.path(),
+                &output_registry,
+            )
+            .unwrap()
+            .is_none()
+        )
     }
 
     #[test]
