@@ -55,6 +55,8 @@ where
 
 /// Create an instance of an integrated output endpoint given its config
 /// and output relation schema.
+/// Integrated connectors stay outside the transport registry because they
+/// need schema and controller lifecycle state when they are constructed.
 #[allow(unused, clippy::too_many_arguments)]
 pub fn create_integrated_output_endpoint(
     endpoint_id: EndpointId,
