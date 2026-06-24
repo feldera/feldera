@@ -980,6 +980,7 @@ data: {
     includeParsingStringLiteralAsArrayLiteral: true
     includeIntervalWithoutQualifier: false
     includeStarExclude: true
+    includeDistinctOn: true
 
     # Method for parsing "SET [OR RESET]" calls.
     setOptionParserMethod: "SqlSetOption"
