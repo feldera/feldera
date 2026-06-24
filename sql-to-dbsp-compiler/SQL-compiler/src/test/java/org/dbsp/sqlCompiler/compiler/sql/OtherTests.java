@@ -436,7 +436,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 #[test]
                 pub fn test() {
                     use dbsp_adapters::{CircuitCatalog, RecordFormat};
-                    use feldera_types::format::csv::CsvParserConfig;
+                    use feldera_types::format::csv::CsvFormatConfig;
 
                     let (mut circuit, catalog) = circuit(CircuitConfig::with_workers(2))
                         .expect("Failed to build circuit");
@@ -470,7 +470,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     // Read the produced output
                     let reader = adult.concat();
                     let mut cursor = reader
-                        .cursor(RecordFormat::Csv(CsvParserConfig::default()))
+                        .cursor(RecordFormat::Csv(CsvFormatConfig::default()))
                         .unwrap();
                     while cursor.key_valid() {
                         let mut w = cursor.weight();

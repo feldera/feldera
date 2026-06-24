@@ -41,7 +41,7 @@ use feldera_types::serde_with_context::serialize::{
     SerializeFieldsWithContextWrapper, SerializeWithContextWrapper,
 };
 use feldera_types::{
-    format::csv::CsvParserConfig,
+    format::csv::CsvFormatConfig,
     serde_with_context::{SerializeWithContext, SqlSerdeConfig},
 };
 use rand::thread_rng;
@@ -197,7 +197,7 @@ struct CsvSerializer {
 }
 
 impl CsvSerializer {
-    fn create(config: CsvParserConfig) -> Self {
+    fn create(config: CsvFormatConfig) -> Self {
         Self {
             writer: CsvWriterBuilder::new()
                 .has_headers(false)
