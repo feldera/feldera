@@ -374,6 +374,31 @@ where
         B: Batch<Time = ()>,
         Spine<B>: SizeOf,
     {
+        self.dyn_shard_accumulate_integrate_trace_inner(factories, false)
+    }
+
+    #[track_caller]
+    pub fn dyn_shard_accumulate_integrate_trace_legacy(
+        &self,
+        factories: &B::Factories,
+    ) -> Stream<C, Spine<B>>
+    where
+        B: Batch<Time = ()>,
+        Spine<B>: SizeOf,
+    {
+        self.dyn_shard_accumulate_integrate_trace_inner(factories, true)
+    }
+
+    #[track_caller]
+    pub fn dyn_shard_accumulate_integrate_trace_inner(
+        &self,
+        factories: &B::Factories,
+        legacy_pid: bool,
+    ) -> Stream<C, Spine<B>>
+    where
+        B: Batch<Time = ()>,
+        Spine<B>: SizeOf,
+    {
         // The stream is already sharded -- use regular accumulate_trace that doesn't shard.
         if let Some(sharded) = self.get_sharded_version() {
             return sharded.dyn_accumulate_integrate_trace(factories);
@@ -398,18 +423,19 @@ where
 
                     let accumulated = self.dyn_shard_accumulate(factories).into_enabled_stream();
 
+                    let integral_pid = if legacy_pid {
+                        persistent_id.map(|name| format!("{name}.shard.accintegral"))
+                    } else {
+                        persistent_id.map(|name| format!("{name}.shard_accintegral"))
+                    };
+
                     let (
                         ExportStream {
                             local: delayed_trace,
                             export,
                         },
                         z1feedback,
-                    ) = circuit.add_feedback_with_export_persistent(
-                        persistent_id
-                            .map(|name| format!("{name}.shard_accintegral"))
-                            .as_deref(),
-                        z1,
-                    );
+                    ) = circuit.add_feedback_with_export_persistent(integral_pid.as_deref(), z1);
 
                     let replay_stream = z1feedback.operator_mut().prepare_replay_stream(self);
 
