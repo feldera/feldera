@@ -795,9 +795,10 @@ runtime check after every input table that has no primary key.  At
 each step, the check verifies that no record in the accumulated
 integral has a negative weight (i.e., the table has not received more
 deletions for a key than insertions).  A violation causes the pipeline
-to panic.  This option is intended for
-debugging pipelines that produce unexpected results due to invalid
-input data.
+to panic.  This option is intended for debugging pipelines that
+produce unexpected results due to invalid input data.  Note: this
+setting is expensive, and will trigger a full backfill for the
+affected tables.
 
 `FELDERA_AVOID_STAR_JOINS` if set to true the compiler will not
 generate code using the new feature of "star joins", which are a
