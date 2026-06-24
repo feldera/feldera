@@ -1,5 +1,6 @@
 import * as AxaOidc from '@axa-fr/oidc-client'
 import { errorCodeOf, requestTenantRecheck } from '$lib/compositions/tenantAccess'
+import { resolve } from '$lib/functions/svelte'
 import { stashRedirectTarget } from '$lib/services/redirectTarget'
 
 const { OidcClient } = AxaOidc
@@ -167,10 +168,10 @@ export const triggerOidcLogin = async (): Promise<void> => {
   try {
     oidcClient = OidcClient.get()
   } catch {
-    window.location.href = '/'
+    window.location.href = resolve('/')
     return
   }
-  await oidcClient.loginAsync('/')
+  await oidcClient.loginAsync(resolve('/'))
 }
 
 /**
