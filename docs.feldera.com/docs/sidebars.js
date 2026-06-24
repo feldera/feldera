@@ -317,6 +317,11 @@ const connectors = {
                 },
                 {
                     type: 'doc',
+                    id: 'connectors/sources/postgresql-cdc',
+                    label: 'PostgreSQL CDC'
+                },
+                {
+                    type: 'doc',
                     id: 'connectors/sources/s3',
                     label: 'AWS S3'
                 },

@@ -5,27 +5,33 @@ use crate::{ControllerError, InputConsumer, InputReader, PipelineState, RecordFo
 use anyhow::{Result as AnyResult, anyhow};
 use chrono::Utc;
 use dbsp::circuit::tokio::TOKIO;
+use etl::concurrency::ShutdownTx;
 use etl::config::{
     BatchConfig, InvalidatedSlotBehavior, MemoryBackpressureConfig, PgConnectionConfig,
-    PipelineConfig, TableSyncCopyConfig, TcpKeepaliveConfig, TlsConfig,
+    PipelineConfig, TableSyncCopyConfig, TcpKeepaliveConfig,
 };
 use etl::destination::Destination;
 use etl::destination::async_result::{
-    TruncateTableResult, WriteEventsResult, WriteTableRowsResult,
+    DropTableForCopyResult, WriteEventsResult, WriteTableRowsResult,
 };
-use etl::error::EtlResult;
+use etl::error::{ErrorKind, EtlResult};
+use etl::etl_error;
 use etl::pipeline::Pipeline;
+use etl::state::{TableRetryPolicy, TableState};
 use etl::store::both::postgres::PostgresStore;
-use etl::types::{ArrayCell, Cell, Event, TableId, TableRow};
+use etl::store::state::StateStore;
+use etl::types::{
+    ArrayCell, Cell, Event, OldTableRow, ReplicatedTableSchema, TableRow, UpdatedTableRow,
+};
 use feldera_adapterlib::catalog::{DeCollectionStream, InputCollectionHandle};
 use feldera_adapterlib::format::ParseError;
 use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_types::config::FtModel;
 use feldera_types::coordination::Completion;
 use feldera_types::format::json::JsonFlavor;
-use feldera_types::transport::postgres::PostgresCdcReaderConfig;
+use feldera_types::transport::postgres::{PostgresCdcReaderConfig, PostgresTlsConfig};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tokio::select;
@@ -34,6 +40,8 @@ use tokio::sync::watch::{Receiver, Sender, channel};
 use tracing::{debug, error, info, warn};
 use url::Url;
 use xxhash_rust::xxh3::xxh3_64;
+
+use super::tls::make_etl_tls_config;
 
 /// Deferred async result senders waiting for step completion.
 type DeferredSenders = Vec<WriteEventsResult<()>>;
@@ -48,14 +56,18 @@ impl PostgresCdcInputEndpoint {
         endpoint_name: &str,
         config: &PostgresCdcReaderConfig,
         consumer: Box<dyn InputConsumer>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, ControllerError> {
+        config.validate().map_err(|e| {
+            ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
+        })?;
+
+        Ok(Self {
             inner: Arc::new(PostgresCdcInputInner::new(
                 endpoint_name,
                 config.clone(),
                 consumer,
             )),
-        }
+        })
     }
 }
 
@@ -98,12 +110,27 @@ impl PostgresCdcInputReader {
             .handle
             .configure_deserializer(RecordFormat::Json(JsonFlavor::Datagen))?;
 
+        // Non-nullable columns of the Feldera table, in canonical form.
+        // Each of them must exist in the PostgreSQL table.
+        let feldera_required_columns: Vec<String> = input_handle
+            .schema
+            .fields
+            .iter()
+            .filter(|f| !f.columntype.nullable)
+            .map(|f| f.name.name())
+            .collect();
+
         thread::Builder::new()
             .name("postgres-cdc-input-tokio-wrapper".to_string())
             .spawn(move || {
                 TOKIO.block_on(async {
                     let _ = endpoint_clone
-                        .worker_task(input_stream, receiver, init_status_sender)
+                        .worker_task(
+                            input_stream,
+                            feldera_required_columns,
+                            receiver,
+                            init_status_sender,
+                        )
                         .await;
                 })
             })
@@ -130,6 +157,12 @@ impl InputReader for PostgresCdcInputReader {
     }
 
     fn request(&self, command: InputReaderCommand) {
+        if matches!(command, InputReaderCommand::Replay { .. }) {
+            panic!(
+                "replay command is not supported by PostgresCdcInputReader; this is a bug, please report it to Feldera developers: https://github.com/feldera/feldera/issues/"
+            );
+        }
+
         match command.as_nonft().unwrap() {
             NonFtInputReaderCommand::Queue => {
                 // Flush queue to circuit, collecting timestamps for watermarks.
@@ -162,7 +195,7 @@ impl InputReader for PostgresCdcInputReader {
                     std::mem::take(&mut *self.inner.pending_senders.lock().unwrap());
 
                 if !senders.is_empty() {
-                    if let Some(tx) = self.inner.completion_tx.as_ref() {
+                    if let Some(tx) = self.inner.completion_task_tx.as_ref() {
                         // Snapshot total_completed_steps AFTER flush.  The
                         // data will land in the next step (>completed), so
                         // this value is the correct lower bound for both
@@ -171,7 +204,7 @@ impl InputReader for PostgresCdcInputReader {
                         // per the `total_checkpointed_steps >= n` semantics).
                         let step_at_flush = self
                             .inner
-                            .completion_rx
+                            .step_completion_rx
                             .as_ref()
                             .map(|rx| rx.borrow().total_completed_steps)
                             .unwrap_or(0);
@@ -211,16 +244,19 @@ struct PostgresCdcInputInner {
     pending_senders: Arc<Mutex<DeferredSenders>>,
     /// Watch receiver for step completion — used to snapshot `step_at_flush`
     /// in the Queue handler.  Always tracks `total_completed_steps`.
-    completion_rx: Option<tokio::sync::watch::Receiver<Completion>>,
+    step_completion_rx: Option<tokio::sync::watch::Receiver<Completion>>,
     /// Watcher source for the background task.  Taken once by `worker_task_inner`.
     /// `Strict` when fault tolerance is enabled (gates slot on checkpoint);
     /// `Fast` otherwise (gates slot on step completion).
     watcher_rx: Mutex<Option<WatcherReceiver>>,
     /// Sender for passing (step_at_flush, senders) to the background task.
     /// Created once at construction time if completion tracking is available.
-    completion_tx: Option<mpsc::UnboundedSender<(u64, DeferredSenders)>>,
+    completion_task_tx: Option<mpsc::UnboundedSender<(u64, DeferredSenders)>>,
     /// Receiver half, taken once by worker_task_inner to spawn the background task.
     completion_task_rx: Mutex<Option<mpsc::UnboundedReceiver<(u64, DeferredSenders)>>>,
+    /// etl shutdown handle for the currently running pipeline.
+    /// Used to stop etl workers when Feldera terminates the connector.
+    etl_shutdown_tx: Mutex<Option<ShutdownTx>>,
 }
 
 impl PostgresCdcInputInner {
@@ -230,26 +266,18 @@ impl PostgresCdcInputInner {
         consumer: Box<dyn InputConsumer>,
     ) -> Self {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
-        let completion_rx = consumer.completion_watcher();
+        let step_completion_rx = consumer.completion_watcher();
 
-        // Deterministic pipeline ID from config — stable across Rust versions (xxh3).
-        // Excludes password and other volatile fields so that rotating the password
-        // doesn't change the pipeline_id (which would orphan the replication slot
-        // and stored etl state, forcing a full re-snapshot).
-        let pipeline_id = {
-            let identity =
-                stable_connection_identity(&config.uri, &config.publication, &config.source_table);
-            xxh3_64(identity.as_bytes())
-        };
+        let pipeline_id = pipeline_id(&config.uri, &config.publication, &config.source_table);
 
         // Use strict mode (gate slot on checkpoint) when fault tolerance is enabled;
         // fast mode (gate slot on step completion) otherwise.
         let watcher_rx = match consumer.checkpoint_watcher() {
             Some(rx) => Some(WatcherReceiver::Strict(rx)),
-            None => completion_rx.clone().map(WatcherReceiver::Fast),
+            None => step_completion_rx.clone().map(WatcherReceiver::Fast),
         };
 
-        let (completion_tx, completion_task_rx) = if watcher_rx.is_some() {
+        let (completion_task_tx, completion_task_rx) = if watcher_rx.is_some() {
             let (tx, rx) = mpsc::unbounded_channel();
             (Some(tx), Some(rx))
         } else {
@@ -263,38 +291,43 @@ impl PostgresCdcInputInner {
             queue,
             pipeline_id,
             pending_senders: Arc::new(Mutex::new(Vec::new())),
-            completion_rx,
+            step_completion_rx,
             watcher_rx: Mutex::new(watcher_rx),
-            completion_tx,
+            completion_task_tx,
             completion_task_rx: Mutex::new(completion_task_rx),
+            etl_shutdown_tx: Mutex::new(None),
         }
     }
 
     async fn worker_task(
         self: Arc<Self>,
         input_stream: Box<dyn DeCollectionStream>,
+        feldera_required_columns: Vec<String>,
         receiver: Receiver<PipelineState>,
         init_status_sender: tokio::sync::oneshot::Sender<Result<(), ControllerError>>,
     ) {
-        let mut receiver_clone = receiver.clone();
-        select! {
-            _ = self.clone().worker_task_inner(input_stream, receiver, init_status_sender) => {
-                debug!("postgres_cdc {}: worker task terminated", &self.endpoint_name);
-            }
-            _ = receiver_clone.wait_for(|state| state == &PipelineState::Terminated) => {
-                debug!("postgres_cdc {}: received termination command; worker task canceled",
-                    &self.endpoint_name);
-            }
-        }
+        self.clone()
+            .worker_task_inner(
+                input_stream,
+                feldera_required_columns,
+                receiver,
+                init_status_sender,
+            )
+            .await;
+        debug!(
+            "postgres_cdc {}: worker task terminated",
+            &self.endpoint_name
+        );
     }
 
     async fn worker_task_inner(
         self: Arc<Self>,
         input_stream: Box<dyn DeCollectionStream>,
-        mut receiver: Receiver<PipelineState>,
+        feldera_required_columns: Vec<String>,
+        receiver: Receiver<PipelineState>,
         init_status_sender: tokio::sync::oneshot::Sender<Result<(), ControllerError>>,
     ) {
-        let pg_conn = match parse_pg_uri(&self.config.uri) {
+        let pg_conn = match parse_pg_uri(&self.config.uri, &self.config.tls, &self.endpoint_name) {
             Ok(conn) => conn,
             Err(e) => {
                 let _ =
@@ -310,6 +343,9 @@ impl PostgresCdcInputInner {
             id: self.pipeline_id,
             publication_name: self.config.publication.clone(),
             pg_connection: pg_conn.clone(),
+            // etl stores its replication state in the source database itself, so
+            // the state store reuses the source connection.
+            store_pg_connection: None,
             batch: BatchConfig::default(),
             table_error_retry_delay_ms: PipelineConfig::DEFAULT_TABLE_ERROR_RETRY_DELAY_MS,
             table_error_retry_max_attempts: PipelineConfig::DEFAULT_TABLE_ERROR_RETRY_MAX_ATTEMPTS,
@@ -336,21 +372,7 @@ impl PostgresCdcInputInner {
             }
         };
 
-        // Spawn the completion watcher background task if tracking is available.
-        // The watcher and the channel were created in new(); we take them here.
-        let completion_handle = match (
-            self.watcher_rx.lock().unwrap().take(),
-            self.completion_task_rx.lock().unwrap().take(),
-        ) {
-            (Some(watcher), Some(rx)) => Some(tokio::spawn(completion_watcher_task(
-                watcher,
-                rx,
-                self.endpoint_name.clone(),
-            ))),
-            _ => None,
-        };
-
-        let pending_senders = if self.completion_rx.is_some() {
+        let pending_senders = if self.step_completion_rx.is_some() {
             Some(Arc::clone(&self.pending_senders))
         } else {
             None
@@ -361,11 +383,18 @@ impl PostgresCdcInputInner {
             queue: Arc::clone(&self.queue),
             source_table: self.config.source_table.clone(),
             endpoint_name: self.endpoint_name.clone(),
-            relation_cache: Arc::new(Mutex::new(HashMap::new())),
+            feldera_required_columns,
             pending_senders,
+            pipeline_state_rx: receiver.clone(),
         };
 
+        let table_error_monitor = TableErrorMonitor {
+            endpoint_name: self.endpoint_name.clone(),
+            consumer: self.consumer.clone(),
+            store: store.clone(),
+        };
         let mut pipeline = Pipeline::new(pipeline_config, store, destination);
+        self.set_etl_shutdown_tx(pipeline.shutdown_tx());
 
         match pipeline.start().await {
             Ok(()) => {
@@ -381,36 +410,159 @@ impl PostgresCdcInputInner {
                     true,
                     anyhow!("failed to start etl pipeline: {e}"),
                 )));
+                self.shutdown_etl_pipeline();
                 return;
             }
         }
 
-        wait_running(&mut receiver).await;
+        // Spawn the completion watcher background task if tracking is available.
+        // The watcher and the channel were created in new(); we take them here
+        // after etl has started so startup failures do not leave a task behind.
+        let mut completion_handle = match (
+            self.watcher_rx.lock().unwrap().take(),
+            self.completion_task_rx.lock().unwrap().take(),
+        ) {
+            (Some(watcher), Some(rx)) => Some(tokio::spawn(completion_watcher_task(
+                watcher,
+                rx,
+                self.endpoint_name.clone(),
+            ))),
+            _ => None,
+        };
 
-        if let Err(e) = pipeline.wait().await {
-            error!(
-                "postgres_cdc {}: etl pipeline error: {e}",
-                &self.endpoint_name
-            );
-            self.consumer.error(true, anyhow!(e), None);
+        // Run the pipeline alongside a watcher for non-retriable per-table
+        // errors. etl marks a table errored (e.g. on a source schema change)
+        // without failing the whole pipeline, so `pipeline.wait` would block
+        // forever while the input silently stalls; the watcher reports such an
+        // error so the controller fails the endpoint instead.
+        let mut receiver_clone = receiver.clone();
+        let pipeline_wait = pipeline.wait();
+        tokio::pin!(pipeline_wait);
+        let (pipeline_result, report_error) = select! {
+            result = &mut pipeline_wait => (result, true),
+            _ = receiver_clone.wait_for(|state| state == &PipelineState::Terminated) => {
+                debug!(
+                    "postgres_cdc {}: received termination command; shutting down etl pipeline",
+                    &self.endpoint_name
+                );
+                self.shutdown_etl_pipeline();
+                abort_completion_watcher(&mut completion_handle).await;
+                (pipeline_wait.as_mut().await, false)
+            }
+            _ = table_error_monitor.run() => {
+                self.shutdown_etl_pipeline();
+                abort_completion_watcher(&mut completion_handle).await;
+                (pipeline_wait.as_mut().await, false)
+            }
+        };
+
+        if let Err(e) = pipeline_result {
+            if report_error && *receiver.borrow() != PipelineState::Terminated {
+                error!(
+                    "postgres_cdc {}: etl pipeline error: {e}",
+                    &self.endpoint_name
+                );
+                self.consumer.error(true, anyhow!(e), None);
+            } else {
+                debug!(
+                    "postgres_cdc {}: etl pipeline stopped during shutdown: {e}",
+                    &self.endpoint_name
+                );
+            }
         }
 
-        // Shut down the completion watcher task.
-        if let Some(handle) = completion_handle {
-            handle.abort();
-            let _ = handle.await;
-        }
+        abort_completion_watcher(&mut completion_handle).await;
 
         self.consumer.eoi();
     }
+
+    fn set_etl_shutdown_tx(&self, shutdown_tx: ShutdownTx) {
+        *self.etl_shutdown_tx.lock().unwrap() = Some(shutdown_tx);
+    }
+
+    fn shutdown_etl_pipeline(&self) {
+        if let Some(shutdown_tx) = self.etl_shutdown_tx.lock().unwrap().take() {
+            let _ = shutdown_tx.shutdown();
+        }
+    }
 }
 
-/// Relation metadata cached from WAL Relation events.
-#[derive(Clone, Debug)]
-struct RelationInfo {
-    table_name: String,
-    schema_name: String,
-    column_names: Vec<String>,
+impl Drop for PostgresCdcInputInner {
+    fn drop(&mut self) {
+        self.shutdown_etl_pipeline();
+    }
+}
+
+/// Monitor that turns etl table-state failures into Feldera connector failures.
+struct TableErrorMonitor {
+    endpoint_name: String,
+    consumer: Box<dyn InputConsumer>,
+    store: PostgresStore,
+}
+
+impl TableErrorMonitor {
+    /// Surface a non-retriable per-table replication error as a fatal endpoint
+    /// error.
+    ///
+    /// When etl cannot continue replicating a table — most notably after a
+    /// source schema change, which Feldera does not support — it marks the
+    /// table `Errored` and stops applying its changes but keeps the pipeline
+    /// running. From Feldera's side the input would then silently stall. This
+    /// polls etl's state store and, on an error whose retry policy is `NoRetry`
+    /// or `ManualRetry` (i.e. it will not clear on its own), reports it via the
+    /// consumer so the controller fails the endpoint. `TimedRetry` errors are
+    /// left alone: etl retries them and, once retries are exhausted, the apply
+    /// worker propagates the failure through `pipeline.wait`.
+    async fn run(self) {
+        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+        loop {
+            tokio::time::sleep(POLL_INTERVAL).await;
+
+            let states = match self.store.get_table_states().await {
+                Ok(states) => states,
+                Err(e) => {
+                    debug!(
+                        "postgres_cdc {}: failed to read table replication states: {e}",
+                        &self.endpoint_name
+                    );
+                    continue;
+                }
+            };
+
+            for (table_id, state) in states.iter() {
+                let TableState::Errored {
+                    reason,
+                    solution,
+                    retry_policy,
+                    ..
+                } = state
+                else {
+                    continue;
+                };
+
+                // A timed retry clears on its own; leave it to etl.
+                if matches!(retry_policy, TableRetryPolicy::TimedRetry { .. }) {
+                    continue;
+                }
+
+                let detail = match solution {
+                    Some(solution) => format!("{reason} ({solution})"),
+                    None => reason.clone(),
+                };
+                error!(
+                    "postgres_cdc {}: table {table_id} replication errored: {detail}",
+                    &self.endpoint_name
+                );
+                self.consumer.error(
+                    true,
+                    anyhow!("postgres replication error on table {table_id}: {detail}"),
+                    None,
+                );
+                return;
+            }
+        }
+    }
 }
 
 /// etl Destination implementation that pushes data into a Feldera DeCollectionStream.
@@ -420,10 +572,16 @@ struct FelderaDestination {
     queue: Arc<InputQueue>,
     source_table: String,
     endpoint_name: String,
-    relation_cache: Arc<Mutex<HashMap<u32, RelationInfo>>>,
+    /// Canonical names of the non-nullable Feldera columns. Each must be present
+    /// (by name) in the target Postgres table schema etl passes with each target
+    /// batch/event. Nullable and extra columns need not match.
+    feldera_required_columns: Vec<String>,
     /// Deferred async result senders. If `Some`, write_events stores senders here
     /// instead of firing them immediately. The Queue handler picks them up.
     pending_senders: Option<Arc<Mutex<DeferredSenders>>>,
+    /// Pipeline state receiver used to stop accepting new etl batches while the
+    /// Feldera pipeline is paused.
+    pipeline_state_rx: Receiver<PipelineState>,
 }
 
 impl Destination for FelderaDestination {
@@ -431,14 +589,20 @@ impl Destination for FelderaDestination {
         "feldera"
     }
 
-    async fn truncate_table(
+    async fn drop_table_for_copy(
         &self,
-        table_id: TableId,
-        async_result: TruncateTableResult<()>,
+        replicated_table_schema: &ReplicatedTableSchema,
+        async_result: DropTableForCopyResult<()>,
     ) -> EtlResult<()> {
+        self.wait_unpaused().await?;
+
+        // Feldera owns no physical destination object to drop; the data lives in
+        // the circuit. A copy restart simply re-snapshots through
+        // `write_table_rows`, so there is nothing to remove here.
         warn!(
-            "postgres_cdc {}: truncate_table called for table_id={}, ignoring",
-            &self.endpoint_name, table_id
+            "postgres_cdc {}: drop_table_for_copy called for table '{}', ignoring",
+            &self.endpoint_name,
+            replicated_table_schema.name()
         );
         async_result.send(Ok(()));
         Ok(())
@@ -446,36 +610,19 @@ impl Destination for FelderaDestination {
 
     async fn write_table_rows(
         &self,
-        table_id: TableId,
+        replicated_table_schema: &ReplicatedTableSchema,
         table_rows: Vec<TableRow>,
         async_result: WriteTableRowsResult<()>,
     ) -> EtlResult<()> {
-        let is_target = {
-            let cache = self.relation_cache.lock().unwrap();
-            if let Some(info) = cache.get(&u32::from(table_id)) {
-                self.is_target_table(&info.schema_name, &info.table_name)
-            } else {
-                // During snapshot, we may not have relation info yet.
-                // Accept rows and let the data flow through.
-                true
+        self.wait_unpaused().await?;
+
+        // A different table in the publication resolves to `None` and is skipped.
+        let column_names = match self.column_names_for_target_schema(replicated_table_schema)? {
+            Some(columns) => columns,
+            None => {
+                async_result.send(Ok(()));
+                return Ok(());
             }
-        };
-
-        if !is_target {
-            return Ok(());
-        }
-
-        let column_names: Vec<String> = {
-            let cache = self.relation_cache.lock().unwrap();
-            cache
-                .get(&u32::from(table_id))
-                .map(|info| info.column_names.clone())
-                .unwrap_or_else(|| {
-                    // During snapshot without relation info, generate fallback names
-                    // based on the first row's column count.
-                    let n = table_rows.first().map(|r| r.values().len()).unwrap_or(0);
-                    (0..n).map(|i| format!("col_{i}")).collect()
-                })
         };
 
         let mut stream = self.input_stream.lock().unwrap();
@@ -519,6 +666,8 @@ impl Destination for FelderaDestination {
         events: Vec<Event>,
         async_result: WriteEventsResult<()>,
     ) -> EtlResult<()> {
+        self.wait_unpaused().await?;
+
         let mut stream = self.input_stream.lock().unwrap();
         let mut bytes = 0;
         let mut errors = Vec::new();
@@ -526,89 +675,84 @@ impl Destination for FelderaDestination {
 
         for event in &events {
             match event {
-                Event::Relation(rel) => {
-                    let table_schema = &rel.table_schema;
-                    let info = RelationInfo {
-                        table_name: table_schema.name.name.clone(),
-                        schema_name: table_schema.name.schema.clone(),
-                        column_names: table_schema
-                            .column_schemas
-                            .iter()
-                            .map(|c| c.name.clone())
-                            .collect(),
-                    };
-                    debug!(
-                        "postgres_cdc {}: relation event for {}.{} (id={})",
-                        &self.endpoint_name, &info.schema_name, &info.table_name, table_schema.id,
-                    );
-                    self.relation_cache
-                        .lock()
-                        .unwrap()
-                        .insert(u32::from(table_schema.id), info);
-                }
                 Event::Insert(insert) => {
-                    if !self.is_target_table_by_id(u32::from(insert.table_id)) {
+                    let Some(cols) =
+                        self.column_names_for_target_schema(&insert.replicated_table_schema)?
+                    else {
                         continue;
+                    };
+                    let json_value = row_to_json(insert.table_row.values(), &cols);
+                    let json_str = json_value.to_string();
+                    if let Err(e) = stream.insert(json_str.as_bytes(), &None) {
+                        errors.push(ParseError::text_event_error(
+                            "Failed to deserialize CDC insert",
+                            e,
+                            0,
+                            Some(&json_str),
+                            None,
+                        ));
                     }
-                    if let Some(cols) = self.get_column_names(u32::from(insert.table_id)) {
-                        let json_value = row_to_json(insert.table_row.values(), &cols);
-                        let json_str = json_value.to_string();
-                        if let Err(e) = stream.insert(json_str.as_bytes(), &None) {
-                            errors.push(ParseError::text_event_error(
-                                "Failed to deserialize CDC insert",
-                                e,
-                                0,
-                                Some(&json_str),
-                                None,
-                            ));
-                        }
-                        bytes += json_str.len();
-                    }
+                    bytes += json_str.len();
                 }
                 Event::Update(update) => {
-                    if !self.is_target_table_by_id(u32::from(update.table_id)) {
+                    let Some(cols) =
+                        self.column_names_for_target_schema(&update.replicated_table_schema)?
+                    else {
                         continue;
-                    }
-                    if let Some(cols) = self.get_column_names(u32::from(update.table_id)) {
-                        // Delete old row if available
-                        if let Some((_full, old_row)) = &update.old_table_row {
-                            let old_json = row_to_json(old_row.values(), &cols);
-                            let old_str = old_json.to_string();
-                            if let Err(e) = stream.delete(old_str.as_bytes(), &None) {
-                                errors.push(ParseError::text_event_error(
-                                    "Failed to deserialize CDC update (old)",
-                                    e,
-                                    0,
-                                    Some(&old_str),
-                                    None,
-                                ));
-                            }
-                            bytes += old_str.len();
-                        }
-                        // Insert new row
-                        let new_json = row_to_json(update.table_row.values(), &cols);
-                        let new_str = new_json.to_string();
-                        if let Err(e) = stream.insert(new_str.as_bytes(), &None) {
+                    };
+                    // The new row is authoritative only when complete. A partial
+                    // image (PostgreSQL `UnchangedToast` columns etl could not
+                    // reconstruct) cannot be turned into a correct Feldera row,
+                    // so skip the whole update rather than emit a half-applied
+                    // delete-without-insert.
+                    let UpdatedTableRow::Full(new_row) = &update.updated_table_row else {
+                        warn!(
+                            "postgres_cdc {}: skipping update with a partial row image \
+                             (unchanged TOAST columns); set REPLICA IDENTITY FULL on the source \
+                             table to receive complete rows",
+                            &self.endpoint_name
+                        );
+                        continue;
+                    };
+                    // Delete the old row first, if PostgreSQL supplied one.
+                    if let Some(old_row) = &update.old_table_row {
+                        let old_str =
+                            old_row_to_json(&update.replicated_table_schema, &cols, old_row)
+                                .to_string();
+                        if let Err(e) = stream.delete(old_str.as_bytes(), &None) {
                             errors.push(ParseError::text_event_error(
-                                "Failed to deserialize CDC update (new)",
+                                "Failed to deserialize CDC update (old)",
                                 e,
                                 0,
-                                Some(&new_str),
+                                Some(&old_str),
                                 None,
                             ));
                         }
-                        bytes += new_str.len();
+                        bytes += old_str.len();
                     }
+                    // Insert the new row.
+                    let new_str = row_to_json(new_row.values(), &cols).to_string();
+                    if let Err(e) = stream.insert(new_str.as_bytes(), &None) {
+                        errors.push(ParseError::text_event_error(
+                            "Failed to deserialize CDC update (new)",
+                            e,
+                            0,
+                            Some(&new_str),
+                            None,
+                        ));
+                    }
+                    bytes += new_str.len();
                 }
                 Event::Delete(delete) => {
-                    if !self.is_target_table_by_id(u32::from(delete.table_id)) {
+                    let Some(cols) =
+                        self.column_names_for_target_schema(&delete.replicated_table_schema)?
+                    else {
                         continue;
-                    }
-                    if let Some(cols) = self.get_column_names(u32::from(delete.table_id))
-                        && let Some((_full, old_row)) = &delete.old_table_row
-                    {
-                        let old_json = row_to_json(old_row.values(), &cols);
-                        let old_str = old_json.to_string();
+                    };
+                    if let Some(old_row) = &delete.old_table_row {
+                        let old_str =
+                            old_row_to_json(&delete.replicated_table_schema, &cols, old_row)
+                                .to_string();
                         if let Err(e) = stream.delete(old_str.as_bytes(), &None) {
                             errors.push(ParseError::text_event_error(
                                 "Failed to deserialize CDC delete",
@@ -627,7 +771,11 @@ impl Destination for FelderaDestination {
                         &self.endpoint_name
                     );
                 }
-                Event::Begin(_) | Event::Commit(_) | Event::Unsupported => {}
+                // Relation events carry only schema, no row data. etl detects
+                // schema changes upstream (it refuses to forward a Relation
+                // whose schema differs from the resolved one) and marks the
+                // table errored; we surface that via `TableErrorMonitor`.
+                Event::Relation(_) | Event::Begin(_) | Event::Commit(_) | Event::Unsupported => {}
             }
 
             if bytes >= 2 * 1024 * 1024 {
@@ -653,6 +801,23 @@ impl Destination for FelderaDestination {
 }
 
 impl FelderaDestination {
+    /// Wait until the Feldera pipeline is running before accepting a new etl
+    /// batch.
+    async fn wait_unpaused(&self) -> EtlResult<()> {
+        let mut rx = self.pipeline_state_rx.clone();
+        match rx.wait_for(|state| state != &PipelineState::Paused).await {
+            Ok(state) if *state == PipelineState::Running => Ok(()),
+            Ok(_) => Err(etl_error!(
+                ErrorKind::DestinationError,
+                "Postgres CDC input connector terminated before accepting batch"
+            )),
+            Err(_) => Err(etl_error!(
+                ErrorKind::DestinationError,
+                "Postgres CDC input connector state channel closed before accepting batch"
+            )),
+        }
+    }
+
     fn is_target_table(&self, schema_name: &str, table_name: &str) -> bool {
         let qualified = format!("{schema_name}.{table_name}");
         self.source_table == qualified
@@ -660,18 +825,83 @@ impl FelderaDestination {
             || self.source_table == format!("\"{schema_name}\".\"{table_name}\"")
     }
 
-    fn is_target_table_by_id(&self, table_id: u32) -> bool {
-        let cache = self.relation_cache.lock().unwrap();
-        if let Some(info) = cache.get(&table_id) {
-            self.is_target_table(&info.schema_name, &info.table_name)
-        } else {
-            false
+    /// Resolve the replicated column names for `schema`.
+    ///
+    /// Returns `Some(column_names)`, in row-payload order, if `schema` describes
+    /// the configured `source_table`, or `None` if it is a different table in
+    /// the publication (whose rows are skipped).
+    ///
+    /// etl carries the table schema with every batch and event, so the connector
+    /// uses that schema directly instead of caching target-table metadata.
+    fn column_names_for_target_schema(
+        &self,
+        schema: &ReplicatedTableSchema,
+    ) -> EtlResult<Option<Vec<String>>> {
+        // A different table in the publication — not ours.
+        let name = schema.name();
+        if !self.is_target_table(&name.schema, &name.name) {
+            return Ok(None);
         }
+
+        let column_names: Vec<String> = replicated_column_names(schema);
+        self.validate_columns(&name.name, &column_names)?;
+        Ok(Some(column_names))
     }
 
-    fn get_column_names(&self, table_id: u32) -> Option<Vec<String>> {
-        let cache = self.relation_cache.lock().unwrap();
-        cache.get(&table_id).map(|info| info.column_names.clone())
+    /// Verify that every non-nullable Feldera column exists (by name) in the
+    /// target Postgres table.
+    /// Nullable Feldera columns and extra Postgres columns are allowed to differ.
+    fn validate_columns(&self, pg_table: &str, pg_columns: &[String]) -> EtlResult<()> {
+        let pg_set: BTreeSet<&str> = pg_columns.iter().map(String::as_str).collect();
+        let missing: Vec<&str> = self
+            .feldera_required_columns
+            .iter()
+            .map(String::as_str)
+            .filter(|c| !pg_set.contains(c))
+            .collect();
+
+        if missing.is_empty() {
+            return Ok(());
+        }
+
+        Err(etl_error!(
+            ErrorKind::ValidationError,
+            "Postgres CDC source table is missing required Feldera columns",
+            format!(
+                "table '{pg_table}': non-nullable Feldera columns absent from the Postgres table: \
+                 {missing:?}. Every non-nullable Feldera column must exist (by name) in the \
+                 source table."
+            )
+        ))
+    }
+}
+
+/// Replicated column names of `schema`, in the order etl emits cell values for
+/// a row.
+fn replicated_column_names(schema: &ReplicatedTableSchema) -> Vec<String> {
+    schema.column_schemas().map(|c| c.name.clone()).collect()
+}
+
+/// Convert an old-row image (carried by updates and deletes) to JSON.
+///
+/// A [`OldTableRow::Full`] image holds every replicated column, in the same
+/// order as `full_columns`. A [`OldTableRow::Key`] image holds only the
+/// replica-identity columns, so its values must be paired with the identity
+/// column names instead.
+fn old_row_to_json(
+    schema: &ReplicatedTableSchema,
+    full_columns: &[String],
+    old_row: &OldTableRow,
+) -> Value {
+    match old_row {
+        OldTableRow::Full(row) => row_to_json(row.values(), full_columns),
+        OldTableRow::Key(row) => {
+            let identity_columns: Vec<String> = schema
+                .identity_column_schemas()
+                .map(|c| c.name.clone())
+                .collect();
+            row_to_json(row.values(), &identity_columns)
+        }
     }
 }
 
@@ -936,6 +1166,25 @@ fn fire_completed(waiting: &mut Vec<(u64, DeferredSenders)>, completed_steps: u6
     });
 }
 
+async fn abort_completion_watcher(handle: &mut Option<tokio::task::JoinHandle<()>>) {
+    if let Some(handle) = handle.take() {
+        handle.abort();
+        let _ = handle.await;
+    }
+}
+
+/// Deterministic pipeline ID derived from the connection config.
+///
+/// Stable across Rust versions (xxh3) and across password rotations: the
+/// identity string excludes the password and other volatile fields, so
+/// rotating the password does not change the ID — which would otherwise
+/// orphan the replication slot and stored etl state and force a full
+/// re-snapshot. etl names its replication slots after this ID (e.g.
+/// `supabase_etl_apply_<id>`), so tests reconstruct it to clean up slots.
+pub(crate) fn pipeline_id(uri: &str, publication: &str, source_table: &str) -> u64 {
+    xxh3_64(stable_connection_identity(uri, publication, source_table).as_bytes())
+}
+
 /// Build a stable identity string for pipeline_id hashing.
 ///
 /// Extracts host/port/database from the URI (excludes password, username,
@@ -956,7 +1205,11 @@ fn stable_connection_identity(uri: &str, publication: &str, source_table: &str) 
 }
 
 /// Parse a Postgres URI into etl's PgConnectionConfig.
-fn parse_pg_uri(uri: &str) -> AnyResult<PgConnectionConfig> {
+fn parse_pg_uri(
+    uri: &str,
+    tls: &PostgresTlsConfig,
+    endpoint_name: &str,
+) -> AnyResult<PgConnectionConfig> {
     let url = Url::parse(uri)?;
 
     let host = url
@@ -976,20 +1229,15 @@ fn parse_pg_uri(uri: &str) -> AnyResult<PgConnectionConfig> {
 
     Ok(PgConnectionConfig {
         host,
+        // No separate numeric address; etl resolves `host` itself.
+        hostaddr: None,
         port,
         name,
         username,
         password,
-        tls: TlsConfig::disabled(),
+        tls: make_etl_tls_config(tls, endpoint_name)?,
         keepalive: TcpKeepaliveConfig::default(),
     })
-}
-
-/// Block until the state is `Running`.
-async fn wait_running(receiver: &mut Receiver<PipelineState>) {
-    let _ = receiver
-        .wait_for(|state| state == &PipelineState::Running)
-        .await;
 }
 
 #[cfg(test)]
@@ -1400,9 +1648,13 @@ mod tests {
     // parse_pg_uri unit tests
     // -----------------------------------------------------------------------
 
+    fn parse_uri(uri: &str) -> AnyResult<PgConnectionConfig> {
+        parse_pg_uri(uri, &PostgresTlsConfig::default(), "test")
+    }
+
     #[test]
     fn test_parse_pg_uri_basic() {
-        let config = parse_pg_uri("postgres://user:pass@localhost:5432/mydb").unwrap();
+        let config = parse_uri("postgres://user:pass@localhost:5432/mydb").unwrap();
         assert_eq!(config.host, "localhost");
         assert_eq!(config.port, 5432);
         assert_eq!(config.username, "user");
@@ -1412,57 +1664,44 @@ mod tests {
 
     #[test]
     fn test_parse_pg_uri_default_port() {
-        let config = parse_pg_uri("postgres://user:pass@host.example.com/testdb").unwrap();
+        let config = parse_uri("postgres://user:pass@host.example.com/testdb").unwrap();
         assert_eq!(config.port, 5432);
         assert_eq!(config.host, "host.example.com");
     }
 
     #[test]
     fn test_parse_pg_uri_no_password() {
-        let config = parse_pg_uri("postgres://user@localhost/mydb").unwrap();
+        let config = parse_uri("postgres://user@localhost/mydb").unwrap();
         assert!(config.password.is_none());
     }
 
     #[test]
     fn test_parse_pg_uri_missing_username() {
-        let result = parse_pg_uri("postgres://localhost/mydb");
+        let result = parse_uri("postgres://localhost/mydb");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_pg_uri_missing_database() {
-        let result = parse_pg_uri("postgres://user:pass@localhost");
+        let result = parse_uri("postgres://user:pass@localhost");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_pg_uri_custom_port() {
-        let config = parse_pg_uri("postgres://user:pass@db.host:15432/mydb").unwrap();
+        let config = parse_uri("postgres://user:pass@db.host:15432/mydb").unwrap();
         assert_eq!(config.port, 15432);
     }
 
     #[test]
     fn test_parse_pg_uri_invalid_scheme() {
-        let result = parse_pg_uri("not_a_uri");
+        let result = parse_uri("not_a_uri");
         assert!(result.is_err());
     }
 
     // -----------------------------------------------------------------------
-    // RelationInfo / target table matching tests (direct struct construction)
+    // Target table matching / column resolution tests
     // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_relation_info_clone() {
-        let info = RelationInfo {
-            table_name: "orders".to_string(),
-            schema_name: "public".to_string(),
-            column_names: vec!["id".to_string(), "name".to_string()],
-        };
-        let cloned = info.clone();
-        assert_eq!(cloned.table_name, "orders");
-        assert_eq!(cloned.schema_name, "public");
-        assert_eq!(cloned.column_names.len(), 2);
-    }
 
     /// Test the is_target_table logic extracted for direct verification.
     /// This mirrors FelderaDestination::is_target_table without needing to
@@ -1510,354 +1749,31 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_relation_cache_lookup() {
-        let cache: HashMap<u32, RelationInfo> = HashMap::from([(
-            42,
-            RelationInfo {
-                table_name: "orders".to_string(),
-                schema_name: "public".to_string(),
-                column_names: vec!["id".to_string(), "amount".to_string()],
-            },
-        )]);
-        // Simulate is_target_table_by_id
-        let source_table = "public.orders";
-        let info42 = cache.get(&42).unwrap();
-        assert!(target_table_matches(
-            source_table,
-            &info42.schema_name,
-            &info42.table_name,
-        ));
-        assert!(cache.get(&99).is_none());
-
-        // Simulate get_column_names
-        let cols = cache.get(&42).map(|info| info.column_names.clone());
-        assert_eq!(cols, Some(vec!["id".to_string(), "amount".to_string()]));
-        assert_eq!(cache.get(&99).map(|info| info.column_names.clone()), None);
-    }
-
-    // -----------------------------------------------------------------------
-    // fire_completed unit tests
-    // -----------------------------------------------------------------------
-
-    /// Creates an `AsyncResult` sender and a future that resolves to `true` when
-    /// the sender is fired with `Ok(())`.  Works in both sync and async contexts
-    /// because the pending side is wrapped in a tokio oneshot that the caller
-    /// can `.await`.
-    fn make_async_sender() -> (
-        WriteEventsResult<()>,
-        impl std::future::Future<Output = bool>,
-    ) {
-        let (async_result, pending) = etl::destination::async_result::AsyncResult::<()>::new(());
-        let fut = async move { pending.await.into_result().is_ok() };
-        (async_result, fut)
-    }
-
-    /// Sync-only helper: spawns a background OS thread so `fire_completed`
-    /// (which is sync) can be tested without a tokio runtime on the test thread.
-    fn make_tracked_sender_sync() -> (WriteEventsResult<()>, std::sync::mpsc::Receiver<bool>) {
-        let (flag_tx, flag_rx) = std::sync::mpsc::channel();
-        let (async_result, pending) = etl::destination::async_result::AsyncResult::<()>::new(());
-        std::thread::spawn(move || {
-            tokio::runtime::Builder::new_current_thread()
-                .build()
-                .unwrap()
-                .block_on(async move {
-                    let result = pending.await;
-                    let _ = flag_tx.send(result.into_result().is_ok());
-                });
-        });
-        (async_result, flag_rx)
+    /// Mirrors `validate_columns`: every non-nullable Feldera column must exist
+    /// (by name) in the Postgres source table.
+    fn missing_required<'a>(pg_columns: &[&str], feldera_required: &[&'a str]) -> Vec<&'a str> {
+        let pg: BTreeSet<&str> = pg_columns.iter().copied().collect();
+        feldera_required
+            .iter()
+            .copied()
+            .filter(|c| !pg.contains(c))
+            .collect()
     }
 
     #[test]
-    fn test_fire_completed_fires_when_past_frontier() {
-        let (sender, flag_rx) = make_tracked_sender_sync();
-        let mut waiting: Vec<(u64, DeferredSenders)> = vec![(5, vec![sender])];
-
-        // completed_steps=5 is NOT strictly greater than step_at_flush=5 — should not fire.
-        fire_completed(&mut waiting, 5);
-        assert_eq!(waiting.len(), 1, "should still be waiting at step=5");
-
-        // completed_steps=6 is strictly greater — should fire.
-        fire_completed(&mut waiting, 6);
-        assert!(waiting.is_empty(), "entry should have been removed");
-
-        let fired = flag_rx
-            .recv_timeout(std::time::Duration::from_secs(2))
-            .unwrap();
-        assert!(fired, "sender should have been fired with Ok(())");
-    }
-
-    #[test]
-    fn test_fire_completed_does_not_fire_at_equal_frontier() {
-        let (sender, _flag_rx) = make_tracked_sender_sync();
-        let mut waiting: Vec<(u64, DeferredSenders)> = vec![(10, vec![sender])];
-        fire_completed(&mut waiting, 10);
+    fn test_required_columns_present() {
+        // All required present, different order -> valid.
+        assert!(missing_required(&["name", "id"], &["id", "name"]).is_empty());
+        // Extra Postgres column (extra) -> still valid.
+        assert!(missing_required(&["id", "name", "extra"], &["id", "name"]).is_empty());
+        // No required columns (all Feldera columns nullable) -> always valid.
+        assert!(missing_required(&["id"], &[]).is_empty());
+        // A required column absent from Postgres -> reported missing.
+        assert_eq!(missing_required(&["id"], &["id", "name"]), vec!["name"]);
+        // Renamed columns (source id,name vs required c0,c1) -> both missing.
         assert_eq!(
-            waiting.len(),
-            1,
-            "step_at_flush==completed_steps must not fire"
-        );
-    }
-
-    #[test]
-    fn test_fire_completed_fires_only_ready_entries() {
-        let (s1, rx1) = make_tracked_sender_sync();
-        let (s2, _rx2) = make_tracked_sender_sync();
-        let mut waiting: Vec<(u64, DeferredSenders)> = vec![
-            (3, vec![s1]), // fires at completed=4
-            (7, vec![s2]), // stays waiting at completed=4
-        ];
-        fire_completed(&mut waiting, 4);
-        assert_eq!(waiting.len(), 1, "only the step=7 entry should remain");
-        assert_eq!(waiting[0].0, 7);
-        let fired = rx1.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
-        assert!(fired);
-    }
-
-    #[test]
-    fn test_fire_completed_empty_waiting() {
-        let mut waiting: Vec<(u64, DeferredSenders)> = vec![];
-        fire_completed(&mut waiting, 100);
-        assert!(waiting.is_empty());
-    }
-
-    // -----------------------------------------------------------------------
-    // completion_watcher_task unit tests
-    // -----------------------------------------------------------------------
-
-    fn make_completion(completed: u64) -> Completion {
-        Completion {
-            total_completed_steps: completed,
-        }
-    }
-
-    const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
-
-    #[tokio::test]
-    async fn test_watcher_fast_mode_fires_on_completed_steps() {
-        let (completion_tx, completion_rx) = tokio::sync::watch::channel(make_completion(0));
-        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
-
-        tokio::spawn(completion_watcher_task(
-            WatcherReceiver::Fast(completion_rx),
-            pending_rx,
-            "test-fast".to_string(),
-        ));
-
-        let (sender, fired_fut) = make_async_sender();
-        pending_tx.send((2, vec![sender])).unwrap();
-
-        // Advance completed_steps past step_at_flush=2.
-        completion_tx.send(make_completion(3)).unwrap();
-
-        let fired = tokio::time::timeout(TIMEOUT, fired_fut)
-            .await
-            .expect("timed out waiting for fast-mode fire");
-        assert!(
-            fired,
-            "fast mode must fire when total_completed_steps > step_at_flush"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_watcher_strict_mode_does_not_fire_on_completed_steps_only() {
-        let (checkpoint_tx, checkpoint_rx) = tokio::sync::watch::channel(0u64);
-        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
-
-        tokio::spawn(completion_watcher_task(
-            WatcherReceiver::Strict(checkpoint_rx),
-            pending_rx,
-            "test-strict".to_string(),
-        ));
-
-        let (sender, fired_fut) = make_async_sender();
-        pending_tx.send((2, vec![sender])).unwrap();
-
-        // Only advance the checkpoint notifier to 0 (no change) — must not fire.
-        let _ = checkpoint_tx.send(0);
-        tokio::task::yield_now().await;
-
-        // The future must NOT resolve — a very short timeout should expire.
-        let did_fire = tokio::time::timeout(std::time::Duration::from_millis(50), fired_fut).await;
-        assert!(
-            did_fire.is_err(),
-            "strict mode must NOT fire when checkpoint frontier has not advanced past step_at_flush"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_watcher_strict_mode_fires_on_checkpointed_steps() {
-        let (checkpoint_tx, checkpoint_rx) = tokio::sync::watch::channel(0u64);
-        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
-
-        tokio::spawn(completion_watcher_task(
-            WatcherReceiver::Strict(checkpoint_rx),
-            pending_rx,
-            "test-strict-fires".to_string(),
-        ));
-
-        let (sender, fired_fut) = make_async_sender();
-        pending_tx.send((2, vec![sender])).unwrap();
-
-        // Checkpoint step advances past step_at_flush=2 — must fire.
-        checkpoint_tx.send(3).unwrap();
-
-        let fired = tokio::time::timeout(TIMEOUT, fired_fut)
-            .await
-            .expect("timed out waiting for strict-mode fire");
-        assert!(
-            fired,
-            "strict mode must fire when checkpointed step > step_at_flush"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_watcher_fires_immediately_when_already_past_frontier() {
-        // completed_steps already beyond step_at_flush at task start.
-        let (_completion_tx, completion_rx) = tokio::sync::watch::channel(make_completion(10));
-        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
-
-        tokio::spawn(completion_watcher_task(
-            WatcherReceiver::Fast(completion_rx),
-            pending_rx,
-            "test-already-done".to_string(),
-        ));
-
-        let (sender, fired_fut) = make_async_sender();
-        pending_tx.send((5, vec![sender])).unwrap();
-
-        let fired = tokio::time::timeout(TIMEOUT, fired_fut)
-            .await
-            .expect("timed out waiting for immediate fire");
-        assert!(
-            fired,
-            "must fire immediately when frontier already exceeds step_at_flush"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_watcher_strict_fires_immediately_when_checkpointed_past_frontier() {
-        let (_checkpoint_tx, checkpoint_rx) = tokio::sync::watch::channel(10u64);
-        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
-
-        tokio::spawn(completion_watcher_task(
-            WatcherReceiver::Strict(checkpoint_rx),
-            pending_rx,
-            "test-strict-already-done".to_string(),
-        ));
-
-        let (sender, fired_fut) = make_async_sender();
-        pending_tx.send((5, vec![sender])).unwrap();
-
-        let fired = tokio::time::timeout(TIMEOUT, fired_fut)
-            .await
-            .expect("timed out waiting for immediate strict-mode fire");
-        assert!(
-            fired,
-            "strict mode must fire immediately when checkpointed step already exceeds step_at_flush"
-        );
-    }
-
-    /// Regression: at Queue time the checkpointed step (2) lags the flush
-    /// frontier (5).  A partial checkpoint advancing to 4 does not cover the
-    /// step containing the new data, so strict mode must NOT fire.
-    #[tokio::test]
-    async fn test_watcher_strict_does_not_fire_on_partial_checkpoint() {
-        let (checkpoint_tx, checkpoint_rx) = tokio::sync::watch::channel(2u64);
-        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
-
-        tokio::spawn(completion_watcher_task(
-            WatcherReceiver::Strict(checkpoint_rx),
-            pending_rx,
-            "test-strict-partial".to_string(),
-        ));
-
-        let (sender, fired_fut) = make_async_sender();
-        // step_at_flush = 5.
-        pending_tx.send((5, vec![sender])).unwrap();
-
-        // Partial checkpoint advances to 4 — still below step_at_flush=5.
-        checkpoint_tx.send(4).unwrap();
-        tokio::task::yield_now().await;
-
-        let did_fire = tokio::time::timeout(std::time::Duration::from_millis(50), fired_fut).await;
-        assert!(
-            did_fire.is_err(),
-            "strict mode must NOT fire when checkpoint (4) does not exceed step_at_flush (5)"
-        );
-    }
-
-    /// Regression: after a partial checkpoint stalls, a full checkpoint that
-    /// passes step_at_flush must fire.
-    #[tokio::test]
-    async fn test_watcher_strict_fires_when_checkpoint_passes_step_at_flush() {
-        let (checkpoint_tx, checkpoint_rx) = tokio::sync::watch::channel(2u64);
-        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
-
-        tokio::spawn(completion_watcher_task(
-            WatcherReceiver::Strict(checkpoint_rx),
-            pending_rx,
-            "test-strict-passes".to_string(),
-        ));
-
-        let (sender, fired_fut) = make_async_sender();
-        pending_tx.send((5, vec![sender])).unwrap();
-
-        // Full checkpoint advances past step_at_flush=5 — must fire.
-        checkpoint_tx.send(6).unwrap();
-
-        let fired = tokio::time::timeout(TIMEOUT, fired_fut)
-            .await
-            .expect("timed out waiting for strict fire after lagging checkpoint");
-        assert!(
-            fired,
-            "strict mode must fire when checkpointed step (6) > step_at_flush (5)"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_watcher_multiple_batches_different_thresholds() {
-        let (completion_tx, completion_rx) = tokio::sync::watch::channel(make_completion(0));
-        let (pending_tx, pending_rx) = mpsc::unbounded_channel::<(u64, DeferredSenders)>();
-
-        tokio::spawn(completion_watcher_task(
-            WatcherReceiver::Fast(completion_rx),
-            pending_rx,
-            "test-multi".to_string(),
-        ));
-
-        let (s1, f1) = make_async_sender(); // fires at completed > 1
-        let (s2, f2) = make_async_sender(); // fires at completed > 4
-        let (s3, f3) = make_async_sender(); // fires at completed > 7
-
-        pending_tx.send((1, vec![s1])).unwrap();
-        pending_tx.send((4, vec![s2])).unwrap();
-        pending_tx.send((7, vec![s3])).unwrap();
-
-        // Advance to 2 — only s1 fires.
-        completion_tx.send(make_completion(2)).unwrap();
-        assert!(
-            tokio::time::timeout(TIMEOUT, f1)
-                .await
-                .expect("s1 timed out")
-        );
-
-        // Advance to 5 — s2 fires.
-        completion_tx.send(make_completion(5)).unwrap();
-        assert!(
-            tokio::time::timeout(TIMEOUT, f2)
-                .await
-                .expect("s2 timed out")
-        );
-
-        // Advance to 8 — s3 fires.
-        completion_tx.send(make_completion(8)).unwrap();
-        assert!(
-            tokio::time::timeout(TIMEOUT, f3)
-                .await
-                .expect("s3 timed out")
+            missing_required(&["id", "name"], &["c0", "c1"]),
+            vec!["c0", "c1"]
         );
     }
 }

@@ -1,5 +1,5 @@
 use dbsp::{DBSPHandle, Runtime, circuit::CircuitConfig, utils::Tup1};
-use feldera_sqllib::Variant;
+use feldera_sqllib::{ByteArray, Variant};
 use feldera_types::{
     config::PipelineConfig,
     deserialize_table_record,
@@ -67,6 +67,19 @@ fn postgres_ssl_config() -> (String, PostgresTlsConfig) {
             ssl_client_key,
             ssl_certificate_chain_location,
             verify_hostname,
+        },
+    )
+}
+
+/// Returns the SSL connection URL and TLS config supported by the CDC connector.
+fn postgres_cdc_ssl_config() -> (String, PostgresTlsConfig) {
+    let (url, tls) = postgres_ssl_config();
+    (
+        url,
+        PostgresTlsConfig {
+            ssl_ca_location: tls.ssl_ca_location,
+            ssl_ca_pem: tls.ssl_ca_pem,
+            ..Default::default()
         },
     )
 }
@@ -2376,8 +2389,6 @@ fn test_pg_non_unique_keys_skipped() {
 // - The connecting user must have REPLICATION privilege
 // - The `with-postgres-cdc` feature must be enabled
 //
-// They are gated behind #[ignore] so they don't run in normal CI.
-// Run with: cargo test -p dbsp_adapters --features with-postgres-cdc -- --ignored
 // ===================================================================
 
 #[cfg(feature = "with-postgres-cdc")]
@@ -2394,11 +2405,22 @@ mod cdc_tests {
         client: postgres::Client,
         table_name: String,
         publication_name: String,
+        url: String,
     }
 
     impl CdcTestTable {
         fn new_simple(table_name: &str, publication_name: &str, url: &str) -> Self {
-            let mut client = pg_connect(url, &None);
+            Self::new_simple_with_tls(table_name, publication_name, url, None)
+        }
+
+        fn new_simple_with_tls(
+            table_name: &str,
+            publication_name: &str,
+            url: &str,
+            tls: Option<&PostgresTlsConfig>,
+        ) -> Self {
+            let tls = tls.cloned();
+            let mut client = pg_connect(url, &tls);
 
             // Clean up any leftover objects from previous runs.
             let _ = client.execute(
@@ -2439,6 +2461,7 @@ mod cdc_tests {
                 client,
                 table_name: table_name.to_string(),
                 publication_name: publication_name.to_string(),
+                url: url.to_string(),
             }
         }
 
@@ -2497,6 +2520,7 @@ mod cdc_tests {
                 client,
                 table_name: table_name.to_string(),
                 publication_name: publication_name.to_string(),
+                url: url.to_string(),
             }
         }
 
@@ -2509,23 +2533,7 @@ mod cdc_tests {
 
     impl Drop for CdcTestTable {
         fn drop(&mut self) {
-            // Drop replication slots that etl may have created for this publication.
-            // etl creates slots with names based on the publication name.
-            let slots: Vec<String> = self
-                .client
-                .query(
-                    "SELECT slot_name FROM pg_replication_slots WHERE slot_name LIKE $1",
-                    &[&format!("%{}%", &self.publication_name)],
-                )
-                .unwrap_or_default()
-                .into_iter()
-                .map(|r| r.get::<_, String>("slot_name"))
-                .collect();
-            for slot in slots {
-                let _ = self
-                    .client
-                    .execute(&format!("SELECT pg_drop_replication_slot('{slot}')"), &[]);
-            }
+            self.drop_replication_slots();
             let _ = self.client.execute(
                 &format!("DROP PUBLICATION IF EXISTS {}", self.publication_name),
                 &[],
@@ -2536,6 +2544,87 @@ mod cdc_tests {
         }
     }
 
+    impl CdcTestTable {
+        /// Drop the replication slots etl created for this pipeline.
+        ///
+        /// etl names slots after the *pipeline ID* (e.g.
+        /// `supabase_etl_apply_<id>` and `supabase_etl_table_sync_<id>_<oid>`),
+        /// not the publication, so we reconstruct that ID exactly as the
+        /// connector does. The slot limit is small (4 by default on
+        /// `debezium/postgres`); leaking even one slot per test exhausts it
+        /// within a couple of tests, so cleanup must be reliable.
+        fn drop_replication_slots(&mut self) {
+            let connector_url = cdc_connector_url(&self.url);
+            let source_table = format!("public.{}", self.table_name);
+            let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+                &connector_url,
+                &self.publication_name,
+                &source_table,
+            )
+            .to_string();
+
+            // The pipeline ID appears as a `_`-delimited token in every slot
+            // name etl creates, so an exact-token match avoids dropping an
+            // unrelated slot whose ID merely shares these digits.
+            let owns_slot = |name: &str| name.split('_').any(|token| token == pipeline_id);
+
+            for _attempt in 0..20 {
+                let slots: Vec<(String, Option<i32>)> = self
+                    .client
+                    .query(
+                        "SELECT slot_name, active_pid FROM pg_replication_slots",
+                        &[],
+                    )
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|r| {
+                        (
+                            r.get::<_, String>("slot_name"),
+                            r.get::<_, Option<i32>>("active_pid"),
+                        )
+                    })
+                    .filter(|(name, _)| owns_slot(name))
+                    .collect();
+
+                if slots.is_empty() {
+                    return;
+                }
+
+                for (slot, active_pid) in &slots {
+                    if let Some(pid) = active_pid {
+                        let _ = self
+                            .client
+                            .execute(&format!("SELECT pg_terminate_backend({pid})"), &[]);
+                    }
+                    let _ = self
+                        .client
+                        .execute(&format!("SELECT pg_drop_replication_slot('{slot}')"), &[]);
+                }
+
+                // Any slots left over had a backend that has not detached yet;
+                // wait for it to clear, then retry.
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+        }
+    }
+
+    fn cdc_connector_url(url: &str) -> String {
+        let Ok(mut url) = url::Url::parse(url) else {
+            return url.to_string();
+        };
+
+        if url.path().trim_start_matches('/').is_empty() {
+            let database = if url.username().is_empty() {
+                "postgres".to_string()
+            } else {
+                url.username().to_string()
+            };
+            url.set_path(&database);
+        }
+
+        url.to_string()
+    }
+
     /// Build a test circuit that reads from CDC input and writes to a file output.
     /// The input schema matches the "simple" table (id, b, i, s).
     fn cdc_simple_test_circuit(
@@ -2544,7 +2633,35 @@ mod cdc_tests {
         source_table: &str,
         output_path: &Path,
     ) -> (Controller, crossbeam::channel::Receiver<String>) {
+        cdc_simple_test_circuit_with_tls(url, publication, source_table, output_path, None)
+    }
+
+    fn cdc_simple_test_circuit_with_tls(
+        url: &str,
+        publication: &str,
+        source_table: &str,
+        output_path: &Path,
+        tls: Option<&PostgresTlsConfig>,
+    ) -> (Controller, crossbeam::channel::Receiver<String>) {
+        if tls.is_some() {
+            crate::ensure_default_crypto_provider();
+        }
+
+        let url = cdc_connector_url(url);
         let schema = TestStruct::schema();
+        let mut postgres_cdc_config = json!({
+            "uri": url,
+            "publication": publication,
+            "source_table": source_table,
+        });
+        if let Some(tls) = tls {
+            let tls_json = serde_json::to_value(tls).unwrap();
+            postgres_cdc_config
+                .as_object_mut()
+                .unwrap()
+                .extend(tls_json.as_object().unwrap().clone());
+        }
+
         let config = serde_json::from_value(json!({
             "name": "cdc_test",
             "workers": 1,
@@ -2553,11 +2670,7 @@ mod cdc_tests {
                     "stream": "test_input1",
                     "transport": {
                         "name": "postgres_cdc_input",
-                        "config": {
-                            "uri": url,
-                            "publication": publication,
-                            "source_table": source_table,
-                        },
+                        "config": postgres_cdc_config,
                     },
                 },
             },
@@ -2627,7 +2740,10 @@ mod cdc_tests {
             Box::new(move |e, _| {
                 let msg = format!("cdc_test: error: {e}");
                 println!("{msg}");
-                err_sender.send(msg).unwrap()
+                // The pipeline can report an error after the test has finished
+                // and dropped the receiver (e.g. during shutdown); ignore the
+                // send failure rather than panicking on a background thread.
+                let _ = err_sender.send(msg);
             }),
         )
         .unwrap();
@@ -2669,7 +2785,7 @@ mod cdc_tests {
         col_timestamptz: Option<String>,
         col_uuid: Option<String>,
         col_jsonb: Option<feldera_sqllib::Variant>,
-        col_bytea: Option<String>,
+        col_bytea: Option<ByteArray>,
         col_numeric: Option<String>,
         col_smallint: Option<i16>,
         col_int_array: Option<Vec<Option<i32>>>,
@@ -2689,7 +2805,7 @@ mod cdc_tests {
         (col_timestamptz, "col_timestamptz", true, Option<String>, |_| Some(None)),
         (col_uuid, "col_uuid", true, Option<String>, |_| Some(None)),
         (col_jsonb, "col_jsonb", true, Option<feldera_sqllib::Variant>, |_| Some(None)),
-        (col_bytea, "col_bytea", true, Option<String>, |_| Some(None)),
+        (col_bytea, "col_bytea", true, Option<ByteArray>, |_| Some(None)),
         (col_numeric, "col_numeric", true, Option<String>, |_| Some(None)),
         (col_smallint, "col_smallint", true, Option<i16>, |_| Some(None)),
         (col_int_array, "col_int_array", true, Option<Vec<Option<i32>>>, |_| Some(None))
@@ -2709,7 +2825,7 @@ mod cdc_tests {
         col_timestamptz["col_timestamptz"]: Option<String>,
         col_uuid["col_uuid"]: Option<String>,
         col_jsonb["col_jsonb"]: Option<feldera_sqllib::Variant>,
-        col_bytea["col_bytea"]: Option<String>,
+        col_bytea["col_bytea"]: Option<ByteArray>,
         col_numeric["col_numeric"]: Option<String>,
         col_smallint["col_smallint"]: Option<i16>,
         col_int_array["col_int_array"]: Option<Vec<Option<i32>>>
@@ -2731,7 +2847,7 @@ mod cdc_tests {
                 Field::new("col_timestamptz".into(), ColumnType::varchar(true)),
                 Field::new("col_uuid".into(), ColumnType::varchar(true)),
                 Field::new("col_jsonb".into(), ColumnType::variant(true)),
-                Field::new("col_bytea".into(), ColumnType::varchar(true)),
+                Field::new("col_bytea".into(), ColumnType::varbinary(true)),
                 Field::new("col_numeric".into(), ColumnType::varchar(true)),
                 Field::new("col_smallint".into(), ColumnType::smallint(true)),
                 Field::new(
@@ -2748,6 +2864,7 @@ mod cdc_tests {
         source_table: &str,
         output_path: &Path,
     ) -> (Controller, crossbeam::channel::Receiver<String>) {
+        let url = cdc_connector_url(url);
         let schema = CdcAllTypesStruct::schema();
         let config = serde_json::from_value(json!({
             "name": "cdc_all_types_test",
@@ -2831,7 +2948,7 @@ mod cdc_tests {
             Box::new(move |e, _| {
                 let msg = format!("cdc_all_types_test: error: {e}");
                 println!("{msg}");
-                err_sender.send(msg).unwrap()
+                let _ = err_sender.send(msg);
             }),
         )
         .unwrap();
@@ -2851,13 +2968,14 @@ mod cdc_tests {
         storage_dir: &Path,
         output_path: &Path,
     ) -> (Controller, crossbeam::channel::Receiver<String>) {
+        let url = cdc_connector_url(url);
         let schema = TestStruct::schema();
         let config: PipelineConfig = serde_json::from_value(json!({
             "name": "cdc_ft_test",
             "workers": 1,
             "storage_config": { "path": storage_dir },
             "storage": true,
-            "fault_tolerance": { "checkpoint_interval_secs": 3600 },
+            "fault_tolerance": { "model": "at_least_once", "checkpoint_interval_secs": 3600 },
             "inputs": {
                 "cdc_in": {
                     "stream": "test_input1",
@@ -2927,7 +3045,7 @@ mod cdc_tests {
             Box::new(move |e, _| {
                 let msg = format!("cdc_ft_test: error: {e}");
                 println!("{msg}");
-                err_sender.send(msg).unwrap();
+                let _ = err_sender.send(msg);
             }),
         )
         .unwrap();
@@ -2955,6 +3073,15 @@ mod cdc_tests {
         rows.iter().filter(|r| r.get("delete").is_some()).count()
     }
 
+    fn has_insert_id(rows: &[serde_json::Value], id: i64) -> bool {
+        rows.iter().any(|r| {
+            r.get("insert")
+                .and_then(|v| v.get("id"))
+                .and_then(|v| v.as_i64())
+                == Some(id)
+        })
+    }
+
     // -------------------------------------------------------------------
     // Test 1: Basic CDC insert test
     // -------------------------------------------------------------------
@@ -2965,7 +3092,6 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
-    #[ignore]
     fn test_cdc_basic_insert() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_basic_insert");
@@ -3038,6 +3164,164 @@ mod cdc_tests {
     }
 
     // -------------------------------------------------------------------
+    // Test 1b: Pause/unpause test
+    // -------------------------------------------------------------------
+
+    /// Tests that a paused CDC input endpoint stops delivering new rows and
+    /// resumes delivery after the endpoint is started again.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    fn test_cdc_pause_unpause() {
+        let url = postgres_url();
+        let table_name = unique_pg_name("cdc_test_pause_unpause");
+        let publication = unique_pg_name("cdc_pub_pause_unpause");
+
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
+
+        let output_file = NamedTempFile::new().unwrap();
+        let output_path = output_file.path().to_owned();
+
+        let (controller, err_receiver) = cdc_simple_test_circuit(
+            &url,
+            &publication,
+            &format!("public.{table_name}"),
+            &output_path,
+        );
+
+        controller.start();
+
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (1, true, 10, 'before_pause')"
+        ));
+
+        wait(
+            || has_insert_id(&read_output_json(&output_path), 1) || !err_receiver.is_empty(),
+            60_000,
+        )
+        .expect("timeout: CDC pause/unpause test did not receive initial row");
+        assert!(
+            err_receiver.is_empty(),
+            "unexpected error before pause: {:?}",
+            err_receiver.try_recv()
+        );
+
+        controller.pause_input_endpoint("cdc_in").unwrap();
+        wait(
+            || {
+                controller
+                    .is_input_endpoint_paused("cdc_in")
+                    .unwrap_or(false)
+            },
+            10_000,
+        )
+        .expect("timeout: CDC input endpoint did not report paused");
+
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (2, false, 20, 'while_paused')"
+        ));
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let rows = read_output_json(&output_path);
+        assert!(
+            !has_insert_id(&rows, 2),
+            "paused CDC input delivered row id=2 before unpause: {rows:?}"
+        );
+        assert!(
+            err_receiver.is_empty(),
+            "unexpected error while paused: {:?}",
+            err_receiver.try_recv()
+        );
+
+        controller.start_input_endpoint("cdc_in").unwrap();
+        wait(
+            || {
+                !controller
+                    .is_input_endpoint_paused("cdc_in")
+                    .unwrap_or(true)
+            },
+            10_000,
+        )
+        .expect("timeout: CDC input endpoint did not report unpaused");
+
+        wait(
+            || has_insert_id(&read_output_json(&output_path), 2) || !err_receiver.is_empty(),
+            60_000,
+        )
+        .expect("timeout: CDC pause/unpause test did not receive row after unpause");
+        assert!(
+            err_receiver.is_empty(),
+            "unexpected error after unpause: {:?}",
+            err_receiver.try_recv()
+        );
+
+        controller.stop().unwrap();
+    }
+
+    /// Same as `test_cdc_basic_insert` but over a TLS connection.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege, and
+    /// `POSTGRES_SSL_URL`/`POSTGRES_SSL_CA_LOCATION` or `POSTGRES_SSL_CA_PEM`.
+    #[test]
+    #[serial]
+    #[ignore]
+    fn test_cdc_basic_insert_tls() {
+        let (url, tls) = postgres_cdc_ssl_config();
+        let table_name = unique_pg_name("cdc_test_basic_insert_tls");
+        let publication = unique_pg_name("cdc_pub_basic_insert_tls");
+
+        let mut table =
+            CdcTestTable::new_simple_with_tls(&table_name, &publication, &url, Some(&tls));
+
+        let output_file = NamedTempFile::new().unwrap();
+        let output_path = output_file.path().to_owned();
+
+        let (controller, err_receiver) = cdc_simple_test_circuit_with_tls(
+            &url,
+            &publication,
+            &format!("public.{table_name}"),
+            &output_path,
+            Some(&tls),
+        );
+
+        controller.start();
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (1, true, 100, 'streaming')"
+        ));
+
+        wait(
+            || {
+                let rows = read_output_json(&output_path);
+                count_inserts(&rows) >= 1 || !err_receiver.is_empty()
+            },
+            60_000,
+        )
+        .expect("timeout: CDC TLS basic insert test did not receive streamed row");
+
+        assert!(
+            err_receiver.is_empty(),
+            "unexpected errors in CDC TLS pipeline"
+        );
+
+        let rows = read_output_json(&output_path);
+        let inserts: Vec<&serde_json::Value> =
+            rows.iter().filter_map(|r| r.get("insert")).collect();
+        assert!(
+            inserts.iter().any(|r| {
+                r.get("id").and_then(|v| v.as_i64()) == Some(1)
+                    && r.get("s").and_then(|v| v.as_str()) == Some("streaming")
+            }),
+            "missing streamed TLS row in inserts: {inserts:?}"
+        );
+
+        controller.stop().unwrap();
+    }
+
+    // -------------------------------------------------------------------
     // Test 2: Data type coverage test
     // -------------------------------------------------------------------
 
@@ -3046,7 +3330,6 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
-    #[ignore]
     fn test_cdc_all_data_types() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_all_types");
@@ -3151,12 +3434,8 @@ mod cdc_tests {
         );
         // JSONB - should be passed through as JSON
         assert!(row1["col_jsonb"].is_object() || row1["col_jsonb"].is_string());
-        // BYTEA - encoded as hex string
-        assert!(
-            row1["col_bytea"].as_str().is_some(),
-            "col_bytea should be a string: {:?}",
-            row1["col_bytea"]
-        );
+        // BYTEA is encoded as a JSON byte array.
+        assert_eq!(row1["col_bytea"], json!([0xde, 0xad, 0xbe, 0xef]));
         // NUMERIC - encoded as string to preserve precision
         assert!(
             row1["col_numeric"].as_str().is_some(),
@@ -3195,7 +3474,6 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege, REPLICA IDENTITY FULL.
     #[test]
     #[serial]
-    #[ignore]
     fn test_cdc_update_delete() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_upd_del");
@@ -3304,6 +3582,161 @@ mod cdc_tests {
     }
 
     // -------------------------------------------------------------------
+    // Test 3b: Compatible schema changes
+    // -------------------------------------------------------------------
+
+    /// Tests that compatible source schema changes continue to replicate:
+    /// adding an extra Postgres column and dropping `i`, which is nullable in
+    /// the Feldera schema.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    fn test_cdc_compatible_schema_changes() {
+        let url = postgres_url();
+        let table_name = unique_pg_name("cdc_test_compatible_schema");
+        let publication = unique_pg_name("cdc_pub_compatible_schema");
+
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
+
+        let output_file = NamedTempFile::new().unwrap();
+        let output_path = output_file.path().to_owned();
+
+        let (controller, err_receiver) = cdc_simple_test_circuit(
+            &url,
+            &publication,
+            &format!("public.{table_name}"),
+            &output_path,
+        );
+
+        controller.start();
+
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (1, true, 10, 'alpha')"
+        ));
+        wait(
+            || has_insert_id(&read_output_json(&output_path), 1) || !err_receiver.is_empty(),
+            60_000,
+        )
+        .expect("timeout: did not receive the initial insert");
+        assert!(
+            err_receiver.is_empty(),
+            "unexpected error before the schema change: {:?}",
+            err_receiver.try_recv()
+        );
+
+        table.execute(&format!("ALTER TABLE {table_name} ADD COLUMN extra TEXT"));
+        table.execute(&format!(
+            "INSERT INTO {table_name} (id, b, i, s, extra) \
+             VALUES (2, false, 20, 'with_extra', 'ignored')"
+        ));
+
+        wait(
+            || has_insert_id(&read_output_json(&output_path), 2) || !err_receiver.is_empty(),
+            60_000,
+        )
+        .expect("timeout: did not receive row after adding an extra source column");
+        assert!(
+            err_receiver.is_empty(),
+            "unexpected error after add-column schema change: {:?}",
+            err_receiver.try_recv()
+        );
+
+        table.execute(&format!("ALTER TABLE {table_name} DROP COLUMN i"));
+        table.execute(&format!(
+            "INSERT INTO {table_name} (id, b, s, extra) \
+             VALUES (3, true, 'without_nullable_i', 'ignored')"
+        ));
+
+        wait(
+            || has_insert_id(&read_output_json(&output_path), 3) || !err_receiver.is_empty(),
+            60_000,
+        )
+        .expect("timeout: did not receive row after dropping nullable source column");
+        assert!(
+            err_receiver.is_empty(),
+            "unexpected error after dropping nullable column: {:?}",
+            err_receiver.try_recv()
+        );
+
+        let rows = read_output_json(&output_path);
+        assert!(has_insert_id(&rows, 1), "missing pre-schema-change row");
+        assert!(
+            has_insert_id(&rows, 2),
+            "missing row after add-column change"
+        );
+        assert!(
+            has_insert_id(&rows, 3),
+            "missing row after drop-column change"
+        );
+
+        controller.stop().unwrap();
+    }
+
+    // -------------------------------------------------------------------
+    // Test 3c: Dropping the primary key is rejected
+    // -------------------------------------------------------------------
+
+    /// Tests that dropping the source primary-key column (`id`), which is a
+    /// required Feldera column, is surfaced as a fatal connector error.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    fn test_cdc_drop_primary_key_column_rejected() {
+        let url = postgres_url();
+        let table_name = unique_pg_name("cdc_test_drop_pk_col");
+        let publication = unique_pg_name("cdc_pub_drop_pk_col");
+
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
+
+        let output_file = NamedTempFile::new().unwrap();
+        let output_path = output_file.path().to_owned();
+
+        let (controller, err_receiver) = cdc_simple_test_circuit(
+            &url,
+            &publication,
+            &format!("public.{table_name}"),
+            &output_path,
+        );
+
+        controller.start();
+
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (1, true, 10, 'alpha')"
+        ));
+        wait(
+            || has_insert_id(&read_output_json(&output_path), 1) || !err_receiver.is_empty(),
+            60_000,
+        )
+        .expect("timeout: did not receive the initial insert");
+        assert!(
+            err_receiver.is_empty(),
+            "unexpected error before dropping primary key column: {:?}",
+            err_receiver.try_recv()
+        );
+
+        table.execute(&format!("ALTER TABLE {table_name} DROP COLUMN id CASCADE"));
+        table.execute(&format!(
+            "INSERT INTO {table_name} (b, i, s) VALUES (false, 20, 'missing_id')"
+        ));
+
+        wait(|| !err_receiver.is_empty(), 60_000)
+            .expect("timeout: dropped primary-key column was not reported as an error");
+
+        let err = err_receiver.try_recv().unwrap_or_default();
+        assert!(
+            err.to_lowercase().contains("missing required")
+                || err.to_lowercase().contains("missing")
+                || err.to_lowercase().contains("schema")
+                || err.to_lowercase().contains("replication error"),
+            "error should report the missing required primary-key column, got: {err}"
+        );
+
+        let _ = controller.stop();
+    }
+
+    // -------------------------------------------------------------------
     // Test 4: Restart/resume test
     // -------------------------------------------------------------------
 
@@ -3313,7 +3746,6 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
-    #[ignore]
     fn test_cdc_restart_resumes_from_slot() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_restart");
@@ -3450,7 +3882,6 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
-    #[ignore]
     fn test_cdc_ft_mode_holds_slot() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_strict_hold");
