@@ -35,6 +35,23 @@ use tokio_stream::StreamExt;
 use tracing::{error, warn, Level};
 use uuid::Uuid;
 
+/// HACK (crucible prototype): whether the fetched program binary is the
+/// compiler's crucible marker placeholder rather than a real pipeline binary.
+/// Sniffs only the marker-length prefix, so a real binary costs one small read.
+fn binary_is_crucible_placeholder(binary_file_path: &Path) -> bool {
+    use crate::compiler::rust_compiler::CRUCIBLE_PLACEHOLDER_MARKER;
+    use std::io::Read;
+    let Ok(mut file) = std::fs::File::open(binary_file_path) else {
+        return false;
+    };
+    let mut prefix = vec![0u8; CRUCIBLE_PLACEHOLDER_MARKER.len()];
+    match file.read_exact(&mut prefix) {
+        Ok(()) => prefix == CRUCIBLE_PLACEHOLDER_MARKER,
+        // Shorter than the marker: not the placeholder.
+        Err(_) => false,
+    }
+}
+
 /// How many times to attempt to retrieve the pipeline binary.
 const BINARY_RETRIEVAL_ATTEMPTS: u64 = 5;
 
@@ -567,7 +584,23 @@ impl PipelineExecutor for LocalRunner {
             // - Current directory: pipeline working directory
             // - Configuration file: path to config.yaml
             // - Stdout/stderr are piped to follow logs
-            let mut command = Command::new(&binary_file_path);
+            //
+            // HACK (crucible prototype): a program compiled with
+            // `runtime_version: "crucible"` delivers a marker placeholder
+            // instead of a pipeline binary; exec the crucible executor for it
+            // (CRUCIBLE_BINARY overrides the path, default `crucible` on
+            // PATH). It runs with the same flags and config.yaml, so the
+            // runner contract is unchanged; pipelines without the marker run
+            // their compiled binary as always. Remove once crucible is the
+            // standard executor.
+            let executable = if binary_is_crucible_placeholder(&binary_file_path) {
+                std::env::var("CRUCIBLE_BINARY")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|_| std::path::PathBuf::from("crucible"))
+            } else {
+                binary_file_path.clone()
+            };
+            let mut command = Command::new(&executable);
             command
                 .env(
                     "TOKIO_WORKER_THREADS",

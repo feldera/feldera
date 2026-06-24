@@ -337,7 +337,11 @@ fn determine_sql_compiler_path(
     runtime_selector: &RuntimeSelector,
 ) -> PathBuf {
     match runtime_selector {
-        RuntimeSelector::Platform(_) => PathBuf::from(&config.sql_compiler_path),
+        // Crucible consumes the platform SQL compiler's program info; only the
+        // Rust half of the compilation is skipped.
+        RuntimeSelector::Platform(_) | RuntimeSelector::Crucible => {
+            PathBuf::from(&config.sql_compiler_path)
+        }
         RuntimeSelector::Sha(sha) => config
             .working_dir()
             .join("sql-compilation")
