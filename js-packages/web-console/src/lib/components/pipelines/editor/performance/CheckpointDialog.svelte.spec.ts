@@ -3,6 +3,10 @@ import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 import CheckpointDialog from './CheckpointDialog.svelte'
 
+const clickButton = (locator: ReturnType<typeof page.getByTestId>) => {
+  ;(locator.element() as HTMLButtonElement).click()
+}
+
 describe('CheckpointDialog.svelte', () => {
   describe('A. Content', () => {
     it('renders the title', async () => {
@@ -31,14 +35,14 @@ describe('CheckpointDialog.svelte', () => {
     it('calls onConfirm when Checkpoint is clicked', async () => {
       const onConfirm = vi.fn()
       await render(CheckpointDialog, { onConfirm })
-      await page.getByTestId('btn-confirm-checkpoint').click()
+      clickButton(page.getByTestId('btn-confirm-checkpoint'))
       expect(onConfirm).toHaveBeenCalledOnce()
     })
 
     it('does not call onConfirm when Cancel is clicked', async () => {
       const onConfirm = vi.fn()
       await render(CheckpointDialog, { onConfirm })
-      await page.getByTestId('btn-dialog-cancel').click()
+      clickButton(page.getByTestId('btn-dialog-cancel'))
       expect(onConfirm).not.toHaveBeenCalled()
     })
   })
