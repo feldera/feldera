@@ -83,6 +83,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // This should be safe because the build-script is single-threaded
         unsafe {
             env::set_var("BUILD_DIR", nested_build_dir.clone());
+            // Bake a sentinel base path into the bundle so the manager can
+            // rewrite it to an operator-configured subpath at serve time
+            // (`--http-base-path`). This MUST match
+            // `WEBCONSOLE_BASE_PATH_PLACEHOLDER` in `src/api/main.rs`. When
+            // pre-building the bundle out-of-band (see `WEBCONSOLE_BUILD_DIR`
+            // below), set the same `WEBCONSOLE_BASE_PATH` so the cached build
+            // carries the placeholder too.
+            env::set_var("WEBCONSOLE_BASE_PATH", "/__FELDERA_BASE_PATH__");
         }
         let asset_path: PathBuf =
             Path::new("../../js-packages/web-console/").join(nested_build_dir);
