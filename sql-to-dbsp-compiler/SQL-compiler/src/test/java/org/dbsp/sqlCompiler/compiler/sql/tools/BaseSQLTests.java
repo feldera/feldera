@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.compiler.backend.ExpressionOracleHarvest;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
@@ -432,6 +433,7 @@ public class BaseSQLTests {
             compiler.showErrors(System.err);
             throw new RuntimeException("No circuit produced");
         }
+        ExpressionOracleHarvest.maybeHarvest(circuit, compiler);
         return circuit;
     }
 
