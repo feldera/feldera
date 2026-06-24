@@ -16,6 +16,7 @@
   import { humanSize } from '$lib/functions/common/string'
   import { tuple } from '$lib/functions/common/tuple'
   import { multihostMemoryLimitMb, timeSeriesAxisMax } from '$lib/functions/pipelineMetrics'
+  import type { MemoryPressure } from '$lib/services/manager'
   import type { Pipeline } from '$lib/services/pipelineManager'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
 
@@ -23,13 +24,23 @@
     pipeline,
     metrics,
     refetchMs,
-    keepMs
+    keepMs,
+    memoryPressure
   }: {
     pipeline: { current: Pipeline }
     metrics: TimeSeriesEntry[]
     refetchMs: number
     keepMs: number
+    memoryPressure?: MemoryPressure
   } = $props()
+
+  const pressureChips: Record<MemoryPressure, { label: string; class: string }> = {
+    low: { label: '', class: 'hidden' },
+    moderate: { label: 'Moderate pressure', class: 'bg-warning-100-900' },
+    high: { label: 'High pressure', class: 'bg-error-50-950' },
+    critical: { label: 'Critical pressure', class: 'bg-error-50-950' }
+  }
+  const pressureChip = $derived(memoryPressure ? pressureChips[memoryPressure] : undefined)
   use([
     LineChart,
     GridComponent,
@@ -209,8 +220,13 @@
 </script>
 
 <div class="absolute h-full w-full py-4">
-  <div class="px-4 pb-2">
-    Used memory: {humanSize(metrics.at(-1)?.m ?? 0)}
+  <div class="flex items-center justify-between gap-2 px-4 pb-2">
+    <span>Used memory: {humanSize(metrics.at(-1)?.m ?? 0)}</span>
+    {#if pressureChip}
+      <div class="pointer-events-none flex h-5 rounded px-2 text-sm {pressureChip.class}">
+        {pressureChip.label}
+      </div>
+    {/if}
   </div>
   {#key pipelineName}
     <Chart init={(dom, theme, opts) => (ref = init(dom, theme, opts))} {options} />

@@ -306,7 +306,12 @@
             ></PipelineThroughputGraph>
           </div>
           <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
-            <PipelineMemoryGraph {pipeline} metrics={timeSeries} refetchMs={1000} keepMs={60 * 1000}
+            <PipelineMemoryGraph
+              {pipeline}
+              metrics={timeSeries}
+              refetchMs={1000}
+              keepMs={60 * 1000}
+              memoryPressure={global.memory_pressure}
             ></PipelineMemoryGraph>
           </div>
           <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">

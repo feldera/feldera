@@ -140,6 +140,13 @@
 
   const connectorsWithErrorsCount = $derived(numConnectorsWithProblems(metrics.current))
 
+  const memoryPressureErrorCount = $derived.by(() => {
+    const memoryPressure = metrics.current.global?.memory_pressure
+    return memoryPressure === 'high' || memoryPressure === 'critical' ? 1 : 0
+  })
+
+  const runtimeErrorsCount = $derived(connectorsWithErrorsCount + memoryPressureErrorCount)
+
   // Local input binding. The committed search (what the list actually runs) lives in
   // `logSearch` and only advances on Enter — so typing doesn't search as-you-type.
   let logSearchInput = $state('')
@@ -187,9 +194,9 @@
 
 {#snippet TabControlPerformance()}
   {@render TabPerformance.Label()}
-  {#if connectorsWithErrorsCount > 0}
+  {#if runtimeErrorsCount > 0}
     <span class="ml-1 inline-block min-w-6 rounded preset-filled-error-50-950 px-1 font-medium">
-      {connectorsWithErrorsCount}
+      {runtimeErrorsCount}
     </span>
   {/if}
 {/snippet}
