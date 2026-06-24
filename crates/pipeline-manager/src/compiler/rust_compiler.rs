@@ -900,6 +900,12 @@ pub(super) struct RustCompilationResult {
 /// Returns the program binary URL, source checksum, integrity checksum,
 /// duration, and compilation information.
 #[allow(clippy::too_many_arguments)]
+/// HACK (crucible prototype): content of the placeholder delivered instead of
+/// a pipeline binary when `runtime_version: "crucible"`. The local runner
+/// sniffs this prefix on the fetched binary and execs the crucible executor.
+pub const CRUCIBLE_PLACEHOLDER_MARKER: &[u8] =
+    b"crucible placeholder binary; the runner execs the crucible executor\n";
+
 pub async fn perform_rust_compilation(
     common_config: &CommonConfig,
     config: &CompilerConfig,
@@ -1224,6 +1230,11 @@ pub async fn resolve_runtime_sha(
     match runtime_version {
         RuntimeSelector::Sha(sha) => Ok(sha.clone()),
         RuntimeSelector::Platform(platform_sha) => Ok(platform_sha.clone()),
+        // The crucible placeholder branch skips cargo, which is the only
+        // caller needing a revision SHA.
+        RuntimeSelector::Crucible => {
+            unreachable!("crucible compiles no pipeline binary")
+        }
         RuntimeSelector::Version(version) => {
             let repo_location = runtime_version.runtime_sources(config);
             match Command::new("git")
@@ -1442,7 +1453,9 @@ async fn prepare_workspace(
     // ---------------------
     // Make sure the runtime version is checked out.
     let runtime_sources = requested_runtime_version.runtime_sources(config);
-    if !requested_runtime_version.is_platform() {
+    // Crucible uses the platform sources (no pipeline binary is built), so no
+    // checkout applies.
+    if !requested_runtime_version.is_platform() && !requested_runtime_version.is_crucible() {
         let repo_location = PathBuf::from(&runtime_sources);
         checkout_runtime_version(
             &repo_location,
@@ -1461,7 +1474,7 @@ async fn prepare_workspace(
     // ---------------------
     // Contains all the (indirect and direct) dependencies of the crates besides UDF.
     // The original is copied over each time such that the starting point is the same.
-    if requested_runtime_version.is_platform() {
+    if requested_runtime_version.is_platform() || requested_runtime_version.is_crucible() {
         let cargo_lock_source_path = Path::new(&config.compilation_cargo_lock_path);
         let cargo_lock_target_path = workspace_dir.join("Cargo.lock");
         copy_file(cargo_lock_source_path, &cargo_lock_target_path).await?;
@@ -1545,142 +1558,171 @@ async fn call_compiler(
     ))?;
     let optional_env_rustflags = std::env::var_os("RUSTFLAGS");
 
-    // Formulate command
-    let mut command = Command::new("cargo");
+    let engine_is_crucible = runtime_selector.is_crucible();
 
-    // get env vars that start with SCCACHE
-    let preserved_env_vars: Vec<(String, String)> = std::env::vars()
-        .filter(|(key, _)| key.starts_with("SCCACHE"))
-        .collect();
+    // Short-circuit (crucible prototype): with `runtime_version: "crucible"`,
+    // crucible is the executor and the compiled binary is never run. Skip the
+    // slow cargo build and stand in a marker placeholder at the path cargo
+    // would produce; the bookkeeping below checksums and delivers it and marks
+    // the program compiled. The runner detects the marker and execs the
+    // crucible binary, not this file. Remove once crucible is the standard
+    // executor.
+    let compilation_info = if engine_is_crucible {
+        let source_file_path = workspace_dir
+            .join("target")
+            .join(profile.to_target_folder())
+            .join(crate_name_pipeline_main(pipeline_id));
+        if let Some(parent) = source_file_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                RustCompilationError::SystemError(format!("creating target dir: {e}"))
+            })?;
+        }
+        std::fs::write(&source_file_path, CRUCIBLE_PLACEHOLDER_MARKER).map_err(|e| {
+            RustCompilationError::SystemError(format!("writing placeholder binary: {e}"))
+        })?;
+        RustCompilationInfo {
+            exit_code: 0,
+            stdout: "rustc skipped: runtime_version is 'crucible'".to_string(),
+            stderr: String::new(),
+        }
+    } else {
+        // Formulate command
+        let mut command = Command::new("cargo");
 
-    command.env_clear();
-    command.env("PATH", env_path);
-    if !runtime_selector.is_platform() {
-        command.env(
-            "FELDERA_RUNTIME_OVERRIDE",
-            resolve_runtime_sha(runtime_selector, config).await?,
-        );
-    }
-    if let Some(env_rustflags) = optional_env_rustflags {
-        command.env("RUSTFLAGS", env_rustflags);
-    }
+        // get env vars that start with SCCACHE
+        let preserved_env_vars: Vec<(String, String)> = std::env::vars()
+            .filter(|(key, _)| key.starts_with("SCCACHE"))
+            .collect();
 
-    if let Some(rustc_wrapper) = std::env::var_os("RUSTC_WRAPPER") {
-        command.env("RUSTC_WRAPPER", rustc_wrapper);
-    }
+        command.env_clear();
+        command.env("PATH", env_path);
+        if !runtime_selector.is_platform() {
+            command.env(
+                "FELDERA_RUNTIME_OVERRIDE",
+                resolve_runtime_sha(runtime_selector, config).await?,
+            );
+        }
+        if let Some(env_rustflags) = optional_env_rustflags {
+            command.env("RUSTFLAGS", env_rustflags);
+        }
 
-    // Preserve CARGO_INCREMENTAL if set, to allow sccache to work properly.
-    if let Some(cargo_incremental) = std::env::var_os("CARGO_INCREMENTAL") {
-        command.env("CARGO_INCREMENTAL", cargo_incremental);
-    }
+        if let Some(rustc_wrapper) = std::env::var_os("RUSTC_WRAPPER") {
+            command.env("RUSTC_WRAPPER", rustc_wrapper);
+        }
 
-    // Preserve AWS_PROFILE if set, to allow sccache to use
-    // credentials from there.
-    // we avoid passing all AWS_* env vars to prevent leaking
-    // credentials from the malicious build scripts.
-    if let Some(aws_profile) = std::env::var_os("AWS_PROFILE") {
-        command.env("AWS_PROFILE", aws_profile);
-    }
+        // Preserve CARGO_INCREMENTAL if set, to allow sccache to work properly.
+        if let Some(cargo_incremental) = std::env::var_os("CARGO_INCREMENTAL") {
+            command.env("CARGO_INCREMENTAL", cargo_incremental);
+        }
 
-    for (key, value) in preserved_env_vars {
-        command.env(key, value);
-    }
+        // Preserve AWS_PROFILE if set, to allow sccache to use
+        // credentials from there.
+        // we avoid passing all AWS_* env vars to prevent leaking
+        // credentials from the malicious build scripts.
+        if let Some(aws_profile) = std::env::var_os("AWS_PROFILE") {
+            command.env("AWS_PROFILE", aws_profile);
+        }
 
-    command
-        // Set compiler stack size to 20MB (10x the default) to prevent
-        // SIGSEGV when the compiler runs out of stack on large programs.
-        .env("RUST_MIN_STACK", "20971520")
-        .current_dir(&workspace_dir)
-        .arg("build")
-        .arg("--workspace")
-        .arg("--profile")
-        .arg(profile.to_string())
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(stdout_file.into_std().await))
-        .stderr(Stdio::from(stderr_file.into_std().await))
-        // Setting it to zero sets the process group ID to the PID.
-        // This is done to be able to kill any subprocesses that are spawned.
-        .process_group(0);
+        for (key, value) in preserved_env_vars {
+            command.env(key, value);
+        }
 
-    // Start process
-    let mut process = command.spawn().map_err(|e| {
-        RustCompilationError::SystemError(
-            UtilError::IoError("running 'cargo build'".to_string(), e).to_string(),
-        )
-    })?;
+        command
+            // Set compiler stack size to 20MB (10x the default) to prevent
+            // SIGSEGV when the compiler runs out of stack on large programs.
+            .env("RUST_MIN_STACK", "20971520")
+            .current_dir(&workspace_dir)
+            .arg("build")
+            .arg("--workspace")
+            .arg("--profile")
+            .arg(profile.to_string())
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(stdout_file.into_std().await))
+            .stderr(Stdio::from(stderr_file.into_std().await))
+            // Setting it to zero sets the process group ID to the PID.
+            // This is done to be able to kill any subprocesses that are spawned.
+            .process_group(0);
 
-    // Retrieve process group ID and create a terminator
-    // which ends the group when going out of scope.
-    let Some(process_group) = process.id() else {
-        return Err(RustCompilationError::SystemError(
-            "unable to retrieve pid".to_string(),
-        ));
-    };
-    let mut terminator = ProcessGroupTerminator::new("Rust compilation", process_group);
+        // Start process
+        let mut process = command.spawn().map_err(|e| {
+            RustCompilationError::SystemError(
+                UtilError::IoError("running 'cargo build'".to_string(), e).to_string(),
+            )
+        })?;
 
-    // Wait for process to exit while regularly checking if the pipeline still exists
-    // and has not had its program get updated
-    let exit_status = loop {
-        match process.try_wait() {
-            Ok(exit_status) => match exit_status {
-                None => {
-                    if let Some(db) = db.clone() {
-                        match db
-                            .lock()
-                            .await
-                            .get_pipeline_by_id_for_monitoring(tenant_id, pipeline_id)
-                            .await
-                        {
-                            Ok(pipeline) => {
-                                if pipeline.program_version != program_version {
-                                    return Err(RustCompilationError::Outdated);
+        // Retrieve process group ID and create a terminator
+        // which ends the group when going out of scope.
+        let Some(process_group) = process.id() else {
+            return Err(RustCompilationError::SystemError(
+                "unable to retrieve pid".to_string(),
+            ));
+        };
+        let mut terminator = ProcessGroupTerminator::new("Rust compilation", process_group);
+
+        // Wait for process to exit while regularly checking if the pipeline still exists
+        // and has not had its program get updated
+        let exit_status = loop {
+            match process.try_wait() {
+                Ok(exit_status) => match exit_status {
+                    None => {
+                        if let Some(db) = db.clone() {
+                            match db
+                                .lock()
+                                .await
+                                .get_pipeline_by_id_for_monitoring(tenant_id, pipeline_id)
+                                .await
+                            {
+                                Ok(pipeline) => {
+                                    if pipeline.program_version != program_version {
+                                        return Err(RustCompilationError::Outdated);
+                                    }
                                 }
-                            }
-                            Err(DBError::UnknownPipeline { .. }) => {
-                                return Err(RustCompilationError::NoLongerExists);
-                            }
-                            Err(e) => {
-                                error!(
-                                    pipeline_id = %pipeline_id,
-                                    pipeline = pipeline_name_for_log.as_str(),
-                                    "Rust compilation outdated check failed due to database error: {e}"
-                                )
-                                // As preemption check failing is not fatal, compilation will continue
+                                Err(DBError::UnknownPipeline { .. }) => {
+                                    return Err(RustCompilationError::NoLongerExists);
+                                }
+                                Err(e) => {
+                                    error!(
+                                        pipeline_id = %pipeline_id,
+                                        pipeline = pipeline_name_for_log.as_str(),
+                                        "Rust compilation outdated check failed due to database error: {e}"
+                                    )
+                                    // As preemption check failing is not fatal, compilation will continue
+                                }
                             }
                         }
                     }
+                    Some(exit_status) => break exit_status,
+                },
+                Err(e) => {
+                    return Err(RustCompilationError::SystemError(
+                        UtilError::IoError("waiting for 'cargo build'".to_string(), e).to_string(),
+                    ));
                 }
-                Some(exit_status) => break exit_status,
-            },
-            Err(e) => {
-                return Err(RustCompilationError::SystemError(
-                    UtilError::IoError("waiting for 'cargo build'".to_string(), e).to_string(),
-                ));
             }
+            sleep(COMPILATION_CHECK_INTERVAL).await;
+        };
+
+        // Once the process has exited, it is no longer needed to terminate its process group
+        terminator.cancel();
+
+        // Check presence of exit status code
+        let Some(exit_code) = exit_status.code() else {
+            // No exit status code present because the process was terminated by a signal
+            return Err(RustCompilationError::TerminatedBySignal);
+        };
+
+        // Read stdout and stderr
+        let stdout = read_file_content(&stdout_file_path).await?;
+        let stderr = read_file_content(&stderr_file_path).await?;
+        RustCompilationInfo {
+            exit_code,
+            stdout,
+            stderr,
         }
-        sleep(COMPILATION_CHECK_INTERVAL).await;
     };
 
-    // Once the process has exited, it is no longer needed to terminate its process group
-    terminator.cancel();
-
-    // Check presence of exit status code
-    let Some(exit_code) = exit_status.code() else {
-        // No exit status code present because the process was terminated by a signal
-        return Err(RustCompilationError::TerminatedBySignal);
-    };
-
-    // Read stdout and stderr
-    let stdout = read_file_content(&stdout_file_path).await?;
-    let stderr = read_file_content(&stderr_file_path).await?;
-    let compilation_info = RustCompilationInfo {
-        exit_code,
-        stdout,
-        stderr,
-    };
-
-    // Compilation is successful if the return exit code is present and zero
-    if exit_status.success() {
+    // Compilation is successful if it exited zero (or rustc was skipped).
+    if engine_is_crucible || compilation_info.exit_code == 0 {
         // Source file
         let source_file_path = workspace_dir
             .join("target")

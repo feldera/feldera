@@ -336,6 +336,11 @@ pub enum RuntimeSelector {
     ///
     /// The string corresponds to the git SHA of feldera/feldera at the time of the build.
     Platform(String),
+    /// HACK (crucible prototype): the crucible executor runs the pipeline, so
+    /// no pipeline binary is compiled (a marker placeholder is delivered) and
+    /// the runner launches the crucible binary. Remove once crucible is the
+    /// standard executor.
+    Crucible,
 }
 
 impl From<RuntimeSelector> for Option<String> {
@@ -344,6 +349,7 @@ impl From<RuntimeSelector> for Option<String> {
             RuntimeSelector::Sha(sha) => Some(sha),
             RuntimeSelector::Version(version) => Some(version),
             RuntimeSelector::Platform(_platform_sha) => None,
+            RuntimeSelector::Crucible => Some("crucible".to_string()),
         }
     }
 }
@@ -351,7 +357,7 @@ impl From<RuntimeSelector> for Option<String> {
 impl RuntimeSelector {
     /// Returns a path to sources of the runtime which the compilation should be using.
     pub fn runtime_sources(&self, config: &CompilerConfig) -> String {
-        if self.is_platform() {
+        if self.is_platform() || self.is_crucible() {
             config.dbsp_override_path.clone()
         } else {
             assert!(has_unstable_feature("runtime_version"));
@@ -366,12 +372,18 @@ impl RuntimeSelector {
         matches!(self, RuntimeSelector::Platform(_))
     }
 
+    /// Is the crucible executor selected (no pipeline binary compiled)?
+    pub fn is_crucible(&self) -> bool {
+        matches!(self, RuntimeSelector::Crucible)
+    }
+
     /// Bytes representation of the runtime selector (for hashing).
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             RuntimeSelector::Sha(sha) => sha.as_bytes(),
             RuntimeSelector::Version(version) => version.as_bytes(),
             RuntimeSelector::Platform(platform_sha) => platform_sha.as_bytes(),
+            RuntimeSelector::Crucible => b"crucible",
         }
     }
 
@@ -381,6 +393,9 @@ impl RuntimeSelector {
             RuntimeSelector::Sha(sha) => sha,
             RuntimeSelector::Version(version) => version,
             RuntimeSelector::Platform(platform_sha) => platform_sha,
+            RuntimeSelector::Crucible => {
+                unreachable!("crucible selects no runtime commit; no git operation applies")
+            }
         }
     }
 }
@@ -391,6 +406,7 @@ impl Display for RuntimeSelector {
             RuntimeSelector::Sha(sha) => write!(f, "{sha}"),
             RuntimeSelector::Version(version) => write!(f, "{version}"),
             RuntimeSelector::Platform(platform_sha) => write!(f, "{platform_sha}"),
+            RuntimeSelector::Crucible => write!(f, "crucible"),
         }
     }
 }
@@ -415,7 +431,9 @@ impl TryFrom<String> for RuntimeSelector {
             version_regex.is_match(s)
         }
 
-        if is_valid_git_sha(&value) {
+        if value == "crucible" {
+            Ok(RuntimeSelector::Crucible)
+        } else if is_valid_git_sha(&value) {
             Ok(RuntimeSelector::Sha(value))
         } else if is_version_tag(&value) {
             Ok(RuntimeSelector::Version(value))
