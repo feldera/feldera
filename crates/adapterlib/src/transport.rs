@@ -86,7 +86,7 @@ pub trait InputTransportEndpointFactory: Send + Sync {
 /// Registry of input transport endpoint factories keyed by transport name.
 #[derive(Default)]
 pub struct InputTransportRegistry {
-    registered: BTreeMap<&'static str, Arc<dyn InputTransportEndpointFactory>>,
+    registered: BTreeMap<String, Arc<dyn InputTransportEndpointFactory>>,
 }
 
 impl InputTransportRegistry {
@@ -98,10 +98,10 @@ impl InputTransportRegistry {
 
     pub fn register(
         &mut self,
-        name: &'static str,
+        name: impl Into<String>,
         factory: Box<dyn InputTransportEndpointFactory>,
     ) {
-        self.registered.insert(name, Arc::from(factory));
+        self.registered.insert(name.into(), Arc::from(factory));
     }
 
     pub fn get(&self, name: &str) -> Option<Arc<dyn InputTransportEndpointFactory>> {
@@ -112,7 +112,7 @@ impl InputTransportRegistry {
         &self,
         config: &TransportConfig,
     ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-        let Some(factory) = self.get(&config.name()) else {
+        let Some(factory) = self.get(config.name().as_str()) else {
             return Ok(None);
         };
         factory.create(config)
@@ -1151,7 +1151,7 @@ pub trait OutputTransportEndpointFactory: Send + Sync {
 /// Registry of output transport endpoint factories keyed by transport name.
 #[derive(Default)]
 pub struct OutputTransportRegistry {
-    registered: BTreeMap<&'static str, Arc<dyn OutputTransportEndpointFactory>>,
+    registered: BTreeMap<String, Arc<dyn OutputTransportEndpointFactory>>,
 }
 
 impl OutputTransportRegistry {
@@ -1163,10 +1163,10 @@ impl OutputTransportRegistry {
 
     pub fn register(
         &mut self,
-        name: &'static str,
+        name: impl Into<String>,
         factory: Box<dyn OutputTransportEndpointFactory>,
     ) {
-        self.registered.insert(name, Arc::from(factory));
+        self.registered.insert(name.into(), Arc::from(factory));
     }
 
     pub fn get(&self, name: &str) -> Option<Arc<dyn OutputTransportEndpointFactory>> {
@@ -1179,7 +1179,7 @@ impl OutputTransportRegistry {
         endpoint_name: &str,
         fault_tolerant: bool,
     ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
-        let Some(factory) = self.get(&config.name()) else {
+        let Some(factory) = self.get(config.name().as_str()) else {
             return Ok(None);
         };
         factory.create(config, endpoint_name, fault_tolerant)
