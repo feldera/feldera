@@ -18,6 +18,10 @@ async function renderDialog(
   return render(GenericDialog, { content, ...opts })
 }
 
+const clickButton = (locator: ReturnType<typeof page.getByTestId>) => {
+  ;(locator.element() as HTMLButtonElement).click()
+}
+
 describe('GenericDialog.svelte', () => {
   describe('A. Basic rendering', () => {
     it('renders title', async () => {
@@ -79,7 +83,7 @@ describe('GenericDialog.svelte', () => {
           onSuccess: { name: 'Confirm', callback: onSuccess, 'data-testid': 'btn-dialog-success' }
         })
       )
-      await page.getByTestId('btn-dialog-success').click()
+      clickButton(page.getByTestId('btn-dialog-success'))
       expect(onSuccess).toHaveBeenCalledOnce()
     })
 
@@ -149,7 +153,7 @@ describe('GenericDialog.svelte', () => {
           onCancel: { name: 'Back', callback: onCancel }
         })
       )
-      await page.getByTestId('btn-dialog-cancel').click()
+      clickButton(page.getByTestId('btn-dialog-cancel'))
       expect(onCancel).toHaveBeenCalledOnce()
     })
 
@@ -160,7 +164,7 @@ describe('GenericDialog.svelte', () => {
           onCancel: { callback: onCancel }
         })
       )
-      await page.getByLabelText('Close dialog').click()
+      ;(page.getByLabelText('Close dialog').element() as HTMLButtonElement).click()
       expect(onCancel).toHaveBeenCalledOnce()
     })
   })

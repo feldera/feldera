@@ -1,3 +1,4 @@
+import { tick } from 'svelte'
 import { describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
@@ -19,9 +20,18 @@ const visibleNames = () =>
     .elements()
     .map((el) => el.textContent?.trim())
 
+const setSearch = async (value: string) => {
+  const search = page.getByPlaceholder('Search pipelines...')
+  await expect.element(search).toBeInTheDocument()
+  const input = search.element() as HTMLInputElement
+  input.value = value
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await tick()
+}
+
 describe('pipeline list search', () => {
   it('lists every pipeline before any search term is entered', async () => {
-    render(List, { pipelineName: '', pipelines })
+    await render(List, { pipelineName: '', pipelines })
 
     await expect.element(page.getByText('orders')).toBeInTheDocument()
     await expect.element(page.getByText('payments')).toBeInTheDocument()
@@ -30,9 +40,9 @@ describe('pipeline list search', () => {
   })
 
   it('filters to pipelines whose name contains the search term', async () => {
-    render(List, { pipelineName: '', pipelines })
+    await render(List, { pipelineName: '', pipelines })
 
-    await page.getByPlaceholder('Search pipelines...').fill('pay')
+    await setSearch('pay')
 
     await expect.element(page.getByText('payments')).toBeInTheDocument()
     await expect.element(page.getByText('orders')).not.toBeInTheDocument()
@@ -41,37 +51,36 @@ describe('pipeline list search', () => {
   })
 
   it('matches case-insensitively', async () => {
-    render(List, { pipelineName: '', pipelines })
+    await render(List, { pipelineName: '', pipelines })
 
-    await page.getByPlaceholder('Search pipelines...').fill('PAY')
+    await setSearch('PAY')
 
     expect(visibleNames()).toEqual(['payments'])
   })
 
   it('matches a substring anywhere in the name, not only a prefix', async () => {
-    render(List, { pipelineName: '', pipelines })
+    await render(List, { pipelineName: '', pipelines })
 
-    await page.getByPlaceholder('Search pipelines...').fill('detect')
+    await setSearch('detect')
 
     expect(visibleNames()).toEqual(['fraud-detection'])
   })
 
   it('shows no pipelines when the term matches nothing', async () => {
-    render(List, { pipelineName: '', pipelines })
+    await render(List, { pipelineName: '', pipelines })
 
-    await page.getByPlaceholder('Search pipelines...').fill('no-such-pipeline')
+    await setSearch('no-such-pipeline')
 
     expect(visibleNames()).toHaveLength(0)
   })
 
   it('restores the full list when the search term is cleared', async () => {
-    render(List, { pipelineName: '', pipelines })
-    const search = page.getByPlaceholder('Search pipelines...')
+    await render(List, { pipelineName: '', pipelines })
 
-    await search.fill('pay')
+    await setSearch('pay')
     expect(visibleNames()).toEqual(['payments'])
 
-    await search.fill('')
+    await setSearch('')
     expect(visibleNames()).toHaveLength(3)
   })
 })
