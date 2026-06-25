@@ -189,3 +189,4 @@ create table FAILED_BANKS (
   - `"fields"` — strip leading and trailing ASCII whitespace from every field value.
   - `"headers"` — strip whitespace from header names only (effective only when `headers` is `true`).
   - `"all"` — strip whitespace from both field values and header names.
+- `buffer_size_records`: Maximum number of records to batch into a single output message (output connectors only). When this threshold is reached, the encoder flushes the buffer to the transport. The default is `10000`.
