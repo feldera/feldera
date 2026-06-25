@@ -1,10 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.backend;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
@@ -12,6 +14,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
@@ -31,7 +34,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -95,6 +103,7 @@ public final class ExpressionOracleHarvest {
     private static void harvest(DBSPCircuit circuit, DBSPCompiler compiler, Path dir)
             throws Exception {
         Files.createDirectories(dir);
+        Map<DBSPOperator, Set<String>> provenance = sqlProvenance(circuit);
 
         for (DBSPOperator operator : circuit.getAllOperators()) {
             if (!(operator instanceof DBSPSimpleOperator simple) || !isHarvestable(operator)) {
@@ -132,6 +141,7 @@ public final class ExpressionOracleHarvest {
             }
 
             String hash = sha1(rustClosure);
+            Path file = dir.resolve(hash + ".json");
             ObjectNode record = MAPPER.createObjectNode();
             record.put("name", "case_" + hash);
             record.put("operator", operator.getClass().getSimpleName());
@@ -140,13 +150,66 @@ public final class ExpressionOracleHarvest {
             attachStatics(compiler, declarations, record);
             record.put("rust_closure", rustClosure);
             record.set("ir", buildIr(compiler, closure, declarations));
+            // Provenance: the SQL view(s) this closure feeds, unioned with whatever a prior
+            // run recorded under the same dedup file, so a case can be traced to its query.
+            record.set("generating_sql",
+                    mergeGeneratingSql(file, provenance.getOrDefault(operator, Set.of())));
 
             // Filename is the dedup key: identical closures from different tests and
             // JVMs converge on one file rather than racing an append.
-            MAPPER.writeValue(dir.resolve(hash + ".json").toFile(), record);
+            MAPPER.writeValue(file.toFile(), record);
             emitted.incrementAndGet();
         }
         writeStats(dir);
+    }
+
+    /**
+     * Map each operator to the SQL of the view(s) it feeds, by walking upstream from every
+     * sink. One closure can serve several views, so the value is a set of view queries.
+     */
+    private static Map<DBSPOperator, Set<String>> sqlProvenance(DBSPCircuit circuit) {
+        Map<DBSPOperator, Set<String>> provenance = new HashMap<>();
+        for (DBSPSinkOperator sink : circuit.sinkOperators.values()) {
+            String sql = sink.query == null || sink.query.isBlank()
+                    ? sink.viewName.toString()
+                    : sink.query;
+            Deque<DBSPOperator> work = new ArrayDeque<>();
+            Set<DBSPOperator> seen = new HashSet<>();
+            work.add(sink);
+            seen.add(sink);
+            while (!work.isEmpty()) {
+                DBSPOperator operator = work.removeFirst();
+                provenance.computeIfAbsent(operator, key -> new LinkedHashSet<>()).add(sql);
+                for (OutputPort input : operator.inputs) {
+                    if (seen.add(input.operator)) {
+                        work.add(input.operator);
+                    }
+                }
+            }
+        }
+        return provenance;
+    }
+
+    /**
+     * Union this closure's view SQL with whatever a prior run already recorded under the same
+     * dedup file, so re-harvesting accumulates provenance rather than overwriting it.
+     */
+    private static ArrayNode mergeGeneratingSql(Path file, Set<String> fresh) {
+        LinkedHashSet<String> all = new LinkedHashSet<>();
+        if (Files.exists(file)) {
+            try {
+                JsonNode prior = MAPPER.readTree(file.toFile()).get("generating_sql");
+                if (prior != null && prior.isArray()) {
+                    prior.forEach(node -> all.add(node.asText()));
+                }
+            } catch (Exception ignored) {
+                // A malformed prior file is replaced, not merged.
+            }
+        }
+        all.addAll(fresh);
+        ArrayNode array = MAPPER.createArrayNode();
+        all.forEach(array::add);
+        return array;
     }
 
     /**
