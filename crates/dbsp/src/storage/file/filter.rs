@@ -266,11 +266,11 @@ where
         // batch bounds we cannot safely decide that min-offset roaring
         // encoding will fit, and we do not allow switching filters after
         // writing has started.
+        let bloom_rate = Runtime::bloom_false_positive_rate();
         let (enable_roaring, bloom_false_positive_rate) = Runtime::with_dev_tweaks(|dev_tweaks| {
-            let rate = dev_tweaks.bloom_false_positive_rate();
             (
                 dev_tweaks.enable_roaring(),
-                (rate > 0.0 && rate < 1.0).then_some(rate),
+                (bloom_rate > 0.0 && bloom_rate < 1.0).then_some(bloom_rate),
             )
         });
         static LOG_FILTER_CONFIG: Once = Once::new();

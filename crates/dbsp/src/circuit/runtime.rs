@@ -1066,6 +1066,23 @@ impl Runtime {
             .unwrap_or_else(|| f(&DEFAULT))
     }
 
+    /// Returns the configured Bloom filter false-positive rate.
+    ///
+    /// Prefers `storage.bloom_false_positive_rate` when set; falls back to
+    /// the deprecated `dev_tweaks.bloom_false_positive_rate`.
+    pub fn bloom_false_positive_rate() -> f64 {
+        let from_storage: Option<f64> = RUNTIME.with(|rt| {
+            rt.borrow()
+                .as_ref()?
+                .inner()
+                .storage
+                .as_ref()?
+                .options
+                .bloom_false_positive_rate
+        });
+        from_storage.unwrap_or_else(|| Self::with_dev_tweaks(|dt| dt.bloom_false_positive_rate()))
+    }
+
     pub fn get_mode(&self) -> Mode {
         self.inner().mode
     }

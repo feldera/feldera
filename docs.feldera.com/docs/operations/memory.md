@@ -106,10 +106,20 @@ This section breaks down pipelines' memory usage in more detail.
   profiles.
 
   The number of bits per key can be tuned by setting
-  `bloom_false_positive_rate` in `dev_tweaks` in the pipeline [Runtime
-  configuration].  This can also be used to disable Bloom filters
-  entirely.  Reducing the number of bits per key, or disabling Bloom
-  filters, can reduce performance.
+  `bloom_false_positive_rate` in `storage` in the pipeline [Runtime
+  configuration].  Typical false-positive rates and their memory costs:
+
+  | False-positive rate | Bits per key |
+  |---------------------|--------------|
+  | 0.1                 | 4.8          |
+  | 0.01                | 9.6          |
+  | 0.001               | 14.4         |
+  | 0.0001 (default)    | 19.2         |
+
+  Setting `bloom_false_positive_rate` to 0.0 (or any value outside
+  the range (0, 1)) disables Bloom filters entirely.  Reducing the
+  number of bits per key, or disabling Bloom filters, can reduce
+  performance.
 
 - **Index batches in memory**.  The pipeline’s internal state is maintained as
   a set of indexes that are continuously updated as new data is processed. Updates
@@ -162,7 +172,7 @@ This section breaks down pipelines' memory usage in more detail.
 | Output buffering | Records produced by the circuit but not yet consumed by output connectors; can be buffered in memory or storage. | [`output_buffered_batches`], [`output_connector_buffered_records`] | Connector [`max_queued_records`] |
 | Index batches in memory | Index batches kept in memory before background merges and eventual flush to storage. |  | Runtime config `storage.min_storage_bytes`, [`max_rss_mb`](#max_rss) |
 | Storage cache | In-memory cache of index batches stored on disk; decouples working memory from total state size. | [`storage_cache_usage_bytes`], [`storage_cache_usage_limit_bytes_total`] | Runtime config `storage.cache_mib` |
-| Bloom filters | In-memory bloom filters for batches on storage; can become significant at large state sizes. | Visible in circuit profiles. | Runtime config `dev_tweaks.bloom_false_positive_rate` |
+| Bloom filters | In-memory bloom filters for batches on storage; can become significant at large state sizes. | Visible in circuit profiles. | Runtime config `storage.bloom_false_positive_rate` |
 | In-flight batches | Transient batches moving between operators during execution; usually short-lived but workload-dependent. |  | Connector [`max_batch_size`], runtime config `storage.min_step_storage_bytes` |
 
 

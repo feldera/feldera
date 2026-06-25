@@ -8889,7 +8889,7 @@
           "bloom_false_positive_rate": {
             "type": "number",
             "format": "double",
-            "description": "False-positive rate for Bloom filters on batches on storage, as a\nfraction f, where 0 < f < 1.\n\nThe false-positive rate trades off between the amount of memory used by\nBloom filters and how frequently storage needs to be searched for keys\nthat are not actually present.  Typical false-positive rates and their\ncorresponding memory costs are:\n\n- 0.1: 4.8 bits per key\n- 0.01: 9.6 bits per key\n- 0.001: 14.4 bits per key\n- 0.0001: 19.2 bits per key (default)\n\nValues outside the valid range, such as 0.0, disable Bloom filters.",
+            "description": "False-positive rate for Bloom filters on batches on storage.\n\nDeprecated: use `storage.bloom_false_positive_rate` instead.",
             "default": null,
             "nullable": true
           },
@@ -13583,6 +13583,13 @@
             "default": {
               "name": "default"
             }
+          },
+          "bloom_false_positive_rate": {
+            "type": "number",
+            "format": "double",
+            "description": "False-positive rate for Bloom filters on batches on storage, as a\nfraction f, where 0 < f < 1.\n\nThe false-positive rate trades off between the amount of memory used by\nBloom filters and how frequently storage needs to be searched for keys\nthat are not actually present.  Typical false-positive rates and their\ncorresponding memory costs are:\n\n- 0.1: 4.8 bits per key\n- 0.01: 9.6 bits per key\n- 0.001: 14.4 bits per key\n- 0.0001: 19.2 bits per key (default)\n\nValues outside the valid range, such as 0.0, disable Bloom filters.",
+            "default": null,
+            "nullable": true
           },
           "cache_mib": {
             "type": "integer",
