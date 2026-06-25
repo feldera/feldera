@@ -43,15 +43,18 @@ use crate::{
     },
     circuit_cache_key,
     ir::LABEL_MIR_NODE_ID,
-    operator::dynamic::balance::{Balancer, BalancerError, BalancerHint, PartitioningPolicy},
+    operator::dynamic::{
+        balance::{Balancer, BalancerError, BalancerHint, PartitioningPolicy},
+        recorder::{Recorder, RecorderControl, RecorderControlId, RecorderId},
+    },
     time::{Timestamp, UnitTimestamp},
+    trace::Batch,
 };
 #[cfg(doc)]
 use crate::{
     InputHandle, OutputHandle,
     algebra::{IndexedZSet, ZSet},
     operator::{Aggregator, Fold, Generator, Max, Min, time_series::RelRange},
-    trace::Batch,
 };
 use anyhow::Error as AnyError;
 use dyn_clone::{DynClone, clone_box};
@@ -997,6 +1000,15 @@ pub trait Node: Any {
     /// Is this an input node?
     fn is_input(&self) -> bool;
 
+    /// Is this a self-contained deterministic source (see
+    /// [`Operator::is_deterministic_source`](super::operator_traits::Operator::is_deterministic_source))?
+    ///
+    /// Defaults to `false`; node wrappers over source operators delegate to the
+    /// wrapped operator.
+    fn is_deterministic_source(&self) -> bool {
+        false
+    }
+
     /// `true` if the node encapsulates an asynchronous operator (see
     /// [`Operator::is_async()`](super::operator_traits::Operator::is_async)).
     /// `false` for synchronous operators and subcircuits.
@@ -1105,6 +1117,13 @@ pub trait Node: Any {
     /// Call [`Operator::is_compaction_complete`](super::operator_traits::Operator::is_compaction_complete) on the operator this node encapsulates.
     fn is_compaction_complete(&self) -> bool;
 
+    /// Call
+    /// [`Operator::start_bootstrap_output_caching`](super::operator_traits::Operator::start_bootstrap_output_caching)
+    /// on the operator this node encapsulates.
+    ///
+    /// The default is a no-op; only output sink nodes forward it.
+    fn start_bootstrap_output_caching(&mut self) {}
+
     /// Place operator in the replay mode.
     ///
     /// In the replay mode the operator streams its stored state to a temporary
@@ -1130,6 +1149,25 @@ pub trait Node: Any {
     ///
     /// Panics for operators that don't support replay.
     fn end_replay(&mut self) -> Result<(), DbspError>;
+
+    /// Start replaying `trace` to the node's replay stream (see
+    /// [`Operator::start_sync_replay`](super::operator_traits::Operator::start_sync_replay)).
+    ///
+    /// # Panics
+    ///
+    /// Panics for operators that don't support replay.
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), DbspError> {
+        let _ = trace;
+        panic!("start_sync_replay() is not supported by this node")
+    }
+
+    /// Swap the node's operator state with `other`, a node of the same
+    /// concrete type (see [`Operator::swap_state`](super::operator_traits::Operator::swap_state)).
+    ///
+    /// For strict (feedback) operators, whose two node halves share one
+    /// operator, the input half is a no-op: the output half's swap moves the
+    /// shared operator's entire state, and swapping twice would put it back.
+    fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError>;
 
     /// Takes a fingerprint of the node's inner operator adds it to `fip`.
     fn fingerprint(&self, fip: &mut Fingerprinter) {
@@ -1434,6 +1472,22 @@ impl OwnershipPreference {
     /// The operator does not gain any speed up from consuming an owned value.
     pub const INDIFFERENT: Self = Self::new(0);
 
+    /// The operator does not benefit from an owned value and must be
+    /// scheduled before any consumer of the same stream that prefers one.
+    ///
+    /// The owned value of a stream is delivered to whichever consumer runs
+    /// last (`StreamValue::take`), so an auxiliary tap evaluated after a
+    /// [`Self::PREFER_OWNED`] consumer would intercept the owned value that
+    /// the latter asked for, forcing it to clone its input.  This preference
+    /// tells the scheduler to evaluate the tap first (see
+    /// `ownership_constraints`).
+    ///
+    /// Use this preference only for sink operators (e.g., the recorders
+    /// attached to replayable streams): the scheduling constraints it adds
+    /// originate at the consumer, and a consumer with downstream successors
+    /// could create a dependency cycle.
+    pub const YIELD_OWNERSHIP: Self = Self::new(1);
+
     /// The operator is likely to run faster provided an owned input, but
     /// shouldn't be prioritized over more impactful operators
     ///
@@ -1469,6 +1523,7 @@ impl Display for OwnershipPreference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::INDIFFERENT => f.write_str("Indifferent"),
+            Self::YIELD_OWNERSHIP => f.write_str("YieldOwnership"),
             Self::WEAKLY_PREFER_OWNED => f.write_str("WeaklyPreferOwned"),
             Self::PREFER_OWNED => f.write_str("PreferOwned"),
             Self::STRONGLY_PREFER_OWNED => f.write_str("StronglyPreferOwned"),
@@ -1523,13 +1578,25 @@ circuit_cache_key!(ExportId<C, D>(StreamId => Stream<C, D>));
 circuit_cache_key!(ReplaySource(StreamId => Box<dyn StreamMetadata>));
 
 /// Register `replay_stream` as a replay source for `stream`.
+///
+/// Also attaches a [`Recorder`](crate::operator::dynamic::recorder::Recorder)
+/// to `stream`: every stream with a replay source can turn out to be a
+/// boundary stream of the bootstrapped region during concurrent
+/// bootstrapping, in which case the deltas applied to it while the bootstrap
+/// circuit replays the (frozen) integral must be recorded for the
+/// synchronization transaction.  The recorder is disabled (empty, no-op)
+/// until bootstrap orchestration enables it through the
+/// [`RecorderId`](crate::operator::dynamic::recorder::RecorderId) cache
+/// entry.
+#[track_caller]
 pub(crate) fn register_replay_stream<C, B>(
     circuit: &C,
     stream: &Stream<C, B>,
     replay_stream: &Stream<C, B>,
+    factories: &B::Factories,
 ) where
     C: Circuit,
-    B: 'static,
+    B: Batch<Time = ()>,
 {
     // We currently only support using operators in the top-level circuit
     // as replay sources.
@@ -1547,6 +1614,22 @@ pub(crate) fn register_replay_stream<C, B>(
                 ReplaySource::new(stream.stream_id()),
                 Box::new(replay_stream.clone()),
             );
+
+            let recorder = Recorder::new(factories, Location::caller());
+            let handle = recorder.handle();
+            // `YIELD_OWNERSHIP` schedules the recorder before the stream's
+            // owned-input consumers (the integral's appender), so that it
+            // does not intercept the owned-value delivery they rely on.
+            circuit.add_sink_with_preference(
+                recorder,
+                stream,
+                OwnershipPreference::YIELD_OWNERSHIP,
+            );
+            circuit.cache_insert(
+                RecorderControlId::new(stream.stream_id()),
+                Rc::new(handle.clone()) as Rc<dyn RecorderControl>,
+            );
+            circuit.cache_insert(RecorderId::new(stream.stream_id()), handle);
         }
     }
 }
@@ -1560,6 +1643,16 @@ pub trait WithClock {
 
     /// Current time.
     fn time(&self) -> Self::Time;
+
+    /// Overwrites the current time.
+    ///
+    /// The concurrent-bootstrap cutover uses this to align a backfilled nested
+    /// circuit's clock with the bootstrap copy that reconstructed its state:
+    /// the live copy excluded the subcircuit from its schedule, so its clock
+    /// never advanced, while the transferred state is timestamped at the
+    /// transactions the bootstrap copy replayed.  See
+    /// `ChildNode::swap_state_with`.
+    fn set_time(&self, time: Self::Time);
 }
 
 /// This `impl` is only needed to bootstrap the
@@ -1571,6 +1664,8 @@ impl WithClock for () {
     fn time(&self) -> Self::Time {
         UnitTimestamp
     }
+
+    fn set_time(&self, _time: Self::Time) {}
 }
 
 impl<P, T> WithClock for ChildCircuit<P, T>
@@ -1582,6 +1677,10 @@ where
 
     fn time(&self) -> Self::Time {
         self.time.borrow().clone()
+    }
+
+    fn set_time(&self, time: Self::Time) {
+        *self.time.borrow_mut() = time;
     }
 }
 
@@ -3101,9 +3200,22 @@ impl RootCircuit {
             })?;
 
         let mut circuit = RootCircuit::new();
-        let res = constructor(&mut circuit).map_err(DbspError::Constructor)?;
+        // On failure, explicitly deallocate whatever the constructor built:
+        // nodes and streams hold cyclic `Rc` references that only
+        // `circuit.clear()` breaks (success-path cleanup happens in
+        // `CircuitHandle::drop`).
+        let res = match constructor(&mut circuit) {
+            Ok(res) => res,
+            Err(e) => {
+                circuit.clear();
+                return Err(DbspError::Constructor(e));
+            }
+        };
         let mut executor = Box::new(<OnceExecutor<S>>::new()) as Box<dyn Executor<RootCircuit>>;
-        executor.prepare(&circuit, None)?;
+        if let Err(e) = executor.prepare(&circuit, None) {
+            circuit.clear();
+            return Err(e.into());
+        }
 
         // if Runtime::worker_index() == 0 {
         //     circuit.to_dot_file(
@@ -3149,6 +3261,8 @@ impl RootCircuit {
                 executor,
                 tokio_runtime,
                 replay_info: None,
+                boundary_streams: None,
+                concurrent_bootstrap_info: None,
             },
             res,
         ))
@@ -4795,12 +4909,27 @@ where
         self.operator.is_compaction_complete()
     }
 
+    fn start_bootstrap_output_caching(&mut self) {
+        self.operator.start_bootstrap_output_caching()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
 
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), DbspError> {
+        self.operator.start_sync_replay(trace)
+    }
+
+    fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError> {
+        let other = (other as &mut dyn Any)
+            .downcast_mut::<Self>()
+            .expect("swap_state_with: node type mismatch");
+        self.operator.swap_state(&mut other.operator)
     }
 
     fn end_replay(&mut self) -> Result<(), DbspError> {
@@ -4880,6 +5009,10 @@ where
         self.operator.is_input()
     }
 
+    fn is_deterministic_source(&self) -> bool {
+        self.operator.is_deterministic_source()
+    }
+
     fn ready(&self) -> bool {
         self.operator.ready()
     }
@@ -4950,12 +5083,27 @@ where
         self.operator.is_compaction_complete()
     }
 
+    fn start_bootstrap_output_caching(&mut self) {
+        self.operator.start_bootstrap_output_caching()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
 
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), DbspError> {
+        self.operator.start_sync_replay(trace)
+    }
+
+    fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError> {
+        let other = (other as &mut dyn Any)
+            .downcast_mut::<Self>()
+            .expect("swap_state_with: node type mismatch");
+        self.operator.swap_state(&mut other.operator)
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -5119,12 +5267,27 @@ where
         self.operator.is_compaction_complete()
     }
 
+    fn start_bootstrap_output_caching(&mut self) {
+        self.operator.start_bootstrap_output_caching()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
 
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), DbspError> {
+        self.operator.start_sync_replay(trace)
+    }
+
+    fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError> {
+        let other = (other as &mut dyn Any)
+            .downcast_mut::<Self>()
+            .expect("swap_state_with: node type mismatch");
+        self.operator.swap_state(&mut other.operator)
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -5281,12 +5444,27 @@ where
         self.operator.is_compaction_complete()
     }
 
+    fn start_bootstrap_output_caching(&mut self) {
+        self.operator.start_bootstrap_output_caching()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
 
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), DbspError> {
+        self.operator.start_sync_replay(trace)
+    }
+
+    fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError> {
+        let other = (other as &mut dyn Any)
+            .downcast_mut::<Self>()
+            .expect("swap_state_with: node type mismatch");
+        self.operator.swap_state(&mut other.operator)
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -5500,12 +5678,27 @@ where
         self.operator.is_compaction_complete()
     }
 
+    fn start_bootstrap_output_caching(&mut self) {
+        self.operator.start_bootstrap_output_caching()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
 
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), DbspError> {
+        self.operator.start_sync_replay(trace)
+    }
+
+    fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError> {
+        let other = (other as &mut dyn Any)
+            .downcast_mut::<Self>()
+            .expect("swap_state_with: node type mismatch");
+        self.operator.swap_state(&mut other.operator)
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -5695,12 +5888,27 @@ where
         self.operator.is_compaction_complete()
     }
 
+    fn start_bootstrap_output_caching(&mut self) {
+        self.operator.start_bootstrap_output_caching()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
 
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), DbspError> {
+        self.operator.start_sync_replay(trace)
+    }
+
+    fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError> {
+        let other = (other as &mut dyn Any)
+            .downcast_mut::<Self>()
+            .expect("swap_state_with: node type mismatch");
+        self.operator.swap_state(&mut other.operator)
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -5914,12 +6122,27 @@ where
         self.operator.is_compaction_complete()
     }
 
+    fn start_bootstrap_output_caching(&mut self) {
+        self.operator.start_bootstrap_output_caching()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
 
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), DbspError> {
+        self.operator.start_sync_replay(trace)
+    }
+
+    fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError> {
+        let other = (other as &mut dyn Any)
+            .downcast_mut::<Self>()
+            .expect("swap_state_with: node type mismatch");
+        self.operator.swap_state(&mut other.operator)
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -6107,12 +6330,27 @@ where
         self.operator.is_compaction_complete()
     }
 
+    fn start_bootstrap_output_caching(&mut self) {
+        self.operator.start_bootstrap_output_caching()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
 
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), DbspError> {
+        self.operator.start_sync_replay(trace)
+    }
+
+    fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError> {
+        let other = (other as &mut dyn Any)
+            .downcast_mut::<Self>()
+            .expect("swap_state_with: node type mismatch");
+        self.operator.swap_state(&mut other.operator)
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -6321,12 +6559,27 @@ where
         self.operator.is_compaction_complete()
     }
 
+    fn start_bootstrap_output_caching(&mut self) {
+        self.operator.start_bootstrap_output_caching()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
 
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), DbspError> {
+        self.operator.start_sync_replay(trace)
+    }
+
+    fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError> {
+        let other = (other as &mut dyn Any)
+            .downcast_mut::<Self>()
+            .expect("swap_state_with: node type mismatch");
+        self.operator.swap_state(&mut other.operator)
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -6520,12 +6773,27 @@ where
         self.operator.is_compaction_complete()
     }
 
+    fn start_bootstrap_output_caching(&mut self) {
+        self.operator.start_bootstrap_output_caching()
+    }
+
     fn clear_state(&mut self) -> Result<(), DbspError> {
         self.operator.clear_state()
     }
 
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.start_replay()
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), DbspError> {
+        self.operator.start_sync_replay(trace)
+    }
+
+    fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError> {
+        let other = (other as &mut dyn Any)
+            .downcast_mut::<Self>()
+            .expect("swap_state_with: node type mismatch");
+        self.operator.swap_state(&mut other.operator)
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -6717,6 +6985,19 @@ where
         self.operator.borrow_mut().start_replay()
     }
 
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), DbspError> {
+        self.operator.borrow_mut().start_sync_replay(trace)
+    }
+
+    fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError> {
+        let other = (other as &mut dyn Any)
+            .downcast_mut::<Self>()
+            .expect("swap_state_with: node type mismatch");
+        self.operator
+            .borrow_mut()
+            .swap_state(&mut other.operator.borrow_mut())
+    }
+
     fn is_replay_complete(&self) -> bool {
         self.operator.borrow().is_replay_complete()
     }
@@ -6886,6 +7167,17 @@ where
 
     fn start_replay(&mut self) -> Result<(), DbspError> {
         self.operator.borrow_mut().start_replay()
+    }
+
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), DbspError> {
+        self.operator.borrow_mut().start_sync_replay(trace)
+    }
+
+    fn swap_state_with(&mut self, _other: &mut dyn Node) -> Result<(), DbspError> {
+        // The input half of a feedback node shares its operator with the
+        // output half, whose `swap_state_with` moves the operator's entire
+        // state; swapping here too would put it back.
+        Ok(())
     }
 
     fn is_replay_complete(&self) -> bool {
@@ -7133,6 +7425,44 @@ where
         Ok(())
     }
 
+    fn swap_state_with(&mut self, other: &mut dyn Node) -> Result<(), DbspError> {
+        // Transfer a nested circuit's state by swapping each child operator's
+        // state with the corresponding child of the other circuit copy.  Both
+        // copies are built from the same constructor, so child node ids
+        // coincide; a child that is itself a nested circuit recurses.
+        let mut result: Result<(), DbspError> = Ok(());
+        for child_id in self.circuit.node_ids() {
+            self.circuit
+                .map_node_mut_relative(&[child_id], &mut |child| {
+                    other.map_child_mut(&[child_id], &mut |other_child| {
+                        if result.is_ok() {
+                            result = child.swap_state_with(other_child);
+                        }
+                    });
+                });
+            if result.is_err() {
+                break;
+            }
+        }
+        result?;
+
+        // Align this (live) subcircuit's clock with the bootstrap copy's.  The
+        // live copy excluded the subcircuit from its schedule, so its clock
+        // never advanced past `clock_start`, whereas the bootstrap copy ticked
+        // the subcircuit once per replayed transaction.  The state we just
+        // transferred is timestamped at those transactions; without matching
+        // the clock, an incremental operator inside the subcircuit (e.g. a
+        // recursive view's join, which keys its outputs on `clock.time()`)
+        // would treat the transferred state as belonging to future
+        // transactions and never emit it, silently dropping the recursion's
+        // fixpoint.
+        let other = (other as &mut dyn Any)
+            .downcast_mut::<Self>()
+            .expect("swap_state_with: node type mismatch");
+        self.circuit.set_time(other.circuit.time());
+        Ok(())
+    }
+
     fn set_label(&mut self, key: &str, value: &str) {
         self.labels.insert(key.to_string(), value.to_string());
     }
@@ -7172,6 +7502,22 @@ pub struct CircuitHandle {
     executor: Box<dyn Executor<RootCircuit>>,
     tokio_runtime: TokioRuntime,
     replay_info: Option<BootstrapInfo>,
+
+    /// The boundary streams of the replay prepared by
+    /// [`CircuitHandle::restore`], mapped to their replay-source nodes.
+    /// During a concurrent bootstrap, the synchronization transaction uses
+    /// this map to feed each boundary stream's recorded changes to the
+    /// replay source that plays them back.
+    boundary_streams: Option<BTreeMap<StreamId, NodeId>>,
+
+    /// Set while this circuit is the live half of a concurrent bootstrap
+    /// (see [`CircuitHandle::restore_concurrent`]): the replay runs in a
+    /// separate circuit copy while this circuit serves pre-existing views
+    /// with recorders armed on the boundary streams.
+    ///
+    /// Kept separate from `replay_info`, which makes `is_replay_complete`
+    /// and `complete_replay` operate on a replay running in *this* circuit.
+    concurrent_bootstrap_info: Option<ConcurrentBootstrapInfo>,
 }
 
 impl Drop for CircuitHandle {
@@ -7203,6 +7549,71 @@ pub struct BootstrapInfo {
     /// Operators that require backfill from upstream nodes, including their persistent IDs.
     #[allow(dead_code)]
     pub need_backfill: BTreeMap<NodeId, Option<String>>,
+}
+
+/// How a circuit differs from a checkpoint it was restored from.
+///
+/// Computed by `CircuitHandle::analyze_checkpoint`; consumed by
+/// [`CircuitHandle::restore`] (which prepares the same circuit to replay the
+/// missing state) and [`CircuitHandle::restore_concurrent`] (which keeps the
+/// pre-existing parts of the circuit running while a second circuit copy
+/// replays the missing state).
+struct CheckpointAnalysis {
+    /// Nodes that will act as replay sources during the replay phase, and
+    /// their replay streams.
+    replay_sources: BTreeMap<NodeId, StreamId>,
+
+    /// The streams whose contents the replay sources play back, mapped to
+    /// the replay source's node: the boundary between the circuit's
+    /// pre-existing region and its bootstrapped region.  Changes to these
+    /// streams during concurrent bootstrapping must be recorded for the
+    /// synchronization transaction.
+    boundary_streams: BTreeMap<StreamId, NodeId>,
+
+    /// New or invalidated nodes: nodes absent from the checkpoint, plus
+    /// nodes whose checkpointed state the balancer invalidated.
+    need_backfill: BTreeSet<NodeId>,
+
+    /// All nodes in the replay circuit: `need_backfill` plus its transitive
+    /// ancestors up to (and including) the replay sources.  Can overlap the
+    /// pre-existing region: an old node on the path from a replay source to
+    /// a new node participates in the replay and keeps serving old views.
+    participate_in_backfill: BTreeSet<NodeId>,
+}
+
+/// The result of [`CircuitHandle::restore_concurrent`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConcurrentRestoreOutcome {
+    /// The checkpoint matches the circuit: there is nothing to bootstrap,
+    /// and the circuit is fully active.
+    UpToDate,
+    /// The circuit serves its pre-existing region while a separate
+    /// bootstrap circuit replays the bootstrapped region.
+    Concurrent(BootstrapInfo),
+    /// The bootstrapped region cannot be processed concurrently; the
+    /// circuit fell back to the non-concurrent replay, exactly as if
+    /// [`CircuitHandle::restore`] had been called.
+    FellBack {
+        /// Why the concurrent bootstrap was refused.
+        reason: String,
+        /// The replay info of the non-concurrent bootstrap.
+        info: Option<BootstrapInfo>,
+    },
+}
+
+/// State a circuit keeps while it is the live half of a concurrent bootstrap
+/// (see [`CircuitHandle::restore_concurrent`]).
+struct ConcurrentBootstrapInfo {
+    /// Nodes excluded from the schedule: their state is installed from the
+    /// bootstrap circuit when bootstrapping completes.
+    need_backfill: BTreeSet<NodeId>,
+
+    /// Streams with recorders armed, mapped to the replay-source node that
+    /// plays each stream's recorded contents back in the bootstrap circuit.
+    /// The recorders are drained — and thereby disarmed — by the
+    /// synchronization transaction, or disarmed with their contents
+    /// discarded by [`CircuitHandle::abort_concurrent_bootstrap`].
+    boundary_streams: BTreeMap<StreamId, NodeId>,
 }
 
 impl CircuitHandle {
@@ -7311,35 +7722,38 @@ impl CircuitHandle {
     }
 
     /// Restores the circuit from a checkpoint.
-    ///
-    /// Restore the circuit from a checkpoint and prepare it to backfill new and
-    /// modified parts of the circuit if necessary.
+    /// Restores each operator's state from the checkpoint at `base` and
+    /// computes how the circuit differs from the checkpointed one.
     ///
     /// 1. Find and restore the checkpointed state of each operator.
-    /// 2. Identify stateful operators (such as integrals and output nodes) that don't have
-    ///    a checkpoint and require backfill (the `need_backfill` set).
-    /// 3. Iterate backward from `need_backfill` nodes to find all operators that
-    ///    should participate in the replay phase of the circuit. Iteration stops when
-    ///    reaching a stream whose contents can be replayed from an existing node
-    ///    that has a checkpoint or an input node.
-    /// 4. If the circuit requires backfill, prepare the circuit for replay by
-    ///    configuring the scheduler to only schedule nodes that participate in
-    ///    backfill.
+    /// 2. Identify stateful operators (such as integrals and output nodes)
+    ///    that don't have a checkpoint and require backfill (the
+    ///    `need_backfill` set), including operators whose state the balancer
+    ///    invalidated.
+    /// 3. Iterate backward from `need_backfill` nodes to find all operators
+    ///    that should participate in the replay phase.  Iteration stops when
+    ///    reaching a stream whose contents can be replayed from an existing
+    ///    node that has a checkpoint, or an input node.
     ///
-    /// Returns `None` if the circuit does not require backfill; returns info about
-    /// nodes that participate in backfill otherwise.
-    ///
-    /// * After calling this function, the client can invoke `step` repeatedly for replay to make progress.
-    /// * Use `is_replay_complete` to determine whether the circuit has finished the replay.
-    /// * Use `complete_replay` to finalize the replay phase and prepare the circuit for normal operation after replay is complete.
-    pub fn restore(&mut self, base: &StoragePath) -> Result<Option<BootstrapInfo>, DbspError> {
+    /// When `splice_replay_edges` is true, the iteration also wires each
+    /// replay source's replay stream to all consumers of the original
+    /// stream, preparing this circuit to run the replay (see
+    /// [`Self::restore`]).  Pass false to only analyze the circuit, e.g.,
+    /// when the replay runs in a separate circuit copy (see
+    /// [`Self::restore_concurrent`]).
+    fn analyze_checkpoint(
+        &mut self,
+        base: &StoragePath,
+        splice_replay_edges: bool,
+    ) -> Result<CheckpointAnalysis, DbspError> {
         // Nodes that will act as replay sources during the replay phase of the circuit.
         let mut replay_sources: BTreeMap<NodeId, StreamId> = BTreeMap::new();
 
+        // The streams whose contents the replay sources play back.
+        let mut boundary_streams: BTreeMap<StreamId, NodeId> = BTreeMap::new();
+
         // Nodes that require backfill from upstream nodes.
         let mut need_backfill: BTreeSet<GlobalNodeId> = BTreeSet::new();
-
-        // debug!("CircuitHandle::restore: restoring from checkpoint {}", base);
 
         // In persistent mode, refuse to silently treat a vanished state
         // file as backfill. dependencies.json records every state file at
@@ -7392,9 +7806,8 @@ impl CircuitHandle {
             need_backfill.iter().cloned().collect::<Vec<GlobalNodeId>>()
         );
 
-        // We can only backfill a nested circuit as a whole, so if we encounter at least
-        // one node in a nested circuit that needs backfill, we backfill the
-        // entire circuit.
+        // We can only backfill a nested circuit as a whole, so map every node
+        // that needs backfill to its top-level ancestor.
         let need_backfill = need_backfill
             .into_iter()
             .map(|gid| gid.top_level_ancestor())
@@ -7413,11 +7826,32 @@ impl CircuitHandle {
         while !participate_in_backfill_new.is_empty() {
             participate_in_backfill_new = self.compute_replay_nodes_step(
                 &mut replay_sources,
+                &mut boundary_streams,
+                splice_replay_edges,
                 &need_backfill,
                 participate_in_backfill_new,
                 &mut participate_in_backfill,
             )?;
         }
+
+        // A nested circuit (subcircuit) on the backfill path -- e.g. a recursive
+        // view -- holds incremental cross-transaction state that the live copy
+        // cannot serve correctly (it starts from a checkpoint predating the new
+        // view and only sees post-restart input deltas).  Treat the whole
+        // subcircuit as a transfer unit: add it to `need_backfill` so it is
+        // excluded from the live copy's schedule and its state is reconstructed
+        // by the bootstrap copy and swapped in at cutover (see
+        // `ChildNode::swap_state_with`).
+        let nested_backfill: BTreeSet<NodeId> = participate_in_backfill
+            .iter()
+            .filter(|node_id| {
+                self.circuit
+                    .map_local_node_mut(**node_id, &mut |node| node.is_circuit())
+            })
+            .cloned()
+            .collect();
+        let need_backfill: BTreeSet<NodeId> =
+            need_backfill.union(&nested_backfill).cloned().collect();
 
         debug!(
             "worker {}: CircuitHandle::restore: replaying {} operators: {:?}\n  backfilling {} operators: {:?}\n  replay circuit consists of {} operators: {:?}",
@@ -7432,6 +7866,66 @@ impl CircuitHandle {
                 .cloned()
                 .collect::<Vec<NodeId>>()
         );
+
+        Ok(CheckpointAnalysis {
+            replay_sources,
+            boundary_streams,
+            need_backfill,
+            participate_in_backfill,
+        })
+    }
+
+    /// Restore the circuit from a checkpoint and prepare it to backfill new and
+    /// modified parts of the circuit if necessary.
+    ///
+    /// 1. Find and restore the checkpointed state of each operator.
+    /// 2. Identify stateful operators (such as integrals and output nodes) that don't have
+    ///    a checkpoint and require backfill (the `need_backfill` set).
+    /// 3. Iterate backward from `need_backfill` nodes to find all operators that
+    ///    should participate in the replay phase of the circuit. Iteration stops when
+    ///    reaching a stream whose contents can be replayed from an existing node
+    ///    that has a checkpoint or an input node.
+    /// 4. If the circuit requires backfill, prepare the circuit for replay by
+    ///    configuring the scheduler to only schedule nodes that participate in
+    ///    backfill.
+    ///
+    /// Returns `None` if the circuit does not require backfill; returns info about
+    /// nodes that participate in backfill otherwise.
+    ///
+    /// * After calling this function, the client can invoke `step` repeatedly for replay to make progress.
+    /// * Use `is_replay_complete` to determine whether the circuit has finished the replay.
+    /// * Use `complete_replay` to finalize the replay phase and prepare the circuit for normal operation after replay is complete.
+    ///
+    /// `for_concurrent_bootstrap` is `true` when this circuit is the bootstrap
+    /// copy (copy 2) of a concurrent bootstrap, in which case the backfilled
+    /// output operators cache their accumulated output for transfer at cutover
+    /// rather than write it to a mailbox no connector reads.
+    pub fn restore(
+        &mut self,
+        base: &StoragePath,
+        for_concurrent_bootstrap: bool,
+    ) -> Result<Option<BootstrapInfo>, DbspError> {
+        let analysis = self.analyze_checkpoint(base, true)?;
+        self.prepare_replay(analysis, for_concurrent_bootstrap)
+    }
+
+    /// Puts the circuit into replay mode for the bootstrapped region of
+    /// `analysis` (the epilogue of [`Self::restore`]): replay sources enter
+    /// replay mode, backfilled nodes are cleared, and the scheduler is
+    /// restricted to the participating nodes.  The replay edges must already
+    /// be spliced.
+    fn prepare_replay(
+        &mut self,
+        analysis: CheckpointAnalysis,
+        for_concurrent_bootstrap: bool,
+    ) -> Result<Option<BootstrapInfo>, DbspError> {
+        let CheckpointAnalysis {
+            replay_sources,
+            boundary_streams,
+            need_backfill,
+            participate_in_backfill,
+            ..
+        } = analysis;
 
         let replay_nodes = replay_sources.keys().cloned().collect::<BTreeSet<_>>();
 
@@ -7460,6 +7954,18 @@ impl CircuitHandle {
             for node_id in nodes_to_backfill.iter() {
                 self.circuit
                     .map_local_node_mut(*node_id, &mut |node| node.clear_state())?;
+            }
+
+            // In a concurrent bootstrap, the backfilled output operators have
+            // no connector reading their mailboxes, so they cache the view's
+            // accumulated output for transfer to the live circuit at cutover
+            // (see `Operator::start_bootstrap_output_caching`).
+            if for_concurrent_bootstrap {
+                for node_id in nodes_to_backfill.iter() {
+                    self.circuit.map_local_node_mut(*node_id, &mut |node| {
+                        node.start_bootstrap_output_caching()
+                    });
+                }
             }
 
             // Prepare the scheduler to only run `participate_in_backfill`.
@@ -7528,10 +8034,315 @@ impl CircuitHandle {
             };
 
             self.replay_info = Some(replay_info.clone());
+            self.boundary_streams = Some(boundary_streams);
 
             Ok(Some(replay_info))
         } else {
             Ok(None)
+        }
+    }
+
+    /// Restore the circuit from a checkpoint for *concurrent* bootstrapping:
+    /// the circuit keeps serving its pre-existing views while a separate
+    /// circuit copy (prepared with [`Self::restore`]) replays the new and
+    /// modified parts.
+    ///
+    /// Differences from [`Self::restore`]:
+    ///
+    /// * No replay edges are spliced and no node enters replay mode; the
+    ///   replay runs in the other circuit copy.
+    /// * The scheduler is prepared with the *pre-existing* region: every
+    ///   node that restored successfully.  Forward propagation of
+    ///   `need_backfill` guarantees that no such node is downstream of a
+    ///   backfilled node.
+    /// * A recorder starts recording on every boundary stream.  The
+    ///   bootstrap circuit replays these streams' integrals as of the
+    ///   checkpoint, so the deltas this circuit applies to them afterward
+    ///   must be captured for the synchronization transaction that brings
+    ///   the bootstrap circuit up to date.
+    ///
+    /// Returns `None`, leaving the circuit fully active with no recorders
+    /// armed, if the checkpoint matches the circuit (nothing to bootstrap).
+    ///
+    /// When the bootstrapped region cannot be processed concurrently (it
+    /// includes a nested circuit, a stream with no replay source, or an
+    /// operator whose state cannot be transferred between circuit copies),
+    /// this method *falls back* to the non-concurrent replay — exactly as if
+    /// [`Self::restore`] had been called — and reports the fallback in the
+    /// returned outcome.  Falling back here, rather than reporting an error,
+    /// matters for two reasons: an error response from a worker kills the
+    /// whole runtime, and the analysis has already restored every operator's
+    /// state, so re-running a restore from scratch would load it twice.
+    pub fn restore_concurrent(
+        &mut self,
+        base: &StoragePath,
+    ) -> Result<ConcurrentRestoreOutcome, DbspError> {
+        if self.replay_info.is_some() || self.concurrent_bootstrap_info.is_some() {
+            return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
+                "the circuit already has a bootstrap in progress".to_string(),
+            )));
+        }
+
+        let analysis = self.analyze_checkpoint(base, false)?;
+
+        if analysis.participate_in_backfill.is_empty() {
+            return Ok(ConcurrentRestoreOutcome::UpToDate);
+        }
+
+        if let Some(reason) = self.concurrent_restore_refusal(&analysis) {
+            // Fall back to the non-concurrent replay in this circuit:
+            // splice the replay edges that `analyze_checkpoint` skipped,
+            // then run [`Self::restore`]'s epilogue.
+            for original_stream in analysis.boundary_streams.keys() {
+                let replay_source = self
+                    .circuit
+                    .get_replay_source(*original_stream)
+                    .expect("boundary streams have replay sources by construction");
+                self.circuit
+                    .add_replay_edges(*original_stream, replay_source.as_ref());
+            }
+            // The replay runs in this circuit, not a separate copy, so the
+            // backfilled views' output must reach their mailboxes normally.
+            let info = self.prepare_replay(analysis, false)?;
+            return Ok(ConcurrentRestoreOutcome::FellBack { reason, info });
+        }
+
+        for stream_id in analysis.boundary_streams.keys() {
+            // Every stream with a registered replay source gets a recorder
+            // at construction time (see `register_replay_stream`), and
+            // boundary streams are found through replay-source lookups, so
+            // the recorder must exist.
+            let control = self
+                .circuit
+                .cache_get(&RecorderControlId::new(*stream_id))
+                .unwrap_or_else(|| panic!("boundary stream {stream_id} has no recorder attached"));
+            control.start_recording();
+        }
+
+        // Exclude `need_backfill` nodes and all their transitive successors
+        // from the schedule.  The successors are excluded because their
+        // inputs originate at unscheduled nodes: a stateless node between a
+        // new stateful operator and a new output restores "successfully"
+        // (it has no checkpoint) but cannot run without its producer.  The
+        // excluded nodes' state is installed from the bootstrap circuit
+        // when bootstrapping completes.
+        let excluded = self.propagate_need_backfill_forward(analysis.need_backfill.clone());
+
+        let active = self
+            .circuit
+            .node_ids()
+            .into_iter()
+            .filter(|node_id| !excluded.contains(node_id))
+            .collect::<BTreeSet<_>>();
+
+        // The active set must be downstream-closed: every stream consumed by
+        // an active node must originate at an active node.
+        #[cfg(debug_assertions)]
+        for edge in self.circuit.edges().deref().iter() {
+            debug_assert!(
+                !(edge.is_stream() && active.contains(&edge.to) && excluded.contains(&edge.from)),
+                "active node {} consumes a stream produced by excluded node {}",
+                edge.to,
+                edge.from,
+            );
+        }
+
+        self.executor.prepare(&self.circuit, Some(&active))?;
+
+        // Tell the balancer which nodes the bootstrap copy is reconstructing, so
+        // it freezes the policy of any cluster that copy is also solving.  A new
+        // join over shared streams runs live in this copy yet is
+        // re-evaluated in the bootstrap copy; without this the live copy could
+        // rebalance the shared cluster and diverge from the bootstrap copy.
+        if self.circuit.root_scope() == 0 {
+            self.circuit
+                .balancer()
+                .set_bootstrap_backfill_region(&analysis.participate_in_backfill);
+        }
+
+        // Build the public info with the same content as [`Self::restore`]
+        // computes for the bootstrap circuit, so that the caller can verify
+        // that the two copies agree on the shape of the bootstrap.
+        let replay_nodes = analysis
+            .replay_sources
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let need_backfill = analysis
+            .participate_in_backfill
+            .difference(&replay_nodes)
+            .map(|node_id| {
+                let pid = self.circuit.map_local_node_mut(*node_id, &mut |node| {
+                    node.get_label(LABEL_PERSISTENT_OPERATOR_ID)
+                        .map(|s| s.to_string())
+                });
+
+                (*node_id, pid)
+            })
+            .collect::<BTreeMap<_, _>>();
+
+        let info = BootstrapInfo {
+            replay_sources: analysis.replay_sources.clone(),
+            need_backfill,
+        };
+
+        self.concurrent_bootstrap_info = Some(ConcurrentBootstrapInfo {
+            need_backfill: excluded,
+            boundary_streams: analysis.boundary_streams,
+        });
+
+        Ok(ConcurrentRestoreOutcome::Concurrent(info))
+    }
+
+    /// Returns the reason the bootstrapped region of `analysis` cannot be
+    /// processed concurrently, or `None` if it can.
+    fn concurrent_restore_refusal(&self, analysis: &CheckpointAnalysis) -> Option<String> {
+        // If the backward walk reached a connector-fed input node, some stream
+        // feeding the bootstrapped region has no replay source (an
+        // unmaterialized table): the bootstrap circuit would silently
+        // replay nothing for it.  In the non-concurrent bootstrap, the
+        // controller re-ingests such tables from their connectors.
+        //
+        // A self-contained deterministic source (e.g. the `ConstantGenerator`
+        // the SQL compiler emits for a global aggregate's empty-group default)
+        // is NOT such an input: the rebuilt bootstrap circuit re-runs it and
+        // reproduces its output, so it needs no replay source and must not
+        // trip this check.
+        for node_id in analysis.participate_in_backfill.iter() {
+            let (is_input, is_deterministic_source) =
+                self.circuit.map_local_node_mut(*node_id, &mut |node| {
+                    (node.is_input(), node.is_deterministic_source())
+                });
+            if is_input && !is_deterministic_source {
+                let name = self
+                    .circuit
+                    .map_local_node_mut(*node_id, &mut |node| node.name().into_owned());
+                return Some(format!(
+                    "a stream feeding the bootstrapped region has no replay source \
+                     (input operator {node_id} ({name}) is an unmaterialized table?)"
+                ));
+            }
+        }
+
+        None
+    }
+
+    /// Stops the recorders armed by [`Self::restore_concurrent`] and returns
+    /// their recorded contents, keyed by boundary stream.
+    ///
+    /// The synchronization transaction of a concurrent bootstrap feeds the
+    /// result to the bootstrap circuit's [`Self::start_sync_replay`].
+    pub fn drain_recorders(&mut self) -> Result<BTreeMap<StreamId, Box<dyn Any>>, DbspError> {
+        let Some(info) = self.concurrent_bootstrap_info.as_ref() else {
+            return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
+                "no concurrent bootstrap is in progress".to_string(),
+            )));
+        };
+
+        let mut recorded = BTreeMap::new();
+        for stream_id in info.boundary_streams.keys() {
+            let control = self
+                .circuit
+                .cache_get(&RecorderControlId::new(*stream_id))
+                .unwrap_or_else(|| panic!("boundary stream {stream_id} has no recorder attached"));
+            let contents = control.stop_recording_any().unwrap_or_else(|| {
+                panic!("the recorder on boundary stream {stream_id} was not recording")
+            });
+            recorded.insert(*stream_id, contents);
+        }
+
+        Ok(recorded)
+    }
+
+    /// Starts the synchronization replay on a circuit prepared by
+    /// [`Self::restore`]: each boundary stream's replay source replays the
+    /// changes that the live circuit recorded on that stream (the boxes hold
+    /// the recorders' spines; see [`Self::drain_recorders`]).
+    ///
+    /// The caller must run a transaction afterwards; the replay drains
+    /// chunk-by-chunk during the transaction's commit, exactly like the
+    /// bootstrap replay.
+    pub fn start_sync_replay(
+        &mut self,
+        mut recorded: BTreeMap<StreamId, Box<dyn Any>>,
+    ) -> Result<(), DbspError> {
+        let Some(boundary_streams) = self.boundary_streams.as_ref() else {
+            return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
+                "the circuit has no replay prepared".to_string(),
+            )));
+        };
+
+        for (stream_id, node_id) in boundary_streams.iter() {
+            let contents = recorded
+                .remove(stream_id)
+                .unwrap_or_else(|| panic!("no recorded contents for boundary stream {stream_id}"));
+            // `map_local_node_mut` takes an `FnMut` closure, which cannot
+            // consume `contents` directly; it invokes the closure exactly
+            // once, so route the move through an `Option`.
+            let mut contents = Some(contents);
+            self.circuit.map_local_node_mut(*node_id, &mut |node| {
+                let contents = contents
+                    .take()
+                    .expect("map_local_node_mut invoked the closure twice");
+                node.start_sync_replay(contents)
+            })?;
+        }
+
+        assert!(
+            recorded.is_empty(),
+            "recorded contents for streams {:?} have no replay sources",
+            recorded.keys().collect::<Vec<_>>(),
+        );
+
+        Ok(())
+    }
+
+    /// Completes a concurrent bootstrap on the live circuit: installs the
+    /// state that the bootstrap circuit (`bootstrapped`) computed for the
+    /// backfilled nodes and reactivates the full circuit.
+    ///
+    /// The caller must have completed the synchronization transaction on
+    /// `bootstrapped` and must drop it after this call.
+    pub fn cutover_from(&mut self, bootstrapped: &CircuitHandle) -> Result<(), DbspError> {
+        let Some(info) = self.concurrent_bootstrap_info.take() else {
+            return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
+                "no concurrent bootstrap is in progress".to_string(),
+            )));
+        };
+
+        for node_id in info.need_backfill.iter() {
+            self.circuit.map_local_node_mut(*node_id, &mut |node| {
+                bootstrapped
+                    .circuit
+                    .map_local_node_mut(*node_id, &mut |bootstrapped_node| {
+                        node.swap_state_with(bootstrapped_node)
+                    })
+            })?;
+        }
+
+        // Reactivate the full circuit.  The recorders were disabled when
+        // the synchronization transaction drained them.
+        self.executor.prepare(&self.circuit, None)?;
+
+        Ok(())
+    }
+
+    /// Aborts a concurrent bootstrap on the live circuit: disarms the
+    /// recorders (discarding their contents) and forgets the bootstrap
+    /// state.  No-op if no concurrent bootstrap is in progress.
+    ///
+    /// The schedule remains restricted to the pre-existing region — the
+    /// backfilled nodes have no state to run with.  The only way to
+    /// populate them afterwards is to restart from a checkpoint.
+    pub fn abort_concurrent_bootstrap(&mut self) {
+        let Some(info) = self.concurrent_bootstrap_info.take() else {
+            return;
+        };
+
+        for stream_id in info.boundary_streams.keys() {
+            if let Some(control) = self.circuit.cache_get(&RecorderControlId::new(*stream_id)) {
+                let _ = control.stop_recording_any();
+            }
         }
     }
 
@@ -7664,6 +8475,8 @@ impl CircuitHandle {
     fn compute_replay_nodes_step(
         &self,
         replay_sources: &mut BTreeMap<NodeId, StreamId>,
+        boundary_streams: &mut BTreeMap<StreamId, NodeId>,
+        splice_replay_edges: bool,
         need_backfill: &BTreeSet<NodeId>,
         participate_in_backfill_new: BTreeSet<NodeId>,
         participate_in_backfill: &mut BTreeSet<NodeId>,
@@ -7744,13 +8557,18 @@ impl CircuitHandle {
             }
         }
 
-        // Connect `replay_streams` to all operators that consume the original stream.
+        // Record the boundary streams and, when preparing this circuit for
+        // replay (rather than only analyzing it), connect `replay_streams`
+        // to all operators that consume the original stream.
         for (original_stream, replay_stream) in replay_streams.into_iter() {
+            boundary_streams.insert(original_stream, replay_stream.local_node_id());
             replay_sources
                 .entry(replay_stream.local_node_id())
                 .or_insert_with(|| {
-                    self.circuit
-                        .add_replay_edges(original_stream, replay_stream.as_ref());
+                    if splice_replay_edges {
+                        self.circuit
+                            .add_replay_edges(original_stream, replay_stream.as_ref());
+                    }
                     replay_stream.stream_id()
                 });
         }

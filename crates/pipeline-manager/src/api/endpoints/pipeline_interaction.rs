@@ -20,6 +20,7 @@ use feldera_types::checkpoint::RemoteCheckpoint;
 use feldera_types::query_params::{
     ApproveParameters, MetricsParameters, SamplyProfileGetParams, SamplyProfileParams,
 };
+use feldera_types::runtime_status::BootstrapConfig;
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
 use std::time::Duration;
 use tracing::{debug, info};
@@ -1862,6 +1863,9 @@ pub(crate) async fn post_pipeline_activate(
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
             , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , description = "Bootstrap options are mutually inconsistent"
+            , body = ErrorResponse),
         (status = SERVICE_UNAVAILABLE
             , body = ErrorResponse
             , examples(
@@ -1885,6 +1889,25 @@ pub(crate) async fn post_pipeline_approve(
 ) -> Result<HttpResponse, ManagerError> {
     {
         let pipeline_name = path.into_inner();
+        let ApproveParameters {
+            silent_bootstrap,
+            concurrent_bootstrap,
+        } = query.into_inner();
+        BootstrapConfig {
+            bootstrap_policy: None,
+            silent_bootstrap,
+            concurrent_bootstrap,
+        }
+        .validate()
+        .map_err(|reason| ApiError::InvalidBootstrapConfig { reason })?;
+        let mut approve_query = Vec::new();
+        if silent_bootstrap {
+            approve_query.push("silent_bootstrap=true");
+        }
+        if concurrent_bootstrap {
+            approve_query.push("concurrent_bootstrap=true");
+        }
+        let approve_query = approve_query.join("&");
         let response = state
             .runner
             .forward_http_request_to_pipeline_by_name(
@@ -1893,11 +1916,7 @@ pub(crate) async fn post_pipeline_approve(
                 &pipeline_name,
                 Method::POST,
                 "approve",
-                if query.into_inner().silent_bootstrap {
-                    "silent_bootstrap=true"
-                } else {
-                    ""
-                },
+                &approve_query,
                 None,
                 None,
             )

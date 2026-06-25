@@ -1,11 +1,12 @@
 use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
 use crate::circuit::metadata::{INPUT_RECORDS_COUNT, MEMORY_ALLOCATIONS_COUNT, RETAINMENT_BOUNDS};
 use crate::circuit::{NodeId, splitter_output_chunk_size};
-use crate::dynamic::{Factory, Weight, WeightTrait};
+use crate::dynamic::Factory;
+use crate::operator::dynamic::replay::ReplayState;
 use crate::operator::dynamic::trace::{DelayedTraceId, TraceBounds};
 use crate::operator::{TraceBound, require_persistent_id};
+use crate::trace::GroupFilter;
 use crate::trace::spine_async::WithSnapshot;
-use crate::trace::{BatchReaderFactories, Builder, GroupFilter, MergeCursor};
 use crate::{
     Error, Timestamp,
     circuit::{
@@ -22,8 +23,8 @@ use crate::{
     trace::{Batch, BatchReader, Filter, Spine, SpineSnapshot, Trace},
 };
 use feldera_storage::{FileCommitter, StoragePath};
-use ouroboros::self_referencing;
 use size_of::SizeOf;
+use std::any::{Any, TypeId};
 use std::sync::Arc;
 use std::{borrow::Cow, marker::PhantomData, ops::Deref};
 
@@ -132,7 +133,7 @@ where
                     // FIXME: this is suboptimal, since this will end up sharding the already sharded data again.
                     // We should instead replay by moving the entire integral into the accumulator. This will require
                     // integrating bootstrapping with transactions better.
-                    register_replay_stream(circuit, self, &replay_stream);
+                    register_replay_stream(circuit, self, &replay_stream, batch_factories);
 
                     circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     trace
@@ -196,7 +197,7 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    register_replay_stream(circuit, self, &replay_stream);
+                    register_replay_stream(circuit, self, &replay_stream, batch_factories);
 
                     circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     trace
@@ -433,7 +434,7 @@ where
                     // We should instead replay by moving the entire integral into the accumulator. This will require
                     // integrating bootstrapping with transactions better. An additional complication is that the integral
                     // can be timed, while the accumulator stores untimed updates
-                    register_replay_stream(circuit, self, &replay_stream);
+                    register_replay_stream(circuit, self, &replay_stream, factories);
 
                     circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     circuit.cache_insert(ExportId::new(trace.stream_id()), export);
@@ -519,7 +520,7 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    register_replay_stream(circuit, self, &replay_stream);
+                    register_replay_stream(circuit, self, &replay_stream, input_factories);
 
                     circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     circuit.cache_insert(ExportId::new(trace.stream_id()), export);
@@ -577,7 +578,7 @@ where
         self.feedback
             .connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
 
-        register_replay_stream(circuit, stream, &replay_stream);
+        register_replay_stream(circuit, stream, &replay_stream, factories);
 
         circuit.cache_insert(
             DelayedTraceId::new(trace.stream_id()),
@@ -856,24 +857,6 @@ where
     }
 }
 
-#[self_referencing]
-struct ReplayState<T: Trace> {
-    trace: T,
-    #[borrows(trace)]
-    #[covariant]
-    cursor: Box<dyn MergeCursor<T::Key, T::Val, T::Time, T::R> + Send + 'this>,
-}
-
-impl<T: Trace> ReplayState<T> {
-    fn create(trace: T) -> Self {
-        ReplayStateBuilder {
-            trace,
-            cursor_builder: |trace| trace.merge_cursor(None, None),
-        }
-        .build()
-    }
-}
-
 pub struct AccumulateZ1Trace<C: Circuit, B: Batch, T: Trace> {
     // For error reporting.
     local_id: NodeId,
@@ -954,6 +937,17 @@ where
     /// replay, `replay_stream` is active while the operator that normally write to
     /// stream is disabled.
     pub fn prepare_replay_stream(&mut self, stream: &Stream<C, B>) -> Stream<C, B> {
+        // The synchronization replay of a concurrent bootstrap downcasts a
+        // recorder's `Spine<B>` to `T`; in the top-level circuit, where
+        // replay sources live, the two types must coincide.
+        if TypeId::of::<C::Time>() == TypeId::of::<()>() {
+            assert_eq!(
+                TypeId::of::<T>(),
+                TypeId::of::<Spine<B>>(),
+                "a top-level replay source's trace type must be Spine<B>"
+            );
+        }
+
         let replay_stream =
             Stream::with_value(stream.circuit().clone(), self.local_id, stream.value());
 
@@ -1094,6 +1088,40 @@ where
         Ok(())
     }
 
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), Error> {
+        let trace = *trace
+            .downcast::<T>()
+            .expect("start_sync_replay: trace type mismatch");
+
+        // Sync replay reuses the replay machinery of the bootstrap replay:
+        // the operator must still be in replay mode (between the bootstrap
+        // transaction and the cutover), with the previous replay drained.
+        assert!(
+            self.replay_mode && self.replay_state.is_none(),
+            "start_sync_replay: the operator is not ready for a sync replay"
+        );
+        assert!(
+            self.delta_stream.is_some(),
+            "start_sync_replay: the operator has no replay stream"
+        );
+        self.replay_state = Some(ReplayState::create(trace));
+
+        Ok(())
+    }
+
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
+        // Move the trace contents and the operator's clock (`time`/`dirty`)
+        // from the bootstrap copy.  The clock must travel with the trace: a
+        // nested circuit's clock is realigned wholesale at cutover (see
+        // `ChildNode::swap_state_with`), so the per-operator clock here must
+        // match the trace's timestamps, which are anchored to the bootstrap
+        // copy's transactions.
+        std::mem::swap(&mut self.trace, &mut other.trace);
+        std::mem::swap(&mut self.time, &mut other.time);
+        std::mem::swap(&mut self.dirty, &mut other.dirty);
+        Ok(())
+    }
+
     fn flush(&mut self) {
         self.flush_output = true;
     }
@@ -1131,41 +1159,9 @@ where
                 && let Some(replay) = &mut self.replay_state
             {
                 //println!("Z1-{}::get_output: replaying", &self.global_id);
-                let mut builder = <B::Builder as Builder<B>>::with_capacity(
-                    &self.batch_factories,
-                    replay_step_size,
-                    replay_step_size,
-                );
-
-                let mut num_values = 0;
-                let mut weight = self.batch_factories.weight_factory().default_box();
-
-                while replay.borrow_cursor().key_valid() && num_values < replay_step_size {
-                    let mut values_added = false;
-                    while replay.borrow_cursor().val_valid() && num_values < replay_step_size {
-                        weight.set_zero();
-                        replay.with_cursor_mut(|cursor| {
-                            cursor.map_times(&mut |_t, w| weight.add_assign(w))
-                        });
-
-                        if !weight.is_zero() {
-                            builder.push_val_diff(replay.borrow_cursor().val(), weight.as_ref());
-                            values_added = true;
-                            num_values += 1;
-                        }
-                        replay.with_cursor_mut(|cursor| cursor.step_val());
-                    }
-                    if values_added {
-                        builder.push_key(replay.borrow_cursor().key());
-                    }
-                    if !replay.borrow_cursor().val_valid() {
-                        replay.with_cursor_mut(|cursor| cursor.step_key());
-                    }
-                }
-
-                let batch = builder.done();
+                let batch: B = replay.next_chunk(&self.batch_factories, replay_step_size);
                 self.delta_stream.as_ref().unwrap().value().put(batch);
-                if !replay.borrow_cursor().key_valid() {
+                if replay.is_exhausted() {
                     self.replay_state = None;
                     self.flush_output = false;
                 }

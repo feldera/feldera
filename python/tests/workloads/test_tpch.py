@@ -45,7 +45,12 @@ class TPCHTestConfig:
         self.mode = mode
         self.resources = resources
 
-        if mode not in ["transaction", "stream", "checkpoint"]:
+        if mode not in [
+            "transaction",
+            "stream",
+            "checkpoint",
+            "concurrent-bootstrapping",
+        ]:
             raise ValueError(f"Unknown mode: {mode}")
 
         self.input_mode = input_mode
@@ -98,10 +103,11 @@ def run_cli():
     parser.add_argument(
         "--mode",
         default="transaction",
-        choices=["transaction", "stream", "checkpoint"],
-        help="Test mode: 'transaction' (default), 'stream' or 'checkpoint'. In 'transaction' mode, data is ingested in a single transactions. This mode is used for testing and benchmarking transactions."
+        choices=["transaction", "stream", "checkpoint", "concurrent-bootstrapping"],
+        help="Test mode: 'transaction' (default), 'stream', 'checkpoint', or 'concurrent-bootstrapping'. In 'transaction' mode, data is ingested in a single transactions. This mode is used for testing and benchmarking transactions."
         " In 'stream' mode, data is ingested without transactions. This mode is used for testing and benchmarking incremental processing."
-        " In 'checkpoint' mode, the dataset is split into segments; the pipeline ingests a segment in a series of transactions, making a checkpoint mid-segment. The pipeline is then shutdown and restarted from the last checkpoint. This mode is used for testing checkpointing and bootstrapping.",
+        " In 'checkpoint' mode, the dataset is split into segments; the pipeline ingests a segment in a series of transactions, making a checkpoint mid-segment. The pipeline is then shutdown and restarted from the last checkpoint. This mode is used for testing checkpointing and bootstrapping."
+        " In 'concurrent-bootstrapping' mode, the test runs exactly like 'checkpoint' mode, but each restart that adds new views bootstraps them concurrently (the pre-existing views stay live while the new ones backfill in the background) instead of with a stop-the-world bootstrap.",
     )
 
     parser.add_argument(
@@ -145,7 +151,7 @@ def run_cli():
         type=int,
         nargs="?",
         default=None,
-        help="Number of test segments. Only used in checkpoint mode. The test divides all views in the benchmark into this many groups and adds one group of views per segment to the pipeline.",
+        help="Number of test segments. Only used in 'checkpoint' and 'concurrent-bootstrapping' modes. The test divides all views in the benchmark into this many groups and adds one group of views per segment to the pipeline.",
     )
 
     parser.add_argument(
@@ -153,7 +159,7 @@ def run_cli():
         type=int,
         nargs="?",
         default=None,
-        help="Approximate number of records ingested per segment. Only used in checkpoint mode.",
+        help="Approximate number of records ingested per segment. Only used in 'checkpoint' and 'concurrent-bootstrapping' modes.",
     )
 
     parser.add_argument(
@@ -1378,6 +1384,7 @@ def tpch_test_segment(
     last_processed: int,
     segment_size: int,
     previously_non_empty_views: List[str],
+    concurrent_bootstrap: bool = False,
 ) -> tuple[bool, int, List[str]]:
     """Run a test segment.
 
@@ -1388,12 +1395,19 @@ def tpch_test_segment(
     previously_non_empty_views is a list of views that were non-empty before the start of the segment.
     This is used to check that the views are still non-empty when the pipeline is restarted, i.e.,
     output snapshots are correctly populated by the bootstrapping process.
+
+    When concurrent_bootstrap is True, views added since the last checkpoint are bootstrapped
+    concurrently: the pre-existing views keep serving queries while the new views backfill in the
+    background, followed by an atomic cutover. Otherwise the restart uses a stop-the-world bootstrap.
     """
 
     # Start pipeline.
     start_time = time.monotonic()
     log(f"Starting pipeline to process {segment_size} records")
-    pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW)
+    pipeline.start(
+        bootstrap_policy=BootstrapPolicy.ALLOW,
+        concurrent_bootstrap=concurrent_bootstrap,
+    )
     log(f"Pipeline started in {time.monotonic() - start_time} seconds")
 
     for view_name in previously_non_empty_views:
@@ -1464,10 +1478,17 @@ def tpch_test(config: TPCHTestConfig):
     tables = tpch_tables(config)
     views = tpch_views(q_dirs)
 
-    if config.mode == "checkpoint":
-        log("Starting checkpoint mode with all tables and no views")
+    if config.mode in ("checkpoint", "concurrent-bootstrapping"):
+        # In 'concurrent-bootstrapping' mode every restart that introduces new views
+        # bootstraps them concurrently instead of with a stop-the-world bootstrap.
+        # The two modes are otherwise identical.
+        concurrent = config.mode == "concurrent-bootstrapping"
+        pipeline_name = (
+            "tpc-h-concurrent-bootstrap" if concurrent else "tpc-h-checkpoint"
+        )
+        log(f"Starting {config.mode} mode with all tables and no views")
         pipeline = build_pipeline(
-            unique_pipeline_name("tpc-h-checkpoint"),
+            unique_pipeline_name(pipeline_name),
             tables,
             [],
             config.resources,
@@ -1493,19 +1514,22 @@ def tpch_test(config: TPCHTestConfig):
         if views and (not view_counts or view_counts[-1] != len(views)):
             view_counts.append(len(views))
 
-        for view_count in view_counts:
+        for segment_index, view_count in enumerate(view_counts):
             modified_views = views[:view_count]
             log(
-                f"Checkpoint view-add phase: adding {view_count}/{len(views)} views: "
+                f"{config.mode} view-add phase: adding {view_count}/{len(views)} views: "
                 f"{', '.join(view.name for view in modified_views)}"
             )
 
             sql = generate_program(tables, modified_views)
             pipeline.modify(sql=sql)
             log(
-                f"Running checkpoint segment with {view_count} views from {last_processed} processed records"
+                f"Running {config.mode} segment with {view_count} views from {last_processed} processed records"
             )
 
+            # The first segment starts a fresh pipeline that has no checkpoint to bootstrap
+            # from, so concurrent bootstrapping only applies to subsequent restarts that add
+            # views on top of an existing checkpoint.
             (complete, last_processed, non_empty_views) = tpch_test_segment(
                 pipeline,
                 tables,
@@ -1513,9 +1537,10 @@ def tpch_test(config: TPCHTestConfig):
                 last_processed,
                 segment_size,
                 non_empty_views,
+                concurrent_bootstrap=concurrent and segment_index > 0,
             )
             log(
-                f"Completed checkpoint view-add segment with complete={complete}, last_processed={last_processed}"
+                f"Completed {config.mode} view-add segment with complete={complete}, last_processed={last_processed}"
             )
             if complete:
                 break
@@ -1530,7 +1555,10 @@ def tpch_test(config: TPCHTestConfig):
         pipeline.modify(sql=sql)
 
         # Process remaining data in one transaction.
-        pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW)
+        pipeline.start(
+            bootstrap_policy=BootstrapPolicy.ALLOW,
+            concurrent_bootstrap=concurrent,
+        )
         start_time = time.monotonic()
 
         try:

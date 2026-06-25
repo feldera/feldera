@@ -503,7 +503,7 @@ where
 }
 
 /// Some useful tools for developing schedulers.
-mod util {
+pub(crate) mod util {
 
     use crate::circuit::{
         Circuit, GlobalNodeId, NodeId, OwnershipPreference, circuit_builder::StreamId,
@@ -606,6 +606,34 @@ mod util {
                         .collect(),
                 });
             };
+
+            // Consumers that declared `OwnershipPreference::YIELD_OWNERSHIP`
+            // never benefit from owned values, but the owned value of a
+            // stream goes to whichever consumer runs last
+            // (`StreamValue::take`).  Schedule them before every consumer
+            // that prefers an owned input, so that auxiliary taps (e.g., the
+            // recorders attached to replayable streams) do not intercept
+            // owned-value delivery.  Yielding consumers are sinks, so these
+            // edges cannot create cycles.
+            for (yielder, yielder_pref) in succ.iter() {
+                if *yielder_pref != Some(OwnershipPreference::YIELD_OWNERSHIP) {
+                    continue;
+                }
+                for (consumer, pref) in succ.iter() {
+                    // Consumers at `STRONGLY_PREFER_OWNED` and above are
+                    // handled by the strong-successor constraints below,
+                    // which already order every other consumer (including
+                    // yielding ones) before them.
+                    if matches!(
+                        pref,
+                        Some(pref)
+                            if *pref >= OwnershipPreference::WEAKLY_PREFER_OWNED
+                                && *pref < OwnershipPreference::STRONGLY_PREFER_OWNED
+                    ) {
+                        constraints.push((*yielder, *consumer));
+                    }
+                }
+            }
 
             // No strong successors -- nothing to do for this node.
             if strong_successors.is_empty() {

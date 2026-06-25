@@ -206,7 +206,12 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    register_replay_stream(circuit, &sharded_stream, &replay_stream);
+                    register_replay_stream(
+                        circuit,
+                        &sharded_stream,
+                        &replay_stream,
+                        batch_factories,
+                    );
 
                     circuit.cache_insert(
                         DelayedTraceId::new(trace.stream_id()),
@@ -1254,6 +1259,37 @@ where
         // shouldn't confuse the balancer.
         self.metadata_exchange
             .clear_local_operator_metadata(self.global_id.local_node_id().unwrap());
+        Ok(())
+    }
+
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), crate::Error> {
+        // Cutover happens between transactions, so neither copy is mid-flush
+        // or mid-rebalance.
+        debug_assert_eq!(self.flush_state.get(), FlushState::FlushCompleted);
+        debug_assert_eq!(other.flush_state.get(), FlushState::FlushCompleted);
+        debug_assert!(self.rebalance_state.borrow().is_none());
+        debug_assert!(other.rebalance_state.borrow().is_none());
+
+        // `self` is the live copy and `other` the bootstrap copy (see
+        // `CircuitHandle::cutover_from`).  The bootstrap copy's integral is
+        // sharded under its `current_policy`, and that integral is transferred
+        // by the integral node's own `swap_state`, so the policy must travel
+        // with it.  We only move the policy-bearing state; the `balancer` and
+        // `metadata_exchange` references are per-copy and stay put.
+        self.current_policy.swap(&other.current_policy);
+        std::mem::swap(
+            &mut *self.key_distribution.borrow_mut(),
+            &mut *other.key_distribution.borrow_mut(),
+        );
+
+        // Re-seed the live balancer with the transferred policy, exactly as
+        // `restore` does, so the balancer's cluster solution matches the layout
+        // of the integral we just installed.
+        if let Some(policy) = self.current_policy.get() {
+            self.balancer
+                .set_policy_for_stream(self.input_node_id, policy);
+        }
+
         Ok(())
     }
 }

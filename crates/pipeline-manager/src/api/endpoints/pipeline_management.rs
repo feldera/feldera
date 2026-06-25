@@ -541,6 +541,7 @@ pub enum PipelineFieldSelector {
     /// - `deployment_runtime_desired_status_since`
     /// - `bootstrap_policy`
     /// - `silent_bootstrap`
+    /// - `concurrent_bootstrap`
     All,
     /// Select only the fields required to know the status of a pipeline.
     ///
@@ -577,6 +578,7 @@ pub enum PipelineFieldSelector {
     /// - `deployment_runtime_desired_status_since`
     /// - `bootstrap_policy`
     /// - `silent_bootstrap`
+    /// - `concurrent_bootstrap`
     Status,
     /// Select the fields included in `Status` plus aggregated connector error statistics.
     ///
@@ -720,6 +722,10 @@ pub struct PostStartPipelineParameters {
     /// Bootstrap the pipeline with output connectors disabled.
     #[serde(default)]
     silent_bootstrap: bool,
+    /// Bootstrap new and modified views concurrently, keeping the pre-existing
+    /// views live while the new ones backfill in the background.
+    #[serde(default)]
+    concurrent_bootstrap: bool,
     #[serde(default = "default_pipeline_start_dismiss_error")]
     dismiss_error: bool,
 }
@@ -843,6 +849,8 @@ async fn fetch_connector_error_stats(
     // Only forward the request if the pipeline is in a valid runtime status
     match deployment_runtime_status {
         Some(RuntimeStatus::Bootstrapping)
+        | Some(RuntimeStatus::ConcurrentBootstrapping)
+        | Some(RuntimeStatus::Synchronizing)
         | Some(RuntimeStatus::Replaying)
         | Some(RuntimeStatus::Running)
         | Some(RuntimeStatus::Paused) => {
@@ -1395,13 +1403,18 @@ pub(crate) async fn post_pipeline_start(
         initial,
         bootstrap_policy,
         silent_bootstrap,
+        concurrent_bootstrap,
         dismiss_error,
     } = query.into_inner();
 
     let bootstrap_config = BootstrapConfig {
         bootstrap_policy: Some(bootstrap_policy),
         silent_bootstrap,
+        concurrent_bootstrap,
     };
+    bootstrap_config
+        .validate()
+        .map_err(|reason| ApiError::InvalidBootstrapConfig { reason })?;
 
     let pipeline_id = match initial.as_str() {
         "standby" => {

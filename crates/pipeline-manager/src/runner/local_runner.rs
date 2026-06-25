@@ -606,6 +606,9 @@ impl PipelineExecutor for LocalRunner {
                 if bootstrap_config.silent_bootstrap {
                     command.arg("--silent-bootstrap");
                 }
+                if bootstrap_config.concurrent_bootstrap {
+                    command.arg("--concurrent-bootstrap");
+                }
             }
 
             if let Some((https_tls_cert_path, https_tls_key_path)) =

@@ -169,6 +169,16 @@ where
         Ok(())
     }
 
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error> {
+        // The accumulator flushes its entire state into the integral at the end
+        // of every transaction (see `eval`), so it is empty between
+        // transactions.  Cutover happens between transactions, so there is
+        // nothing to move -- the integral node carries the transferred state.
+        debug_assert!(self.0.borrow().state.is_empty());
+        debug_assert!(other.0.borrow().state.is_empty());
+        Ok(())
+    }
+
     fn flush(&mut self) {
         self.0.borrow_mut().flush = true;
     }

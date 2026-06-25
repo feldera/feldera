@@ -496,6 +496,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         initial: str = "running",
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         silent_bootstrap: bool = False,
+        concurrent_bootstrap: bool = False,
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
@@ -526,6 +527,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if silent_bootstrap:
             start_params["silent_bootstrap"] = "true"
 
+        if concurrent_bootstrap:
+            start_params["concurrent_bootstrap"] = "true"
+
         self.http.post(
             path=f"/pipelines/{pipeline_name}/start",
             params=start_params,
@@ -545,6 +549,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         pipeline_name: str,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         silent_bootstrap: bool = False,
+        concurrent_bootstrap: bool = False,
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
@@ -565,6 +570,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             "running",
             bootstrap_policy,
             silent_bootstrap,
+            concurrent_bootstrap,
             wait,
             timeout_s,
             dismiss_error,
@@ -575,6 +581,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         pipeline_name: str,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         silent_bootstrap: bool = False,
+        concurrent_bootstrap: bool = False,
         wait: bool = True,
         timeout_s: float | None = None,
         dismiss_error: bool = True,
@@ -594,6 +601,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             "paused",
             bootstrap_policy,
             silent_bootstrap,
+            concurrent_bootstrap,
             wait,
             timeout_s,
             dismiss_error,
@@ -604,6 +612,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         pipeline_name: str,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         silent_bootstrap: bool = False,
+        concurrent_bootstrap: bool = False,
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
@@ -623,6 +632,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             "standby",
             bootstrap_policy,
             silent_bootstrap,
+            concurrent_bootstrap,
             wait,
             timeout_s,
             dismiss_error,
@@ -682,6 +692,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         self,
         pipeline_name: str,
         silent_bootstrap: bool = False,
+        concurrent_bootstrap: bool = False,
     ):
         """
         Approve a pipeline awaiting approval to proceed with bootstrapping.
@@ -690,9 +701,17 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param silent_bootstrap: Set True to bootstrap with output connectors
             disabled, so no records are emitted during the bootstrap phase.
             False by default.
+        :param concurrent_bootstrap: Set True to bootstrap new and modified views
+            concurrently, keeping the pre-existing views live while the new ones
+            backfill in the background. Mutually exclusive with
+            `silent_bootstrap`. False by default.
         """
 
-        params = {"silent_bootstrap": "true"} if silent_bootstrap else {}
+        params = {}
+        if silent_bootstrap:
+            params["silent_bootstrap"] = "true"
+        if concurrent_bootstrap:
+            params["concurrent_bootstrap"] = "true"
 
         self.http.post(
             path=f"/pipelines/{pipeline_name}/approve",

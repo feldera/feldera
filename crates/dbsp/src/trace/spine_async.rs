@@ -1579,13 +1579,17 @@ where
     }
 }
 
-// TODO.
+/// Spines are deliberately not cloneable: `Clone` exists only to satisfy
+/// trait bounds on stream values and panics if invoked.  Spines circulate
+/// through circuits by ownership, so this implementation is never called
+/// during normal operation.  To copy a spine's contents, use [`Trace::fork`],
+/// which makes the cost and semantics of the copy explicit.
 impl<B> Clone for Spine<B>
 where
     B: Batch,
 {
     fn clone(&self) -> Self {
-        unimplemented!()
+        unimplemented!("Spine cannot be cloned; use Trace::fork instead")
     }
 }
 
@@ -1933,18 +1937,64 @@ where
         self.merger.state.lock().unwrap().name = name;
     }
 
+    fn fork(&self) -> Self {
+        // Take the name, frontier, filters, and batches under a single lock
+        // acquisition, so that the fork sees a consistent view even if a
+        // background merge completes concurrently.  The filters come from
+        // the locked state, rather than from `self.key_filter` and
+        // `self.value_filter`, because the locked copies are what the
+        // source's merges actually enforce.
+        let (name, frontier, (key_filter, value_filter), batches) = {
+            let state = self.merger.state.lock().unwrap();
+            (
+                state.name.clone(),
+                state.frontier.clone(),
+                state.get_filters(),
+                state.get_batches(),
+            )
+        };
+
+        let mut fork = Self::with_runtime(
+            Runtime::runtime().expect("Attempting to fork a spine outside of a DBSP runtime"),
+            Runtime::worker_index(),
+            &self.factories,
+            name,
+        );
+
+        if let Some(filter) = key_filter {
+            fork.retain_keys(filter);
+        }
+        if let Some(filter) = value_filter {
+            fork.retain_values(filter);
+        }
+        fork.merger.set_frontier(&frontier);
+
+        for batch in batches {
+            fork.insert_without_blocking(batch);
+        }
+
+        // `insert_without_blocking` marks the fork dirty; the fork must
+        // instead inherit the source's flag, so set it last.
+        fork.dirty = self.dirty;
+
+        fork
+    }
+
     fn set_frontier(&mut self, frontier: &B::Time) {
         self.merger.set_frontier(frontier)
+    }
+
+    fn frontier(&self) -> B::Time {
+        self.merger.state.lock().unwrap().frontier.clone()
     }
 
     fn exert(&mut self, _effort: &mut isize) {}
 
     fn consolidate(self) -> Option<B> {
-        let batches = self
-            .merger
-            .pause()
-            .into_iter()
-            .map(|batch| Arc::into_inner(batch).unwrap());
+        // A batch `Arc` can be shared outside this spine, e.g., with a
+        // [`SpineSnapshot`] or a [`Trace::fork`] of this spine, in which case
+        // `Arc::unwrap_or_clone` copies the batch instead of taking ownership.
+        let batches = self.merger.pause().into_iter().map(Arc::unwrap_or_clone);
         let result = merge_batches(
             &self.factories,
             batches,
@@ -2120,6 +2170,15 @@ where
         self.dirty = committed.dirty;
         self.key_filter = None;
         self.value_filter = None;
+        // Also clear the merger's copies of the filters, which would
+        // otherwise keep filtering merges: `self.key_filter` and
+        // `self.value_filter` must always mirror the locked state (`fork`
+        // documents that the locked copies are authoritative).
+        {
+            let mut state = self.merger.state.lock().unwrap();
+            state.key_filter = None;
+            state.value_filter = None;
+        }
         for batch in committed.batches {
             let batch =
                 B::from_path(&self.factories.clone(), &batch.clone().into()).map_err(|error| {

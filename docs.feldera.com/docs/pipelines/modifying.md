@@ -146,6 +146,42 @@ Use silent bootstrapping when the external sink already has the desired contents
 Do not use it if the sink needs to receive the full contents of newly
 added or modified views during bootstrap.
 
+## Concurrent bootstrapping
+
+:::warning Experimental
+Concurrent bootstrapping is an experimental Enterprise-only feature and is
+disabled by default.
+:::
+
+By default, bootstrapping is a **stop-the-world** operation: the pipeline ingests
+no input and existing views produce no output until every new and modified view has
+been recomputed (see [Bootstrapping](#bootstrapping) above).
+
+**Concurrent bootstrapping** removes this pause. The pipeline keeps serving and
+updating its existing views while the new and modified views bootstrap in the
+background, then atomically switches the new views in.
+
+Set `concurrent_bootstrap=true` on the [`/start`](/api/start-pipeline) or
+[`/approve`](/api/approve-bootstrap) request to opt into concurrent bootstrapping.
+
+### How it works
+
+Concurrent bootstrapping proceeds in two phases:
+
+* **Computing new and modified views**. The pipeline processes inputs and
+  incrementally updates existing views while computing the initial contents
+  of new and modified views from the pipeline's checkpointed state in the
+  background. During this phase the pipeline reports `ConcurrentBootstrapping`
+  runtime status.
+
+* **Synchronization**. The pipeline pauses input ingestion just long enough to bring
+  the new views up to date with the most recent changes, switches them in, emits the
+  full contents of new and modified views to input connectors, and returns to the
+  `Running` state. During this phase the pipeline reports `Synchronizing` runtime status.
+
+Concurrent bootstrapping is *mutually exclusive with `silent_bootstrap`**. Starting a
+pipeline with both `concurrent_bootstrap=true` and `silent_bootstrap=true` is rejected.
+
 ## Caveats and limitations
 
 ### Caveat 1: Feldera runtime upgrade can modify the pipeline
@@ -223,6 +259,10 @@ Feldera currently assumes that a UDF whose name and signature have not changed d
 If the user modifies the implementation of a UDF without changing its signature, they need to either clear the
 state of the pipeline or rename the UDF to trigger the bootstrapping of any views that depend on the modified UDF.
 
+### Limitation 5: Concurrent bootstrapping with modified tables is not yet supported
+
+Concurrent bootstrapping is rejected if the modified pipeline contains new or modified tables.
+
 ## API
 
 In this section we describe the REST API elements related to bootstrapping.
@@ -238,7 +278,13 @@ All of this functionality is also available via the Python SDK and the `fda` CLI
   to suppress output connector records during bootstrapping, as described in
   [Silent bootstrapping](#silent-bootstrapping).
 
-* Two runtime states reported by the [pipeline status endpoint](/api/get-pipeline) in the `deployment_runtime_status` field:
+* The `concurrent_bootstrap` argument to the [`/start` endpoint](/api/start-pipeline) and
+  [`/approve` endpoint](/api/approve-bootstrap). Set this argument to `true` to bootstrap
+  new and modified views concurrently, keeping the existing views live, as described in
+  [Concurrent bootstrapping](#concurrent-bootstrapping). It is mutually exclusive with
+  `silent_bootstrap`.
+
+* Runtime states reported by the [pipeline status endpoint](/api/get-pipeline) in the `deployment_runtime_status` field:
   * `AwaitingApproval` - When starting the pipeline with `bootstrap_policy=await_approval`, if the pipeline
     requires bootstrapping, it will stop in the `AwaitingApproval` state waiting for the user to approve the
     changes. While in this state, the `deployment_runtime_status_details` field lists added, modified, and removed
@@ -247,6 +293,11 @@ All of this functionality is also available via the Python SDK and the `fda` CLI
     or force-stops the pipeline with `/stop?force=true`.
   * `Bootstrapping` - In this state the pipeline evaluates new and modified views. Once bootstrapping completes,
     the pipeline automatically moves into the `Running` or `Paused` state.
+  * `ConcurrentBootstrapping` - When started with `concurrent_bootstrap=true`, the pipeline enters this state
+    while the existing views stay live and serving queries and the new and modified views backfill in the
+    background.
+  * `Synchronizing` - The brief cutover window at the end of a concurrent bootstrap, during which the pipeline
+    brings the new views up to date and switches them in before returning to the `Running` state.
 
 * The [`/approve` endpoint](/api/approve-bootstrap).
   Invoking this endpoint transitions the pipeline from the `AwaitingApproval` to `Bootstrapping` state.
