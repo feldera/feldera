@@ -323,6 +323,7 @@ create table PART (
 - `update_format`: Choose data change event format for this connector. Supported values are `insert_delete` and `raw`. The default is `insert_delete`.
 - `array`: Whether to enable array encoding. The default is `false`.
 - `lines`: How many input lines may be part of a JSON value. The default, `multiple`, allows individual JSON values to span multiple lines. Specify `single` to limit support to newline-delimited JSON (NDJSON), a subset of JSON which does not allow a new-line inside a value.
+- `buffer_size_records`: Maximum number of records to batch into a single output message (output connectors only). When this threshold is reached, the encoder flushes the buffer to the transport. The default is `10000`.
 
 See also the [input/output connector tutorial](/tutorials/basics/part3.md).
 

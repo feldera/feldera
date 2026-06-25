@@ -31,6 +31,10 @@ and [Arrow types](https://docs.rs/arrow/latest/arrow/datatypes/enum.DataType.htm
 | `VARIANT`                                  | `LargeUtf8` (JSON-encoded string, see [VARIANT documentation](/sql/json))   |
 
 
+## Output configuration
+
+- `buffer_size_records`: Maximum number of records to batch into a single output Parquet file (output connectors only). When this threshold is reached, the encoder flushes the buffer to the transport. The default is `100000`.
+
 ## Example
 
 In this example, we configure a table to load data from a Parquet file.
