@@ -165,6 +165,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlViewColumnDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateAggregateStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateIndexStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.connectors.ConnectorValidator;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTypeStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
@@ -2142,6 +2143,10 @@ public class SqlToRelCompiler implements IWritesLogs {
                         throw new CompilationError("Postprocessor field \"config\" must be a JSON object", pos);
                     }
                 }
+                ConnectorValidator.validateFormatConfig(connector, path, isTable, json,
+                        value.getSourcePosition().start, this.errorReporter);
+                ConnectorValidator.validateTransportConfig(connector, path, isTable, json,
+                        value.getSourcePosition().start, this.errorReporter);
             }
         } else {
             var error = jsonNode.err();

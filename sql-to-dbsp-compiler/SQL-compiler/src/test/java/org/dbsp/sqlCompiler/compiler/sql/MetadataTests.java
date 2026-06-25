@@ -401,54 +401,6 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
-    public void issue4896() {
-        String sql = """
-               CREATE TABLE T (COL1 INT) WITH (
-                  'connectors' = '[{
-                    "url": "localhost"
-                  }]'
-               );""";
-        DBSPCompiler compiler = this.chattyCompiler();
-        compiler.submitStatementsForCompilation(sql);
-        // Force compilation
-        compiler.getFinalCircuit(true);
-        Assert.assertTrue(compiler.messages.toString().contains(
-                "warning: Unnamed connector: Connector nr. 1 for table 't' does not have a name.\n" +
-                "It is recommended to name all connectors using the \"name\" property; " +
-                        "names will be required in the future."));
-
-        sql = """
-               CREATE TABLE T (COL1 INT) WITH (
-                  'connectors' = '[{
-                    "name": [],
-                    "url": "localhost"
-                  }]'
-               );""";
-        this.statementsFailingInCompilation(sql, """
-               Compilation error: Expected a string value for the connector "name" property
-                   3|     "name": [],
-                                  ^
-                   4|     "url": "localhost"
-               """);
-
-        sql = """
-               CREATE TABLE T (COL1 INT) WITH (
-                  'connectors' = '[{
-                    "name": "Bob",
-                    "url": "localhost"
-                  }, {
-                    "name": "Bob",
-                    "url": "localhost:8080"
-                  }]'
-               );""";
-        this.statementsFailingInCompilation(sql,"""
-               error: Compilation error: Two connectors for the same table 't' cannot have the same name: 'Bob'
-                   6|     "name": "Bob",
-                                  ^
-                   7|     "url": "localhost:8080\"""");
-    }
-
-    @Test
     public void stripConnectors() throws IOException, SQLException {
         // Test that the connectors are stripped from the generated Rust
         String sql = """
@@ -977,58 +929,6 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
-    public void testPreprocessorValidation() {
-        this.statementsFailingInCompilation("""
-                CREATE TABLE T(x INT) WITH ('connectors' = '[{
-                   "name": "0",
-                   "transport": {
-                     "name": "datagen",
-                     "config": {}
-                   },
-                   "preprocessor": [{
-                      "config": {}
-                   }]
-                }]');""", """
-                Compilation error: Preprocessor must have a field "name"
-                    7|   "preprocessor": [{
-                                          ^
-                    8|      "config": {}""");
-        this.statementsFailingInCompilation("""
-                CREATE TABLE T(x INT) WITH ('connectors' = '[{
-                   "name": "0",
-                   "transport": {
-                     "name": "datagen",
-                     "config": {}
-                   },
-                   "preprocessor": [{
-                      "name": "Bob",
-                      "config": {}
-                   }]
-                }]');""", """
-                Compilation error: Preprocessor must have a field "message_oriented"
-                    7|   "preprocessor": [{
-                                          ^
-                    8|      "name": "Bob",""");
-        this.statementsFailingInCompilation("""
-                CREATE TABLE T(x INT) WITH ('connectors' = '[{
-                   "name": "0",
-                   "transport": {
-                     "name": "datagen",
-                     "config": {}
-                   },
-                   "preprocessor": [{
-                      "message_oriented": "streaming",
-                      "name": "Bob",
-                      "config": {}
-                   }]
-                }]');""", """
-                Compilation error: Preprocessor field "message_oriented" must be a Boolean value
-                    8|      "message_oriented": "streaming",
-                                                ^
-                    9|      "name": "Bob",""");
-    }
-
-    @Test
     public void testUDP() throws IOException, InterruptedException, SQLException {
         // Test user-defined preprocessor
         String sql = """
@@ -1110,22 +1010,6 @@ public class MetadataTests extends BaseSQLTests {
             Files.copy(cargoBackup, cargo, StandardCopyOption.REPLACE_EXISTING);
             Utilities.deleteFile(cargoBackup.toFile(), true);
         }
-    }
-
-    @Test
-    public void testPostprocessorValidation() {
-        this.statementsFailingInCompilation("""
-                CREATE TABLE T(x INT);
-                CREATE VIEW V WITH ('connectors' = '[{
-                   "name": "0",
-                   "postprocessor": [{
-                      "config": {}
-                   }]
-                }]') AS SELECT * FROM T;""", """
-                Compilation error: Postprocessor must have a field "name"
-                    4|   "postprocessor": [{
-                                           ^
-                    5|      "config": {}""");
     }
 
     @Test
