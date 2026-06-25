@@ -26,12 +26,14 @@ The resulting table's history (one commit per step):
 * ``v5`` DROP COLUMN ``amount``
 * ``v6`` INSERT one row under the final ``(id, full_name, country)`` schema
 
-Reading the latest version -- whether by snapshot, or by following/CDC-replaying
-the log from v0 -- must therefore return the final logical schema with ``amount``
-gone, ``country`` NULL for the rows written before it existed, and every value
-resolved through column mapping. The follow/CDC paths read each commit's data
-file as raw Parquet, so they exercise the connector's own physical-name
-resolution across the rename/add/drop history.
+A snapshot read of the latest version returns the final logical schema with
+``amount`` gone, ``country`` NULL for the rows written before it existed, and
+every value resolved through column mapping. The follow/CDC paths instead read
+each commit's data file as raw Parquet against the schema active when that commit
+was written, exercising the connector's own physical-name resolution across the
+rename/add/drop history. A replay from v0 therefore differs from the snapshot on
+the pre-rename rows: rows 1 and 2 were written under the logical name ``name``,
+so ``full_name`` reads NULL for them (see ``_REPLAY_EXPECTED_ROWS`` in the test).
 """
 
 from __future__ import annotations

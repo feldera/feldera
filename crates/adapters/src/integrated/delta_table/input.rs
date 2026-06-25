@@ -948,13 +948,12 @@ struct DeltaTableInputEndpointInner {
     /// forward (see [`schema_snapshot`](Self::schema_snapshot)):
     ///
     /// * Snapshot mode leaves it at the opened version.
-    /// * Following pins it to the highest version it will ingest (the latest
-    ///   committed version, or `end_version` when that is lower), so replayed
-    ///   history resolves against that window's final schema: a renamed column
-    ///   keeps its physical `col-<uuid>` name and still matches, an added column
-    ///   null-fills, a dropped column is ignored.
-    /// * A commit that changes the schema beyond that version advances it, so a
-    ///   column added to the table while we follow is picked up.
+    /// * While following, each commit's data is read against the schema that was
+    ///   active when that commit was written: [`advance_schema`](Self::advance_schema)
+    ///   adopts the new schema whenever a commit carries a `metaData` action. A
+    ///   renamed column keeps its physical `col-<uuid>` name, a column added
+    ///   later null-fills for earlier commits, and a dropped column is ignored
+    ///   once gone.
     schema_table: Mutex<Option<Arc<DeltaTable>>>,
 }
 
@@ -1753,14 +1752,10 @@ impl DeltaTableInputEndpointInner {
 
         // Start following the table if required by the configuration.
         if self.config.follow() {
-            // Pin the schema used to read data files to the highest version we
-            // will ingest, so replayed history resolves against the window's
-            // final schema; later commits that change it advance it forward
-            // (`advance_schema`).
-            if let Err(e) = self.pin_follow_schema(&table).await {
-                self.consumer.error(true, e, None);
-                return;
-            }
+            // The schema source stays at the version we opened at; each commit's
+            // schema change advances it as the loop reaches that commit (see
+            // `advance_schema`), so every commit's data is read against the
+            // schema that was active when it was written.
 
             // Log the appropriate message based on whether we just completed a snapshot
             if self.config.snapshot() && snapshot_incomplete {
@@ -2969,24 +2964,15 @@ impl DeltaTableInputEndpointInner {
         Ok(())
     }
 
-    /// Pin the schema source to the highest version we will ingest (the latest
-    /// committed version, or `end_version` when that is lower) before the follow
-    /// loop starts. The whole window then resolves against its own final schema,
-    /// not a later schema from the tail we never ingest.
-    async fn pin_follow_schema(&self, table: &Arc<DeltaTable>) -> AnyResult<()> {
-        let target = self.catchup_target_version(Arc::clone(table)).await?;
-        let target = u64::try_from(target)
-            .map_err(|_| anyhow!("unexpected negative Delta table version {target}"))?;
-        self.pin_schema_to_version(target).await
-    }
-
     /// Advance the schema source when a commit carries a schema change.
     ///
-    /// A commit that changes the schema writes a `metaData` action. We reload
-    /// the schema at that commit so its data, and every later commit's, is read
-    /// against the new schema. Moves forward only: a `metaData` action at or
-    /// before the current schema version is replay, already covered by the
-    /// schema pinned at startup, so we ignore it.
+    /// A commit that changes the schema writes a `metaData` action holding the
+    /// schema effective from that commit on. We reload the table at that version
+    /// and adopt it, so this commit's data, and every later commit's, is read
+    /// against the schema that was active when it was written. Commits without a
+    /// `metaData` action leave the current schema in place. Moves forward only:
+    /// the guard skips a version we already hold (the opened or resumed snapshot
+    /// may already reflect it), since the schema never moves backward.
     async fn advance_schema(&self, new_version: i64, actions: &[Action]) -> AnyResult<()> {
         let changes_schema = actions.iter().any(|a| matches!(a, Action::Metadata(_)));
         let current_version = self.schema_snapshot().version();
@@ -3286,11 +3272,12 @@ impl DeltaTableInputEndpointInner {
     }
 
     // NOTE: Column projection (follow here, CDC in `process_cdc_transaction`) runs against the
-    // schema in `schema_table`, which `create_parquet_table` applies to every Parquet file we read
-    // (see the field's docs for how that schema tracks evolution). Column-mapped physical names are
-    // stable across a rename, so the reader handles every followed version's files: DataFusion's
-    // schema adapter null-fills added columns and ignores dropped ones; a type change produces an
-    // error at read time when a value cannot be converted to the target type.
+    // schema in `schema_table`, which `create_parquet_table` applies to every Parquet file we read.
+    // While following, that schema is the one active when the commit being read was written (see the
+    // field's docs and `advance_schema`). Column-mapped physical names are stable across a rename, so
+    // the reader handles each version's files against its own schema: DataFusion's schema adapter
+    // null-fills columns absent from a file and ignores ones the schema drops; a type change produces
+    // an error at read time when a value cannot be converted to the target type.
     #[allow(clippy::too_many_arguments)]
     async fn add_with_polarity(
         &self,
