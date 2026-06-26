@@ -59,6 +59,7 @@ fda pipelines
 fda shutdown p1 || true
 fda delete --force p1 || true
 fda delete --force p2 || true
+fda delete --force pbad || true
 fda clear pudf && fda delete pudf || true
 fda delete --force pclock || true
 fda delete unknown || true
@@ -90,6 +91,21 @@ fda events p1 all
 fda event p1 latest
 fda event p1 latest status
 fda event p1 latest all
+
+cat > bad-program.sql <<EOF
+SELECT invalid
+EOF
+fda create pbad bad-program.sql
+for _ in {1..60}; do
+  if fda program status pbad | grep -q "SqlError"; then
+    break
+  fi
+  sleep 1
+done
+fda program status pbad | grep "SqlError"
+fda program errors pbad | grep -i "error:"
+fda --format json program errors pbad | jq -e '.sql_compilation.messages | length > 0'
+fda delete --force pbad
 
 fda create pudf program.sql --udf-toml udf.toml --udf-rs udf.rs
 compare_output "fda program get pudf --udf-toml" "cat udf.toml"
@@ -275,6 +291,7 @@ fail_on_success fda --insecure --tls-cert /tmp/does-not-matter.pem pipelines
 fail_on_success fda -k --tls-cert /tmp/does-not-matter.pem pipelines
 
 rm program.sql
+rm bad-program.sql
 rm udf.toml
 rm udf.rs
 rm -f test-support-bundle-full.zip
