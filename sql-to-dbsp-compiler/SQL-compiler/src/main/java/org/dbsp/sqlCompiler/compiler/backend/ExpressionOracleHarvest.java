@@ -316,6 +316,13 @@ public final class ExpressionOracleHarvest {
 
     private static boolean isSupportedLeaf(String rustType) {
         String base = stripOption(rustType);
+        // An ARRAY column is `Array<element>`; allow it when the element is itself a supported
+        // leaf (so the runtime has a Sample/encoding for it). This admits arrays of scalars and
+        // nested arrays, but not arrays of rows (a `Tup<...>` element has no sampler).
+        if (base.startsWith("Array<") && base.endsWith(">")) {
+            String element = base.substring("Array<".length(), base.length() - 1).trim();
+            return isSupportedLeaf(element);
+        }
         return SUPPORTED_LEAF.contains(base) || base.startsWith("SqlDecimal");
     }
 
