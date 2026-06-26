@@ -296,6 +296,10 @@ impl InputReader for AdHocInputEndpoint {
             InputReaderCommand::Queue { .. } => {
                 let mut guard = self.inner.details.lock().unwrap();
                 let details = guard.as_mut().unwrap();
+                // It's important to hold the lock for the rest of this code block. It guarantees that when `complete_request`
+                // observes an empty queue, the controller stats will also be updated by the `.extended` call. The client
+                // can then reliably wait for the ad hoc query to be fully processed by waiting for `total_completed_records` to
+                // catch up with `total_circuit_input_records`.
                 let (num_records, hasher, batches) = details.queue.flush_with_aux();
                 let (timestamps, batches): (Vec<_>, Vec<_>) = batches.into_iter().unzip();
 

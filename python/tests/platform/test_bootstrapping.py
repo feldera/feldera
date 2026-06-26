@@ -75,8 +75,7 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW, dismiss_error=True)
     assert pipeline.status() == PipelineStatus.RUNNING
 
-    pipeline.execute("INSERT INTO t1 VALUES (4), (5), (6);")
-    pipeline.wait_for_idle()
+    pipeline.execute("INSERT INTO t1 VALUES (4), (5), (6);", wait=True)
 
     result = list(pipeline.query("SELECT * FROM v1;"))
     assert result == [{"c": 6}]
@@ -107,8 +106,7 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
 
     # Wait for the pipeline to reach RUNNING status (up to 300 seconds)
     pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=300)
-    pipeline.execute("INSERT INTO t1 VALUES (4), (5), (6);")
-    pipeline.wait_for_idle()
+    pipeline.execute("INSERT INTO t1 VALUES (4), (5), (6);", wait=True)
 
     result = list(pipeline.query("SELECT * FROM v1;"))
     assert result == [{"c": 6}]
@@ -149,8 +147,7 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
 
     # Wait for the pipeline to reach RUNNING status (up to 300 seconds)
     pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=300)
-    pipeline.execute("INSERT INTO t2 VALUES (10), (20), (30);")
-    pipeline.wait_for_idle()
+    pipeline.execute("INSERT INTO t2 VALUES (10), (20), (30);", wait=True)
 
     result = list(pipeline.query("SELECT * FROM v3;"))
     assert result == [{"m": 30}]
@@ -197,8 +194,7 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
     result = list(pipeline.query("SELECT * FROM v1;"))
     assert result == [{"c": 6}]
 
-    pipeline.execute("INSERT INTO t2 (y) VALUES (40), (50), (60);")
-    pipeline.wait_for_idle()
+    pipeline.execute("INSERT INTO t2 (y) VALUES (40), (50), (60);", wait=True)
 
     result = list(pipeline.query("SELECT * FROM v3;"))
     assert result == [{"m": 60}]
@@ -238,8 +234,7 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
 
     # Wait for the pipeline to reach RUNNING status (up to 300 seconds)
     pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=300)
-    pipeline.execute("INSERT INTO t2 (y) VALUES (70), (80), (90);")
-    pipeline.wait_for_idle()
+    pipeline.execute("INSERT INTO t2 (y) VALUES (70), (80), (90);", wait=True)
 
     # The table hasn't changed, so the previous 3 rows should still be there.
     result = list(pipeline.query("SELECT count(*) as c FROM t2;"))
@@ -594,8 +589,7 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     pipeline.start()
     assert pipeline.status() == PipelineStatus.RUNNING
 
-    pipeline.execute("INSERT INTO t1 VALUES (1), (2), (3);")
-    pipeline.wait_for_idle()
+    pipeline.execute("INSERT INTO t1 VALUES (1), (2), (3);", wait=True)
     result = list(pipeline.query("SELECT * FROM v1;"))
     assert result == [{"c": 3}]
 

@@ -228,10 +228,10 @@ class TestAdhocQueries(SharedTestPipeline):
             assert "materialized" in str(e), f"unexpected error: {e}"
         assert nonmat_ok, "Expected querying a non-materialized table to raise"
 
-        # INSERT into materialized t1 using JSON query endpoint (to retrieve count row)
-        insert_resp = list(
-            TEST_CLIENT.query_as_json(self.pipeline.name, ADHOC_SQL_INSERT)
-        )
+        # INSERT into materialized t1. `wait=True` blocks until the insert has
+        # been processed so the reads below observe it (read-your-writes). The
+        # JSON result still carries the count row.
+        insert_resp = list(self.pipeline.query(ADHOC_SQL_INSERT, wait=True))
         assert insert_resp and insert_resp[0].get("count") == 2
 
         prepared_rows = list(
@@ -246,8 +246,8 @@ class TestAdhocQueries(SharedTestPipeline):
         # Non-materialized table via its materialized view
         assert self._count("SELECT COUNT(*) AS c FROM view_of_not_materialized") == 0
         ins_nm = list(
-            TEST_CLIENT.query_as_json(
-                self.pipeline.name, "INSERT INTO not_materialized VALUES (99),(100)"
+            self.pipeline.query(
+                "INSERT INTO not_materialized VALUES (99),(100)", wait=True
             )
         )
         assert ins_nm and ins_nm[0].get("count") == 2
@@ -388,7 +388,8 @@ class TestAdhocQueriesArrow(SharedTestPipeline):
         # Use an integer larger than 2**53 (JSON's f64 precision boundary)
         # to demonstrate a value we cannot represent in JSON.
         wide_int = 9007199254740993  # 2**53 + 1
-        # `execute` drains the generator so the INSERT actually runs.
+        # `execute` drains the generator so the INSERT actually runs; `wait`
+        # blocks until it is processed so the read below observes it.
         self.pipeline.execute(
             "INSERT INTO all_types VALUES ("
             f"1, 2, 3, {wide_int}, "
@@ -403,7 +404,8 @@ class TestAdhocQueriesArrow(SharedTestPipeline):
             "'c32d330f-5757-4ada-bcf6-1fac2d54e37f', "
             "ARRAY[10, 20, 30], "
             "MAP {'a': 1, 'b': 2}"
-            ")"
+            ")",
+            wait=True,
         )
 
         batches = list(
@@ -462,7 +464,7 @@ class TestAdhocQueriesArrow(SharedTestPipeline):
         self.pipeline.start()
 
         self.pipeline.execute(
-            "INSERT INTO int_keyed_map VALUES (MAP {1: 'one', 2: 'two'})"
+            "INSERT INTO int_keyed_map VALUES (MAP {1: 'one', 2: 'two'})", wait=True
         )
 
         # Arrow IPC: int keys preserved as ints.
@@ -531,7 +533,8 @@ class TestAdhocQueriesArrow(SharedTestPipeline):
             "INSERT INTO floats VALUES "
             "('pos_inf',  1.0/0.0, CAST( 1.0/0.0 AS REAL)),"
             "('neg_inf', -1.0/0.0, CAST(-1.0/0.0 AS REAL)),"
-            "('nan',      0.0/0.0, CAST( 0.0/0.0 AS REAL))"
+            "('nan',      0.0/0.0, CAST( 0.0/0.0 AS REAL))",
+            wait=True,
         )
 
         batches = list(self.pipeline.query_arrow("SELECT * FROM floats ORDER BY tag"))

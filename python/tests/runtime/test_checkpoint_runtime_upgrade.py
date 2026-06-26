@@ -743,8 +743,7 @@ CREATE MATERIALIZED VIEW closure AS
 
     # Insert 20 rows across 4 buckets (id 0..19, bucket = id % 4).
     values = ", ".join(f"({i}, {i % 4})" for i in range(20))
-    legacy_pipeline.execute(f"INSERT INTO t VALUES {values};")
-    legacy_pipeline.wait_for_idle()
+    legacy_pipeline.execute(f"INSERT INTO t VALUES {values};", wait=True)
 
     result_before = list(legacy_pipeline.query("SELECT COUNT(*) AS n FROM t;"))
     assert result_before == [{"n": 20}], (
