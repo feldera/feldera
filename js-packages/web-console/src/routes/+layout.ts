@@ -278,6 +278,7 @@ const initAuth = async (): Promise<AuthInitResult> => {
     onBeforeLogout() {
       // Session-scoped data must not survive a logout/login cycle, since a different
       // user may sign in on the same browser.
+      setSelectedTenant(undefined)
       clearConfigCaches()
       posthog.reset()
     }
@@ -350,6 +351,8 @@ export const load: LayoutLoad = async (): Promise<LayoutData> => {
       auth
     }
   }
+
+  applyTenantSelection(computeAuthorizedTenants(auth))
 
   const cachedConfig = OPTIMISTIC_CONFIG_CACHE ? getConfigFromCache() : undefined
   const cachedSessionConfig = OPTIMISTIC_CONFIG_CACHE ? getSessionConfigFromCache() : undefined
@@ -430,8 +433,7 @@ function buildLayoutData(
 /**
  * Run side effects derived from `config` that are independent of server-time
  * sync. Safe to call with cached config and safe to re-run: all pushes are
- * deduped by id, tenant selection is idempotent for a stable auth, and
- * `posthog.init` dedupes on its key.
+ * deduped by id and `posthog.init` dedupes on its key.
  * It is expected to be idempotent - calling it the second time on lazy update
  * when config hasn't changed should not break anything.
  *
@@ -439,8 +441,6 @@ function buildLayoutData(
  * which only runs against freshly-fetched data.
  */
 function initializeConfigDependencies(auth: AuthDetails, config: Configuration) {
-  applyTenantSelection(computeAuthorizedTenants(auth))
-
   if (typeof auth === 'object' && 'logout' in auth) {
     initPosthog(config).then(() => {
       if (auth.profile.email) {
