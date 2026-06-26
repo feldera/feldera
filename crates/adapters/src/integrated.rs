@@ -115,20 +115,22 @@ pub fn create_integrated_input_endpoint(
 ) -> Result<Box<dyn IntegratedInputEndpoint>, ControllerError> {
     let ep: Box<dyn IntegratedInputEndpoint> = match &config.transport {
         #[cfg(feature = "with-deltalake")]
-        TransportConfig::DeltaTableInput(config) => {
+        TransportConfig::DeltaTableInput(transport_config) => {
             Box::new(delta_table::DeltaTableInputEndpoint::new(
                 endpoint_name,
-                config,
+                transport_config,
+                config.projection.clone(),
                 pipeline_config,
                 runtime_env,
                 consumer,
             ))
         }
         #[cfg(feature = "with-iceberg")]
-        TransportConfig::IcebergInput(config) => {
+        TransportConfig::IcebergInput(transport_config) => {
             Box::new(feldera_iceberg::IcebergInputEndpoint::new(
                 endpoint_name,
-                config,
+                transport_config,
+                config.projection.clone(),
                 pipeline_config,
                 runtime_env,
                 consumer,

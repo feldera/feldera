@@ -1538,6 +1538,12 @@ where
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ConnectorProjection {
+    /// Ordered list of input columns the connector should read.
+    pub columns: Vec<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ConnectorConfig {
     /// Send a full snapshot of a materialized view when the connector first
     /// starts. Valid for output connectors only.
@@ -1556,6 +1562,10 @@ pub struct ConnectorConfig {
 
     /// Transport endpoint configuration.
     pub transport: TransportConfig,
+
+    /// Standard projection pushdown configuration. Valid for input connectors only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection: Option<ConnectorProjection>,
 
     /// Optional preprocessor configuration
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1687,6 +1697,7 @@ impl ConnectorConfig {
         Self {
             send_snapshot: false,
             transport,
+            projection: None,
             preprocessor: None,
             format,
             postprocessor: None,
@@ -1710,6 +1721,13 @@ impl ConnectorConfig {
     pub fn with_max_queued_records(mut self, max_queued_records: u64) -> Self {
         self.max_queued_records = max_queued_records;
         self
+    }
+
+    pub fn supports_projection_pushdown(&self) -> bool {
+        matches!(
+            self.transport,
+            TransportConfig::DeltaTableInput(_) | TransportConfig::IcebergInput(_)
+        )
     }
 
     /// Compare two configs modulo the `paused` field.

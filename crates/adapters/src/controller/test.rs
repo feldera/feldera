@@ -1,4 +1,4 @@
-use super::{OutputEndpointControl, stats::BufferedInput};
+use super::{ControllerInner, OutputEndpointControl, stats::BufferedInput};
 use crate::{
     Controller, PipelineConfig,
     controller::{ControllerStatusContext, TransactionInfo},
@@ -13,9 +13,10 @@ use crossbeam::sync::Parker;
 use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
 use feldera_adapterlib::format::BufferSize;
 use feldera_types::{
-    config::{InputEndpointConfig, OutputEndpointConfig},
+    config::{ConnectorConfig, InputEndpointConfig, OutputEndpointConfig},
     constants::STATE_FILE,
     memory_pressure::MemoryPressure,
+    program_schema::{ColumnType, Field, Relation, SqlIdentifier},
 };
 use serde_json::json;
 use std::{
@@ -37,6 +38,90 @@ use tracing::info;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use proptest::prelude::*;
+
+fn int_field(name: &str, nullable: bool, unused: bool) -> Field {
+    Field::new(SqlIdentifier::from(name), ColumnType::int(nullable)).with_unused(unused)
+}
+
+#[test]
+fn test_projection_pushdown_rejects_missing_non_omittable_columns() {
+    let mut connector_config: ConnectorConfig = serde_json::from_value(json!({
+        "projection": {
+            "columns": ["unused_nullable"]
+        },
+        "transport": {
+            "name": "delta_table_input",
+            "config": {
+                "uri": "s3://bucket/table",
+                "mode": "snapshot"
+            }
+        }
+    }))
+    .unwrap();
+
+    let relation = Relation::new(
+        SqlIdentifier::from("t"),
+        vec![
+            int_field("used", false, false),
+            int_field("unused_nullable", true, true),
+            int_field("unused_required", false, true),
+        ],
+        false,
+        Default::default(),
+    );
+
+    let err = ControllerInner::validate_input_connector_pushdown(
+        "test_input",
+        &mut connector_config,
+        &relation,
+    )
+    .unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("omits non-omittable column(s): used, unused_required")
+    );
+}
+
+#[test]
+fn test_projection_pushdown_normalizes_column_names() {
+    let mut connector_config: ConnectorConfig = serde_json::from_value(json!({
+        "projection": {
+            "columns": ["USED", "UNUSED_REQUIRED"]
+        },
+        "transport": {
+            "name": "delta_table_input",
+            "config": {
+                "uri": "s3://bucket/table",
+                "mode": "snapshot"
+            }
+        }
+    }))
+    .unwrap();
+
+    let relation = Relation::new(
+        SqlIdentifier::from("t"),
+        vec![
+            int_field("used", false, false),
+            int_field("unused_nullable", true, true),
+            int_field("unused_required", false, true),
+        ],
+        false,
+        Default::default(),
+    );
+
+    ControllerInner::validate_input_connector_pushdown(
+        "test_input",
+        &mut connector_config,
+        &relation,
+    )
+    .unwrap();
+
+    assert_eq!(
+        connector_config.projection.unwrap().columns,
+        vec!["used".to_string(), "unused_required".to_string()]
+    );
+}
 
 #[test]
 fn test_start_after_cyclic() {

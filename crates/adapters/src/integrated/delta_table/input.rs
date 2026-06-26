@@ -38,7 +38,7 @@ use feldera_adapterlib::utils::datafusion::{
 };
 use feldera_storage::tokio::TOKIO_DEDICATED_IO;
 use feldera_types::adapter_stats::ConnectorHealth;
-use feldera_types::config::{FtModel, PipelineConfig};
+use feldera_types::config::{ConnectorProjection, FtModel, PipelineConfig};
 use feldera_types::program_schema::{Field, Relation};
 use feldera_types::transport::delta_table::{DeltaTableReaderConfig, DeltaTableTransactionMode};
 use futures_util::StreamExt;
@@ -252,6 +252,7 @@ pub(super) fn parse_cdc_order_by(df: &DataFrame, order_by: &str) -> AnyResult<Ve
 pub struct DeltaTableInputEndpoint {
     endpoint_name: String,
     config: DeltaTableReaderConfig,
+    projection: Option<ConnectorProjection>,
     datafusion: SessionContext,
     consumer: Box<dyn InputConsumer>,
 }
@@ -260,6 +261,7 @@ impl DeltaTableInputEndpoint {
     pub fn new(
         endpoint_name: &str,
         config: &DeltaTableReaderConfig,
+        projection: Option<ConnectorProjection>,
         pipeline_config: &PipelineConfig,
         runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
         consumer: Box<dyn InputConsumer>,
@@ -328,6 +330,7 @@ impl DeltaTableInputEndpoint {
         Self {
             endpoint_name: endpoint_name.to_string(),
             config: config.clone(),
+            projection,
             datafusion,
             consumer,
         }
@@ -348,6 +351,7 @@ impl IntegratedInputEndpoint for DeltaTableInputEndpoint {
         Ok(Box::new(DeltaTableInputReader::new(
             self.endpoint_name,
             self.config,
+            self.projection,
             self.datafusion,
             self.consumer,
             input_handle,
@@ -365,6 +369,7 @@ impl DeltaTableInputReader {
     fn new(
         endpoint_name: String,
         mut config: DeltaTableReaderConfig,
+        projection: Option<ConnectorProjection>,
         datafusion: SessionContext,
         consumer: Box<dyn InputConsumer>,
         input_handle: &InputCollectionHandle,
@@ -501,6 +506,7 @@ impl DeltaTableInputReader {
             datafusion,
             consumer,
             schema,
+            projection,
             resume_info.clone(),
         ));
 
@@ -895,6 +901,7 @@ struct DeltaTableInputEndpointInner {
     endpoint_name: String,
     schema: Relation,
     config: DeltaTableReaderConfig,
+    projection: Option<ConnectorProjection>,
     consumer: Box<dyn InputConsumer>,
     datafusion: SessionContext,
 
@@ -952,6 +959,7 @@ impl DeltaTableInputEndpointInner {
         datafusion: SessionContext,
         consumer: Box<dyn InputConsumer>,
         schema: Relation,
+        projection: Option<ConnectorProjection>,
         resume_info: Option<DeltaResumeInfo>,
     ) -> Self {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
@@ -965,6 +973,7 @@ impl DeltaTableInputEndpointInner {
             endpoint_name: endpoint_name.to_string(),
             schema,
             config,
+            projection,
             consumer,
             datafusion,
             transaction_index: AtomicUsize::new(0),
@@ -1060,8 +1069,11 @@ impl DeltaTableInputEndpointInner {
     fn skip_unused_columns(&self) -> bool {
         // Old-style: property in the connector configuration.
         // New-style: property in the table definition.
-        self.config.skip_unused_columns
-            || self.schema.get_property("skip_unused_columns") == Some("true")
+        self.config.skip_unused_columns || self.schema.skip_unused_columns()
+    }
+
+    fn should_project_columns(&self) -> bool {
+        self.projection.is_some() || self.skip_unused_columns()
     }
 
     fn new_follow_transaction_label(&self) -> Option<Option<String>> {
@@ -1180,6 +1192,19 @@ impl DeltaTableInputEndpointInner {
     /// are removed. Derived once from the immutable SQL schema and cached.
     fn used_sql_columns(&self) -> &ColumnNameSet {
         self.used_sql_columns.get_or_init(|| {
+            if let Some(projection) = &self.projection {
+                let mut columns = projection.columns.clone();
+                let referenced = self.config_referenced_columns();
+                columns.extend(
+                    self.schema
+                        .fields
+                        .iter()
+                        .filter(|field| referenced.contains(&field.name.name()))
+                        .map(|field| field.name.name()),
+                );
+                return ColumnNameSet::from_names(columns);
+            }
+
             ColumnNameSet::from_names(
                 self.schema
                     .fields
@@ -1224,7 +1249,7 @@ impl DeltaTableInputEndpointInner {
     /// This is the shape-only rule; [`can_skip_column`](Self::can_skip_column)
     /// adds the connector-config check before a column is actually skipped.
     fn is_unused_and_omittable(field: &Field) -> bool {
-        field.unused && (field.columntype.nullable || field.default.is_some())
+        Relation::is_unused_column_omittable(field)
     }
 
     /// SQL columns named by the connector's own expressions (`filter`,
@@ -1276,7 +1301,7 @@ impl DeltaTableInputEndpointInner {
     /// than the SQL table maps; this keeps the connector from reading the rest
     /// off disk.
     fn project_cdc_columns(&self, df: DataFrame) -> AnyResult<DataFrame> {
-        if !self.skip_unused_columns() {
+        if !self.should_project_columns() {
             return Ok(df);
         }
 

@@ -18,7 +18,7 @@ use feldera_adapterlib::{
     PipelineState,
 };
 use feldera_types::{
-    config::{FtModel, PipelineConfig},
+    config::{ConnectorProjection, FtModel, PipelineConfig},
     program_schema::Relation,
     transport::iceberg::{IcebergCatalogType, IcebergReaderConfig},
 };
@@ -56,6 +56,10 @@ fn storage_factory() -> Arc<dyn StorageFactory> {
     Arc::new(OpenDalResolvingStorageFactory::new())
 }
 
+fn quote_sql_identifier<S: AsRef<str>>(ident: S) -> String {
+    format!("\"{}\"", ident.as_ref().replace("\"", "\"\""))
+}
+
 enum SnapshotDescr {
     /// Open the latest snapshot (default)
     Latest,
@@ -74,6 +78,7 @@ impl IcebergInputEndpoint {
     pub fn new(
         endpoint_name: &str,
         config: &IcebergReaderConfig,
+        projection: Option<ConnectorProjection>,
         pipeline_config: &PipelineConfig,
         runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
         consumer: Box<dyn InputConsumer>,
@@ -82,6 +87,7 @@ impl IcebergInputEndpoint {
             inner: Arc::new(IcebergInputEndpointInner::new(
                 endpoint_name,
                 config.clone(),
+                projection,
                 pipeline_config,
                 runtime_env,
                 consumer,
@@ -190,6 +196,7 @@ impl Drop for IcebergInputReader {
 struct IcebergInputEndpointInner {
     endpoint_name: String,
     config: IcebergReaderConfig,
+    projection: Option<ConnectorProjection>,
     consumer: Box<dyn InputConsumer>,
     datafusion: SessionContext,
     queue: InputQueue,
@@ -199,6 +206,7 @@ impl IcebergInputEndpointInner {
     fn new(
         endpoint_name: &str,
         config: IcebergReaderConfig,
+        projection: Option<ConnectorProjection>,
         pipeline_config: &PipelineConfig,
         runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
         consumer: Box<dyn InputConsumer>,
@@ -211,6 +219,7 @@ impl IcebergInputEndpointInner {
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
+            projection,
             consumer,
             datafusion,
             queue,
@@ -290,16 +299,32 @@ impl IcebergInputEndpointInner {
         }
     }
 
-    /// Load the entire table snapshot as a single "select * where <filter>" query.
+    fn projection_column_list(&self, _schema: &Relation) -> String {
+        self.projection.as_ref().map_or_else(
+            || "*".to_string(),
+            |projection| {
+                projection
+                    .columns
+                    .iter()
+                    .map(quote_sql_identifier)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            },
+        )
+    }
+
+    /// Load the entire table snapshot as a single "select <columns> where <filter>" query.
     async fn read_unordered_snapshot(
         &self,
         input_stream: &mut dyn ArrowStream,
+        schema: &Relation,
         receiver: &mut Receiver<PipelineState>,
     ) {
         // Execute the snapshot query; push snapshot data to the circuit.
         info!("iceberg {}: reading initial snapshot", &self.endpoint_name,);
 
-        let mut snapshot_query = "select * from snapshot".to_string();
+        let column_names = self.projection_column_list(schema);
+        let mut snapshot_query = format!("select {column_names} from snapshot");
         if let Some(filter) = &self.config.snapshot_filter {
             snapshot_query = format!("{snapshot_query} where {filter}");
         }
@@ -408,8 +433,9 @@ impl IcebergInputEndpointInner {
             let end = timestamp_to_sql_expression(&timestamp_field.columntype, &end);
 
             // Query the table for the range.
+            let column_names = self.projection_column_list(schema);
             let mut range_query =
-                format!("select * from snapshot where {timestamp_column} >= {start} and {timestamp_column} < {end}");
+                format!("select {column_names} from snapshot where {timestamp_column} >= {start} and {timestamp_column} < {end}");
             if let Some(filter) = &self.config.snapshot_filter {
                 range_query = format!("{range_query} and {filter}");
             }
@@ -458,7 +484,7 @@ impl IcebergInputEndpointInner {
 
         if self.config.snapshot() && self.config.timestamp_column.is_none() {
             // Read snapshot chunk-by-chunk.
-            self.read_unordered_snapshot(input_stream.as_mut(), &mut receiver)
+            self.read_unordered_snapshot(input_stream.as_mut(), &schema, &mut receiver)
                 .await;
         } else if self.config.snapshot() {
             // Read the entire snapshot in one query.

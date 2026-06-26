@@ -1,7 +1,7 @@
 pub use feldera_ir::SourcePosition;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use utoipa::ToSchema;
@@ -250,12 +250,68 @@ impl Relation {
         self.fields.iter().find(|f| f.name == name)
     }
 
+    pub fn field_projection_name(&self, name: &str) -> Option<String> {
+        self.field(name)
+            .or_else(|| self.fields.iter().find(|f| f.name.name() == name))
+            .map(|f| f.name.name())
+    }
+
     pub fn has_lateness(&self) -> bool {
         self.fields.iter().any(|f| f.lateness.is_some())
     }
 
     pub fn get_property(&self, name: &str) -> Option<&str> {
         self.properties.get(name).map(|p| p.value.as_str())
+    }
+
+    pub fn skip_unused_columns(&self) -> bool {
+        self.get_property("skip_unused_columns") == Some("true")
+    }
+
+    pub fn is_unused_column_omittable(field: &Field) -> bool {
+        field.unused && (field.columntype.nullable || field.default.is_some())
+    }
+
+    /// Return the input columns that must be read after removing unused columns
+    /// whose values can be supplied as NULL/defaults.
+    ///
+    /// A projection with no columns cannot preserve row count in SQL, so keep
+    /// one field when every declared column is otherwise skippable.
+    pub fn unused_column_projection(&self) -> Option<Vec<String>> {
+        let mut columns = self
+            .fields
+            .iter()
+            .filter(|field| !Self::is_unused_column_omittable(field))
+            .map(|field| field.name.name())
+            .collect::<Vec<_>>();
+
+        if columns.len() == self.fields.len() {
+            return None;
+        }
+
+        if columns.is_empty() {
+            if let Some(field) = self.fields.first() {
+                columns.push(field.name.name());
+            } else {
+                return None;
+            }
+        }
+
+        Some(columns)
+    }
+
+    pub fn missing_non_omittable_projection_columns(&self, columns: &[String]) -> Vec<String> {
+        let projected = columns
+            .iter()
+            .filter_map(|column| self.field_projection_name(column))
+            .collect::<BTreeSet<_>>();
+
+        self.fields
+            .iter()
+            .filter(|field| !Self::is_unused_column_omittable(field))
+            .map(|field| field.name.name())
+            .filter(|name| !projected.contains(name))
+            .collect()
     }
 
     pub fn with_primary_key<'a>(
@@ -1126,8 +1182,72 @@ impl ColumnType {
 
 #[cfg(test)]
 mod tests {
-    use super::{IntervalUnit, SqlIdentifier};
+    use super::{IntervalUnit, Relation, SqlIdentifier};
     use crate::program_schema::{ColumnType, Field, SQL_TYPE_VALUES, SqlType};
+
+    fn int_field(name: &str, nullable: bool, unused: bool) -> Field {
+        Field::new(SqlIdentifier::from(name), ColumnType::int(nullable)).with_unused(unused)
+    }
+
+    #[test]
+    fn unused_column_projection_skips_only_omittable_unused_fields() {
+        let mut unused_with_default = int_field("unused_with_default", false, true);
+        unused_with_default.default = Some("0".to_string());
+
+        let relation = Relation::new(
+            SqlIdentifier::from("t"),
+            vec![
+                int_field("used", false, false),
+                int_field("unused_nullable", true, true),
+                int_field("unused_required", false, true),
+                unused_with_default,
+            ],
+            false,
+            Default::default(),
+        );
+
+        assert_eq!(
+            relation.unused_column_projection(),
+            Some(vec!["used".to_string(), "unused_required".to_string()])
+        );
+    }
+
+    #[test]
+    fn unused_column_projection_keeps_one_column_when_all_columns_are_skippable() {
+        let relation = Relation::new(
+            SqlIdentifier::from("t"),
+            vec![
+                int_field("unused_a", true, true),
+                int_field("unused_b", true, true),
+            ],
+            false,
+            Default::default(),
+        );
+
+        assert_eq!(
+            relation.unused_column_projection(),
+            Some(vec!["unused_a".to_string()])
+        );
+    }
+
+    #[test]
+    fn missing_non_omittable_projection_columns_reports_required_columns() {
+        let relation = Relation::new(
+            SqlIdentifier::from("t"),
+            vec![
+                int_field("used", false, false),
+                int_field("unused_nullable", true, true),
+                int_field("unused_required", false, true),
+            ],
+            false,
+            Default::default(),
+        );
+
+        assert_eq!(
+            relation.missing_non_omittable_projection_columns(&["unused_nullable".to_string()]),
+            vec!["used".to_string(), "unused_required".to_string()]
+        );
+    }
 
     /// Every `SqlType` variant, with intervals expanded to one entry per unit.
     fn all_sql_types() -> Vec<SqlType> {
