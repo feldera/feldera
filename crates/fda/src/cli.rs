@@ -998,6 +998,12 @@ pub enum ProgramAction {
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
     },
+    /// Retrieve program compilation errors and warnings.
+    Errors {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1011,7 +1017,7 @@ pub enum ConnectorAction {
 
 #[cfg(test)]
 mod tests {
-    use crate::cli::Cli;
+    use crate::cli::{Cli, Commands, ProgramAction};
     use clap::Parser;
 
     /// [clap] will panic inside `try_parse` if it finds anything invalid in the
@@ -1020,5 +1026,18 @@ mod tests {
     #[test]
     fn basic_validation() {
         let _ = Cli::try_parse();
+    }
+
+    #[test]
+    fn parse_program_errors_command() {
+        let cli = Cli::try_parse_from(["fda", "program", "errors", "pipeline"])
+            .expect("program errors command should parse");
+
+        assert!(matches!(
+            cli.command,
+            Commands::Pipeline(crate::cli::PipelineAction::Program {
+                action: ProgramAction::Errors { name }
+            }) if name == "pipeline"
+        ));
     }
 }

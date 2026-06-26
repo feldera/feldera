@@ -16,6 +16,7 @@ use reqwest::StatusCode;
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use serde_json::json;
 use std::convert::Infallible;
+use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{ErrorKind, Read, Write, stdout};
 use std::path::PathBuf;
@@ -2428,6 +2429,87 @@ async fn connector(
     };
 }
 
+fn format_program_errors(program_error: &ProgramError) -> String {
+    let mut output = String::new();
+    let mut has_output = false;
+
+    if let Some(sql) = &program_error.sql_compilation {
+        has_output = true;
+        output.push_str(&format!("SQL compiler exit code: {}\n", sql.exit_code));
+
+        if sql.messages.is_empty() {
+            output.push_str("No SQL compiler messages.\n");
+        } else {
+            for message in &sql.messages {
+                let severity = if message.warning { "warning" } else { "error" };
+                let error_type = &message.error_type;
+                let message_text = &message.message;
+                let start_line = message.start_line_number;
+                let start_column = message.start_column;
+
+                writeln!(
+                    &mut output,
+                    "{severity}: {error_type}: {message_text} (line {start_line}, column {start_column})",
+                )
+                .expect("writing to String should not fail");
+
+                if let Some(snippet) = &message.snippet
+                    && !snippet.is_empty()
+                {
+                    output.push_str(snippet);
+                    if !snippet.ends_with('\n') {
+                        output.push('\n');
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(rust) = &program_error.rust_compilation {
+        if has_output {
+            output.push('\n');
+        }
+        has_output = true;
+        output.push_str(&format!("Rust compiler exit code: {}\n", rust.exit_code));
+
+        if !rust.stdout.is_empty() {
+            output.push_str("\nstdout:\n");
+            output.push_str(&rust.stdout);
+            if !rust.stdout.ends_with('\n') {
+                output.push('\n');
+            }
+        }
+        if !rust.stderr.is_empty() {
+            output.push_str("\nstderr:\n");
+            output.push_str(&rust.stderr);
+            if !rust.stderr.ends_with('\n') {
+                output.push('\n');
+            }
+        }
+        if rust.stdout.is_empty() && rust.stderr.is_empty() {
+            output.push_str("No Rust compiler stdout or stderr.\n");
+        }
+    }
+
+    if let Some(system_error) = &program_error.system_error {
+        if has_output {
+            output.push('\n');
+        }
+        has_output = true;
+        output.push_str("System error:\n");
+        output.push_str(system_error);
+        if !system_error.ends_with('\n') {
+            output.push('\n');
+        }
+    }
+
+    if !has_output {
+        output.push_str("No compilation errors or warnings.\n");
+    }
+
+    output
+}
+
 async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
     match action {
         ProgramAction::Get {
@@ -2583,6 +2665,44 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                         "{}",
                         serde_json::to_string_pretty(&response.into_inner())
                             .expect("Failed to serialize pipeline stats")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+        ProgramAction::Errors { name } => {
+            let response = client
+                .get_pipeline()
+                .pipeline_name(name)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to get program compilation errors",
+                    1,
+                ))
+                .unwrap();
+
+            let Some(program_error) = response.into_inner().program_error else {
+                eprintln!(
+                    "Pipeline response did not include program errors. {}",
+                    UPGRADE_NOTICE
+                );
+                std::process::exit(1);
+            };
+
+            match format {
+                OutputFormat::Text => {
+                    print!("{}", format_program_errors(&program_error));
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&program_error)
+                            .expect("Failed to serialize program errors")
                     );
                 }
                 _ => {
@@ -2842,7 +2962,10 @@ fn init_logging(default_level: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::make_client;
+    use super::{format_program_errors, make_client};
+    use feldera_rest_api::types::{
+        ProgramError, RustCompilationInfo, SqlCompilationInfo, SqlCompilerMessage,
+    };
     use std::io::Write;
 
     // A single self-signed PEM-encoded certificate used only as test data. It
@@ -2932,5 +3055,83 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
                 "unexpected empty-bundle error from valid PEM path: {msg}"
             );
         }
+    }
+
+    #[test]
+    fn format_program_errors_empty() {
+        let output = format_program_errors(&ProgramError {
+            sql_compilation: None,
+            rust_compilation: None,
+            system_error: None,
+        });
+
+        assert_eq!(output, "No compilation errors or warnings.\n");
+    }
+
+    #[test]
+    fn format_program_errors_sql_messages() {
+        let output = format_program_errors(&ProgramError {
+            sql_compilation: Some(SqlCompilationInfo {
+                exit_code: 1,
+                messages: vec![SqlCompilerMessage {
+                    start_line_number: 2,
+                    start_column: 4,
+                    end_line_number: 2,
+                    end_column: 8,
+                    warning: true,
+                    error_type: "PRIMARY KEY cannot be nullable".to_string(),
+                    message: "PRIMARY KEY column 'C' has type INTEGER, which is nullable"
+                        .to_string(),
+                    snippet: Some("    2|   c INT PRIMARY KEY\n         ^^^^^\n".to_string()),
+                }],
+            }),
+            rust_compilation: None,
+            system_error: None,
+        });
+
+        assert_eq!(
+            output,
+            concat!(
+                "SQL compiler exit code: 1\n",
+                "warning: PRIMARY KEY cannot be nullable: PRIMARY KEY column 'C' has type INTEGER, which is nullable (line 2, column 4)\n",
+                "    2|   c INT PRIMARY KEY\n",
+                "         ^^^^^\n",
+            )
+        );
+    }
+
+    #[test]
+    fn format_program_errors_rust_output() {
+        let output = format_program_errors(&ProgramError {
+            sql_compilation: None,
+            rust_compilation: Some(RustCompilationInfo {
+                exit_code: 101,
+                stdout: "checking pipeline\n".to_string(),
+                stderr: "error: failed to compile".to_string(),
+            }),
+            system_error: None,
+        });
+
+        assert_eq!(
+            output,
+            "Rust compiler exit code: 101\n\
+\n\
+stdout:\n\
+checking pipeline\n\
+\n\
+stderr:\n\
+error: failed to compile\n"
+        );
+    }
+
+    #[test]
+    fn format_program_errors_system_error() {
+        let output = format_program_errors(&ProgramError {
+            sql_compilation: None,
+            rust_compilation: None,
+            system_error: Some("compiler service unavailable".to_string()),
+        });
+
+        assert_eq!(output, "System error:\ncompiler service unavailable\n");
     }
 }
