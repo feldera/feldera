@@ -62,12 +62,12 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Download Test Binaries
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: dawidd6/action-download-artifact@ac66b43f0e6a346234dd65d4d0c8fbb31cb316e5
         with:
           name: feldera-test-binaries-${{ matrix.target }}
           path: build
-          run-id: ${{ github.event.inputs.run_id || github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run_id: ${{ github.event.inputs.run_id || github.run_id }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make binaries executable
@@ -142,12 +142,12 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Download Test Binaries
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: dawidd6/action-download-artifact@ac66b43f0e6a346234dd65d4d0c8fbb31cb316e5
         with:
           name: feldera-test-binaries-x86_64-unknown-linux-gnu
           path: build
-          run-id: ${{ github.event.inputs.run_id || github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run_id: ${{ github.event.inputs.run_id || github.run_id }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make binaries executable
