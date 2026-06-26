@@ -400,8 +400,7 @@ class TestPipeline(SharedTestPipeline):
 
     def test_adhoc_execute(self):
         self.pipeline.start()
-        self.pipeline.execute("INSERT INTO tbl VALUES (1), (2);")
-        self.pipeline.wait_for_idle()
+        self.pipeline.execute("INSERT INTO tbl VALUES (1), (2);", wait=True)
         resp = self.pipeline.query("SELECT * FROM tbl;")
         got = list(resp)
         expected = [{"id": 1}, {"id": 2}]

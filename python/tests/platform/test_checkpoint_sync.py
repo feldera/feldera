@@ -563,8 +563,7 @@ class TestCheckpointSync(SharedTestPipeline):
         total_initial = random.randint(10, 20)
         data_initial = [{"c0": i, "c1": str(i)} for i in range(1, total_initial)]
         self.pipeline.input_json("t0", data_initial)
-        self.pipeline.execute("INSERT INTO t0 VALUES (21, 'exists')")
-        self.pipeline.wait_for_completion()
+        self.pipeline.execute("INSERT INTO t0 VALUES (21, 'exists')", wait=True)
 
         got_before = list(self.pipeline.query("select * from v0"))
 
