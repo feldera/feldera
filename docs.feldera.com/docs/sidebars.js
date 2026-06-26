@@ -501,6 +501,7 @@ const operations = {
         'operations/metrics',
         'operations/json-logging',
         'operations/visualizing-profiles',
+        'operations/required-domains',
     ]
 };
 
