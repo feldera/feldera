@@ -10,6 +10,7 @@
   import type { PipelineManagerApi } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { partition } from '$lib/functions/common/array'
+  import { promisePool } from '$lib/functions/common/promise'
   import {
     parseTag,
     tagColorOf,
@@ -69,56 +70,58 @@
     setPipelineTags(pipelineName, next)
   }
 
-  // Renaming, recoloring, or deleting a tag can touch many pipelines at once.
-  // Update and patch them one batch at a time, awaiting each batch before the
-  // next, so a tag shared by hundreds of pipelines can't fire hundreds of requests
-  // at once. These patches use the bare service call rather than
-  // `api.patchPipeline` so we control how failures surface: within a batch the
-  // first couple of failures toast individually as they land, but the moment a
-  // batch reaches `BATCH_FAILURE_TOAST_LIMIT` failures we give up — let the
-  // current batch finish settling, then raise one toast covering its remaining
-  // failures plus every update in the batches we skip — so a widespread failure
-  // can't bury the user under one toast per pipeline.
-  const PATCH_BATCH_SIZE = 20
-  const BATCH_FAILURE_TOAST_LIMIT = 3
+  // Patch the pipelines through a fixed-size pool of concurrent requests, so a tag shared by
+  // hundreds of pipelines doesn't fire hundreds of requests at once. These
+  // patches use the bare service call rather than `api.patchPipeline` so we
+  // control how failures surface: the first couple of failures toast
+  // individually as they land, but the moment we reach `PATCH_FAILURE_TOAST_LIMIT`
+  // failures we give up - skip the remaining pipelines, let the in-flight requests
+  // settle, then raise one toast covering the remaining failures plus
+  // every skipped update.
+  const PATCH_CONCURRENCY = 16
+  const PATCH_FAILURE_TOAST_LIMIT = 3
   const setManyPipelineTags = async (
     tagName: string,
     updates: { name: string; tags: string[] }[]
   ) => {
     discardPendingListRefresh()
-    for (let i = 0; i < updates.length; i += PATCH_BATCH_SIZE) {
-      const batch = updates.slice(i, i + PATCH_BATCH_SIZE)
-      let failures = 0
-      let limitFailureBody = ''
-      await Promise.all(
-        batch.map(({ name, tags }) =>
-          patchPipeline(name, { tags: applyTagsLocally(name, tags) }).catch((error) => {
-            // Toast each failure as it lands, up to the limit. The error that
-            // reaches the limit is carried into the aggregate toast below; later
-            // failures are only counted.
-            failures += 1
-            if (failures < BATCH_FAILURE_TOAST_LIMIT) {
-              toastError('')(new Error(`Failed to update tag “${tagName}” on pipeline “${name}”`))
-            } else if (failures === BATCH_FAILURE_TOAST_LIMIT) {
-              limitFailureBody = error instanceof Error ? error.message : String(error)
-            }
-          })
+    let failures = 0
+    let limitFailureBody = ''
+    let stopped = false
+    const outcomes = await promisePool(updates, PATCH_CONCURRENCY, async ({ name, tags }) => {
+      // Once we've given up, skip without issuing a request. The pool still
+      // visits the remaining items cheaply; we count the skips below.
+      if (stopped) {
+        return 'skipped' as const
+      }
+      try {
+        await patchPipeline(name, { tags: applyTagsLocally(name, tags) })
+        return 'ok' as const
+      } catch (error) {
+        // Toast each failure as it lands, up to the limit. The error that
+        // reaches the limit is carried into the aggregate toast below; later
+        // failures are only counted.
+        failures += 1
+        if (failures < PATCH_FAILURE_TOAST_LIMIT) {
+          toastError('')(new Error(`Failed to update tag “${tagName}” on pipeline “${name}”`))
+        } else if (failures === PATCH_FAILURE_TOAST_LIMIT) {
+          limitFailureBody = error instanceof Error ? error.message : String(error)
+          stopped = true
+        }
+        return 'failed' as const
+      }
+    })
+    if (failures >= PATCH_FAILURE_TOAST_LIMIT) {
+      // The first `PATCH_FAILURE_TOAST_LIMIT - 1` failures toasted individually;
+      // fold the failures past that point together with every update we skipped
+      // into one count — annotated with the error that hit the limit.
+      const skipped = outcomes.filter((outcome) => outcome === 'skipped').length
+      const count = failures - (PATCH_FAILURE_TOAST_LIMIT - 1) + skipped
+      toastError('')(
+        new Error(
+          `Failed to update tag "${tagName}" on ${count} pipeline${count === 1 ? '' : 's'}:\n${limitFailureBody}`
         )
       )
-      if (failures >= BATCH_FAILURE_TOAST_LIMIT) {
-        // The first `BATCH_FAILURE_TOAST_LIMIT - 1` failures toasted individually;
-        // fold this batch's remaining failures together with every update in the
-        // batches we skip into one count — annotated with the error that hit the
-        // limit — and stop.
-        const count =
-          failures - (BATCH_FAILURE_TOAST_LIMIT - 1) + (updates.length - i - batch.length)
-        toastError('')(
-          new Error(
-            `Failed to update tag "${tagName}" on ${count} pipeline${count === 1 ? '' : 's'}:\n${limitFailureBody}`
-          )
-        )
-        return
-      }
     }
   }
   const toggleTag = (tag: string) => {
@@ -291,16 +294,19 @@
         <button
           class="px-1 text-sm text-surface-600-400 hover:text-surface-950-50"
           onclick={open}
-          aria-label="Show all tags">
+          aria-label="Show all tags"
+        >
           +{overflowCount}
         </button>
         <Tooltip placement="top" class="max-w-[240px] text-wrap"
-          >{tags.map(tagDisplayName).join(', ')}</Tooltip>
+          >{tags.map(tagDisplayName).join(', ')}</Tooltip
+        >
       {/if}
       {#if tags.length === 0}
         <button
           class="flex h-5 items-center gap-1 rounded border border-dashed border-surface-500 px-2 text-sm text-surface-800-200 hover:border-surface-950-50 hover:text-surface-950-50"
-          onclick={open}>
+          onclick={open}
+        >
           <span class="fd fd-plus text-[16px]"></span>
           Tag
         </button>
@@ -310,7 +316,8 @@
   {#snippet content()}
     <div
       transition:slide={{ duration: 100 }}
-      class="bg-white-dark absolute top-8 left-0 z-30 flex w-[304px] flex-col overflow-hidden rounded shadow-md">
+      class="bg-white-dark absolute top-8 left-0 z-30 flex w-[304px] flex-col overflow-hidden rounded shadow-md"
+    >
       <SlidingPanels
         current={page}
         width={280}
@@ -319,7 +326,8 @@
           { key: 'create', content: createPage },
           { key: 'edit', content: editPage },
           { key: 'delete', content: deletePage }
-        ]} />
+        ]}
+      />
     </div>
 
     {#snippet listPage()}
@@ -336,7 +344,8 @@
       </div>
       <button
         class="flex items-center gap-2 border-t border-surface-100-900 px-3 py-2 text-left text-sm hover:bg-surface-50-950"
-        onclick={() => openCreate(search)}>
+        onclick={() => openCreate(search)}
+      >
         <span class="fd fd-plus text-[16px]"></span>
         Create a new tag
       </button>
@@ -370,7 +379,8 @@
           class="btn-icon h-7 w-7"
           onclick={() => (page = 'edit')}
           aria-label="Back"
-          title="Back">
+          title="Back"
+        >
           <span class="fd fd-chevron-left text-[20px]"></span>
         </button>
         <span class="text-sm font-medium">Delete tag</span>
@@ -399,7 +409,8 @@
 {#snippet chip(tag: string, open: () => void)}
   <button
     class="flex h-5 items-center gap-1.5 rounded border border-surface-200-800 px-2 text-sm whitespace-nowrap hover:bg-surface-50-950"
-    onclick={open}>
+    onclick={open}
+  >
     <span class="h-2 w-2 rounded-full" style="background-color: {tagColorOf(tag)}"></span>
     {tagDisplayName(tag)}
   </button>
@@ -409,12 +420,14 @@
   <div class="group/row flex items-center hover:bg-surface-50-950">
     <button
       class="flex flex-1 items-center gap-2 py-1.5 pl-3 text-left text-sm"
-      onclick={() => toggleTag(tag)}>
+      onclick={() => toggleTag(tag)}
+    >
       <input
         class="pointer-events-none checkbox"
         type="checkbox"
         checked={selected}
-        tabindex="-1" />
+        tabindex="-1"
+      />
       <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background-color: {tagColorOf(tag)}"
       ></span>
       <span class="truncate">{tagDisplayName(tag)}</span>
@@ -423,7 +436,8 @@
       class="invisible flex h-7 w-7 shrink-0 items-center justify-center text-surface-600-400 group-hover/row:visible hover:text-surface-950-50"
       onclick={() => openEdit(tag)}
       aria-label="Edit tag"
-      title="Edit tag">
+      title="Edit tag"
+    >
       <span class="fd fd-settings text-[16px]"></span>
     </button>
   </div>
@@ -450,7 +464,8 @@
         class="ml-auto btn-icon h-7 w-7 text-surface-600-400 hover:text-error-500"
         onclick={opts.onDelete}
         aria-label="Delete tag"
-        title="Delete tag">
+        title="Delete tag"
+      >
         <span class="fd fd-trash-2 text-[18px]"></span>
       </button>
     {/if}
@@ -463,7 +478,8 @@
         class:border-error-500={!!opts.validationError}
         type="text"
         bind:value={newTagName}
-        placeholder="Tag name" />
+        placeholder="Tag name"
+      />
       {#if opts.validationError}
         <span class="text-xs font-normal text-error-500">{opts.validationError}</span>
       {/if}
@@ -483,7 +499,8 @@
             title={paletteColor.name}
             aria-label={paletteColor.name}
             aria-pressed={paletteColor.color === selectedColor}
-            onclick={() => (newTagColor = paletteColor.color)}>
+            onclick={() => (newTagColor = paletteColor.color)}
+          >
             {#if paletteColor.color !== selectedColor}
               <span class="bg-white-dark block h-4 w-4 rounded-full opacity-80"></span>
             {/if}
@@ -494,7 +511,8 @@
     <button
       class="btn h-9! w-full preset-filled-primary-500"
       disabled={opts.submitDisabled}
-      onclick={opts.onSubmit}>
+      onclick={opts.onSubmit}
+    >
       {opts.submitLabel}
     </button>
     {#if opts.lockedColor !== undefined}

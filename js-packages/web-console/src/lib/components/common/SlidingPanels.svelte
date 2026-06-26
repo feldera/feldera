@@ -64,7 +64,8 @@
       <div
         in:fly={{ x: direction * width, duration }}
         out:fly={{ x: -direction * width, duration }}
-        class="col-start-1 row-start-1 flex flex-col">
+        class="col-start-1 row-start-1 flex flex-col"
+      >
         {@render page.content()}
       </div>
     {/if}
