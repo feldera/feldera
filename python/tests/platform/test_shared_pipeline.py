@@ -352,14 +352,15 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.input_json("json_table", input_strings)
 
         self.pipeline.wait_for_idle()
-        assert expected_average == average_out.to_dict()
-        assert expected_variant == variant_out.to_dict()
-        assert expected_strings == json_out.to_dict()
+        # Outputs may arrive in any order, so compare ignoring order.
+        self.assertCountEqual(expected_average, average_out.to_dict())
+        self.assertCountEqual(expected_variant, variant_out.to_dict())
+        self.assertCountEqual(expected_strings, json_out.to_dict())
 
         # Feed VARIANT, read strongly typed columns. Since output columns have the same
         # shape as inputs, output and input should be identical.
         self.pipeline.input_json("variant_table", input_json)
-        assert expected_typed == typed_out.to_dict()
+        self.assertCountEqual(expected_typed, typed_out.to_dict())
         self.pipeline.stop(True)
 
     def test_issue2142(self):
