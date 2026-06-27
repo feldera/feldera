@@ -844,6 +844,84 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 std::process::exit(1);
             }
         }
+        PipelineAction::Copy {
+            source,
+            destination,
+        } => {
+            let source_pipeline = client
+                .get_pipeline()
+                .pipeline_name(source.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to get source pipeline",
+                    1,
+                ))
+                .unwrap()
+                .into_inner();
+
+            let Some(program_code) = source_pipeline.program_code else {
+                eprintln!(
+                    "Source pipeline response did not include program code. {}",
+                    UPGRADE_NOTICE
+                );
+                std::process::exit(1);
+            };
+            let Some(runtime_config) = source_pipeline.runtime_config else {
+                eprintln!(
+                    "Source pipeline response did not include runtime configuration. {}",
+                    UPGRADE_NOTICE
+                );
+                std::process::exit(1);
+            };
+            let Some(program_config) = source_pipeline.program_config else {
+                eprintln!(
+                    "Source pipeline response did not include compilation configuration. {}",
+                    UPGRADE_NOTICE
+                );
+                std::process::exit(1);
+            };
+
+            let response = client
+                .post_pipeline()
+                .body(PostPutPipeline {
+                    description: source_pipeline.description,
+                    tags: source_pipeline.tags,
+                    name: destination.clone(),
+                    program_code,
+                    udf_rust: source_pipeline.udf_rust,
+                    udf_toml: source_pipeline.udf_toml,
+                    program_config: Some(program_config),
+                    runtime_config: Some(runtime_config),
+                })
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to copy pipeline",
+                    1,
+                ))
+                .unwrap();
+
+            match format {
+                OutputFormat::Text => {
+                    println!("Pipeline copied successfully.");
+                    debug!("{:#?}", response);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize pipeline response")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
         PipelineAction::Start {
             name,
             recompile,
