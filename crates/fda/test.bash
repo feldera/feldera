@@ -79,7 +79,7 @@ CREATE VIEW example_count WITH ('connectors' = '[{ "name": "c", "transport": { "
 EOF
 
 fda create p1 program.sql
-fda program get p1 | fda create p2 -s
+fda copy p1 p2
 compare_output "fda program get p1" "fda program get p2"
 fda program set-config p1 --profile dev
 fda program set-config p1 --profile optimized

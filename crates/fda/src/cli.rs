@@ -1057,7 +1057,7 @@ pub enum ConnectorAction {
 
 #[cfg(test)]
 mod tests {
-    use crate::cli::{Cli, Commands, ProgramAction};
+    use crate::cli::{Cli, Commands, PipelineAction, ProgramAction};
     use clap::Parser;
 
     /// [clap] will panic inside `try_parse` if it finds anything invalid in the
@@ -1075,9 +1075,25 @@ mod tests {
 
         assert!(matches!(
             cli.command,
-            Commands::Pipeline(crate::cli::PipelineAction::Program {
+            Commands::Pipeline(PipelineAction::Program {
                 action: ProgramAction::Errors { name }
             }) if name == "pipeline"
         ));
+    }
+
+    #[test]
+    fn parse_pipeline_copy_command_and_alias() {
+        for command in ["copy", "clone"] {
+            let cli = Cli::try_parse_from(["fda", command, "source", "destination"])
+                .expect("copy command should parse");
+
+            assert!(matches!(
+                cli.command,
+                Commands::Pipeline(PipelineAction::Copy {
+                    source,
+                    destination
+                }) if source == "source" && destination == "destination"
+            ));
+        }
     }
 }
