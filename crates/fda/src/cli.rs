@@ -342,6 +342,15 @@ pub enum PipelineAction {
         )]
         stdin: bool,
     },
+    /// Copy a pipeline's program and configuration into a new pipeline.
+    #[clap(aliases = &["clone"])]
+    Copy {
+        /// The name of the pipeline to copy from.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        source: String,
+        /// The name of the new pipeline.
+        destination: String,
+    },
     /// Start a pipeline.
     ///
     /// If the pipeline is compiling it will wait for the compilation to finish.
