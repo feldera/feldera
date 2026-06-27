@@ -3352,6 +3352,15 @@ impl CircuitThread {
         // Install the new snapshot.
         let mut snapshots = self.controller.trace_snapshots.blocking_lock();
         snapshots.insert(self.step, Arc::new(snapshot));
+        // In multihost mode the coordinator leases the latest committed step
+        // without holding any lock, so the circuit can commit a few more
+        // transactions before the lease lands. Retaining several recent
+        // committed snapshots (rather than just 2) widens that window so the
+        // lock-free lease essentially never misses; the coordinator's bounded
+        // retry covers the rare remainder. Each retained snapshot is a
+        // read-only view of the output integral, so this is a modest memory
+        // cost bounded by `MULTIHOST_MAX_SNAPSHOTS`.
+        const MULTIHOST_MAX_SNAPSHOTS: usize = 8;
         let max_snapshots = if self
             .controller
             .coordination_request
@@ -3359,7 +3368,7 @@ impl CircuitThread {
             .unwrap()
             .is_some()
         {
-            2
+            MULTIHOST_MAX_SNAPSHOTS
         } else {
             1
         };
