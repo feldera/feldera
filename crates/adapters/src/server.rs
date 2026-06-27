@@ -2856,12 +2856,27 @@ async fn coordination_adhoc_lease(
 
     // Grab the snapshot for the step.
     let controller = state.controller()?;
-    let snapshot = controller.consistent_snapshot(step).await.ok_or_else(|| {
-        PipelineError::AdHocQueryError {
-            error: format!("snapshot for step {step} is not available"),
-            df: None,
+    let snapshot = match controller.consistent_snapshot(step).await {
+        Some(snapshot) => snapshot,
+        None => {
+            // INSTRUMENTATION: the coordinator leased `step` (its `current_step`),
+            // but our snapshot for it has already been evicted. Log which steps we
+            // still retain so we can see how far `current_step` lagged this host.
+            let retained = controller.available_snapshot_steps().await;
+            error!(
+                "adhoc lease: snapshot for step {step} is not available; \
+                 retained snapshot steps = {retained:?} (this host is at step \
+                 {:?})",
+                retained.last()
+            );
+            return Err(PipelineError::AdHocQueryError {
+                error: format!(
+                    "snapshot for step {step} is not available (retained steps: {retained:?})"
+                ),
+                df: None,
+            });
         }
-    })?;
+    };
 
     // Add the snapshot to the table of leases.
     state
