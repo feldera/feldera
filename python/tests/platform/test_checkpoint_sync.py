@@ -187,6 +187,40 @@ class TestCheckpointSync(SharedTestPipeline):
         )
         return chk_uuid, chk_steps
 
+    def _latest_checkpoint(self, processed=None, timeout_s=10.0):
+        """Return (chk_uuid, chk_steps) for the most recently created checkpoint.
+
+        If *processed* is given, polls until the latest checkpoint covers at
+        least that many records (summed across pods for multihost pipelines),
+        up to *timeout_s* seconds.  Use after checkpoint(wait=True).
+        """
+        chk_uuid = None
+        chk_steps = None
+
+        def checkpoint_visible() -> bool:
+            nonlocal chk_uuid, chk_steps
+            chks = self.pipeline.checkpoints()
+            if not chks:
+                return False
+            latest = max(chks, key=lambda c: c.steps)
+            if processed is not None:
+                step_total = sum(
+                    c.processed_records for c in chks if c.steps == latest.steps
+                )
+                if step_total < processed:
+                    return False
+            chk_uuid = latest.uuid
+            chk_steps = latest.steps
+            return True
+
+        wait_for_condition(
+            "latest checkpoint visible with sufficient processed records",
+            checkpoint_visible,
+            timeout_s=timeout_s,
+            poll_interval_s=0.5,
+        )
+        return chk_uuid, chk_steps
+
     def _checkpoint_steps(self, synced_uuid) -> Optional[int]:
         """Return the step count for *synced_uuid*, or None if not found."""
         return next(
@@ -381,11 +415,15 @@ class TestCheckpointSync(SharedTestPipeline):
     @enterprise_only
     def test_automated_checkpoint_sync1(self):
         # Manual checkpoint, automated sync.
-        self._configure_and_start(ft_interval=5, push_interval=10)
-        _, got_before = self._insert_data_and_wait()
+        ft_interval = 5
+        self._configure_and_start(ft_interval=ft_interval, push_interval=10)
+        processed, got_before = self._insert_data_and_wait()
         self.pipeline.checkpoint(wait=True)
         time.sleep(1)
-        self._wait_for_automated_sync()
+        chk_uuid, chk_steps = self._latest_checkpoint(
+            processed, timeout_s=2 * ft_interval
+        )
+        self._wait_for_automated_sync(chk_uuid, chk_steps)
 
         self._restart_from_checkpoint("latest")
 

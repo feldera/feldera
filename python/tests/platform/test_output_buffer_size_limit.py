@@ -104,8 +104,10 @@ CREATE INDEX v_idx ON v(id);
         # count past the cap.
         wait_for_condition(
             "completed-record count advances past the default buffer size cap",
-            lambda: (pipeline.stats().global_metrics.total_completed_records or 0)
-            >= _DEFAULT_MAX_OUTPUT_BUFFER_SIZE_RECORDS,
+            lambda: (
+                (pipeline.stats().global_metrics.total_completed_records or 0)
+                >= _DEFAULT_MAX_OUTPUT_BUFFER_SIZE_RECORDS
+            ),
             timeout_s=600.0,
             poll_interval_s=2.0,
         )
