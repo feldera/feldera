@@ -249,10 +249,10 @@ CREATE VIEW example_count AS ( SELECT COUNT(*) AS num_rows FROM example );" > pr
 fda create p1 program.sql
 ```
 
-Retrieve the program for `p1` and create a new pipeline `p2` from it:
+Copy pipeline `p1` to a new pipeline `p2`:
 
 ```bash
-fda program get p1 | fda create p2 -s
+fda copy p1 p2
 ```
 
 Enable storage for `p1`:
