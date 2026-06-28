@@ -35,7 +35,6 @@ use crate::server::metrics::{HistogramDiv, LabelStack, MetricsFormatter, Metrics
 use crate::server::{InitializationState, ServerState};
 use crate::transport::Step;
 use crate::transport::clock::now_endpoint_config;
-use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::util::{LongOperationWarning, run_on_thread_pool};
 use crate::{
     CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint, ParseError,
@@ -94,7 +93,9 @@ use feldera_types::coordination::{
 use feldera_types::format::json::JsonLines;
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::runtime_status::BootstrapPolicy;
-use feldera_types::secret_resolver::resolve_secret_references_in_connector_config;
+use feldera_types::secret_resolver::{
+    resolve_secret_references_in_connector_config, resolve_secret_references_via_json,
+};
 use feldera_types::suspend::{PermanentSuspendError, SuspendError, TemporarySuspendError};
 use feldera_types::time_series::SampleStatistics;
 use feldera_types::transaction::{StartTransactionResponse, TransactionId};
@@ -4854,10 +4855,7 @@ impl ControllerInit {
                     .filter(|(_, config)| {
                         // The clock input connector will be automatically recreated and initialized
                         // with the clock resolution from the pipeline config.
-                        !matches!(
-                            config.connector_config.transport,
-                            TransportConfig::ClockInput(_)
-                        )
+                        config.connector_config.transport.name() != TransportConfig::CLOCK
                     })
                     .collect()
             } else {
@@ -6277,12 +6275,23 @@ impl ControllerInner {
         endpoint_config: &InputEndpointConfig,
         resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
-        let endpoint = input_transport_config_to_endpoint(
-            &endpoint_config.connector_config.transport,
-            endpoint_name,
+        let transport_config = resolve_secret_references_via_json(
             &self.secrets_dir,
+            &endpoint_config.connector_config.transport,
         )
         .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
+        let factory = self
+            .catalog
+            .input_transport_registry()
+            .lock()
+            .unwrap()
+            .get(transport_config.name());
+        let endpoint = match factory {
+            Some(factory) => factory
+                .create(&transport_config)
+                .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?,
+            None => None,
+        };
 
         // If `endpoint` is `None`, it means that the endpoint config specifies an integrated
         // input connector.  Such endpoints are instantiated inside `add_input_endpoint`.
@@ -6409,17 +6418,19 @@ impl ControllerInner {
                     &resolved_connector_config.transport,
                     &resolved_connector_config.format,
                 ) {
-                    (TransportConfig::Datagen(_), None) => FormatConfig {
-                        name: Cow::from("json"),
-                        config: serde_json::to_value(JsonParserConfig {
-                            update_format: JsonUpdateFormat::Raw,
-                            json_flavor: JsonFlavor::Datagen,
-                            array: true,
-                            lines: JsonLines::Multiple,
-                        })
-                        .unwrap(),
-                    },
-                    (TransportConfig::Datagen(_), Some(_)) => {
+                    (transport, None) if transport.name() == TransportConfig::DATAGEN => {
+                        FormatConfig {
+                            name: Cow::from("json"),
+                            config: serde_json::to_value(JsonParserConfig {
+                                update_format: JsonUpdateFormat::Raw,
+                                json_flavor: JsonFlavor::Datagen,
+                                array: true,
+                                lines: JsonLines::Multiple,
+                            })
+                            .unwrap(),
+                        }
+                    }
+                    (transport, Some(_)) if transport.name() == TransportConfig::DATAGEN => {
                         return Err(ControllerError::input_format_not_supported(
                             endpoint_name,
                             "datagen endpoints do not support custom formats: remove the 'format' section from connector specification",
@@ -6597,13 +6608,27 @@ impl ControllerInner {
         endpoint_config: &OutputEndpointConfig,
         initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Result<EndpointId, ControllerError> {
-        let endpoint = output_transport_config_to_endpoint(
-            &endpoint_config.connector_config.transport,
-            endpoint_name,
-            self.fault_tolerance == Some(FtModel::ExactlyOnce),
+        let transport_config = resolve_secret_references_via_json(
             &self.secrets_dir,
+            &endpoint_config.connector_config.transport,
         )
         .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
+        let factory = self
+            .catalog
+            .output_transport_registry()
+            .lock()
+            .unwrap()
+            .get(transport_config.name());
+        let endpoint = match factory {
+            Some(factory) => factory
+                .create(
+                    &transport_config,
+                    endpoint_name,
+                    self.fault_tolerance == Some(FtModel::ExactlyOnce),
+                )
+                .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?,
+            None => None,
+        };
 
         // If `endpoint` is `None`, it means that the endpoint config specifies an integrated
         // output connector.  Such endpoints are instantiated inside `add_output_endpoint`.

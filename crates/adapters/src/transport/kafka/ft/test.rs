@@ -1540,24 +1540,28 @@ fn test_offset(
     let config = InputEndpointConfig::new(
         "test_input",
         ConnectorConfig::new(
-            TransportConfig::KafkaInput(KafkaInputConfig {
-                log_level: Some(KafkaLogLevel::Debug),
-                start_from: match start_from {
-                    KafkaStartFromConfig::Timestamp(_) => {
-                        sleep(Duration::from_secs(2));
-                        let timestamp =
-                            KafkaStartFromConfig::Timestamp(Timestamp::now().to_millis().unwrap());
-                        sleep(Duration::from_secs(2));
-                        if let Some(send_after) = send_after.take() {
-                            producer.send_to_topic(send_after, topic);
-                            producer.send_string("", topic);
+            TransportConfig::new(
+                TransportConfig::KAFKA_INPUT,
+                KafkaInputConfig {
+                    log_level: Some(KafkaLogLevel::Debug),
+                    start_from: match start_from {
+                        KafkaStartFromConfig::Timestamp(_) => {
+                            sleep(Duration::from_secs(2));
+                            let timestamp = KafkaStartFromConfig::Timestamp(
+                                Timestamp::now().to_millis().unwrap(),
+                            );
+                            sleep(Duration::from_secs(2));
+                            if let Some(send_after) = send_after.take() {
+                                producer.send_to_topic(send_after, topic);
+                                producer.send_string("", topic);
+                            }
+                            timestamp
                         }
-                        timestamp
-                    }
-                    other => other,
+                        other => other,
+                    },
+                    ..KafkaInputConfig::default(kafka_options, topic)
                 },
-                ..KafkaInputConfig::default(kafka_options, topic)
-            }),
+            ),
             Some(FormatConfig {
                 name: Cow::from("csv"),
                 config: json!({}),
@@ -1971,12 +1975,15 @@ fn test_input_partition(
     let config = InputEndpointConfig::new(
         "test_input",
         ConnectorConfig::new(
-            TransportConfig::KafkaInput(KafkaInputConfig {
-                log_level: Some(KafkaLogLevel::Debug),
-                start_from: start_from.clone(),
-                partitions: Some(partitions.clone()),
-                ..KafkaInputConfig::default(kafka_options, topic)
-            }),
+            TransportConfig::new(
+                TransportConfig::KAFKA_INPUT,
+                KafkaInputConfig {
+                    log_level: Some(KafkaLogLevel::Debug),
+                    start_from: start_from.clone(),
+                    partitions: Some(partitions.clone()),
+                    ..KafkaInputConfig::default(kafka_options, topic)
+                },
+            ),
             Some(FormatConfig {
                 name: Cow::from("csv"),
                 config: json!({}),

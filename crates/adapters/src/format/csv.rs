@@ -346,10 +346,7 @@ impl OutputFormat for CsvOutputFormat {
             )
         })?;
 
-        if matches!(
-            config.transport,
-            feldera_types::config::TransportConfig::RedisOutput(_)
-        ) {
+        if config.transport.name() == feldera_types::config::TransportConfig::REDIS_OUTPUT {
             return Err(ControllerError::invalid_encoder_configuration(
                 endpoint_name,
                 "'csv' format not yet supported with Redis connector",

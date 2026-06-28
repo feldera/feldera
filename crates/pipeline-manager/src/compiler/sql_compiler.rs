@@ -1279,10 +1279,7 @@ mod test {
             .unwrap()
             .connector_config
             .clone();
-        assert!(matches!(
-            connector_config.transport,
-            TransportConfig::Datagen(_)
-        ));
+        assert_eq!(connector_config.transport.name(), TransportConfig::DATAGEN);
 
         // Program schema only with properties: check properties
         let program_schema_properties_only: ProgramSchemaPropertiesOnly =

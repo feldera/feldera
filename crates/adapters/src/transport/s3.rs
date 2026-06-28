@@ -1038,12 +1038,9 @@ mod test {
     ) {
         let config: InputEndpointConfig = serde_json::from_str(config_str).unwrap();
         let transport_config = config.connector_config.transport.clone();
-        let transport_config: Arc<S3InputConfig> = match transport_config {
-            TransportConfig::S3Input(config) => Arc::new(config),
-            _ => {
-                panic!("Expected S3Input transport configuration");
-            }
-        };
+        assert_eq!(transport_config.name(), TransportConfig::S3_INPUT);
+        let transport_config: Arc<S3InputConfig> =
+            Arc::new(transport_config.deserialize_config().unwrap());
         let (consumer, parser, input_handle) = mock_parser_pipeline::<TestStruct, TestStruct>(
             &Relation::empty(),
             &config.connector_config.format.unwrap(),

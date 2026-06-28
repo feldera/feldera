@@ -697,6 +697,73 @@ impl ProgramInfo {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TransportDirection {
+    Input,
+    Output,
+}
+
+fn known_transport_direction(name: &str) -> Option<TransportDirection> {
+    match name {
+        TransportConfig::FILE_INPUT
+        | TransportConfig::NATS_INPUT
+        | TransportConfig::KAFKA_INPUT
+        | TransportConfig::PUB_SUB_INPUT
+        | TransportConfig::URL_INPUT
+        | TransportConfig::S3_INPUT
+        | TransportConfig::DELTA_TABLE_INPUT
+        | TransportConfig::POSTGRES_INPUT
+        | TransportConfig::POSTGRES_CDC_INPUT
+        | TransportConfig::ICEBERG_INPUT
+        | TransportConfig::DATAGEN
+        | TransportConfig::NEXMARK
+        | TransportConfig::HTTP_INPUT
+        | TransportConfig::ADHOC_INPUT
+        | TransportConfig::CLOCK
+        | TransportConfig::EMPTY_INPUT => Some(TransportDirection::Input),
+        TransportConfig::FILE_OUTPUT
+        | TransportConfig::KAFKA_OUTPUT
+        | TransportConfig::DELTA_TABLE_OUTPUT
+        | TransportConfig::DYNAMODB_OUTPUT
+        | TransportConfig::POSTGRES_OUTPUT
+        | TransportConfig::HTTP_OUTPUT
+        | TransportConfig::REDIS_OUTPUT
+        | TransportConfig::NULL_OUTPUT => Some(TransportDirection::Output),
+        _ => None,
+    }
+}
+
+fn sql_connector_transport_direction(name: &str) -> Option<TransportDirection> {
+    match name {
+        TransportConfig::FILE_INPUT
+        | TransportConfig::NATS_INPUT
+        | TransportConfig::KAFKA_INPUT
+        | TransportConfig::PUB_SUB_INPUT
+        | TransportConfig::URL_INPUT
+        | TransportConfig::S3_INPUT
+        | TransportConfig::DELTA_TABLE_INPUT
+        | TransportConfig::POSTGRES_INPUT
+        | TransportConfig::ICEBERG_INPUT
+        | TransportConfig::DATAGEN
+        | TransportConfig::NEXMARK
+        | TransportConfig::EMPTY_INPUT => Some(TransportDirection::Input),
+        TransportConfig::FILE_OUTPUT
+        | TransportConfig::KAFKA_OUTPUT
+        | TransportConfig::DELTA_TABLE_OUTPUT
+        | TransportConfig::DYNAMODB_OUTPUT
+        | TransportConfig::POSTGRES_OUTPUT
+        | TransportConfig::REDIS_OUTPUT
+        | TransportConfig::NULL_OUTPUT => Some(TransportDirection::Output),
+        _ => None,
+    }
+}
+
+fn rejects_sql_connector_transport(name: &str, expected_direction: TransportDirection) -> bool {
+    let sql_direction = sql_connector_transport_direction(name);
+    matches!(sql_direction, Some(direction) if direction != expected_direction)
+        || (known_transport_direction(name).is_some() && sql_direction.is_none())
+}
+
 /// Generates the program info using the program schema.
 /// The info includes the schema and the input/output connectors derived from it.
 pub fn generate_program_info(
@@ -719,26 +786,13 @@ pub fn generate_program_info(
             let origin_value = origin_value
                 .clone()
                 .expect("Origin value cannot be None if connectors is non-empty");
-            match connector.config.transport {
-                TransportConfig::FileInput(_)
-                | TransportConfig::NatsInput(_)
-                | TransportConfig::KafkaInput(_)
-                | TransportConfig::PubSubInput(_)
-                | TransportConfig::UrlInput(_)
-                | TransportConfig::S3Input(_)
-                | TransportConfig::DeltaTableInput(_)
-                | TransportConfig::PostgresInput(_)
-                | TransportConfig::IcebergInput(_)
-                | TransportConfig::Datagen(_)
-                | TransportConfig::Nexmark(_)
-                | TransportConfig::EmptyInput => {}
-                _ => {
-                    return Err(ConnectorGenerationError::ExpectedInputConnector {
-                        position: origin_value.value_position,
-                        relation: input_relation.name.sql_name(),
-                        connector_name: connector.name.unwrap_or("<unnamed>".to_string()),
-                    });
-                }
+            let transport_name = connector.config.transport.name();
+            if rejects_sql_connector_transport(transport_name, TransportDirection::Input) {
+                return Err(ConnectorGenerationError::ExpectedInputConnector {
+                    position: origin_value.value_position,
+                    relation: input_relation.name.sql_name(),
+                    connector_name: connector.name.unwrap_or("<unnamed>".to_string()),
+                });
             }
             input_connectors.push((
                 input_relation.name.sql_name(),
@@ -773,21 +827,13 @@ pub fn generate_program_info(
             let origin_value = origin_value
                 .clone()
                 .expect("Origin value cannot be None if connectors is non-empty");
-            match connector.config.transport {
-                TransportConfig::FileOutput(_)
-                | TransportConfig::PostgresOutput(_)
-                | TransportConfig::KafkaOutput(_)
-                | TransportConfig::DeltaTableOutput(_)
-                | TransportConfig::DynamoDBOutput(_)
-                | TransportConfig::RedisOutput(_)
-                | TransportConfig::NullOutput => {}
-                _ => {
-                    return Err(ConnectorGenerationError::ExpectedOutputConnector {
-                        position: origin_value.value_position,
-                        relation: output_relation.name.sql_name(),
-                        connector_name: connector.name.unwrap_or("<unnamed>".to_string()),
-                    });
-                }
+            let transport_name = connector.config.transport.name();
+            if rejects_sql_connector_transport(transport_name, TransportDirection::Output) {
+                return Err(ConnectorGenerationError::ExpectedOutputConnector {
+                    position: origin_value.value_position,
+                    relation: output_relation.name.sql_name(),
+                    connector_name: connector.name.unwrap_or("<unnamed>".to_string()),
+                });
             }
             output_connectors.push((
                 output_relation.name.sql_name(),
@@ -859,11 +905,17 @@ pub fn generate_pipeline_config(
 
 #[cfg(test)]
 mod tests {
-    use super::{determine_connector_endpoint_names, RuntimeSelector};
-    use crate::db::types::program::ConnectorGenerationError::RelationConnectorNameCollision;
+    use super::{
+        determine_connector_endpoint_names, generate_program_info, known_transport_direction,
+        sql_connector_transport_direction, RuntimeSelector,
+    };
+    use crate::db::types::program::ConnectorGenerationError::{
+        ExpectedInputConnector, ExpectedOutputConnector, RelationConnectorNameCollision,
+    };
     use feldera_types::config::{ConnectorConfig, TransportConfig};
     use feldera_types::program_schema::{PropertyValue, SourcePosition};
     use feldera_types::transport::datagen::DatagenInputConfig;
+    use serde_json::json;
 
     #[test]
     fn test_runtime_version_validation() {
@@ -895,7 +947,10 @@ mod tests {
         // Reuse the configuration as it is not used in the function
         let config = ConnectorConfig {
             send_snapshot: false,
-            transport: TransportConfig::Datagen(DatagenInputConfig::default()),
+            transport: TransportConfig::new(
+                TransportConfig::DATAGEN,
+                DatagenInputConfig::default(),
+            ),
             format: None,
             preprocessor: None,
             postprocessor: None,
@@ -985,5 +1040,196 @@ mod tests {
                 connector_name: "example".to_string(),
             }
         );
+    }
+
+    fn position() -> SourcePosition {
+        SourcePosition {
+            start_line_number: 1,
+            start_column: 2,
+            end_line_number: 3,
+            end_column: 4,
+        }
+    }
+
+    fn schema_with_connector(input: bool, transport_name: &str) -> serde_json::Value {
+        let property_value = PropertyValue {
+            value: json!([{
+                "name": "c1",
+                "transport": {
+                    "name": transport_name,
+                }
+            }])
+            .to_string(),
+            key_position: position(),
+            value_position: position(),
+        };
+        let relation = json!({
+            "name": "t1",
+            "case_sensitive": false,
+            "properties": {
+                "connectors": property_value,
+            }
+        });
+
+        if input {
+            json!({
+                "inputs": [relation],
+                "outputs": [],
+            })
+        } else {
+            json!({
+                "inputs": [],
+                "outputs": [relation],
+            })
+        }
+    }
+
+    fn builtin_transport_names() -> [&'static str; 24] {
+        [
+            TransportConfig::FILE_INPUT,
+            TransportConfig::FILE_OUTPUT,
+            TransportConfig::NATS_INPUT,
+            TransportConfig::KAFKA_INPUT,
+            TransportConfig::KAFKA_OUTPUT,
+            TransportConfig::PUB_SUB_INPUT,
+            TransportConfig::URL_INPUT,
+            TransportConfig::S3_INPUT,
+            TransportConfig::DELTA_TABLE_INPUT,
+            TransportConfig::DELTA_TABLE_OUTPUT,
+            TransportConfig::DYNAMODB_OUTPUT,
+            TransportConfig::REDIS_OUTPUT,
+            TransportConfig::ICEBERG_INPUT,
+            TransportConfig::POSTGRES_INPUT,
+            TransportConfig::POSTGRES_CDC_INPUT,
+            TransportConfig::POSTGRES_OUTPUT,
+            TransportConfig::DATAGEN,
+            TransportConfig::NEXMARK,
+            TransportConfig::HTTP_INPUT,
+            TransportConfig::HTTP_OUTPUT,
+            TransportConfig::ADHOC_INPUT,
+            TransportConfig::CLOCK,
+            TransportConfig::NULL_OUTPUT,
+            TransportConfig::EMPTY_INPUT,
+        ]
+    }
+
+    #[test]
+    fn builtin_transports_have_known_direction() {
+        for transport_name in builtin_transport_names() {
+            assert!(
+                known_transport_direction(transport_name).is_some(),
+                "{transport_name} should have a known transport direction"
+            );
+        }
+    }
+
+    #[test]
+    fn sql_transport_directions_match_known_directions() {
+        for transport_name in builtin_transport_names() {
+            let Some(sql_direction) = sql_connector_transport_direction(transport_name) else {
+                continue;
+            };
+            assert_eq!(
+                known_transport_direction(transport_name),
+                Some(sql_direction),
+                "{transport_name} should have matching SQL and known transport directions"
+            );
+        }
+    }
+
+    #[test]
+    fn generate_program_info_rejects_known_output_transport_on_input_relation() {
+        assert_eq!(
+            generate_program_info(
+                schema_with_connector(true, TransportConfig::NULL_OUTPUT),
+                String::new(),
+                String::new(),
+                None,
+            )
+            .unwrap_err(),
+            ExpectedInputConnector {
+                position: position(),
+                relation: "t1".to_string(),
+                connector_name: "c1".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn generate_program_info_rejects_runtime_only_input_transports() {
+        for transport_name in [
+            TransportConfig::HTTP_INPUT,
+            TransportConfig::ADHOC_INPUT,
+            TransportConfig::CLOCK,
+        ] {
+            assert_eq!(
+                generate_program_info(
+                    schema_with_connector(true, transport_name),
+                    String::new(),
+                    String::new(),
+                    None,
+                )
+                .unwrap_err(),
+                ExpectedInputConnector {
+                    position: position(),
+                    relation: "t1".to_string(),
+                    connector_name: "c1".to_string(),
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn generate_program_info_rejects_known_input_transport_on_output_relation() {
+        assert_eq!(
+            generate_program_info(
+                schema_with_connector(false, TransportConfig::DATAGEN),
+                String::new(),
+                String::new(),
+                None,
+            )
+            .unwrap_err(),
+            ExpectedOutputConnector {
+                position: position(),
+                relation: "t1".to_string(),
+                connector_name: "c1".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn generate_program_info_rejects_runtime_only_output_transports() {
+        assert_eq!(
+            generate_program_info(
+                schema_with_connector(false, TransportConfig::HTTP_OUTPUT),
+                String::new(),
+                String::new(),
+                None,
+            )
+            .unwrap_err(),
+            ExpectedOutputConnector {
+                position: position(),
+                relation: "t1".to_string(),
+                connector_name: "c1".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn generate_program_info_allows_unknown_dynamic_transport_names() {
+        assert!(generate_program_info(
+            schema_with_connector(true, "custom_input"),
+            String::new(),
+            String::new(),
+            None,
+        )
+        .is_ok());
+        assert!(generate_program_info(
+            schema_with_connector(false, "custom_output"),
+            String::new(),
+            String::new(),
+            None,
+        )
+        .is_ok());
     }
 }

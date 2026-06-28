@@ -4,6 +4,7 @@ use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint};
 use datafusion::execution::runtime_env::RuntimeEnv;
 use feldera_types::config::{ConnectorConfig, PipelineConfig, TransportConfig};
 use feldera_types::program_schema::Relation;
+use serde::de::DeserializeOwned;
 use std::sync::{Arc, Weak};
 
 #[cfg(feature = "with-deltalake")]
@@ -27,6 +28,18 @@ pub trait IntegratedOutputEndpoint: OutputEndpoint + Encoder {
     fn as_endpoint(&mut self) -> &mut dyn OutputEndpoint;
 }
 
+fn parse_transport_config<T>(
+    endpoint_name: &str,
+    transport: &TransportConfig,
+) -> Result<T, ControllerError>
+where
+    T: DeserializeOwned,
+{
+    transport.deserialize_config().map_err(|e| {
+        ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
+    })
+}
+
 impl<EP> IntegratedOutputEndpoint for EP
 where
     EP: OutputEndpoint + Encoder + 'static,
@@ -42,6 +55,8 @@ where
 
 /// Create an instance of an integrated output endpoint given its config
 /// and output relation schema.
+/// Integrated connectors stay outside the transport registry because they
+/// need schema and controller lifecycle state when they are constructed.
 #[allow(unused, clippy::too_many_arguments)]
 pub fn create_integrated_output_endpoint(
     endpoint_id: EndpointId,
@@ -53,41 +68,41 @@ pub fn create_integrated_output_endpoint(
     continue_previous_state: bool,
     is_index: bool,
 ) -> Result<Box<dyn IntegratedOutputEndpoint>, ControllerError> {
-    let ep: Box<dyn IntegratedOutputEndpoint> = match &connector_config.transport {
+    let ep: Box<dyn IntegratedOutputEndpoint> = match connector_config.transport.name() {
         #[cfg(feature = "with-deltalake")]
-        TransportConfig::DeltaTableOutput(config) => Box::new(delta_table::DeltaTableWriter::new(
+        TransportConfig::DELTA_TABLE_OUTPUT => Box::new(delta_table::DeltaTableWriter::new(
             endpoint_id,
             endpoint_name,
-            config,
+            &parse_transport_config(endpoint_name, &connector_config.transport)?,
             key_schema,
             schema,
             controller,
             continue_previous_state,
             is_index,
         )?),
-        TransportConfig::PostgresOutput(config) => Box::new(PostgresOutputEndpoint::new(
+        TransportConfig::POSTGRES_OUTPUT => Box::new(PostgresOutputEndpoint::new(
             endpoint_id,
             endpoint_name,
-            config,
+            &parse_transport_config(endpoint_name, &connector_config.transport)?,
             key_schema,
             schema,
             controller,
             is_index,
         )?),
         #[cfg(feature = "with-dynamodb")]
-        TransportConfig::DynamoDBOutput(config) => Box::new(DynamoDBOutputEndpoint::new(
+        TransportConfig::DYNAMODB_OUTPUT => Box::new(DynamoDBOutputEndpoint::new(
             endpoint_id,
             endpoint_name,
-            config,
+            &parse_transport_config(endpoint_name, &connector_config.transport)?,
             key_schema,
             schema,
             controller,
             is_index,
         )?),
-        transport => {
+        transport_name => {
             return Err(ControllerError::unknown_output_transport(
                 endpoint_name,
-                &transport.name(),
+                transport_name,
             ));
         }
     };
@@ -113,40 +128,38 @@ pub fn create_integrated_input_endpoint(
     runtime_env: Arc<RuntimeEnv>,
     consumer: Box<dyn InputConsumer>,
 ) -> Result<Box<dyn IntegratedInputEndpoint>, ControllerError> {
-    let ep: Box<dyn IntegratedInputEndpoint> = match &config.transport {
+    let ep: Box<dyn IntegratedInputEndpoint> = match config.transport.name() {
         #[cfg(feature = "with-deltalake")]
-        TransportConfig::DeltaTableInput(config) => {
-            Box::new(delta_table::DeltaTableInputEndpoint::new(
-                endpoint_name,
-                config,
-                pipeline_config,
-                runtime_env,
-                consumer,
-            ))
-        }
-        #[cfg(feature = "with-iceberg")]
-        TransportConfig::IcebergInput(config) => {
-            Box::new(feldera_iceberg::IcebergInputEndpoint::new(
-                endpoint_name,
-                config,
-                pipeline_config,
-                runtime_env,
-                consumer,
-            ))
-        }
-        TransportConfig::PostgresInput(config) => {
-            Box::new(PostgresInputEndpoint::new(endpoint_name, config, consumer))
-        }
-        #[cfg(feature = "with-postgres-cdc")]
-        TransportConfig::PostgresCdcInput(config) => Box::new(PostgresCdcInputEndpoint::new(
+        TransportConfig::DELTA_TABLE_INPUT => Box::new(delta_table::DeltaTableInputEndpoint::new(
             endpoint_name,
-            config,
+            &parse_transport_config(endpoint_name, &config.transport)?,
+            pipeline_config,
+            runtime_env,
             consumer,
         )),
-        transport => {
+        #[cfg(feature = "with-iceberg")]
+        TransportConfig::ICEBERG_INPUT => Box::new(feldera_iceberg::IcebergInputEndpoint::new(
+            endpoint_name,
+            &parse_transport_config(endpoint_name, &config.transport)?,
+            pipeline_config,
+            runtime_env,
+            consumer,
+        )),
+        TransportConfig::POSTGRES_INPUT => Box::new(PostgresInputEndpoint::new(
+            endpoint_name,
+            &parse_transport_config(endpoint_name, &config.transport)?,
+            consumer,
+        )),
+        #[cfg(feature = "with-postgres-cdc")]
+        TransportConfig::POSTGRES_CDC_INPUT => Box::new(PostgresCdcInputEndpoint::new(
+            endpoint_name,
+            &parse_transport_config(endpoint_name, &config.transport)?,
+            consumer,
+        )),
+        transport_name => {
             return Err(ControllerError::unknown_input_transport(
                 endpoint_name,
-                &transport.name(),
+                transport_name,
             ));
         }
     };
