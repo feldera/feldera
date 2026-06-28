@@ -23,6 +23,10 @@ RUN apt-get update --fix-missing && apt-get install -y \
     golang-go \
     # rdkafka dependency needs libsasl2-dev and a CXX compiler
     libsasl2-dev libzstd-dev zlib1g-dev build-essential \
+    # zstd CLI: @actions/cache (runs-on/cache) auto-uses it for cache
+    # compression when on PATH, else falls back to slow gzip. Big win for the
+    # multi-GB target/ caches in test-java.yml.
+    zstd \
     # bindgen needs this (at least the dec crate uses bindgen)
     libclang-dev \
     # To download tools
@@ -152,9 +156,9 @@ RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86
 
 # Install sccache
 RUN  arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86_64/g"`; \
-    cd /home/ubuntu && curl -LO https://github.com/mozilla/sccache/releases/download/v0.10.0/sccache-v0.10.0-$arch-unknown-linux-musl.tar.gz \
-    && tar zxvf sccache-v0.10.0-$arch-unknown-linux-musl.tar.gz \
-    && cp sccache-v0.10.0-$arch-unknown-linux-musl/sccache /home/ubuntu/.cargo/bin \
+    cd /home/ubuntu && curl -LO https://github.com/mozilla/sccache/releases/download/v0.15.0/sccache-v0.15.0-$arch-unknown-linux-musl.tar.gz \
+    && tar zxvf sccache-v0.15.0-$arch-unknown-linux-musl.tar.gz \
+    && cp sccache-v0.15.0-$arch-unknown-linux-musl/sccache /home/ubuntu/.cargo/bin \
     && chmod +x /home/ubuntu/.cargo/bin/sccache
 
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sections=zlib"
