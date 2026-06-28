@@ -2115,6 +2115,19 @@ impl Controller {
         self.inner.trace_snapshots.lock().await.get(&step).cloned()
     }
 
+    /// Steps for which an ad-hoc-query snapshot is currently retained, in
+    /// ascending order. Used for diagnostics when a requested step's snapshot
+    /// has already been evicted.
+    pub async fn available_snapshot_steps(&self) -> Vec<Step> {
+        self.inner
+            .trace_snapshots
+            .lock()
+            .await
+            .keys()
+            .copied()
+            .collect()
+    }
+
     pub async fn latest_consistent_snapshot(&self) -> Option<ConsistentSnapshot> {
         self.inner
             .trace_snapshots
