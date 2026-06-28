@@ -111,6 +111,9 @@ public final class MultiCratesWriter extends RustWriter {
         if (!options.ioOptions.runtimePath.isEmpty())
             relativePath = options.ioOptions.runtimePath;
         deps = deps.replace("$ROOT", relativePath);
+        // The upstream fix also drops the adapters default features for test
+        // crates, gated on an ioOptions.testing flag this branch predates;
+        // that part is a build-time optimization and is not backported.
         String enterpriseFeatures = options.ioOptions.enterprise ?
                 ", features = [\"feldera-enterprise\"] " : "";
         deps = deps.replace("$FEATURES", enterpriseFeatures);

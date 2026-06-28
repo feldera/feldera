@@ -12,6 +12,7 @@ lcov.info
 # already existing elements were commented out
 
 **/target
+**/target-check
 **/build
 #Cargo.lock
 
