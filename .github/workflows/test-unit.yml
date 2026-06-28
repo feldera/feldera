@@ -6,6 +6,9 @@ on:
 
 env:
   RUST_BACKTRACE: 1
+  # Cap libtest parallelism in every Rust test binary at the runner core
+  # budget. Overridable via the CI_RUNNER_CORES repo variable.
+  RUST_TEST_THREADS: ${{ vars.CI_RUNNER_CORES || 20 }}
 
 permissions:
   actions: read

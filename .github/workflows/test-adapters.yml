@@ -94,7 +94,10 @@ jobs:
         shell: bash
         env:
           RUST_BACKTRACE: 1
-          RUST_TEST_THREADS: 16
+          # Cap libtest parallelism at the runner core budget. Adapter tests
+          # share the pod with postgres/redpanda/redis sidecars; if those start
+          # starving we can lower CI_RUNNER_CORES or switch this to its own var.
+          RUST_TEST_THREADS: ${{ vars.CI_RUNNER_CORES || 20 }}
           REDIS_URL: redis://localhost:6379/0
           DYNAMODB_ENDPOINT: http://localhost:8000
           POSTGRES_URL: postgres://postgres:password@localhost:5432
