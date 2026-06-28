@@ -382,10 +382,16 @@ class TestCheckpointSync(SharedTestPipeline):
     def test_automated_checkpoint_sync1(self):
         # Manual checkpoint, automated sync.
         self._configure_and_start(ft_interval=5, push_interval=10)
-        _, got_before = self._insert_data_and_wait()
+        processed, got_before = self._insert_data_and_wait()
         self.pipeline.checkpoint(wait=True)
+        # Wait for the automated sync to upload a checkpoint that covers the data
+        # we just inserted, before restarting. Waiting for *any* sync is not
+        # enough: "latest" can otherwise resolve to an earlier, pre-data synced
+        # checkpoint (especially in multihost, where per-pod sync timing varies),
+        # and the restored pipeline would come up empty.
+        chk_uuid, chk_steps = self._wait_for_automated_checkpoint(processed)
         time.sleep(1)
-        self._wait_for_automated_sync()
+        self._wait_for_automated_sync(chk_uuid, chk_steps)
 
         self._restart_from_checkpoint("latest")
 
