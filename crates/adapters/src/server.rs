@@ -1791,7 +1791,7 @@ async fn metadata(state: WebData<ServerState>) -> impl Responder {
 
 #[get("/heap_profile")]
 async fn heap_profile() -> impl Responder {
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", feature = "with-heap-profiling"))]
     {
         let mut prof_ctl = jemalloc_pprof::PROF_CTL.as_ref().unwrap().lock().await;
         if !prof_ctl.activated() {
@@ -1809,10 +1809,10 @@ async fn heap_profile() -> impl Responder {
             }),
         }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(all(target_os = "linux", feature = "with-heap-profiling")))]
     {
         Err::<HttpResponse, PipelineError>(PipelineError::HeapProfilerError {
-            error: "heap profiling is only supported on Linux".to_string(),
+            error: "heap profiling is not available in this build".to_string(),
         })
     }
 }

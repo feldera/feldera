@@ -26,6 +26,7 @@ default = [
     "with-nats",
     "with-postgres-cdc",
     "with-dynamodb",
+    "with-heap-profiling",
 ]
 with-kafka = ["rdkafka"]
 # `parquet/async` + `parquet/object_store` serve only the deletion-vector
@@ -68,6 +69,9 @@ iceberg-tests-rest = []
 fips = ["rustls/fips"]
 bench-mode = []
 with-postgres-cdc = ["etl", "etl-config", "etl-postgres"]
+# jemalloc heap-profiling endpoint (/heap_profile). Linux-only dep; on other
+# targets the feature is a no-op.
+with-heap-profiling = ["dep:jemalloc_pprof"]
 
 [dependencies]
 feldera-types = { workspace = true }
@@ -228,7 +232,12 @@ etl-postgres = { workspace = true, optional = true }
 ignored = ["num-traits"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
-jemalloc_pprof = { workspace = true, features = ["symbolize"] }
+# Optional so the SQL test fixture (sql-to-dbsp-compiler/temp), which builds
+# adapters with default-features = false, drops the jemalloc/tikv-jemalloc-sys
+# C-build subtree. That subtree has a non-deterministic build fingerprint that
+# made cargo recompile it on every test invocation. Production pipelines build
+# adapters with default features, so they keep heap profiling.
+jemalloc_pprof = { workspace = true, features = ["symbolize"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
