@@ -508,7 +508,14 @@ public class Utilities {
         if (quiet)
             args.add("--quiet");
         addExtraArgs(args, packages);
-        runProcess(directory, args.toArray(new String[0]));
+        // 'cargo check' and 'cargo test' carry different per-profile fingerprints.
+        // Sharing one target dir makes every switch between a checking test and a
+        // running test re-dirty the dependency graph, so the build never settles.
+        // Give check its own target dir to keep the two profiles from colliding.
+        File checkTarget = new File(new File(directory).getCanonicalFile().getParentFile(), "target-check");
+        Map<String, String> env = new HashMap<>();
+        env.put("CARGO_TARGET_DIR", checkTarget.getPath());
+        runProcess(directory, env, args.toArray(new String[0]));
     }
 
     public static <T> T last(List<T> data) {
