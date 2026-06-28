@@ -36,6 +36,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -78,7 +79,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE FUNCTION g(x int NOT NULL) RETURNS ROW(a INT, b INT) NOT NULL;
                 CREATE VIEW V AS SELECT f(X(1)), g(2).a;""");
 
-        File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
+        File udf = Paths.get(RUST_DIRECTORY, DBSPCompiler.UDF_FILE_NAME).toFile();
         PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
         script.println("""
                 use crate::{Tup1, Tup2};
@@ -101,6 +102,7 @@ public class MetadataTests extends BaseSQLTests {
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
         BaseSQLTests.compileAndTestRust(false);
+        cleanupUdf();
     }
 
     @Test
@@ -675,6 +677,13 @@ public class MetadataTests extends BaseSQLTests {
         BaseSQLTests.compileAndTestRust(true);
     }
 
+    void cleanupUdf() throws IOException {
+        Files.newOutputStream(Paths.get(RUST_DIRECTORY, DBSPCompiler.UDF_FILE_NAME),
+                StandardOpenOption.WRITE,
+                StandardOpenOption.TRUNCATE_EXISTING).close();
+        createEmptyStubs();
+    }
+
     @Test
     public void testUDFTypeError() throws IOException, SQLException {
         File file = createInputScript("""
@@ -694,7 +703,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE TABLE T(x TINYINT);
                 CREATE VIEW V AS SELECT I8_AVG(x) FROM T;""");
 
-        File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
+        File udf = Paths.get(RUST_DIRECTORY, DBSPCompiler.UDF_FILE_NAME).toFile();
         PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
         script.println("""
                 use feldera_sqllib::*;
@@ -715,10 +724,7 @@ public class MetadataTests extends BaseSQLTests {
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
         BaseSQLTests.compileAndTestRust(false);
-
-        // Truncate file to 0 bytes
-        FileWriter writer = new FileWriter(udf);
-        writer.close();
+        cleanupUdf();
     }
 
     @Test
@@ -741,7 +747,7 @@ public class MetadataTests extends BaseSQLTests {
                 FROM A
                 GROUP BY id, a, b""");
 
-        File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
+        File udf = Paths.get(RUST_DIRECTORY, DBSPCompiler.UDF_FILE_NAME).toFile();
         PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
         script.println("""
                 use feldera_sqllib::*;
@@ -761,10 +767,7 @@ public class MetadataTests extends BaseSQLTests {
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
         BaseSQLTests.compileAndTestRust(false);
-
-        // Truncate file to 0 bytes
-        FileWriter writer = new FileWriter(udf);
-        writer.close();
+        cleanupUdf();
     }
 
 
@@ -791,7 +794,7 @@ public class MetadataTests extends BaseSQLTests {
             p.write(cargoContents);
             p.close();
 
-            File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
+            File udf = Paths.get(RUST_DIRECTORY, DBSPCompiler.UDF_FILE_NAME).toFile();
             PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
             script.println("""
                     use i256::I256;
@@ -918,11 +921,9 @@ public class MetadataTests extends BaseSQLTests {
             if (messages.errorCount() > 0)
                 throw new RuntimeException(messages.toString());
             BaseSQLTests.compileAndTestRust(false);
-            // Truncate udf file to 0 bytes
-            FileWriter writer = new FileWriter(udf);
-            writer.close();
         } finally {
             // Restore cargo.toml
+            cleanupUdf();
             Files.copy(cargoBackup, cargo, StandardCopyOption.REPLACE_EXISTING);
             Utilities.deleteFile(cargoBackup.toFile(), true);
         }
@@ -949,7 +950,7 @@ public class MetadataTests extends BaseSQLTests {
         // Save a copy of cargo.toml
         Path cargo = Paths.get(RUST_DIRECTORY, "..", "Cargo.toml");
         Path cargoBackup = Paths.get(RUST_DIRECTORY, "..", "Cargo.toml.bak");
-        File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
+        File udf = Paths.get(RUST_DIRECTORY, DBSPCompiler.UDF_FILE_NAME).toFile();
         try {
             Files.copy(cargo, cargoBackup, StandardCopyOption.REPLACE_EXISTING);
             String cargoContents = Utilities.readFile(cargo);
@@ -1002,11 +1003,9 @@ public class MetadataTests extends BaseSQLTests {
             if (messages.errorCount() > 0)
                 throw new RuntimeException(messages.toString());
             BaseSQLTests.compileAndTestRust(false);
-            // Truncate udf file to 0 bytes
-            FileWriter writer = new FileWriter(udf);
-            writer.close();
         } finally {
             // Restore cargo.toml
+            cleanupUdf();
             Files.copy(cargoBackup, cargo, StandardCopyOption.REPLACE_EXISTING);
             Utilities.deleteFile(cargoBackup.toFile(), true);
         }
@@ -1095,7 +1094,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE FUNCTION "EMPTY"() RETURNS VARCHAR;
                 CREATE VIEW V1 AS SELECT "EMPTY"();""");
 
-        File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
+        File udf = Paths.get(RUST_DIRECTORY, DBSPCompiler.UDF_FILE_NAME).toFile();
         PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
         script.println("""
                 use feldera_sqllib::*;
@@ -1139,10 +1138,7 @@ public class MetadataTests extends BaseSQLTests {
                 }
                 """, String.join(System.lineSeparator(), str));
         Utilities.deleteFile(protos.toFile(), true);
-
-        // Truncate file to 0 bytes
-        FileWriter writer = new FileWriter(udf);
-        writer.close();
+        cleanupUdf();
     }
 
     @Test
