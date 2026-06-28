@@ -1122,7 +1122,8 @@ impl LocalRunnerConfig {
     /// port file do not collide with the other hosts sharing this container.
     /// This mirrors how each Kubernetes pod has its own volume.
     pub(crate) fn host_dir(&self, pipeline_id: PipelineId, ordinal: usize) -> PathBuf {
-        self.pipeline_dir(pipeline_id).join(format!("host-{ordinal}"))
+        self.pipeline_dir(pipeline_id)
+            .join(format!("host-{ordinal}"))
     }
 
     /// Working directory for the coordinator process of a multihost pipeline.

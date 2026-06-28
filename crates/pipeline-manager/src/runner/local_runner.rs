@@ -172,12 +172,17 @@ async fn supervise_member(
         let mut child = match spec.command().spawn() {
             Ok(child) => child,
             Err(e) => {
-                record_multihost_error(&health, format!("{}: unable to spawn process: {e}", spec.name));
+                record_multihost_error(
+                    &health,
+                    format!("{}: unable to spawn process: {e}", spec.name),
+                );
                 return;
             }
         };
-        let mut stdout = BufReader::new(child.stdout.take().expect("stdout could not be taken")).lines();
-        let mut stderr = BufReader::new(child.stderr.take().expect("stderr could not be taken")).lines();
+        let mut stdout =
+            BufReader::new(child.stdout.take().expect("stdout could not be taken")).lines();
+        let mut stderr =
+            BufReader::new(child.stderr.take().expect("stderr could not be taken")).lines();
         let mut stdout_done = false;
         let mut stderr_done = false;
 
@@ -225,7 +230,10 @@ async fn supervise_member(
                     return;
                 }
                 Some(code) if code == COORDINATED_RESTART_EXIT_CODE => {
-                    let message = format!("{} requested a coordinated restart (exit {code}); restarting it", spec.name);
+                    let message = format!(
+                        "{} requested a coordinated restart (exit {code}); restarting it",
+                        spec.name
+                    );
                     info!("{message}");
                     logs_sender
                         .send(LogMessage::new_from_control_plane(
@@ -243,13 +251,19 @@ async fn supervise_member(
                 other => {
                     record_multihost_error(
                         &health,
-                        format!("{} exited unexpectedly with {status} (code {other:?})", spec.name),
+                        format!(
+                            "{} exited unexpectedly with {status} (code {other:?})",
+                            spec.name
+                        ),
                     );
                     return;
                 }
             },
             Err(e) => {
-                record_multihost_error(&health, format!("{}: failed to await process: {e}", spec.name));
+                record_multihost_error(
+                    &health,
+                    format!("{}: failed to await process: {e}", spec.name),
+                );
                 return;
             }
         }
@@ -743,19 +757,25 @@ impl LocalRunner {
         // Retrieve the program info and merge it into the deployment config
         // (shared by every member process).
         let program_info_file_path = self.config.program_info_file_path(self.pipeline_id);
-        self.retrieve_pipeline_file(program_info_url, "program info", &program_info_file_path, 0o660)
-            .await?;
-        let program_info_contents = fs::read_to_string(&program_info_file_path)
-            .await
-            .map_err(|e| {
-                ManagerError::from(CommonError::io_error(
-                    format!(
-                        "read program info file '{}'",
-                        program_info_file_path.display()
-                    ),
-                    e,
-                ))
-            })?;
+        self.retrieve_pipeline_file(
+            program_info_url,
+            "program info",
+            &program_info_file_path,
+            0o660,
+        )
+        .await?;
+        let program_info_contents =
+            fs::read_to_string(&program_info_file_path)
+                .await
+                .map_err(|e| {
+                    ManagerError::from(CommonError::io_error(
+                        format!(
+                            "read program info file '{}'",
+                            program_info_file_path.display()
+                        ),
+                        e,
+                    ))
+                })?;
         let program_info: PipelineConfigProgramInfo = serde_json::from_str(&program_info_contents)
             .map_err(|e| {
                 ManagerError::from(RunnerError::RunnerProvisionError {
@@ -823,14 +843,19 @@ impl LocalRunner {
             ];
             if let Some(bootstrap_config) = bootstrap_config {
                 args.push("--bootstrap-policy".into());
-                args.push(bootstrap_policy_to_string(bootstrap_config.active_bootstrap_policy()).into());
+                args.push(
+                    bootstrap_policy_to_string(bootstrap_config.active_bootstrap_policy()).into(),
+                );
                 if bootstrap_config.silent_bootstrap {
                     args.push("--silent-bootstrap".into());
                 }
             }
 
             let mut envs = pipeline_env.clone();
-            envs.push(("TOKIO_WORKER_THREADS".to_string(), tokio_worker_threads.clone()));
+            envs.push((
+                "TOKIO_WORKER_THREADS".to_string(),
+                tokio_worker_threads.clone(),
+            ));
 
             specs.push(MemberSpec {
                 name: format!("host-{ordinal}"),
@@ -878,7 +903,9 @@ impl LocalRunner {
             ];
             if let Some(bootstrap_config) = bootstrap_config {
                 args.push("--bootstrap-policy".into());
-                args.push(bootstrap_policy_to_string(bootstrap_config.active_bootstrap_policy()).into());
+                args.push(
+                    bootstrap_policy_to_string(bootstrap_config.active_bootstrap_policy()).into(),
+                );
             }
 
             specs.push(MemberSpec {
@@ -904,7 +931,11 @@ impl LocalRunner {
             )));
         }
 
-        let location = format!("{}:{}", multihost_coordinator_ip(), MULTIHOST_COORDINATOR_PORT);
+        let location = format!(
+            "{}:{}",
+            multihost_coordinator_ip(),
+            MULTIHOST_COORDINATOR_PORT
+        );
         self.multihost = Some(MultihostDeployment {
             location,
             n_hosts,
@@ -1359,8 +1390,8 @@ impl PipelineExecutor for LocalRunner {
 #[cfg(test)]
 mod multihost_tests {
     use super::{
-        multihost_coordinator_ip, multihost_host_ip, multihost_host_template,
-        MAX_MULTIHOST_HOSTS, MULTIHOST_LOOPBACK_OCTET,
+        multihost_coordinator_ip, multihost_host_ip, multihost_host_template, MAX_MULTIHOST_HOSTS,
+        MULTIHOST_LOOPBACK_OCTET,
     };
     use std::net::Ipv4Addr;
 
