@@ -286,4 +286,3 @@ $ fda query transaction_test "select * from v"
 | 1 |
 +---+
 ```
-

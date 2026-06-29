@@ -401,4 +401,3 @@ average speeds were observed in testing:
 - Both GP2 and GP3 can briefly hit maximum download speeds of around 1 GiB/s, but performance drops off quickly.
 - NVMe speeds were tested on an i4i.4xlarge instance type.
 - Performance may improve by tuning sync parameters such as `transfers`, `checkers`, `upload_concurrency`, etc.
-

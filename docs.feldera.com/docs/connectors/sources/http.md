@@ -130,4 +130,3 @@ For more information, see:
   [CSV](/formats/csv)
 
 * [Python API documentation](pathname:///python/)
-

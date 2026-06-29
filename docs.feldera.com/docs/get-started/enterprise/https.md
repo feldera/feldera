@@ -232,4 +232,3 @@ section below describes one way to generate these files.
    "localhost sent an invalid response" (Chrome) or
    "Received HTTP/0.9 when not allowed" (curl).
    Use `https://` as the protocol.
-

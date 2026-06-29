@@ -347,4 +347,3 @@ For more information, see:
 * Data formats such as [JSON](/formats/json) and [CSV](/formats/csv)
 * [NATS JetStream documentation](https://docs.nats.io/nats-concepts/jetstream)
 * [NATS Ordered Consumer documentation](https://docs.nats.io/using-nats/developer/develop_jetstream/consumers#orderedconsumer)
-

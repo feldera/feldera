@@ -225,4 +225,3 @@ Let us review:
 - Internally, Feldera also works with changes: the Feldera query engine employs
   incremental algorithms to compute only what has changed in each view without
   requiring a full re-computation.
-

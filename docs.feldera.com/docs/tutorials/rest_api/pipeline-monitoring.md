@@ -120,4 +120,3 @@ curl -X GET 'http://127.0.0.1:8080/v0/pipelines/example/events/019dd514-9fbd-7a4
 
 ... with `(JSON value)` representing JSON status details (omitted for brevity)
 which can be any JSON value (e.g., string, object, etc.).
-

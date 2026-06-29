@@ -104,4 +104,3 @@ SELECT * FROM gold_supplier_performance ORDER BY total_net_revenue DESC LIMIT 10
 ```
 
 After the pipeline has loaded the snapshot, continue to [Part 2](./part2.md) to push CDC changes and watch the Gold views update in real time.
-

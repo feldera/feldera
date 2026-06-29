@@ -213,4 +213,3 @@ This is useful for:
 - Feldera allows streaming data directly to popular data sinks like
   **PostgreSQL**, **Kafka**, **Delta Lake** and **Redis**.
 - By connecting Feldera's incremental SQL engine to different sources and destinations, you can query data from multiple independent sources and materialize the results in multiple independent destinations in real-time.
-

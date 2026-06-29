@@ -387,4 +387,3 @@ Interested in building applications using the API? Consider reading our API and 
 
 - [Browse the API documentation](/api/)
 - [Read the SQL reference](/sql/intro/)
-

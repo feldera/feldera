@@ -75,4 +75,3 @@ For more information, see:
 
 * [REST API documentation](/api/subscribe-to-view)
   for the `/egress` endpoint.
-
