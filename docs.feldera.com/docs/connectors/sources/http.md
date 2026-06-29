@@ -49,7 +49,7 @@ curl -i -X 'POST' \
 
 ```bash
 curl -i -X 'POST' \
-  'http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json\&array=true' \
+  'http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json&array=true' \
   -d '[{"insert": {"pid": 0, "name": "hammer", "price": 5}}, {"insert": {"pid": 1, "name": "nail", "price": 0.02}}]'
 ```
 
