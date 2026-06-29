@@ -141,6 +141,9 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExtendedSqlParserPos;
+import org.dbsp.sqlCompiler.compiler.frontend.SqlComment;
+import org.dbsp.sqlCompiler.compiler.frontend.SqlCommentParser;
+import org.dbsp.sqlCompiler.compiler.frontend.SqlPrettyPrinter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
@@ -847,9 +850,18 @@ public class SqlToRelCompiler implements IWritesLogs {
     /** Given a list of statements separated by semicolons, parse all of them.
      * @param saveLines True if the lines are from the user program; false if they are internally generated. */
     public List<ParsedStatement> parseStatements(String statements, boolean saveLines) throws SqlParseException {
+        // Debugging flag for (partially) testing SqlPrettyPrinter
+        final boolean ROUND_TRIP_CHECK = false;
+
         SqlParser sqlParser = this.createSqlParser(statements, saveLines);
         List<ParsedStatement> result = new ArrayList<>();
         SqlNodeList sqlNodes = sqlParser.parseStmtList();
+        if (saveLines && ROUND_TRIP_CHECK) {
+            List<SqlComment> comments = SqlCommentParser.parse(statements);
+            String sql = SqlPrettyPrinter.toString(sqlNodes, comments);
+            // System.out.println(sql);
+            this.createSqlParser(sql, false).parseStmtList();
+        }
         for (SqlNode node: sqlNodes) {
             SqlNode sqlNode = this.postParsingProcess(node, saveLines);
             ParsedStatement stat = new ParsedStatement(sqlNode, saveLines);

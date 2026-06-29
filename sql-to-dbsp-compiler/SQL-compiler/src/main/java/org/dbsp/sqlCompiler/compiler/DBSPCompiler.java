@@ -39,6 +39,9 @@ import org.apache.calcite.sql.SqlWriterConfig;
 import org.apache.calcite.sql.dialect.CalciteSqlDialect;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.pretty.SqlPrettyWriter;
+import org.dbsp.sqlCompiler.compiler.frontend.SqlComment;
+import org.dbsp.sqlCompiler.compiler.frontend.SqlCommentParser;
+import org.dbsp.sqlCompiler.compiler.frontend.SqlPrettyPrinter;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.apache.calcite.sql.validate.SqlUserDefinedAggFunction;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
@@ -98,7 +101,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
+import java.util.Objects;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -532,7 +535,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return true;
     }
 
-    void renameIdentifiers(List<ParsedStatement> statements) {
+    void emitSql(List<ParsedStatement> statements) {
         final PrintStream outputStream;
         try {
             @Nullable String outputFile = this.options.ioOptions.outputFile;
@@ -547,19 +550,35 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             return;
         }
 
+        List<SqlComment> comments = this.options.ioOptions.format
+                ? SqlCommentParser.parse(this.sources.getWholeProgram())
+                : new ArrayList<>();
+        IndentStream indentStream = new IndentStream(outputStream);
+        SqlPrettyPrinter printer = new SqlPrettyPrinter(indentStream, comments);
+
         RenameIdentifiers renamer = new RenameIdentifiers();
-        for (ParsedStatement stat: statements) {
+        for (ParsedStatement stat : statements) {
             if (stat.visible()) {
-                SqlNode renamed = renamer.visitNode(stat.statement());
-                Utilities.enforce(renamed != null);
-                final SqlWriter sqlWriter = new SqlPrettyWriter(
-                        SqlWriterConfig.of()
-                                .withDialect(CalciteSqlDialect.DEFAULT)
-                                .withQuoteAllIdentifiers(false)
-                );
-                renamed.unparse(sqlWriter, 0, 0);
-                outputStream.println(sqlWriter + ";");
+                SqlNode node = stat.statement();
+                if (this.options.ioOptions.anonymize)
+                    node = Objects.requireNonNull(renamer.visitNode(node));
+                Utilities.enforce(node != null);
+                if (this.options.ioOptions.format) {
+                    printer.print(node);
+                    indentStream.append(";").newline();
+                } else {
+                    final SqlWriter sqlWriter = new SqlPrettyWriter(
+                            SqlWriterConfig.of()
+                                    .withDialect(CalciteSqlDialect.DEFAULT)
+                                    .withQuoteAllIdentifiers(false)
+                    );
+                    node.unparse(sqlWriter, 0, 0);
+                    outputStream.println(sqlWriter + ";");
+                }
             }
+        }
+        if (this.options.ioOptions.format) {
+            printer.flushRemainingComments();
         }
         outputStream.close();
     }
@@ -569,8 +588,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         if (this.hasErrors())
             return null;
 
-        if (this.options.ioOptions.anonymize) {
-            this.renameIdentifiers(parsed);
+        if (this.options.ioOptions.anonymize || this.options.ioOptions.format) {
+            this.emitSql(parsed);
             return null;
         }
 
@@ -749,7 +768,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return null;
     }
 
-    static final Pattern ITEM_ERROR = Pattern.compile("Cannot apply 'ITEM' to arguments of type 'ITEM\\(([^,]+), ([^']+)\\)'(.*)", Pattern.DOTALL);
+    static final Pattern ITEM_ERROR = Pattern.compile(
+            "Cannot apply 'ITEM' to arguments of type 'ITEM\\(([^,]+), ([^']+)\\)'(.*)", Pattern.DOTALL);
 
     static SourcePositionRange getRange(CalciteContextException e) {
         return new SourcePositionRange(
@@ -767,23 +787,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 String index = matcher.group(2);
                 String tail = matcher.group(3);
                 String newMessage = "Cannot apply indexing to arguments of type " + source + "[" + index + "]" + tail;
-                return new CompilationError(newMessage, getRange(e));
-            }
-            if (message.contains("'TIMESTAMPDIFF'.")) {
-                // The Calcite parser replaces DATEDIFF with TIMESTAMPDIFF
-                // Try to figure out whether this is what happened and rewrite it.
-                // This heuristic may fail... but will work in general.
-                SourcePositionRange range = getRange(e);
-                String fragment = this.sources.getFragment(range, false);
-                String lower = fragment.toLowerCase(Locale.ENGLISH);
-                if (lower.contains("datediff") && !lower.contains("timestampdiff")) {
-                    message = message.replace("TIMESTAMPDIFF", "DATEDIFF");
-                    return new CompilationError(message, range);
-                }
-            }
-            String newMessage = message.replace(":PEEK_NO_EXPAND", "");
-            newMessage = newMessage.replace("RECORDTYPE", "ROW");
-            if (!newMessage.equals(message)) {
                 return new CompilationError(newMessage, getRange(e));
             }
         }

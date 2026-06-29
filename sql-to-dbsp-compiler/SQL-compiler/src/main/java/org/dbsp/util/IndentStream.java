@@ -51,6 +51,9 @@ public class IndentStream implements IIndentStream {
         return result;
     }
 
+    @Override
+    public int getIndentAmount() { return this.amount; }
+
     /** Set the indent amount.  If less or equal to 0, newline will have no effect. */
     public IIndentStream setIndentAmount(int amount) {
         Utilities.enforce(amount >= 0);

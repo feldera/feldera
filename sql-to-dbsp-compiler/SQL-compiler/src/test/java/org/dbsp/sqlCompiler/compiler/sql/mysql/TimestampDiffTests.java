@@ -150,6 +150,8 @@ public class TimestampDiffTests extends SqlIoTest {
                 -----
                 89
                 (1 row)""");
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT DATEDIFF(MINUTE, '', '');",
+                "Use TIMESTAMPDIFF instead of DATEDIFF for MINUTE");
     }
 
     @Test

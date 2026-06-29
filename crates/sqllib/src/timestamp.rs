@@ -2867,11 +2867,49 @@ some_polymorphic_function1!(extract_minute, Date, Date, i64);
 some_polymorphic_function1!(extract_hour, Date, Date, i64);
 
 #[doc(hidden)]
+pub fn datediff_hour_Date_Date(left: Date, right: Date) -> i32 {
+    (right.days() - left.days()) * 24
+}
+
+some_polymorphic_function2!(datediff_hour, Date, Date, Date, Date, i32);
+
+#[doc(hidden)]
 pub fn datediff_day_Date_Date(left: Date, right: Date) -> i32 {
-    left.days() - right.days()
+    right.days() - left.days()
 }
 
 some_polymorphic_function2!(datediff_day, Date, Date, Date, Date, i32);
+
+#[doc(hidden)]
+pub fn datediff_week_Date_Date(left: Date, right: Date) -> i32 {
+    (right.days() - left.days()) / 7
+}
+
+some_polymorphic_function2!(datediff_week, Date, Date, Date, Date, i32);
+
+#[doc(hidden)]
+pub fn datediff_month_Date_Date(left: Date, right: Date) -> i32 {
+    let interval = minus_LongInterval_Date_Date__(right, left);
+    interval.months()
+}
+
+some_polymorphic_function2!(datediff_month, Date, Date, Date, Date, i32);
+
+#[doc(hidden)]
+pub fn datediff_quarter_Date_Date(left: Date, right: Date) -> i32 {
+    datediff_year_Date_Date(left, right) * 4
+        + (extract_quarter_Date(right) - extract_quarter_Date(left)) as i32
+}
+
+some_polymorphic_function2!(datediff_quarter, Date, Date, Date, Date, i32);
+
+#[doc(hidden)]
+pub fn datediff_year_Date_Date(left: Date, right: Date) -> i32 {
+    let interval = minus_LongInterval_Date_Date__(right, left);
+    interval.years()
+}
+
+some_polymorphic_function2!(datediff_year, Date, Date, Date, Date, i32);
 
 #[doc(hidden)]
 pub fn format_date__(format: SqlString, date: Date) -> SqlString {

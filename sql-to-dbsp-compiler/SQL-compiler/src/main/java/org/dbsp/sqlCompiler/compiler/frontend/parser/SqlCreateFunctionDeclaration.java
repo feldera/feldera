@@ -71,6 +71,9 @@ public class SqlCreateFunctionDeclaration extends SqlCreate {
         writer.endList(frame);
         writer.keyword("RETURNS");
         this.returnType.unparse(writer, 0, 0);
+        if (Boolean.FALSE.equals(this.returnType.getNullable())) {
+            writer.keyword("NOT NULL");
+        }
         if (this.body != null) {
             writer.keyword("AS");
             this.body.unparse(writer, 0, 0);

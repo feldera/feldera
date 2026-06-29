@@ -12,6 +12,8 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
+import org.dbsp.sqlCompiler.compiler.frontend.SqlComment;
+import org.dbsp.sqlCompiler.compiler.frontend.SqlCommentParser;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
@@ -1201,6 +1203,9 @@ public class MetadataTests extends BaseSQLTests {
                     --errors
                       Error output file; stderr if not specified
                       Default: <empty string>
+                    --format
+                      Output the SQL program reformatted
+                      Default: false
                     --handles
                       Use handles (true) or Catalog (false) in the emitted Rust code
                       Default: false
@@ -2059,6 +2064,270 @@ public class MetadataTests extends BaseSQLTests {
                 FROM ID_4
                 GROUP BY ID_4.ID_6, ID_7;""", result);
         // Anonymized program is valid
+        execute = CompilerMain.execute("--noRust", "-i", out.getPath());
+        Assert.assertEquals(0, execute.exitCode);
+        Utilities.deleteFile(input, false);
+    }
+
+    // Helpers for SqlCommentParser unit tests
+    static void assertComment(SqlComment c, SqlComment.Kind kind, String text, int line, int col) {
+        Assert.assertEquals(kind, c.kind);
+        Assert.assertEquals(text, c.text);
+        Assert.assertEquals(line, c.pos.getLineNum());
+        Assert.assertEquals(col, c.pos.getColumnNum());
+    }
+
+    /** Verify that {@code sql} is accepted by the SQL compiler without errors. */
+    private void assertCompilesWithoutError(String sql) {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation(sql);
+        getCircuit(compiler);
+        Assert.assertEquals(0, compiler.messages.exitCode);
+    }
+
+    @Test
+    public void testCommentParserLineDash() {
+        List<SqlComment> cs = SqlCommentParser.parse("-- hello\n");
+        Assert.assertEquals(1, cs.size());
+        assertComment(cs.get(0), SqlComment.Kind.LINE_DASH, "-- hello\n", 1, 1);
+    }
+
+    @Test
+    public void testCommentParserLineSlash() {
+        // "CREATE VIEW V AS SELECT 1; " is 27 chars, so "//" is at col 28.
+        String sql = "CREATE VIEW V AS SELECT 1; // end\n";
+        List<SqlComment> cs = SqlCommentParser.parse(sql);
+        Assert.assertEquals(1, cs.size());
+        assertComment(cs.get(0), SqlComment.Kind.LINE_SLASH, "// end\n", 1, 28);
+        assertCompilesWithoutError(sql);
+    }
+
+    @Test
+    public void testCommentParserBlock() {
+        List<SqlComment> cs = SqlCommentParser.parse("/* hello */");
+        Assert.assertEquals(1, cs.size());
+        assertComment(cs.get(0), SqlComment.Kind.BLOCK, "/* hello */", 1, 1);
+    }
+
+    @Test
+    public void testCommentParserNoTrailingNewline() {
+        // Single-line comment at EOF with no newline: text has no trailing newline.
+        String sql = "CREATE VIEW V AS SELECT 1; -- end";
+        List<SqlComment> cs = SqlCommentParser.parse(sql);
+        Assert.assertEquals(1, cs.size());
+        Assert.assertEquals("-- end", cs.get(0).text);
+        assertCompilesWithoutError(sql);
+    }
+
+    @Test
+    public void testCommentParserMultipleComments() {
+        // Line 2: "CREATE VIEW V AS SELECT 1; " is 27 chars, so "--" is at col 28.
+        String sql = "-- first\nCREATE VIEW V AS SELECT 1; -- second\n/* third */\n";
+        List<SqlComment> cs = SqlCommentParser.parse(sql);
+        Assert.assertEquals(3, cs.size());
+        assertComment(cs.get(0), SqlComment.Kind.LINE_DASH, "-- first\n", 1, 1);
+        assertComment(cs.get(1), SqlComment.Kind.LINE_DASH, "-- second\n", 2, 28);
+        assertComment(cs.get(2), SqlComment.Kind.BLOCK, "/* third */", 3, 1);
+        assertCompilesWithoutError(sql);
+    }
+
+    @Test
+    public void testCommentParserBlockMultiline() {
+        // Block comment spanning two lines; position tracks correctly.
+        String sql = "/* line 1\n   line 2 */";
+        List<SqlComment> cs = SqlCommentParser.parse(sql);
+        Assert.assertEquals(1, cs.size());
+        assertComment(cs.get(0), SqlComment.Kind.BLOCK, sql, 1, 1);
+    }
+
+    @Test
+    public void testCommentParserInsideSingleQuote() {
+        // Comment markers inside a single-quoted string are not comments.
+        String sql = "CREATE VIEW V AS SELECT '-- not a comment /* also not */'";
+        List<SqlComment> cs = SqlCommentParser.parse(sql);
+        Assert.assertEquals(0, cs.size());
+        assertCompilesWithoutError(sql);
+    }
+
+    @Test
+    public void testCommentParserInsideDoubleQuote() {
+        // Comment markers inside a double-quoted identifier are not comments.
+        String sql =
+                "CREATE TABLE t (\"-- not a comment\" INT);\n" +
+                "CREATE VIEW V AS SELECT \"-- not a comment\" FROM t;";
+        List<SqlComment> cs = SqlCommentParser.parse(sql);
+        Assert.assertEquals(0, cs.size());
+        assertCompilesWithoutError(sql);
+    }
+
+    @Test
+    public void testCommentParserInsideBacktick() {
+        // Comment markers inside a backtick-quoted identifier are not comments.
+        List<SqlComment> cs = SqlCommentParser.parse("SELECT `-- not a comment` FROM t");
+        Assert.assertEquals(0, cs.size());
+    }
+
+    @Test
+    public void testCommentParserHintNotComment() {
+        // Calcite query hints /*+ ... */ are not collected as comments:
+        // they are already in the SqlNode tree and emitted by SqlPrettyPrinter.
+        String sql =
+                "CREATE TABLE t (x INT);\n" +
+                "CREATE TABLE s (x INT);\n" +
+                "CREATE VIEW V AS SELECT /*+ broadcast(t), shard(s) */ * FROM t JOIN s USING (x);";
+        List<SqlComment> cs = SqlCommentParser.parse(sql);
+        Assert.assertEquals(0, cs.size());
+        assertCompilesWithoutError(sql);
+    }
+
+    @Test
+    public void testCommentParserEscapedSingleQuote() {
+        // '' is an escaped quote; the string continues past it, so -- is not a comment.
+        String sql = "CREATE VIEW V AS SELECT 'it''s -- not a comment'";
+        List<SqlComment> cs = SqlCommentParser.parse(sql);
+        Assert.assertEquals(0, cs.size());
+        assertCompilesWithoutError(sql);
+    }
+
+    @Test
+    public void testCommentParserEscapedDoubleQuote() {
+        // "" is an escaped double-quote inside a double-quoted identifier.
+        String sql =
+                "CREATE TABLE t (\"my\"\"-- not a comment\" INT);\n" +
+                "CREATE VIEW V AS SELECT \"my\"\"-- not a comment\" FROM t;";
+        List<SqlComment> cs = SqlCommentParser.parse(sql);
+        Assert.assertEquals(0, cs.size());
+        assertCompilesWithoutError(sql);
+    }
+
+    @Test
+    public void testCommentParserEscapedBacktick() {
+        // `` is an escaped backtick inside a backtick-quoted identifier.
+        List<SqlComment> cs = SqlCommentParser.parse("SELECT `my``-- not a comment`");
+        Assert.assertEquals(0, cs.size());
+    }
+
+    @Test
+    public void testCommentParserStringWithNewline() {
+        // A string literal containing a newline: the -- on line 2 is still inside the string.
+        List<SqlComment> cs = SqlCommentParser.parse("SELECT 'line1\n-- not a comment\n'");
+        Assert.assertEquals(0, cs.size());
+    }
+
+    @Test
+    public void testCommentParserCommentAfterString() {
+        // Real comment immediately following a closed string.
+        // "CREATE VIEW V AS SELECT 'value' " is 32 chars, so "--" is at col 33.
+        String sql = "CREATE VIEW V AS SELECT 'value' -- real comment\n";
+        List<SqlComment> cs = SqlCommentParser.parse(sql);
+        Assert.assertEquals(1, cs.size());
+        assertComment(cs.get(0), SqlComment.Kind.LINE_DASH, "-- real comment\n", 1, 33);
+        assertCompilesWithoutError(sql);
+    }
+
+    @Test
+    public void testCommentParserInsideTableDef() {
+        // Comments between columns of a CREATE TABLE, verifying line/col positions.
+        String sql =
+                "CREATE TABLE t (\n" +
+                "    -- col a\n" +
+                "    a INT,\n" +
+                "    -- col b\n" +
+                "    b VARCHAR\n" +
+                ");\n";
+        List<SqlComment> cs = SqlCommentParser.parse(sql);
+        Assert.assertEquals(2, cs.size());
+        assertComment(cs.get(0), SqlComment.Kind.LINE_DASH, "-- col a\n", 2, 5);
+        assertComment(cs.get(1), SqlComment.Kind.LINE_DASH, "-- col b\n", 4, 5);
+        assertCompilesWithoutError(sql);
+    }
+
+    @Test
+    public void testFormat() throws IOException, SQLException {
+        File input = createInputScript("""
+                -- Custom type for JSON payloads
+                CREATE TYPE TYP AS ("Z" INT);
+                CREATE FUNCTION jsonstring_as_typ(l VARCHAR) RETURNS TYP;
+                -- Main fact table
+                CREATE TABLE T(
+                    -- primary key
+                    x INT,
+                    y INT LATENESS 0,
+                    "Z" TYP ARRAY,
+                    W STRING
+                ) WITH ('connectors' = '[{"name": "kafka", "url": "localhost"}]');
+                CREATE TABLE orders(id INT NOT NULL, product VARCHAR, amount BIGINT, customer_x INT);
+                /* Aggregation view */
+                CREATE VIEW V WITH ('emit_final' = 'y', 'connectors' = '[]') AS
+                SELECT jsonstring_as_typ(W), y, SUM(T.x) as sum, COUNT(T."Z"[1]) FROM T GROUP BY T.y, W;
+                CREATE VIEW v2 WITH ('connectors' = '[{"name": "http", "url": "localhost:8080"}]') AS
+                SELECT t.y, o.product, SUM(o.amount) AS total,
+                       CASE WHEN SUM(o.amount) > 100 THEN 'high' ELSE 'low' END AS tier
+                FROM t JOIN orders AS o ON t.x = o.customer_x
+                WHERE o.amount > (SELECT AVG(amount) FROM orders)
+                GROUP BY t.y, o.product
+                HAVING COUNT(*) > 2;""");
+        File out = File.createTempFile("out", ".sql", new File("."));
+        out.deleteOnExit();
+        CompilerMessages execute = CompilerMain.execute("--format", "-o", out.getPath(), input.getPath());
+        Assert.assertEquals(0, execute.exitCode);
+        String result = Utilities.readFile(out.getAbsolutePath());
+        Assert.assertEquals("""
+                -- Custom type for JSON payloads
+                CREATE TYPE typ AS ("Z" INTEGER);
+                CREATE FUNCTION jsonstring_as_typ (l VARCHAR) RETURNS typ;
+                -- Main fact table
+                CREATE TABLE t (
+                    -- primary key
+                    x INTEGER,
+                    y INTEGER LATENESS 0,
+                    "Z" typ ARRAY,
+                    w string
+                ) WITH (
+                    'connectors' = '[{
+                        "name" : "kafka",
+                        "url" : "localhost"
+                    }]'
+                );
+                CREATE TABLE orders (
+                    id INTEGER NOT NULL,
+                    product VARCHAR,
+                    amount BIGINT,
+                    customer_x INTEGER
+                );
+                /* Aggregation view */
+                CREATE VIEW v WITH (
+                    'emit_final' = 'y',
+                    'connectors' = '[ ]'
+                ) AS
+                SELECT
+                    jsonstring_as_typ(w),
+                    y,
+                    SUM(t.x) AS sum,
+                    COUNT(t."Z"[1])
+                FROM t
+                GROUP BY t.y, w;
+                CREATE VIEW v2 WITH (
+                    'connectors' = '[{
+                        "name" : "http",
+                        "url" : "localhost:8080"
+                    }]'
+                ) AS
+                SELECT
+                    t.y,
+                    o.product,
+                    SUM(o.amount) AS total,
+                    CASE WHEN SUM(o.amount) > 100 THEN 'high' ELSE 'low' END AS tier
+                FROM t
+                INNER JOIN orders AS o ON t.x = o.customer_x
+                WHERE o.amount > (
+                    SELECT
+                        AVG(amount)
+                    FROM orders
+                )
+                GROUP BY t.y, o.product
+                HAVING COUNT(*) > 2;""", result);
+        // Reformatted program is valid
         execute = CompilerMain.execute("--noRust", "-i", out.getPath());
         Assert.assertEquals(0, execute.exitCode);
         Utilities.deleteFile(input, false);

@@ -152,6 +152,9 @@ public class NullIndentStream implements IIndentStream {
     }
 
     @Override
+    public int getIndentAmount() { return 0; }
+
+    @Override
     public IIndentStream increase() {
         return this;
     }

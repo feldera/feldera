@@ -29,6 +29,8 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonLocation;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.util.DefaultIndenter;
+import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -224,6 +226,24 @@ public class Utilities {
                 .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
                 .configure(DeserializationFeature.FAIL_ON_READING_DUP_TREE_KEY, true)
                 .build();
+    }
+
+    /**
+     * If {@code value} is valid JSON, returns it pretty-printed using {@code indent}
+     * spaces per indentation level.
+     * Returns the original string unchanged when the value is not valid JSON.
+     */
+    public static String tryFormatAsJson(String value, int indent) {
+        try {
+            Object parsed = deterministicObjectMapper().readValue(value, Object.class);
+            DefaultPrettyPrinter printer = new DefaultPrettyPrinter();
+            // Arrays use NopIndenter so "[" and "{" appear on the same line as the key.
+            printer.indentArraysWith(DefaultPrettyPrinter.NopIndenter.instance);
+            printer.indentObjectsWith(new DefaultIndenter(" ".repeat(indent), "\n"));
+            return deterministicObjectMapper().writer(printer).writeValueAsString(parsed);
+        } catch (Exception e) {
+            return value;
+        }
     }
 
     /** Add double quotes around string and escape symbols that need it.

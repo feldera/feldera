@@ -76,6 +76,9 @@ public class SqlCreateAggregate extends SqlCreate {
         writer.endList(frame);
         writer.keyword("RETURNS");
         this.returnType.unparse(writer, 0, 0);
+        if (Boolean.FALSE.equals(this.returnType.getNullable())) {
+            writer.keyword("NOT NULL");
+        }
     }
 
     @Override public SqlOperator getOperator() {

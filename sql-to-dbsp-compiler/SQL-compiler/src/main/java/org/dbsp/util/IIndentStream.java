@@ -224,6 +224,9 @@ public interface IIndentStream {
     IIndentStream increase();
     IIndentStream decrease();
 
+    /** Return the number of spaces added per indentation level. */
+    int getIndentAmount();
+
     default IIndentStream appendJsonLabelAndColon(String label) {
         return this.append("\"").append(Utilities.escapeDoubleQuotes(label)).append("\": ");
     }
