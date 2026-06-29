@@ -48,8 +48,31 @@ public final class DBSPKeywordLiteral extends DBSPLiteral {
 
     public DBSPKeywordLiteral(CalciteObject node, String keyword) {
         super(node, DBSPTypeKeyword.INSTANCE, false);
-        this.keyword = keyword.toLowerCase();
         switch (keyword.toLowerCase()) {
+            case "sql_tsi_year":
+                keyword = "year";
+                break;
+            case "sql_tsi_quarter":
+                keyword = "quarter";
+                break;
+            case "sql_tsi_month":
+                keyword = "month";
+                break;
+            case "sql_tsi_week":
+                keyword = "week";
+                break;
+            case "sql_tsi_day":
+                keyword = "day";
+                break;
+            case "sql_tsi_hour":
+                keyword = "hour";
+                break;
+            case "sql_tsi_second":
+                keyword = "second";
+                break;
+            case "sql_tsi_minute":
+                keyword = "minute";
+                break;
             case "dow":
             case "epoch":
             case "isodow":
@@ -77,6 +100,7 @@ public final class DBSPKeywordLiteral extends DBSPLiteral {
             default:
                 throw new UnimplementedException("Not yet implemented support for Calcite construct " + keyword, node);
         }
+        this.keyword = keyword.toLowerCase();
     }
 
     @Override

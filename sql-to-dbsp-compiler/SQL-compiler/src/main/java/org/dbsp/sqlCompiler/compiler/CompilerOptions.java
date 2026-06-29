@@ -159,6 +159,9 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
     public static class IO implements IDiff<IO>, IValidate {
         @Parameter(names = "--anonymize", description = "Produce in the output file an anonymized version of the input program")
         public boolean anonymize = false;
+        @Parameter(names = "--format",
+                description = "Output the SQL program reformatted")
+        public boolean format = false;
         @DynamicParameter(names = "-T",
                 description = "Specify logging level for a class (can be repeated)")
         public Map<String, String> loggingLevel = new HashMap<>();
@@ -278,6 +281,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                     ",\n\tnoRust=" + this.noRust +
                     ",\n\toutputFile=" + Utilities.singleQuote(this.outputFile) +
                     ",\n\tquiet=" + this.quiet +
+                    ",\n\tformat=" + this.format +
                     ",\n\truntime=" + Utilities.singleQuote(this.runtimePath) +
                     ",\n\ttrimInputs=" + this.trimInputs +
                     ",\n\tverbosity=" + this.verbosity +

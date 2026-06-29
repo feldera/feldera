@@ -107,6 +107,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeKeyword;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
@@ -142,6 +143,7 @@ import java.math.BigDecimal;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -816,6 +818,18 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPTypeInteger expected = DBSPTypeInteger.getType(arg.getType().getNode(), INT32, arg.getType().mayBeNull);
         if (!arg.getType().sameType(expected))
             ops.set(argument, arg.cast(node, expected, DBSPCastExpression.CastType.SqlUnsafe));
+    }
+
+    /** Ensure that a specific operand is interpreted as a KEYWORD */
+    void ensureKeyword(CalciteObject node, List<DBSPExpression> ops, int argument) {
+        DBSPExpression arg = ops.get(argument);
+        if (arg.getType().sameType(DBSPTypeKeyword.INSTANCE))
+            return;
+        if (arg.is(DBSPStringLiteral.class)) {
+            ops.set(argument, new DBSPKeywordLiteral(node, Objects.requireNonNull(arg.to(DBSPStringLiteral.class).value)));
+            return;
+        }
+        throw new CompilationError("Unknown keyword", node);
     }
 
     @SuppressWarnings("SameParameterValue")
@@ -1934,6 +1948,24 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 this.ensureString(ops, 2);
                 return compileKeywordFunction(call, node, null, type, ops, 0, 3);
             case TIMESTAMP_DIFF:
+                // Also called for DATEDIFF
+                this.ensureKeyword(node, ops, 0);
+                DBSPKeywordLiteral lit = ops.get(0).to(DBSPKeywordLiteral.class);
+                if (call.op.getName().toLowerCase(Locale.ENGLISH).equals("datediff")) {
+                    switch (lit.keyword) {
+                        // These units would overflow in 32 bits
+                        case "minute":
+                        case "second":
+                        case "millisecond":
+                        case "microsecond":
+                        case "nanosecond":
+                            throw new CompilationError("Use TIMESTAMPDIFF instead of DATEDIFF for " +
+                                    lit.keyword.toUpperCase(Locale.ENGLISH) +
+                                    "\n(TIMESTAMPDIFF result is BIGINT)", node);
+                        default:
+                            break;
+                    }
+                }
                 return compileKeywordFunction(call, node, null, type, ops, 0, 3);
             case TUMBLE: {
                 validateArgCount(node, operationName, ops.size(), 2, 3);

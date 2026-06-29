@@ -36,7 +36,7 @@ SqlNode DateaddFunctionCall() :
 {
     (   <DATE_PART>  { op = SqlLibraryOperators.DATE_PART; }
     |   <DATEADD> { op = SqlLibraryOperators.DATEADD; }
-    |   <DATEDIFF> { op = SqlStdOperatorTable.TIMESTAMP_DIFF; }
+    |   <DATEDIFF> { op = SqlLibraryOperators.DATEDIFF; }
     |   <DATEPART>  { op = SqlLibraryOperators.DATEPART; }
     )
     { s = span(); }

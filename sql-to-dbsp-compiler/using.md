@@ -64,6 +64,9 @@ Usage: sql-to-dbsp [options] Input file to compile
     --errors
       Error output file; stderr if not specified
       Default: <empty string>
+    --format
+      Output the SQL program reformatted
+      Default: false
     --handles
       Use handles (true) or Catalog (false) in the emitted Rust code
       Default: false

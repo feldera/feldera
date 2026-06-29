@@ -101,6 +101,7 @@ public class SqlLateness extends SqlCall {
         final int opLeft = getOperator().getLeftPrec();
         final int opRight = getOperator().getRightPrec();
         this.view.unparse(writer, opLeft, opRight);
+        writer.print(".");
         this.column.unparse(writer, opLeft, opRight);
         this.expression.unparse(writer, 0, 0);
         writer.newlineAndIndent();
