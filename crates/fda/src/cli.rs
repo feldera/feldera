@@ -342,6 +342,22 @@ pub enum PipelineAction {
         )]
         stdin: bool,
     },
+    /// Copy an existing pipeline into a new pipeline.
+    ///
+    /// Clones the source pipeline's program code, UDFs, runtime configuration,
+    /// and compilation (program) configuration into a newly created pipeline
+    /// with the given name. The new pipeline is created in the stopped state;
+    /// it is not started. This is convenient for launching several copies of a
+    /// pipeline for testing.
+    #[command(visible_alias = "clone")]
+    Copy {
+        /// The name of the existing pipeline to copy from.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        source: String,
+        /// The name of the new pipeline to create.
+        #[arg(value_hint = ValueHint::Other)]
+        name: String,
+    },
     /// Start a pipeline.
     ///
     /// If the pipeline is compiling it will wait for the compilation to finish.
@@ -1069,6 +1085,30 @@ mod tests {
             Commands::Pipeline(crate::cli::PipelineAction::Program {
                 action: ProgramAction::Errors { name }
             }) if name == "pipeline"
+        ));
+    }
+
+    #[test]
+    fn parse_copy_command() {
+        let cli = Cli::try_parse_from(["fda", "copy", "source-pipeline", "new-pipeline"])
+            .expect("copy command should parse");
+
+        assert!(matches!(
+            cli.command,
+            Commands::Pipeline(crate::cli::PipelineAction::Copy { source, name })
+                if source == "source-pipeline" && name == "new-pipeline"
+        ));
+    }
+
+    #[test]
+    fn parse_copy_clone_alias() {
+        let cli = Cli::try_parse_from(["fda", "clone", "source-pipeline", "new-pipeline"])
+            .expect("clone alias should parse");
+
+        assert!(matches!(
+            cli.command,
+            Commands::Pipeline(crate::cli::PipelineAction::Copy { source, name })
+                if source == "source-pipeline" && name == "new-pipeline"
         ));
     }
 }

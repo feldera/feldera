@@ -14,6 +14,12 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - The `fda` CLI can now copy a pipeline with `fda copy <source> <name>`
+          (alias `fda clone`), cloning the source pipeline's program, UDFs,
+          runtime configuration, and compilation configuration into a new,
+          stopped pipeline. Convenient for launching several copies of a
+          pipeline for testing.
+
         - New DynamoDB output connector. It writes a SQL view to an Amazon
           DynamoDB table, mapping inserts and updates to upserts and deletes to
           deletes keyed by the table's primary key. See the

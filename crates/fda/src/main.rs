@@ -844,6 +844,58 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 std::process::exit(1);
             }
         }
+        PipelineAction::Copy { source, name } => {
+            // Clone the source pipeline's program, UDFs, runtime configuration,
+            // and compilation configuration into a new pipeline.
+            let src = client
+                .get_pipeline()
+                .pipeline_name(source.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to fetch the source pipeline",
+                    1,
+                ))
+                .unwrap();
+            let response = client
+                .post_pipeline()
+                .body(PostPutPipeline {
+                    description: src.description.clone(),
+                    tags: src.tags.clone(),
+                    name: name.to_string(),
+                    program_code: src.program_code.clone().unwrap_or_default(),
+                    udf_rust: src.udf_rust.clone(),
+                    udf_toml: src.udf_toml.clone(),
+                    program_config: src.program_config.clone(),
+                    runtime_config: src.runtime_config.clone(),
+                })
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to create the copied pipeline",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    println!("Pipeline `{source}` copied to `{name}` successfully.");
+                    debug!("{:#?}", response);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize pipeline response")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {format}");
+                    std::process::exit(1);
+                }
+            }
+        }
         PipelineAction::Start {
             name,
             recompile,

@@ -255,6 +255,13 @@ Retrieve the program for `p1` and create a new pipeline `p2` from it:
 fda program get p1 | fda create p2 -s
 ```
 
+Copy the pipeline `p1` to a new pipeline `p2`, cloning its program, UDFs,
+runtime configuration, and compilation configuration (`fda clone` works too):
+
+```bash
+fda copy p1 p2
+```
+
 Enable storage for `p1`:
 
 ```bash
