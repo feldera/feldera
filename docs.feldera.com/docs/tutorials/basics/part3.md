@@ -335,4 +335,3 @@ To summarize Part 3 of the tutorial,
 - Combined with the incremental query evaluation mechanism, this enables Feldera
   to analyze data on the fly as it moves from sources to destinations, so that
   the destination receives up-to-date query results in real time.
-

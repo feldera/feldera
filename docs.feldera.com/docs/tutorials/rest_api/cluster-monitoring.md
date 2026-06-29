@@ -103,4 +103,3 @@ curl -X GET 'http://127.0.0.1:8080/v0/cluster/events/019afe45-ec1f-7de0-9cd1-3a6
 ```
 
 ... with `"(...)"` representing human-readable status explanations (omitted for brevity).
-

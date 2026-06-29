@@ -95,4 +95,3 @@ For more information, see:
 
 * Data formats such as [JSON](/formats/json),
   [CSV](/formats/csv), and [Parquet](/formats/parquet)
-

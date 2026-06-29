@@ -73,4 +73,3 @@ You also need `curl` and a web browser such as Chrome or Firefox.
 [3]: https://docs.docker.com/compose/install/linux
 [4]: https://docs.docker.com/engine/install/linux-postinstall/
 
-

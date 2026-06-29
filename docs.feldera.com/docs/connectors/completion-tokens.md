@@ -150,4 +150,3 @@ CREATE TABLE price (
     "status": "complete"
   }
   ```
-

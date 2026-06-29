@@ -338,4 +338,3 @@ Within the shell, you can interact with the pipeline `p1` by sending [ad-hoc SQL
 
 The shell also lets you execute certain CLI commands like `start`, `restart`, `shutdown` without having to provide the
 pipeline name every time. Type `help` for more information.
-
