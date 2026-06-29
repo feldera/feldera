@@ -56,7 +56,7 @@ Use the [`start_transaction`](/api/begin-transaction) API to start a transaction
 <Tabs>
     <TabItem value="rest" label="REST API">
     ```shell
-    $ curl -X POST http://localhost:8080/v0/pipelines/my_pipeline/start_transaction
+    $ curl -X POST 'http://localhost:8080/v0/pipelines/my_pipeline/start_transaction'
 
     {"transaction_id":1}
     ```
@@ -93,7 +93,7 @@ commit the transaction using the [`commit_transaction`](/api/commit-transaction)
 <Tabs>
     <TabItem value="rest" label="REST API">
     ```shell
-    $ curl -X POST http://localhost:8080/v0/pipelines/my_pipeline/commit_transaction
+    $ curl -X POST 'http://localhost:8080/v0/pipelines/my_pipeline/commit_transaction'
     "Transaction commit initiated"
     ```
     </TabItem>
@@ -152,10 +152,10 @@ Transaction status is also available through [metrics](/operations/metrics.md#tr
 <Tabs>
     <TabItem value="rest" label="REST API">
     ```shell
-    $ curl -s http://localhost:8080/v0/pipelines/my_pipeline/stats | jq -r '.global_metrics.transaction_status'
+    $ curl -s 'http://localhost:8080/v0/pipelines/my_pipeline/stats' | jq -r '.global_metrics.transaction_status'
     TransactionInProgress
 
-    $ curl -s http://localhost:8080/v0/pipelines/my_pipeline/stats | jq -r '.global_metrics.transaction_id'
+    $ curl -s 'http://localhost:8080/v0/pipelines/my_pipeline/stats' | jq -r '.global_metrics.transaction_id'
     1
     ```
     </TabItem>
@@ -286,3 +286,4 @@ $ fda query transaction_test "select * from v"
 | 1 |
 +---+
 ```
+

@@ -96,7 +96,7 @@ CREATE TABLE price (
 ### Step 1. Push data via HTTP
 
   ```shell
-  curl -s -X 'POST' http://127.0.0.1:8080/v0/pipelines/supply-chain/ingress/PRICE?format=json -d '
+  curl -s -X 'POST' 'http://127.0.0.1:8080/v0/pipelines/supply-chain/ingress/PRICE?format=json' -d '
   {"insert": {"part": 1, "vendor": 2, "price": 10000}}
   {"insert": {"part": 2, "vendor": 1, "price": 15000}}
   {"insert": {"part": 3, "vendor": 3, "price": 9000}}'| jq
@@ -115,7 +115,7 @@ CREATE TABLE price (
   Let us generate another completion token for the URL input connector attached to the table.
 
   ```shell
-  curl -s -X 'GET' http://127.0.0.1:8080/v0/pipelines/supply-chain/tables/PRICE/connectors/tutorial-price-s3/completion_token | jq
+  curl -s -X 'GET' 'http://127.0.0.1:8080/v0/pipelines/supply-chain/tables/PRICE/connectors/tutorial-price-s3/completion_token' | jq
   ```
 
   > Note that this endpoint requires the user to explicitly assign a name to the connector (`"name": "tutorial-price-s3"`)
@@ -132,7 +132,7 @@ CREATE TABLE price (
 ### Step 3. Check the status of both tokens
 
   ```shell
-  curl -s -X 'GET' http://127.0.0.1:8080/v0/pipelines/supply-chain/completion_status?token=eyJ1IjoiMDE5NmIxMjAtNjIwMy03YjkwLWI2YmQtMTY4OTBkZjE1ZTI4IiwiZSI6MywiYyI6M30= | jq
+  curl -s -X 'GET' 'http://127.0.0.1:8080/v0/pipelines/supply-chain/completion_status?token=eyJ1IjoiMDE5NmIxMjAtNjIwMy03YjkwLWI2YmQtMTY4OTBkZjE1ZTI4IiwiZSI6MywiYyI6M30=' | jq
   ```
 
   ```json
@@ -142,7 +142,7 @@ CREATE TABLE price (
   ```
 
   ```shell
-  curl -s -X 'GET' http://127.0.0.1:8080/v0/pipelines/supply-chain/completion_status?token=eyJ1IjoiMDE5NmIxMjAtNjIwMy03YjkwLWI2YmQtMTY4OTBkZjE1ZTI4IiwiZSI6MSwiYyI6M30= | jq
+  curl -s -X 'GET' 'http://127.0.0.1:8080/v0/pipelines/supply-chain/completion_status?token=eyJ1IjoiMDE5NmIxMjAtNjIwMy03YjkwLWI2YmQtMTY4OTBkZjE1ZTI4IiwiZSI6MSwiYyI6M30=' | jq
   ```
 
   ```json
@@ -150,3 +150,4 @@ CREATE TABLE price (
     "status": "complete"
   }
   ```
+

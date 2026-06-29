@@ -27,7 +27,7 @@ get further details using the individual endpoint as needed.
 
 **Request**
 ```
-curl -X GET http://127.0.0.1:8080/v0/pipelines/example/events | jq
+curl -X GET 'http://127.0.0.1:8080/v0/pipelines/example/events' | jq
 ```
 
 **Response**
@@ -74,7 +74,7 @@ curl -X GET http://127.0.0.1:8080/v0/pipelines/example/events | jq
 
 **Request**
 ```
-curl -X GET http://127.0.0.1:8080/v0/pipelines/example/events/latest | jq
+curl -X GET 'http://127.0.0.1:8080/v0/pipelines/example/events/latest' | jq
 ```
 
 **Response**
@@ -96,7 +96,7 @@ curl -X GET http://127.0.0.1:8080/v0/pipelines/example/events/latest | jq
 
 **Request**
 ```
-curl -X GET http://127.0.0.1:8080/v0/pipelines/example/events/019dd514-9fbd-7a40-804c-9f9165007fc3?selector=all | jq
+curl -X GET 'http://127.0.0.1:8080/v0/pipelines/example/events/019dd514-9fbd-7a40-804c-9f9165007fc3?selector=all' | jq
 ```
 
 **Response**
@@ -120,3 +120,4 @@ curl -X GET http://127.0.0.1:8080/v0/pipelines/example/events/019dd514-9fbd-7a40
 
 ... with `(JSON value)` representing JSON status details (omitted for brevity)
 which can be any JSON value (e.g., string, object, etc.).
+

@@ -170,7 +170,7 @@ Live stream of updates to the view can be observed using the following `curl`
 command:
 
 ```sh
-curl -i -X 'POST' http://127.0.0.1:8080/v0/pipelines/batch/egress/q2?format=json
+curl -i -X 'POST' 'http://127.0.0.1:8080/v0/pipelines/batch/egress/q2?format=json'
 ```
 
 As the contents of the view change, the changes will be
@@ -213,3 +213,4 @@ This is useful for:
 - Feldera allows streaming data directly to popular data sinks like
   **PostgreSQL**, **Kafka**, **Delta Lake** and **Redis**.
 - By connecting Feldera's incremental SQL engine to different sources and destinations, you can query data from multiple independent sources and materialize the results in multiple independent destinations in real-time.
+

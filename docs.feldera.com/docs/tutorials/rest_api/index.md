@@ -26,7 +26,7 @@ language (e.g., in Python using the `requests` module).
 3. **Feldera instance:**  If you haven't done so already, you can start Feldera locally using
    [**docker**](https://docs.docker.com/engine/install/):
    ```
-   curl -L https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml | \
+   curl -L 'https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml' | \
    docker compose -f - up
    ```
    (leave it running in a separate terminal while going through this tutorial)
@@ -41,7 +41,7 @@ language (e.g., in Python using the `requests` module).
    You can add it to a `curl` call by replacing `<API-KEY>`
    with the generated string starting with `apikey:...`:
    ```
-   curl -s -H "Authorization: Bearer <API-KEY>" -X GET http://127.0.0.1:8080/v0/pipelines | jq
+   curl -s -H "Authorization: Bearer <API-KEY>" -X GET 'http://127.0.0.1:8080/v0/pipelines' | jq
    ```
 
    > For the remainder of this tutorial, you will need to add
@@ -49,7 +49,7 @@ language (e.g., in Python using the `requests` module).
 
 5. **Check whether your setup works:** You can verify your setup by running:
    ```
-   curl -s -X GET http://127.0.0.1:8080/v0/programs | jq
+   curl -s -X GET 'http://127.0.0.1:8080/v0/programs' | jq
    ```
 
    ... this will output a JSON array of program objects, which when there are
@@ -162,7 +162,7 @@ specifies the pipeline's name, description, the different configuration paramter
 contents of `program.sql` into the `program_code` field.
 
 ```
-curl -i -X PUT http://127.0.0.1:8080/v0/pipelines/supply-chain \
+curl -i -X PUT 'http://127.0.0.1:8080/v0/pipelines/supply-chain' \
 -H 'Content-Type: application/json' \
 -d "$(jq -Rsn \
   --rawfile code program.sql \
@@ -184,7 +184,7 @@ updated, its version is incremented and compilation is automatically triggered.
 Now let's check the program's compilation status a few times:
 
 ```
-curl -s http://127.0.0.1:8080/v0/pipelines/supply-chain | jq '.program_status'
+curl -s 'http://127.0.0.1:8080/v0/pipelines/supply-chain' | jq '.program_status'
 ```
 ...which will show "CompilingRust" at first, but in about 30 seconds or so say "Success".
 
@@ -195,7 +195,7 @@ The pipeline is now ready to be started.
 We start the pipeline using:
 
 ```
-curl -i -X POST http://127.0.0.1:8080/v0/pipelines/supply-chain/start
+curl -i -X POST 'http://127.0.0.1:8080/v0/pipelines/supply-chain/start'
 ```
 
 ... which will return `HTTP/1.1 202 Accepted` when successful.
@@ -205,7 +205,7 @@ As such, it will take some time before the final target state has been reached.
 Regularly poll the status until the start has completed:
 
 ```
-curl -s GET http://127.0.0.1:8080/v0/pipelines/supply-chain | jq '.deployment_status'
+curl -s GET 'http://127.0.0.1:8080/v0/pipelines/supply-chain' | jq '.deployment_status'
 ```
 
 ... which eventually will say `Running` when the pipeline has started.
@@ -218,11 +218,11 @@ curl -s GET http://127.0.0.1:8080/v0/pipelines/supply-chain | jq '.deployment_st
 > take effect):
 > ```
 > # Shut it down:
-> curl -i -X POST http://127.0.0.1:8080/v0/pipelines/supply-chain/shutdown
+> curl -i -X POST 'http://127.0.0.1:8080/v0/pipelines/supply-chain/shutdown'
 > # ... wait for the current_status to become Shutdown by checking:
-> curl -X GET http://127.0.0.1:8080/v0/pipelines/supply-chain
+> curl -X GET 'http://127.0.0.1:8080/v0/pipelines/supply-chain'
 > # ... and then start:
-> curl -i -X POST http://127.0.0.1:8080/v0/pipelines/supply-chain/start
+> curl -i -X POST 'http://127.0.0.1:8080/v0/pipelines/supply-chain/start'
 > ```
 
 ### Step 3: Pipeline progress
@@ -230,7 +230,7 @@ curl -s GET http://127.0.0.1:8080/v0/pipelines/supply-chain | jq '.deployment_st
 A running pipeline provides several useful stats:
 
 ```
-curl -sX GET http://127.0.0.1:8080/v0/pipelines/supply-chain/stats | jq
+curl -sX GET 'http://127.0.0.1:8080/v0/pipelines/supply-chain/stats' | jq
 ```
 
 ... such as the number of input and processed records.
@@ -318,7 +318,7 @@ It is possible to INSERT, UPSERT or even DELETE a single row within a table. In 
 we have HyperDrive Innovations supply the Warp Core at a lower price of 12000:
 
 ```
-curl -X 'POST' http://127.0.0.1:8080/v0/pipelines/supply-chain/ingress/PRICE?format=json \
+curl -X 'POST' 'http://127.0.0.1:8080/v0/pipelines/supply-chain/ingress/PRICE?format=json' \
 -d '{"insert": {"part": 2, "vendor": 2, "price": 12000}}'
 ```
 
@@ -361,19 +361,19 @@ down the pipeline (which will automatically terminate monitoring the
 view if it is still running):
 
 ```
-curl -i -X POST http://127.0.0.1:8080/v0/pipelines/supply-chain/shutdown
+curl -i -X POST 'http://127.0.0.1:8080/v0/pipelines/supply-chain/shutdown'
 ```
 
 Check that it has been shut down using:
 
 ```
-curl -s http://127.0.0.1:8080/v0/pipelines/supply-chain | jq '.deployment_status'
+curl -s 'http://127.0.0.1:8080/v0/pipelines/supply-chain' | jq '.deployment_status'
 ```
 ... and you  should see `deployment_status` set to `Shutdown`.
 
 Next, let's DELETE the pipeline:
 ```
-curl -i -X DELETE http://127.0.0.1:8080/v0/pipelines/supply-chain
+curl -i -X DELETE 'http://127.0.0.1:8080/v0/pipelines/supply-chain'
 ```
 
 You can also delete the `program.sql` file we used to create the program.
@@ -387,3 +387,4 @@ Interested in building applications using the API? Consider reading our API and 
 
 - [Browse the API documentation](/api/)
 - [Read the SQL reference](/sql/intro/)
+
