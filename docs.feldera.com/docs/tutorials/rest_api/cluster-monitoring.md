@@ -32,7 +32,7 @@ The cluster monitor events can be retrieved via two endpoints:
 
 **Request**
 ```
-curl -X GET http://127.0.0.1:8080/v0/cluster/events | jq
+curl -X GET 'http://127.0.0.1:8080/v0/cluster/events' | jq
 ```
 
 **Response**
@@ -62,7 +62,7 @@ curl -X GET http://127.0.0.1:8080/v0/cluster/events | jq
 
 **Request**
 ```
-curl -X GET http://127.0.0.1:8080/v0/cluster/events/latest | jq
+curl -X GET 'http://127.0.0.1:8080/v0/cluster/events/latest' | jq
 ```
 
 **Response**
@@ -81,7 +81,7 @@ curl -X GET http://127.0.0.1:8080/v0/cluster/events/latest | jq
 
 **Request**
 ```
-curl -X GET http://127.0.0.1:8080/v0/cluster/events/019afe45-ec1f-7de0-9cd1-3a6a4350b5e9?selector=all | jq
+curl -X GET 'http://127.0.0.1:8080/v0/cluster/events/019afe45-ec1f-7de0-9cd1-3a6a4350b5e9?selector=all' | jq
 ```
 
 **Response**
@@ -103,3 +103,4 @@ curl -X GET http://127.0.0.1:8080/v0/cluster/events/019afe45-ec1f-7de0-9cd1-3a6a
 ```
 
 ... with `"(...)"` representing human-readable status explanations (omitted for brevity).
+

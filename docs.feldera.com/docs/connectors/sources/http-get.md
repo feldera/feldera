@@ -49,7 +49,7 @@ WITH ('connectors' = '[{
 ### curl
 
 ```bash
-curl -i -X PUT http://127.0.0.1:8080/v0/pipelines/workshop \
+curl -i -X PUT 'http://127.0.0.1:8080/v0/pipelines/workshop' \
 -H 'Content-Type: application/json' \
 -d "$(jq -Rsn \
   --rawfile code program.sql \
@@ -95,3 +95,4 @@ For more information, see:
 
 * Data formats such as [JSON](/formats/json),
   [CSV](/formats/csv), and [Parquet](/formats/parquet)
+

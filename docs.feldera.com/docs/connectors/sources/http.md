@@ -24,7 +24,7 @@ We will insert rows into table `product` for pipeline `supply-chain-pipeline`.
 
 ```bash
 curl -i -X 'POST' \
-  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json \
+  'http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json' \
   -d '{"insert": {"pid": 0, "name": "hammer", "price": 5.0}}'
 ```
 
@@ -32,7 +32,7 @@ curl -i -X 'POST' \
 
 ```bash
 curl -i -H "Authorization: Bearer <API-KEY>" -X 'POST' \
-  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json \
+  'http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json' \
   -d '{"insert": {"pid": 0, "name": "hammer", "price": 5.0}}'
 ```
 
@@ -40,7 +40,7 @@ curl -i -H "Authorization: Bearer <API-KEY>" -X 'POST' \
 
 ```bash
 curl -i -X 'POST' \
-  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json \
+  'http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json' \
   -d '{"insert": {"pid": 0, "name": "hammer", "price": 5}}
 {"insert": {"pid": 1, "name": "nail", "price": 0.02}}'
 ```
@@ -49,7 +49,7 @@ curl -i -X 'POST' \
 
 ```bash
 curl -i -X 'POST' \
-  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json\&array=true \
+  'http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json\&array=true' \
   -d '[{"insert": {"pid": 0, "name": "hammer", "price": 5}}, {"insert": {"pid": 1, "name": "nail", "price": 0.02}}]'
 ```
 
@@ -57,7 +57,7 @@ curl -i -X 'POST' \
 
 ```bash
 curl -i -X 'POST' \
-  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json \
+  'http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/product?format=json' \
   -d '{"delete": {"pid": 1}}'
 ```
 
@@ -130,3 +130,4 @@ For more information, see:
   [CSV](/formats/csv)
 
 * [Python API documentation](pathname:///python/)
+

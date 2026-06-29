@@ -143,7 +143,7 @@ Before using the NATS input connector, you need a NATS server with JetStream ena
 The quickest way to start experimenting with Feldera and NATS is to use Docker Compose:
 
 ```bash
-curl -L https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml -o docker-compose.yml
+curl -L 'https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml' -o docker-compose.yml
 docker compose --profile nats up
 ```
 
@@ -347,3 +347,4 @@ For more information, see:
 * Data formats such as [JSON](/formats/json) and [CSV](/formats/csv)
 * [NATS JetStream documentation](https://docs.nats.io/nats-concepts/jetstream)
 * [NATS Ordered Consumer documentation](https://docs.nats.io/using-nats/developer/develop_jetstream/consumers#orderedconsumer)
+

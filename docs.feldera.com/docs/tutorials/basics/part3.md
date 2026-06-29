@@ -97,7 +97,7 @@ the Redpanda container should already be running.  Otherwise, you can start it
 using the following command:
 
 ```bash
-curl -L https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml | docker compose -f - up redpanda
+curl -L 'https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml' | docker compose -f - up redpanda
 ```
 
 Next, you will need to install `rpk`, the Redpanda CLI, by following the instructions on
@@ -335,3 +335,4 @@ To summarize Part 3 of the tutorial,
 - Combined with the incremental query evaluation mechanism, this enables Feldera
   to analyze data on the fly as it moves from sources to destinations, so that
   the destination receives up-to-date query results in real time.
+

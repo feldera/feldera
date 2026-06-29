@@ -54,7 +54,7 @@ staying ready for immediate activation.
 To activate a standby pipeline:
 
 ```sh
-curl -X POST https://{FELDERA_HOST}/v0/pipelines/{PIPELINE_NAME}/activate
+curl -X POST 'https://{FELDERA_HOST}/v0/pipelines/{PIPELINE_NAME}/activate'
 ```
 
 :::important
@@ -217,7 +217,7 @@ Automatic sync is **disabled by default**.
 The status of the most recent automatic sync operation can be queried with:
 
 ```bash
-curl http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status | jq '.periodic'
+curl 'http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status' | jq '.periodic'
 ```
 
 It is recommended to set `push_interval` greater than
@@ -240,7 +240,7 @@ following conditions are met:
 A sync operation can be triggered by making a `POST` request to:
 
 ```bash
-curl -X POST http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync
+curl -X POST 'http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync'
 ```
 
 This initiates the sync and returns the UUID of the checkpoint being synced:
@@ -254,7 +254,7 @@ This initiates the sync and returns the UUID of the checkpoint being synced:
 The status of the sync operation can be checked with:
 
 ```bash
-curl http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status
+curl 'http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status'
 ```
 
 ### Response fields
@@ -401,3 +401,4 @@ average speeds were observed in testing:
 - Both GP2 and GP3 can briefly hit maximum download speeds of around 1 GiB/s, but performance drops off quickly.
 - NVMe speeds were tested on an i4i.4xlarge instance type.
 - Performance may improve by tuning sync parameters such as `transfers`, `checkers`, `upload_concurrency`, etc.
+

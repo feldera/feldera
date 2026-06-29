@@ -226,7 +226,7 @@ base64 = \"0.22.1\"
 " > udf.toml
 
 
-curl -i -X PUT http://127.0.0.1:8080/v0/pipelines/udf_api_test \
+curl -i -X PUT 'http://127.0.0.1:8080/v0/pipelines/udf_api_test' \
 -H 'Content-Type: application/json' \
 -d "$(jq -Rsn \
   --rawfile sql program.sql \
@@ -1173,4 +1173,5 @@ CREATE VIEW v WITH (
 Currently exactly one postprocessor may be specified per connector.
 
 :::
+
 

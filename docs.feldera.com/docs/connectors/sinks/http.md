@@ -41,14 +41,14 @@ Stream incremental updates (default):
 
 ```bash
 curl -i -X 'POST' \
-  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/egress/average_price?format=json
+  'http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/egress/average_price?format=json'
 ```
 
 Receive a full snapshot followed by incremental updates:
 
 ```bash
 curl -i -X 'POST' \
-  http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/egress/average_price?format=json\&send_snapshot=true
+  'http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/egress/average_price?format=json\&send_snapshot=true'
 ```
 
 ### Python (direct API calls)
@@ -75,3 +75,4 @@ For more information, see:
 
 * [REST API documentation](/api/subscribe-to-view)
   for the `/egress` endpoint.
+

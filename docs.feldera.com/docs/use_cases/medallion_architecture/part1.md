@@ -31,7 +31,7 @@ Each GitHub page above has a **Download raw file** button. To fetch a file from 
 terminal, use its raw URL, e.g.:
 
 ```bash
-curl -O https://raw.githubusercontent.com/feldera/feldera/main/docs.feldera.com/docs/use_cases/medallion_architecture/push_changes.py
+curl -O 'https://raw.githubusercontent.com/feldera/feldera/main/docs.feldera.com/docs/use_cases/medallion_architecture/push_changes.py'
 ```
 :::
 
@@ -104,3 +104,4 @@ SELECT * FROM gold_supplier_performance ORDER BY total_net_revenue DESC LIMIT 10
 ```
 
 After the pipeline has loaded the snapshot, continue to [Part 2](./part2.md) to push CDC changes and watch the Gold views update in real time.
+

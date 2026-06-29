@@ -292,7 +292,7 @@ This flag adds the `PERFMON` capability to the pipeline pod to enable profiling.
 
 ```bash
 # Start a 60 second profiling session
-curl -X POST "http://localhost:8080/v0/pipelines/my-pipeline/samply_profile?duration_secs=60"
+curl -X POST 'http://localhost:8080/v0/pipelines/my-pipeline/samply_profile?duration_secs=60'
 ```
 
 #### Retrieve the profile
@@ -302,7 +302,7 @@ Wait for `duration_secs` for the profiling to complete. Then make a `GET` reques
 ```bash
 
 # Retrieve the profile (after the session completes)
-curl "http://localhost:8080/v0/pipelines/my-pipeline/samply_profile" -o prof.json.gz
+curl 'http://localhost:8080/v0/pipelines/my-pipeline/samply_profile' -o prof.json.gz
 ```
 
 ##### Failures
