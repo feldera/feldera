@@ -6,7 +6,7 @@ use crate::{
 };
 use crossbeam::channel::Receiver;
 use dbsp::DBData;
-use feldera_sqllib::{ByteArray, F32, F64, Variant};
+use feldera_sqllib::{ByteArray, F32, F64, Timestamp, TimestampTz, Variant};
 use feldera_types::{
     program_schema::Field,
     serde_with_context::{DeserializeWithContext, SerializeWithContext, SqlSerdeConfig},
@@ -177,6 +177,7 @@ fn data(n_records: usize) -> Vec<IcebergTestStruct> {
             // uuid: ByteArray::new([0u8; 16].as_slice()),
             fixed: ByteArray::new([0u8; 5].as_slice()),
             varbin: ByteArray::new([0u8; 5].as_slice()),
+            tstz: TimestampTz::from(Timestamp::from_naiveDateTime(time)),
         });
 
         time += std::time::Duration::from_secs(1);
@@ -295,7 +296,7 @@ fn iceberg_glue_s3_input_test() {
             ),
             (
                 "table_name".to_string(),
-                "iceberg_test.test_table".to_string(),
+                "iceberg_test.test_table_v2".to_string(),
             ),
             (
                 "glue.access-key-id".to_string(),
@@ -344,7 +345,7 @@ fn iceberg_rest_s3_input_test() {
             ),
             (
                 "table_name".to_string(),
-                "iceberg_test.test_table".to_string(),
+                "iceberg_test.test_table_v2".to_string(),
             ),
             (
                 "s3.access-key-id".to_string(),
