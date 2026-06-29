@@ -134,6 +134,12 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         this.toSkip = toSkip;
     }
 
+    /** Whether closure harvesting is on (the same env var the harvest hook reads). */
+    private static boolean harvesting() {
+        String dir = System.getenv("FELDERA_EXPR_ORACLE_DIR");
+        return dir != null && !dir.isBlank();
+    }
+
     public TableData[] getInputSets(DBSPCompiler compiler) throws SQLException {
         for (SltSqlStatement statement : this.inputPreparation.statements)
             compiler.submitStatementForCompilation(statement.statement);
@@ -191,22 +197,34 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                     result.addFailure(
                             new TestStatistics.FailedTestDescription(testQuery,
                                     "Exception during test", "", ex));
+                    // When harvesting, one query's compile failure must not abort the whole
+                    // batch: skip it so the rest of the file is still harvested.
+                    if (harvesting()) {
+                        queryNo++;
+                        continue;
+                    }
                     throw ex;
                     // return false;
                 }
                 queryNo++;
             }
 
-            // Write the code to Rust files on the filesystem.
-            DBSPFunction inputFunction = gen.getInputFunction();
-            this.writeCodeToFile(compiler, Linq.list(inputFunction), codeGenerated);
+            // Parse-only harvesting never compiles the generated Rust, so skip writing it:
+            // the temp/src files are discarded, and parallel harvest shards sharing a working
+            // directory would otherwise race on them.
+            boolean harvestOnly = harvesting() && !this.execute;
+            if (!harvestOnly) {
+                // Write the code to Rust files on the filesystem.
+                DBSPFunction inputFunction = gen.getInputFunction();
+                this.writeCodeToFile(compiler, Linq.list(inputFunction), codeGenerated);
+            }
             this.startTest();
             if (this.execute) {
                 Utilities.compileAndTestRust(Main.getAbsoluteRustDirectory(), true);
             }
             this.queriesToRun.clear();
             System.out.println(elapsedTime(queryNo));
-            if (cleanup)
+            if (cleanup && !harvestOnly)
                 this.cleanupFilesystem();
             if (this.execute)
                 // This is not entirely correct, but I am not parsing the rust output

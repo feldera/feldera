@@ -147,13 +147,20 @@ public class Main {
         System.out.println(Arrays.toString(args));
         String wd = System.getProperty("user.dir");
         System.out.println("WD: " + wd);
-        Path source = Path.of(wd, "..", "Cargo.lock");
-        File sourceFile = source.toFile().getCanonicalFile();
-        Path destination = Path.of(wd, "temp", "Cargo.lock");
-        File destinationFile = destination.toFile().getCanonicalFile();
-        System.out.println("Copying " + sourceFile.getPath() + " to " + destinationFile.getPath());
-        Utilities.enforce(sourceFile.exists());
-        Files.copy(sourceFile.toPath(), destinationFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        // The temp Cargo.lock feeds the Rust harness compile. Parse-only harvesting never
+        // compiles it, and parallel harvest shards share a working directory, so skip the copy
+        // when harvesting to avoid racing on the shared file.
+        boolean harvesting = System.getenv("FELDERA_EXPR_ORACLE_DIR") != null
+                && !System.getenv("FELDERA_EXPR_ORACLE_DIR").isBlank();
+        if (!harvesting) {
+            Path source = Path.of(wd, "..", "Cargo.lock");
+            File sourceFile = source.toFile().getCanonicalFile();
+            Path destination = Path.of(wd, "temp", "Cargo.lock");
+            File destinationFile = destination.toFile().getCanonicalFile();
+            System.out.println("Copying " + sourceFile.getPath() + " to " + destinationFile.getPath());
+            Utilities.enforce(sourceFile.exists());
+            Files.copy(sourceFile.toPath(), destinationFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
         OptionsParser parser = new OptionsParser(true, System.out, System.err);
         parser.registerOption("-skip", "skipCount", "How many tests to skip (for debugging)", o -> {
             skip.set(Integer.parseInt(o));
