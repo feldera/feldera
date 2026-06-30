@@ -111,17 +111,20 @@ datafusion = "53.1"
 dbsp = { path = "crates/dbsp", version = "0.316.0" }
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.14.1"
-# Feldera fork of delta-rs: upstream tag `rust-v0.32.3` + 2 patches, on branch
-# `v0.32.3-feldera`. When bumping the pinned revision, preserve these patches:
+# Feldera fork of delta-rs: upstream tag `rust-v0.32.3` + 3 patches, on branch
+# `v0.32.3-feldera-fix`. When bumping the pinned revision, preserve these patches:
 #   - 7f8bb445 "Disable unsupported feature check." — relax the writer-side
 #     protocol-feature gate so we can write tables produced by newer clients.
 #   - 5b35c098 "delta-rs: round-robin pre-split unpartitioned scans into
 #     target_partitions FileGroups" — improves snapshot read parallelism for
 #     unpartitioned tables; pairs with the DataFusion knobs we tune in adapters.
+#   - 9a58fbef "delta-rs: resolve column-mapped Uniform/Iceberg columns by
+#     Parquet field-id" — fixes `col-<id> is missing from the physical schema`
+#     when reading UC-Uniform-over-Iceberg tables (columnMapping.mode=id). #6557.
 # Diff vs. upstream:
-#   https://github.com/delta-io/delta-rs/compare/rust-v0.32.3...feldera:delta-rs:v0.32.3-feldera
-deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "5b35c0988b07ab921d5eee5b8da8da55e4d65945" }
-deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "5b35c0988b07ab921d5eee5b8da8da55e4d65945" }
+#   https://github.com/delta-io/delta-rs/compare/rust-v0.32.3...feldera:delta-rs:v0.32.3-feldera-fix
+deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "60d7b6447870e3b6ddd9f798cc13ed051d2c2047" }
+deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "60d7b6447870e3b6ddd9f798cc13ed051d2c2047" }
 
 delta_kernel = { package = "buoyant_kernel", version = "0.22" }
 derive_more = { version = "1.0.0" }
