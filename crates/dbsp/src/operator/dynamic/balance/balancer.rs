@@ -778,26 +778,38 @@ impl BalancerInner {
         // );
         let cluster_index = *self.stream_to_cluster.get(&node_id).unwrap();
 
-        let (_exchange_sender, _persistent_id, hints) = self
-            .integrals
-            .get_mut(&node_id)
-            .ok_or(BalancerError::NotRegisteredWithBalancer(node_id))?;
+        // Apply the hint to the stored hints, remembering the previous value so we
+        // can roll back if the hint turns out to be unenforceable. The hint must be
+        // stored *before* validating below, because `solve_cluster` reads the hint
+        // from `self.integrals`; validating against the pre-hint state would accept
+        // hints that make the cluster unsatisfiable and crash at the first step.
+        let old_hints = {
+            let (_exchange_sender, _persistent_id, hints) = self
+                .integrals
+                .get_mut(&node_id)
+                .ok_or(BalancerError::NotRegisteredWithBalancer(node_id))?;
 
-        let mut hints = hints.clone();
-
-        match hint {
-            BalancerHint::Policy(policy) => {
-                if let Some(policy) = policy {
-                    hints.policy_hint = Some(policy);
-                    self.solve_cluster(cluster_index, false)?;
-                } else {
-                    hints.policy_hint = None;
-                }
+            let old_hints = hints.clone();
+            match hint {
+                BalancerHint::Policy(policy) => hints.policy_hint = policy,
+                BalancerHint::Size(size) => hints.size_hint = size,
+                BalancerHint::Skew(skew) => hints.skew_hint = skew,
             }
-            BalancerHint::Size(size) => hints.size_hint = size,
-            BalancerHint::Skew(skew) => hints.skew_hint = skew,
+            old_hints
+        };
+
+        if let BalancerHint::Policy(Some(policy)) = hint
+            && self.solve_cluster(cluster_index, false).is_err()
+        {
+            self.integrals.get_mut(&node_id).unwrap().2 = old_hints;
+            return Err(BalancerError::InvalidPolicyHint(
+                policy,
+                format!(
+                    "'{policy}' policy is incompatible with the partitioning constraints of the streams it joins with"
+                ),
+            ));
         }
-        self.integrals.get_mut(&node_id).unwrap().2 = hints.clone();
+
         self.clusters[cluster_index].refresh_requested = true;
 
         Ok(())
