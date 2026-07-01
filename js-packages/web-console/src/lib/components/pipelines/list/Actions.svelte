@@ -125,7 +125,6 @@ groups related actions into multi-action dropdowns when multiple options are ava
     _stop,
     _multiStop,
     _multiStart,
-    _duplicate,
     _more,
     _spacer_short,
     _spacer_long,
@@ -309,7 +308,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   const active = $derived.by(() => {
     const rawActions = getRawActions(pipeline.current.status)
     // Group actions into dropdowns
-    return [...processActionsForDropdowns(rawActions), '_duplicate' as const]
+    return processActionsForDropdowns(rawActions)
   })
 
   function processActionsForDropdowns(
@@ -675,6 +674,18 @@ groups related actions into multi-action dropdowns when multiple options are ava
       >
         <button
           class="flex items-center gap-2 px-4 py-3 text-left hover:bg-surface-50-950 disabled:pointer-events-none disabled:opacity-50"
+          disabled={!pipelineList.pipelines || unsavedChanges}
+          title={unsavedChanges ? 'Save the program before duplicating.' : duplicatePipelineTooltip}
+          onclick={() => {
+            close()
+            void duplicateCurrentPipeline()
+          }}
+        >
+          <span class="fd fd-copy-plus text-[20px]"></span>
+          Duplicate
+        </button>
+        <button
+          class="flex items-center gap-2 px-4 py-3 text-left hover:bg-surface-50-950 disabled:pointer-events-none disabled:opacity-50"
           disabled={editConfigDisabled}
           title={editConfigDisabled ? 'Stop the pipeline to delete it' : undefined}
           onclick={() => {
@@ -688,22 +699,6 @@ groups related actions into multi-action dropdowns when multiple options are ava
       </div>
     {/snippet}
   </Popup>
-{/snippet}
-{#snippet _duplicate()}
-  <button
-    class="{buttonClass} {shortClass} {shortColor} fd fd-copy-plus {iconClass}"
-    title={unsavedChanges ? 'Save the program before duplicating.' : duplicatePipelineTooltip}
-    disabled={!pipelineList.pipelines || unsavedChanges}
-    onclick={() => void duplicateCurrentPipeline()}
-  >
-  </button>
-  <Tooltip placement="top">
-    {#if unsavedChanges}
-      Save the program before duplicating.
-    {:else}
-      {duplicatePipelineTooltip}
-    {/if}
-  </Tooltip>
 {/snippet}
 {#snippet start({
   text,
