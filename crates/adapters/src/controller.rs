@@ -5031,20 +5031,6 @@ impl ControllerInit {
             )
         }
 
-        // Transfer HTTP input endpoints that are not affected by the program diff from the checkpoint to the new configuration.
-        checkpoint_config
-            .inputs
-            .iter()
-            .filter(|(_connector_name, connector_config)| {
-                connector_config.connector_config.transport.is_http_input()
-                    && !pipeline_diff.is_affected_relation(&connector_config.stream)
-            })
-            .for_each(|(connector_name, connector_config)| {
-                config
-                    .inputs
-                    .insert(connector_name.clone(), connector_config.clone());
-            });
-
         // Merge `config` (the configuration provided by the pipeline manager)
         // with `checkpoint_config` (the configuration read from the
         // checkpoint).
@@ -5097,26 +5083,11 @@ impl ControllerInit {
                 pipeline_template_configmap: config.global.pipeline_template_configmap.clone(),
             },
 
-            // If pipeline is unmodified, we may need to replay journaled inputs.
-            // We therefore use connector configuration from the checkpoint, including
-            // transient HTTP and adhoc connectors, so that we can use them to
-            // replay journaled inputs.
-            inputs: if !modified {
-                checkpoint_config
-                    .inputs
-                    .into_iter()
-                    .filter(|(_, config)| {
-                        // The clock input connector will be automatically recreated and initialized
-                        // with the clock resolution from the pipeline config.
-                        !matches!(
-                            config.connector_config.transport,
-                            TransportConfig::ClockInput(_)
-                        )
-                    })
-                    .collect()
-            } else {
-                config.inputs
-            },
+            inputs: Self::inputs_for_checkpoint_replay(
+                config.inputs,
+                checkpoint_config.inputs,
+                &pipeline_diff,
+            ),
             outputs: if !modified {
                 checkpoint_config.outputs
             } else {
@@ -5146,6 +5117,66 @@ impl ControllerInit {
             pipeline_diff: Some(pipeline_diff),
             incarnation_uuid: Uuid::nil(),
         })
+    }
+
+    fn inputs_for_checkpoint_replay(
+        mut config_inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
+        checkpoint_inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
+        pipeline_diff: &feldera_types::pipeline_diff::PipelineDiff,
+    ) -> BTreeMap<Cow<'static, str>, InputEndpointConfig> {
+        // Preserve the pipeline manager's input configs before HTTP input
+        // endpoints are transferred from the checkpoint below.  The final
+        // replay config still needs replay-safe limits from the new config.
+        let new_inputs = config_inputs.clone();
+
+        // Transfer HTTP input endpoints that are not affected by the program
+        // diff from the checkpoint to the new configuration.
+        checkpoint_inputs
+            .iter()
+            .filter(|(_connector_name, connector_config)| {
+                connector_config.connector_config.transport.is_http_input()
+                    && !pipeline_diff.is_affected_relation(&connector_config.stream)
+            })
+            .for_each(|(connector_name, connector_config)| {
+                config_inputs.insert(connector_name.clone(), connector_config.clone());
+            });
+
+        if pipeline_diff.is_empty() {
+            // If the pipeline is unmodified, we may need to replay journaled
+            // inputs. We therefore use connector configuration from the
+            // checkpoint, including transient HTTP and adhoc connectors, so
+            // that we can use them to replay journaled inputs. Input
+            // flow-control settings are safe to adopt from the new config
+            // without invalidating checkpointed state.
+            Self::checkpoint_inputs_with_replay_safe_config(checkpoint_inputs, &new_inputs)
+        } else {
+            config_inputs
+        }
+    }
+
+    fn checkpoint_inputs_with_replay_safe_config(
+        mut checkpoint_inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
+        new_inputs: &BTreeMap<Cow<'static, str>, InputEndpointConfig>,
+    ) -> BTreeMap<Cow<'static, str>, InputEndpointConfig> {
+        for (connector_name, checkpoint_input) in checkpoint_inputs.iter_mut() {
+            if let Some(new_input) = new_inputs.get(connector_name) {
+                checkpoint_input
+                    .connector_config
+                    .apply_input_checkpoint_replay_config_from(&new_input.connector_config);
+            }
+        }
+
+        checkpoint_inputs
+            .into_iter()
+            .filter(|(_, config)| {
+                // The clock input connector will be automatically recreated and initialized
+                // with the clock resolution from the pipeline config.
+                !matches!(
+                    config.connector_config.transport,
+                    TransportConfig::ClockInput(_)
+                )
+            })
+            .collect()
     }
 
     pub fn set_incarnation_uuid(&mut self, incarnation_uuid: Uuid) {
@@ -8766,7 +8797,10 @@ mod controller_init_tests {
     use super::ControllerInit;
     use crate::ControllerError;
     use feldera_adapterlib::errors::controller::ConfigError;
-    use feldera_types::config::{PipelineConfig, RuntimeConfig};
+    use feldera_types::config::{InputEndpointConfig, PipelineConfig, RuntimeConfig};
+    use feldera_types::pipeline_diff::PipelineDiff;
+    use serde_json::json;
+    use std::{borrow::Cow, collections::BTreeMap};
 
     fn pipeline_config(global: RuntimeConfig) -> PipelineConfig {
         PipelineConfig {
@@ -8830,7 +8864,85 @@ mod controller_init_tests {
                 if matches!(
                     *config_error,
                     ConfigError::DatafusionMemoryExceedsBudget { .. },
-                ),
+            ),
         ));
+    }
+
+    #[test]
+    fn checkpoint_inputs_adopt_replay_safe_config() {
+        let mut checkpoint_inputs = BTreeMap::new();
+        checkpoint_inputs.insert(
+            Cow::Borrowed("test_input.connector"),
+            input_config(json!({"name": "empty_input"}), 100),
+        );
+
+        let mut new_inputs = BTreeMap::new();
+        new_inputs.insert(
+            Cow::Borrowed("test_input.connector"),
+            input_config(json!({"name": "empty_input"}), 200),
+        );
+
+        let merged = ControllerInit::checkpoint_inputs_with_replay_safe_config(
+            checkpoint_inputs,
+            &new_inputs,
+        );
+        let connector_config = &merged["test_input.connector"].connector_config;
+
+        assert_eq!(connector_config.max_queued_records, 200);
+        assert_eq!(connector_config.max_queued_bytes, Some(400));
+        assert_eq!(connector_config.max_batch_size, Some(201));
+        assert_eq!(connector_config.max_worker_batch_size, Some(202));
+    }
+
+    #[test]
+    fn checkpoint_http_input_replay_uses_pre_transfer_config() {
+        let mut checkpoint_inputs = BTreeMap::new();
+        checkpoint_inputs.insert(
+            Cow::Borrowed("test_input.connector"),
+            input_config(
+                json!({
+                    "name": "http_input",
+                    "config": {"name": "test_input.connector"}
+                }),
+                100,
+            ),
+        );
+
+        let mut config_inputs = BTreeMap::new();
+        config_inputs.insert(
+            Cow::Borrowed("test_input.connector"),
+            input_config(
+                json!({
+                    "name": "http_input",
+                    "config": {"name": "test_input.connector"}
+                }),
+                200,
+            ),
+        );
+
+        let merged = ControllerInit::inputs_for_checkpoint_replay(
+            config_inputs,
+            checkpoint_inputs,
+            &PipelineDiff::new_with_program_diff(Default::default()),
+        );
+        let connector_config = &merged["test_input.connector"].connector_config;
+
+        assert!(connector_config.transport.is_http_input());
+        assert_eq!(connector_config.max_queued_records, 200);
+        assert_eq!(connector_config.max_queued_bytes, Some(400));
+        assert_eq!(connector_config.max_batch_size, Some(201));
+        assert_eq!(connector_config.max_worker_batch_size, Some(202));
+    }
+
+    fn input_config(transport: serde_json::Value, max_queued_records: u64) -> InputEndpointConfig {
+        serde_json::from_value(json!({
+            "stream": "test_input",
+            "transport": transport,
+            "max_queued_records": max_queued_records,
+            "max_queued_bytes": max_queued_records * 2,
+            "max_batch_size": max_queued_records + 1,
+            "max_worker_batch_size": max_queued_records + 2,
+        }))
+        .unwrap()
     }
 }

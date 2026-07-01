@@ -1723,6 +1723,33 @@ impl ConnectorConfig {
         a == b
     }
 
+    /// Compare two input connector configs modulo fields that only affect
+    /// runtime flow control and do not invalidate checkpointed connector state.
+    pub fn equal_for_input_checkpoint_replay(&self, other: &Self) -> bool {
+        let mut a = self.clone();
+        let mut b = other.clone();
+        a.normalize_for_input_checkpoint_replay();
+        b.normalize_for_input_checkpoint_replay();
+        a == b
+    }
+
+    fn normalize_for_input_checkpoint_replay(&mut self) {
+        self.paused = false;
+        self.max_batch_size = None;
+        self.max_worker_batch_size = None;
+        self.max_queued_records = default_max_queued_records();
+        self.max_queued_bytes = None;
+    }
+
+    /// Adopt input connector settings that are safe to change while replaying
+    /// checkpointed connector state.
+    pub fn apply_input_checkpoint_replay_config_from(&mut self, other: &Self) {
+        self.max_batch_size = other.max_batch_size;
+        self.max_worker_batch_size = other.max_worker_batch_size;
+        self.max_queued_records = other.max_queued_records;
+        self.max_queued_bytes = other.max_queued_bytes;
+    }
+
     /// Returns `max_queued_records` or, if it is not set, the default.
     pub fn max_queued_records(&self) -> u64 {
         self.max_queued_records
