@@ -11,6 +11,7 @@ pub mod nats;
 pub mod nexmark;
 pub mod postgres;
 pub mod pubsub;
+pub mod rabbitmq;
 pub mod redis;
 pub mod s3;
 pub mod url;

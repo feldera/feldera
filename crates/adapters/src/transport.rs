@@ -47,6 +47,9 @@ pub(crate) mod kafka;
 #[cfg(feature = "with-nats")]
 pub(crate) mod nats;
 
+#[cfg(feature = "with-rabbitmq")]
+pub(crate) mod rabbitmq;
+
 #[cfg(feature = "with-nexmark")]
 mod nexmark;
 
@@ -71,6 +74,9 @@ use crate::transport::null::NullOutputEndpoint;
 
 #[cfg(feature = "with-nats")]
 use crate::transport::nats::NatsInputEndpoint;
+
+#[cfg(feature = "with-rabbitmq")]
+use crate::transport::rabbitmq::{RabbitmqInputEndpoint, RabbitmqOutputEndpoint};
 
 #[cfg(feature = "with-nexmark")]
 use crate::transport::nexmark::NexmarkEndpoint;
@@ -102,6 +108,12 @@ pub fn input_transport_config_to_endpoint(
         TransportConfig::NatsInput(config) => Box::new(NatsInputEndpoint::new(config)?),
         #[cfg(not(feature = "with-nats"))]
         TransportConfig::NatsInput(_) => return Ok(None),
+        #[cfg(feature = "with-rabbitmq")]
+        TransportConfig::RabbitmqInput(config) => {
+            Box::new(RabbitmqInputEndpoint::new(config.clone())?)
+        }
+        #[cfg(not(feature = "with-rabbitmq"))]
+        TransportConfig::RabbitmqInput(_) => return Ok(None),
         #[cfg(feature = "with-pubsub")]
         TransportConfig::PubSubInput(config) => Box::new(PubSubInputEndpoint::new(config.clone())?),
         #[cfg(not(feature = "with-pubsub"))]
@@ -125,6 +137,7 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::PostgresInput(_)
         | TransportConfig::PostgresCdcInput(_)
         | TransportConfig::PostgresOutput(_)
+        | TransportConfig::RabbitmqOutput(_)
         | TransportConfig::HttpOutput(_)
         | TransportConfig::RedisOutput(_)
         | TransportConfig::IcebergInput(_)
@@ -163,6 +176,10 @@ pub fn output_transport_config_to_endpoint(
         #[cfg(feature = "with-redis")]
         TransportConfig::RedisOutput(config) => {
             Ok(Some(Box::new(RedisOutputEndpoint::new(config)?)))
+        }
+        #[cfg(feature = "with-rabbitmq")]
+        TransportConfig::RabbitmqOutput(config) => {
+            Ok(Some(Box::new(RabbitmqOutputEndpoint::new(config.clone())?)))
         }
         TransportConfig::NullOutput => Ok(Some(Box::new(NullOutputEndpoint))),
         _ => Ok(None),

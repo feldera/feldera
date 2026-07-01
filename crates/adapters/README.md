@@ -122,6 +122,7 @@ where any string key is valid and should not be reported as an error.
 | `iceberg_input`      | `IcebergReaderConfig`     |
 | `kafka_input`        | `KafkaInputConfig`        |
 | `nats_input`         | `NatsInputConfig`         |
+| `rabbitmq_input`      | `RabbitmqInputConfig`     |
 | `postgres_input`     | `PostgresReaderConfig`    |
 | `postgres_cdc_input` | `PostgresCdcReaderConfig` |
 | `pub_sub_input`      | `PubSubInputConfig`       |
@@ -138,6 +139,7 @@ where any string key is valid and should not be reported as an error.
 | `kafka_output`       | `KafkaOutputConfig`      |
 | `postgres_output`    | `PostgresWriterConfig`   |
 | `redis_output`       | `RedisOutputConfig`      |
+| `rabbitmq_output`    | `RabbitmqOutputConfig`   |
 
 Not validated by the SQL compiler: `datagen`, `nexmark`.
 

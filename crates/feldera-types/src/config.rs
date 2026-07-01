@@ -23,6 +23,7 @@ use crate::transport::postgres::{
     PostgresCdcReaderConfig, PostgresReaderConfig, PostgresWriterConfig,
 };
 use crate::transport::pubsub::PubSubInputConfig;
+use crate::transport::rabbitmq::{RabbitmqInputConfig, RabbitmqOutputConfig};
 use crate::transport::redis::RedisOutputConfig;
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
@@ -1828,6 +1829,7 @@ pub enum TransportConfig {
     FileInput(FileInputConfig),
     FileOutput(FileOutputConfig),
     NatsInput(NatsInputConfig),
+    RabbitmqInput(RabbitmqInputConfig),
     KafkaInput(KafkaInputConfig),
     KafkaOutput(KafkaOutputConfig),
     PubSubInput(PubSubInputConfig),
@@ -1840,6 +1842,7 @@ pub enum TransportConfig {
     #[serde(rename = "dynamodb_output")]
     DynamoDBOutput(DynamoDBWriterConfig),
     RedisOutput(RedisOutputConfig),
+    RabbitmqOutput(RabbitmqOutputConfig),
     // Prevent rust from complaining about large size difference between enum variants.
     IcebergInput(Box<IcebergReaderConfig>),
     PostgresInput(PostgresReaderConfig),
@@ -1866,6 +1869,7 @@ impl TransportConfig {
             TransportConfig::FileInput(_) => "file_input".to_string(),
             TransportConfig::FileOutput(_) => "file_output".to_string(),
             TransportConfig::NatsInput(_) => "nats_input".to_string(),
+            TransportConfig::RabbitmqInput(_) => "rabbitmq_input".to_string(),
             TransportConfig::KafkaInput(_) => "kafka_input".to_string(),
             TransportConfig::KafkaOutput(_) => "kafka_output".to_string(),
             TransportConfig::PubSubInput(_) => "pub_sub_input".to_string(),
@@ -1884,6 +1888,7 @@ impl TransportConfig {
             TransportConfig::HttpOutput(_) => "http_output".to_string(),
             TransportConfig::AdHocInput(_) => "adhoc_input".to_string(),
             TransportConfig::RedisOutput(_) => "redis_output".to_string(),
+            TransportConfig::RabbitmqOutput(_) => "rabbitmq_output".to_string(),
             TransportConfig::ClockInput(_) => "clock".to_string(),
             TransportConfig::NullOutput => "null_output".to_string(),
             TransportConfig::EmptyInput => "empty_input".to_string(),
