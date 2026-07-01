@@ -2,6 +2,46 @@ import { clearTimeout as clearWorkerTimeout, setTimeout as setWorkerTimeout } fr
 
 export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
+/**
+ * Map over `items` with a bounded number of concurrent workers — a sliding
+ * window rather than fixed batches. At most `concurrency` calls to `fn` are in
+ * flight at once; as each settles, the next item starts immediately.
+ *
+ * Results are returned in input order, like `Promise.all`. `fn` receives the
+ * item and its index. A rejection from `fn` rejects the whole pool (again like
+ * `Promise.all`), and no further items are started; callers that want to finish
+ * the rest should catch inside `fn`.
+ *
+ * The "workers" are not threads: everything runs on the single main JS thread,
+ * so this is concurrency, not parallelism. It only helps when `fn` spends its
+ * time awaiting (a network request, a timer) - those waits overlap. CPU-bound
+ * `fn`s gain nothing, since the thread still runs them one at a time.
+ *
+ * @param items       Items to process.
+ * @param concurrency Maximum number of `fn` calls in flight at once (clamped to ≥ 1).
+ * @param fn          Async worker invoked once per item.
+ * @returns Results in the same order as `items`.
+ */
+export const promisePool = async <T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> => {
+  const results = new Array<R>(items.length)
+  let next = 0
+  // Each worker pulls the next unclaimed index until the list is drained;
+  // `next++` is atomic between awaits, so no two workers claim the same item.
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++
+      results[index] = await fn(items[index], index)
+    }
+  }
+  const workerCount = Math.max(1, Math.min(concurrency, items.length))
+  await Promise.all(Array.from({ length: workerCount }, worker))
+  return results
+}
+
 const hasDocument = typeof document !== 'undefined'
 const isHidden = () => hasDocument && document.hidden
 const clearWorkerTimeoutSafely = (timeout: number) => {

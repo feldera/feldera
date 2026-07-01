@@ -1468,6 +1468,10 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
     def tags(self) -> List[str]:
         """
         Return the tags of the pipeline.
+
+        Tags are returned verbatim, including the ``|rrggbb`` color suffix the web
+        console uses to encode a tag's color. Use :func:`feldera.tags.tag_display_name`
+        to obtain the tag's text label.
         """
 
         self.refresh(PipelineFieldSelector.STATUS)
