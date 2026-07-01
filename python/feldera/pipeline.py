@@ -290,6 +290,10 @@ class Pipeline:
         using :meth:`start_paused`, attach listeners and unpause the pipeline using :meth:`resume`.
 
         :param view_name: The name of the view to listen to.
+
+        :raises RuntimeError: If the pipeline is neither running nor paused.
+        :raises BaseException: The underlying error, if the connection to the
+            change stream cannot be established.
         """
 
         if self.status() not in [PipelineStatus.PAUSED, PipelineStatus.RUNNING]:
@@ -324,17 +328,25 @@ class Pipeline:
         .. note::
             - The callback must be thread-safe as it will be run in a separate thread.
 
+        :raises RuntimeError: If the pipeline is neither running nor paused.
+        :raises BaseException: The underlying error, if the connection to the
+            change stream cannot be established.
         """
 
         if self.status() not in [PipelineStatus.RUNNING, PipelineStatus.PAUSED]:
             raise RuntimeError("Pipeline must be running or paused to listen to output")
 
         event = Event()
+        # Collect the exception that aborted the listener, if any, so that a
+        # connection failure surfaces here instead of being silently dropped.
+        errors: List[BaseException] = []
         handler = CallbackRunner(
-            self.client, self.name, view_name, callback, lambda exception: None, event
+            self.client, self.name, view_name, callback, errors.append, event
         )
         handler.start()
         event.wait()
+        if errors:
+            raise errors[0]
 
     def wait_for_completion(
         self, force_stop: bool = False, timeout_s: float | None = None

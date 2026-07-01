@@ -1171,6 +1171,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         array: bool = False,
         timeout: Optional[float] = None,
         case_sensitive: bool = False,
+        read_timeout: Optional[float] = 120.0,
     ):
         """
         Listen for updates to views for pipeline, yields the chunks of data
@@ -1190,6 +1191,13 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         :param timeout: The amount of time in seconds to listen to the stream for
         :param case_sensitive: True if the table name is case sensitive or a reserved keyword, False by default
+        :param read_timeout: The maximum time in seconds to wait for the server
+            to produce the next piece of the stream, including the initial
+            response. The pipeline emits a heartbeat chunk every few seconds
+            even when there is no data, so this timeout fires only when the
+            connection or the server is stalled; it converts an otherwise
+            indefinite hang into an error. Set to None to wait indefinitely.
+            The default is 120 seconds.
         """
 
         params = {
@@ -1209,6 +1217,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             path=f"/pipelines/{quote(pipeline_name, safe='')}/egress/{quote(table_name, safe='')}",
             params=params,
             stream=True,
+            timeout=(self.config.connection_timeout, read_timeout),
         )
 
         end = time.monotonic() + timeout if timeout else None
