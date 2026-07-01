@@ -6,7 +6,7 @@ use actix_web::{HttpRequest, HttpResponse, HttpResponseBuilder, Responder, Respo
 use bytemuck::NoUninit;
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use serde_json::json;
 use std::fmt;
 use std::fmt::Display;
 use utoipa::ToSchema;
@@ -260,10 +260,10 @@ impl BootstrapConfig {
 
 /// Details about pipeline storage, which are returned as part of the regular runtime status polling
 /// by the runner.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 pub struct StorageStatusDetails {
     /// Present checkpoints.
-    pub checkpoints: VecDeque<CheckpointMetadata>,
+    pub checkpoints: Vec<CheckpointMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -347,4 +347,65 @@ impl ResponseError for ExtendedRuntimeStatusError {
     fn error_response(&self) -> HttpResponse<BoxBody> {
         HttpResponseBuilder::new(self.status_code()).json(self.error.clone())
     }
+}
+
+/// Details about the current runtime status. The fields in this struct should all be **optional**
+/// and set only by a runtime status when they are known. Otherwise, they can just be set `None`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default, Eq, ToSchema)]
+pub struct RuntimeStatusDetails {
+    /// Free form text giving an explanation why it is currently in this runtime status.
+    ///
+    /// Specifically useful for: `Unavailable`, `Initializing`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+
+    /// Statistics across all connectors.
+    ///
+    /// Specifically useful for: `Paused`, `Running`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connector_stats: Option<ConnectorStats>,
+
+    /// The diff which is awaiting approval.
+    ///
+    /// Specifically useful for: `AwaitingApproval`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_diff: Option<serde_json::Value>,
+    // Backward compatibility: in older versions, the approval diff was the runtime status details
+    // value itself. To distinguish between the old and new version, clients can check if the
+    // `program_diff` field (one of the fields within the `approval_diff`) is present if they
+    // expect there to be a diff (i.e., when the runtime status is `AwaitingApproval`). As such,
+    // `program_diff` is a reserved field name that cannot be added here in the future.
+}
+
+impl RuntimeStatusDetails {
+    pub fn new_only_reason(reason: &str) -> Self {
+        Self {
+            reason: Some(reason.to_string()),
+            ..Self::default()
+        }
+    }
+
+    /// Serializes the runtime status details to JSON. If the serialization errors, an error JSON
+    /// is returned instead. This makes sure this method does not panic unexpectedly and that the
+    /// error bubbles up. The details are only supplementary information, and as such are not
+    /// critical to operation.
+    pub fn serialize_guaranteed(self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap_or_else(|e| {
+            json!({
+                "reason": format!("unable to serialize runtime status details due to: {e}")
+            })
+        })
+    }
+}
+
+/// Statistics across all connectors.
+#[derive(Serialize, Deserialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+pub struct ConnectorStats {
+    /// Total number of errors across all connectors.
+    ///
+    /// - `num_transport_errors` from all input connectors
+    /// - `num_parse_errors` from all input connectors
+    /// - `num_encode_errors` from all output connectors
+    /// - `num_transport_errors` from all output connectors
+    pub num_errors: u64,
 }

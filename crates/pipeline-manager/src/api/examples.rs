@@ -23,6 +23,7 @@ use crate::runner::interaction::{
     format_disconnected_error_message, format_timeout_error_message, RunnerInteraction,
 };
 use feldera_types::config::{DevTweaks, FtConfig, ResourceConfig, StorageOptions};
+use feldera_types::runtime_status::{RuntimeStatusDetails, StorageStatusDetails};
 use feldera_types::{config::RuntimeConfig, error::ErrorResponse};
 use uuid::uuid;
 
@@ -215,7 +216,10 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
         deployment_error: pipeline.deployment_error,
         refresh_version: pipeline.refresh_version,
         storage_status: pipeline.storage_status,
-        storage_status_details: pipeline.storage_status_details,
+        storage_status_details: pipeline.storage_status_details.map(|v| {
+            serde_json::from_value::<StorageStatusDetails>(v)
+                .expect("example should be deserializable")
+        }),
         deployment_id: pipeline.deployment_id,
         deployment_initial: pipeline.deployment_initial,
         deployment_status: pipeline.deployment_status,
@@ -229,7 +233,10 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
         deployment_resources_desired_status_since: pipeline
             .deployment_resources_desired_status_since,
         deployment_runtime_status: pipeline.deployment_runtime_status,
-        deployment_runtime_status_details: pipeline.deployment_runtime_status_details,
+        deployment_runtime_status_details: pipeline.deployment_runtime_status_details.map(|v| {
+            serde_json::from_value::<RuntimeStatusDetails>(v)
+                .expect("example should be deserializable")
+        }),
         deployment_runtime_status_since: pipeline.deployment_runtime_status_since,
         deployment_runtime_desired_status: pipeline.deployment_runtime_desired_status,
         deployment_runtime_desired_status_since: pipeline.deployment_runtime_desired_status_since,
@@ -278,7 +285,10 @@ fn pipeline_selected_info_internal_to_external(
         deployment_error: pipeline.deployment_error,
         refresh_version: pipeline.refresh_version,
         storage_status: pipeline.storage_status,
-        storage_status_details: pipeline.storage_status_details,
+        storage_status_details: pipeline.storage_status_details.map(|v| {
+            serde_json::from_value::<StorageStatusDetails>(v)
+                .expect("example should be deserializable")
+        }),
         deployment_id: pipeline.deployment_id,
         deployment_initial: pipeline.deployment_initial,
         deployment_status: pipeline.deployment_status,
@@ -292,7 +302,10 @@ fn pipeline_selected_info_internal_to_external(
         deployment_resources_desired_status_since: pipeline
             .deployment_resources_desired_status_since,
         deployment_runtime_status: pipeline.deployment_runtime_status,
-        deployment_runtime_status_details: pipeline.deployment_runtime_status_details,
+        deployment_runtime_status_details: pipeline.deployment_runtime_status_details.map(|v| {
+            serde_json::from_value::<RuntimeStatusDetails>(v)
+                .expect("example should be deserializable")
+        }),
         deployment_runtime_status_since: pipeline.deployment_runtime_status_since,
         deployment_runtime_desired_status: pipeline.deployment_runtime_desired_status,
         deployment_runtime_desired_status_since: pipeline.deployment_runtime_desired_status_since,

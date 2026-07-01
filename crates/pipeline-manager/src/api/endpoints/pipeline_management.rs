@@ -27,21 +27,20 @@ use actix_web::{
     HttpResponse,
 };
 use chrono::{DateTime, Utc};
-use feldera_types::adapter_stats::PipelineStatsErrorsResponse;
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
-    BootstrapConfig, BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus,
+    BootstrapConfig, BootstrapPolicy, ConnectorStats, RuntimeDesiredStatus, RuntimeStatus,
+    RuntimeStatusDetails, StorageStatusDetails,
 };
-use futures_util::future::join_all;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 #[cfg(feature = "feldera-enterprise")]
 use std::time::Duration;
-use tracing::{debug, error, info};
+use tracing::info;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -74,22 +73,6 @@ fn remove_large_fields_from_program_info(
     program_info
 }
 
-/// Aggregated connector error statistics.
-///
-/// This structure contains the sum of all error counts across all input and output connectors
-/// for a pipeline.
-#[derive(Serialize, Deserialize, ToSchema, Eq, PartialEq, Debug, Clone)]
-pub struct ConnectorStats {
-    /// Total number of errors across all connectors.
-    ///
-    /// This is the sum of:
-    /// - `num_transport_errors` from all input connectors
-    /// - `num_parse_errors` from all input connectors
-    /// - `num_encode_errors` from all output connectors
-    /// - `num_transport_errors` from all output connectors
-    pub num_errors: u64,
-}
-
 /// Pipeline information.
 /// It both includes fields which are user-provided and system-generated.
 #[derive(Serialize, ToSchema, PartialEq, Debug, Clone)]
@@ -116,7 +99,7 @@ pub struct PipelineInfo {
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
-    pub storage_status_details: Option<serde_json::Value>,
+    pub storage_status_details: Option<StorageStatusDetails>,
     pub deployment_id: Option<Uuid>,
     pub deployment_initial: Option<RuntimeDesiredStatus>,
     pub deployment_status: CombinedStatus,
@@ -129,7 +112,7 @@ pub struct PipelineInfo {
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
     pub deployment_runtime_status: Option<RuntimeStatus>,
-    pub deployment_runtime_status_details: Option<serde_json::Value>,
+    pub deployment_runtime_status_details: Option<RuntimeStatusDetails>,
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
@@ -237,7 +220,9 @@ impl PipelineInfoInternal {
             deployment_resources_desired_status_since: extended_pipeline
                 .deployment_resources_desired_status_since,
             deployment_runtime_status: extended_pipeline.deployment_runtime_status,
-            deployment_runtime_status_details: extended_pipeline.deployment_runtime_status_details,
+            deployment_runtime_status_details: backward_compatible_runtime_status_details(
+                extended_pipeline.deployment_runtime_status_details,
+            ),
             deployment_runtime_status_since: extended_pipeline.deployment_runtime_status_since,
             deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
             deployment_runtime_desired_status_since: extended_pipeline
@@ -280,7 +265,7 @@ pub struct PipelineSelectedInfo {
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
-    pub storage_status_details: Option<serde_json::Value>,
+    pub storage_status_details: Option<StorageStatusDetails>,
     pub deployment_id: Option<Uuid>,
     pub deployment_initial: Option<RuntimeDesiredStatus>,
     pub deployment_status: CombinedStatus,
@@ -294,7 +279,7 @@ pub struct PipelineSelectedInfo {
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
     pub deployment_runtime_status: Option<RuntimeStatus>,
-    pub deployment_runtime_status_details: Option<serde_json::Value>,
+    pub deployment_runtime_status_details: Option<RuntimeStatusDetails>,
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
@@ -417,7 +402,9 @@ impl PipelineSelectedInfoInternal {
             deployment_resources_desired_status_since: extended_pipeline
                 .deployment_resources_desired_status_since,
             deployment_runtime_status: extended_pipeline.deployment_runtime_status,
-            deployment_runtime_status_details: extended_pipeline.deployment_runtime_status_details,
+            deployment_runtime_status_details: backward_compatible_runtime_status_details(
+                extended_pipeline.deployment_runtime_status_details,
+            ),
             deployment_runtime_status_since: extended_pipeline.deployment_runtime_status_since,
             deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
             deployment_runtime_desired_status_since: extended_pipeline
@@ -477,7 +464,9 @@ impl PipelineSelectedInfoInternal {
             deployment_resources_desired_status_since: extended_pipeline
                 .deployment_resources_desired_status_since,
             deployment_runtime_status: extended_pipeline.deployment_runtime_status,
-            deployment_runtime_status_details: extended_pipeline.deployment_runtime_status_details,
+            deployment_runtime_status_details: backward_compatible_runtime_status_details(
+                extended_pipeline.deployment_runtime_status_details,
+            ),
             deployment_runtime_status_since: extended_pipeline.deployment_runtime_status_since,
             deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
             deployment_runtime_desired_status_since: extended_pipeline
@@ -489,10 +478,13 @@ impl PipelineSelectedInfoInternal {
 
     pub(crate) fn new_status_with_connectors(
         extended_pipeline: ExtendedPipelineDescrMonitoring,
-        connectors: Option<ConnectorStats>,
     ) -> Self {
         let mut result = Self::new_status(extended_pipeline);
-        result.connectors = connectors;
+        if let Some(value) = result.deployment_runtime_status_details.clone() {
+            if let Ok(details) = serde_json::from_value::<RuntimeStatusDetails>(value) {
+                result.connectors = details.connector_stats;
+            }
+        };
         result
     }
 }
@@ -739,6 +731,40 @@ pub struct PostStopPipelineParameters {
     force: bool,
 }
 
+/// Converts old runtime status details to the new strongly typed one.
+fn backward_compatible_runtime_status_details(
+    details: Option<serde_json::Value>,
+) -> Option<serde_json::Value> {
+    details.map(|details| match details {
+        serde_json::Value::Null => RuntimeStatusDetails::default().serialize_guaranteed(),
+        serde_json::Value::Bool(b) => {
+            RuntimeStatusDetails::new_only_reason(&format!("Boolean: {b}")).serialize_guaranteed()
+        }
+        serde_json::Value::Number(n) => {
+            RuntimeStatusDetails::new_only_reason(&format!("Number: {n}")).serialize_guaranteed()
+        }
+        serde_json::Value::String(s) => {
+            RuntimeStatusDetails::new_only_reason(&s).serialize_guaranteed()
+        }
+        serde_json::Value::Array(a) => {
+            RuntimeStatusDetails::new_only_reason(&format!("Array: {a:?}")).serialize_guaranteed()
+        }
+        serde_json::Value::Object(obj) => {
+            if obj.get("program_diff").is_some() {
+                // Backward compatibility: the entire runtime status details is actually the approval
+                // diff, as such it must be restructured.
+                RuntimeStatusDetails {
+                    approval_diff: Some(serde_json::Value::Object(obj)),
+                    ..Default::default()
+                }
+                .serialize_guaranteed()
+            } else {
+                serde_json::Value::Object(obj)
+            }
+        }
+    })
+}
+
 /// List Pipelines
 ///
 /// Retrieve the list of pipelines.
@@ -789,133 +815,15 @@ pub(crate) async fn list_pipelines(
                 .await
                 .list_pipelines_for_monitoring(*tenant_id)
                 .await?;
-
-            // Fetch connector stats for all pipelines in parallel
-            let stats_futures: Vec<_> = pipelines
-                .iter()
-                .map(|pipeline| {
-                    let state = state.clone();
-                    let tenant_id = *tenant_id;
-                    let pipeline_name = pipeline.name.clone();
-                    async move {
-                        fetch_connector_error_stats(
-                            &state,
-                            tenant_id,
-                            &pipeline_name,
-                            pipeline.deployment_runtime_status,
-                        )
-                        .await
-                    }
-                })
-                .collect();
-
-            let connector_stats = join_all(stats_futures).await;
-
             pipelines
                 .into_iter()
-                .zip(connector_stats.into_iter())
-                .map(|(pipeline, stats)| {
-                    PipelineSelectedInfoInternal::new_status_with_connectors(pipeline, stats)
-                })
+                .map(PipelineSelectedInfoInternal::new_status_with_connectors)
                 .collect()
         }
     };
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(returned_pipelines))
-}
-
-/// Aggregate Connector Stats
-///
-/// Fetch and aggregate connector error statistics for a pipeline.
-///
-/// Returns `None` if the pipeline is unavailable, if there's an error fetching stats,
-/// or if the endpoint returns 404 (not implemented on older pipeline versions).
-///
-/// This endpoint is only used by the web-console so it is not published on openapi
-/// and subject to breakage.
-async fn fetch_connector_error_stats(
-    state: &WebData<ServerState>,
-    tenant_id: TenantId,
-    pipeline_name: &str,
-    deployment_runtime_status: Option<RuntimeStatus>,
-) -> Option<ConnectorStats> {
-    // Only forward the request if the pipeline is in a valid runtime status
-    match deployment_runtime_status {
-        Some(RuntimeStatus::Bootstrapping)
-        | Some(RuntimeStatus::Replaying)
-        | Some(RuntimeStatus::Running)
-        | Some(RuntimeStatus::Paused) => {
-            // Pipeline is in a valid state, proceed with the request
-        }
-        _ => {
-            // Pipeline is not in a valid state to fetch connector stats
-            return None;
-        }
-    }
-
-    // Use the existing method to forward the request to the pipeline
-    let client = awc::Client::default();
-    let response = state
-        .runner
-        .forward_http_request_to_pipeline_by_name(
-            &client,
-            tenant_id,
-            pipeline_name,
-            actix_web::http::Method::GET,
-            "stats/errors",
-            "",
-            Some(std::time::Duration::from_millis(500)),
-            None,
-        )
-        .await
-        .ok()?;
-
-    // Check status code - quietly ignore 404 (endpoint not available on older pipelines)
-    if response.status() == actix_web::http::StatusCode::NOT_FOUND {
-        debug!(
-            pipeline = %pipeline_name,
-            pipeline_id = "N/A",
-            "Pipeline does not support /stats/errors endpoint (404), skipping error stats"
-        );
-        return None;
-    }
-
-    // Parse the response body
-    let body = response.into_body();
-    let bytes = actix_web::body::to_bytes(body).await.ok()?;
-    let stats_response: PipelineStatsErrorsResponse = match serde_json::from_slice(&bytes) {
-        Ok(response) => response,
-        Err(e) => {
-            error!(
-                pipeline = %pipeline_name,
-                pipeline_id = "N/A",
-                "Failed to deserialize pipeline stats response: {e}"
-            );
-            return None;
-        }
-    };
-
-    // Extract and aggregate error counts
-    let mut total_errors = 0u64;
-
-    // Aggregate input connector errors
-    for endpoint in stats_response.inputs {
-        total_errors = total_errors
-            .saturating_add(endpoint.metrics.num_transport_errors)
-            .saturating_add(endpoint.metrics.num_parse_errors);
-    }
-
-    // Aggregate output connector errors
-    for endpoint in stats_response.outputs {
-        total_errors = total_errors
-            .saturating_add(endpoint.metrics.num_encode_errors)
-            .saturating_add(endpoint.metrics.num_transport_errors);
-    }
-
-    Some(ConnectorStats {
-        num_errors: total_errors,
-    })
 }
 
 /// Get Pipeline
@@ -976,14 +884,7 @@ pub(crate) async fn get_pipeline(
                 .await
                 .get_pipeline_for_monitoring(*tenant_id, &pipeline_name)
                 .await?;
-            let connector_stats = fetch_connector_error_stats(
-                &state,
-                *tenant_id,
-                &pipeline_name,
-                pipeline.deployment_runtime_status,
-            )
-            .await;
-            PipelineSelectedInfoInternal::new_status_with_connectors(pipeline, connector_stats)
+            PipelineSelectedInfoInternal::new_status_with_connectors(pipeline)
         }
     };
     Ok(HttpResponse::Ok()

@@ -617,8 +617,8 @@ fn limited_optional_storage_status_details() -> impl Strategy<Value = Option<ser
         if v.0 {
             None
         } else {
-            let mut checkpoints = VecDeque::new();
-            checkpoints.push_back(CheckpointMetadata {
+            let mut checkpoints = Vec::new();
+            checkpoints.push(CheckpointMetadata {
                 uuid: Default::default(),
                 identifier: None,
                 fingerprint: 0,
@@ -1970,7 +1970,7 @@ async fn pipeline_deployment() {
             RuntimeDesiredStatus::Paused,
             Some(
                 serde_json::to_value(&StorageStatusDetails {
-                    checkpoints: VecDeque::new(),
+                    checkpoints: Vec::new(),
                 })
                 .unwrap(),
             ),
@@ -1989,7 +1989,7 @@ async fn pipeline_deployment() {
             RuntimeDesiredStatus::Running,
             Some(
                 serde_json::to_value(&StorageStatusDetails {
-                    checkpoints: VecDeque::new(),
+                    checkpoints: Vec::new(),
                 })
                 .unwrap(),
             ),
@@ -2007,7 +2007,7 @@ async fn pipeline_deployment() {
     );
     let storage_status_details = Some(
         serde_json::to_value(&StorageStatusDetails {
-            checkpoints: VecDeque::new(),
+            checkpoints: Vec::new(),
         })
         .unwrap(),
     );
@@ -2043,7 +2043,8 @@ async fn pipeline_deployment() {
                 size: None,
                 steps: None,
                 processed_records: None,
-            }]),
+            }])
+            .into(),
         })
         .unwrap(),
     );
@@ -2084,7 +2085,8 @@ async fn pipeline_deployment() {
                 size: None,
                 steps: None,
                 processed_records: None,
-            }]),
+            }])
+            .into(),
         })
         .unwrap(),
     );
@@ -2201,7 +2203,7 @@ async fn pipeline_deployment() {
             RuntimeDesiredStatus::Paused,
             Some(
                 serde_json::to_value(&StorageStatusDetails {
-                    checkpoints: VecDeque::new(),
+                    checkpoints: Vec::new(),
                 })
                 .unwrap(),
             ),

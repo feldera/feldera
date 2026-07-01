@@ -1076,7 +1076,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 )
                 .await;
                 if status == CombinedStatus::AwaitingApproval {
-                    let diff = client
+                    let runtime_status_details = client
                         .get_pipeline()
                         .pipeline_name(name.clone())
                         .selector(PipelineFieldSelector::Status)
@@ -1095,10 +1095,11 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         "Pipeline definition has changed since the last checkpoint. The pipeline is awaiting approval to proceed with bootstrapping the modified components. Run 'fda approve' to approve the changes or 'fda stop' to terminate the pipeline. Summary of changes:"
                     );
 
-                    let diff_str = match diff {
+                    let diff_str = match runtime_status_details.map(|details| details.approval_diff)
+                    {
                         // Normally shouldn't happen.
-                        None => "<not available>".to_string(),
-                        Some(diff) => match format {
+                        None | Some(None) => "<not available>".to_string(),
+                        Some(Some(diff)) => match format {
                             OutputFormat::Text => json_to_table(&diff)
                                 .collapse()
                                 .into_pool_table()
