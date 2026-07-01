@@ -44,6 +44,14 @@ pub struct Checkpoint {
     /// Number of records processed.
     pub processed_records: u64,
 
+    /// The engine's per-transaction counter at checkpoint time.
+    ///
+    /// Restored on startup so transaction ids (which fault-tolerant output
+    /// connectors key their exactly-once dedup on) are reproduced across replay
+    /// and continue monotonically afterward, rather than restarting at 0.
+    #[serde(default)]
+    pub transaction_number: u64,
+
     /// Time at which the ultimate ancestor pipeline process of this
     /// checkpoint started.
     #[serde(with = "chrono::serde::ts_seconds", default = "unix_epoch")]
