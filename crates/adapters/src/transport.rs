@@ -80,6 +80,308 @@ use feldera_datagen::GeneratorEndpoint;
 
 pub use feldera_adapterlib::transport::*;
 
+pub fn builtin_input_transport_registry() -> InputTransportRegistry {
+    let mut registry = InputTransportRegistry::new();
+    registry.register(TransportConfig::FILE_INPUT, Box::new(FileInputFactory));
+    #[cfg(feature = "with-kafka")]
+    registry.register(TransportConfig::KAFKA_INPUT, Box::new(KafkaInputFactory));
+    #[cfg(feature = "with-nats")]
+    registry.register(TransportConfig::NATS_INPUT, Box::new(NatsInputFactory));
+    #[cfg(feature = "with-pubsub")]
+    registry.register(TransportConfig::PUB_SUB_INPUT, Box::new(PubSubInputFactory));
+    registry.register(TransportConfig::URL_INPUT, Box::new(UrlInputFactory));
+    registry.register(TransportConfig::S3_INPUT, Box::new(S3InputFactory));
+    registry.register(TransportConfig::DATAGEN, Box::new(DatagenInputFactory));
+    #[cfg(feature = "with-nexmark")]
+    registry.register(TransportConfig::NEXMARK, Box::new(NexmarkInputFactory));
+    registry.register(TransportConfig::HTTP_INPUT, Box::new(HttpInputFactory));
+    registry.register(TransportConfig::ADHOC_INPUT, Box::new(AdHocInputFactory));
+    registry.register(TransportConfig::CLOCK, Box::new(ClockInputFactory));
+    registry.register(TransportConfig::EMPTY_INPUT, Box::new(EmptyInputFactory));
+    registry
+}
+
+pub fn builtin_output_transport_registry() -> OutputTransportRegistry {
+    let mut registry = OutputTransportRegistry::new();
+    registry.register(TransportConfig::FILE_OUTPUT, Box::new(FileOutputFactory));
+    #[cfg(feature = "with-kafka")]
+    registry.register(TransportConfig::KAFKA_OUTPUT, Box::new(KafkaOutputFactory));
+    #[cfg(feature = "with-redis")]
+    registry.register(TransportConfig::REDIS_OUTPUT, Box::new(RedisOutputFactory));
+    registry.register(TransportConfig::NULL_OUTPUT, Box::new(NullOutputFactory));
+    registry
+}
+
+struct FileInputFactory;
+
+impl InputTransportEndpointFactory for FileInputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+        match config {
+            TransportConfig::FileInput(config) => {
+                Ok(Some(Box::new(FileInputEndpoint::new(config))))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+#[cfg(feature = "with-kafka")]
+struct KafkaInputFactory;
+
+#[cfg(feature = "with-kafka")]
+impl InputTransportEndpointFactory for KafkaInputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+        match config {
+            TransportConfig::KafkaInput(config) => {
+                Ok(Some(Box::new(KafkaFtInputEndpoint::new(config)?)))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+#[cfg(feature = "with-nats")]
+struct NatsInputFactory;
+
+#[cfg(feature = "with-nats")]
+impl InputTransportEndpointFactory for NatsInputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+        match config {
+            TransportConfig::NatsInput(config) => {
+                Ok(Some(Box::new(NatsInputEndpoint::new(config)?)))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+#[cfg(feature = "with-pubsub")]
+struct PubSubInputFactory;
+
+#[cfg(feature = "with-pubsub")]
+impl InputTransportEndpointFactory for PubSubInputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+        match config {
+            TransportConfig::PubSubInput(config) => {
+                Ok(Some(Box::new(PubSubInputEndpoint::new(config.clone())?)))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+struct UrlInputFactory;
+
+impl InputTransportEndpointFactory for UrlInputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+        match config {
+            TransportConfig::UrlInput(config) => Ok(Some(Box::new(UrlInputEndpoint::new(config)))),
+            _ => Ok(None),
+        }
+    }
+}
+
+struct S3InputFactory;
+
+impl InputTransportEndpointFactory for S3InputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+        match config {
+            TransportConfig::S3Input(config) => Ok(Some(Box::new(S3InputEndpoint::new(config)?))),
+            _ => Ok(None),
+        }
+    }
+}
+
+struct DatagenInputFactory;
+
+impl InputTransportEndpointFactory for DatagenInputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+        match config {
+            TransportConfig::Datagen(config) => {
+                Ok(Some(Box::new(GeneratorEndpoint::new(config.clone()))))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+#[cfg(feature = "with-nexmark")]
+struct NexmarkInputFactory;
+
+#[cfg(feature = "with-nexmark")]
+impl InputTransportEndpointFactory for NexmarkInputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+        match config {
+            TransportConfig::Nexmark(config) => {
+                Ok(Some(Box::new(NexmarkEndpoint::new(config.clone()))))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+struct HttpInputFactory;
+
+impl InputTransportEndpointFactory for HttpInputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+        match config {
+            TransportConfig::HttpInput(config) => {
+                Ok(Some(Box::new(HttpInputEndpoint::new(config))))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+struct AdHocInputFactory;
+
+impl InputTransportEndpointFactory for AdHocInputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+        match config {
+            TransportConfig::AdHocInput(config) => {
+                Ok(Some(Box::new(AdHocInputEndpoint::new(config))))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+struct ClockInputFactory;
+
+impl InputTransportEndpointFactory for ClockInputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+        match config {
+            TransportConfig::ClockInput(config) => Ok(Some(Box::new(ClockEndpoint::new(config)?))),
+            _ => Ok(None),
+        }
+    }
+}
+
+struct EmptyInputFactory;
+
+impl InputTransportEndpointFactory for EmptyInputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+        match config {
+            TransportConfig::EmptyInput => Ok(Some(Box::new(EmptyInputEndpoint))),
+            _ => Ok(None),
+        }
+    }
+}
+
+struct FileOutputFactory;
+
+impl OutputTransportEndpointFactory for FileOutputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+        _endpoint_name: &str,
+        _fault_tolerant: bool,
+    ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
+        match config {
+            TransportConfig::FileOutput(config) => {
+                Ok(Some(Box::new(FileOutputEndpoint::new(config)?)))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+#[cfg(feature = "with-kafka")]
+struct KafkaOutputFactory;
+
+#[cfg(feature = "with-kafka")]
+impl OutputTransportEndpointFactory for KafkaOutputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+        endpoint_name: &str,
+        fault_tolerant: bool,
+    ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
+        match config {
+            TransportConfig::KafkaOutput(config) => match fault_tolerant {
+                false => Ok(Some(Box::new(KafkaOutputEndpoint::new(
+                    config,
+                    endpoint_name,
+                )?))),
+                true => Ok(Some(Box::new(KafkaFtOutputEndpoint::new(config)?))),
+            },
+            _ => Ok(None),
+        }
+    }
+}
+
+#[cfg(feature = "with-redis")]
+struct RedisOutputFactory;
+
+#[cfg(feature = "with-redis")]
+impl OutputTransportEndpointFactory for RedisOutputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+        _endpoint_name: &str,
+        _fault_tolerant: bool,
+    ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
+        match config {
+            TransportConfig::RedisOutput(config) => {
+                Ok(Some(Box::new(RedisOutputEndpoint::new(config)?)))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+struct NullOutputFactory;
+
+impl OutputTransportEndpointFactory for NullOutputFactory {
+    fn create(
+        &self,
+        config: &TransportConfig,
+        _endpoint_name: &str,
+        _fault_tolerant: bool,
+    ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
+        match config {
+            TransportConfig::NullOutput => Ok(Some(Box::new(NullOutputEndpoint))),
+            _ => Ok(None),
+        }
+    }
+}
+
 /// Creates an input transport endpoint instance using an input transport
 /// configuration, resolving secrets by reading `secrets_dir`.
 ///
@@ -92,45 +394,7 @@ pub fn input_transport_config_to_endpoint(
     secrets_dir: &Path,
 ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
-    let endpoint: Box<dyn TransportInputEndpoint> = match config {
-        TransportConfig::FileInput(config) => Box::new(FileInputEndpoint::new(config)),
-        #[cfg(feature = "with-kafka")]
-        TransportConfig::KafkaInput(config) => Box::new(KafkaFtInputEndpoint::new(config)?),
-        #[cfg(not(feature = "with-kafka"))]
-        TransportConfig::KafkaInput(_) => return Ok(None),
-        #[cfg(feature = "with-nats")]
-        TransportConfig::NatsInput(config) => Box::new(NatsInputEndpoint::new(config)?),
-        #[cfg(not(feature = "with-nats"))]
-        TransportConfig::NatsInput(_) => return Ok(None),
-        #[cfg(feature = "with-pubsub")]
-        TransportConfig::PubSubInput(config) => Box::new(PubSubInputEndpoint::new(config.clone())?),
-        #[cfg(not(feature = "with-pubsub"))]
-        TransportConfig::PubSubInput(_) => return Ok(None),
-        TransportConfig::UrlInput(config) => Box::new(UrlInputEndpoint::new(config)),
-        TransportConfig::S3Input(config) => Box::new(S3InputEndpoint::new(config)?),
-        TransportConfig::Datagen(config) => Box::new(GeneratorEndpoint::new(config.clone())),
-        #[cfg(feature = "with-nexmark")]
-        TransportConfig::Nexmark(config) => Box::new(NexmarkEndpoint::new(config.clone())),
-        #[cfg(not(feature = "with-nexmark"))]
-        TransportConfig::Nexmark(_) => return Ok(None),
-        TransportConfig::HttpInput(config) => Box::new(HttpInputEndpoint::new(config)),
-        TransportConfig::AdHocInput(config) => Box::new(AdHocInputEndpoint::new(config)),
-        TransportConfig::ClockInput(config) => Box::new(ClockEndpoint::new(config)?),
-        TransportConfig::EmptyInput => Box::new(EmptyInputEndpoint),
-        TransportConfig::FileOutput(_)
-        | TransportConfig::KafkaOutput(_)
-        | TransportConfig::DeltaTableInput(_)
-        | TransportConfig::DeltaTableOutput(_)
-        | TransportConfig::DynamoDBOutput(_)
-        | TransportConfig::PostgresInput(_)
-        | TransportConfig::PostgresCdcInput(_)
-        | TransportConfig::PostgresOutput(_)
-        | TransportConfig::HttpOutput(_)
-        | TransportConfig::RedisOutput(_)
-        | TransportConfig::IcebergInput(_)
-        | TransportConfig::NullOutput => return Ok(None),
-    };
-    Ok(Some(endpoint))
+    builtin_input_transport_registry().create_endpoint(&config)
 }
 
 /// Creates an output transport endpoint instance using an output transport
@@ -150,21 +414,130 @@ pub fn output_transport_config_to_endpoint(
     secrets_dir: &Path,
 ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
-    match config {
-        TransportConfig::FileOutput(config) => Ok(Some(Box::new(FileOutputEndpoint::new(config)?))),
+    builtin_output_transport_registry().create_endpoint(&config, endpoint_name, fault_tolerant)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use feldera_types::config::FtModel;
+
+    #[test]
+    fn builtin_input_registry_creates_empty_input_endpoint() {
+        let secrets_dir = tempfile::tempdir().unwrap();
+
+        let endpoint = input_transport_config_to_endpoint(
+            &TransportConfig::EmptyInput,
+            "empty",
+            secrets_dir.path(),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(endpoint.fault_tolerance(), Some(FtModel::ExactlyOnce));
+    }
+
+    #[test]
+    fn builtin_output_registry_creates_null_output_endpoint() {
+        let secrets_dir = tempfile::tempdir().unwrap();
+
+        let endpoint = output_transport_config_to_endpoint(
+            &TransportConfig::NullOutput,
+            "null",
+            true,
+            secrets_dir.path(),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert!(endpoint.is_fault_tolerant());
+        assert_eq!(endpoint.max_buffer_size_bytes(), usize::MAX);
+    }
+
+    #[test]
+    fn wrong_direction_transport_configs_still_return_none() {
+        let secrets_dir = tempfile::tempdir().unwrap();
+
+        assert!(
+            input_transport_config_to_endpoint(
+                &TransportConfig::NullOutput,
+                "null",
+                secrets_dir.path()
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            output_transport_config_to_endpoint(
+                &TransportConfig::EmptyInput,
+                "empty",
+                false,
+                secrets_dir.path()
+            )
+            .unwrap()
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn explicit_transport_registries_dispatch_by_transport_name() {
+        let mut input_registry = InputTransportRegistry::new();
+        assert!(
+            input_registry
+                .create_endpoint(&TransportConfig::EmptyInput)
+                .unwrap()
+                .is_none()
+        );
+        input_registry.register(TransportConfig::EMPTY_INPUT, Box::new(EmptyInputFactory));
+        assert!(
+            input_registry
+                .create_endpoint(&TransportConfig::EmptyInput)
+                .unwrap()
+                .is_some()
+        );
+
+        let mut output_registry = OutputTransportRegistry::new();
+        assert!(
+            output_registry
+                .create_endpoint(&TransportConfig::NullOutput, "null", true)
+                .unwrap()
+                .is_none()
+        );
+        output_registry.register(TransportConfig::NULL_OUTPUT, Box::new(NullOutputFactory));
+        assert!(
+            output_registry
+                .create_endpoint(&TransportConfig::NullOutput, "null", true)
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn builtin_transport_registries_include_compiled_transport_names() {
+        let input_registry = builtin_input_transport_registry();
+        assert!(input_registry.get(TransportConfig::FILE_INPUT).is_some());
         #[cfg(feature = "with-kafka")]
-        TransportConfig::KafkaOutput(config) => match fault_tolerant {
-            false => Ok(Some(Box::new(KafkaOutputEndpoint::new(
-                config,
-                endpoint_name,
-            )?))),
-            true => Ok(Some(Box::new(KafkaFtOutputEndpoint::new(config)?))),
-        },
+        assert!(input_registry.get(TransportConfig::KAFKA_INPUT).is_some());
+        #[cfg(feature = "with-nats")]
+        assert!(input_registry.get(TransportConfig::NATS_INPUT).is_some());
+        #[cfg(feature = "with-pubsub")]
+        assert!(input_registry.get(TransportConfig::PUB_SUB_INPUT).is_some());
+        assert!(input_registry.get(TransportConfig::URL_INPUT).is_some());
+        assert!(input_registry.get(TransportConfig::S3_INPUT).is_some());
+        assert!(input_registry.get(TransportConfig::DATAGEN).is_some());
+        #[cfg(feature = "with-nexmark")]
+        assert!(input_registry.get(TransportConfig::NEXMARK).is_some());
+        assert!(input_registry.get(TransportConfig::HTTP_INPUT).is_some());
+        assert!(input_registry.get(TransportConfig::ADHOC_INPUT).is_some());
+        assert!(input_registry.get(TransportConfig::CLOCK).is_some());
+        assert!(input_registry.get(TransportConfig::EMPTY_INPUT).is_some());
+
+        let output_registry = builtin_output_transport_registry();
+        assert!(output_registry.get(TransportConfig::FILE_OUTPUT).is_some());
+        #[cfg(feature = "with-kafka")]
+        assert!(output_registry.get(TransportConfig::KAFKA_OUTPUT).is_some());
         #[cfg(feature = "with-redis")]
-        TransportConfig::RedisOutput(config) => {
-            Ok(Some(Box::new(RedisOutputEndpoint::new(config)?)))
-        }
-        TransportConfig::NullOutput => Ok(Some(Box::new(NullOutputEndpoint))),
-        _ => Ok(None),
+        assert!(output_registry.get(TransportConfig::REDIS_OUTPUT).is_some());
+        assert!(output_registry.get(TransportConfig::NULL_OUTPUT).is_some());
     }
 }
