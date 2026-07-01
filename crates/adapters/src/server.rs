@@ -9,7 +9,10 @@ use crate::server::metrics::{
 };
 use crate::static_compile::catalog::OUTPUT_MAPPING;
 use crate::transport::http::HttpOutputFormat;
-use crate::util::{LongOperationWarning, RateLimitCheckResult, TokenBucketRateLimiter};
+use crate::util::{
+    LongOperationWarning, RateLimitCheckResult, TokenBucketRateLimiter,
+    missing_pipeline_identity_message,
+};
 use crate::{Catalog, ControllerStatus, dyn_event};
 use crate::{
     CircuitCatalog, Controller, ControllerError, FormatConfig, InputEndpointConfig, OutputEndpoint,
@@ -62,7 +65,7 @@ use feldera_types::checkpoint::{
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
-use feldera_types::config::SyncConfig;
+use feldera_types::config::{PipelineIdentity, SyncConfig};
 use feldera_types::constants::STATUS_FILE;
 use feldera_types::coordination::{
     AdHocScan, CoordinationActivate, CoordinationStatus, Labels, RestartArgs, Step, StepRequest,
@@ -287,6 +290,13 @@ pub(crate) struct ServerState {
     /// restarts.
     deployment_id: Uuid,
 
+    /// Identity of this pipeline (system name + given name).
+    ///
+    /// Used by the `/coordination/checkpoint/pull` endpoint to identify the
+    /// pipeline when checking S3 bucket ownership.  `None` when the pipeline has
+    /// no system-assigned name.
+    pipeline_identity: Option<PipelineIdentity>,
+
     /// Incarnation UUID.
     ///
     /// This is randomly generated each time the process starts.
@@ -341,6 +351,7 @@ impl ServerState {
         desired_status: RuntimeDesiredStatus,
         bootstrap_config: BootstrapConfig,
         deployment_id: Uuid,
+        pipeline_identity: Option<PipelineIdentity>,
         storage: Option<Arc<dyn StorageBackend>>,
         sync_config: Option<SyncConfig>,
         host_info: Option<HostInfo>,
@@ -357,6 +368,7 @@ impl ServerState {
             desired_status: Mutex::new(desired_status),
             bootstrap_config: Mutex::new(bootstrap_config),
             deployment_id,
+            pipeline_identity,
             storage,
             sync_config,
             host_info,
@@ -376,6 +388,7 @@ impl ServerState {
             RuntimeDesiredStatus::Paused,
             BootstrapConfig::default(),
             deployment_id,
+            None,
             None,
             None,
             None,
@@ -804,6 +817,7 @@ pub fn run_server(
             initial_status,
             bootstrap_config,
             args.deployment_id,
+            config.pipeline_identity(),
             builder.storage().clone(),
             builder.sync_config(),
             host_info,
@@ -2893,6 +2907,16 @@ async fn coordination_checkpoint_pull(
     let host_info = state.host_info;
     let standby = body.into_inner().standby;
 
+    let pipeline =
+        state
+            .pipeline_identity
+            .clone()
+            .ok_or_else(|| PipelineError::ControllerError {
+                error: Arc::new(ControllerError::checkpoint_fetch_error(
+                    missing_pipeline_identity_message("checkpoint pull requires pipeline identity"),
+                )),
+            })?;
+
     {
         let mut pull_state = state.pull_state.lock().unwrap();
         if matches!(*pull_state, CheckpointPullStatus::InProgress) {
@@ -2904,7 +2928,9 @@ async fn coordination_checkpoint_pull(
 
     spawn(async move {
         let result = spawn_blocking(move || {
-            crate::controller::sync::pull_once_with_backend(storage, &sync, host_info, standby)
+            crate::controller::sync::pull_once_with_backend(
+                storage, &sync, host_info, standby, &pipeline,
+            )
         })
         .await
         .unwrap();

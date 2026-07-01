@@ -459,6 +459,65 @@ class TestCheckpointSync(SharedTestPipeline):
             self._restart_from_checkpoint("latest", auth_err=True, strict=False)
 
     @enterprise_only
+    def test_bucket_owner_lock_rejects_other_pipeline(self):
+        # Two different pipelines intentionally point at the same remote bucket.
+        # The first one claims ownership when it syncs a checkpoint; the second
+        # must fail before writing anything to that bucket.
+        ft = FaultToleranceModel.AtLeastOnce
+
+        owner = self.new_pipeline_with_suffix("owner")
+        intruder = self.new_pipeline_with_suffix("intruder")
+        shared_storage = Storage(config=storage_cfg(owner.name))
+
+        owner.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=shared_storage,
+            )
+        )
+        owner.start()
+        owner.input_json("t0", [{"c0": i, "c1": f"owner_{i}"} for i in range(1, 6)])
+        owner.wait_for_completion()
+        owner.checkpoint(wait=True)
+        owner.sync_checkpoint(wait=True)
+
+        intruder.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=ft,
+                storage=shared_storage,
+            )
+        )
+        intruder.start()
+        intruder.input_json(
+            "t0", [{"c0": i, "c1": f"intruder_{i}"} for i in range(6, 11)]
+        )
+        intruder.wait_for_completion()
+        intruder.checkpoint(wait=True)
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Refusing to write checkpoint data|owned by pipeline|Current pipeline is",
+        ):
+            intruder.sync_checkpoint(wait=True)
+
+        # The failed intruder write must not disturb the legitimate owner.
+        owner.input_json(
+            "t0", [{"c0": i, "c1": f"owner_again_{i}"} for i in range(11, 16)]
+        )
+        owner.wait_for_completion()
+        owner.checkpoint(wait=True)
+        owner.sync_checkpoint(wait=True)
+
+        intruder.stop(force=True)
+        owner.stop(force=True)
+        intruder.clear_storage()
+        owner.clear_storage()
+
+    @enterprise_only
     @single_host_only
     def test_nonexistent_checkpoint_fail(self):
         self._configure_and_start()

@@ -43,6 +43,25 @@ This configuration restores from the latest checkpoint on startup (downloading
 from S3 if not available locally) and pushes new checkpoints to S3 every 120
 seconds.
 
+## Bucket ownership
+
+The configured `bucket` is a read/write checkpoint location owned by one
+pipeline. This location can be either an entire S3 bucket or a prefix inside a
+bucket, for example `mybucket/checkpoints/pipeline-a`. Do not configure two
+different pipelines with the same `bucket` location.
+
+On the first checkpoint sync to a location without an ownership file, Feldera
+writes an `owner.json` file at the root of the configured `bucket` location.
+The file records the system-generated pipeline name that owns the checkpoint
+location. Before every push, Feldera reads `owner.json` again and refuses
+to write checkpoint data if the file names a different pipeline.
+
+If the ownership file is changed manually, the current owner can lose write
+access to the location and future checkpoint syncs will fail until the
+configuration or ownership file is corrected. Pulling checkpoints is less
+strict: if a pipeline pulls from a location owned by another pipeline, Feldera
+logs a warning but does not fail the pull.
+
 ## Standby mode
 
 Pipelines can start in **standby** mode by passing `initial=standby` to the
@@ -85,6 +104,10 @@ primary fails. The following table illustrates a typical failover scenario:
 `read_bucket` lets you seed a new pipeline from a read-only checkpoint source
 without giving it write access to the source.
 
+This is the supported way to share checkpoint data between pipelines. Each
+pipeline still writes to its own `bucket`; `read_bucket` points at another
+pipeline's checkpoint location and is never modified by the reader.
+
 For example, suppose pipeline **A** pushes checkpoints to `bucket-a/pipeline-a`
 and you want a new pipeline **B** to start from **A**'s latest state without
 writing back to **A**'s bucket:
@@ -114,7 +137,7 @@ On its first start **B** pulls from `bucket-a/pipeline-a` (because
 | Field                   | Type            | Default     | Description                                                                                                                                                                                                                                                                                                                                                                         |
 | ----------------------- | --------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `endpoint`              | `string`        |             | The S3-compatible object store endpoint (e.g., `http://localhost:9000` for MinIO).                                                                                                                                                                                                                                                                                                  |
-| `bucket` \*             | `string`        |             | The bucket name and optional prefix to store checkpoints (e.g., `mybucket/checkpoints`).                                                                                                                                                                                                                                                                                            |
+| `bucket` \*             | `string`        |             | The bucket name and optional prefix to store checkpoints (e.g., `mybucket/checkpoints`). This is the pipeline's read/write checkpoint location and must be unique to this pipeline. See [Bucket ownership](#bucket-ownership).                                                                                                                                                      |
 | `read_bucket`           | `string`        |             | A read-only fallback bucket used to seed the pipeline when `bucket` has no checkpoint. Uses the same connection settings as `bucket` (`provider`, `access_key`, `secret_key`, `endpoint`, `region`). The pipeline **never writes** to `read_bucket`. Must point to a different location than `bucket`. See [Seeding from an existing pipeline](#seeding-from-an-existing-pipeline). |
 | `region`                | `string`        | `us-east-1` | The region of the bucket. Leave empty for MinIO. If `provider` is AWS, and no region is specified, `us-east-1` is used.                                                                                                                                                                                                                                                             |
 | `provider` \*           | `string`        |             | The S3 provider identifier. Must match [rclone's list](https://rclone.org/s3/#providers). Case-sensitive. Use `"Other"` if unsure.                                                                                                                                                                                                                                                  |
@@ -196,6 +219,9 @@ Example policy:
 ```
 
 For more details, refer to [rclone S3 permissions](https://rclone.org/s3/#s3-permissions).
+
+These permissions also cover the `owner.json` ownership file stored at the
+root of the configured `bucket` location.
 
 ## IRSA
 
@@ -332,6 +358,7 @@ may reference the same files.
 
 ```
 storage-bucket/
+├── owner.json                    # Pipeline that owns this checkpoint location
 ├── w0-[UUID].feldera            # LSM tree reference file (shared across hosts)
 ├── w1-[UUID].feldera            # LSM tree reference file (shared across hosts)
 ├── dependencies/                # Per-checkpoint dependency manifests

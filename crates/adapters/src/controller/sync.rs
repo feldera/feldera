@@ -19,7 +19,10 @@ use feldera_types::{
     config::{FileBackendConfig, StorageBackendConfig},
     constants::ACTIVATION_MARKER_FILE,
 };
-use feldera_types::{checkpoint::HostInfo, config::SyncConfig};
+use feldera_types::{
+    checkpoint::HostInfo,
+    config::{PipelineIdentity, SyncConfig},
+};
 
 // Pull metrics
 /// Bytes transferred when pulling a checkpoint.
@@ -82,9 +85,16 @@ fn pull_and_gc(
     prev: &mut uuid::Uuid,
     host_info: Option<HostInfo>,
     standby: bool,
+    pipeline: &PipelineIdentity,
 ) -> Result<CheckpointMetadata, ControllerError> {
     match SYNCHRONIZER
-        .pull(storage.clone(), sync.to_owned(), host_info, standby)
+        .pull(
+            storage.clone(),
+            sync.to_owned(),
+            host_info,
+            standby,
+            pipeline.clone(),
+        )
         .map_err(|e| ControllerError::checkpoint_fetch_error(format!("{e:?}")))
     {
         Err(err) => {
@@ -135,6 +145,7 @@ pub fn pull_once(
     storage: &CircuitStorageConfig,
     sync: &SyncConfig,
     host_info: Option<HostInfo>,
+    pipeline: &PipelineIdentity,
 ) -> Result<(), ControllerError> {
     pull_and_gc(
         storage.backend.clone(),
@@ -142,6 +153,7 @@ pub fn pull_once(
         &mut uuid::Uuid::nil(),
         host_info,
         false,
+        pipeline,
     )?;
 
     Ok(())
@@ -158,8 +170,16 @@ pub fn pull_once_with_backend(
     sync: &SyncConfig,
     host_info: Option<HostInfo>,
     standby: bool,
+    pipeline: &PipelineIdentity,
 ) -> Result<(), ControllerError> {
-    pull_and_gc(storage, sync, &mut uuid::Uuid::nil(), host_info, standby)?;
+    pull_and_gc(
+        storage,
+        sync,
+        &mut uuid::Uuid::nil(),
+        host_info,
+        standby,
+        pipeline,
+    )?;
     Ok(())
 }
 
@@ -169,6 +189,7 @@ pub fn pull_once_with_backend(
     _sync: &SyncConfig,
     _host_info: Option<HostInfo>,
     _standby: bool,
+    _pipeline: &PipelineIdentity,
 ) -> Result<(), ControllerError> {
     Err(ControllerError::EnterpriseFeature("checkpoint pull"))
 }
@@ -194,6 +215,7 @@ pub fn continuous_pull<F>(
     storage: &CircuitStorageConfig,
     is_activated: F,
     host_info: Option<HostInfo>,
+    pipeline: &PipelineIdentity,
 ) -> Result<(), ControllerError>
 where
     F: Fn() -> bool,
@@ -251,7 +273,14 @@ where
     // Also, if we receive an activation signal, we run one more iteration to
     // ensure that we have the latest checkpoint before activating.
     loop {
-        match pull_and_gc(storage.backend.clone(), sync, &mut prev, host_info, true) {
+        match pull_and_gc(
+            storage.backend.clone(),
+            sync,
+            &mut prev,
+            host_info,
+            true,
+            pipeline,
+        ) {
             Err(err) => {
                 // On our final attempt to pull the checkpoint after activation, if we fail, we should error out and not activate with a potentially stale or missing checkpoint.
                 if pull_once_again_after_activation {
