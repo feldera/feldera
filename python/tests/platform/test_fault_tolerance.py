@@ -2,22 +2,14 @@
 
 A fault-tolerant pipeline (`fault_tolerance: latest_checkpoint`) must replay its
 logged input *deterministically* across restarts: on resume the engine restores
-the latest checkpoint and replays the input log, and every replayed step must
+the latest checkpoint and replays the input log, and every replayed transaction must
 contain the same records (count + hash) as were originally logged.
 
 ``test_ft_input_replay_determinism`` exercises this by repeatedly force-stopping
 (crashing) and restarting a single-host FT pipeline while a datagen connector is
 actively producing, so each restart replays a partially-logged step. On a buggy
-build the input is re-sharded across workers non-deterministically on replay; the
-engine detects
-
-    Logged and replayed step N contained different numbers of records or hashes
-
-and self-terminates the pipeline (``PipelineTerminated`` -> ``Stopped``), which
-this test reports as a recovery failure. The bug requires >= 2 workers (the input
-is sharded across workers); with a single worker replay is deterministic.
-
-Regression test for the intermittent ``fault_tolerance_tests`` CI failures.
+build the pipeline crashes because validation code in controller.rs detects the
+mismatch in the recorded vs replay input digest.
 """
 
 import json
