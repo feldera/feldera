@@ -356,7 +356,6 @@ class illarg_intersect_illegal(TstView):
 
 
 # INTERSECT ALL
-# Negative Test
 class illarg_intersect_all_illegal(TstView):
     def __init__(self):
         self.sql = """CREATE MATERIALIZED VIEW intersect_all_illegal AS SELECT
@@ -364,7 +363,7 @@ class illarg_intersect_all_illegal(TstView):
                       INTERSECT ALL
                       SELECT booll
                       FROM illegal_tbl"""
-        self.expected_error = "Not yet implemented"
+        self.data = [{"str": None}]
 
 
 # MINUS

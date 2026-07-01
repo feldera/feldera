@@ -1167,6 +1167,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     private void visitMinus(LogicalMinus minus) {
         IntermediateRel node = CalciteObject.create(minus);
+        if (minus.all)
+            throw new InternalCompilerError("EXCEPT/MINUS ALL should have been eliminated", node);
         boolean first = true;
         RelDataType rowType = minus.getRowType();
         DBSPTypeTuple outputType = this.convertType(node.getPositionRange(), rowType, false).to(DBSPTypeTuple.class);
@@ -1196,14 +1198,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             first = false;
         }
 
-        if (minus.all) {
-            throw new UnimplementedException("EXCEPT/MINUS ALL", 5483, node);
-        } else {
-            DBSPSumOperator sum = new DBSPSumOperator(node, inputs);
-            this.addOperator(sum);
-            DBSPStreamDistinctOperator d = new DBSPStreamDistinctOperator(node.getFinal(), sum.outputPort());
-            this.assignOperator(minus, d);
-        }
+        DBSPSumOperator sum = new DBSPSumOperator(node, inputs);
+        this.addOperator(sum);
+        DBSPStreamDistinctOperator d = new DBSPStreamDistinctOperator(node.getFinal(), sum.outputPort());
+        this.assignOperator(minus, d);
     }
 
     void visitFilter(LogicalFilter filter) {
@@ -2434,6 +2432,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     void visitIntersect(LogicalIntersect intersect) {
         var node = CalciteObject.create(intersect);
+        if (intersect.all)
+            // Should have been eliminated by the Calcite rewrite rule
+            throw new InternalCompilerError("INTERSECT ALL should have been eliminated", node);
         // Intersect is a special case of join.
         List<RelNode> inputs = intersect.getInputs();
         RelNode input = intersect.getInput(0);
@@ -2442,8 +2443,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         if (inputs.isEmpty())
             throw new UnsupportedException(node);
-        if (intersect.all)
-            throw new UnimplementedException("INTERSECT ALL", node);
         if (inputs.size() == 1) {
             Utilities.putNew(this.nodeOperator, intersect, previous);
             return;

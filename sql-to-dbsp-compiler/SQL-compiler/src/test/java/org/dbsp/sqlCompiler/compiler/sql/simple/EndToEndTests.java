@@ -496,6 +496,16 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void intersectAllTest() {
+        // Both rows in T have COL1=10, so SELECT COL1 is a multiset {10, 10}.
+        // INTERSECT ALL with itself returns the same multiset: {10, 10} (weight 2).
+        DBSPTupleExpression ten = new DBSPTupleExpression(new DBSPI32Literal(10));
+        this.testQuery(
+                "SELECT COL1 FROM T INTERSECT ALL SELECT COL1 FROM T",
+                new DBSPZSetExpression(ten, ten));
+    }
+
+    @Test
     public void plusNullTest() {
         String query = "SELECT T.COL1 + T.COL5 FROM T";
         this.testQuery(query,
