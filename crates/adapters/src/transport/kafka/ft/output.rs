@@ -2,10 +2,7 @@ use crate::transport::kafka::{
     MemoryUseReporter, build_headers, generate_oauthbearer_token, kafka_send,
     validate_aws_msk_region,
 };
-use crate::{
-    AsyncErrorCallback, OutputEndpoint,
-    transport::{Step, kafka::DeferredLogging},
-};
+use crate::{AsyncErrorCallback, OutputEndpoint, transport::kafka::DeferredLogging};
 use anyhow::{Context, Error as AnyError, Result as AnyResult, anyhow, bail};
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::transport::kafka::KafkaOutputConfig;
@@ -51,8 +48,8 @@ enum State {
     /// will write at position `.0`.
     BatchOpen(OutputPosition),
 
-    /// `batch_end` has been called for step `.0`.
-    BatchClosed(Step),
+    /// `batch_end` has been called for transaction `.0`.
+    BatchClosed(u64),
 }
 
 /// A position in the output partition.
@@ -60,10 +57,16 @@ enum State {
 /// This is stored as the Kafka message key.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct OutputPosition {
-    /// The step number.
-    step: Step,
+    /// The transaction number.
+    ///
+    /// Exactly-once dedup keys on the transaction (not the physical step):
+    /// a transaction produces output once per output stream, and the
+    /// transaction number is reproduced deterministically across replay,
+    /// whereas the step at which a commit lands is not (streaming exchange
+    /// makes the commit-step count vary between the original run and replay).
+    transaction: u64,
 
-    /// An index within the step.  The first message output in a step has
+    /// An index within the transaction's output.  The first message has
     /// substep 0, the second has substep 1, and so on.
     ///
     /// We don't have an a priori need to store the substep number in the Kafka
@@ -90,7 +93,7 @@ pub struct KafkaOutputEndpoint {
     next_partition: usize,
     n_partitions: usize,
     max_message_size: usize,
-    next_step: Step,
+    next_transaction: u64,
     state: State,
 }
 
@@ -152,8 +155,8 @@ impl KafkaOutputEndpoint {
 
         // Read the number of partitions and the next step number.  We do this
         // after initializing transactions to avoid a race.
-        let (n_partitions, next_step) =
-            Self::read_next_step(&common.seekable_consumer_config, &config)?;
+        let (n_partitions, next_transaction) =
+            Self::read_next_transaction(&common.seekable_consumer_config, &config)?;
 
         Ok(Self {
             kafka_producer,
@@ -162,23 +165,23 @@ impl KafkaOutputEndpoint {
             n_partitions,
             next_partition: 0,
             max_message_size,
-            next_step,
+            next_transaction,
             state: State::New,
         })
     }
 
     /// Reads the tail of `topic` using `seekable_consumer_config`. Returns the
-    /// number of partitions in `topic` and the step number for the next step to
-    /// be written.
-    fn read_next_step(
+    /// number of partitions in `topic` and the transaction number for the next
+    /// transaction to be written.
+    fn read_next_transaction(
         seekable_consumer_config: &ClientConfig,
         kafka_config: &KafkaOutputConfig,
-    ) -> AnyResult<(usize, Step)> {
+    ) -> AnyResult<(usize, u64)> {
         let topic = &kafka_config.topic;
         let context = DataConsumerContext::new(|error| warn!("{error}"), kafka_config)?;
         let consumer = BaseConsumer::from_config_and_context(seekable_consumer_config, context)?;
         let n_partitions = count_partitions_in_topic(&consumer, topic)?;
-        let mut next_step = 0;
+        let mut next_transaction = 0;
         for partition in 0..n_partitions {
             let ctp = Ctp::new(&consumer, topic, partition as i32);
             let watermarks = ctp.fetch_watermarks(None)?;
@@ -186,11 +189,11 @@ impl KafkaOutputEndpoint {
                 if let Some(msg) = ctp.read_last_message(&watermarks)? {
                     let key = OutputPosition::from_message(&msg).with_context(|| {
                         format!(
-                            "message at offset {} in {ctp} should have step and substep as key",
+                            "message at offset {} in {ctp} should have transaction and substep as key",
                             msg.offset()
                         )
                     })?;
-                    next_step = max(next_step, key.step + 1);
+                    next_transaction = max(next_transaction, key.transaction + 1);
                 }
             } else if watermarks != (0..0) {
                 // The partition is empty, but it has nonzero watermarks:
@@ -210,7 +213,7 @@ impl KafkaOutputEndpoint {
                 );
             };
         }
-        Ok((n_partitions, next_step))
+        Ok((n_partitions, next_transaction))
     }
 }
 
@@ -235,19 +238,26 @@ impl OutputEndpoint for KafkaOutputEndpoint {
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
         let _guard = span(&self.topic);
-        let State::BatchOpen(OutputPosition { step, substep }) = self.state else {
+        let State::BatchOpen(OutputPosition {
+            transaction,
+            substep,
+        }) = self.state
+        else {
             unreachable!(
                 "state should be BatchOpen (not {:?}) in `push_buffer()`",
                 self.state
             )
         };
         self.state = State::BatchOpen(OutputPosition {
-            step,
+            transaction,
             substep: substep + 1,
         });
 
-        if step >= self.next_step {
-            let key = OutputPosition { step, substep };
+        if transaction >= self.next_transaction {
+            let key = OutputPosition {
+                transaction,
+                substep,
+            };
             let key = serde_json::to_string(&key).unwrap();
             let record = BaseRecord::to(&self.topic)
                 .key(&key)
@@ -281,45 +291,56 @@ impl OutputEndpoint for KafkaOutputEndpoint {
                 self.state
             )
         };
-        self.state = State::BatchClosed(position.step);
+        self.state = State::BatchClosed(position.transaction);
 
-        if position.step >= self.next_step {
+        if position.transaction >= self.next_transaction {
             self.kafka_producer.commit_transaction(None)?;
-            self.next_step = position.step + 1;
+            self.next_transaction = position.transaction + 1;
         }
         Ok(())
     }
 
-    fn batch_start(&mut self, step: Step, _batch_type: OutputBatchType) -> AnyResult<()> {
+    fn batch_start(&mut self, transaction: u64, _batch_type: OutputBatchType) -> AnyResult<()> {
         let _guard = span(&self.topic);
-        let first_step = match self.state {
+        // The caller invokes `batch_start` exactly once per transaction, with
+        // strictly increasing transaction numbers (the controller skips empty
+        // output batches, so an in-progress step that produced no output does
+        // not open a batch). That keeps each `(transaction, substep)` key
+        // unique.
+        let first_transaction = match self.state {
             State::New => unreachable!("connect() should be called first"),
             State::Connected => true,
-            State::BatchClosed(closed_step) => {
-                if step <= closed_step {
+            State::BatchClosed(closed_transaction) => {
+                if transaction <= closed_transaction {
                     unreachable!(
-                        "step numbers should increase, not go from {closed_step} to {step}"
+                        "transaction numbers should increase, not go from {closed_transaction} to {transaction}"
                     );
                 };
                 false
             }
             State::BatchOpen(_) => {
-                unreachable!("batch_end() should be called before next batch_start_step()")
+                unreachable!("batch_end() should be called before the next batch_start()")
             }
         };
 
-        if step >= self.next_step {
-            if step > self.next_step {
-                warn!("skipping from step {} to {step}", self.next_step);
+        if transaction >= self.next_transaction {
+            if transaction > self.next_transaction {
+                warn!(
+                    "skipping from transaction {} to {transaction}",
+                    self.next_transaction
+                );
             }
             self.kafka_producer.begin_transaction()?;
-        } else if first_step {
+        } else if first_transaction {
             info!(
-                "dropping steps {step}..{} that were already output in a previous run",
-                self.next_step
+                "dropping transactions {transaction}..{} that were already output in a previous run",
+                self.next_transaction
             );
         }
-        self.state = State::BatchOpen(OutputPosition { step, substep: 0 });
+        self.state = State::BatchOpen(OutputPosition {
+            transaction,
+            substep: 0,
+        });
         Ok(())
     }
 

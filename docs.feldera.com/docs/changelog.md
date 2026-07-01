@@ -12,7 +12,15 @@ import TabItem from '@theme/TabItem';
     <TabItem className="changelogItem" value="enterprise"
         label="Enterprise">
 
-        ## Unreleased
+	## Unreleased
+
+	- A bug fix introduced a backward incompatible change to the replay journal format.
+          This only affects pipelines configured with exactly-once fault tolerance. Such
+          pipelines should not be upgraded to the new Feldera runtime if they are in a failed
+          state with non-empty replay journal.  Upgrade is possible once the pipeline has been
+          cleanly stopped without a failure.
+
+        ## v0.313.0
 
         - New DynamoDB output connector. It writes a SQL view to an Amazon
           DynamoDB table, mapping inserts and updates to upserts and deletes to

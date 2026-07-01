@@ -102,7 +102,7 @@ use governor::DefaultDirectRateLimiter;
 use governor::Quota;
 use governor::RateLimiter;
 use itertools::Itertools;
-use journal::StepMetadata;
+use journal::{InputChecksums, StepMetadata};
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
@@ -2586,6 +2586,20 @@ struct CircuitThread {
     /// Set to true on startup if the circuit requires bootstrapping.
     /// Cleared when the circuit completes bootstrapping.
     bootstrapping: bool,
+
+    /// Input metadata collected by [Self::input_step] for the step in progress,
+    /// to be journaled by [FtState::write_step] *after* [Self::step_circuit] has
+    /// run, so that the journal entry can be stamped with the transaction id
+    /// that the step's circuit evaluation belongs to. `None` when the current
+    /// step produced nothing to journal (e.g. while bootstrapping or committing
+    /// a transaction).
+    pending_step_metadata: Option<HashMap<EndpointId, (String, StepResults)>>,
+
+    /// Whether [Self::input_step] fed a replay step to the circuit this step.
+    /// Used by [FtState::next_step] to decide whether to advance the replay
+    /// cursor (it must not advance on steps that only commit the open replay
+    /// transaction).
+    replay_consumed: bool,
 }
 
 struct CommitUpdates {
@@ -2709,6 +2723,7 @@ impl CircuitThread {
             pipeline_config,
             circuit_config,
             processed_records,
+            transaction_number,
             initial_start_time,
             step,
             input_metadata,
@@ -2846,6 +2861,7 @@ impl CircuitThread {
             lir,
             error_cb,
             processed_records,
+            transaction_number,
             initial_start_time,
             &resume_info,
             &output_statistics,
@@ -2929,6 +2945,8 @@ impl CircuitThread {
             input_metadata: input_metadata.unwrap_or_default(),
             commit_updates: None,
             bootstrapping,
+            pending_step_metadata: None,
+            replay_consumed: false,
         })
     }
 
@@ -3088,6 +3106,8 @@ impl CircuitThread {
     }
 
     fn step(&mut self) -> Result<bool, ControllerError> {
+        // Step number under which this step's input is journaled.
+        let journal_step = self.step;
         self.controller
             .status
             .global_metrics
@@ -3116,6 +3136,16 @@ impl CircuitThread {
         // backpressure.
         self.controller.unpark_backpressure();
         self.step_circuit();
+
+        // Journal the step we just executed, stamped with the
+        // transaction id it belonged to.  Needs to be done after
+        // `step_circuit`, because the transaction id is only assigned there.
+        if let Some(step_metadata) = self.pending_step_metadata.take() {
+            let transaction_id = self.controller.get_transaction_number() as TransactionId;
+            if let Some(ft) = self.ft.as_mut() {
+                ft.write_step(step_metadata, journal_step, transaction_id)?;
+            }
+        }
 
         let transaction_state = self.controller.get_transaction_state();
 
@@ -3175,8 +3205,9 @@ impl CircuitThread {
         }
         // Push output batches to output pipelines.
         self.push_output(processed_records);
+        let replay_consumed = self.replay_consumed;
         if let Some(ft) = self.ft.as_mut() {
-            ft.next_step(self.step)?;
+            ft.next_step(replay_consumed)?;
             self.finish_replaying();
         }
         self.controller.unpark_backpressure();
@@ -3291,11 +3322,13 @@ impl CircuitThread {
                         .record();
                     TRANSACTION_COMMIT_TIME_MICROSECONDS.record_duration(duration);
 
-                    self.controller
-                        .transaction_info
-                        .lock()
-                        .unwrap()
-                        .transaction_state = TransactionState::None;
+                    {
+                        let mut transaction_info = self.controller.transaction_info.lock().unwrap();
+                        transaction_info.transaction_state = TransactionState::None;
+                        // A replay transaction just committed; clear the open id
+                        // so the next replayed transaction can start.
+                        transaction_info.replay_open_transaction_id = None;
+                    }
 
                     self.commit_updates = None;
                     self.controller
@@ -3637,9 +3670,16 @@ impl CircuitThread {
     ///   recovered, so the pipeline process should exit as soon as it can.
     /// - `Err(error)` if there was an error.
     fn input_step(&mut self) -> Result<Option<BufferSize>, ControllerError> {
-        // No ingestion during bootstrap.
+        // Reset; set again at the end only if this step fed input. Early returns
+        // below leave them as is, so those steps neither journal nor
+        // advance the replay cursor.
+        self.pending_step_metadata = None;
+        self.replay_consumed = false;
+        // No ingestion during bootstrap, while committing a transaction, or at a
+        // replay transaction boundary.
         if self.controller.status.bootstrap_in_progress()
             || self.controller.transaction_commit_in_progress()
+            || self.replay_at_boundary()
         {
             return Ok(Some(BufferSize::empty()));
         }
@@ -3895,8 +3935,15 @@ impl CircuitThread {
             }
         };
 
-        if let Some(ft) = &mut self.ft {
-            ft.write_step(step_metadata, self.step)?;
+        // Defer journaling to `step()`, after `step_circuit` assigns the
+        // transaction id that this step's circuit evaluation belongs to.
+        if self.ft.is_some() {
+            self.pending_step_metadata = Some(step_metadata);
+        }
+        // We fed the current replay step (if any), so the replay cursor may
+        // advance after this step.
+        if self.replaying() {
+            self.replay_consumed = true;
         }
 
         Ok(Some(total_consumed))
@@ -3943,12 +3990,14 @@ impl CircuitThread {
 
             for (i, endpoint_id) in endpoints.iter().enumerate() {
                 let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
+                let transaction = self.controller.get_transaction_number();
 
                 // Silent bootstrap: send empty batch for progress tracking only.
                 if silent_bootstrap {
                     self.controller.status.enqueue_batch(*endpoint_id, 0);
                     endpoint.queue.push(BatchQueueEntry {
                         step: self.step,
+                        transaction,
                         batch_type: OutputBatchType::Delta,
                         data: None,
                         processed_records,
@@ -3969,6 +4018,7 @@ impl CircuitThread {
                     // We need to propagate processed_records to the connector for progress tracking.
                     endpoint.queue.push(BatchQueueEntry {
                         step: self.step,
+                        transaction,
                         batch_type: OutputBatchType::Delta,
                         data: None,
                         processed_records,
@@ -4006,6 +4056,7 @@ impl CircuitThread {
 
                 endpoint.queue.push(BatchQueueEntry {
                     step: self.step,
+                    transaction,
                     batch_type: OutputBatchType::Delta,
                     data: Some(batch),
                     processed_records,
@@ -4022,6 +4073,26 @@ impl CircuitThread {
 
     fn replaying(&self) -> bool {
         self.ft.as_ref().is_some_and(|ft| ft.is_replaying())
+    }
+
+    /// True while replaying when the next journaled step belongs to a
+    /// different transaction than the one currently open — meaning the open
+    /// transaction must commit (with no new input) before that step is fed.
+    /// `input_step` suppresses input on such steps and
+    /// `advance_transaction_state` commits the open transaction.
+    fn replay_at_boundary(&self) -> bool {
+        let Some(next) = self
+            .ft
+            .as_ref()
+            .and_then(|ft| ft.replay_step.as_ref())
+            .map(|r| r.transaction_id)
+        else {
+            return false;
+        };
+        matches!(
+            self.controller.get_transaction_state(),
+            TransactionState::Started { .. }
+        ) && self.controller.replay_open_transaction_id() != Some(next)
     }
 
     fn sync_checkpoint_requested(&self) -> bool {
@@ -4101,6 +4172,58 @@ impl CheckpointRequest {
     }
 }
 
+/// Per-endpoint aggregate of a replayed transaction's input checksums.
+///
+/// During fault-tolerance replay we verify that re-ingesting the journaled
+/// input reproduces what was recorded. The check is done per transaction, not
+/// per step: a transaction's commit can take a different number of physical
+/// steps on replay than during recording (e.g. under a streaming exchange with
+/// several workers), so the individual per-step record counts and hashes are
+/// not reproducible, but their per-transaction aggregate is.
+///
+/// `num_records` is summed and `hash` is XORed across the transaction's steps,
+/// which makes the aggregate independent of how the input was split across
+/// steps. A divergence is overwhelmingly likely to be detected: replay would
+/// have to reproduce both the exact total record count and the XOR of every
+/// per-step 64-bit hash while still ingesting different data.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+struct ReplayChecksumAggregate {
+    num_records: u64,
+    hash: u64,
+}
+
+impl ReplayChecksumAggregate {
+    fn add(&mut self, checksums: &InputChecksums) {
+        self.num_records = self.num_records.wrapping_add(checksums.num_records);
+        self.hash ^= checksums.hash;
+    }
+}
+
+/// Accumulates the recorded and replayed input checksums of the transaction
+/// currently being replayed, so the two can be compared when the transaction
+/// boundary is reached (see [FtState::verify_replay_transaction]).
+struct ReplayTransactionCheck {
+    /// Journaled id of the transaction being accumulated.
+    transaction_id: TransactionId,
+
+    /// Checksums read from the journal, aggregated per input endpoint.
+    recorded: HashMap<String, ReplayChecksumAggregate>,
+
+    /// Checksums actually re-ingested during replay, aggregated per input
+    /// endpoint.
+    replayed: HashMap<String, ReplayChecksumAggregate>,
+}
+
+impl ReplayTransactionCheck {
+    fn new(transaction_id: TransactionId) -> Self {
+        Self {
+            transaction_id,
+            recorded: HashMap::new(),
+            replayed: HashMap::new(),
+        }
+    }
+}
+
 /// Tracks fault-tolerant state in a controller [CircuitThread].
 struct FtState {
     /// Used to temporarily disable journaling.
@@ -4112,8 +4235,21 @@ struct FtState {
     /// The journal.
     journal: Journal,
 
-    /// The journal record that we're replaying, if we're replaying.
+    /// The journal record currently being replayed (fed to the circuit), if
+    /// we're replaying.
     replay_step: Option<StepMetadata>,
+
+    /// Journaled step numbers to replay, in recorded order. Replay iterates
+    /// these (decoupled from the physical step counter, which can diverge when
+    /// a transaction's commit takes a different number of steps on replay).
+    /// `replay_cursor` indexes the current `replay_step`.
+    replay_steps: Vec<Step>,
+    replay_cursor: usize,
+
+    /// Accumulates the current replay transaction's recorded and replayed input
+    /// checksums, verified at each transaction boundary. `None` while not
+    /// replaying or before the first replayed step of a transaction.
+    replay_check: Option<ReplayTransactionCheck>,
 
     /// Input endpoint ids, names, and whether the endpoints are paused, at the
     /// time we wrote the last step, so that we can log changes for the replay
@@ -4128,18 +4264,29 @@ impl FtState {
         step: Step,
         controller: Arc<ControllerInner>,
     ) -> Result<Self, ControllerError> {
-        info!("{STEPS_FILE}: opening to start from step {step}");
+        info!("{STEPS_FILE}: opening to start replay from step {step}");
         let journal = Journal::open(backend, &StoragePath::from(STEPS_FILE));
-        let replay_step = journal.read(step)?;
-        if let Some(record) = &replay_step {
-            // Start replaying the step.
-            Self::replay_step(step, record, &controller)?;
-        }
+        let replay_steps = journal.list_steps(step)?;
+        let replay_step = match replay_steps.first() {
+            Some(&first) => {
+                let record = journal.read(first)?;
+                if let Some(record) = &record {
+                    // Start replaying the first step.
+                    Self::replay_step(first, record, &controller)?;
+                }
+                record
+            }
+            None => None,
+        };
+        controller.set_replay_transaction_id(replay_step.as_ref().map(|r| r.transaction_id));
         Ok(Self {
             enabled: true,
             input_endpoints: Self::initial_input_endpoints(&controller),
             controller,
             replay_step,
+            replay_steps,
+            replay_cursor: 0,
+            replay_check: None,
             journal,
         })
     }
@@ -4158,6 +4305,9 @@ impl FtState {
             input_endpoints: Self::initial_input_endpoints(&controller),
             controller,
             replay_step: None,
+            replay_steps: Vec::new(),
+            replay_cursor: 0,
+            replay_check: None,
             journal,
         })
     }
@@ -4185,6 +4335,7 @@ impl FtState {
             step: 0,
             config,
             processed_records: 0,
+            transaction_number: 0,
             initial_start_time: controller.status.global_metrics.initial_start_time,
             input_metadata: CheckpointOffsets::default(),
             input_statistics: HashMap::new(),
@@ -4197,6 +4348,9 @@ impl FtState {
             input_endpoints: Self::initial_input_endpoints(&controller),
             controller,
             replay_step: None,
+            replay_steps: Vec::new(),
+            replay_cursor: 0,
+            replay_check: None,
             journal,
         })
     }
@@ -4268,6 +4422,7 @@ impl FtState {
         &mut self,
         step_metadata: HashMap<u64, (String, StepResults)>,
         step: Step,
+        transaction_id: TransactionId,
     ) -> Result<(), ControllerError> {
         if !self.enabled {
             return Ok(());
@@ -4313,6 +4468,7 @@ impl FtState {
                     .collect();
                 let step_metadata = StepMetadata {
                     step,
+                    transaction_id,
                     remove_inputs,
                     add_inputs,
                     changed_inputs,
@@ -4320,27 +4476,105 @@ impl FtState {
                 };
                 self.journal.write(&step_metadata)?;
             }
-            Some(record) => {
-                let mut logged = HashMap::new();
-                for (name, log) in &record.input_logs {
-                    logged.insert(name, log.checksums);
-                }
-
-                let mut replayed = HashMap::new();
-                for (name, results) in step_metadata.values() {
-                    replayed.insert(name, results.checksums().unwrap());
-                }
-
-                if replayed != logged {
-                    let error = format!(
-                        "Logged and replayed step {step} contained different numbers of records or hashes:\nLogged: {logged:?}\nReplayed: {replayed:?}"
-                    );
-                    error!("{error}");
-                    return Err(ControllerError::ReplayFailure { error });
-                }
+            Some(_) => {
+                // We're replaying, so there's nothing to record in the journal.
+                // Instead, accumulate this step's input checksums so we can
+                // verify that the transaction re-ingested the recorded input
+                // once it reaches its boundary. We check per transaction, not
+                // per step, because a transaction's commit can take a different
+                // number of physical steps on replay than during recording (see
+                // `ReplayChecksumAggregate`).
+                self.accumulate_replay_check(&step_metadata)?;
             }
         };
         Ok(())
+    }
+
+    /// Accumulates one replayed step's recorded and re-ingested input checksums
+    /// into the current transaction's [ReplayTransactionCheck]. When the step
+    /// begins a new transaction, the previous one is first verified (see
+    /// [Self::verify_replay_transaction]).
+    fn accumulate_replay_check(
+        &mut self,
+        step_metadata: &HashMap<u64, (String, StepResults)>,
+    ) -> Result<(), ControllerError> {
+        // Recorded checksums for this step, copied out so the borrow of
+        // `self.replay_step` ends before we touch `self.replay_check`.
+        let (transaction_id, recorded) = match &self.replay_step {
+            Some(record) => (
+                record.transaction_id,
+                record
+                    .input_logs
+                    .iter()
+                    .map(|(name, log)| (name.clone(), log.checksums))
+                    .collect::<Vec<_>>(),
+            ),
+            None => return Ok(()),
+        };
+
+        // A change of transaction id marks a boundary: the transaction we were
+        // accumulating is complete, so verify it before starting the next one.
+        if self
+            .replay_check
+            .as_ref()
+            .is_some_and(|check| check.transaction_id != transaction_id)
+        {
+            self.verify_replay_transaction()?;
+        }
+
+        let check = self
+            .replay_check
+            .get_or_insert_with(|| ReplayTransactionCheck::new(transaction_id));
+        for (name, checksums) in &recorded {
+            check
+                .recorded
+                .entry(name.clone())
+                .or_default()
+                .add(checksums);
+        }
+        for (name, results) in step_metadata.values() {
+            if let Some(checksums) = Self::replayed_checksums(results) {
+                check
+                    .replayed
+                    .entry(name.clone())
+                    .or_default()
+                    .add(&checksums);
+            }
+        }
+        Ok(())
+    }
+
+    /// Verifies that the transaction just replayed re-ingested the same input
+    /// that was recorded for it, comparing the per-endpoint aggregates
+    /// collected by [Self::accumulate_replay_check]. Returns
+    /// [ControllerError::ReplayFailure] on any divergence. A no-op when no
+    /// transaction is currently accumulated.
+    fn verify_replay_transaction(&mut self) -> Result<(), ControllerError> {
+        let Some(check) = self.replay_check.take() else {
+            return Ok(());
+        };
+        if check.replayed != check.recorded {
+            let error = format!(
+                "replayed transaction {} ingested different input than was recorded:\n\
+                 recorded: {:?}\nreplayed: {:?}",
+                check.transaction_id, check.recorded, check.replayed
+            );
+            error!("{error}");
+            return Err(ControllerError::ReplayFailure { error });
+        }
+        Ok(())
+    }
+
+    /// Extracts the input record count and hash from a replayed step's results,
+    /// or `None` if the results carry no replay checksums.
+    fn replayed_checksums(results: &StepResults) -> Option<InputChecksums> {
+        match &results.resume {
+            Some(Resume::Replay { hash, .. }) => Some(InputChecksums {
+                num_records: results.amt.records as u64,
+                hash: *hash,
+            }),
+            _ => None,
+        }
     }
 
     /// Waits for the step writer to commit the step (written by
@@ -4350,27 +4584,40 @@ impl FtState {
         Ok(())
     }
 
-    /// If we just replayed a step, try to replay the next one too.
-    fn next_step(&mut self, step: Step) -> Result<(), ControllerError> {
+    /// Advance to the next journaled step to replay, but only if the current
+    /// one was actually fed to the circuit this step (`consumed`). When the
+    /// current step was instead suppressed — e.g. to commit the open
+    /// transaction at a recorded boundary — we keep it so it is fed once the
+    /// commit completes.
+    fn next_step(&mut self, consumed: bool) -> Result<(), ControllerError> {
         if !self.enabled {
             return Ok(());
         }
 
-        if self.is_replaying() {
-            // Read a step.
-            self.replay_step = self.journal.read(step)?;
-            match &self.replay_step {
-                None => {
-                    // No more steps to replay.
-                    info!("replay complete, starting pipeline");
-                    self.replay_step = None;
-                    self.input_endpoints = Self::initial_input_endpoints(&self.controller);
+        if self.is_replaying() && consumed {
+            self.replay_cursor += 1;
+            // `.copied()` ends the borrow of `self.replay_steps` so the `None`
+            // arm can take `&mut self` to verify the final transaction.
+            match self.replay_steps.get(self.replay_cursor).copied() {
+                Some(step) => {
+                    let record = self.journal.read(step)?;
+                    if let Some(record) = &record {
+                        Self::replay_step(step, record, &self.controller)?;
+                    }
+                    self.replay_step = record;
                 }
-                Some(record) => {
-                    // There's a step to replay.
-                    Self::replay_step(step, record, &self.controller)?;
+                None => {
+                    // No more steps to replay. The boundary check in
+                    // `accumulate_replay_check` only fires when a later
+                    // transaction begins, so verify the last one here.
+                    self.verify_replay_transaction()?;
+                    info!("replay complete, starting pipeline");
+                    self.input_endpoints = Self::initial_input_endpoints(&self.controller);
+                    self.replay_step = None;
                 }
             };
+            self.controller
+                .set_replay_transaction_id(self.replay_step.as_ref().map(|r| r.transaction_id));
         }
         Ok(())
     }
@@ -4605,6 +4852,11 @@ pub struct ControllerInit {
     /// Initial counter for `total_processed_records`.
     processed_records: u64,
 
+    /// Initial value for the engine's per-transaction counter, restored from the
+    /// checkpoint so transaction ids (and thus fault-tolerant output dedup) are
+    /// reproduced across replay.
+    transaction_number: u64,
+
     /// Value for `initial_start_time`.
     initial_start_time: Option<DateTime<Utc>>,
 
@@ -4653,6 +4905,7 @@ impl ControllerInit {
             circuit_config: Self::circuit_config(layout, &config, storage)?,
             pipeline_config: config,
             processed_records: 0,
+            transaction_number: 0,
             initial_start_time: None,
             step: 0,
             input_metadata: None,
@@ -4713,6 +4966,7 @@ impl ControllerInit {
             step,
             config: checkpoint_config,
             processed_records,
+            transaction_number,
             initial_start_time,
             input_metadata,
             input_statistics,
@@ -4887,6 +5141,7 @@ impl ControllerInit {
             output_statistics,
             modified_output_endpoints,
             processed_records,
+            transaction_number,
             initial_start_time: Some(initial_start_time),
             pipeline_diff: Some(pipeline_diff),
             incarnation_uuid: Uuid::nil(),
@@ -5204,6 +5459,11 @@ struct BatchQueueEntry {
     /// The step in which the output was produced.
     step: Step,
 
+    /// The transaction whose output this batch carries. Fault-tolerant output
+    /// connectors key their exactly-once dedup on this (it is reproduced
+    /// deterministically across replay, unlike the physical step).
+    transaction: u64,
+
     /// Whether this batch contains a delta or a full snapshot.
     batch_type: OutputBatchType,
 
@@ -5366,6 +5626,10 @@ struct OutputBuffer {
     /// out.
     buffered_step: Step,
 
+    /// Transaction of the last update in the buffer, used to key fault-tolerant
+    /// output dedup when the buffer is flushed.
+    buffered_transaction: u64,
+
     /// Time when the first batch was pushed to the buffer.
     buffer_since: Instant,
 
@@ -5385,6 +5649,7 @@ impl OutputBuffer {
             endpoint_name: endpoint_name.to_string(),
             buffer: None,
             buffered_step: 0,
+            buffered_transaction: 0,
             buffer_since: Instant::now(),
             buffered_processed_records: ProcessedRecords::default(),
         }
@@ -5406,6 +5671,7 @@ impl OutputBuffer {
         &mut self,
         batch: Option<Arc<dyn SerBatchReader>>,
         step: Step,
+        transaction: u64,
         processed_records: Option<ProcessedRecords>,
     ) {
         if let Some(batch) = batch {
@@ -5431,6 +5697,7 @@ impl OutputBuffer {
             }
         }
         self.buffered_step = step;
+        self.buffered_transaction = transaction;
         if let Some(records) = processed_records {
             self.buffered_processed_records = records;
         }
@@ -5741,6 +6008,19 @@ pub struct TransactionInfo {
     /// Actual pipeline state, set by the circuit thread.
     transaction_state: TransactionState,
 
+    /// Journaled transaction id of the replay step the circuit thread is about
+    /// to feed during fault-tolerance replay, or `None` once the journal is
+    /// exhausted (or when not replaying). Set by the circuit thread before each
+    /// step; read by [ControllerInner::advance_transaction_state] to drive
+    /// transaction-aligned replay.
+    replay_transaction_id: Option<TransactionId>,
+
+    /// Journaled transaction id of the transaction currently open during
+    /// replay: set when it is started, cleared when it commits. Replay commits
+    /// the open transaction (and starts the next) when `replay_transaction_id`
+    /// differs from this — reproducing the recorded transaction boundaries.
+    replay_open_transaction_id: Option<TransactionId>,
+
     /// For sending updates to the coordination status to the coordinator.
     sender: tokio::sync::watch::Sender<TransactionCoordination>,
 }
@@ -5755,6 +6035,8 @@ impl TransactionInfo {
             last_transaction_id: 0,
             initiators: TransactionInitiators::default(),
             transaction_state: TransactionState::None,
+            replay_transaction_id: None,
+            replay_open_transaction_id: None,
             sender,
         }
     }
@@ -6041,6 +6323,7 @@ impl ControllerInner {
         lir: LirCircuit,
         error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
         processed_records: u64,
+        transaction_number: u64,
         initial_start_time: Option<DateTime<Utc>>,
         resume_info: &HashMap<String, (JsonValue, CheckpointInputEndpointMetrics)>,
         output_statistics: &HashMap<String, CheckpointOutputEndpointMetrics>,
@@ -6092,7 +6375,7 @@ impl ControllerInner {
                     transaction_sender,
                 )),
                 restoring: AtomicBool::new(config.global.fault_tolerance.is_enabled()),
-                transaction_number: AtomicU64::new(0),
+                transaction_number: AtomicU64::new(transaction_number),
                 step_receiver,
                 checkpoint_receiver,
                 transaction_receiver,
@@ -6223,6 +6506,21 @@ impl ControllerInner {
 
     fn increment_transaction_number(&self) {
         self.transaction_number.fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Sets the journaled transaction id of the replay step the circuit thread
+    /// is about to feed (`None` once the journal is exhausted). Drives
+    /// transaction-aligned replay in [Self::advance_transaction_state].
+    fn set_replay_transaction_id(&self, tid: Option<TransactionId>) {
+        self.transaction_info.lock().unwrap().replay_transaction_id = tid;
+    }
+
+    /// Journaled transaction id of the transaction currently open during replay.
+    fn replay_open_transaction_id(&self) -> Option<TransactionId> {
+        self.transaction_info
+            .lock()
+            .unwrap()
+            .replay_open_transaction_id
     }
 
     fn input_endpoint_id_by_name(
@@ -6975,6 +7273,7 @@ impl ControllerInner {
                 .map(|processed| processed.total_processed_steps)
                 .unwrap_or_default()
         });
+        let transaction = self.get_transaction_number();
         // Flip the "snapshot delivered" flag for this endpoint before
         // pushing so subsequent `push_output` calls take the regular delta
         // path.
@@ -6993,6 +7292,7 @@ impl ControllerInner {
             self.status.enqueue_batch(endpoint_id, 0);
             queue.push(BatchQueueEntry {
                 step,
+                transaction,
                 batch_type: OutputBatchType::Snapshot,
                 data: None,
                 processed_records,
@@ -7003,6 +7303,7 @@ impl ControllerInner {
             self.status.enqueue_batch(endpoint_id, merged.len());
             queue.push(BatchQueueEntry {
                 step,
+                transaction,
                 batch_type: OutputBatchType::Snapshot,
                 data: Some(merged),
                 processed_records,
@@ -7025,10 +7326,10 @@ impl ControllerInner {
         endpoint_id: EndpointId,
         endpoint_name: &str,
         encoder: &mut dyn Encoder,
-        step: Step,
+        transaction: u64,
         controller: &ControllerInner,
     ) {
-        encoder.consumer().batch_start(step, batch_type);
+        encoder.consumer().batch_start(transaction, batch_type);
         encoder.encode(batch).unwrap_or_else(|e| {
             controller.encode_error(endpoint_id, endpoint_name, e, Some("encoder_error"))
         });
@@ -7076,7 +7377,7 @@ impl ControllerInner {
                     endpoint_id,
                     &endpoint_name,
                     encoder.as_mut(),
-                    output_buffer.buffered_step,
+                    output_buffer.buffered_transaction,
                     &controller,
                 );
 
@@ -7086,6 +7387,7 @@ impl ControllerInner {
                 controller.circuit_thread_unparker.unpark()
             } else if let Some(BatchQueueEntry {
                 step,
+                transaction,
                 batch_type,
                 data,
                 processed_records,
@@ -7102,7 +7404,7 @@ impl ControllerInner {
                 // Buffer the new output if buffering is enabled.
                 if output_buffer_config.enable_output_buffer && batch_type == OutputBatchType::Delta
                 {
-                    output_buffer.insert(data, step, processed_records);
+                    output_buffer.insert(data, step, transaction, processed_records);
                     controller.status.buffer_batch(
                         endpoint_id,
                         num_records,
@@ -7118,14 +7420,20 @@ impl ControllerInner {
                         );
                     }
                 } else {
-                    if let Some(data) = data {
+                    // Skip empty batches: each transaction must open exactly one
+                    // output batch, because fault-tolerant output dedup keys on
+                    // the transaction and requires strictly increasing ids. Empty
+                    // in-progress steps of a transaction produce no output.
+                    if let Some(data) = data
+                        && num_records > 0
+                    {
                         Self::push_batch_to_encoder(
                             data,
                             batch_type,
                             endpoint_id,
                             &endpoint_name,
                             encoder.as_mut(),
-                            step,
+                            transaction,
                             &controller,
                         );
                     }
@@ -7636,7 +7944,77 @@ impl ControllerInner {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
         let is_multihost = transaction_info.is_multihost;
-        let result = if transaction_info.initiators.is_ongoing(is_multihost) {
+        // Gated on `!is_multihost`: in a multihost pipeline the coordinator
+        // centrally starts and commits transactions on every host via the API
+        // and requires all hosts to report the same transaction state each
+        // step, so a host must not open a transaction on its own. Fixing
+        // multihost FT replay the same way needs the coordinator to drive one
+        // replay transaction across all hosts -- a separate change (multihost +
+        // fault tolerance is currently untested).
+        let result = if self.restoring.load(Ordering::Acquire) && !is_multihost {
+            // Transaction-aligned fault-tolerance replay (single-host).
+            //
+            // We reproduce the *recorded* transaction boundaries:
+            // `replay_transaction_id` is the journaled transaction id of the
+            // step the circuit thread is about to feed (`None` once the journal
+            // is exhausted), and `replay_open_transaction_id` is the journaled
+            // id of the transaction currently open. We keep feeding the open
+            // transaction while the two match, and commit it (then start the
+            // next) when they differ or the journal ends.
+            //
+            // The journal cursor is iterated in recorded order, decoupled from
+            // the physical step counter (see `FtState` / `Journal::list_steps`),
+            // so a commit taking a different number of steps on replay than
+            // during recording cannot shift logged input onto the wrong step.
+            // Reproducing the boundaries also reproduces the per-transaction
+            // output structure that fault-tolerant output connectors (e.g. Kafka
+            // exactly-once) rely on for dedup.
+            let next = transaction_info.replay_transaction_id;
+            let open = transaction_info.replay_open_transaction_id;
+            match transaction_info.transaction_state {
+                TransactionState::None => {
+                    if let Some(tid) = next {
+                        // Start the next recorded transaction. There is no
+                        // API/connector initiator to take an engine transaction
+                        // id from, so allocate one like the auto-transaction
+                        // path does.
+                        transaction_info.replay_open_transaction_id = Some(tid);
+                        transaction_info.last_transaction_id += 1;
+                        let engine_tid = transaction_info.last_transaction_id;
+                        info!("Transaction {engine_tid}: replaying journaled transaction {tid}");
+                        transaction_info.transaction_state = TransactionState::Started {
+                            tid: engine_tid,
+                            start: Instant::now(),
+                            processed_records: self
+                                .status
+                                .global_metrics
+                                .num_total_processed_records(),
+                        };
+                        Some(AdvanceTransaction::Start)
+                    } else {
+                        // Journal exhausted and nothing open: replay is done.
+                        None
+                    }
+                }
+                TransactionState::Started {
+                    tid,
+                    start,
+                    processed_records,
+                } if next.is_none() || next != open => {
+                    // The next step belongs to a different transaction, or the
+                    // journal is exhausted: commit the open replay transaction.
+                    info!("Transaction {tid}: committing replayed transaction");
+                    transaction_info.transaction_state = TransactionState::Committing {
+                        tid,
+                        start: Instant::now(),
+                        processed_records,
+                    };
+                    Some(AdvanceTransaction::Commit)
+                }
+                // Same transaction: keep feeding it; or a commit is in progress.
+                TransactionState::Started { .. } | TransactionState::Committing { .. } => None,
+            }
+        } else if transaction_info.initiators.is_ongoing(is_multihost) {
             // The API and connectors want us to be in a transaction, so start a
             // new one if there's not one already.
             match transaction_info.transaction_state {
@@ -8199,6 +8577,7 @@ impl RunningCheckpoint {
             step: circuit.step,
             config,
             processed_records,
+            transaction_number: circuit.controller.get_transaction_number(),
             initial_start_time,
             input_metadata: CheckpointOffsets(input_metadata),
             input_statistics,

@@ -10,7 +10,7 @@ use dbsp::storage::{
     buffer_cache::FBuf,
 };
 use feldera_adapterlib::{errors::journal::StepError, transport::Step};
-use feldera_types::config::InputEndpointConfig;
+use feldera_types::{config::InputEndpointConfig, transaction::TransactionId};
 use rmpv::Value as RmpValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -111,6 +111,36 @@ impl Journal {
         }
     }
 
+    /// Returns the step numbers present in the journal that are `>= start`, in
+    /// increasing order.
+    ///
+    /// Replay iterates these in order (decoupled from the physical step
+    /// counter), so a transaction's commit taking a different number of steps
+    /// on replay than during recording cannot shift logged input onto the wrong
+    /// entry. Tolerates gaps in the step numbering (e.g. steps that were not
+    /// journaled because they only continued a transaction commit).
+    pub fn list_steps(&self, start: Step) -> Result<Vec<Step>, StepError> {
+        let mut steps = Vec::new();
+        self.backend
+            .list(&self.path, &mut |entry| {
+                let Some(file_name) = entry.name.filename() else {
+                    return;
+                };
+                let Some(number) = file_name.strip_suffix(".bin") else {
+                    return;
+                };
+                let Ok(step) = number.parse::<Step>() else {
+                    return;
+                };
+                if step >= start {
+                    steps.push(step);
+                }
+            })
+            .map_err(|error| self.storage_error(error))?;
+        steps.sort_unstable();
+        Ok(steps)
+    }
+
     fn storage_error(&self, error: StorageError) -> StepError {
         StepError::storage_error(&self.path, error)
     }
@@ -121,6 +151,17 @@ impl Journal {
 pub struct StepMetadata {
     /// Step number.
     pub step: Step,
+
+    /// Id of the transaction whose circuit evaluation consumed this step's
+    /// input.
+    ///
+    /// Replay groups journaled steps into transactions by this id and commits
+    /// at each boundary (where the id changes from one journaled step to the
+    /// next), reproducing the original transaction structure regardless of how
+    /// many physical steps each commit took during recording. Fault-tolerant
+    /// output connectors key their exactly-once dedup on this id, which (unlike
+    /// the physical step number) is deterministic across replay.
+    pub transaction_id: TransactionId,
 
     /// Names of input endpoints removed in the step.
     pub remove_inputs: HashSet<String>,
@@ -238,6 +279,7 @@ mod tests {
         let records = (0..10)
             .map(|step| StepMetadata {
                 step,
+                transaction_id: step as i64,
                 remove_inputs: HashSet::new(),
                 add_inputs: HashMap::new(),
                 changed_inputs: HashMap::new(),

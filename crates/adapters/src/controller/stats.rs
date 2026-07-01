@@ -1552,18 +1552,6 @@ impl TryFrom<StepResults> for InputLog {
     }
 }
 
-impl StepResults {
-    pub(super) fn checksums(&self) -> Option<InputChecksums> {
-        match self.resume {
-            Some(Resume::Replay { hash, .. }) => Some(InputChecksums {
-                hash,
-                num_records: self.amt.records as u64,
-            }),
-            _ => None,
-        }
-    }
-}
-
 const MAX_TOKENLIST_LEN: usize = 1_000_000;
 
 /// Tracks the set of tokens issued by the connector and the state needed to report
