@@ -446,6 +446,17 @@ public class BaseSQLTests {
         new CompilerCircuitStream(compiler, data, this, message);
     }
 
+    /** Run a test that fails at runtime with a panic matching {@code message}.
+     *
+     * @param compiler compiler
+     * @param script   DML statements (INSERT/REMOVE) that trigger the panic
+     * @param message  expected substring of the panic message */
+    protected void runtimeFail(DBSPCompiler compiler, String script, String message) {
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, this, message);
+        Change input = ccs.toChange(script);
+        ccs.addPair(input, new Change());
+    }
+
     /** Run a test that fails at runtime without needing any inputs */
     protected void runtimeConstantFail(String query, String message) {
         this.runtimeFail(query, message, this.streamWithEmptyChanges());

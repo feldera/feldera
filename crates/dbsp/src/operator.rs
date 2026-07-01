@@ -22,6 +22,7 @@ mod csv;
 mod delta0;
 mod differentiate;
 mod generator;
+mod integral_weight_validator;
 mod integrate;
 mod neg;
 mod output;

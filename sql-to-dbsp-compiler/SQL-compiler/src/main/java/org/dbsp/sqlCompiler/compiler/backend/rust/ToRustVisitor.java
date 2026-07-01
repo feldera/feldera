@@ -969,6 +969,24 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPWeightValidatorOperator operator) {
+        this.computeHash(operator);
+        DBSPType streamType = this.streamType(operator);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getNodeName(this.preferHash))
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ")
+                .append(this.getInputName(operator, 0))
+                .append(".integral_weight_validator(")
+                .append(Utilities.doubleQuote(operator.message, false))
+                .append(");");
+        this.tagStream(operator);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPInternOperator operator) {
         this.writeComments(operator)
                 .append("let ")

@@ -24,6 +24,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWeightValidatorOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -239,6 +240,15 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
         return this.preorder(operator.to(DBSPSourceTableOperator.class));
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPWeightValidatorOperator operator) {
+        if (this.preorder(operator.to(DBSPSimpleOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("message");
+        this.stream.append(operator.message);
+        return VisitDecision.CONTINUE;
     }
 
     @Override

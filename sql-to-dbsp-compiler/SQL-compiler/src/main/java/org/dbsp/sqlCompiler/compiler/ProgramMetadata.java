@@ -45,7 +45,8 @@ public class ProgramMetadata implements IJson {
 
     static final Set<String> reserved = Set.of(
             DBSPCompiler.WARNINGS_ARE_ERRORS.toLowerCase(Locale.ENGLISH),
-            ProgramMetadata.AVOID_STAR_JOINS.toLowerCase(Locale.ENGLISH)
+            ProgramMetadata.AVOID_STAR_JOINS.toLowerCase(Locale.ENGLISH),
+            ProgramMetadata.ENFORCE_POSITIVE_INPUTS.toLowerCase(Locale.ENGLISH)
     );
 
     private boolean known(String variable) {
@@ -110,9 +111,18 @@ public class ProgramMetadata implements IJson {
     }
 
     public static final String AVOID_STAR_JOINS = "FELDERA_AVOID_STAR_JOINS";
+    /** When set to {@code true}, inserts a weight-validation check after every
+     * input table that has no primary key. */
+    public static final String ENFORCE_POSITIVE_INPUTS = "ENFORCE_POSITIVE_INPUTS";
 
     public boolean noStarJoins() {
         return this.isExplicitlyOn(AVOID_STAR_JOINS);
+    }
+
+    /** Returns {@code true} if weight validation should be inserted after
+     * inputs without a primary key. */
+    public boolean enforcePositiveInputs() {
+        return this.isExplicitlyOn(ENFORCE_POSITIVE_INPUTS);
     }
 
     /** True if a feature is not set or set to 'false' */

@@ -7,7 +7,6 @@ import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class Regression3Tests extends SqlIoTest {
@@ -716,5 +715,17 @@ public class Regression3Tests extends SqlIoTest {
                 );
 
                 CREATE VIEW Z AS SELECT b, r.b, t.b FROM T;""");
+    }
+
+    @Test
+    public void testEnforcePositiveInputs() {
+        String sql = """
+                SET ENFORCE_POSITIVE_INPUTS = TRUE;
+                CREATE TABLE T(x INT NOT NULL);
+                CREATE VIEW V AS SELECT x FROM T;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation(sql);
+        this.runtimeFail(compiler, "REMOVE FROM T VALUES (1);",
+                "Table t: negative weight found");
     }
 }
