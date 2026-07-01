@@ -1,5 +1,6 @@
 <script lang="ts" module>
   import type { TriageResults } from 'triage-types'
+  import type { GlobalMetrics } from '../../functions/globalMetrics'
   import type { LookupCoordinator } from '../../functions/lookup'
   import type { MetricsMode } from '../MetricsView.svelte'
   import type { TooltipData } from '../ProfilerTooltip.svelte'
@@ -12,6 +13,9 @@
     /** Id of the loaded profile's toplevel node, so the Metrics view can tell the overview from a
      *  single operator. `undefined` until a profile is loaded. */
     rootNodeId: string | undefined
+    /** Cumulative pipeline-wide metrics from `stats.json`, shown as a tile in the overview.
+     *  `undefined` when the bundle carried no stats. */
+    globalMetrics: GlobalMetrics | undefined
     /** When true, metrics flagged `advanced` in the profile metadata are shown too. */
     showAdvancedMetrics: boolean
     lookup: LookupCoordinator
@@ -34,6 +38,7 @@
     metricsMode,
     tooltipData,
     rootNodeId,
+    globalMetrics,
     showAdvancedMetrics,
     lookup,
     onSearchNode
@@ -44,6 +49,7 @@
   mode={metricsMode}
   {tooltipData}
   {rootNodeId}
+  {globalMetrics}
   showAdvanced={showAdvancedMetrics}
   {lookup}
   {onSearchNode}

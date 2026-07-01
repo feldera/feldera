@@ -21,6 +21,7 @@
   } from 'profiler-lib'
   import { type Snippet, untrack } from 'svelte'
   import type { TriageResults } from 'triage-types'
+  import type { GlobalMetrics } from '../functions/globalMetrics'
   import { createLookupCoordinator } from '../functions/lookup'
   import { type AnalysisView, isNodeView, metricsModeOf } from '../functions/metricsMode'
   import { severityLabel, uniqueCategories, uniqueSeverities } from '../functions/triage'
@@ -41,6 +42,8 @@
     dataflowData: Dataflow | undefined
     programCode: string[] | undefined
     logText?: string
+    /** Cumulative pipeline-wide metrics from the bundle's `stats.json`; shown in the overview. */
+    globalMetrics?: GlobalMetrics
     triageResults: TriageResults
     profileFiles: [Date, ZipItem[]][]
     selectedTimestamp: Date | null
@@ -61,6 +64,7 @@
     dataflowData,
     programCode,
     logText,
+    globalMetrics,
     triageResults,
     profileFiles,
     selectedTimestamp,
@@ -261,6 +265,7 @@
     metricsMode,
     tooltipData,
     rootNodeId: diagramRootNodeId,
+    globalMetrics,
     showAdvancedMetrics,
     lookup,
     logText,

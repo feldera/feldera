@@ -2,11 +2,13 @@ import { unzip, type ZipItem } from 'but-unzip'
 import type { Dataflow, JsonProfiles } from 'profiler-lib'
 import sortOn from 'sort-on'
 import { groupBy } from './array'
+import type { GlobalMetrics } from './globalMetrics'
 
 const circuitProfileRegex = /circuit_profile\.json$/
 const dataflowGraphRegex = /dataflow_graph\.json$/
 const pipelineConfigRegex = /pipeline_config\.json$/
 const logsRegex = /logs\.txt$/
+const statsRegex = /stats\.json$/
 
 // New bundle layout (since support-bundle metadata_version 1): each collection
 // lives under a directory named after its timestamp, e.g.
@@ -45,6 +47,8 @@ export interface ProcessedProfile {
   sources?: string[]
   logText?: string
   pipelineName?: string
+  /** Cumulative pipeline-wide metrics from `stats.json`, when the bundle includes it. */
+  globalMetrics?: GlobalMetrics
 }
 
 /**
@@ -112,11 +116,28 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
     logText = decoder.decode(await logsFile.read())
   }
 
+  // `stats.json` is the `/stats` response; the overview tile only needs its `global_metrics`.
+  // A malformed or missing file leaves `globalMetrics` undefined rather than failing the load,
+  // since the stats are supplementary to the profile.
+  const statsFile = files.find((file) => statsRegex.test(file.filename))
+  let globalMetrics: GlobalMetrics | undefined
+  if (statsFile) {
+    try {
+      const stats = JSON.parse(decoder.decode(await statsFile.read())) as {
+        global_metrics?: GlobalMetrics
+      }
+      globalMetrics = stats.global_metrics
+    } catch {
+      globalMetrics = undefined
+    }
+  }
+
   return {
     profile,
     dataflow,
     sources,
     logText,
-    pipelineName
+    pipelineName,
+    globalMetrics
   }
 }
