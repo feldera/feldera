@@ -311,6 +311,7 @@ async fn run_reader(
         username: &config.username,
         password: &config.password,
         tls: config.tls,
+        tls_ca_pem: config.tls_ca_pem.as_deref(),
         container_id: format!("feldera-rabbitmq-input-{}", process::id()),
     };
     let mut connection = params.open().await?;

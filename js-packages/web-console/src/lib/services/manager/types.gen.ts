@@ -4355,6 +4355,12 @@ export type RabbitmqInputConfig = {
    */
   tls?: boolean
   /**
+   * PEM-encoded CA certificate(s) to trust for TLS. When set, only these CAs
+   * are trusted (use for brokers with a private/self-signed CA). When unset
+   * and `tls` is on, the system/webpki roots are used.
+   */
+  tls_ca_pem?: string | null
+  /**
    * SASL PLAIN username.
    */
   username: string
@@ -4411,6 +4417,12 @@ export type RabbitmqOutputConfig = {
    * Use TLS (`amqps`).
    */
   tls?: boolean
+  /**
+   * PEM-encoded CA certificate(s) to trust for TLS. When set, only these CAs
+   * are trusted (use for brokers with a private/self-signed CA). When unset
+   * and `tls` is on, the system/webpki roots are used.
+   */
+  tls_ca_pem?: string | null
   /**
    * SASL PLAIN username.
    */

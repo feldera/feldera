@@ -42,5 +42,6 @@ CREATE VIEW results WITH ('connectors' = '[{
 | `routing_key` | string | yes | — | Routing key, set as the message subject |
 | `delivery_mode` | string | no | `persistent` | `persistent` or `transient` (message durable header) |
 | `tls` | boolean | no | `false` | Use `amqps` (rustls with the system roots) |
+| `tls_ca_pem` | string | no | — | PEM CA certificate(s) to trust for TLS (for a private/self-signed CA); trusts only these when set |
 
 Delivery is **at-least-once**; downstream consumers should deduplicate if needed.

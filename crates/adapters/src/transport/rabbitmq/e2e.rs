@@ -181,6 +181,7 @@ fn base_input(queue: &str) -> RabbitmqInputConfig {
         queue: queue.to_string(),
         offset: None,
         tls: false,
+        tls_ca_pem: None,
         consumer_name: None,
     }
 }
@@ -283,6 +284,7 @@ fn rabbitmq_e2e_output_exchange_roundtrip() {
         routing_key: routing_key.to_string(),
         delivery_mode: Default::default(),
         tls: false,
+        tls_ca_pem: None,
     };
     let mut endpoint = RabbitmqOutputEndpoint::new(out_cfg).unwrap();
     endpoint
@@ -300,4 +302,85 @@ fn rabbitmq_e2e_output_exchange_roundtrip() {
         N,
         "output_exchange_roundtrip",
     );
+}
+
+fn tls_port() -> u16 {
+    std::env::var("RABBITMQ_TLS_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5671)
+}
+
+/// (d) TLS: output and input endpoints round-trip over `amqps`, trusting the
+/// broker's private CA via `tls_ca_pem`. Requires a TLS-enabled broker and
+/// `RABBITMQ_TLS_CA` pointing at the CA PEM; `RABBITMQ_MANAGEMENT_URL` must
+/// point at that broker's management API.
+#[test]
+fn rabbitmq_e2e_tls_roundtrip() {
+    if std::env::var("RABBITMQ_TLS_E2E").is_err() {
+        return;
+    }
+    let Some(ca_pem) = std::env::var("RABBITMQ_TLS_CA")
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+    else {
+        eprintln!("RABBITMQ_TLS_CA not set/readable, skipping TLS e2e");
+        return;
+    };
+    let reachable = (host().as_str(), tls_port())
+        .to_socket_addrs()
+        .map(|addrs| {
+            addrs
+                .into_iter()
+                .any(|a| TcpStream::connect_timeout(&a, Duration::from_secs(2)).is_ok())
+        })
+        .unwrap_or(false);
+    if !reachable {
+        eprintln!("TLS port {}:{} unreachable, skipping", host(), tls_port());
+        return;
+    }
+
+    let pid = std::process::id();
+    let exchange = format!("feldera_tls_ex_{pid}");
+    let queue = format!("feldera_tls_q_{pid}");
+    let routing_key = "tls.v1";
+    const N: usize = 3;
+
+    TOKIO
+        .block_on(async {
+            declare_exchange(&exchange).await?;
+            declare_queue(&queue, "classic").await?;
+            bind_queue(&exchange, &queue, routing_key).await
+        })
+        .expect("setup exchange+queue+binding");
+
+    // Publish over amqps via the output endpoint.
+    let out_cfg = RabbitmqOutputConfig {
+        host: host(),
+        port: tls_port(),
+        vhost: "/".to_string(),
+        username: "guest".to_string(),
+        password: "guest".to_string(),
+        exchange: exchange.clone(),
+        routing_key: routing_key.to_string(),
+        delivery_mode: Default::default(),
+        tls: true,
+        tls_ca_pem: Some(ca_pem.clone()),
+    };
+    let mut endpoint = RabbitmqOutputEndpoint::new(out_cfg).unwrap();
+    endpoint
+        .connect(Box::new(|_, _, _| {}))
+        .expect("tls output connect");
+    for i in 0..N {
+        endpoint
+            .push_buffer(format!(r#"{{"n":{i}}}"#).as_bytes())
+            .expect("push_buffer");
+    }
+
+    // Consume over amqps via the input endpoint.
+    let mut in_cfg = base_input(&queue);
+    in_cfg.port = tls_port();
+    in_cfg.tls = true;
+    in_cfg.tls_ca_pem = Some(ca_pem);
+    ingest_and_assert(input_config(in_cfg), N, "tls_roundtrip");
 }

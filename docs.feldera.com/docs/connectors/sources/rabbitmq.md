@@ -46,6 +46,7 @@ CREATE TABLE events (
 | `queue` | string | yes | — | Queue or stream name (`/queues/{queue}`) |
 | `offset` | object | no | — | Stream start position (see below). Presence marks the source as a stream |
 | `tls` | boolean | no | `false` | Use `amqps` (rustls with the system roots) |
+| `tls_ca_pem` | string | no | — | PEM CA certificate(s) to trust for TLS (for a private/self-signed CA); trusts only these when set |
 | `consumer_name` | string | no | — | AMQP link name; make it unique per consumer to fan out |
 
 ### Offset (streams only)

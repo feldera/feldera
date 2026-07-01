@@ -32,6 +32,9 @@ public class RabbitmqInputConfig implements IValidateConfig {
     @JsonProperty("tls")
     public boolean tls = false;
 
+    @JsonProperty("tls_ca_pem")
+    public String tlsCaPem = null;
+
     @JsonProperty("consumer_name")
     public String consumerName = null;
 

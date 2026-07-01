@@ -54,7 +54,7 @@ with-dynamodb = [
 with-nexmark = ["dbsp_nexmark"]
 with-redis = ["redis", "r2d2"]
 with-nats = []
-with-rabbitmq = ["fe2o3-amqp", "serde_amqp"]
+with-rabbitmq = ["fe2o3-amqp", "serde_amqp", "tokio-rustls", "rustls-pemfile"]
 # Run delta table tests against an S3 bucket.  Requires S3 authentication key
 # to be provided via an environment variable.
 delta-s3-test = []
@@ -92,6 +92,8 @@ awc = { workspace = true, features = [
 async-nats = { workspace = true }
 fe2o3-amqp = { workspace = true, optional = true }
 serde_amqp = { workspace = true, optional = true }
+tokio-rustls = { workspace = true, optional = true }
+rustls-pemfile = { workspace = true, optional = true }
 async-stream = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
 bytestring = "1.4.0"

@@ -105,6 +105,7 @@ impl OutputEndpoint for RabbitmqOutputEndpoint {
             username: &self.config.username,
             password: &self.config.password,
             tls: self.config.tls,
+            tls_ca_pem: self.config.tls_ca_pem.as_deref(),
             container_id: format!("feldera-rabbitmq-output-{}", process::id()),
         };
         // Route by routing key via the exchange address `/exchanges/{ex}/{key}`.

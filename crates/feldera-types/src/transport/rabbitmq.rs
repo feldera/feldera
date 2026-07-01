@@ -60,6 +60,11 @@ pub struct RabbitmqInputConfig {
     /// Use TLS (`amqps`).
     #[serde(default)]
     pub tls: bool,
+    /// PEM-encoded CA certificate(s) to trust for TLS. When set, only these CAs
+    /// are trusted (use for brokers with a private/self-signed CA). When unset
+    /// and `tls` is on, the system/webpki roots are used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls_ca_pem: Option<String>,
     /// Optional AMQP container/link name suffix (must be unique per consumer to
     /// allow fan-out).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -103,6 +108,11 @@ pub struct RabbitmqOutputConfig {
     /// Use TLS (`amqps`).
     #[serde(default)]
     pub tls: bool,
+    /// PEM-encoded CA certificate(s) to trust for TLS. When set, only these CAs
+    /// are trusted (use for brokers with a private/self-signed CA). When unset
+    /// and `tls` is on, the system/webpki roots are used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls_ca_pem: Option<String>,
 }
 
 impl RabbitmqInputConfig {
@@ -203,6 +213,7 @@ mod tests {
             queue: "".into(),
             offset: None,
             tls: false,
+            tls_ca_pem: None,
             consumer_name: None,
         };
         assert!(cfg.validate().is_err());

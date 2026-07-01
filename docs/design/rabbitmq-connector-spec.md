@@ -46,9 +46,13 @@ onto Feldera's routing-key and header concepts.
 
 ## 5. TLS
 
-`tls: true` switches the connection to `amqps` using rustls with the system /
-webpki roots (the `fe2o3-amqp` `rustls` feature). Self-signed broker certs need
-a broker configured with a CA trusted by those roots.
+`tls: true` switches the connection to `amqps` (implicit TLS). With `tls_ca_pem`
+unset, rustls uses fe2o3's default webpki roots. With `tls_ca_pem` set (PEM CA
+certificate(s)), the connector does the TLS handshake itself with a rustls
+connector trusting **only** those CAs — the path for private/self-signed broker
+CAs. (fe2o3's `open("amqps://")` ignores a supplied connector, so the custom-CA
+case handshakes manually and then runs AMQP over the TLS stream via
+`open_with_stream`.)
 
 ## 6. Out of scope
 

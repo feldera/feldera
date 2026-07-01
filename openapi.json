@@ -12582,6 +12582,11 @@
             "type": "boolean",
             "description": "Use TLS (`amqps`)."
           },
+          "tls_ca_pem": {
+            "type": "string",
+            "description": "PEM-encoded CA certificate(s) to trust for TLS. When set, only these CAs\nare trusted (use for brokers with a private/self-signed CA). When unset\nand `tls` is on, the system/webpki roots are used.",
+            "nullable": true
+          },
           "username": {
             "type": "string",
             "description": "SASL PLAIN username."
@@ -12674,6 +12679,11 @@
           "tls": {
             "type": "boolean",
             "description": "Use TLS (`amqps`)."
+          },
+          "tls_ca_pem": {
+            "type": "string",
+            "description": "PEM-encoded CA certificate(s) to trust for TLS. When set, only these CAs\nare trusted (use for brokers with a private/self-signed CA). When unset\nand `tls` is on, the system/webpki roots are used.",
+            "nullable": true
           },
           "username": {
             "type": "string",
