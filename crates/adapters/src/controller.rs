@@ -170,7 +170,7 @@ pub use feldera_types::config::{
 };
 use feldera_types::config::{
     DEFAULT_MAX_WORKER_BATCH_SIZE, DevTweaks, FileBackendConfig, FtConfig, FtModel,
-    OutputBufferConfig, StorageBackendConfig, SyncConfig,
+    OutputBufferConfig, PipelineIdentity, StorageBackendConfig, SyncConfig,
 };
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
@@ -297,7 +297,14 @@ impl ControllerBuilder {
     pub(crate) fn pull_once(&self, _sync: &SyncConfig) -> Result<(), ControllerError> {
         #[cfg(feature = "feldera-enterprise")]
         if let Some(storage) = &self.storage {
-            return sync::pull_once(storage, _sync, None);
+            let pipeline = self.config.pipeline_identity().ok_or_else(|| {
+                ControllerError::checkpoint_fetch_error(
+                    "cannot pull checkpoint from object store: pipeline has no \
+                     system-assigned name (config.name)"
+                        .to_owned(),
+                )
+            })?;
+            return sync::pull_once(storage, _sync, None, &pipeline);
         };
 
         Ok(())
@@ -310,7 +317,14 @@ impl ControllerBuilder {
     {
         #[cfg(feature = "feldera-enterprise")]
         if let Some(storage) = &self.storage {
-            sync::continuous_pull(storage, _is_activated, None)
+            let pipeline = self.config.pipeline_identity().ok_or_else(|| {
+                ControllerError::checkpoint_fetch_error(
+                    "cannot pull checkpoint from object store: pipeline has no \
+                     system-assigned name (config.name)"
+                        .to_owned(),
+                )
+            })?;
+            sync::continuous_pull(storage, _is_activated, None, &pipeline)
         } else {
             Err(ControllerError::InvalidStandby(
                 "standby mode requires storage configuration",
@@ -2368,11 +2382,19 @@ struct CheckpointSyncThread {
     storage: Arc<dyn StorageBackend>,
     config: SyncConfig,
     host_info: Option<HostInfo>,
+    /// Identity of this pipeline, used to enforce S3 bucket ownership on push.
+    pipeline: PipelineIdentity,
 }
 
 impl CheckpointSyncThread {
     fn run(self) -> Result<(), Arc<ControllerError>> {
-        match SYNCHRONIZER.push(self.uuid, self.storage, self.config, self.host_info) {
+        match SYNCHRONIZER.push(
+            self.uuid,
+            self.storage,
+            self.config,
+            self.host_info,
+            self.pipeline,
+        ) {
             Err(err) => {
                 CHECKPOINT_SYNC_PUSH_FAILURES.fetch_add(1, Ordering::Relaxed);
                 Err(Arc::new(ControllerError::checkpoint_push_error(
@@ -2419,6 +2441,19 @@ impl RunningCheckpointSync {
     }
 
     fn start(circuit: &mut CircuitThread, uuid: uuid::Uuid) -> Result<Self, Arc<ControllerError>> {
+        let pipeline = circuit
+            .controller
+            .status
+            .pipeline_config
+            .pipeline_identity()
+            .ok_or_else(|| {
+                Arc::new(ControllerError::checkpoint_push_error(
+                    "cannot push checkpoints to object store: pipeline has no \
+                     system-assigned name (config.name)"
+                        .to_owned(),
+                ))
+            })?;
+
         let Some((_, options)) = circuit.controller.status.pipeline_config.storage() else {
             return Err(Arc::new(ControllerError::storage_error(
                 "cannot sync checkpoints when storage is disabled",
@@ -2459,6 +2494,7 @@ impl RunningCheckpointSync {
             ))?,
             config: sync.to_owned(),
             host_info: circuit.controller.layout.host_info(),
+            pipeline,
         };
         let unparker = circuit.parker.unparker().clone();
         let join_handle = std::thread::Builder::new()
