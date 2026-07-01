@@ -2,7 +2,7 @@
 
 ``tests.utils.ensure_delta_spark_fixture`` runs this as a subprocess
 (``uv run --with "delta-spark>=4.2,<5" python column_mapping.py <output_dir>
-<mode>``), where ``<mode>`` is a ``delta.columnMapping.mode`` value: ``name``
+<mode>``). ``<mode>`` is a ``delta.columnMapping.mode`` value: ``name``
 (physical Parquet columns are renamed to ``col-<uuid>``) or ``id`` (columns are
 matched by Parquet field ID). PySpark is currently the only writer that can
 produce a Delta table with column mapping enabled *and* perform the rename /
@@ -26,9 +26,14 @@ The resulting table's history (one commit per step):
 * ``v5`` DROP COLUMN ``amount``
 * ``v6`` INSERT one row under the final ``(id, full_name, country)`` schema
 
-A snapshot read at the latest version must therefore return the final logical
-schema with ``amount`` gone, ``country`` NULL for the rows written before it
-existed, and every value resolved through column mapping.
+A snapshot read of the latest version returns the final logical schema with
+``amount`` gone, ``country`` NULL for the rows written before it existed, and
+every value resolved through column mapping. The follow/CDC paths instead read
+each commit's data file as raw Parquet against the schema active when that commit
+was written, exercising the connector's own physical-name resolution across the
+rename/add/drop history. A replay from v0 therefore differs from the snapshot on
+the pre-rename rows: rows 1 and 2 were written under the logical name ``name``,
+so ``full_name`` reads NULL for them (see ``_REPLAY_EXPECTED_ROWS`` in the test).
 """
 
 from __future__ import annotations
@@ -48,7 +53,8 @@ EXPECTED_ROWS = [
 
 
 def build(table_path: str, mode: str = "name") -> None:
-    """Create the column-mapped, schema-evolved table at ``table_path``.
+    """Create a column-mapped table at ``table_path`` with the rename/add/drop
+    history documented in the module docstring.
 
     :param mode: ``delta.columnMapping.mode`` for the table: ``name`` or ``id``.
     """
@@ -71,15 +77,15 @@ def build(table_path: str, mode: str = "name") -> None:
     spark.sparkContext.setLogLevel("ERROR")
     try:
         t = f"delta.`{table_path}`"
+        props = (
+            f"TBLPROPERTIES ('delta.columnMapping.mode' = '{mode}',"
+            "               'delta.minReaderVersion' = '2',"
+            "               'delta.minWriterVersion' = '5')"
+        )
 
         spark.sql(
-            f"""
-            CREATE TABLE {t} (id BIGINT, name STRING, amount DOUBLE)
-            USING delta
-            TBLPROPERTIES ('delta.columnMapping.mode' = '{mode}',
-                           'delta.minReaderVersion' = '2',
-                           'delta.minWriterVersion' = '5')
-            """
+            f"CREATE TABLE {t} (id BIGINT, name STRING, amount DOUBLE)"
+            f" USING delta {props}"
         )
         spark.sql(f"INSERT INTO {t} VALUES (1,'alice',10.0),(2,'bob',20.0)")
         spark.sql(f"ALTER TABLE {t} RENAME COLUMN name TO full_name")
