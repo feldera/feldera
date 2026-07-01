@@ -14,6 +14,18 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - Pipeline API field `deployment_runtime_status_details` is now strongly typed,
+          whereas before it was just a generic JSON value type. While `AwaitingApproval`,
+          the diff is now located at `deployment_runtime_status_details.approval_diff`
+          instead of being the whole details itself.
+
+        - Pipelines need to be upgraded to the latest version in order for the number of
+          "Runtime errors" to show up on the pipeline list overview in the Web Console.
+          Pipelines of prior versions will show a '-' (not 0). This is due to an speedup to
+          how pipeline GET selector `status_with_connectors` retrieves connector stats
+          that are behind it. The connector stats are now cached, and are updated
+          along with the runtime status details approximately within 1-15s.
+
         - New DynamoDB output connector. It writes a SQL view to an Amazon
           DynamoDB table, mapping inserts and updates to upserts and deletes to
           deletes keyed by the table's primary key. See the

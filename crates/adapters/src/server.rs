@@ -10,7 +10,7 @@ use crate::server::metrics::{
 use crate::static_compile::catalog::OUTPUT_MAPPING;
 use crate::transport::http::HttpOutputFormat;
 use crate::util::{LongOperationWarning, RateLimitCheckResult, TokenBucketRateLimiter};
-use crate::{Catalog, dyn_event};
+use crate::{Catalog, ControllerStatus, dyn_event};
 use crate::{
     CircuitCatalog, Controller, ControllerError, FormatConfig, InputEndpointConfig, OutputEndpoint,
     OutputEndpointConfig, PipelineConfig, TransportInputEndpoint,
@@ -74,8 +74,9 @@ use feldera_types::query_params::{
     SamplyProfileParams,
 };
 use feldera_types::runtime_status::{
-    BootstrapConfig, BootstrapPolicy, ExtendedRuntimeStatus, ExtendedRuntimeStatusError,
-    RuntimeDesiredStatus, RuntimeStatus, StorageStatusDetails,
+    BootstrapConfig, BootstrapPolicy, ConnectorStats, ExtendedRuntimeStatus,
+    ExtendedRuntimeStatusError, RuntimeDesiredStatus, RuntimeStatus, RuntimeStatusDetails,
+    StorageStatusDetails,
 };
 use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::time_series::TimeSeries;
@@ -1428,7 +1429,7 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
     let storage_status_details = match &state.storage {
         Some(backend) => match Checkpointer::read_checkpoints(&**backend) {
             Ok(list_checkpoints) => Some(StorageStatusDetails {
-                checkpoints: list_checkpoints,
+                checkpoints: list_checkpoints.into(),
             }),
             Err(e) => {
                 error!(
@@ -1449,6 +1450,23 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
                 default_status: RuntimeStatus,
                 storage_status_details: Option<StorageStatusDetails>,
             ) -> ExtendedRuntimeStatus {
+                // Error statistics across connectors
+                let (inputs, outputs) = retrieve_error_stats(controller.status());
+                let mut total_errors = 0u64;
+                for endpoint in inputs {
+                    total_errors = total_errors
+                        .saturating_add(endpoint.metrics.num_transport_errors)
+                        .saturating_add(endpoint.metrics.num_parse_errors);
+                }
+                for endpoint in outputs {
+                    total_errors = total_errors
+                        .saturating_add(endpoint.metrics.num_encode_errors)
+                        .saturating_add(endpoint.metrics.num_transport_errors);
+                }
+                let connector_stats = ConnectorStats {
+                    num_errors: total_errors,
+                };
+
                 ExtendedRuntimeStatus {
                     runtime_status: if controller.status().bootstrap_in_progress() {
                         RuntimeStatus::Bootstrapping
@@ -1457,7 +1475,11 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
                     } else {
                         default_status
                     },
-                    runtime_status_details: json!(""),
+                    runtime_status_details: RuntimeStatusDetails {
+                        connector_stats: Some(connector_stats),
+                        ..Default::default()
+                    }
+                    .serialize_guaranteed(),
                     runtime_desired_status,
                     storage_status_details,
                 }
@@ -1496,25 +1518,32 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
         PipelinePhase::Initializing(inner) => match inner {
             InitializationState::Starting => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Initializing,
-                runtime_status_details: json!(""),
+                runtime_status_details: RuntimeStatusDetails::default().serialize_guaranteed(),
                 runtime_desired_status,
                 storage_status_details,
             }),
             InitializationState::DownloadingCheckpoint => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Initializing,
-                runtime_status_details: json!("downloading checkpoint from object storage"),
+                runtime_status_details: RuntimeStatusDetails::new_only_reason(
+                    "downloading checkpoint from object storage",
+                )
+                .serialize_guaranteed(),
                 runtime_desired_status,
                 storage_status_details,
             }),
             InitializationState::Standby => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Standby,
-                runtime_status_details: json!(""),
+                runtime_status_details: RuntimeStatusDetails::default().serialize_guaranteed(),
                 runtime_desired_status,
                 storage_status_details,
             }),
             InitializationState::AwaitingApproval(diff) => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::AwaitingApproval,
-                runtime_status_details: serde_json::to_value(&diff).unwrap_or_default(),
+                runtime_status_details: RuntimeStatusDetails {
+                    approval_diff: Some(serde_json::to_value(&diff).unwrap_or_default()),
+                    ..Default::default()
+                }
+                .serialize_guaranteed(),
                 runtime_desired_status,
                 storage_status_details,
             }),
@@ -1546,7 +1575,7 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
             if matches!(*e, ControllerError::RestoreInProgress) {
                 Ok(ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Replaying,
-                    runtime_status_details: json!(""),
+                    runtime_status_details: RuntimeStatusDetails::default().serialize_guaranteed(),
                     runtime_desired_status,
                     storage_status_details,
                 })
@@ -1573,7 +1602,7 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
         }
         PipelinePhase::Suspended => Ok(ExtendedRuntimeStatus {
             runtime_status: RuntimeStatus::Suspended,
-            runtime_status_details: json!(""),
+            runtime_status_details: RuntimeStatusDetails::default().serialize_guaranteed(),
             runtime_desired_status,
             storage_status_details,
         }),
@@ -1642,12 +1671,15 @@ async fn stats(
     Ok(HttpResponse::Ok().json(state.controller()?.api_status(include_connector_errors)))
 }
 
-/// This endpoint returns a subset of stats that don't need updating and so is more performant than /stats
-#[get("/stats/errors")]
-async fn error_stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    let controller = state.controller()?;
-    let controller_status = controller.status();
-
+/// Retrieves the error statistics across all endpoints.
+///
+/// TODO: how blocking is this? Will this block `/status` under high load?
+fn retrieve_error_stats(
+    controller_status: &ControllerStatus,
+) -> (
+    Vec<EndpointErrorStats<InputEndpointErrorMetrics>>,
+    Vec<EndpointErrorStats<OutputEndpointErrorMetrics>>,
+) {
     let inputs: Vec<EndpointErrorStats<InputEndpointErrorMetrics>> = controller_status
         .input_status()
         .values()
@@ -1671,7 +1703,15 @@ async fn error_stats(state: WebData<ServerState>) -> Result<HttpResponse, Pipeli
             },
         })
         .collect();
+    (inputs, outputs)
+}
 
+/// This endpoint returns a subset of stats that don't need updating and so is more performant than /stats
+#[get("/stats/errors")]
+async fn error_stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let controller = state.controller()?;
+    let controller_status = controller.status();
+    let (inputs, outputs) = retrieve_error_stats(controller_status);
     Ok(HttpResponse::Ok().json(PipelineStatsErrorsResponse { inputs, outputs }))
 }
 

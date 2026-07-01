@@ -8256,7 +8256,7 @@
       },
       "ConnectorStats": {
         "type": "object",
-        "description": "Aggregated connector error statistics.\n\nThis structure contains the sum of all error counts across all input and output connectors\nfor a pipeline.",
+        "description": "Statistics across all connectors.",
         "required": [
           "num_errors"
         ],
@@ -8264,7 +8264,7 @@
           "num_errors": {
             "type": "integer",
             "format": "int64",
-            "description": "Total number of errors across all connectors.\n\nThis is the sum of:\n- `num_transport_errors` from all input connectors\n- `num_parse_errors` from all input connectors\n- `num_encode_errors` from all output connectors\n- `num_transport_errors` from all output connectors",
+            "description": "Total number of errors across all connectors.\n\n- `num_transport_errors` from all input connectors\n- `num_parse_errors` from all input connectors\n- `num_encode_errors` from all output connectors\n- `num_transport_errors` from all output connectors",
             "minimum": 0
           }
         }
@@ -11405,6 +11405,11 @@
                 "nullable": true
               },
               "deployment_runtime_status_details": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RuntimeStatusDetails"
+                  }
+                ],
                 "nullable": true
               },
               "deployment_runtime_status_since": {
@@ -11465,6 +11470,11 @@
                 "$ref": "#/components/schemas/StorageStatus"
               },
               "storage_status_details": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/StorageStatusDetails"
+                  }
+                ],
                 "nullable": true
               },
               "udf_rust": {
@@ -11670,6 +11680,11 @@
                 "nullable": true
               },
               "deployment_runtime_status_details": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RuntimeStatusDetails"
+                  }
+                ],
                 "nullable": true
               },
               "deployment_runtime_status_since": {
@@ -11746,6 +11761,11 @@
                 "$ref": "#/components/schemas/StorageStatus"
               },
               "storage_status_details": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/StorageStatusDetails"
+                  }
+                ],
                 "nullable": true
               },
               "udf_rust": {
@@ -13125,6 +13145,29 @@
           "Suspended"
         ]
       },
+      "RuntimeStatusDetails": {
+        "type": "object",
+        "description": "Details about the current runtime status. The fields in this struct should all be **optional**\nand set only by a runtime status when they are known. Otherwise, they can just be set `None`.",
+        "properties": {
+          "approval_diff": {
+            "description": "The diff which is awaiting approval.\n\nSpecifically useful for: `AwaitingApproval`.",
+            "nullable": true
+          },
+          "connector_stats": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConnectorStats"
+              }
+            ],
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "description": "Free form text giving an explanation why it is currently in this runtime status.\n\nSpecifically useful for: `Unavailable`, `Initializing`.",
+            "nullable": true
+          }
+        }
+      },
       "RustCompilationInfo": {
         "type": "object",
         "description": "Rust compilation information.",
@@ -13623,6 +13666,22 @@
           "InUse",
           "Clearing"
         ]
+      },
+      "StorageStatusDetails": {
+        "type": "object",
+        "description": "Details about pipeline storage, which are returned as part of the regular runtime status polling\nby the runner.",
+        "required": [
+          "checkpoints"
+        ],
+        "properties": {
+          "checkpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CheckpointMetadata"
+            },
+            "description": "Present checkpoints."
+          }
+        }
       },
       "SuspendError": {
         "oneOf": [

@@ -23,7 +23,8 @@ use chrono::Utc;
 use feldera_observability::ReqwestTracingExt;
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{
-    ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus, StorageStatusDetails,
+    ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus, RuntimeStatusDetails,
+    StorageStatusDetails,
 };
 use reqwest::{Method, StatusCode};
 use semver::Version;
@@ -1483,7 +1484,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 deployment_resources_status_details: details,
                 extended_runtime_status: ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Initializing,
-                    runtime_status_details: json!(""),
+                    runtime_status_details: RuntimeStatusDetails::new_only_reason(
+                        "initializing set by the runner",
+                    )
+                    .serialize_guaranteed(),
                     runtime_desired_status: deployment_initial,
                     storage_status_details: None,
                 },
@@ -1506,19 +1510,19 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         match response_str {
                             "Paused" => Ok(ExtendedRuntimeStatus {
                                 runtime_status: RuntimeStatus::Paused,
-                                runtime_status_details: json!(""),
+                                runtime_status_details: RuntimeStatusDetails::default().serialize_guaranteed(),
                                 runtime_desired_status: RuntimeDesiredStatus::Paused,
                                 storage_status_details: None,
                             }),
                             "Running" => Ok(ExtendedRuntimeStatus {
                                 runtime_status: RuntimeStatus::Running,
-                                runtime_status_details: json!(""),
+                                runtime_status_details: RuntimeStatusDetails::default().serialize_guaranteed(),
                                 runtime_desired_status: RuntimeDesiredStatus::Running,
                                 storage_status_details: None,
                             }),
                             "Initializing" => Ok(ExtendedRuntimeStatus { // Backward compatibility: in anticipation of recent change of 503 to 200
                                 runtime_status: RuntimeStatus::Initializing,
-                                runtime_status_details: json!(""),
+                                runtime_status_details: RuntimeStatusDetails::default().serialize_guaranteed(),
                                 runtime_desired_status: RuntimeDesiredStatus::Paused,
                                 storage_status_details: None,
                             }),
@@ -1528,7 +1532,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             })),
                             _ => Ok(ExtendedRuntimeStatus {
                                 runtime_status: RuntimeStatus::Unavailable,
-                                runtime_status_details: json!(format!("Pipeline status response (200 OK) is an unexpected JSON string: '{response_str}'")),
+                                runtime_status_details: RuntimeStatusDetails::new_only_reason(&format!("Pipeline status response (200 OK) is an unexpected JSON string: '{response_str}'")).serialize_guaranteed(),
                                 runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                                 storage_status_details: None,
                             }),
@@ -1539,7 +1543,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             Ok(response) => Ok(response),
                             Err(e) => Ok(ExtendedRuntimeStatus {
                                 runtime_status: RuntimeStatus::Unavailable,
-                                runtime_status_details: json!(format!("Pipeline status response (200 OK) cannot be deserialized due to: {e}")),
+                                runtime_status_details: RuntimeStatusDetails::new_only_reason(&format!("Pipeline status response (200 OK) cannot be deserialized due to: {e}")).serialize_guaranteed(),
                                 runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                                 storage_status_details: None,
                             }),
@@ -1548,7 +1552,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         // JSON response must be either a string or an object.
                         Ok(ExtendedRuntimeStatus {
                             runtime_status: RuntimeStatus::Unavailable,
-                            runtime_status_details: json!(format!("Pipeline status response (200 OK) is not a string or an object:\n{body:#}")),
+                            runtime_status_details: RuntimeStatusDetails::new_only_reason(&format!("Pipeline status response (200 OK) is not a string or an object:\n{body:#}")).serialize_guaranteed(),
                             runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                             storage_status_details: None,
                         })
@@ -1559,13 +1563,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             match error_response.error_code.as_ref() {
                                 "Initializing" => Ok(ExtendedRuntimeStatus { // For backward compatibility
                                     runtime_status: RuntimeStatus::Initializing,
-                                    runtime_status_details: json!(""),
+                                    runtime_status_details: RuntimeStatusDetails::default().serialize_guaranteed(),
                                     runtime_desired_status: RuntimeDesiredStatus::Paused,
                                     storage_status_details: None,
                                 }),
                                 "Suspended" => Ok(ExtendedRuntimeStatus { // For backward compatibility
                                     runtime_status: RuntimeStatus::Suspended,
-                                    runtime_status_details: json!(""),
+                                    runtime_status_details: RuntimeStatusDetails::default().serialize_guaranteed(),
                                     runtime_desired_status: RuntimeDesiredStatus::Suspended,
                                     storage_status_details: None,
                                 }),
@@ -1577,16 +1581,16 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                     );
                                     Ok(ExtendedRuntimeStatus {
                                         runtime_status: RuntimeStatus::Unavailable,
-                                        runtime_status_details: json!(format!("Pipeline status response (503 Service Unavailable) is an error:\n{error_response:?}")),
+                                        runtime_status_details: RuntimeStatusDetails::new_only_reason(&format!("Pipeline status response (503 Service Unavailable) is an error:\n{error_response:?}")).serialize_guaranteed(),
                                         runtime_desired_status: RuntimeDesiredStatus::Unavailable,
-                                    storage_status_details: None,
+                                        storage_status_details: None,
                                     })
                                 },
                             }
                         }
                         Err(e) => Ok(ExtendedRuntimeStatus {
                             runtime_status: RuntimeStatus::Unavailable,
-                            runtime_status_details: json!(format!("Pipeline status response (503 Service Unavailable) cannot be deserialized due to: {e}. Response was:\n{body:#}")),
+                            runtime_status_details: RuntimeStatusDetails::new_only_reason(&format!("Pipeline status response (503 Service Unavailable) cannot be deserialized due to: {e}. Response was:\n{body:#}")).serialize_guaranteed(),
                             runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                             storage_status_details: None,
                         })
@@ -1615,7 +1619,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 {
                     Ok(ExtendedRuntimeStatus {
                         runtime_status: RuntimeStatus::Initializing,
-                        runtime_status_details: json!(format!("Still in the grace period for initializing. Pipeline status endpoint cannot yet be reached due to: {e}")),
+                        runtime_status_details: RuntimeStatusDetails::new_only_reason(
+                            &format!("Still in the grace period for initializing. Pipeline status endpoint cannot yet be reached due to: {e}")
+                        ).serialize_guaranteed(),
                         runtime_desired_status: deployment_initial,
                         storage_status_details: None,
                     })
@@ -1627,9 +1633,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     );
                     Ok(ExtendedRuntimeStatus {
                         runtime_status: RuntimeStatus::Unavailable,
-                        runtime_status_details: json!(format!(
+                        runtime_status_details: RuntimeStatusDetails::new_only_reason(&format!(
                             "Pipeline status endpoint could not be reached: {e}"
-                        )),
+                        ))
+                        .serialize_guaranteed(),
                         runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                         storage_status_details: None,
                     })
