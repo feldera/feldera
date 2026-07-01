@@ -4320,6 +4320,107 @@ export type PubSubInputConfig = {
   timestamp?: string | null
 }
 
+export type RabbitmqDeliveryMode = 'persistent' | 'transient'
+
+/**
+ * Configuration for the `rabbitmq_input` connector (AMQP 1.0 receiver).
+ */
+export type RabbitmqInputConfig = {
+  /**
+   * Optional AMQP container/link name suffix (must be unique per consumer to
+   * allow fan-out).
+   */
+  consumer_name?: string | null
+  /**
+   * Broker hostname.
+   */
+  host: string
+  offset?: RabbitmqOffsetConfig | null
+  /**
+   * SASL PLAIN password.
+   */
+  password: string
+  /**
+   * AMQP port. Defaults to 5672 (or 5671 when `tls` is set and no port is
+   * given by the user).
+   */
+  port?: number
+  /**
+   * Queue or stream to consume from. Attaches to the AMQP 1.0 address
+   * `/queues/{queue}`.
+   */
+  queue: string
+  /**
+   * Use TLS (`amqps`).
+   */
+  tls?: boolean
+  /**
+   * SASL PLAIN username.
+   */
+  username: string
+  /**
+   * Virtual host. Mapped to the AMQP 1.0 `hostname` field as `vhost:<name>`.
+   */
+  vhost?: string
+}
+
+/**
+ * Starting position for a RabbitMQ **stream** source, mapped to the
+ * `rabbitmq:stream-offset-spec` filter on the AMQP 1.0 receiver.
+ *
+ * Ignored for non-stream queues.
+ */
+export type RabbitmqOffsetConfig =
+  | {
+      policy: string
+    }
+  | {
+      offset: number
+    }
+  | {
+      timestamp: string
+    }
+
+/**
+ * Configuration for the `rabbitmq_output` connector (AMQP 1.0 sender).
+ */
+export type RabbitmqOutputConfig = {
+  delivery_mode?: RabbitmqDeliveryMode
+  /**
+   * Target exchange. Attaches to the AMQP 1.0 address `/exchanges/{exchange}`.
+   */
+  exchange: string
+  /**
+   * Broker hostname.
+   */
+  host: string
+  /**
+   * SASL PLAIN password.
+   */
+  password: string
+  /**
+   * AMQP port. Defaults to 5672.
+   */
+  port?: number
+  /**
+   * Routing key. Set as the message **subject**, which RabbitMQ uses as the
+   * routing key for exchange bindings.
+   */
+  routing_key: string
+  /**
+   * Use TLS (`amqps`).
+   */
+  tls?: boolean
+  /**
+   * SASL PLAIN username.
+   */
+  username: string
+  /**
+   * Virtual host. Mapped to the AMQP 1.0 `hostname` field as `vhost:<name>`.
+   */
+  vhost?: string
+}
+
 /**
  * Redis output connector configuration.
  */
@@ -5438,6 +5539,10 @@ export type TransportConfig =
       name: 'nats_input'
     }
   | {
+      config: RabbitmqInputConfig
+      name: 'rabbitmq_input'
+    }
+  | {
       config: KafkaInputConfig
       name: 'kafka_input'
     }
@@ -5468,6 +5573,10 @@ export type TransportConfig =
   | {
       config: RedisOutputConfig
       name: 'redis_output'
+    }
+  | {
+      config: RabbitmqOutputConfig
+      name: 'rabbitmq_output'
     }
   | {
       config: IcebergReaderConfig

@@ -12529,6 +12529,162 @@
           }
         }
       },
+      "RabbitmqDeliveryMode": {
+        "type": "string",
+        "description": "Delivery durability for published messages.",
+        "enum": [
+          "persistent",
+          "transient"
+        ]
+      },
+      "RabbitmqInputConfig": {
+        "type": "object",
+        "description": "Configuration for the `rabbitmq_input` connector (AMQP 1.0 receiver).",
+        "required": [
+          "host",
+          "username",
+          "password",
+          "queue"
+        ],
+        "properties": {
+          "consumer_name": {
+            "type": "string",
+            "description": "Optional AMQP container/link name suffix (must be unique per consumer to\nallow fan-out).",
+            "nullable": true
+          },
+          "host": {
+            "type": "string",
+            "description": "Broker hostname."
+          },
+          "offset": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RabbitmqOffsetConfig"
+              }
+            ],
+            "nullable": true
+          },
+          "password": {
+            "type": "string",
+            "description": "SASL PLAIN password."
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "AMQP port. Defaults to 5672 (or 5671 when `tls` is set and no port is\ngiven by the user).",
+            "minimum": 0
+          },
+          "queue": {
+            "type": "string",
+            "description": "Queue or stream to consume from. Attaches to the AMQP 1.0 address\n`/queues/{queue}`."
+          },
+          "tls": {
+            "type": "boolean",
+            "description": "Use TLS (`amqps`)."
+          },
+          "username": {
+            "type": "string",
+            "description": "SASL PLAIN username."
+          },
+          "vhost": {
+            "type": "string",
+            "description": "Virtual host. Mapped to the AMQP 1.0 `hostname` field as `vhost:<name>`."
+          }
+        }
+      },
+      "RabbitmqOffsetConfig": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "`{ \"policy\": \"first\" }`, `\"last\"`, or `\"next\"`.",
+            "required": [
+              "policy"
+            ],
+            "properties": {
+              "policy": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Absolute stream offset.",
+            "required": [
+              "offset"
+            ],
+            "properties": {
+              "offset": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "RFC 3339 timestamp.",
+            "required": [
+              "timestamp"
+            ],
+            "properties": {
+              "timestamp": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "Starting position for a RabbitMQ **stream** source, mapped to the\n`rabbitmq:stream-offset-spec` filter on the AMQP 1.0 receiver.\n\nIgnored for non-stream queues."
+      },
+      "RabbitmqOutputConfig": {
+        "type": "object",
+        "description": "Configuration for the `rabbitmq_output` connector (AMQP 1.0 sender).",
+        "required": [
+          "host",
+          "username",
+          "password",
+          "exchange",
+          "routing_key"
+        ],
+        "properties": {
+          "delivery_mode": {
+            "$ref": "#/components/schemas/RabbitmqDeliveryMode"
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Target exchange. Attaches to the AMQP 1.0 address `/exchanges/{exchange}`."
+          },
+          "host": {
+            "type": "string",
+            "description": "Broker hostname."
+          },
+          "password": {
+            "type": "string",
+            "description": "SASL PLAIN password."
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "AMQP port. Defaults to 5672.",
+            "minimum": 0
+          },
+          "routing_key": {
+            "type": "string",
+            "description": "Routing key. Set as the message **subject**, which RabbitMQ uses as the\nrouting key for exchange bindings."
+          },
+          "tls": {
+            "type": "boolean",
+            "description": "Use TLS (`amqps`)."
+          },
+          "username": {
+            "type": "string",
+            "description": "SASL PLAIN username."
+          },
+          "vhost": {
+            "type": "string",
+            "description": "Virtual host. Mapped to the AMQP 1.0 `hostname` field as `vhost:<name>`."
+          }
+        }
+      },
       "RedisOutputConfig": {
         "type": "object",
         "description": "Redis output connector configuration.",
@@ -13976,6 +14132,24 @@
             ],
             "properties": {
               "config": {
+                "$ref": "#/components/schemas/RabbitmqInputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "rabbitmq_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
                 "$ref": "#/components/schemas/KafkaInputConfig"
               },
               "name": {
@@ -14126,6 +14300,24 @@
                 "type": "string",
                 "enum": [
                   "redis_output"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/RabbitmqOutputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "rabbitmq_output"
                 ]
               }
             }
