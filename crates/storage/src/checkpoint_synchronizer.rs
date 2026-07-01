@@ -2,7 +2,7 @@ use std::sync::{Arc, LazyLock};
 
 use feldera_types::{
     checkpoint::{CheckpointMetadata, CheckpointSyncMetrics, HostInfo, RemoteCheckpoint},
-    config::SyncConfig,
+    config::{PipelineIdentity, SyncConfig},
 };
 
 use crate::StorageBackend;
@@ -14,12 +14,17 @@ pub trait CheckpointSynchronizer: Sync {
     /// When `Some`, the checkpoint zip and catalog are written under
     /// `host{N}/` in the remote bucket; when `None` (solo pipeline), the
     /// existing flat layout is used for backward compatibility.
+    ///
+    /// `pipeline` identifies the pipeline performing the push and is used to
+    /// enforce bucket ownership: the push fails before writing any data if the
+    /// bucket is already owned by a different pipeline.
     fn push(
         &self,
         checkpoint: uuid::Uuid,
         storage: Arc<dyn StorageBackend>,
         remote_config: SyncConfig,
         host_info: Option<HostInfo>,
+        pipeline: PipelineIdentity,
     ) -> anyhow::Result<Option<CheckpointSyncMetrics>>;
 
     /// Pull a checkpoint from remote object storage.
@@ -30,12 +35,17 @@ pub trait CheckpointSynchronizer: Sync {
     /// `standby` indicates that the pipeline is in standby mode: the
     /// local-storage cache is bypassed (always pull from remote) and a missing
     /// remote checkpoint is treated as an error rather than a fresh start.
+    ///
+    /// `pipeline` identifies the pipeline performing the pull. It is used only
+    /// to warn (never fail) when pulling from a bucket owned by a different
+    /// pipeline.
     fn pull(
         &self,
         storage: Arc<dyn StorageBackend>,
         remote_config: SyncConfig,
         host_info: Option<HostInfo>,
         standby: bool,
+        pipeline: PipelineIdentity,
     ) -> anyhow::Result<(CheckpointMetadata, Option<CheckpointSyncMetrics>)>;
 
     /// List checkpoints available in remote object storage.

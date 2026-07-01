@@ -66,6 +66,16 @@ pub struct ProgramIr {
     pub program_schema: serde_json::Value,
 }
 
+/// Identity of a pipeline, used to record and check ownership of an S3
+/// checkpoint bucket.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PipelineIdentity {
+    /// System-generated name of the pipeline (format `pipeline-<uuid>`).
+    pub name: String,
+    /// Name given to the pipeline by the tenant.
+    pub given_name: Option<String>,
+}
+
 /// Pipeline deployment configuration.
 /// It represents configuration entries directly provided by the user
 /// (e.g., runtime configuration) and entries derived from the schema
@@ -152,6 +162,17 @@ impl PipelineConfig {
         let storage_options = self.global.storage.as_ref();
         let storage_config = self.storage_config.as_ref();
         storage_config.zip(storage_options)
+    }
+
+    /// Returns this pipeline's [`PipelineIdentity`], used to identify the
+    /// pipeline that owns an S3 checkpoint bucket.
+    ///
+    /// Returns `None` when the pipeline has no system-generated [`name`](Self::name).
+    pub fn pipeline_identity(&self) -> Option<PipelineIdentity> {
+        self.name.as_ref().map(|name| PipelineIdentity {
+            name: name.clone(),
+            given_name: self.given_name.clone(),
+        })
     }
 
     /// Returns `self.secrets_dir`, or the default secrets directory if it isn't
@@ -1209,9 +1230,42 @@ impl Default for FtConfig {
 mod test {
     use super::deserialize_fault_tolerance;
     use crate::config::{
-        DEFAULT_DATAFUSION_MEMORY_MB_CEILING, FtConfig, FtModel, ResourceConfig, RuntimeConfig,
+        DEFAULT_DATAFUSION_MEMORY_MB_CEILING, FtConfig, FtModel, PipelineConfig, ResourceConfig,
+        RuntimeConfig,
     };
     use serde::{Deserialize, Serialize};
+
+    fn config_with_name(name: Option<&str>) -> PipelineConfig {
+        PipelineConfig {
+            global: RuntimeConfig::default(),
+            multihost: None,
+            name: name.map(str::to_string),
+            given_name: None,
+            storage_config: None,
+            secrets_dir: None,
+            inputs: Default::default(),
+            outputs: Default::default(),
+            program_ir: None,
+        }
+    }
+
+    #[test]
+    fn pipeline_identity_uses_system_and_given_names() {
+        let mut config = config_with_name(Some("pipeline-018f6f57-4e15-7438-91af-3fd21ff2a8d3"));
+        config.given_name = Some("my-pipeline".to_string());
+
+        let metadata = config.pipeline_identity().unwrap();
+        assert_eq!(
+            metadata.name,
+            "pipeline-018f6f57-4e15-7438-91af-3fd21ff2a8d3"
+        );
+        assert_eq!(metadata.given_name.as_deref(), Some("my-pipeline"));
+    }
+
+    #[test]
+    fn pipeline_identity_is_none_without_system_name() {
+        assert_eq!(config_with_name(None).pipeline_identity(), None);
+    }
 
     #[test]
     fn resolved_datafusion_memory_explicit_passes_through() {
