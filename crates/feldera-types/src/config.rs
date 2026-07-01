@@ -277,7 +277,7 @@ impl StorageCacheConfig {
 }
 
 /// Storage configuration for a pipeline.
-#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct StorageOptions {
     /// How to connect to the underlying storage.
@@ -319,7 +319,29 @@ pub struct StorageOptions {
     /// background threads. If unset, each foreground or background thread cache
     /// is limited to 256 MiB.
     pub cache_mib: Option<usize>,
+
+    /// False-positive rate for Bloom filters on batches on storage, as a
+    /// fraction f, where 0 < f < 1.
+    ///
+    /// The false-positive rate trades off between the amount of memory used by
+    /// Bloom filters and how frequently storage needs to be searched for keys
+    /// that are not actually present.  Typical false-positive rates and their
+    /// corresponding memory costs are:
+    ///
+    /// - 0.1: 4.8 bits per key
+    /// - 0.01: 9.6 bits per key
+    /// - 0.001: 14.4 bits per key
+    /// - 0.0001: 19.2 bits per key (default)
+    ///
+    /// Values outside the valid range, such as 0.0, disable Bloom filters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "crate::serde_via_value::deserialize")]
+    pub bloom_false_positive_rate: Option<f64>,
 }
+
+// `f64` does not implement `Eq`, but `bloom_false_positive_rate` is always
+// finite, so `PartialEq` is an equivalence relation here.
+impl Eq for StorageOptions {}
 
 /// Backend storage configuration.
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -1209,7 +1231,8 @@ impl Default for FtConfig {
 mod test {
     use super::deserialize_fault_tolerance;
     use crate::config::{
-        DEFAULT_DATAFUSION_MEMORY_MB_CEILING, FtConfig, FtModel, ResourceConfig, RuntimeConfig,
+        DEFAULT_DATAFUSION_MEMORY_MB_CEILING, FtConfig, FtModel, PipelineConfig, ResourceConfig,
+        RuntimeConfig, StorageOptions,
     };
     use serde::{Deserialize, Serialize};
 
@@ -1337,6 +1360,49 @@ mod test {
                 model: Some(FtModel::default()),
                 checkpoint_interval_secs: None
             }
+        );
+    }
+
+    /// Regression test: `Option<f64>` fields inside `StorageOptions` must
+    /// survive a JSON-string round-trip through `PipelineConfig`, which uses
+    /// `#[serde(flatten)]` on `RuntimeConfig`.
+    #[test]
+    fn storage_options_f64_roundtrip_through_pipeline_config() {
+        let pc = PipelineConfig {
+            global: RuntimeConfig {
+                storage: Some(StorageOptions {
+                    bloom_false_positive_rate: Some(0.01),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            multihost: None,
+            name: Some("test-pipeline".into()),
+            given_name: None,
+            storage_config: None,
+            secrets_dir: None,
+            inputs: Default::default(),
+            outputs: Default::default(),
+            program_ir: None,
+        };
+
+        // JSON string round-trip (the path the pipeline process takes).
+        let json = serde_json::to_string_pretty(&pc).unwrap();
+        let pc2: PipelineConfig = serde_json::from_str(&json).expect(
+            "JSON string round-trip of PipelineConfig with f64 StorageOptions must succeed",
+        );
+        assert_eq!(
+            pc2.global.storage.unwrap().bloom_false_positive_rate,
+            Some(0.01)
+        );
+
+        // serde_json::Value round-trip (the path the pipeline manager takes).
+        let value = serde_json::to_value(&pc).unwrap();
+        let pc3: PipelineConfig = serde_json::from_value(value)
+            .expect("Value round-trip of PipelineConfig with f64 StorageOptions must succeed");
+        assert_eq!(
+            pc3.global.storage.unwrap().bloom_false_positive_rate,
+            Some(0.01)
         );
     }
 }
