@@ -1147,6 +1147,51 @@ fn test_accumulate_trace_with_balancer_policy_returns_to_trace_policy() {
     assert_eq!(output_trace, expected_output_trace);
 }
 
+/// A `Broadcast` policy hint on the outer (left) input of a left join cannot be
+/// honored: the left side of a left join must be Shard or Balance. The hint must
+/// be rejected when it is installed, rather than accepted and then crashing the
+/// circuit with `NoSolution` on the first step.
+///
+/// Regression test: `set_hint` used to validate the cluster *before* persisting
+/// the hint, so it checked a still-satisfiable (hint-free) instance, accepted the
+/// hint, and the first step then solved the now-unsatisfiable instance and
+/// panicked in `solve_all_clusters().unwrap()`. This is the crash produced by a
+/// SQL `/*+ broadcast(pt) */` hint where `pt` is the outer input of a left join.
+#[test]
+fn test_reject_broadcast_hint_on_left_join_outer_input() {
+    init_test_logger();
+
+    let workers = 4;
+    let (
+        mut circuit,
+        (left_input_handle, right_input_handle, left_input_node_id, _right_input_node_id, _output),
+    ) = Runtime::init_circuit(
+        CircuitConfig::from(workers)
+            .with_splitter_chunk_size_records(2)
+            .with_balancer_min_absolute_improvement_threshold(0)
+            .with_mode(Mode::Persistent),
+        left_join_with_balancer_test_circuit,
+    )
+    .unwrap();
+
+    // Broadcasting the outer input of a left join is infeasible, so the hint must
+    // be rejected here instead of being accepted and crashing at the first step.
+    let result = circuit.set_balancer_hint(
+        &left_input_node_id,
+        BalancerHint::Policy(Some(PartitioningPolicy::Broadcast)),
+    );
+    assert!(
+        result.is_err(),
+        "broadcast hint on the outer input of a left join must be rejected, got {result:?}"
+    );
+
+    // With the hint rejected and rolled back, the circuit runs normally instead of
+    // crashing with `NoSolution` on the first step.
+    left_input_handle.push(1, (1, 1));
+    right_input_handle.push(1, (1, 1));
+    circuit.transaction().unwrap();
+}
+
 /// Join a large left collection with a small right collection. Both are skewed.
 /// The balancer should balance the left collection using Policy::Balance and the
 /// right collection using Policy::Broadcast.
