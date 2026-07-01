@@ -260,6 +260,10 @@ public final class ConnectorValidator {
                     validateConfig(transportConfig, outerJson, configPointer,
                             outerStart, NatsInputConfig.class, reporter);
                     break;
+                case "rabbitmq_input":
+                    validateConfig(transportConfig, outerJson, configPointer,
+                            outerStart, RabbitmqInputConfig.class, reporter);
+                    break;
                 case "datagen":
                 case "nexmark":
                 case "empty":
@@ -299,6 +303,10 @@ public final class ConnectorValidator {
                 case "redis_output":
                     validateConfig(transportConfig, outerJson, configPointer,
                             outerStart, RedisOutputConfig.class, reporter);
+                    break;
+                case "rabbitmq_output":
+                    validateConfig(transportConfig, outerJson, configPointer,
+                            outerStart, RabbitmqOutputConfig.class, reporter);
                     break;
                 case "null":
                     break;

@@ -1453,4 +1453,66 @@ public class ConnectorTests extends BaseSQLTests {
                 }""",
                 "\"inactivity_timeout_secs\" must be at least 1");
     }
+
+    // ---- RabbitMQ transport config ----
+
+    @Test
+    public void rabbitmqInputValidConfig() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "rabbitmq_input",
+                  "config": {
+                    "host": "localhost",
+                    "username": "guest",
+                    "password": "guest",
+                    "queue": "events",
+                    "offset": { "policy": "next" }
+                  }
+                }""");
+    }
+
+    @Test
+    public void rabbitmqInputMissingQueue() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "rabbitmq_input",
+                  "config": {
+                    "host": "localhost",
+                    "username": "guest",
+                    "password": "guest",
+                    "offset": { "policy": "first" }
+                  }
+                }""",
+                "required field \"queue\" is missing or empty");
+    }
+
+    @Test
+    public void rabbitmqOutputValidConfig() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "rabbitmq_output",
+                  "config": {
+                    "host": "localhost",
+                    "username": "guest",
+                    "password": "guest",
+                    "exchange": "analytics",
+                    "routing_key": "results.v1"
+                  }
+                }""");
+    }
+
+    @Test
+    public void rabbitmqOutputMissingRoutingKey() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "rabbitmq_output",
+                  "config": {
+                    "host": "localhost",
+                    "username": "guest",
+                    "password": "guest",
+                    "exchange": "analytics"
+                  }
+                }""",
+                "required field \"routing_key\" is missing or empty");
+    }
 }
