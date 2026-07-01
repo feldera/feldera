@@ -998,16 +998,21 @@ export class Measurement {
             }
             case "merges": {
                 let s = metric.value as MergesMetricValue;
-                let avg_step_time = TimeValue.fromDurationMetric(s.avg_step_time);
+                let avg_step_time = undefined;
+                let result = [];
+                if (s.avg_step_time !== undefined) {
+                    avg_step_time = TimeValue.fromDurationMetric(s.avg_step_time);
+                    result.push(new Measurement(metric_id + ".avg_step_time", Option.some(avg_step_time)));
+                }
                 let batches = CountValue.fromCountMetric(s.batches);
                 let merges = CountValue.fromCountMetric(s.merges);
                 let steps = CountValue.fromCountMetric(s.steps);
-                return [
-                    new Measurement(metric_id + ".avg_step_time", Option.some(avg_step_time)),
+                result.push(
                     new Measurement(metric_id + ".batches", Option.some(batches)),
                     new Measurement(metric_id + ".merges", Option.some(merges)),
                     new Measurement(metric_id + ".steps", Option.some(steps)),
-                ];
+                );
+                return result;
             }
             case "policy": {
                 let s = metric.value as StringMetricValue;
