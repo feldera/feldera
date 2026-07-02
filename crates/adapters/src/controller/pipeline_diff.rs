@@ -147,7 +147,7 @@ pub fn compute_pipeline_diff(
                     .get(*k)
                     .unwrap()
                     .connector_config
-                    .equal_modulo_paused(&v.connector_config)
+                    .equal_for_input_checkpoint_replay(&v.connector_config)
         })
         .map(|(k, _)| k.to_string())
         .collect::<Vec<_>>();
@@ -196,4 +196,68 @@ pub fn compute_pipeline_diff(
         .with_added_output_connectors(added_output_connectors)
         .with_modified_output_connectors(modified_output_connectors)
         .with_removed_output_connectors(removed_output_connectors))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compute_pipeline_diff;
+    use feldera_types::config::PipelineConfig;
+    use serde_json::{Map, Value, json};
+
+    fn input_endpoint(mut fields: Map<String, Value>) -> Value {
+        let mut endpoint = Map::from_iter([
+            ("stream".to_string(), json!("t1")),
+            ("transport".to_string(), json!({"name": "empty_input"})),
+        ]);
+        endpoint.append(&mut fields);
+        Value::Object(endpoint)
+    }
+
+    fn pipeline_config(input: Value) -> PipelineConfig {
+        serde_json::from_value(json!({
+            "name": "test",
+            "workers": 1,
+            "inputs": {
+                "t1.connector": input
+            }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn input_flow_control_changes_do_not_modify_connector() {
+        let old_config = pipeline_config(input_endpoint(Map::new()));
+        let new_config = pipeline_config(input_endpoint(Map::from_iter([
+            ("max_queued_records".to_string(), json!(5000)),
+            ("max_queued_bytes".to_string(), json!(6000)),
+            ("max_batch_size".to_string(), json!(7000)),
+            ("max_worker_batch_size".to_string(), json!(8000)),
+            ("paused".to_string(), json!(true)),
+        ])));
+
+        let diff = compute_pipeline_diff(&old_config, &new_config).unwrap();
+
+        assert!(diff.modified_input_connectors().is_empty());
+    }
+
+    #[test]
+    fn input_transport_changes_still_modify_connector() {
+        let old_config = pipeline_config(input_endpoint(Map::new()));
+        let new_config = pipeline_config(input_endpoint(Map::from_iter([(
+            "transport".to_string(),
+            json!({
+                "name": "datagen",
+                "config": {
+                    "plan": [{"limit": 1}]
+                }
+            }),
+        )])));
+
+        let diff = compute_pipeline_diff(&old_config, &new_config).unwrap();
+
+        assert_eq!(
+            diff.modified_input_connectors(),
+            &vec!["t1.connector".to_string()]
+        );
+    }
 }
