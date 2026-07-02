@@ -103,55 +103,78 @@ fn abbreviate(value: &str) -> String {
     }
 }
 
-/// Build a [`TableProvider`] over the Parquet file at `path` that skips the
-/// rows flagged by `bitmap`.
+/// Build a [`TableProvider`] over the Parquet file at `path` that reads the rows
+/// `mode` picks out of `bitmap` (see [`ReadMode`]).
 ///
-/// The bitmap indexes rows by physical position, so the file is read in
-/// order through a single-partition [`StreamingTable`] (a `ListingTable`
-/// could split and reorder it). The Parquet decoder skips deleted rows via a
-/// [`RowSelection`]; memory stays bounded to one batch.
+/// The bitmap indexes rows by physical position, so the file is read in order
+/// through a single-partition [`StreamingTable`] (a `ListingTable` could split
+/// and reorder it). Row selection happens inside the Parquet decoder, so memory
+/// stays bounded to one batch.
 ///
-/// `logical_schema` is the table's Arrow schema, restricted by the caller to
-/// the columns it wants read. Batches are projected to it by name (missing
-/// columns become NULL), and it doubles as the Parquet projection: columns it
-/// does not name are never decoded. The caller must restrict it itself, because
+/// `logical_schema` is the table's Arrow schema, restricted by the caller to the
+/// columns it wants read. Batches are projected to it by name (missing columns
+/// become NULL), and it doubles as the Parquet projection: columns it does not
+/// name are never decoded. The caller must restrict it itself, because
 /// [`StreamingTable`] does not push projections down.
-pub(crate) async fn masked_parquet_table(
+pub(crate) async fn filtered_parquet_table(
     store: Arc<dyn ObjectStore>,
     path: Path,
     bitmap: RoaringTreemap,
     logical_schema: SchemaRef,
+    mode: ReadMode,
 ) -> AnyResult<Arc<dyn TableProvider>> {
     let partition = MaskedParquetPartition {
         store,
         path,
         bitmap: Arc::new(bitmap),
         schema: Arc::clone(&logical_schema),
+        mode,
     };
     let provider = StreamingTable::try_new(logical_schema, vec![Arc::new(partition)])
-        .map_err(|e| anyhow!("failed to build DV-masked streaming table: {e}"))?;
+        .map_err(|e| anyhow!("failed to build DV-filtered streaming table: {e}"))?;
     Ok(Arc::new(provider))
 }
 
+/// Which rows [`filtered_parquet_table`] reads, relative to its `bitmap`.
+#[derive(Clone, Copy)]
+pub(crate) enum ReadMode {
+    /// Read only the rows in the bitmap: a deletion-vector delta (the rows a
+    /// same-path rewrite masked or un-masked).
+    InBitmap,
+    /// Read the rows not in the bitmap: apply a deletion vector, so the file's
+    /// live rows come through.
+    NotInBitmap,
+}
+
+impl ReadMode {
+    /// Does the read keep the bitmap rows (rather than the rest)?
+    fn reads_bitmap_rows(self) -> bool {
+        matches!(self, ReadMode::InBitmap)
+    }
+}
+
 /// Single-partition [`PartitionStream`] that lazily opens a Parquet file and
-/// drops rows flagged by `bitmap` as batches flow through.
+/// keeps or drops the rows flagged by `bitmap` (per `mode`) as batches flow
+/// through.
 struct MaskedParquetPartition {
     store: Arc<dyn ObjectStore>,
     path: Path,
-    /// Deleted row positions for this one file. A `RoaringTreemap` stays
-    /// compact even for dense deletes, and it is dropped once the partition
-    /// finishes streaming, so the footprint is bounded and short-lived.
+    /// Row positions this partition acts on. A `RoaringTreemap` stays compact
+    /// even for dense sets, and it is dropped once the partition finishes
+    /// streaming, so the footprint is bounded and short-lived.
     bitmap: Arc<RoaringTreemap>,
     /// The Delta logical schema; may differ from the file's own schema under
     /// schema evolution.
     schema: SchemaRef,
+    /// Which rows to read, relative to `bitmap`.
+    mode: ReadMode,
 }
 
 impl fmt::Debug for MaskedParquetPartition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MaskedParquetPartition")
             .field("path", &self.path)
-            .field("deleted_rows", &self.bitmap.len())
+            .field("bitmap_rows", &self.bitmap.len())
             .finish()
     }
 }
@@ -226,30 +249,41 @@ fn logical_projection_mask(
     ProjectionMask::roots(builder.parquet_schema(), roots)
 }
 
-/// Build the [`RowSelection`] selecting every row in `0..total_rows` that is
-/// not in `bitmap`. Positions past `total_rows` are ignored.
-fn bitmap_to_row_selection(bitmap: &RoaringTreemap, total_rows: u64) -> RowSelection {
-    // One selector per *run* of selected/skipped rows, so the vector is small
-    // when deletes are clustered and grows to O(deletes) only when they alternate
-    // with live rows. It is built per file, consumed right away to build the
-    // Parquet stream, and dropped, so the footprint is bounded and short-lived.
+/// Append a [`RowSelector`] for `count` rows to `selectors`, selecting or
+/// skipping them per `select`, merging into the previous selector when it is
+/// the same kind. A zero-length selector is a no-op. `select`/skip is parquet's
+/// [`RowSelector`] vocabulary, one level below [`ReadMode`].
+fn push_selector(selectors: &mut Vec<RowSelector>, select: bool, count: u64) {
+    if count == 0 {
+        return;
+    }
+    let count = count as usize;
+    match selectors.last_mut() {
+        Some(last) if last.skip != select => last.row_count += count,
+        _ if select => selectors.push(RowSelector::select(count)),
+        _ => selectors.push(RowSelector::skip(count)),
+    }
+}
+
+/// Build the [`RowSelection`] over `0..total_rows` that `mode` implies for
+/// `bitmap`. Positions past `total_rows` are ignored.
+///
+/// The result holds one selector per run of like rows, so it is O(runs): small
+/// when the bitmap is clustered, O(bitmap) only when bitmap rows alternate with
+/// the rest. It is built per file, consumed to start the Parquet stream, then
+/// dropped.
+fn bitmap_to_selection(bitmap: &RoaringTreemap, total_rows: u64, mode: ReadMode) -> RowSelection {
+    // A bitmap row is selected exactly when `mode` reads bitmap rows; the gaps
+    // between them are selected in the other case.
+    let select_bitmap_rows = mode.reads_bitmap_rows();
     let mut selectors: Vec<RowSelector> = Vec::new();
-    // First row not yet covered by a selector.
     let mut cursor: u64 = 0;
-    for deleted in bitmap.iter().take_while(|&pos| pos < total_rows) {
-        if deleted > cursor {
-            selectors.push(RowSelector::select((deleted - cursor) as usize));
-        }
-        // Extend the previous skip when deletes are consecutive.
-        match selectors.last_mut() {
-            Some(last) if last.skip => last.row_count += 1,
-            _ => selectors.push(RowSelector::skip(1)),
-        }
-        cursor = deleted + 1;
+    for pos in bitmap.iter().take_while(|&pos| pos < total_rows) {
+        push_selector(&mut selectors, !select_bitmap_rows, pos - cursor); // gap before this row
+        push_selector(&mut selectors, select_bitmap_rows, 1); // the bitmap row itself
+        cursor = pos + 1;
     }
-    if cursor < total_rows {
-        selectors.push(RowSelector::select((total_rows - cursor) as usize));
-    }
+    push_selector(&mut selectors, !select_bitmap_rows, total_rows - cursor); // trailing gap
     RowSelection::from(selectors)
 }
 
@@ -266,6 +300,7 @@ impl PartitionStream for MaskedParquetPartition {
         let path = self.path.clone();
         let bitmap = Arc::clone(&self.bitmap);
         let logical_schema = Arc::clone(&self.schema);
+        let mode = self.mode;
 
         let stream = try_stream! {
             let reader = ParquetObjectReader::new(store, path.clone());
@@ -279,8 +314,9 @@ impl PartitionStream for MaskedParquetPartition {
             let total_rows = builder.metadata().file_metadata().num_rows() as u64;
             // Decode only the columns the logical schema names.
             let mask = logical_projection_mask(&builder, &logical_schema);
-            // Skip deleted rows inside the decoder.
-            let selection = bitmap_to_row_selection(&bitmap, total_rows);
+            // Pick rows inside the decoder: skip the flagged rows (apply a DV) or
+            // keep only them (read a DV delta).
+            let selection = bitmap_to_selection(&bitmap, total_rows, mode);
             let mut parquet_stream = builder
                 .with_projection(mask)
                 .with_row_selection(selection)
@@ -336,7 +372,7 @@ mod tests {
 
     fn check(deleted: &[u64], total_rows: u64) {
         let bitmap = RoaringTreemap::from_iter(deleted.iter().copied());
-        let selection = bitmap_to_row_selection(&bitmap, total_rows);
+        let selection = bitmap_to_selection(&bitmap, total_rows, ReadMode::NotInBitmap);
         assert_eq!(
             selected_rows(&selection),
             expected_rows(deleted, total_rows)
@@ -360,7 +396,7 @@ mod tests {
     fn contiguous_run_merges_into_one_skip() {
         check(&[2, 3, 4], 10);
         let bitmap = RoaringTreemap::from_iter([2u64, 3, 4]);
-        let selection = bitmap_to_row_selection(&bitmap, 10);
+        let selection = bitmap_to_selection(&bitmap, 10, ReadMode::NotInBitmap);
         // select(2), skip(3), select(5)
         assert_eq!(selection.iter().count(), 3);
     }
@@ -385,6 +421,52 @@ mod tests {
         ) {
             let deleted: Vec<u64> = deleted.into_iter().collect();
             check(&deleted, total_rows);
+        }
+    }
+
+    /// Rows in `0..total_rows` that *are* in `kept`.
+    fn expected_kept_rows(kept: &[u64], total_rows: u64) -> Vec<u64> {
+        (0..total_rows).filter(|row| kept.contains(row)).collect()
+    }
+
+    fn check_keep(kept: &[u64], total_rows: u64) {
+        let bitmap = RoaringTreemap::from_iter(kept.iter().copied());
+        let selection = bitmap_to_selection(&bitmap, total_rows, ReadMode::InBitmap);
+        assert_eq!(
+            selected_rows(&selection),
+            expected_kept_rows(kept, total_rows)
+        );
+    }
+
+    #[test]
+    fn keep_selection_edge_cases() {
+        check_keep(&[], 0);
+        check_keep(&[], 10); // keep nothing
+        check_keep(&[0], 5); // leading
+        check_keep(&[4], 5); // trailing
+        check_keep(&[1, 2, 3], 10); // contiguous run
+        check_keep(&[0, 1, 2], 3); // keep everything
+        check_keep(&[1, 7, 100], 5); // positions past EOF ignored
+    }
+
+    proptest! {
+        /// The keep-selection picks exactly the bitmap, and is the complement of
+        /// the skip-selection over the same bitmap.
+        #[test]
+        fn keep_selection_is_the_bitmap(
+            kept in proptest::collection::btree_set(0u64..200, 0..50),
+            total_rows in 0u64..200,
+        ) {
+            let kept: Vec<u64> = kept.into_iter().collect();
+            check_keep(&kept, total_rows);
+
+            let bitmap = RoaringTreemap::from_iter(kept.iter().copied());
+            let keep = selected_rows(&bitmap_to_selection(&bitmap, total_rows, ReadMode::InBitmap));
+            let skip = selected_rows(&bitmap_to_selection(&bitmap, total_rows, ReadMode::NotInBitmap));
+            let mut union: Vec<u64> = keep.iter().chain(skip.iter()).copied().collect();
+            union.sort_unstable();
+            prop_assert!(keep.iter().all(|r| !skip.contains(r)));
+            prop_assert_eq!(union, (0..total_rows).collect::<Vec<_>>());
         }
     }
 
@@ -443,11 +525,11 @@ mod tests {
             .unwrap()
     }
 
-    /// End-to-end check of [`masked_parquet_table`] against a real Parquet
-    /// file: DV-flagged rows are skipped inside the decoder, and the logical
-    /// schema drives the read. A file column it omits is pruned, a column it
-    /// widens is cast (`Int32` to `Int64`), and a column the file lacks comes
-    /// back NULL (schema evolution).
+    /// End-to-end check of [`filtered_parquet_table`] with [`ReadMode::NotInBitmap`]
+    /// against a real Parquet file: DV-flagged rows are skipped inside the
+    /// decoder, and the logical schema drives the read. A file column it omits is
+    /// pruned, a column it widens is cast (`Int32` to `Int64`), and a column the
+    /// file lacks comes back NULL (schema evolution).
     #[tokio::test]
     async fn masked_reader_applies_dv_and_logical_schema() {
         const TOTAL_ROWS: usize = 200;
@@ -478,11 +560,12 @@ mod tests {
         let deleted = RoaringTreemap::from_iter((0..TOTAL_ROWS as u64).filter(|i| i % 2 == 0));
 
         let store = unloaded_table(dir.path()).log_store().object_store(None);
-        let provider = masked_parquet_table(
+        let provider = filtered_parquet_table(
             store,
             Path::from("data.parquet"),
             deleted,
             Arc::clone(&logical),
+            ReadMode::NotInBitmap,
         )
         .await
         .unwrap();
@@ -515,5 +598,76 @@ mod tests {
         got.sort();
         let expected: Vec<i64> = (0..TOTAL_ROWS as i64).filter(|i| i % 2 != 0).collect();
         assert_eq!(got, expected, "masked rows mismatch");
+    }
+
+    /// End-to-end check of [`filtered_parquet_table`] with [`ReadMode::InBitmap`]:
+    /// the inverse of the masked reader. Given a bitmap of row positions (a
+    /// deletion-vector delta), it reads *only* those rows and applies the logical
+    /// schema, so a K-row change costs K rows. Uses the same file/schema shape as
+    /// the masked-reader test.
+    #[tokio::test]
+    async fn selected_reader_reads_only_the_bitmap_rows() {
+        const TOTAL_ROWS: usize = 200;
+        let dir = TempDir::new().unwrap();
+
+        let file_schema = Arc::new(ArrowSchema::new(vec![
+            ArrowField::new("id", ArrowDataType::Int32, false),
+            ArrowField::new("payload", ArrowDataType::Utf8, false),
+        ]));
+        let ids = Int32Array::from_iter_values(0..TOTAL_ROWS as i32);
+        let payloads = StringArray::from_iter_values((0..TOTAL_ROWS).map(|i| format!("row_{i}")));
+        let batch = RecordBatch::try_new(
+            Arc::clone(&file_schema),
+            vec![Arc::new(ids), Arc::new(payloads)],
+        )
+        .unwrap();
+        let file = std::fs::File::create(dir.path().join("data.parquet")).unwrap();
+        let mut writer = parquet::arrow::ArrowWriter::try_new(file, file_schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let logical = Arc::new(ArrowSchema::new(vec![
+            ArrowField::new("id", ArrowDataType::Int64, true),
+            ArrowField::new("added_later", ArrowDataType::Utf8, true),
+        ]));
+        // A sparse, clustered set spanning both ends, so runs and gaps are exercised.
+        let wanted: Vec<u64> = [0u64, 1, 2, 50, 51, 199].into_iter().collect();
+        let selected = RoaringTreemap::from_iter(wanted.iter().copied());
+
+        let store = unloaded_table(dir.path()).log_store().object_store(None);
+        let provider = filtered_parquet_table(
+            store,
+            Path::from("data.parquet"),
+            selected,
+            Arc::clone(&logical),
+            ReadMode::InBitmap,
+        )
+        .await
+        .unwrap();
+        let batches = SessionContext::new()
+            .read_table(provider)
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
+
+        let mut got: Vec<i64> = Vec::new();
+        for batch in &batches {
+            assert_eq!(batch.schema().as_ref(), logical.as_ref());
+            let id = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            got.extend(id.iter().map(|v| v.unwrap()));
+            assert_eq!(
+                batch.column(1).null_count(),
+                batch.num_rows(),
+                "the column absent from the file must be all NULL"
+            );
+        }
+        got.sort();
+        let expected: Vec<i64> = wanted.iter().map(|&r| r as i64).collect();
+        assert_eq!(got, expected, "must read exactly the bitmap rows");
     }
 }

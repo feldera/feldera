@@ -1,6 +1,8 @@
 use crate::catalog::{ArrowStream, InputCollectionHandle};
 use crate::format::InputBuffer;
-use crate::integrated::delta_table::deletion_vector::{masked_parquet_table, read_deletion_vector};
+use crate::integrated::delta_table::deletion_vector::{
+    ReadMode, filtered_parquet_table, read_deletion_vector,
+};
 use crate::integrated::delta_table::{delta_input_serde_config, register_storage_handlers};
 use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint};
 use crate::util::JobQueue;
@@ -49,6 +51,7 @@ use feldera_types::program_schema::{Field, Relation};
 use feldera_types::transport::delta_table::{DeltaTableReaderConfig, DeltaTableTransactionMode};
 use futures_util::StreamExt;
 use rand::Rng;
+use roaring::RoaringTreemap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::cmp::min;
@@ -2748,14 +2751,67 @@ impl DeltaTableInputEndpointInner {
             // go using `ListingTable`, which understands partitioning and can probably
             // parallelize the load.
 
-            // Process deletes before inserts. Semantically, delete actions in
-            // are applied before insert actions; however the delta standard doesn't
+            // A same-path Add+Remove is a deletion-vector rewrite (DELETE/MERGE):
+            // Delta files are immutable and path-addressed, so the bytes are
+            // unchanged and only the DV differs. Its logical change is just the
+            // rows the DV newly masks (deleted) or un-masks (restored), so we
+            // read only those rows rather than re-reading the whole file.
+            //
+            // Index the data-change `Add` actions by path (a metadata-only
+            // rewrite has data_change == false and never pairs). The Delta
+            // protocol allows at most one `Add` per path in a commit.
+            let adds_by_path: BTreeMap<&str, &AddAction> = actions
+                .iter()
+                .filter_map(|action| match action {
+                    Action::Add(add) if add.data_change => Some((add.path.as_str(), add)),
+                    _ => None,
+                })
+                .collect();
+
+            // Row-position delta of each same-path rewrite, keyed by file path.
+            // The pair is (newly deleted = rows the new DV masks but the old did
+            // not, restored = rows the old DV masked but the new does not).
+            let mut dv_deltas: BTreeMap<&str, (RoaringTreemap, RoaringTreemap)> = BTreeMap::new();
+            for action in actions {
+                let Action::Remove(remove) = action else {
+                    continue;
+                };
+                if !remove.data_change {
+                    continue;
+                }
+                if let Some(add) = adds_by_path.get(remove.path.as_str()) {
+                    let description = format!("file '{}'", remove.path);
+                    let old_dv = self
+                        .decode_dv(table, remove.deletion_vector.as_ref(), &description)
+                        .await?;
+                    let new_dv = self
+                        .decode_dv(table, add.deletion_vector.as_ref(), &description)
+                        .await?;
+                    // newly deleted = in the new DV but not the old; restored = the reverse.
+                    dv_deltas.insert(remove.path.as_str(), (&new_dv - &old_dv, &old_dv - &new_dv));
+                }
+            }
+
+            // Process deletes before inserts. Semantically, delete actions are
+            // applied before insert actions; however the delta standard doesn't
             // guarantee that actions occur in any particular order in the transaction log
             // entry.
+            //
+            // Each pass hands `process_follow_action` the row-index delta for its
+            // side of a same-path pair (the `Remove` retracts the newly-deleted
+            // rows; the `Add` inserts the restored rows) or `None` for an unpaired
+            // action, which is then read whole. `dv_deltas` is keyed only by
+            // data-change pairs, so a metadata-only action never matches.
             for action in actions {
-                if matches!(action, Action::Remove(_)) {
-                    self.process_action(
+                if let Action::Remove(remove) = action {
+                    let newly_deleted = dv_deltas
+                        .get(remove.path.as_str())
+                        .map(|(newly_deleted, _)| newly_deleted);
+                    self.process_follow_action(
                         action,
+                        &remove.path,
+                        newly_deleted,
+                        false,
                         table,
                         &used_columns,
                         input_stream,
@@ -2767,9 +2823,15 @@ impl DeltaTableInputEndpointInner {
             }
 
             for action in actions {
-                if matches!(action, Action::Add(_)) {
-                    self.process_action(
+                if let Action::Add(add) = action {
+                    let restored = dv_deltas
+                        .get(add.path.as_str())
+                        .map(|(_, restored)| restored);
+                    self.process_follow_action(
                         action,
+                        &add.path,
+                        restored,
+                        true,
                         table,
                         &used_columns,
                         input_stream,
@@ -3095,60 +3157,77 @@ impl DeltaTableInputEndpointInner {
         })
     }
 
-    /// Build a [`TableProvider`] over the data file at `path` (relative and
-    /// URL-encoded, as the Delta log stores it) with the rows flagged by
-    /// deletion vector `dv` masked out.
+    /// Build a streaming [`TableProvider`] over the data file at `path`
+    /// (relative and URL-encoded, as the Delta log stores it) that reads the
+    /// rows `mode` picks out of `bitmap`: the file's live rows when applying a
+    /// deletion vector ([`ReadMode::NotInBitmap`]), or a deletion-vector delta
+    /// when following a same-path rewrite ([`ReadMode::InBitmap`]). The caller
+    /// supplies the decoded bitmap: a deletion vector for the mask, or the
+    /// difference of two deletion vectors for the delta.
     ///
     /// `keep_column` picks the columns to read: the provider declares the
     /// snapshot schema restricted to them, which doubles as the Parquet
-    /// projection (see [`masked_parquet_table`]). It must match the columns the
-    /// unmasked side keeps, so the two providers mix in one query. It is a
-    /// predicate rather than a fixed list because the callers differ: follow
-    /// keeps its `used_columns`, CDC keeps `keeps_cdc_column`.
-    async fn masked_file_provider(
+    /// projection (see [`filtered_parquet_table`]). It must match the columns
+    /// any file it unions with keeps, so the providers line up in one query. It
+    /// is a predicate rather than a fixed list because the callers differ:
+    /// follow keeps its `used_columns`, CDC keeps `keeps_cdc_column`.
+    async fn file_provider(
         &self,
         table: &DeltaTable,
         path: &str,
-        dv: &DeletionVectorDescriptor,
+        bitmap: RoaringTreemap,
+        mode: ReadMode,
         keep_column: impl Fn(&str) -> bool,
-        description: &str,
     ) -> AnyResult<Arc<dyn TableProvider>> {
-        // Decode the DV into its bitmap of deleted row positions, retrying on
-        // transient object-store failures (the decode is idempotent).
-        let bitmap = self
-            .retry(
-                &format!(
-                    "decoding deletion vector for {description} at table version {:?}",
-                    table.version(),
-                ),
-                None,
-                || read_deletion_vector(dv, table),
-            )
-            .await?;
-
         // The provider declares the kept columns under their physical names so
-        // it lines up with the unmasked side; the caller renames them back.
+        // files read into one query line up by column; the caller renames them
+        // back to logical.
         let read_schema = self.physical_read_schema(keep_column)?;
 
-        // `Add.path` is URL-encoded per the Delta spec; decode it into a
-        // real object-store key.
+        // Decode the URL-encoded Delta log path (per the spec) into an
+        // object-store key.
         let file_path = Path::from_url_path(path)
             .map_err(|e| anyhow!("invalid file path '{path}' in Delta log action: {e}"))?;
 
-        masked_parquet_table(
+        filtered_parquet_table(
             table.log_store().object_store(None),
             file_path,
             bitmap,
             read_schema,
+            mode,
         )
         .await
+    }
+
+    /// Decode a deletion vector into its bitmap of row positions, or the empty
+    /// set when there is no active DV. Retries transient object-store failures.
+    async fn decode_dv(
+        &self,
+        table: &DeltaTable,
+        dv: Option<&DeletionVectorDescriptor>,
+        description: &str,
+    ) -> AnyResult<RoaringTreemap> {
+        match dv.filter(|d| is_active_dv(d)) {
+            None => Ok(RoaringTreemap::new()),
+            Some(dv) => {
+                self.retry(
+                    &format!(
+                        "decoding deletion vector for {description} at table version {:?}",
+                        table.version(),
+                    ),
+                    None,
+                    || read_deletion_vector(dv, table),
+                )
+                .await
+            }
+        }
     }
 
     /// Build the [`DataFrame`] for one side (adds or removes) of a CDC
     /// transaction, or `None` when the side has no files.
     ///
     /// Each file is `(path, deletion_vector)`. Files with an active DV stream
-    /// through a [`masked_parquet_table`] that drops their deleted rows; the
+    /// through a [`filtered_parquet_table`] that drops their deleted rows; the
     /// rest are read together through one [`ListingTable`]. The pieces combine
     /// with `UNION ALL`, each restricted to the same CDC read set (the columns
     /// [`Self::project_cdc_columns`] keeps), so they line up by position for the
@@ -3201,14 +3280,11 @@ impl DeltaTableInputEndpointInner {
             // Keep the same CDC read set as `project_cdc_columns` applies on the
             // plain side (via `keeps_cdc_column`), so the two providers union
             // cleanly.
+            let bitmap = self.decode_dv(table, Some(dv), description).await?;
             let provider = self
-                .masked_file_provider(
-                    table,
-                    path,
-                    dv,
-                    |name| self.keeps_cdc_column(name),
-                    description,
-                )
+                .file_provider(table, path, bitmap, ReadMode::NotInBitmap, |name| {
+                    self.keeps_cdc_column(name)
+                })
                 .await?;
             let df = self.datafusion.read_table(provider).map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading masked file '{path}': {e}")
@@ -3292,19 +3368,16 @@ impl DeltaTableInputEndpointInner {
     ) -> AnyResult<()> {
         let description = format!("file '{path}'");
 
-        // An active deletion vector routes the file through a masked
-        // streaming provider, restricted to `used_columns` so unread columns
-        // are never decoded; otherwise the regular `ListingTable` path
+        // An active deletion vector routes the file through a streaming provider
+        // that masks the deleted rows, restricted to `used_columns` so unread
+        // columns are never decoded; otherwise the regular `ListingTable` path
         // applies.
         let provider: Arc<dyn TableProvider> =
             if let Some(dv) = deletion_vector.filter(|d| is_active_dv(d)) {
-                self.masked_file_provider(
-                    table,
-                    path,
-                    dv,
-                    |name| used_columns.contains(&name),
-                    &description,
-                )
+                let bitmap = self.decode_dv(table, Some(dv), &description).await?;
+                self.file_provider(table, path, bitmap, ReadMode::NotInBitmap, |name| {
+                    used_columns.contains(&name)
+                })
                 .await?
             } else {
                 // Address files via the table's real `root_url()` (e.g. `file:///...`
@@ -3317,6 +3390,90 @@ impl DeltaTableInputEndpointInner {
                 )
             };
 
+        self.emit_provider(
+            provider,
+            polarity,
+            used_columns,
+            &description,
+            table,
+            input_stream,
+            receiver,
+            start_transaction,
+        )
+        .await
+    }
+
+    /// Ingest one follow-mode `Add`/`Remove` action with `polarity` (`true`
+    /// inserts, `false` deletes), reading only the rows that changed when the
+    /// action is one side of a same-path deletion-vector rewrite.
+    #[allow(clippy::too_many_arguments)]
+    async fn process_follow_action(
+        &self,
+        action: &Action,
+        path: &str,
+        dv_delta: Option<&RoaringTreemap>,
+        polarity: bool,
+        table: &DeltaTable,
+        used_columns: &[&str],
+        input_stream: &mut dyn ArrowStream,
+        receiver: &mut Receiver<PipelineState>,
+        start_transaction: Option<Option<String>>,
+    ) -> AnyResult<()> {
+        match dv_delta {
+            // One side of a same-path rewrite: read only its delta rows. An
+            // empty delta means the rewrite left this side unchanged, so there
+            // is nothing to emit.
+            Some(positions) if !positions.is_empty() => {
+                let description = format!("file '{path}'");
+                let provider = self
+                    .file_provider(table, path, positions.clone(), ReadMode::InBitmap, |name| {
+                        used_columns.contains(&name)
+                    })
+                    .await?;
+                self.emit_provider(
+                    provider,
+                    polarity,
+                    used_columns,
+                    &description,
+                    table,
+                    input_stream,
+                    receiver,
+                    start_transaction,
+                )
+                .await
+            }
+            Some(_) => Ok(()),
+            // An unpaired action: a whole file enters or leaves the table. Read
+            // it whole, applying the action's own deletion vector.
+            None => {
+                self.process_action(
+                    action,
+                    table,
+                    used_columns,
+                    input_stream,
+                    receiver,
+                    start_transaction,
+                )
+                .await
+            }
+        }
+    }
+
+    /// Read `provider` restricted to `used_columns`, apply the connector's
+    /// optional `filter` expression (`self.config.filter`), and push the rows to
+    /// the input stream with `polarity`.
+    #[allow(clippy::too_many_arguments)]
+    async fn emit_provider(
+        &self,
+        provider: Arc<dyn TableProvider>,
+        polarity: bool,
+        used_columns: &[&str],
+        description: &str,
+        table: &DeltaTable,
+        input_stream: &mut dyn ArrowStream,
+        receiver: &mut Receiver<PipelineState>,
+        start_transaction: Option<Option<String>>,
+    ) -> AnyResult<()> {
         let df = self.datafusion.read_table(provider).map_err(|e| {
             anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading Parquet file: {e}")
         })?;
@@ -3343,7 +3500,7 @@ impl DeltaTableInputEndpointInner {
                 df,
                 polarity,
                 None,
-                &description,
+                description,
                 input_stream,
                 receiver,
                 start_transaction,

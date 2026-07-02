@@ -19,10 +19,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import NamedTuple
 
 from feldera import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
-from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
+from feldera.testutils import (
+    FELDERA_TEST_NUM_HOSTS,
+    FELDERA_TEST_NUM_WORKERS,
+    number_of_input_records,
+)
 
 from tests import TEST_CLIENT
 from tests.utils import DeltaTestLocation, ensure_delta_spark_fixture
@@ -32,6 +37,22 @@ TABLE = "dv_data"
 CONNECTOR = "dv_in"
 TOTAL_ROWS = 200
 EXPECTED_ROWS_AFTER_DV = 100
+# Rows the even-id soft-delete masks (== the odd-id survivors, both halves equal).
+DV_DELETED_ROWS = TOTAL_ROWS - EXPECTED_ROWS_AFTER_DV
+# Records a follow-mode DV rewrite must feed into the circuit. A same-path
+# `add`/`remove` pair changes only the rows whose deletion-vector membership
+# flipped, so the connector must ingest just those, not re-read the whole file.
+# The follow phase reads one DV commit; snapshot reads the pinned base version.
+#
+#   plain fixture (v0 base, v1 DV-delete): snapshot TOTAL_ROWS + follow deletes
+#                                          exactly the DV_DELETED_ROWS.
+#   cdc fixture   (v1 base, v2 restore)  : snapshot EXPECTED_ROWS_AFTER_DV +
+#                                          follow re-inserts the DV_DELETED_ROWS.
+#
+# Before the same-path pairing fix, follow re-read whole files (~2N-K records),
+# so these totals were ~500 and ~400 -- the amplification these bounds catch.
+FOLLOW_DV_DELETE_INPUT_RECORDS = TOTAL_ROWS + DV_DELETED_ROWS
+FOLLOW_RESTORE_INPUT_RECORDS = EXPECTED_ROWS_AFTER_DV + DV_DELETED_ROWS
 # Bump to invalidate cached MinIO copies when the fixture definition changes.
 FIXTURE_VERSION = "dv_snapshot_v1"
 # CDC-shaped fixture (see fixtures/deletion_vectors.py --cdc): v0 inserts
@@ -99,14 +120,28 @@ def _build_sql(
     )
 
 
-def _run_to_completion(pipeline_name: str, sql: str) -> tuple[int, int]:
+class DvIngest(NamedTuple):
+    """Outcome of ingesting a DV fixture.
+
+    ``total`` and ``even_id_rows`` are TABLE row counts; ``input_records`` is
+    ``total_input_records`` (records fed into the circuit). ``input_records``
+    exposes read amplification the row counts cannot: the circuit nets a whole-
+    file re-read back to the same result, so only the ingested-record count
+    distinguishes a minimal DV-delta read from re-reading the whole file.
+    """
+
+    total: int
+    even_id_rows: int
+    input_records: int
+
+
+def _run_to_completion(pipeline_name: str, sql: str) -> DvIngest:
     """Run the pipeline until end-of-input.
 
-    Returns ``(total_rows, even_id_rows)`` of TABLE. ``even_id_rows`` exists
-    because every fixture soft-deletes exactly the even ids: a correct ingest
-    leaves zero of them, and counting them catches an *inverted* deletion
-    vector (ingesting the deleted half), which COUNT(*) alone cannot, since
-    both halves have the same size.
+    ``even_id_rows`` exists because every fixture soft-deletes exactly the even
+    ids: a correct ingest leaves zero of them, and counting them catches an
+    *inverted* deletion vector (ingesting the deleted half), which COUNT(*)
+    alone cannot, since both halves have the same size.
     """
     pipeline = PipelineBuilder(
         TEST_CLIENT,
@@ -128,8 +163,10 @@ def _run_to_completion(pipeline_name: str, sql: str) -> tuple[int, int]:
             f" FROM {TABLE}"
         )
     )
+    # Read before stopping: the metric is only live while the pipeline runs.
+    input_records = number_of_input_records(pipeline)
     pipeline.stop(force=True)
-    return int(rows[0]["total"]), int(rows[0]["even_id_rows"])
+    return DvIngest(int(rows[0]["total"]), int(rows[0]["even_id_rows"]), input_records)
 
 
 def _ingest_dv_fixture(
@@ -142,12 +179,11 @@ def _ingest_dv_fixture(
     overwrite: bool = False,
     columns: str = "id INT NOT NULL, name VARCHAR, value DOUBLE",
     extra_config: dict | None = None,
-) -> tuple[int, int]:
-    """Ensure the fixture exists, ingest it in `mode`, return the row counts.
+) -> DvIngest:
+    """Ensure the fixture exists, ingest it in `mode`, return the outcome.
 
     Owns the location's lifecycle (create/cleanup); the tests reduce to a
-    call plus their assertions. Returns ``_run_to_completion``'s
-    ``(total_rows, even_id_rows)`` pair.
+    call plus their assertions. Returns ``_run_to_completion``'s [`DvIngest`].
     """
     builder_flags = (["--cdc"] if cdc else []) + (["--overwrite"] if overwrite else [])
     loc = DeltaTestLocation.create(
@@ -172,12 +208,12 @@ def _ingest_dv_fixture(
 
 def test_delta_input_snapshot_with_deletion_vectors(pipeline_name):
     """Snapshot read of a DV-enabled table must skip soft-deleted rows."""
-    total, even_id_rows = _ingest_dv_fixture(pipeline_name, mode="snapshot")
-    assert total == EXPECTED_ROWS_AFTER_DV, (
+    result = _ingest_dv_fixture(pipeline_name, mode="snapshot")
+    assert result.total == EXPECTED_ROWS_AFTER_DV, (
         "snapshot ingest of a DV-enabled table must drop the soft-deleted "
-        f"rows ({TOTAL_ROWS - EXPECTED_ROWS_AFTER_DV} rows have id % 2 = 0)"
+        f"rows ({DV_DELETED_ROWS} rows have id % 2 = 0)"
     )
-    assert even_id_rows == 0, (
+    assert result.even_id_rows == 0, (
         "the surviving rows must be the odd ids, not the deleted even ids"
     )
 
@@ -185,21 +221,32 @@ def test_delta_input_snapshot_with_deletion_vectors(pipeline_name):
 def test_delta_input_follow_with_deletion_vectors(pipeline_name):
     """The follow path must apply the deletion vectors carried by log actions.
 
-    Replays the fixture's DV commit (v1) from version 0: the `remove`
-    retracts all rows of the rewritten file and the `add` re-inserts only
-    the DV survivors.
+    Replays the fixture's DV commit (v1) from version 0. The commit is a
+    same-path `remove`/`add` pair (the file is immutable; only its deletion
+    vector changed), so the connector reads just the newly-masked rows and
+    retracts them, leaving the DV survivors. It must not re-read the whole file.
     """
-    total, even_id_rows = _ingest_dv_fixture(
+    result = _ingest_dv_fixture(
         pipeline_name,
         mode="snapshot_and_follow",
         extra_config={"version": 0, "end_version": 1},
     )
-    assert total == EXPECTED_ROWS_AFTER_DV, (
+    assert result.total == EXPECTED_ROWS_AFTER_DV, (
         "follow ingest of a DV commit must retract the soft-deleted rows; "
         f"{TOTAL_ROWS} rows means the add action's deletion vector was ignored"
     )
-    assert even_id_rows == 0, (
+    assert result.even_id_rows == 0, (
         "the surviving rows must be the odd ids, not the deleted even ids"
+    )
+    # A same-path add/remove DV rewrite must ingest only the flipped rows.
+    # Re-reading the whole file (the pre-fix behavior) would net the same rows
+    # but roughly double this count, so the record total is what guards it.
+    assert result.input_records == FOLLOW_DV_DELETE_INPUT_RECORDS, (
+        f"follow ingested {result.input_records} records for a "
+        f"{DV_DELETED_ROWS}-row DV delete; expected "
+        f"{FOLLOW_DV_DELETE_INPUT_RECORDS} (snapshot {TOTAL_ROWS} + "
+        f"{DV_DELETED_ROWS} deleted). A far larger count means the connector "
+        "re-read the whole rewritten file instead of just the DV delta"
     )
 
 
@@ -207,17 +254,16 @@ def test_delta_input_follow_restore_with_deletion_vectors(pipeline_name):
     """Follow mode must apply a deletion vector carried by a `remove` action.
 
     Reuses the CDC fixture and replays its restore commit (v2) in follow mode,
-    starting from the post-delete snapshot (v1). Unlike CDC mode, follow mode
-    does not skip the same-path `remove`/`add` pair; it processes each action
-    on its own. The restore's `remove` carries the delete's deletion vector, so
-    masking it retracts only the surviving odd ids; the `add` (DV-free again)
-    re-inserts the whole file, bringing the soft-deleted even ids back.
+    starting from the post-delete snapshot (v1). The restore is a same-path
+    `remove` (carrying the delete's deletion vector) and `add` (DV cleared): the
+    connector pairs them and re-inserts exactly the rows the DV un-masked, the
+    soft-deleted even ids. It must not re-read the whole restored file.
 
-    It drives the masked reader from a `remove` action whose deletion vector is
-    non-empty (the v0->v1 follow test's `remove` has no DV, as the file was
-    unmasked at v0).
+    This exercises the restore direction of the pair, where the flipped rows come
+    from the `remove` side's non-empty deletion vector (the v0->v1 follow test's
+    `remove` has no DV, as the file was unmasked at v0).
     """
-    total, even_id_rows = _ingest_dv_fixture(
+    result = _ingest_dv_fixture(
         pipeline_name,
         mode="snapshot_and_follow",
         fixture_version=CDC_FIXTURE_VERSION,
@@ -226,14 +272,24 @@ def test_delta_input_follow_restore_with_deletion_vectors(pipeline_name):
         columns="id BIGINT NOT NULL",
         extra_config={"version": 1, "end_version": 2},
     )
-    assert total == TOTAL_ROWS, (
+    assert result.total == TOTAL_ROWS, (
         "the restore's `add` must re-insert the whole file after its `remove` "
         "(masked by the delete's deletion vector) retracts only the survivors; "
-        f"got {total} rows, expected {TOTAL_ROWS}"
+        f"got {result.total} rows, expected {TOTAL_ROWS}"
     )
-    assert even_id_rows == TOTAL_ROWS // 2, (
+    assert result.even_id_rows == TOTAL_ROWS // 2, (
         "the restored even ids must be present; their absence means the "
         "`remove` action's deletion vector was applied to the wrong rows"
+    )
+    # The restore flips the same rows back: its `remove` (masked to the odd
+    # survivors) and `add` (DV cleared) differ only in the even ids, so follow
+    # must re-insert exactly those, not re-read the whole restored file.
+    assert result.input_records == FOLLOW_RESTORE_INPUT_RECORDS, (
+        f"follow ingested {result.input_records} records for a "
+        f"{DV_DELETED_ROWS}-row restore; expected "
+        f"{FOLLOW_RESTORE_INPUT_RECORDS} (snapshot {EXPECTED_ROWS_AFTER_DV} + "
+        f"{DV_DELETED_ROWS} restored). A far larger count means the connector "
+        "re-read the whole file on each side of the same-path rewrite"
     )
 
 
@@ -250,7 +306,7 @@ def test_delta_input_cdc_overwrite_masks_removed_dv_rows(pipeline_name):
     the whole file (including its DV-dead even rows) and wrongly cancel the
     new even events, leaving zero.
     """
-    total, even_id_rows = _ingest_dv_fixture(
+    result = _ingest_dv_fixture(
         pipeline_name,
         mode="cdc",
         fixture_version=OVERWRITE_FIXTURE_VERSION,
@@ -264,12 +320,12 @@ def test_delta_input_cdc_overwrite_masks_removed_dv_rows(pipeline_name):
             "cdc_order_by": "__feldera_ts asc, lsn asc",
         },
     )
-    assert total == EXPECTED_ROWS_AFTER_DV, (
+    assert result.total == EXPECTED_ROWS_AFTER_DV, (
         "the re-inserted even events must survive the `EXCEPT ALL`; a count of "
         "0 means the `remove`'s deletion vector was ignored and its DV-dead "
         "rows over-subtracted the new events"
     )
-    assert even_id_rows == EXPECTED_ROWS_AFTER_DV, (
+    assert result.even_id_rows == EXPECTED_ROWS_AFTER_DV, (
         "every re-inserted event has an even id"
     )
 
@@ -283,7 +339,7 @@ def test_delta_input_cdc_with_deletion_vectors(pipeline_name):
     are both such commits; replaying from version 0 must yield only the
     single v3 insert.
     """
-    total, _ = _ingest_dv_fixture(
+    result = _ingest_dv_fixture(
         pipeline_name,
         mode="cdc",
         fixture_version=CDC_FIXTURE_VERSION,
@@ -297,7 +353,7 @@ def test_delta_input_cdc_with_deletion_vectors(pipeline_name):
             "cdc_order_by": "__feldera_ts asc, lsn asc",
         },
     )
-    assert total == 1, (
+    assert result.total == 1, (
         "CDC replay of DV rewrite commits must net to zero events: "
         "only the single v3 insert event may arrive; a higher count "
         "means soft-deleted or restored events were re-ingested"
