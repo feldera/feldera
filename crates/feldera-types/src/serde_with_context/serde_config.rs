@@ -201,9 +201,9 @@ impl From<JsonFlavor> for SqlSerdeConfig {
             JsonFlavor::DebeziumMySql => Self {
                 time_format: TimeFormat::Micros,
                 date_format: DateFormat::DaysSinceEpoch,
-                // Why is this missing fractions of second?
-                timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%Z"),
-                timestamp_tz_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%Z"),
+                // `2018-06-20T13:37:03Z` and `2018-06-20T13:37:03.123456Z`.
+                timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%.f%Z"),
+                timestamp_tz_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%.f%Z"),
                 decimal_format: DecimalFormat::String,
                 variant_format: VariantFormat::JsonString,
                 binary_format: BinaryFormat::Array,

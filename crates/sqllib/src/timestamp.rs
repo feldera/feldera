@@ -4054,6 +4054,25 @@ mod test {
         );
     }
 
+    /// Debezium MySQL emits `io.debezium.time.ZonedTimestamp` values with
+    /// fractional seconds when the column has sub-second precision.
+    /// The fraction must be preserved, not silently dropped.
+    #[test]
+    fn debezium_fractional_seconds() {
+        assert_eq!(
+            deserialize_with_debezium_config::<TestStruct>(
+                r#"{"date": 16816, "time": 10800000000, "timestamp": "2018-06-20T13:37:03.123456Z", "timestampTz": "2018-06-20T13:37:03.123456Z" }"#
+            )
+            .unwrap(),
+            TestStruct {
+                date: Date::from_days(16816),
+                time: Time::from_nanoseconds(10800000000000),
+                timestamp: Timestamp::from_microseconds(1529501823123456),
+                timestampTz: TimestampTz::from_microseconds(1529501823123456),
+            }
+        );
+    }
+
     #[test]
     fn snowflake_json() {
         assert_eq!(
