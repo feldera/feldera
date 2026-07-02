@@ -4434,31 +4434,36 @@ impl FtState {
                 let mut changed_inputs = HashMap::new();
                 let inputs = self.controller.status.input_status();
 
-                // Stop recording if the controller is shutting down. Avoid race with
-                // `stop`, which removes input endpoints from the pipeline. Without this
-                // check we may end up recording these endpoints in `remove_inputs`.
-                if self.controller.state() == PipelineState::Terminated {
-                    return Ok(());
-                }
-                self.input_endpoints
-                    .retain(|endpoint_id, (endpoint_name, paused)| {
-                        if let Some(endpoint) = inputs.get(endpoint_id) {
-                            let now_paused = endpoint.is_paused_by_user();
-                            if *paused != now_paused {
-                                changed_inputs.insert(endpoint_name.clone(), now_paused);
-                                *paused = now_paused;
+                // Compute the endpoint lifecycle diff (added/removed/paused since
+                // the previous step) that this step's journal entry records, but
+                // skip it while the controller is shutting down: `stop`
+                // concurrently disconnects endpoints, so the diff would spuriously
+                // record still-live endpoints as removed and replay them away.
+                //
+                // We must still journal this step's already-computed input, or a
+                // clean stop would silently drop the last step and a subsequent
+                // restart would resume from before it.
+                if self.controller.state() != PipelineState::Terminated {
+                    self.input_endpoints
+                        .retain(|endpoint_id, (endpoint_name, paused)| {
+                            if let Some(endpoint) = inputs.get(endpoint_id) {
+                                let now_paused = endpoint.is_paused_by_user();
+                                if *paused != now_paused {
+                                    changed_inputs.insert(endpoint_name.clone(), now_paused);
+                                    *paused = now_paused;
+                                }
+                                true
+                            } else {
+                                remove_inputs.insert(endpoint_name.clone());
+                                false
                             }
-                            true
-                        } else {
-                            remove_inputs.insert(endpoint_name.clone());
-                            false
-                        }
-                    });
-                for (endpoint_id, status) in inputs.iter() {
-                    self.input_endpoints.entry(*endpoint_id).or_insert_with(|| {
-                        add_inputs.insert(status.endpoint_name.clone(), status.config.clone());
-                        (status.endpoint_name.clone(), status.is_paused_by_user())
-                    });
+                        });
+                    for (endpoint_id, status) in inputs.iter() {
+                        self.input_endpoints.entry(*endpoint_id).or_insert_with(|| {
+                            add_inputs.insert(status.endpoint_name.clone(), status.config.clone());
+                            (status.endpoint_name.clone(), status.is_paused_by_user())
+                        });
+                    }
                 }
                 drop(inputs);
 

@@ -891,6 +891,13 @@ mod test {
     }
 
     /// After checkpoint/restart, `NOW()` resumes from the last replayed value, not the anchor.
+    ///
+    /// Regression coverage for a fault-tolerance journaling race: a step is
+    /// journaled after its circuit evaluation (so the entry can carry the
+    /// transaction id assigned there), and a `stop` landing between a step's
+    /// output being emitted and its journal write must not drop that step, or
+    /// the post-checkpoint advance is absent from the replay log and `NOW()`
+    /// regresses to the checkpoint value on restart.
     #[test]
     fn test_clock_advance_survives_checkpoint() {
         use dbsp::circuit::tokio::TOKIO;
@@ -986,6 +993,18 @@ mod test {
 
         let reader = controller.get_input_endpoint("now").unwrap();
         let clock_reader = reader.as_any().downcast::<super::ClockReader>().unwrap();
+
+        // Replay runs asynchronously on the circuit thread, feeding the journaled
+        // steps one at a time. Wait for it to finish before reading `NOW()`, or we
+        // could observe an intermediate value from before the last replayed step.
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while controller.is_replaying() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "replay did not complete within 30s"
+            );
+            sleep(Duration::from_millis(10));
+        }
 
         let post_replay = TOKIO.block_on(clock_reader.advance(Some(0))).unwrap();
         assert_eq!(
