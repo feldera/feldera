@@ -82,8 +82,8 @@ where
         )
     }
 
-    fn connect(&self, vars: Self::Feedback) {
-        vars.connect(self)
+    fn connect(&self, var: Self::Feedback) {
+        var.connect(self)
     }
 
     fn export(self, factories: &Self::Factories) -> Self::Export {
@@ -95,7 +95,81 @@ where
     }
 }
 
-// TODO: `impl RecursiveStreams for Vec<Stream>`.
+/// Recursion over a group of streams whose size is only known at runtime.
+///
+/// The arity of the group (the number of mutually recursive streams) is
+/// determined by the length of the `factories` vector passed to
+/// [`new`](RecursiveStreams::new).  Every other method preserves this arity:
+/// the closure driving the recursion must therefore return exactly as many
+/// streams as it received.  Unlike the tuple implementations, all streams in
+/// the group share the same batch type `B`.
+impl<C, B> RecursiveStreams<C> for Vec<Stream<C, B>>
+where
+    C: Circuit,
+    C::Parent: Circuit,
+    B: Checkpoint + IndexedZSet + Send + Sync,
+    Spine<B>: SizeOf,
+{
+    type Feedback = Vec<DelayedFeedback<C, B>>;
+    type Export = Vec<Stream<C::Parent, Spine<B>>>;
+    type Output = Vec<Stream<C::Parent, B>>;
+    type Factories = Vec<DistinctFactories<B, C::Time>>;
+
+    fn new(circuit: &C, factories: &Self::Factories) -> (Self::Feedback, Self) {
+        factories
+            .iter()
+            .map(|factory| {
+                let feedback =
+                    DelayedFeedback::with_default(circuit, B::dyn_empty(&factory.input_factories));
+                let stream = feedback.stream().clone();
+                (feedback, stream)
+            })
+            .unzip()
+    }
+
+    fn distinct(mut self, factories: &Self::Factories) -> Self {
+        debug_assert_eq!(self.len(), factories.len());
+
+        for (stream, factory) in self.iter_mut().zip(factories) {
+            let persistent_id = stream
+                .get_persistent_id()
+                .map(|name| format!("{name}.distinct"));
+            *stream =
+                Stream::dyn_distinct(&stream, factory).set_persistent_id(persistent_id.as_deref());
+        }
+
+        self
+    }
+
+    fn connect(&self, vars: Self::Feedback) {
+        debug_assert_eq!(self.len(), vars.len());
+
+        for (stream, var) in self.iter().zip(vars) {
+            var.connect(stream);
+        }
+    }
+
+    fn export(self, factories: &Self::Factories) -> Self::Export {
+        debug_assert_eq!(self.len(), factories.len());
+
+        self.into_iter()
+            .zip(factories)
+            .map(|(stream, factory)| {
+                Stream::export(&stream.dyn_integrate_trace(&factory.input_factories))
+            })
+            .collect()
+    }
+
+    fn consolidate(exports: Self::Export, factories: &Self::Factories) -> Self::Output {
+        debug_assert_eq!(exports.len(), factories.len());
+
+        exports
+            .into_iter()
+            .zip(factories)
+            .map(|(stream, factory)| Stream::dyn_consolidate(&stream, &factory.input_factories))
+            .collect()
+    }
+}
 
 #[allow(clippy::unused_unit)]
 #[impl_for_tuples(14)]
@@ -187,72 +261,13 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        Circuit, FallbackZSet, Runtime, Stream, operator::Generator, typed_batch::OrdZSet,
-        utils::Tup2, zset,
+        Circuit, Runtime, Stream, operator::Generator, typed_batch::OrdZSet, utils::Tup2, zset,
     };
     use std::{
         thread,
         time::{Duration, Instant},
         vec,
     };
-
-    #[test]
-    fn reachability() {
-        let mut root = Runtime::init_circuit(1, move |circuit| {
-            // Changes to the edges relation.
-            let mut edges = vec![
-                zset! { Tup2(1, 2) => 1 },
-                zset! { Tup2(2, 3) => 1},
-                zset! { Tup2(1, 3) => 1},
-                zset! { Tup2(3, 1) => 1},
-                zset! { Tup2(3, 1) => -1},
-                zset! { Tup2(1, 2) => -1},
-                zset! { Tup2(2, 4) => 1, Tup2(4, 1) => 1 },
-                zset! { Tup2(2, 3) => -1, Tup2(3, 2) => 1 },
-            ]
-            .into_iter();
-
-            // Expected content of the reachability relation.
-            let mut outputs = vec![
-                zset! { Tup2(1, 2) => 1 },
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 1) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1},
-                zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1, Tup2(2, 1) => 1, Tup2(4, 1) => 1, Tup2(4, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(4, 4) => 1,
-                        Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(1, 4) => 1,
-                        Tup2(2, 1) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1,
-                        Tup2(3, 1) => 1, Tup2(3, 2) => 1, Tup2(3, 4) => 1,
-                        Tup2(4, 1) => 1, Tup2(4, 2) => 1, Tup2(4, 3) => 1 },
-            ]
-            .into_iter();
-
-            let edges = circuit
-                    .add_source(Generator::new(move || edges.next().unwrap()));
-
-            let paths = circuit.recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
-                let edges = edges.delta0(child);
-
-                let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
-                let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
-
-                Ok(edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
-            })
-            .unwrap();
-
-            paths.integrate().stream_distinct().inspect(move |ps| {
-                assert_eq!(*ps, outputs.next().unwrap());
-            });
-            Ok(())
-        })
-        .unwrap().0;
-
-        for _ in 0..8 {
-            root.transaction().unwrap();
-        }
-    }
 
     // See https://github.com/feldera/feldera/issues/4168
     #[test]
@@ -355,15 +370,14 @@ mod test {
         }
     }
 
-    // Somewhat lame multiple recursion example to test RecursiveStreams impl for
-    // tuples: compute forward and backward reachability at the same time.
-    #[test]
-    fn reachability2() {
-        type Edges<S> = Stream<S, OrdZSet<Tup2<u64, u64>>>;
+    mod reachability {
+        use super::*;
 
-        let mut root = Runtime::init_circuit(1, move |circuit| {
-            // Changes to the edges relation.
-            let mut edges = vec![
+        type Edge = Tup2<usize, usize>;
+
+        /// Changes to the edges relation.
+        fn edges_data() -> Vec<OrdZSet<Edge>> {
+            vec![
                 zset! { Tup2(1, 2) => 1 },
                 zset! { Tup2(2, 3) => 1},
                 zset! { Tup2(1, 3) => 1},
@@ -373,59 +387,265 @@ mod test {
                 zset! { Tup2(2, 4) => 1, Tup2(4, 1) => 1 },
                 zset! { Tup2(2, 3) => -1, Tup2(3, 2) => 1 },
             ]
-            .into_iter();
+        }
 
-            // Expected content of the reachability relation.
-            let output_vec = vec![
+        /// Expected output to the reachable relation.
+        fn expected_reachable() -> Vec<OrdZSet<Edge>> {
+            vec![
                 zset! { Tup2(1, 2) => 1 },
                 zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
                 zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 1) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1},
+                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1,
+                Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(2, 3) => 1,
+                Tup2(2, 1) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1},
                 zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
                 zset! { Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-                zset! { Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1, Tup2(2, 1) => 1, Tup2(4, 1) => 1, Tup2(4, 3) => 1 },
-                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1, Tup2(4, 4) => 1,
-                              Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(1, 4) => 1,
-                              Tup2(2, 1) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1,
-                              Tup2(3, 1) => 1, Tup2(3, 2) => 1, Tup2(3, 4) => 1,
-                              Tup2(4, 1) => 1, Tup2(4, 2) => 1, Tup2(4, 3) => 1 },
-            ];
+                zset! { Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1,
+                Tup2(2, 1) => 1, Tup2(4, 1) => 1, Tup2(4, 3) => 1 },
+                zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1,
+                Tup2(4, 4) => 1, Tup2(1, 2) => 1, Tup2(1, 3) => 1,
+                Tup2(1, 4) => 1, Tup2(2, 1) => 1, Tup2(2, 3) => 1,
+                Tup2(2, 4) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1,
+                Tup2(3, 4) => 1, Tup2(4, 1) => 1, Tup2(4, 2) => 1,
+                Tup2(4, 3) => 1 },
+            ]
+        }
 
-            let mut outputs = output_vec.clone().into_iter();
-            let mut outputs2 = output_vec.into_iter();
+        #[test]
+        fn reachability() {
+            let edges_data = edges_data();
+            let steps = edges_data.len();
+            let mut edges = edges_data.into_iter();
+            let mut expected_reachable = expected_reachable().into_iter();
 
-            let edges = circuit
-                    .add_source(Generator::new(move || edges.next().unwrap()));
+            let (mut handle, _) = Runtime::init_circuit(1, move |circuit| {
+                let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
 
-            let (paths, reverse_paths):  (Stream<_, FallbackZSet<Tup2<u64, u64>>>, Stream<_, FallbackZSet<Tup2<u64, u64>>>) =
-                circuit.recursive(|child, (paths, reverse_paths): (Edges<_>, Edges<_>)| {
-                let edges = edges.delta0(child);
+                let reachable = circuit
+                    .recursive(|child, reachable: Stream<_, OrdZSet<Edge>>| {
+                        let edges = edges.delta0(child);
+                        let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
 
-                let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
-                let reverse_paths_indexed = reverse_paths.map_index(|&Tup2(x, y)| (y, x));
-                let edges_indexed = edges.map_index(|Tup2(x,y)| (*x, *y));
-                let reverse_edges = edges.map(|&Tup2(x, y)| Tup2(y, x));
-                let reverse_edges_indexed = reverse_edges.map_index(|Tup2(x,y)| (*x, *y));
+                        let reachable_indexed = reachable.map_index(|&Tup2(x, y)| (y, x));
 
-                Ok((edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))),
-                    reverse_edges.plus(&reverse_paths_indexed.join(&reverse_edges_indexed, |_via, from, to| Tup2(*from, *to)))
-                ))
+                        let reachable_next = edges.plus(
+                            &reachable_indexed
+                                .join(&edges_indexed, |_via, from, to| Tup2(*from, *to)),
+                        );
+
+                        Ok(reachable_next)
+                    })
+                    .unwrap();
+
+                reachable
+                    .integrate()
+                    .stream_distinct()
+                    .inspect(move |reachable| {
+                        assert_eq!(*reachable, expected_reachable.next().unwrap());
+                    });
+
+                Ok(())
             })
             .unwrap();
 
-            paths.integrate().stream_distinct().inspect(move |ps| {
-                assert_eq!(*ps, outputs.next().unwrap());
-            });
+            for _ in 0..steps {
+                handle.transaction().unwrap();
+            }
+        }
 
-            reverse_paths.map(|Tup2(x, y)| Tup2(*y, *x)).integrate().stream_distinct().inspect(move |ps: &OrdZSet<_>| {
-                assert_eq!(*ps, outputs2.next().unwrap());
-            });
-            Ok(())
-        })
-        .unwrap().0;
+        /// The `Vec` counterpart of [`reachability()`]: a single recursive relation
+        /// supplied as a one-element vector (arity 1).  It must produce exactly the
+        /// same output as the single-`Stream` implementation.
+        #[test]
+        fn reachability_variadic() {
+            let edges_data = edges_data();
+            let steps = edges_data.len();
+            let mut edges = edges_data.into_iter();
+            let mut expected_reachable = expected_reachable().into_iter();
 
-        for _ in 0..8 {
-            root.transaction().unwrap();
+            let (mut handle, _) = Runtime::init_circuit(1, move |circuit| {
+                let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
+
+                let mut recursive_streams = circuit
+                    .recursive_variadic(
+                        1,
+                        |child, mut recursive_streams: Vec<Stream<_, OrdZSet<Edge>>>| {
+                            let edges = edges.delta0(child);
+                            let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
+
+                            let reachable = &mut recursive_streams[0];
+                            let reachable_indexed = reachable.map_index(|&Tup2(x, y)| (y, x));
+
+                            let reachable_next = edges.plus(
+                                &reachable_indexed
+                                    .join(&edges_indexed, |_via, from, to| Tup2(*from, *to)),
+                            );
+
+                            // We can even reuse the allocated vector and spare us a reallocation.
+                            *reachable = reachable_next;
+                            Ok(recursive_streams)
+                        },
+                    )
+                    .unwrap();
+
+                let reachable = recursive_streams.pop().unwrap();
+
+                reachable.integrate().stream_distinct().inspect(move |ps| {
+                    assert_eq!(*ps, expected_reachable.next().unwrap());
+                });
+
+                Ok(())
+            })
+            .unwrap();
+
+            for _ in 0..steps {
+                handle.transaction().unwrap();
+            }
+        }
+
+        // Somewhat lame multiple recursion example to test RecursiveStreams impl for
+        // tuples: compute forward and backward reachability at the same time.
+        #[test]
+        fn reachability2() {
+            let edges_data = edges_data();
+            let steps = edges_data.len();
+            let mut edges = edges_data.into_iter();
+            let expected_reachable = expected_reachable();
+            let expected_reachable_reverse = expected_reachable.clone();
+            let mut expected_reachable = expected_reachable.into_iter();
+            let mut expected_reachable_reverse = expected_reachable_reverse.into_iter();
+
+            let (mut root, _) = Runtime::init_circuit(1, move |circuit| {
+                let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
+
+                let (reachable, reachable_reverse) = circuit
+                    .recursive(
+                        |child,
+                         (reachable, reachable_reverse): (
+                            Stream<_, OrdZSet<Edge>>,
+                            Stream<_, OrdZSet<Edge>>,
+                        )| {
+                            let edges = edges.delta0(child);
+
+                            let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
+                            let reachable_indexed = reachable.map_index(|&Tup2(x, y)| (y, x));
+                            let reachable_reverse_indexed =
+                                reachable_reverse.map_index(|&Tup2(x, y)| (y, x));
+                            let reverse_edges = edges.map(|&Tup2(x, y)| Tup2(y, x));
+                            let reverse_edges_indexed =
+                                reverse_edges.map_index(|Tup2(x, y)| (*x, *y));
+
+                            let reachable_next = edges.plus(
+                                &reachable_indexed
+                                    .join(&edges_indexed, |_via, from, to| Tup2(*from, *to)),
+                            );
+                            let reachable_reverse_next = reverse_edges.plus(
+                                &reachable_reverse_indexed
+                                    .join(&reverse_edges_indexed, |_via, from, to| {
+                                        Tup2(*from, *to)
+                                    }),
+                            );
+
+                            Ok((reachable_next, reachable_reverse_next))
+                        },
+                    )
+                    .unwrap();
+
+                reachable.integrate().stream_distinct().inspect(move |ps| {
+                    assert_eq!(*ps, expected_reachable.next().unwrap());
+                });
+
+                reachable_reverse
+                    .map(|Tup2(x, y)| Tup2(*y, *x))
+                    .integrate()
+                    .stream_distinct()
+                    .inspect(move |ps: &OrdZSet<_>| {
+                        assert_eq!(*ps, expected_reachable_reverse.next().unwrap());
+                    });
+
+                Ok(())
+            })
+            .unwrap();
+
+            for _ in 0..steps {
+                root.transaction().unwrap();
+            }
+        }
+
+        /// The `Vec` counterpart of [`reachability2()`]: forward and backward
+        /// reachability as two recursive relations supplied as a two-element
+        /// vector (arity 2).  It must match the tuple implementation.
+        #[test]
+        fn reachability2_variadic() {
+            let edges_data = edges_data();
+            let steps = edges_data.len();
+            let mut edges = edges_data.into_iter();
+            let expected_reachable = expected_reachable();
+            let expected_reachable_reverse = expected_reachable.clone();
+            let mut expected_reachable = expected_reachable.into_iter();
+            let mut expected_reachable_reverse = expected_reachable_reverse.into_iter();
+
+            let (mut root, _) = Runtime::init_circuit(1, move |circuit| {
+                let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
+
+                let mut recursive_streams = circuit
+                    .recursive_variadic(
+                        2,
+                        |child, mut recursive_streams: Vec<Stream<_, OrdZSet<Edge>>>| {
+                            let edges = edges.delta0(child);
+
+                            let (reachable, rest) = recursive_streams.split_first_mut().unwrap();
+                            let reachable_reverse = rest.first_mut().unwrap();
+
+                            let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
+                            let reachable_indexed = reachable.map_index(|&Tup2(x, y)| (y, x));
+                            let reachable_reverse_indexed =
+                                reachable_reverse.map_index(|&Tup2(x, y)| (y, x));
+                            let reverse_edges = edges.map(|&Tup2(x, y)| Tup2(y, x));
+                            let reverse_edges_indexed =
+                                reverse_edges.map_index(|Tup2(x, y)| (*x, *y));
+
+                            let reachable_next = edges.plus(
+                                &reachable_indexed
+                                    .join(&edges_indexed, |_via, from, to| Tup2(*from, *to)),
+                            );
+
+                            let reachable_reverse_next = reverse_edges.plus(
+                                &reachable_reverse_indexed
+                                    .join(&reverse_edges_indexed, |_via, from, to| {
+                                        Tup2(*from, *to)
+                                    }),
+                            );
+
+                            // We can even reuse the allocated vector and spare us a reallocation.
+                            *reachable = reachable_next;
+                            *reachable_reverse = reachable_reverse_next;
+                            Ok(recursive_streams)
+                        },
+                    )
+                    .unwrap();
+
+                let reachable_reverse = recursive_streams.pop().unwrap();
+                let reachable = recursive_streams.pop().unwrap();
+
+                reachable.integrate().stream_distinct().inspect(move |ps| {
+                    assert_eq!(*ps, expected_reachable.next().unwrap());
+                });
+                reachable_reverse
+                    .map(|Tup2(x, y)| Tup2(*y, *x))
+                    .integrate()
+                    .stream_distinct()
+                    .inspect(move |ps: &OrdZSet<_>| {
+                        assert_eq!(*ps, expected_reachable_reverse.next().unwrap());
+                    });
+
+                Ok(())
+            })
+            .unwrap();
+
+            for _ in 0..steps {
+                root.transaction().unwrap();
+            }
         }
     }
 }
