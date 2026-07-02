@@ -1209,9 +1209,11 @@ impl Default for FtConfig {
 mod test {
     use super::deserialize_fault_tolerance;
     use crate::config::{
-        DEFAULT_DATAFUSION_MEMORY_MB_CEILING, FtConfig, FtModel, ResourceConfig, RuntimeConfig,
+        ConnectorConfig, DEFAULT_DATAFUSION_MEMORY_MB_CEILING, FtConfig, FtModel, ResourceConfig,
+        RuntimeConfig,
     };
     use serde::{Deserialize, Serialize};
+    use serde_json::json;
 
     #[test]
     fn resolved_datafusion_memory_explicit_passes_through() {
@@ -1338,6 +1340,53 @@ mod test {
                 checkpoint_interval_secs: None
             }
         );
+    }
+
+    #[test]
+    fn equal_modulo_paused_keeps_derived_projection_significant() {
+        let with_derived_projection: ConnectorConfig = serde_json::from_value(json!({
+            "projection": {
+                "columns": ["id"],
+                "derived": true
+            },
+            "transport": {
+                "name": "empty_input"
+            }
+        }))
+        .unwrap();
+        let with_changed_derived_projection: ConnectorConfig = serde_json::from_value(json!({
+            "projection": {
+                "columns": ["other_id"],
+                "derived": true
+            },
+            "transport": {
+                "name": "empty_input"
+            }
+        }))
+        .unwrap();
+
+        assert!(!with_derived_projection.equal_modulo_paused(&with_changed_derived_projection));
+    }
+
+    #[test]
+    fn equal_modulo_paused_keeps_explicit_projection_significant() {
+        let without_projection: ConnectorConfig = serde_json::from_value(json!({
+            "transport": {
+                "name": "empty_input"
+            }
+        }))
+        .unwrap();
+        let with_explicit_projection: ConnectorConfig = serde_json::from_value(json!({
+            "projection": {
+                "columns": ["id"]
+            },
+            "transport": {
+                "name": "empty_input"
+            }
+        }))
+        .unwrap();
+
+        assert!(!without_projection.equal_modulo_paused(&with_explicit_projection));
     }
 }
 
@@ -1538,6 +1587,30 @@ where
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ConnectorProjection {
+    /// Ordered list of input columns the connector should read.
+    pub columns: Vec<String>,
+
+    /// True when projection was derived by the compiler instead of specified
+    /// explicitly in connector configuration.
+    #[serde(default, skip_serializing_if = "ConnectorProjection::derived_is_false")]
+    pub derived: bool,
+}
+
+impl ConnectorProjection {
+    fn derived_is_false(derived: &bool) -> bool {
+        !*derived
+    }
+}
+
+/// Pushdown operations supported by an input connector transport.
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+pub struct ConnectorPushdownCapabilities {
+    /// Connector can read a subset of input columns.
+    pub projection: bool,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ConnectorConfig {
     /// Send a full snapshot of a materialized view when the connector first
     /// starts. Valid for output connectors only.
@@ -1556,6 +1629,10 @@ pub struct ConnectorConfig {
 
     /// Transport endpoint configuration.
     pub transport: TransportConfig,
+
+    /// Standard projection pushdown configuration. Valid for input connectors only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection: Option<ConnectorProjection>,
 
     /// Optional preprocessor configuration
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1687,6 +1764,7 @@ impl ConnectorConfig {
         Self {
             send_snapshot: false,
             transport,
+            projection: None,
             preprocessor: None,
             format,
             postprocessor: None,
@@ -1904,6 +1982,15 @@ impl TransportConfig {
 
     pub fn is_http_input(&self) -> bool {
         matches!(self, TransportConfig::HttpInput(_))
+    }
+
+    pub fn input_pushdown_capabilities(&self) -> ConnectorPushdownCapabilities {
+        ConnectorPushdownCapabilities {
+            projection: matches!(
+                self,
+                TransportConfig::DeltaTableInput(_) | TransportConfig::IcebergInput(_)
+            ),
+        }
     }
 }
 

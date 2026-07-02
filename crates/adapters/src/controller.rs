@@ -174,7 +174,7 @@ use feldera_types::config::{
 };
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
-use feldera_types::program_schema::{SqlIdentifier, canonical_identifier};
+use feldera_types::program_schema::{Relation, SqlIdentifier, canonical_identifier};
 pub use pipeline_diff::compute_pipeline_diff;
 pub use stats::{CompletionToken, ControllerStatus, ControllerStatusContext, InputEndpointStatus};
 
@@ -6569,6 +6569,93 @@ impl ControllerInner {
         tables
     }
 
+    fn validate_input_connector_pushdown(
+        endpoint_name: &str,
+        connector_config: &mut ConnectorConfig,
+        schema: &Relation,
+    ) -> Result<(), ControllerError> {
+        if connector_config.projection.is_some()
+            && !connector_config
+                .transport
+                .input_pushdown_capabilities()
+                .projection
+        {
+            return Err(ControllerError::invalid_transport_configuration(
+                endpoint_name,
+                &format!(
+                    "{} input connector does not support standard 'projection' pushdown",
+                    connector_config.transport.name()
+                ),
+            ));
+        }
+
+        if let Some(projection) = &mut connector_config.projection {
+            if projection.columns.is_empty() {
+                return Err(ControllerError::invalid_transport_configuration(
+                    endpoint_name,
+                    "standard 'projection' pushdown must include at least one column",
+                ));
+            }
+
+            let mut seen_columns = BTreeSet::new();
+            for column in &projection.columns {
+                let Some(column_name) = schema.projection_field_name(column) else {
+                    return Err(ControllerError::invalid_transport_configuration(
+                        endpoint_name,
+                        &format!(
+                            "standard 'projection' pushdown references unknown column '{column}'"
+                        ),
+                    ));
+                };
+
+                if !seen_columns.insert(column_name) {
+                    return Err(ControllerError::invalid_transport_configuration(
+                        endpoint_name,
+                        &format!(
+                            "standard 'projection' pushdown contains duplicate column '{column}'"
+                        ),
+                    ));
+                }
+            }
+
+            let missing = schema.missing_non_omittable_projection_columns(&projection.columns);
+            if !missing.is_empty() {
+                return Err(ControllerError::invalid_transport_configuration(
+                    endpoint_name,
+                    &format!(
+                        "standard 'projection' pushdown omits non-omittable column(s): {}",
+                        missing.join(", ")
+                    ),
+                ));
+            }
+
+            if projection.derived
+                && schema.unused_column_projection().as_ref() != Some(&projection.columns)
+            {
+                return Err(ControllerError::invalid_transport_configuration(
+                    endpoint_name,
+                    "standard 'projection' pushdown is marked as compiler-derived, but it does not match the projection derived from the input table schema",
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_output_connector_pushdown(
+        endpoint_name: &str,
+        connector_config: &ConnectorConfig,
+    ) -> Result<(), ControllerError> {
+        if connector_config.projection.is_some() {
+            return Err(ControllerError::invalid_transport_configuration(
+                endpoint_name,
+                "standard 'projection' pushdown is valid for input connectors only",
+            ));
+        }
+
+        Ok(())
+    }
+
     fn connect_input(
         self: &Arc<Self>,
         endpoint_name: &str,
@@ -6632,7 +6719,7 @@ impl ControllerInner {
             Err(ControllerError::duplicate_input_endpoint(endpoint_name))?;
         }
 
-        let resolved_connector_config = resolve_secret_references_in_connector_config(
+        let mut resolved_connector_config = resolve_secret_references_in_connector_config(
             &self.secrets_dir,
             &endpoint_config.connector_config,
         )
@@ -6691,6 +6778,12 @@ impl ControllerInner {
             .ok_or_else(|| {
                 ControllerError::unknown_input_stream(endpoint_name, &endpoint_config.stream)
             })?;
+
+        Self::validate_input_connector_pushdown(
+            endpoint_name,
+            &mut resolved_connector_config,
+            &input_handle.schema,
+        )?;
 
         let endpoint_id = self.next_input_id.fetch_add(1, Ordering::AcqRel);
 
@@ -6932,6 +7025,8 @@ impl ControllerInner {
             &endpoint_config.connector_config,
         )
         .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
+
+        Self::validate_output_connector_pushdown(endpoint_name, &resolved_connector_config)?;
 
         // Create output pipeline, consisting of an encoder, output probe and
         // transport endpoint; run the pipeline in a separate thread.

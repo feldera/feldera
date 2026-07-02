@@ -43,7 +43,7 @@ use feldera_adapterlib::utils::datafusion::{
 };
 use feldera_storage::tokio::TOKIO_DEDICATED_IO;
 use feldera_types::adapter_stats::ConnectorHealth;
-use feldera_types::config::{FtModel, PipelineConfig};
+use feldera_types::config::{ConnectorProjection, FtModel, PipelineConfig};
 use feldera_types::program_schema::{Field, Relation};
 use feldera_types::transport::delta_table::{DeltaTableReaderConfig, DeltaTableTransactionMode};
 use futures_util::StreamExt;
@@ -263,6 +263,7 @@ pub(super) fn parse_cdc_order_by(df: &DataFrame, order_by: &str) -> AnyResult<Ve
 pub struct DeltaTableInputEndpoint {
     endpoint_name: String,
     config: DeltaTableReaderConfig,
+    projection: Option<ConnectorProjection>,
     datafusion: SessionContext,
     consumer: Box<dyn InputConsumer>,
 }
@@ -271,6 +272,7 @@ impl DeltaTableInputEndpoint {
     pub fn new(
         endpoint_name: &str,
         config: &DeltaTableReaderConfig,
+        projection: Option<ConnectorProjection>,
         pipeline_config: &PipelineConfig,
         runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
         consumer: Box<dyn InputConsumer>,
@@ -339,6 +341,7 @@ impl DeltaTableInputEndpoint {
         Self {
             endpoint_name: endpoint_name.to_string(),
             config: config.clone(),
+            projection,
             datafusion,
             consumer,
         }
@@ -359,6 +362,7 @@ impl IntegratedInputEndpoint for DeltaTableInputEndpoint {
         Ok(Box::new(DeltaTableInputReader::new(
             self.endpoint_name,
             self.config,
+            self.projection,
             self.datafusion,
             self.consumer,
             input_handle,
@@ -376,6 +380,7 @@ impl DeltaTableInputReader {
     fn new(
         endpoint_name: String,
         mut config: DeltaTableReaderConfig,
+        projection: Option<ConnectorProjection>,
         datafusion: SessionContext,
         consumer: Box<dyn InputConsumer>,
         input_handle: &InputCollectionHandle,
@@ -512,6 +517,7 @@ impl DeltaTableInputReader {
             datafusion,
             consumer,
             schema,
+            projection,
             resume_info.clone(),
         ));
 
@@ -906,6 +912,7 @@ struct DeltaTableInputEndpointInner {
     endpoint_name: String,
     schema: Relation,
     config: DeltaTableReaderConfig,
+    projection: Option<ConnectorProjection>,
     consumer: Box<dyn InputConsumer>,
     datafusion: SessionContext,
 
@@ -963,6 +970,7 @@ impl DeltaTableInputEndpointInner {
         datafusion: SessionContext,
         consumer: Box<dyn InputConsumer>,
         schema: Relation,
+        projection: Option<ConnectorProjection>,
         resume_info: Option<DeltaResumeInfo>,
     ) -> Self {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
@@ -976,6 +984,7 @@ impl DeltaTableInputEndpointInner {
             endpoint_name: endpoint_name.to_string(),
             schema,
             config,
+            projection,
             consumer,
             datafusion,
             transaction_index: AtomicUsize::new(0),
@@ -1071,8 +1080,11 @@ impl DeltaTableInputEndpointInner {
     fn skip_unused_columns(&self) -> bool {
         // Old-style: property in the connector configuration.
         // New-style: property in the table definition.
-        self.config.skip_unused_columns
-            || self.schema.get_property("skip_unused_columns") == Some("true")
+        self.config.skip_unused_columns || self.schema.skip_unused_columns()
+    }
+
+    fn should_project_columns(&self) -> bool {
+        self.projection.is_some() || self.skip_unused_columns()
     }
 
     fn new_follow_transaction_label(&self) -> Option<Option<String>> {
@@ -1191,6 +1203,19 @@ impl DeltaTableInputEndpointInner {
     /// are removed. Derived once from the immutable SQL schema and cached.
     fn used_sql_columns(&self) -> &ColumnNameSet {
         self.used_sql_columns.get_or_init(|| {
+            if let Some(projection) = &self.projection {
+                let mut columns = projection.columns.clone();
+                let referenced = self.config_referenced_columns();
+                columns.extend(
+                    self.schema
+                        .fields
+                        .iter()
+                        .filter(|field| referenced.contains(&field.name.name()))
+                        .map(|field| field.name.name()),
+                );
+                return ColumnNameSet::from_names(columns);
+            }
+
             ColumnNameSet::from_names(
                 self.schema
                     .fields
@@ -1235,7 +1260,7 @@ impl DeltaTableInputEndpointInner {
     /// This is the shape-only rule; [`can_skip_column`](Self::can_skip_column)
     /// adds the connector-config check before a column is actually skipped.
     fn is_unused_and_omittable(field: &Field) -> bool {
-        field.unused && (field.columntype.nullable || field.default.is_some())
+        Relation::is_unused_column_omittable(field)
     }
 
     /// SQL columns named by the connector's own expressions (`filter`,
@@ -1308,7 +1333,7 @@ impl DeltaTableInputEndpointInner {
     /// both project through [`keeps_cdc_column`](Self::keeps_cdc_column), so the
     /// two relations expose the same columns and their `UNION ALL` lines up.
     fn project_cdc_columns(&self, df: DataFrame) -> AnyResult<DataFrame> {
-        if !self.skip_unused_columns() {
+        if !self.should_project_columns() {
             return Ok(df);
         }
 
@@ -3250,12 +3275,22 @@ mod format_datafusion_error_tests {
 #[cfg(test)]
 mod is_skippable_tests {
     use super::DeltaTableInputEndpointInner;
-    use feldera_types::program_schema::{ColumnType, Field};
+    use crate::test::MockInputConsumer;
+    use datafusion::prelude::SessionContext;
+    use feldera_types::{
+        config::ConnectorProjection,
+        program_schema::{ColumnType, Field, Relation},
+    };
+    use serde_json::json;
 
     fn field(unused: bool, nullable: bool, default: Option<&str>) -> Field {
         let mut field = Field::new("c".into(), ColumnType::varchar(nullable)).with_unused(unused);
         field.default = default.map(str::to_string);
         field
+    }
+
+    fn named_int_field(name: &str, unused: bool) -> Field {
+        Field::new(name.into(), ColumnType::int(true)).with_unused(unused)
     }
 
     #[test]
@@ -3279,5 +3314,60 @@ mod is_skippable_tests {
         assert!(!DeltaTableInputEndpointInner::is_unused_and_omittable(
             &field(true, false, None)
         ));
+    }
+
+    #[test]
+    fn projection_keeps_columns_referenced_by_connector_expressions() {
+        let config = serde_json::from_value(json!({
+            "uri": "s3://bucket/table",
+            "mode": "cdc",
+            "filter": "filter_only > 0",
+            "snapshot_filter": "snapshot_only = 1",
+            "cdc_delete_filter": "cdc_flag",
+            "cdc_order_by": "cdc_ts"
+        }))
+        .unwrap();
+
+        let schema = Relation::new(
+            "test_table".into(),
+            vec![
+                named_int_field("used", false),
+                named_int_field("projected_unused", true),
+                named_int_field("filter_only", true),
+                named_int_field("snapshot_only", true),
+                named_int_field("cdc_flag", true),
+                named_int_field("cdc_ts", true),
+                named_int_field("skipped_unused", true),
+            ],
+            false,
+            Default::default(),
+        );
+
+        let endpoint = DeltaTableInputEndpointInner::new(
+            "test_input",
+            config,
+            SessionContext::new(),
+            Box::new(MockInputConsumer::new()),
+            schema,
+            Some(ConnectorProjection {
+                columns: vec!["used".to_string(), "projected_unused".to_string()],
+                derived: false,
+            }),
+            None,
+        );
+
+        let used = endpoint.used_sql_columns();
+
+        for column in [
+            "used",
+            "projected_unused",
+            "filter_only",
+            "snapshot_only",
+            "cdc_flag",
+            "cdc_ts",
+        ] {
+            assert!(used.contains(column), "missing projected column {column}");
+        }
+        assert!(!used.contains("skipped_unused"));
     }
 }

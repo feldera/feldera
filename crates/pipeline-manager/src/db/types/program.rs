@@ -6,11 +6,13 @@ use crate::has_unstable_feature;
 use clap::Parser;
 use feldera_ir::Dataflow;
 use feldera_types::config::{
-    ConnectorConfig, InputEndpointConfig, MultihostConfig, OutputEndpointConfig, PipelineConfig,
-    PipelineConfigProgramInfo, ProgramIr, RuntimeConfig, TransportConfig,
+    ConnectorConfig, ConnectorProjection, InputEndpointConfig, MultihostConfig,
+    OutputEndpointConfig, PipelineConfig, PipelineConfigProgramInfo, ProgramIr, RuntimeConfig,
+    TransportConfig,
 };
 use feldera_types::program_schema::{
-    ProgramSchemaPropertiesOnly, PropertyValue, SourcePosition, SqlIdentifier,
+    ProgramSchema, ProgramSchemaPropertiesOnly, PropertyValue, Relation, SourcePosition,
+    SqlIdentifier,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -600,6 +602,23 @@ fn parse_named_connectors(
                         }
                     })?;
                 }
+                if connector
+                    .config
+                    .projection
+                    .as_ref()
+                    .is_some_and(|projection| projection.derived)
+                {
+                    return Err(ConnectorGenerationError::InvalidPropertyValue {
+                        position: value.value_position,
+                        relation: relation.sql_name(),
+                        key: "connectors".to_string(),
+                        value: value.value.clone(),
+                        reason: Box::new(
+                            "'projection.derived' is reserved for compiler-generated connector projection"
+                                .to_string(),
+                        ),
+                    });
+                }
             }
             Ok((connectors, Some(value.clone())))
         }
@@ -709,17 +728,35 @@ pub fn generate_program_info(
         .map_err(|e| ConnectorGenerationError::InvalidProgramSchema {
             error: e.to_string(),
         })?;
+    let program_schema_full = ProgramSchema::deserialize(&program_schema)
+        .map_err(|e| {
+            warn!("cannot derive connector pushdown from program schema: {e}");
+        })
+        .ok();
+    let input_relations_by_name: BTreeMap<String, &Relation> = program_schema_full
+        .as_ref()
+        .map(|schema| {
+            schema
+                .inputs
+                .iter()
+                .map(|relation| (relation.name.sql_name(), relation))
+                .collect()
+        })
+        .unwrap_or_default();
 
     // Input connectors
     let mut input_connectors = vec![];
     for input_relation in program_schema_properties_only.inputs {
+        let input_relation_name = input_relation.name.sql_name();
+        let full_input_relation = input_relations_by_name.get(&input_relation_name).copied();
         let (connectors, origin_value) =
             parse_named_connectors(input_relation.name.clone(), &input_relation.properties)?;
         for connector in connectors {
             let origin_value = origin_value
                 .clone()
                 .expect("Origin value cannot be None if connectors is non-empty");
-            match connector.config.transport {
+            let mut connector_config = connector.config;
+            match &connector_config.transport {
                 TransportConfig::FileInput(_)
                 | TransportConfig::NatsInput(_)
                 | TransportConfig::KafkaInput(_)
@@ -740,10 +777,11 @@ pub fn generate_program_info(
                     });
                 }
             }
+            apply_input_connector_pushdown(full_input_relation, &mut connector_config);
             input_connectors.push((
-                input_relation.name.sql_name(),
+                input_relation_name.clone(),
                 connector.name,
-                connector.config,
+                connector_config,
                 origin_value,
             ));
         }
@@ -823,6 +861,35 @@ pub fn generate_program_info(
     })
 }
 
+fn apply_input_connector_pushdown(
+    input_relation: Option<&Relation>,
+    connector_config: &mut ConnectorConfig,
+) {
+    if connector_config.projection.is_some()
+        || !connector_config
+            .transport
+            .input_pushdown_capabilities()
+            .projection
+    {
+        return;
+    }
+
+    let Some(input_relation) = input_relation else {
+        return;
+    };
+
+    if !input_relation.skip_unused_columns() {
+        return;
+    }
+
+    if let Some(columns) = input_relation.unused_column_projection() {
+        connector_config.projection = Some(ConnectorProjection {
+            columns,
+            derived: true,
+        });
+    }
+}
+
 /// Generates the pipeline configuration derived from the runtime configuration.
 ///
 /// The returned pipeline config leaves three fields empty (they will be populated later from
@@ -865,6 +932,226 @@ mod tests {
     use feldera_types::program_schema::{PropertyValue, SourcePosition};
     use feldera_types::transport::datagen::DatagenInputConfig;
 
+    fn test_position() -> SourcePosition {
+        SourcePosition {
+            start_line_number: 1,
+            start_column: 1,
+            end_line_number: 1,
+            end_column: 1,
+        }
+    }
+
+    fn test_property(value: impl Into<String>) -> serde_json::Value {
+        let position = test_position();
+        serde_json::json!({
+            "value": value.into(),
+            "key_position": position,
+            "value_position": position,
+        })
+    }
+
+    fn schema_with_connector(connector: serde_json::Value) -> serde_json::Value {
+        let connectors = serde_json::to_string(&vec![connector]).unwrap();
+
+        serde_json::json!({
+            "inputs": [{
+                "name": "T",
+                "case_sensitive": false,
+                "fields": [{
+                    "name": "used",
+                    "case_sensitive": false,
+                    "columntype": {
+                        "type": "INTEGER",
+                        "nullable": false
+                    }
+                }, {
+                    "name": "unused_nullable",
+                    "case_sensitive": false,
+                    "columntype": {
+                        "type": "INTEGER",
+                        "nullable": true
+                    },
+                    "unused": true
+                }, {
+                    "name": "unused_required",
+                    "case_sensitive": false,
+                    "columntype": {
+                        "type": "INTEGER",
+                        "nullable": false
+                    },
+                    "unused": true
+                }],
+                "properties": {
+                    "skip_unused_columns": test_property("true"),
+                    "connectors": test_property(connectors)
+                },
+                "primary_key": null
+            }],
+            "outputs": []
+        })
+    }
+
+    #[test]
+    fn test_generate_projection_pushdown_for_delta_input() {
+        let schema = schema_with_connector(serde_json::json!({
+            "name": "delta",
+            "transport": {
+                "name": "delta_table_input",
+                "config": {
+                    "uri": "s3://bucket/table",
+                    "mode": "snapshot"
+                }
+            }
+        }));
+
+        let program_info =
+            super::generate_program_info(schema, String::new(), String::new(), None).unwrap();
+        let connector = &program_info
+            .input_connectors
+            .get("t.delta")
+            .unwrap()
+            .connector_config;
+
+        assert_eq!(
+            connector.projection.as_ref().unwrap().columns,
+            vec!["used".to_string(), "unused_required".to_string()]
+        );
+        assert!(connector.projection.as_ref().unwrap().derived);
+    }
+
+    #[test]
+    fn test_derived_projection_survives_program_info_json_round_trip() {
+        let schema = schema_with_connector(serde_json::json!({
+            "name": "delta",
+            "transport": {
+                "name": "delta_table_input",
+                "config": {
+                    "uri": "s3://bucket/table",
+                    "mode": "snapshot"
+                }
+            }
+        }));
+
+        let program_info =
+            super::generate_program_info(schema, String::new(), String::new(), None).unwrap();
+        let program_info: super::ProgramInfo =
+            serde_json::from_value(serde_json::to_value(program_info).unwrap()).unwrap();
+        let connector = &program_info
+            .input_connectors
+            .get("t.delta")
+            .unwrap()
+            .connector_config;
+
+        assert!(connector.projection.as_ref().unwrap().derived);
+    }
+
+    #[test]
+    fn test_generate_projection_pushdown_for_iceberg_input() {
+        let schema = schema_with_connector(serde_json::json!({
+            "name": "iceberg",
+            "transport": {
+                "name": "iceberg_input",
+                "config": {
+                    "mode": "snapshot",
+                    "metadata_location": "s3://warehouse/table/metadata.json"
+                }
+            }
+        }));
+
+        let program_info =
+            super::generate_program_info(schema, String::new(), String::new(), None).unwrap();
+        let connector = &program_info
+            .input_connectors
+            .get("t.iceberg")
+            .unwrap()
+            .connector_config;
+
+        assert_eq!(
+            connector.projection.as_ref().unwrap().columns,
+            vec!["used".to_string(), "unused_required".to_string()]
+        );
+        assert!(connector.projection.as_ref().unwrap().derived);
+    }
+
+    #[test]
+    fn test_projection_pushdown_not_generated_for_unsupported_input() {
+        let schema = schema_with_connector(serde_json::json!({
+            "name": "empty",
+            "transport": {
+                "name": "empty_input"
+            }
+        }));
+
+        let program_info =
+            super::generate_program_info(schema, String::new(), String::new(), None).unwrap();
+        let connector = &program_info
+            .input_connectors
+            .get("t.empty")
+            .unwrap()
+            .connector_config;
+
+        assert!(connector.projection.is_none());
+    }
+
+    #[test]
+    fn test_explicit_projection_pushdown_is_preserved() {
+        let schema = schema_with_connector(serde_json::json!({
+            "name": "delta",
+            "projection": {
+                "columns": ["used", "unused_nullable", "unused_required"]
+            },
+            "transport": {
+                "name": "delta_table_input",
+                "config": {
+                    "uri": "s3://bucket/table",
+                    "mode": "snapshot"
+                }
+            }
+        }));
+
+        let program_info =
+            super::generate_program_info(schema, String::new(), String::new(), None).unwrap();
+        let connector = &program_info
+            .input_connectors
+            .get("t.delta")
+            .unwrap()
+            .connector_config;
+
+        assert_eq!(
+            connector.projection.as_ref().unwrap().columns,
+            vec![
+                "used".to_string(),
+                "unused_nullable".to_string(),
+                "unused_required".to_string()
+            ]
+        );
+        assert!(!connector.projection.as_ref().unwrap().derived);
+    }
+
+    #[test]
+    fn test_user_projection_pushdown_cannot_set_derived() {
+        let schema = schema_with_connector(serde_json::json!({
+            "name": "delta",
+            "projection": {
+                "columns": ["used", "unused_required"],
+                "derived": true
+            },
+            "transport": {
+                "name": "delta_table_input",
+                "config": {
+                    "uri": "s3://bucket/table",
+                    "mode": "snapshot"
+                }
+            }
+        }));
+
+        let err = super::generate_program_info(schema, String::new(), String::new(), None)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("'projection.derived' is reserved"));
+    }
+
     #[test]
     fn test_runtime_version_validation() {
         assert!(RuntimeSelector::try_from("invalid".to_string()).is_err());
@@ -896,6 +1183,7 @@ mod tests {
         let config = ConnectorConfig {
             send_snapshot: false,
             transport: TransportConfig::Datagen(DatagenInputConfig::default()),
+            projection: None,
             format: None,
             preprocessor: None,
             postprocessor: None,
