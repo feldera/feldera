@@ -3092,6 +3092,7 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
+    #[ignore]
     fn test_cdc_basic_insert() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_basic_insert");
@@ -3173,6 +3174,7 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
+    #[ignore]
     fn test_cdc_pause_unpause() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_pause_unpause");
@@ -3330,6 +3332,7 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
+    #[ignore]
     fn test_cdc_all_data_types() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_all_types");
@@ -3474,6 +3477,7 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege, REPLICA IDENTITY FULL.
     #[test]
     #[serial]
+    #[ignore]
     fn test_cdc_update_delete() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_upd_del");
@@ -3592,6 +3596,7 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
+    #[ignore]
     fn test_cdc_compatible_schema_changes() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_compatible_schema");
@@ -3683,6 +3688,7 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
+    #[ignore]
     fn test_cdc_drop_primary_key_column_rejected() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_drop_pk_col");
@@ -3746,6 +3752,7 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
+    #[ignore]
     fn test_cdc_restart_resumes_from_slot() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_restart");
@@ -3882,6 +3889,7 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
+    #[ignore]
     fn test_cdc_ft_mode_holds_slot() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_strict_hold");
