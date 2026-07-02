@@ -25,8 +25,6 @@ from feldera.testutils import FELDERA_TEST_NUM_WORKERS
 from tests import TEST_CLIENT
 from tests.utils import DeltaTestLocation, wait_for_condition
 
-from .helper import gen_pipeline_name
-
 # Default value of ``max_output_buffer_size_records``.  The buffer must flush
 # once it grows past this many records, even without a time limit.
 _DEFAULT_MAX_OUTPUT_BUFFER_SIZE_RECORDS = 10_000_000
@@ -36,7 +34,6 @@ _DEFAULT_MAX_OUTPUT_BUFFER_SIZE_RECORDS = 10_000_000
 _NUM_RECORDS = 12_000_000
 
 
-@gen_pipeline_name
 def test_output_buffer_flushes_at_default_size_limit(pipeline_name):
     """A buffered Delta sink with no time limit still flushes at 10M records."""
 
@@ -98,18 +95,16 @@ CREATE INDEX v_idx ON v(id);
 
     pipeline.start()
 
-    try:
-        # The buffer flushes once it crosses the 10M default size cap, pushing
-        # those records through the Delta sink and advancing the completed
-        # count past the cap.
-        wait_for_condition(
-            "completed-record count advances past the default buffer size cap",
-            lambda: (
-                (pipeline.stats().global_metrics.total_completed_records or 0)
-                >= _DEFAULT_MAX_OUTPUT_BUFFER_SIZE_RECORDS
-            ),
-            timeout_s=600.0,
-            poll_interval_s=2.0,
-        )
-    finally:
-        pipeline.stop(force=True)
+    # The buffer flushes once it crosses the 10M default size cap, pushing
+    # those records through the Delta sink and advancing the completed count
+    # past the cap.  On timeout the test raises without stopping the pipeline,
+    # so it is left running on the persistent runtime instance for inspection.
+    wait_for_condition(
+        "completed-record count advances past the default buffer size cap",
+        lambda: (
+            (pipeline.stats().global_metrics.total_completed_records or 0)
+            >= _DEFAULT_MAX_OUTPUT_BUFFER_SIZE_RECORDS
+        ),
+        timeout_s=600.0,
+        poll_interval_s=2.0,
+    )
