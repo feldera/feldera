@@ -250,9 +250,15 @@ impl Relation {
         self.fields.iter().find(|f| f.name == name)
     }
 
-    pub fn field_projection_name(&self, name: &str) -> Option<String> {
-        self.field(name)
-            .or_else(|| self.fields.iter().find(|f| f.name.name() == name))
+    /// Lookup a field name from standard connector projection configuration.
+    ///
+    /// Unlike [`field`](Self::field), this does not canonicalize the user input:
+    /// projection columns are connector-facing names and must match the schema's
+    /// true column name exactly.
+    pub fn projection_field_name(&self, name: &str) -> Option<String> {
+        self.fields
+            .iter()
+            .find(|f| f.name.name() == name)
             .map(|f| f.name.name())
     }
 
@@ -276,7 +282,9 @@ impl Relation {
     /// whose values can be supplied as NULL/defaults.
     ///
     /// A projection with no columns cannot preserve row count in SQL, so keep
-    /// one field when every declared column is otherwise skippable.
+    /// the first declared field when every declared column is otherwise
+    /// skippable. The choice is arbitrary, but stable and cheap to compute from
+    /// the schema available here.
     pub fn unused_column_projection(&self) -> Option<Vec<String>> {
         let mut columns = self
             .fields
@@ -301,10 +309,7 @@ impl Relation {
     }
 
     pub fn missing_non_omittable_projection_columns(&self, columns: &[String]) -> Vec<String> {
-        let projected = columns
-            .iter()
-            .filter_map(|column| self.field_projection_name(column))
-            .collect::<BTreeSet<_>>();
+        let projected = columns.iter().cloned().collect::<BTreeSet<_>>();
 
         self.fields
             .iter()

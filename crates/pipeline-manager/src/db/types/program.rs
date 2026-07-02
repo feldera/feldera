@@ -602,6 +602,23 @@ fn parse_named_connectors(
                         }
                     })?;
                 }
+                if connector
+                    .config
+                    .projection
+                    .as_ref()
+                    .is_some_and(|projection| projection.derived)
+                {
+                    return Err(ConnectorGenerationError::InvalidPropertyValue {
+                        position: value.value_position,
+                        relation: relation.sql_name(),
+                        key: "connectors".to_string(),
+                        value: value.value.clone(),
+                        reason: Box::new(
+                            "'projection.derived' is reserved for compiler-generated connector projection"
+                                .to_string(),
+                        ),
+                    });
+                }
             }
             Ok((connectors, Some(value.clone())))
         }
@@ -848,7 +865,12 @@ fn apply_input_connector_pushdown(
     input_relation: Option<&Relation>,
     connector_config: &mut ConnectorConfig,
 ) {
-    if connector_config.projection.is_some() || !connector_config.supports_projection_pushdown() {
+    if connector_config.projection.is_some()
+        || !connector_config
+            .transport
+            .input_pushdown_capabilities()
+            .projection
+    {
         return;
     }
 
@@ -861,7 +883,10 @@ fn apply_input_connector_pushdown(
     }
 
     if let Some(columns) = input_relation.unused_column_projection() {
-        connector_config.projection = Some(ConnectorProjection { columns });
+        connector_config.projection = Some(ConnectorProjection {
+            columns,
+            derived: true,
+        });
     }
 }
 
@@ -991,6 +1016,61 @@ mod tests {
             connector.projection.as_ref().unwrap().columns,
             vec!["used".to_string(), "unused_required".to_string()]
         );
+        assert!(connector.projection.as_ref().unwrap().derived);
+    }
+
+    #[test]
+    fn test_derived_projection_survives_program_info_json_round_trip() {
+        let schema = schema_with_connector(serde_json::json!({
+            "name": "delta",
+            "transport": {
+                "name": "delta_table_input",
+                "config": {
+                    "uri": "s3://bucket/table",
+                    "mode": "snapshot"
+                }
+            }
+        }));
+
+        let program_info =
+            super::generate_program_info(schema, String::new(), String::new(), None).unwrap();
+        let program_info: super::ProgramInfo =
+            serde_json::from_value(serde_json::to_value(program_info).unwrap()).unwrap();
+        let connector = &program_info
+            .input_connectors
+            .get("t.delta")
+            .unwrap()
+            .connector_config;
+
+        assert!(connector.projection.as_ref().unwrap().derived);
+    }
+
+    #[test]
+    fn test_generate_projection_pushdown_for_iceberg_input() {
+        let schema = schema_with_connector(serde_json::json!({
+            "name": "iceberg",
+            "transport": {
+                "name": "iceberg_input",
+                "config": {
+                    "mode": "snapshot",
+                    "metadata_location": "s3://warehouse/table/metadata.json"
+                }
+            }
+        }));
+
+        let program_info =
+            super::generate_program_info(schema, String::new(), String::new(), None).unwrap();
+        let connector = &program_info
+            .input_connectors
+            .get("t.iceberg")
+            .unwrap()
+            .connector_config;
+
+        assert_eq!(
+            connector.projection.as_ref().unwrap().columns,
+            vec!["used".to_string(), "unused_required".to_string()]
+        );
+        assert!(connector.projection.as_ref().unwrap().derived);
     }
 
     #[test]
@@ -1045,6 +1125,31 @@ mod tests {
                 "unused_required".to_string()
             ]
         );
+        assert!(!connector.projection.as_ref().unwrap().derived);
+    }
+
+    #[test]
+    fn test_user_projection_pushdown_cannot_set_derived() {
+        let schema = schema_with_connector(serde_json::json!({
+            "name": "delta",
+            "projection": {
+                "columns": ["used", "unused_required"],
+                "derived": true
+            },
+            "transport": {
+                "name": "delta_table_input",
+                "config": {
+                    "uri": "s3://bucket/table",
+                    "mode": "snapshot"
+                }
+            }
+        }));
+
+        let err = super::generate_program_info(schema, String::new(), String::new(), None)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("'projection.derived' is reserved"));
     }
 
     #[test]

@@ -84,7 +84,7 @@ fn test_projection_pushdown_rejects_missing_non_omittable_columns() {
 }
 
 #[test]
-fn test_projection_pushdown_normalizes_column_names() {
+fn test_projection_pushdown_rejects_case_mismatched_column_names() {
     let mut connector_config: ConnectorConfig = serde_json::from_value(json!({
         "projection": {
             "columns": ["USED", "UNUSED_REQUIRED"]
@@ -110,17 +110,52 @@ fn test_projection_pushdown_normalizes_column_names() {
         Default::default(),
     );
 
-    ControllerInner::validate_input_connector_pushdown(
+    let err = ControllerInner::validate_input_connector_pushdown(
         "test_input",
         &mut connector_config,
         &relation,
     )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("references unknown column 'USED'"));
+}
+
+#[test]
+fn test_projection_pushdown_rejects_forged_derived_projection() {
+    let mut connector_config: ConnectorConfig = serde_json::from_value(json!({
+        "projection": {
+            "columns": ["used", "unused_nullable", "unused_required"],
+            "derived": true
+        },
+        "transport": {
+            "name": "delta_table_input",
+            "config": {
+                "uri": "s3://bucket/table",
+                "mode": "snapshot"
+            }
+        }
+    }))
     .unwrap();
 
-    assert_eq!(
-        connector_config.projection.unwrap().columns,
-        vec!["used".to_string(), "unused_required".to_string()]
+    let relation = Relation::new(
+        SqlIdentifier::from("t"),
+        vec![
+            int_field("used", false, false),
+            int_field("unused_nullable", true, true),
+            int_field("unused_required", false, true),
+        ],
+        false,
+        Default::default(),
     );
+
+    let err = ControllerInner::validate_input_connector_pushdown(
+        "test_input",
+        &mut connector_config,
+        &relation,
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("marked as compiler-derived"));
 }
 
 #[test]

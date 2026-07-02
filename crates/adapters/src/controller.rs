@@ -6267,7 +6267,11 @@ impl ControllerInner {
         connector_config: &mut ConnectorConfig,
         schema: &Relation,
     ) -> Result<(), ControllerError> {
-        if connector_config.projection.is_some() && !connector_config.supports_projection_pushdown()
+        if connector_config.projection.is_some()
+            && !connector_config
+                .transport
+                .input_pushdown_capabilities()
+                .projection
         {
             return Err(ControllerError::invalid_transport_configuration(
                 endpoint_name,
@@ -6278,7 +6282,7 @@ impl ControllerInner {
             ));
         }
 
-        if let Some(projection) = &connector_config.projection {
+        if let Some(projection) = &mut connector_config.projection {
             if projection.columns.is_empty() {
                 return Err(ControllerError::invalid_transport_configuration(
                     endpoint_name,
@@ -6287,9 +6291,8 @@ impl ControllerInner {
             }
 
             let mut seen_columns = BTreeSet::new();
-            let mut normalized_columns = Vec::with_capacity(projection.columns.len());
             for column in &projection.columns {
-                let Some(column_name) = schema.field_projection_name(column) else {
+                let Some(column_name) = schema.projection_field_name(column) else {
                     return Err(ControllerError::invalid_transport_configuration(
                         endpoint_name,
                         &format!(
@@ -6298,18 +6301,17 @@ impl ControllerInner {
                     ));
                 };
 
-                if !seen_columns.insert(column_name.clone()) {
+                if !seen_columns.insert(column_name) {
                     return Err(ControllerError::invalid_transport_configuration(
                         endpoint_name,
                         &format!(
-                            "standard 'projection' pushdown contains duplicate column '{column_name}'"
+                            "standard 'projection' pushdown contains duplicate column '{column}'"
                         ),
                     ));
                 }
-                normalized_columns.push(column_name);
             }
 
-            let missing = schema.missing_non_omittable_projection_columns(&normalized_columns);
+            let missing = schema.missing_non_omittable_projection_columns(&projection.columns);
             if !missing.is_empty() {
                 return Err(ControllerError::invalid_transport_configuration(
                     endpoint_name,
@@ -6320,7 +6322,14 @@ impl ControllerInner {
                 ));
             }
 
-            connector_config.projection.as_mut().unwrap().columns = normalized_columns;
+            if projection.derived
+                && schema.unused_column_projection().as_ref() != Some(&projection.columns)
+            {
+                return Err(ControllerError::invalid_transport_configuration(
+                    endpoint_name,
+                    "standard 'projection' pushdown is marked as compiler-derived, but it does not match the projection derived from the input table schema",
+                ));
+            }
         }
 
         Ok(())
