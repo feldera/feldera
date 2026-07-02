@@ -101,6 +101,13 @@ class TestPipelineBuilder(PipelineTestCase):
         pipeline.modify(tags=[])
         assert pipeline.tags() == []
 
+        # The SDK normalizes tags before storing them, matching the web console:
+        # tags are saved in sorted order, and color variants of the same name
+        # (the same text with different "|rrggbb" color suffixes) are collapsed to
+        # the last one supplied. The surviving variant keeps its color.
+        pipeline.modify(tags=["prod", "alpha", "prod|ef4444"])
+        assert pipeline.tags() == ["alpha", "prod|ef4444"]
+
 
 if __name__ == "__main__":
     unittest.main()

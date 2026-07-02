@@ -36,6 +36,7 @@ import {
   listClusterEvents,
   listPipelineEvents,
   listPipelines,
+  type PatchPipeline,
   type PipelineSelectedInfo,
   type PostPutPipeline,
   type ProgramError,

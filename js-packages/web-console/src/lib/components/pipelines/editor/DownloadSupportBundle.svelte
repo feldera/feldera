@@ -1,7 +1,8 @@
 <script lang="ts">
   import { Tooltip } from 'common-ui'
-  import { fly, slide } from 'svelte/transition'
+  import { slide } from 'svelte/transition'
   import Popup from '$lib/components/common/Popup.svelte'
+  import SlidingPanels from '$lib/components/common/SlidingPanels.svelte'
   import DownloadProgressDisplay from '$lib/components/dialogs/DownloadProgressDisplay.svelte'
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
@@ -163,60 +164,54 @@
       transition:slide={{ duration: 100 }}
       class="bg-white-dark absolute top-10 right-0 z-30 flex min-w-[220px] flex-col overflow-hidden rounded shadow-md"
     >
-      <!-- Grid with both pages in (1,1) so they overlap during the transition
-           and slide past each other like carousel slides. Each page has a fixed
-           direction (page 1 left, page 2 right) so forward/back animate as
-           mirrored sweeps without tracking direction state. -->
-      <div class="grid">
-        {#if pickedFile}
-          <!-- Confirmation view: opens the viewer tab on a direct click so the
-               browser preserves user activation through window.open. -->
-          <div
-            in:fly={{ x: 220, duration: 200 }}
-            out:fly={{ x: 220, duration: 200 }}
-            class="col-start-1 row-start-1 flex flex-col"
-          >
-            <div class="flex items-center gap-2 px-2 py-2">
-              <button class="btn-icon h-7 w-7" onclick={resetUpload} aria-label="Back" title="Back">
-                <span class="fd fd-chevron-left text-[20px]"></span>
-              </button>
-              <span class="min-w-0 flex-1 truncate text-sm" title={pickedFile.name}>
-                {pickedFile.name}
-              </span>
-            </div>
-            <div class="px-2 pb-2">
-              <button
-                class="btn h-8! w-full preset-filled-primary-500"
-                onclick={() => {
-                  confirmOpenViewer()
-                  close()
-                }}
-                data-testid="btn-confirm-view-profile"
-              >
-                <span class="fd fd-file-search text-[18px]"></span>
-                <span>View profile</span>
-              </button>
-            </div>
-          </div>
-        {:else}
-          <div
-            in:fly={{ x: -220, duration: 200 }}
-            out:fly={{ x: -220, duration: 200 }}
-            class="col-start-1 row-start-1 flex flex-col"
-          >
-            <SupportBundleMenu
-              bind:collectNewData={collectNewData.value}
-              onDownload={() => {
-                downloadData = { ...defaultData, collect: collectNewData.value }
-                globalDialog.dialog = supportBundleDialog
-                close()
-              }}
-              onFilePicked={handleFilePicked}
-            />
-          </div>
-        {/if}
-      </div>
+      <SlidingPanels
+        current={pickedFile ? 'confirm' : 'menu'}
+        pages={[
+          { key: 'menu', content: menuPage },
+          { key: 'confirm', content: confirmPage }
+        ]}
+      />
     </div>
+
+    {#snippet menuPage()}
+      <SupportBundleMenu
+        bind:collectNewData={collectNewData.value}
+        onDownload={() => {
+          downloadData = { ...defaultData, collect: collectNewData.value }
+          globalDialog.dialog = supportBundleDialog
+          close()
+        }}
+        onFilePicked={handleFilePicked}
+      />
+    {/snippet}
+
+    <!-- Confirmation view: opens the viewer tab on a direct click so the browser
+         preserves user activation through window.open. -->
+    {#snippet confirmPage()}
+      {#if pickedFile}
+        <div class="flex items-center gap-2 px-2 py-2">
+          <button class="btn-icon h-7 w-7" onclick={resetUpload} aria-label="Back" title="Back">
+            <span class="fd fd-chevron-left text-[20px]"></span>
+          </button>
+          <span class="min-w-0 flex-1 truncate text-sm" title={pickedFile.name}>
+            {pickedFile.name}
+          </span>
+        </div>
+        <div class="px-2 pb-2">
+          <button
+            class="btn h-8! w-full preset-filled-primary-500"
+            onclick={() => {
+              confirmOpenViewer()
+              close()
+            }}
+            data-testid="btn-confirm-view-profile"
+          >
+            <span class="fd fd-file-search text-[18px]"></span>
+            <span>View profile</span>
+          </button>
+        </div>
+      {/if}
+    {/snippet}
   {/snippet}
 </Popup>
 <Tooltip placement="top" class="w-[240px] text-wrap">
