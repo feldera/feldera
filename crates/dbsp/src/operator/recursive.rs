@@ -169,7 +169,7 @@ where
     ///         zset_set! { Tup2(4, 5) },
     ///         // Remove an edge, breaking the cycle.
     ///         zset! { Tup2(1, 2) => -1 },
-    ///      ] as [_; STEPS])
+    ///      ] as [OrdZSet<Tup2<u64, u64>>; STEPS])
     ///          .into_iter();
     ///
     ///     let edges = root_circuit
@@ -182,7 +182,7 @@ where
     ///         // Add a label to node 2.
     ///         zset_set! { Tup2(2, "l2".to_string()) },
     ///         zset! { },
-    ///     ] as [_; STEPS])
+    ///     ] as [OrdZSet<Tup2<u64, String>>; STEPS])
     ///         .into_iter();
     ///
     ///     let init_labels = root_circuit
@@ -193,7 +193,7 @@ where
     ///         zset! { Tup2(1, "l1".to_string()) => 1, Tup2(2, "l1".to_string()) => 1, Tup2(3, "l1".to_string()) => 1, Tup2(4, "l1".to_string()) => 1 },
     ///         zset! { Tup2(1, "l2".to_string()) => 1, Tup2(2, "l2".to_string()) => 1, Tup2(3, "l2".to_string()) => 1, Tup2(4, "l2".to_string()) => 1, Tup2(5, "l1".to_string()) => 1, Tup2(5, "l2".to_string()) => 1 },
     ///         zset! { Tup2(2, "l1".to_string()) => -1, Tup2(3, "l1".to_string()) => -1, Tup2(4, "l1".to_string()) => -1, Tup2(5, "l1".to_string()) => -1 },
-    ///     ] as [_; STEPS])
+    ///     ] as [OrdZSet<Tup2<u64, String>>; STEPS])
     ///         .into_iter();
     ///
     ///     let labels = root_circuit.recursive(|child_circuit, labels: Stream<_, OrdZSet<Tup2<u64, String>>>| {

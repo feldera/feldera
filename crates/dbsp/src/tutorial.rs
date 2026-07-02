@@ -2056,9 +2056,9 @@
 //!
 //!     let (mut circuit_handle, output_handle) = Runtime::init_circuit(1, move |root_circuit| {
 //!         let mut edges_data = ([
-//!             zset_set! { Tup3(0_usize, 1_usize, 1_usize), Tup3(1, 2, 1), Tup3(2, 3, 2), Tup3(3, 4, 2) },
+//!             zset_set! { Tup3(0, 1, 1), Tup3(1, 2, 1), Tup3(2, 3, 2), Tup3(3, 4, 2) },
 //!             zset! { Tup3(1, 2, 1) => -1 },
-//!         ] as [_; STEPS])
+//!         ] as [OrdZSet<Tup3<usize, usize, usize>>; STEPS])
 //!         .into_iter();
 //!
 //!         let edges = root_circuit.add_source(Generator::new(move || edges_data.next().unwrap()));
@@ -2119,7 +2119,7 @@
 //!                 Tup4(1, 3, 3, 2) => -1,
 //!                 Tup4(1, 4, 5, 3) => -1,
 //!             },
-//!         ] as [_; STEPS])
+//!         ] as [OrdZSet<Tup4<usize, usize, usize, usize>>; STEPS])
 //!             .into_iter();
 //!
 //!         closure.inspect(move |output| {
@@ -2182,7 +2182,8 @@
 //! #     indexed_zset,
 //! #     operator::{Generator, Min},
 //! #     utils::{Tup2, Tup3, Tup4},
-//! #     zset_set, Circuit, NestedCircuit, OrdIndexedZSet, RootCircuit, Stream, IndexedZSetReader, Runtime
+//! #     zset_set, Circuit, NestedCircuit, OrdZSet, OrdIndexedZSet, RootCircuit,
+//! #     Stream, IndexedZSetReader, Runtime
 //! # };
 //! #
 //! type Accumulator =
@@ -2193,9 +2194,9 @@
 //! #
 //! #     let (mut circuit_handle, output_handle) = Runtime::init_circuit(1, move |root_circuit| {
 //! #         let mut edges_data = ([
-//! #             zset_set! { Tup3(0_usize, 1_usize, 1_usize), Tup3(1, 2, 1), Tup3(2, 3, 2), Tup3(3, 4, 2) },
+//! #             zset_set! { Tup3(0, 1, 1), Tup3(1, 2, 1), Tup3(2, 3, 2), Tup3(3, 4, 2) },
 //! #             zset_set! { Tup3(4, 0, 3)}
-//! #         ] as [_; STEPS])
+//! #         ] as [OrdZSet<Tup3<usize, usize, usize>>; STEPS])
 //! #         .into_iter();
 //! #
 //! #         let edges = root_circuit.add_source(Generator::new(move || edges_data.next().unwrap()));
