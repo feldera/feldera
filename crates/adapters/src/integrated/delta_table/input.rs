@@ -3129,12 +3129,22 @@ mod format_datafusion_error_tests {
 #[cfg(test)]
 mod is_skippable_tests {
     use super::DeltaTableInputEndpointInner;
-    use feldera_types::program_schema::{ColumnType, Field};
+    use crate::test::MockInputConsumer;
+    use datafusion::prelude::SessionContext;
+    use feldera_types::{
+        config::ConnectorProjection,
+        program_schema::{ColumnType, Field, Relation},
+    };
+    use serde_json::json;
 
     fn field(unused: bool, nullable: bool, default: Option<&str>) -> Field {
         let mut field = Field::new("c".into(), ColumnType::varchar(nullable)).with_unused(unused);
         field.default = default.map(str::to_string);
         field
+    }
+
+    fn named_int_field(name: &str, unused: bool) -> Field {
+        Field::new(name.into(), ColumnType::int(true)).with_unused(unused)
     }
 
     #[test]
@@ -3158,5 +3168,60 @@ mod is_skippable_tests {
         assert!(!DeltaTableInputEndpointInner::is_unused_and_omittable(
             &field(true, false, None)
         ));
+    }
+
+    #[test]
+    fn projection_keeps_columns_referenced_by_connector_expressions() {
+        let config = serde_json::from_value(json!({
+            "uri": "s3://bucket/table",
+            "mode": "cdc",
+            "filter": "filter_only > 0",
+            "snapshot_filter": "snapshot_only = 1",
+            "cdc_delete_filter": "cdc_flag",
+            "cdc_order_by": "cdc_ts"
+        }))
+        .unwrap();
+
+        let schema = Relation::new(
+            "test_table".into(),
+            vec![
+                named_int_field("used", false),
+                named_int_field("projected_unused", true),
+                named_int_field("filter_only", true),
+                named_int_field("snapshot_only", true),
+                named_int_field("cdc_flag", true),
+                named_int_field("cdc_ts", true),
+                named_int_field("skipped_unused", true),
+            ],
+            false,
+            Default::default(),
+        );
+
+        let endpoint = DeltaTableInputEndpointInner::new(
+            "test_input",
+            config,
+            SessionContext::new(),
+            Box::new(MockInputConsumer::new()),
+            schema,
+            Some(ConnectorProjection {
+                columns: vec!["used".to_string(), "projected_unused".to_string()],
+                derived: false,
+            }),
+            None,
+        );
+
+        let used = endpoint.used_sql_columns();
+
+        for column in [
+            "used",
+            "projected_unused",
+            "filter_only",
+            "snapshot_only",
+            "cdc_flag",
+            "cdc_ts",
+        ] {
+            assert!(used.contains(column), "missing projected column {column}");
+        }
+        assert!(!used.contains("skipped_unused"));
     }
 }

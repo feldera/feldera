@@ -29,6 +29,10 @@ import TabItem from '@theme/TabItem';
           `version` or `refresh_version`, nor triggers recompilation. These fields can
           therefore be edited at any state of a pipeline (e.g. while running).
 
+        - Iceberg input connectors now honor the table-level
+          `skip_unused_columns` property by projecting away safely omittable unused
+          columns before reading snapshots.
+
         ## v0.311.0
 
         - The default value of `max_output_buffer_size_records` is now 10,000,000
