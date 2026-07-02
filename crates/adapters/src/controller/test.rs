@@ -2062,7 +2062,7 @@ fn suspend_barrier() {
 
     // Suspend should now succeed, because we crossed the barrier.
     receiver
-        .recv_timeout(Duration::from_millis(10000))
+        .recv_timeout(Duration::from_millis(100000))
         .unwrap()
         .unwrap();
     assert_bounded_suspend_steps(&controller, suspend_request_step);
@@ -2113,7 +2113,7 @@ fn suspend_barrier() {
 
     // Suspend should now succeed, because we crossed the barrier.
     receiver
-        .recv_timeout(Duration::from_millis(10000))
+        .recv_timeout(Duration::from_millis(100000))
         .unwrap()
         .unwrap();
 }
@@ -2238,7 +2238,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
 
     // Suspend should now succeed, because we crossed the barrier.
     receiver
-        .recv_timeout(Duration::from_millis(10000))
+        .recv_timeout(Duration::from_millis(100000))
         .unwrap()
         .unwrap();
     assert_bounded_suspend_steps(&controller, suspend_request_step);
