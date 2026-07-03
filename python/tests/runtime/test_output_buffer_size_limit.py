@@ -13,7 +13,7 @@ time limit is configured.
 
 This test enables output buffering on a Delta Lake sink without setting a time
 limit, feeds it more than 10,000,000 records, and verifies that records are
-written out: the pipeline's completed-record count advances past the default
+written out: the sink's transmitted-record count advances past the default
 size cap.
 """
 
@@ -95,15 +95,21 @@ CREATE INDEX v_idx ON v(id);
 
     pipeline.start()
 
-    # The buffer flushes once it crosses the 10M default size cap, pushing
-    # those records through the Delta sink and advancing the completed count
-    # past the cap.  On timeout the test raises without stopping the pipeline,
-    # so it is left running on the persistent runtime instance for inspection.
+    # The buffer flushes once it grows past the 10M default size cap, pushing
+    # its contents through the Delta sink.  Poll the sink's transmitted-record
+    # count, which the endpoint updates after the Delta commit succeeds.
+    #
+    # Do not poll total_completed_records here: a flush triggered by a step
+    # whose transaction commit is still in progress credits only the
+    # previous commit boundary; the remaining
+    # tail never flushes because the default time cap is infinite, so
+    # the completed count would stay below the cap forever.
     wait_for_condition(
-        "completed-record count advances past the default buffer size cap",
-        lambda: (
-            (pipeline.stats().global_metrics.total_completed_records or 0)
+        "Delta sink transmits at least the default buffer size cap",
+        lambda: any(
+            (output.metrics.transmitted_records or 0)
             >= _DEFAULT_MAX_OUTPUT_BUFFER_SIZE_RECORDS
+            for output in pipeline.stats().outputs
         ),
         timeout_s=600.0,
         poll_interval_s=2.0,
