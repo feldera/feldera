@@ -30,15 +30,34 @@ import java.util.List;
 
 /**
  * Rule that converts MAX(CASE ... THEN 1 ELSE 0 END)
- * into COUNT(...) FILTER (WHERE ...)
- * Rewrite:
+ * or MAX(CASE ... THEN 1 ELSE NULL END) (equivalently, no ELSE clause)
+ * into COUNT(...) FILTER (WHERE ...).
+ *
+ * <p>Rewrite for ELSE 0:
+ * <pre>
  * LogicalAggregate(group=[{0}], [MAX($1)]
  *   LogicalProject([$0], $f1=[CASE(=(...), 1, 0)])
- * into
+ * </pre>
+ * becomes
+ * <pre>
  * LogicalProject([$0], [CASE(>($1, 0), 1, 0)])
  *   LogicalAggregate(group=[{0}], agg#0=[COUNT(*) FILTER $1])
  *     LogicalProject([$0], $f1=[IS TRUE(...)])
- * This works only if there is a GROUP BY.
+ * </pre>
+ *
+ * <p>Rewrite for ELSE NULL (or no ELSE):
+ * <pre>
+ * LogicalAggregate(group=[{0}], [MAX($1)]
+ *   LogicalProject([$0], $f1=[CASE(=(...), 1, null)])
+ * </pre>
+ * becomes
+ * <pre>
+ * LogicalProject([$0], [CASE(>($1, 0), 1, null)])
+ *   LogicalAggregate(group=[{0}], agg#0=[COUNT(*) FILTER $1])
+ *     LogicalProject([$0], $f1=[IS TRUE(...)])
+ * </pre>
+ *
+ * <p>This works only if there is a GROUP BY.
  */
 public class MaxCaseToCountRule
         extends RelRule<DefaultOptRuleConfig<MaxCaseToCountRule>>
@@ -66,16 +85,17 @@ public class MaxCaseToCountRule
         RelDataType bigInt = cluster.getTypeFactory().createSqlType(SqlTypeName.BIGINT);
         bigInt = cluster.getTypeFactory().createTypeWithNullability(bigInt, true);
 
-        RexLiteral one = rexBuilder.makeLiteral(BigDecimal.ONE, bigInt);
-        newProjects.add(one);
         for (int i = 0; i < aggregate.getGroupCount(); i++)
             // Preserve the keys in the postProjects
             postProjects.add(new RexInputRef(i, resultType.getFieldList().get(i).getType()));
 
+        final int groupCount = aggregate.getGroupCount();
         for (AggregateCall aggregateCall : aggregate.getAggCallList()) {
             AggregateCall newCall = transform(aggregateCall, project, newProjects, postProjects, bigInt);
             if (newCall == null) {
-                postProjects.add(rexBuilder.makeInputRef(aggregateCall.getType(), newAggregates.size()));
+                // Aggregate output: [group_keys (0..groupCount-1), agg_0, agg_1, ...]
+                postProjects.add(rexBuilder.makeInputRef(
+                        aggregateCall.getType(), groupCount + newAggregates.size()));
                 newAggregates.add(aggregateCall);
             } else {
                 newAggregates.add(newCall);
@@ -147,11 +167,17 @@ public class MaxCaseToCountRule
         if (op1Value == null)
             return null;
         Long op2Value = getLiteralValue(op2);
-        if (op2Value == null)
+        if (op2Value == null && !(op2 instanceof RexLiteral))
             return null;
+        boolean elseIsNull = op2Value == null;
 
-        boolean flip;
-        if (op1Value == 0L && op2Value == 1L) {
+        final boolean flip;
+        if (elseIsNull) {
+            // Only THEN 1 ELSE NULL is supported: MAX = 1 if any row matches, NULL otherwise.
+            if (op1Value != 1L)
+                return null;
+            flip = false;
+        } else if (op1Value == 0L && op2Value == 1L) {
             flip = true;
         } else if (op1Value == 1L && op2Value == 0L) {
             flip = false;
@@ -179,27 +205,26 @@ public class MaxCaseToCountRule
                 false, call.rexList, ImmutableList.of(), newProjects.size() - 1, null,
                 RelCollations.EMPTY, bigInt, call.getName());
 
-        // CASE(WHEN $1 IS NULL THEN NULL WHEN $1 = 0 THEN 0 ELSE 1 END)
-        RelDataType nullable =
-                cluster.getTypeFactory().createTypeWithNullability(op1.getType(), call.type.isNullable());
-        List<RexNode> postOperands = new ArrayList<>();
-        // WHEN $1 IS NULL
         RexInputRef ref = rexBuilder.makeInputRef(bigInt, postProjects.size());
-        RexNode isNull = rexBuilder.makeCall(pos, SqlStdOperatorTable.IS_NULL, ref);
-        postOperands.add(isNull);
-        // THEN NULL
-        RexLiteral nullLit = rexBuilder.makeNullLiteral(nullable);
-        postOperands.add(nullLit);
-        // WHEN $1 = 0
-        RexLiteral biggerZero = rexBuilder.makeLiteral(BigDecimal.ZERO, bigInt);
-        postOperands.add(rexBuilder.makeCall(pos, SqlStdOperatorTable.EQUALS, ref, biggerZero));
-        // THEN 0
-        RexNode zero = rexBuilder.makeLiteral(BigDecimal.ZERO, nullable, true);
-        postOperands.add(zero);
-        // ELSE one
-        RexNode one = rexBuilder.makeLiteral(BigDecimal.ONE, nullable, true);
-        postOperands.add(one);
-        final RexNode postCondition = rexBuilder.makeCall(pos, SqlStdOperatorTable.CASE, postOperands);
+        List<RexNode> postOperands = new ArrayList<>();
+        RelDataType nullable = cluster.getTypeFactory().createTypeWithNullability(
+                op1.getType(), call.type.isNullable());
+        RexLiteral zero = rexBuilder.makeLiteral(BigDecimal.ZERO, bigInt);
+        final RexNode postCondition;
+        if (elseIsNull) {
+            // CASE WHEN count > 0 THEN 1 ELSE NULL END
+            postOperands.add(rexBuilder.makeCall(pos, SqlStdOperatorTable.GREATER_THAN, ref, zero));
+            postOperands.add(rexBuilder.makeLiteral(BigDecimal.ONE, nullable, true));
+            postOperands.add(rexBuilder.makeNullLiteral(nullable));
+        } else {
+            // CASE WHEN count IS NULL THEN NULL WHEN count = 0 THEN 0 ELSE 1 END
+            postOperands.add(rexBuilder.makeCall(pos, SqlStdOperatorTable.IS_NULL, ref));
+            postOperands.add(rexBuilder.makeNullLiteral(nullable));
+            postOperands.add(rexBuilder.makeCall(pos, SqlStdOperatorTable.EQUALS, ref, zero));
+            postOperands.add(rexBuilder.makeLiteral(BigDecimal.ZERO, nullable, true));
+            postOperands.add(rexBuilder.makeLiteral(BigDecimal.ONE, nullable, true));
+        }
+        postCondition = rexBuilder.makeCall(pos, SqlStdOperatorTable.CASE, postOperands);
         postProjects.add(postCondition);
         return result;
     }
