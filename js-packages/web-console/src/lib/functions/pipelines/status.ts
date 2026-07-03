@@ -1,4 +1,5 @@
 import { match, P } from 'ts-pattern'
+import type { StorageStatus } from '$lib/services/manager'
 import type { ExtendedPipeline, PipelineStatus } from '$lib/services/pipelineManager'
 
 export const getPipelineStatusLabel = (status: PipelineStatus) => {
@@ -191,6 +192,26 @@ export const isPipelineShutdown = (status: PipelineStatus) => {
     .with('RustError', () => true)
     .with('SystemError', () => true)
     .exhaustive()
+}
+
+export const deletePipelineDisabledReason = (
+  status: PipelineStatus,
+  storageStatus: StorageStatus,
+  deleted: boolean
+): string | undefined => {
+  if (deleted) {
+    return 'This pipeline has already been deleted.'
+  }
+  if (!isPipelineShutdown(status)) {
+    return 'Stop the pipeline to delete it.'
+  }
+  if (storageStatus === 'Clearing') {
+    return 'Wait for storage to finish clearing to delete the pipeline.'
+  }
+  if (storageStatus !== 'Cleared') {
+    return 'Clear the pipeline storage to delete it.'
+  }
+  return undefined
 }
 
 export const isMetricsAvailable = (status: PipelineStatus) => {

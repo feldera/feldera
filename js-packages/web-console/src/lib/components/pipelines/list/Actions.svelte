@@ -62,7 +62,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
-  import { getDeploymentStatusLabel, isPipelineShutdown } from '$lib/functions/pipelines/status'
+  import {
+    deletePipelineDisabledReason,
+    getDeploymentStatusLabel,
+    isPipelineShutdown
+  } from '$lib/functions/pipelines/status'
   import { resolve } from '$lib/functions/svelte'
   import type { PipelineAction } from '$lib/services/pipelineManager'
   import type { Snippet } from '$lib/types/svelte'
@@ -110,6 +114,10 @@ groups related actions into multi-action dropdowns when multiple options are ava
     await goto(resolve(`/pipelines/${encodeURIComponent(newPipeline.name)}/`))
   }
   const { toastError } = useToast()
+
+  // An already-deleted pipeline offers no Delete action; otherwise the backend
+  // dictates when deletion is possible (fully stopped, storage cleared).
+  const deleteDisabledReason = $derived(deletePipelineDisabledReason(pipeline.current.status, pipeline.current.storageStatus, deleted))
 
   const actions = {
     _start,
@@ -673,9 +681,8 @@ groups related actions into multi-action dropdowns when multiple options are ava
         class="bg-white-dark absolute right-0 z-30 mt-2 flex w-44 flex-col justify-stretch rounded shadow-md"
       >
         <button
-          class="flex items-center gap-2 px-4 py-3 text-left hover:bg-surface-50-950 disabled:pointer-events-none disabled:opacity-50"
+          class="flex items-center gap-2 px-4 py-3 text-left hover:bg-surface-50-950 disabled:opacity-50"
           disabled={!pipelineList.pipelines || unsavedChanges}
-          title={unsavedChanges ? 'Save the program before duplicating.' : duplicatePipelineTooltip}
           onclick={() => {
             close()
             void duplicateCurrentPipeline()
@@ -684,10 +691,16 @@ groups related actions into multi-action dropdowns when multiple options are ava
           <span class="fd fd-copy-plus text-[20px]"></span>
           Duplicate
         </button>
+        <Tooltip placement="top">
+          {#if unsavedChanges}
+            Save the program before duplicating.
+          {:else}
+            {duplicatePipelineTooltip}
+          {/if}
+        </Tooltip>
         <button
-          class="flex items-center gap-2 px-4 py-3 text-left hover:bg-surface-50-950 disabled:pointer-events-none disabled:opacity-50"
-          disabled={editConfigDisabled}
-          title={editConfigDisabled ? 'Stop the pipeline to delete it' : undefined}
+          class="flex items-center gap-2 px-4 py-3 text-left hover:bg-surface-50-950 disabled:opacity-50"
+          disabled={!!deleteDisabledReason}
           onclick={() => {
             close()
             globalDialog.dialog = deleteDialog
@@ -696,6 +709,9 @@ groups related actions into multi-action dropdowns when multiple options are ava
           <span class="fd fd-trash-2 text-[20px]"></span>
           Delete
         </button>
+        {#if deleteDisabledReason}
+          <Tooltip class="whitespace-nowrap" placement="top">{deleteDisabledReason}</Tooltip>
+        {/if}
       </div>
     {/snippet}
   </Popup>

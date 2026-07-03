@@ -1,5 +1,6 @@
 /**
- * Mouse interaction tests for column sorting in the pipelines `Table`.
+ * Tests for the pipelines `Table`: the left-to-right column order and mouse
+ * interaction with column sorting.
  *
  * The real pipelines `Table` is mounted with a handful of pipeline thumbs whose name order
  * and "status changed" order deliberately disagree, so every assertion about row
@@ -76,6 +77,14 @@ const rowOrder = () =>
 const header = (label: string) => page.getByText(label, { exact: true })
 const headerCell = (label: string) => header(label).element().closest('th')!
 
+// The visible column order, read left to right off the header row. Each cell's
+// text is whitespace-collapsed so responsive label variants (e.g. the short and
+// long "Runtime errors" spans, both present in the DOM) compare deterministically.
+const columnHeaders = () =>
+  Array.from(document.querySelectorAll('thead th')).map((th) =>
+    th.textContent!.replace(/\s+/g, ' ').trim()
+  )
+
 const persistedSort = () => JSON.parse(localStorage.getItem(SORT_KEY)!)
 
 const mountTable = () => render(Table, { props: { pipelines, selectedPipelines: [] } } as any)
@@ -149,5 +158,41 @@ describe('Table — column sorting', () => {
 
     await expect.poll(rowOrder).toEqual(['delta', 'charlie', 'bravo', 'alpha'])
     expect(headerCell('Pipeline name').classList.contains('active')).toBe(true)
+  })
+})
+
+describe('Table — column order', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
+  })
+
+  afterEach(async () => {
+    // See the sorting suite's afterEach: wait out @vincjo/datatables' 2 ms
+    // scroll-restore timer so it fires while the component is still mounted.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    localStorage.clear()
+  })
+
+  it('renders the columns left to right in the expected order', async () => {
+    mountTable()
+
+    // The leading cell is the select-all checkbox and carries no label. "Runtime
+    // errors" holds both the short ("Errors") and long ("Runtime errors") span,
+    // so its collapsed text is the concatenation of the two.
+    await expect
+      .poll(columnHeaders)
+      .toEqual([
+        '',
+        'Pipeline name',
+        'Storage',
+        'Status',
+        'Message',
+        'Tags',
+        'Runtime version',
+        'Errors Runtime errors',
+        'Status changed',
+        'Deployed on'
+      ])
   })
 })

@@ -3,7 +3,7 @@ import type { PipelineThumb } from '$lib/services/pipelineManager'
 import type { useUpdatePipelineList } from './pipelines/usePipelineList.svelte'
 
 export const duplicatePipelineTooltip =
-  'Pipeline storage and state are not duplicated. The new pipeline starts fresh.'
+  'The connectors are preserved. Pipeline storage and state are not copied - the new pipeline starts fresh.'
 
 export const MAX_DUPLICATE_ATTEMPTS = 10_000
 

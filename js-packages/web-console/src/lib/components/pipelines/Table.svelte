@@ -175,7 +175,12 @@
           <th class="px-1 py-1 text-left"
             ><span class="text-base font-normal text-surface-950-50">Tags</span></th
           >
-          <ThSort {table} class="w-20 px-1 py-1 xl:w-32" field="platformVersion">
+          <ThSort
+            {table}
+            class="w-20 px-1 py-1 xl:w-32"
+            field="platformVersion"
+            {...sortColumn('platformVersion')}
+          >
             <span class="text-base font-normal text-surface-950-50">
               Runtime <span class="hidden xl:!inline">version</span>
             </span>
@@ -189,16 +194,6 @@
             <span class="text-base font-normal text-surface-950-50">
               <span class="inline xl:hidden">Errors</span>
               <span class="hidden xl:!inline">Runtime errors</span>
-            </span>
-          </ThSort>
-          <ThSort
-            {table}
-            class="w-20 px-1 py-1 xl:w-32"
-            field="platformVersion"
-            {...sortColumn('platformVersion')}
-          >
-            <span class="text-base font-normal text-surface-950-50">
-              Runtime <span class="hidden xl:!inline">version</span>
             </span>
           </ThSort>
           <ThSort
