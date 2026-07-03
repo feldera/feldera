@@ -250,8 +250,16 @@ where
     ///
     /// The closure `f` receives a vector of `arity` recursive input streams and
     /// must return a vector of exactly `arity` output streams, one per recursive
-    /// relation.  Returning a vector of a different length panics in debug
-    /// builds and produces an incorrect circuit otherwise.
+    /// relation.
+    ///
+    /// Similar to [`recursive`](ChildCircuit::recursive), the underlying
+    /// circuit also applies an implicit distinct to the output of each
+    /// recursive step.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the returned vector from the closure parameter has a different
+    /// length than the `arity` parameter.
     ///
     /// # Examples
     ///
@@ -295,7 +303,7 @@ where
     ///     //  ------ |5| <-----
     ///     vec![Tup2(Tup2(2, 5), 1), Tup2(Tup2(5, 0), 1)],
     ///     // And we introduce an odd-length cycle, rendering the graph
-    ///     // non-biparite anymore (all nodes are red _and_ blue):
+    ///     // non-bipartite anymore (all nodes are red _and_ blue):
     ///     // |0| --> |1| --> |2| --> |3| --> |4|
     ///     //  ^               |               |
     ///     //  |               |               |
@@ -339,7 +347,7 @@ where
     ///         let (edges, edges_input) = root_circuit.add_input_zset::<Edge>();
     ///         let (init, init_input) = root_circuit.add_input_zset::<Node>();
     ///
-    ///         let recursive_streams = root_circuit.recursive_variadic(
+    ///         let recursive_streams = root_circuit.recursive_dynamic(
     ///             2,
     ///             |child_circuit, mut recursive_streams: Vec<Stream<NestedCircuit, OrdZSet<usize>>>| {
     ///                 // delta0 fires only at inner step 0, injecting the base case exactly once.
@@ -388,7 +396,7 @@ where
     /// Ok::<(), DbspError>(())
     /// ```
     #[track_caller]
-    pub fn recursive_variadic<F, K, V, B>(
+    pub fn recursive_dynamic<F, K, V, B>(
         &self,
         arity: usize,
         f: F,

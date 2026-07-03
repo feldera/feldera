@@ -128,21 +128,21 @@ where
     }
 
     fn distinct(mut self, factories: &Self::Factories) -> Self {
-        debug_assert_eq!(self.len(), factories.len());
+        assert_eq!(self.len(), factories.len());
 
         for (stream, factory) in self.iter_mut().zip(factories) {
             let persistent_id = stream
                 .get_persistent_id()
                 .map(|name| format!("{name}.distinct"));
             *stream =
-                Stream::dyn_distinct(&stream, factory).set_persistent_id(persistent_id.as_deref());
+                Stream::dyn_distinct(stream, factory).set_persistent_id(persistent_id.as_deref());
         }
 
         self
     }
 
     fn connect(&self, vars: Self::Feedback) {
-        debug_assert_eq!(self.len(), vars.len());
+        assert_eq!(self.len(), vars.len());
 
         for (stream, var) in self.iter().zip(vars) {
             var.connect(stream);
@@ -150,7 +150,7 @@ where
     }
 
     fn export(self, factories: &Self::Factories) -> Self::Export {
-        debug_assert_eq!(self.len(), factories.len());
+        assert_eq!(self.len(), factories.len());
 
         self.into_iter()
             .zip(factories)
@@ -161,7 +161,7 @@ where
     }
 
     fn consolidate(exports: Self::Export, factories: &Self::Factories) -> Self::Output {
-        debug_assert_eq!(exports.len(), factories.len());
+        assert_eq!(exports.len(), factories.len());
 
         exports
             .into_iter()
@@ -372,6 +372,7 @@ mod test {
 
     mod reachability {
         use super::*;
+        use crate::FallbackZSet;
 
         type Edge = Tup2<usize, usize>;
 
@@ -453,11 +454,13 @@ mod test {
             }
         }
 
-        /// The `Vec` counterpart of [`reachability()`]: a single recursive relation
-        /// supplied as a one-element vector (arity 1).  It must produce exactly the
-        /// same output as the single-`Stream` implementation.
+        /// A rewrite of [`reachability()`] using
+        /// [`recursive_dynamic`](crate::ChildCircuit::recursive_dynamic):
+        /// A single recursive relation supplied as a one-element vector
+        /// (arity 1).  It must produce exactly the same output as the
+        /// single-`Stream` implementation.
         #[test]
-        fn reachability_variadic() {
+        fn reachability_dynamic() {
             let edges_data = edges_data();
             let steps = edges_data.len();
             let mut edges = edges_data.into_iter();
@@ -467,7 +470,7 @@ mod test {
                 let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
 
                 let mut recursive_streams = circuit
-                    .recursive_variadic(
+                    .recursive_dynamic(
                         1,
                         |child, mut recursive_streams: Vec<Stream<_, OrdZSet<Edge>>>| {
                             let edges = edges.delta0(child);
@@ -522,8 +525,8 @@ mod test {
                     .recursive(
                         |child,
                          (reachable, reachable_reverse): (
-                            Stream<_, OrdZSet<Edge>>,
-                            Stream<_, OrdZSet<Edge>>,
+                            Stream<_, FallbackZSet<Edge>>,
+                            Stream<_, FallbackZSet<Edge>>,
                         )| {
                             let edges = edges.delta0(child);
 
@@ -572,11 +575,13 @@ mod test {
             }
         }
 
-        /// The `Vec` counterpart of [`reachability2()`]: forward and backward
-        /// reachability as two recursive relations supplied as a two-element
-        /// vector (arity 2).  It must match the tuple implementation.
+        /// A rewrite of [`reachability2()`] using
+        /// [`recursive_dynamic`](crate::ChildCircuit::recursive_dynamic):
+        /// Forward and backward reachability as two recursive relations
+        /// supplied as a two-element vector (arity 2).  It must match the
+        /// tuple implementation.
         #[test]
-        fn reachability2_variadic() {
+        fn reachability2_dynamic() {
             let edges_data = edges_data();
             let steps = edges_data.len();
             let mut edges = edges_data.into_iter();
@@ -589,7 +594,7 @@ mod test {
                 let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
 
                 let mut recursive_streams = circuit
-                    .recursive_variadic(
+                    .recursive_dynamic(
                         2,
                         |child, mut recursive_streams: Vec<Stream<_, OrdZSet<Edge>>>| {
                             let edges = edges.delta0(child);
