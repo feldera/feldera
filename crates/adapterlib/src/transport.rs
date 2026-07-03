@@ -77,10 +77,7 @@ pub trait TransportInputEndpoint: InputEndpoint {
 
 /// Factory for creating input transport endpoints from transport configuration.
 pub trait InputTransportEndpointFactory: Send + Sync {
-    fn create(
-        &self,
-        config: &TransportConfig,
-    ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>>;
+    fn create(&self, config: &TransportConfig) -> AnyResult<Box<dyn TransportInputEndpoint>>;
 }
 
 /// Registry of input transport endpoint factories keyed by transport name.
@@ -115,7 +112,7 @@ impl InputTransportRegistry {
         let Some(factory) = self.get(config.name().as_str()) else {
             return Ok(None);
         };
-        factory.create(config)
+        factory.create(config).map(Some)
     }
 }
 
@@ -1145,7 +1142,7 @@ pub trait OutputTransportEndpointFactory: Send + Sync {
         config: &TransportConfig,
         endpoint_name: &str,
         fault_tolerant: bool,
-    ) -> AnyResult<Option<Box<dyn OutputEndpoint>>>;
+    ) -> AnyResult<Box<dyn OutputEndpoint>>;
 }
 
 /// Registry of output transport endpoint factories keyed by transport name.
@@ -1182,7 +1179,9 @@ impl OutputTransportRegistry {
         let Some(factory) = self.get(config.name().as_str()) else {
             return Ok(None);
         };
-        factory.create(config, endpoint_name, fault_tolerant)
+        factory
+            .create(config, endpoint_name, fault_tolerant)
+            .map(Some)
     }
 }
 
