@@ -757,7 +757,12 @@ impl InputConsumer for DummyInputConsumer {
 
     fn error(&self, fatal: bool, error: AnyError, _tag: Option<&'static str>) {
         info!("error: {error}");
-        self.called(ConsumerCall::Error(fatal));
+        // Record only fatal errors. Non-fatal errors, such as a momentary
+        // broker disconnection, can arrive at any time, and recording them
+        // would break the strict call sequence that `expect()` checks.
+        if fatal {
+            self.called(ConsumerCall::Error(fatal));
+        }
     }
 
     fn request_step(&self) {}
