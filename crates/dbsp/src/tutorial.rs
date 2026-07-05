@@ -2021,8 +2021,8 @@
 //! We have two execution contexts: a [root circuit](`RootCircuit`)
 //! and a [child circuit](`crate::NestedCircuit`).
 //! The root circuit is the one that is built by the parameter to the
-//! [`Runtime::init_circuit`] function. The child circuit is defined by the parameter to
-//! the [`ChildCircuit<()>::recursive`](`crate::ChildCircuit::recursive`) function.
+//! [`Runtime::init_circuit`] function. The child circuit is defined by the
+//! parameter to the [`ChildCircuit::recursive`] function.
 //! We also make use of the [`delta0`](`crate::operator::Delta0`) operator to
 //! import streams from a parent circuit into a child circuit.
 //! Finally, we pick up the [incremental computation](#incremental-computation)
@@ -2169,9 +2169,8 @@
 //!
 //! To fix this issue, we have to change the code to stop iterating once the
 //! shortest path for each pair of nodes has been discovered. One approach to
-//! achieve this is to group by each pair and use the
-//! [`Min`](`crate::operator::dynamic::aggregate::Min`) aggregation operator
-//! to only retain the shortest path for each pair.
+//! achieve this is to group by each pair and use the [`aggregate::Min`]
+//! aggregation operator to only retain the shortest path for each pair.
 //! Aggregation requires to index the stream, so there are more code changes
 //! required than shown here. You can find the full code in `tutorial11.rs` but
 //! the important changes take place within the child circuit:
@@ -2292,7 +2291,7 @@
 //! The examples on the transitive closure above demonstrate how to express
 //! self-recursive queries. DBSP also supports _mutually_-recursive queries.
 //! As this is a little bit more involved than what would fit in here, we defer
-//! the interested reader to the example given in `tutorial12` which
+//! the interested reader to the example given in `tutorial12.rs` which
 //! demonstrates mutual recursion in the domain of static program analysis.
 //!
 //! # Next steps
@@ -2315,8 +2314,8 @@
 //! let (mut circuit, (/*handles*/)) = Runtime::init_circuit(4, build_circuit)?;
 //! ```
 use crate::{
-    CircuitHandle, IndexedZSet, OrdPartitionedIndexedZSet, OutputHandle, RootCircuit, Runtime,
-    Stream, ZSet, ZSetHandle,
-    operator::{Aggregator, Max},
+    ChildCircuit, CircuitHandle, IndexedZSet, OrdPartitionedIndexedZSet, OutputHandle, RootCircuit,
+    Runtime, Stream, ZSet, ZSetHandle,
+    operator::{Aggregator, Max, dynamic::aggregate},
     utils::{Tup0, Tup1, Tup10},
 };

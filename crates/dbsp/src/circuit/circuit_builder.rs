@@ -1960,6 +1960,18 @@ pub trait CircuitBase: 'static {
         self.get_node_label(id, LABEL_PERSISTENT_OPERATOR_ID)
     }
 
+    /// Returns `true` if every operator in scope `scope` has reached a fixed
+    /// point, i.e., a state in which its output stays constant as long as its
+    /// input does.
+    ///
+    /// This is the same condition [`fixedpoint`](Circuit::fixedpoint) uses to stop
+    /// iterating.  Unlike an emptiness test on an output stream, it accounts for
+    /// state still buffered inside operators (for example, results a join has
+    /// precomputed for future nested timestamps).  Custom iteration built on
+    /// [`iterate`](Circuit::iterate) can call this from its termination check to
+    /// detect convergence, typically combining the per-worker results across
+    /// workers via [`Consensus`]. See the documentation of [`Scope`] for the
+    /// meaning of the parameter but passing `0` refers to the current circuit.
     fn check_fixedpoint(&self, scope: Scope) -> bool;
 
     /// Return the metadata exchange object associated with the circuit.

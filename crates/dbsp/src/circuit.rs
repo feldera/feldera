@@ -47,8 +47,8 @@ pub use dbsp_handle::{
     splitter_output_first_chunk_size,
 };
 pub use runtime::{
-    Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle, WeakRuntime,
-    WorkerLocation, WorkerLocations,
+    Consensus, Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle,
+    WeakRuntime, WorkerLocation, WorkerLocations,
 };
 
 pub use schedule::Error as SchedulerError;

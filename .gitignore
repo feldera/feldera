@@ -102,3 +102,7 @@ playwright/.cache/
 .devcontainer/devcontainer-lock.json
 js-packages/support-bundle-triage/
 .roc-check/
+
+# Local dev configs
+.envrc
+.direnv
