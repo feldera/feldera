@@ -1,7 +1,6 @@
 use crate::iceberg_input_serde_config;
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use chrono::{DateTime, Utc};
-use datafusion::common::DFSchema;
 use datafusion::prelude::{DataFrame, SQLOptions, SessionContext};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
@@ -19,7 +18,7 @@ use feldera_adapterlib::{
     PipelineState,
 };
 use feldera_types::{
-    config::{ConnectorProjection, FtModel, PipelineConfig},
+    config::{FtModel, PipelineConfig},
     program_schema::Relation,
     transport::iceberg::{IcebergCatalogType, IcebergReaderConfig},
 };
@@ -57,10 +56,6 @@ fn storage_factory() -> Arc<dyn StorageFactory> {
     Arc::new(OpenDalResolvingStorageFactory::new())
 }
 
-fn quote_sql_identifier<S: AsRef<str>>(ident: S) -> String {
-    format!("\"{}\"", ident.as_ref().replace("\"", "\"\""))
-}
-
 enum SnapshotDescr {
     /// Open the latest snapshot (default)
     Latest,
@@ -79,7 +74,6 @@ impl IcebergInputEndpoint {
     pub fn new(
         endpoint_name: &str,
         config: &IcebergReaderConfig,
-        projection: Option<ConnectorProjection>,
         pipeline_config: &PipelineConfig,
         runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
         consumer: Box<dyn InputConsumer>,
@@ -88,7 +82,6 @@ impl IcebergInputEndpoint {
             inner: Arc::new(IcebergInputEndpointInner::new(
                 endpoint_name,
                 config.clone(),
-                projection,
                 pipeline_config,
                 runtime_env,
                 consumer,
@@ -197,7 +190,6 @@ impl Drop for IcebergInputReader {
 struct IcebergInputEndpointInner {
     endpoint_name: String,
     config: IcebergReaderConfig,
-    projection: Option<ConnectorProjection>,
     consumer: Box<dyn InputConsumer>,
     datafusion: SessionContext,
     queue: InputQueue,
@@ -207,7 +199,6 @@ impl IcebergInputEndpointInner {
     fn new(
         endpoint_name: &str,
         config: IcebergReaderConfig,
-        projection: Option<ConnectorProjection>,
         pipeline_config: &PipelineConfig,
         runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
         consumer: Box<dyn InputConsumer>,
@@ -220,7 +211,6 @@ impl IcebergInputEndpointInner {
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
-            projection,
             consumer,
             datafusion,
             queue,
@@ -300,39 +290,7 @@ impl IcebergInputEndpointInner {
         }
     }
 
-    async fn projection_column_list(&self) -> AnyResult<String> {
-        let Some(projection) = &self.projection else {
-            return Ok("*".to_string());
-        };
-
-        let snapshot = self.datafusion.table("snapshot").await.map_err(|e| {
-            anyhow!("internal error accessing registered Iceberg snapshot table: {e}")
-        })?;
-        Self::projection_column_list_from_schema(projection, snapshot.schema())
-    }
-
-    fn projection_column_list_from_schema(
-        projection: &ConnectorProjection,
-        schema: &DFSchema,
-    ) -> AnyResult<String> {
-        let fields = schema.as_arrow().fields();
-        projection
-            .columns
-            .iter()
-            .map(|column| {
-                if let Some(field) = fields.iter().find(|field| field.name() == column) {
-                    return Ok(quote_sql_identifier(field.name()));
-                }
-
-                Err(anyhow!(
-                    "projection references column '{column}', but the Iceberg table snapshot does not contain a matching field"
-                ))
-            })
-            .collect::<AnyResult<Vec<_>>>()
-            .map(|columns| columns.join(", "))
-    }
-
-    /// Load the entire table snapshot as a single "select <columns> where <filter>" query.
+    /// Load the entire table snapshot as a single "select * where <filter>" query.
     async fn read_unordered_snapshot(
         &self,
         input_stream: &mut dyn ArrowStream,
@@ -342,14 +300,7 @@ impl IcebergInputEndpointInner {
         // Execute the snapshot query; push snapshot data to the circuit.
         info!("iceberg {}: reading initial snapshot", &self.endpoint_name,);
 
-        let column_names = match self.projection_column_list().await {
-            Ok(column_names) => column_names,
-            Err(e) => {
-                self.consumer.error(true, e, None);
-                return;
-            }
-        };
-        let mut snapshot_query = format!("select {column_names} from snapshot");
+        let mut snapshot_query = "select * from snapshot".to_string();
         if let Some(filter) = &self.config.snapshot_filter {
             snapshot_query = format!("{snapshot_query} where {filter}");
         }
@@ -459,9 +410,8 @@ impl IcebergInputEndpointInner {
             let end = timestamp_to_sql_expression(&timestamp_field.columntype, &end);
 
             // Query the table for the range.
-            let column_names = self.projection_column_list().await?;
             let mut range_query = format!(
-                "select {column_names} from snapshot where {timestamp_column} >= {start} and {timestamp_column} < {end}"
+                "select * from snapshot where {timestamp_column} >= {start} and {timestamp_column} < {end}"
             );
             if let Some(filter) = &self.config.snapshot_filter {
                 range_query = format!("{range_query} and {filter}");
@@ -956,79 +906,10 @@ async fn wait_running(receiver: &mut Receiver<PipelineState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use datafusion::arrow::datatypes::{DataType, Field as ArrowField, Schema};
-    use feldera_types::config::ConnectorProjection;
 
     #[test]
     fn storage_factory_constructs() {
         // Smoke test; scheme dispatch is covered upstream in iceberg-rust.
         let _factory = storage_factory();
-    }
-
-    fn projection(columns: &[&str]) -> ConnectorProjection {
-        ConnectorProjection {
-            columns: columns.iter().map(|column| column.to_string()).collect(),
-            derived: false,
-        }
-    }
-
-    fn datafusion_schema(columns: &[&str]) -> DFSchema {
-        DFSchema::try_from(Schema::new(
-            columns
-                .iter()
-                .map(|column| ArrowField::new(*column, DataType::Int64, true))
-                .collect::<Vec<_>>(),
-        ))
-        .unwrap()
-    }
-
-    #[test]
-    fn projection_column_list_quotes_physical_projected_columns() {
-        let projection = projection(&["id", "user name", "quoted\"column"]);
-        let schema = datafusion_schema(&["id", "user name", "quoted\"column"]);
-
-        assert_eq!(
-            IcebergInputEndpointInner::projection_column_list_from_schema(&projection, &schema)
-                .unwrap(),
-            "\"id\", \"user name\", \"quoted\"\"column\""
-        );
-    }
-
-    #[test]
-    fn projection_column_list_rejects_case_mismatched_columns() {
-        let projection = projection(&["id", "mixed_case"]);
-        let schema = datafusion_schema(&["ID", "Mixed_Case"]);
-
-        let err =
-            IcebergInputEndpointInner::projection_column_list_from_schema(&projection, &schema)
-                .unwrap_err()
-                .to_string();
-
-        assert!(err.contains("does not contain a matching field"));
-    }
-
-    #[test]
-    fn projection_column_list_prefers_exact_case_match() {
-        let projection = projection(&["id"]);
-        let schema = datafusion_schema(&["ID", "id"]);
-
-        assert_eq!(
-            IcebergInputEndpointInner::projection_column_list_from_schema(&projection, &schema)
-                .unwrap(),
-            "\"id\""
-        );
-    }
-
-    #[test]
-    fn projection_column_list_rejects_non_exact_case_even_with_unique_folded_match() {
-        let projection = projection(&["Id"]);
-        let schema = datafusion_schema(&["ID"]);
-
-        let err =
-            IcebergInputEndpointInner::projection_column_list_from_schema(&projection, &schema)
-                .unwrap_err()
-                .to_string();
-
-        assert!(err.contains("does not contain a matching field"));
     }
 }

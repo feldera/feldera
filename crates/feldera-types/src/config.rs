@@ -1986,10 +1986,7 @@ impl TransportConfig {
 
     pub fn input_pushdown_capabilities(&self) -> ConnectorPushdownCapabilities {
         ConnectorPushdownCapabilities {
-            projection: matches!(
-                self,
-                TransportConfig::DeltaTableInput(_) | TransportConfig::IcebergInput(_)
-            ),
+            projection: matches!(self, TransportConfig::DeltaTableInput(_)),
         }
     }
 }

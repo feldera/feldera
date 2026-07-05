@@ -130,7 +130,6 @@ pub fn create_integrated_input_endpoint(
             Box::new(feldera_iceberg::IcebergInputEndpoint::new(
                 endpoint_name,
                 transport_config,
-                config.projection.clone(),
                 pipeline_config,
                 runtime_env,
                 consumer,

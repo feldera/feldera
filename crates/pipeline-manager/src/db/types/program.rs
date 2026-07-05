@@ -1046,7 +1046,7 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_projection_pushdown_for_iceberg_input() {
+    fn test_projection_pushdown_not_generated_for_iceberg_input() {
         let schema = schema_with_connector(serde_json::json!({
             "name": "iceberg",
             "transport": {
@@ -1066,11 +1066,7 @@ mod tests {
             .unwrap()
             .connector_config;
 
-        assert_eq!(
-            connector.projection.as_ref().unwrap().columns,
-            vec!["used".to_string(), "unused_required".to_string()]
-        );
-        assert!(connector.projection.as_ref().unwrap().derived);
+        assert!(connector.projection.is_none());
     }
 
     #[test]
