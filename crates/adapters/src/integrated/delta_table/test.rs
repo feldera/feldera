@@ -2426,6 +2426,90 @@ async fn delta_table_cdc_skip_unused_columns_catchup_suspend_test() {
     .await;
 }
 
+/// Projection must not drop columns referenced by existing Delta connector
+/// expressions. The compiler projection omits `unused` because it is nullable
+/// and marked unused in the SQL schema, but the Delta connector must still read
+/// it when a connector expression references it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_projection_preserves_connector_expression_columns_test() {
+    init_logging();
+
+    let relation_schema = DeltaTestStruct::schema();
+    let arrow_fields = relation_to_arrow_fields(&relation_schema, true);
+    let arrow_schema = Arc::new(ArrowSchema::new(arrow_fields));
+    let struct_fields = arrow_schema
+        .fields
+        .iter()
+        .map(|field| {
+            StructField::new(
+                field.name(),
+                DataType::try_from_arrow(field.data_type()).unwrap(),
+                field.is_nullable(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let input_table_dir = TempDir::new().unwrap();
+    let input_table_uri = input_table_dir.path().display().to_string();
+    let output_table_dir = TempDir::new().unwrap();
+    let output_table_uri = output_table_dir.path().display().to_string();
+    let storage_dir = TempDir::new().unwrap();
+
+    let input_table = create_table(&input_table_uri, &HashMap::new(), &struct_fields).await;
+    let mut keep = delta_test_record(0);
+    keep.unused = Some("keep".to_string());
+    let mut discard = delta_test_record(2);
+    discard.unused = Some("drop".to_string());
+    write_data_to_table(input_table, &arrow_schema, &[keep.clone(), discard]).await;
+
+    let input_config: HashMap<String, Value> = HashMap::from([
+        ("mode".to_string(), "snapshot".into()),
+        ("filter".to_string(), "unused = 'keep'".into()),
+    ]);
+
+    let pipeline = {
+        let input_table_uri = input_table_uri.clone();
+        let output_table_uri = output_table_uri.clone();
+        let storage_dir = storage_dir.path().to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            delta_to_delta_pipeline::<DeltaTestStruct>(
+                &input_table_uri,
+                true,
+                &input_config,
+                &output_table_uri,
+                &HashMap::new(),
+                1000,
+                100,
+                &storage_dir,
+                false,
+            )
+        })
+        .await
+        .unwrap()
+    };
+
+    pipeline.start();
+
+    let datafusion = SessionContext::new();
+    let mut output_table = Arc::new(
+        DeltaTableBuilder::from_url(ensure_table_uri(&output_table_uri).unwrap())
+            .unwrap()
+            .load()
+            .await
+            .unwrap(),
+    );
+    wait_for_output_records(
+        &mut output_table,
+        std::slice::from_ref(&keep),
+        &datafusion,
+        60_000,
+        false,
+    )
+    .await;
+
+    pipeline.stop().unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_cdc_file_catchup_test() {
     let mut runner = TestRunner::default();
