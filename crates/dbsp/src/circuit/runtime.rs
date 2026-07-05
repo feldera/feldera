@@ -1367,9 +1367,27 @@ impl Runtime {
     }
 }
 
-/// A synchronization primitive that allows multiple threads within a runtime to agree
-/// when a condition is satisfied.
-pub(crate) struct Consensus(Broadcast<bool>);
+/// A synchronization primitive that allows multiple threads within a runtime to
+/// agree when a condition is satisfied.
+///
+/// Each worker submits a local vote via [`check`](Self::check); the call
+/// returns `true` only when every worker in the runtime votes `true`.  It is
+/// the building block for combining per-worker termination decisions (for
+/// example, per-worker fixed-point status) into a single, runtime-wide
+/// decision when driving a nested circuit built on
+/// [`Circuit::iterate`](super::circuit_builder::Circuit::iterate).
+///
+/// # Correctness
+///
+/// Callers must respect the following invariants:
+///
+/// 1. Every worker must call [`check`](Self::check) the same number of times
+///    and in the same order relative to other ongoing `Consensus` in the same
+///    subcircuit. A worker that skips a call to [`check`](Self::check) will
+///    stop its peers from making progress.
+/// 2. [`Consensus`] must be constructed once per logical decision and reused
+///    across clock ticks.
+pub struct Consensus(Broadcast<bool>);
 
 impl Consensus {
     pub fn new(name: impl Display) -> Self {
