@@ -1985,6 +1985,9 @@ impl TransportConfig {
     }
 
     pub fn input_pushdown_capabilities(&self) -> ConnectorPushdownCapabilities {
+        // This is currently a transport-level capability table because projection
+        // pushdown is implemented only for Delta input. Future connectors should
+        // expose capabilities through a connector-specific capability object.
         ConnectorPushdownCapabilities {
             projection: matches!(self, TransportConfig::DeltaTableInput(_)),
         }
