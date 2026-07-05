@@ -29,9 +29,9 @@ import TabItem from '@theme/TabItem';
           `version` or `refresh_version`, nor triggers recompilation. These fields can
           therefore be edited at any state of a pipeline (e.g. while running).
 
-        - Iceberg input connectors now honor the table-level
-          `skip_unused_columns` property by projecting away safely omittable unused
-          columns before reading snapshots.
+        - Delta Lake input connectors now support compiler-derived projection
+          pushdown from table-level `skip_unused_columns`, using the standard
+          `projection.include` connector configuration.
 
         ## v0.311.0
 
