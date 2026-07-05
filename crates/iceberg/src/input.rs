@@ -294,7 +294,6 @@ impl IcebergInputEndpointInner {
     async fn read_unordered_snapshot(
         &self,
         input_stream: &mut dyn ArrowStream,
-        schema: &Relation,
         receiver: &mut Receiver<PipelineState>,
     ) {
         // Execute the snapshot query; push snapshot data to the circuit.
@@ -340,14 +339,13 @@ impl IcebergInputEndpointInner {
         let lateness = timestamp_field.lateness.as_ref().unwrap();
 
         // Query the table for min and max values of the timestamp column that satisfy the filter.
-        let bounds_query = format!(
-            "select * from (select cast(min({timestamp_column}) as string) as start_ts, cast(max({timestamp_column}) as string) as end_ts from snapshot {}) where start_ts is not null",
+        let bounds_query =
+            format!("select * from (select cast(min({timestamp_column}) as string) as start_ts, cast(max({timestamp_column}) as string) as end_ts from snapshot {}) where start_ts is not null",
             if let Some(filter) = &self.config.snapshot_filter {
                 format!("where {filter}")
             } else {
                 String::new()
-            }
-        );
+            });
 
         let bounds = execute_query_collect(&self.datafusion, &bounds_query).await?;
 
@@ -372,9 +370,9 @@ impl IcebergInputEndpointInner {
         if bounds[0].num_columns() != 2 {
             // Should never happen.
             return Err(anyhow!(
-                "internal error: query '{bounds_query}' returned a result with {} columns; expected 2 columns",
-                bounds[0].num_columns()
-            ));
+                    "internal error: query '{bounds_query}' returned a result with {} columns; expected 2 columns",
+                    bounds[0].num_columns()
+                ));
         }
 
         let min = array_to_string(bounds[0].column(0)).ok_or_else(|| {
@@ -410,9 +408,8 @@ impl IcebergInputEndpointInner {
             let end = timestamp_to_sql_expression(&timestamp_field.columntype, &end);
 
             // Query the table for the range.
-            let mut range_query = format!(
-                "select * from snapshot where {timestamp_column} >= {start} and {timestamp_column} < {end}"
-            );
+            let mut range_query =
+                format!("select * from snapshot where {timestamp_column} >= {start} and {timestamp_column} < {end}");
             if let Some(filter) = &self.config.snapshot_filter {
                 range_query = format!("{range_query} and {filter}");
             }
@@ -461,7 +458,7 @@ impl IcebergInputEndpointInner {
 
         if self.config.snapshot() && self.config.timestamp_column.is_none() {
             // Read snapshot chunk-by-chunk.
-            self.read_unordered_snapshot(input_stream.as_mut(), &schema, &mut receiver)
+            self.read_unordered_snapshot(input_stream.as_mut(), &mut receiver)
                 .await;
         } else if self.config.snapshot() {
             // Read the entire snapshot in one query.
@@ -740,9 +737,7 @@ impl IcebergInputEndpointInner {
                     return Err(ControllerError::input_transport_error(
                         &self.endpoint_name,
                         true,
-                        anyhow!(
-                            "Iceberg connector configuration specifies timestamp {ts}; however Iceberg table does not contain a snapshot with the same or earlier timestamp"
-                        ),
+                        anyhow!("Iceberg connector configuration specifies timestamp {ts}; however Iceberg table does not contain a snapshot with the same or earlier timestamp"),
                     ));
                 }
             }
