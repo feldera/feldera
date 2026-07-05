@@ -1346,7 +1346,7 @@ mod test {
     fn equal_modulo_paused_keeps_derived_projection_significant() {
         let with_derived_projection: ConnectorConfig = serde_json::from_value(json!({
             "projection": {
-                "columns": ["id"],
+                "include": ["id"],
                 "derived": true
             },
             "transport": {
@@ -1356,7 +1356,7 @@ mod test {
         .unwrap();
         let with_changed_derived_projection: ConnectorConfig = serde_json::from_value(json!({
             "projection": {
-                "columns": ["other_id"],
+                "include": ["other_id"],
                 "derived": true
             },
             "transport": {
@@ -1378,7 +1378,7 @@ mod test {
         .unwrap();
         let with_explicit_projection: ConnectorConfig = serde_json::from_value(json!({
             "projection": {
-                "columns": ["id"]
+                "include": ["id"]
             },
             "transport": {
                 "name": "empty_input"
@@ -1589,7 +1589,7 @@ where
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ConnectorProjection {
     /// Ordered list of input columns the connector should read.
-    pub columns: Vec<String>,
+    pub include: Vec<String>,
 
     /// True when projection was derived by the compiler instead of specified
     /// explicitly in connector configuration.

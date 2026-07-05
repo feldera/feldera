@@ -47,7 +47,7 @@ fn int_field(name: &str, nullable: bool, unused: bool) -> Field {
 fn test_projection_pushdown_rejects_missing_non_omittable_columns() {
     let mut connector_config: ConnectorConfig = serde_json::from_value(json!({
         "projection": {
-            "columns": ["unused_nullable"]
+            "include": ["unused_nullable"]
         },
         "transport": {
             "name": "delta_table_input",
@@ -87,7 +87,7 @@ fn test_projection_pushdown_rejects_missing_non_omittable_columns() {
 fn test_projection_pushdown_rejects_case_mismatched_column_names() {
     let mut connector_config: ConnectorConfig = serde_json::from_value(json!({
         "projection": {
-            "columns": ["USED", "UNUSED_REQUIRED"]
+            "include": ["USED", "UNUSED_REQUIRED"]
         },
         "transport": {
             "name": "delta_table_input",
@@ -124,7 +124,7 @@ fn test_projection_pushdown_rejects_case_mismatched_column_names() {
 fn test_projection_pushdown_rejects_forged_derived_projection() {
     let mut connector_config: ConnectorConfig = serde_json::from_value(json!({
         "projection": {
-            "columns": ["used", "unused_nullable", "unused_required"],
+            "include": ["used", "unused_nullable", "unused_required"],
             "derived": true
         },
         "transport": {

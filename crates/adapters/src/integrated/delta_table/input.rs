@@ -1193,7 +1193,7 @@ impl DeltaTableInputEndpointInner {
     fn used_sql_columns(&self) -> &ColumnNameSet {
         self.used_sql_columns.get_or_init(|| {
             if let Some(projection) = &self.projection {
-                let mut columns = projection.columns.clone();
+                let mut columns = projection.include.clone();
                 let referenced = self.config_referenced_columns();
                 columns.extend(
                     self.schema
@@ -3204,7 +3204,7 @@ mod is_skippable_tests {
             Box::new(MockInputConsumer::new()),
             schema,
             Some(ConnectorProjection {
-                columns: vec!["used".to_string(), "projected_unused".to_string()],
+                include: vec!["used".to_string(), "projected_unused".to_string()],
                 derived: false,
             }),
             None,

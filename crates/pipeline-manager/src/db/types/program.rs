@@ -884,7 +884,7 @@ fn apply_input_connector_pushdown(
 
     if let Some(columns) = input_relation.unused_column_projection() {
         connector_config.projection = Some(ConnectorProjection {
-            columns,
+            include: columns,
             derived: true,
         });
     }
@@ -1013,7 +1013,7 @@ mod tests {
             .connector_config;
 
         assert_eq!(
-            connector.projection.as_ref().unwrap().columns,
+            connector.projection.as_ref().unwrap().include,
             vec!["used".to_string(), "unused_required".to_string()]
         );
         assert!(connector.projection.as_ref().unwrap().derived);
@@ -1098,7 +1098,7 @@ mod tests {
         let schema = schema_with_connector(serde_json::json!({
             "name": "delta",
             "projection": {
-                "columns": ["used", "unused_nullable", "unused_required"]
+                "include": ["used", "unused_nullable", "unused_required"]
             },
             "transport": {
                 "name": "delta_table_input",
@@ -1118,7 +1118,7 @@ mod tests {
             .connector_config;
 
         assert_eq!(
-            connector.projection.as_ref().unwrap().columns,
+            connector.projection.as_ref().unwrap().include,
             vec![
                 "used".to_string(),
                 "unused_nullable".to_string(),
@@ -1133,7 +1133,7 @@ mod tests {
         let schema = schema_with_connector(serde_json::json!({
             "name": "delta",
             "projection": {
-                "columns": ["used", "unused_required"],
+                "include": ["used", "unused_required"],
                 "derived": true
             },
             "transport": {

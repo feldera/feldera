@@ -6283,7 +6283,7 @@ impl ControllerInner {
         }
 
         if let Some(projection) = &mut connector_config.projection {
-            if projection.columns.is_empty() {
+            if projection.include.is_empty() {
                 return Err(ControllerError::invalid_transport_configuration(
                     endpoint_name,
                     "standard 'projection' pushdown must include at least one column",
@@ -6291,7 +6291,7 @@ impl ControllerInner {
             }
 
             let mut seen_columns = BTreeSet::new();
-            for column in &projection.columns {
+            for column in &projection.include {
                 let Some(column_name) = schema.projection_field_name(column) else {
                     return Err(ControllerError::invalid_transport_configuration(
                         endpoint_name,
@@ -6311,7 +6311,7 @@ impl ControllerInner {
                 }
             }
 
-            let missing = schema.missing_non_omittable_projection_columns(&projection.columns);
+            let missing = schema.missing_non_omittable_projection_columns(&projection.include);
             if !missing.is_empty() {
                 return Err(ControllerError::invalid_transport_configuration(
                     endpoint_name,
@@ -6323,7 +6323,7 @@ impl ControllerInner {
             }
 
             if projection.derived
-                && schema.unused_column_projection().as_ref() != Some(&projection.columns)
+                && schema.unused_column_projection().as_ref() != Some(&projection.include)
             {
                 return Err(ControllerError::invalid_transport_configuration(
                     endpoint_name,
