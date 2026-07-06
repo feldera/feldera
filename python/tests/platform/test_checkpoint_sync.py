@@ -1,3 +1,4 @@
+import platform
 import random
 import sys
 import time
@@ -22,6 +23,13 @@ from tests.utils import (
 )
 
 from .helper import wait_for_condition
+
+
+_CHECKPOINT_SYNC_BUCKET_ARCH = platform.machine().lower()
+
+
+def checkpoint_sync_bucket(pipeline_name: str) -> str:
+    return f"{MINIO_BUCKET}/{_CHECKPOINT_SYNC_BUCKET_ARCH}/{pipeline_name}"
 
 
 def storage_cfg(
@@ -51,7 +59,7 @@ def storage_cfg(
     secret_key = required_env("CI_K8S_MINIO_SECRET_ACCESS_KEY")
 
     sync: dict = {
-        "bucket": f"{MINIO_BUCKET}/{pipeline_name}",
+        "bucket": checkpoint_sync_bucket(pipeline_name),
         "access_key": access_key,
         "secret_key": secret_key if not auth_err else secret_key + "extra",
         "provider": "Minio",
@@ -850,7 +858,7 @@ class TestCheckpointSync(SharedTestPipeline):
         uuid = source.sync_checkpoint(wait=True)
         source.stop(force=True)
 
-        source_bucket = f"{MINIO_BUCKET}/{source.name}"
+        source_bucket = checkpoint_sync_bucket(source.name)
 
         # Step 2: start the main pipeline with an empty bucket and read_bucket
         # pointing at the source.
@@ -938,7 +946,7 @@ class TestCheckpointSync(SharedTestPipeline):
         source.sync_checkpoint(wait=True)
         source.stop(force=True)
 
-        source_bucket = f"{MINIO_BUCKET}/{source.name}"
+        source_bucket = checkpoint_sync_bucket(source.name)
 
         # Step 2: push a checkpoint to the main pipeline's own bucket.
         storage_config = storage_cfg(self.pipeline.name)
@@ -1014,7 +1022,7 @@ class TestCheckpointSync(SharedTestPipeline):
         source.sync_checkpoint(wait=True)
         source.stop(force=True)
 
-        source_bucket = f"{MINIO_BUCKET}/{source.name}"
+        source_bucket = checkpoint_sync_bucket(source.name)
 
         # Step 2: start the main pipeline; it will push newer checkpoints to
         # its own bucket during the test.
@@ -1198,7 +1206,7 @@ class TestCheckpointSync(SharedTestPipeline):
         source.sync_checkpoint(wait=True)
         source.stop(force=True)
 
-        source_bucket = f"{MINIO_BUCKET}/{source.name}"
+        source_bucket = checkpoint_sync_bucket(source.name)
 
         # Step 2: main pipeline takes a LOCAL-ONLY checkpoint (never synced).
         # Its own S3 bucket stays empty, ensuring the only remote source of data
@@ -1283,7 +1291,7 @@ class TestCheckpointSync(SharedTestPipeline):
         source.sync_checkpoint(wait=True)
         source.stop(force=True)
 
-        source_bucket = f"{MINIO_BUCKET}/{source.name}"
+        source_bucket = checkpoint_sync_bucket(source.name)
 
         # Step 2: main pipeline takes a LOCAL-ONLY checkpoint (never synced).
         # Main bucket stays empty; source_bucket (read_bucket) has a checkpoint
@@ -1397,7 +1405,9 @@ class TestCheckpointSync(SharedTestPipeline):
         ft = FaultToleranceModel.AtLeastOnce
 
         # A bucket path with no checkpoints.
-        empty_read_bucket = f"{MINIO_BUCKET}/{self.pipeline.name}_read_bucket_empty"
+        empty_read_bucket = checkpoint_sync_bucket(
+            f"{self.pipeline.name}_read_bucket_empty"
+        )
 
         storage_config = storage_cfg(
             self.pipeline.name,
@@ -1441,7 +1451,7 @@ class TestCheckpointSync(SharedTestPipeline):
         source.sync_checkpoint(wait=True)
         source.stop(force=True)
 
-        source_bucket = f"{MINIO_BUCKET}/{source.name}"
+        source_bucket = checkpoint_sync_bucket(source.name)
 
         # Step 2: main pipeline creates and syncs its own checkpoint.
         storage_config = storage_cfg(self.pipeline.name)
