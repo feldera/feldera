@@ -198,7 +198,8 @@ public class NegativeParserTests extends BaseSQLTests {
         Assert.assertEquals(1, messages.errorCount());
         CompilerMessages.Message msg = messages.getMessage(0);
         Assert.assertFalse(msg.warning);
-        Assert.assertEquals("Non-query expression encountered in illegal context", msg.message);
+        // The message continues with the tokens that the parser expected
+        Assert.assertTrue(msg.message, msg.message.startsWith("Encountered \"not SQL\"."));
 
         file = createInputScript("CREATE VIEW V AS SELECT * FROM T;");
         messages = CompilerMain.execute("--noRust", file.getPath());

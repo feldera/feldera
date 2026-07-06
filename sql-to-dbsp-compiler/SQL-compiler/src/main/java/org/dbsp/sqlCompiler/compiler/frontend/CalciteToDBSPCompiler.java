@@ -417,43 +417,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     void visitCorrelate(LogicalCorrelate correlate) {
-        /*
-         We decorrelate queries using Calcite's optimizer, which doesn't always work.
-         In particular, it won't decorrelate queries with unnest.
-         Here we check for unnest-type queries.  We assume that unnest queries
-         have a restricted plan of this form:
-         LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{...}])
-            LeftSubquery (arbitrary)
-            Uncollect
-              LogicalProject(COL=[$cor0.ARRAY])  // uncollectInput
-                LogicalValues(tuples=[[{ 0 }]])
-         or
-         LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{...}])
-            LeftSubquery
-            LogicalFilter // rightFilter
-              Uncollect
-                LogicalProject(COL=[$cor0.ARRAY])  // uncollectInput
-                  LogicalValues(tuples=[[{ 0 }]])
-         or
-         LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{...}])
-            LeftSubquery
-            LogicalProject // rightProject
-              Uncollect
-                LogicalProject(COL=[$cor0.ARRAY])  // uncollectInput
-                  LogicalValues(tuples=[[{ 0 }]])
-         Instead of projecting and joining again we directly apply flatmap.
-         The translation for this is:
-         stream.flat_map({
-           move |x: &Tuple2<Vec<i32>, Option<i32>>, | -> _ {
-             let xA: Vec<i32> = x.0.clone();
-             let xB: x.1.clone();
-             x.0.clone().into_iter().map({
-                move |e: i32, | -> Tuple3<Vec<i32>, Option<i32>, i32> {
-                    Tuple3::new(xA.clone(), xB.clone(), e)
-                }
-             })
-         }});
-         */
         CalciteObject node = CalciteObject.create(correlate);
         DBSPTypeTuple type = this.convertType(
                 node.getPositionRange(), correlate.getRowType(), false).to(DBSPTypeTuple.class);
@@ -717,49 +680,80 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     void visitUncollect(Uncollect uncollect) {
-        // This represents an unnest:
-        // flat_map(move |x| { x.0.into_iter().map(move |e| Tup1::new(e)) })
-        // or, with ordinality:
-        // flat_map(move |x| { x.0.into_iter().map(move |e, i| Tup2::new(e, i+1)) })
-        IntermediateRel node = CalciteObject.create(uncollect);
-        DBSPType type = this.convertType(node.getPositionRange(), uncollect.getRowType(), false);
-        RelNode input = uncollect.getInput();
-        DBSPTypeTuple inputRowType = this.convertType(node.getPositionRange(), input.getRowType(), false).to(DBSPTypeTuple.class);
-        // We expect this to be a single-element tuple whose type is a vector.
-        DBSPSimpleOperator opInput = this.getInputAs(input, true);
-        DBSPType indexType = null;
-        if (uncollect.withOrdinality) {
-            DBSPTypeTuple tuple = type.to(DBSPTypeTuple.class);
-            indexType = tuple.getFieldType(tuple.size() - 1);
-        }
-        if (inputRowType.size() > 1) {
+        /*
+        This represents an unnest:
+        The translation for this is:
+        stream.flat_map({
+                move |x: &Tuple2<Vec<i32>, Option<i32>>, | -> _ {
+            let xA: Vec<i32> = x.0.clone();
+            let xB: x.1.clone();
+            x.0.clone().into_iter().map({
+                    move |e: i32, | -> Tuple3<Vec<i32>, Option<i32>, i32> {
+                Tuple3::new(xA.clone(), xB.clone(), e)
+            }
+             })
+        }});
+         */
+        CalciteObject node = CalciteObject.create(uncollect);
+        DBSPTypeTuple type = this.convertType(
+                node.getPositionRange(), uncollect.getRowType(), false).to(DBSPTypeTuple.class);
+        if (uncollect.isOuter)
+            throw new UnimplementedException("LEFT JOIN UNNEST", node);
+        if (uncollect.getCollectionFieldIndices().cardinality() != 1)
             throw new UnimplementedException("UNNEST of multiple collections", node);
-        }
-        DBSPVariablePath data = new DBSPVariablePath(inputRowType.ref());
-        DBSPType arrayType = data.deref().field(0).getType();
-        DBSPType collectionElementType = arrayType.to(ICollectionType.class).getElementType();
-        DBSPClosureExpression getField0 = data.deref().field(0).closure(data);
+        int collectionField = uncollect.getCollectionFieldIndices().stream().iterator().next();
 
-        int shuffleSize = 0;
-        if (indexType != null) {
-            if (indexType.is(DBSPTypeTupleBase.class))
-                shuffleSize += indexType.to(DBSPTypeTupleBase.class).size();
-            else
-                shuffleSize += 1;
-        }
-        if (collectionElementType.is(DBSPTypeTupleBase.class)) {
-            shuffleSize += collectionElementType.to(DBSPTypeTupleBase.class).size();
-        } else {
-            shuffleSize += 1;
+        RelNode input = uncollect.getInput();
+        DBSPTypeTuple inputRowType = this.convertType(node.getPositionRange(), input.getRowType(), false)
+                .to(DBSPTypeTuple.class);
+        DBSPSimpleOperator inputOperator = this.getInputAs(input, true);
+
+        DBSPVariablePath dataVar = new DBSPVariablePath(inputRowType.ref());
+        DBSPClosureExpression arrayExpression = dataVar.deref().field(collectionField).closure(dataVar);
+        DBSPTypeTuple uncollectElementType = this.convertType(
+                node.getPositionRange(), uncollect.getRowType(), false).to(DBSPTypeTuple.class);
+        DBSPType collectionElementType = arrayExpression.getResultType().to(ICollectionType.class).getElementType();
+        if (collectionElementType.mayBeNull) {
+            // This seems to be a bug in Calcite, we should not need to do this adjustment
+            if (uncollect.withOrdinality) {
+                List<DBSPType> fieldTypes = new ArrayList<>();
+                DBSPTypeTuple tuple = uncollectElementType.to(DBSPTypeTuple.class);
+                for (int i = 0; i < tuple.size(); i++) {
+                    DBSPType ft = tuple.getFieldType(i);
+                    if (i < tuple.size() - 1)
+                        // skip the ordinality field
+                        ft = ft.withMayBeNull(true);
+                    fieldTypes.add(ft);
+                }
+                uncollectElementType = new DBSPTypeTuple(fieldTypes);
+            } else {
+                uncollectElementType = uncollectElementType.withMayBeNull(true).to(DBSPTypeTuple.class);
+            }
         }
 
-        DBSPFlatmap function = new DBSPFlatmap(node, inputRowType, getField0,
-                Linq.list(), null, indexType, new IdShuffle(shuffleSize));
+        DBSPType ordinalityIndexType = null;
+        if (uncollect.withOrdinality) {
+            // Index field is always last.
+            ordinalityIndexType = uncollectElementType.getFieldType(uncollectElementType.size() - 1);
+            // This should really be a BIGINT
+            Utilities.enforce(ordinalityIndexType.is(DBSPTypeBaseType.class));
+        }
+
+        int shuffleSize = type.size();
+        DBSPFlatmap flatmap = new DBSPFlatmap(node,
+                inputRowType, arrayExpression,
+                Linq.list(uncollect.getPassthroughFieldIndices()),
+                null, ordinalityIndexType, new IdShuffle(shuffleSize));
+
         DBSPTypeFunction functionType = new DBSPTypeFunction(type, inputRowType.ref());
-        Utilities.enforce(function.getType().sameType(functionType));
-        DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(node.getFinal(), function,
-                TypeCompiler.makeZSet(type), opInput.outputPort());
-        this.assignOperator(uncollect, flatMap);
+        Utilities.enforce(flatmap.getType().sameType(functionType),
+                () -> "Expected type to be\n" + functionType + "\nbut it is\n" + flatmap.getType());
+        DBSPSimpleOperator result = new DBSPFlatMapOperator(
+                new LastRel(uncollect, SourcePositionRange.INVALID),
+                flatmap, TypeCompiler.makeZSet(type), inputOperator.outputPort());
+
+        Utilities.enforce(type.sameType(result.getOutputZSetElementType()));
+        this.assignOperator(uncollect, result);
     }
 
     /** Generate a list of the groupings that have to be evaluated for all aggregates */
@@ -2835,9 +2829,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     @Override
-    public void visit(
-            RelNode node, int ordinal,
-            @Nullable RelNode parent) {
+    public void visit(RelNode node, int ordinal, @Nullable RelNode parent) {
         Logger.INSTANCE.belowLevel(this, 3)
                 .append("Visiting ")
                 .appendSupplier(node::toString)
@@ -2847,7 +2839,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // plan can be a DAG, not just a tree.
             return;
 
-        // logical correlates are not done in postorder.
+        // Give up if the plan is not decorrelated
         if (this.visitIfMatches(node, LogicalCorrelate.class, this::visitCorrelate))
             return;
 
