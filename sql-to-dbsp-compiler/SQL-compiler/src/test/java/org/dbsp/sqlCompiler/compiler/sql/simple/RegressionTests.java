@@ -21,7 +21,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
@@ -1748,7 +1747,7 @@ public class RegressionTests extends SqlIoTest {
             (1 row)""");
     }
 
-    @Test @Ignore("Calcite decorrelator fails")
+    @Test
     public void issue1956() {
         String sql = """
                 CREATE TABLE auctions (

@@ -31,8 +31,9 @@ import java.util.Set;
  *
  * <p>Calcite has no relational operator for a CTE: the SqlToRelConverter
  * re-converts a CTE body at every reference.  A query whose CTE contains
- * correlations (e.g., UNNEST) and is referenced many times produces many
- * correlates that the decorrelator must solve together, which often fails.
+ * correlations (e.g., a correlated EXISTS) and is referenced many times
+ * produces many correlates that the decorrelator must solve together, which
+ * often fails.
  * Compiling each CTE as a LOCAL VIEW may make the plan tractable.
  *
  * <p>Only top-level WITH items are hoisted.  A WITH nested inside a subquery may

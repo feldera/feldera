@@ -115,10 +115,8 @@ public class CteToLocalViewsTests extends SqlIoTest {
     }
 
     @Test
-    public void testAutomaticFallback() {
-        // A correlated subquery whose body contains an UNNEST cannot be
-        // decorrelated with the CTE inlined; the compiler will retry
-        // with the CTE as a local view.
+    public void testUnnestCteInCorrelatedSubquery() {
+        // A correlated subquery reads a CTE that contains an UNNEST.
         // Expected output validated on Postgres.
         var ccs = this.getCCS("""
                 CREATE TABLE t(id INT, arr INT ARRAY);
@@ -135,22 +133,44 @@ public class CteToLocalViewsTests extends SqlIoTest {
                  2  | 30 | 1""");
     }
 
+    /** A correlated subquery reads a CTE that contains a correlated EXISTS.
+     * Calcite cannot decorrelate the view with the CTE inlined, but it can
+     * decorrelate the view with the CTE as a local view. */
+    static final String CORRELATED_CTE_PROGRAM = """
+            CREATE TABLE t(id INT, arr INT ARRAY);
+            CREATE TABLE t2(v INT);
+            CREATE VIEW v AS
+            WITH e AS (SELECT t.id, u.v FROM t, UNNEST(t.arr) AS u(v)
+                       WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.v = u.v))
+            SELECT e.id, e.v,
+                   (SELECT COUNT(*) FROM e AS e2 WHERE e2.id = e.id) AS cnt
+            FROM e;""";
+
+    @Test
+    public void testAutomaticFallback() {
+        // The compiler retries with the CTE as a local view.
+        // Expected output validated on Postgres.
+        var ccs = this.getCCS(CORRELATED_CTE_PROGRAM);
+        ccs.stepWeightOne("""
+                INSERT INTO t VALUES(1, ARRAY[10, 20, 30]), (2, ARRAY[30, 40]);
+                INSERT INTO t2 VALUES(10), (30);""", """
+                 id | v  | cnt
+                ---------------
+                 1  | 10 | 2
+                 1  | 30 | 2
+                 2  | 30 | 1""");
+    }
+
     @Test
     public void testRetryRequested() throws SqlParseException {
-        // The query of testAutomaticFallback cannot be compiled with the
-        // CTE inlined: compileCreateView must request the CTE rewrite.
+        // compileCreateView must request the CTE rewrite.
         DBSPCompiler compiler = this.testCompiler();
         SqlToRelCompiler sqlToRel = compiler.sqlToRelCompiler;
-        List<ParsedStatement> statements = sqlToRel.parseStatements("""
-                CREATE TABLE t(id INT, arr INT ARRAY);
-                CREATE VIEW v AS
-                WITH e AS (SELECT t.id, u.v FROM t, UNNEST(t.arr) AS u(v))
-                SELECT e.id, e.v,
-                       (SELECT COUNT(*) FROM e AS e2 WHERE e2.id = e.id) AS cnt
-                FROM e;""");
+        List<ParsedStatement> statements = sqlToRel.parseStatements(CORRELATED_CTE_PROGRAM);
         sqlToRel.compile(statements.get(0), compiler.sources);
+        sqlToRel.compile(statements.get(1), compiler.sources);
         try {
-            sqlToRel.compileCreateView(statements.get(1), new HashMap<>(), compiler.sources, true);
+            sqlToRel.compileCreateView(statements.get(2), new HashMap<>(), compiler.sources, true);
             Assert.fail("Expected a CTE rewrite request");
         } catch (CteToLocalViews.Retry ignored) {}
     }
