@@ -32,7 +32,9 @@ class MeasurementMatrix {
         // Order that the metrics should be displayed in
         readonly metricOrder: Array<string>,
         // Keys are measurement names, arrays contain one element per column name.
-        readonly attributes: Map<string, Array<SerializedMeasurement>>) {
+        readonly attributes: Map<string, Array<SerializedMeasurement>>,
+        // Profile-wide value range per metric (min/max across all nodes and workers).
+        readonly ranges: Map<string, { min: number; max: number }> = new Map()) {
         for (const a of attributes.entries()) {
             assert(columnNames.length == a[1].length,
                 "Measurement count mismatch for '" + a[0] + "':" + columnNames.length + " vs " + a.length);
@@ -683,10 +685,14 @@ export class CytographRendering {
         for (const node of this.currentGraph!.nodes) {
             let profileNode = profile.getNode(node.getId()).unwrap();
             let data = new Map<string, Array<SerializedMeasurement>>();
+            let ranges = new Map<string, { min: number; max: number }>();
             // Select just the visible metrics
             // Compute per-worker attributes
             for (let metric of profileNode.measurements.getMetrics()) {
                 let range = profile.propertyRange(metric);
+                if (!range.isEmpty()) {
+                    ranges.set(metric, { min: range.min, max: range.max });
+                }
                 let metrics = profileNode.getMeasurements(metric);
                 let selected = selection.workersVisible.getSelectedElements(metrics);
                 let measurements: Array<SerializedMeasurement> = [];
@@ -708,7 +714,7 @@ export class CytographRendering {
                 const p = parent.unwrap();
                 kv.set("parent", p);
             }
-            let matrix = new MeasurementMatrix(columnNames, [...profileNode.measurements.getMetrics()], data);
+            let matrix = new MeasurementMatrix(columnNames, [...profileNode.measurements.getMetrics()], data, ranges);
             let attributes = new Attributes(matrix, kv);
             let rendered = this.getRenderedNode(node.getId());
             rendered.data("expanded", node.expanded);
@@ -1049,10 +1055,12 @@ export class CytographRendering {
                     }
                 }
 
+                let range = attributes.matrix.ranges.get(key);
                 tooltipData.rows.push({
                     metric: key,
                     isCurrentMetric: key === this.getCurrentMetric(),
-                    cells
+                    cells,
+                    ...(range ? { range } : {})
                 });
             }
         }

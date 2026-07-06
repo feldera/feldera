@@ -28,8 +28,12 @@
 
 <script lang="ts">
   import type { TooltipData } from './ProfilerTooltip.svelte'
+  import MetricKindBlock from './metrics/blocks/MetricKindBlock.svelte'
   import MetricsDistributionBlock from './metrics/blocks/MetricsDistributionBlock.svelte'
-  import { buildBlocks, type RenderableBlock } from './metrics/dispatch'
+  import { buildCacheTiles, isCacheFamilyMetric } from './metrics/cache'
+  import CacheTile from './metrics/parts/cache/CacheTile.svelte'
+  import { buildBlocks, type MetricGroup, type RenderableBlock } from './metrics/dispatch'
+  import { isCardKind } from './metrics/kind'
   import type { LookupCoordinator } from '../functions/lookup'
 
   interface Props {
@@ -67,7 +71,24 @@
   const blocks = $derived<RenderableBlock[]>(
     nodeAttributes ? buildBlocks(nodeAttributes, showAdvanced) : []
   )
+  // Within a category, bar-chart kinds go to the distribution grid; other kinds each render as
+  // their own card. Cache-family metrics are subsumed into composite CacheTiles, so they are
+  // excluded from both. Splitting here keeps MetricsDistributionBlock bar-chart-only.
+  const barGroups = (block: RenderableBlock): MetricGroup[] =>
+    block.entries.filter((g) => !isCardKind(g.kind) && !isCacheFamilyMetric(g.baseId))
+  const cardGroups = (block: RenderableBlock): MetricGroup[] =>
+    block.entries.filter((g) => isCardKind(g.kind) && !isCacheFamilyMetric(g.baseId))
+  const cacheTiles = (block: RenderableBlock) => buildCacheTiles(block.entries)
+  // A category renders a header only when it has at least one visible tile (after filtering).
+  const hasContent = (block: RenderableBlock): boolean =>
+    barGroups(block).length > 0 || cardGroups(block).length > 0 || cacheTiles(block).length > 0
   const showAttributesView = $derived(mode === 'overview' || mode === 'node')
+
+  // Per-category collapse state, keyed by block id; an absent entry means expanded.
+  let collapsed = $state<Record<string, boolean>>({})
+  const toggleCategory = (id: string) => {
+    collapsed[id] = !collapsed[id]
+  }
 
   let containerEl: HTMLDivElement | undefined = $state()
 
@@ -103,7 +124,7 @@
     }
     for (const b of blocks) {
       for (const e of b.entries) {
-        if (e.row.metric.toLowerCase().includes(q)) return b.id
+        if (e.baseId.toLowerCase().includes(q)) return b.id
       }
     }
     return null
@@ -116,6 +137,8 @@
     if (!containerEl) return
     const matchId = findMatchingBlockId(query)
     if (!matchId) return
+    // Expand the target category so the matched metric is visible after scrolling.
+    collapsed[matchId] = false
     const el = containerEl.querySelector<HTMLElement>(`[data-block-id="${matchId}"]`)
     el?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }
@@ -156,14 +179,55 @@
         {/each}
       </div>
     {/if}
-    <!-- Two same-width columns once the container is at least TWO_COLUMN_THRESHOLD_PX wide;
-         otherwise one column. CSS multi-column flow auto-distributes blocks; the column
-         count is driven by the ResizeObserver on the scroll container. -->
-    <div class="gap-3" style="column-count: {useTwoColumns ? 2 : 1};">
+    <!-- One collapsible section per metrics category. The category name sits on the page
+         background with a chevron aligned right that collapses the whole category. Within an
+         expanded category, tiles flow across two same-width columns once the container is at
+         least TWO_COLUMN_THRESHOLD_PX wide (CSS multi-column, driven by the ResizeObserver),
+         otherwise one column. -->
+    <div class="metrics-theme">
       {#each blocks as b (b.id)}
-        <div class="mb-3 break-inside-avoid">
-          <MetricsDistributionBlock id={b.id} title={b.title} entries={b.entries} />
-        </div>
+        {#if hasContent(b)}
+          <section class="mb-4" data-block-id={b.id}>
+            <button
+              type="button"
+              class="mb-2 flex w-full items-center justify-between gap-3 text-left"
+              aria-expanded={!collapsed[b.id]}
+              onclick={() => toggleCategory(b.id)}
+            >
+              <span class="text-xl font-semibold text-surface-900-100">{b.title}</span>
+              <span
+                class="fd fd-chevron-down chevron shrink-0 text-[20px] text-surface-600-400"
+                class:rotate-180={!collapsed[b.id]}
+                aria-hidden="true"
+              ></span>
+            </button>
+            {#if !collapsed[b.id]}
+              <div style="column-count: {useTwoColumns ? 2 : 1};">
+                {#if barGroups(b).length > 0}
+                  <div class="mb-3 break-inside-avoid">
+                    <MetricsDistributionBlock id={`${b.id}-dist`} title={b.title} entries={barGroups(b)} />
+                  </div>
+                {/if}
+                {#each cardGroups(b) as g (g.baseId)}
+                  <div class="mb-3 break-inside-avoid">
+                    <MetricKindBlock id={`${b.id}-${g.baseId}`} group={g} />
+                  </div>
+                {/each}
+                {#each cacheTiles(b) as tile (tile.prefix)}
+                  <div class="mb-3 break-inside-avoid">
+                    <CacheTile
+                      id={`${b.id}-cache-${tile.prefix}`}
+                      title={tile.title}
+                      hits={tile.hits}
+                      misses={tile.misses}
+                      hitRate={tile.hitRate}
+                    />
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </section>
+        {/if}
       {/each}
     </div>
   {/if}
@@ -214,4 +278,41 @@
     {@render topNodesView()}
   {/if}
 </div>
+
+<style>
+  /* Shared theme tokens for all metric block visuals, defined once on the container so both
+     block types (bar-chart grid and per-kind cards) and their children inherit them via the
+     custom-property cascade. We use Skeleton's single-tone vars (defined under [data-theme=...]
+     and inherited reliably) and switch on `.dark` / `body.dark` ourselves, instead of relying
+     on Skeleton's dual-tone `*-200-800` vars inside color-mix() — which resolved to transparent
+     in this setup (cascade re-parsing of the dual-tone value doesn't reach the data-theme
+     scope in some browsers). Kept in a <style> block so `:global(.dark)` and `:global(body.dark)`
+     can both target the same vars; Tailwind's `dark:` variant alone doesn't cover the
+     `body.dark` form used elsewhere in this app. */
+  .chevron {
+    display: inline-block;
+    transition: transform 200ms ease;
+  }
+  .metrics-theme {
+    --bar-low: var(--color-surface-100);
+    --bar-high: var(--color-error-300);
+    --skew-low: var(--color-surface-600);
+    --skew-high: var(--color-error-500);
+    --header-bg: white;
+    /* Compaction-state chips (K6). */
+    --state-none: var(--color-surface-300);
+    --state-requested: var(--color-warning-400);
+    --state-progress: var(--color-primary-400);
+  }
+  :global(.dark) .metrics-theme,
+  :global(body.dark) .metrics-theme {
+    --bar-low: var(--color-surface-900);
+    --bar-high: var(--color-error-700);
+    --skew-low: var(--color-surface-400);
+    --header-bg: var(--color-dark);
+    --state-none: var(--color-surface-600);
+    --state-requested: var(--color-warning-600);
+    --state-progress: var(--color-primary-600);
+  }
+</style>
 

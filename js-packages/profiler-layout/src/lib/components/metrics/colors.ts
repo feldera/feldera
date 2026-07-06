@@ -48,3 +48,22 @@ export function logScale01(t: number): number {
   // log(1 + x*(e-1)) / log(e) === log(1 + x*(e-1))
   return Math.log(1 + x * (Math.E - 1))
 }
+
+/**
+ * Bar geometry for a numeric value: log-normalize `v` within [min, max] to a fraction `t`
+ * (0..1, also the input to `barColor`) and the matching pixel `height` in [minH, maxH]. A
+ * degenerate range (min === max, i.e. no spread across workers) maps to `t = 0` — a flat
+ * minimal bar, since a relative-difference chart has nothing to show. Shared by the K1
+ * distribution bars (BarChartRow) and the cache tile's value bars (ValueBars) so both use the
+ * same curve and the same 6px..24px envelope.
+ */
+export function barMetrics(
+  v: number,
+  min: number,
+  max: number,
+  minH = 6,
+  maxH = 24
+): { t: number; height: number } {
+  const t = min === max ? 0 : logScale01((v - min) / (max - min))
+  return { t, height: minH + (maxH - minH) * t }
+}
