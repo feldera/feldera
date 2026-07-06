@@ -494,10 +494,10 @@ public class Lineage extends CircuitVisitor {
             final Tuple inputTuple = source.to(Ref.class).value.to(Tuple.class);
             List<ValueSource> resultColumns = new ArrayList<>();
             DBSPFlatmap flatmap = function.to(DBSPFlatmap.class);
-            for (int index : flatmap.leftInputIndexes)
+            for (int index : flatmap.passthroughIndexes)
                 resultColumns.add(inputTuple.field(index));
-            if (flatmap.rightProjections != null) {
-                for (DBSPClosureExpression ignored : flatmap.rightProjections)
+            if (flatmap.postProcess != null) {
+                for (DBSPClosureExpression ignored : flatmap.postProcess)
                     resultColumns.add(Unknown.INSTANCE);
             } else {
                 final DBSPType collectionElementType = flatmap.getCollectionElementType();

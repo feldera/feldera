@@ -345,7 +345,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         FindUsedFields find = new FindUsedFields(this.compiler);
         var useMap = find.findUsedFields(flatmap.collectionExpression);
         FieldUseMap map = useMap.get(flatmap.collectionExpression.parameters[0]).deref();
-        for (int index: flatmap.leftInputIndexes) {
+        for (int index: flatmap.passthroughIndexes) {
             map.setUsed(index);
         }
         if (!map.hasUnusedFields(1)) {
@@ -364,10 +364,10 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPClosureExpression collectionExpression = fieldRewriter.rewriteClosure(flatmap.collectionExpression);
 
         // Correct the DBSPFLatmap to account for the removed fields
-        List<Integer> indexes = Linq.map(flatmap.leftInputIndexes, map::getNewIndex);
+        List<Integer> indexes = Linq.map(flatmap.passthroughIndexes, map::getNewIndex);
         DBSPFlatmap replacement = new DBSPFlatmap(flatmap.getNode(),
                 Objects.requireNonNull(map.compressedType(1)).to(DBSPTypeTuple.class),
-                collectionExpression, indexes, flatmap.rightProjections, flatmap.ordinalityIndexType,
+                collectionExpression, indexes, flatmap.postProcess, flatmap.ordinalityIndexType,
                 flatmap.shuffle);
 
         DBSPSimpleOperator result = new DBSPFlatMapOperator(

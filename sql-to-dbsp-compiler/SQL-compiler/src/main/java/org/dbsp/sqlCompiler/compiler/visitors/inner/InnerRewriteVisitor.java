@@ -840,14 +840,14 @@ public abstract class InnerRewriteVisitor
             indexType = this.transform(expression.ordinalityIndexType);
         DBSPClosureExpression collectionExpression = this.transform(expression.collectionExpression)
                 .to(DBSPClosureExpression.class);
-        List<DBSPClosureExpression> rightProjections = null;
-        if (expression.rightProjections != null)
-            rightProjections = Linq.map(expression.rightProjections,
+        List<DBSPClosureExpression> postProcess = null;
+        if (expression.postProcess != null)
+            postProcess = Linq.map(expression.postProcess,
                     e -> this.transform(e).to(DBSPClosureExpression.class));
         this.pop(expression);
         DBSPExpression result = new DBSPFlatmap(expression.getNode(),
                 inputElementType, collectionExpression,
-                expression.leftInputIndexes, rightProjections, indexType, expression.shuffle);
+                expression.passthroughIndexes, postProcess, indexType, expression.shuffle);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

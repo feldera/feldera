@@ -269,6 +269,82 @@ public class ArrayTests extends BaseSQLTests {
         this.testQuery(ddl, query, new Change("ARR_TABLE", input), result);
     }
 
+    /** Schema for the UNNEST tests over arrays nested inside struct-typed columns. */
+    static final String NESTED_ARRAY_SCHEMA = """
+            CREATE TYPE ELEM AS (name VARCHAR, val INT);
+            CREATE TYPE MID AS (steps ELEM ARRAY, tag VARCHAR);
+            CREATE TYPE REC AS (mid MID, steps2 INT ARRAY);
+            CREATE TABLE T(id INT NOT NULL, rec REC);""";
+
+    // Row 3 has NULL collections inside the struct: an inner UNNEST produces
+    // no rows for it.
+    static final String NESTED_ARRAY_INSERT = """
+            INSERT INTO T VALUES
+              (1, ROW(ROW(ARRAY[ROW('a', 10), ROW('b', 20)], 'x'), ARRAY[5, 6])),
+              (2, ROW(ROW(ARRAY[ROW('c', 30)], 'y'), ARRAY[7])),
+              (3, ROW(ROW(NULL, 'z'), NULL));""";
+
+    @Test
+    public void testUnnestNestedField() {
+        // Validated (modified) on Postgres
+        var ccs = this.getCCS(NESTED_ARRAY_SCHEMA + """
+                CREATE VIEW V AS SELECT T.id, v, x.name
+                FROM T, UNNEST(T.rec.steps2) AS v, UNNEST(T.rec.mid.steps) AS x;""");
+        ccs.stepWeightOne(NESTED_ARRAY_INSERT, """
+                 id | v | name
+                ---------------
+                 1  | 5 | a
+                 1  | 5 | b
+                 1  | 6 | a
+                 1  | 6 | b
+                 2  | 7 | c""");
+    }
+
+    @Test
+    public void testUnnestCallOverNestedField() {
+        // Validated (modified) on postgres
+        var ccs = this.getCCS(NESTED_ARRAY_SCHEMA + """
+                CREATE VIEW V AS SELECT T.id, x.v, x.o
+                FROM T CROSS APPLY UNNEST(COALESCE(T.rec.steps2, ARRAY[NULL::INT]))
+                WITH ORDINALITY AS x(v, o);""");
+        ccs.stepWeightOne(NESTED_ARRAY_INSERT, """
+                 id | v  | o
+                -------------
+                 1  | 5  | 1
+                 1  | 6  | 2
+                 2  | 7  | 1
+                 3  |NULL| 1""");
+    }
+
+    @Test
+    public void testUnnestCoalesce() {
+        var ccs = this.getCCS("""
+                CREATE TABLE data(cities VARCHAR ARRAY, country VARCHAR);
+                CREATE VIEW V AS SELECT city, country
+                FROM data, UNNEST(COALESCE(cities, ARRAY[NULL])) AS t (city);""").withStringTrim();
+        ccs.stepWeightOne("""
+                INSERT INTO data VALUES (ARRAY['Boston', 'Seattle'], 'US'), (NULL, 'CH');""", """
+                 city    | country
+                ----------------
+                 Boston  | US
+                 Seattle | US
+                NULL     | CH""");
+    }
+
+    @Test
+    public void testUnnestNestedFieldOrdinality() {
+        // Validated (modified) on Postgres
+        var ccs = this.getCCS(NESTED_ARRAY_SCHEMA + """
+                CREATE VIEW V AS SELECT T.id, x.v, x.o
+                FROM T, UNNEST(T.rec.steps2) WITH ORDINALITY AS x(v, o);""");
+        ccs.stepWeightOne(NESTED_ARRAY_INSERT, """
+                 id | v | o
+                ------------
+                 1  | 5 | 1
+                 1  | 6 | 2
+                 2  | 7 | 1""");
+    }
+
     @Test
     public void testDoubleUnnest1() {
         String ddl = "CREATE TABLE ARR_TABLE (\n"
