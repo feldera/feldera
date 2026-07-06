@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.StubsWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCrates;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCratesWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer;
 import org.dbsp.sqlCompiler.compiler.sql.MultiCrateTests;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
@@ -123,6 +124,11 @@ public class BaseSQLTests {
     @SuppressWarnings("unused")
     public static void showPlan() {
         Logger.INSTANCE.setLoggingLevel(SqlToRelCompiler.class, 2);
+    }
+
+    @SuppressWarnings("unused")
+    public static void showCalciteOptimizer() {
+        Logger.INSTANCE.setLoggingLevel(CalciteOptimizer.class, 2);
     }
 
     @SuppressWarnings("unused")

@@ -11,6 +11,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.ISameValue;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
@@ -162,6 +164,15 @@ public final class DBSPZSetExpression extends DBSPExpression
     }
 
     public DBSPExpression castRecursive(DBSPExpression expression, DBSPType type) {
+        if (expression.is(DBSPNullLiteral.class)) {
+            return DBSPLiteral.none(type);
+        }
+        if (expression.is(DBSPSomeExpression.class)) {
+            return this.castRecursive(expression.to(DBSPSomeExpression.class).expression, type);
+        }
+        if (!type.is(DBSPTypeBaseType.class) && expression.is(DBSPCastExpression.class)) {
+            return this.castRecursive(expression.to(DBSPCastExpression.class).source, type);
+        }
         if (type.is(DBSPTypeBaseType.class)) {
             return expression.cast(expression.getNode(), type, DBSPCastExpression.CastType.SqlUnsafe);
         } else if (type.is(DBSPTypeArray.class)) {

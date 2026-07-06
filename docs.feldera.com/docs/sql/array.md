@@ -49,7 +49,27 @@ CREATE VIEW V AS SELECT city, data.country
 FROM data CROSS JOIN UNNEST(data.cities) AS city;
 ```
 
-`UNNEST` applied to a `NULL` value returns an empty table.
+`CROSS APPLY` is another spelling for the same query:
+
+```sql
+CREATE VIEW V AS SELECT city, data.country
+FROM data CROSS APPLY UNNEST(data.cities) AS city;
+```
+
+`UNNEST` applied to a `NULL` value returns an empty table.  As a
+consequence, the queries above drop the rows of `data` where `cities`
+is `NULL` or empty.  The join forms that instead keep such rows,
+`LEFT JOIN UNNEST(...) ON TRUE` and `OUTER APPLY UNNEST(...)`, are not
+yet supported; see [unsupported
+operations](unsupported-operations.md#left-join-unnest).  To keep the
+rows where the array is `NULL`, substitute a one-element array in the
+`UNNEST` argument:
+
+```sql
+-- A row with a NULL cities array produces one row with a NULL city
+CREATE VIEW V AS SELECT city, country
+FROM data, UNNEST(COALESCE(cities, ARRAY[NULL])) AS t (city);
+```
 
 Note that applying `UNNEST` to an `ARRAY` of structure-typed objects
 will produce a collection whose columns are the fields of the

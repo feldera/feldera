@@ -1977,12 +1977,43 @@ public class RegressionTests extends SqlIoTest {
     public void issue3547() {
         this.queryFailingInCompilation(
                 "SELECT * FROM UNNEST(ARRAY [1, 2, 3, 4, 5], ARRAY[3, 2, 1]);",
-                "UNNEST with multiple vectors");
+                "UNNEST of multiple collections");
     }
 
     @Test
     public void issue2736() {
         var ccs = this.getCCS("""
+                create table latest_cells(
+                  id integer,
+                  mentioned_cell_ids integer array
+                );
+                
+                create local view l as
+                select
+                    s.id,
+                    m.mentioned_id
+                from
+                    latest_cells s
+                join unnest(s.mentioned_cell_ids) as m(mentioned_id) on true;
+                
+                create local view l1 as
+                select
+                    s.id,
+                    m.mentioned_id
+                from
+                    latest_cells s
+                join unnest(s.mentioned_cell_ids) as m(mentioned_id) on true;
+                
+                create view e as (SELECT * FROM l) EXCEPT (SELECT * FROM l1);""");
+        ccs.stepWeightOne("INSERT INTO latest_cells VALUES(1, ARRAY[1,2,3]), (2, ARRAY[2,3,4]);",
+                """
+                  id | mentioned_id
+                 -------------------""");
+    }
+
+    @Test
+    public void issue2736b() {
+        this.statementsFailingInCompilation("""
                 create table latest_cells(
                   id integer,
                   mentioned_cell_ids integer array
@@ -2004,11 +2035,8 @@ public class RegressionTests extends SqlIoTest {
                     latest_cells s
                 join unnest(s.mentioned_cell_ids) as m(mentioned_id) on true;
                 
-                create view e as (SELECT * FROM l) EXCEPT (SELECT * FROM l1);""");
-        ccs.stepWeightOne("INSERT INTO latest_cells VALUES(1, ARRAY[1,2,3]), (2, ARRAY[2,3,4]);",
-                """
-                  id | mentioned_id
-                 -------------------""");
+                create view e as (SELECT * FROM l) EXCEPT (SELECT * FROM l1);""",
+                "Not yet implemented: LEFT JOIN UNNEST");
     }
 
     @Test

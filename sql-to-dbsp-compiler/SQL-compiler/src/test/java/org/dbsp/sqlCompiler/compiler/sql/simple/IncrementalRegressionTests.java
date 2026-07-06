@@ -1389,8 +1389,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     FROM T
                     CROSS JOIN UNNEST(split(T.s, '/')) WITH ORDINALITY AS R(sid, o)
                     WHERE sid <> ''
-                );
-                """);
+                );""");
         // Validated on postgres by replacing 'split' with 'string_to_array'
         ccs.step("INSERT INTO T VALUES(0, 'a/b/c'), (1, '/a//b'), (2, 'd');", """
                  id | sid | o | weight

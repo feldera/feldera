@@ -412,12 +412,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         CalciteObject node = CalciteObject.create(correlate);
         DBSPTypeTuple type = this.convertType(
                 node.getPositionRange(), correlate.getRowType(), false).to(DBSPTypeTuple.class);
-        /*
-        The join type does not influence the results of the decorrelate!
-        A Decorrelate is a cross join, and an outer cross join is equivalent to an inner cross join.
-        if (correlate.getJoinType().isOuterJoin())
-            throw this.decorrelateError(node);
-         */
+
+        if (correlate.getJoinType() != JoinRelType.INNER)
+            throw new UnimplementedException("LEFT JOIN UNNEST");
         this.visit(correlate.getLeft(), 0, correlate);
         DBSPSimpleOperator left = this.getInputAs(correlate.getLeft(), true);
         DBSPTypeTuple leftElementType = left.getOutputZSetElementType().to(DBSPTypeTuple.class);
@@ -692,7 +689,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             indexType = tuple.getFieldType(tuple.size() - 1);
         }
         if (inputRowType.size() > 1) {
-            throw new UnimplementedException("UNNEST with multiple vectors", node);
+            throw new UnimplementedException("UNNEST of multiple collections", node);
         }
         DBSPVariablePath data = new DBSPVariablePath(inputRowType.ref());
         DBSPType arrayType = data.deref().field(0).getType();
