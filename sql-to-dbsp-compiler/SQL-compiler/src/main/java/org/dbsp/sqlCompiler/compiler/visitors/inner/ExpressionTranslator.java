@@ -322,17 +322,17 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> imple
         if (this.done(node))
             return;
         DBSPExpression collectionExpression = this.getE(node.collectionExpression);
-        List<DBSPClosureExpression> rightProjections = null;
-        if (node.rightProjections != null)
-            rightProjections = Linq.map(node.rightProjections,
+        List<DBSPClosureExpression> postProcess = null;
+        if (node.postProcess != null)
+            postProcess = Linq.map(node.postProcess,
                     e -> this.getE(e).to(DBSPClosureExpression.class));
         DBSPClosureExpression closure = collectionExpression.to(DBSPClosureExpression.class);
         Utilities.enforce(closure.parameters.length == 1);
         this.map(node, new DBSPFlatmap(
                 node.getNode(),
                 closure.parameters[0].type.deref().to(DBSPTypeTuple.class),
-                closure, node.leftInputIndexes,
-                rightProjections, node.ordinalityIndexType, node.shuffle));
+                closure, node.passthroughIndexes,
+                postProcess, node.ordinalityIndexType, node.shuffle));
     }
 
     @Override

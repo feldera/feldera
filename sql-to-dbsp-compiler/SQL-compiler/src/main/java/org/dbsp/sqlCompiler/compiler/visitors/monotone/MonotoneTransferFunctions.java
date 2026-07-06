@@ -163,7 +163,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         // This logic parallels the one from LowerCircuitVisitor
         DBSPVariablePath param = expression.inputRowType.ref().var(expression.getNode());
         List<DBSPExpression> outputFields = new ArrayList<>();
-        for (int index : expression.leftInputIndexes) {
+        for (int index : expression.passthroughIndexes) {
             DBSPExpression field = param.deepCopy().deref().field(index);
             outputFields.add(field);
         }
@@ -173,8 +173,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (expression.ordinalityIndexType != null) {
             outputFields.add(new NoExpression(expression.ordinalityIndexType));
         } else {
-            if (expression.rightProjections != null) {
-                for (DBSPClosureExpression clo : expression.rightProjections) {
+            if (expression.postProcess != null) {
+                for (DBSPClosureExpression clo : expression.postProcess) {
                     // TODO: this is very conservative
                     outputFields.add(new NoExpression(clo.getResultType()));
                 }

@@ -79,8 +79,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPType collectionElementType = eType;
         List<DBSPStatement> statements = new ArrayList<>();
         List<DBSPExpression> resultColumns = new ArrayList<>();
-        for (int i = 0; i < flatmap.leftInputIndexes.size(); i++) {
-            int index = flatmap.leftInputIndexes.get(i);
+        for (int i = 0; i < flatmap.passthroughIndexes.size(); i++) {
+            int index = flatmap.passthroughIndexes.get(i);
             // let x0: Vec<i32> = x.0.clone();
             // let x1: x.1.clone();
             DBSPExpression field = rowVar.deref().field(index).applyCloneIfNeeded();
@@ -109,8 +109,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                     .cast(flatmap.getNode(), flatmap.ordinalityIndexType, DBSPCastExpression.CastType.SqlUnsafe);
         }
 
-        if (flatmap.rightProjections != null) {
-            for (DBSPClosureExpression clo: flatmap.rightProjections) {
+        if (flatmap.postProcess != null) {
+            for (DBSPClosureExpression clo: flatmap.postProcess) {
                 List<DBSPExpression> fields;
                 DBSPExpression base = e;
                 if (flatmap.ordinalityIndexType != null)
