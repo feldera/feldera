@@ -51,3 +51,5 @@ Some of the silver views could be made incremental by hand by a data engineer â€
 More complex views, such as `gold_weekly_revenue_trend`, would require merge logic that is difficult to validate and entails significant engineering effort.
 
 With Feldera, you use the same SQL your batch engine runs now, get the same results, and pay a cost that tracks change size instead of data size. In addition, you get millisecond update latency across your full medallion architecture.
+
+Continue on to [Part 4](./part4.md) for a comparison between Databricks' IVM offering (Lakeflow Declarative Pipelines) and Feldera.

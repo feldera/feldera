@@ -1,0 +1,37 @@
+# Job settings for the compute_silver_gold workflow.
+# Create via the Jobs UI (Create job -> kebab menu -> Edit as YAML) or the jobs API.
+# - Replace the ingest_bronze notebook_path with where you imported ingest_bronze.py.
+# - Replace pipeline_id with the id of the pipeline created from pipeline.yaml.
+# - Assign serverless (or other) compute to the notebook task in the UI.
+# scale_factor + warehouse_bucket are passed to the ingest notebook here and also override
+# the pipeline's parameters of the same key when the pipeline task runs.
+resources:
+  jobs:
+    name: compute_silver_gold
+    parameters:
+      - name: hour
+        default: ""
+      - name: clean_start
+        default: "false"
+      - name: scale_factor
+        default: "0.01"
+      - name: source_bucket
+        default: s3://feldera-demos
+      - name: warehouse_bucket
+        default: <YOUR BUCKET>
+    tasks:
+      - task_key: ingest_bronze
+        notebook_task:
+          notebook_path: <ingest_bronze.py PATH>
+          base_parameters:
+            hour: "{{job.parameters.hour}}"
+            clean_start: "{{job.parameters.clean_start}}"
+            scale_factor: "{{job.parameters.scale_factor}}"
+            source_bucket: "{{job.parameters.source_bucket}}"
+            warehouse_bucket: "{{job.parameters.warehouse_bucket}}"
+      - task_key: refresh_silver_gold
+        depends_on:
+          - task_key: ingest_bronze
+        pipeline_task:
+          pipeline_id: "<PIPELINE_ID_FROM_pipeline.yaml>"
+          full_refresh: false

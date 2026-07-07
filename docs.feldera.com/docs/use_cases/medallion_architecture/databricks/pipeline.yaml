@@ -1,0 +1,16 @@
+# Lakeflow Declarative Pipeline settings (the "transformation" — runs silver_gold_pipeline.py).
+# Create via the Pipelines UI (Create pipeline -> Settings -> YAML) or the pipelines API.
+# - Replace the notebook path with where you imported silver_gold_pipeline.py.
+# - Set catalog/schema to where the silver/gold materialized views should publish.
+# configuration values are read via spark.conf in the notebook; the compute_silver_gold job
+# passes job parameters of the same key, which override these at run time.
+name: ecommerce-silver-gold-mv
+serverless: true
+catalog: <YOUR CATALOG>
+schema: <YOUR SCHEMA>
+configuration:
+  scale_factor: "0.01"
+  warehouse_bucket: <YOUR BUCKET>
+libraries:
+  - notebook:
+      path: <silver_gold_pipeline.py PATH>

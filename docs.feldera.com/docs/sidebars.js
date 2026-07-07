@@ -120,7 +120,8 @@ const guides = {
             items: [
                 'use_cases/medallion_architecture/part1',
                 'use_cases/medallion_architecture/part2',
-                'use_cases/medallion_architecture/part3'
+                'use_cases/medallion_architecture/part3',
+                'use_cases/medallion_architecture/part4'
             ]
         },
         {
