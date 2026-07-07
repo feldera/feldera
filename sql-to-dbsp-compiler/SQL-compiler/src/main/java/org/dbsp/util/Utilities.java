@@ -332,8 +332,7 @@ public class Utilities {
 
     /** Print a ResultSet obtained from some database. */
     @SuppressWarnings("unused")
-    public static void showResultSet(ResultSet result, PrintStream out)
-            throws SQLException {
+    public static void showResultSet(ResultSet result, PrintStream out) throws SQLException {
         int columnCount = result.getMetaData().getColumnCount();
         while (result.next()) {
             for (int i = 1; i <= columnCount; i++) {

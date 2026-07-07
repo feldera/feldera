@@ -399,7 +399,8 @@ public class CalciteOptimizer implements IWritesLogs {
                 // CoreRules.PROJECT_CORRELATE_TRANSPOSE,
                 CoreRules.PROJECT_WINDOW_TRANSPOSE,
                 CoreRules.PROJECT_SET_OP_TRANSPOSE,
-                CoreRules.FILTER_PROJECT_TRANSPOSE
+                CoreRules.FILTER_PROJECT_TRANSPOSE,
+                CoreRules.FILTER_AGGREGATE_TRANSPOSE
                 // Rule is unsound, replaced with UnusedFields done later.
                 //CoreRules.PROJECT_JOIN_TRANSPOSE
         ));

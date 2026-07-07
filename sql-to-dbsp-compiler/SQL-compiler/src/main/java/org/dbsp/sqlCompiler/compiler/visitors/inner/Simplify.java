@@ -80,9 +80,9 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
@@ -237,10 +237,6 @@ public class Simplify extends ExpressionTranslator {
                 }
                 // Otherwise this expression will certainly generate
                 // a runtime error if evaluated.  But it may never be evaluated.
-            } else if (litType.is(DBSPTypeNull.class)) {
-                // This is a literal with type "NULL".
-                // Convert it to a literal of the resulting type
-                result = DBSPLiteral.none(type);
             } else if (lit.is(DBSPStringLiteral.class)) {
                 // Constant folding string values
                 // This is mostly useful for testing code, to fold various literals.
@@ -260,7 +256,7 @@ public class Simplify extends ExpressionTranslator {
                     } else {
                         result = new DBSPBoolLiteral(lit.getNode(), type, value);
                     }
-                } if (type.is(DBSPTypeDate.class)) {
+                } else if (type.is(DBSPTypeDate.class)) {
                     // We have to validate the date, it may be invalid, and in this case
                     // the result is 'null'.  This pattern is hardwired in Calcite.
                     DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.US)
@@ -294,10 +290,20 @@ public class Simplify extends ExpressionTranslator {
                 } else if (type.is(DBSPTypeDecimal.class)) {
                     try {
                         DBSPTypeDecimal decType = type.to(DBSPTypeDecimal.class);
-                        BigDecimal value = new BigDecimal(str.value).setScale(decType.scale, RoundingMode.HALF_EVEN);
-                        result = new DBSPDecimalLiteral(type, value);
+                        // The runtime trims spaces and rounds excess digits half-to-even
+                        BigDecimal value = new BigDecimal(str.value.trim())
+                                .setScale(decType.scale, RoundingMode.HALF_EVEN);
+                        if (value.precision() > decType.precision) {
+                            // The runtime cast fails; keep the cast so the error surfaces at runtime
+                            this.compiler.reportWarning(expression.getSourcePosition(), "Invalid DECIMAL",
+                                    "cannot represent " + Utilities.singleQuote(str.value) +
+                                            " as DECIMAL(" + decType.precision + ", " + decType.scale +
+                                            "): precision of DECIMAL type too small to represent value");
+                        } else {
+                            result = new DBSPDecimalLiteral(type, value);
+                        }
                     } catch (NumberFormatException ex) {
-                        // on parse error return 0.
+                        // Keep the cast; the runtime reports a parse error
                         this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
                                 " String " + Utilities.singleQuote(str.value) +
                                         " cannot be interpreted as a DECIMAL");
@@ -331,7 +337,7 @@ public class Simplify extends ExpressionTranslator {
                                 value = Byte.parseByte(str.value);
                                 result = new DBSPI8Literal(lit.getNode(), type, value);
                             } catch (NumberFormatException ex) {
-                                // SQL semantics: parsing failures return 0
+                                // Keep the cast; the runtime reports a parse error
                                 this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
                                         " String " + Utilities.singleQuote(str.value) +
                                                 " cannot be interpreted as a number");
@@ -382,59 +388,53 @@ public class Simplify extends ExpressionTranslator {
                 if (type.is(DBSPTypeDecimal.class)) {
                     result = new DBSPDecimalLiteral(source.getNode(), type, new BigDecimal(i.value));
                 } else if (type.is(DBSPTypeInteger.class)) {
-                    if (i.isNull()) {
-                        result = DBSPLiteral.none(type);
-                    } else {
-                        switch (type.code) {
-                            case INT8:
-                                if (i.value >= Byte.MIN_VALUE && i.value <= Byte.MAX_VALUE) {
-                                    result = new DBSPI8Literal(source.getNode(), type, i.value.byteValue());
-                                }
-                                break;
-                            case INT16:
-                                if (i.value >= Short.MIN_VALUE && i.value <= Short.MAX_VALUE) {
-                                    result = new DBSPI16Literal(source.getNode(), type, i.value.shortValue());
-                                }
-                                break;
-                            case INT64:
-                                result = new DBSPI64Literal(source.getNode(), type, i.value.longValue());
-                                break;
-                            case INT128:
-                                result = new DBSPI128Literal(source.getNode(), type, BigInteger.valueOf(i.value));
-                                break;
-                            case UINT8:
-                                if (i.value >= 0 && i.value <= 255) {
-                                    result = new DBSPU8Literal(source.getNode(), type, i.value);
-                                }
-                                break;
-                            case UINT16:
-                                if (i.value >= 0 && i.value <= 65535) {
-                                    result = new DBSPU16Literal(source.getNode(), type, i.value);
-                                }
-                                break;
-                            case UINT32:
-                                if (i.value >= 0) {
-                                    result = new DBSPU32Literal(source.getNode(), type, i.value.longValue());
-                                }
-                                break;
-                            case UINT64:
-                                if (i.value >= 0) {
-                                    result = new DBSPU64Literal(source.getNode(), type, BigInteger.valueOf(i.value));
-                                }
-                                break;
-                            case UINT128:
-                                if (i.value >= 0) {
-                                    result = new DBSPU128Literal(source.getNode(), type, BigInteger.valueOf(i.value));
-                                }
-                                break;
-                        }
+                    switch (type.code) {
+                        case INT8:
+                            if (i.value >= Byte.MIN_VALUE && i.value <= Byte.MAX_VALUE) {
+                                result = new DBSPI8Literal(source.getNode(), type, i.value.byteValue());
+                            }
+                            break;
+                        case INT16:
+                            if (i.value >= Short.MIN_VALUE && i.value <= Short.MAX_VALUE) {
+                                result = new DBSPI16Literal(source.getNode(), type, i.value.shortValue());
+                            }
+                            break;
+                        case INT64:
+                            result = new DBSPI64Literal(source.getNode(), type, i.value.longValue());
+                            break;
+                        case INT128:
+                            result = new DBSPI128Literal(source.getNode(), type, BigInteger.valueOf(i.value));
+                            break;
+                        case UINT8:
+                            if (i.value >= 0 && i.value <= 255) {
+                                result = new DBSPU8Literal(source.getNode(), type, i.value);
+                            }
+                            break;
+                        case UINT16:
+                            if (i.value >= 0 && i.value <= 65535) {
+                                result = new DBSPU16Literal(source.getNode(), type, i.value);
+                            }
+                            break;
+                        case UINT32:
+                            if (i.value >= 0) {
+                                result = new DBSPU32Literal(source.getNode(), type, i.value.longValue());
+                            }
+                            break;
+                        case UINT64:
+                            if (i.value >= 0) {
+                                result = new DBSPU64Literal(source.getNode(), type, BigInteger.valueOf(i.value));
+                            }
+                            break;
+                        case UINT128:
+                            if (i.value >= 0) {
+                                result = new DBSPU128Literal(source.getNode(), type, BigInteger.valueOf(i.value));
+                            }
+                            break;
                     }
                 } else if (type.is(DBSPTypeISize.class)) {
-                    if (!i.isNull()) {
-                        result = new DBSPISizeLiteral(source.getNode(), type, i.value.longValue());
-                    }
+                    result = new DBSPISizeLiteral(source.getNode(), type, i.value.longValue());
                 } else if (type.is(DBSPTypeUSize.class)) {
-                    if (!i.isNull() && i.value >= 0) {
+                    if (i.value >= 0) {
                         result = new DBSPUSizeLiteral(source.getNode(), type, i.value.longValue());
                     }
                 }
@@ -442,17 +442,19 @@ public class Simplify extends ExpressionTranslator {
                 DBSPDecimalLiteral dec = lit.to(DBSPDecimalLiteral.class);
                 BigDecimal value = Objects.requireNonNull(dec.value);
                 if (type.is(DBSPTypeDecimal.class)) {
-                    // must adjust precision and scale
+                    // must adjust precision and scale; the runtime truncates excess digits
                     DBSPTypeDecimal decType = type.to(DBSPTypeDecimal.class);
                     value = value.setScale(decType.scale, RoundingMode.DOWN);
                     if (value.precision() > decType.precision) {
+                        // The runtime cast fails; keep the cast so the error surfaces at runtime
                         this.compiler.reportWarning(expression.getSourcePosition(),
                                 "Invalid DECIMAL",
                                 "cannot represent " + lit + " as DECIMAL(" + decType.precision + ", " + decType.scale +
                                         "): precision of DECIMAL type too small to represent value"
                         );
+                    } else {
+                        result = new DBSPDecimalLiteral(source.getNode(), type, value);
                     }
-                    result = new DBSPDecimalLiteral(source.getNode(), type, value);
                 }
             }
         }
@@ -468,7 +470,7 @@ public class Simplify extends ExpressionTranslator {
             result = source.to(DBSPBaseTupleExpression.class).get(expression.fieldNo);
             if (source.getType().mayBeNull && !result.getType().mayBeNull)
                 result = result.some();
-        } if (source.is(DBSPBlockExpression.class)) {
+        } else if (source.is(DBSPBlockExpression.class)) {
             DBSPBlockExpression block = source.to(DBSPBlockExpression.class);
             Utilities.enforce(block.lastExpression != null);
             result = new DBSPBlockExpression(block.contents,
@@ -561,10 +563,6 @@ public class Simplify extends ExpressionTranslator {
                 negative.is(DBSPBoolLiteral.class) &&
                 negative.to(DBSPBoolLiteral.class).hasValue(true)) {
             result = condition.not();
-        } else if (condition != expression.condition ||
-                positive != expression.positive ||
-                negative != expression.negative) {
-            result = new DBSPIfExpression(expression.getNode(), condition, positive, negative);
         }
         this.map(expression, result);
     }
@@ -816,8 +814,8 @@ public class Simplify extends ExpressionTranslator {
                     if (iLeftType.isOne(leftLit)) {
                         // This works even for null
                         result = right.cast(expression.getNode(), expression.getType(), DBSPCastExpression.CastType.SqlUnsafe);
-                    } else if (iLeftType.isZero(leftLit) && !rightMayBeNull) {
-                        // This is not true for null values
+                    } else if (iLeftType.isZero(leftLit) && !rightMayBeNull && !leftType.is(DBSPTypeFP.class)) {
+                        // Not true for null values; for floats 0 * Infinity is NaN
                         result = left;
                     } else if (leftLit.isNull()) {
                         result = left;
@@ -836,8 +834,8 @@ public class Simplify extends ExpressionTranslator {
                     IsNumericType iRightType = rightType.to(IsNumericType.class);
                     if (iRightType.isOne(rightLit)) {
                         result = left;
-                    } else if (iRightType.isZero(rightLit) && !leftMayBeNull) {
-                        // This is not true for null values
+                    } else if (iRightType.isZero(rightLit) && !leftMayBeNull && !rightType.is(DBSPTypeFP.class)) {
+                        // Not true for null values; for floats Infinity * 0 is NaN
                         result = right;
                     } else if (rightLit.isNull()) {
                         result = right;
@@ -853,7 +851,8 @@ public class Simplify extends ExpressionTranslator {
                     IsNumericType iRightType = rightType.to(IsNumericType.class);
                     if (iRightType.isOne(rightLit)) {
                         result = left;
-                    } else if (iRightType.isZero(rightLit)) {
+                    } else if (iRightType.isZero(rightLit) && !rightType.is(DBSPTypeFP.class)) {
+                        // No warning for floats, where division by zero produces infinities
                         this.compiler.reportWarning(expression.getSourcePosition(), "Division by zero",
                                 " Division by constant zero value.");
                     }
@@ -867,7 +866,9 @@ public class Simplify extends ExpressionTranslator {
                 if (right.is(DBSPLiteral.class)) {
                     DBSPLiteral rightLit = right.to(DBSPLiteral.class);
                     IsNumericType iRightType = rightType.to(IsNumericType.class);
-                    if (iRightType.isOne(rightLit)) {
+                    // Fold x % 1 to 0 only for non-nullable integers:
+                    // NULL % 1 is NULL, and 5.5 % 1 is 0.5
+                    if (iRightType.isOne(rightLit) && !leftMayBeNull && leftType.is(DBSPTypeInteger.class)) {
                         result = iRightType.getZero();
                     } else if (iRightType.isZero(rightLit)) {
                         this.compiler.reportWarning(expression.getSourcePosition(),

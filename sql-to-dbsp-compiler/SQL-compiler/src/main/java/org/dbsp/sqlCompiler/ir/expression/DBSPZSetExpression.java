@@ -100,6 +100,23 @@ public final class DBSPZSetExpression extends DBSPExpression
         return new DBSPZSetExpression(elementType);
     }
 
+    /** Return 'true' when this constant is not a multi-set.
+     * In general there is no easy way to do this, since we don't have a canonical representation of constants
+     * at compile-time, so this is only conservative. */
+    public boolean isCertainlyDistinct() {
+        if (this.isEmpty())
+            return true;
+        if (this.data.size() == 1) {
+            for (var weight : this.data.values()) {
+                // Constants can have negative weights!
+                if (weight >= 0 && weight <= 1) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     @SuppressWarnings("MethodDoesntCallSuperMethod")
     public DBSPZSetExpression clone() {
         return new DBSPZSetExpression(new HashMap<>(this.data), this.elementType);

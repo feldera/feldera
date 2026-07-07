@@ -1068,14 +1068,25 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.assignOperator(project, op);
     }
 
-    DBSPSimpleOperator castOutput(CalciteRelNode node, DBSPSimpleOperator operator, DBSPType outputElementType) {
-        DBSPType inputElementType = operator.getOutputZSetElementType();
+    /** Convert the type of a stream if needed, using a Map operator.
+     *
+     * @param source            Output of this operator is converted.
+     * @param outputElementType Type to convert to.
+     * @param preservesDistinct If true and input is not a multiset, the output is not a multiset either.
+     * @return                  The operator inserting the cast.
+     */
+    @SuppressWarnings("SameParameterValue")
+    DBSPSimpleOperator castOutput(CalciteRelNode node, DBSPSimpleOperator source,
+                                  DBSPType outputElementType, boolean preservesDistinct) {
+        DBSPType inputElementType = source.getOutputZSetElementType();
         if (inputElementType.sameType(outputElementType))
-            return operator;
+            return source;
         DBSPClosureExpression caster = inputElementType.caster(outputElementType, DBSPCastExpression.CastType.SqlUnsafe);
         DBSPExpression function = caster.reduce(this.compiler);
         DBSPSimpleOperator map = new DBSPMapOperator(
-                node, function, TypeCompiler.makeZSet(outputElementType), operator.outputPort());
+                node, function, TypeCompiler.makeZSet(outputElementType),
+                source.isMultiset || !preservesDistinct,
+                source.outputPort());
         this.addOperator(map);
         return map;
     }
@@ -1149,7 +1160,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.checkPermutation(node, unionInputs, "UNION");
 
         // input type nullability may not match
-        List<OutputPort> ports = Linq.map(inputs, o -> this.castOutput(node, o, outputType).outputPort());
+        List<OutputPort> ports = Linq.map(inputs,
+                o -> this.castOutput(node, o, outputType, true).outputPort());
         if (union.all) {
             DBSPSumOperator sum = new DBSPSumOperator(node.getFinal(), ports);
             Utilities.enforce(sum.getOutputZSetElementType().sameType(outputType));
@@ -1185,10 +1197,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
                 DBSPSimpleOperator filter =
                         this.filterNonNullFields(node, CalciteObject.EMPTY, filterIndexes, neg, false);
-                neg = this.castOutput(node, filter, outputType);
+                neg = this.castOutput(node, filter, outputType, true);
                 inputs.add(neg.outputPort());
             } else {
-                opInput = this.castOutput(node, opInput, outputType);
+                opInput = this.castOutput(node, opInput, outputType, true);
                 inputs.add(opInput.outputPort());
             }
             first = false;
@@ -2404,35 +2416,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (this.modifyTableTranslation != null) {
             this.modifyTableTranslation.setResult(result);
         } else {
-            // We currently don't have a reliable way to check whether there are duplicates
-            // in the Z-set, so we assume it is a multiset
-            DBSPSimpleOperator constant = new DBSPConstantOperator(node.getFinal(), result, true);
+            DBSPSimpleOperator constant = new DBSPConstantOperator(node.getFinal(), result, !result.isCertainlyDistinct());
             this.assignOperator(values, constant);
         }
-    }
-
-    /** Given an operator with output type ZSet[T], index is using
-     * (ZSet[S], Tup0).  If a field is nullable in the input, but not in the result, insert a filter. */
-    DBSPMapIndexOperator indexEntireTuple(CalciteRelNode node, OutputPort port, DBSPTypeTuple resultType) {
-        DBSPTypeTuple inputRowType = port.getOutputZSetElementType().to(DBSPTypeTuple.class);
-        List<Integer> filterIndexes = new ArrayList<>();
-        for (int i = 0; i < resultType.size(); i++) {
-            if (inputRowType.getFieldType(i).mayBeNull && !resultType.getFieldType(i).mayBeNull)
-                filterIndexes.add(i);
-        }
-
-        DBSPSimpleOperator filter =
-                this.filterNonNullFields(node, CalciteObject.EMPTY, filterIndexes, port.simpleNode(), false);
-        DBSPVariablePath t = inputRowType.ref().var();
-        DBSPClosureExpression entireKey =
-                new DBSPRawTupleExpression(
-                        DBSPTupleExpression.flatten(t.deref()).cast(
-                                CalciteObject.EMPTY, resultType, DBSPCastExpression.CastType.SqlUnsafe),
-                        new DBSPTupleExpression()).closure(t);
-        DBSPMapIndexOperator result = new DBSPMapIndexOperator(node, entireKey,
-                makeIndexedZSet(resultType, DBSPTypeTuple.EMPTY), filter.outputPort());
-        this.addOperator(result);
-        return result;
     }
 
     private DBSPSimpleOperator
@@ -2485,7 +2471,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             DBSPSimpleOperator filter =
                     this.filterNonNullFields(node, CalciteObject.EMPTY, filterIndexes, opInput, false);
-            DBSPSimpleOperator next = this.castOutput(node, filter, outputType);
+            DBSPSimpleOperator next = this.castOutput(node, filter, outputType, true);
             if (current == null)
                 current = next;
             else {
