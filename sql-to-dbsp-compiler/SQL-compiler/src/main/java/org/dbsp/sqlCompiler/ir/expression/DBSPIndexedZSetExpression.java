@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 
@@ -39,13 +40,20 @@ public final class DBSPIndexedZSetExpression extends DBSPExpression
 
     @Override
     public DBSPExpression deepCopy() {
+        Utilities.enforce(this.isEmpty());
         return new DBSPIndexedZSetExpression(this.getNode(), this.type);
     }
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
         // This is accurate only for empty IndexedZSets, which is the only supported case so far
+        Utilities.enforce(this.isEmpty());
         return this.getType().sameType(other.getType());
+    }
+
+    public DBSPIndexedZSetExpression negate() {
+        Utilities.enforce(this.isEmpty());
+        return this;
     }
 
     @Override
@@ -70,6 +78,7 @@ public final class DBSPIndexedZSetExpression extends DBSPExpression
 
     @SuppressWarnings("SameReturnValue")
     public int size() {
+        Utilities.enforce(this.isEmpty());
         return 0;
     }
 

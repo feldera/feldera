@@ -382,7 +382,7 @@
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":27,"end_line_number":20,"end_column":37}
         ],
-        "persistent_id": "1d55e90bf29e3f19e1986f4d01fa7ac67549ea1345bd04d223f43ff4694927f6"
+        "persistent_id": "5aa9e3ce872b5ae2f4047600a57ec8ac352119caed9f06a50ae9709d1c32ba60"
       },
       "s4": {
         "operation": "flat_map_index",
@@ -392,18 +392,18 @@
         "calcite": {
           "seq": [
             {
-              "final": 3
-            },{
               "final": 4
             },{
               "partial": 7
+            },{
+              "final": 3
             }]
         },
         "positions": [
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":21}
         ],
-        "persistent_id": "532b61244e3f6ecac6e439489956f24fb4bdfedc3708b4dd7601e06c20c5ffc2"
+        "persistent_id": "1053dafeb120e48af7501505c4717953ea687294833b044a7b3a23fc5ca9e48b"
       },
       "s5": {
         "operation": "delta0",
@@ -430,7 +430,7 @@
           {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26}
         ],
-        "persistent_id": "41c15145ffd7f94a9c7335f8c82ca5f9fcd14d9d5c62c8aeea8616a7eb7433f4"
+        "persistent_id": "5a44d41ef4ed2601d42a7a00634ccb396c9c0230eab64a913761a6b73cb75c6d"
       },
       "s7": {
         "operation": "sum",
@@ -442,7 +442,7 @@
           "final": 10
         },
         "positions": [],
-        "persistent_id": "f9e9f0eed2184cdd3cacd079404f8ff466e148cfafe969034ddacc0f747a8d17"
+        "persistent_id": "934c48e9f1e8daed99d74753d09f112e8fe1981a549d318476a3a4fbc18736f7"
       }
     }, "s8": {
       "operation": "inspect",
@@ -457,7 +457,7 @@
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1},
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
       ],
-      "persistent_id": "c79ff4ab927d459ed213c8a0e70e93c7fdc0ed93011443b0ae9f1404fc33eca1"
+      "persistent_id": "e0ef8291b19f9950a61b410d5d368894412303197bc5d3465184f1fff0654253"
     }, "s9": {
       "operation": "constant",
       "inputs": [],

@@ -885,7 +885,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     @Nullable public DBSPCircuit getFinalCircuit(boolean temporary) {
         compileStartTime = System.currentTimeMillis();
         DBSPCircuit circuit = this.runAllCompilerStages();
-        this.postCompilationChecks();
+        if (circuit != null)
+            this.postCompilationChecks();
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Compilation time ")
                 .appendSupplier(() -> elapsedTimeInMs() + "ms")

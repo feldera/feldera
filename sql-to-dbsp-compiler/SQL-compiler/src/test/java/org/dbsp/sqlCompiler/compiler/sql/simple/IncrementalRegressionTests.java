@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -2114,6 +2115,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
         ccs.step("INSERT INTO T VALUES(0, 0), (1, 2), (2, 2)", """
                  y | min | max | stddev | arg_max | weight
                 -------------------------------------------""");
+        ccs.blockForCompaction();
         // Insert one tuple which produces no output yet; output for
         // data inserted so far is now emitted.
         ccs.step("INSERT INTO T VALUES(1, 5)", """
@@ -2124,7 +2126,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
             int joins = 0;
 
             @Override
-            public void postorder(DBSPStarJoinFilterMapOperator operator) {
+            public void postorder(DBSPStarJoinIndexOperator operator) {
                 this.joins++;
             }
 

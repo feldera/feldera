@@ -85,6 +85,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new DeadCode(compiler, options.languageOptions.generateInputForEveryTable));
         if (options.languageOptions.outputsAreSets)
             this.add(new EnsureDistinctOutputs(compiler));
+        this.add(new PropagateConstants(compiler));
         this.add(new PropagateEmptySources(compiler));
         this.add(new MergeSums(compiler));
         this.add(new Conditional(compiler, new CreateStarJoins(compiler), () -> !this.compiler.metadata.noStarJoins()));
@@ -100,6 +101,8 @@ public class CircuitOptimizer extends Passes {
         this.add(new ExpandAggregateZero(compiler));
         this.add(new Conditional(compiler, new RemoveStarJoins(compiler), this.compiler.metadata::noStarJoins));
         this.add(new DeadCode(compiler, true));
+        this.add(new OptimizeWithGraph(compiler, g -> new PullFilterVisitor(compiler, g)));
+        this.add(new PropagateEmptySources(compiler));
         this.add(new OptimizeDistinctVisitor(compiler));
         // This is useful even without incrementalization if we have recursion
         this.add(new OptimizeIncrementalVisitor(compiler));

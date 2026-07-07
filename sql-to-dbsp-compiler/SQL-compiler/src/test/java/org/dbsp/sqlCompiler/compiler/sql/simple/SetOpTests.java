@@ -1,11 +1,39 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.compiler.sql.quidem.ScottBaseTests;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /** End-to-end tests for SQL set operations: UNION, UNION ALL, INTERSECT, INTERSECT ALL, EXCEPT.
  * Some tests are from set-op.iq */
 public class SetOpTests extends ScottBaseTests {
+    @Test @Ignore("https://github.com/feldera/feldera/issues/6691")
+    public void simplifyIntersect() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(x INT, y INT NOT NULL);
+                
+                CREATE MATERIALIZED VIEW v AS
+                SELECT x, y FROM tbl
+                INTERSECT
+                SELECT 5, NULL;""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            // This is simplified to an empty set
+            @Override
+            public void postorder(DBSPSimpleOperator operator) {
+                Assert.assertTrue(
+                        operator.is(DBSPConstantOperator.class)
+                                || operator.is(DBSPSourceTableOperator.class)
+                                || operator.is(DBSPSinkOperator.class));
+            }
+        });
+    }
+
     @Test
     public void calciteIntersect() {
         this.qst("""

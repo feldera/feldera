@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -63,9 +65,9 @@ public class Regression3Tests extends SqlIoTest {
                 CREATE VIEW W AS SELECT R[1], R[2], R[3][1] FROM V;""");
         ccs.stepWeightOne("""
                 INSERT INTO T VALUES(0, 1, 2); INSERT INTO S VALUES(3, 4);""", """
-                  y | z | b
-                 -----------
-                  1 | 2 | 4""");
+                 y | z | b
+                -----------
+                 1 | 2 | 4""");
     }
 
     @Test
@@ -144,8 +146,6 @@ public class Regression3Tests extends SqlIoTest {
                 ) WITH (
                 'append_only' = 'true'
                 );
-
-
                 CREATE MATERIALIZED VIEW v1
                 WITH ('emit_final' = 'a_ts')
                 AS
@@ -810,5 +810,55 @@ public class Regression3Tests extends SqlIoTest {
                 -------------
                  {NULL: NULL}
                 """);
+    }
+
+    @Test
+    public void issue6565() {
+        var ccs = this.getCCS("""
+                CREATE TABLE employees(dept VARCHAR);
+                CREATE VIEW V AS SELECT dept, COUNT(*) AS n
+                FROM employees
+                GROUP BY dept
+                HAVING dept LIKE 'S%';""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            boolean filterFound = false;
+
+            @Override
+            public void postorder(DBSPFlatMapIndexOperator node) {
+                // Source is input
+                this.filterFound = true;
+                Assert.assertTrue(node.input().node().is(DBSPSourceTableOperator.class));
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertTrue(this.filterFound);
+            }
+        });
+    }
+
+    @Test
+    public void issue6565b() {
+        var ccs = this.getCCS("""
+                CREATE TABLE employees(dept VARCHAR);
+                CREATE LOCAL VIEW V AS SELECT dept, COUNT(*) AS n
+                FROM employees
+                GROUP BY dept;
+                CREATE VIEW W AS SELECT * FROM V WHERE dept LIKE 'S%';""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            boolean filterFound = false;
+
+            @Override
+            public void postorder(DBSPFlatMapIndexOperator node) {
+                // Source is input
+                this.filterFound = true;
+                Assert.assertTrue(node.input().node().is(DBSPSourceTableOperator.class));
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertTrue(this.filterFound);
+            }
+        });
     }
 }

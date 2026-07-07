@@ -161,6 +161,7 @@ public final class DBSPClosureExpression extends DBSPExpression {
                 .append(")");
     }
 
+    /** True if the composition this(before) can productively inline before */
     public boolean shouldInlineComposition(DBSPCompiler compiler, DBSPClosureExpression before) {
         Projection projection = new Projection(compiler, true, true);
         projection.apply(this);

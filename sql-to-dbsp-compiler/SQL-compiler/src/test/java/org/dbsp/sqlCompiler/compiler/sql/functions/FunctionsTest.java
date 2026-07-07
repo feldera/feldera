@@ -667,18 +667,18 @@ public class FunctionsTest extends SqlIoTest {
     @Test
     public void testDecimalErrors() {
         this.runtimeConstantFail("select cast(1234.1234 AS DECIMAL(6, 3))",
-                "Could not convert 1234.123 to DECIMAL(6, 3)");
+                "Cannot represent 1234.1234 as DECIMAL(6, 3)");
         this.runtimeConstantFail("select cast(1234.1236 AS DECIMAL(6, 3))",
-                "Could not convert 1234.123 to DECIMAL(6, 3)");
+                "Cannot represent 1234.1236 as DECIMAL(6, 3)");
         this.runtimeConstantFail("select cast(143.481 as decimal(2, 1))",
-                "Could not convert 143.4 to DECIMAL(2, 1)");
+                "Cannot represent 143.481 as DECIMAL(2, 1)");
         this.q("""
                 select cast(99.6 as decimal(2, 0));
                  result
                 --------
                  99""");
         this.runtimeConstantFail("select cast(-13.4 as decimal(2,1))",
-                "Could not convert -13.4 to DECIMAL(2, 1)");
+                "Cannot represent -13.4 as DECIMAL(2, 1)");
     }
 
     @Test
