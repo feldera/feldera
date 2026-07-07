@@ -177,7 +177,9 @@ pub(crate) fn truncate_ellipse<'a>(s: &'a str, len: usize, ellipse: &str) -> Cow
 }
 
 pub(crate) fn missing_pipeline_identity_message(operation: &str) -> String {
-    format!("{operation}: pipeline has no system-assigned name (config.name)")
+    format!(
+        "{operation}: pipeline has no system-assigned name (config.name), which is necessary to verify ownership"
+    )
 }
 
 /// For logging with a non-constant level.  From

@@ -1,11 +1,15 @@
+import json
+import logging
 import platform
 import random
 import sys
 import time
 import warnings
 from typing import Optional
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
+from feldera import Pipeline
 from feldera.enums import FaultToleranceModel, PipelineStatus
 from feldera.runtime_config import RuntimeConfig, Storage
 from feldera.testutils import (
@@ -25,11 +29,50 @@ from tests.utils import (
 from .helper import wait_for_condition
 
 
+LOGGER = logging.getLogger(__name__)
 _CHECKPOINT_SYNC_BUCKET_ARCH = platform.machine().lower()
 
 
 def checkpoint_sync_bucket(pipeline_name: str) -> str:
     return f"{MINIO_BUCKET}/{_CHECKPOINT_SYNC_BUCKET_ARCH}/{pipeline_name}"
+
+
+def checkpoint_sync_owner(bucket_name: str) -> Optional[dict]:
+    """Read the checkpoint-sync owner file from S3 if Python can access S3."""
+    try:
+        import pyarrow.fs as pafs
+
+        endpoint = MINIO_ENDPOINT.rstrip("/")
+        parsed = urlparse(endpoint)
+        s3 = pafs.S3FileSystem(  # type: ignore[attr-defined]
+            access_key=required_env("CI_K8S_MINIO_ACCESS_KEY_ID"),
+            secret_key=required_env("CI_K8S_MINIO_SECRET_ACCESS_KEY"),
+            endpoint_override=parsed.netloc,
+            scheme=parsed.scheme,
+            region=MINIO_REGION,
+        )
+        owner_path = f"{checkpoint_sync_bucket(bucket_name)}/owner.json"
+        info = s3.get_file_info(owner_path)
+    except Exception as e:
+        print(
+            f"S3 is not accessible from the Python SDK; skipping owner.json check: {e}",
+            file=sys.stderr,
+        )
+        return None
+
+    if not info.is_file:
+        raise AssertionError(f"checkpoint ownership file not found: {owner_path}")
+
+    with s3.open_input_file(owner_path) as f:
+        owner = json.loads(f.read().decode("utf-8"))
+
+    LOGGER.debug(
+        "read checkpoint ownership file from S3: bucket=%s path=%s pipeline_name=%s",
+        checkpoint_sync_bucket(bucket_name),
+        owner_path,
+        owner.get("pipeline_name"),
+    )
+    return owner
 
 
 def storage_cfg(
@@ -508,7 +551,9 @@ class TestCheckpointSync(SharedTestPipeline):
 
         with self.assertRaisesRegex(
             RuntimeError,
-            "Refusing to write checkpoint data|owned by pipeline|Current pipeline is",
+            "S3 bucket is owned by pipeline 'pipeline-[^']+'[\\s\\S]*"
+            "Current pipeline is 'pipeline-[^']+'[\\s\\S]*"
+            "Refusing to write checkpoint data",
         ):
             intruder.sync_checkpoint(wait=True)
 
@@ -524,6 +569,57 @@ class TestCheckpointSync(SharedTestPipeline):
         owner.stop(force=True)
         intruder.clear_storage()
         owner.clear_storage()
+
+    @enterprise_only
+    def test_bucket_owner_lock_allows_renamed_pipeline(self):
+        # Renaming a pipeline changes the user-visible name, but keeps the
+        # system-generated pipeline name used for bucket ownership.
+        old_name = self.pipeline.name
+        pipeline_id = self.pipeline.id()
+        system_name = f"pipeline-{pipeline_id}"
+        bucket_name = f"{old_name}-{pipeline_id}"
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
+                storage=Storage(
+                    config=storage_cfg(bucket_name, start_from_checkpoint="latest")
+                ),
+            )
+        )
+        self.pipeline.start()
+        _, got_before = self._insert_data_and_wait()
+        self.pipeline.checkpoint(wait=True)
+        self.pipeline.sync_checkpoint(wait=True)
+        owner_before = checkpoint_sync_owner(bucket_name)
+        if owner_before is not None:
+            self.assertEqual(owner_before["pipeline_name"], system_name)
+
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+        new_name = f"{old_name[:50]}-{uuid4().hex[:8]}"
+        self.client.http.patch(f"/pipelines/{old_name}", {"name": new_name})
+        self.p = Pipeline.get(new_name, self.client)
+
+        self.pipeline.start()
+        got_after = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: after rename: {len(got_after)}, {got_after}",
+            file=sys.stderr,
+        )
+        self.assertCountEqual(got_before, got_after)
+
+        self.pipeline.input_json("t0", [{"c0": 42, "c1": "after_rename"}])
+        self.pipeline.wait_for_completion()
+        self.pipeline.checkpoint(wait=True)
+        self.pipeline.sync_checkpoint(wait=True)
+        owner_after = checkpoint_sync_owner(bucket_name)
+        if owner_after is not None:
+            self.assertEqual(owner_after["pipeline_name"], system_name)
+
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
 
     @enterprise_only
     @single_host_only

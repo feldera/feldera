@@ -359,9 +359,9 @@ may reference the same files.
 ```
 storage-bucket/
 ├── owner.json                    # Pipeline that owns this checkpoint location
-├── w0-[UUID].feldera            # LSM tree reference file (shared across hosts)
-├── w1-[UUID].feldera            # LSM tree reference file (shared across hosts)
-├── dependencies/                # Per-checkpoint dependency manifests
+├── w0-[UUID].feldera             # LSM tree reference file (shared across hosts)
+├── w1-[UUID].feldera             # LSM tree reference file (shared across hosts)
+├── dependencies/                 # Per-checkpoint dependency manifests
 │   ├── [UUID-host0-ckpt1].json
 │   ├── [UUID-host1-ckpt1].json
 │   └── ...
