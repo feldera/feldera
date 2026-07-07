@@ -29,9 +29,9 @@ import TabItem from '@theme/TabItem';
           `version` or `refresh_version`, nor triggers recompilation. These fields can
           therefore be edited at any state of a pipeline (e.g. while running).
 
-        - Delta Lake input connectors now support compiler-derived projection
-          pushdown from table-level `skip_unused_columns`, using the standard
-          `projection.include` connector configuration.
+        - Delta Lake input connectors now honor table-level
+          `skip_unused_columns` by reading only the required columns from the
+          Delta table.
 
         ## v0.311.0
 

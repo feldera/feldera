@@ -42,34 +42,6 @@ exactly once fault tolerance.
 
 [*]: Required fields
 
-### Projection pushdown
-
-When a SQL table is declared with `WITH ('skip_unused_columns' = 'true')`,
-the compiler can derive a standard connector projection for Delta Lake inputs:
-
-```json
-{
-  "transport": {
-    "name": "delta_table_input",
-    "config": {
-      "uri": "s3://bucket/table",
-      "mode": "snapshot"
-    }
-  },
-  "projection": {
-    "include": ["col0", "col1"]
-  }
-}
-```
-
-`projection.include` is an ordered list of connector-facing column names to read.
-Column names are case-sensitive and must match the SQL table schema exactly.
-The optional `projection.derived` flag is reserved for compiler-generated
-configuration. This first implementation is limited to Delta Lake projection
-pushdown; standard filter pushdown is planned separately. Existing Delta Lake
-`filter`, `snapshot_filter`, `cdc_delete_filter`, and `cdc_order_by` options keep
-their current SQL-expression semantics.
-
 :::caution
 In `cdc` mode, transactions that need to reconcile Add and Remove actions
 (such as `MERGE` or `UPDATE`) are not currently supported on Delta tables
