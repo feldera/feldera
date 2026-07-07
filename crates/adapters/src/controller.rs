@@ -6292,16 +6292,16 @@ impl ControllerInner {
 
             let mut seen_columns = BTreeSet::new();
             for column in &projection.include {
-                let Some(column_name) = schema.projection_field_name(column) else {
+                if !schema.has_projection_field_name(column) {
                     return Err(ControllerError::invalid_transport_configuration(
                         endpoint_name,
                         &format!(
                             "standard 'projection' pushdown references unknown column '{column}'"
                         ),
                     ));
-                };
+                }
 
-                if !seen_columns.insert(column_name) {
+                if !seen_columns.insert(column) {
                     return Err(ControllerError::invalid_transport_configuration(
                         endpoint_name,
                         &format!(

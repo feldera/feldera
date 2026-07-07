@@ -250,16 +250,9 @@ impl Relation {
         self.fields.iter().find(|f| f.name == name)
     }
 
-    /// Lookup a field name from standard connector projection configuration.
-    ///
-    /// Unlike [`field`](Self::field), this does not canonicalize the user input:
-    /// projection columns are connector-facing names and must match the schema's
-    /// true column name exactly.
-    pub fn projection_field_name(&self, name: &str) -> Option<String> {
-        self.fields
-            .iter()
-            .find(|f| f.name.name() == name)
-            .map(|f| f.name.name())
+    /// Return `true` if `name` exactly matches a field name.
+    pub fn has_projection_field_name(&self, name: &str) -> bool {
+        self.fields.iter().any(|f| f.name.name() == name)
     }
 
     pub fn has_lateness(&self) -> bool {
@@ -270,21 +263,22 @@ impl Relation {
         self.properties.get(name).map(|p| p.value.as_str())
     }
 
+    /// Return `true` if `skip_unused_columns` is set.
     pub fn skip_unused_columns(&self) -> bool {
         self.get_property("skip_unused_columns") == Some("true")
     }
 
+    /// Return `true` if `field` can be omitted from connector input.
     pub fn is_unused_column_omittable(field: &Field) -> bool {
         field.unused && (field.columntype.nullable || field.default.is_some())
     }
 
-    /// Return the input columns that must be read after removing unused columns
-    /// whose values can be supplied as NULL/defaults.
+    /// Return the input columns that must be read after omitting unused columns.
     ///
-    /// A projection with no columns cannot preserve row count in SQL, so keep
-    /// the first declared field when every declared column is otherwise
-    /// skippable. The choice is arbitrary, but stable and cheap to compute from
-    /// the schema available here.
+    /// A projection with no columns cannot preserve input row count, so keep the
+    /// first declared field when every declared column is otherwise skippable.
+    /// The choice is arbitrary, but stable and cheap to compute from the schema
+    /// available here.
     pub fn unused_column_projection(&self) -> Option<Vec<String>> {
         let mut columns = self
             .fields
@@ -308,6 +302,7 @@ impl Relation {
         Some(columns)
     }
 
+    /// Return non-omittable columns missing from `columns`.
     pub fn missing_non_omittable_projection_columns(&self, columns: &[String]) -> Vec<String> {
         let projected = columns.iter().cloned().collect::<BTreeSet<_>>();
 

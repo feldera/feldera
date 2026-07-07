@@ -2430,7 +2430,7 @@ async fn delta_table_cdc_skip_unused_columns_catchup_suspend_test() {
 /// expressions. The compiler projection omits `unused` because it is nullable
 /// and marked unused in the SQL schema, but the Delta connector must still read
 /// it when a connector expression references it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 async fn delta_table_projection_preserves_connector_expression_columns_test() {
     init_logging();
 

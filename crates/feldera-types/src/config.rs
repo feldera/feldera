@@ -1984,6 +1984,7 @@ impl TransportConfig {
         matches!(self, TransportConfig::HttpInput(_))
     }
 
+    /// Return pushdown capabilities supported by this input transport.
     pub fn input_pushdown_capabilities(&self) -> ConnectorPushdownCapabilities {
         // This is currently a transport-level capability table because projection
         // pushdown is implemented only for Delta input. Future connectors should
