@@ -5722,15 +5722,22 @@ impl ControllerInit {
         if max_rss_mb.is_none()
             && let Some(memory_mb_max) = &pipeline_config.global.resources.memory_mb_max
         {
-            warn!(
-                "RSS memory limit ('max_rss_mb') is not set, but a Kubernetes memory limit \
+            if feldera_observability::system::running_in_kubernetes() {
+                warn!(
+                    "RSS memory limit ('max_rss_mb') is not set, but a Kubernetes pod memory limit \
 ('resources.memory_mb_max' = {memory_mb_max} MB) is configured. \
-Using the Kubernetes limit as the RSS memory limit."
-            );
+Using the pod limit as the RSS memory limit."
+                );
+            } else {
+                info!(
+                    "RSS memory limit ('max_rss_mb') is not set; using 'resources.memory_mb_max' \
+({memory_mb_max} MB) as the RSS memory limit."
+                );
+            }
             max_rss_mb = Some(*memory_mb_max);
         } else if max_rss_mb.is_none() && pipeline_config.global.resources.memory_mb_max.is_none() {
             warn!(
-                "RSS memory limit ('max_rss_mb') is not set, and no Kubernetes memory limit \
+                "RSS memory limit ('max_rss_mb') is not set, and no deployment memory limit \
 ('resources.memory_mb_max') is configured. We recommend configuring at least one of these settings to avoid out-of-memory failures."
             );
         } else if let Some(max_rss_mb) = max_rss_mb
@@ -5738,8 +5745,8 @@ Using the Kubernetes limit as the RSS memory limit."
             && max_rss_mb > *memory_mb_max
         {
             warn!(
-                "RSS memory limit ('max_rss_mb') is set to {max_rss_mb} MB exceeds the Kubernetes memory limit \
-('resources.memory_mb_max' = {memory_mb_max} MB) is configured. This will likely cause out-of-memory failures."
+                "RSS memory limit ('max_rss_mb' = {max_rss_mb} MB) exceeds the deployment memory limit \
+('resources.memory_mb_max' = {memory_mb_max} MB). This will likely cause out-of-memory failures."
             );
         }
 
@@ -8583,7 +8590,7 @@ impl ControllerInner {
                 }
                 TransactionState::Started {
                     tid,
-                    start,
+                    start: _,
                     processed_records,
                 } if next.is_none() || next != open => {
                     // The next step belongs to a different transaction, or the

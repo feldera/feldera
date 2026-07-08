@@ -3,7 +3,7 @@ import unittest
 from feldera import PipelineBuilder
 from tests import TEST_CLIENT
 from tests.platform.helper import PipelineTestCase
-from feldera.runtime_config import RuntimeConfig
+from feldera.runtime_config import Resources, RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 
@@ -104,6 +104,10 @@ tracing = { version = "0.1.40" }
             udf_rust=udfs,
             udf_toml=toml,
             runtime_config=RuntimeConfig(
+                resources=Resources(
+                    memory_mb_min=1024,
+                    config={"datafusion_memory_mb": 512},
+                ),
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
             ),

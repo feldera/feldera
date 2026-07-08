@@ -5470,6 +5470,7 @@ dependencies = [
  "reqwest 0.12.24",
  "sentry",
  "serde_json",
+ "sysinfo 0.38.4",
  "tracing",
  "tracing-subscriber",
 ]
