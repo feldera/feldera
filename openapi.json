@@ -11944,6 +11944,16 @@
               "source_table"
             ],
             "properties": {
+              "discard_shutdown_errors": {
+                "type": "boolean",
+                "description": "True to retry reading the table when the previous connector run stopped\nbefore acknowledging pending data.\n\nThese writes were not reported durable and are safe to reingest.",
+                "default": true
+              },
+              "discard_table_errors": {
+                "type": "boolean",
+                "description": "True to retry reading the table with a persisted etl error when the connector starts.\n\nRecovery may repeat the initial snapshot. Define a primary key on the\ninput relation so replayed rows do not appear as duplicates.",
+                "default": false
+              },
               "publication": {
                 "type": "string",
                 "description": "Name of the pre-created Postgres publication to replicate from."
@@ -11951,6 +11961,13 @@
               "source_table": {
                 "type": "string",
                 "description": "Postgres table to replicate (e.g. \"public.orders\").\nMust be included in the publication."
+              },
+              "streaming_ack_hold_ms": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Maximum time to wait for each non-final CDC batch to become durable before\ningestion may continue without advancing the PostgreSQL replication position.\nThe final batch of an initial snapshot or catch-up always waits for durability.",
+                "default": 2000,
+                "minimum": 0
               },
               "uri": {
                 "type": "string",

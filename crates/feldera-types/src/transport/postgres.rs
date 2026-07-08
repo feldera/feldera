@@ -90,6 +90,41 @@ pub struct PostgresCdcReaderConfig {
     #[serde(flatten)]
     #[schema(inline)]
     pub tls: PostgresTlsConfig,
+
+    /// Maximum time to wait for each non-final CDC batch to become durable before
+    /// ingestion may continue without advancing the PostgreSQL replication position.
+    /// The final batch of an initial snapshot or catch-up always waits for durability.
+    #[serde(default = "default_streaming_ack_hold_ms")]
+    #[schema(default = default_streaming_ack_hold_ms)]
+    pub streaming_ack_hold_ms: u64,
+
+    /// True to retry reading the table when the previous connector run stopped
+    /// before acknowledging pending data.
+    ///
+    /// These writes were not reported durable and are safe to reingest.
+    #[serde(default = "default_discard_shutdown_errors")]
+    #[schema(default = default_discard_shutdown_errors)]
+    pub discard_shutdown_errors: bool,
+
+    /// True to retry reading the table with a persisted etl error when the connector starts.
+    ///
+    /// Recovery may repeat the initial snapshot. Define a primary key on the
+    /// input relation so replayed rows do not appear as duplicates.
+    #[serde(default = "default_discard_table_errors")]
+    #[schema(default = default_discard_table_errors)]
+    pub discard_table_errors: bool,
+}
+
+pub const fn default_streaming_ack_hold_ms() -> u64 {
+    2_000
+}
+
+pub const fn default_discard_shutdown_errors() -> bool {
+    true
+}
+
+pub const fn default_discard_table_errors() -> bool {
+    false
 }
 
 impl PostgresCdcReaderConfig {
@@ -100,6 +135,10 @@ impl PostgresCdcReaderConfig {
 
         if self.source_table.trim().is_empty() {
             return Err("source_table cannot be empty".to_string());
+        }
+
+        if self.streaming_ack_hold_ms == 0 {
+            return Err("streaming_ack_hold_ms must be greater than zero".to_string());
         }
 
         if self.tls.ssl_client_pem.is_some()
@@ -311,6 +350,9 @@ mod tests {
             publication: "publication".to_string(),
             source_table: "public.table".to_string(),
             tls,
+            streaming_ack_hold_ms: default_streaming_ack_hold_ms(),
+            discard_shutdown_errors: default_discard_shutdown_errors(),
+            discard_table_errors: default_discard_table_errors(),
         }
     }
 
@@ -343,6 +385,19 @@ mod tests {
         let config = postgres_cdc_config(PostgresTlsConfig::default());
 
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn postgres_cdc_config_discards_shutdown_errors_by_default() {
+        let config: PostgresCdcReaderConfig = serde_json::from_value(serde_json::json!({
+            "uri": "postgres://user:password@localhost:5432/database",
+            "publication": "publication",
+            "source_table": "public.table",
+        }))
+        .unwrap();
+
+        assert!(config.discard_shutdown_errors);
+        assert!(!config.discard_table_errors);
     }
 
     #[test]

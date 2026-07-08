@@ -1,3 +1,73 @@
+//! PostgreSQL change-data-capture input connector.
+//!
+//! [`PostgresCdcInputInner::worker_task_inner`] constructs and runs an `etl` [`Pipeline`] that
+//! snapshots a PostgreSQL publication and then follows its logical replication stream. `etl`
+//! persists table-copy phases and replication progress in the source database through its
+//! [`PostgresStore`]. The connector forwards only the configured `source_table` to Feldera, even
+//! when the publication contains other tables.
+//!
+//! # Data flow
+//!
+//! ```text
+//! PostgreSQL snapshot and WAL
+//!             |
+//!             v
+//!     etl Pipeline + PostgresStore
+//!             |
+//!             v
+//! FelderaDestination (rows/events -> JSON inserts and deletes)
+//!             |
+//!             v
+//! CdcInputQueue (parsed buffers + deferred acknowledgments)
+//!             |
+//!             v
+//! PostgresCdcInputReader -> Feldera circuit step
+//! ```
+//!
+//! [`FelderaDestination`] converts snapshot rows and replication events into Feldera input
+//! records. It splits large writes into bounded buffers and pushes them into [`CdcInputQueue`].
+//! When the controller requests input, [`PostgresCdcInputReader`] flushes up to the connector's
+//! batch limit. Every deferred acknowledgment encountered in that flush is assigned to the same
+//! circuit step, which has flushed all the data covered by each acknowledgment.
+//!
+//! # Acknowledgments and durability
+//!
+//! etl waits for each destination acknowledgment before it can continue. With completion
+//! tracking, snapshot batches are accepted while their data accumulates in the queue.
+//!
+//! etl then sends an empty write that terminates a snapshot, which is queued behind that data
+//! as a durability barrier; etl finishes the copy only after the barrier becomes durable.
+//!
+//! A streaming write's [`DeferredAck`] is attached to its final queue entry (each streaming write may
+//! produce multiple queue entries). Once that entry is flushed, the completion watcher ties the
+//! acknowledgment to the resulting circuit step. It reports `Durable` after the step completes in
+//! fast mode, or after a checkpoint containing the step completes when fault tolerance is enabled.
+//! This prevents the PostgreSQL replication slot from advancing beyond Feldera's completion frontier.
+//!
+//! A streaming acknowledgment marked `MayDefer` that waits longer than
+//! `streaming_ack_hold_ms` may be reported as `Accepted`. This lets etl continue reading WAL
+//! without advancing the replication slot; a later durable acknowledgment confirms the accepted
+//! prefix. etl marks terminal writes as `RequireDurable`; those acknowledgments never time out and
+//! wait for the completion frontier. While an acknowledgment remains queued, the reader requests
+//! bounded steps so it does not wait for the controller's normal buffer timeout.
+//!
+//! # Lifecycle and errors
+//!
+//! Pausing the Feldera pipeline stops the destination from accepting new etl batches; already
+//! queued records can still drain. [`TableErrorMonitor`] turns non-retriable per-table etl errors,
+//! such as unsupported source schema changes, into connector errors instead of allowing the input
+//! to stall silently. Terminating or dropping the connector shuts down the etl pipeline and its
+//! completion watcher.
+//!
+//! etl normally drains pending streaming writes during shutdown. If the completion watcher or
+//! destination side disappears first, etl observes the dropped acknowledgment as a destination
+//! error and may persist it in the table state. The same state can be left by a failed run in
+//! which etl has enough time to observe the closed acknowledgment before the process exits. Since
+//! Feldera never reported that write as [`DestinationWriteStatus::Durable`], the saved PostgreSQL
+//! replication position does not include it and the write must be replayed. On startup,
+//! `discard_shutdown_errors` therefore defaults to `true` and rolls back only this dropped-ack
+//! error. Other persisted table errors remain intact unless `discard_table_errors` is enabled.
+
 use crate::transport::{
     InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint, NonFtInputReaderCommand,
 };
@@ -5,24 +75,21 @@ use crate::{ControllerError, InputConsumer, InputReader, PipelineState, RecordFo
 use anyhow::{Result as AnyResult, anyhow};
 use chrono::Utc;
 use dbsp::circuit::tokio::TOKIO;
-use etl::concurrency::ShutdownTx;
 use etl::config::{
     BatchConfig, InvalidatedSlotBehavior, MemoryBackpressureConfig, PgConnectionConfig,
     PipelineConfig, TableSyncCopyConfig, TcpKeepaliveConfig,
 };
-use etl::destination::Destination;
-use etl::destination::async_result::{
-    DropTableForCopyResult, WriteEventsResult, WriteTableRowsResult,
+use etl::data::{ArrayCell, Cell, OldTableRow, TableRow, UpdatedTableRow};
+use etl::destination::{
+    Destination, DestinationWriteStatus, DropTableForCopyResult, WriteEventsDurability,
+    WriteEventsResult, WriteTableRowsResult,
 };
 use etl::error::{ErrorKind, EtlResult};
 use etl::etl_error;
-use etl::pipeline::Pipeline;
-use etl::state::{TableRetryPolicy, TableState};
-use etl::store::both::postgres::PostgresStore;
-use etl::store::state::StateStore;
-use etl::types::{
-    ArrayCell, Cell, Event, OldTableRow, ReplicatedTableSchema, TableRow, UpdatedTableRow,
-};
+use etl::event::Event;
+use etl::pipeline::{Pipeline, ShutdownTx};
+use etl::schema::ReplicatedTableSchema;
+use etl::store::{PostgresStore, StateStore, TableRetryPolicy, TableState};
 use feldera_adapterlib::catalog::{DeCollectionStream, InputCollectionHandle};
 use feldera_adapterlib::format::ParseError;
 use feldera_adapterlib::transport::{Resume, Watermark};
@@ -32,19 +99,189 @@ use feldera_types::format::json::JsonFlavor;
 use feldera_types::transport::postgres::{PostgresCdcReaderConfig, PostgresTlsConfig};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
+use std::future::pending;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::sync::watch::{Receiver, Sender, channel};
+use tokio::time::{Instant as TokioInstant, sleep_until};
 use tracing::{debug, error, info, warn};
 use url::Url;
 use xxhash_rust::xxh3::xxh3_64;
 
 use super::tls::make_etl_tls_config;
 
-/// Deferred async result senders waiting for step completion.
-type DeferredSenders = Vec<WriteEventsResult<()>>;
+const DROPPED_DESTINATION_ACK_ERROR: &str =
+    "[DestinationError] Async result channel closed before sending";
+const MAX_ERROR_ROLLBACKS_PER_TABLE: usize = 32;
+
+/// An etl write acknowledgment deferred until Feldera has processed the data it covers.
+/// The ack is tagged by write type because snapshot and stream acks follow different rules.
+enum DeferredAck {
+    /// etl sends an empty table-copy write once we've accepted the snapshot batches.
+    /// We need to keep it around to mark that the snapshot has now become durable.
+    /// Answering `Accepted` on this empty table-copy write is illegal.
+    SnapshotCopyBarrier(WriteTableRowsResult),
+    /// Each `write_events` call may produce multiple smaller batches; we attach
+    /// this ack to the last one. `write_events` fires both during a table's
+    /// post-copy catchup and in steady-state streaming.
+    ///
+    /// We answer `Durable` as soon as the completion frontier passes it. A
+    /// `MayDefer` write may instead be answered `Accepted` after
+    /// `streaming_ack_hold_ms`; a `RequireDurable` write waits for the frontier.
+    Stream {
+        result: WriteEventsResult,
+        durability: WriteEventsDurability,
+    },
+    #[cfg(test)]
+    Test {
+        kind: TestAckKind,
+        tx: std::sync::mpsc::Sender<TestAckStatus>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
+enum TestAckKind {
+    SnapshotCopyBarrier,
+    StreamMayDefer,
+    StreamRequireDurable,
+}
+
+impl DeferredAck {
+    /// Report the ack as `Durable`, letting etl advance the replication slot
+    /// or finish the table copy.
+    fn complete(self) {
+        match self {
+            Self::SnapshotCopyBarrier(result) | Self::Stream { result, .. } => {
+                result.send(Ok(DestinationWriteStatus::Durable))
+            }
+            #[cfg(test)]
+            Self::Test { tx, .. } => {
+                let _ = tx.send(TestAckStatus::Durable);
+            }
+        }
+    }
+
+    /// Report a stream ack as `Accepted`: Feldera has accepted the rows for processing,
+    /// but they are not durable yet, so etl may keep reading WAL without moving the slot.
+    fn accept(self) {
+        match self {
+            Self::Stream {
+                result,
+                durability: WriteEventsDurability::MayDefer,
+            } => result.send(Ok(DestinationWriteStatus::Accepted)),
+            Self::Stream {
+                durability: WriteEventsDurability::RequireDurable,
+                ..
+            } => unreachable!("a required-durability stream ack is never accepted"),
+            Self::SnapshotCopyBarrier(_) => {
+                unreachable!("the snapshot copy barrier is never accepted")
+            }
+            #[cfg(test)]
+            Self::Test {
+                kind: TestAckKind::StreamMayDefer,
+                tx,
+            } => {
+                let _ = tx.send(TestAckStatus::Accepted);
+            }
+            #[cfg(test)]
+            Self::Test { .. } => {
+                unreachable!("a non-deferrable ack is never accepted")
+            }
+        }
+    }
+
+    fn is_stream(&self) -> bool {
+        match self {
+            Self::SnapshotCopyBarrier(_) => false,
+            Self::Stream { .. } => true,
+            #[cfg(test)]
+            Self::Test { kind, .. } => matches!(
+                kind,
+                TestAckKind::StreamMayDefer | TestAckKind::StreamRequireDurable
+            ),
+        }
+    }
+
+    /// Whether etl permits this stream write to complete as `Accepted`.
+    fn may_defer(&self) -> bool {
+        match self {
+            Self::SnapshotCopyBarrier(_) => false,
+            Self::Stream { durability, .. } => *durability == WriteEventsDurability::MayDefer,
+            #[cfg(test)]
+            Self::Test { kind, .. } => *kind == TestAckKind::StreamMayDefer,
+        }
+    }
+}
+
+/// Deferred etl acks stored as auxiliary data on a queue entry.
+/// Each ack answers one etl destination call.
+type DeferredSenders = Vec<DeferredAck>;
+
+/// FIFO input queue for parsed CDC data. Each entry carries [`DeferredSenders`]
+/// as auxiliary data; see [`DeferredAck`] for what each variant answers and when.
+///
+/// One etl write may be parsed into several queue entries but has at most one
+/// ack, so most entries carry none; the ack sits on the write's final entry.
+///
+/// ```text
+/// etl write([e1, e2, e3, e4])
+///     |
+///     +--> queue entry: [e1, e2]  acks: []
+///     +--> queue entry: [e3]      acks: []
+///     `--> queue entry: [e4]      acks: [ack]
+///
+/// FIFO flush order: entry 1 -> entry 2 -> entry 3 + ack
+/// ```
+///
+/// That positioning is what lets [`PostgresCdcInputReader::request`] hand each
+/// ack to a step that flushed everything it covers. A bounded flush may cross
+/// several ack boundaries; all of those acks share the same step completion.
+type CdcInputQueue = InputQueue<DeferredSenders>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
+enum TestAckStatus {
+    Accepted,
+    Durable,
+}
+
+struct PendingAcks {
+    /// `total_completed_steps` observed right after the queue flush. The
+    /// flushed data lands in the next step, so these acks are done once
+    /// `total_completed_steps >= step_at_flush + 1` (or the corresponding
+    /// checkpoint frontier reaches that step in strict mode).
+    step_at_flush: u64,
+    /// When the acks were assigned to a step. The stream ack hold deadline
+    /// counts from here.
+    held_since: Instant,
+    senders: DeferredSenders,
+}
+
+/// Two ways an ack reaches the completion watcher.
+///
+/// A stream ack that times out as `Accepted` has no further data of its own
+/// to confirm it durable; only a later write can do that. A `write_events`
+/// call whose events all get filtered out (e.g. a change to another table in
+/// the publication, or an update we cannot reconstruct) is our chance to do
+/// so, but it queues no Feldera rows and so never goes through the input
+/// queue: it never gets a `step_at_flush` to anchor it. This variant gives it
+/// a path to the watcher without one.
+enum CompletionMessage {
+    /// A write that queued data. Resolved against the `step_at_flush` on
+    /// [`PendingAcks`].
+    Queued(PendingAcks),
+    /// A stream write that produced no Feldera rows: there is no queue entry,
+    /// so no step to wait on. But it is still an ack we can answer, and
+    /// answering it `Durable` means the completion frontier has caught up with
+    /// everything before it, including any earlier stream ack that timed out
+    /// as `Accepted`, so it doubles as confirmation for that data too.
+    NoRowStream(DeferredAck),
+}
 
 /// Integrated input connector that reads from Postgres via logical replication (CDC).
 pub struct PostgresCdcInputEndpoint {
@@ -165,13 +402,22 @@ impl InputReader for PostgresCdcInputReader {
 
         match command.as_nonft().unwrap() {
             NonFtInputReaderCommand::Queue => {
-                // Flush queue to circuit, collecting timestamps for watermarks.
+                // Flush the queue to the circuit, collecting timestamps for
+                // watermarks and every ack encountered by this bounded flush.
+                // Each ack sits on the final entry of the data it covers, so
+                // all collected acks can share this step's completion frontier.
                 let (buffer_size, _hasher, flushed) = self.inner.queue.flush_with_aux();
 
-                let watermarks: Vec<Watermark> = flushed
-                    .iter()
-                    .map(|(ts, _)| Watermark::new(*ts, None))
-                    .collect();
+                let mut watermarks = Vec::new();
+                let mut senders = Vec::new();
+                for (ts, mut flushed_senders) in flushed {
+                    watermarks.push(Watermark::new(ts, None));
+                    senders.append(&mut flushed_senders);
+                }
+
+                self.inner
+                    .queued_acks
+                    .fetch_sub(senders.len(), Ordering::Release);
 
                 // Build resume metadata so Feldera can checkpoint our position.
                 // The actual resume state is managed by etl's PostgresStore;
@@ -190,34 +436,50 @@ impl InputReader for PostgresCdcInputReader {
                     .consumer
                     .extended(buffer_size, Some(resume), watermarks);
 
-                // Take any deferred senders that write_events stored.
-                let senders: DeferredSenders =
-                    std::mem::take(&mut *self.inner.pending_senders.lock().unwrap());
-
                 if !senders.is_empty() {
                     if let Some(tx) = self.inner.completion_task_tx.as_ref() {
-                        // Snapshot total_completed_steps AFTER flush.  The
-                        // data will land in the next step (>completed), so
-                        // this value is the correct lower bound for both
-                        // fast mode (fire when completed_steps > this) and
-                        // strict mode (fire when checkpointed_steps > this,
-                        // per the `total_checkpointed_steps >= n` semantics).
+                        // The data we just flushed lands in the next step, so
+                        // remember how many steps have completed right now.
+                        // The watcher answers these acks once the frontier
+                        // passes this value: after the step itself in fast
+                        // mode, after its checkpoint in strict mode.
                         let step_at_flush = self
                             .inner
                             .step_completion_rx
                             .as_ref()
                             .map(|rx| rx.borrow().total_completed_steps)
                             .unwrap_or(0);
-                        let _ = tx.send((step_at_flush, senders));
+                        let _ = tx.send(CompletionMessage::Queued(PendingAcks {
+                            step_at_flush,
+                            held_since: Instant::now(),
+                            senders,
+                        }));
                     } else {
-                        // No completion tracking — fire immediately.
+                        // No completion tracking: complete immediately.
                         for sender in senders {
-                            sender.send(Ok(()));
+                            sender.complete();
                         }
                     }
                 }
+
+                // etl blocks on each write's ack before it can proceed, so an
+                // ack stuck in the queue stalls replication. That can happen:
+                // a flush may stop at `max_batch_size` before reaching the
+                // ack's entry. If the leftover tail is smaller than
+                // `min_batch_size_records`, the controller may wait until the
+                // buffer timeout before scheduling another step, stalling
+                // replication in the meantime. So while any ack is still queued,
+                // keep requesting a step.
+                if self.inner.queued_acks.load(Ordering::Acquire) > 0 {
+                    self.inner.consumer.request_step();
+                }
             }
-            NonFtInputReaderCommand::Transition(state) => drop(self.sender.send_replace(state)),
+            NonFtInputReaderCommand::Transition(state) => {
+                if state == PipelineState::Terminated {
+                    self.inner.shutdown_etl_pipeline();
+                }
+                let _ = self.sender.send_replace(state);
+            }
         }
     }
 
@@ -236,24 +498,26 @@ struct PostgresCdcInputInner {
     endpoint_name: String,
     config: PostgresCdcReaderConfig,
     consumer: Box<dyn InputConsumer>,
-    queue: Arc<InputQueue>,
+    queue: Arc<CdcInputQueue>,
     /// Deterministic pipeline ID used for replication slot naming and resume.
     pipeline_id: u64,
-    /// Deferred async result senders from `write_events`, waiting to be paired
-    /// with a step number during the next `Queue` command.
-    pending_senders: Arc<Mutex<DeferredSenders>>,
-    /// Watch receiver for step completion — used to snapshot `step_at_flush`
-    /// in the Queue handler.  Always tracks `total_completed_steps`.
+    /// How many `DeferredAck`s are sitting in `queue`, waiting to be flushed.
+    /// While nonzero, the reader keeps requesting bounded steps; otherwise an
+    /// ack behind a tail smaller than `min_batch_size_records` could sit there
+    /// forever with etl blocked on it.
+    queued_acks: Arc<AtomicUsize>,
+    /// Watch receiver for step completion, used to capture `step_at_flush` in
+    /// the Queue handler. Always tracks `total_completed_steps`.
     step_completion_rx: Option<tokio::sync::watch::Receiver<Completion>>,
-    /// Watcher source for the background task.  Taken once by `worker_task_inner`.
+    /// Watcher source for the background task. Taken once by `worker_task_inner`.
     /// `Strict` when fault tolerance is enabled (gates slot on checkpoint);
     /// `Fast` otherwise (gates slot on step completion).
     watcher_rx: Mutex<Option<WatcherReceiver>>,
-    /// Sender for passing (step_at_flush, senders) to the background task.
-    /// Created once at construction time if completion tracking is available.
-    completion_task_tx: Option<mpsc::UnboundedSender<(u64, DeferredSenders)>>,
+    /// Sender for passing pending acks to the background task.
+    /// Created at construction time if completion tracking is available.
+    completion_task_tx: Option<mpsc::UnboundedSender<CompletionMessage>>,
     /// Receiver half, taken once by worker_task_inner to spawn the background task.
-    completion_task_rx: Mutex<Option<mpsc::UnboundedReceiver<(u64, DeferredSenders)>>>,
+    completion_task_rx: Mutex<Option<mpsc::UnboundedReceiver<CompletionMessage>>>,
     /// etl shutdown handle for the currently running pipeline.
     /// Used to stop etl workers when Feldera terminates the connector.
     etl_shutdown_tx: Mutex<Option<ShutdownTx>>,
@@ -290,7 +554,7 @@ impl PostgresCdcInputInner {
             consumer,
             queue,
             pipeline_id,
-            pending_senders: Arc::new(Mutex::new(Vec::new())),
+            queued_acks: Arc::new(AtomicUsize::new(0)),
             step_completion_rx,
             watcher_rx: Mutex::new(watcher_rx),
             completion_task_tx,
@@ -352,14 +616,16 @@ impl PostgresCdcInputInner {
             max_table_sync_workers: PipelineConfig::DEFAULT_MAX_TABLE_SYNC_WORKERS,
             max_copy_connections_per_table: PipelineConfig::DEFAULT_MAX_COPY_CONNECTIONS_PER_TABLE,
             memory_refresh_interval_ms: PipelineConfig::DEFAULT_MEMORY_REFRESH_INTERVAL_MS,
+            replication_lag_refresh_interval_ms:
+                PipelineConfig::DEFAULT_REPLICATION_LAG_REFRESH_INTERVAL_MS,
             memory_backpressure: Some(MemoryBackpressureConfig::default()),
             table_sync_copy: TableSyncCopyConfig::IncludeAllTables,
             invalidated_slot_behavior: InvalidatedSlotBehavior::default(),
+            run_source_migrations: true,
         };
 
-        // Use PostgresStore to persist table replication phases across restarts.
-        // This allows etl to resume from the replication slot position instead of
-        // re-snapshotting the entire table on restart.
+        // Persist table phases and slot progress across restarts. Once a table
+        // copy completes, this avoids repeating it on an ordinary restart.
         let store = match PostgresStore::new(self.pipeline_id, pg_conn).await {
             Ok(store) => store,
             Err(e) => {
@@ -372,11 +638,17 @@ impl PostgresCdcInputInner {
             }
         };
 
-        let pending_senders = if self.step_completion_rx.is_some() {
-            Some(Arc::clone(&self.pending_senders))
+        let discard_errors_result = if self.config.discard_table_errors {
+            self.discard_table_errors(&store).await
+        } else if self.config.discard_shutdown_errors {
+            self.discard_shutdown_errors(&store).await
         } else {
-            None
+            Ok(())
         };
+        if let Err(e) = discard_errors_result {
+            let _ = init_status_sender.send(Err(e));
+            return;
+        }
 
         let destination = FelderaDestination {
             input_stream: Arc::new(Mutex::new(input_stream)),
@@ -384,7 +656,8 @@ impl PostgresCdcInputInner {
             source_table: self.config.source_table.clone(),
             endpoint_name: self.endpoint_name.clone(),
             feldera_required_columns,
-            pending_senders,
+            completion_task_tx: self.completion_task_tx.clone(),
+            queued_acks: Arc::clone(&self.queued_acks),
             pipeline_state_rx: receiver.clone(),
         };
 
@@ -426,6 +699,7 @@ impl PostgresCdcInputInner {
                 watcher,
                 rx,
                 self.endpoint_name.clone(),
+                Duration::from_millis(self.config.streaming_ack_hold_ms),
             ))),
             _ => None,
         };
@@ -436,8 +710,7 @@ impl PostgresCdcInputInner {
         // forever while the input silently stalls; the watcher reports such an
         // error so the controller fails the endpoint instead.
         let mut receiver_clone = receiver.clone();
-        let pipeline_wait = pipeline.wait();
-        tokio::pin!(pipeline_wait);
+        let mut pipeline_wait = Box::pin(pipeline.wait());
         let (pipeline_result, report_error) = select! {
             result = &mut pipeline_wait => (result, true),
             _ = receiver_clone.wait_for(|state| state == &PipelineState::Terminated) => {
@@ -484,6 +757,152 @@ impl PostgresCdcInputInner {
         if let Some(shutdown_tx) = self.etl_shutdown_tx.lock().unwrap().take() {
             let _ = shutdown_tx.shutdown();
         }
+    }
+
+    /// Roll back persisted errors caused by a destination acknowledgment being
+    /// dropped by a previous connector run.
+    async fn discard_shutdown_errors(&self, store: &PostgresStore) -> Result<(), ControllerError> {
+        self.discard_matching_table_errors(store, false).await
+    }
+
+    /// Roll back every persisted `Errored` table state so etl retries those
+    /// tables on this run (the `discard_table_errors` config option).
+    async fn discard_table_errors(&self, store: &PostgresStore) -> Result<(), ControllerError> {
+        self.discard_matching_table_errors(store, true).await
+    }
+
+    /// Roll back matching persisted `Errored` table states.
+    ///
+    /// Errored states can stack, so keep rolling back until something else
+    /// surfaces. If a rollback fails, reset the table to `Init` instead,
+    /// which re-copies it from scratch.
+    async fn discard_matching_table_errors(
+        &self,
+        store: &PostgresStore,
+        discard_all: bool,
+    ) -> Result<(), ControllerError> {
+        store.load_table_states().await.map_err(|e| {
+            ControllerError::input_transport_error(
+                &self.endpoint_name,
+                true,
+                anyhow!("failed to load etl table states before discarding errors: {e}"),
+            )
+        })?;
+
+        let states = store.get_table_states().await.map_err(|e| {
+            ControllerError::input_transport_error(
+                &self.endpoint_name,
+                true,
+                anyhow!("failed to read etl table states before discarding errors: {e}"),
+            )
+        })?;
+
+        let errored_table_ids: Vec<_> = states
+            .iter()
+            .filter_map(|(table_id, state)| {
+                should_discard_table_error(state, discard_all).then_some(*table_id)
+            })
+            .collect();
+
+        if errored_table_ids.is_empty() {
+            return Ok(());
+        }
+
+        warn!(
+            "postgres_cdc {}: discarding {} persisted etl {} error(s) before startup",
+            &self.endpoint_name,
+            errored_table_ids.len(),
+            if discard_all { "table" } else { "shutdown" },
+        );
+
+        for table_id in errored_table_ids {
+            let mut discarded = 0usize;
+            loop {
+                let Some(state) = store.get_table_state(table_id).await.map_err(|e| {
+                    ControllerError::input_transport_error(
+                        &self.endpoint_name,
+                        true,
+                        anyhow!("failed to read etl table state for table {table_id}: {e}"),
+                    )
+                })?
+                else {
+                    break;
+                };
+                if !should_discard_table_error(&state, discard_all) {
+                    break;
+                }
+
+                if discarded == MAX_ERROR_ROLLBACKS_PER_TABLE {
+                    warn!(
+                        "postgres_cdc {}: table {table_id} still has a matching etl error after \
+                         {MAX_ERROR_ROLLBACKS_PER_TABLE} rollbacks; resetting table state to init",
+                        &self.endpoint_name
+                    );
+                    store
+                        .update_table_state(table_id, TableState::Init)
+                        .await
+                        .map_err(|e| {
+                            ControllerError::input_transport_error(
+                                &self.endpoint_name,
+                                true,
+                                anyhow!(
+                                    "failed to reset etl table state for table {table_id} after \
+                                     reaching the rollback limit: {e}"
+                                ),
+                            )
+                        })?;
+                    break;
+                }
+
+                match store.rollback_table_state(table_id).await {
+                    Ok(restored_state) => {
+                        discarded += 1;
+                        info!(
+                            "postgres_cdc {}: discarded etl table error for table {table_id}, \
+                             restored previous state {restored_state}",
+                            &self.endpoint_name
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "postgres_cdc {}: failed to roll back etl table error for table \
+                             {table_id}: {e}; resetting table state to init",
+                            &self.endpoint_name
+                        );
+                        store
+                            .update_table_state(table_id, TableState::Init)
+                            .await
+                            .map_err(|e| {
+                                ControllerError::input_transport_error(
+                                    &self.endpoint_name,
+                                    true,
+                                    anyhow!(
+                                        "failed to reset etl table state for table {table_id} \
+                                         after discarding error: {e}"
+                                    ),
+                                )
+                            })?;
+                        discarded += 1;
+                    }
+                }
+            }
+
+            debug!(
+                "postgres_cdc {}: discarded {discarded} etl table error state(s) for table {table_id}",
+                &self.endpoint_name
+            );
+        }
+
+        Ok(())
+    }
+}
+
+fn should_discard_table_error(state: &TableState, discard_all: bool) -> bool {
+    match state {
+        TableState::Errored { reason, .. } => {
+            discard_all || reason == DROPPED_DESTINATION_ACK_ERROR
+        }
+        _ => false,
     }
 }
 
@@ -569,16 +988,19 @@ impl TableErrorMonitor {
 #[derive(Clone)]
 struct FelderaDestination {
     input_stream: Arc<Mutex<Box<dyn DeCollectionStream>>>,
-    queue: Arc<InputQueue>,
+    queue: Arc<CdcInputQueue>,
     source_table: String,
     endpoint_name: String,
     /// Canonical names of the non-nullable Feldera columns. Each must be present
     /// (by name) in the target Postgres table schema etl passes with each target
     /// batch/event. Nullable and extra columns need not match.
     feldera_required_columns: Vec<String>,
-    /// Deferred async result senders. If `Some`, write_events stores senders here
-    /// instead of firing them immediately. The Queue handler picks them up.
-    pending_senders: Option<Arc<Mutex<DeferredSenders>>>,
+    /// Sends deferred acks to the completion watcher. When absent, writes are
+    /// acked immediately.
+    completion_task_tx: Option<mpsc::UnboundedSender<CompletionMessage>>,
+    /// How many `DeferredAck`s are sitting in the queue, waiting to be
+    /// flushed. See [`PostgresCdcInputInner::queued_acks`].
+    queued_acks: Arc<AtomicUsize>,
     /// Pipeline state receiver used to stop accepting new etl batches while the
     /// Feldera pipeline is paused.
     pipeline_state_rx: Receiver<PipelineState>,
@@ -612,7 +1034,7 @@ impl Destination for FelderaDestination {
         &self,
         replicated_table_schema: &ReplicatedTableSchema,
         table_rows: Vec<TableRow>,
-        async_result: WriteTableRowsResult<()>,
+        async_result: WriteTableRowsResult,
     ) -> EtlResult<()> {
         self.wait_unpaused().await?;
 
@@ -620,7 +1042,7 @@ impl Destination for FelderaDestination {
         let column_names = match self.column_names_for_target_schema(replicated_table_schema)? {
             Some(columns) => columns,
             None => {
-                async_result.send(Ok(()));
+                async_result.send(Ok(DestinationWriteStatus::Durable));
                 return Ok(());
             }
         };
@@ -628,6 +1050,7 @@ impl Destination for FelderaDestination {
         let mut stream = self.input_stream.lock().unwrap();
         let mut bytes = 0;
         let mut errors = Vec::new();
+        let mut queued_data = false;
         let timestamp = Utc::now();
 
         for row in &table_rows {
@@ -647,30 +1070,42 @@ impl Destination for FelderaDestination {
             bytes += json_str.len();
 
             if bytes >= 2 * 1024 * 1024 {
-                self.queue.push((stream.take_all(), errors), timestamp);
+                self.queue.push_with_aux(
+                    (stream.take_all(), errors),
+                    timestamp,
+                    DeferredSenders::new(),
+                );
+                queued_data = true;
                 bytes = 0;
                 errors = Vec::new();
             }
         }
 
         if bytes > 0 || !errors.is_empty() {
-            self.queue.push((stream.take_all(), errors), timestamp);
+            self.queue.push_with_aux(
+                (stream.take_all(), errors),
+                timestamp,
+                DeferredSenders::new(),
+            );
+            queued_data = true;
         }
 
-        async_result.send(Ok(()));
+        self.ack_snapshot_copy(queued_data, async_result);
         Ok(())
     }
 
     async fn write_events(
         &self,
         events: Vec<Event>,
-        async_result: WriteEventsResult<()>,
+        durability: WriteEventsDurability,
+        async_result: WriteEventsResult,
     ) -> EtlResult<()> {
         self.wait_unpaused().await?;
 
         let mut stream = self.input_stream.lock().unwrap();
         let mut bytes = 0;
         let mut errors = Vec::new();
+        let mut queue_entries = Vec::new();
         let timestamp = Utc::now();
 
         for event in &events {
@@ -779,21 +1214,40 @@ impl Destination for FelderaDestination {
             }
 
             if bytes >= 2 * 1024 * 1024 {
-                self.queue.push((stream.take_all(), errors), timestamp);
+                queue_entries.push((stream.take_all(), errors));
                 bytes = 0;
                 errors = Vec::new();
             }
         }
 
         if bytes > 0 || !errors.is_empty() {
-            self.queue.push((stream.take_all(), errors), timestamp);
+            queue_entries.push((stream.take_all(), errors));
         }
 
-        // Defer or fire the async result.
-        if let Some(ref pending) = self.pending_senders {
-            pending.lock().unwrap().push(async_result);
+        let ack = DeferredAck::Stream {
+            result: async_result,
+            durability,
+        };
+        if let Some(last_entry) = queue_entries.pop() {
+            for entry in queue_entries {
+                self.queue
+                    .push_with_aux(entry, timestamp, DeferredSenders::new());
+            }
+            if self.completion_task_tx.is_some() {
+                // Increment before pushing so the count cannot underflow if
+                // the reader flushes and decrements before this lands.
+                self.queued_acks.fetch_add(1, Ordering::Release);
+                self.queue.push_with_aux(last_entry, timestamp, vec![ack]);
+                // etl waits for this ack before sending more events. Keep
+                // taking steps until the queue entry carrying it is flushed.
+                self.queue.consumer.request_step();
+            } else {
+                self.queue
+                    .push_with_aux(last_entry, timestamp, DeferredSenders::new());
+                ack.complete();
+            }
         } else {
-            async_result.send(Ok(()));
+            self.ack_no_row_stream_write(ack);
         }
 
         Ok(())
@@ -801,6 +1255,60 @@ impl Destination for FelderaDestination {
 }
 
 impl FelderaDestination {
+    /// Answer a table-copy write.
+    ///
+    /// Without completion tracking there is nothing to wait for, so every
+    /// write is `Durable` immediately.
+    ///
+    /// With tracking, a batch that queued rows is answered `Accepted` right
+    /// away: Feldera owns the rows, and etl keeps copying while they wait for
+    /// the completion frontier.
+    ///
+    /// The one empty write etl sends at the end of the copy (an empty table
+    /// sends only this) is the table's durability barrier: answering it
+    /// `Durable` tells etl the whole snapshot is safe. So instead of answering
+    /// now, queue it behind all the snapshot data and let the completion
+    /// watcher answer once its step passes the frontier.
+    fn ack_snapshot_copy(&self, queued_data: bool, async_result: WriteTableRowsResult) {
+        if self.completion_task_tx.is_none() {
+            async_result.send(Ok(DestinationWriteStatus::Durable));
+        } else if queued_data {
+            async_result.send(Ok(DestinationWriteStatus::Accepted));
+        } else {
+            // At most one barrier can be live at a time: only the configured
+            // source table's copy reaches this branch. Every other publication
+            // table fails the column match in `write_table_rows` and is acked
+            // Durable immediately.
+            //
+            // Increment before pushing so the count cannot underflow if the
+            // reader flushes and decrements before this increment lands.
+            self.queued_acks.fetch_add(1, Ordering::Release);
+            self.queue.push_with_aux(
+                (None, Vec::new()),
+                Utc::now(),
+                vec![DeferredAck::SnapshotCopyBarrier(async_result)],
+            );
+        }
+    }
+
+    /// Answer a stream write that produced no Feldera rows.
+    ///
+    /// The completion watcher answers `Durable` if the frontier already covers
+    /// all earlier `Accepted` data. Otherwise a `MayDefer` write is `Accepted`,
+    /// while a `RequireDurable` write waits for that frontier.
+    fn ack_no_row_stream_write(&self, ack: DeferredAck) {
+        if !ack.is_stream() {
+            unreachable!("snapshot copy barriers are handled by ack_snapshot_copy")
+        } else if let Some(tx) = self.completion_task_tx.as_ref() {
+            // A no-row write is etl's chance to hear that data it previously
+            // got an Accepted for has since become durable.
+            let _ = tx.send(CompletionMessage::NoRowStream(ack));
+        } else {
+            // Without completion tracking, data writes are already Durable.
+            ack.complete();
+        }
+    }
+
     /// Wait until the Feldera pipeline is running before accepting a new etl
     /// batch.
     async fn wait_unpaused(&self) -> EtlResult<()> {
@@ -948,6 +1456,7 @@ fn cell_to_json(cell: &Cell) -> Value {
         }
         Cell::Date(d) => json!(d.to_string()),
         Cell::Time(t) => json!(t.to_string()),
+        Cell::TimeTz(t) => json!(t.to_string()),
         Cell::Timestamp(ts) => json!(ts.format("%Y-%m-%dT%H:%M:%S%.f").to_string()),
         Cell::TimestampTz(ts) => json!(ts.to_rfc3339()),
         Cell::Uuid(u) => json!(u.to_string()),
@@ -1021,6 +1530,16 @@ fn array_cell_to_json(arr: &ArrayCell) -> Value {
                 .collect();
             Value::Array(vals)
         }
+        ArrayCell::TimeTz(v) => {
+            let vals: Vec<Value> = v
+                .iter()
+                .map(|opt| match opt {
+                    Some(t) => json!(t.to_string()),
+                    None => Value::Null,
+                })
+                .collect();
+            Value::Array(vals)
+        }
         ArrayCell::Timestamp(v) => {
             let vals: Vec<Value> = v
                 .iter()
@@ -1077,7 +1596,7 @@ fn array_cell_to_json(arr: &ArrayCell) -> Value {
 /// Typed watch receiver used by the completion watcher background task.
 ///
 /// `Fast` waits for step completion (`total_completed_steps`); used when fault
-/// tolerance is not enabled.  `Strict` waits for checkpoint completion; used
+/// tolerance is not enabled. `Strict` waits for checkpoint completion; used
 /// when fault tolerance is enabled so the replication slot only advances past
 /// the last durable checkpoint, preserving at-least-once correctness for
 /// stateful circuits after a crash.
@@ -1102,68 +1621,205 @@ impl WatcherReceiver {
     }
 }
 
-/// Background task that fires deferred ETL async result senders when the
-/// completion frontier passes the step recorded at Queue time.
+/// Background task that answers deferred acks.
 ///
-/// Each entry is `(step_at_flush, senders)` where `step_at_flush` is the
-/// value of `total_completed_steps` at the time the data was flushed to the
-/// circuit.  The data lands in the next step, so we fire when the frontier
-/// strictly exceeds `step_at_flush`.
+/// Each [`PendingAcks`] remembers how many steps had completed when its data
+/// was flushed. The data lands in the next step, so its acks are `Durable` once
+/// the frontier moves strictly past `step_at_flush`. `MayDefer` stream acks that
+/// wait longer than the hold deadline are answered `Accepted` instead, and a
+/// later write confirms them once the frontier catches up. `RequireDurable`
+/// acks always wait for the frontier.
 async fn completion_watcher_task(
     mut watcher: WatcherReceiver,
-    mut pending_rx: mpsc::UnboundedReceiver<(u64, DeferredSenders)>,
+    mut pending_rx: mpsc::UnboundedReceiver<CompletionMessage>,
     endpoint_name: String,
+    streaming_ack_hold: Duration,
 ) {
-    let mut waiting: Vec<(u64, DeferredSenders)> = Vec::new();
+    let mut waiting: Vec<PendingAcks> = Vec::new();
+    // The latest step whose stream ack timed out as Accepted. etl applies
+    // events in one ordered stream, so a Durable answer for any later step
+    // also covers this one; forget it once that happens.
+    let mut accepted_stream_step = None;
 
     loop {
+        let next_stream_deadline = earliest_stream_deadline(&waiting, streaming_ack_hold);
         tokio::select! {
             result = watcher.changed() => {
                 if result.is_err() {
                     break; // Sender dropped (pipeline shutting down)
                 }
-                let f = watcher.frontier();
-                fire_completed(&mut waiting, f);
+                let frontier = watcher.frontier();
+                if let Some(completed_step) = fire_completed(&mut waiting, frontier)
+                    && accepted_stream_step.is_some_and(|step| step <= completed_step)
+                {
+                    accepted_stream_step = None;
+                }
             }
-            maybe_entry = pending_rx.recv() => {
-                match maybe_entry {
-                    Some((step_at_flush, senders)) => {
-                        let f = watcher.frontier();
-                        if f > step_at_flush {
-                            // Already past the threshold — fire immediately.
-                            for sender in senders {
-                                sender.send(Ok(()));
+            maybe_message = pending_rx.recv() => {
+                match maybe_message {
+                    Some(CompletionMessage::Queued(entry)) => {
+                        let frontier = watcher.frontier();
+                        if frontier > entry.step_at_flush {
+                            // Already past the threshold: complete immediately.
+                            let completes_stream = entry.senders.iter().any(DeferredAck::is_stream);
+                            for sender in entry.senders {
+                                sender.complete();
+                            }
+                            if completes_stream
+                                && accepted_stream_step
+                                    .is_some_and(|step| step <= entry.step_at_flush)
+                            {
+                                accepted_stream_step = None;
                             }
                         } else {
-                            waiting.push((step_at_flush, senders));
+                            waiting.push(entry);
                         }
                     }
+                    Some(CompletionMessage::NoRowStream(ack)) => {
+                        complete_no_row_stream_ack(
+                            ack,
+                            watcher.frontier(),
+                            &mut accepted_stream_step,
+                            &mut waiting,
+                        );
+                    }
                     None => break, // Channel closed
+                }
+            }
+            _ = async {
+                match next_stream_deadline {
+                    Some(deadline) => sleep_until(TokioInstant::from_std(deadline)).await,
+                    None => pending::<()>().await,
+                }
+            } => {
+                debug!(
+                    "postgres_cdc {endpoint_name}: stream ack hold expired, \
+                     accepting non-durable stream acks"
+                );
+                if let Some(step) = accept_expired_stream_acks(
+                    &mut waiting,
+                    Instant::now(),
+                    streaming_ack_hold,
+                ) {
+                    accepted_stream_step = Some(
+                        accepted_stream_step.map_or(step, |previous: u64| previous.max(step)),
+                    );
                 }
             }
         }
     }
 
-    // On shutdown, remaining senders are dropped. AsyncResult's Drop impl
-    // sends an error to the ETL side, causing it to shut down gracefully.
+    // Dropping the remaining senders here is safe: the connector signals etl
+    // shutdown before aborting this task, so etl's copy loop sees the
+    // shutdown before it sees the dropped ack, and its table-sync error
+    // handler does not persist errors that surface after a shutdown request.
     debug!(
         "postgres_cdc {endpoint_name}: completion watcher exiting with {} pending entries",
         waiting.len()
     );
 }
 
-/// Fires deferred senders whose data has been fully processed.
-fn fire_completed(waiting: &mut Vec<(u64, DeferredSenders)>, completed_steps: u64) {
-    waiting.retain_mut(|(step_at_flush, senders)| {
-        if completed_steps > *step_at_flush {
-            for sender in senders.drain(..) {
-                sender.send(Ok(()));
+/// Answers `Durable` for every waiting ack whose step the frontier has
+/// passed. Returns the latest step whose stream ack became `Durable`, so the
+/// caller can clear `accepted_stream_step` when that Durable covers it.
+fn fire_completed(waiting: &mut Vec<PendingAcks>, frontier: u64) -> Option<u64> {
+    let mut completed_stream_step = None;
+    waiting.retain_mut(|entry| {
+        if frontier > entry.step_at_flush {
+            for sender in entry.senders.drain(..) {
+                if sender.is_stream() {
+                    completed_stream_step = Some(
+                        completed_stream_step.map_or(entry.step_at_flush, |step: u64| {
+                            step.max(entry.step_at_flush)
+                        }),
+                    );
+                }
+                sender.complete();
             }
             false
         } else {
             true
         }
     });
+    completed_stream_step
+}
+
+/// Answer a no-row stream write against the latest accepted prefix.
+///
+/// If the prefix is already complete, answer `Durable`. Otherwise answer a
+/// `MayDefer` write as `Accepted`, or retain a `RequireDurable` write until the
+/// frontier passes the accepted step.
+fn complete_no_row_stream_ack(
+    ack: DeferredAck,
+    frontier: u64,
+    accepted_stream_step: &mut Option<u64>,
+    waiting: &mut Vec<PendingAcks>,
+) {
+    debug_assert!(ack.is_stream());
+    let Some(accepted_step) = *accepted_stream_step else {
+        ack.complete();
+        return;
+    };
+
+    if frontier > accepted_step {
+        *accepted_stream_step = None;
+        ack.complete();
+    } else if ack.may_defer() {
+        ack.accept();
+    } else {
+        waiting.push(PendingAcks {
+            step_at_flush: accepted_step,
+            held_since: Instant::now(),
+            senders: vec![ack],
+        });
+    }
+}
+
+/// The next moment a waiting stream ack's hold expires, if any.
+fn earliest_stream_deadline(
+    waiting: &[PendingAcks],
+    streaming_ack_hold: Duration,
+) -> Option<Instant> {
+    waiting
+        .iter()
+        .filter(|entry| entry.senders.iter().any(DeferredAck::may_defer))
+        .map(|entry| entry.held_since + streaming_ack_hold)
+        .min()
+}
+
+/// Answers `Accepted` for deferrable stream acks whose hold has expired.
+/// Snapshot barriers and required-durability stream acks stay queued.
+/// Returns the latest step whose stream ack was accepted.
+fn accept_expired_stream_acks(
+    waiting: &mut Vec<PendingAcks>,
+    now: Instant,
+    streaming_ack_hold: Duration,
+) -> Option<u64> {
+    let mut accepted_stream_step = None;
+    waiting.retain_mut(|entry| {
+        if now >= entry.held_since + streaming_ack_hold {
+            let senders = std::mem::take(&mut entry.senders);
+            entry.senders = senders
+                .into_iter()
+                .filter_map(|sender| {
+                    if sender.may_defer() {
+                        accepted_stream_step = Some(
+                            accepted_stream_step.map_or(entry.step_at_flush, |step: u64| {
+                                step.max(entry.step_at_flush)
+                            }),
+                        );
+                        sender.accept();
+                        None
+                    } else {
+                        Some(sender)
+                    }
+                })
+                .collect();
+        }
+
+        !entry.senders.is_empty()
+    });
+    accepted_stream_step
 }
 
 async fn abort_completion_watcher(handle: &mut Option<tokio::task::JoinHandle<()>>) {
@@ -1244,9 +1900,196 @@ fn parse_pg_uri(
 mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
-    use etl::types::PgNumeric;
+    use etl::data::PgNumeric;
     use serde_json::json;
     use std::str::FromStr;
+
+    fn errored_table_state(reason: &str) -> TableState {
+        serde_json::from_value(json!({
+            "type": "errored",
+            "reason": reason,
+            "solution": null,
+            "retry_policy": { "type": "manual_retry" },
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn discard_shutdown_errors_only_matches_dropped_destination_acks() {
+        let shutdown_error = errored_table_state(DROPPED_DESTINATION_ACK_ERROR);
+        let replication_error = errored_table_state("source schema changed");
+
+        assert!(should_discard_table_error(&shutdown_error, false));
+        assert!(!should_discard_table_error(&replication_error, false));
+        assert!(should_discard_table_error(&shutdown_error, true));
+        assert!(should_discard_table_error(&replication_error, true));
+    }
+
+    fn test_ack(kind: TestAckKind, tx: std::sync::mpsc::Sender<TestAckStatus>) -> DeferredAck {
+        DeferredAck::Test { kind, tx }
+    }
+
+    fn test_required_stream_ack(tx: std::sync::mpsc::Sender<TestAckStatus>) -> DeferredAck {
+        DeferredAck::Test {
+            kind: TestAckKind::StreamRequireDurable,
+            tx,
+        }
+    }
+
+    #[test]
+    fn watcher_deadline_accepts_only_deferrable_stream_acks() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let now = Instant::now();
+        let hold = Duration::from_secs(2);
+        let mut waiting = vec![PendingAcks {
+            step_at_flush: 7,
+            held_since: now - Duration::from_secs(3),
+            senders: vec![
+                test_ack(TestAckKind::StreamMayDefer, tx.clone()),
+                test_required_stream_ack(tx.clone()),
+                test_ack(TestAckKind::SnapshotCopyBarrier, tx),
+            ],
+        }];
+
+        let accepted_step = accept_expired_stream_acks(&mut waiting, now, hold);
+
+        assert_eq!(accepted_step, Some(7));
+        assert_eq!(rx.recv().unwrap(), TestAckStatus::Accepted);
+        assert!(rx.try_recv().is_err());
+        assert_eq!(waiting.len(), 1);
+        assert_eq!(waiting[0].senders.len(), 2);
+        assert!(waiting[0].senders.iter().all(|ack| !ack.may_defer()));
+
+        assert_eq!(fire_completed(&mut waiting, 8), Some(7));
+
+        assert_eq!(rx.recv().unwrap(), TestAckStatus::Durable);
+        assert_eq!(rx.recv().unwrap(), TestAckStatus::Durable);
+        assert!(waiting.is_empty());
+    }
+
+    #[test]
+    fn watcher_frontier_completes_all_acks_sharing_a_step() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let now = Instant::now();
+        let mut waiting = vec![PendingAcks {
+            step_at_flush: 7,
+            held_since: now,
+            senders: vec![
+                test_ack(TestAckKind::StreamMayDefer, tx.clone()),
+                test_ack(TestAckKind::SnapshotCopyBarrier, tx),
+            ],
+        }];
+
+        assert_eq!(fire_completed(&mut waiting, 7), None);
+        assert!(rx.try_recv().is_err());
+        assert_eq!(waiting.len(), 1);
+        assert_eq!(waiting[0].senders.len(), 2);
+
+        assert_eq!(fire_completed(&mut waiting, 8), Some(7));
+
+        let mut statuses = vec![rx.recv().unwrap(), rx.recv().unwrap()];
+        statuses.sort_by_key(|status| match status {
+            TestAckStatus::Accepted => 0,
+            TestAckStatus::Durable => 1,
+        });
+        assert_eq!(
+            statuses,
+            vec![TestAckStatus::Durable, TestAckStatus::Durable]
+        );
+        assert!(waiting.is_empty());
+    }
+
+    #[test]
+    fn no_row_stream_ack_makes_checkpointed_accepted_data_durable() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut accepted_stream_step = Some(7);
+        let mut waiting = Vec::new();
+
+        complete_no_row_stream_ack(
+            test_ack(TestAckKind::StreamMayDefer, tx.clone()),
+            7,
+            &mut accepted_stream_step,
+            &mut waiting,
+        );
+        assert_eq!(rx.recv().unwrap(), TestAckStatus::Accepted);
+        assert_eq!(accepted_stream_step, Some(7));
+        assert!(waiting.is_empty());
+
+        complete_no_row_stream_ack(
+            test_ack(TestAckKind::StreamMayDefer, tx),
+            8,
+            &mut accepted_stream_step,
+            &mut waiting,
+        );
+        assert_eq!(rx.recv().unwrap(), TestAckStatus::Durable);
+        assert_eq!(accepted_stream_step, None);
+        assert!(waiting.is_empty());
+    }
+
+    #[test]
+    fn no_row_stream_ack_is_durable_without_accepted_data() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut accepted_stream_step = None;
+        let mut waiting = Vec::new();
+
+        complete_no_row_stream_ack(
+            test_ack(TestAckKind::StreamMayDefer, tx),
+            0,
+            &mut accepted_stream_step,
+            &mut waiting,
+        );
+
+        assert_eq!(rx.recv().unwrap(), TestAckStatus::Durable);
+        assert_eq!(accepted_stream_step, None);
+        assert!(waiting.is_empty());
+    }
+
+    #[test]
+    fn required_no_row_stream_ack_waits_for_accepted_prefix() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut accepted_stream_step = Some(7);
+        let mut waiting = Vec::new();
+
+        complete_no_row_stream_ack(
+            test_required_stream_ack(tx),
+            7,
+            &mut accepted_stream_step,
+            &mut waiting,
+        );
+
+        assert!(rx.try_recv().is_err());
+        assert_eq!(accepted_stream_step, Some(7));
+        assert_eq!(waiting.len(), 1);
+        assert!(!waiting[0].senders[0].may_defer());
+
+        assert_eq!(fire_completed(&mut waiting, 8), Some(7));
+        assert_eq!(rx.recv().unwrap(), TestAckStatus::Durable);
+        assert!(waiting.is_empty());
+    }
+
+    #[test]
+    fn snapshot_copy_barrier_completes_durable_only() {
+        // The copy barrier must never be reported as merely accepted: etl fails
+        // a table copy whose terminal barrier does not confirm durability.
+        let (tx, rx) = std::sync::mpsc::channel();
+        DeferredAck::Test {
+            kind: TestAckKind::SnapshotCopyBarrier,
+            tx: tx.clone(),
+        }
+        .complete();
+        assert_eq!(rx.recv().unwrap(), TestAckStatus::Durable);
+    }
+
+    #[test]
+    #[should_panic(expected = "never accepted")]
+    fn snapshot_copy_barrier_never_accepts() {
+        let (tx, _rx) = std::sync::mpsc::channel();
+        DeferredAck::Test {
+            kind: TestAckKind::SnapshotCopyBarrier,
+            tx,
+        }
+        .accept();
+    }
 
     // -----------------------------------------------------------------------
     // cell_to_json unit tests
