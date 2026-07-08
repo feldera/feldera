@@ -13,9 +13,10 @@ use crate::runner::error::RunnerError;
 use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use async_trait::async_trait;
+use feldera_observability::system::total_memory_megabyte;
 use feldera_observability::ReqwestTracingExt;
 use feldera_types::config::{
-    PipelineConfig, PipelineConfigProgramInfo, StorageCacheConfig, StorageConfig,
+    PipelineConfig, PipelineConfigProgramInfo, RuntimeConfig, StorageCacheConfig, StorageConfig,
 };
 use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus};
 use reqwest::StatusCode;
@@ -791,6 +792,13 @@ impl LocalRunner {
         base_config.outputs = program_info.outputs;
         base_config.program_ir = program_info.program_ir;
 
+        // The memory budget is per host, and all host processes share this
+        // machine, so each host gets an equal share of the available memory.
+        apply_default_memory_limit(
+            &mut base_config.global,
+            per_host_share(total_memory_megabyte(), n_hosts),
+        );
+
         // Retrieve the pipeline binary once; every host process runs the same
         // executable.
         let binary_file_path = self
@@ -1105,6 +1113,10 @@ impl PipelineExecutor for LocalRunner {
         deployment_config.outputs = program_info.outputs;
         deployment_config.program_ir = program_info.program_ir;
 
+        // Unlike Kubernetes, a local deployment has no pod memory limit for
+        // the pipeline to fall back on, so derive one from this machine.
+        apply_default_memory_limit(&mut deployment_config.global, total_memory_megabyte());
+
         // Write config as YAML and JSON
         //
         // Newer pipelines will read the JSON, older ones will read the YAML.
@@ -1387,6 +1399,42 @@ impl PipelineExecutor for LocalRunner {
             }
         }
         Ok(())
+    }
+}
+
+/// Splits `available_mb` evenly among `n_hosts` colocated host processes;
+/// `None` when the share rounds down to nothing.
+fn per_host_share(available_mb: Option<u64>, n_hosts: usize) -> Option<u64> {
+    available_mb
+        .map(|mb| mb / n_hosts.max(1) as u64)
+        .filter(|mb| *mb > 0)
+}
+
+/// Sets `global.resources.memory_mb_max` to `available_mb` when the pipeline
+/// has no memory budget.
+fn apply_default_memory_limit(global: &mut RuntimeConfig, available_mb: Option<u64>) {
+    if global.effective_memory_mb().is_none() {
+        if let Some(available_mb) = available_mb {
+            info!(
+                "pipeline has no memory limit ('max_rss_mb' or 'resources.memory_mb_max'): \
+defaulting 'resources.memory_mb_max' to {available_mb} MB"
+            );
+            global.resources.memory_mb_max = Some(available_mb);
+        }
+    }
+}
+
+#[cfg(test)]
+mod memory_limit_tests {
+    use super::per_host_share;
+
+    /// Colocated hosts split the machine evenly; a share that rounds down to
+    /// nothing must yield `None`, not a 0 MB limit.
+    #[test]
+    fn hosts_split_available_memory() {
+        assert_eq!(per_host_share(Some(4000), 4), Some(1000));
+        assert_eq!(per_host_share(Some(3), 4), None);
+        assert_eq!(per_host_share(None, 4), None);
     }
 }
 

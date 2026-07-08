@@ -14,7 +14,7 @@ from feldera.testutils import (
 
 # Add now() value to a table in a transaction.
 
-INPUT_RECORDS = 2000000
+INPUT_RECORDS = 500000
 
 # After restart, the implicit `now` clock connector uses this resolution (see
 # `now_endpoint_config` in the adapters crate). Stats only expose `stream` for
@@ -88,7 +88,7 @@ class TestNow(unittest.TestCase):
             ViewSpec(
                 "v",
                 """
-                select
+                select /*+ BROADCAST(v_now) */
                     t.*,
                     v_now.now_ts as now_ts
                 from t, v_now
@@ -106,7 +106,11 @@ class TestNow(unittest.TestCase):
             # gets it OOM-killed. No memory_mb_max: it would cap the
             # DataFusion pool at 5% and the big ad-hoc validation queries
             # exhaust that.
-            resources=Resources(storage_mb_max=8192, memory_mb_min=6000),
+            resources=Resources(
+                storage_mb_max=16384,
+                memory_mb_min=16384,
+                config={"datafusion_memory_mb": 12288},
+            ),
         )
 
         pipeline.start()

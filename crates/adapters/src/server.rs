@@ -1163,7 +1163,7 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
     }
 
     let path = config_file.as_ref();
-    let config = if path.extension() == Some(OsStr::new("json")) {
+    let mut config = if path.extension() == Some(OsStr::new("json")) {
         parse_json_config(path)
     } else {
         let json_path = path.with_extension("json");
@@ -1173,6 +1173,19 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
             parse_yaml_config(path)
         }
     }?;
+
+    // This is run in the pipeline process itself, so on a multihost deployment every
+    // host derives the limit from its own machine.
+    if config.global.effective_memory_mb().is_none()
+        && let Some(available_mb) = observability::system::total_memory_megabyte()
+    {
+        // The logger is not running yet.
+        eprintln!(
+            "No memory limit configured ('max_rss_mb' or 'resources.memory_mb_max'); \
+using this host's available memory: 'max_rss_mb' = {available_mb} MB."
+        );
+        config.global.max_rss_mb = Some(available_mb);
+    }
 
     eprintln!(
         "Pipeline configuration loaded successfully: {}",

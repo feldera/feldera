@@ -13,6 +13,13 @@ If `max_rss_mb` is not set but `memory_mb_max` is configured in the `resources` 
 [Runtime configuration], the latter is used as the effective memory cap. We **strongly recommend**
 setting at least one of these parameters to prevent out-of-memory failures.
 
+On single-host deployments (for example, in Docker), if neither
+parameter is set, `resources.memory_mb_max` is set to the smaller
+value of host memory size, and container memory limit.  In a
+multi-host deployment each pipeline process that finds neither
+parameter set derives `max_rss_mb` from its own host's available
+memory at startup.
+
 When either `max_rss_mb` or `resources.memory_mb_max` is configured, the pipeline reports its current
 memory pressure level (`low`, `moderate`, `high`, or `critical`) via the
 [`memory_pressure` metric](/operations/metrics). High or critical pressure indicates that memory usage
