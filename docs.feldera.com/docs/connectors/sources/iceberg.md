@@ -29,6 +29,8 @@ The Iceberg input connector does not yet support [fault tolerance](/pipelines/fa
 | Property                    | Type   | Description   |
 |-----------------------------|--------|---------------|
 | `mode`*                     | enum   | Table read mode. Currently, the only supported mode is `snapshot`, in which the connector reads a snapshot of the table and stops.|
+| `transaction_mode`          | enum   | Determines how the connector breaks up its input into transactions. Supported values are `none` (default) and `snapshot`. See [below](#transactions) for details. |
+| `timestamp_column`          | string | Table column that serves as an event timestamp. When this option is specified, table rows are ingested in the timestamp order, respecting the [`LATENESS`](/sql/streaming#lateness-expressions) property of the column: each ingested row has a timestamp no more than `LATENESS` time units earlier than the most recent timestamp of any previously ingested row. See details [below](#ingesting-time-series-data-from-iceberg). |
 | `snapshot_filter`           | string | <p>Optional row filter.  When specified, only rows that satisfy the filter condition are included in the snapshot.  The condition must be a valid SQL Boolean expression that can be used in the `where` clause of the `select * from snapshot where ..` query.</p><p> This option can be used to specify the range of event times to include in the snapshot, e.g.: `ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'`.</p>
 | `snapshot_id`               | integer| <p>Optional table snapshot id.  When this option is set, the connector reads the specified snapshot of the table.</p><p>Note: at most one of `version` and `datetime` options can be specified.  When neither of the two options is specified, the latest snapshot of the table is used.</p>
 | `datetime`                  | string | <p>Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g., "2024-12-09T16:09:53+00:00". When this option is set, the connector reads the version of the table as of the specified point in time (based on the server time recorded in the transaction log, not the event time encoded in the data). </p><p> Note: at most one of `version` and `datetime` options can be specified.  When neither of the two options is specified, the latest committed version of the table is used.</p>|
@@ -37,9 +39,6 @@ The Iceberg input connector does not yet support [fault tolerance](/pipelines/fa
 | `catalog_type`              | enum   | Type of the Iceberg catalog used to access the table. Supported options include `rest`, `glue`, and `s3tables`. This property is mutually exclusive with `metadata_location`.|
 | `num_parsers`               | integer| Number of parallel parsing tasks used to process data read from the table. Increasing this value can improve throughput by parsing record batches concurrently. Recommended range: 1-10. Default: `4`.|
 | `max_retries`               | integer| <p>Maximum number of retries for reading the table snapshot. When reading the snapshot fails partway through, for example because an object store read times out or is throttled, the connector retries the entire read with exponential backoff. This is in addition to the lower-level retries performed by the object store client.</p><p>Defaults to unlimited retries. Set to `0` to disable retries.</p>|
-
-<!-- | `timestamp_column`          | string | Table column that serves as an event timestamp. When this option is specified, table rows are ingested in the timestamp order, respecting the [`LATENESS`](/sql/streaming#lateness-expressions) property of the column: each ingested row has a timestamp no more than `LATENESS` time units earlier than the most recent timestamp of any previously ingested row.  See details [below](#ingesting-time-series-data-from-iceberg). | -->
-
 
 [*]: Required fields
 
@@ -165,8 +164,29 @@ declaration. Other columns of the Iceberg table are never read. In addition,
 when the table declaration sets the [`skip_unused_columns` property](/sql/grammar#ignoring-unused-columns), the connector skips declared columns that no view uses, provided they are
 nullable or have default values.
 
-<!--  Uncomment when https://github.com/apache/iceberg-rust/issues/811 is resolved>
-<!-- ## Ingesting time series data from Iceberg
+## Transactions
+
+The Iceberg connector can be configured to automatically initiate [transactions](/pipelines/transactions)
+when ingesting the table snapshot. The `transaction_mode` property configures this feature:
+
+* `none` - the connector does not group inputs into transactions. This is the default.
+* `snapshot` - ingest the initial snapshot of the table in one or several transactions.
+
+### Ingesting table snapshot using transactions
+
+When `transaction_mode` is set to `snapshot`, the connector ingests the snapshot of the table
+in one or several transactions. The exact behavior depends on the value of the `timestamp_column`
+option. If `timestamp_column` is not set, the connector ingests the whole snapshot in one big
+transaction.
+
+If `timestamp_column` is set, the connector ingests the snapshot in a series of batches, one for
+each timestamp range of width equal to the `LATENESS` attribute of the `timestamp_column`. Each
+range is ingested in a separate transaction. The number of transactions therefore depends on the
+range of values in the timestamp column and the width of `LATENESS`, not on the physical layout
+(partitioning) of the table. See `timestamp_column` documentation
+[below](#ingesting-time-series-data-from-iceberg) for more details.
+
+## Ingesting time series data from Iceberg
 
 Feldera is optimized to efficiently process time series data by taking advantage
 of the fact that such data often arrives ordered by timestamp, i.e., every event
@@ -177,12 +197,12 @@ attaching the [`LATENESS`](/sql/streaming#lateness-expressions) attribute to the
 timestamp column of the table declaration.  See our [Time Series Analysis
 Guide](/tutorials/time-series) for more details.
 
-When reading from an Iceberg that contains time series data, the user must
+When reading from an Iceberg table that contains time series data, the user must
 ensure that the initial snapshot of the table is ingested respecting the
 `LATENESS` annotation, e.g., if the table contains one year worth of data, and
 its lateness is equal to 1 month, then the connector must ingest all data for the
 first month before moving to the second month, and so on.  If this requirement
-is violated, the pipeline will drop records that arrive more that `LATENESS` out
+is violated, the pipeline will drop records that arrive more than `LATENESS` out
 of order.
 
 This can be achieved using the `timestamp_column` property, which specifies the table column
@@ -198,50 +218,41 @@ Requirements:
 * The timestamp column must be declared with non-zero `LATENESS`.
 * `LATENESS` must be a valid constant expression in the [DataFusion
   SQL dialect](https://datafusion.apache.org/). The reason for this is that Feldera
-  uses the Apache Datafusion engine to query Delta Lake.  In practice, most
+  uses the Apache DataFusion engine to query the Iceberg table.  In practice, most
   valid Feldera SQL expressions are accepted by DataFusion.
 * For efficient ingest, the Iceberg table must be optimized for timestamp-based queries
   using partitioning and sorting.
- -->
-<!-- Note that the `timestamp_column` property only controls the initial table snapshot.
-When `mode` is set to `follow` or `snapshot_and_follow` and the connector is following
-the transaction log of the table, it ingests changes in the order they appear in the
-log.  It is the responsibility of the application that writes to the table
-to ensure that changes it applies to the table respect the `LATENESS` annotations. -->
 
-<!-- ### Example
+### Example
 
 The following table contains a timestamp column of type `TIMESTAMP` with `LATENESS` equal
-to `INTERVAL 30 days`. Assuming that the oldest timestamp in the table is `2024-01-01T00:00:00`,
-the connector will fetch all records with timestamps from `2024-01-01`, then all records for
-`2024-01-02`, `2024-01-03`, etc., until all records in the table have been ingested.
+to `INTERVAL 1 day`. Assuming that the oldest timestamp in the table is `2023-01-01T00:00:00`,
+the connector fetches all records with timestamps from `2023-01-01`, then all records for
+`2023-01-02`, `2023-01-03`, etc., until all records in the table have been ingested. With
+`transaction_mode` set to `snapshot`, each daily range is ingested in a separate transaction.
 
 ```sql
-CREATE TABLE transaction(
-    trans_date_trans_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 day,
-    cc_num BIGINT,
-    merchant STRING,
-    category STRING,
-    amt DECIMAL(38, 2),
-    trans_num STRING,
-    unix_time BIGINT,
-    merch_lat DOUBLE,
-    merch_long DOUBLE,
-    is_fraud BIGINT
+CREATE TABLE iceberg_table(
+  id BIGINT,
+  name STRING,
+  b BOOLEAN,
+  ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 day,
+  dt DATE
 ) WITH (
+  'materialized' = 'true',
   'connectors' = '[{
     "transport": {
-      "name": "delta_table_input",
+      "name": "iceberg_input",
       "config": {
-        "uri": "s3://feldera-fraud-detection-data/transaction_train",
         "mode": "snapshot",
-        "aws_skip_signature": "true",
-        "timestamp_column": "trans_date_trans_time"
+        "transaction_mode": "snapshot",
+        "timestamp_column": "ts",
+        "metadata_location": "file:///tmp/warehouse/test_table/metadata/00001-26093ae9-b816-40ca-8ca4-05bd445a8a1d.metadata.json"
       }
     }
-  }
-]');
-``` -->
+  }]'
+);
+```
 
 ## Examples
 

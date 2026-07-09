@@ -15,7 +15,7 @@ use feldera_types::{
 };
 use serde_json::json;
 
-use std::{collections::HashMap, time::Instant};
+use std::time::Instant;
 use tempfile::NamedTempFile;
 use tracing::info;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -69,10 +69,13 @@ fn data_to_ndjson(data: Vec<IcebergTestStruct>) -> NamedTempFile {
 ///
 /// `table_properties` are set on the input relation, the way table-level SQL
 /// `WITH` properties (e.g., `skip_unused_columns`) reach the connector.
+///
+/// `config` is the connector's transport config as a JSON object. This function
+/// forces `mode = snapshot`.
 fn iceberg_snapshot_to_json<T>(
     schema: &[Field],
     table_properties: &[(&str, &str)],
-    config: &HashMap<String, String>,
+    config: serde_json::Value,
 ) -> NamedTempFile
 where
     T: DBData
@@ -87,13 +90,16 @@ where
         json_file.path().display()
     );
 
-    let mut config = config.clone();
-    config.insert("mode".to_string(), "snapshot".to_string());
+    let mut config = config;
+    config
+        .as_object_mut()
+        .expect("iceberg connector config must be a JSON object")
+        .insert("mode".to_string(), json!("snapshot"));
 
     let (input_pipeline, err_receiver) = iceberg_input_pipeline::<T>(
         schema,
         table_properties,
-        &config,
+        config,
         &json_file.path().display().to_string(),
     );
     input_pipeline.start();
@@ -116,7 +122,7 @@ where
 fn iceberg_input_pipeline<T>(
     schema: &[Field],
     table_properties: &[(&str, &str)],
-    config: &HashMap<String, String>,
+    config: serde_json::Value,
     output_file_path: &str,
 ) -> (Controller, Receiver<String>)
 where
@@ -228,27 +234,53 @@ fn data(n_records: usize) -> Vec<IcebergTestStruct> {
 #[test]
 #[cfg(feature = "iceberg-tests-fs")]
 fn iceberg_localfs_input_test_unordered() {
-    iceberg_localfs_input_test(&[], &|_| true);
+    iceberg_localfs_input_test(1_000_000, json!({}), &|_| true);
 }
 
 #[test]
 #[cfg(feature = "iceberg-tests-fs")]
 fn iceberg_localfs_input_test_ordered() {
-    iceberg_localfs_input_test(
-        &[("timestamp_column".to_string(), "ts".to_string())],
-        &|_| true,
-    );
+    iceberg_localfs_input_test(1_000_000, json!({ "timestamp_column": "ts" }), &|_| true);
 }
 
 #[test]
 #[cfg(feature = "iceberg-tests-fs")]
 fn iceberg_localfs_input_test_ordered_with_filter() {
     iceberg_localfs_input_test(
-        &[
-            ("timestamp_column".to_string(), "ts".to_string()),
-            ("snapshot_filter".to_string(), "i >= 10000".to_string()),
-        ],
+        1_000_000,
+        json!({ "timestamp_column": "ts", "snapshot_filter": "i >= 10000" }),
         &|x| x.i >= 10000,
+    );
+}
+
+/// A single parser task must ingest the whole snapshot correctly (the parallel
+/// path defaults to 4 parsers and is covered by the tests above).
+#[test]
+#[cfg(feature = "iceberg-tests-fs")]
+fn iceberg_localfs_input_test_single_parser() {
+    iceberg_localfs_input_test(100_000, json!({ "num_parsers": 1 }), &|_| true);
+}
+
+/// `transaction_mode = snapshot` on an unordered read ingests the whole snapshot
+/// in one Feldera transaction; the ingested data must be identical to a
+/// non-transactional read.
+#[test]
+#[cfg(feature = "iceberg-tests-fs")]
+fn iceberg_localfs_input_test_transactional() {
+    iceberg_localfs_input_test(100_000, json!({ "transaction_mode": "snapshot" }), &|_| {
+        true
+    });
+}
+
+/// `transaction_mode = snapshot` on an ordered read ingests one Feldera
+/// transaction per lateness range; the ingested data must still be complete.
+#[test]
+#[cfg(feature = "iceberg-tests-fs")]
+fn iceberg_localfs_input_test_ordered_transactional() {
+    iceberg_localfs_input_test(
+        100_000,
+        json!({ "timestamp_column": "ts", "transaction_mode": "snapshot" }),
+        &|_| true,
     );
 }
 
@@ -303,22 +335,32 @@ fn create_localfs_table(data: &[IcebergTestStruct], extra_columns: bool) -> Stri
         .to_string()
 }
 
+/// Ingest a local-FS Iceberg table in snapshot mode and assert the ingested
+/// data matches `data(n_records)` filtered by `filter`. `extra_config` is
+/// merged into the connector's transport config as JSON.
 #[cfg(feature = "iceberg-tests-fs")]
 fn iceberg_localfs_input_test(
-    extra_config: &[(String, String)],
+    n_records: usize,
+    extra_config: serde_json::Value,
     filter: &dyn Fn(&IcebergTestStruct) -> bool,
 ) {
-    let data = data(1_000_000);
+    let data = data(n_records);
 
     let metadata_path = create_localfs_table(&data, false);
+
+    let mut config = json!({ "metadata_location": metadata_path });
+    let config_obj = config.as_object_mut().unwrap();
+    for (key, value) in extra_config
+        .as_object()
+        .expect("extra_config must be a JSON object")
+    {
+        config_obj.insert(key.clone(), value.clone());
+    }
 
     let mut json_file = iceberg_snapshot_to_json::<IcebergTestStruct>(
         &IcebergTestStruct::schema_with_lateness(),
         &[],
-        &[("metadata_location".to_string(), metadata_path.to_string())]
-            .into_iter()
-            .chain(extra_config.into_iter().cloned())
-            .collect::<HashMap<_, _>>(),
+        config,
     );
 
     let expected_zset = dbsp::OrdZSet::from_tuples(
@@ -358,9 +400,7 @@ fn iceberg_localfs_input_subset_test(skip_unused: bool) {
     let mut json_file = iceberg_snapshot_to_json::<IcebergSubsetTestStruct>(
         &IcebergSubsetTestStruct::schema(),
         table_properties,
-        &[("metadata_location".to_string(), metadata_path)]
-            .into_iter()
-            .collect::<HashMap<_, _>>(),
+        json!({ "metadata_location": metadata_path }),
     );
 
     let expected_zset = dbsp::OrdZSet::from_tuples(
@@ -402,37 +442,17 @@ fn iceberg_glue_s3_input_test() {
     let mut json_file = iceberg_snapshot_to_json::<IcebergTestStruct>(
         &IcebergTestStruct::schema_with_lateness(),
         &[],
-        &[
-            ("catalog_type".to_string(), "glue".to_string()),
-            (
-                "glue.warehouse".to_string(),
-                "s3://feldera-iceberg-test/".to_string(),
-            ),
-            (
-                "table_name".to_string(),
-                "iceberg_test.test_table_v2".to_string(),
-            ),
-            (
-                "glue.access-key-id".to_string(),
-                std::env::var("ICEBERG_TEST_AWS_ACCESS_KEY_ID").unwrap(),
-            ),
-            (
-                "glue.secret-access-key".to_string(),
-                std::env::var("ICEBERG_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
-            ),
-            ("glue.region".to_string(), "us-east-1".to_string()),
-            (
-                "s3.access-key-id".to_string(),
-                std::env::var("ICEBERG_TEST_AWS_ACCESS_KEY_ID").unwrap(),
-            ),
-            (
-                "s3.secret-access-key".to_string(),
-                std::env::var("ICEBERG_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
-            ),
-            ("s3.region".to_string(), "us-east-1".to_string()),
-        ]
-        .into_iter()
-        .collect::<HashMap<_, _>>(),
+        json!({
+            "catalog_type": "glue",
+            "glue.warehouse": "s3://feldera-iceberg-test/",
+            "table_name": "iceberg_test.test_table_v2",
+            "glue.access-key-id": std::env::var("ICEBERG_TEST_AWS_ACCESS_KEY_ID").unwrap(),
+            "glue.secret-access-key": std::env::var("ICEBERG_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
+            "glue.region": "us-east-1",
+            "s3.access-key-id": std::env::var("ICEBERG_TEST_AWS_ACCESS_KEY_ID").unwrap(),
+            "s3.secret-access-key": std::env::var("ICEBERG_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
+            "s3.region": "us-east-1",
+        }),
     );
 
     let zset = file_to_zset::<IcebergTestStruct>(json_file.as_file_mut());
@@ -460,18 +480,13 @@ fn iceberg_s3tables_input_test() {
     let mut json_file = iceberg_snapshot_to_json::<S3TablesTestStruct>(
         &S3TablesTestStruct::schema(),
         &[],
-        &[
-            ("catalog_type".to_string(), "s3tables".to_string()),
-            (
-                "s3tables.table-bucket-arn".to_string(),
-                "arn:aws:s3tables:us-west-1:737834633458:bucket/iceberg-test".to_string(),
-            ),
-            ("table_name".to_string(), "dev.test_table".to_string()),
-            ("s3tables.region".to_string(), "us-west-1".to_string()),
-            ("s3.region".to_string(), "us-west-1".to_string()),
-        ]
-        .into_iter()
-        .collect::<HashMap<_, _>>(),
+        json!({
+            "catalog_type": "s3tables",
+            "s3tables.table-bucket-arn": "arn:aws:s3tables:us-west-1:737834633458:bucket/iceberg-test",
+            "table_name": "dev.test_table",
+            "s3tables.region": "us-west-1",
+            "s3.region": "us-west-1",
+        }),
     );
 
     let zset = file_to_zset::<S3TablesTestStruct>(json_file.as_file_mut());
@@ -488,29 +503,15 @@ fn iceberg_rest_s3_input_test() {
     let mut json_file = iceberg_snapshot_to_json::<IcebergTestStruct>(
         &IcebergTestStruct::schema_with_lateness(),
         &[],
-        &[
-            ("catalog_type".to_string(), "rest".to_string()),
-            ("rest.uri".to_string(), "http://localhost:8181".to_string()),
-            (
-                "rest.warehouse".to_string(),
-                "s3://feldera-iceberg-test/".to_string(),
-            ),
-            (
-                "table_name".to_string(),
-                "iceberg_test.test_table_v2".to_string(),
-            ),
-            (
-                "s3.access-key-id".to_string(),
-                std::env::var("ICEBERG_TEST_AWS_ACCESS_KEY_ID").unwrap(),
-            ),
-            (
-                "s3.secret-access-key".to_string(),
-                std::env::var("ICEBERG_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
-            ),
-            ("s3.region".to_string(), "us-east-1".to_string()),
-        ]
-        .into_iter()
-        .collect::<HashMap<_, _>>(),
+        json!({
+            "catalog_type": "rest",
+            "rest.uri": "http://localhost:8181",
+            "rest.warehouse": "s3://feldera-iceberg-test/",
+            "table_name": "iceberg_test.test_table_v2",
+            "s3.access-key-id": std::env::var("ICEBERG_TEST_AWS_ACCESS_KEY_ID").unwrap(),
+            "s3.secret-access-key": std::env::var("ICEBERG_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
+            "s3.region": "us-east-1",
+        }),
     );
 
     let zset = file_to_zset::<IcebergTestStruct>(json_file.as_file_mut());
