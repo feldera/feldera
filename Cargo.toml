@@ -166,6 +166,7 @@ home = "=0.5.9"
 iceberg = { git = "https://github.com/feldera/iceberg-rust.git", rev = "28c4800f198686f306bd80d11d03f232670feec3" }
 iceberg-catalog-glue = { git = "https://github.com/feldera/iceberg-rust.git", rev = "28c4800f198686f306bd80d11d03f232670feec3" }
 iceberg-catalog-rest = { git = "https://github.com/feldera/iceberg-rust.git", rev = "28c4800f198686f306bd80d11d03f232670feec3" }
+iceberg-catalog-s3tables = { git = "https://github.com/feldera/iceberg-rust.git", rev = "28c4800f198686f306bd80d11d03f232670feec3" }
 iceberg-datafusion = { git = "https://github.com/feldera/iceberg-rust.git", rev = "28c4800f198686f306bd80d11d03f232670feec3" }
 iceberg-storage-opendal = { git = "https://github.com/feldera/iceberg-rust.git", rev = "28c4800f198686f306bd80d11d03f232670feec3", features = ["opendal-s3", "opendal-gcs", "opendal-fs", "opendal-memory"] }
 impl-trait-for-tuples = "0.2"

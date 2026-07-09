@@ -44,6 +44,8 @@ pub enum IcebergCatalogType {
     Rest,
     #[serde(rename = "glue")]
     Glue,
+    #[serde(rename = "s3tables")]
+    S3Tables,
 }
 
 /// AWS Glue catalog config.
@@ -136,6 +138,44 @@ pub struct RestCatalogConfig {
     pub resource: Option<String>,
 }
 
+/// Amazon S3 Tables catalog config.
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+pub struct S3TablesCatalogConfig {
+    /// ARN of the S3 table bucket that contains the table.
+    ///
+    /// Note that this is the ARN of the table *bucket*, not of an individual table,
+    /// e.g., `"arn:aws:s3tables:us-east-2:123456789012:bucket/my-bucket"`.
+    #[serde(rename = "s3tables.table-bucket-arn")]
+    pub table_bucket_arn: Option<String>,
+
+    /// Custom endpoint URL for the S3 Tables service.
+    ///
+    /// Primarily used to target a local or mock S3 Tables implementation for testing.
+    /// When omitted, the default regional endpoint is used.
+    #[serde(rename = "s3tables.endpoint")]
+    pub endpoint: Option<String>,
+
+    /// Access key id used to access the S3 Tables catalog.
+    #[serde(rename = "s3tables.access-key-id")]
+    pub access_key_id: Option<String>,
+
+    /// Secret access key used to access the S3 Tables catalog.
+    #[serde(rename = "s3tables.secret-access-key")]
+    pub secret_access_key: Option<String>,
+
+    /// Static session token used to access the S3 Tables catalog.
+    #[serde(rename = "s3tables.session-token")]
+    pub session_token: Option<String>,
+
+    /// Profile used to access the S3 Tables catalog.
+    #[serde(rename = "s3tables.profile-name")]
+    pub profile_name: Option<String>,
+
+    /// Region of the S3 Tables catalog.
+    #[serde(rename = "s3tables.region")]
+    pub region: Option<String>,
+}
+
 /// Iceberg input connector configuration.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct IcebergReaderConfig {
@@ -219,7 +259,8 @@ pub struct IcebergReaderConfig {
 
     /// Specifies the catalog type used to access the Iceberg table.
     ///
-    /// Supported options include "rest" and "glue". This property is mutually exclusive with `metadata_location`.
+    /// Supported options include "rest", "glue", and "s3tables". This property is mutually
+    /// exclusive with `metadata_location`.
     pub catalog_type: Option<IcebergCatalogType>,
 
     #[serde(flatten)]
@@ -227,6 +268,9 @@ pub struct IcebergReaderConfig {
 
     #[serde(flatten)]
     pub rest_catalog_config: RestCatalogConfig,
+
+    #[serde(flatten)]
+    pub s3tables_catalog_config: S3TablesCatalogConfig,
 
     /// Storage options for configuring backend object store.
     ///
@@ -241,6 +285,7 @@ impl IcebergReaderConfig {
         self.validate_table_name()?;
         self.validate_glue_catalog_config()?;
         self.validate_rest_catalog_config()?;
+        self.validate_s3tables_catalog_config()?;
 
         Ok(())
     }
@@ -293,6 +338,40 @@ impl IcebergReaderConfig {
         Ok(())
     }
 
+    /// Reject S3 Tables catalog config when 'catalog_type' isn't set to 's3tables'.
+    pub fn validate_s3tables_catalog_config(&self) -> Result<(), String> {
+        if self.catalog_type == Some(IcebergCatalogType::S3Tables) {
+            if self.s3tables_catalog_config.table_bucket_arn.is_none() {
+                return Err(r#"missing S3 table bucket ARN; set the 's3tables.table-bucket-arn' property to the ARN of the S3 table bucket (e.g., 'arn:aws:s3tables:us-east-2:123456789012:bucket/my-bucket') when using "catalog_type" = "s3tables""#.to_string());
+            }
+        } else {
+            ensure_s3tables_property_not_set(
+                &self.s3tables_catalog_config.table_bucket_arn,
+                "table-bucket-arn",
+            )?;
+            ensure_s3tables_property_not_set(&self.s3tables_catalog_config.endpoint, "endpoint")?;
+            ensure_s3tables_property_not_set(
+                &self.s3tables_catalog_config.access_key_id,
+                "access-key-id",
+            )?;
+            ensure_s3tables_property_not_set(
+                &self.s3tables_catalog_config.secret_access_key,
+                "secret-access-key",
+            )?;
+            ensure_s3tables_property_not_set(
+                &self.s3tables_catalog_config.session_token,
+                "session-token",
+            )?;
+            ensure_s3tables_property_not_set(
+                &self.s3tables_catalog_config.profile_name,
+                "profile-name",
+            )?;
+            ensure_s3tables_property_not_set(&self.s3tables_catalog_config.region, "region")?;
+        }
+
+        Ok(())
+    }
+
     /// Table name must be configured iff 'catalog_type' is set.
     pub fn validate_table_name(&self) -> Result<(), String> {
         if self.catalog_type.is_none() && self.table_name.is_some() {
@@ -336,6 +415,16 @@ fn ensure_rest_property_not_set<T>(property: &Option<T>, name: &str) -> Result<(
     }
 }
 
+fn ensure_s3tables_property_not_set<T>(property: &Option<T>, name: &str) -> Result<(), String> {
+    if property.is_some() {
+        Err(format!(
+            r#"unexpected 's3tables.{name}' property—S3 Tables catalog configuration properties are only valid when "catalog_type" = "s3tables""#
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 impl IcebergReaderConfig {
     /// `true` if the configuration requires taking an initial snapshot of the table.
     pub fn snapshot(&self) -> bool {
@@ -352,5 +441,86 @@ impl IcebergReaderConfig {
             &self.mode,
             IcebergIngestMode::SnapshotAndFollow | IcebergIngestMode::Follow
         )
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use serde_json::json;
+
+    fn config(value: serde_json::Value) -> IcebergReaderConfig {
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn s3tables_config_deserializes() {
+        let config = config(json!({
+            "mode": "snapshot",
+            "catalog_type": "s3tables",
+            "table_name": "namespace.table",
+            "s3tables.table-bucket-arn": "arn:aws:s3tables:us-east-2:123456789012:bucket/my-bucket",
+            "s3tables.region": "us-east-2",
+            "s3tables.access-key-id": "key",
+            "s3tables.secret-access-key": "secret",
+            "s3tables.session-token": "token",
+            "s3tables.profile-name": "profile",
+            "s3tables.endpoint": "http://localhost:4566",
+        }));
+
+        // Each prefixed key must land on its struct field, not in the catch-all
+        // `fileio_config` map (which is what happens on a rename mismatch).
+        let s3tables = &config.s3tables_catalog_config;
+        assert_eq!(
+            s3tables.table_bucket_arn.as_deref(),
+            Some("arn:aws:s3tables:us-east-2:123456789012:bucket/my-bucket")
+        );
+        assert_eq!(s3tables.region.as_deref(), Some("us-east-2"));
+        assert_eq!(s3tables.access_key_id.as_deref(), Some("key"));
+        assert_eq!(s3tables.secret_access_key.as_deref(), Some("secret"));
+        assert_eq!(s3tables.session_token.as_deref(), Some("token"));
+        assert_eq!(s3tables.profile_name.as_deref(), Some("profile"));
+        assert_eq!(s3tables.endpoint.as_deref(), Some("http://localhost:4566"));
+        assert!(config.fileio_config.is_empty());
+
+        config.validate_catalog_config().unwrap();
+    }
+
+    #[test]
+    fn s3tables_requires_table_bucket_arn() {
+        let err = config(json!({
+            "mode": "snapshot",
+            "catalog_type": "s3tables",
+            "table_name": "namespace.table",
+        }))
+        .validate_catalog_config()
+        .unwrap_err();
+        assert!(err.contains("s3tables.table-bucket-arn"), "{err}");
+    }
+
+    #[test]
+    fn s3tables_props_rejected_for_other_catalog() {
+        let err = config(json!({
+            "mode": "snapshot",
+            "catalog_type": "glue",
+            "table_name": "namespace.table",
+            "glue.warehouse": "s3://warehouse/",
+            "s3tables.region": "us-east-2",
+        }))
+        .validate_catalog_config()
+        .unwrap_err();
+        assert!(err.contains("s3tables.region"), "{err}");
+    }
+
+    #[test]
+    fn s3tables_props_rejected_without_catalog() {
+        let err = config(json!({
+            "mode": "snapshot",
+            "metadata_location": "s3://warehouse/metadata.json",
+            "s3tables.table-bucket-arn": "arn:aws:s3tables:us-east-2:123456789012:bucket/my-bucket",
+        }))
+        .validate_catalog_config()
+        .unwrap_err();
+        assert!(err.contains("s3tables.table-bucket-arn"), "{err}");
     }
 }

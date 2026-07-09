@@ -66,6 +66,15 @@ public class IcebergReaderConfig implements IValidateConfig {
     @Nullable @JsonProperty("rest.audience")         public String restAudience = null;
     @Nullable @JsonProperty("rest.resource")         public String restResource = null;
 
+    // S3 Tables catalog fields (inlined from S3TablesCatalogConfig)
+    @Nullable @JsonProperty("s3tables.table-bucket-arn") public String s3tablesTableBucketArn = null;
+    @Nullable @JsonProperty("s3tables.endpoint")          public String s3tablesEndpoint = null;
+    @Nullable @JsonProperty("s3tables.access-key-id")     public String s3tablesAccessKeyId = null;
+    @Nullable @JsonProperty("s3tables.secret-access-key") public String s3tablesSecretAccessKey = null;
+    @Nullable @JsonProperty("s3tables.session-token")     public String s3tablesSessionToken = null;
+    @Nullable @JsonProperty("s3tables.profile-name")      public String s3tablesProfileName = null;
+    @Nullable @JsonProperty("s3tables.region")            public String s3tablesRegion = null;
+
     /** Absorbs flattened {@code fileio_config} keys so they are not rejected as unknown. */
     @JsonAnySetter
     public void setFileioOption(String key, Object value) {}
@@ -137,6 +146,22 @@ public class IcebergReaderConfig implements IValidateConfig {
             ok &= checkRestPropAbsent(reporter, restAudience, "audience");
             ok &= checkRestPropAbsent(reporter, restResource, "resource");
         }
+        if (catalogType == IcebergCatalogType.S3Tables) {
+            if (s3tablesTableBucketArn == null) {
+                reporter.warn("Invalid configuration",
+                        "missing S3 table bucket ARN—set \"s3tables.table-bucket-arn\" when using"
+                                + " \"catalog_type\": \"s3tables\"");
+                ok = false;
+            }
+        } else {
+            ok &= checkS3tablesPropAbsent(reporter, s3tablesTableBucketArn, "table-bucket-arn");
+            ok &= checkS3tablesPropAbsent(reporter, s3tablesEndpoint, "endpoint");
+            ok &= checkS3tablesPropAbsent(reporter, s3tablesAccessKeyId, "access-key-id");
+            ok &= checkS3tablesPropAbsent(reporter, s3tablesSecretAccessKey, "secret-access-key");
+            ok &= checkS3tablesPropAbsent(reporter, s3tablesSessionToken, "session-token");
+            ok &= checkS3tablesPropAbsent(reporter, s3tablesProfileName, "profile-name");
+            ok &= checkS3tablesPropAbsent(reporter, s3tablesRegion, "region");
+        }
         return ok;
     }
 
@@ -153,6 +178,15 @@ public class IcebergReaderConfig implements IValidateConfig {
         if (value != null) {
             reporter.warnPath("rest." + name, "Invalid configuration",
                     "\"rest." + name + "\" is only valid when \"catalog_type\": \"rest\"");
+            return false;
+        }
+        return true;
+    }
+
+    private boolean checkS3tablesPropAbsent(ConfigReporter reporter, Object value, String name) {
+        if (value != null) {
+            reporter.warnPath("s3tables." + name, "Invalid configuration",
+                    "\"s3tables." + name + "\" is only valid when \"catalog_type\": \"s3tables\"");
             return false;
         }
         return true;

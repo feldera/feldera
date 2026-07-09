@@ -22,6 +22,7 @@ iceberg = { workspace = true }
 iceberg-datafusion = { workspace = true }
 iceberg-catalog-glue = { workspace = true }
 iceberg-catalog-rest = { workspace = true }
+iceberg-catalog-s3tables = { workspace = true }
 iceberg-storage-opendal = { workspace = true }
 url = { workspace = true }
 chrono = { workspace = true }

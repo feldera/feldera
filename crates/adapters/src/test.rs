@@ -49,7 +49,8 @@ mod datagen;
     any(
         feature = "iceberg-tests-fs",
         feature = "iceberg-tests-glue",
-        feature = "iceberg-tests-rest"
+        feature = "iceberg-tests-rest",
+        feature = "iceberg-tests-s3tables"
     )
 ))]
 mod iceberg;
@@ -58,8 +59,9 @@ use crate::catalog::InputCollectionHandle;
 use crate::format::get_input_format;
 use crate::transport::input_transport_config_to_endpoint;
 pub use data::{
-    DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergTestStruct, KeyStruct, TestStruct,
-    TestStruct2, generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
+    DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergTestStruct, KeyStruct,
+    S3TablesTestStruct, TestStruct, TestStruct2, generate_test_batch, generate_test_batches,
+    generate_test_batches_with_weights,
 };
 use dbsp::circuit::{CircuitConfig, NodeId};
 use dbsp::utils::Tup2;

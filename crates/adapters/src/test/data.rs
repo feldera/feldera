@@ -954,6 +954,55 @@ deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", Variant, 12] {
     (varbin, "varbin", false, ByteArray, |_| None)
 });
 
+/// Records in the Amazon S3 Tables integration-test table (`dev.test_table`).
+///
+/// Mirrors the table created by the `s3tables` test-setup script:
+/// `id BIGINT NOT NULL`, `name STRING`, `created_at TIMESTAMP`.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+pub struct S3TablesTestStruct {
+    pub id: i64,
+    pub name: Option<String>,
+    pub created_at: Option<Timestamp>,
+}
+
+impl S3TablesTestStruct {
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field::new("id".into(), ColumnType::bigint(false)),
+            Field::new("name".into(), ColumnType::varchar(true)),
+            Field::new("created_at".into(), ColumnType::timestamp(true)),
+        ]
+    }
+}
+
+serialize_table_record!(S3TablesTestStruct[3]{
+    id["id"]: i64,
+    name["name"]: Option<String>,
+    created_at["created_at"]: Option<Timestamp>
+});
+
+deserialize_table_record!(S3TablesTestStruct["S3TablesTestStruct", Variant, 3] {
+    (id, "id", false, i64, |_| None),
+    (name, "name", true, Option<String>, |_| Some(None)),
+    (created_at, "created_at", true, Option<Timestamp>, |_| Some(None))
+});
+
 /// Struct will all types supported by the DeltaLake connector.
 #[derive(
     Debug,

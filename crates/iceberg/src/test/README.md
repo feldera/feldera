@@ -7,6 +7,7 @@ and are feature gated using:
 * `iceberg-tests-fs` - enables tests using local file system
 * `iceberg-tests-glue` - enables tests using S3 and AWS Glue catalog
 * `iceberg-tests-rest` - enables tests using S3 and Rest catalog.
+* `iceberg-tests-s3tables` - enables tests using an Amazon S3 Tables catalog.
 
 The `iceberg-rust` crate does not yes support writing Iceberg tables; therefore
 we use `pyiceberg` to create test tables for the Iceberg source connector.  The
@@ -45,6 +46,22 @@ implementation of the REST catalog from Databricks and bind it to the Glue catal
 * Create catalog: `docker run -e AWS_REGION=us-east-1 -e AWS_ACCESS_KEY_ID=<aws access key> -e AWS_SECRET_ACCESS_KEY=<aws secret> -e CATALOG_CATALOG__IMPL=org.apache.iceberg.aws.glue.GlueCatalog -p 8181:8181 tabulario/iceberg-rest:0.1.0`
 
 * `cargo test --features="iceberg-tests-rest" iceberg_rest_s3_input_test`
+
+## S3 Tables catalog test
+
+This test reads the table `dev.test_table` (schema `id BIGINT NOT NULL, name STRING,
+created_at TIMESTAMP`, 100 rows) from an
+[Amazon S3 Tables](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets.html)
+table bucket (`arn:aws:s3tables:us-west-1:737834633458:bucket/iceberg-test`).
+
+Credentials and region resolve from the ambient AWS provider chain, so the test embeds no
+keys. Provide credentials for an identity authorized for `s3tables:GetTable` (to locate the
+table metadata) and `s3tables:GetTableData` (to read the metadata and data files) on the
+table (talk to leonid@feldera.com), for example via an SSO profile or exported access keys:
+
+* `export AWS_PROFILE=<profile>` (after `aws sso login`), or
+  `export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_SESSION_TOKEN=...`
+* Run the following command in the `adapters` crate: `cargo test --features="iceberg-tests-s3tables" iceberg_s3tables_input_test`
 
 # Running tests in CI
 

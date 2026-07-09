@@ -17,9 +17,9 @@ a Feldera pipeline. Currently, the connector supports batch reads, allowing user
 load a static snapshot of the table. However, it does not yet support ingesting
 incremental changes. Incremental ingestion capabilities are planned for future releases.
 
-The connector is compatible with REST and AWS Glue catalogs and also supports direct
-table reads without a catalog, provided the location of the metadata file. Supported
-storage systems include S3, GCS, and local file systems.
+The connector is compatible with REST, AWS Glue, and Amazon S3 Tables catalogs and also
+supports direct table reads without a catalog, provided the location of the metadata file.
+Supported storage systems include S3, GCS, and local file systems.
 
 The Iceberg input connector does not yet support [fault tolerance](/pipelines/fault-tolerance).
 
@@ -34,7 +34,7 @@ The Iceberg input connector does not yet support [fault tolerance](/pipelines/fa
 | `datetime`                  | string | <p>Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g., "2024-12-09T16:09:53+00:00". When this option is set, the connector reads the version of the table as of the specified point in time (based on the server time recorded in the transaction log, not the event time encoded in the data). </p><p> Note: at most one of `version` and `datetime` options can be specified.  When neither of the two options is specified, the latest committed version of the table is used.</p>|
 | `metadata_location`         | string | Location of the table metadata JSON file. This property is used to access an Iceberg table directly, without a catalog. It is mutually exclusive with the `catalog_type` property.|
 | `table_name`                | string | Specifies the Iceberg table name within the catalog in the `namespace.table` format. This option is applicable when an Iceberg catalog is configured using the `catalog_type` property.|
-| `catalog_type`              | enum   | Type of the Iceberg catalog used to access the table. Supported options include `rest` and `glue`. This property is mutually exclusive with `metadata_location`.|
+| `catalog_type`              | enum   | Type of the Iceberg catalog used to access the table. Supported options include `rest`, `glue`, and `s3tables`. This property is mutually exclusive with `metadata_location`.|
 
 <!-- | `timestamp_column`          | string | Table column that serves as an event timestamp. When this option is specified, table rows are ingested in the timestamp order, respecting the [`LATENESS`](/sql/streaming#lateness-expressions) property of the column: each ingested row has a timestamp no more than `LATENESS` time units earlier than the most recent timestamp of any previously ingested row.  See details [below](#ingesting-time-series-data-from-iceberg). | -->
 
@@ -76,6 +76,24 @@ The following properties are used when `catalog_type` is set to `glue` to config
 | `glue.id`                   | string | The 12-digit ID of the Glue catalog.|
 
 [*]: These fields are required when the `catalog_type` property is set to `glue`.
+
+### S3 Tables catalog configuration
+
+The following properties are used when `catalog_type` is set to `s3tables` to configure
+access to an [Amazon S3 Tables](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets.html)
+table bucket.
+
+| Property                        | Type   | Description   |
+|---------------------------------|--------|---------------|
+| `s3tables.table-bucket-arn`*    | string | ARN of the S3 table bucket that contains the table. Note that this is the ARN of the table _bucket_, not of an individual table, e.g., `arn:aws:s3tables:us-east-2:123456789012:bucket/my-bucket`.|
+| `s3tables.endpoint`             | string | Custom endpoint URL for the S3 Tables service. Primarily used to target a local or mock S3 Tables implementation for testing.|
+| `s3tables.access-key-id`        | string | Access key id used to access the S3 Tables catalog.|
+| `s3tables.secret-access-key`    | string | Secret access key used to access the S3 Tables catalog.|
+| `s3tables.session-token`        | string | Static session token used to access the S3 Tables catalog. Required when using temporary credentials.|
+| `s3tables.profile-name`         | string | Profile used to access the S3 Tables catalog.|
+| `s3tables.region`               | string | Region of the S3 Tables catalog.|
+
+[*]: These fields are required when the `catalog_type` property is set to `s3tables`.
 
 ### FileIO configuration
 
@@ -250,6 +268,44 @@ create table iceberg_table(
                 "s3.access-key-id": "<AWS_ACCESS_KEY_ID>",
                 "s3.secret-access-key": "<AWS_SECRET_ACCESS_KEY>",
                 "s3.region": "us-east-1"
+            }
+        }
+    }]'
+);
+```
+
+### Read an Iceberg table from S3 through the S3 Tables catalog
+
+Create an Iceberg input connector to read a snapshot of a table stored in an
+[Amazon S3 Tables](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets.html)
+table bucket. As with the AWS Glue catalog, the configuration specifies AWS credentials
+separately for the S3 Tables catalog API (`s3tables.*`) and for reading the table's data
+files from S3 (`s3.*`). These credentials can either be the same, when using a single IAM
+identity for both, or different, when using separate IAM identities.
+
+```sql
+create table iceberg_table(
+  id bigint,
+  name STRING,
+  b BOOLEAN,
+  ts TIMESTAMP,
+  dt DATE
+) with (
+    'materialized' = 'true',
+    'connectors' = '[{
+        "transport": {
+            "name": "iceberg_input",
+            "config": {
+                "mode": "snapshot",
+                "catalog_type": "s3tables",
+                "table_name": "iceberg_test.test_table",
+                "s3tables.table-bucket-arn": "arn:aws:s3tables:us-east-2:123456789012:bucket/my-bucket",
+                "s3tables.access-key-id": "<AWS_ACCESS_KEY_ID>",
+                "s3tables.secret-access-key": "<AWS_SECRET_ACCESS_KEY>",
+                "s3tables.region": "us-east-2",
+                "s3.access-key-id": "<AWS_ACCESS_KEY_ID>",
+                "s3.secret-access-key": "<AWS_SECRET_ACCESS_KEY>",
+                "s3.region": "us-east-2"
             }
         }
     }]'
