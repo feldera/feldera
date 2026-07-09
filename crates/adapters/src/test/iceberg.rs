@@ -15,7 +15,7 @@ use feldera_types::{
 };
 use serde_json::json;
 
-use std::time::Instant;
+use std::{collections::HashMap, time::Instant};
 use tempfile::NamedTempFile;
 use tracing::info;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -63,11 +63,35 @@ fn data_to_ndjson(data: Vec<IcebergTestStruct>) -> NamedTempFile {
     file
 }
 
+/// Read the Iceberg connector's custom metrics into a `name -> value` map.
+fn iceberg_connector_metrics(pipeline: &Controller) -> HashMap<String, f64> {
+    let endpoint_id = pipeline
+        .input_endpoint_id_by_name("test_input1")
+        .expect("iceberg input endpoint must exist");
+    pipeline
+        .status()
+        .input_status()
+        .get(&endpoint_id)
+        .and_then(|status| status.custom_metrics.clone())
+        .map(|metrics| {
+            metrics
+                .metrics()
+                .into_iter()
+                .map(|(name, _, _, value)| (name.to_string(), value))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Read a snapshot of an Iceberg table with records of type `T` to a temporary JSON file.
 ///
 /// `config` is the connector's transport config as a JSON object. This function
-/// forces `mode = snapshot`.
-fn iceberg_snapshot_to_json<T>(schema: &[Field], config: serde_json::Value) -> NamedTempFile
+/// forces `mode = snapshot`. Returns the output file and the connector's custom
+/// metrics captured just before the pipeline is stopped.
+fn iceberg_snapshot_to_json<T>(
+    schema: &[Field],
+    config: serde_json::Value,
+) -> (NamedTempFile, HashMap<String, f64>)
 where
     T: DBData
         + SerializeWithContext<SqlSerdeConfig>
@@ -98,11 +122,14 @@ where
 
     assert!(err_receiver.is_empty());
 
+    // Read metrics before stopping, while the connector status is still live.
+    let metrics = iceberg_connector_metrics(&input_pipeline);
+
     input_pipeline.stop().unwrap();
 
     info!("Read Iceberg snapshot in {:?}", start.elapsed());
 
-    json_file
+    (json_file, metrics)
 }
 
 /// Build a pipeline that reads from an Iceberg table and writes to a JSON file.
@@ -232,14 +259,23 @@ fn iceberg_localfs_input_test_single_parser() {
 }
 
 /// `transaction_mode = snapshot` on an unordered read ingests the whole snapshot
-/// in one Feldera transaction; the ingested data must be identical to a
+/// in exactly one Feldera transaction; the ingested data must be identical to a
 /// non-transactional read.
 #[test]
 #[cfg(feature = "iceberg-tests-fs")]
 fn iceberg_localfs_input_test_transactional() {
-    iceberg_localfs_input_test(100_000, json!({ "transaction_mode": "snapshot" }), &|_| {
-        true
-    });
+    let metrics =
+        iceberg_localfs_input_test(100_000, json!({ "transaction_mode": "snapshot" }), &|_| {
+            true
+        });
+    // Unordered snapshot: exactly one transaction. (Reverting the transaction
+    // wiring drops this to 0.)
+    assert_eq!(
+        metrics
+            .get("input_connector_iceberg_snapshot_transaction_starts")
+            .copied(),
+        Some(1.0)
+    );
 }
 
 /// `transaction_mode = snapshot` on an ordered read ingests one Feldera
@@ -247,19 +283,32 @@ fn iceberg_localfs_input_test_transactional() {
 #[test]
 #[cfg(feature = "iceberg-tests-fs")]
 fn iceberg_localfs_input_test_ordered_transactional() {
-    iceberg_localfs_input_test(
+    let metrics = iceberg_localfs_input_test(
         100_000,
         json!({ "timestamp_column": "ts", "transaction_mode": "snapshot" }),
         &|_| true,
     );
+    // Ordered snapshot: one transaction per non-empty lateness range, so at
+    // least one, and (with data spanning multiple ranges) typically several.
+    let starts = metrics
+        .get("input_connector_iceberg_snapshot_transaction_starts")
+        .copied()
+        .unwrap_or(0.0);
+    assert!(
+        starts >= 1.0,
+        "expected >= 1 snapshot transaction, got {starts}"
+    );
 }
 
+/// Ingest a local-FS Iceberg table in snapshot mode and assert the ingested
+/// data matches `data(n_records)` filtered by `filter`. Returns the connector's
+/// custom metrics so callers can make mode-specific assertions.
 #[cfg(feature = "iceberg-tests-fs")]
 fn iceberg_localfs_input_test(
     n_records: usize,
     extra_config: serde_json::Value,
     filter: &dyn Fn(&IcebergTestStruct) -> bool,
-) {
+) -> HashMap<String, f64> {
     let data = data(n_records);
 
     let table_dir = tempfile::TempDir::new().unwrap();
@@ -311,7 +360,7 @@ fn iceberg_localfs_input_test(
         config_obj.insert(key.clone(), value.clone());
     }
 
-    let mut json_file = iceberg_snapshot_to_json::<IcebergTestStruct>(
+    let (mut json_file, metrics) = iceberg_snapshot_to_json::<IcebergTestStruct>(
         &IcebergTestStruct::schema_with_lateness(),
         config,
     );
@@ -327,6 +376,23 @@ fn iceberg_localfs_input_test(
     let zset = file_to_zset::<IcebergTestStruct>(json_file.as_file_mut());
 
     assert_eq!(zset, expected_zset);
+
+    // A snapshot-only connector must reach the completed phase (2).
+    assert_eq!(
+        metrics.get("input_connector_iceberg_phase").copied(),
+        Some(2.0)
+    );
+
+    // The test table is built with a single append, i.e. the ingested snapshot
+    // has sequence number 1. (An unset gauge would read -1.)
+    assert_eq!(
+        metrics
+            .get("input_connector_iceberg_last_ingested_sequence_number")
+            .copied(),
+        Some(1.0)
+    );
+
+    metrics
 }
 
 #[test]
@@ -334,7 +400,7 @@ fn iceberg_localfs_input_test(
 fn iceberg_glue_s3_input_test() {
     use dbsp::trace::BatchReader;
     // Read delta table unordered.
-    let mut json_file = iceberg_snapshot_to_json::<IcebergTestStruct>(
+    let (mut json_file, _metrics) = iceberg_snapshot_to_json::<IcebergTestStruct>(
         &IcebergTestStruct::schema_with_lateness(),
         json!({
             "catalog_type": "glue",
@@ -398,7 +464,7 @@ fn iceberg_rest_s3_input_test() {
     use dbsp::trace::BatchReader;
 
     // Read delta table unordered.
-    let mut json_file = iceberg_snapshot_to_json::<IcebergTestStruct>(
+    let (mut json_file, _metrics) = iceberg_snapshot_to_json::<IcebergTestStruct>(
         &IcebergTestStruct::schema_with_lateness(),
         json!({
             "catalog_type": "rest",

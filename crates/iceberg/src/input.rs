@@ -1,5 +1,7 @@
 use crate::iceberg_input_serde_config;
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use atomic::Atomic;
+use bytemuck::NoUninit;
 use chrono::{DateTime, Utc};
 use datafusion::common::arrow::array::RecordBatch;
 use datafusion::prelude::{DataFrame, SQLOptions, SessionContext};
@@ -8,6 +10,7 @@ use feldera_adapterlib::{
     catalog::{ArrowStream, InputCollectionHandle},
     errors::journal::ControllerError,
     format::{InputBuffer, ParseError},
+    metrics::{ConnectorMetrics, ValueType},
     transport::{
         InputConsumer, InputEndpoint, InputQueue, InputQueueEntry, InputReader, InputReaderCommand,
         IntegratedInputEndpoint, NonFtInputReaderCommand,
@@ -30,6 +33,7 @@ use futures_util::StreamExt;
 use iceberg::CatalogBuilder;
 use iceberg::{
     io::{FileIO, FileIOBuilder, StorageFactory},
+    spec::SnapshotRef,
     table::{StaticTable, Table as IcebergTable},
     Catalog, TableIdent,
 };
@@ -48,7 +52,8 @@ use iceberg_catalog_s3tables::{
 use iceberg_datafusion::IcebergStaticTableProvider;
 use iceberg_storage_opendal::OpenDalResolvingStorageFactory;
 use log::{debug, info, trace, warn};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{sync::Arc, thread};
 use tokio::{
     select,
@@ -75,6 +80,115 @@ const S3TABLES_PROP_SECRET_ACCESS_KEY: &str = "aws_secret_access_key";
 const S3TABLES_PROP_SESSION_TOKEN: &str = "aws_session_token";
 const S3TABLES_PROP_PROFILE_NAME: &str = "profile_name";
 const S3TABLES_PROP_REGION_NAME: &str = "region_name";
+
+/// Current phase of an Iceberg table input connector.
+// repr(u64) so the phase can live in an `Atomic<IcebergPhase>` gauge and read
+// out as an f64 metric.
+#[derive(Copy, Clone, NoUninit)]
+#[repr(u64)]
+enum IcebergPhase {
+    LoadingSnapshot = 0,
+    // Reserved so the gauge encoding stays stable when follow mode adds a
+    // streaming phase; see #6165.
+    #[allow(dead_code)]
+    Follow = 1,
+    Completed = 2,
+}
+
+/// Prometheus-style metrics exported by the Iceberg input connector.
+// TODO(#6165): follow-mode metrics land with follow mode.
+struct IcebergMetrics {
+    /// Current phase of the connector (see [`IcebergPhase`]).
+    phase: Atomic<IcebergPhase>,
+    /// Unix epoch seconds when the snapshot phase finished; 0 if not yet complete.
+    snapshot_completed_ts: AtomicU64,
+    /// Total records loaded during the snapshot phase.
+    snapshot_records_total: AtomicU64,
+    /// Number of Feldera snapshot transactions started by this connector.
+    snapshot_transaction_starts: AtomicU64,
+    /// Sequence number of the ingested Iceberg snapshot;
+    /// [`SEQUENCE_METRIC_UNSET`] until the snapshot has been read.
+    last_ingested_sequence_number: AtomicU64,
+}
+
+/// Sentinel stored in the sequence-number gauge before a value is available.
+const SEQUENCE_METRIC_UNSET: u64 = u64::MAX;
+
+impl IcebergMetrics {
+    fn new() -> Self {
+        Self {
+            phase: Atomic::new(IcebergPhase::LoadingSnapshot),
+            snapshot_completed_ts: AtomicU64::new(0),
+            snapshot_records_total: AtomicU64::new(0),
+            snapshot_transaction_starts: AtomicU64::new(0),
+            last_ingested_sequence_number: AtomicU64::new(SEQUENCE_METRIC_UNSET),
+        }
+    }
+
+    fn set_phase(&self, phase: IcebergPhase) {
+        self.phase.store(phase, Ordering::Relaxed);
+    }
+
+    fn set_last_ingested_sequence_number(&self, sequence_number: i64) {
+        debug_assert!(
+            sequence_number >= 0,
+            "Iceberg sequence number must be non-negative"
+        );
+        self.last_ingested_sequence_number
+            .store(sequence_number as u64, Ordering::Relaxed);
+    }
+
+    fn last_ingested_sequence_number_metric(&self) -> f64 {
+        match self.last_ingested_sequence_number.load(Ordering::Relaxed) {
+            SEQUENCE_METRIC_UNSET => -1.0,
+            sequence_number => sequence_number as f64,
+        }
+    }
+}
+
+impl ConnectorMetrics for IcebergMetrics {
+    fn metrics(&self) -> Vec<(&'static str, &'static str, ValueType, f64)> {
+        vec![
+            (
+                "input_connector_iceberg_phase",
+                "Current phase: 0=loading_snapshot, 2=completed (1 reserved for follow mode).",
+                ValueType::Gauge,
+                self.phase.load(Ordering::Relaxed) as u64 as f64,
+            ),
+            (
+                "input_connector_iceberg_snapshot_completed_seconds",
+                "Unix epoch seconds when the snapshot phase finished (0 if not yet complete).",
+                ValueType::Gauge,
+                self.snapshot_completed_ts.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "input_connector_iceberg_snapshot_records_total",
+                "Total records loaded during the snapshot phase.",
+                ValueType::Counter,
+                self.snapshot_records_total.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "input_connector_iceberg_snapshot_transaction_starts",
+                "Number of Feldera snapshot transactions started by this connector.",
+                ValueType::Counter,
+                self.snapshot_transaction_starts.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "input_connector_iceberg_last_ingested_sequence_number",
+                "Sequence number of the Iceberg snapshot ingested by this connector (-1 if none yet).",
+                ValueType::Gauge,
+                self.last_ingested_sequence_number_metric(),
+            ),
+        ]
+    }
+}
+
+fn now_unix_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
 
 enum SnapshotDescr {
     /// Open the latest snapshot (default)
@@ -153,6 +267,14 @@ impl IcebergInputReader {
             bail!("'{}' mode is not yet supported", endpoint.config.mode);
         }
 
+        // Register metrics here rather than at endpoint construction: the
+        // controller inserts this endpoint's status entry after constructing the
+        // endpoint but before calling `open` (which builds this reader), and
+        // `set_custom_metrics` is dropped if the status entry does not yet exist.
+        endpoint
+            .consumer
+            .set_custom_metrics(Arc::clone(&endpoint.metrics) as Arc<dyn ConnectorMetrics>);
+
         let (sender, receiver) = channel(PipelineState::Paused);
         let endpoint_clone = endpoint.clone();
         let receiver_clone = receiver.clone();
@@ -219,6 +341,7 @@ struct IcebergInputEndpointInner {
     queue: Arc<InputQueue>,
     /// Monotonic counter used to label snapshot transactions for observability.
     transaction_index: AtomicUsize,
+    metrics: Arc<IcebergMetrics>,
 }
 
 impl IcebergInputEndpointInner {
@@ -234,6 +357,14 @@ impl IcebergInputEndpointInner {
         // iceberg table spill to the bounded memory pool and on-disk scratch
         // dir alongside every other datafusion user in the pipeline.
         let datafusion = create_session_context(pipeline_config, runtime_env);
+
+        // Note: metrics are registered with the consumer in `IcebergInputReader::new`
+        // (the `open` path), not here. The controller inserts this endpoint's status
+        // entry only after constructing the endpoint but before `open`, and
+        // `set_custom_metrics` is silently dropped if the status entry does not yet
+        // exist.
+        let metrics = Arc::new(IcebergMetrics::new());
+
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
@@ -241,6 +372,7 @@ impl IcebergInputEndpointInner {
             datafusion,
             queue,
             transaction_index: AtomicUsize::new(0),
+            metrics,
         }
     }
 
@@ -507,6 +639,26 @@ impl IcebergInputEndpointInner {
             self.read_ordered_snapshot(input_stream.as_mut(), &schema, &mut receiver)
                 .await;
         };
+
+        if self.config.snapshot() {
+            self.metrics
+                .snapshot_completed_ts
+                .store(now_unix_secs(), Ordering::Relaxed);
+            if let Some(snapshot) = self.ingested_snapshot(&table) {
+                self.metrics
+                    .set_last_ingested_sequence_number(snapshot.sequence_number());
+                info!(
+                    "iceberg {}: ingested snapshot {} (sequence number {})",
+                    &self.endpoint_name,
+                    snapshot.snapshot_id(),
+                    snapshot.sequence_number(),
+                );
+            }
+        }
+
+        // Snapshot-only connector: nothing follows the snapshot, so the
+        // connector is done once the snapshot has been read.
+        self.metrics.set_phase(IcebergPhase::Completed);
 
         self.consumer.eoi();
     }
@@ -924,6 +1076,27 @@ impl IcebergInputEndpointInner {
         Ok(())
     }
 
+    /// The Iceberg snapshot selected for ingest, resolved the same way as
+    /// [`Self::snapshot_descr`]. `None` if the table has no matching snapshot.
+    fn ingested_snapshot(&self, table: &IcebergTable) -> Option<SnapshotRef> {
+        let metadata = table.metadata();
+        let snapshot = match self.snapshot_descr().ok()? {
+            SnapshotDescr::SnapshotId(snapshot_id) => metadata.snapshot_by_id(snapshot_id),
+            SnapshotDescr::Timestamp(ts) => {
+                let ts_ms = ts.timestamp_millis();
+                let snapshot_id = metadata
+                    .history()
+                    .iter()
+                    .rev()
+                    .find(|log| log.timestamp_ms() <= ts_ms)?
+                    .snapshot_id;
+                metadata.snapshot_by_id(snapshot_id)
+            }
+            SnapshotDescr::Latest => metadata.current_snapshot(),
+        };
+        snapshot.cloned()
+    }
+
     /// Execute a SQL query to load a complete or partial snapshot of the table.
     async fn execute_snapshot_query(
         &self,
@@ -1008,6 +1181,10 @@ impl IcebergInputEndpointInner {
                 .await
             {
                 Ok(total_records) => {
+                    self.metrics
+                        .snapshot_records_total
+                        .fetch_add(total_records as u64, Ordering::Relaxed);
+
                     // Close the transaction once all records have been queued. The
                     // non-empty-buffer entries above start it lazily at flush time;
                     // this empty entry commits it after the last one flushes.
@@ -1060,6 +1237,12 @@ impl IcebergInputEndpointInner {
         receiver: &mut Receiver<PipelineState>,
     ) -> Result<usize, String> {
         wait_running(receiver).await;
+
+        if transaction.is_some() {
+            self.metrics
+                .snapshot_transaction_starts
+                .fetch_add(1, Ordering::Relaxed);
+        }
 
         let mut stream = dataframe
             .execute_stream()
