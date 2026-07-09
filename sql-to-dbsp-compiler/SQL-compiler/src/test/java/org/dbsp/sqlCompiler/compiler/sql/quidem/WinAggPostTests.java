@@ -179,8 +179,8 @@ public class WinAggPostTests extends PostBaseTests {
                 | M      | 20     | 1      |
                 | M      | 50     | 1      |
                 +--------+--------+--------+
-                (9 rows)""");
-        this.qst("""
+                (9 rows)
+                
                 -- [CALCITE-1540] Support multiple columns in PARTITION BY clause of window function
                 select gender,deptno,
                   count(*) over (partition by gender,deptno) as count1
@@ -240,8 +240,8 @@ public class WinAggPostTests extends PostBaseTests {
                  Eve   |     50 | F      |          50
                  Grace |     60 | F      |          50
                  Wilma |        | F      |          50
-                (9 rows)""");
-        this.qst("""
+                (9 rows)
+        
                 select *, first_value(ename) over () from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------

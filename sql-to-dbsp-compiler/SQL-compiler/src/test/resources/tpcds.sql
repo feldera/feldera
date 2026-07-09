@@ -2966,7 +2966,7 @@ order by s_store_name
  limit 100
 ;
 
-/* sql_51.sql
+/* sql_51.sql */
 CREATE VIEW sql_51 AS
 WITH web_v1 as (
 select
@@ -3011,7 +3011,6 @@ order by item_sk
         ,d_date
 limit 100
 ;
-*/
 
 /* sql_52.sql */
 CREATE VIEW sql_52 AS

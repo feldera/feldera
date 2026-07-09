@@ -4,14 +4,43 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 public class FoodmartTests extends FoodmartBaseTests {
-    @Test@Ignore("Calcite desugars qualify into WINDOW aggregate with ROWS; not yet implemented")
+    @Test
     public void testQualify() {
-        this.q("""
-                SELECT empno, ename, deptno, job, mgr
+        this.qst("""
+                SELECT empno, ename, deptno
                 FROM emp
                 QUALIFY ROW_NUMBER() over (partition by ename order by deptno) = 1;
-                 empno | ename | deptno | job | mgr
-                ------------------------------------""");
+                 EMPNO | ENAME  | DEPTNO
+                -------------------------
+                 7369  | SMITH  | 20
+                 7499  | ALLEN  | 30
+                 7521  | WARD   | 30
+                 7566  | JONES  | 20
+                 7654  | MARTIN | 30
+                 7698  | BLAKE  | 30
+                 7782  | CLARK  | 10
+                 7788  | SCOTT  | 20
+                 7839  | KING   | 10
+                 7844  | TURNER | 30
+                 7876  | ADAMS  | 20
+                 7900  | JAMES  | 30
+                 7902  | FORD   | 20
+                 7934  | MILLER | 10
+                (14 rows)
+
+                SELECT empno, ename, deptno
+                FROM emp
+                WHERE deptno > 20
+                QUALIFY ROW_NUMBER() over (partition by ename order by deptno) = 1;
+                 EMPNO | ENAME  | DEPTNO
+                -------------------------
+                 7499  | ALLEN  | 30
+                 7521  | WARD   | 30
+                 7654  | MARTIN | 30
+                 7698  | BLAKE  | 30
+                 7844  | TURNER | 30
+                 7900  | JAMES  | 30
+                (6 rows)""");
     }
 
     @Test

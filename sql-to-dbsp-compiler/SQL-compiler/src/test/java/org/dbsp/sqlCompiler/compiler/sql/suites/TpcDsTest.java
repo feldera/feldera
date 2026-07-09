@@ -21,7 +21,6 @@ public class TpcDsTest extends BaseSQLTests {
         return options;
     }
 
-    // View q51 is disabled in tpcds.sql due to OVER with ROWS aggregate
     @Test
     public void compileIndividually() throws IOException {
         String tpcds = TestUtil.readStringFromResourceFile("tpcds.sql");

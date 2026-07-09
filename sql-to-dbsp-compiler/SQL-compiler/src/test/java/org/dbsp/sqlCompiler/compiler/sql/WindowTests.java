@@ -658,4 +658,141 @@ public class WindowTests extends ScottBaseTests {
                  e| 70  | 50  | 1  | 1
                  f| 60  | 60  | 1  | 1""");
         }
+
+    @Test
+    public void rowsFrameTests() {
+        // Validated on Postgres.
+        this.qst("""
+                SELECT empno, SUM(sal) OVER (
+                    PARTITION BY deptno ORDER BY empno
+                    ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS s
+                FROM emp;
+                 empno | s
+                ------------------
+                 7369 | 800.00
+                 7499 | 1600.00
+                 7521 | 2850.00
+                 7566 | 3775.00
+                 7654 | 4100.00
+                 7698 | 5350.00
+                 7782 | 2450.00
+                 7788 | 6775.00
+                 7839 | 7450.00
+                 7844 | 5600.00
+                 7876 | 7075.00
+                 7900 | 5300.00
+                 7902 | 7100.00
+                 7934 | 8750.00
+                (14 rows)
+
+                SELECT empno, MIN(sal) OVER (
+                    PARTITION BY deptno ORDER BY sal DESC, empno
+                    ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING) AS m
+                FROM emp;
+                 empno | m
+                ------------------
+                 7369 |
+                 7499 | 1250.00
+                 7521 | 950.00
+                 7566 | 800.00
+                 7654 | 950.00
+                 7698 | 1500.00
+                 7782 | 1300.00
+                 7788 | 2975.00
+                 7839 | 1300.00
+                 7844 | 1250.00
+                 7876 | 800.00
+                 7900 |
+                 7902 | 1100.00
+                 7934 |
+                (14 rows)
+
+                SELECT empno, COUNT(*) OVER (
+                    PARTITION BY deptno ORDER BY empno
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS c
+                FROM emp;
+                 empno | c
+                ------------------
+                 7369 | 5
+                 7499 | 6
+                 7521 | 6
+                 7566 | 5
+                 7654 | 6
+                 7698 | 6
+                 7782 | 3
+                 7788 | 5
+                 7839 | 3
+                 7844 | 6
+                 7876 | 5
+                 7900 | 6
+                 7902 | 5
+                 7934 | 3
+                (14 rows)
+
+                SELECT empno,
+                    SUM(sal) OVER (PARTITION BY deptno ORDER BY empno ROWS UNBOUNDED PRECEDING) AS s,
+                    FIRST_VALUE(sal) OVER (PARTITION BY deptno ORDER BY empno ROWS UNBOUNDED PRECEDING) AS f
+                FROM emp;
+                 empno | s       | f
+                --------------------------
+                 7369 | 800.00   | 800.00
+                 7499 | 1600.00  | 1600.00
+                 7521 | 2850.00  | 1600.00
+                 7566 | 3775.00  | 800.00
+                 7654 | 4100.00  | 1600.00
+                 7698 | 6950.00  | 1600.00
+                 7782 | 2450.00  | 2450.00
+                 7788 | 6775.00  | 800.00
+                 7839 | 7450.00  | 2450.00
+                 7844 | 8450.00  | 1600.00
+                 7876 | 7875.00  | 800.00
+                 7900 | 9400.00  | 1600.00
+                 7902 | 10875.00 | 800.00
+                 7934 | 8750.00  | 2450.00
+                (14 rows)
+
+                SELECT empno,
+                    ROW_NUMBER() OVER (PARTITION BY deptno ORDER BY empno) AS r,
+                    SUM(sal) OVER (PARTITION BY deptno ORDER BY empno ROWS UNBOUNDED PRECEDING) AS s
+                FROM emp;
+                 empno | r | s
+                ------------------
+                 7369 | 1 | 800.00
+                 7499 | 1 | 1600.00
+                 7521 | 2 | 2850.00
+                 7566 | 2 | 3775.00
+                 7654 | 3 | 4100.00
+                 7698 | 4 | 6950.00
+                 7782 | 1 | 2450.00
+                 7788 | 3 | 6775.00
+                 7839 | 2 | 7450.00
+                 7844 | 5 | 8450.00
+                 7876 | 4 | 7875.00
+                 7900 | 6 | 9400.00
+                 7902 | 5 | 10875.00
+                 7934 | 3 | 8750.00
+                (14 rows)
+
+                SELECT COUNT(*) OVER (
+                    PARTITION BY deptno
+                    ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS c
+                FROM emp;
+                 c
+                ----
+                 1
+                 1
+                 1
+                 2
+                 2
+                 2
+                 3
+                 3
+                 3
+                 3
+                 3
+                 3
+                 3
+                 3
+                (14 rows)""");
+    }
     }

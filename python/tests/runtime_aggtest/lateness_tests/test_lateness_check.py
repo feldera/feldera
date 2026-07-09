@@ -65,7 +65,6 @@ class lateness_rolling_sum_illegal(TstView):
                         ts,
                         SUM(value) OVER (ORDER BY ts ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS rolling_sum
                     FROM purchase"""
-        self.expected_error = "Not yet implemented"
 
 
 class lateness_interval_add(TstView):

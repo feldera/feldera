@@ -22,9 +22,11 @@ The following aggregate functions are not supported:
 
 ### `FIRST_VALUE` and `LAST_VALUE` limited to unbounded range
 
-`FIRST_VALUE()` and `LAST_VALUE()` are only supported for windows with
-an unbounded range (e.g., `RANGE BETWEEN UNBOUNDED PRECEDING AND
-CURRENT ROW`).  Custom `RANGE` bounds or `ROWS` frames are not yet
+`FIRST_VALUE()` and `LAST_VALUE()` are only supported for frames whose
+bounds are `UNBOUNDED PRECEDING`, `CURRENT ROW`, or `UNBOUNDED
+FOLLOWING` (with `RANGE` or `ROWS`): `FIRST_VALUE` requires the frame
+to start at `UNBOUNDED PRECEDING`, and `LAST_VALUE` requires the frame
+to end at `UNBOUNDED FOLLOWING`.  Numeric bounds are not yet
 supported.
 See [#3918](https://github.com/feldera/feldera/issues/3918).
 
@@ -34,12 +36,6 @@ Window functions using `ORDER BY` on `VARCHAR`/`STRING`,
 `DOUBLE`/`FLOAT` or `VARBINARY` columns are not yet supported.
 See [#457](https://github.com/feldera/feldera/issues/457).
 
-### `ROWS` frame type not supported
-
-The `ROWS` frame specification in window functions is not yet
-supported.  Only `RANGE` frames are currently accepted.  See
-[#457](https://github.com/feldera/feldera/issues/457).  This
-limitation affects TPC-DS query q51.
 
 ### `EXCLUDE` clause not supported
 

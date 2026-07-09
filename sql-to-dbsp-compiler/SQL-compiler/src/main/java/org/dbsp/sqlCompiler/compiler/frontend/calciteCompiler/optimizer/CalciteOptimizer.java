@@ -364,6 +364,8 @@ public class CalciteOptimizer implements IWritesLogs {
                 // See discussion in https://issues.apache.org/jira/browse/CALCITE-6020
                 CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW
         ));
+        this.addStep(new SimpleOptimizerStep("Window ROWS to RANGE", 0,
+                new RowsToRangeRule()));
         this.addStep(new SimpleOptimizerStep("Isolate DISTINCT aggregates", 0,
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN,
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES

@@ -221,33 +221,6 @@ The following window aggregate functions are supported:
   </tr>
 </table>
 
-:::warning Potential inefficiency
-
-The window aggregate functions `RANK`, `DENSE_RANK`, and `ROW_NUMBER`
-may be very expensive to evaluate incrementally, because it's possible
-for a very small input change to produce a very large output change:
-inserting or deleting a single row can change the numbering of all
-subsequent rows in the same group.  These functions can have a
-reasonable cost in three circumstances:
-
-- each modified group (created by `PARTITION BY`) is relatively small in size
-
-- new insertions and deletions feature rows that appear towards the
-  end of the order produced by the `ORDER BY` clause
-
-- they are used in a TopK pattern with a small limit.
-  The topK is expressed in SQL with the following structure:
-
-```sql
-SELECT * FROM (
-   SELECT empno,
-          row_number() OVER (ORDER BY empno) rn
-   FROM empsalary) emp
-WHERE rn < 3
-```
-
-:::
-
 ## Pivots
 
 The SQL `PIVOT` operation can be used to turn rows into columns.  It
@@ -374,6 +347,33 @@ data type.
 Window aggregation functions need to store the entire collection that
 is being aggregated -- the space overhead is thus O(N).  The work
 performed is expected to be O(D log N).
+
+The window aggregate functions `RANK`, `DENSE_RANK`, and `ROW_NUMBER`
+may be very expensive to evaluate incrementally, because it's possible
+for a very small input change to produce a very large output change:
+inserting or deleting a single row can change the numbering of all
+subsequent rows in the same group.  These functions can have a
+reasonable cost in three circumstances:
+
+- each modified group (created by `PARTITION BY`) is relatively small in size
+
+- new insertions and deletions feature rows that appear towards the
+  end of the order produced by the `ORDER BY` clause
+
+- they are used in a TopK pattern with a small limit.
+  The topK is expressed in SQL with the following structure:
+
+```sql
+SELECT * FROM (
+   SELECT empno,
+          row_number() OVER (ORDER BY empno) rn
+   FROM empsalary) emp
+WHERE rn < 3
+```
+
+Window aggregation functions involving `ROWS BETWEEN` are implemented
+behind the scenes by computing `ROW_NUMBER` for each `PARTITION BY`
+group, so they inherit the cost of `ROW_NUMBER` as described above.
 
 ### `DISTINCT`
 

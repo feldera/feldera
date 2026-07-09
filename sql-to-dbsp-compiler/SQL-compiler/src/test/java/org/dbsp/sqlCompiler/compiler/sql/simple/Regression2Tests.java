@@ -777,7 +777,7 @@ public class Regression2Tests extends SqlIoTest {
 
     @Test
     public void rowsTest() {
-        this.statementsFailingInCompilation("""
+        this.getCCS("""
                 CREATE TABLE purchase (
                     ts TIMESTAMP NOT NULL,
                     amount BIGINT,
@@ -787,7 +787,7 @@ public class Regression2Tests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW rolling_sum AS
                 SELECT ts,
                     SUM(value) OVER (ORDER BY ts ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS rolling_sum
-                    FROM purchase;""", "Not yet implemented: Window aggregates with ROWS");
+                    FROM purchase;""");
     }
 
     @Test

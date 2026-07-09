@@ -742,7 +742,7 @@ INSERT INTO Bid VALUES(4, 1, 60, 'my-channel', 'https://example.com', '2020-01-0
                 ---------------""");
     }
 
-    @Test @Ignore("OVER with ROWS")
+    @Test
     public void q6test() {
         this.createTest(6,
                 """
