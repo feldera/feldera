@@ -5373,6 +5373,8 @@ name = "feldera-iceberg"
 version = "0.323.0"
 dependencies = [
  "anyhow",
+ "atomic",
+ "bytemuck",
  "chrono",
  "datafusion",
  "dbsp",
