@@ -30,16 +30,11 @@ jobs:
 
       # Compute the internal-PR boolean once so individual steps can reference
       # it; cheaper to grep and less fragile when triggers expand.
+      # Must stay a ${{ }} expression: run steps on the k8s runners execute
+      # under plain `sh`, where bash-only tests like [[ ]] fail silently.
       - name: Determine if this is an internal PR
         id: pr-check
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" \
-             && "${{ github.event.pull_request.head.repo.full_name }}" == "${{ github.repository }}" \
-             && "${{ github.actor }}" != "dependabot[bot]" ]]; then
-            echo "internal=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "internal=false" >> "$GITHUB_OUTPUT"
-          fi
+        run: echo "internal=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}" >> "$GITHUB_OUTPUT"
 
       - name: Disable sccache for fork/dependabot PRs (secrets unavailable)
         if: ${{ steps.pr-check.outputs.internal != 'true' }}
