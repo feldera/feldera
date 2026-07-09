@@ -385,6 +385,8 @@ It contains the following fields:
         feldera_types::transport::kafka::KafkaOutputConfig,
         feldera_types::transport::kafka::KafkaOutputFtConfig,
         feldera_types::transport::kafka::KafkaStartFromConfig,
+        feldera_types::transport::kafka::HeaderFilter,
+        feldera_types::transport::kafka::HeaderMatch,
         feldera_types::transport::nats::Auth,
         feldera_types::transport::nats::ConnectOptions,
         feldera_types::transport::nats::ConsumerConfig,

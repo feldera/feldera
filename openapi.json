@@ -9709,6 +9709,81 @@
           }
         }
       },
+      "HeaderFilter": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "header"
+            ],
+            "properties": {
+              "header": {
+                "$ref": "#/components/schemas/HeaderMatch"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "and"
+            ],
+            "properties": {
+              "and": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/HeaderFilter"
+                },
+                "description": "Conjunction: matches when every nested filter matches.  Must have at\nleast one operand."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "or"
+            ],
+            "properties": {
+              "or": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/HeaderFilter"
+                },
+                "description": "Disjunction: matches when at least one nested filter matches.  Must have\nat least one operand."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "not"
+            ],
+            "properties": {
+              "not": {
+                "$ref": "#/components/schemas/HeaderFilter"
+              }
+            }
+          }
+        ],
+        "description": "A boolean filter over the headers of a Kafka message.\n\nThe Kafka input connector uses this to drop messages whose headers do not\nsatisfy a predicate.  It is a tree of boolean operators (`and`, `or`, `not`)\nwhose leaves are regular expression tests on individual header values.  It\nserializes as an externally tagged JSON object, for example:\n\n```json\n{\n\"and\": [\n{ \"header\": { \"name\": \"event-type\", \"pattern\": \"created|updated\" } },\n{ \"not\": { \"header\": { \"name\": \"source\", \"pattern\": \"test-.*\" } } }\n]\n}\n```\n\nThis admits a message only if it has an `event-type` header valued exactly\n`created` or `updated` and does not have a `source` header whose value\nstarts with `test-`."
+      },
+      "HeaderMatch": {
+        "type": "object",
+        "description": "A leaf of a [`HeaderFilter`]: a regular expression tested against the value\nof a named Kafka header.",
+        "required": [
+          "name",
+          "pattern"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the header to test, matched exactly against the header key."
+          },
+          "pattern": {
+            "type": "string",
+            "description": "Regular expression ([Rust `regex` crate\nsyntax](https://docs.rs/regex/latest/regex/#syntax)) tested against the\nheader value.\n\nThe value is matched as raw bytes, so non-UTF-8 values and byte patterns\nwork.  The pattern must match the *entire* value: it is anchored\nautomatically, so `^`/`$` are unnecessary (though harmless).  A header\npresent with a null value is matched as an empty byte sequence; a header\nthat appears more than once matches if any of its values match."
+          }
+        }
+      },
       "HealthStatus": {
         "type": "object",
         "required": [
@@ -10057,6 +10132,14 @@
             "format": "int32",
             "description": "Maximum timeout in seconds to wait for the endpoint to join the Kafka\nconsumer group during initialization.",
             "minimum": 0
+          },
+          "header_filter": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HeaderFilter"
+              }
+            ],
+            "nullable": true
           },
           "include_headers": {
             "type": "boolean",

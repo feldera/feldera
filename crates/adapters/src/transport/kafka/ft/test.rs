@@ -136,14 +136,37 @@ fn create_reader(
     DummyInputReceiver,
     Box<dyn InputReader>,
 ) {
-    let config = serde_json::from_value(json!({
-      "name": "kafka_input",
-      "config": {
+    create_reader_config(topic, resume_info, synchronize_partitions, None)
+}
+
+/// Like [`create_reader`], but with an optional `header_filter` added to the
+/// connector configuration.
+fn create_reader_config(
+    topic: &str,
+    resume_info: Option<JsonValue>,
+    synchronize_partitions: bool,
+    header_filter: Option<JsonValue>,
+) -> (
+    Box<dyn TransportInputEndpoint>,
+    DummyInputReceiver,
+    Box<dyn InputReader>,
+) {
+    let mut inner_config = json!({
         "topic": topic,
         "log_level": "debug",
-         "start_from": "earliest",
-         "synchronize_partitions": synchronize_partitions,
-      }
+        "start_from": "earliest",
+        "synchronize_partitions": synchronize_partitions,
+    });
+    if let Some(header_filter) = header_filter {
+        inner_config
+            .as_object_mut()
+            .unwrap()
+            .insert("header_filter".to_string(), header_filter);
+    }
+
+    let config = serde_json::from_value(json!({
+      "name": "kafka_input",
+      "config": inner_config,
     }))
     .unwrap();
 
@@ -163,6 +186,23 @@ fn create_reader(
         .unwrap();
 
     (endpoint, receiver, reader)
+}
+
+/// Drain and return the payloads flushed to `receiver` so far, in order.
+fn take_flushed(receiver: &DummyInputReceiver) -> Vec<String> {
+    mem::take(&mut *receiver.inner.flushed.lock().unwrap())
+}
+
+/// Build the `headers` argument for [`TestProducer::send_message`] from
+/// `(key, value)` pairs, where a `None` value denotes a header with a null
+/// value.
+fn headers(pairs: &[(&str, Option<&[u8]>)]) -> Option<BTreeMap<String, Option<Vec<u8>>>> {
+    Some(
+        pairs
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.map(|v| v.to_vec())))
+            .collect(),
+    )
 }
 
 #[test]
@@ -467,6 +507,139 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
             receiver.expect_flushed(&final_batch);
         }
     }
+}
+
+/// A configured header filter drops non-matching messages before parsing, and
+/// the drop decision is deterministic across replay: a fresh reader replaying
+/// the checkpointed offset range reproduces exactly the admitted records.
+///
+/// To confirm this test catches a regression, make `header_filter_admits`
+/// always return `true`; the connector then buffers all 6 messages instead of
+/// 3 and both the live and the replay expectations fail.
+#[test]
+fn test_input_header_filter() {
+    init_test_logger();
+
+    let topic = "kafka_header_filter_ft";
+    let _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+
+    // Admit only messages whose `keep` header equals `yes`.
+    let filter = json!({"header": {"name": "keep", "pattern": "yes"}});
+
+    let (endpoint, receiver, reader) =
+        create_reader_config(topic, None, false, Some(filter.clone()));
+    reader.extend();
+
+    // Offsets 0..6.  `keep=yes` at 0, 2, 4 are admitted; 1, 3 (`keep=no`) and 5
+    // (no header) are dropped.  The trailing drop at offset 5 lies beyond the
+    // recorded range and must never be replayed.
+    let producer = TestProducer::new();
+    producer.send_message(b"m0", topic, headers(&[("keep", Some(b"yes"))]));
+    producer.send_message(b"m1", topic, headers(&[("keep", Some(b"no"))]));
+    producer.send_message(b"m2", topic, headers(&[("keep", Some(b"yes"))]));
+    producer.send_message(b"m3", topic, headers(&[("keep", Some(b"no"))]));
+    producer.send_message(b"m4", topic, headers(&[("keep", Some(b"yes"))]));
+    producer.send_message(b"m5", topic, None);
+
+    // Only the 3 admitted messages are buffered.
+    receiver.expect_buffering(3);
+    reader.queue(false);
+
+    // The offset range spans the first through the last admitted offset (0..5);
+    // dropped offsets inside and beyond the range do not change it.
+    let metadata = Metadata {
+        offsets: vec![0..5],
+    };
+    receiver.expect(vec![ConsumerCall::Extended {
+        num_records: 3,
+        metadata: serde_json::to_value(&metadata).unwrap(),
+    }]);
+    assert_eq!(take_flushed(&receiver), vec!["m0", "m2", "m4"]);
+
+    drop(endpoint);
+    drop(receiver);
+    drop(reader);
+
+    // Replay the recorded range with the same filter.  The filter is re-applied
+    // during replay, so exactly the admitted records reappear, in order.
+    let (_endpoint, receiver, reader) = create_reader_config(topic, None, false, Some(filter));
+    receiver.inner.drop_buffered.store(true, Ordering::Release);
+    reader.replay(serde_json::to_value(&metadata).unwrap(), RmpValue::Nil);
+    receiver.expect(vec![ConsumerCall::Replayed { num_records: 3 }]);
+    assert_eq!(take_flushed(&receiver), vec!["m0", "m2", "m4"]);
+}
+
+/// A boolean header filter (`and`/`or`/`not`) drops the right messages in the
+/// real connector, exercising leading, middle, and trailing drops, and its
+/// decisions are re-applied identically on replay.  The filter reads headers
+/// directly, so it works even though `include_headers` is not set.
+#[test]
+fn test_input_header_filter_boolean() {
+    init_test_logger();
+
+    let topic = "kafka_header_filter_boolean_ft";
+    let _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+
+    // Admit iff (env is prod or staging) and not (skip == drop).
+    let filter = json!({
+        "and": [
+            {"or": [
+                {"header": {"name": "env", "pattern": "prod"}},
+                {"header": {"name": "env", "pattern": "staging"}}
+            ]},
+            {"not": {"header": {"name": "skip", "pattern": "drop"}}}
+        ]
+    });
+
+    let (endpoint, receiver, reader) =
+        create_reader_config(topic, None, false, Some(filter.clone()));
+    reader.extend();
+
+    let producer = TestProducer::new();
+    // 0: env=dev               -> drop (fails `or`); leading drop
+    // 1: env=prod              -> admit
+    // 2: env=staging, skip=drop -> drop (fails `not`); middle drop
+    // 3: env=staging           -> admit
+    // 4: env=prod, skip=drop   -> drop (fails `not`); trailing drop
+    producer.send_message(b"m0", topic, headers(&[("env", Some(b"dev"))]));
+    producer.send_message(b"m1", topic, headers(&[("env", Some(b"prod"))]));
+    producer.send_message(
+        b"m2",
+        topic,
+        headers(&[("env", Some(b"staging")), ("skip", Some(b"drop"))]),
+    );
+    producer.send_message(b"m3", topic, headers(&[("env", Some(b"staging"))]));
+    producer.send_message(
+        b"m4",
+        topic,
+        headers(&[("env", Some(b"prod")), ("skip", Some(b"drop"))]),
+    );
+
+    // Admitted: offsets 1 and 3.
+    receiver.expect_buffering(2);
+    reader.queue(false);
+
+    // The range starts at the first admitted offset (1) and ends after the last
+    // (3), skipping the leading drop at offset 0.
+    let metadata = Metadata {
+        offsets: vec![1..4],
+    };
+    receiver.expect(vec![ConsumerCall::Extended {
+        num_records: 2,
+        metadata: serde_json::to_value(&metadata).unwrap(),
+    }]);
+    assert_eq!(take_flushed(&receiver), vec!["m1", "m3"]);
+
+    drop(endpoint);
+    drop(receiver);
+    drop(reader);
+
+    // Replaying the recorded range reproduces the admitted records.
+    let (_endpoint, receiver, reader) = create_reader_config(topic, None, false, Some(filter));
+    receiver.inner.drop_buffered.store(true, Ordering::Release);
+    reader.replay(serde_json::to_value(&metadata).unwrap(), RmpValue::Nil);
+    receiver.expect(vec![ConsumerCall::Replayed { num_records: 2 }]);
+    assert_eq!(take_flushed(&receiver), vec!["m1", "m3"]);
 }
 
 #[derive(Debug, PartialEq)]

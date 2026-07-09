@@ -23,7 +23,9 @@ use feldera_adapterlib::transport::{
 use feldera_sqllib::{ByteArray, SqlString, Timestamp, Variant};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
-use feldera_types::transport::kafka::{KafkaInputConfig, KafkaStartFromConfig};
+use feldera_types::transport::kafka::{
+    CompiledHeaderFilter, KafkaInputConfig, KafkaStartFromConfig,
+};
 use itertools::Itertools;
 use rdkafka::client::OAuthToken;
 use rdkafka::config::RDKafkaLogLevel;
@@ -65,6 +67,10 @@ const METADATA_TIMEOUT: Duration = Duration::from_secs(10);
 // Size of the circular buffer used to pass errors from ClientContext
 // to the worker thread.
 const ERROR_BUFFER_SIZE: usize = 1000;
+
+/// A Kafka message's headers borrowed as `(key, value)` pairs for header
+/// filtering.  A `None` value denotes a header present with a null value.
+type HeaderPairs<'a> = SmallVec<[(&'a str, Option<&'a [u8]>); 8]>;
 
 pub struct KafkaFtInputEndpoint {
     config: Arc<KafkaInputConfig>,
@@ -380,6 +386,16 @@ impl KafkaFtInputReaderInner {
             })
             .collect::<Vec<_>>();
 
+        // Compile the header filter once and share it across partition
+        // receivers.  A malformed filter is already rejected by
+        // `KafkaInputConfig::validate`, so this normally cannot fail.
+        let header_filter = config
+            .header_filter
+            .as_ref()
+            .map(|filter| filter.compile())
+            .transpose()?
+            .map(Arc::new);
+
         // Split every partition away as its own separate queue.
         let mut receivers = BTreeMap::new();
 
@@ -405,6 +421,7 @@ impl KafkaFtInputReaderInner {
                 queue,
                 next_offset,
                 &config,
+                header_filter.clone(),
                 unparker,
             ));
             receivers.insert(partition, receiver.clone());
@@ -999,6 +1016,10 @@ struct PartitionReceiver {
     config: KafkaInputConfig,
     metadata_requested: bool,
 
+    /// Compiled header filter, shared across partitions.  Messages that do not
+    /// match are dropped before parsing.  `None` admits all messages.
+    header_filter: Option<Arc<CompiledHeaderFilter>>,
+
     /// The maximum message offset that we want to receive, used as follows:
     ///
     /// - `i64::MIN`, the initial value, disables receiving messages entirely.
@@ -1041,6 +1062,7 @@ impl PartitionReceiver {
         queue: PartitionQueue<KafkaFtInputContext>,
         next_offset: i64,
         config: &KafkaInputConfig,
+        header_filter: Option<Arc<CompiledHeaderFilter>>,
         unparker: Unparker,
     ) -> Self {
         let metadata_requested = config.metadata_requested();
@@ -1057,6 +1079,7 @@ impl PartitionReceiver {
             fatal_error: AtomicBool::new(false),
             config: config.clone(),
             metadata_requested,
+            header_filter,
             unparker,
         }
     }
@@ -1110,6 +1133,27 @@ impl PartitionReceiver {
 
     fn next_offset(&self) -> i64 {
         self.next_offset.load(Ordering::Relaxed)
+    }
+
+    /// Returns `true` if `message` satisfies the configured header filter, or if
+    /// no filter is configured.  Messages for which this returns `false` are
+    /// dropped before parsing.
+    fn header_filter_admits(&self, message: &BorrowedMessage<'_>) -> bool {
+        let Some(filter) = &self.header_filter else {
+            return true;
+        };
+
+        // Borrow the message's headers as (key, value) pairs; nothing is copied.
+        let headers: HeaderPairs = match message.headers() {
+            Some(headers) => (0..headers.count())
+                .map(|i| {
+                    let header = headers.get(i);
+                    (header.key, header.value)
+                })
+                .collect(),
+            None => SmallVec::new(),
+        };
+        filter.matches(&headers)
     }
 
     /// Create record metadata from Kafka message containing only properties specified in the connector config.
@@ -1189,6 +1233,16 @@ impl PartitionReceiver {
                 let next_offset = self.next_offset();
                 if offset >= next_offset {
                     self.next_offset.store(offset + 1, Ordering::Relaxed);
+
+                    // Drop messages rejected by the header filter before parsing,
+                    // so they never enter the offset ranges or the step hash.
+                    // This runs after advancing `next_offset` (the consume
+                    // position still moves forward) and is re-applied identically
+                    // on replay, keeping ranges and hashes deterministic.
+                    if !self.header_filter_admits(&message) {
+                        return;
+                    }
+
                     let timestamp = message.timestamp().to_millis().unwrap_or(i64::MIN);
                     let payload = message.payload().unwrap_or(&[]);
                     let metadata = self.create_metadata(&message);

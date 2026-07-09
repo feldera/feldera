@@ -1,4 +1,5 @@
-use anyhow::{Error as AnyError, Result as AnyResult};
+use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
+use regex::bytes::Regex;
 use serde::de::{Error, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
@@ -162,6 +163,19 @@ pub struct KafkaInputConfig {
     ///   the partition whose events have been completely processed.
     #[serde(default)]
     pub synchronize_partitions: bool,
+
+    /// Drop incoming messages whose Kafka headers do not satisfy this filter.
+    ///
+    /// The filter is a boolean expression (`and`, `or`, `not`) over regular
+    /// expression tests on individual header values (see [`HeaderFilter`]).
+    /// Messages that do not satisfy the filter are dropped before parsing and
+    /// never reach the pipeline.  When absent (the default), all messages are
+    /// admitted.
+    ///
+    /// Filtering is independent of `include_headers`: it works whether or not
+    /// the matched headers are also surfaced to SQL via `CONNECTOR_METADATA()`.
+    #[serde(default, with = "crate::serde_via_value")]
+    pub header_filter: Option<HeaderFilter>,
 }
 
 impl KafkaInputConfig {
@@ -185,6 +199,7 @@ impl KafkaInputConfig {
             include_offset: None,
             include_topic: None,
             synchronize_partitions: false,
+            header_filter: None,
         }
     }
 
@@ -211,6 +226,162 @@ impl<'de> Deserialize<'de> for KafkaInputConfig {
     {
         let compat = compat::KafkaInputConfigCompat::deserialize(deserializer)?;
         Self::try_from(compat).map_err(D::Error::custom)
+    }
+}
+
+/// Maximum nesting depth of a [`HeaderFilter`], to bound recursion during
+/// compilation and evaluation.
+const MAX_HEADER_FILTER_DEPTH: usize = 64;
+
+/// A boolean filter over the headers of a Kafka message.
+///
+/// The Kafka input connector uses this to drop messages whose headers do not
+/// satisfy a predicate.  It is a tree of boolean operators (`and`, `or`, `not`)
+/// whose leaves are regular expression tests on individual header values.  It
+/// serializes as an externally tagged JSON object, for example:
+///
+/// ```json
+/// {
+///   "and": [
+///     { "header": { "name": "event-type", "pattern": "created|updated" } },
+///     { "not": { "header": { "name": "source", "pattern": "test-.*" } } }
+///   ]
+/// }
+/// ```
+///
+/// This admits a message only if it has an `event-type` header valued exactly
+/// `created` or `updated` and does not have a `source` header whose value
+/// starts with `test-`.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HeaderFilter {
+    /// Leaf test: matches when the message has a header named
+    /// [`HeaderMatch::name`] whose value matches [`HeaderMatch::pattern`].
+    Header(HeaderMatch),
+
+    /// Conjunction: matches when every nested filter matches.  Must have at
+    /// least one operand.
+    And(Vec<HeaderFilter>),
+
+    /// Disjunction: matches when at least one nested filter matches.  Must have
+    /// at least one operand.
+    Or(Vec<HeaderFilter>),
+
+    /// Negation: matches when the nested filter does not match.
+    Not(Box<HeaderFilter>),
+}
+
+/// A leaf of a [`HeaderFilter`]: a regular expression tested against the value
+/// of a named Kafka header.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct HeaderMatch {
+    /// Name of the header to test, matched exactly against the header key.
+    pub name: String,
+
+    /// Regular expression ([Rust `regex` crate
+    /// syntax](https://docs.rs/regex/latest/regex/#syntax)) tested against the
+    /// header value.
+    ///
+    /// The value is matched as raw bytes, so non-UTF-8 values and byte patterns
+    /// work.  The pattern must match the *entire* value: it is anchored
+    /// automatically, so `^`/`$` are unnecessary (though harmless).  A header
+    /// present with a null value is matched as an empty byte sequence; a header
+    /// that appears more than once matches if any of its values match.
+    pub pattern: String,
+}
+
+impl HeaderFilter {
+    /// Validate the filter without retaining the compiled form: rejects empty
+    /// `and`/`or`, nesting deeper than `MAX_HEADER_FILTER_DEPTH`, and invalid
+    /// leaf patterns.
+    pub fn validate(&self) -> AnyResult<()> {
+        self.compile().map(|_| ())
+    }
+
+    /// Compile into a [`CompiledHeaderFilter`] ready for evaluation, compiling
+    /// each leaf regular expression exactly once.  Returns an error for the same
+    /// conditions as [`HeaderFilter::validate`].
+    pub fn compile(&self) -> AnyResult<CompiledHeaderFilter> {
+        Ok(CompiledHeaderFilter(self.compile_node(1)?))
+    }
+
+    fn compile_node(&self, depth: usize) -> AnyResult<CompiledNode> {
+        if depth > MAX_HEADER_FILTER_DEPTH {
+            bail!("Kafka header filter is nested more than {MAX_HEADER_FILTER_DEPTH} levels deep");
+        }
+        match self {
+            HeaderFilter::Header(HeaderMatch { name, pattern }) => {
+                // Anchor to the whole value so the pattern matches the entire
+                // header value rather than a substring.  The non-capturing group
+                // keeps any top-level alternation inside `pattern` bounded.
+                let regex = Regex::new(&format!(r"\A(?:{pattern})\z")).map_err(|error| {
+                    anyhow!(
+                        "invalid regular expression {pattern:?} for Kafka header {name:?}: {error}"
+                    )
+                })?;
+                Ok(CompiledNode::Header {
+                    name: name.clone(),
+                    regex,
+                })
+            }
+            HeaderFilter::And(children) => {
+                if children.is_empty() {
+                    bail!("Kafka header filter 'and' must have at least one operand");
+                }
+                Ok(CompiledNode::And(Self::compile_children(children, depth)?))
+            }
+            HeaderFilter::Or(children) => {
+                if children.is_empty() {
+                    bail!("Kafka header filter 'or' must have at least one operand");
+                }
+                Ok(CompiledNode::Or(Self::compile_children(children, depth)?))
+            }
+            HeaderFilter::Not(child) => {
+                Ok(CompiledNode::Not(Box::new(child.compile_node(depth + 1)?)))
+            }
+        }
+    }
+
+    fn compile_children(children: &[HeaderFilter], depth: usize) -> AnyResult<Vec<CompiledNode>> {
+        children.iter().map(|c| c.compile_node(depth + 1)).collect()
+    }
+}
+
+/// A [`HeaderFilter`] compiled for evaluation.  Holds the leaf regular
+/// expressions compiled once so that matching a message allocates nothing.
+#[derive(Debug)]
+pub struct CompiledHeaderFilter(CompiledNode);
+
+#[derive(Debug)]
+enum CompiledNode {
+    Header { name: String, regex: Regex },
+    And(Vec<CompiledNode>),
+    Or(Vec<CompiledNode>),
+    Not(Box<CompiledNode>),
+}
+
+impl CompiledHeaderFilter {
+    /// Evaluate the filter against a message's headers.
+    ///
+    /// `headers` lists the message's `(key, value)` pairs in order.  A `None`
+    /// value denotes a header present with a null value and is matched as an
+    /// empty byte sequence.  Returns `true` if the message satisfies the filter
+    /// and should be admitted.
+    pub fn matches(&self, headers: &[(&str, Option<&[u8]>)]) -> bool {
+        self.0.matches(headers)
+    }
+}
+
+impl CompiledNode {
+    fn matches(&self, headers: &[(&str, Option<&[u8]>)]) -> bool {
+        match self {
+            CompiledNode::Header { name, regex } => headers
+                .iter()
+                .any(|&(key, value)| key == name.as_str() && regex.is_match(value.unwrap_or(b""))),
+            CompiledNode::And(children) => children.iter().all(|c| c.matches(headers)),
+            CompiledNode::Or(children) => children.iter().any(|c| c.matches(headers)),
+            CompiledNode::Not(child) => !child.matches(headers),
+        }
     }
 }
 
@@ -338,6 +509,13 @@ impl KafkaInputConfig {
             anyhow::bail!(
                 "the number of partitions ('{partitions:?}') should be equal to the number of offsets '{offsets:?}' specified"
             )
+        }
+
+        // Reject malformed filters (empty `and`/`or`, excessive nesting, or an
+        // invalid regular expression) at configuration time rather than when the
+        // connector starts.
+        if let Some(header_filter) = &self.header_filter {
+            header_filter.validate()?;
         }
 
         Ok(())
@@ -608,6 +786,8 @@ mod compat {
         include_topic: Option<bool>,
         #[serde(default)]
         synchronize_partitions: bool,
+        #[serde(default, with = "crate::serde_via_value")]
+        header_filter: Option<super::HeaderFilter>,
     }
 
     impl TryFrom<KafkaInputConfigCompat> for super::KafkaInputConfig {
@@ -687,7 +867,208 @@ mod compat {
                 include_offset: compat.include_offset,
                 include_topic: compat.include_topic,
                 synchronize_partitions: compat.synchronize_partitions,
+                header_filter: compat.header_filter,
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod header_filter_tests {
+    use super::{HeaderFilter, KafkaInputConfig, MAX_HEADER_FILTER_DEPTH};
+    use std::collections::BTreeMap;
+
+    /// Compile the filter described by `json` and evaluate it against `headers`.
+    fn admits(json: &str, headers: &[(&str, Option<&[u8]>)]) -> bool {
+        let filter: HeaderFilter = serde_json::from_str(json).unwrap();
+        filter.compile().unwrap().matches(headers)
+    }
+
+    #[test]
+    fn leaf_matches_whole_value() {
+        let f = r#"{"header": {"name": "type", "pattern": "created|updated"}}"#;
+        assert!(admits(f, &[("type", Some(&b"created"[..]))]));
+        assert!(admits(f, &[("type", Some(&b"updated"[..]))]));
+
+        // Patterns are anchored to the whole value: a substring must not match.
+        assert!(!admits(f, &[("type", Some(&b"created-x"[..]))]));
+        assert!(!admits(f, &[("type", Some(&b"x-created"[..]))]));
+
+        // Wrong value, wrong header name, and missing header all fail a leaf.
+        assert!(!admits(f, &[("type", Some(&b"deleted"[..]))]));
+        assert!(!admits(f, &[("other", Some(&b"created"[..]))]));
+        assert!(!admits(f, &[]));
+    }
+
+    #[test]
+    fn null_value_is_empty_bytes() {
+        let empty = r#"{"header": {"name": "h", "pattern": ""}}"#;
+        let nonempty = r#"{"header": {"name": "h", "pattern": ".+"}}"#;
+
+        // A header with a null value matches an empty pattern but not `.+`.
+        assert!(admits(empty, &[("h", None)]));
+        assert!(!admits(nonempty, &[("h", None)]));
+        assert!(admits(empty, &[("h", Some(&b""[..]))]));
+    }
+
+    #[test]
+    fn duplicate_header_any_value_matches() {
+        let f = r#"{"header": {"name": "k", "pattern": "b"}}"#;
+        assert!(admits(f, &[("k", Some(&b"a"[..])), ("k", Some(&b"b"[..]))]));
+        assert!(!admits(
+            f,
+            &[("k", Some(&b"a"[..])), ("k", Some(&b"c"[..]))]
+        ));
+    }
+
+    #[test]
+    fn non_utf8_value_bytes() {
+        // A single-byte match against a non-UTF-8 value must work without panic.
+        let f = r#"{"header": {"name": "b", "pattern": "(?s-u:.)"}}"#;
+        assert!(admits(f, &[("b", Some(&[0xffu8][..]))]));
+        // Anchoring still applies: two bytes do not match a single-byte pattern.
+        assert!(!admits(f, &[("b", Some(&[0xffu8, 0xfe][..]))]));
+    }
+
+    #[test]
+    fn boolean_combinations() {
+        // A AND (B OR C).
+        let f = r#"{"and": [
+            {"header": {"name": "a", "pattern": "1"}},
+            {"or": [
+                {"header": {"name": "b", "pattern": "1"}},
+                {"header": {"name": "c", "pattern": "1"}}
+            ]}
+        ]}"#;
+        assert!(admits(f, &[("a", Some(&b"1"[..])), ("b", Some(&b"1"[..]))]));
+        assert!(admits(f, &[("a", Some(&b"1"[..])), ("c", Some(&b"1"[..]))]));
+        assert!(!admits(f, &[("a", Some(&b"1"[..]))])); // neither b nor c
+        assert!(!admits(f, &[("b", Some(&b"1"[..]))])); // missing a
+    }
+
+    #[test]
+    fn not_over_leaf() {
+        let f = r#"{"not": {"header": {"name": "env", "pattern": "prod"}}}"#;
+        assert!(!admits(f, &[("env", Some(&b"prod"[..]))])); // matching -> dropped
+        assert!(admits(f, &[("env", Some(&b"dev"[..]))])); // non-matching -> admitted
+        assert!(admits(f, &[])); // absent header -> admitted
+    }
+
+    #[test]
+    fn de_morgan_equivalence() {
+        let lhs = r#"{"not": {"and": [
+            {"header": {"name": "a", "pattern": "1"}},
+            {"header": {"name": "b", "pattern": "1"}}
+        ]}}"#;
+        let rhs = r#"{"or": [
+            {"not": {"header": {"name": "a", "pattern": "1"}}},
+            {"not": {"header": {"name": "b", "pattern": "1"}}}
+        ]}"#;
+        let l = serde_json::from_str::<HeaderFilter>(lhs)
+            .unwrap()
+            .compile()
+            .unwrap();
+        let r = serde_json::from_str::<HeaderFilter>(rhs)
+            .unwrap()
+            .compile()
+            .unwrap();
+        for a in [None, Some(&b"1"[..])] {
+            for b in [None, Some(&b"1"[..])] {
+                let mut headers: Vec<(&str, Option<&[u8]>)> = Vec::new();
+                if let Some(v) = a {
+                    headers.push(("a", Some(v)));
+                }
+                if let Some(v) = b {
+                    headers.push(("b", Some(v)));
+                }
+                assert_eq!(
+                    l.matches(&headers),
+                    r.matches(&headers),
+                    "headers={headers:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_empty_combinators() {
+        for json in [r#"{"and": []}"#, r#"{"or": []}"#] {
+            let filter: HeaderFilter = serde_json::from_str(json).unwrap();
+            assert!(filter.validate().is_err(), "expected {json} to be rejected");
+        }
+    }
+
+    #[test]
+    fn rejects_deep_nesting() {
+        // Wrap a leaf in `not` more times than the depth limit allows.
+        let mut json = String::from(r#"{"header": {"name": "x", "pattern": "y"}}"#);
+        for _ in 0..MAX_HEADER_FILTER_DEPTH + 5 {
+            json = format!(r#"{{"not": {json}}}"#);
+        }
+        let filter: HeaderFilter = serde_json::from_str(&json).unwrap();
+        assert!(filter.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_regex() {
+        let filter: HeaderFilter =
+            serde_json::from_str(r#"{"header": {"name": "x", "pattern": "("}}"#).unwrap();
+        assert!(filter.validate().is_err());
+    }
+
+    #[test]
+    fn serde_round_trip_external_tagging() {
+        let json = r#"{"and":[{"header":{"name":"t","pattern":"a|b"}},{"not":{"header":{"name":"s","pattern":"x"}}}]}"#;
+        let filter: HeaderFilter = serde_json::from_str(json).unwrap();
+        let reserialized = serde_json::to_string(&filter).unwrap();
+        assert_eq!(reserialized, json);
+    }
+
+    #[test]
+    fn config_validate_rejects_bad_filter() {
+        let mut config = KafkaInputConfig::default(BTreeMap::new(), "topic");
+        config.header_filter = Some(serde_json::from_str(r#"{"or": []}"#).unwrap());
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn config_deserializes_header_filter() {
+        // Exercises the compat deserialization path for the new field.
+        let config: KafkaInputConfig = serde_json::from_value(serde_json::json!({
+            "topic": "t",
+            "bootstrap.servers": "localhost:9092",
+            "header_filter": {"header": {"name": "k", "pattern": "v"}}
+        }))
+        .unwrap();
+        assert!(config.header_filter.is_some());
+    }
+
+    #[test]
+    fn config_with_header_filter_serializes_to_yaml() {
+        // Regression: the pipeline config is serialized to YAML when a pipeline
+        // is provisioned. `HeaderFilter` is a nested enum, which `serde_yaml`
+        // cannot serialize directly; `serde_via_value` keeps this working.
+        // Without it, the pipeline runner panics and the pipeline is stuck
+        // provisioning.
+        let mut config = KafkaInputConfig::default(
+            BTreeMap::from([(
+                "bootstrap.servers".to_string(),
+                "localhost:9092".to_string(),
+            )]),
+            "topic",
+        );
+        config.header_filter = Some(
+            serde_json::from_str(
+                r#"{"and":[{"header":{"name":"a","pattern":"b"}},{"not":{"header":{"name":"c","pattern":"d"}}}]}"#,
+            )
+            .unwrap(),
+        );
+
+        // Must not error (this is what panicked in the pipeline runner).
+        let yaml = serde_yaml::to_string(&config).expect("serialize config to YAML");
+
+        // And the config round-trips back through YAML.
+        let reparsed: KafkaInputConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(reparsed.header_filter, config.header_filter);
     }
 }

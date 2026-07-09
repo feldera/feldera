@@ -24,6 +24,7 @@ tolerance](/pipelines/fault-tolerance).
 | `include_offset`               | boolean          | false   | Whether to include Kafka offset name in connector metadata (see [Accessing Kafka metadata](#metadata)). |
 | `include_timestamp`            | boolean          | false   | Whether to include Kafka timestamp in connector metadata (see [Accessing Kafka metadata](#metadata)). |
 | `synchronize_partitions`       | boolean          | false   | Whether to read records in order of Kafka timestamp across partitions (see [Synchronizing partitions](#synchronizing-partitions)) |
+| `header_filter`                | filter           |         | Drop messages whose Kafka headers do not match a boolean expression of regular expressions (see [Filtering messages by header](#header-filter)). |
 
 The connector passes additional options directly to [**librdkafka**](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).  Some of the relevant options:
 
@@ -351,6 +352,67 @@ create materialized view v as
 select
   BIN2UTF8(kafka_headers['my_header']) as my_header
 from t;
+```
+
+## <a name="header-filter"></a>Filtering messages by header
+
+The `header_filter` option drops incoming messages whose Kafka headers do not
+match a filter. Dropped messages are discarded before parsing and never reach
+the pipeline. When `header_filter` is omitted, all messages are admitted.
+
+A filter is a boolean expression whose leaves test individual header values
+against regular expressions. Each node is a JSON object with a single key:
+
+| Node       | Value                | Matches when                                    |
+|------------|----------------------|-------------------------------------------------|
+| `header`   | `{name, pattern}`    | a header named `name` has a value matching `pattern` |
+| `and`      | list of filters      | every nested filter matches                     |
+| `or`       | list of filters      | at least one nested filter matches              |
+| `not`      | a filter             | the nested filter does not match                |
+
+The `header` leaf takes two fields:
+
+* `name`: the header name, matched exactly against the header key.
+* `pattern`: a [regular expression](https://docs.rs/regex/latest/regex/#syntax)
+  tested against the header value. The value is matched as raw bytes, so
+  non-UTF-8 values work. The pattern must match the **entire** value (it is
+  anchored automatically), so `^` and `$` are unnecessary.
+
+Leaf matching details:
+
+* A message with no header of the given `name` does not match the leaf.
+* A header present with a null value is matched as an empty byte sequence.
+* If a header appears more than once, the leaf matches when any of its values
+  match.
+
+Filtering is independent of [`include_headers`](#metadata): a header can be used
+in a filter whether or not it is also exposed to SQL through
+`CONNECTOR_METADATA()`.
+
+### Examples
+
+Admit only messages whose `event-type` header is exactly `created` or
+`updated`:
+
+```json
+"header_filter": {
+  "header": { "name": "event-type", "pattern": "created|updated" }
+}
+```
+
+Admit messages from `prod` or `staging`, unless they carry a `skip` header set
+to `true`:
+
+```json
+"header_filter": {
+  "and": [
+    { "or": [
+        { "header": { "name": "env", "pattern": "prod" } },
+        { "header": { "name": "env", "pattern": "staging" } }
+    ]},
+    { "not": { "header": { "name": "skip", "pattern": "true" } } }
+  ]
+}
 ```
 
 ## Tolerating missing data on resume
