@@ -1775,27 +1775,9 @@ pub struct PostPipelineTesting {
 ///
 /// This endpoint is used as part of the test harness. Only available if the `testing`
 /// unstable feature is enabled. Do not use in production.
-#[utoipa::path(
-    context_path = "/v0",
-    security(("JSON web token (JWT) or API key" = [])),
-    params(
-        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        PostPipelineTesting,
-    ),
-    responses(
-        (status = OK
-            , description = "Request successfully processed"),
-        (status = NOT_FOUND
-            , description = "Pipeline with that name does not exist"
-            , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline_name())),
-        (status = METHOD_NOT_ALLOWED
-            , description = "Endpoint is disabled. Set FELDERA_UNSTABLE_FEATURES=\"testing\" to enable."
-            , body = ErrorResponse
-        )
-    ),
-    tag = "Metrics & Debugging"
-)]
+///
+/// Deliberately excluded from the public OpenAPI spec (not in `ApiDoc`'s `paths()`): it is a
+/// test-only hook, not a supported API. The route stays registered so the test harness can call it.
 #[post("/pipelines/{pipeline_name}/testing")]
 pub(crate) async fn post_pipeline_testing(
     state: WebData<ServerState>,

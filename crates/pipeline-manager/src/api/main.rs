@@ -189,7 +189,6 @@ It contains the following fields:
         endpoints::pipeline_management::post_pipeline,
         endpoints::pipeline_management::put_pipeline,
         endpoints::pipeline_management::patch_pipeline,
-        endpoints::pipeline_management::post_pipeline_testing,
         endpoints::pipeline_management::post_update_runtime,
         endpoints::pipeline_management::delete_pipeline,
         endpoints::pipeline_management::post_pipeline_start,
@@ -639,6 +638,7 @@ fn public_scope(api_config: &ApiServerConfig) -> Scope {
         )
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
         .service(healthz)
+        .service(robots_txt)
         .service(
             web::scope("")
                 .wrap(middleware::from_fn(add_cache_headers))
@@ -1036,6 +1036,16 @@ async fn healthz(state: WebData<ServerState>) -> Result<HttpResponse, ManagerErr
     Ok(probe.as_http_response())
 }
 
+/// Disallow all crawlers instance-wide. The web-console is a client-side SPA, so per-page robots
+/// hints never reach crawlers; a root disallow is the only reliable way to keep app URLs (e.g.
+/// the sandbox's `/create?...` deep-links) out of search indexes.
+#[get("/robots.txt")]
+async fn robots_txt() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/plain; charset=utf-8")
+        .body("User-agent: *\nDisallow: /\n")
+}
+
 #[cfg(test)]
 mod tests {
     //! Tests covering the static-asset caching middleware and the CORS surface
@@ -1100,6 +1110,28 @@ mod tests {
             .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
             .is_none());
         assert!(res.headers().get(header::EXPIRES).is_none());
+    }
+
+    /// `/robots.txt` must be answered by the backend with a blanket crawler
+    /// disallow, not fall through to the SPA catch-all. Drives the production
+    /// App from `build_app`. Without the explicit `robots_txt` route this path
+    /// resolves to the web-console bundle (index.html in production, a 404 in
+    /// the bundle-less test build) and crawlers get no valid robots rules — so
+    /// they index the sandbox's generated `/create?...` deep-links. Removing
+    /// the `.service(robots_txt)` wiring flips the status to 404 and fails here.
+    #[actix_web::test]
+    async fn robots_txt_disallows_all_crawlers() {
+        let cfg = ApiServerConfig::test_config();
+        let app = test::init_service(build_app(&cfg, &None)).await;
+        let req = test::TestRequest::get().uri("/robots.txt").to_request();
+        let res = test::call_service(&app, req).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/plain; charset=utf-8",
+        );
+        let body = test::read_body(res).await;
+        assert_eq!(&body[..], b"User-agent: *\nDisallow: /\n");
     }
 
     // -------- CORS surface integration tests --------

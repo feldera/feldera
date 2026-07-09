@@ -1,7 +1,7 @@
 # Helm Chart Reference
 
 This page documents all configurable values for the Feldera Enterprise Helm chart.
-See the [Helm guide](./helm-guide) for installation instructions.
+See the [Helm guide](./helm-guide.md) for installation instructions.
 
 ## Required Values
 
@@ -111,7 +111,7 @@ Controls which Kubernetes secrets can be mounted in connectors via [secret refer
 
 ## Parallel Compilation
 
-Parallel compilation runs multiple compiler server replicas to reduce total compile time. See the [parallel compilation guide](./parallel-compilation) for additional details.
+Parallel compilation runs multiple compiler server replicas to reduce total compile time. See the [parallel compilation guide](./parallel-compilation.md) for additional details.
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -137,12 +137,12 @@ When running multiple compiler replicas, sccache allows them to share compiled a
 
 ## Authentication
 
-When `auth.enabled` is `true`, the API server requires OIDC authentication. See the guides for [AWS Cognito](./authentication/aws-cognito), [Okta](./authentication/okta-sso), or [generic OIDC providers](./authentication/generic-oidc).
+When `auth.enabled` is `true`, the API server requires OIDC authentication. See the guides for [AWS Cognito](./authentication/aws-cognito.md), [Okta](./authentication/okta-sso.md), or [generic OIDC providers](./authentication/generic-oidc.md).
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `auth.enabled` | `false` | Enable authentication for the API server. |
-| `auth.provider` | `"aws-cognito"` | OIDC provider type. Set the appropriate value based on your [supported authentication provider](./authentication) |
+| `auth.provider` | `"aws-cognito"` | OIDC provider type. Set the appropriate value based on your [supported authentication provider](./authentication/index.mdx) |
 | `auth.clientId` | `""` | OIDC application client ID. |
 | `auth.issuer` | `""` | OIDC issuer URL. |
 | `auth.cognitoLoginUrl` | `""` | Cognito hosted UI login URL (Cognito only). |
@@ -292,7 +292,7 @@ annotations:
 
 ## HTTPS / TLS
 
-Configure HTTPS for all Feldera components. See the [HTTPS guide](./https) for certificate generation and setup.
+Configure HTTPS for all Feldera components. See the [HTTPS guide](./https.md) for certificate generation and setup.
 
 | Key | Default | Description |
 |-----|---------|-------------|

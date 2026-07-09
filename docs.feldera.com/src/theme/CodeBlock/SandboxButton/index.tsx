@@ -21,7 +21,7 @@ console.log('styles', styles)
       <a
         href={href}
         target="_blank"
-        rel="noopener noreferrer"
+        rel="noopener noreferrer nofollow"
         aria-label={translate({
           id: 'theme.CodeBlock.SandboxButtonAriaLabel',
           message: 'Run code in the Feldera Online Sandbox',

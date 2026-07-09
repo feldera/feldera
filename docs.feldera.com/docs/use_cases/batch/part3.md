@@ -7,7 +7,7 @@ accumulated in the source database over an extended period (months or years)
 before processing new real-time inputs. This process is known as **backfill**.
 
 In some cases, both historical and real-time data can be ingested from the same
-data source. For example, in [Part 2](part2) of this tutorial, we configured the
+data source. For example, in [Part 2](part2.md) of this tutorial, we configured the
 Delta Lake connector to read the current snapshot of the table before following
 new updates in the table's transaction log.
 

@@ -240,7 +240,7 @@ the latter will be overwritten.
 
 The Kafka connector can be used to ingest data from a source via
 Debezium.  For information on how to setup Debezium integration for Feldera, see
-[Debezium connector documentation](debezium).
+[Debezium connector documentation](debezium.md).
 
 ### Connecting to AWS MSK with IAM SASL
 

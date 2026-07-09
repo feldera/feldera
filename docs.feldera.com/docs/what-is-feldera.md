@@ -18,7 +18,7 @@ Our defining features:
 
 3. **Datasets larger than RAM**. Feldera is designed to handle datasets that exceed the available RAM by spilling efficiently to disk, taking advantage of recent advances in NVMe storage.
 
-4. **Strong guarantees on consistency and freshness**. Feldera is strongly consistent: it [guarantees](https://www.feldera.com/blog/synchronous-streaming/) that the state of the views always corresponds to what you'd get if you ran the queries in a batch system for the same input.
+4. **Strong guarantees on consistency and freshness**. Feldera is strongly consistent: it [guarantees](https://www.feldera.com/blog/synchronous-streaming) that the state of the views always corresponds to what you'd get if you ran the queries in a batch system for the same input.
 
 5. **Connectors for your favorite data sources and destinations**. Feldera connects to myriad batch and streaming data sources, like Kafka, HTTP, CDC streams, S3, Data Lakes, Warehouses and more. If you need a connector that we don't yet support, [let us know](https://github.com/feldera/feldera/issues/new/choose).
 

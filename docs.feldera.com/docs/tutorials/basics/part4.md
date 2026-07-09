@@ -161,4 +161,4 @@ changes in `PREFERRED_VENDOR` view approximately every second.
 
 To summarize Part 4 of the tutorial, we can attach a random generator to Feldera tables to simulate different scenarios
 such as backfill, continuous evaluation or a combination of the two.
-You'll find a complete datagen reference in the [connectors section](../../connectors/sources/datagen).
+You'll find a complete datagen reference in the [connectors section](../../connectors/sources/datagen.md).

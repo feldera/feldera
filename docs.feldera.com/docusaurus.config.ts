@@ -15,6 +15,11 @@ const config: Config = {
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: "/",
 
+  // The static host serves canonical pages with a trailing slash and 301s the
+  // non-slash form to it. Match that so generated links, canonical tags, and
+  // sitemap entries point at the served URL instead of a redirect.
+  trailingSlash: true,
+
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
   organizationName: "feldera", // Usually your GitHub org/user name.
@@ -53,6 +58,13 @@ const config: Config = {
         },
         theme: {
           customCss: "./src/css/custom.css",
+        },
+        sitemap: {
+          // Emit a real freshness signal; changefreq/priority are ignored by
+          // search engines, but lastmod is honored.
+          lastmod: "date",
+          // Keep utility routes and the raw OpenAPI spec out of the sitemap.
+          ignorePatterns: ["/search", "/**/openapi.json/**", "/**/openapi.json"],
         },
       } satisfies PresetOpenapi.Options,
     ],
@@ -261,6 +273,18 @@ const config: Config = {
           {
             from: "/api/retrieve-the-status-of-an-output-connector",
             to: "/api/get-output-status",
+          },
+          {
+            from: "/get-started/enterprise/kubernetes-guides/eks/ingress",
+            to: "/get-started/enterprise/kubernetes-guides/eks/envoy-gateway",
+          },
+          {
+            from: "/enterprise/kubernetes-guides/k3d",
+            to: "/get-started/enterprise/kubernetes-guides/k3d",
+          },
+          {
+            from: "/connectors/sources/kafka/debezium",
+            to: "/connectors/sources/debezium",
           },
         ],
       },

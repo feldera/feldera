@@ -483,4 +483,4 @@ input.
 ## Resources
 
 A version of this use case focusing on integration with the Delta Lake and Spark ecosystem
-is published as a [blog post](https://www.feldera.com/blog/feature-engineering-part2/).
+is published as a [blog post](https://www.feldera.com/blog/feature-engineering-part2).

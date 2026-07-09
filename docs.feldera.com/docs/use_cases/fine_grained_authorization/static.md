@@ -282,7 +282,7 @@ where not users.is_banned;
 ```
 </details>
 
-Start the pipeline and populate the object graph to match the [example](intro#object-graph) by issuing the following
+Start the pipeline and populate the object graph to match the [example](intro.md#object-graph) by issuing the following
 ad hoc queries:
 
 ```sql

@@ -4,8 +4,8 @@ The following publications and awards describe Feldera's theoretical foundation,
 
 ## Awards
 
-* :trophy: [DBSP in ACM SIGMOD Research Highlights](https://www.feldera.com/blog/sigmod-research-highlights/)
-* :trophy: [DBSP wins Best Paper award at VLDB 2023 ](https://www.feldera.com/blog/Best-Research-Paper-VLDB-2023/)
+* :trophy: [DBSP in ACM SIGMOD Research Highlights](https://www.feldera.com/blog/sigmod-research-highlights)
+* :trophy: [DBSP wins Best Paper award at VLDB 2023 ](https://www.feldera.com/blog/Best-Research-Paper-VLDB-2023)
 
 ## Publications
 
