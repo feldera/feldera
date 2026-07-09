@@ -393,7 +393,9 @@ impl Parser for StreamingPreprocessedParser {
         data: &[u8],
         metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
-        let (pre_data, mut pre_errors) = self.preprocessor.process(data);
+        let (pre_data, mut pre_errors) = self
+            .preprocessor
+            .process_with_metadata(data, metadata.as_ref());
         self.stream_splitter.append(&pre_data);
         let mut parsed: Vec<Box<dyn InputBuffer>> = Vec::new();
         while let Some(chunk) = self.stream_splitter.next(true) {
@@ -451,7 +453,9 @@ impl Parser for MessageOrientedPreprocessedParser {
         data: &[u8],
         metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
-        let (pre_data, mut pre_errors) = self.preprocessor.process(data);
+        let (pre_data, mut pre_errors) = self
+            .preprocessor
+            .process_with_metadata(data, metadata.as_ref());
         let mut parser_splitter = self.parser.splitter();
         let mut parsed: Vec<Box<dyn InputBuffer>> = Vec::new();
         let mut remaining = pre_data.as_slice();

@@ -730,11 +730,34 @@ pub struct PreprocessorConfig {
 
 ```rust
 pub trait Preprocessor: Send + Sync {
-    /// Transform raw input bytes.
+    /// Process raw input data and return transformed data.
+    ///
+    /// # Arguments
+    /// * `data` - Raw input data bytes
     ///
     /// Returns the transformed bytes together with any non-fatal parse errors
     /// encountered during transformation.
-    fn process(&mut self, data: &[u8]) -> (Vec<u8>, Vec<ParseError>);
+    /// The default implementation calls `process_with_metadata` without metadata.
+    fn process(&mut self, data: &[u8]) -> (Vec<u8>, Vec<ParseError>) {
+        self.process_with_metadata(data, None)
+    }
+
+    /// Process raw input data and return transformed data using connector metadata.
+    ///
+    /// # Arguments
+    /// * `data` - Raw input data bytes
+    /// * `metadata` - Connector metadata
+    ///
+    /// # Returns
+    /// The transformed data and any parse errors that occurred.
+    /// The default implementation just calls `process` ignoring the metadata.
+    fn process_with_metadata(
+        &mut self,
+        data: &[u8],
+        metadata: Option<&ConnectorMetadata>,
+    ) -> (Vec<u8>, Vec<ParseError>) {
+        self.process(data)
+    }
 
     /// Create an independent copy of this preprocessor with the same configuration.
     ///
@@ -749,6 +772,26 @@ pub trait Preprocessor: Send + Sync {
 }
 ```
 
+Each processing method has a default implementation that forwards to the
+other, so a preprocessor needs to implement exactly one of them:
+
+- Implement `process` when the transformation does not use connector
+  metadata.
+
+- Implement `process_with_metadata` when the transformation depends on
+  metadata.
+
+The pipeline only invokes `process_with_metadata`, which, by default,
+discards the metadata and invokes `process`.
+
+:::danger
+
+A preprocessor that implements neither processing method compiles
+without warnings, but the two default implementations will crash
+the pipeline with a stack overflow.
+
+:::
+
 There are two kinds of preprocessors: streaming and message-oriented,
 depending on the "message_oriented" configuration field value.
 
@@ -762,6 +805,62 @@ records from the preprocessor to produce even one record.
 
 Currently only "message-oriented" preprocessors are supported with
 fault-tolerance.
+
+#### `ConnectorMetadata`
+
+The `process_with_metadata` method receives an optional argument with type
+`feldera_adapterlib::ConnectorMetadata`.  Connector metadata contains
+key-value attributes that the input transport endpoint attaches to each
+record it produces.  A preprocessor can
+use these attributes to guide its transformation, for example to select
+a decryption key based on the topic a record arrived on.
+
+```rust
+/// Connector metadata attached to each input record.
+pub struct ConnectorMetadata(BTreeMap<Variant, Variant>);
+```
+
+Attribute names are `Variant::String` keys; values are
+[`Variant`](/sql/json/#the-variant-type)s.
+For example, the Kafka connector may attach an attribute `kafka_timestamp` with a
+type `feldera_sqllib::Timestamp`.
+
+If the connector does not provide metadata, its value is `None`.
+
+A preprocessor reads attributes from the `ConnectorMetadata` through two getters:
+
+```rust
+impl ConnectorMetadata {
+    /// Returns the attribute stored under `key`, or `None` if absent.
+    pub fn get(&self, key: &Variant) -> Option<&Variant>;
+
+    /// Returns the attribute stored under the string key `name`, or `None`
+    /// if absent.
+    pub fn get_by_name(&self, name: &str) -> Option<&Variant>;
+}
+```
+
+Because connectors key their attributes by string, `get_by_name` is the
+common lookup; `get` accepts an arbitrary `Variant` key.  For example, a
+preprocessor can select its behavior based on the Kafka topic a record
+arrived on:
+
+```rust
+if let Some(Variant::String(topic)) = metadata.get_by_name("kafka_topic") {
+    // Choose a transformation based on the topic name.
+}
+```
+
+Here is an example extracting a string value:
+
+```rust
+// Retrieve the topic name as a string; use "" when the attribute is
+// absent or is not a string.
+let topic: &str = match metadata.get_by_name("kafka_topic") {
+    Some(Variant::String(topic)) => topic.str(),
+    _ => "",
+};
+```
 
 #### `PreprocessorFactory` trait
 
@@ -876,7 +975,7 @@ tracing = { version = "0.1.40" }
 
 ### Configuring a preprocessor in a connector
 
-Preprocessors are enabled by adding a `preprocess` field to the connector configuration.
+Preprocessors are enabled by adding a `preprocessor` field to the connector configuration.
 Each entry has
 - a string `name` (matching a registered factory)
 - a boolean `message_oriented` property
