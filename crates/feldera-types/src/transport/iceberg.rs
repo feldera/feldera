@@ -48,6 +48,29 @@ pub enum IcebergCatalogType {
     S3Tables,
 }
 
+/// Iceberg table transaction mode.
+///
+/// Determines how the connector breaks up its input into Feldera transactions.
+///
+/// * `none` - the connector does not break up its input into transactions.
+/// * `snapshot` - ingest the initial snapshot of the table in one or several transactions.
+///
+/// # How the table snapshot is ingested using transactions
+///
+/// When `transaction_mode` is set to `snapshot`, the connector ingests the snapshot in one
+/// or several transactions, depending on `timestamp_column`. If `timestamp_column` is not set,
+/// the whole snapshot is ingested in a single Feldera transaction. If `timestamp_column` is set,
+/// the connector ingests the snapshot in a series of timestamp ranges of width equal to the
+/// `LATENESS` attribute of the column, each range in a separate transaction.
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema, Default)]
+pub enum IcebergTransactionMode {
+    #[default]
+    #[serde(rename = "none")]
+    None,
+    #[serde(rename = "snapshot")]
+    Snapshot,
+}
+
 /// AWS Glue catalog config.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct GlueCatalogConfig {
@@ -185,6 +208,13 @@ fn default_num_parsers() -> u32 {
 pub struct IcebergReaderConfig {
     /// Table read mode.
     pub mode: IcebergIngestMode,
+
+    /// Transaction mode.
+    ///
+    /// Determines how the connector breaks up its input into Feldera transactions.
+    /// See [`IcebergTransactionMode`]. Defaults to [`IcebergTransactionMode::None`].
+    #[serde(default)]
+    pub transaction_mode: IcebergTransactionMode,
 
     /// Table column that serves as an event timestamp.
     ///
@@ -573,6 +603,24 @@ mod test {
         assert_eq!(config.max_retries, Some(0));
         // 0 disables retries: the first attempt is the last.
         assert_eq!(config.max_retries(), 0);
+    }
+
+    #[test]
+    fn transaction_mode_defaults_to_none() {
+        let config: IcebergReaderConfig = serde_json::from_str(
+            r#"{"mode":"snapshot","metadata_location":"file:///tmp/t/metadata.json"}"#,
+        )
+        .unwrap();
+        assert_eq!(config.transaction_mode, IcebergTransactionMode::None);
+    }
+
+    #[test]
+    fn transaction_mode_snapshot_parses() {
+        let config: IcebergReaderConfig = serde_json::from_str(
+            r#"{"mode":"snapshot","metadata_location":"file:///tmp/t/metadata.json","transaction_mode":"snapshot"}"#,
+        )
+        .unwrap();
+        assert_eq!(config.transaction_mode, IcebergTransactionMode::Snapshot);
     }
 
     #[test]
