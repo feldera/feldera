@@ -11,7 +11,7 @@ use feldera_adapterlib::{
     errors::journal::ControllerError,
     format::{InputBuffer, ParseError},
     transport::{
-        InputConsumer, InputEndpoint, InputQueue, InputReader, InputReaderCommand,
+        InputConsumer, InputEndpoint, InputQueue, InputQueueEntry, InputReader, InputReaderCommand,
         IntegratedInputEndpoint, NonFtInputReaderCommand,
     },
     utils::backoff::calculate_backoff_delay,
@@ -28,7 +28,7 @@ use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::{
     config::{FtModel, PipelineConfig},
     program_schema::{Field, Relation},
-    transport::iceberg::{IcebergCatalogType, IcebergReaderConfig},
+    transport::iceberg::{IcebergCatalogType, IcebergReaderConfig, IcebergTransactionMode},
 };
 use futures_util::StreamExt;
 use iceberg::CatalogBuilder;
@@ -52,6 +52,7 @@ use iceberg_catalog_s3tables::{
 use iceberg_datafusion::IcebergStaticTableProvider;
 use iceberg_storage_opendal::OpenDalResolvingStorageFactory;
 use log::{debug, info, trace, warn};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{collections::BTreeSet, sync::Arc, thread};
 use tokio::{
     select,
@@ -303,6 +304,8 @@ struct IcebergInputEndpointInner {
     consumer: Box<dyn InputConsumer>,
     datafusion: SessionContext,
     queue: Arc<InputQueue>,
+    /// Monotonic counter used to label snapshot transactions for observability.
+    transaction_index: AtomicUsize,
 }
 
 impl IcebergInputEndpointInner {
@@ -324,6 +327,22 @@ impl IcebergInputEndpointInner {
             consumer,
             datafusion,
             queue,
+            transaction_index: AtomicUsize::new(0),
+        }
+    }
+
+    /// Allocate a transaction for the next snapshot chunk.
+    ///
+    /// Returns `None` when `transaction_mode` is `none`, meaning the chunk is not
+    /// wrapped in a Feldera transaction. Otherwise returns `Some(Some(label))`,
+    /// where the label identifies the transaction in logs and metrics.
+    fn allocate_snapshot_transaction(&self) -> Option<Option<String>> {
+        match self.config.transaction_mode {
+            IcebergTransactionMode::None => None,
+            IcebergTransactionMode::Snapshot => {
+                let index = self.transaction_index.fetch_add(1, Ordering::AcqRel);
+                Some(Some(format!("snapshot-{index}")))
+            }
         }
     }
 
@@ -1052,10 +1071,15 @@ impl IcebergInputEndpointInner {
             }
         };
 
+        // Each snapshot chunk is its own Feldera transaction (or none, depending on
+        // `transaction_mode`): the whole snapshot for an unordered read, one range
+        // for an ordered read.
+        let transaction = self.allocate_snapshot_transaction();
+
         // On terminal failure `execute_df` has already reported the error to the
         // consumer, which stops ingestion; nothing more to do here.
         let _ = self
-            .execute_df(df, true, &descr, input_stream, receiver)
+            .execute_df(df, true, &descr, transaction, input_stream, receiver)
             .await;
     }
 
@@ -1073,6 +1097,10 @@ impl IcebergInputEndpointInner {
     ///
     /// * `descr` - dataframe description used to construct error message.
     ///
+    /// * `transaction` - when `Some`, the dataframe's records are wrapped in a
+    ///   Feldera transaction: entries carry the start label and a commit entry is
+    ///   pushed once the dataframe completes.
+    ///
     /// * `input_stream` - handle to push updates to.
     ///
     /// * `receiver` - used to block the function until the endpoint is unpaused.
@@ -1081,17 +1109,35 @@ impl IcebergInputEndpointInner {
         dataframe: DataFrame,
         polarity: bool,
         descr: &str,
+        transaction: Option<Option<String>>,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) -> Result<usize, AnyError> {
+        let is_transactional = transaction.is_some();
         let max_retries = self.config.max_retries();
         let mut retry_count = 0;
         loop {
             match self
-                .execute_df_inner(dataframe.clone(), polarity, input_stream, receiver)
+                .execute_df_inner(
+                    dataframe.clone(),
+                    polarity,
+                    transaction.clone(),
+                    input_stream,
+                    receiver,
+                )
                 .await
             {
                 Ok(total_records) => {
+                    // Close the transaction once all records have been queued. The
+                    // non-empty-buffer entries above start it lazily at flush time;
+                    // this empty entry commits it after the last one flushes.
+                    if is_transactional {
+                        self.queue.push_entry(
+                            InputQueueEntry::new_with_aux(Utc::now(), ())
+                                .with_commit_transaction(true),
+                            Vec::new(),
+                        );
+                    }
                     self.consumer
                         .update_connector_health(ConnectorHealth::healthy());
                     return Ok(total_records);
@@ -1129,6 +1175,7 @@ impl IcebergInputEndpointInner {
         &self,
         dataframe: DataFrame,
         polarity: bool,
+        transaction: Option<Option<String>>,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) -> Result<usize, String> {
@@ -1178,7 +1225,15 @@ impl IcebergInputEndpointInner {
                 })
             },
             move |(buffer, errors, timestamp)| {
-                queue.push((buffer, errors), timestamp);
+                // Setting the start label on every entry is idempotent: the input
+                // queue starts the transaction on the first flushed entry and
+                // ignores the label thereafter.
+                queue.push_entry(
+                    InputQueueEntry::new_with_aux(timestamp, ())
+                        .with_buffer(buffer)
+                        .with_start_transaction(transaction.clone()),
+                    errors,
+                );
             },
         );
 

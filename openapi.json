@@ -10096,6 +10096,9 @@
                 "type": "string",
                 "description": "Table column that serves as an event timestamp.\n\nWhen this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,\ntable rows are ingested in the timestamp order, respecting the\n[`LATENESS`](https://docs.feldera.com/sql/streaming#lateness-expressions)\nproperty of the column: each ingested row has a timestamp no more than `LATENESS`\ntime units earlier than the most recent timestamp of any previously ingested row.\nThe ingestion is performed by partitioning the table into timestamp ranges of width\n`LATENESS`. Each range is processed sequentially, in increasing timestamp order.\n\n# Example\n\nConsider a table with timestamp column of type `TIMESTAMP` and lateness attribute\n`INTERVAL 1 DAY`. Assuming that the oldest timestamp in the table is\n`2024-01-01T00:00:00``, the connector will fetch all records with timestamps\nfrom `2024-01-01`, then all records for `2024-01-02`, `2024-01-03`, etc., until all records\nin the table have been ingested.\n\n# Requirements\n\n* The timestamp column must be of a supported type: integer, `DATE`, or `TIMESTAMP`.\n* The timestamp column must be declared with non-zero `LATENESS`.\n* For efficient ingest, the table must be optimized for timestamp-based\nqueries using partitioning, Z-ordering, or liquid clustering.",
                 "nullable": true
+              },
+              "transaction_mode": {
+                "$ref": "#/components/schemas/IcebergTransactionMode"
               }
             },
             "additionalProperties": {
@@ -10105,6 +10108,14 @@
           }
         ],
         "description": "Iceberg input connector configuration."
+      },
+      "IcebergTransactionMode": {
+        "type": "string",
+        "description": "Iceberg table transaction mode.\n\nDetermines how the connector breaks up its input into Feldera transactions.\n\n* `none` - the connector does not break up its input into transactions.\n* `snapshot` - ingest the initial snapshot of the table in one or several transactions.\n\n# How the table snapshot is ingested using transactions\n\nWhen `transaction_mode` is set to `snapshot`, the connector ingests the snapshot in one\nor several transactions, depending on `timestamp_column`. If `timestamp_column` is not set,\nthe whole snapshot is ingested in a single Feldera transaction. If `timestamp_column` is set,\nthe connector ingests the snapshot in a series of timestamp ranges of width equal to the\n`LATENESS` attribute of the column, each range in a separate transaction.",
+        "enum": [
+          "none",
+          "snapshot"
+        ]
       },
       "InputEndpointConfig": {
         "allOf": [
