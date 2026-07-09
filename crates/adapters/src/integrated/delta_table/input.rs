@@ -1066,14 +1066,10 @@ impl DeltaTableInputEndpointInner {
             .fetch_add(1, Ordering::Relaxed);
     }
 
-    fn skip_unused_columns(&self) -> bool {
-        // Old-style: property in the connector configuration.
-        // New-style: property in the table definition.
-        self.config.skip_unused_columns || self.schema.skip_unused_columns()
-    }
-
     fn should_project_columns(&self) -> bool {
-        self.projection.is_some() || self.skip_unused_columns()
+        self.projection.is_some()
+            || self.schema.skip_unused_columns()
+            || self.config.skip_unused_columns
     }
 
     fn new_follow_transaction_label(&self) -> Option<Option<String>> {
@@ -1188,8 +1184,10 @@ impl DeltaTableInputEndpointInner {
     }
 
     /// SQL columns the connector reads, matched case-insensitively against Delta
-    /// column names. When `skip_unused_columns` is set, skippable unused columns
-    /// are removed. Derived once from the immutable SQL schema and cached.
+    /// column names. Standard table-level projection keeps fields used by the
+    /// program. The deprecated connector-level `skip_unused_columns` option keeps
+    /// the legacy nullable/defaulted-column rule. Derived once from the immutable
+    /// SQL schema and cached.
     fn used_sql_columns(&self) -> &ColumnNameSet {
         self.used_sql_columns.get_or_init(|| {
             if let Some(projection) = &self.projection {
@@ -1205,11 +1203,30 @@ impl DeltaTableInputEndpointInner {
                 return ColumnNameSet::from_names(columns);
             }
 
+            if self.schema.skip_unused_columns() {
+                let mut columns = self.schema.used_column_projection().unwrap_or_else(|| {
+                    self.schema
+                        .fields
+                        .iter()
+                        .map(|field| field.name.name())
+                        .collect()
+                });
+                let referenced = self.config_referenced_columns();
+                columns.extend(
+                    self.schema
+                        .fields
+                        .iter()
+                        .filter(|field| referenced.contains(&field.name.name()))
+                        .map(|field| field.name.name()),
+                );
+                return ColumnNameSet::from_names(columns);
+            }
+
             ColumnNameSet::from_names(
                 self.schema
                     .fields
                     .iter()
-                    .filter(|f| !self.skip_unused_columns() || !self.can_skip_column(f))
+                    .filter(|f| !self.config.skip_unused_columns || !self.can_skip_column(f))
                     .map(|f| f.name.name()),
             )
         })
@@ -1249,7 +1266,7 @@ impl DeltaTableInputEndpointInner {
     /// This is the shape-only rule; [`can_skip_column`](Self::can_skip_column)
     /// adds the connector-config check before a column is actually skipped.
     fn is_unused_and_omittable(field: &Field) -> bool {
-        Relation::is_unused_column_omittable(field)
+        field.unused && (field.columntype.nullable || field.default.is_some())
     }
 
     /// SQL columns named by the connector's own expressions (`filter`,
@@ -3133,9 +3150,10 @@ mod is_skippable_tests {
     use datafusion::prelude::SessionContext;
     use feldera_types::{
         config::ConnectorProjection,
-        program_schema::{ColumnType, Field, Relation},
+        program_schema::{ColumnType, Field, PropertyValue, Relation, SourcePosition},
     };
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     fn field(unused: bool, nullable: bool, default: Option<&str>) -> Field {
         let mut field = Field::new("c".into(), ColumnType::varchar(nullable)).with_unused(unused);
@@ -3145,6 +3163,38 @@ mod is_skippable_tests {
 
     fn named_int_field(name: &str, unused: bool) -> Field {
         Field::new(name.into(), ColumnType::int(true)).with_unused(unused)
+    }
+
+    fn position() -> SourcePosition {
+        SourcePosition {
+            start_line_number: 1,
+            start_column: 1,
+            end_line_number: 1,
+            end_column: 1,
+        }
+    }
+
+    fn skip_unused_property() -> BTreeMap<String, PropertyValue> {
+        BTreeMap::from([(
+            "skip_unused_columns".to_string(),
+            PropertyValue {
+                value: "true".to_string(),
+                key_position: position(),
+                value_position: position(),
+            },
+        )])
+    }
+
+    fn endpoint(config: serde_json::Value, schema: Relation) -> DeltaTableInputEndpointInner {
+        DeltaTableInputEndpointInner::new(
+            "test_input",
+            serde_json::from_value(config).unwrap(),
+            SessionContext::new(),
+            Box::new(MockInputConsumer::new()),
+            schema,
+            None,
+            None,
+        )
     }
 
     #[test]
@@ -3168,6 +3218,63 @@ mod is_skippable_tests {
         assert!(!DeltaTableInputEndpointInner::is_unused_and_omittable(
             &field(true, false, None)
         ));
+    }
+
+    #[test]
+    fn table_level_skip_unused_columns_drops_required_unused_columns() {
+        let schema = Relation::new(
+            "test_table".into(),
+            vec![
+                Field::new("used".into(), ColumnType::int(false)),
+                Field::new("unused_required".into(), ColumnType::int(false)).with_unused(true),
+                Field::new("unused_nullable".into(), ColumnType::int(true)).with_unused(true),
+            ],
+            false,
+            skip_unused_property(),
+        );
+
+        let endpoint = endpoint(
+            json!({
+                "uri": "s3://bucket/table",
+                "mode": "snapshot"
+            }),
+            schema,
+        );
+
+        let used = endpoint.used_sql_columns();
+
+        assert!(used.contains("used"));
+        assert!(!used.contains("unused_required"));
+        assert!(!used.contains("unused_nullable"));
+    }
+
+    #[test]
+    fn deprecated_connector_skip_unused_columns_keeps_required_unused_columns() {
+        let schema = Relation::new(
+            "test_table".into(),
+            vec![
+                Field::new("used".into(), ColumnType::int(false)),
+                Field::new("unused_required".into(), ColumnType::int(false)).with_unused(true),
+                Field::new("unused_nullable".into(), ColumnType::int(true)).with_unused(true),
+            ],
+            false,
+            Default::default(),
+        );
+
+        let endpoint = endpoint(
+            json!({
+                "uri": "s3://bucket/table",
+                "mode": "snapshot",
+                "skip_unused_columns": true
+            }),
+            schema,
+        );
+
+        let used = endpoint.used_sql_columns();
+
+        assert!(used.contains("used"));
+        assert!(used.contains("unused_required"));
+        assert!(!used.contains("unused_nullable"));
     }
 
     #[test]

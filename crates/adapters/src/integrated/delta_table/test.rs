@@ -25,7 +25,9 @@ use deltalake::{DeltaTable, DeltaTableBuilder, ensure_table_uri};
 use feldera_sqllib::Variant;
 use feldera_types::config::PipelineConfig;
 use feldera_types::format::json::JsonFlavor;
-use feldera_types::program_schema::{Field, Relation, SqlIdentifier};
+use feldera_types::program_schema::{
+    ColumnType, Field, PropertyValue, Relation, SourcePosition, SqlIdentifier,
+};
 use feldera_types::serde_with_context::serde_config::DecimalFormat;
 use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
 use feldera_types::serde_with_context::{
@@ -126,6 +128,23 @@ fn delta_test_record(bigint: i64) -> DeltaTestStruct {
         .current();
     record.bigint = bigint;
     record
+}
+
+fn test_position() -> SourcePosition {
+    SourcePosition {
+        start_line_number: 1,
+        start_column: 1,
+        end_line_number: 1,
+        end_column: 1,
+    }
+}
+
+fn table_property(value: impl Into<String>) -> PropertyValue {
+    PropertyValue {
+        value: value.into(),
+        key_position: test_position(),
+        value_position: test_position(),
+    }
 }
 
 /// Append a single row, producing exactly one new Delta table version.
@@ -834,6 +853,91 @@ where
 
     Controller::with_test_config(
         move |workers| Ok(test_circuit::<T>(workers, &schema, &[None])),
+        &config,
+        Box::new(move |e, _| {
+            panic!("delta_table_input_test: error: {e}");
+        }),
+    )
+    .unwrap()
+}
+
+/// Build a pipeline that reads from a delta table and writes to a JSON file,
+/// using the supplied input relation verbatim.
+fn delta_table_input_pipeline_with_relation<T>(
+    table_uri: &str,
+    relation: Relation,
+    config: &HashMap<String, String>,
+    output_file_path: &str,
+) -> Controller
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
+    init_logging();
+
+    let mut storage_options = config.clone();
+    storage_options.insert("uri".into(), table_uri.into());
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": {
+                        "path": output_file_path
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "insert_delete"
+                    }
+                }
+            }
+        },
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "delta_table_input",
+                    "config": storage_options,
+                }
+            }
+        }
+    }))
+    .unwrap();
+
+    Controller::with_test_config(
+        move |workers| {
+            let relation = relation.clone();
+            let output_relation = Relation::new(
+                "test_output1".into(),
+                relation.fields.clone(),
+                false,
+                BTreeMap::new(),
+            );
+
+            let (circuit, catalog) = Runtime::init_circuit(workers, move |circuit| {
+                let mut catalog = Catalog::new();
+                let (input, hinput) = circuit.add_input_zset::<T>();
+                input.set_persistent_mir_id("input");
+
+                let input_schema = serde_json::to_string(&relation).unwrap();
+                let output_schema = serde_json::to_string(&output_relation).unwrap();
+
+                catalog.register_materialized_input_zset(input.clone(), hinput, &input_schema);
+                catalog.register_materialized_output_zset_persistent(None, input, &output_schema);
+                Ok(catalog)
+            })
+            .unwrap();
+
+            Ok((circuit, Box::new(catalog) as Box<dyn CircuitCatalog>))
+        },
         &config,
         Box::new(move |e, _| {
             panic!("delta_table_input_test: error: {e}");
@@ -2426,9 +2530,69 @@ async fn delta_table_cdc_skip_unused_columns_catchup_suspend_test() {
     .await;
 }
 
+#[tokio::test]
+async fn delta_table_level_skip_unused_columns_omits_non_nullable_unused_column_test() {
+    init_logging();
+
+    let mut relation_schema = DeltaTestStruct::schema();
+    let unused_field = relation_schema
+        .iter_mut()
+        .find(|field| field.name.name() == "unused")
+        .unwrap();
+    unused_field.columntype = ColumnType::varchar(false);
+    unused_field.default = None;
+
+    let arrow_fields = relation_to_arrow_fields(&relation_schema, true);
+    let arrow_schema = Arc::new(ArrowSchema::new(arrow_fields));
+    let struct_fields = arrow_schema
+        .fields
+        .iter()
+        .map(|field| {
+            StructField::new(
+                field.name(),
+                DataType::try_from_arrow(field.data_type()).unwrap(),
+                field.is_nullable(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let input_table_dir = TempDir::new().unwrap();
+    let input_table_uri = input_table_dir.path().display().to_string();
+    let input_table = create_table(&input_table_uri, &HashMap::new(), &struct_fields).await;
+
+    let mut record = delta_test_record(0);
+    record.unused = Some("should-not-be-read".to_string());
+    write_data_to_table(input_table, &arrow_schema, &[record.clone()]).await;
+
+    let relation = Relation::new(
+        "test_input1".into(),
+        relation_schema,
+        false,
+        BTreeMap::from([("skip_unused_columns".to_string(), table_property("true"))]),
+    );
+
+    let mut output_file = NamedTempFile::new().unwrap();
+    let input_pipeline = delta_table_input_pipeline_with_relation::<DeltaTestStruct>(
+        &input_table_uri,
+        relation,
+        &HashMap::from([("mode".to_string(), "snapshot".to_string())]),
+        &output_file.path().display().to_string(),
+    );
+    input_pipeline.start();
+    wait(|| input_pipeline.pipeline_complete(), 400_000).expect("timeout");
+    input_pipeline.stop().unwrap();
+
+    let mut expected = record;
+    expected.unused = None;
+    let expected_zset = OrdZSet::from_tuples((), vec![Tup2(Tup2(expected, ()), 1)]);
+    let zset = file_to_zset::<DeltaTestStruct>(output_file.as_file_mut());
+
+    assert_eq!(zset, expected_zset);
+}
+
 /// Projection must not drop columns referenced by existing Delta connector
-/// expressions. The compiler projection omits `unused` because it is nullable
-/// and marked unused in the SQL schema, but the Delta connector must still read
+/// expressions. `skip_unused_columns` would otherwise omit `unused` because it
+/// is marked unused in the SQL schema, but the Delta connector must still read
 /// it when a connector expression references it.
 #[tokio::test]
 async fn delta_table_projection_preserves_connector_expression_columns_test() {
