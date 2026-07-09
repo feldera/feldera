@@ -1,7 +1,7 @@
 pub use feldera_ir::SourcePosition;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use utoipa::ToSchema;
@@ -268,22 +268,17 @@ impl Relation {
         self.get_property("skip_unused_columns") == Some("true")
     }
 
-    /// Return `true` if `field` can be omitted from connector input.
-    pub fn is_unused_column_omittable(field: &Field) -> bool {
-        field.unused && (field.columntype.nullable || field.default.is_some())
-    }
-
-    /// Return the input columns that must be read after omitting unused columns.
+    /// Return the input columns used by the program.
     ///
     /// A projection with no columns cannot preserve input row count, so keep the
-    /// first declared field when every declared column is otherwise skippable.
+    /// first declared field when every declared column is unused.
     /// The choice is arbitrary, but stable and cheap to compute from the schema
     /// available here.
-    pub fn unused_column_projection(&self) -> Option<Vec<String>> {
+    pub fn used_column_projection(&self) -> Option<Vec<String>> {
         let mut columns = self
             .fields
             .iter()
-            .filter(|field| !Self::is_unused_column_omittable(field))
+            .filter(|field| !field.unused)
             .map(|field| field.name.name())
             .collect::<Vec<_>>();
 
@@ -302,15 +297,13 @@ impl Relation {
         Some(columns)
     }
 
-    /// Return non-omittable columns missing from `columns`.
-    pub fn missing_non_omittable_projection_columns(&self, columns: &[String]) -> Vec<String> {
-        let projected = columns.iter().cloned().collect::<BTreeSet<_>>();
-
+    /// Return program-used columns missing from `columns`.
+    pub fn missing_used_projection_columns(&self, columns: &[String]) -> Vec<String> {
         self.fields
             .iter()
-            .filter(|field| !Self::is_unused_column_omittable(field))
+            .filter(|field| !field.unused)
             .map(|field| field.name.name())
-            .filter(|name| !projected.contains(name))
+            .filter(|name| !columns.contains(name))
             .collect()
     }
 
@@ -1190,30 +1183,26 @@ mod tests {
     }
 
     #[test]
-    fn unused_column_projection_skips_only_omittable_unused_fields() {
-        let mut unused_with_default = int_field("unused_with_default", false, true);
-        unused_with_default.default = Some("0".to_string());
-
+    fn used_column_projection_skips_unused_fields() {
         let relation = Relation::new(
             SqlIdentifier::from("t"),
             vec![
                 int_field("used", false, false),
                 int_field("unused_nullable", true, true),
                 int_field("unused_required", false, true),
-                unused_with_default,
             ],
             false,
             Default::default(),
         );
 
         assert_eq!(
-            relation.unused_column_projection(),
-            Some(vec!["used".to_string(), "unused_required".to_string()])
+            relation.used_column_projection(),
+            Some(vec!["used".to_string()])
         );
     }
 
     #[test]
-    fn unused_column_projection_keeps_one_column_when_all_columns_are_skippable() {
+    fn used_column_projection_keeps_one_column_when_all_columns_are_unused() {
         let relation = Relation::new(
             SqlIdentifier::from("t"),
             vec![
@@ -1225,13 +1214,13 @@ mod tests {
         );
 
         assert_eq!(
-            relation.unused_column_projection(),
+            relation.used_column_projection(),
             Some(vec!["unused_a".to_string()])
         );
     }
 
     #[test]
-    fn missing_non_omittable_projection_columns_reports_required_columns() {
+    fn missing_used_projection_columns_reports_required_columns() {
         let relation = Relation::new(
             SqlIdentifier::from("t"),
             vec![
@@ -1244,8 +1233,8 @@ mod tests {
         );
 
         assert_eq!(
-            relation.missing_non_omittable_projection_columns(&["unused_nullable".to_string()]),
-            vec!["used".to_string(), "unused_required".to_string()]
+            relation.missing_used_projection_columns(&["unused_nullable".to_string()]),
+            vec!["used".to_string()]
         );
     }
 

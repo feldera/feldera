@@ -882,7 +882,7 @@ fn apply_input_connector_pushdown(
         return;
     }
 
-    if let Some(columns) = input_relation.unused_column_projection() {
+    if let Some(columns) = input_relation.used_column_projection() {
         connector_config.projection = Some(ConnectorProjection {
             include: columns,
             derived: true,
@@ -1014,7 +1014,7 @@ mod tests {
 
         assert_eq!(
             connector.projection.as_ref().unwrap().include,
-            vec!["used".to_string(), "unused_required".to_string()]
+            vec!["used".to_string()]
         );
         assert!(connector.projection.as_ref().unwrap().derived);
     }

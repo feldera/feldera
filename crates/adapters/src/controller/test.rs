@@ -44,7 +44,7 @@ fn int_field(name: &str, nullable: bool, unused: bool) -> Field {
 }
 
 #[test]
-fn test_projection_pushdown_rejects_missing_non_omittable_columns() {
+fn test_projection_pushdown_rejects_missing_used_columns() {
     let mut connector_config: ConnectorConfig = serde_json::from_value(json!({
         "projection": {
             "include": ["unused_nullable"]
@@ -77,10 +77,7 @@ fn test_projection_pushdown_rejects_missing_non_omittable_columns() {
     )
     .unwrap_err();
 
-    assert!(
-        err.to_string()
-            .contains("omits non-omittable column(s): used, unused_required")
-    );
+    assert!(err.to_string().contains("omits used column(s): used"));
 }
 
 #[test]

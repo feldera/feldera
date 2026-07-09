@@ -6311,19 +6311,19 @@ impl ControllerInner {
                 }
             }
 
-            let missing = schema.missing_non_omittable_projection_columns(&projection.include);
+            let missing = schema.missing_used_projection_columns(&projection.include);
             if !missing.is_empty() {
                 return Err(ControllerError::invalid_transport_configuration(
                     endpoint_name,
                     &format!(
-                        "standard 'projection' pushdown omits non-omittable column(s): {}",
+                        "standard 'projection' pushdown omits used column(s): {}",
                         missing.join(", ")
                     ),
                 ));
             }
 
             if projection.derived
-                && schema.unused_column_projection().as_ref() != Some(&projection.include)
+                && schema.used_column_projection().as_ref() != Some(&projection.include)
             {
                 return Err(ControllerError::invalid_transport_configuration(
                     endpoint_name,
