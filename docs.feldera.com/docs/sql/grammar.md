@@ -231,11 +231,9 @@ sources.
 
 When set to `true`, this option instructs the connector to avoid
 reading columns from the input that are not used in any view
-definitions. To be skipped, the columns must be either nullable or
-have default values. This can improve ingestion performance,
-especially for wide tables.  Not all connectors support this feature;
-currently only the Delta table connectors can take advantage of this
-feature.
+definitions. This can improve ingestion performance, especially for
+wide tables.  Not all connectors support this feature; currently only
+the Delta table connectors can take advantage of this feature.
 
 Note: The simplest way to exclude unused columns is to omit them from
 the Feldera SQL table declaration. The connector never reads columns
@@ -257,7 +255,7 @@ https://docs.feldera.com/pipelines/modifying/#limitation-3-table-evolution-is-no
 Example:
 
 ```sql
-CREATE TABLE T(x INT, unused INT DEFAULT 0)
+CREATE TABLE T(x INT, unused INT)
 WITH ('skip_unused_columns' = 'true');
 ```
 
