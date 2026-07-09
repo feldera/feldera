@@ -9835,7 +9835,8 @@
         "type": "string",
         "enum": [
           "rest",
-          "glue"
+          "glue",
+          "s3tables"
         ]
       },
       "IcebergIngestMode": {
@@ -9854,6 +9855,9 @@
           },
           {
             "$ref": "#/components/schemas/RestCatalogConfig"
+          },
+          {
+            "$ref": "#/components/schemas/S3TablesCatalogConfig"
           },
           {
             "type": "object",
@@ -13288,6 +13292,47 @@
           "region": {
             "type": "string",
             "description": "AWS region."
+          }
+        }
+      },
+      "S3TablesCatalogConfig": {
+        "type": "object",
+        "description": "Amazon S3 Tables catalog config.",
+        "properties": {
+          "s3tables.access-key-id": {
+            "type": "string",
+            "description": "Access key id used to access the S3 Tables catalog.",
+            "nullable": true
+          },
+          "s3tables.endpoint": {
+            "type": "string",
+            "description": "Custom endpoint URL for the S3 Tables service.\n\nPrimarily used to target a local or mock S3 Tables implementation for testing.\nWhen omitted, the default regional endpoint is used.",
+            "nullable": true
+          },
+          "s3tables.profile-name": {
+            "type": "string",
+            "description": "Profile used to access the S3 Tables catalog.",
+            "nullable": true
+          },
+          "s3tables.region": {
+            "type": "string",
+            "description": "Region of the S3 Tables catalog.",
+            "nullable": true
+          },
+          "s3tables.secret-access-key": {
+            "type": "string",
+            "description": "Secret access key used to access the S3 Tables catalog.",
+            "nullable": true
+          },
+          "s3tables.session-token": {
+            "type": "string",
+            "description": "Static session token used to access the S3 Tables catalog.",
+            "nullable": true
+          },
+          "s3tables.table-bucket-arn": {
+            "type": "string",
+            "description": "ARN of the S3 table bucket that contains the table.\n\nNote that this is the ARN of the table *bucket*, not of an individual table,\ne.g., `\"arn:aws:s3tables:us-east-2:123456789012:bucket/my-bucket\"`.",
+            "nullable": true
           }
         }
       },
