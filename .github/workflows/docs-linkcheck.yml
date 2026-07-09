@@ -18,7 +18,9 @@ jobs:
         uses: astral-sh/setup-uv@6dfebec6ddbcd197e02256fbdf54deb334fb7f06 # v2
 
       # ignored crates.io due to https://github.com/rust-lang/crates.io/issues/788
-      - name: Check links on feldera.com
+      # browser-like user-agent avoids WAFs dropping the connection on the
+      # default LinkChecker UA (the classic UNEXPECTED_EOF cause)
+      - name: Check links on docs.feldera.com
         run: |
-          uv run --locked linkchecker https://docs.feldera.com --check-extern --no-warnings --ignore-url "https?://localhost|https://crates.io|https://www.linkedin.com|https://ieeexplore.ieee.org|https://x.com|https?://127.0.0.1" --no-robots
+          uv run --locked linkchecker https://docs.feldera.com --check-extern --no-warnings --ignore-url "https?://localhost|https://crates.io|https://www.linkedin.com|https://ieeexplore.ieee.org|https://x.com|https?://127.0.0.1|https://join.slack.com|https://felderacommunity.slack.com" --no-robots
         working-directory: docs.feldera.com
