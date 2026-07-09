@@ -77,10 +77,11 @@ interface StatsMetricValue extends MetricValue {
 }
 
 interface MergesMetricValue extends MetricValue {
-    avg_step_time: DurationMetricValue;
-    batches: CountMetricValue;
     merges: CountMetricValue;
+    batches: CountMetricValue;
     steps: CountMetricValue;
+    avg_step_seconds: DurationMetricValue;
+    avg_step_cpu_seconds: DurationMetricValue;
 }
 
 interface SerializedStringValue {
@@ -622,6 +623,71 @@ export class MissingValue extends PropertyValue {
     }
 }
 
+/** A property value that is an array of numbers, e.g. a distribution (`key_distribution`,
+ * `size_distribution`). Non-comparable and without a scalar numeric value — consumers that
+ * visualize distributions read the array via `toArray()`. */
+export class ArrayValue extends PropertyValue {
+    constructor(readonly array: number[]) {
+        super();
+    }
+
+    toArray(): number[] {
+        return this.array;
+    }
+
+    override isComparable(): boolean {
+        return false;
+    }
+
+    // No single scalar summarizes a distribution; return none so numeric-only consumers (the
+    // heatmap percentile scale, the bar chart) skip it rather than misrepresent it.
+    getNumericValue(): Option<number> {
+        return Option.none();
+    }
+
+    // Element-wise sum, padding the shorter array with zeros. Used when a complex node folds in
+    // its children's readings (e.g. per-shard key distributions).
+    override combine(other: PropertyValue): PropertyValue {
+        if (other instanceof MissingValue) {
+            return this;
+        }
+        if (other instanceof ArrayValue) {
+            const n = Math.max(this.array.length, other.array.length);
+            const out = new Array<number>(n);
+            for (let i = 0; i < n; i++) {
+                out[i] = (this.array[i] ?? 0) + (other.array[i] ?? 0);
+            }
+            return new ArrayValue(out);
+        }
+        throw new Error("Cannot add ArrayValue to " + other);
+    }
+
+    override average(others: PropertyValue[]): PropertyValue {
+        const arrays = [this, ...others].filter((v): v is ArrayValue => v instanceof ArrayValue);
+        if (arrays.length === 0) {
+            return MissingValue.INSTANCE;
+        }
+        const n = arrays.reduce((m, a) => Math.max(m, a.array.length), 0);
+        const out = new Array<number>(n).fill(0);
+        for (const a of arrays) {
+            for (let i = 0; i < a.array.length; i++) {
+                out[i]! += a.array[i]!;
+            }
+        }
+        for (let i = 0; i < n; i++) {
+            out[i]! /= arrays.length;
+        }
+        return new ArrayValue(out);
+    }
+
+    override toString(): string {
+        if (this.array.length <= 8) {
+            return "[" + this.array.join(", ") + "]";
+        }
+        return `${this.array.length} values`;
+    }
+}
+
 /** A property value that represents a time with seconds and nanoseconds. */
 export class TimeValue extends PropertyValue {
     constructor(readonly seconds: number) {
@@ -998,21 +1064,37 @@ export class Measurement {
             }
             case "merges": {
                 let s = metric.value as MergesMetricValue;
-                let avg_step_time = undefined;
-                let result = [];
-                if (s.avg_step_time !== undefined) {
-                    avg_step_time = TimeValue.fromDurationMetric(s.avg_step_time);
-                    result.push(new Measurement(metric_id + ".avg_step_time", Option.some(avg_step_time)));
+                let result = [
+                    new Measurement(metric_id + ".merges", Option.some(CountValue.fromCountMetric(s.merges))),
+                    new Measurement(metric_id + ".batches", Option.some(CountValue.fromCountMetric(s.batches))),
+                    new Measurement(metric_id + ".steps", Option.some(CountValue.fromCountMetric(s.steps))),
+                ];
+                if (s.avg_step_seconds !== undefined) {
+                    result.push(new Measurement(metric_id + ".avg_step_seconds",
+                        Option.some(TimeValue.fromDurationMetric(s.avg_step_seconds))));
                 }
-                let batches = CountValue.fromCountMetric(s.batches);
-                let merges = CountValue.fromCountMetric(s.merges);
-                let steps = CountValue.fromCountMetric(s.steps);
-                result.push(
-                    new Measurement(metric_id + ".batches", Option.some(batches)),
-                    new Measurement(metric_id + ".merges", Option.some(merges)),
-                    new Measurement(metric_id + ".steps", Option.some(steps)),
-                );
+                if (s.avg_step_cpu_seconds !== undefined) {
+                    result.push(new Measurement(metric_id + ".avg_step_cpu_seconds",
+                        Option.some(TimeValue.fromDurationMetric(s.avg_step_cpu_seconds))));
+                }
                 return result;
+            }
+            case "distribution": {
+                // Serialized as a JSON array of typed MetaItems (e.g. {type:"count",value:n});
+                // extract the numeric payloads into a single array-valued measurement.
+                let items = metric.value as unknown as Array<{ value: number }>;
+                let arr = Array.isArray(items) ? items.map((e) => enforceNumber(e.value)) : [];
+                return [new Measurement(metric_id, Option.some(new ArrayValue(arr)))];
+            }
+            case "state": {
+                // e.g. compaction_state (a per-slot status string).
+                let s = metric.value as StringMetricValue;
+                return [new Measurement(metric_id, Option.some(StringValue.fromString(s.value)))];
+            }
+            case "key": {
+                // e.g. bloom_filter_bits_per_key (an integer density).
+                let s = metric.value as IntMetricValue;
+                return [new Measurement(metric_id, Option.some(new CountValue(s.value)))];
             }
             case "policy": {
                 let s = metric.value as StringMetricValue;

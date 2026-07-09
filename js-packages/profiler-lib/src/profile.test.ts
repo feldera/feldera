@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+    ArrayValue,
     BooleanValue,
     BytesValue,
     CircuitProfile,
     CountValue,
+    Measurement,
     MissingValue,
     PercentValue,
     PropertyValue,
@@ -301,5 +303,73 @@ describe('PropertyValue contract', () => {
             // Self-average: every kind should accept an empty `others` array without throwing.
             expect(() => v.average([])).not.toThrow()
         }
+    })
+})
+
+describe('ArrayValue', () => {
+    it('reports its array and is non-comparable with no scalar value', () => {
+        const a = new ArrayValue([1, 2, 3])
+        expect(a.toArray()).toEqual([1, 2, 3])
+        expect(a.isComparable()).toBe(false)
+        expect(a.getNumericValue().isNone()).toBe(true)
+    })
+
+    it('combines element-wise, padding the shorter array', () => {
+        const combined = new ArrayValue([1, 2]).combine(new ArrayValue([10, 20, 30]))
+        expect((combined as ArrayValue).toArray()).toEqual([11, 22, 30])
+    })
+})
+
+describe('Measurement.parseValues', () => {
+    it('decodes key/size distributions into an ArrayValue', () => {
+        const ms = Measurement.parseValues({
+            metric_id: 'key_distribution',
+            value: [
+                { type: 'count', value: 3 },
+                { type: 'count', value: 5 }
+            ]
+        } as never)
+        expect(ms).toHaveLength(1)
+        const v = ms[0]!.value.unwrap()
+        expect(v).toBeInstanceOf(ArrayValue)
+        expect((v as ArrayValue).toArray()).toEqual([3, 5])
+    })
+
+    it('decodes a slot-labeled compaction state into a StringValue', () => {
+        const ms = Measurement.parseValues({
+            metric_id: 'compaction_state',
+            labels: [['slot', '0']],
+            value: { type: 'string', value: 'requested' }
+        } as never)
+        expect(ms).toHaveLength(1)
+        expect(ms[0]!.property).toBe('compaction_state.slot:0')
+        expect(ms[0]!.value.unwrap().toString()).toBe('requested')
+    })
+
+    it('decodes bloom_filter_bits_per_key (suffix "key") as a count', () => {
+        const ms = Measurement.parseValues({
+            metric_id: 'bloom_filter_bits_per_key',
+            value: { type: 'int', value: 7 }
+        } as never)
+        expect(ms).toHaveLength(1)
+        expect(ms[0]!.value.unwrap().getNumericValue().unwrap()).toBe(7)
+    })
+
+    it('decodes completed_merges into merges/batches/steps/avg sub-rows', () => {
+        const ms = Measurement.parseValues({
+            metric_id: 'completed_merges',
+            labels: [['slot', '1']],
+            value: {
+                merges: { value: 2 },
+                batches: { value: 10 },
+                steps: { value: 4 },
+                avg_step_seconds: { value: { secs: 0, nanos: 500_000_000 } },
+                avg_step_cpu_seconds: { value: { secs: 0, nanos: 250_000_000 } }
+            }
+        } as never)
+        const byProp = new Map(ms.map((m) => [m.property, m.value.unwrap()]))
+        expect(byProp.get('completed_merges.slot:1.steps')?.getNumericValue().unwrap()).toBe(4)
+        expect(byProp.get('completed_merges.slot:1.merges')?.getNumericValue().unwrap()).toBe(2)
+        expect(byProp.has('completed_merges.slot:1.avg_step_seconds')).toBe(true)
     })
 })

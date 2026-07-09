@@ -16,11 +16,13 @@
     "@feldera/vite-plugin-monaco-editor": "workspace:*",
     "@monaco-editor/loader": "1.7.0",
     "common-ui": "workspace:*",
+    "echarts": "6.0.0",
     "monaco-editor": "0.55.1",
     "profiler-layout": "workspace:*",
     "profiler-lib": "workspace:*",
     "runed": "0.37.1",
     "strip-ansi": "7.1.2",
+    "svelte-echarts": "1.0.0",
     "tiny-invariant": "1.3.3",
     "triage-types": "workspace:*",
     "virtua": "0.48.6"

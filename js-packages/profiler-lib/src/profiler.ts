@@ -36,6 +36,9 @@ export interface TooltipRow {
     metric: string;
     isCurrentMetric: boolean;
     cells: TooltipCell[];
+    /** Profile-wide value range for this metric (min/max across all nodes and workers), when
+     * numeric. Lets consumers color a value relative to the whole profile, not just this node. */
+    range?: { min: number; max: number };
 }
 
 /** Tooltip data structure */
