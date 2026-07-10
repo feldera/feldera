@@ -20,8 +20,10 @@ vi.mock('$lib/services/manager', async (importOriginal) => {
   }
 })
 
+import type { CombinedDesiredStatus, CombinedStatus } from '$lib/services/manager'
 import * as sdkManager from '$lib/services/manager'
 import {
+  consolidatePipelineStatus,
   getExtendedPipeline,
   getPipelines,
   getPipelineThumb,
@@ -115,5 +117,36 @@ describe('pipelineManager API error propagation', () => {
       const err = await catchRejection(call())
       expect(err).toBe(networkError)
     })
+  })
+})
+
+// A concurrent bootstrap keeps the pre-existing views live, so the pipeline
+// reports its underlying Running/Paused status while the bootstrap phase is
+// surfaced separately for the indicator next to the status pill.
+describe('consolidatePipelineStatus concurrent bootstrap phase', () => {
+  const consolidate = (deployment: CombinedStatus, desired: CombinedDesiredStatus) =>
+    consolidatePipelineStatus('Success', deployment, desired, null)
+
+  // Concurrent bootstrap and synchronization are sub-phases of Running: the pipeline always reads
+  // as Running regardless of the desired status, and the phase is surfaced separately. The
+  // non-Running desired cases below previously flipped the status to Paused/Stopping.
+  it.each([
+    { deployment: 'ConcurrentBootstrapping' as const, desired: 'Running' as const },
+    { deployment: 'ConcurrentBootstrapping' as const, desired: 'Paused' as const },
+    { deployment: 'ConcurrentBootstrapping' as const, desired: 'Stopped' as const },
+    { deployment: 'ConcurrentBootstrapping' as const, desired: 'Suspended' as const },
+    { deployment: 'Synchronizing' as const, desired: 'Running' as const },
+    { deployment: 'Synchronizing' as const, desired: 'Paused' as const },
+    { deployment: 'Synchronizing' as const, desired: 'Stopped' as const },
+    { deployment: 'Synchronizing' as const, desired: 'Suspended' as const }
+  ])('reads as Running while $deployment (desired $desired)', ({ deployment, desired }) => {
+    const result = consolidate(deployment, desired)
+    expect(result.status).toBe('Running')
+    expect(result.concurrentBootstrapPhase).toBe(deployment)
+  })
+
+  it('reports the Inactive phase for ordinary statuses', () => {
+    expect(consolidate('Running', 'Running').concurrentBootstrapPhase).toBe('Inactive')
+    expect(consolidate('Paused', 'Paused').concurrentBootstrapPhase).toBe('Inactive')
   })
 })

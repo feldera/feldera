@@ -131,6 +131,7 @@ export type {
   CompletionTokenResponse,
   CompletionTokenResponse2,
   CompletionTokenResponses,
+  ConcurrentBootstrapPhase,
   Condition,
   Configuration,
   ConnectOptions,

@@ -26,6 +26,7 @@ import {
   type CheckpointMetadata,
   type CheckpointResponse,
   type CheckpointStatus,
+  type ConcurrentBootstrapPhase,
   type ControllerStatus,
   type ErrorResponse,
   type GetPipelineSupportBundleData,
@@ -57,6 +58,7 @@ export type {
   CheckpointMetadata,
   CheckpointResponse,
   CheckpointStatus,
+  ConcurrentBootstrapPhase,
   InputEndpointConfig,
   InputEndpointStatus,
   OutputEndpointConfig,
@@ -146,7 +148,7 @@ const _postPipelineAction = (
 
 export type PipelineStatus = ReturnType<typeof consolidatePipelineStatus>['status']
 
-const consolidatePipelineStatus = (
+export const consolidatePipelineStatus = (
   programStatus: ProgramStatus,
   deploymentStatus: _CombinedStatus,
   desiredStatus: _CombinedDesiredStatus,
@@ -191,6 +193,8 @@ const consolidatePipelineStatus = (
     .with(['Standby', P._, P._], () => 'Standby' as const)
     .with(['Bootstrapping', P._, P._], () => 'Bootstrapping' as const)
     .with(['Replaying', P._, P._], () => 'Replaying' as const)
+    .with(['ConcurrentBootstrapping', P._, P._], () => 'Running' as const)
+    .with(['Synchronizing', P._, P._], () => 'Running' as const)
     .with(['Running', P.any, P._], () => 'Running' as const)
     .with(['Unavailable', P.any, P.any], () => 'Unavailable' as const)
     .with(['AwaitingApproval', P.any, P._], () => 'AwaitingApproval' as const)
@@ -205,8 +209,15 @@ const consolidatePipelineStatus = (
       return 'Unavailable' as const
     })
 
+  const concurrentBootstrapPhase = match(deploymentStatus)
+    .returnType<ConcurrentBootstrapPhase>()
+    .with('ConcurrentBootstrapping', () => 'ConcurrentBootstrapping' as const)
+    .with('Synchronizing', () => 'Synchronizing' as const)
+    .otherwise(() => 'Inactive' as const)
+
   return {
-    status
+    status,
+    concurrentBootstrapPhase
   }
 }
 

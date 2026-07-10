@@ -502,6 +502,8 @@ export type CombinedStatus =
   | 'AwaitingApproval'
   | 'Initializing'
   | 'Bootstrapping'
+  | 'ConcurrentBootstrapping'
+  | 'Synchronizing'
   | 'Replaying'
   | 'Paused'
   | 'Running'
@@ -613,6 +615,13 @@ export type CompletionTokenResponse = {
    */
   token: string
 }
+
+/**
+ * Phase of a concurrent bootstrap.
+ *
+ * `#[repr(u8)]` + `NoUninit` so it can be stored in a lock-free `Atomic`.
+ */
+export type ConcurrentBootstrapPhase = 'Inactive' | 'ConcurrentBootstrapping' | 'Synchronizing'
 
 export type Condition = {
   literal?: boolean
@@ -2139,6 +2148,8 @@ export type GlobalControllerMetrics = {
    */
   buffered_input_records: number
   commit_progress?: CommitProgressSummary | null
+  concurrent_bootstrap_phase: ConcurrentBootstrapPhase
+  concurrent_bootstrap_progress?: CommitProgressSummary | null
   /**
    * CPU time used by the pipeline across all threads, in milliseconds.
    */
@@ -4982,6 +4993,8 @@ export type RuntimeStatus =
   | 'Paused'
   | 'Running'
   | 'Suspended'
+  | 'ConcurrentBootstrapping'
+  | 'Synchronizing'
 
 /**
  * Details about the current runtime status. The fields in this struct should all be **optional**
@@ -6292,11 +6305,21 @@ export type PostPipelineApproveData = {
      * Bootstrap the pipeline with output connectors disabled.
      */
     silent_bootstrap?: boolean
+    /**
+     * Bootstrap new and modified views concurrently, keeping the pre-existing
+     * views live while the new ones backfill. Mutually exclusive with
+     * `silent_bootstrap`.
+     */
+    concurrent_bootstrap?: boolean
   }
   url: '/v0/pipelines/{pipeline_name}/approve'
 }
 
 export type PostPipelineApproveErrors = {
+  /**
+   * Bootstrap options are mutually inconsistent
+   */
+  400: ErrorResponse
   /**
    * Pipeline with that name does not exist
    */
@@ -7348,6 +7371,11 @@ export type PostPipelineStartData = {
      * Bootstrap the pipeline with output connectors disabled.
      */
     silent_bootstrap?: boolean
+    /**
+     * Bootstrap new and modified views concurrently, keeping the pre-existing
+     * views live while the new ones backfill in the background.
+     */
+    concurrent_bootstrap?: boolean
     dismiss_error?: boolean
   }
   url: '/v0/pipelines/{pipeline_name}/start'
