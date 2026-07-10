@@ -49,6 +49,7 @@ impl CompilerTest {
             https_tls_key_path: None,
             private_ca_cert_path: None,
             pipeline_monitor_events_retention: 720,
+            disable_cluster_monitor_resources: false,
         };
         let compiler_config = CompilerConfig {
             sql_compiler_path:

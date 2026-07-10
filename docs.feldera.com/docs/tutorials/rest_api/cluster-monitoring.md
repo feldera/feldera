@@ -8,8 +8,8 @@ notably at most 1000 and with a time limit of 72 hours (whichever comes first).
 With this, it is possible to access both the latest health check of the cluster
 and its health in the recent past. The events are accessible through the API.
 
-The resources monitoring feature is not yet stabilized, but can already be activated by adding
-`cluster_monitor_resources` to the Helm chart `unstableFeatures` array value.
+The resources monitoring feature can be deactivated by setting
+in the Helm chart `disableClusterMonitorResources` to `true`.
 
 ## API usage
 

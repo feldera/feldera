@@ -253,8 +253,6 @@ pub struct CommonConfig {
     /// Currently supported features:
     /// - `runtime_version`: Allows to override the runtime version of a pipeline on the platform.
     /// - `testing`
-    /// - `cluster_monitor_resources`: Cluster monitoring also monitors the resources backing the
-    ///   instance (i.e., the Kubernetes objects).
     /// - `rust_compiler_full_cleanup`: the Rust compiler fully cleans up the target directory if the
     ///   disk space usage is approaching its limit.
     #[arg(verbatim_doc_comment, long, env = "FELDERA_UNSTABLE_FEATURES")]
@@ -316,6 +314,14 @@ pub struct CommonConfig {
     /// Number of monitor events that are retained for each pipeline.
     #[arg(long, default_value_t = default_pipeline_monitor_events_retention(), env = "FELDERA_PIPELINE_MONITOR_EVENTS_RETENTION")]
     pub pipeline_monitor_events_retention: u32,
+
+    /// Whether to disable cluster monitoring of its own (Kubernetes) resources.
+    #[arg(
+        long,
+        default_value_t = false,
+        env = "FELDERA_DISABLE_CLUSTER_MONITOR_RESOURCES"
+    )]
+    pub disable_cluster_monitor_resources: bool,
 }
 
 impl CommonConfig {
@@ -588,6 +594,7 @@ impl CommonConfig {
             https_tls_key_path: None,
             private_ca_cert_path: None,
             pipeline_monitor_events_retention: 720,
+            disable_cluster_monitor_resources: false,
         }
     }
 }

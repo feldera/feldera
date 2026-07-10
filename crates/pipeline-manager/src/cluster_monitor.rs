@@ -4,7 +4,6 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::monitor::{MonitorStatus, NewClusterMonitorEvent};
 use crate::error::source_error;
-use crate::unstable_features;
 use async_trait::async_trait;
 use feldera_observability::ReqwestTracingExt;
 use std::{sync::Arc, time::Duration};
@@ -39,10 +38,8 @@ const RESOURCES_INFO_NOT_AVAILABLE: &str =
     "Resources information not available in Community edition.";
 
 /// Message when the resources information gathering is not enabled.
-const RESOURCES_INFO_NOT_ENABLED: &str = "Resources information is not enabled. \
-    Cluster monitoring resources is currently an unstable feature. It can be enabled by \
-    setting the control plane environment variable FELDERA_UNSTABLE_FEATURES and adding to it \
-    `cluster_monitor_resources` as one of the comma-separated entries.";
+const RESOURCES_INFO_DISABLED: &str =
+    "Cluster monitoring resources information is disabled in the configuration.";
 
 /// Target to poll resources of.
 pub enum PollResourcesTarget {
@@ -128,9 +125,16 @@ pub async fn cluster_monitor<P: ResourcesPoller>(
             api_resources_info,
             compiler_resources_info,
             runner_resources_info,
-        ) = if unstable_features().is_some_and(|activated_unstable_features| {
-            activated_unstable_features.contains("cluster_monitor_resources")
-        }) {
+        ) = if common_config.disable_cluster_monitor_resources {
+            (
+                true,
+                true,
+                true,
+                RESOURCES_INFO_DISABLED.to_string(),
+                RESOURCES_INFO_DISABLED.to_string(),
+                RESOURCES_INFO_DISABLED.to_string(),
+            )
+        } else {
             let (api_resources_ok, api_resources_info) = resources_poller
                 .poll_resources(PollResourcesTarget::Api)
                 .await;
@@ -147,15 +151,6 @@ pub async fn cluster_monitor<P: ResourcesPoller>(
                 truncate_info(api_resources_info),
                 truncate_info(compiler_resources_info),
                 truncate_info(runner_resources_info),
-            )
-        } else {
-            (
-                true,
-                true,
-                true,
-                RESOURCES_INFO_NOT_ENABLED.to_string(),
-                RESOURCES_INFO_NOT_ENABLED.to_string(),
-                RESOURCES_INFO_NOT_ENABLED.to_string(),
             )
         };
 

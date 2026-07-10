@@ -14,6 +14,14 @@ import TabItem from '@theme/TabItem';
 
 	## Unreleased
 
+        - Cluster monitor events with information on the backing (Kubernetes) resources is
+          no longer gated behind unstable feature `cluster_monitor_resources` (deprecated).
+          It is now enabled by default. This change adds RBAC permissions to get the
+          deployments of the API server and the runner. The status of the backing Kubernetes
+          resources is shown in the Feldera Health page to every (authenticated) user.
+          The cluster monitoring of resources can still be disabled by setting in the Helm
+          chart `disableClusterMonitorResources` to `true`.
+
 	- A bug fix introduced a backward incompatible change to the replay journal format.
           This only affects pipelines configured with exactly-once fault tolerance. Such
           pipelines should not be upgraded to the new Feldera runtime if they are in a failed
