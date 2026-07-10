@@ -431,9 +431,40 @@ fn collect_endpoint_records(controller: &Controller, n: usize) -> Vec<usize> {
         .collect()
 }
 
+/// Default budget for [`wait_for_records`] to observe the expected output.
+const OUTPUT_TIMEOUT_MS: u128 = 10_000;
+
+/// Longer output budget for waits taken while a suspend is in progress.
+///
+/// While a suspend is pending, the controller advances only the barrier inputs
+/// while re-attempting the checkpoint each step, so under CI CPU contention
+/// output can lag far behind input even though stepping keeps making forward
+/// progress. Using the default [`OUTPUT_TIMEOUT_MS`] in that window makes the
+/// suspend tests flake. Matches the 100s budget already used for the
+/// suspend-completion `recv_timeout` in these tests.
+const SUSPEND_OUTPUT_TIMEOUT_MS: u128 = 100_000;
+
+/// Like `println!`, but prefixes a UTC timestamp so test output interleaves
+/// legibly with the controller's tracing logs when diagnosing timing issues.
+macro_rules! tprintln {
+    ($($arg:tt)*) => {
+        println!("[{}] {}", chrono::Utc::now().format("%H:%M:%S%.6f"), format_args!($($arg)*))
+    };
+}
+
+/// Wait until every output endpoint has received at least the expected number
+/// of records, then verify the counts match exactly, using the default
+/// [`OUTPUT_TIMEOUT_MS`] budget.
 #[track_caller]
 fn wait_for_records(controller: &Controller, expect_n: &[usize]) {
-    println!("waiting for {expect_n:?} records...");
+    wait_for_records_within(controller, expect_n, OUTPUT_TIMEOUT_MS);
+}
+
+/// Like [`wait_for_records`], but waits up to `timeout_ms` for the records to
+/// arrive.
+#[track_caller]
+fn wait_for_records_within(controller: &Controller, expect_n: &[usize], timeout_ms: u128) {
+    tprintln!("waiting for {expect_n:?} records...");
     let n = expect_n.len();
     let mut last_n = repeat_n(0, n).collect::<Vec<_>>();
     wait(
@@ -441,7 +472,7 @@ fn wait_for_records(controller: &Controller, expect_n: &[usize]) {
             let new_n = collect_endpoint_records(controller, n);
             for i in 0..n {
                 if new_n[i] > last_n[i] {
-                    println!("received {} records on test_output{}", new_n[i], i + 1);
+                    tprintln!("received {} records on test_output{}", new_n[i], i + 1);
                 }
             }
             last_n = new_n;
@@ -450,7 +481,7 @@ fn wait_for_records(controller: &Controller, expect_n: &[usize]) {
                 .zip(expect_n.iter())
                 .all(|(&last, &expect)| last >= expect)
         },
-        10_000,
+        timeout_ms,
     )
     .unwrap();
 
@@ -2028,25 +2059,25 @@ fn suspend_barrier() {
         .from_writer(&input_file);
 
     // Write records to the input file.
-    println!("Writing records 0..4000");
+    tprintln!("Writing records 0..4000");
     for id in 0..4000 {
         writer.serialize(TestStruct::for_id(id as u32)).unwrap();
     }
     writer.flush().unwrap();
 
     // Start pipeline.
-    println!("start pipeline");
+    tprintln!("start pipeline");
 
     let controller = start_controller(&storage_dir, &[5000]);
 
     // Wait for the records that are not in the checkpoint to be
     // processed or replayed.
-    println!("wait for 4000 records 0..4000");
+    tprintln!("wait for 4000 records 0..4000");
     wait_for_records(&controller, &[4000]);
 
     // Suspend.
     let (sender, receiver) = mpsc::channel();
-    println!("start suspend");
+    tprintln!("start suspend");
     let suspend_request_step = controller.status().global_metrics.total_initiated_steps();
     controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
 
@@ -2068,7 +2099,7 @@ fn suspend_barrier() {
     assert_bounded_suspend_steps(&controller, suspend_request_step);
 
     // Stop controller.
-    println!("stop controller");
+    tprintln!("stop controller");
     controller.stop().unwrap();
 
     // Read output and compare. Our output adapter, which is not
@@ -2082,7 +2113,7 @@ fn suspend_barrier() {
     let controller = start_controller(&storage_dir, &[5000]);
     wait_for_records(&controller, &[5000]);
 
-    println!("start suspend");
+    tprintln!("start suspend");
     let (sender, receiver) = mpsc::channel();
     let mut sender = Some(sender);
 
@@ -2092,13 +2123,16 @@ fn suspend_barrier() {
 
         let start = (i + 5) * 1000;
         let end = start + 1000;
-        println!("writing records {start}..{end}");
+        tprintln!("writing records {start}..{end}");
         for id in start..end {
             writer.serialize(TestStruct::for_id(id as u32)).unwrap();
         }
         writer.flush().unwrap();
-        println!("waiting for {end} records");
-        wait_for_records(&controller, &[end]);
+        tprintln!("waiting for {end} records");
+        // After the first iteration a suspend is pending: the controller only
+        // advances barrier inputs while re-attempting the checkpoint each step,
+        // so output can lag under CI CPU load. Use the longer budget.
+        wait_for_records_within(&controller, &[end], SUSPEND_OUTPUT_TIMEOUT_MS);
         check_file_contents(&(output_path(&storage_dir, 0)), 5000..end);
 
         if let Some(sender) = sender.take() {
@@ -2157,7 +2191,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
         .collect::<Vec<_>>();
 
     // Write records to the input files.
-    println!("Writing 1000 records to each of {n_inputs} files");
+    tprintln!("Writing 1000 records to each of {n_inputs} files");
     for writer in writers.iter_mut().take(n_inputs) {
         for id in 0..1000 {
             writer.serialize(TestStruct::for_id(id as u32)).unwrap();
@@ -2166,7 +2200,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
     }
 
     // Start pipeline.
-    println!("start pipeline");
+    tprintln!("start pipeline");
 
     // The barrier for input 0 is record 0,
     // for input 1 is record 1000,
@@ -2177,7 +2211,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
 
     // Wait for the first 1000 records in each file to be read and copied to the
     // output.
-    println!("wait for 1000 records in each file");
+    tprintln!("wait for 1000 records in each file");
     let mut written = repeat_n(1000, n_inputs).collect::<Vec<_>>();
     wait_for_records(&controller, &written);
 
@@ -2187,7 +2221,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
     // we're past all the barriers; otherwise, it will not complete due to
     // barriers, since each input only has 1000 records so far.
     let (sender, receiver) = mpsc::channel();
-    println!("start suspend");
+    tprintln!("start suspend");
     let suspend_request_step = controller.status().global_metrics.total_initiated_steps();
     controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
 
@@ -2212,7 +2246,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
         receiver.try_recv().unwrap_err();
 
         // Write 1000 more records to the `next` input.
-        println!("writing 1000 more records to test_input{}", next + 1);
+        tprintln!("writing 1000 more records to test_input{}", next + 1);
         for id in written[next]..written[next] + 1000 {
             writers[next]
                 .serialize(TestStruct::for_id(id as u32))
@@ -2228,9 +2262,12 @@ fn suspend_multiple_barriers(n_inputs: usize) {
         // We won't get any more records on output from inputs that have reached
         // their barrier, so the writes to inputs 0 and 1 won't have any effect
         // here.
-        println!("total written: {written:?}");
+        tprintln!("total written: {written:?}");
         let expect = expectations(&written, &barriers);
-        wait_for_records(&controller, &expect);
+        // A suspend is pending here: the controller only advances barrier inputs
+        // while re-attempting the checkpoint each step, so output can lag far
+        // behind under CI CPU load. Use the longer budget.
+        wait_for_records_within(&controller, &expect, SUSPEND_OUTPUT_TIMEOUT_MS);
         for (i, expectation) in expect.iter().enumerate().take(n_inputs) {
             check_file_contents(&output_path(&storage_dir, i), 0..*expectation);
         }
@@ -2244,11 +2281,11 @@ fn suspend_multiple_barriers(n_inputs: usize) {
     assert_bounded_suspend_steps(&controller, suspend_request_step);
 
     // Stop controller.
-    println!("stop controller");
+    tprintln!("stop controller");
     controller.stop().unwrap();
 
     // Check output one more time.
-    println!("check output one more time now that controller is stopped");
+    tprintln!("check output one more time now that controller is stopped");
     let expect = expectations(&written, &barriers);
     for (i, e) in expect.iter().enumerate().take(n_inputs) {
         check_file_contents(&output_path(&storage_dir, i), 0..*e);
@@ -2256,7 +2293,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
 
     // Now restart the controller and wait for all the records that we wrote
     // beyond the barriers get copied to output (and nothing else).
-    println!("restart controller and wait for records beyond the barriers");
+    tprintln!("restart controller and wait for records beyond the barriers");
     let controller = start_controller(&storage_dir, &barriers);
     wait_for_records(&controller, &written);
     for i in 0..n_inputs {
