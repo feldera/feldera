@@ -1420,6 +1420,47 @@ async fn status_handler(
 }
 
 #[allow(clippy::result_large_err)]
+/// Reports the runtime status of a controller whose circuit has reached
+/// [`PipelineState::Terminated`].
+///
+/// A successful suspend terminates the circuit before the server installs
+/// [`PipelinePhase::Suspended`] and deallocates the controller (see `/suspend`),
+/// so a status poll landing in that window observes the still-registered
+/// controller in `Terminated`. When a suspend was requested the pipeline is
+/// converging to `Suspended`, so report that clean status rather than a
+/// spurious `PipelineTerminated` error that the pipeline manager would record
+/// as a failed execution.
+///
+/// This branch is reached only for a *successful* suspend: a failed suspend
+/// deliberately leaves the circuit running (see the `SuspendCommand` handler in
+/// `controller.rs`) so that it never masquerades here as a clean `Suspended`;
+/// the `/suspend` handler reports it as [`PipelinePhase::Failed`] instead. Any
+/// termination without a suspend request is an unexpected, fatal termination
+/// and stays an error.
+fn terminated_status(
+    runtime_desired_status: RuntimeDesiredStatus,
+    storage_status_details: Option<StorageStatusDetails>,
+) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
+    if matches!(runtime_desired_status, RuntimeDesiredStatus::Suspended) {
+        Ok(ExtendedRuntimeStatus {
+            runtime_status: RuntimeStatus::Suspended,
+            runtime_status_details: json!(""),
+            runtime_desired_status,
+            storage_status_details,
+        })
+    } else {
+        Err(ExtendedRuntimeStatusError {
+            status_code: StatusCode::INTERNAL_SERVER_ERROR,
+            error: feldera_types::error::ErrorResponse {
+                message: "Pipeline has been terminated.".to_string(),
+                error_code: Cow::from("PipelineTerminated"),
+                details: json!({}),
+            },
+        })
+    }
+}
+
+#[allow(clippy::result_large_err)]
 fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
     // Runtime desired status
     let runtime_desired_status = state.desired_status();
@@ -1476,14 +1517,9 @@ fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRunt
                     RuntimeStatus::Running,
                     storage_status_details,
                 )),
-                PipelineState::Terminated => Err(ExtendedRuntimeStatusError {
-                    status_code: StatusCode::INTERNAL_SERVER_ERROR,
-                    error: feldera_types::error::ErrorResponse {
-                        message: "Pipeline has been terminated.".to_string(),
-                        error_code: Cow::from("PipelineTerminated"),
-                        details: json!({}),
-                    },
-                }),
+                PipelineState::Terminated => {
+                    terminated_status(runtime_desired_status, storage_status_details)
+                }
             };
         }
         Err(_) => {
@@ -2135,10 +2171,12 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
             drop(desired_status);
 
             async fn suspend(state: WebData<ServerState>) {
+                let mut suspend_error = None;
                 loop {
                     if let Ok(controller) = state.controller() {
                         if let Err(error) = controller.async_suspend().await {
                             error!("controller suspend failed ({error})");
+                            suspend_error = Some(error);
                         }
                         break;
                     }
@@ -2151,7 +2189,17 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
                     };
                     tokio::time::sleep(Duration::from_millis(50)).await;
                 }
-                state.set_phase(PipelinePhase::Suspended);
+                // A failed suspend leaves the pipeline unsuspended: report it as
+                // a fatal error so the pipeline manager records the failure
+                // rather than a clean suspend. The circuit is deliberately left
+                // running on failure (see the `SuspendCommand` handler in
+                // `controller.rs`), so `/status` never observed a `Terminated`
+                // circuit to mask as `Suspended`; this phase is what the poll
+                // sees once the controller is deallocated below.
+                state.set_phase(match suspend_error {
+                    Some(error) => PipelinePhase::Failed(error),
+                    None => PipelinePhase::Suspended,
+                });
                 if let Ok(controller) = state.take_controller()
                     && let Err(error) = controller.async_stop().await
                 {
@@ -3146,7 +3194,7 @@ impl StoredStatus {
 /// off.
 #[cfg(test)]
 mod test_http_helpers {
-    use super::{ServerArgs, ServerState, bootstrap, build_app, parse_config};
+    use super::{ServerArgs, ServerState, bootstrap, build_app, parse_config, terminated_status};
     use crate::{
         controller::ControllerBuilder,
         server::{InitializationState, PipelinePhase},
@@ -3180,6 +3228,26 @@ mod test_http_helpers {
     };
     use tempfile::NamedTempFile;
     use uuid::Uuid;
+
+    /// A successful suspend terminates the circuit before the server reports
+    /// `PipelinePhase::Suspended`, so `terminated_status` must report a clean
+    /// `Suspended` while a suspend is in progress instead of the spurious
+    /// `PipelineTerminated` error that flaked `suspend_and_resume_demos`.
+    ///
+    /// A *failed* suspend never reaches `terminated_status`: the `SuspendCommand`
+    /// handler leaves the circuit running instead of terminating it, and the
+    /// `/suspend` handler reports the failure as `PipelinePhase::Failed`.
+    #[test]
+    fn terminated_status_reports_suspended_while_suspending() {
+        let status = terminated_status(RuntimeDesiredStatus::Suspended, None)
+            .expect("a suspending pipeline must not surface PipelineTerminated");
+        assert!(matches!(status.runtime_status, RuntimeStatus::Suspended));
+
+        // An unexpected termination (no suspend requested) stays a fatal error.
+        let error = terminated_status(RuntimeDesiredStatus::Running, None)
+            .expect_err("an unexpected termination must remain PipelineTerminated");
+        assert_eq!(error.error.error_code.as_ref(), "PipelineTerminated");
+    }
 
     pub(super) async fn get_stats(server: &TestServer) -> ExternalControllerStatus {
         server
