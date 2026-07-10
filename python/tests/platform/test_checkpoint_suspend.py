@@ -278,3 +278,70 @@ def test_suspend_enterprise(pipeline_name):
     assert _adhoc_count(pipeline_name) == final_count, (
         "Received new records after all connectors reached EOI"
     )
+
+
+@enterprise_only
+@gen_pipeline_name
+def test_suspend_failure_enterprise(pipeline_name):
+    """
+    A suspend (`/stop?force=false`) whose checkpoint fails must be reported as a
+    failure, not masked as a clean suspend.
+
+    This is the failure counterpart to `test_suspend_enterprise` (which covers
+    the happy path). It needs its own pipeline because the trigger is a
+    storage-disabled config: with storage off, `can_suspend` fails permanently
+    with `StorageRequired`, so the suspend checkpoint cannot succeed. The
+    manager forwards `/suspend` to the pipeline without pre-checking
+    suspendability, the checkpoint fails, and the pipeline must be forcefully
+    stopped with the error recorded in `deployment_error`.
+
+    Regression: the adapter used to report the terminated circuit as a clean
+    `Suspended` whenever a suspend was desired (see `terminated_status` in
+    `crates/adapters/src/server.rs`), so a failed suspend reached `Stopped`
+    with no `deployment_error`. With the fix, a failed suspend leaves the
+    circuit running and the `/suspend` handler reports `PipelinePhase::Failed`,
+    so the failure surfaces as a `deployment_error`.
+    """
+    sql = "CREATE TABLE t1(x int) WITH ('materialized' = 'true');"
+    create_pipeline(pipeline_name, sql)
+
+    # Disable storage so the suspend checkpoint fails permanently.
+    resp = patch_json(
+        api_url(f"/pipelines/{pipeline_name}"),
+        {
+            "runtime_config": {
+                "workers": FELDERA_TEST_NUM_WORKERS,
+                "hosts": FELDERA_TEST_NUM_HOSTS,
+                "logging": "debug",
+                "storage": False,
+            }
+        },
+    )
+    assert resp.status_code == HTTPStatus.OK, resp.text
+
+    start_pipeline(pipeline_name)
+
+    # Request a suspend. The manager forwards `/suspend` to the pipeline; the
+    # checkpoint then fails because storage is disabled.
+    resp = post_no_body(api_url(f"/pipelines/{pipeline_name}/stop?force=false"))
+    assert resp.status_code == HTTPStatus.ACCEPTED, (resp.status_code, resp.text)
+
+    # The failed suspend forcefully stops the pipeline.
+    def deployment():
+        d = get(api_url(f"/pipelines/{pipeline_name}")).json()
+        return d.get("deployment_status"), d.get("deployment_error")
+
+    wait_for_condition(
+        "pipeline stopped after failed suspend",
+        lambda: deployment()[0] == "Stopped",
+        timeout_s=60.0,
+        poll_interval_s=0.5,
+    )
+
+    # The failure must be recorded, not masked as a clean suspend. The old
+    # (buggy) code reached "Stopped" with deployment_error == None.
+    _, deployment_error = deployment()
+    assert deployment_error is not None, (
+        "a failed suspend must be recorded as a deployment error, not masked "
+        "as a clean suspend (deployment_error is None)"
+    )
