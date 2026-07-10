@@ -250,6 +250,11 @@ pub trait ZSet: IndexedZSet<Val = DynUnit> {
     /// negative, so the result can be zero even if the Z-set contains nonzero
     /// weights.
     fn weighted_count(&self, sum: &mut Self::R);
+
+    /// Returns a Z-set that contains all elements with positive weights from
+    /// `self` with their weights preserved.
+    #[cfg(test)]
+    fn positive(&self) -> Self;
 }
 
 impl<Z, K> ZSet for Z
@@ -265,6 +270,24 @@ where
             WeightTrait::add_assign(sum, cursor.weight());
             cursor.step_key();
         }
+    }
+
+    #[cfg(test)]
+    fn positive(&self) -> Self {
+        let factories = self.factories();
+        let mut builder = Self::Builder::with_capacity(&factories, self.key_count(), self.len());
+        let mut cursor = self.cursor();
+
+        while cursor.key_valid() {
+            let weight = **cursor.weight();
+            if weight > 0 {
+                builder.push_val_diff(cursor.val(), weight.erase());
+                builder.push_key(cursor.key());
+            }
+            cursor.step_key();
+        }
+
+        builder.done()
     }
 }
 

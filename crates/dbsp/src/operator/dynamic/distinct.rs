@@ -14,7 +14,7 @@ use crate::{
     DBData, Runtime, Timestamp, ZWeight,
     algebra::{
         AddByRef, HasOne, HasZero, IndexedZSet, Lattice, OrdIndexedZSet, OrdIndexedZSetFactories,
-        PartialOrder, ZRingValue,
+        PartialOrder,
     },
     circuit::{
         Circuit, Scope, Stream, WithClock,
@@ -49,6 +49,45 @@ use super::{MonoIndexedZSet, MonoZSet};
 
 circuit_cache_key!(DistinctId<C, D>(StreamId => Stream<C, D>));
 circuit_cache_key!(DistinctIncrementalId<C, D>(StreamId => Stream<C, D>));
+circuit_cache_key!(PositiveIncrementalId<C, D>(StreamId => Stream<C, D>));
+
+/// Abstract semantics of the generic `distinct` operator.
+pub trait DistinctSemantics: 'static {
+    /// Name of the incremental operator specialized for the root scope.
+    const ROOT_SCOPE_NAME: &'static str;
+    /// Name of the incremental operator for nested scopes.
+    const NESTED_SCOPE_NAME: &'static str;
+
+    /// Maps the weight `w` of a tuple in the input to the weight of
+    /// the same tuple in the output.
+    fn output_weight(w: ZWeight) -> ZWeight;
+}
+
+/// [`DistinctSemantics`] of the `distinct` operator: tuples with positive
+/// weight get weight 1.
+pub struct ZeroOrOneWeight;
+
+impl DistinctSemantics for ZeroOrOneWeight {
+    const ROOT_SCOPE_NAME: &'static str = "DistinctIncrementalTotal";
+    const NESTED_SCOPE_NAME: &'static str = "DistinctIncremental";
+
+    fn output_weight(w: ZWeight) -> ZWeight {
+        if w > 0 { 1 } else { 0 }
+    }
+}
+
+/// [`DistinctSemantics`] of the `positive` operator: tuples with positive
+/// weight keep their weight.
+pub struct PositiveWeight;
+
+impl DistinctSemantics for PositiveWeight {
+    const ROOT_SCOPE_NAME: &'static str = "PositiveIncrementalTotal";
+    const NESTED_SCOPE_NAME: &'static str = "PositiveIncremental";
+
+    fn output_weight(w: ZWeight) -> ZWeight {
+        w.max(0)
+    }
+}
 
 pub struct DistinctFactories<Z: IndexedZSet, T: Timestamp> {
     pub input_factories: Z::Factories,
@@ -189,6 +228,13 @@ impl Stream<RootCircuit, MonoZSet> {
         self.dyn_distinct(factories)
     }
 
+    pub fn dyn_positive_mono(
+        &self,
+        factories: &DistinctFactories<MonoZSet, ()>,
+    ) -> Stream<RootCircuit, MonoZSet> {
+        self.dyn_positive(factories)
+    }
+
     pub fn dyn_hash_distinct_mono(
         &self,
         factories: &HashDistinctFactories<MonoZSet, ()>,
@@ -219,6 +265,13 @@ impl Stream<NestedCircuit, MonoZSet> {
         factories: &DistinctFactories<MonoZSet, <NestedCircuit as WithClock>::Time>,
     ) -> Stream<NestedCircuit, MonoZSet> {
         self.dyn_distinct(factories)
+    }
+
+    pub fn dyn_positive_mono(
+        &self,
+        factories: &DistinctFactories<MonoZSet, <NestedCircuit as WithClock>::Time>,
+    ) -> Stream<NestedCircuit, MonoZSet> {
+        self.dyn_positive(factories)
     }
 
     pub fn dyn_hash_distinct_mono(
@@ -307,9 +360,42 @@ where
         })
     }
 
+    /// See [`Stream::positive`].
+    pub fn dyn_positive(&self, factories: &DistinctFactories<Z, C::Time>) -> Stream<C, Z>
+    where
+        Z: IndexedZSet + Send,
+    {
+        let circuit = self.circuit();
+        circuit.region("positive", || {
+            let stream = self.try_sharded_version();
+
+            circuit
+                .cache_get_or_insert_with(PositiveIncrementalId::new(stream.stream_id()), || {
+                    stream.dyn_positive_inner(factories)
+                })
+                .clone()
+        })
+    }
+
     pub fn dyn_distinct_inner(&self, factories: &DistinctFactories<Z, C::Time>) -> Stream<C, Z>
     where
         Z: IndexedZSet + Send,
+    {
+        self.distinct_inner_generic::<ZeroOrOneWeight>(factories)
+            .mark_distinct()
+    }
+
+    pub fn dyn_positive_inner(&self, factories: &DistinctFactories<Z, C::Time>) -> Stream<C, Z>
+    where
+        Z: IndexedZSet + Send,
+    {
+        self.distinct_inner_generic::<PositiveWeight>(factories)
+    }
+
+    fn distinct_inner_generic<S>(&self, factories: &DistinctFactories<Z, C::Time>) -> Stream<C, Z>
+    where
+        Z: IndexedZSet + Send,
+        S: DistinctSemantics,
     {
         let circuit = self.circuit();
 
@@ -318,7 +404,7 @@ where
         if circuit.root_scope() == 0 {
             // Use an implementation optimized to work in the root scope.
             circuit.add_binary_operator(
-                StreamingBinaryWrapper::new(DistinctIncrementalTotal::new(
+                StreamingBinaryWrapper::new(DistinctIncrementalTotal::<_, _, S>::new(
                     Location::caller(),
                     &factories.input_factories,
                 )),
@@ -339,7 +425,7 @@ where
             //         └───────────┘               └─────┘                  └─────┘        └───────────────────┘
             // ```
             circuit.add_binary_operator(
-                StreamingBinaryWrapper::new(DistinctIncremental::new(
+                StreamingBinaryWrapper::new(DistinctIncremental::<_, _, _, S>::new(
                     Location::caller(),
                     &factories.input_factories,
                     &factories.aux_factories,
@@ -356,7 +442,6 @@ where
             )
         }
         .mark_sharded()
-        .mark_distinct()
     }
 }
 
@@ -403,14 +488,15 @@ where
     }
 }
 
-/// Incremental version of the distinct operator that only works in the
-/// top-level scope (i.e., for totally ordered timestamps).
+/// Incremental version of the distinct and positive operators that only works
+/// in the top-level scope (i.e., for totally ordered timestamps).
 ///
 /// Takes a stream `a` of changes to relation `A` and a stream with delayed
 /// value of `A`: `z^-1(A) = a.integrate().delay()` and computes
-/// `distinct(A) - distinct(z^-1(A))` incrementally, by only considering
-/// values in the support of `a`.
-struct DistinctIncrementalTotal<Z: IndexedZSet, I> {
+/// `f(A) - f(z^-1(A))` incrementally, by only considering values in the
+/// support of `a`, where `f` applies [`DistinctSemantics::output_weight`] to
+/// the weight of every tuple.
+struct DistinctIncrementalTotal<Z: IndexedZSet, I, S> {
     input_factories: Z::Factories,
     location: &'static Location<'static>,
 
@@ -423,10 +509,10 @@ struct DistinctIncrementalTotal<Z: IndexedZSet, I> {
     chunk_size: usize,
     first_chunk_size: usize,
 
-    _type: PhantomData<(Z, I)>,
+    _type: PhantomData<(Z, I, S)>,
 }
 
-impl<Z: IndexedZSet, I> DistinctIncrementalTotal<Z, I> {
+impl<Z: IndexedZSet, I, S> DistinctIncrementalTotal<Z, I, S> {
     pub fn new(location: &'static Location<'static>, input_factories: &Z::Factories) -> Self {
         Self {
             input_factories: input_factories.clone(),
@@ -470,13 +556,14 @@ impl<Z: IndexedZSet, I> DistinctIncrementalTotal<Z, I> {
     }
 }
 
-impl<Z, I> Operator for DistinctIncrementalTotal<Z, I>
+impl<Z, I, S> Operator for DistinctIncrementalTotal<Z, I, S>
 where
     Z: IndexedZSet,
     I: 'static,
+    S: DistinctSemantics,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("DistinctIncrementalTotal")
+        Cow::from(S::ROOT_SCOPE_NAME)
     }
 
     fn location(&self) -> OperatorLocation {
@@ -495,10 +582,11 @@ where
     }
 }
 
-impl<Z, I> StreamingBinaryOperator<Option<Spine<Z>>, I, Z> for DistinctIncrementalTotal<Z, I>
+impl<Z, I, S> StreamingBinaryOperator<Option<Spine<Z>>, I, Z> for DistinctIncrementalTotal<Z, I, S>
 where
     Z: IndexedZSet,
     I: WithSnapshot<Batch = Z> + 'static,
+    S: DistinctSemantics,
 {
     fn eval(
         self: Rc<Self>,
@@ -555,15 +643,13 @@ where
 
                         let new_weight = old_weight.add_by_ref(&w);
 
-                        if old_weight.le0() {
-                            // Weight changes from non-positive to positive.
-                            if new_weight.ge0() && !new_weight.is_zero() {
-                                builder.push_val_diff(v, ZWeight::one().erase());
-                                any_values = true;
-                            }
-                        } else if new_weight.le0() {
-                            // Weight changes from positive to non-positive.
-                            builder.push_val_diff(v, ZWeight::one().neg().erase());
+                        // Emit the change in the tuple's output weight.  For
+                        // `distinct` it is nonzero only when the integrated
+                        // weight changes sign; for `positive` also when a
+                        // positive weight changes value.
+                        let diff = S::output_weight(new_weight) - S::output_weight(old_weight);
+                        if !diff.is_zero() {
+                            builder.push_val_diff(v, diff.erase());
                             any_values = true;
                         }
 
@@ -574,12 +660,15 @@ where
                         delta_cursor.step_val();
                     }
                 } else {
+                    // The key is missing from the integral: the weight
+                    // if copied from the delta
                     while delta_cursor.val_valid() {
                         let new_weight = **delta_cursor.weight();
                         debug_assert!(!new_weight.is_zero());
 
-                        if new_weight.ge0() {
-                            builder.push_val_diff(delta_cursor.val(), ZWeight::one().erase());
+                        let output_weight = S::output_weight(new_weight);
+                        if !output_weight.is_zero() {
+                            builder.push_val_diff(delta_cursor.val(), output_weight.erase());
                             any_values = true;
                         }
 
@@ -612,7 +701,7 @@ where
 type KeysOfInterest<TS, K, V, R> = BTreeMap<TS, Box<DynWeightedPairs<DynPair<K, V>, R>>>;
 
 #[derive(SizeOf)]
-struct DistinctIncremental<Z, T, Clk>
+struct DistinctIncremental<Z, T, Clk, S>
 where
     Z: IndexedZSet,
     T: WithSnapshot,
@@ -649,15 +738,16 @@ where
     chunk_size: usize,
     first_chunk_size: usize,
 
-    _type: PhantomData<(Z, T)>,
+    _type: PhantomData<(Z, T, S)>,
 }
 
-impl<Z, T, Clk> DistinctIncremental<Z, T, Clk>
+impl<Z, T, Clk, S> DistinctIncremental<Z, T, Clk, S>
 where
     Z: IndexedZSet,
     T: WithSnapshot,
     T::Batch: ZBatchReader<Key = Z::Key, Val = Z::Val>,
     Clk: WithClock<Time = <T::Batch as BatchReader>::Time>,
+    S: DistinctSemantics,
 {
     fn new(
         location: &'static Location<'static>,
@@ -732,20 +822,21 @@ where
     /// ```text
     ///              __
     ///              \
-    /// f(t) =dist(  / stream[t'][k][v].weight )
+    /// f(t) = out(  / stream[t'][k][v].weight )
     ///              --
     ///              t'<=t
     /// ```
     ///
     /// where `stream[t'][k][v].weight` is pseudocode for selecting the weight
-    /// of the update at time `t'` for key `k` and value `v`, and
+    /// of the update at time `t'` for key `k` and value `v`, and `out` is
+    /// [`DistinctSemantics::output_weight`], e.g., for `distinct`:
     ///
     /// ```text
-    ///            ┌
-    ///            │  1, if w > 0
-    /// dist(w) = <
-    ///            │  0, otherwise
-    ///            └
+    ///           ┌
+    ///           │  1, if w > 0
+    /// out(w) = <
+    ///           │  0, otherwise
+    ///           └
     /// ```
     ///
     /// We compute `f(t)` for all `2^n` times `t` of interest simultaneously in
@@ -809,13 +900,9 @@ where
                 }
             });
 
-            // Compute `dist` for each entry in `distinct_vals`.
+            // Compute `out` for each entry in `distinct_vals`.
             for (_time, weight) in self.distinct_vals.borrow_mut().iter_mut() {
-                if weight.le0() {
-                    *weight = HasZero::zero();
-                } else {
-                    *weight = HasOne::one();
-                }
+                *weight = S::output_weight(*weight);
             }
 
             // We have computed `f` at all the relevant points in times; we can now
@@ -907,15 +994,16 @@ where
     }
 }
 
-impl<Z, T, Clk> Operator for DistinctIncremental<Z, T, Clk>
+impl<Z, T, Clk, S> Operator for DistinctIncremental<Z, T, Clk, S>
 where
     Z: IndexedZSet,
     T: WithSnapshot + 'static,
     T::Batch: ZBatchReader<Key = Z::Key, Val = Z::Val>,
     Clk: WithClock<Time = <T::Batch as BatchReader>::Time> + 'static,
+    S: DistinctSemantics,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("DistinctIncremental")
+        Cow::Borrowed(S::NESTED_SCOPE_NAME)
     }
 
     fn location(&self) -> OperatorLocation {
@@ -973,12 +1061,14 @@ where
     }
 }
 
-impl<Z, T, Clk> StreamingBinaryOperator<Option<Spine<Z>>, T, Z> for DistinctIncremental<Z, T, Clk>
+impl<Z, T, Clk, S> StreamingBinaryOperator<Option<Spine<Z>>, T, Z>
+    for DistinctIncremental<Z, T, Clk, S>
 where
     Z: IndexedZSet,
     T: WithSnapshot + 'static,
     T::Batch: ZBatchReader<Key = Z::Key, Val = Z::Val>,
     Clk: WithClock<Time = <T::Batch as BatchReader>::Time> + 'static,
+    S: DistinctSemantics,
 {
     // TODO: add eval_owned, so we can use keys and values from `delta` without
     // cloning.
@@ -1223,10 +1313,11 @@ mod test {
 
     use crate::{
         Circuit, IndexedZSetHandle, RootCircuit, Runtime, ZSetHandle,
+        algebra::ZSet as DynZSet,
         circuit::CircuitConfig,
         indexed_zset,
         operator::{GeneratorNested, OutputHandle},
-        typed_batch::{IndexedZSetReader, OrdIndexedZSet, OrdZSet, SpineSnapshot},
+        typed_batch::{BatchReader, IndexedZSetReader, OrdIndexedZSet, OrdZSet, SpineSnapshot},
         utils::Tup2,
         zset,
     };
@@ -1331,6 +1422,161 @@ mod test {
     #[test]
     fn distinct_indexed_test_big_step() {
         distinct_indexed_test(true);
+    }
+
+    #[test]
+    fn distinct_positive_test_small_steps() {
+        distinct_positive_test(false);
+    }
+
+    #[test]
+    fn distinct_positive_test_big_step() {
+        distinct_positive_test(true);
+    }
+
+    fn distinct_positive_test(transaction: bool) {
+        // Each key exercises a sequence of sign transitions of its integrated
+        // weight; together they cover every transition a consolidated delta
+        // can cause (zero -> zero is impossible), including both directions
+        // of positive -> positive, where `positive` must emit a weight change
+        // but `distinct` must not.
+        //
+        // | key | round 1  | round 2   | round 3   |
+        // |-----|----------|-----------|-----------|
+        // |  1  | 0 -> +2  | +2 -> +5  | +5 -> +1  |
+        // |  2  | 0 -> -2  | -2 -> -1  | -1 -> 0   |
+        // |  3  | 0 -> +1  | +1 -> 0   | 0 -> -1   |
+        // |  4  | 0 -> -1  | -1 -> +2  | +2 -> -1  |
+        // |  5  | 0 -> +1  | +1 -> -1  | -1 -> +3  |
+        // |  6  | 0 -> +2  | no delta  | no delta  |
+        let inputs = vec![
+            vec![
+                Tup2(1, 2),
+                Tup2(2, -2),
+                Tup2(3, 1),
+                Tup2(4, -1),
+                Tup2(5, 1),
+                Tup2(6, 2),
+            ],
+            vec![Tup2(1, 3), Tup2(2, 1), Tup2(3, -1), Tup2(4, 3), Tup2(5, -2)],
+            vec![
+                Tup2(1, -4),
+                Tup2(2, 1),
+                Tup2(3, -1),
+                Tup2(4, -3),
+                Tup2(5, 4),
+            ],
+        ];
+
+        // `positive` preserves the weights of the tuples with positive
+        // weights in the integral
+        let expected_positive = vec![
+            zset! { 1 => 2, 3 => 1, 5 => 1, 6 => 2 },
+            zset! { 1 => 5, 4 => 2, 6 => 2 },
+            zset! { 1 => 1, 5 => 3, 6 => 2 },
+        ];
+        // `distinct` maps them to weight 1,
+        // i.e., to the signum of the (always positive) `positive` weights
+        let expected_distinct: Vec<OrdZSet<u64>> = expected_positive
+            .iter()
+            .map(|z| {
+                OrdZSet::from_tuples(
+                    (),
+                    z.iter()
+                        .map(|(k, (), w)| Tup2(Tup2(k, ()), w.signum()))
+                        .collect(),
+                )
+            })
+            .collect();
+
+        let (
+            mut circuit,
+            (
+                input,
+                distinct_ref_output,
+                distinct_output,
+                hash_distinct_output,
+                positive_ref_output,
+                positive_output,
+            ),
+        ) = Runtime::init_circuit(4, move |circuit| {
+            let (input, input_handle) = circuit.add_input_zset::<u64>();
+
+            let distinct_ref_output = circuit
+                .non_incremental(&input, |_child, input| {
+                    Ok(input.integrate().stream_distinct())
+                })
+                .unwrap()
+                .accumulate_output();
+
+            let distinct_output = input.distinct().accumulate_integrate().accumulate_output();
+
+            let hash_distinct_output = input
+                .hash_distinct()
+                .accumulate_integrate()
+                .accumulate_output();
+
+            // Non-incremental reference: drop non-positive weights from
+            // the sharded integral of the input.
+            let positive_ref_output = circuit
+                .non_incremental(&input, |_child, input| {
+                    Ok(input
+                        .integrate()
+                        .shard()
+                        .apply(|batch| <OrdZSet<u64>>::from_inner(batch.inner().positive())))
+                })
+                .unwrap()
+                .accumulate_output();
+
+            let positive_output = input.positive().accumulate_integrate().accumulate_output();
+
+            Ok((
+                input_handle,
+                distinct_ref_output,
+                distinct_output,
+                hash_distinct_output,
+                positive_ref_output,
+                positive_output,
+            ))
+        })
+        .unwrap();
+
+        if transaction {
+            circuit.start_transaction().unwrap();
+
+            for mut i in inputs.into_iter() {
+                input.append(&mut i);
+                circuit.step().unwrap();
+            }
+
+            circuit.commit_transaction().unwrap();
+
+            let expected = expected_positive.last().unwrap().clone();
+            assert_eq!(positive_ref_output.concat().consolidate(), expected);
+            assert_eq!(positive_output.concat().consolidate(), expected);
+
+            let expected = expected_distinct.last().unwrap().clone();
+            assert_eq!(distinct_ref_output.concat().consolidate(), expected);
+            assert_eq!(distinct_output.concat().consolidate(), expected);
+            assert_eq!(hash_distinct_output.concat().consolidate(), expected);
+        } else {
+            for (mut i, (p, d)) in inputs
+                .into_iter()
+                .zip(expected_positive.into_iter().zip(expected_distinct))
+            {
+                input.append(&mut i);
+                circuit.transaction().unwrap();
+
+                assert_eq!(positive_ref_output.concat().consolidate(), p);
+                assert_eq!(positive_output.concat().consolidate(), p);
+
+                assert_eq!(distinct_ref_output.concat().consolidate(), d);
+                assert_eq!(distinct_output.concat().consolidate(), d);
+                assert_eq!(hash_distinct_output.concat().consolidate(), d);
+            }
+        }
+
+        circuit.kill().unwrap();
     }
 
     fn distinct_indexed_test(transaction: bool) {
@@ -1468,15 +1714,29 @@ mod test {
         OutputHandle<SpineSnapshot<TestZSet>>,
         OutputHandle<SpineSnapshot<TestZSet>>,
         OutputHandle<SpineSnapshot<TestZSet>>,
+        OutputHandle<SpineSnapshot<TestZSet>>,
+        OutputHandle<SpineSnapshot<TestZSet>>,
     )> {
         let (input, input_handle) = circuit.add_input_zset::<u64>();
 
         let distinct_inc = input.distinct().accumulate_output();
         let hash_distinct_inc = input.hash_distinct().accumulate_output();
+        let positive_inc = input.positive().accumulate_output();
 
         let distinct_noninc = circuit
             .non_incremental(&input, |_child_circuit, input| {
                 Ok(input.integrate().stream_distinct().differentiate())
+            })
+            .unwrap()
+            .accumulate_output();
+
+        let positive_noninc = circuit
+            .non_incremental(&input, |_child_circuit, input| {
+                Ok(input
+                    .integrate()
+                    .shard()
+                    .apply(|batch| TestZSet::from_inner(batch.inner().positive()))
+                    .differentiate())
             })
             .unwrap()
             .accumulate_output();
@@ -1486,6 +1746,8 @@ mod test {
             distinct_inc,
             hash_distinct_inc,
             distinct_noninc,
+            positive_inc,
+            positive_noninc,
         ))
     }
 
@@ -1544,6 +1806,11 @@ mod test {
                 let distinct_inc = input.distinct().gather(0);
                 let hash_distinct_inc = input.hash_distinct().gather(0);
 
+                // `positive` only exists for non-indexed Z-sets: flatten the
+                // input before applying it.
+                let flat = input.map(|(k, v)| Tup2(*k, *v));
+                let positive_inc = flat.positive().gather(0);
+
                 let distinct_noninc = child
                     .non_incremental(&input, |_child_circuit, input| {
                         Ok(input
@@ -1556,12 +1823,31 @@ mod test {
                     })
                     .unwrap();
 
+                let positive_noninc = child
+                    .non_incremental(&flat, |_child_circuit, flat| {
+                        Ok(flat
+                            .integrate_nested()
+                            .integrate()
+                            .shard()
+                            .apply(|batch| {
+                                <OrdZSet<Tup2<u64, i64>>>::from_inner(batch.inner().positive())
+                            })
+                            .differentiate()
+                            .differentiate_nested()
+                            .gather(0))
+                    })
+                    .unwrap();
+
                 // Compare outputs of all three implementations.
                 distinct_inc.accumulate_apply2(&distinct_noninc, |d1, d2| {
                     assert_eq!(d1.iter().collect::<Vec<_>>(), d2.iter().collect::<Vec<_>>());
                 });
 
                 distinct_inc.accumulate_apply2(&hash_distinct_inc, |d1, d2| {
+                    assert_eq!(d1.iter().collect::<Vec<_>>(), d2.iter().collect::<Vec<_>>());
+                });
+
+                positive_inc.accumulate_apply2(&positive_noninc, |d1, d2| {
                     assert_eq!(d1.iter().collect::<Vec<_>>(), d2.iter().collect::<Vec<_>>());
                 });
 
@@ -1582,12 +1868,21 @@ mod test {
         workers: usize,
         transaction: bool,
     ) {
-        let (mut circuit, (input_handle, inc_output, hash_inc_output, noninc_output)) =
-            Runtime::init_circuit(
-                CircuitConfig::from(workers).with_splitter_chunk_size_records(2),
-                distinct_test_circuit,
-            )
-            .unwrap();
+        let (
+            mut circuit,
+            (
+                input_handle,
+                inc_output,
+                hash_inc_output,
+                noninc_output,
+                positive_inc_output,
+                positive_noninc_output,
+            ),
+        ) = Runtime::init_circuit(
+            CircuitConfig::from(workers).with_splitter_chunk_size_records(2),
+            distinct_test_circuit,
+        )
+        .unwrap();
 
         if transaction {
             circuit.start_transaction().unwrap();
@@ -1606,6 +1901,11 @@ mod test {
             assert_eq!(noninc_output, hash_inc_output);
             assert_eq!(noninc_output, inc_output);
             assert_eq!(hash_inc_output, inc_output);
+
+            assert_eq!(
+                positive_noninc_output.concat().consolidate(),
+                positive_inc_output.concat().consolidate()
+            );
         } else {
             for mut input_batch in inputs.into_iter() {
                 input_handle.append(&mut input_batch);
@@ -1619,6 +1919,11 @@ mod test {
                 assert_eq!(noninc_output, hash_inc_output);
                 assert_eq!(noninc_output, inc_output);
                 assert_eq!(hash_inc_output, inc_output);
+
+                assert_eq!(
+                    positive_noninc_output.concat().consolidate(),
+                    positive_inc_output.concat().consolidate()
+                );
             }
         }
 

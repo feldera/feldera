@@ -544,6 +544,10 @@ dyn_clone::clone_trait_object!(StreamMetadata);
 ///     data.  It sets each record's weight to 1 if it is positive and drops the
 ///     others.
 ///
+/// The "positive" operator on a Z-set keeps positive weights unchanged and
+/// maps all other weights to 0.  It differs from "distinct" only in that it
+/// does not clamp positive weights to 1.
+///
 /// ## Join on equal keys
 ///
 /// A DBSP equi-join takes batches `a` and `b` as input, finds all pairs of a

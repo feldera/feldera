@@ -763,6 +763,13 @@ where
     }
 
     #[track_caller]
+    pub fn positive(&self) -> Self {
+        let factories = DistinctFactories::new::<K, ()>();
+
+        self.inner().dyn_positive_mono(&factories).typed()
+    }
+
+    #[track_caller]
     pub fn hash_distinct(&self) -> Self {
         let factories = HashDistinctFactories::new::<K, ()>();
 
@@ -1242,6 +1249,13 @@ where
         let factories = DistinctFactories::new::<K, ()>();
 
         self.inner().dyn_distinct_mono(&factories).typed()
+    }
+
+    #[track_caller]
+    pub fn positive(&self) -> Self {
+        let factories = DistinctFactories::new::<K, ()>();
+
+        self.inner().dyn_positive_mono(&factories).typed()
     }
 
     #[track_caller]

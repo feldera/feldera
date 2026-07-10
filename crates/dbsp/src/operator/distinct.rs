@@ -22,14 +22,7 @@ where
 
         self.inner().dyn_stream_distinct(&factories).typed()
     }
-}
 
-impl<C, Z> Stream<C, Z>
-where
-    C: Circuit,
-    Z: IndexedZSet,
-    Z::InnerBatch: Send,
-{
     /// Incrementally deduplicate input stream.
     ///
     /// This is an incremental version of the
@@ -61,5 +54,26 @@ where
             crate::operator::dynamic::distinct::HashDistinctFactories::new::<Z::Key, Z::Val>();
 
         self.inner().dyn_has_distinct(&factories).typed()
+    }
+
+    /// Incrementally filter out tuples with non-positive weights.
+    ///
+    /// Given a stream of changes to relation `A`, computes a stream of
+    /// changes to relation `A'` that contains every `(key, weight)` tuple of
+    /// `A` with `weight > 0`, with the weight unchanged.
+    ///
+    /// This operator is like [`distinct`](`Self::distinct`), except that it
+    /// preserves the weights of the retained tuples instead of clamping them
+    /// to 1.
+    #[cfg(not(feature = "backend-mode"))]
+    #[track_caller]
+    pub fn positive(&self) -> Stream<C, Z>
+    where
+        Z: crate::typed_batch::ZSet,
+    {
+        let factories =
+            crate::operator::dynamic::distinct::DistinctFactories::new::<Z::Key, Z::Val>();
+
+        self.inner().dyn_positive(&factories).typed()
     }
 }
