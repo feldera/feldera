@@ -138,6 +138,8 @@ class Pipeline:
         if status not in [
             PipelineStatus.RUNNING,
             PipelineStatus.PAUSED,
+            PipelineStatus.CONCURRENTBOOTSTRAPPING,
+            PipelineStatus.SYNCHRONIZING,
         ]:
             raise RuntimeError("Pipeline must be running or paused to push data")
 
@@ -292,7 +294,12 @@ class Pipeline:
         :param view_name: The name of the view to listen to.
         """
 
-        if self.status() not in [PipelineStatus.PAUSED, PipelineStatus.RUNNING]:
+        if self.status() not in [
+            PipelineStatus.PAUSED,
+            PipelineStatus.RUNNING,
+            PipelineStatus.CONCURRENTBOOTSTRAPPING,
+            PipelineStatus.SYNCHRONIZING,
+        ]:
             raise RuntimeError("Pipeline must be running or paused to listen to output")
 
         handler = OutputHandler(self.client, self.name, view_name)
@@ -326,7 +333,12 @@ class Pipeline:
 
         """
 
-        if self.status() not in [PipelineStatus.RUNNING, PipelineStatus.PAUSED]:
+        if self.status() not in [
+            PipelineStatus.RUNNING,
+            PipelineStatus.PAUSED,
+            PipelineStatus.CONCURRENTBOOTSTRAPPING,
+            PipelineStatus.SYNCHRONIZING,
+        ]:
             raise RuntimeError("Pipeline must be running or paused to listen to output")
 
         event = Event()
@@ -366,6 +378,8 @@ class Pipeline:
             PipelineStatus.INITIALIZING,
             PipelineStatus.PROVISIONING,
             PipelineStatus.BOOTSTRAPPING,
+            PipelineStatus.CONCURRENTBOOTSTRAPPING,
+            PipelineStatus.SYNCHRONIZING,
         ]:
             raise RuntimeError("Pipeline must be running to wait for completion")
 
@@ -554,6 +568,7 @@ metrics"""
         self,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         silent_bootstrap: bool = False,
+        concurrent_bootstrap: bool = False,
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
@@ -569,6 +584,10 @@ metrics"""
 
         :param bootstrap_policy: The bootstrap policy to use.
         :param silent_bootstrap: Set True to bootstrap the pipeline with output connectors disabled. False by default.
+        :param concurrent_bootstrap: Set True to bootstrap new and modified views
+            concurrently, keeping the pre-existing views live while the new ones
+            backfill in the background. Mutually exclusive with
+            `silent_bootstrap`. False by default.
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to start.
         :param wait: Set True to wait for the pipeline to start. True by default
@@ -581,6 +600,7 @@ metrics"""
             self.name,
             bootstrap_policy=bootstrap_policy,
             silent_bootstrap=silent_bootstrap,
+            concurrent_bootstrap=concurrent_bootstrap,
             wait=wait,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
@@ -590,6 +610,7 @@ metrics"""
         self,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         silent_bootstrap: bool = False,
+        concurrent_bootstrap: bool = False,
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
@@ -598,6 +619,11 @@ metrics"""
         Starts the pipeline in the paused state.
 
         :param bootstrap_policy: The bootstrap policy to use.
+        :param silent_bootstrap: Set True to bootstrap the pipeline with output connectors disabled. False by default.
+        :param concurrent_bootstrap: Set True to bootstrap new and modified views
+            concurrently, keeping the pre-existing views live while the new ones
+            backfill in the background. Mutually exclusive with
+            `silent_bootstrap`. False by default.
         :param wait: Set True to wait for the pipeline to start. True by default.
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to start (defaults to `None` = no timeout is enforced).
@@ -609,6 +635,7 @@ metrics"""
             self.name,
             bootstrap_policy=bootstrap_policy,
             silent_bootstrap=silent_bootstrap,
+            concurrent_bootstrap=concurrent_bootstrap,
             wait=wait,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
@@ -618,6 +645,7 @@ metrics"""
         self,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         silent_bootstrap: bool = False,
+        concurrent_bootstrap: bool = False,
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
@@ -626,6 +654,11 @@ metrics"""
         Starts the pipeline in the standby state.
 
         :param bootstrap_policy: The bootstrap policy to use.
+        :param silent_bootstrap: Set True to bootstrap the pipeline with output connectors disabled. False by default.
+        :param concurrent_bootstrap: Set True to bootstrap new and modified views
+            concurrently, keeping the pre-existing views live while the new ones
+            backfill in the background. Mutually exclusive with
+            `silent_bootstrap`. False by default.
         :param wait: Set True to wait for the pipeline to start. True by default.
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to start (defaults to `None` = no timeout is enforced).
@@ -637,6 +670,7 @@ metrics"""
             self.name,
             bootstrap_policy=bootstrap_policy,
             silent_bootstrap=silent_bootstrap,
+            concurrent_bootstrap=concurrent_bootstrap,
             wait=wait,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
@@ -646,6 +680,7 @@ metrics"""
         self,
         bootstrap_policy: Optional[BootstrapPolicy] = None,
         silent_bootstrap: bool = False,
+        concurrent_bootstrap: bool = False,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
     ):
@@ -657,6 +692,11 @@ metrics"""
         the pipeline.
 
         :param bootstrap_policy: The bootstrap policy to use.
+        :param silent_bootstrap: Set True to bootstrap the pipeline with output connectors disabled. False by default.
+        :param concurrent_bootstrap: Set True to bootstrap new and modified views
+            concurrently, keeping the pre-existing views live while the new ones
+            backfill in the background. Mutually exclusive with
+            `silent_bootstrap`. False by default.
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to restart.
         :param dismiss_error: Set True to dismiss any deployment error before starting;
@@ -667,6 +707,7 @@ metrics"""
         self.start(
             bootstrap_policy=bootstrap_policy,
             silent_bootstrap=silent_bootstrap,
+            concurrent_bootstrap=concurrent_bootstrap,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
         )
@@ -711,7 +752,11 @@ metrics"""
 
         self.client.dismiss_error_pipeline(self.name)
 
-    def approve(self, silent_bootstrap: bool = False):
+    def approve(
+        self,
+        silent_bootstrap: bool = False,
+        concurrent_bootstrap: bool = False,
+    ):
         """
         Approves the pipeline to proceed with bootstrapping.
 
@@ -723,9 +768,17 @@ metrics"""
         :param silent_bootstrap: Set True to bootstrap with output connectors
             disabled, so no records are emitted during the bootstrap phase.
             False by default.
+        :param concurrent_bootstrap: Set True to bootstrap new and modified views
+            concurrently, keeping the pre-existing views live while the new ones
+            backfill in the background. Mutually exclusive with
+            `silent_bootstrap`. False by default.
         """
 
-        self.client.approve_pipeline(self.name, silent_bootstrap=silent_bootstrap)
+        self.client.approve_pipeline(
+            self.name,
+            silent_bootstrap=silent_bootstrap,
+            concurrent_bootstrap=concurrent_bootstrap,
+        )
 
     def resume(self, wait: bool = True, timeout_s: Optional[float] = None):
         """

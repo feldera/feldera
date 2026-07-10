@@ -79,4 +79,9 @@ pub struct ApproveParameters {
     /// Bootstrap the pipeline with output connectors disabled.
     #[serde(default)]
     pub silent_bootstrap: bool,
+    /// Bootstrap new and modified views concurrently, keeping the pre-existing
+    /// views live while the new ones backfill. Mutually exclusive with
+    /// `silent_bootstrap`.
+    #[serde(default)]
+    pub concurrent_bootstrap: bool,
 }

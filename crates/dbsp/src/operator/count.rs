@@ -22,6 +22,17 @@ where
     #[allow(clippy::type_complexity)]
     #[track_caller]
     pub fn weighted_count(&self) -> Stream<C, OrdIndexedZSet<Z::Key, ZWeight>> {
+        self.weighted_count_persistent(None)
+    }
+
+    /// Like [`Self::weighted_count`], but with a persistent id, so that the
+    /// count's integrals can be checkpointed and restored.
+    #[allow(clippy::type_complexity)]
+    #[track_caller]
+    pub fn weighted_count_persistent(
+        &self,
+        persistent_id: Option<&str>,
+    ) -> Stream<C, OrdIndexedZSet<Z::Key, ZWeight>> {
         let factories: IncAggregateLinearFactories<
             Z::Inner,
             DynZWeight,
@@ -31,7 +42,7 @@ where
 
         self.inner()
             .dyn_weighted_count_generic(
-                None,
+                persistent_id,
                 &factories,
                 Box::new(|w, out| *unsafe { out.downcast_mut() } = **w),
             )

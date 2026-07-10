@@ -23,6 +23,10 @@ pub enum CombinedStatus {
     Initializing,
     /// See `RuntimeStatus::Bootstrapping`.
     Bootstrapping,
+    /// See `RuntimeStatus::ConcurrentBootstrapping`.
+    ConcurrentBootstrapping,
+    /// See `RuntimeStatus::Synchronizing`.
+    Synchronizing,
     /// See `RuntimeStatus::Replaying`.
     Replaying,
     /// See `RuntimeStatus::Paused`.
@@ -49,6 +53,8 @@ impl CombinedStatus {
                         RuntimeStatus::Standby => Self::Standby,
                         RuntimeStatus::Initializing => Self::Initializing,
                         RuntimeStatus::Bootstrapping => Self::Bootstrapping,
+                        RuntimeStatus::ConcurrentBootstrapping => Self::ConcurrentBootstrapping,
+                        RuntimeStatus::Synchronizing => Self::Synchronizing,
                         RuntimeStatus::Replaying => Self::Replaying,
                         RuntimeStatus::Paused => Self::Paused,
                         RuntimeStatus::Running => Self::Running,

@@ -548,6 +548,7 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
             initial: "running".to_string(),
             bootstrap_policy: "allow".to_string(),
             silent_bootstrap: false,
+            concurrent_bootstrap: false,
             no_dismiss_error: false,
         },
         client.clone(),

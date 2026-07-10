@@ -61,6 +61,14 @@ pub enum RuntimeStatus {
 
     /// The pipeline finished checkpointing and pausing.
     Suspended,
+
+    /// A concurrent bootstrap is in progress: the pre-existing views are live
+    /// and serving while new/modified views backfill in the background.
+    ConcurrentBootstrapping,
+
+    /// A concurrent bootstrap is in its cutover window: inputs are briefly
+    /// paused while the backfilled views are synchronized and brought online.
+    Synchronizing,
 }
 
 impl From<RuntimeDesiredStatus> for RuntimeStatus {
@@ -232,6 +240,14 @@ pub struct BootstrapConfig {
     /// Bootstrap the pipeline with output connectors disabled.
     #[serde(default)]
     pub silent_bootstrap: bool,
+    /// Bootstrap new and modified views concurrently, keeping the pre-existing
+    /// views live while the new ones backfill in the background.
+    ///
+    /// Mutually exclusive with `silent_bootstrap`. When set, a circuit that
+    /// cannot be bootstrapped concurrently fails the pipeline instead of
+    /// falling back to a stop-the-world bootstrap.
+    #[serde(default)]
+    pub concurrent_bootstrap: bool,
 }
 
 impl From<BootstrapPolicy> for BootstrapConfig {
@@ -239,6 +255,7 @@ impl From<BootstrapPolicy> for BootstrapConfig {
         Self {
             bootstrap_policy: Some(bootstrap_policy),
             silent_bootstrap: false,
+            concurrent_bootstrap: false,
         }
     }
 }
@@ -249,6 +266,30 @@ impl BootstrapConfig {
             silent_bootstrap,
             ..self
         }
+    }
+
+    pub fn with_concurrent_bootstrap(self, concurrent_bootstrap: bool) -> Self {
+        Self {
+            concurrent_bootstrap,
+            ..self
+        }
+    }
+
+    /// Validates that the bootstrap options are mutually consistent.
+    ///
+    /// `silent_bootstrap` and `concurrent_bootstrap` cannot both be set:
+    /// silent bootstrap suppresses outputs during a stop-the-world bootstrap,
+    /// whereas concurrent bootstrap keeps the old views (and their outputs)
+    /// live, so the two requests contradict each other.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.silent_bootstrap && self.concurrent_bootstrap {
+            return Err(
+                "`silent_bootstrap` and `concurrent_bootstrap` are mutually exclusive; \
+                 set at most one"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
 
     /// Returns the bootstrap policy for an active deployment.

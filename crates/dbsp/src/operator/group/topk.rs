@@ -18,8 +18,21 @@ where
     /// For each key in the input stream, removes all but `k` smallest values.
     #[allow(clippy::type_complexity)]
     pub fn topk_asc(&self, k: usize) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val>> {
+        self.topk_asc_persistent(None, k)
+    }
+
+    /// Like [`Self::topk_asc`], but with a persistent id, so that the
+    /// operator's integrals can be checkpointed and restored.
+    #[allow(clippy::type_complexity)]
+    pub fn topk_asc_persistent(
+        &self,
+        persistent_id: Option<&str>,
+        k: usize,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<B::Key, B::Val>> {
         let factories = TopKFactories::new::<B::Key, B::Val>();
-        self.inner().dyn_topk_asc(None, &factories, k).typed()
+        self.inner()
+            .dyn_topk_asc(persistent_id, &factories, k)
+            .typed()
     }
 
     /// Pick `k` largest values in each group.

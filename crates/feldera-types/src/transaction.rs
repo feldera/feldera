@@ -63,3 +63,36 @@ impl Display for CommitProgressSummary {
         )
     }
 }
+
+/// Phase of a concurrent bootstrap.
+///
+/// `#[repr(u8)]` + `NoUninit` so it can be stored in a lock-free `Atomic`.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema, bytemuck::NoUninit,
+)]
+#[repr(u8)]
+pub enum ConcurrentBootstrapPhase {
+    /// No concurrent bootstrap is in progress.
+    #[default]
+    Inactive,
+
+    /// New and modified views are backfilling in the background while the
+    /// pre-existing views stay live and serving.
+    ConcurrentBootstrapping,
+
+    /// The cutover window: inputs are paused while recorded changes are
+    /// synchronized into the new views.
+    Synchronizing,
+}
+
+impl Display for ConcurrentBootstrapPhase {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConcurrentBootstrapPhase::Inactive => write!(f, "inactive"),
+            ConcurrentBootstrapPhase::ConcurrentBootstrapping => {
+                write!(f, "concurrent bootstrapping")
+            }
+            ConcurrentBootstrapPhase::Synchronizing => write!(f, "synchronizing"),
+        }
+    }
+}

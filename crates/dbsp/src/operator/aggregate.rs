@@ -213,6 +213,22 @@ where
         F: Fn(&Z::Val) -> A + Clone + 'static,
         <Z::Key as Deserializable>::ArchivedDeser: Ord,
     {
+        self.aggregate_linear_persistent(None, f)
+    }
+
+    /// Like [`Self::aggregate_linear`], but with a persistent id, so that the
+    /// aggregate's integrals can be checkpointed and restored.
+    pub fn aggregate_linear_persistent<F, A>(
+        &self,
+        persistent_id: Option<&str>,
+        f: F,
+    ) -> Stream<C, OrdIndexedZSet<Z::Key, A>>
+    where
+        Z: IndexedZSet<DynK = DynData>,
+        A: DBWeight + MulByRef<ZWeight, Output = A>,
+        F: Fn(&Z::Val) -> A + Clone + 'static,
+        <Z::Key as Deserializable>::ArchivedDeser: Ord,
+    {
         let factories: IncAggregateLinearFactories<
             Z::Inner,
             DynWeight,
@@ -222,7 +238,7 @@ where
 
         self.inner()
             .dyn_aggregate_linear_generic(
-                None,
+                persistent_id,
                 &factories,
                 Box::new(move |_k, v, r, acc| unsafe {
                     *acc.downcast_mut::<A>() = f(v.downcast::<Z::Val>()).mul_by_ref(&**r)

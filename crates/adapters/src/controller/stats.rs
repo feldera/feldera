@@ -67,7 +67,7 @@ use feldera_types::{
     memory_pressure::MemoryPressure,
     suspend::{PermanentSuspendError, SuspendError},
     time_series::SampleStatistics,
-    transaction::CommitProgressSummary,
+    transaction::{CommitProgressSummary, ConcurrentBootstrapPhase},
 };
 use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
@@ -177,8 +177,19 @@ pub struct GlobalControllerMetrics {
     /// new and modified views.
     bootstrap_in_progress: AtomicBool,
 
+    /// Phase of the concurrent bootstrap, or `Inactive` when none is in
+    /// progress. Updated atomically at each phase transition. Old views stay
+    /// live and inputs keep flowing during `ConcurrentBootstrapping`; inputs are
+    /// paused during `Synchronizing` (the cutover window).
+    concurrent_bootstrap_phase: Atomic<ConcurrentBootstrapPhase>,
+
     /// Transaction commit progress, if a transaction is committing.
     pub commit_progress: Mutex<Option<CommitProgressSummary>>,
+
+    /// Progress of the concurrent bootstrap's transaction commit, if a commit is
+    /// in progress (the backfill transaction, then the synchronization
+    /// transaction). Updated periodically; `None` when no commit is in progress.
+    pub concurrent_bootstrap_progress: Mutex<Option<CommitProgressSummary>>,
 
     /// Time at which the pipeline process started, in seconds since the epoch.
     pub start_time: DateTime<Utc>,
@@ -300,7 +311,9 @@ impl GlobalControllerMetrics {
         Self {
             state: Atomic::new(PipelineState::Paused),
             bootstrap_in_progress: AtomicBool::new(false),
+            concurrent_bootstrap_phase: Atomic::new(ConcurrentBootstrapPhase::Inactive),
             commit_progress: Mutex::new(None),
+            concurrent_bootstrap_progress: Mutex::new(None),
             start_time,
             incarnation_uuid,
             initial_start_time,
@@ -409,12 +422,29 @@ impl GlobalControllerMetrics {
             .store(bootstrap_in_progress, Ordering::Release);
     }
 
+    fn concurrent_bootstrap_phase(&self) -> ConcurrentBootstrapPhase {
+        self.concurrent_bootstrap_phase.load(Ordering::Acquire)
+    }
+
+    fn set_concurrent_bootstrap_phase(&self, phase: ConcurrentBootstrapPhase) {
+        self.concurrent_bootstrap_phase
+            .store(phase, Ordering::Release);
+    }
+
+    fn concurrent_bootstrap_in_progress(&self) -> bool {
+        self.concurrent_bootstrap_phase() != ConcurrentBootstrapPhase::Inactive
+    }
+
     fn set_step_requested(&self) -> bool {
         self.step_requested.swap(true, Ordering::AcqRel)
     }
 
     pub fn set_commit_progress(&self, commit_progress: Option<CommitProgressSummary>) {
         *self.commit_progress.lock().unwrap() = commit_progress;
+    }
+
+    pub fn set_concurrent_bootstrap_progress(&self, progress: Option<CommitProgressSummary>) {
+        *self.concurrent_bootstrap_progress.lock().unwrap() = progress;
     }
 
     pub fn update_output_stall_start(&self, stalled: bool) {
@@ -737,6 +767,18 @@ impl ControllerStatus {
     pub fn set_bootstrap_in_progress(&self, bootstrap_in_progress: bool) {
         self.global_metrics
             .set_bootstrap_in_progress(bootstrap_in_progress);
+    }
+
+    pub fn concurrent_bootstrap_phase(&self) -> ConcurrentBootstrapPhase {
+        self.global_metrics.concurrent_bootstrap_phase()
+    }
+
+    pub fn set_concurrent_bootstrap_phase(&self, phase: ConcurrentBootstrapPhase) {
+        self.global_metrics.set_concurrent_bootstrap_phase(phase);
+    }
+
+    pub fn concurrent_bootstrap_in_progress(&self) -> bool {
+        self.global_metrics.concurrent_bootstrap_in_progress()
     }
 
     pub fn request_step(&self, circuit_thread_unparker: &Unparker) {
@@ -1355,6 +1397,13 @@ impl ControllerStatus {
                 0
             },
             commit_progress: self.global_metrics.commit_progress.lock().unwrap().clone(),
+            concurrent_bootstrap_phase: self.global_metrics.concurrent_bootstrap_phase(),
+            concurrent_bootstrap_progress: self
+                .global_metrics
+                .concurrent_bootstrap_progress
+                .lock()
+                .unwrap()
+                .clone(),
             transaction_initiators: ctx.transaction_info.initiators.to_api_type(),
             start_time: self.global_metrics.start_time,
             incarnation_uuid: self.global_metrics.incarnation_uuid,

@@ -16,6 +16,7 @@ use crate::{
     },
     trace::cursor::Position,
 };
+use std::any::Any;
 use std::borrow::Cow;
 use std::fmt::Display;
 use std::sync::Arc;
@@ -131,6 +132,19 @@ pub trait Operator: 'static {
     /// An input operator feeds new data into the circuit. Examples are
     /// the `Input` and `Generator` operators.
     fn is_input(&self) -> bool {
+        false
+    }
+
+    /// Returns `true` if `self` is a self-contained deterministic source whose
+    /// output the engine can reproduce simply by re-running it, as opposed to
+    /// an input fed from outside the circuit (e.g. a connector-backed table).
+    ///
+    /// Concurrent bootstrapping rebuilds a second copy of the circuit and
+    /// re-runs it; a deterministic source such as `ConstantGenerator` in the
+    /// bootstrapped region needs no replay source, so it must not be rejected
+    /// like a connector-fed input that the bootstrap copy cannot replay.
+    /// Defaults to `false`; override on deterministic source operators.
+    fn is_deterministic_source(&self) -> bool {
         false
     }
 
@@ -254,6 +268,23 @@ pub trait Operator: 'static {
         Ok(())
     }
 
+    /// Instruct the operator to cache its accumulated output for transfer at
+    /// cutover, rather than write it to its mailbox.
+    ///
+    /// A concurrent bootstrap circuit (copy 2) reconstructs the contents of a
+    /// new or modified view but has no output connector reading them.  An
+    /// output operator on such a view must accumulate the view's contents
+    /// (backfill plus the synchronization transaction) into its persistent
+    /// state, which the cutover then swaps (see [`Self::swap_state`]) into the
+    /// live circuit's operator.  The next committed transaction on the live
+    /// operator combines that cached output with its own and writes the
+    /// combined result to the mailbox, so the connector observes the full
+    /// view as its first batch -- exactly as a from-scratch run does.
+    ///
+    /// Only the backfilled output operators of a bootstrap circuit receive
+    /// this call; the default is a no-op.
+    fn start_bootstrap_output_caching(&mut self) {}
+
     /// Start replaying the operator's state to the replay stream.
     ///
     /// Only defined for operators that support replay.
@@ -273,6 +304,41 @@ pub trait Operator: 'static {
     /// Only defined for operators that support replay.
     fn end_replay(&mut self) -> Result<(), Error> {
         panic!("end_replay() is not implemented for this operator")
+    }
+
+    /// Start replaying `trace` to the replay stream, instead of the
+    /// operator's own state.
+    ///
+    /// The synchronization transaction of a concurrent bootstrap uses this
+    /// method to replay the changes that a recorder captured on a boundary
+    /// stream while the operator's circuit was bootstrapping.  The box holds
+    /// a value of the operator's trace type.
+    ///
+    /// Only defined for operators that support replay.
+    fn start_sync_replay(&mut self, trace: Box<dyn Any>) -> Result<(), Error> {
+        let _ = trace;
+        panic!("start_sync_replay() is not implemented for this operator")
+    }
+
+    /// Swap the operator's persistent state with `other`, an operator of the
+    /// same concrete type.
+    ///
+    /// The cutover phase of a concurrent bootstrap uses this method to
+    /// install state that the bootstrap circuit computed into the
+    /// corresponding operator of the live circuit.  "Persistent state" is
+    /// exactly the state that [`Self::checkpoint`] saves and
+    /// [`Self::restore`] loads: operators that implement those methods must
+    /// implement this one (with the exception of operators whose
+    /// "checkpoint" is an empty marker file), or the state they computed
+    /// during bootstrapping is silently lost at cutover.
+    ///
+    /// The default is a no-op: most operators hold no persistent state.
+    fn swap_state(&mut self, other: &mut Self) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
+        let _ = other;
+        Ok(())
     }
 
     /// Notify the operator about start of a transaction.

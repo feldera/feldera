@@ -79,6 +79,10 @@ pub enum Error {
     IncompatibleStorage,
     /// Error deserializing checkpointed state.
     CheckpointParseError(String),
+    /// A bootstrap-circuit command was issued in the wrong state, e.g.,
+    /// stepping a bootstrap circuit that does not exist or creating one
+    /// while another exists.
+    BootstrapCircuit(String),
     Terminated,
 }
 
@@ -90,6 +94,7 @@ impl DetailedError for Error {
             Self::Terminated => Cow::from("Terminated"),
             Self::IncompatibleStorage => Cow::from("IncompatibleStorage"),
             Self::CheckpointParseError(_) => Cow::from("CheckpointParseError"),
+            Self::BootstrapCircuit(_) => Cow::from("BootstrapCircuit"),
         }
     }
 }
@@ -115,6 +120,9 @@ impl Display for Error {
             }
             Self::CheckpointParseError(error) => {
                 write!(f, "Error deserializing checkpointed state: {error}")
+            }
+            Self::BootstrapCircuit(error) => {
+                write!(f, "Bootstrap circuit error: {error}")
             }
         }
     }

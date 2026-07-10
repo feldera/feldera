@@ -11,7 +11,10 @@ use crate::{
     default_hasher,
     dynamic::{Data, DowncastTrait as _},
     operator::{
-        dynamic::balance::{BalancerHint, PartitioningPolicy},
+        dynamic::{
+            accumulator::EnableCount,
+            balance::{BalancerHint, PartitioningPolicy},
+        },
         output::AccumulateOutput,
     },
     trace::{BatchReader as _, Cursor as _},
@@ -68,8 +71,14 @@ fn accumulate_trace_with_balancer_test_circuit(
 
     let (balanced_accumulator, balanced_trace) = input.accumulate_trace_balanced();
 
+    // This balanced accumulator has no enable-count gate of its own; the
+    // output operator only consults the count to force-enable a bootstrap
+    // circuit's accumulator, which this test never exercises, so a
+    // permanently-enabled count keeps it out of bootstrap caching mode.
+    let mut enable_count = EnableCount::new();
+    enable_count.enable();
     let (balanced_stream_output, output_handle) =
-        AccumulateOutput::<OrdIndexedZSet<u64, u64>>::new();
+        AccumulateOutput::<OrdIndexedZSet<u64, u64>>::new(enable_count);
 
     let _gid = circuit.add_sink(balanced_stream_output, &balanced_accumulator);
     // circuit.set_persistent_node_id(&gid, persistent_id);

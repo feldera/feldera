@@ -134,6 +134,8 @@ class DeploymentRuntimeStatus(Enum):
     PAUSED = 6
     RUNNING = 7
     SUSPENDED = 8
+    CONCURRENTBOOTSTRAPPING = 9
+    SYNCHRONIZING = 10
 
     @staticmethod
     def from_str(value):
@@ -163,6 +165,8 @@ class PipelineStatus(Enum):
     RUNNING = 10
     SUSPENDED = 11
     STOPPING = 12
+    CONCURRENTBOOTSTRAPPING = 13
+    SYNCHRONIZING = 14
 
     @staticmethod
     def from_str(value):

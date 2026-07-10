@@ -199,6 +199,11 @@ where
     fn is_input(&self) -> bool {
         true
     }
+    fn is_deterministic_source(&self) -> bool {
+        // A constant source has no external input: the bootstrap circuit copy
+        // reproduces it by re-running, so it needs no replay source.
+        true
+    }
 }
 
 impl<T> SourceOperator<T> for ConstantGenerator<T>

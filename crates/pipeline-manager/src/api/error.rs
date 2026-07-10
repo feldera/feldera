@@ -20,6 +20,7 @@ pub enum ApiError {
     InvalidChecksumParam { value: String, error: String },
     InvalidVersionParam { value: String, error: String },
     UnsupportedPipelineAction { action: String, reason: String },
+    InvalidBootstrapConfig { reason: String },
     InvalidConnectorAction { action: String },
     UnableToConnect { reason: String },
     LockTimeout { value: String, timeout: Duration },
@@ -40,6 +41,7 @@ impl DetailedError for ApiError {
             Self::InvalidChecksumParam { .. } => Cow::from("InvalidChecksumParam"),
             Self::InvalidVersionParam { .. } => Cow::from("InvalidVersionParam"),
             Self::UnsupportedPipelineAction { .. } => Cow::from("UnsupportedPipelineAction"),
+            Self::InvalidBootstrapConfig { .. } => Cow::from("InvalidBootstrapConfig"),
             Self::InvalidConnectorAction { .. } => Cow::from("InvalidConnectorAction"),
             Self::UnableToConnect { .. } => Cow::from("UnableToConnect"),
             Self::LockTimeout { .. } => Cow::from("LockTimeout"),
@@ -75,6 +77,9 @@ impl Display for ApiError {
             }
             Self::UnsupportedPipelineAction { action, reason } => {
                 write!(f, "Unsupported pipeline action '{action}': {reason}")
+            }
+            Self::InvalidBootstrapConfig { reason } => {
+                write!(f, "Invalid bootstrap configuration: {reason}")
             }
             Self::InvalidConnectorAction { action } => {
                 write!(
@@ -137,6 +142,7 @@ impl ResponseError for ApiError {
             Self::InvalidChecksumParam { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidVersionParam { .. } => StatusCode::BAD_REQUEST,
             Self::UnsupportedPipelineAction { .. } => StatusCode::METHOD_NOT_ALLOWED,
+            Self::InvalidBootstrapConfig { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidConnectorAction { .. } => StatusCode::BAD_REQUEST,
             Self::UnableToConnect { .. } => StatusCode::BAD_REQUEST,
             Self::LockTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,

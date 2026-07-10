@@ -513,7 +513,7 @@ impl Catalog {
 
         // Create handle for the stream itself.
         let (delta_handle, delta_gid) =
-            circuit.output_accumulated_stream_persistent_with_gid::<Z>(&stream, persistent_id);
+            circuit.output_accumulated_stream_persistent_with_gid::<Z>(&stream, enable_count.clone(), persistent_id);
         circuit.set_mir_node_id(&delta_gid, persistent_id);
 
         let handles = OutputCollectionHandles {
@@ -625,7 +625,7 @@ impl Catalog {
 
         // Create handle for the stream itself.
         let (delta_handle, delta_gid) = circuit
-            .output_accumulated_stream_persistent_with_gid::<Z>(&gathered_stream, persistent_id);
+            .output_accumulated_stream_persistent_with_gid::<Z>(&gathered_stream, enable_count.clone(), persistent_id);
         circuit.set_mir_node_id(&delta_gid, persistent_id);
 
         let integral_stream = if let Some(gathered_integral_stream) = gathered_integral_stream {
@@ -808,6 +808,7 @@ impl Catalog {
         let (delta_handle, delta_gid) = circuit
             .output_accumulated_stream_persistent_with_gid::<OrdIndexedZSet<K, V>>(
                 &gathered_stream,
+                enable_count.clone(),
                 persistent_id,
             );
         circuit.set_mir_node_id(&delta_gid, persistent_id);

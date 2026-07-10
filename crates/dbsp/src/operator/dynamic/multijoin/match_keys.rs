@@ -865,6 +865,12 @@ where
         Ok(())
     }
 
+    fn swap_state_with(&mut self, _other: &mut dyn Node) -> Result<(), crate::Error> {
+        // `Match` holds only transient per-transaction state (its
+        // checkpoint is empty), so there is no persistent state to swap.
+        Ok(())
+    }
+
     fn start_compaction(&mut self) {}
 
     fn is_compaction_complete(&self) -> bool {
