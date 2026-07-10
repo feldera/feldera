@@ -1,14 +1,6 @@
 // Builds the key/value entries shown in the overview tile from a pipeline's `stats.json`.
 //
-// `stats.json` is the `/stats` response (`ControllerStatus`); its `global_metrics` object
-// mixes two kinds of readings:
-//   - cumulative totals that describe the whole run (records processed, CPU time, …), and
-//   - "current" point-in-time gauges (`rss_bytes`, `storage_bytes`, buffered input, …).
-//
-// The overview tile reports a profile of the run, so only the cumulative readings are
-// meaningful here — a momentary RSS or storage figure says nothing about the profile as a
-// whole. We therefore select from an explicit allowlist; the current gauges are left out by
-// omission rather than by a fragile deny-list that new fields could slip past.
+// Only the cumulative steats are meaningful in the overview tile - so we only pick those to display.
 
 import { BytesValue, CountValue, PropertyValue, TimeValue } from 'profiler-lib'
 
@@ -41,9 +33,7 @@ type ToValue = (raw: number) => PropertyValue
 
 const millisecondsToTime: ToValue = (ms) => new TimeValue(ms / 1000)
 
-/** The cumulative metrics to display, in presentation order. Each descriptor names a
- *  `global_metrics` field and the value kind that formats it. Current gauges (`rss_bytes`,
- *  `storage_bytes`, `buffered_input_*`, …) are intentionally absent — see the file header. */
+/** The cumulative metrics to display. */
 const DESCRIPTORS: { key: keyof GlobalMetrics; label: string; toValue: ToValue }[] = [
   { key: 'total_input_records', label: 'Input records', toValue: CountValue.fromNumber },
   { key: 'total_input_bytes', label: 'Input bytes', toValue: BytesValue.fromNumber },
@@ -59,9 +49,6 @@ const DESCRIPTORS: { key: keyof GlobalMetrics; label: string; toValue: ToValue }
 
 /**
  * Select and format the cumulative global metrics for the overview tile.
- *
- * Only fields that are present and finite are included, so a partial or older `stats.json`
- * still produces a clean (possibly shorter) tile instead of rows reading "N/A".
  *
  * @param metrics The `global_metrics` object from `stats.json`, or `undefined` when the bundle
  *                carried no stats. Returns an empty array in that case.

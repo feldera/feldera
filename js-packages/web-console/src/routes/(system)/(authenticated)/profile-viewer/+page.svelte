@@ -3,8 +3,8 @@
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import {
     createLoadGuard,
-    getSuitableProfiles,
     type GlobalMetrics,
+    getSuitableProfiles,
     processProfileFiles,
     SupportBundleViewerLayout,
     type ZipItem
@@ -50,6 +50,7 @@
         sources: string[] | undefined
         logText: string | undefined
         globalMetrics: GlobalMetrics | undefined
+        runtimeConfig: unknown
       })
     | null = $state(null)
   let triageResults: TriageResults = $state(new TriageResults())
@@ -104,7 +105,8 @@
       dataflow: processed.dataflow,
       sources: processed.sources,
       logText: processed.logText,
-      globalMetrics: processed.globalMetrics
+      globalMetrics: processed.globalMetrics,
+      runtimeConfig: processed.runtimeConfig
     })
   }
 
@@ -283,7 +285,8 @@
       {/if}
     </div>
   {:else if getProfileData}
-    {@const { profile, dataflow, sources, logText, globalMetrics } = getProfileData()}
+    {@const { profile, dataflow, sources, logText, globalMetrics, runtimeConfig } =
+      getProfileData()}
     <div class="min-h-0 flex-1 px-4 pb-4">
       <SupportBundleViewerLayout
         profileData={profile}
@@ -291,6 +294,7 @@
         programCode={sources}
         {logText}
         {globalMetrics}
+        {runtimeConfig}
         {triageResults}
         profileFiles={getProfileFiles()}
         selectedTimestamp={selectedProfile}

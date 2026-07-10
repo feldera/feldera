@@ -16,6 +16,9 @@
     /** Cumulative pipeline-wide metrics from `stats.json`, shown as a tile in the overview.
      *  `undefined` when the bundle carried no stats. */
     globalMetrics: GlobalMetrics | undefined
+    /** Pipeline runtime configuration shown in the Config tab. `undefined` when the bundle carried
+     *  no `pipeline_config.json` */
+    runtimeConfig: unknown
     /** When true, metrics flagged `advanced` in the profile metadata are shown too. */
     showAdvancedMetrics: boolean
     lookup: LookupCoordinator

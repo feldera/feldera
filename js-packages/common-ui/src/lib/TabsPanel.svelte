@@ -15,6 +15,9 @@
     panel: Component<T>
     keepAlive: boolean
     tabBarEnd?: Snippet
+    /** When true, the trigger is rendered but cannot be selected. Use for tabs whose data the
+     *  loaded profile does not carry. */
+    disabled?: boolean
   }
 
   /** Visual style of the tab strip:
@@ -53,7 +56,9 @@
   // Segment items only need a `value`; the visual label is rendered via the `segmentLabel`
   // snippet, which dispatches back to each TabSpec's own `label` snippet so a tab definition
   // stays the single source of truth regardless of the chosen variant.
-  const segmentItems = $derived<SegmentedItem<string>[]>(tabs.map((t) => ({ value: t.id })))
+  const segmentItems = $derived<SegmentedItem<string>[]>(
+    tabs.map((t) => ({ value: t.id, disabled: t.disabled }))
+  )
 </script>
 
 {#snippet defaultTabContainer(tab: Snippet, hidden: boolean)}
@@ -113,12 +118,15 @@
          minimum width on the surrounding Pane. `min-w-0` on the row + a row gap keeps the
          wrapped rows visually grouped. -->
     <Tabs.List class="flex w-full min-w-0 flex-wrap items-center gap-0 pb-0 mb-0 {headerClass}">
-      {#each tabs as { id, label }}
+      {#each tabs as { id, label, disabled }}
         <Tabs.Trigger
           value={id}
+          {disabled}
           class="btn h-9 font-medium whitespace-nowrap {id === currentTab
             ? 'border-surface-950-50 '
-            : 'rounded hover:bg-surface-100-900/50'}"
+            : 'rounded hover:bg-surface-100-900/50'} {disabled
+            ? 'cursor-not-allowed opacity-40'
+            : ''}"
         >
           {@render label()}
         </Tabs.Trigger>

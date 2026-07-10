@@ -29,12 +29,13 @@
   import ProfilerDiagram from './ProfilerDiagram.svelte'
   import type { TooltipData } from './ProfilerTooltip.svelte'
   import ProfileTimestampSelector from './ProfileTimestampSelector.svelte'
+  import ConfigTab from './tabs/ConfigTab.svelte'
   import IssuesTab from './tabs/IssuesTab.svelte'
   import LogsTab from './tabs/LogsTab.svelte'
   import MetricsTab, { type AnalysisTabProps } from './tabs/MetricsTab.svelte'
   import SqlTab, { type SqlTabProps } from './tabs/SqlTab.svelte'
 
-  const TABS = ['Metrics', 'Logs', 'Issues'] as const
+  const TABS = ['Metrics', 'Logs', 'Config', 'Issues'] as const
   type AnalysisTab = (typeof TABS)[number]
 
   interface Props {
@@ -44,6 +45,9 @@
     logText?: string
     /** Cumulative pipeline-wide metrics from the bundle's `stats.json`; shown in the overview. */
     globalMetrics?: GlobalMetrics
+    /** Pipeline runtime configuration from the bundle's `pipeline_config.json`; shown in the Config
+     *  tab. Absent when the bundle carried no config. */
+    runtimeConfig?: unknown
     triageResults: TriageResults
     profileFiles: [Date, ZipItem[]][]
     selectedTimestamp: Date | null
@@ -65,6 +69,7 @@
     programCode,
     logText,
     globalMetrics,
+    runtimeConfig,
     triageResults,
     profileFiles,
     selectedTimestamp,
@@ -266,6 +271,7 @@
     tooltipData,
     rootNodeId: diagramRootNodeId,
     globalMetrics,
+    runtimeConfig,
     showAdvancedMetrics,
     lookup,
     logText,
@@ -289,6 +295,14 @@
       panel: LogsTab,
       keepAlive: true,
       tabBarEnd: commonTabBarEnd
+    },
+    {
+      id: 'Config',
+      label: configLabel,
+      panel: ConfigTab,
+      keepAlive: true,
+      // No runtime config in the bundle → nothing to show, so the tab is present but unselectable.
+      disabled: runtimeConfig === undefined
     },
     {
       id: 'Issues',
@@ -360,6 +374,7 @@
 <!-- ── Analysis panel labels and tab-bar-end snippets ────────────────────────── -->
 {#snippet metricsLabel()}Metrics{/snippet}
 {#snippet logsLabel()}Logs{/snippet}
+{#snippet configLabel()}Config{/snippet}
 {#snippet issuesLabel()}
   Issues &amp; Suggestions
   {#if triageResults.results.length > 0}

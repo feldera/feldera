@@ -25,6 +25,7 @@
     sources: string[] | undefined
     logText: string | undefined
     globalMetrics: GlobalMetrics | undefined
+    runtimeConfig: unknown
   } | null = $state(null)
 
   let fileInput: HTMLInputElement | null = $state(null)
@@ -47,7 +48,8 @@
       dataflow: data.dataflow,
       sources: data.sources,
       logText: data.logText,
-      globalMetrics: data.globalMetrics
+      globalMetrics: data.globalMetrics,
+      runtimeConfig: data.runtimeConfig
     }
   }
 
@@ -115,6 +117,7 @@
       programCode={profileData.sources}
       logText={profileData.logText}
       globalMetrics={profileData.globalMetrics}
+      runtimeConfig={profileData.runtimeConfig}
       triageResults={new TriageResults()}
       {profileFiles}
       {selectedTimestamp}

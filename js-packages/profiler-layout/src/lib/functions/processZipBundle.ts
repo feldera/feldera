@@ -47,8 +47,11 @@ export interface ProcessedProfile {
   sources?: string[]
   logText?: string
   pipelineName?: string
-  /** Cumulative pipeline-wide metrics from `stats.json`, when the bundle includes it. */
+  /** Cumulative pipeline-wide metrics from `stats.json`, when the bundle includes them. */
   globalMetrics?: GlobalMetrics
+  /** Pipeline runtime configuration (`runtime_config` from `pipeline_config.json`), when the
+   *  bundle includes it. */
+  runtimeConfig?: unknown
 }
 
 /**
@@ -101,13 +104,16 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
   const configFile = files.find((file) => pipelineConfigRegex.test(file.filename))
   let sources: string[] | undefined
   let pipelineName: string | undefined
+  let runtimeConfig: unknown
   if (configFile) {
     const pipelineConfig = JSON.parse(decoder.decode(await configFile.read())) as unknown as {
       program_code: string
       name?: string
+      runtime_config?: unknown
     }
     sources = pipelineConfig.program_code.split('\n')
     pipelineName = pipelineConfig.name || undefined
+    runtimeConfig = pipelineConfig.runtime_config ?? undefined
   }
 
   const logsFile = files.find((file) => logsRegex.test(file.filename))
@@ -138,6 +144,7 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
     sources,
     logText,
     pipelineName,
-    globalMetrics
+    globalMetrics,
+    runtimeConfig
   }
 }
