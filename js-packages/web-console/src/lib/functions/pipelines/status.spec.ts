@@ -21,13 +21,17 @@ describe('deletePipelineDisabledReason', () => {
   })
 
   it('asks to stop the pipeline while it is still running', () => {
-    expect(deletePipelineDisabledReason('Running', 'Cleared', false)).toBe('Stop the pipeline to delete it.')
+    expect(deletePipelineDisabledReason('Running', 'Cleared', false)).toBe(
+      'Stop the pipeline to delete it.'
+    )
   })
 
   // Stop takes priority: a running pipeline always holds its storage, so naming
   // storage first would send the user down a step they cannot take yet.
   it('asks to stop first even when storage is still in use', () => {
-    expect(deletePipelineDisabledReason('Running', 'InUse', false)).toBe('Stop the pipeline to delete it.')
+    expect(deletePipelineDisabledReason('Running', 'InUse', false)).toBe(
+      'Stop the pipeline to delete it.'
+    )
   })
 
   it('asks to clear storage when stopped but storage is in use', () => {
@@ -61,7 +65,9 @@ describe('deletePipelineDisabledReason', () => {
     const anyStorage: StorageStatus[] = ['Cleared', 'InUse', 'Clearing']
     for (const status of transitional) {
       for (const storage of anyStorage) {
-        expect(deletePipelineDisabledReason(status, storage, false)).toBe('Stop the pipeline to delete it.')
+        expect(deletePipelineDisabledReason(status, storage, false)).toBe(
+          'Stop the pipeline to delete it.'
+        )
       }
     }
   })

@@ -117,7 +117,9 @@ groups related actions into multi-action dropdowns when multiple options are ava
 
   // An already-deleted pipeline offers no Delete action; otherwise the backend
   // dictates when deletion is possible (fully stopped, storage cleared).
-  const deleteDisabledReason = $derived(deletePipelineDisabledReason(pipeline.current.status, pipeline.current.storageStatus, deleted))
+  const deleteDisabledReason = $derived(
+    deletePipelineDisabledReason(pipeline.current.status, pipeline.current.storageStatus, deleted)
+  )
 
   const actions = {
     _start,

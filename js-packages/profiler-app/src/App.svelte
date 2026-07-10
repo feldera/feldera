@@ -20,7 +20,7 @@
   let sqlPanelFullHeight = $state(false)
 
   let profileData: {
-    profile: JsonProfiles
+    profile: JsonProfiles | undefined
     dataflow: Dataflow | undefined
     sources: string[] | undefined
     logText: string | undefined
@@ -65,7 +65,7 @@
         const suitableProfiles = getSuitableProfiles(zipData)
         if (suitableProfiles.length === 0) {
           throw new Error(
-            'No suitable profiles found in the uploaded support bundle. Check if it contains the circuit profile and dataflow graph (optional).'
+            'No readable data found in the uploaded support bundle. Check that it contains a circuit profile, config, logs or stats.'
           )
         }
         profileFiles = suitableProfiles
@@ -147,8 +147,8 @@
 
       <div class="bg-surface-50 max-w-md rounded-container p-6 shadow-lg">
         <p class="mb-6 text-sm text-surface-700">
-          Load a Feldera support bundle (.zip file) containing circuit profile data to begin
-          visualization.
+          Load a Feldera support bundle (.zip file) to explore the circuit profile,
+          program code, logs and the pipeline config.
         </p>
 
         {#if isLoading}

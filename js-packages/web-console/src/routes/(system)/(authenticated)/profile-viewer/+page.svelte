@@ -45,7 +45,7 @@
   let selectedProfile: Date | null = $state(null)
   let getProfileData:
     | (() => {
-        profile: JsonProfiles
+        profile: JsonProfiles | undefined
         dataflow: Dataflow | undefined
         sources: string[] | undefined
         logText: string | undefined
@@ -126,7 +126,7 @@
         const buffer = await receiveUploadedBundle(channel)
         await processZipBundle(
           new Uint8Array(buffer),
-          'No suitable profiles found in the uploaded bundle.'
+          'No readable data found in the uploaded bundle.'
         )
       } else {
         downloadProgress.onProgress(0, 1)
@@ -144,7 +144,7 @@
         const supportBundle = await dataPromise
         await processZipBundle(
           new Uint8Array(await supportBundle.data.arrayBuffer()),
-          'No suitable profiles found. Try enabling "Collect new data".'
+          'No readable data found. Try enabling "Collect new data".'
         )
       }
     }, onLoadError('Failed to load the profile bundle.'))
@@ -169,7 +169,7 @@
       const bundle = await dataPromise
       await processZipBundle(
         new Uint8Array(await bundle.data.arrayBuffer()),
-        'No suitable profiles found. Try enabling "Collect new data".'
+        'No readable data found. Try enabling "Collect new data".'
       )
     }, onLoadError('Failed to download the profile bundle.'))
   }

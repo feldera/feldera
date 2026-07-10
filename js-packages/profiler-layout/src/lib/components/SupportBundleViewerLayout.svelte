@@ -39,7 +39,8 @@
   type AnalysisTab = (typeof TABS)[number]
 
   interface Props {
-    profileData: JsonProfiles
+    /** Parsed circuit profile */
+    profileData?: JsonProfiles
     dataflowData: Dataflow | undefined
     programCode: string[] | undefined
     logText?: string
@@ -80,6 +81,12 @@
     onHighlightSourceRanges,
     onRenderingChange
   }: Props = $props()
+
+  const hasProfile = $derived(profileData !== undefined)
+
+  const graphPaneDefaultSize = 55
+  const graphPaneMinSize = 20
+  const belowGraphPaneDefaultSize = 100 - graphPaneDefaultSize
 
   let profilerDiagram: ProfilerDiagram | undefined = $state()
   // The loaded profile's toplevel node id, so the analysis panel can recognise overview data.
@@ -137,7 +144,6 @@
       const attrs = data.match({ some: (v) => v, none: () => null })
       untrack(() => {
         if (attrs) {
-          currentTab = 'Metrics'
           tooltipData = { nodeAttributes: attrs }
           // Only cache while we're on a node view, so an `'overview'` round-trip can't
           // overwrite the operator the user actually inspected.
@@ -205,19 +211,18 @@
     profilerDiagram?.selectMetric(selectedMetricId)
   })
 
-  // Show the overview each time a profile loads. `analysisView` is reset first so the
+  // Reset to the overview whenever the loaded bundle changes. `analysisView` is reset first so the
   // SegmentedControl indicator follows the new view, and so the sticky `displayNodeAttributes`
   // that `showGlobalMetrics` triggers sees a non-node view and can't overwrite `lastNodeData`
   // with the overview payload.
   $effect(() => {
     void profileData
     const diagram = profilerDiagram
-    if (!diagram) {
-      return
-    }
     queueMicrotask(() => {
       analysisView = 'overview'
-      diagram.showGlobalMetrics(true)
+      tooltipData = null
+      lastNodeData = null
+      diagram?.showGlobalMetrics(true)
     })
   })
 
@@ -316,42 +321,54 @@
 
 <!-- ── Graph panel (dataflow graph) ────────────────────────────────────────── -->
 {#snippet graphPanel()}
-  <div class="flex h-full flex-col overflow-hidden rounded-container bg-surface-50-950">
+  <div
+    class="flex flex-col overflow-hidden rounded-container bg-surface-50-950 {hasProfile
+      ? 'h-full'
+      : ''}"
+  >
     <!-- Header -->
     <div class="flex flex-shrink-0 flex-wrap items-center gap-2 p-4">
       {@render loadProfileControl?.()}
       <ProfileTimestampSelector {profileFiles} {selectedTimestamp} {onSelectTimestamp} />
-      <div class="ml-auto">
-        <input
-          bind:value={nodeSearchQuery}
-          type="text"
-          placeholder="Search node"
-          title="Search for a node by ID or persistent ID"
-          onkeydown={(e) => e.key === 'Enter' && handleSearch()}
-          class="input h-6 w-36 text-sm"
-        />
-      </div>
+      {#if hasProfile}
+        <div class="ml-auto">
+          <input
+            bind:value={nodeSearchQuery}
+            type="text"
+            placeholder="Search node"
+            title="Search for a node by ID or persistent ID"
+            onkeydown={(e) => e.key === 'Enter' && handleSearch()}
+            class="input h-6 w-36 text-sm"
+          />
+        </div>
+      {:else}
+        <p class="text-sm text-surface-600-400">
+          This bundle has no circuit profile, so the dataflow graph is unavailable.
+        </p>
+      {/if}
     </div>
     <!-- Diagram slot. The actual <ProfilerDiagram> is rendered once outside the layout-
          toggle as a <PersistentContent> overlay so it survives the sqlPanelFullHeight
          layout toggle without re-initialising the Visualizer. The `use:` action mirrors
          this div's bounding rect onto the shared handle. -->
-    <div use:diagramRect.placeholder class="relative min-h-0 flex-1 bg-white-dark">
-      {#if error}
-        <div
-          class="absolute inset-x-4 top-4 z-10 rounded border border-red-300 bg-white p-3 font-mono text-sm text-red-600 shadow"
-        >
-          {error}
-        </div>
-      {/if}
-      {#if message}
-        <div
-          class="absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 font-mono text-sm shadow"
-        >
-          {message}
-        </div>
-      {/if}
-    </div>
+    {#if hasProfile}
+      <div use:diagramRect.placeholder class="relative min-h-0 flex-1 bg-white-dark">
+        {#if error}
+          <div
+            class="absolute inset-x-4 top-4 z-10 rounded border border-red-300 bg-white p-3 font-mono text-sm text-red-600 shadow"
+          >
+            {error}
+          </div>
+        {/if}
+        {#if message}
+          <div
+            class="absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 font-mono text-sm shadow"
+          >
+            {message}
+          </div>
+        {/if}
+      </div>
+    {/if}
   </div>
 {/snippet}
 
@@ -446,7 +463,7 @@
     items={[
       { value: 'overview', label: 'Overview' },
       { value: 'node', label: 'Node', disabled: !lastNodeData },
-      { value: 'top-nodes', label: 'Top nodes' }
+      { value: 'top-nodes', label: 'Top nodes', disabled: !hasProfile }
     ]}
     class="px-2"
   />
@@ -491,11 +508,17 @@
 <!-- ══ Layout: normal (graph top, SQL + tabs bottom) ══════════════════════ -->
 {#if !sqlPanelFullHeight}
   <PaneGroup direction="vertical" class="!overflow-visible h-full">
-    <Pane defaultSize={55} minSize={20} class="!overflow-visible">
-      {@render graphPanel()}
-    </Pane>
-    <PaneResizer class="pane-divider-horizontal my-2" />
-    <Pane defaultSize={45} minSize={15} class="!overflow-visible">
+    {#if hasProfile}
+      <Pane defaultSize={graphPaneDefaultSize} minSize={graphPaneMinSize} class="!overflow-visible">
+        {@render graphPanel()}
+      </Pane>
+      <PaneResizer class="pane-divider-horizontal my-2" />
+    {:else}
+      <div class="mb-4">
+        {@render graphPanel()}
+      </div>
+    {/if}
+    <Pane defaultSize={belowGraphPaneDefaultSize} minSize={15} class="!overflow-visible">
       <PaneGroup direction="horizontal" class="!overflow-visible h-full">
         <Pane defaultSize={50} minSize={0} class="!overflow-visible">
           <div use:sqlPanelRect.placeholder class="h-full"></div>
@@ -516,11 +539,21 @@
     <PaneResizer class="pane-divider-vertical mx-1.5" />
     <Pane minSize={20} class="!overflow-visible">
       <PaneGroup direction="vertical" class="!overflow-visible h-full">
-        <Pane defaultSize={55} minSize={20} class="!overflow-visible">
-          {@render graphPanel()}
-        </Pane>
-        <PaneResizer class="pane-divider-horizontal my-2" />
-        <Pane defaultSize={45} minSize={15} class="!overflow-visible">
+        {#if hasProfile}
+          <Pane
+            defaultSize={graphPaneDefaultSize}
+            minSize={graphPaneMinSize}
+            class="!overflow-visible"
+          >
+            {@render graphPanel()}
+          </Pane>
+          <PaneResizer class="pane-divider-horizontal my-2" />
+        {:else}
+          <div class="mb-4">
+            {@render graphPanel()}
+          </div>
+        {/if}
+        <Pane defaultSize={belowGraphPaneDefaultSize} minSize={15} class="!overflow-visible">
           {@render analysisPanel()}
         </Pane>
       </PaneGroup>
@@ -532,15 +565,17 @@
      <PersistentPlaceholder> in graphPanel. Surviving the layout toggle (and any other
      conditional re-render of graphPanel) is what keeps the Visualizer's internal state intact
      instead of being torn down and re-created from `profileData` each time. -->
-<PersistentContent persistent={diagramRect} class="overflow-hidden bg-white-dark">
-  <ProfilerDiagram
-    bind:this={profilerDiagram}
-    {profileData}
-    {dataflowData}
-    {programCode}
-    {callbacks}
-  />
-</PersistentContent>
+{#if profileData}
+  <PersistentContent persistent={diagramRect} class="overflow-hidden bg-white-dark">
+    <ProfilerDiagram
+      bind:this={profilerDiagram}
+      {profileData}
+      {dataflowData}
+      {programCode}
+      {callbacks}
+    />
+  </PersistentContent>
+{/if}
 
 <!-- Persistent SQL panel overlay. Hoisted out of the layout branches for the same reason as the
      diagram: rendered once, it mirrors the placeholder in whichever {#if} branch is active, so the

@@ -10,6 +10,16 @@ const pipelineConfigRegex = /pipeline_config\.json$/
 const logsRegex = /logs\.txt$/
 const statsRegex = /stats\.json$/
 
+// Any of these files makes a collection worth opening. A bundle missing the circuit profile
+// still carries program code, config, logs and stats, all of which the viewer can display.
+const usefulFileRegexes = [
+  circuitProfileRegex,
+  dataflowGraphRegex,
+  pipelineConfigRegex,
+  logsRegex,
+  statsRegex
+]
+
 // New bundle layout (since support-bundle metadata_version 1): each collection
 // lives under a directory named after its timestamp, e.g.
 // "2026-05-25T12-34-56.789Z/circuit_profile.json". Collisions get a "-N" suffix
@@ -42,7 +52,8 @@ function collectionDate(key: string): Date {
 }
 
 export interface ProcessedProfile {
-  profile: JsonProfiles
+  /** Parsed `circuit_profile.json` */
+  profile?: JsonProfiles
   dataflow?: Dataflow
   sources?: string[]
   logText?: string
@@ -55,8 +66,10 @@ export interface ProcessedProfile {
 }
 
 /**
- * Unzip a bundle and extract all suitable profiles with their files.
+ * Unzip a bundle and extract every readable profile with its files.
  * This function only unzips once - store the result for efficient timestamp switching.
+ * A profile is readable when it holds any recognised file (circuit profile, dataflow graph,
+ * pipeline config, logs or stats).
  * @param zipData Raw zip file data
  * @returns Array of [timestamp, files] tuples sorted by timestamp (oldest first)
  * @throws Error if the zip is invalid
@@ -70,14 +83,23 @@ export function getSuitableProfiles(zipData: Uint8Array): [Date, ZipItem[]][] {
       `Failed to unzip bundle: ${error instanceof Error ? error.message : String(error)}`
     )
   }
+  return selectProfiles(profileFiles)
+}
 
-  const profileTimestamps = groupBy(profileFiles, (file) => collectionKey(file.filename)).filter(
-    (group) => group[0] && group[1].some((file) => circuitProfileRegex.test(file.filename))
-    // Pipeline config and dataflow graph are not required
+/**
+ * Group already-unzipped bundle files into readable profiles, sorted oldest-first.
+ * A collection is kept when its timestamp directory holds any recognised file; the circuit
+ * profile is not required.
+ */
+export function selectProfiles(files: ZipItem[]): [Date, ZipItem[]][] {
+  const profiles = groupBy(files, (file) => collectionKey(file.filename)).filter(
+    (group) =>
+      group[0] &&
+      group[1].some((file) => usefulFileRegexes.some((regex) => regex.test(file.filename)))
   )
 
   return sortOn(
-    profileTimestamps.map(([key, files]) => [collectionDate(key), files] as [Date, ZipItem[]]),
+    profiles.map(([key, files]) => [collectionDate(key), files] as [Date, ZipItem[]]),
     (p) => p[0]
   )
 }
@@ -91,9 +113,12 @@ export function getSuitableProfiles(zipData: Uint8Array): [Date, ZipItem[]][] {
 export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedProfile> {
   const decoder = new TextDecoder()
 
-  // Read and parse the three required files
-  const profileFile = files.find((file) => circuitProfileRegex.test(file.filename))!
-  const profile = JSON.parse(decoder.decode(await profileFile.read())) as JsonProfiles
+  // The circuit profile is optional: a bundle without it still yields config, logs and stats.
+  const profileFile = files.find((file) => circuitProfileRegex.test(file.filename))
+  let profile: JsonProfiles | undefined
+  if (profileFile) {
+    profile = JSON.parse(decoder.decode(await profileFile.read())) as JsonProfiles
+  }
 
   const dataflowFile = files.find((file) => dataflowGraphRegex.test(file.filename))
   let dataflow: Dataflow | undefined

@@ -84,6 +84,7 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 
 RUN \
    rustup install $RUST_VERSION && \
+   rustup default $RUST_VERSION && \
    rustup component add rustfmt && \
    rustup component add clippy && \
    cargo install cargo-make
