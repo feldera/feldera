@@ -41,28 +41,6 @@ public class Regression2Tests extends SqlIoTest {
     }
 
     @Test
-    public void issue5481() {
-        this.statementsFailingInCompilation("""
-                CREATE TABLE tbl(
-                str VARCHAR,
-                bin BINARY,
-                uuidd UUID,
-                arr VARCHAR ARRAY);
-                
-                CREATE MATERIALIZED VIEW v1 AS
-                SELECT str FROM tbl
-                EXCEPT ALL
-                SELECT arr[1] FROM tbl;""", "Not yet implemented: EXCEPT/MINUS ALL");
-    }
-
-    @Test
-    public void intersectAllTest() {
-        this.statementsFailingInCompilation("""
-                CREATE TABLE T(x INT);
-                CREATE VIEW V AS SELECT * FROM T INTERSECT ALL SELECT * FROM T;""", "Not yet implemented: INTERSECT ALL");
-    }
-
-    @Test
     public void issue5425() {
         this.statementsFailingInCompilation("""
                 CREATE TABLE  tbl(

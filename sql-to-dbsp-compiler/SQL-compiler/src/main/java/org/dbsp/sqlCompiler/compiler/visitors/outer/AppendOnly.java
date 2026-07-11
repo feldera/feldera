@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -162,6 +163,11 @@ public class AppendOnly extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPDistinctOperator node) {
+        this.copy(node);
+    }
+
+    @Override
+    public void postorder(DBSPPositiveOperator node) {
         this.copy(node);
     }
 

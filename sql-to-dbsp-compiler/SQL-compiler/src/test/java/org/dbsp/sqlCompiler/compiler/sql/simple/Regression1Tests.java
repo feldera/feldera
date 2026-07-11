@@ -1324,16 +1324,16 @@ public class Regression1Tests extends SqlIoTest {
                 """
                  id | step | en   | ss | ts  | x |     y |     z
                 ---------------------------------------------------
-                 1 | true  | beta|      10 | 116 | 0 | false | true
-                 1 | true  | alpha|     10 | 590 | 47| true  | true
-                 1 | true  | alpha|     10 | 597 | 0 | true  | false
-                 1 | true  | gamma|     10 | 604 | 0 | true  | true
+                 1 | true  | beta|	10 | 116 | 0 | false | true
+                 1 | true  | alpha|	10 | 590 | 47| true  | true
+                 1 | true  | alpha|	10 | 597 | 0 | true  | false
+                 1 | true  | gamma|	10 | 604 | 0 | true  | true
                  1 | true  | delta| 20 | 618 | 1 | true  | false
-                 2 | false | beta|      10 | 593 | 0 | false | true
-                 2 | false | alpha|     25 | 600 | 0 | false | false
-                 2 | false | eta|       12 | 608 | 0 | false | false
-                 2 | false | gamma|     25 | 615 | 0 | false | false
-                 2 | false | gamma|     25 | 622 | 0 | false | false""");
+                 2 | false | beta|	10 | 593 | 0 | false | true
+                 2 | false | alpha|	25 | 600 | 0 | false | false
+                 2 | false | eta|	12 | 608 | 0 | false | false
+                 2 | false | gamma|	25 | 615 | 0 | false | false
+                 2 | false | gamma|	25 | 622 | 0 | false | false""");
     }
 
     @Test

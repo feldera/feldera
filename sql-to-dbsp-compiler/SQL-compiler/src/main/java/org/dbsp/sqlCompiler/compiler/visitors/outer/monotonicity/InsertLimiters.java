@@ -809,21 +809,17 @@ public class InsertLimiters extends CircuitCloneVisitor {
         super.postorder(operator);
     }
 
-    @Override
-    public void postorder(DBSPDistinctOperator operator) {
+    // Handle DBSPDistinctOperator and DBSPPositiveOperator
+    boolean processDistinct(DBSPUnaryOperator operator) {
         OutputPort source = this.mapped(operator.input());
         OperatorDeltaExpansion expanded = this.expandedInto.get(operator);
         if (expanded == null) {
-            super.postorder(operator);
-            this.nonMonotone(operator);
-            return;
+            return false;
         }
         DistinctDeltaExpansion expansion = expanded.to(DistinctDeltaExpansion.class);
         OutputPort sourceLimiter = this.bound.get(operator.input());
         if (sourceLimiter == null) {
-            super.postorder(operator);
-            this.nonMonotone(operator);
-            return;
+            return false;
         }
 
         DBSPSimpleOperator result = operator.withInputs(Linq.list(source), false)
@@ -835,6 +831,25 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.markBound(expansion.distinct.outputPort(), sourceLimiter);
         this.markBound(operator.outputPort(), sourceLimiter);
         this.map(operator, result, true);
+        return true;
+    }
+
+    @Override
+    public void postorder(DBSPDistinctOperator operator) {
+        boolean monotone = this.processDistinct(operator);
+        if (!monotone) {
+            super.postorder(operator);
+            this.nonMonotone(operator);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPPositiveOperator operator) {
+        boolean monotone = this.processDistinct(operator);
+        if (!monotone) {
+            super.postorder(operator);
+            this.nonMonotone(operator);
+        }
     }
 
     /** Represents a join and the two inputs.  onLeft is true if a retainKeys operator was inserted on the left input */

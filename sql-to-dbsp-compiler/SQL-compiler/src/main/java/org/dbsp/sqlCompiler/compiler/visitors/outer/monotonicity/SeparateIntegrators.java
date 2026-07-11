@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
@@ -67,6 +68,7 @@ public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
                 (operator.is(DBSPWindowOperator.class) && input == 0) ||
                 operator.is(DBSPPartitionedRollingAggregateOperator.class) ||
                 operator.is(DBSPDistinctOperator.class) ||
+                operator.is(DBSPPositiveOperator.class) ||
                 operator.is(DBSPAggregateOperator.class) ||
                 operator.is(DBSPIntegrateOperator.class) ||
                 operator.is(DBSPLagOperator.class) ||

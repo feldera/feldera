@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFailExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -165,8 +166,14 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
             casts[i] = casts[i].call(var.deepCopy().deref().field(i).borrow());
         }
         DBSPExpression result = new DBSPTupleExpression(to.mayBeNull, casts);
-        if (this.mayBeNull)
-            result = new DBSPIfExpression(CalciteObject.EMPTY, var.deref().is_null(), to.none(), result);
+        if (this.mayBeNull) {
+            final DBSPExpression tup;
+            if (to.mayBeNull)
+                tup = to.none();
+            else
+                tup = new DBSPFailExpression(CalciteObject.EMPTY, to, "Cast to non-nullable value applied to NULL");
+            result = new DBSPIfExpression(CalciteObject.EMPTY, var.deref().is_null(), tup, result);
+        }
         return result.closure(var);
     }
 

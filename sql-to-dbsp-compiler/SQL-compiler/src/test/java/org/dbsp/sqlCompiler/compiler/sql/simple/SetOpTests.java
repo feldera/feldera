@@ -3,12 +3,25 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 import org.dbsp.sqlCompiler.compiler.sql.quidem.ScottBaseTests;
 import org.junit.Test;
 
-/** End-to-end tests for SQL set operations: UNION, INTERSECT, EXCEPT.
+/** End-to-end tests for SQL set operations: UNION, UNION ALL, INTERSECT, INTERSECT ALL, EXCEPT.
  * Some tests are from set-op.iq */
 public class SetOpTests extends ScottBaseTests {
     @Test
     public void calciteIntersect() {
         this.qst("""
+             -- Intersect all
+            select * from
+            (select x, y from (values (1, 'a'), (1, 'a'), (1, 'a'), (2, 'b'), (3, 'c')) as t(x, y))
+            intersect all
+            (select x, y from (values (1, 'a'), (1, 'a'), (2, 'c'), (4, 'x')) as t2(x, y));
+            +---+---+
+            | X | Y |
+            +---+---+
+            | 1 | a |
+            | 1 | a |
+            +---+---+
+            (2 rows)
+
             -- Intersect
             select * from
             (select x, y from (values (1, 'a'), (1, 'a'), (1, 'a'), (2, 'b'), (3, 'c')) as t(x, y))
@@ -20,6 +33,21 @@ public class SetOpTests extends ScottBaseTests {
             | 1 | a |
             +---+---+
             (1 row)
+
+            -- Intersect all with null value rows
+            select * from
+            (select x, y from (values (cast(NULL as int), cast(NULL as varchar(1))),
+            (cast(NULL as int), cast(NULL as varchar(1))), (cast(NULL as int), cast(NULL as varchar(1)))) as t(x, y))
+            intersect all
+            (select x, y from (values (cast(NULL as int), cast(NULL as varchar(1))),
+            (cast(NULL as int), cast(NULL as varchar(1)))) as t2(x, y));
+            +----+----+
+            | X  | Y  |
+            +----+----+
+            |NULL|NULL|
+            |NULL|NULL|
+            +----+----+
+            (2 rows)
 
             -- Intersect with null value rows
             select * from
@@ -109,6 +137,21 @@ public class SetOpTests extends ScottBaseTests {
     @Test
     public void calciteExcept() {
         this.qst("""
+            -- Except all
+            select * from
+            (select x, y from (values (1, 'a'), (1, 'a'), (1, 'a'), (2, 'b'), (3, 'c')) as t(x, y))
+            except all
+            (select x, y from (values (1, 'a'), (2, 'c'), (4, 'x')) as t2(x, y));
+            +---+---+
+            | X | Y |
+            +---+---+
+            | 1 | a |
+            | 1 | a |
+            | 2 | b |
+            | 3 | c |
+            +---+---+
+            (4 rows)
+
             -- Except
             select * from
             (select x, y from (values (1, 'a'), (1, 'a'), (1, 'a'), (2, 'b'), (3, 'c')) as t(x, y))
@@ -121,6 +164,20 @@ public class SetOpTests extends ScottBaseTests {
             | 3 | c |
             +---+---+
             (2 rows)
+
+            -- Except all with null value rows
+            select * from
+            (select x, y from (values (cast(NULL as int), cast(NULL as varchar(1))),
+            (cast(NULL as int), cast(NULL as varchar(1))), (cast(NULL as int), cast(NULL as varchar(1)))) as t(x, y))
+            except all
+            (select x, y from (values (cast(NULL as int), cast(NULL as varchar(1))),
+            (cast(NULL as int), cast(NULL as varchar(1)))) as t2(x, y));
+            +----+----+
+            | X  | Y  |
+            +----+----+
+            |NULL|NULL|
+            +----+----+
+            (1 row)
 
             -- Except with null value rows
             select * from
@@ -217,10 +274,6 @@ public class SetOpTests extends ScottBaseTests {
             (1 row)""");
     }
 
-    // -----------------------------------------------------------------------
-    // UNION / UNION ALL
-    // -----------------------------------------------------------------------
-
     @Test
     public void testUnionBasic() {
         this.qst("""
@@ -296,10 +349,6 @@ public class SetOpTests extends ScottBaseTests {
                 (4 rows)""");
     }
 
-    // -----------------------------------------------------------------------
-    // INTERSECT (distinct)
-    // -----------------------------------------------------------------------
-
     @Test
     public void testIntersectBasic() {
         this.qst("""
@@ -361,18 +410,113 @@ public class SetOpTests extends ScottBaseTests {
                 (1 row)""");
     }
 
-    /** INTERSECT: all 16 combinations of which column(s) hold NULL and on which side. */
     @Test
-    public void testIntersectNullTwoInts() {
-        for (boolean nullInFirst : new boolean[]{true, false}) {
-            for (boolean nullInSecond : new boolean[]{true, false}) {
-                for (boolean nullOnLeft : new boolean[]{true, false}) {
-                    for (boolean nullOnRight : new boolean[]{true, false}) {
-                        checkSetOpNullTwoInts("INTERSECT", nullInFirst, nullInSecond, nullOnLeft, nullOnRight);
-                    }
-                }
-            }
-        }
+    public void testIntersectAllBasic() {
+        // A = {1, 2, 2}  B = {2, 2, 3}
+        // Result = {2, 2}  (min(0,0)=0 for 1 and 3, min(2,2)=2 for 2)
+        this.qst("""
+                SELECT * FROM (VALUES (1), (2), (2)) AS T(x)
+                INTERSECT ALL
+                SELECT * FROM (VALUES (2), (2), (3)) AS T(x);
+                 x
+                ---
+                 2
+                 2
+                (2 rows)""");
+    }
+
+    @Test
+    public void testIntersectAllMinCounts() {
+        // A = {1, 1, 1}  B = {1, 1}
+        // Result = {1, 1}  (min(3, 2) = 2)
+        this.qst("""
+                SELECT * FROM (VALUES (1), (1), (1)) AS T(x)
+                INTERSECT ALL
+                SELECT * FROM (VALUES (1), (1)) AS T(x);
+                 x
+                ---
+                 1
+                 1
+                (2 rows)""");
+    }
+
+    @Test
+    public void testIntersectAllEmpty() {
+        // No common values: result is empty.
+        this.qst("""
+                SELECT * FROM (VALUES (1), (2)) AS T(x)
+                INTERSECT ALL
+                SELECT * FROM (VALUES (3), (4)) AS T(x);
+                 x
+                ---
+                (0 rows)""");
+    }
+
+    @Test
+    public void testIntersectAllNull() {
+        // A = {NULL, NULL, 1}  B = {NULL, 1, 1}
+        // Result = {NULL, 1}  (min(2,1)=1 for NULL, min(1,2)=1 for 1)
+        this.qst("""
+                SELECT * FROM (VALUES (CAST(NULL AS INT)), (CAST(NULL AS INT)), (1)) AS T(x)
+                INTERSECT ALL
+                SELECT * FROM (VALUES (CAST(NULL AS INT)), (1), (1)) AS T(x);
+                 x
+                ------
+                 NULL
+                 1
+                (2 rows)""");
+    }
+
+    @Test
+    public void testIntersectAllNullBothSides() {
+        // A = {NULL, NULL}  B = {NULL, NULL, NULL}
+        // Result = {NULL, NULL}  (min(2, 3) = 2)
+        this.qst("""
+                SELECT * FROM (VALUES (CAST(NULL AS INT)), (CAST(NULL AS INT))) AS T(x)
+                INTERSECT ALL
+                SELECT * FROM (VALUES (CAST(NULL AS INT)), (CAST(NULL AS INT)), (CAST(NULL AS INT))) AS T(x);
+                 x
+                ------
+                 NULL
+                 NULL
+                (2 rows)""");
+    }
+
+    @Test
+    public void testIntersectAllMultiColumn() {
+        // A = {(1,'a')x2, (2,NULL)x1, (NULL,'c')x1}
+        // B = {(1,'a')x1, (2,NULL)x2, (NULL,'c')x1}
+        // Result: each value appears min(count_A, count_B) times:
+        //   (1,'a'): min(2,1) = 1
+        //   (2,NULL): min(1,2) = 1
+        //   (NULL,'c'): min(1,1) = 1
+        this.qst("""
+                SELECT * FROM (VALUES (1, 'a'), (1, 'a'), (2, CAST(NULL AS VARCHAR)), (CAST(NULL AS INT), 'c')) AS T(x, s)
+                INTERSECT ALL
+                SELECT * FROM (VALUES (1, 'a'), (2, CAST(NULL AS VARCHAR)), (2, CAST(NULL AS VARCHAR)), (CAST(NULL AS INT), 'c')) AS T(x, s);
+                 x    | s
+                ----------
+                 1    | a
+                 2    |NULL
+                NULL  | c
+                (3 rows)""");
+    }
+
+    @Test
+    public void testIntersectAllThreeWay() {
+        // A = {1, 1, 2, 3}  B = {1, 2, 2}  C = {1, 1, 1, 2}
+        // Result: 1 → min(2,1,3)=1;  2 → min(1,2,1)=1;  3 → min(1,0,0)=0
+        this.qst("""
+                SELECT * FROM (VALUES (1), (1), (2), (3)) AS A(x)
+                INTERSECT ALL
+                SELECT * FROM (VALUES (1), (2), (2)) AS B(x)
+                INTERSECT ALL
+                SELECT * FROM (VALUES (1), (1), (1), (2)) AS C(x);
+                 x
+                ---
+                 1
+                 2
+                (2 rows)""");
     }
 
     @Test
@@ -484,7 +628,7 @@ public class SetOpTests extends ScottBaseTests {
         String ry = (nullOnRight && nullInSecond) ? "CAST(NULL AS INT)" : "10";
 
         boolean rowsMatch = lx.equals(rx) && ly.equals(ry);
-        boolean hasResult = op.equals("INTERSECT") ? rowsMatch : !rowsMatch;
+        boolean hasResult = op.equals("INTERSECT") == rowsMatch;
 
         String resultX = lx.contains("NULL") ? "NULL" : "10";
         String resultY = ly.contains("NULL") ? "NULL" : "10";
@@ -508,6 +652,20 @@ public class SetOpTests extends ScottBaseTests {
                 for (boolean nullOnLeft : new boolean[]{true, false}) {
                     for (boolean nullOnRight : new boolean[]{true, false}) {
                         checkSetOpNullTwoInts("EXCEPT", nullInFirst, nullInSecond, nullOnLeft, nullOnRight);
+                    }
+                }
+            }
+        }
+    }
+
+    /** INTERSECT: all 16 combinations of which column(s) hold NULL and on which side. */
+    @Test
+    public void testIntersectNullTwoInts() {
+        for (boolean nullInFirst : new boolean[]{true, false}) {
+            for (boolean nullInSecond : new boolean[]{true, false}) {
+                for (boolean nullOnLeft : new boolean[]{true, false}) {
+                    for (boolean nullOnRight : new boolean[]{true, false}) {
+                        checkSetOpNullTwoInts("INTERSECT", nullInFirst, nullInSecond, nullOnLeft, nullOnRight);
                     }
                 }
             }

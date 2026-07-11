@@ -908,6 +908,26 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPPositiveOperator operator) {
+        // No "persistent" version
+        DBSPType streamType = this.streamType(operator);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getNodeName(this.preferHash))
+                .append(": ");
+        this.innerVisitor.setOperatorContext(operator);
+        streamType.accept(this.innerVisitor);
+        this.innerVisitor.setOperatorContext(null);
+        this.builder.append(" = ")
+                .append(this.getInputName(operator, 0))
+                .append(".")
+                .append(operator.operation)
+                .append("();");
+        this.tagStream(operator);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPControlledKeyFilterOperator operator) {
         // No need to use the Merkle Hash
         this.builder.append("let (")

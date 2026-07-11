@@ -44,8 +44,14 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
             !input.isMultiset()) {
             this.map(distinct.outputPort(), input, false);
             return;
-        }
-        if (input.node().is(DBSPStreamJoinOperator.class) ||
+        } else if (input.node().is(DBSPPositiveOperator.class)) {
+            // distinct(positive(x)) = distinct(x)
+            DBSPSimpleOperator newDistinct = distinct
+                    .withInputs(Linq.list(input.simpleNode().inputs.get(0)), false)
+                    .to(DBSPSimpleOperator.class);
+            this.map(distinct, newDistinct);
+            return;
+        } else if (input.node().is(DBSPStreamJoinOperator.class) ||
             input.node().is(DBSPMapOperator.class) ||
             input.node().is(DBSPSumOperator.class) ||
             input.node().is(DBSPAtomicSumOperator.class)) {
@@ -68,8 +74,21 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPPositiveOperator operator) {
+        OutputPort input = this.mapped(operator.input());
+        if (input.node().is(DBSPPositiveOperator.class)
+            || input.node().is(DBSPDistinctOperator.class)) {
+            // positive(distinct(x)) = distinct(x);
+            // positive(positive(x)) = positive(X)
+            this.map(operator.outputPort(), input, false);
+            return;
+        }
+        super.postorder(operator);
+    }
+
+    @Override
     public void postorder(DBSPDistinctOperator distinct) {
-        // distinct (distinct) = distinct
+        // distinct (distinct(x)) = distinct(x)
         OutputPort input = this.mapped(distinct.input());
         if (input.node().is(DBSPStreamDistinctOperator.class) ||
             input.node().is(DBSPDistinctOperator.class) ||
@@ -82,7 +101,7 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
                 input.node().is(DBSPSumOperator.class)) {
             boolean allDistinct = Linq.all(input.node().inputs, i -> i.node().is(DBSPStreamDistinctOperator.class));
             if (allDistinct) {
-                // distinct(map(distinct)) = distinct(map)
+                // distinct(map(distinct(x))) = distinct(map(x))
                 List<OutputPort> newInputs = Linq.map(input.node().inputs, i -> i.node().inputs.get(0));
                 DBSPSimpleOperator newInput = input.simpleNode()
                         .withInputs(newInputs, false)

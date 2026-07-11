@@ -7,24 +7,16 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
 
-/** This operator does not exist in DBSP, it is purely used while computing monotonicity */
-@NonCoreIR
-public final class DBSPBinaryDistinctOperator extends DBSPBinaryOperator
+public final class DBSPPositiveOperator extends DBSPUnaryOperator
         implements IContainsIntegrator, IIncremental {
-    /** If true this is from a {@link DBSPPositiveOperator}, else it's from a {@link DBSPDistinctOperator}. */
-    public final boolean positive;
-
-    public DBSPBinaryDistinctOperator(CalciteRelNode node, OutputPort integral, OutputPort delta, boolean positive) {
-        super(node, "distinct_component", null, delta.outputType(), false, integral, delta);
-        this.positive = positive;
+    public DBSPPositiveOperator(CalciteRelNode node, OutputPort input) {
+        super(node, "positive", null, input.outputType(), false, input);
     }
 
     @Override
@@ -41,19 +33,16 @@ public final class DBSPBinaryDistinctOperator extends DBSPBinaryOperator
             @Nullable DBSPExpression function, DBSPType outputType,
             List<OutputPort> newInputs, boolean force) {
         if (this.mustReplace(force, function, newInputs, outputType)) {
-            Utilities.enforce(newInputs.size() == 2);
-            if (force || this.inputsDiffer(newInputs))
-                return new DBSPBinaryDistinctOperator(
-                        this.getRelNode(), newInputs.get(0), newInputs.get(1), this.positive).copyAnnotations(this);
+            return new DBSPPositiveOperator(
+                    this.getRelNode(), newInputs.get(0)).copyAnnotations(this);
         }
         return this;
     }
 
     @SuppressWarnings("unused")
-    public static DBSPBinaryDistinctOperator fromJson(JsonNode node, JsonDecoder decoder) {
+    public static DBSPPositiveOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        boolean positive = Utilities.getBooleanProperty(node, "positive");
-        return new DBSPBinaryDistinctOperator(CalciteEmptyRel.INSTANCE, info.getInput(0), info.getInput(1), positive)
-                .addAnnotations(info.annotations(), DBSPBinaryDistinctOperator.class);
+        return new DBSPPositiveOperator(CalciteEmptyRel.INSTANCE, info.getInput(0))
+                .addAnnotations(info.annotations(), DBSPPositiveOperator.class);
     }
 }

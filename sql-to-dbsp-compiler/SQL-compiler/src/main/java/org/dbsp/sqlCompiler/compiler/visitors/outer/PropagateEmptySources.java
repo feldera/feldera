@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
@@ -128,6 +129,12 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPDistinctOperator operator) {
+        if (this.replaceUnary(operator))
+            super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPPositiveOperator operator) {
         if (this.replaceUnary(operator))
             super.postorder(operator);
     }

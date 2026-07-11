@@ -93,6 +93,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
@@ -1164,14 +1165,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     private void visitMinus(LogicalMinus minus) {
         IntermediateRel node = CalciteObject.create(minus);
-        boolean first = true;
         RelDataType rowType = minus.getRowType();
         DBSPTypeTuple outputType = this.convertType(node.getPositionRange(), rowType, false).to(DBSPTypeTuple.class);
-        List<OutputPort> inputs = new ArrayList<>();
         this.checkPermutation(node, minus.getInputs(), "EXCEPT");
 
+        boolean first = true;
+        List<OutputPort> inputs = new ArrayList<>(minus.getInputs().size());
         for (RelNode input : minus.getInputs()) {
-            DBSPSimpleOperator opInput = this.getInputAs(input, false);
+            DBSPSimpleOperator opInput = this.getInputAs(input, minus.all);
             if (!first) {
                 DBSPSimpleOperator neg = new DBSPNegateOperator(node, opInput.outputPort());
                 this.addOperator(neg);
@@ -1193,14 +1194,19 @@ public class CalciteToDBSPCompiler extends RelVisitor
             first = false;
         }
 
+        DBSPSumOperator sum = new DBSPSumOperator(node, inputs);
+        final DBSPSimpleOperator result;
+        this.addOperator(sum);
         if (minus.all) {
-            throw new UnimplementedException("EXCEPT/MINUS ALL", 5483, node);
+            DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, sum.outputPort());
+            this.addOperator(diff);
+            DBSPPositiveOperator pos = new DBSPPositiveOperator(node, diff.outputPort());
+            this.addOperator(pos);
+            result = new DBSPIntegrateOperator(node.getFinal(), pos.outputPort());
         } else {
-            DBSPSumOperator sum = new DBSPSumOperator(node, inputs);
-            this.addOperator(sum);
-            DBSPStreamDistinctOperator d = new DBSPStreamDistinctOperator(node.getFinal(), sum.outputPort());
-            this.assignOperator(minus, d);
+            result = new DBSPStreamDistinctOperator(node.getFinal(), sum.outputPort());
         }
+        this.assignOperator(minus, result);
     }
 
     void visitFilter(LogicalFilter filter) {
@@ -2429,40 +2435,67 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return result;
     }
 
+    private DBSPSimpleOperator
+    except(IntermediateRel node, DBSPSimpleOperator left, DBSPSimpleOperator right, boolean all, boolean needsDistinct) {
+        List<OutputPort> inputs = new ArrayList<>(2);
+        inputs.add(left.outputPort());
+        DBSPSimpleOperator neg = new DBSPNegateOperator(node, right.outputPort());
+        this.addOperator(neg);
+        inputs.add(neg.outputPort());
+        DBSPSumOperator sum = new DBSPSumOperator(node, inputs);
+        this.addOperator(sum);
+        if (!needsDistinct)
+            return sum;
+
+        final DBSPSimpleOperator result;
+        if (all) {
+            DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, sum.outputPort());
+            this.addOperator(diff);
+            DBSPPositiveOperator pos = new DBSPPositiveOperator(node, diff.outputPort());
+            this.addOperator(pos);
+            result = new DBSPIntegrateOperator(node.getFinal(), pos.outputPort());
+        } else {
+            result = new DBSPStreamDistinctOperator(node.getFinal(), sum.outputPort());
+        }
+        this.addOperator(result);
+        return result;
+    }
+
     void visitIntersect(LogicalIntersect intersect) {
-        var node = CalciteObject.create(intersect);
-        // Intersect is a special case of join.
-        List<RelNode> inputs = intersect.getInputs();
-        RelNode input = intersect.getInput(0);
-        DBSPSimpleOperator previous = this.getInputAs(input, false);
-        this.checkPermutation(node, inputs, "INTERSECT");
+        // A INTERSECT B = A EXCEPT (A EXCEPT B)
+        // A INTERSECT ALL B = A EXCEPT ALL (A EXCEPT ALL B)
+        IntermediateRel node = CalciteObject.create(intersect);
+        RelDataType rowType = intersect.getRowType();
+        DBSPTypeTuple outputType = this.convertType(node.getPositionRange(), rowType, false).to(DBSPTypeTuple.class);
+        List<RelNode> relInputs = intersect.getInputs();
+        this.checkPermutation(node, relInputs, "INTERSECT");
 
-        if (inputs.isEmpty())
+        if (relInputs.isEmpty())
             throw new UnsupportedException(node);
-        if (intersect.all)
-            throw new UnimplementedException("INTERSECT ALL", node);
-        if (inputs.size() == 1) {
-            Utilities.putNew(this.nodeOperator, intersect, previous);
-            return;
+
+        DBSPSimpleOperator current = null;
+        for (RelNode input : intersect.getInputs()) {
+            DBSPSimpleOperator opInput = this.getInputAs(input, intersect.all);
+            DBSPTypeTuple inputRowType = opInput.getOutputZSetElementType().to(DBSPTypeTuple.class);
+            List<Integer> filterIndexes = new ArrayList<>();
+            for (int i = 0; i < outputType.size(); i++) {
+                if (inputRowType.getFieldType(i).mayBeNull && !outputType.getFieldType(i).mayBeNull)
+                    filterIndexes.add(i);
+            }
+
+            DBSPSimpleOperator filter =
+                    this.filterNonNullFields(node, CalciteObject.EMPTY, filterIndexes, opInput, false);
+            DBSPSimpleOperator next = this.castOutput(node, filter, outputType);
+            if (current == null)
+                current = next;
+            else {
+                DBSPSimpleOperator crtExceptNext = this.except(node, current, next, intersect.all, true);
+                current = this.except(node, current, crtExceptNext, intersect.all, false);
+            }
         }
 
-        DBSPTypeTuple resultType = this.convertType(node.getPositionRange(), intersect.getRowType(), false)
-                .to(DBSPTypeTuple.class);
-        DBSPMapIndexOperator previousIndex = this.indexEntireTuple(node, previous.outputPort(), resultType);
-
-        for (int i = 1; i < inputs.size(); i++) {
-            DBSPSimpleOperator inputI = this.getInputAs(intersect.getInput(i), false);
-            DBSPMapIndexOperator index = this.indexEntireTuple(node, inputI.outputPort(), resultType);
-            // Join with the current result
-            DBSPVariablePath l = DBSPTypeTuple.EMPTY.ref().var();
-            DBSPVariablePath r = DBSPTypeTuple.EMPTY.ref().var();
-            DBSPVariablePath k = resultType.ref().var();
-            DBSPClosureExpression closure = DBSPTupleExpression.flatten(k.deref()).closure(k, l, r);
-            previous = new DBSPStreamJoinOperator(node, TypeCompiler.makeZSet(resultType),
-                    closure, false, previousIndex.outputPort(), index.outputPort(), false);
-            this.addOperator(previous);
-        }
-        Utilities.putNew(this.nodeOperator, intersect, previous);
+        Utilities.enforce(current != null);
+        Utilities.putNew(this.nodeOperator, intersect, current);
     }
 
     /** If this is not null, the parent LogicalFilter should use this implementation

@@ -24,6 +24,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
@@ -219,7 +221,18 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
         DBSPIntegrateOperator integrator = new DBSPIntegrateOperator(operator.getRelNode(), input);
         this.addOperator(integrator);
         DBSPBinaryDistinctOperator distinct =
-                new DBSPBinaryDistinctOperator(operator.getRelNode(), integrator.outputPort(), input);
+                new DBSPBinaryDistinctOperator(operator.getRelNode(), integrator.outputPort(), input, false);
+        this.addExpansion(operator, new DistinctDeltaExpansion(integrator, distinct));
+        this.map(operator, distinct);
+    }
+
+    @Override
+    public void postorder(DBSPPositiveOperator operator) {
+        OutputPort input = this.mapped(operator.input());
+        DBSPIntegrateOperator integrator = new DBSPIntegrateOperator(operator.getRelNode(), input);
+        this.addOperator(integrator);
+        DBSPBinaryDistinctOperator distinct =
+                new DBSPBinaryDistinctOperator(operator.getRelNode(), integrator.outputPort(), input, true);
         this.addExpansion(operator, new DistinctDeltaExpansion(integrator, distinct));
         this.map(operator, distinct);
     }
