@@ -284,6 +284,9 @@
   {#snippet trigger(toggle)}
     {@const open = () => {
       closeForm()
+      if (knownTags.size === 0) {
+        openCreate('')
+      }
       toggle()
     }}
     <div class="flex flex-nowrap items-center gap-1">
@@ -331,9 +334,11 @@
     </div>
 
     {#snippet listPage()}
-      <div class="p-2">
-        <input class="input h-9 w-full" type="search" placeholder="Search" bind:value={search} />
-      </div>
+      {#if knownTags.size > 0}
+        <div class="p-2">
+          <input class="input h-9 w-full" type="search" placeholder="Search" bind:value={search} />
+        </div>
+      {/if}
       <div class="scrollbar flex max-h-[280px] flex-col overflow-y-auto pb-1">
         {#each selectedTags as tag (tag)}
           {@render tagRow(tag, true)}
@@ -470,7 +475,15 @@
       </button>
     {/if}
   </div>
-  <div class="flex flex-col gap-3 px-3 pb-3">
+  <form
+    class="flex flex-col gap-3 px-3 pb-3"
+    onsubmit={(e) => {
+      e.preventDefault()
+      if (!opts.submitDisabled) {
+        opts.onSubmit()
+      }
+    }}
+  >
     <label class="flex flex-col gap-1 text-sm font-medium">
       Tag name
       <input
@@ -509,9 +522,9 @@
       </div>
     </div>
     <button
+      type="submit"
       class="btn h-9! w-full preset-filled-primary-500"
       disabled={opts.submitDisabled}
-      onclick={opts.onSubmit}
     >
       {opts.submitLabel}
     </button>
@@ -520,5 +533,5 @@
         The tag “{newTagName.trim()}” already exists.
       </p>
     {/if}
-  </div>
+  </form>
 {/snippet}
