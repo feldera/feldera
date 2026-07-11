@@ -96,6 +96,40 @@ A SQL column and a field in the Avro schema are compatible if the following cond
 | `VARIANT`                     | `string`       | values of type `VARIANT` are deserialized from JSON-encoded strings (see [`VARIANT` documetation](/sql/json)) |
 | user-defined types            | `record`       | Avro record schema must match SQL user-defined type definition according to the same schema compatibility rules as for SQL tables|
 
+### Debezium logical types
+
+When `update_format` is set to `debezium`, the connector additionally recognizes
+Debezium's temporal and decimal
+[semantic types](https://debezium.io/documentation/reference/stable/connectors/postgresql.html#postgresql-data-types).
+Debezium encodes these as plain Avro types annotated with a `connect.name`
+attribute rather than as native Avro logical types. The connector converts each
+value into the matching SQL column type:
+
+| `connect.name`                          | Avro encoding                                               | SQL column  |
+|-----------------------------------------|-------------------------------------------------------------|-------------|
+| `io.debezium.time.Date`                 | `int` days since epoch                                      | `DATE`      |
+| `io.debezium.time.Time`                 | `int` milliseconds since midnight                           | `TIME`      |
+| `io.debezium.time.MicroTime`            | `long` microseconds since midnight                          | `TIME`      |
+| `io.debezium.time.NanoTime`             | `long` nanoseconds since midnight                           | `TIME`      |
+| `io.debezium.time.ZonedTime`            | ISO-8601 `string` (e.g. `10:15:30+01:00`)                   | `TIME`      |
+| `io.debezium.time.Timestamp`            | `long` milliseconds since epoch                             | `TIMESTAMP` |
+| `io.debezium.time.MicroTimestamp`       | `long` microseconds since epoch                             | `TIMESTAMP` |
+| `io.debezium.time.NanoTimestamp`        | `long` nanoseconds since epoch                              | `TIMESTAMP` |
+| `io.debezium.time.ZonedTimestamp`       | ISO-8601 `string` (e.g. `2011-12-03T10:15:30.030431+01:00`) | `TIMESTAMP` |
+| `io.debezium.data.VariableScaleDecimal` | `{scale, value}` record                                     | `DECIMAL`   |
+
+Notes:
+
+* Any timestamp type can be deserialized into either a `TIMESTAMP` or a
+  `TIMESTAMP WITH TIME ZONE` column; the connector stores the same instant in
+  both cases. Zoned values are normalized to UTC.
+* The equivalent `org.apache.kafka.connect.data.Date`, `.Time`, and `.Timestamp`
+  types, emitted when Debezium's `time.precision.mode` is set to `connect`, are
+  also supported.
+* `io.debezium.data.VariableScaleDecimal` represents decimals whose scale is not
+  fixed in the schema (for example, an unconstrained PostgreSQL `NUMERIC`). The
+  wire scale may differ from the SQL column's scale.
+
 ### Configuration
 
 The following properties can be used to configure the Avro parser. All of these properties are optional.  However,

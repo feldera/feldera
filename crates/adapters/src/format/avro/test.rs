@@ -16,11 +16,12 @@ use crate::{catalog::SerBatchReader, util::run_in_posix_runtime};
 use apache_avro::{
     Schema as AvroSchema, from_avro_datum, schema::ResolvedSchema, to_avro_datum, types::Value,
 };
+use chrono::{DateTime, Utc};
 use dbsp::trace::BatchReaderFactories;
 use dbsp::typed_batch::{DynSpineSnapshot, SpineSnapshot as TypedSpineSnapshot, TypedBatch};
 use dbsp::{DBData, IndexedZSetReader, OrdIndexedZSet, OrdZSet, ZWeight, utils::Tup2};
 use feldera_adapterlib::transport::OutputBatchType;
-use feldera_sqllib::{ByteArray, Uuid, Variant};
+use feldera_sqllib::{ByteArray, Date, SqlDecimal, Time, Timestamp, TimestampTz, Uuid, Variant};
 use feldera_types::{
     deserialize_table_record,
     format::avro::{AvroEncoderConfig, AvroEncoderKeyMode},
@@ -33,6 +34,7 @@ use feldera_types::{
     serialize_struct,
 };
 use itertools::Itertools;
+use num_bigint::BigInt;
 use proptest::prelude::*;
 use proptest::proptest;
 use rand::rngs::StdRng;
@@ -122,6 +124,18 @@ impl<T> DebeziumMessage<T> {
 
 /// Debezium message Avro schema with the specified inner record schema.
 fn debezium_avro_schema(value_schema: &str, value_type_name: &str) -> AvroSchema {
+    let schema_str = debezium_avro_schema_str(value_schema, value_type_name);
+
+    println!("Debezium Avro schema: {schema_str}");
+
+    AvroSchema::parse_str(&schema_str).unwrap()
+}
+
+/// Raw JSON of the Debezium envelope schema embedding the given inner record
+/// schema. Unlike [`debezium_avro_schema`], the string is returned verbatim so
+/// that Debezium `connect.name` annotations survive (parsing them into an
+/// `AvroSchema` drops attributes on primitive types).
+fn debezium_avro_schema_str(value_schema: &str, value_type_name: &str) -> String {
     // Note: placing `after` before `before` to trigger schema reference resolution.
     let schema_str = r#"{
     "type": "record",
@@ -202,9 +216,7 @@ fn debezium_avro_schema(value_schema: &str, value_type_name: &str) -> AvroSchema
     "connect.name": "test_namespace.Envelope"
 }"#.replace("VALUE_SCHEMA", value_schema).replace("VALUE_TYPE", value_type_name);
 
-    println!("Debezium Avro schema: {schema_str}");
-
-    AvroSchema::parse_str(&schema_str).unwrap()
+    schema_str
 }
 
 fn serialize_record<T>(x: &T, schema: &AvroSchema) -> Vec<u8>
@@ -1058,6 +1070,579 @@ fn test_ms_time() {
         },
         input_batches,
         expected_output,
+    };
+
+    run_parser_test(vec![test]);
+}
+
+/// Raw wire representation of a row carrying every Debezium temporal type.
+///
+/// The fields hold the exact values Debezium puts on the wire (milliseconds,
+/// microseconds, or nanoseconds since epoch/midnight, or ISO-8601 strings) so
+/// that the test can encode a realistic Debezium message. The connector must
+/// convert these into the [`TestTemporal`] representation on the way in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TestTemporalRaw {
+    id: i64,
+    ts_millis: i64,
+    ts_micros: i64,
+    ts_nanos: i64,
+    ts_zoned: String,
+    ts_connect: i64,
+    ts_opt: Option<i64>,
+    t_millis: i32,
+    t_micros: i64,
+    t_nanos: i64,
+    t_zoned: String,
+    t_connect: i32,
+    dt: i32,
+}
+
+serialize_table_record!(TestTemporalRaw[13]{
+    r#id["id"]: i64,
+    r#ts_millis["ts_millis"]: i64,
+    r#ts_micros["ts_micros"]: i64,
+    r#ts_nanos["ts_nanos"]: i64,
+    r#ts_zoned["ts_zoned"]: String,
+    r#ts_connect["ts_connect"]: i64,
+    r#ts_opt["ts_opt"]: Option<i64>,
+    r#t_millis["t_millis"]: i32,
+    r#t_micros["t_micros"]: i64,
+    r#t_nanos["t_nanos"]: i64,
+    r#t_zoned["t_zoned"]: String,
+    r#t_connect["t_connect"]: i32,
+    r#dt["dt"]: i32
+});
+
+deserialize_table_record!(TestTemporalRaw["Temporal", Variant, 13] {
+    (r#id, "id", false, i64, |_| None),
+    (r#ts_millis, "ts_millis", false, i64, |_| None),
+    (r#ts_micros, "ts_micros", false, i64, |_| None),
+    (r#ts_nanos, "ts_nanos", false, i64, |_| None),
+    (r#ts_zoned, "ts_zoned", false, String, |_| None),
+    (r#ts_connect, "ts_connect", false, i64, |_| None),
+    (r#ts_opt, "ts_opt", true, Option<i64>, |_| Some(None)),
+    (r#t_millis, "t_millis", false, i32, |_| None),
+    (r#t_micros, "t_micros", false, i64, |_| None),
+    (r#t_nanos, "t_nanos", false, i64, |_| None),
+    (r#t_zoned, "t_zoned", false, String, |_| None),
+    (r#t_connect, "t_connect", false, i32, |_| None),
+    (r#dt, "dt", false, i32, |_| None)
+});
+
+/// Decoded representation of [`TestTemporalRaw`]: every temporal column parsed
+/// into the matching Feldera type.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct TestTemporal {
+    id: i64,
+    ts_millis: Timestamp,
+    ts_micros: Timestamp,
+    ts_nanos: Timestamp,
+    ts_zoned: TimestampTz,
+    ts_connect: Timestamp,
+    ts_opt: Option<Timestamp>,
+    t_millis: Time,
+    t_micros: Time,
+    t_nanos: Time,
+    t_zoned: Time,
+    t_connect: Time,
+    dt: Date,
+}
+
+serialize_table_record!(TestTemporal[13]{
+    r#id["id"]: i64,
+    r#ts_millis["ts_millis"]: Timestamp,
+    r#ts_micros["ts_micros"]: Timestamp,
+    r#ts_nanos["ts_nanos"]: Timestamp,
+    r#ts_zoned["ts_zoned"]: TimestampTz,
+    r#ts_connect["ts_connect"]: Timestamp,
+    r#ts_opt["ts_opt"]: Option<Timestamp>,
+    r#t_millis["t_millis"]: Time,
+    r#t_micros["t_micros"]: Time,
+    r#t_nanos["t_nanos"]: Time,
+    r#t_zoned["t_zoned"]: Time,
+    r#t_connect["t_connect"]: Time,
+    r#dt["dt"]: Date
+});
+
+deserialize_table_record!(TestTemporal["Temporal", Variant, 13] {
+    (r#id, "id", false, i64, |_| None),
+    (r#ts_millis, "ts_millis", false, Timestamp, |_| None),
+    (r#ts_micros, "ts_micros", false, Timestamp, |_| None),
+    (r#ts_nanos, "ts_nanos", false, Timestamp, |_| None),
+    (r#ts_zoned, "ts_zoned", false, TimestampTz, |_| None),
+    (r#ts_connect, "ts_connect", false, Timestamp, |_| None),
+    (r#ts_opt, "ts_opt", true, Option<Timestamp>, |_| Some(None)),
+    (r#t_millis, "t_millis", false, Time, |_| None),
+    (r#t_micros, "t_micros", false, Time, |_| None),
+    (r#t_nanos, "t_nanos", false, Time, |_| None),
+    (r#t_zoned, "t_zoned", false, Time, |_| None),
+    (r#t_connect, "t_connect", false, Time, |_| None),
+    (r#dt, "dt", false, Date, |_| None)
+});
+
+impl TestTemporal {
+    /// Avro value schema covering every supported Debezium temporal type. Each
+    /// column is a plain `int`/`long`/`string` tagged with a Debezium
+    /// `connect.name`, exactly as Debezium emits them.
+    fn value_avro_schema() -> &'static str {
+        r#"{
+            "type": "record",
+            "name": "Temporal",
+            "connect.name": "test_namespace.Temporal",
+            "fields": [
+                { "name": "id", "type": "long" },
+                { "name": "ts_millis", "type": { "type": "long", "connect.name": "io.debezium.time.Timestamp" } },
+                { "name": "ts_micros", "type": { "type": "long", "connect.name": "io.debezium.time.MicroTimestamp" } },
+                { "name": "ts_nanos", "type": { "type": "long", "connect.name": "io.debezium.time.NanoTimestamp" } },
+                { "name": "ts_zoned", "type": { "type": "string", "connect.name": "io.debezium.time.ZonedTimestamp" } },
+                { "name": "ts_connect", "type": { "type": "long", "connect.name": "org.apache.kafka.connect.data.Timestamp" } },
+                { "name": "ts_opt", "type": ["null", { "type": "long", "connect.name": "io.debezium.time.MicroTimestamp" }], "default": null },
+                { "name": "t_millis", "type": { "type": "int", "connect.name": "io.debezium.time.Time" } },
+                { "name": "t_micros", "type": { "type": "long", "connect.name": "io.debezium.time.MicroTime" } },
+                { "name": "t_nanos", "type": { "type": "long", "connect.name": "io.debezium.time.NanoTime" } },
+                { "name": "t_zoned", "type": { "type": "string", "connect.name": "io.debezium.time.ZonedTime" } },
+                { "name": "t_connect", "type": { "type": "int", "connect.name": "org.apache.kafka.connect.data.Time" } },
+                { "name": "dt", "type": { "type": "int", "connect.name": "io.debezium.time.Date" } }
+            ]
+        }"#
+    }
+
+    fn schema() -> Vec<Field> {
+        vec![
+            Field::new("id".into(), ColumnType::bigint(false)),
+            Field::new("ts_millis".into(), ColumnType::timestamp(false)),
+            Field::new("ts_micros".into(), ColumnType::timestamp(false)),
+            Field::new("ts_nanos".into(), ColumnType::timestamp(false)),
+            Field::new("ts_zoned".into(), ColumnType::timestamp_tz(false)),
+            Field::new("ts_connect".into(), ColumnType::timestamp(false)),
+            Field::new("ts_opt".into(), ColumnType::timestamp(true)),
+            Field::new("t_millis".into(), ColumnType::time(false)),
+            Field::new("t_micros".into(), ColumnType::time(false)),
+            Field::new("t_nanos".into(), ColumnType::time(false)),
+            Field::new("t_zoned".into(), ColumnType::time(false)),
+            Field::new("t_connect".into(), ColumnType::time(false)),
+            Field::new("dt".into(), ColumnType::date(false)),
+        ]
+    }
+
+    fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("Temporal", false),
+            fields: Self::schema(),
+            materialized: false,
+            properties: BTreeMap::new(),
+            primary_key: None,
+        }
+    }
+}
+
+/// Parse every Debezium temporal semantic type into the matching Feldera
+/// `TIME`/`TIMESTAMP`/`DATE` column.
+#[test]
+fn test_debezium_temporal_types() {
+    // Base instant with millisecond precision so its millisecond, microsecond,
+    // and nanosecond encodings all denote the same point in time.
+    let instant = DateTime::parse_from_rfc3339("2021-06-15T12:30:45.123Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let ts_micros = instant.timestamp_micros();
+    let ts_millis = ts_micros / 1_000;
+    let ts_nanos = ts_micros * 1_000;
+    let dt_days = (instant.timestamp() / 86_400) as i32;
+
+    // Time of day 12:30:45.123, again at millisecond precision.
+    let time_micros = (12 * 3_600 + 30 * 60 + 45) * 1_000_000 + 123_000;
+    let time_millis = (time_micros / 1_000) as i32;
+    let time_nanos = time_micros * 1_000;
+    let time_as_time = Time::from_nanoseconds((time_micros * 1_000) as u64);
+
+    let raw = TestTemporalRaw {
+        id: 1,
+        ts_millis,
+        ts_micros,
+        ts_nanos,
+        // +02:00 wall clock for the same instant, to exercise offset handling.
+        ts_zoned: "2021-06-15T14:30:45.123+02:00".to_string(),
+        ts_connect: ts_millis,
+        ts_opt: Some(ts_micros),
+        t_millis: time_millis,
+        t_micros: time_micros,
+        t_nanos: time_nanos,
+        t_zoned: "14:30:45.123+02:00".to_string(),
+        t_connect: time_millis,
+        dt: dt_days,
+    };
+
+    let expected = TestTemporal {
+        id: 1,
+        ts_millis: Timestamp::from_microseconds(ts_micros),
+        ts_micros: Timestamp::from_microseconds(ts_micros),
+        ts_nanos: Timestamp::from_microseconds(ts_micros),
+        ts_zoned: TimestampTz::from_microseconds(ts_micros),
+        ts_connect: Timestamp::from_microseconds(ts_micros),
+        ts_opt: Some(Timestamp::from_microseconds(ts_micros)),
+        t_millis: time_as_time,
+        t_micros: time_as_time,
+        t_nanos: time_as_time,
+        t_zoned: time_as_time,
+        t_connect: time_as_time,
+        dt: Date::from_days(dt_days),
+    };
+
+    // Second row exercises a NULL value in the nullable timestamp column.
+    let raw_null = TestTemporalRaw {
+        id: 2,
+        ts_opt: None,
+        ..raw.clone()
+    };
+    let expected_null = TestTemporal {
+        id: 2,
+        ts_opt: None,
+        ..expected.clone()
+    };
+
+    // Encode a Debezium message from the raw values. The envelope schema is
+    // parsed here purely to drive Avro encoding; the connector receives the raw
+    // schema string (below) with the `connect.name` annotations intact.
+    let envelope_str = debezium_avro_schema_str(TestTemporal::value_avro_schema(), "Temporal");
+    let envelope_schema = AvroSchema::parse_str(&envelope_str).unwrap();
+    let resolved = ResolvedSchema::try_from(&envelope_schema).unwrap();
+
+    let encode = |row: &TestTemporalRaw| {
+        let mut buffer = vec![0; 5];
+        let serializer = AvroSchemaSerializer::new(&envelope_schema, resolved.get_names(), true);
+        let dbz_message = DebeziumMessage::new("u", Some(row.clone()), Some(row.clone()));
+        let val = dbz_message
+            .serialize_with_context(serializer, &avro_ser_config())
+            .unwrap();
+        let mut avro_record = to_avro_datum(&envelope_schema, val).unwrap();
+        buffer.append(&mut avro_record);
+        (buffer, vec![])
+    };
+
+    let test = TestCase {
+        relation_schema: TestTemporal::relation_schema(),
+        config: AvroParserConfig {
+            update_format: AvroUpdateFormat::Debezium,
+            schema: Some(envelope_str),
+            skip_schema_id: false,
+            registry_config: Default::default(),
+        },
+        input_batches: vec![encode(&raw), encode(&raw_null)],
+        expected_output: vec![
+            MockUpdate::Delete(expected.clone()),
+            MockUpdate::Insert(expected.clone()),
+            MockUpdate::Delete(expected_null.clone()),
+            MockUpdate::Insert(expected_null.clone()),
+        ],
+    };
+
+    run_parser_test(vec![test]);
+}
+
+/// A Debezium temporal type mapped to an incompatible SQL column must be
+/// rejected during schema validation.
+#[test]
+fn test_debezium_temporal_type_mismatch() {
+    use super::schema::validate_struct_schema;
+
+    let value_schema = r#"{
+        "type": "record",
+        "name": "Temporal",
+        "connect.name": "test_namespace.Temporal",
+        "fields": [
+            { "name": "id", "type": { "type": "long", "connect.name": "io.debezium.time.Timestamp" } }
+        ]
+    }"#;
+
+    let hoisted = super::coercion::hoist_coercible_types(value_schema).unwrap();
+    let schema = AvroSchema::parse_str(&hoisted).unwrap();
+    let resolved = ResolvedSchema::try_from(&schema).unwrap();
+    let refs = resolved
+        .get_names()
+        .iter()
+        .map(|(name, schema)| (name.clone(), (*schema).clone()))
+        .collect();
+
+    // The `id` column is BIGINT, but the Avro field is a Debezium timestamp.
+    let fields = vec![Field::new("id".into(), ColumnType::bigint(false))];
+    let err = validate_struct_schema(&schema, &refs, &fields).unwrap_err();
+    assert!(
+        err.contains("io.debezium.time.Timestamp") && err.contains("TIMESTAMP"),
+        "unexpected error message: {err}"
+    );
+}
+
+/// Raw wire representation of the same instant encoded four ways: as a
+/// `ZonedTimestamp` (string) and a `MicroTimestamp` (long), each destined for
+/// both a `TIMESTAMP` and a `TIMESTAMP WITH TIME ZONE` column.
+#[derive(Debug, Clone)]
+struct TsTargetsRaw {
+    z_ts: String,
+    z_tstz: String,
+    n_ts: i64,
+    n_tstz: i64,
+}
+
+serialize_table_record!(TsTargetsRaw[4]{
+    r#z_ts["z_ts"]: String,
+    r#z_tstz["z_tstz"]: String,
+    r#n_ts["n_ts"]: i64,
+    r#n_tstz["n_tstz"]: i64
+});
+
+/// Decoded form of [`TsTargetsRaw`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct TsTargets {
+    z_ts: Timestamp,
+    z_tstz: TimestampTz,
+    n_ts: Timestamp,
+    n_tstz: TimestampTz,
+}
+
+deserialize_table_record!(TsTargets["TsTargets", Variant, 4] {
+    (r#z_ts, "z_ts", false, Timestamp, |_| None),
+    (r#z_tstz, "z_tstz", false, TimestampTz, |_| None),
+    (r#n_ts, "n_ts", false, Timestamp, |_| None),
+    (r#n_tstz, "n_tstz", false, TimestampTz, |_| None)
+});
+
+impl TsTargets {
+    fn value_avro_schema() -> &'static str {
+        r#"{
+            "type": "record",
+            "name": "TsTargets",
+            "connect.name": "test_namespace.TsTargets",
+            "fields": [
+                { "name": "z_ts", "type": { "type": "string", "connect.name": "io.debezium.time.ZonedTimestamp" } },
+                { "name": "z_tstz", "type": { "type": "string", "connect.name": "io.debezium.time.ZonedTimestamp" } },
+                { "name": "n_ts", "type": { "type": "long", "connect.name": "io.debezium.time.MicroTimestamp" } },
+                { "name": "n_tstz", "type": { "type": "long", "connect.name": "io.debezium.time.MicroTimestamp" } }
+            ]
+        }"#
+    }
+
+    fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("TsTargets", false),
+            fields: vec![
+                Field::new("z_ts".into(), ColumnType::timestamp(false)),
+                Field::new("z_tstz".into(), ColumnType::timestamp_tz(false)),
+                Field::new("n_ts".into(), ColumnType::timestamp(false)),
+                Field::new("n_tstz".into(), ColumnType::timestamp_tz(false)),
+            ],
+            materialized: false,
+            properties: BTreeMap::new(),
+            primary_key: None,
+        }
+    }
+}
+
+/// A Debezium timestamp type deserializes into either a `TIMESTAMP` or a
+/// `TIMESTAMP WITH TIME ZONE` column. This covers both the string-encoded
+/// `ZonedTimestamp` and a numeric type against both column types.
+#[test]
+fn test_debezium_timestamp_column_targets() {
+    let instant = DateTime::parse_from_rfc3339("2021-06-15T12:30:45.123Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let micros = instant.timestamp_micros();
+    // Same instant expressed in a +02:00 offset.
+    let zoned = "2021-06-15T14:30:45.123+02:00".to_string();
+
+    let raw = TsTargetsRaw {
+        z_ts: zoned.clone(),
+        z_tstz: zoned.clone(),
+        n_ts: micros,
+        n_tstz: micros,
+    };
+    let expected = TsTargets {
+        z_ts: Timestamp::from_microseconds(micros),
+        z_tstz: TimestampTz::from_microseconds(micros),
+        n_ts: Timestamp::from_microseconds(micros),
+        n_tstz: TimestampTz::from_microseconds(micros),
+    };
+
+    let envelope_str = debezium_avro_schema_str(TsTargets::value_avro_schema(), "TsTargets");
+    let envelope_schema = AvroSchema::parse_str(&envelope_str).unwrap();
+    let resolved = ResolvedSchema::try_from(&envelope_schema).unwrap();
+
+    let mut buffer = vec![0; 5];
+    let serializer = AvroSchemaSerializer::new(&envelope_schema, resolved.get_names(), true);
+    let dbz_message = DebeziumMessage::new("u", Some(raw.clone()), Some(raw.clone()));
+    let val = dbz_message
+        .serialize_with_context(serializer, &avro_ser_config())
+        .unwrap();
+    let mut avro_record = to_avro_datum(&envelope_schema, val).unwrap();
+    buffer.append(&mut avro_record);
+
+    let test = TestCase {
+        relation_schema: TsTargets::relation_schema(),
+        config: AvroParserConfig {
+            update_format: AvroUpdateFormat::Debezium,
+            schema: Some(envelope_str),
+            skip_schema_id: false,
+            registry_config: Default::default(),
+        },
+        input_batches: vec![(buffer, vec![])],
+        expected_output: vec![
+            MockUpdate::Delete(expected.clone()),
+            MockUpdate::Insert(expected.clone()),
+        ],
+    };
+
+    run_parser_test(vec![test]);
+}
+
+/// Raw wire representation of a Debezium `VariableScaleDecimal`: a record with
+/// the scale and the big-endian two's-complement unscaled value.
+#[derive(Debug, Clone)]
+struct VariableScaleDecimalRaw {
+    scale: i32,
+    value: ByteArray,
+}
+
+serialize_table_record!(VariableScaleDecimalRaw[2]{
+    r#scale["scale"]: i32,
+    r#value["value"]: ByteArray
+});
+
+/// Raw wire representation of a row with variable-scale decimal columns, one of
+/// them nullable and encoded via a by-name reference to the same record type.
+#[derive(Debug, Clone)]
+struct TestDecimalRaw {
+    id: i64,
+    amount: VariableScaleDecimalRaw,
+    amount_opt: Option<VariableScaleDecimalRaw>,
+}
+
+serialize_table_record!(TestDecimalRaw[3]{
+    r#id["id"]: i64,
+    r#amount["amount"]: VariableScaleDecimalRaw,
+    r#amount_opt["amount_opt"]: Option<VariableScaleDecimalRaw>
+});
+
+/// Decoded representation of [`TestDecimalRaw`]: every variable-scale decimal
+/// parsed into a Feldera `DECIMAL` column.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct TestDecimal {
+    id: i64,
+    amount: SqlDecimal<10, 3>,
+    amount_opt: Option<SqlDecimal<10, 3>>,
+}
+
+deserialize_table_record!(TestDecimal["Dec", Variant, 3] {
+    (r#id, "id", false, i64, |_| None),
+    (r#amount, "amount", false, SqlDecimal<10, 3>, |_| None),
+    (r#amount_opt, "amount_opt", true, Option<SqlDecimal<10, 3>>, |_| Some(None))
+});
+
+impl TestDecimal {
+    /// Avro value schema with two `VariableScaleDecimal` columns; `amount_opt`
+    /// references the record type by name, exercising reference resolution.
+    fn value_avro_schema() -> &'static str {
+        r#"{
+            "type": "record",
+            "name": "Dec",
+            "connect.name": "test_namespace.Dec",
+            "fields": [
+                { "name": "id", "type": "long" },
+                { "name": "amount", "type": {
+                    "type": "record",
+                    "name": "VariableScaleDecimal",
+                    "namespace": "io.debezium.data",
+                    "fields": [
+                        { "name": "scale", "type": "int" },
+                        { "name": "value", "type": "bytes" }
+                    ],
+                    "connect.version": 1,
+                    "connect.name": "io.debezium.data.VariableScaleDecimal"
+                }},
+                { "name": "amount_opt", "type": ["null", "io.debezium.data.VariableScaleDecimal"], "default": null }
+            ]
+        }"#
+    }
+
+    fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("Dec", false),
+            fields: vec![
+                Field::new("id".into(), ColumnType::bigint(false)),
+                Field::new("amount".into(), ColumnType::decimal(10, 3, false)),
+                Field::new("amount_opt".into(), ColumnType::decimal(10, 3, true)),
+            ],
+            materialized: false,
+            properties: BTreeMap::new(),
+            primary_key: None,
+        }
+    }
+}
+
+/// Parse Debezium `io.debezium.data.VariableScaleDecimal` records into Feldera
+/// `DECIMAL` columns, including a nullable column and a by-name type reference.
+#[test]
+fn test_debezium_variable_scale_decimal() {
+    let raw_dec = |scale: i32, unscaled: i64| VariableScaleDecimalRaw {
+        scale,
+        value: ByteArray::new(&BigInt::from(unscaled).to_signed_bytes_be()),
+    };
+
+    // The wire scale differs from the column scale (3), which is the whole point
+    // of the variable-scale type.
+    let row1 = TestDecimalRaw {
+        id: 1,
+        amount: raw_dec(2, 12345),           // 123.45
+        amount_opt: Some(raw_dec(3, -6789)), // -6.789
+    };
+    let row2 = TestDecimalRaw {
+        id: 2,
+        amount: raw_dec(0, 42), // 42
+        amount_opt: None,
+    };
+
+    let expected1 = TestDecimal {
+        id: 1,
+        amount: SqlDecimal::<10, 3>::new(12345, 2).unwrap(),
+        amount_opt: Some(SqlDecimal::<10, 3>::new(-6789, 3).unwrap()),
+    };
+    let expected2 = TestDecimal {
+        id: 2,
+        amount: SqlDecimal::<10, 3>::new(42, 0).unwrap(),
+        amount_opt: None,
+    };
+
+    let envelope_str = debezium_avro_schema_str(TestDecimal::value_avro_schema(), "Dec");
+    let envelope_schema = AvroSchema::parse_str(&envelope_str).unwrap();
+    let resolved = ResolvedSchema::try_from(&envelope_schema).unwrap();
+
+    let encode = |row: &TestDecimalRaw| {
+        let mut buffer = vec![0; 5];
+        let serializer = AvroSchemaSerializer::new(&envelope_schema, resolved.get_names(), true);
+        let dbz_message = DebeziumMessage::new("u", Some(row.clone()), Some(row.clone()));
+        let val = dbz_message
+            .serialize_with_context(serializer, &avro_ser_config())
+            .unwrap();
+        let mut avro_record = to_avro_datum(&envelope_schema, val).unwrap();
+        buffer.append(&mut avro_record);
+        (buffer, vec![])
+    };
+
+    let test = TestCase {
+        relation_schema: TestDecimal::relation_schema(),
+        config: AvroParserConfig {
+            update_format: AvroUpdateFormat::Debezium,
+            schema: Some(envelope_str),
+            skip_schema_id: false,
+            registry_config: Default::default(),
+        },
+        input_batches: vec![encode(&row1), encode(&row2)],
+        expected_output: vec![
+            MockUpdate::Delete(expected1.clone()),
+            MockUpdate::Insert(expected1.clone()),
+            MockUpdate::Delete(expected2.clone()),
+            MockUpdate::Insert(expected2.clone()),
+        ],
     };
 
     run_parser_test(vec![test]);

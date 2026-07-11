@@ -5,6 +5,8 @@ use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_types::format::avro::AvroSchemaRegistryConfig;
 use schema_registry_converter::blocking::schema_registry::SrSettings;
 
+mod coercion;
+mod debezium;
 pub mod deserializer;
 pub mod input;
 pub mod output;

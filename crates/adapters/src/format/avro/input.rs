@@ -284,7 +284,19 @@ impl AvroParser {
         &self,
         schema_str: &str,
     ) -> Result<(AvroSchema, AvroSchemaRefs, AvroSchema), ControllerError> {
-        let schema = AvroSchema::parse_str(schema_str).map_err(|e| {
+        // Debezium encodes some columns with `connect.name` annotations that
+        // `apache-avro` drops for primitive types. Hoist them onto their record
+        // fields so they survive parsing (see `super::coercion`).
+        let schema_str: Cow<str> =
+            if matches!(self.config.update_format, AvroUpdateFormat::Debezium) {
+                super::coercion::hoist_coercible_types(schema_str)
+                    .map(Cow::Owned)
+                    .unwrap_or(Cow::Borrowed(schema_str))
+            } else {
+                Cow::Borrowed(schema_str)
+            };
+
+        let schema = AvroSchema::parse_str(&schema_str).map_err(|e| {
             ControllerError::invalid_parser_configuration(
                 &self.endpoint_name,
                 &format!("error parsing Avro schema: {e}"),

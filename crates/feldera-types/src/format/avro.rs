@@ -25,6 +25,36 @@ pub enum AvroUpdateFormat {
     Raw,
 
     /// Debezium data change event format.
+    ///
+    /// ### Temporal types
+    ///
+    /// Debezium encodes temporal columns with a `connect.name` annotation
+    /// rather than a native Avro logical type. The input connector recognizes
+    /// these annotations and converts each value into the matching Feldera
+    /// column type:
+    ///
+    /// | `connect.name`                          | wire encoding                     | Feldera column |
+    /// |-----------------------------------------|-----------------------------------|----------------|
+    /// | `io.debezium.time.Date`                 | `int` days since epoch            | `DATE`         |
+    /// | `io.debezium.time.Time`                 | `int` milliseconds since midnight | `TIME`         |
+    /// | `io.debezium.time.MicroTime`            | `long` microseconds since midnight| `TIME`         |
+    /// | `io.debezium.time.NanoTime`             | `long` nanoseconds since midnight | `TIME`         |
+    /// | `io.debezium.time.ZonedTime`            | ISO-8601 `string`                 | `TIME`         |
+    /// | `io.debezium.time.Timestamp`            | `long` milliseconds since epoch   | `TIMESTAMP`    |
+    /// | `io.debezium.time.MicroTimestamp`       | `long` microseconds since epoch   | `TIMESTAMP`    |
+    /// | `io.debezium.time.NanoTimestamp`        | `long` nanoseconds since epoch    | `TIMESTAMP`    |
+    /// | `io.debezium.time.ZonedTimestamp`       | ISO-8601 `string`                 | `TIMESTAMP`    |
+    ///
+    /// Any timestamp type populates either a `TIMESTAMP` or a `TIMESTAMP WITH
+    /// TIME ZONE` column; the connector stores the same instant (microseconds
+    /// since the Unix epoch) in both cases.
+    ///
+    /// The `org.apache.kafka.connect.data.{Date,Time,Timestamp}` types emitted
+    /// with `time.precision.mode=connect` are also supported.
+    ///
+    /// `io.debezium.data.VariableScaleDecimal` (used for `NUMERIC`/`DECIMAL`
+    /// columns without a fixed scale, encoded as a `{scale, value}` record) is
+    /// parsed into a `DECIMAL` column.
     #[serde(rename = "debezium")]
     Debezium,
 

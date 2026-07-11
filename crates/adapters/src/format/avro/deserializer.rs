@@ -47,6 +47,7 @@ use std::{
 
 use crate::format::avro::resolve_ref;
 
+use super::coercion::{Coerced, Coercion, field_coercion};
 use super::input::avro_de_config;
 
 fn deserialize_decimal<E: serde::de::Error>(d: &Decimal, schema: &Schema) -> Result<String, E> {
@@ -70,6 +71,10 @@ pub struct Deserializer<'de> {
     schema: &'de Schema,
     refs: &'de AvroSchemaRefs,
     input: &'de Value,
+    /// Value coercion for the enclosing record field, if any. When set, the
+    /// decoded Avro value is converted (see [`Coercion`]) before being handed to
+    /// the target column's deserializer.
+    coercion: Option<Coercion>,
 }
 
 struct SeqDeserializer<'de> {
@@ -99,6 +104,21 @@ impl<'de> Deserializer<'de> {
             input,
             schema,
             refs,
+            coercion: None,
+        }
+    }
+
+    fn with_coercion(
+        input: &'de Value,
+        schema: &'de Schema,
+        refs: &'de AvroSchemaRefs,
+        coercion: Option<Coercion>,
+    ) -> Self {
+        Deserializer {
+            input,
+            schema,
+            refs,
+            coercion,
         }
     }
 }
@@ -180,6 +200,26 @@ fn unwrap_union<'de>(v: &'de Value, schema: &'de Schema) -> (&'de Value, &'de Sc
     }
 }
 
+/// Apply a [`Coercion`] to `value` and hand the result to `visitor`.
+///
+/// This is the single point at which coercions produce Serde values, called
+/// from every deserialize entry point a coerced field can reach.
+// The error type is determined by the `apache_avro` crate.
+#[allow(clippy::result_large_err)]
+fn visit_coerced<'de, V: Visitor<'de>>(
+    coercion: Coercion,
+    value: &Value,
+    visitor: V,
+) -> Result<V::Value, Error> {
+    match coercion
+        .coerce(value)
+        .map_err(|e| de::Error::custom(format!("error applying Avro value coercion: {e}")))?
+    {
+        Coerced::I64(i) => visitor.visit_i64(i),
+        Coerced::Str(s) => visitor.visit_str(&s),
+    }
+}
+
 impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     type Error = Error;
 
@@ -188,6 +228,9 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
         V: Visitor<'de>,
     {
         let (val, schema) = unwrap_union(self.input, self.schema);
+        if let Some(coercion) = self.coercion {
+            return visit_coerced(coercion, val, visitor);
+        }
         match  val {
             Value::Null => visitor.visit_unit(),
             &Value::Boolean(b) => visitor.visit_bool(b),
@@ -233,7 +276,11 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        match unwrap_union(self.input, self.schema).0 {
+        let (val, _) = unwrap_union(self.input, self.schema);
+        if let Some(coercion) = self.coercion {
+            return visit_coerced(coercion, val, visitor);
+        }
+        match val {
             Value::String(s) | Value::Enum(_, s) => visitor.visit_borrowed_str(s),
             Value::Bytes(bytes) | Value::Fixed(_, bytes) => {
                 let s =
@@ -251,7 +298,11 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        match unwrap_union(self.input, self.schema).0 {
+        let (val, _) = unwrap_union(self.input, self.schema);
+        if let Some(coercion) = self.coercion {
+            return visit_coerced(coercion, val, visitor);
+        }
+        match val {
             Value::String(s) | Value::Enum(_, s) => visitor.visit_borrowed_str(s),
             Value::Bytes(bytes) | Value::Fixed(_, bytes) => {
                 let s = String::from_utf8(bytes.to_owned())
@@ -310,13 +361,19 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
                         self.schema
                     )));
                 };
-                visitor.visit_some(&Deserializer::new(
+                visitor.visit_some(&Deserializer::with_coercion(
                     inner,
                     &union_schema.variants()[*i as usize],
                     self.refs,
+                    self.coercion,
                 ))
             }
-            v => visitor.visit_some(&Deserializer::new(v, self.schema, self.refs)),
+            v => visitor.visit_some(&Deserializer::with_coercion(
+                v,
+                self.schema,
+                self.refs,
+                self.coercion,
+            )),
         }
     }
 
@@ -517,10 +574,12 @@ impl<'de> de::MapAccess<'de> for RecordDeserializer<'de> {
     {
         match self.value.take() {
             Some(value) => {
-                let result = seed.deserialize(&Deserializer::new(
+                let field = &self.record_schema.fields[self.next_field_index];
+                let result = seed.deserialize(&Deserializer::with_coercion(
                     value,
-                    &self.record_schema.fields[self.next_field_index].schema,
+                    &field.schema,
                     self.refs,
+                    field_coercion(&field.custom_attributes, &field.schema, self.refs),
                 ));
                 self.next_field_index += 1;
                 result

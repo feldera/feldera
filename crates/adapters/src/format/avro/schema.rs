@@ -13,6 +13,7 @@ use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
 use tracing::warn;
 
+use crate::format::avro::coercion::field_coercion;
 use crate::format::avro::resolve_ref;
 
 /// Indicates whether the field has an optional type (`["null", T]`) and,
@@ -81,6 +82,24 @@ pub fn validate_struct_schema(
                 ));
             }
         };
+
+        // A field carrying a coercion annotation (e.g. a Debezium temporal type
+        // or variable-scale decimal) is validated against the SQL column type by
+        // the coercion itself, since its Avro schema differs from the column's
+        // natural Avro type.
+        if let Some(coercion) =
+            field_coercion(&avro_field.custom_attributes, &avro_field.schema, refs)
+        {
+            coercion
+                .validate(&avro_field.schema, refs, &field.columntype)
+                .map_err(|e| {
+                    format!(
+                        "error validating schema for column '{}': {e}",
+                        field.name.name()
+                    )
+                })?;
+            continue;
+        }
 
         validate_field_schema(
             &avro_field.name,
