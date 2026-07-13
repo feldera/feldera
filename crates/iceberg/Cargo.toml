@@ -15,7 +15,7 @@ feldera-types = { workspace = true }
 feldera-adapterlib = { workspace = true }
 dbsp = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
-tokio = { workspace = true, features = ["sync", "rt"] }
+tokio = { workspace = true, features = ["sync", "rt", "time"] }
 datafusion = { workspace = true }
 log = { workspace = true }
 iceberg = { workspace = true }
