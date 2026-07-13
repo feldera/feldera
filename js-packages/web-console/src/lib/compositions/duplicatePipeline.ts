@@ -40,6 +40,7 @@ export const optimisticDuplicatePipelineThumb = (
     programStatusSince: now.toISOString(),
     deploymentResourcesStatus: 'Stopped',
     deploymentResourcesStatusSince: now,
+    deploymentRuntimeStatusDetails: undefined,
     connectors: undefined
   }
 }

@@ -32,7 +32,8 @@ use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeCo
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
-    BootstrapConfig, BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus,
+    BootstrapConfig, BootstrapPolicy, ConnectorStats, RuntimeDesiredStatus, RuntimeStatus,
+    RuntimeStatusDetails, StorageStatusDetails,
 };
 use futures_util::future::join_all;
 use serde::{Deserialize, Serialize};
@@ -74,22 +75,6 @@ fn remove_large_fields_from_program_info(
     program_info
 }
 
-/// Aggregated connector error statistics.
-///
-/// This structure contains the sum of all error counts across all input and output connectors
-/// for a pipeline.
-#[derive(Serialize, Deserialize, ToSchema, Eq, PartialEq, Debug, Clone)]
-pub struct ConnectorStats {
-    /// Total number of errors across all connectors.
-    ///
-    /// This is the sum of:
-    /// - `num_transport_errors` from all input connectors
-    /// - `num_parse_errors` from all input connectors
-    /// - `num_encode_errors` from all output connectors
-    /// - `num_transport_errors` from all output connectors
-    pub num_errors: u64,
-}
-
 /// Pipeline information.
 /// It both includes fields which are user-provided and system-generated.
 #[derive(Serialize, ToSchema, PartialEq, Debug, Clone)]
@@ -116,7 +101,7 @@ pub struct PipelineInfo {
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
-    pub storage_status_details: Option<serde_json::Value>,
+    pub storage_status_details: Option<StorageStatusDetails>,
     pub deployment_id: Option<Uuid>,
     pub deployment_initial: Option<RuntimeDesiredStatus>,
     pub deployment_status: CombinedStatus,
@@ -129,7 +114,7 @@ pub struct PipelineInfo {
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
     pub deployment_runtime_status: Option<RuntimeStatus>,
-    pub deployment_runtime_status_details: Option<serde_json::Value>,
+    pub deployment_runtime_status_details: Option<RuntimeStatusDetails>,
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
@@ -139,8 +124,9 @@ pub struct PipelineInfo {
 ///
 /// This is the struct that is actually serialized when a response body type
 /// is [`PipelineInfo`] according to the OpenAPI specification.
-/// The difference are the types of `runtime_config`, `program_config` and
-/// `program_info` fields, which are JSON values rather than their actual ones.
+/// The difference are the types of `runtime_config`, `program_config`,
+/// `program_info`, `storage_status_details` and `deployment_runtime_status_details` fields,
+/// which are JSON values rather than their actual ones.
 /// This ensures that even when a backward incompatible change occurred for
 /// any of these fields, the API still works (i.e., able to serialize them in
 /// order to return pipeline(s)).
@@ -237,7 +223,9 @@ impl PipelineInfoInternal {
             deployment_resources_desired_status_since: extended_pipeline
                 .deployment_resources_desired_status_since,
             deployment_runtime_status: extended_pipeline.deployment_runtime_status,
-            deployment_runtime_status_details: extended_pipeline.deployment_runtime_status_details,
+            deployment_runtime_status_details: backward_compatible_runtime_status_details(
+                extended_pipeline.deployment_runtime_status_details,
+            ),
             deployment_runtime_status_since: extended_pipeline.deployment_runtime_status_since,
             deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
             deployment_runtime_desired_status_since: extended_pipeline
@@ -280,7 +268,7 @@ pub struct PipelineSelectedInfo {
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
-    pub storage_status_details: Option<serde_json::Value>,
+    pub storage_status_details: Option<StorageStatusDetails>,
     pub deployment_id: Option<Uuid>,
     pub deployment_initial: Option<RuntimeDesiredStatus>,
     pub deployment_status: CombinedStatus,
@@ -294,7 +282,7 @@ pub struct PipelineSelectedInfo {
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
     pub deployment_runtime_status: Option<RuntimeStatus>,
-    pub deployment_runtime_status_details: Option<serde_json::Value>,
+    pub deployment_runtime_status_details: Option<RuntimeStatusDetails>,
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
@@ -417,7 +405,9 @@ impl PipelineSelectedInfoInternal {
             deployment_resources_desired_status_since: extended_pipeline
                 .deployment_resources_desired_status_since,
             deployment_runtime_status: extended_pipeline.deployment_runtime_status,
-            deployment_runtime_status_details: extended_pipeline.deployment_runtime_status_details,
+            deployment_runtime_status_details: backward_compatible_runtime_status_details(
+                extended_pipeline.deployment_runtime_status_details,
+            ),
             deployment_runtime_status_since: extended_pipeline.deployment_runtime_status_since,
             deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
             deployment_runtime_desired_status_since: extended_pipeline
@@ -477,7 +467,9 @@ impl PipelineSelectedInfoInternal {
             deployment_resources_desired_status_since: extended_pipeline
                 .deployment_resources_desired_status_since,
             deployment_runtime_status: extended_pipeline.deployment_runtime_status,
-            deployment_runtime_status_details: extended_pipeline.deployment_runtime_status_details,
+            deployment_runtime_status_details: backward_compatible_runtime_status_details(
+                extended_pipeline.deployment_runtime_status_details,
+            ),
             deployment_runtime_status_since: extended_pipeline.deployment_runtime_status_since,
             deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
             deployment_runtime_desired_status_since: extended_pipeline
@@ -739,6 +731,40 @@ pub struct PostStopPipelineParameters {
     force: bool,
 }
 
+/// Converts old runtime status details to the new strongly typed one.
+fn backward_compatible_runtime_status_details(
+    details: Option<serde_json::Value>,
+) -> Option<serde_json::Value> {
+    details.map(|details| match details {
+        serde_json::Value::Null => RuntimeStatusDetails::default().serialize_guaranteed(),
+        serde_json::Value::Bool(b) => {
+            RuntimeStatusDetails::new_only_reason(&format!("Boolean: {b}")).serialize_guaranteed()
+        }
+        serde_json::Value::Number(n) => {
+            RuntimeStatusDetails::new_only_reason(&format!("Number: {n}")).serialize_guaranteed()
+        }
+        serde_json::Value::String(s) => {
+            RuntimeStatusDetails::new_only_reason(&s).serialize_guaranteed()
+        }
+        serde_json::Value::Array(a) => {
+            RuntimeStatusDetails::new_only_reason(&format!("Array: {a:?}")).serialize_guaranteed()
+        }
+        serde_json::Value::Object(obj) => {
+            if obj.get("program_diff").is_some() {
+                // Backward compatibility: the entire runtime status details is actually the approval
+                // diff, as such it must be restructured.
+                RuntimeStatusDetails {
+                    approval_diff: Some(serde_json::Value::Object(obj)),
+                    ..Default::default()
+                }
+                .serialize_guaranteed()
+            } else {
+                serde_json::Value::Object(obj)
+            }
+        }
+    })
+}
+
 /// List Pipelines
 ///
 /// Retrieve the list of pipelines.
@@ -798,13 +824,8 @@ pub(crate) async fn list_pipelines(
                     let tenant_id = *tenant_id;
                     let pipeline_name = pipeline.name.clone();
                     async move {
-                        fetch_connector_error_stats(
-                            &state,
-                            tenant_id,
-                            &pipeline_name,
-                            pipeline.deployment_runtime_status,
-                        )
-                        .await
+                        fetch_connector_error_stats(&state, tenant_id, &pipeline_name, pipeline)
+                            .await
                     }
                 })
                 .collect();
@@ -838,10 +859,25 @@ async fn fetch_connector_error_stats(
     state: &WebData<ServerState>,
     tenant_id: TenantId,
     pipeline_name: &str,
-    deployment_runtime_status: Option<RuntimeStatus>,
+    pipeline: &ExtendedPipelineDescrMonitoring,
 ) -> Option<ConnectorStats> {
+    // First attempt to retrieve the connector statistics from the runtime status details if they
+    // are available there. The fetching afterward is added for backward compatibility. Once the
+    // runtime status details changes are sufficiently long present and the user base has migrated
+    // past it, then the HTTP fetching can be removed.
+    let details = backward_compatible_runtime_status_details(
+        pipeline.deployment_runtime_status_details.clone(),
+    );
+    if let Some(value) = details {
+        if let Ok(details) = serde_json::from_value::<RuntimeStatusDetails>(value) {
+            if let Some(connector_stats) = details.connector_stats {
+                return Some(connector_stats);
+            }
+        }
+    };
+
     // Only forward the request if the pipeline is in a valid runtime status
-    match deployment_runtime_status {
+    match pipeline.deployment_runtime_status {
         Some(RuntimeStatus::Bootstrapping)
         | Some(RuntimeStatus::Replaying)
         | Some(RuntimeStatus::Running)
@@ -976,13 +1012,8 @@ pub(crate) async fn get_pipeline(
                 .await
                 .get_pipeline_for_monitoring(*tenant_id, &pipeline_name)
                 .await?;
-            let connector_stats = fetch_connector_error_stats(
-                &state,
-                *tenant_id,
-                &pipeline_name,
-                pipeline.deployment_runtime_status,
-            )
-            .await;
+            let connector_stats =
+                fetch_connector_error_stats(&state, *tenant_id, &pipeline_name, &pipeline).await;
             PipelineSelectedInfoInternal::new_status_with_connectors(pipeline, connector_stats)
         }
     };
@@ -1804,4 +1835,63 @@ pub(crate) async fn post_pipeline_testing(
     }
 
     Ok(HttpResponse::Ok().finish())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::api::endpoints::pipeline_management::backward_compatible_runtime_status_details;
+    use feldera_types::runtime_status::{ConnectorStats, RuntimeStatusDetails};
+    use serde_json::json;
+
+    #[test]
+    fn test_backward_compatible_runtime_status_details() {
+        for (input, expected) in [
+            (None, None),
+            (Some(json!(null)), Some(json!({}))),
+            (
+                Some(json!(false)),
+                Some(json!({"reason": "Boolean: false"})),
+            ),
+            (Some(json!(123)), Some(json!({"reason": "Number: 123"}))),
+            (Some(json!("abc")), Some(json!({"reason": "abc"}))),
+            (
+                Some(json!([1, 2, 3])),
+                Some(json!({"reason": "Array: [Number(1), Number(2), Number(3)]"})),
+            ),
+            (Some(json!({"abc": "def"})), Some(json!({"abc": "def"}))),
+            (
+                Some(json!({"program_diff": "xyz"})),
+                Some(json!({"approval_diff": { "program_diff": "xyz" }})),
+            ),
+            (
+                Some(RuntimeStatusDetails::default().serialize_guaranteed()),
+                Some(json!({})),
+            ),
+            (
+                Some(RuntimeStatusDetails::new_only_reason("abc").serialize_guaranteed()),
+                Some(json!({"reason": "abc"})),
+            ),
+            (
+                Some(
+                    RuntimeStatusDetails {
+                        reason: Some("abc".to_string()),
+                        connector_stats: Some(ConnectorStats { num_errors: 123 }),
+                        approval_diff: Some(json!({"a": "b"})),
+                    }
+                    .serialize_guaranteed(),
+                ),
+                Some(json!({
+                    "reason": "abc",
+                    "connector_stats": {
+                        "num_errors": 123
+                    },
+                    "approval_diff": {
+                        "a": "b"
+                    }
+                })),
+            ),
+        ] {
+            assert_eq!(backward_compatible_runtime_status_details(input), expected);
+        }
+    }
 }

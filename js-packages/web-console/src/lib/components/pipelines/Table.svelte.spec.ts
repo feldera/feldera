@@ -58,6 +58,7 @@ const thumb = (name: string): PipelineThumb =>
     programConfig: { runtime_version: null },
     deploymentResourcesStatus: 'Stopped',
     deploymentResourcesStatusSince: new Date(lastChange[name]),
+    deploymentRuntimeStatusDetails: { connector_stats: { num_errors: 0 } },
     connectors: { numErrors: 0 }
   }) as unknown as PipelineThumb
 

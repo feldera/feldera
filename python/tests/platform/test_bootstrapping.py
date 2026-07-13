@@ -91,7 +91,7 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     pipeline.start(bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL)
     assert pipeline.status() == PipelineStatus.AWAITINGAPPROVAL
 
-    diff = pipeline.deployment_runtime_status_details()
+    diff = pipeline.deployment_runtime_status_details()["approval_diff"]
     print(f"Pipeline diff: {diff}")
     assert diff["program_diff"] == {
         "added_tables": [],
@@ -132,7 +132,7 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
 
     pipeline.start(bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL)
     assert pipeline.status() == PipelineStatus.AWAITINGAPPROVAL
-    diff = pipeline.deployment_runtime_status_details()
+    diff = pipeline.deployment_runtime_status_details()["approval_diff"]
     print(f"Pipeline diff: {diff}")
     assert diff["program_diff"] == {
         "added_tables": ["t2"],
@@ -173,7 +173,7 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
 
     pipeline.start(bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL)
     assert pipeline.status() == PipelineStatus.AWAITINGAPPROVAL
-    diff = pipeline.deployment_runtime_status_details()
+    diff = pipeline.deployment_runtime_status_details()["approval_diff"]
     print(f"Pipeline diff: {diff}")
     assert diff["program_diff"] == {
         "added_tables": [],
@@ -219,7 +219,7 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
 
     pipeline.start(bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL)
     assert pipeline.status() == PipelineStatus.AWAITINGAPPROVAL
-    diff = pipeline.deployment_runtime_status_details()
+    diff = pipeline.deployment_runtime_status_details()["approval_diff"]
     print(f"Pipeline diff: {diff}")
     assert diff["program_diff"] == {
         "added_tables": [],
@@ -253,7 +253,7 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
 
     pipeline.start(bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL)
     assert pipeline.status() == PipelineStatus.AWAITINGAPPROVAL
-    diff = pipeline.deployment_runtime_status_details()
+    diff = pipeline.deployment_runtime_status_details()["approval_diff"]
     print(f"Pipeline diff: {diff}")
     assert diff["program_diff"] == {
         "added_tables": [],
@@ -624,7 +624,7 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     pipeline.start(bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL)
     assert pipeline.status() == PipelineStatus.AWAITINGAPPROVAL
 
-    diff = pipeline.deployment_runtime_status_details()
+    diff = pipeline.deployment_runtime_status_details()["approval_diff"]
     print(f"Pipeline diff: {diff}")
     assert diff == {
         "added_input_connectors": ["t1.unnamed-0", "t1.unnamed-1"],
@@ -673,7 +673,7 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     pipeline.start(bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL)
     assert pipeline.status() == PipelineStatus.AWAITINGAPPROVAL
 
-    diff = pipeline.deployment_runtime_status_details()
+    diff = pipeline.deployment_runtime_status_details()["approval_diff"]
     print(f"Pipeline diff: {diff}")
     assert diff == {
         "added_input_connectors": [],

@@ -50,7 +50,7 @@ use proptest_derive::Arbitrary;
 use serde_json::json;
 use std::borrow::BorrowMut;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -617,8 +617,8 @@ fn limited_optional_storage_status_details() -> impl Strategy<Value = Option<ser
         if v.0 {
             None
         } else {
-            let mut checkpoints = VecDeque::new();
-            checkpoints.push_back(CheckpointMetadata {
+            let mut checkpoints = Vec::new();
+            checkpoints.push(CheckpointMetadata {
                 uuid: Default::default(),
                 identifier: None,
                 fingerprint: 0,
@@ -1970,7 +1970,7 @@ async fn pipeline_deployment() {
             RuntimeDesiredStatus::Paused,
             Some(
                 serde_json::to_value(&StorageStatusDetails {
-                    checkpoints: VecDeque::new(),
+                    checkpoints: Vec::new(),
                 })
                 .unwrap(),
             ),
@@ -1989,7 +1989,7 @@ async fn pipeline_deployment() {
             RuntimeDesiredStatus::Running,
             Some(
                 serde_json::to_value(&StorageStatusDetails {
-                    checkpoints: VecDeque::new(),
+                    checkpoints: Vec::new(),
                 })
                 .unwrap(),
             ),
@@ -2007,7 +2007,7 @@ async fn pipeline_deployment() {
     );
     let storage_status_details = Some(
         serde_json::to_value(&StorageStatusDetails {
-            checkpoints: VecDeque::new(),
+            checkpoints: Vec::new(),
         })
         .unwrap(),
     );
@@ -2036,14 +2036,14 @@ async fn pipeline_deployment() {
     );
     let storage_status_details = Some(
         serde_json::to_value(&StorageStatusDetails {
-            checkpoints: VecDeque::from([CheckpointMetadata {
+            checkpoints: vec![CheckpointMetadata {
                 uuid: Default::default(),
                 identifier: None,
                 fingerprint: 456,
                 size: None,
                 steps: None,
                 processed_records: None,
-            }]),
+            }],
         })
         .unwrap(),
     );
@@ -2077,14 +2077,14 @@ async fn pipeline_deployment() {
         .unwrap();
     let storage_status_details = Some(
         serde_json::to_value(&StorageStatusDetails {
-            checkpoints: VecDeque::from([CheckpointMetadata {
+            checkpoints: vec![CheckpointMetadata {
                 uuid: Default::default(),
                 identifier: None,
                 fingerprint: 123,
                 size: None,
                 steps: None,
                 processed_records: None,
-            }]),
+            }],
         })
         .unwrap(),
     );
@@ -2201,7 +2201,7 @@ async fn pipeline_deployment() {
             RuntimeDesiredStatus::Paused,
             Some(
                 serde_json::to_value(&StorageStatusDetails {
-                    checkpoints: VecDeque::new(),
+                    checkpoints: Vec::new(),
                 })
                 .unwrap(),
             ),

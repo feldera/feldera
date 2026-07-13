@@ -12,7 +12,16 @@ import TabItem from '@theme/TabItem';
     <TabItem className="changelogItem" value="enterprise"
         label="Enterprise">
 
-	## Unreleased
+        ## Unreleased
+
+        - Pipeline API field `deployment_runtime_status_details` is now strongly typed,
+          whereas before it was just a generic JSON value type. While `AwaitingApproval`,
+          the diff is now located at `deployment_runtime_status_details.approval_diff`
+          instead of being the whole details itself.
+
+        - Pipelines from this latest version onward will have their GET selector
+          `status_with_connectors` connector stats cached, which are now updated along
+          with the runtime status details within roughly 1-15s.
 
         - Cluster monitor events with information on the backing (Kubernetes) resources is
           no longer gated behind unstable feature `cluster_monitor_resources` (deprecated).
@@ -22,7 +31,7 @@ import TabItem from '@theme/TabItem';
           The cluster monitoring of resources can still be disabled by setting in the Helm
           chart `disableClusterMonitorResources` to `true`.
 
-	- A bug fix introduced a backward incompatible change to the replay journal format.
+        - A bug fix introduced a backward incompatible change to the replay journal format.
           This only affects pipelines configured with exactly-once fault tolerance. Such
           pipelines should not be upgraded to the new Feldera runtime if they are in a failed
           state with non-empty replay journal.  Upgrade is possible once the pipeline has been

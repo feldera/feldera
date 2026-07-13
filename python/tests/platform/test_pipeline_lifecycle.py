@@ -850,3 +850,37 @@ def test_start_failed_compilation(pipeline_name):
     except FelderaAPIError as e:
         error = e
     assert error is not None and error.error_code == "CannotStartWithCompilationError"
+
+
+@gen_pipeline_name
+def test_connector_stats_errors_count(pipeline_name):
+    """
+    Tests that the connector statistics number of errors is set.
+    """
+    pipeline = PipelineBuilder(
+        TEST_CLIENT, pipeline_name, "CREATE TABLE t1 (v1 INT);"
+    ).create_or_replace()
+    pipeline.start()
+    assert _ingress(pipeline_name, "t1", "1\n2\n3\n").status_code == HTTPStatus.OK
+    assert (
+        _ingress(pipeline_name, "t1", "a\nb\nc\nd\n").status_code
+        == HTTPStatus.BAD_REQUEST
+    )
+    assert _ingress(pipeline_name, "t1", "4\n5\n6\n").status_code == HTTPStatus.OK
+    start_s = time.monotonic()
+    while True:
+        num_errors = pipeline.deployment_runtime_status_details()["connector_stats"][
+            "num_errors"
+        ]
+        if num_errors == 4:
+            break
+        elif time.monotonic() - start_s >= 30.0 or num_errors > 4:
+            raise ValueError(f"Number of errors is not 4 but {num_errors}")
+        time.sleep(0.5)
+    assert pipeline.stats().global_metrics.total_completed_records == 6
+    assert (
+        TEST_CLIENT.http.get(
+            f"/pipelines/{pipeline_name}?selector=status_with_connectors"
+        )["connectors"]["num_errors"]
+        == 4
+    )

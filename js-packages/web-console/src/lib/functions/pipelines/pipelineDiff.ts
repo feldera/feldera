@@ -32,12 +32,16 @@ export const parsePipelineDiff = (
     throw new Error('Pipeline is not awaiting approval')
   }
 
-  if (!pipeline.deploymentRuntimeStatusDetails) {
+  // The approval diff lives at `deployment_runtime_status_details.approval_diff`.
+  // The manager rewrites older pipelines, whose entire runtime status details
+  // were the diff, into this shape, so a single path covers all versions.
+  const approvalDiff = pipeline.deploymentRuntimeStatusDetails?.approval_diff
+  if (!approvalDiff) {
     throw new Error('Pipeline diff data is not available')
   }
 
   try {
-    const rawDiff = va.parse(pipelineDiffSchema, pipeline.deploymentRuntimeStatusDetails)
+    const rawDiff = va.parse(pipelineDiffSchema, approvalDiff)
     return {
       tables: rawDiff.program_diff
         ? {
