@@ -35,6 +35,12 @@ RUN curl -sS https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
       -o /usr/local/share/ca-certificates/aws-global-rds-bundle.crt
 RUN update-ca-certificates
 
+# Prefer IPv4 over IPv6 for dual-stack DNS results. Our EKS nodes have no IPv6
+# routing, so glibc's default preference for AAAA records makes any resolver
+# (Node.js actions like setup-uv, curl, etc.) hang until the IPv6 attempt times
+# out before falling back to IPv4.
+RUN echo "precedence ::ffff:0:0/96 100" >> /etc/gai.conf
+
 # Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
   locale-gen
