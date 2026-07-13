@@ -1,22 +1,26 @@
 use crate::iceberg_input_serde_config;
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use chrono::{DateTime, Utc};
+use datafusion::common::arrow::array::RecordBatch;
 use datafusion::prelude::{DataFrame, SQLOptions, SessionContext};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
     catalog::{ArrowStream, InputCollectionHandle},
     errors::journal::ControllerError,
-    format::ParseError,
+    format::{InputBuffer, ParseError},
     transport::{
         InputConsumer, InputEndpoint, InputQueue, InputReader, InputReaderCommand,
         IntegratedInputEndpoint, NonFtInputReaderCommand,
     },
+    utils::backoff::calculate_backoff_delay,
     utils::datafusion::{
         array_to_string, create_session_context, execute_query_collect, execute_singleton_query,
         timestamp_to_sql_expression, validate_sql_expression, validate_timestamp_column,
     },
+    utils::job_queue::JobQueue,
     PipelineState,
 };
+use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::{
     config::{FtModel, PipelineConfig},
     program_schema::Relation,
@@ -43,7 +47,7 @@ use iceberg_catalog_s3tables::{
 };
 use iceberg_datafusion::IcebergStaticTableProvider;
 use iceberg_storage_opendal::OpenDalResolvingStorageFactory;
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use std::{sync::Arc, thread};
 use tokio::{
     select,
@@ -51,6 +55,7 @@ use tokio::{
         mpsc,
         watch::{channel, Receiver, Sender},
     },
+    time::sleep,
 };
 use url::Url;
 
@@ -139,6 +144,10 @@ impl IcebergInputReader {
             .validate_catalog_config()
             .map_err(|e| anyhow!(e))?;
 
+        if endpoint.config.num_parsers == 0 {
+            bail!("invalid Iceberg connector configuration: 'num_parsers' must be greater than 0");
+        }
+
         if endpoint.config.follow() {
             bail!("'{}' mode is not yet supported", endpoint.config.mode);
         }
@@ -206,7 +215,7 @@ struct IcebergInputEndpointInner {
     config: IcebergReaderConfig,
     consumer: Box<dyn InputConsumer>,
     datafusion: SessionContext,
-    queue: InputQueue,
+    queue: Arc<InputQueue>,
 }
 
 impl IcebergInputEndpointInner {
@@ -217,7 +226,7 @@ impl IcebergInputEndpointInner {
         runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
         consumer: Box<dyn InputConsumer>,
     ) -> Self {
-        let queue = InputQueue::new(consumer.clone());
+        let queue = Arc::new(InputQueue::new(consumer.clone()));
         // Share the pipeline-wide `RuntimeEnv` so that scans against the
         // iceberg table spill to the bounded memory pool and on-disk scratch
         // dir alongside every other datafusion user in the pipeline.
@@ -923,11 +932,21 @@ impl IcebergInputEndpointInner {
             }
         };
 
-        self.execute_df(df, true, &descr, input_stream, receiver)
+        // On terminal failure `execute_df` has already reported the error to the
+        // consumer, which stops ingestion; nothing more to do here.
+        let _ = self
+            .execute_df(df, true, &descr, input_stream, receiver)
             .await;
     }
 
-    /// Execute a prepared dataframe and push data from it to the circuit.
+    /// Execute a prepared dataframe and push data from it to the circuit,
+    /// retrying the whole dataframe on transient failures.
+    ///
+    /// The object-store reads underlying an Iceberg scan can fail intermittently
+    /// (timeouts, throttling). Since a partially consumed dataframe stream cannot
+    /// be resumed mid-flight, we retry the entire dataframe with exponential
+    /// backoff. On terminal failure the error is reported to the consumer and
+    /// returned.
     ///
     /// * `polarity` - determines whether records in the dataframe should be
     ///   inserted to or deleted from the table.
@@ -944,59 +963,145 @@ impl IcebergInputEndpointInner {
         descr: &str,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
-    ) {
+    ) -> Result<usize, AnyError> {
+        let max_retries = self.config.max_retries();
+        let mut retry_count = 0;
+        loop {
+            match self
+                .execute_df_inner(dataframe.clone(), polarity, input_stream, receiver)
+                .await
+            {
+                Ok(total_records) => {
+                    self.consumer
+                        .update_connector_health(ConnectorHealth::healthy());
+                    return Ok(total_records);
+                }
+                Err(e) => {
+                    retry_count += 1;
+                    if retry_count > max_retries {
+                        let message =
+                            format!("error retrieving {descr} after {retry_count} attempt(s): {e}");
+                        self.consumer
+                            .update_connector_health(ConnectorHealth::unhealthy(&message));
+                        self.consumer
+                            .error(true, anyhow!(message.clone()), Some("iceberg-read"));
+                        return Err(anyhow!(message));
+                    }
+                    let backoff_delay = calculate_backoff_delay(retry_count - 1);
+                    let message = format!(
+                        "error retrieving {descr} after {retry_count} attempt(s): {e}; retrying in {backoff_delay:?}"
+                    );
+                    self.consumer
+                        .update_connector_health(ConnectorHealth::unhealthy(&message));
+                    warn!("iceberg {}: {message}", &self.endpoint_name);
+                    sleep(backoff_delay).await;
+                }
+            }
+        }
+    }
+
+    /// A single attempt of the `execute_df` retry loop.
+    ///
+    /// Record batches are parsed by a pool of `num_parsers` tasks. Parsing runs
+    /// concurrently, but [`JobQueue`] preserves ordering, so parsed buffers reach
+    /// the input queue in the same order the batches were read.
+    async fn execute_df_inner(
+        &self,
+        dataframe: DataFrame,
+        polarity: bool,
+        input_stream: &mut dyn ArrowStream,
+        receiver: &mut Receiver<PipelineState>,
+    ) -> Result<usize, String> {
         wait_running(receiver).await;
 
-        let mut stream = match dataframe.execute_stream().await {
-            Err(e) => {
-                self.consumer
-                    .error(true, anyhow!("error retrieving {descr}: {e:?}"), None);
-                return;
-            }
-            Ok(stream) => stream,
-        };
+        let mut stream = dataframe
+            .execute_stream()
+            .await
+            .map_err(|e| format!("{e:?}"))?;
+
+        // The dataframe compiled and started streaming: the connector is healthy.
+        self.consumer
+            .update_connector_health(ConnectorHealth::healthy());
 
         let mut num_batches = 0;
+        let mut total_records = 0usize;
 
-        // Use the timestamp when we start retrieving the next batch as the ingestion timestamp.
+        let queue = self.queue.clone();
+        let num_parsers = self.config.num_parsers as usize;
+
+        // Job queue that parses record batches on a pool of tasks and pushes the
+        // resulting buffers to the input queue in enqueue order.
+        let job_queue = JobQueue::<
+            (RecordBatch, DateTime<Utc>),
+            (Option<Box<dyn InputBuffer>>, Vec<ParseError>, DateTime<Utc>),
+        >::new(
+            num_parsers,
+            // Both the worker closure and each per-job future need an owned
+            // (`'static`) stream, so each level forks once:
+            //   - the outer fork gives every worker its own stream, since the
+            //     closure can't capture the borrowed `&mut input_stream`;
+            //   - the inner fork produces a fresh stream to move into each job's
+            //     future, since an `FnMut` can't move its captured stream out
+            //     more than once.
+            move || {
+                let input_stream = input_stream.fork();
+                Box::new(move |(batch, timestamp)| {
+                    Box::pin({
+                        let mut input_stream = input_stream.fork();
+                        async move {
+                            let (buffer, errors) =
+                                Self::parse_record_batch(batch, polarity, input_stream.as_mut())
+                                    .await;
+                            (buffer, errors, timestamp)
+                        }
+                    })
+                })
+            },
+            move |(buffer, errors, timestamp)| {
+                queue.push((buffer, errors), timestamp);
+            },
+        );
+
+        // Use the timestamp when the batch was retrieved as the ingestion timestamp.
         let mut timestamp = Utc::now();
 
         while let Some(batch) = stream.next().await {
             wait_running(receiver).await;
-
-            let batch = match batch {
-                Ok(batch) => batch,
-                Err(e) => {
-                    self.consumer.error(
-                        false,
-                        anyhow!("error retrieving batch {num_batches} of {descr}: {e:?}"),
-                        Some("iceberg-batch"),
-                    );
-                    continue;
-                }
-            };
-            // info!("schema: {}", batch.schema());
+            let batch =
+                batch.map_err(|e| format!("error retrieving batch {num_batches}: {e:?}"))?;
             num_batches += 1;
-            let result = if polarity {
-                input_stream.insert(&batch, &None)
-            } else {
-                input_stream.delete(&batch, &None)
-            };
-            let errors = result.map_or_else(
-                |e| {
-                    vec![ParseError::bin_envelope_error(
-                        format!("error deserializing table records from Parquet data: {e}"),
-                        &[],
-                        None,
-                    )]
-                },
-                |()| Vec::new(),
-            );
-            self.queue
-                .push((input_stream.take_all(), errors), timestamp);
-
+            total_records += batch.num_rows();
+            job_queue.push_job((batch, timestamp)).await;
             timestamp = Utc::now();
         }
+
+        job_queue.flush().await;
+        Ok(total_records)
+    }
+
+    /// Parse a single record batch into an input buffer.
+    async fn parse_record_batch(
+        batch: RecordBatch,
+        polarity: bool,
+        input_stream: &mut dyn ArrowStream,
+    ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+        let result = if polarity {
+            input_stream.insert(&batch, &None)
+        } else {
+            input_stream.delete(&batch, &None)
+        };
+        let errors = result.map_or_else(
+            |e| {
+                vec![ParseError::bin_envelope_error(
+                    format!("error deserializing records read from the Iceberg table: {e}"),
+                    &[],
+                    None,
+                )]
+            },
+            |()| Vec::new(),
+        );
+
+        (input_stream.take_all(), errors)
     }
 }
 
