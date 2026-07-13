@@ -176,6 +176,10 @@ pub struct S3TablesCatalogConfig {
     pub region: Option<String>,
 }
 
+fn default_num_parsers() -> u32 {
+    4
+}
+
 /// Iceberg input connector configuration.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct IcebergReaderConfig {
@@ -262,6 +266,24 @@ pub struct IcebergReaderConfig {
     /// Supported options include "rest", "glue", and "s3tables". This property is mutually
     /// exclusive with `metadata_location`.
     pub catalog_type: Option<IcebergCatalogType>,
+
+    /// The number of parallel parsing tasks the connector uses to process data read from the
+    /// table. Increasing this value can enhance performance by allowing more concurrent processing.
+    /// Recommended range: 1-10. The default is 4.
+    #[serde(default = "default_num_parsers")]
+    #[schema(minimum = 1)]
+    pub num_parsers: u32,
+
+    /// Maximum number of retries for reading the table snapshot.
+    ///
+    /// When reading the snapshot fails partway through, for example because an
+    /// object-store read times out or is throttled, the connector retries the
+    /// entire read with exponential backoff. This is in addition to the
+    /// lower-level retries performed by the object-store client.
+    ///
+    /// Defaults to unlimited retries. Set to 0 to disable retries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u32>,
 
     #[serde(flatten)]
     pub glue_catalog_config: GlueCatalogConfig,
@@ -426,6 +448,11 @@ fn ensure_s3tables_property_not_set<T>(property: &Option<T>, name: &str) -> Resu
 }
 
 impl IcebergReaderConfig {
+    /// Maximum number of high-level operation retries. Defaults to unlimited.
+    pub fn max_retries(&self) -> u32 {
+        self.max_retries.unwrap_or(u32::MAX)
+    }
+
     /// `true` if the configuration requires taking an initial snapshot of the table.
     pub fn snapshot(&self) -> bool {
         matches!(
@@ -522,5 +549,41 @@ mod test {
         .validate_catalog_config()
         .unwrap_err();
         assert!(err.contains("s3tables.table-bucket-arn"), "{err}");
+    }
+
+    #[test]
+    fn num_parsers_and_max_retries_defaults() {
+        // With neither field set, num_parsers defaults to 4 and retries are unlimited.
+        let config: IcebergReaderConfig = serde_json::from_str(
+            r#"{"mode":"snapshot","metadata_location":"file:///tmp/t/metadata.json"}"#,
+        )
+        .unwrap();
+        assert_eq!(config.num_parsers, 4);
+        assert_eq!(config.max_retries, None);
+        assert_eq!(config.max_retries(), u32::MAX);
+    }
+
+    #[test]
+    fn num_parsers_and_max_retries_explicit() {
+        let config: IcebergReaderConfig = serde_json::from_str(
+            r#"{"mode":"snapshot","metadata_location":"file:///tmp/t/metadata.json","num_parsers":8,"max_retries":0}"#,
+        )
+        .unwrap();
+        assert_eq!(config.num_parsers, 8);
+        assert_eq!(config.max_retries, Some(0));
+        // 0 disables retries: the first attempt is the last.
+        assert_eq!(config.max_retries(), 0);
+    }
+
+    #[test]
+    fn reader_config_roundtrips() {
+        let config: IcebergReaderConfig = serde_json::from_str(
+            r#"{"mode":"snapshot","metadata_location":"file:///tmp/t/metadata.json","num_parsers":2}"#,
+        )
+        .unwrap();
+        let serialized = serde_json::to_string(&config).unwrap();
+        let reparsed: IcebergReaderConfig = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(config, reparsed);
+        assert_eq!(reparsed.num_parsers, 2);
     }
 }

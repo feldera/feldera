@@ -9811,6 +9811,13 @@
                 "description": "Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,\n\"2024-12-09T16:09:53+00:00\".\n\nWhen this option is set, the connector finds and opens the snapshot of the table as of the\nspecified point in time (based on the server time recorded in the transaction\nlog, not the event time encoded in the data).  In `snapshot` and `snapshot_and_follow`\nmodes, it retrieves this snapshot.  In `follow` and `snapshot_and_follow` modes, it\nfollows transaction log records **after** this snapshot.\n\nNote: at most one of `snapshot_id` and `datetime` options can be specified.\nWhen neither of the two options is specified, the latest committed version of the table\nis used.",
                 "nullable": true
               },
+              "max_retries": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Maximum number of retries for reading the table snapshot.\n\nWhen reading the snapshot fails partway through, for example because an\nobject-store read times out or is throttled, the connector retries the\nentire read with exponential backoff. This is in addition to the\nlower-level retries performed by the object-store client.\n\nDefaults to unlimited retries. Set to 0 to disable retries.",
+                "nullable": true,
+                "minimum": 0
+              },
               "metadata_location": {
                 "type": "string",
                 "description": "Location of the table metadata JSON file.\n\nThis propery is used to access an Iceberg table without a catalog. It is mutually\nexclusive with the `catalog_type` property.",
@@ -9818,6 +9825,12 @@
               },
               "mode": {
                 "$ref": "#/components/schemas/IcebergIngestMode"
+              },
+              "num_parsers": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The number of parallel parsing tasks the connector uses to process data read from the\ntable. Increasing this value can enhance performance by allowing more concurrent processing.\nRecommended range: 1-10. The default is 4.",
+                "minimum": 1
               },
               "snapshot_filter": {
                 "type": "string",
