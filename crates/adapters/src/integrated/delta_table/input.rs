@@ -5,7 +5,6 @@ use crate::integrated::delta_table::deletion_vector::{
 };
 use crate::integrated::delta_table::{delta_input_serde_config, register_storage_handlers};
 use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint};
-use crate::util::JobQueue;
 use crate::{ControllerError, InputConsumer, InputReader, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use arrow::array::BooleanArray;
@@ -39,19 +38,20 @@ use deltalake::{DeltaTable, DeltaTableBuilder, Path, datafusion};
 use feldera_adapterlib::format::{ParseError, StagedInputBuffer};
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{InputQueueEntry, Resume, Watermark, parse_resume_info};
+use feldera_adapterlib::utils::backoff::calculate_backoff_delay;
 use feldera_adapterlib::utils::datafusion::{
     ColumnNameSet, array_to_string, columns_referenced_by_expression,
     columns_referenced_by_order_by, create_session_context_with, execute_query_collect,
     execute_singleton_query, quote_sql_identifier, timestamp_to_sql_expression,
     validate_sql_expression, validate_sql_order_by, validate_timestamp_column,
 };
+use feldera_adapterlib::utils::job_queue::JobQueue;
 use feldera_storage::tokio::TOKIO_DEDICATED_IO;
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::{FtModel, PipelineConfig};
 use feldera_types::program_schema::{Field, Relation};
 use feldera_types::transport::delta_table::{DeltaTableReaderConfig, DeltaTableTransactionMode};
 use futures_util::StreamExt;
-use rand::Rng;
 use roaring::RoaringTreemap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -71,21 +71,6 @@ use tracing::{debug, info, trace, warn};
 
 /// Polling interval when following a delta table.
 const POLL_INTERVAL: Duration = Duration::from_millis(1000);
-
-/// Calculate exponential backoff delay for retrying delta log reads.
-/// Starts at 0.5s, doubles each retry, caps at 32s, plus uniform jitter up to 25% of that delay
-/// (capped at `max_delay_ms`) to reduce synchronized retries.
-fn calculate_backoff_delay(retry_count: u32) -> Duration {
-    let base_delay_ms: u64 = 500; // 0.5 seconds
-    let max_delay_ms: u64 = 32_000; // 32 seconds
-    let delay_ms = min(
-        base_delay_ms.checked_shl(retry_count).unwrap_or(u64::MAX),
-        max_delay_ms,
-    );
-    let jitter_span = (delay_ms / 4).max(1);
-    let jitter_ms = rand::thread_rng().gen_range(0..jitter_span);
-    Duration::from_millis(min(delay_ms + jitter_ms, max_delay_ms))
-}
 
 /// Default object store timeout. When not explicitly set by the user,
 /// we use a large timeout value to avoid this issue:
