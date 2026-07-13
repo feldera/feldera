@@ -3,6 +3,7 @@
   import { goto, invalidate } from '$app/navigation'
   import { page } from '$app/state'
   import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
+  import { resolve } from '$lib/functions/svelte'
   import { getSelectedTenant, setSelectedTenant } from '$lib/services/auth'
 
   let { class: className = '' }: { class?: string } = $props()
@@ -23,10 +24,10 @@
     {:else}
       <Select
         onchange={async () => {
-          if (page.url.pathname === '/') {
+          if (page.url.pathname === resolve('/')) {
             invalidate(`${felderaEndpoint}/v0/pipelines?selector=status_with_connectors`)
           } else {
-            goto('/')
+            goto(resolve('/'))
           }
         }}
         bind:value={getSelectedTenant, setSelectedTenant}
