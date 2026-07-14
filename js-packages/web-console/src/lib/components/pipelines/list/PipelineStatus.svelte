@@ -17,6 +17,9 @@
   const chipClass = $derived(pipelineStatusColor(deleted ? 'SystemError' : status).chip)
 </script>
 
-<div data-testid={testid} class={'chip w-28 uppercase transition-none ' + chipClass + ' ' + _class}>
+<div
+  data-testid={testid}
+  class={'chip min-w-28 px-1 font-medium uppercase transition-none ' + chipClass + ' ' + _class}
+>
   {deleted ? 'Deleted' : getPipelineStatusLabel(status)}
 </div>

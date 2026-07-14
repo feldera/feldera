@@ -3,7 +3,6 @@
   import { Popover, Select, Tooltip } from 'common-ui'
   import { match } from 'ts-pattern'
   import { page } from '$app/state'
-  import ConcurrentBootstrapStatus from '$lib/components/pipelines/list/ConcurrentBootstrapStatus.svelte'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import ThSort from '$lib/components/pipelines/table/ThSort.svelte'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
@@ -244,13 +243,9 @@
                   .exhaustive()}</Tooltip
               >
             </td>
-            <td class="pr-2 {td} w-36 border-surface-100-900 group-hover:bg-surface-50-950">
-              <div class="flex items-center gap-2 whitespace-nowrap">
-                <PipelineStatus status={pipeline.status}></PipelineStatus>
-                <ConcurrentBootstrapStatus phase={pipeline.concurrentBootstrapPhase}
-                ></ConcurrentBootstrapStatus>
-              </div>
-            </td>
+            <td class="pr-2 {td} w-36 border-surface-100-900 group-hover:bg-surface-50-950"
+              ><PipelineStatus status={pipeline.status}></PipelineStatus></td
+            >
             <td
               class="{td} relative border-surface-100-900 whitespace-pre-wrap group-hover:bg-surface-50-950"
             >

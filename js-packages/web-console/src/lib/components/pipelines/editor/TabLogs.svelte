@@ -109,6 +109,8 @@
         'Standby',
         'Bootstrapping',
         'Replaying',
+        'ConcurrentBootstrapping',
+        'Synchronizing',
         'AwaitingApproval',
         'Running',
         'Pausing',

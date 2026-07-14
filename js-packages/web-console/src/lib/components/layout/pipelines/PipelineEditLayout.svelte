@@ -21,7 +21,6 @@
   import ReviewPipelineChanges from '$lib/components/pipelines/editor/ReviewPipelineChangesDialog.svelte'
   import * as TabPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
   import PipelineList from '$lib/components/pipelines/List.svelte'
-  import ConcurrentBootstrapStatus from '$lib/components/pipelines/list/ConcurrentBootstrapStatus.svelte'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import PipelineTransactionStatus from '$lib/components/pipelines/list/PipelineTransactionStatus.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
@@ -275,11 +274,6 @@
             status={pipelineThumb.status}
             {deleted}
           ></PipelineStatus>
-          <ConcurrentBootstrapStatus
-            data-testid="box-concurrent-bootstrap-status"
-            class="h-6"
-            phase={pipelineThumb.concurrentBootstrapPhase}
-          ></ConcurrentBootstrapStatus>
         {/if}
         {#if metrics.current}
           <PipelineTransactionStatus
