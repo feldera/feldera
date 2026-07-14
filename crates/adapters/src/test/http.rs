@@ -8,7 +8,18 @@ use csv::ReaderBuilder as CsvReaderBuilder;
 use csv::WriterBuilder as CsvWriterBuilder;
 use futures::{Stream, StreamExt};
 use serde::Deserialize;
+use std::time::Duration;
 use tracing::trace;
+
+/// Per-request timeout for the test HTTP client.
+///
+/// awc defaults to a 5s response timeout, shorter than the harness's own 20s
+/// `async_wait`/completion budgets. Under CI load (or a k8s CPU-quota freeze)
+/// the in-process server can stall past 5s and trip that deadline, panicking an
+/// otherwise-healthy request. The `/ingress` POST is non-idempotent and cannot
+/// be retried safely, so we widen the client deadline and let the higher-level
+/// waits govern liveness.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub struct TestHttpSender;
 pub struct TestHttpReceiver;
@@ -20,6 +31,7 @@ impl TestHttpSender {
         let data = data.to_vec();
 
         let mut response = req
+            .timeout(REQUEST_TIMEOUT)
             .send_stream(stream! {
                 for batch in data.iter() {
                     let mut writer = CsvWriterBuilder::new()
