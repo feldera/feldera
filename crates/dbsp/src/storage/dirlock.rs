@@ -92,7 +92,7 @@ fn get_lock(file: &File) -> Result<Option<u32>, IoError> {
 }
 
 impl LockedDirectory {
-    const LOCKFILE_NAME: &'static str = "feldera.pidlock";
+    pub const LOCKFILE_NAME: &'static str = "feldera.pidlock";
 
     /// Attempts to create a new pidfile in the `base_path` directory, returning
     /// an error if the file was already created by a different process (and

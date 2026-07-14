@@ -1,6 +1,7 @@
 //! Logic to manage persistent checkpoints for a circuit.
 
 use crate::dynamic::{self, data::DataTyped};
+use crate::storage::dirlock::LockedDirectory;
 use crate::storage::file::SerializerInner;
 use crate::{Error, NumEntries, TypedBox};
 use enum_map::{Enum, EnumMap};
@@ -120,6 +121,7 @@ impl Checkpointer {
         in_use_paths.insert(format!("{}.mut", STATUS_FILE).into(), SmallVec::new());
         in_use_paths.insert(DATAFUSION_TEMP_DIR.into(), SmallVec::new());
         in_use_paths.insert(ACTIVATION_MARKER_FILE.into(), SmallVec::new());
+        in_use_paths.insert(LockedDirectory::LOCKFILE_NAME.into(), SmallVec::new());
         for (checkpoint_index, cpm) in self.checkpoint_list.iter().enumerate() {
             in_use_paths
                 .entry(cpm.uuid.to_string().into())
