@@ -253,59 +253,60 @@
 </script>
 
 <div data-testid="box-pipeline-health" class="flex h-full flex-nowrap overflow-hidden">
-  <div class="bg-white-dark flex h-full flex-1 flex-col gap-4 overflow-hidden rounded p-2">
-    <StatusTimeline
-      bind:this={timelineRef}
-      label="Pipeline status"
-      events={timelineEvents}
-      startAt={firstTimestamp(events)}
-      endAt={lastTimestamp(events)}
-      unitDurationMs={60 * 60 * 1000}
-      class="flex flex-col gap-2"
-      onBarClick={handleBarClick}
-      legend={['idle', 'transitioning', 'healthy', 'unhealthy', 'major_issue']}
-      updatedAt={lastUpdated}
-      getSeverity={(type) => pipelineStatus(type).severity}
-      getBarColor={(type, h) => pipelineStatus(type).barColor(h)}
-      getStatusStyle={(type) => pipelineStatus(type).statusStyle}
-      selectedBars={selectedEventTimestamp
-        ? { from: selectedEventTimestamp.from, to: selectedEventTimestamp.to }
-        : null}
-    ></StatusTimeline>
-
-    {#if !events && !deleted}
-      <Progress class="h-1" value={null} max={100}>
-        <Progress.Track>
-          <Progress.Range class="bg-primary-500" />
-        </Progress.Track>
-      </Progress>
-    {/if}
-
-    <div class="flex-1 overflow-hidden">
-      <EventLogList
-        bind:this={eventLogListRef}
-        previousEvents={splitEvents.previous}
-        unresolvedEvents={splitEvents.unresolved}
-        onEventSelected={handleEventSelected}
-        selectedEvents={selectedEventTimestamp}
-        getIconClass={(type) => pipelineStatus(type).iconClass}
-      >
-        {#snippet noIssues()}
-          {#if events}
-            <span>The pipeline experienced no issues in the observed period.</span>
-          {/if}
-        {/snippet}
-      </EventLogList>
-    </div>
-  </div>
-
   <Drawer
     open={!!selectedEvent}
     side="right"
-    width="w-[500px]"
     inlineClass="rounded pt-4 pl-4"
     onClose={closeDrawer}
+    localStorageKey="layout/drawer/pipelineHealth"
   >
+    {#snippet main()}
+      <div class="bg-white-dark flex h-full flex-1 flex-col gap-4 overflow-hidden rounded p-2">
+        <StatusTimeline
+          bind:this={timelineRef}
+          label="Pipeline status"
+          events={timelineEvents}
+          startAt={firstTimestamp(events)}
+          endAt={lastTimestamp(events)}
+          unitDurationMs={60 * 60 * 1000}
+          class="flex flex-col gap-2"
+          onBarClick={handleBarClick}
+          legend={['idle', 'transitioning', 'healthy', 'unhealthy', 'major_issue']}
+          updatedAt={lastUpdated}
+          getSeverity={(type) => pipelineStatus(type).severity}
+          getBarColor={(type, h) => pipelineStatus(type).barColor(h)}
+          getStatusStyle={(type) => pipelineStatus(type).statusStyle}
+          selectedBars={selectedEventTimestamp
+            ? { from: selectedEventTimestamp.from, to: selectedEventTimestamp.to }
+            : null}
+        ></StatusTimeline>
+
+        {#if !events && !deleted}
+          <Progress class="h-1" value={null} max={100}>
+            <Progress.Track>
+              <Progress.Range class="bg-primary-500" />
+            </Progress.Track>
+          </Progress>
+        {/if}
+
+        <div class="flex-1 overflow-hidden">
+          <EventLogList
+            bind:this={eventLogListRef}
+            previousEvents={splitEvents.previous}
+            unresolvedEvents={splitEvents.unresolved}
+            onEventSelected={handleEventSelected}
+            selectedEvents={selectedEventTimestamp}
+            getIconClass={(type) => pipelineStatus(type).iconClass}
+          >
+            {#snippet noIssues()}
+              {#if events}
+                <span>The pipeline experienced no issues in the observed period.</span>
+              {/if}
+            {/snippet}
+          </EventLogList>
+        </div>
+      </div>
+    {/snippet}
     {#if selectedEvent}
       <HealthEventList
         eventParts={selectedEvent}

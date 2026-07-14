@@ -264,53 +264,61 @@
 </AppHeader>
 
 <div class="flex h-full flex-nowrap px-2 pb-5 md:px-8">
-  <div class="flex h-full flex-1 flex-col gap-8 rounded-container">
-    <!-- Status Timelines for each Feldera service -->
-    <div class="flex flex-col gap-2">
-      {#each Object.entries(componentLabels) as [tag, label], i}
-        <StatusTimeline
-          bind:this={timelineRefs[tag as EventTag]}
-          {label}
-          events={rawClusterEvents.filter((e) => e.tag === tag)}
-          startAt={firstTimestamp(events)}
-          endAt={lastTimestamp(events)}
-          unitDurationMs={60 * 60 * 1000}
-          class="flex flex-col gap-2"
-          onBarClick={(group) => handleBarClick(tag as EventTag, group)}
-          legend={i === 2 ? (['healthy', 'unhealthy', 'major_issue'] as ClusterEventType[]) : []}
-          selectedBars={selectedEventTimestamp?.tag === tag
-            ? { from: selectedEventTimestamp.from, to: selectedEventTimestamp.to }
-            : null}
-          getSeverity={(type) => clusterStatus(type).severity}
-          getBarColor={(type, h) => clusterStatus(type).barColor(h)}
-          getStatusStyle={(type) => clusterStatus(type).statusStyle}
-        ></StatusTimeline>
-      {/each}
-    </div>
-    {#if !events}
-      <Progress class="h-1" value={null} max={100}>
-        <Progress.Track>
-          <Progress.Range class="bg-primary-500" />
-        </Progress.Track>
-      </Progress>
-    {/if}
-    <EventLogList
-      bind:this={eventLogListRef}
-      previousEvents={splitClusterEvents.previous}
-      unresolvedEvents={splitClusterEvents.unresolved}
-      onEventSelected={handleEventSelected}
-      selectedEvents={selectedEventTimestamp}
-      getIconClass={(type) => clusterStatus(type).iconClass}
-    >
-      {#snippet noIssues()}
-        {#if events}
-          <span>The cluster experienced no issues in the observed period.</span>
+  <Drawer
+    open={!!selectedEvent}
+    side="right"
+    onClose={onCloseDrawer}
+    localStorageKey="layout/drawer/clusterHealth"
+  >
+    {#snippet main()}
+      <div class="flex h-full flex-1 flex-col gap-8 rounded-container">
+        <!-- Status Timelines for each Feldera service -->
+        <div class="flex flex-col gap-2">
+          {#each Object.entries(componentLabels) as [tag, label], i}
+            <StatusTimeline
+              bind:this={timelineRefs[tag as EventTag]}
+              {label}
+              events={rawClusterEvents.filter((e) => e.tag === tag)}
+              startAt={firstTimestamp(events)}
+              endAt={lastTimestamp(events)}
+              unitDurationMs={60 * 60 * 1000}
+              class="flex flex-col gap-2"
+              onBarClick={(group) => handleBarClick(tag as EventTag, group)}
+              legend={i === 2
+                ? (['healthy', 'unhealthy', 'major_issue'] as ClusterEventType[])
+                : []}
+              selectedBars={selectedEventTimestamp?.tag === tag
+                ? { from: selectedEventTimestamp.from, to: selectedEventTimestamp.to }
+                : null}
+              getSeverity={(type) => clusterStatus(type).severity}
+              getBarColor={(type, h) => clusterStatus(type).barColor(h)}
+              getStatusStyle={(type) => clusterStatus(type).statusStyle}
+            ></StatusTimeline>
+          {/each}
+        </div>
+        {#if !events}
+          <Progress class="h-1" value={null} max={100}>
+            <Progress.Track>
+              <Progress.Range class="bg-primary-500" />
+            </Progress.Track>
+          </Progress>
         {/if}
-      {/snippet}
-    </EventLogList>
-  </div>
-  <!-- TODO: Create a responsive inline drawer - that takes up full width on smaller screens -->
-  <Drawer open={!!selectedEvent} side="right" width="w-[500px]" onClose={onCloseDrawer}>
+        <EventLogList
+          bind:this={eventLogListRef}
+          previousEvents={splitClusterEvents.previous}
+          unresolvedEvents={splitClusterEvents.unresolved}
+          onEventSelected={handleEventSelected}
+          selectedEvents={selectedEventTimestamp}
+          getIconClass={(type) => clusterStatus(type).iconClass}
+        >
+          {#snippet noIssues()}
+            {#if events}
+              <span>The cluster experienced no issues in the observed period.</span>
+            {/if}
+          {/snippet}
+        </EventLogList>
+      </div>
+    {/snippet}
     {#if selectedEvent}
       <HealthEventList
         eventParts={selectedEvent}

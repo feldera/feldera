@@ -345,7 +345,11 @@
     {/if}
 
     <Pane class="!overflow-visible">
-      <PaneGroup direction="vertical" class="!overflow-visible">
+      <PaneGroup
+        direction="vertical"
+        class="!overflow-visible"
+        autoSaveId="layout/pipelines/monitoringPanel/size"
+      >
         {#if pipelineBannerMessage}
           <div class="pb-2 md:pb-4">
             <PipelineBanner {...pipelineBannerMessage}></PipelineBanner>
@@ -353,7 +357,11 @@
         {/if}
 
         <Pane defaultSize={60} minSize={15} class="!overflow-visible">
-          <PaneGroup direction="horizontal" class="!overflow-visible">
+          <PaneGroup
+            direction="horizontal"
+            class="!overflow-visible"
+            autoSaveId="layout/pipelines/interactionPanel/size"
+          >
             <Pane minSize={30} class="!overflow-visible">
               {#if pipeline.current}
                 <PipelineCodePanel

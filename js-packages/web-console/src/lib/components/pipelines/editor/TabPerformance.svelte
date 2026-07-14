@@ -216,129 +216,136 @@
     <div>Pipeline is running, but has not reported usage telemetry yet</div>
   </div>
 {:else}<div class="flex h-full">
-    <div
-      class="-mr-2 scrollbar flex min-w-0 flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto pr-2"
+    <Drawer
+      open={!!openDrawer}
+      side="right"
+      onClose={() => (openDrawer = null)}
+      localStorageKey="layout/drawer/pipelinePerformance"
     >
-      <div class="flex w-full flex-col gap-4">
-        <div class="flex flex-wrap gap-4">
-          <div class="mt-1 flex flex-wrap items-center gap-4">
-            <div class="flex flex-col">
-              <div class="text-start text-sm text-nowrap">Records Ingested</div>
-              <div class="pt-2">
-                {formatQty(global.total_input_records)}
-              </div>
-            </div>
-            <div class="flex flex-col">
-              <div class="text-start text-sm text-nowrap">Records Processed</div>
-              <div class="pt-2">
-                {formatQty(global.total_processed_records)}
-              </div>
-            </div>
-            <div class="flex flex-col">
-              <div class="text-start text-sm text-nowrap">Records Buffered</div>
-              <div class="pt-2">
-                {formatQty(global.buffered_input_records)}
-              </div>
-            </div>
-            {#snippet age()}
-              <div class="w-52 pt-2">
-                {#if global.start_time > 0}
-                  On {formatDateTime({ ms: global.start_time * 1000 })}
+      {#snippet main()}
+        <div
+          class="-mr-2 scrollbar flex min-w-0 flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto pr-2"
+        >
+          <div class="flex w-full flex-col gap-4">
+            <div class="flex flex-wrap gap-4">
+              <div class="mt-1 flex flex-wrap items-center gap-4">
+                <div class="flex flex-col">
+                  <div class="text-start text-sm text-nowrap">Records Ingested</div>
+                  <div class="pt-2">
+                    {formatQty(global.total_input_records)}
+                  </div>
+                </div>
+                <div class="flex flex-col">
+                  <div class="text-start text-sm text-nowrap">Records Processed</div>
+                  <div class="pt-2">
+                    {formatQty(global.total_processed_records)}
+                  </div>
+                </div>
+                <div class="flex flex-col">
+                  <div class="text-start text-sm text-nowrap">Records Buffered</div>
+                  <div class="pt-2">
+                    {formatQty(global.buffered_input_records)}
+                  </div>
+                </div>
+                {#snippet age()}
+                  <div class="w-52 pt-2">
+                    {#if global.start_time > 0}
+                      On {formatDateTime({ ms: global.start_time * 1000 })}
+                    {:else}
+                      Not deployed
+                    {/if}
+                  </div>
+                {/snippet}
+                {#snippet updated()}
+                  <div class="w-64 pt-2 text-nowrap">
+                    {getDeploymentStatusLabel(pipeline.current.status)} since {Dayjs(
+                      pipeline.current.deploymentStatusSince
+                    ).format('MMM D, YYYY h:mm A')}
+                  </div>
+                {/snippet}
+                {#if isXl.current}
+                  <div class="flex flex-col">
+                    <div class="text-start text-sm">
+                      Deployment age -
+
+                      {#if global.start_time > 0}
+                        {formatElapsedTime(new Date(global.start_time * 1000))}
+                      {:else}
+                        N/A
+                      {/if}
+                    </div>
+                    {@render age()}
+                  </div>
+                  <div class="flex flex-col">
+                    <div class="text-start text-sm">
+                      Last status update - {formatElapsedTime(
+                        new Date(pipeline.current.deploymentStatusSince)
+                      )}
+                    </div>
+                    {@render updated()}
+                  </div>
                 {:else}
-                  Not deployed
+                  <div>
+                    <SegmentedControl
+                      value={statusTab}
+                      onValueChange={(v) => (statusTab = v)}
+                      items={[
+                        { value: 'age', label: 'Age' },
+                        { value: 'updated', label: 'Last status update' }
+                      ]}
+                      class="-mt-3"
+                    />
+                    {#if statusTab === 'age'}
+                      {@render age()}
+                    {:else if statusTab === 'updated'}
+                      {@render updated()}{/if}
+                  </div>
                 {/if}
               </div>
-            {/snippet}
-            {#snippet updated()}
-              <div class="w-64 pt-2 text-nowrap">
-                {getDeploymentStatusLabel(pipeline.current.status)} since {Dayjs(
-                  pipeline.current.deploymentStatusSince
-                ).format('MMM D, YYYY h:mm A')}
+            </div>
+            <div class="flex w-full flex-col gap-4 xl:flex-row">
+              <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
+                <PipelineThroughputGraph
+                  {pipeline}
+                  metrics={timeSeries}
+                  refetchMs={1000}
+                  keepMs={60 * 1000}
+                ></PipelineThroughputGraph>
               </div>
-            {/snippet}
-            {#if isXl.current}
-              <div class="flex flex-col">
-                <div class="text-start text-sm">
-                  Deployment age -
-
-                  {#if global.start_time > 0}
-                    {formatElapsedTime(new Date(global.start_time * 1000))}
-                  {:else}
-                    N/A
-                  {/if}
-                </div>
-                {@render age()}
+              <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
+                <PipelineMemoryGraph
+                  {pipeline}
+                  metrics={timeSeries}
+                  refetchMs={1000}
+                  keepMs={60 * 1000}
+                  memoryPressure={global.memory_pressure}
+                ></PipelineMemoryGraph>
               </div>
-              <div class="flex flex-col">
-                <div class="text-start text-sm">
-                  Last status update - {formatElapsedTime(
-                    new Date(pipeline.current.deploymentStatusSince)
-                  )}
-                </div>
-                {@render updated()}
+              <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
+                <PipelineStorageGraph
+                  {pipeline}
+                  metrics={timeSeries}
+                  refetchMs={1000}
+                  keepMs={60 * 1000}
+                ></PipelineStorageGraph>
               </div>
-            {:else}
-              <div>
-                <SegmentedControl
-                  value={statusTab}
-                  onValueChange={(v) => (statusTab = v)}
-                  items={[
-                    { value: 'age', label: 'Age' },
-                    { value: 'updated', label: 'Last status update' }
-                  ]}
-                  class="-mt-3"
-                />
-                {#if statusTab === 'age'}
-                  {@render age()}
-                {:else if statusTab === 'updated'}
-                  {@render updated()}{/if}
-              </div>
-            {/if}
+            </div>
+            <CheckpointsIndicator
+              {pipelineName}
+              {checkpoints}
+              {metrics}
+              {checkpointStatus}
+              onShowCheckpoints={() => (openDrawer = { kind: 'checkpoints' })}
+            />
+            <TransactionStatus {metrics} class="w-full"></TransactionStatus>
           </div>
+          {#if metrics.current.views.size || metrics.current.tables.size}
+            <div class="flex flex-wrap gap-4">
+              <MetricsTables {metrics} onConnectorSelect={handleConnectorSelect} />
+            </div>
+          {/if}
         </div>
-        <div class="flex w-full flex-col gap-4 xl:flex-row">
-          <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
-            <PipelineThroughputGraph
-              {pipeline}
-              metrics={timeSeries}
-              refetchMs={1000}
-              keepMs={60 * 1000}
-            ></PipelineThroughputGraph>
-          </div>
-          <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
-            <PipelineMemoryGraph
-              {pipeline}
-              metrics={timeSeries}
-              refetchMs={1000}
-              keepMs={60 * 1000}
-              memoryPressure={global.memory_pressure}
-            ></PipelineMemoryGraph>
-          </div>
-          <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
-            <PipelineStorageGraph
-              {pipeline}
-              metrics={timeSeries}
-              refetchMs={1000}
-              keepMs={60 * 1000}
-            ></PipelineStorageGraph>
-          </div>
-        </div>
-        <CheckpointsIndicator
-          {pipelineName}
-          {checkpoints}
-          {metrics}
-          {checkpointStatus}
-          onShowCheckpoints={() => (openDrawer = { kind: 'checkpoints' })}
-        />
-        <TransactionStatus {metrics} class="w-full"></TransactionStatus>
-      </div>
-      {#if metrics.current.views.size || metrics.current.tables.size}
-        <div class="flex flex-wrap gap-4">
-          <MetricsTables {metrics} onConnectorSelect={handleConnectorSelect} />
-        </div>
-      {/if}
-    </div>
-    <Drawer open={!!openDrawer} side="right" width="w-[500px]" onClose={() => (openDrawer = null)}>
+      {/snippet}
       {#if openDrawer?.kind === 'connector'}
         <ConnectorErrors
           {pipelineName}

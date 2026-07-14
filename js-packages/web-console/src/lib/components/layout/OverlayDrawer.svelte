@@ -63,7 +63,10 @@
       <div
         role="dialog"
         aria-modal="true"
-        class={'flex h-full flex-col' + (open ? ' shadow-xl ' : ' ') + `${width} ` + _class}
+        class={'flex h-full max-w-full flex-col' +
+          (open ? ' shadow-xl ' : ' ') +
+          `${width} ` +
+          _class}
       >
         {@render children?.()}
       </div>
