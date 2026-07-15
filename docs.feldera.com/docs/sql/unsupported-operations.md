@@ -6,11 +6,19 @@ Feldera.  These limitations are tracked in our [GitHub issue
 tracker](https://github.com/feldera/feldera/issues) and may be
 resolved in future releases.
 
+## Aggregate functions
+
+The following aggregate functions are not supported:
+`PERCENTILE_DISC`, `PERCENTILE_CONT`, `MODE`, `CORR`, `COVAR_POP`,
+`COVAR_SAMP`, `REGR_SLOPE`, `REGR_INTERCEPT`, `REGR_R2`, `JSON_AGG`,
+`JSON_OBJECT_AGG`, `VAR_POP`, `VAR_SAMP`, `LISTAGG`.
+
 ## Window functions (`OVER` clause)
 
-### `NTILE` and `NTH_VALUE` are not supported
+### Statistics window functions
 
-The `NTILE()` and `NTH_VALUE()` window functions are not yet implemented.
+`NTILE`, `NTH_VALUE`, `PERCENT_RANK`, `CUME_DIST`, `VAR_POP`,
+`VAR_SAMP` window functions are not yet implemented.
 
 ### `FIRST_VALUE` and `LAST_VALUE` limited to unbounded range
 
@@ -97,7 +105,6 @@ Several `MAP` functions are not yet implemented:
 
 A list of supported MAP operations is available [here](./map.md).
 See [#1907](https://github.com/feldera/feldera/issues/1907).
-
 ## `MATCH_RECOGNIZE`
 
 The `MATCH_RECOGNIZE` clause for pattern matching over rows is not yet
@@ -117,12 +124,9 @@ The `MULTISET` data type is not currently supported.
 Session windows (grouping events into sessions based on a gap in
 activity) are not yet supported.
 
-## Timezone support
+## `TIME` with timezone
 
-`TIME`, and `TIMESTAMP` types have no time zone.  There is no
-`TIMESTAMP WITH TIME ZONE` type, and timezone conversion functions are
-not available.  See the [datetime documentation](datetime.md#timezones)
-for details.
+The type `TIME WITH TIME ZONE` is not supported.
 
 ## Performance caveats
 
