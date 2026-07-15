@@ -52,6 +52,8 @@ impl StorageCacheFlags for OpenOptions {
             use std::os::unix::fs::OpenOptionsExt;
             self.custom_flags(cache.to_custom_open_flags());
         }
+        #[cfg(not(unix))]
+        let _ = cache;
         self
     }
 }

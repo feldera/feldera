@@ -62,7 +62,7 @@ use flate2::{
 };
 use itertools::Itertools;
 use memory_stats::memory_stats;
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos")))]
 use nix::time::{ClockId, clock_gettime};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -108,8 +108,9 @@ struct Timestamp(
     /// Monotonic time in nanoseconds.
     ///
     /// On macOS this is [`mach_absolute_time`] converted to nanoseconds via
-    /// [`mach_timebase_info`].  On other Unix platforms this is
-    /// `CLOCK_MONOTONIC`.
+    /// [`mach_timebase_info`]. On other Unix platforms this is
+    /// `CLOCK_MONOTONIC`. On Windows this is time elapsed since the first
+    /// timestamp requested by this process.
     ///
     /// [`mach_absolute_time`]: https://developer.apple.com/documentation/kernel/1462446-mach_absolute_time
     /// [`mach_timebase_info`]: https://developer.apple.com/documentation/kernel/1462447-mach_timebase_info
@@ -144,10 +145,23 @@ impl Timestamp {
             Self(mach_absolute_time_nanos())
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(all(unix, not(target_os = "macos")))]
         {
             let now = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
             Self(now.tv_sec() as i64 * 1_000_000_000 + now.tv_nsec() as i64)
+        }
+
+        #[cfg(windows)]
+        {
+            use std::sync::OnceLock;
+
+            static ORIGIN: OnceLock<Instant> = OnceLock::new();
+            Self(
+                ORIGIN
+                    .get_or_init(Instant::now)
+                    .elapsed()
+                    .as_nanos() as i64,
+            )
         }
     }
 
@@ -713,7 +727,7 @@ impl Capture {
                 tooltip,
             };
             markers
-                .entry(nix::unistd::getpid().as_raw() as usize)
+                .entry(std::process::id() as usize)
                 .or_default()
                 .1
                 .0

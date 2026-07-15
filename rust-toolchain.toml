@@ -1,0 +1,5 @@
+[toolchain]
+# latest is currently 1.97.0 which crashes. Revisit or remove this pinning in the future.
+channel = "1.96.1"
+components = ["rustfmt", "clippy"]
+

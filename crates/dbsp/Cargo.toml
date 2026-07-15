@@ -99,9 +99,14 @@ feldera-buffer-cache = { workspace = true }
 memory-stats = { workspace = true }
 serde_json_path_to_error = { workspace = true }
 flate2 = { workspace = true }
-nix = { workspace = true, features = ["process", "time"] }
 thread-id = { workspace = true }
 pin-project-lite = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["process", "time"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading"] }
 
 [dev-dependencies]
 rand = { workspace = true }
@@ -115,13 +120,15 @@ csv = { workspace = true }
 tar = { workspace = true }
 zstd = { workspace = true }
 criterion = { workspace = true }
-pprof = { workspace = true, features = ["flamegraph", "criterion"] }
 rand_xoshiro = { workspace = true }
 indicatif = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 chrono = { workspace = true, features = ["serde"] }
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 tarpc = { workspace = true, features = ["full"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+pprof = { workspace = true, features = ["flamegraph", "criterion"] }
 
 [[bench]]
 name = "galen"
