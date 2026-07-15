@@ -705,6 +705,139 @@ mod tests {
         assert_eq!(total_rows, 1);
     }
 
+    /// Ad-hoc queries can take apart VARIANT columns with the JSON function
+    /// family from `datafusion-functions-json` (issue #6644). VARIANT values
+    /// reach DataFusion as JSON-encoded Utf8 strings; the in-memory table
+    /// below stands in for a materialized table with a VARIANT column.
+    ///
+    /// The state must come from `create_session_context`, which registers
+    /// the functions; the plain `test_state()` used elsewhere in this
+    /// module does not have them.
+    #[tokio::test]
+    async fn json_functions_work_in_adhoc_queries() {
+        use datafusion::arrow::array::{Array, Int64Array, StringArray};
+        use datafusion::arrow::datatypes::{DataType, Field, Schema};
+        use datafusion::datasource::MemTable;
+        use feldera_adapterlib::utils::datafusion::{create_runtime_env, create_session_context};
+        use feldera_types::config::{PipelineConfig, RuntimeConfig};
+
+        // Tripwire: stock DataFusion does not know these functions; they
+        // must come from the registration in `create_session_context`. If
+        // this starts failing, DataFusion gained native JSON functions and
+        // the `datafusion-functions-json` dependency may be redundant.
+        let err = execute_sql_with_state(test_state(), "SELECT json_get_str('{}', 'a')")
+            .await
+            .expect_err("stock DataFusion should not provide json_get_str");
+        assert!(
+            format!("{err}").contains("json_get_str"),
+            "unexpected error: {err}"
+        );
+
+        let config = PipelineConfig {
+            global: RuntimeConfig {
+                workers: 1,
+                ..Default::default()
+            },
+            multihost: None,
+            name: None,
+            given_name: None,
+            storage_config: None,
+            secrets_dir: None,
+            inputs: Default::default(),
+            outputs: Default::default(),
+            program_ir: None,
+        };
+        let runtime_env = create_runtime_env(&config).unwrap();
+        let ctx = create_session_context(&config, runtime_env);
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("val", DataType::Utf8, true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int64Array::from(vec![1, 2, 3])),
+                Arc::new(StringArray::from(vec![
+                    Some(r#"{"name":"Bob","scores":[8,10],"active":true}"#),
+                    Some(r#"{"name":"Ann","scores":[3],"extra":{"x":5}}"#),
+                    None,
+                ])),
+            ],
+        )
+        .unwrap();
+        let mem = MemTable::try_new(schema, vec![vec![batch]]).unwrap();
+        ctx.register_table("t", Arc::new(mem)).unwrap();
+
+        // Typed getters in the projection. A missing key ('scores' has one
+        // element in row 2; indexes are 0-based) and a NULL document both
+        // yield NULL.
+        let batches = collect_rows(
+            ctx.state(),
+            "SELECT json_get_str(val, 'name') AS name, \
+             json_get_int(val, 'scores', 1) AS second_score \
+             FROM t ORDER BY id",
+        )
+        .await;
+        let names = batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("string column");
+        assert_eq!(names.value(0), "Bob");
+        assert_eq!(names.value(1), "Ann");
+        assert!(names.is_null(2));
+        let scores = batches[0]
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("int64 column");
+        assert_eq!(scores.value(0), 10);
+        assert!(scores.is_null(1));
+        assert!(scores.is_null(2));
+
+        // JSON predicates filter on document contents, as in the queries
+        // from issue #6644.
+        for (query, expected_id) in [
+            ("SELECT id FROM t WHERE json_contains(val, 'extra')", 2),
+            (
+                "SELECT id FROM t WHERE json_get_bool(val, 'active') = TRUE",
+                1,
+            ),
+        ] {
+            let batches = collect_rows(ctx.state(), query).await;
+            let ids = batches[0]
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("int64 column");
+            assert_eq!(ids.len(), 1, "query: {query}");
+            assert_eq!(ids.value(0), expected_id, "query: {query}");
+        }
+
+        // `->>` is shorthand for `json_as_text`, and casting `json_get` is
+        // rewritten to the matching typed getter.
+        let batches = collect_rows(
+            ctx.state(),
+            "SELECT val->>'name' AS name, \
+             CAST(json_get(val, 'scores', 0) AS BIGINT) AS first_score \
+             FROM t WHERE json_get_str(val, 'name') = 'Bob'",
+        )
+        .await;
+        let names = batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("string column");
+        assert_eq!(names.value(0), "Bob");
+        let scores = batches[0]
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .expect("int64 column");
+        assert_eq!(scores.value(0), 8);
+    }
+
     /// Selecting from a non-materialized source fails during *physical
     /// planning* — when the scan node is built — not during scan execution.
     /// `execute_adhoc_stream` must surface that as an `Err`, letting the HTTP

@@ -219,11 +219,18 @@ where
         );
     let session_config = customize_config(session_config);
 
-    let state = SessionStateBuilder::new()
+    let mut state = SessionStateBuilder::new()
         .with_config(session_config)
         .with_runtime_env(runtime_env)
         .with_default_features()
         .build();
+    // DataFusion has no VARIANT type; VARIANT columns reach it as
+    // JSON-encoded strings. The `datafusion-functions-json` family
+    // (`json_get_str`, `json_contains`, ...) lets queries take such
+    // strings apart. Of the crate's operators only `->>` is reachable:
+    // `->` and `?` do not parse in the default (generic) SQL dialect.
+    datafusion_functions_json::register_all(&mut state)
+        .expect("registering JSON functions on a fresh session state cannot fail");
     SessionContext::from(state)
 }
 
@@ -731,6 +738,42 @@ mod tests {
             c.set_usize("datafusion.execution.target_partitions", 99)
         });
         assert_eq!(ctx.copied_config().target_partitions(), 99);
+    }
+
+    /// The JSON function family must be registered on every context built
+    /// here: ad-hoc queries rely on it to take apart VARIANT columns, which
+    /// DataFusion sees as JSON-encoded strings (issue #6644).
+    #[test]
+    fn create_session_context_registers_json_functions() {
+        let storage = TempStorage::new("feldera-datafusion-create-session-context-json-test");
+        let cfg = pipeline_config(
+            RuntimeConfig {
+                workers: 1,
+                ..Default::default()
+            },
+            Some(storage.path()),
+        );
+        let env = create_runtime_env(&cfg).unwrap();
+        let ctx = create_session_context(&cfg, env);
+        let state = ctx.state();
+        for function in [
+            "json_get",
+            "json_get_str",
+            "json_get_int",
+            "json_get_float",
+            "json_get_bool",
+            "json_get_json",
+            "json_get_array",
+            "json_as_text",
+            "json_contains",
+            "json_length",
+            "json_object_keys",
+        ] {
+            assert!(
+                state.scalar_functions().contains_key(function),
+                "JSON function '{function}' is not registered"
+            );
+        }
     }
 
     /// Tripwire: `clean_stale_scratch_entries` refuses to walk a directory

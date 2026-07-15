@@ -109,6 +109,9 @@ csv-core = "0.1.10"
 dashmap = "6.1.0"
 datafusion = "53.1"
 dbsp = { path = "crates/dbsp", version = "0.323.0" }
+# JSON functions (json_get_str, json_contains, ...) for ad-hoc queries over
+# VARIANT columns, which reach DataFusion as JSON-encoded strings.
+datafusion-functions-json = "0.53.1"
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.14.1"
 # Feldera fork of delta-rs: upstream tag `rust-v0.32.3` + 3 patches, on branch
