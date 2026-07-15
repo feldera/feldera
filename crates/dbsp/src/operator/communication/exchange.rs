@@ -1043,6 +1043,8 @@ where
     ///
     /// When the data is ready, but before reading it, this method swaps
     /// `start_wait_usecs` with 0 and returns the old value along with the data.
+    /// This allows the caller to obtain the waiting time incurred just after it
+    /// became ready.
     pub(crate) async fn receive_all<D>(
         &self,
         deserialize: D,
