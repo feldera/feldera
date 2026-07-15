@@ -177,12 +177,16 @@ public final class DBSPZSetExpression extends DBSPExpression
             return expression.cast(expression.getNode(), type, DBSPCastExpression.CastType.SqlUnsafe);
         } else if (type.is(DBSPTypeArray.class)) {
             DBSPTypeArray array = type.to(DBSPTypeArray.class);
-            DBSPArrayExpression vecLit = expression.to(DBSPArrayExpression.class);
-            if (vecLit.data == null) {
-                return new DBSPArrayExpression(array, type.mayBeNull);
+            if (expression.is(DBSPArrayExpression.class)) {
+                DBSPArrayExpression vecLit = expression.to(DBSPArrayExpression.class);
+                if (vecLit.data == null) {
+                    return new DBSPArrayExpression(array, type.mayBeNull);
+                }
+                List<DBSPExpression> fields = Linq.map(vecLit.data, e -> castRecursive(e, array.getElementType()));
+                return new DBSPArrayExpression(expression.getNode(), type, fields);
+            } else {
+                return expression.cast(CalciteObject.EMPTY, type, DBSPCastExpression.CastType.SqlUnsafe);
             }
-            List<DBSPExpression> fields = Linq.map(vecLit.data, e -> castRecursive(e, array.getElementType()));
-            return new DBSPArrayExpression(expression.getNode(), type, fields);
         } else if (type.is(DBSPTypeTupleBase.class)) {
             DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
             DBSPExpression[] fields = new DBSPExpression[tuple.size()];

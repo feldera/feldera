@@ -728,4 +728,65 @@ public class Regression3Tests extends SqlIoTest {
         this.runtimeFail(compiler, "REMOVE FROM T VALUES (1);",
                 "Table t: negative weight found");
     }
+
+    @Test
+    public void issue6453() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t (id INT, arr ROW(name VARCHAR, score INT) ARRAY);
+                CREATE MATERIALIZED VIEW v AS
+                SELECT id, TRANSFORM(arr, x -> x.name) AS names FROM t;""");
+        String insert = """
+                INSERT INTO t VALUES
+                  -- Simple single-element array
+                  (1, ARRAY[
+                        ROW('alice', 10)
+                      ]),
+                
+                  -- Multi-element array
+                  (2, ARRAY[
+                        ROW('bob', 5),
+                        ROW('carol', 7),
+                        ROW('dave', 3)
+                      ]),
+                
+                  -- Empty array; direct casts of ARRAY[] do not work
+                  (3, ARRAY_REMOVE(ARRAY[NULL], NULL)),
+                
+                  -- Array with NULL element
+                  (4, ARRAY[
+                        NULL,
+                        ROW('eve', 42)
+                      ]),
+                
+                  -- Repeated names, varied scores
+                  (5, ARRAY[
+                        ROW('zoe', 1),
+                        ROW('zoe', 99),
+                        ROW('max', 50)
+                      ]),
+                
+                  -- Stress test: longer array
+                  (6, ARRAY[
+                        ROW('p1', 10),
+                        ROW('p2', 20),
+                        ROW('p3', 30),
+                        ROW('p4', 40)
+                      ]);""";
+        String expected = """
+                 id | names
+                -------------
+                  1 | { alice}
+                  2 | { bob, carol, dave}
+                  3 | {}
+                  4 | {NULL, eve}
+                  5 | { zoe, zoe, max}
+                  6 | { p1, p2, p3, p4}""";
+        ccs.stepWeightOne(insert, expected);
+
+        ccs = this.getCCS("""
+                CREATE TABLE t (id INT, arr ROW(name VARCHAR, score INT) ARRAY);
+                CREATE MATERIALIZED VIEW v AS
+                SELECT id, TRANSFORM(arr, x -> (x).name) AS names FROM t;""");
+        ccs.stepWeightOne(insert, expected);
+    }
 }

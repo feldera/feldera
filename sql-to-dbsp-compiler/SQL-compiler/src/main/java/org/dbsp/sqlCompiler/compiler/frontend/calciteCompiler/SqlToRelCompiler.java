@@ -692,6 +692,11 @@ public class SqlToRelCompiler implements IWritesLogs {
         public boolean isHavingAlias() {
             return true;
         }
+
+        @Override
+        public boolean allowLambdaClosure() {
+            return false;
+        }
     }
 
     /** Add a new set of operators to the operator table.  Creates a new validator, converter */
