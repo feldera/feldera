@@ -38,6 +38,10 @@ ad-hoc queries that need to be taken into account:
   (`SELECT 1729595568::TIMESTAMP;` will yield `2024-10-22T11:12:48` in ad-hoc queries and
   `1970-01-21 00:26:35` in Feldera SQL).
 - Ad-hoc SQL cannot perform as-of joins.
+- Feldera SQL reads fields of `VARIANT` values with subscripts (`doc['scores'][1]`, array indexes
+  are 1-based); ad-hoc queries use
+  [JSON functions](#querying-variant-columns-with-json-functions) instead
+  (`json_get(doc, 'scores', 0)`, array indexes are 0-based).
 
 We will continue to improve the consistency between the two engines in future releases.
 
@@ -154,6 +158,59 @@ An ad-hoc query to insert data into the `complex_types` table would look like th
 ```sql
 insert into complex_types values ([1,2,3], struct(2, 'b'), '{"field": 3}', MAP(['answer'], [42]), struct(2, 3));
 ```
+
+### Querying VARIANT Columns with JSON Functions
+
+Datafusion has no equivalent of the Feldera SQL [`VARIANT`](/sql/json) type. An ad-hoc query
+receives a `VARIANT` column as a string that holds the JSON-encoded value, so the Feldera SQL
+subscript syntax (`doc['name']`) does not work in ad-hoc queries. Instead, ad-hoc queries
+take JSON strings apart with the
+[datafusion-functions-json](https://github.com/datafusion-contrib/datafusion-functions-json)
+function family. These functions also apply to string columns that hold JSON text.
+
+| Function                          | Return type     | Description                                                            |
+|-----------------------------------|-----------------|------------------------------------------------------------------------|
+| `json_get(json, path...)`         | union           | Value at `path`; cast the result to select a concrete type (see below) |
+| `json_get_str(json, path...)`     | `VARCHAR`       | String value at `path`                                                 |
+| `json_get_int(json, path...)`     | `BIGINT`        | Integer value at `path`                                                |
+| `json_get_float(json, path...)`   | `DOUBLE`        | Float value at `path`                                                  |
+| `json_get_bool(json, path...)`    | `BOOLEAN`       | Boolean value at `path`                                                |
+| `json_get_json(json, path...)`    | `VARCHAR`       | Raw JSON text of the value at `path`                                   |
+| `json_get_array(json, path...)`   | array           | Array at `path`, each element as raw JSON text                         |
+| `json_as_text(json, path...)`     | `VARCHAR`       | Value at `path` as text; also available as the `->>` operator          |
+| `json_contains(json, path...)`    | `BOOLEAN`       | Whether a value exists at `path`                                       |
+| `json_length(json, path...)`      | `BIGINT`        | Length of the object or array at `path`                                |
+| `json_object_keys(json, path...)` | `VARCHAR` array | Keys of the object at `path`                                           |
+
+A path is a sequence of object keys and 0-based array indexes:
+`json_get_int(doc, 'scores', 0)` reads element 0 of the array under the `scores` key.
+A missing key, a mismatched type, or a `NULL` document yields `NULL`.
+
+Given
+
+```sql
+CREATE TABLE json_docs (id INT, doc VARIANT) WITH ('materialized' = 'true');
+```
+
+where `doc` holds documents such as `{"name": "Bob", "scores": [8, 10], "active": true}`,
+the following ad-hoc query returns the names of active users whose first score exceeds 5:
+
+```sql
+SELECT id, json_get_str(doc, 'name') AS name
+FROM json_docs
+WHERE json_get_bool(doc, 'active') = TRUE
+  AND json_get_int(doc, 'scores', 0) > 5;
+```
+
+Notes:
+
+- `json_get` returns a value of a union type that only the `text` and `arrow_ipc` output
+  formats can render. To use `json_get` results in the `json` or `parquet` output format,
+  cast them to a concrete type; the cast is rewritten to the matching typed getter, so
+  `json_get(doc, 'scores', 0)::BIGINT` and `CAST(json_get(doc, 'scores', 0) AS BIGINT)`
+  both execute as `json_get_int(doc, 'scores', 0)`.
+- Of the operators provided by the crate, only `->>` (alias of `json_as_text`) is
+  available; `->` and `?` do not parse in the SQL dialect used by ad-hoc queries.
 
 ### Parameterized Queries with PREPARE / EXECUTE
 
