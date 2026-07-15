@@ -16,10 +16,7 @@
   } from '$lib/components/pipelines/editor/performance/ConnectorErrors.svelte'
   import CheckpointsStatus from '$lib/components/pipelines/editor/performance/CheckpointsStatus.svelte'
   import { useIsScreenXl } from '$lib/compositions/layout/useIsMobile.svelte'
-  import {
-    type PipelineManagerApi,
-    usePipelineManager
-  } from '$lib/compositions/usePipelineManager.svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { formatDateTime, formatQty } from '$lib/functions/format'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
@@ -33,6 +30,10 @@
   import CheckpointsIndicator from './performance/CheckpointsIndicator.svelte'
   import TransactionStatus from './performance/TransactionStatus.svelte'
   import Drawer from '$lib/components/layout/Drawer.svelte'
+  import WarningBanner from './WarningBanner.svelte'
+  import { sleep } from '$lib/functions/common/promise'
+
+  const RECONNECT_BACKOFF_MS = 1000
 
   const {
     pipeline,
@@ -75,101 +76,113 @@
     openDrawer = { kind: 'connector', relationName, connectorName, direction, filter }
   }
 
-  let cancelStream: (() => void) | undefined
-
-  const endMetricsStream = () => {
-    cancelStream?.()
-    cancelStream = undefined
-    timeSeries = []
-  }
-  const startMetricsStream = async (api: PipelineManagerApi, targetPipelineName: string) => {
-    const result = await api.pipelineTimeSeriesStream(targetPipelineName)
-    if (result instanceof Error) {
-      cancelStream = undefined
-      return
-    }
-    // Not routed through `parseStream` — the load shedding is unnecessary
-    // metrics stream. Metric values parsed as JS numbers —
-    // record counts and byte sizes sit well below `Number.MAX_SAFE_INTEGER`.
-    const appendRow = pushAsCircularBuffer(
-      () => timeSeries,
-      63,
-      (v: TimeSeriesEntry) => v
-    )
-    const abortCtrl = new AbortController()
-    cancelStream = () => {
-      abortCtrl.abort()
-      result.cancel()
-    }
-    try {
-      await result.stream.pipeThrough(new JSONParser({ paths: ['$'], separator: '' })).pipeTo(
-        new WritableStream<ParsedElementInfo>({
-          write(chunk) {
-            appendRow([chunk.value as TimeSeriesEntry])
-          }
-        }),
-        { signal: abortCtrl.signal }
-      )
-    } catch (e) {
-      // Only log unexpected failures — `AbortError` from `cancelStream` is intentional.
-      if (!abortCtrl.signal.aborted) {
-        console.warn('Pipeline metrics stream error:', e)
-      }
-    }
-    if (cancelStream) {
-      cancelStream = undefined
-    }
-    // Restart on natural EOS / transient errors only. Skip if cancelled, if
-    // metrics are no longer available, or if the user navigated away mid-stream.
-    if (abortCtrl.signal.aborted) {
-      return
-    }
-    if (!metricsAvailable) {
-      return
-    }
-    if (pipelineName !== targetPipelineName) {
-      return
-    }
-    startMetricsStream(api, targetPipelineName)
-  }
-
   const pipelineName = $derived(pipeline.current.name)
-  const metricsAvailable = $derived(isMetricsAvailable(pipeline.current.status) === 'yes')
+  const metricsStatus = $derived(isMetricsAvailable(pipeline.current.status))
+  const metricsAvailable = $derived(metricsStatus === 'yes')
+  // When metrics are temporarily unavailable ('missing'), freeze graphs and stats until the pipeline is reachable again.
+  const metricsDesired = $derived(metricsStatus === 'yes' || metricsStatus === 'missing')
 
+  // Keep reconnecting to time_series_stream for as long as the tab is mounted and metrics are desired
+  // Reconnect on end-of-stream immediately, or with 1s backoff on mid-stream or stream-open errors
+  // Clear the timeSeries after reconnecting, when metrics are no longer desired or the pipeline is deleted
   $effect(() => {
     pipelineName
     if (deleted) {
-      endMetricsStream()
+      timeSeries = []
       openDrawer = null
       return
     }
-    if (!metricsAvailable) {
-      endMetricsStream()
+    if (!metricsDesired) {
+      timeSeries = []
       openDrawer = null
       checkpoints = []
       return
     }
-    $effect.root(() => {
-      if (cancelStream) {
-        // Avoid redundant cleanup on first start
-        endMetricsStream()
+
+    const targetPipelineName = pipelineName
+    // Start each session with empty stats so a previous pipeline's samples
+    // never bleed into the newly selected one.
+    timeSeries = []
+    let cancelled = false
+    let cancelActive: (() => void) | undefined
+
+    const runMetricsStream = async () => {
+      // Not routed through `parseStream`: the load shedding is unnecessary for the metrics stream.
+      const appendRow = pushAsCircularBuffer(
+        () => timeSeries,
+        63,
+        (v: TimeSeriesEntry) => v
+      )
+      while (!cancelled) {
+        if (!metricsAvailable) {
+          await sleep(RECONNECT_BACKOFF_MS)
+          continue
+        }
+        const result = await api.pipelineTimeSeriesStream(targetPipelineName)
+        if (cancelled) {
+          if (!(result instanceof Error)) {
+            result.cancel()
+          }
+          return
+        }
+        if (result instanceof Error) {
+          // Could not open the stream. Back off briefly, then retry so the graphs recover.
+          await sleep(RECONNECT_BACKOFF_MS)
+          continue
+        }
+        const abortCtrl = new AbortController()
+        cancelActive = () => {
+          abortCtrl.abort()
+          result.cancel()
+        }
+
+        // Subscribe to the metrics stream, overwrite the previous data only when the first sample is received.
+        try {
+          let pendingReplace = true
+          await result.stream.pipeThrough(new JSONParser({ paths: ['$'], separator: '' })).pipeTo(
+            new WritableStream<ParsedElementInfo>({
+              write(chunk) {
+                const entry = chunk.value as TimeSeriesEntry
+                if (pendingReplace) {
+                  // The first sample after a reconnect replaces the previous time series window, which may be frozen or stale.
+                  timeSeries = [entry]
+                  pendingReplace = false
+                  return
+                }
+                appendRow([entry])
+              }
+            }),
+            { signal: abortCtrl.signal }
+          )
+        } catch (e) {
+          // `AbortError` from teardown is intentional, so only log real failures.
+          if (!abortCtrl.signal.aborted) {
+            console.warn('Pipeline metrics stream error:', e)
+          }
+        }
+        cancelActive = undefined
       }
-      setTimeout(() => startMetricsStream(api, pipelineName), 100)
-    })
+    }
+    runMetricsStream()
+
     return () => {
-      endMetricsStream()
+      cancelled = true
+      cancelActive?.()
     }
   })
 
   $effect(() => {
     pipelineName
-    if (!metricsAvailable) {
+    if (!metricsDesired) {
       checkpoints = []
       checkpointStatus = null
       return
     }
-    // Poll checkpoint-related endpoints so the UI stays current with
-    // ongoing checkpoint activity (also needed for the mock simulator).
+    if (!metricsAvailable) {
+      // Keep the last-known metrics and pause polling until the pipeline is reachable again.
+      return
+    }
+    // Poll checkpoint-related endpoints so the UI stays current with ongoing checkpoint activity.
     const fetchCheckpoints = () => {
       api.getPipelineCheckpoints(pipelineName).then((v) => {
         checkpoints = v
@@ -192,25 +205,6 @@
   <div class="flex justify-between pt-2 sm:pt-0">
     <div>Pipeline is not running</div>
   </div>
-{:else if pipeline.current.status === 'Unavailable'}
-  <div class="flex justify-between">
-    <div>
-      Pipeline is unavailable for {formatElapsedTime(
-        new Date(pipeline.current.deploymentStatusSince)
-      )} since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}. You can
-      attempt to suspend or shut it down.
-    </div>
-  </div>
-  <!-- {:else if !global && pipeline.current.status === 'Suspended'}
-  <div class="flex justify-between">
-    <div>
-      Pipeline is suspended for {formatElapsedTime(
-        new Date(pipeline.current.deploymentStatusSince)
-      )} since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}. The
-      performance metrics cannot be retrieved.
-    </div>
-    {@render pipelineId()}
-  </div> -->
 {:else if !global}
   <div class="flex justify-between">
     <div>Pipeline is running, but has not reported usage telemetry yet</div>
@@ -227,6 +221,15 @@
           class="-mr-2 scrollbar flex min-w-0 flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto pr-2"
         >
           <div class="flex w-full flex-col gap-4">
+            {#if pipeline.current.status === 'Unavailable'}
+              <WarningBanner class="rounded!">
+                Pipeline has been unavailable for {formatElapsedTime(
+                  new Date(pipeline.current.deploymentStatusSince)
+                )} since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}.
+                Showing the last known metrics while reconnecting. You can attempt to suspend or shut it
+                down.
+              </WarningBanner>
+            {/if}
             <div class="flex flex-wrap gap-4">
               <div class="mt-1 flex flex-wrap items-center gap-4">
                 <div class="flex flex-col">
