@@ -181,7 +181,10 @@ except:
 print("Creating Iceberg table")
 
 table = catalog.create_table(
-    "iceberg_test.test_table_v2", schema, location=location, partition_spec=partition_spec
+    "iceberg_test.test_table_v2",
+    schema,
+    location=location,
+    partition_spec=partition_spec,
 )
 
 # Number of records

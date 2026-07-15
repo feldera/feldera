@@ -253,7 +253,15 @@ schema_registry_converter = "4.2.0"
 semver = "1.0.27"
 serde = "1.0.213"
 serde_dynamo = { version = "4.3.0", features = ["aws-sdk-dynamodb+1"] }
-serde_arrow = { version = "0.14.1", features = ["arrow-58"] }
+# serde_arrow fork that recognizes the "+00:00" timezone Iceberg uses for
+# `timestamptz` columns (upstream 0.14.2 accepts only the name "UTC").
+# Remove the git source when https://github.com/chmp/serde_arrow/pull/320
+# is released. `version` keeps the crates that depend on serde_arrow
+# publishable to crates.io; cargo drops the git source when publishing.
+# The git source goes on the dependency rather than in a `[patch]` section
+# because patches do not apply to generated SQL pipeline workspaces, which
+# import this dependency through `crates/adapters`.
+serde_arrow = { version = "0.14.2", git = "https://github.com/ryzhyk/serde_arrow.git", rev = "9555b34fb85d4323e4381ad5a09872c1696a0d34", features = ["arrow-58"] }
 serde_bytes = "0.11.15"
 serde_json = { version = "1.0.132", features = ["arbitrary_precision"] }
 serde_json_path_to_error = "0.1.5"
