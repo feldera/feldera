@@ -59,14 +59,16 @@ use crate::catalog::InputCollectionHandle;
 use crate::format::get_input_format;
 use crate::transport::input_transport_config_to_endpoint;
 pub use data::{
-    DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergTestStruct, KeyStruct,
-    S3TablesTestStruct, TestStruct, TestStruct2, generate_test_batch, generate_test_batches,
-    generate_test_batches_with_weights,
+    DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergSubsetTestStruct, IcebergTestStruct,
+    KeyStruct, S3TablesTestStruct, TestStruct, TestStruct2, generate_test_batch,
+    generate_test_batches, generate_test_batches_with_weights,
 };
 use dbsp::circuit::{CircuitConfig, NodeId};
 use dbsp::utils::Tup2;
 use feldera_types::format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat};
-use feldera_types::program_schema::{Field, Relation, SqlIdentifier};
+use feldera_types::program_schema::{
+    Field, PropertyValue, Relation, SourcePosition, SqlIdentifier,
+};
 pub use mock_dezset::{
     MockDeZSet, MockUpdate, wait_for_output_count, wait_for_output_ordered,
     wait_for_output_unordered,
@@ -242,6 +244,44 @@ where
         + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
+    test_circuit_with_properties::<T>(config, schema, &[], persistent_output_ids)
+}
+
+/// Like [`test_circuit`], but sets the given properties on the input relations,
+/// the way the SQL compiler records table-level `WITH` properties (e.g.,
+/// `skip_unused_columns`) in the program schema.
+pub fn test_circuit_with_properties<T>(
+    config: CircuitConfig,
+    schema: &[Field],
+    input_properties: &[(&str, &str)],
+    persistent_output_ids: &[Option<&str>],
+) -> (DBSPHandle, Box<dyn CircuitCatalog>)
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
+    let zero_position = SourcePosition {
+        start_line_number: 0,
+        start_column: 0,
+        end_line_number: 0,
+        end_column: 0,
+    };
+    let input_properties: BTreeMap<String, PropertyValue> = input_properties
+        .iter()
+        .map(|(key, value)| {
+            (
+                key.to_string(),
+                PropertyValue {
+                    value: value.to_string(),
+                    key_position: zero_position,
+                    value_position: zero_position,
+                },
+            )
+        })
+        .collect();
+
     let schema = schema.to_vec();
     let persistent_output_ids = persistent_output_ids
         .iter()
@@ -264,7 +304,7 @@ where
                 format!("test_input{i}").into(),
                 schema.clone(),
                 false,
-                BTreeMap::new(),
+                input_properties.clone(),
             ))
             .unwrap();
 

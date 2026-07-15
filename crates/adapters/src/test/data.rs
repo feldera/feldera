@@ -1003,6 +1003,57 @@ deserialize_table_record!(S3TablesTestStruct["S3TablesTestStruct", Variant, 3] {
     (created_at, "created_at", true, Option<Timestamp>, |_| Some(None))
 });
 
+/// SQL table that declares a subset of [`IcebergTestStruct`]'s columns, for
+/// testing that the Iceberg connector only reads declared columns.
+///
+/// `l` is nullable and marked unused, so the connector skips it (and the
+/// deserializer NULL-fills it) when the `skip_unused_columns` table property
+/// is set.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+pub struct IcebergSubsetTestStruct {
+    pub i: i32,
+    pub s: String,
+    pub l: Option<i64>,
+}
+
+impl IcebergSubsetTestStruct {
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field::new("i".into(), ColumnType::int(false)),
+            Field::new("s".into(), ColumnType::varchar(false)),
+            Field::new("l".into(), ColumnType::bigint(true)).with_unused(true),
+        ]
+    }
+}
+
+serialize_table_record!(IcebergSubsetTestStruct[3]{
+    i["i"]: i32,
+    s["s"]: String,
+    l["l"]: Option<i64>
+});
+
+deserialize_table_record!(IcebergSubsetTestStruct["IcebergSubsetTestStruct", Variant, 3] {
+    (i, "i", false, i32, |_| None),
+    (s, "s", false, String, |_| None),
+    (l, "l", false, Option<i64>, |_| Some(None))
+});
+
 /// Struct will all types supported by the DeltaLake connector.
 #[derive(
     Debug,

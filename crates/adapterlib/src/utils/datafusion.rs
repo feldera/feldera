@@ -364,6 +364,35 @@ pub fn columns_referenced_by_order_by(order_by: &str) -> Result<BTreeSet<String>
     Ok(columns)
 }
 
+/// Takes a column name from an external table schema and returns a quoted
+/// string that can be used in datafusion queries like `select "foo""bar" from my_table`.
+pub fn quote_sql_identifier<S: AsRef<str>>(ident: S) -> String {
+    format!("\"{}\"", ident.as_ref().replace("\"", "\"\""))
+}
+
+/// A set of column names compared case-insensitively. External table schemas
+/// (Delta, Iceberg) carry no case-sensitivity information, so names are stored
+/// and probed in lowercased form.
+///
+/// SQL is case-sensitive for quoted column names, but an external table cannot
+/// hold two columns with the same lowercase form, so collapsing to a single
+/// canonical form is safe here.
+#[derive(Default)]
+pub struct ColumnNameSet {
+    lowercase: BTreeSet<String>,
+}
+
+impl ColumnNameSet {
+    pub fn from_names(names: impl IntoIterator<Item = String>) -> Self {
+        let lowercase = names.into_iter().map(|c| c.to_lowercase()).collect();
+        Self { lowercase }
+    }
+
+    pub fn contains(&self, name: &str) -> bool {
+        self.lowercase.contains(&name.to_lowercase())
+    }
+}
+
 /// Convert a value of the timestamp column returned by a SQL query into a valid
 /// SQL expression.
 pub fn timestamp_to_sql_expression(column_type: &ColumnType, expr: &str) -> String {

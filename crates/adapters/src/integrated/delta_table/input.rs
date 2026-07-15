@@ -39,10 +39,10 @@ use feldera_adapterlib::format::{ParseError, StagedInputBuffer};
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{InputQueueEntry, Resume, Watermark, parse_resume_info};
 use feldera_adapterlib::utils::datafusion::{
-    array_to_string, columns_referenced_by_expression, columns_referenced_by_order_by,
-    create_session_context_with, execute_query_collect, execute_singleton_query,
-    timestamp_to_sql_expression, validate_sql_expression, validate_sql_order_by,
-    validate_timestamp_column,
+    ColumnNameSet, array_to_string, columns_referenced_by_expression,
+    columns_referenced_by_order_by, create_session_context_with, execute_query_collect,
+    execute_singleton_query, quote_sql_identifier, timestamp_to_sql_expression,
+    validate_sql_expression, validate_sql_order_by, validate_timestamp_column,
 };
 use feldera_storage::tokio::TOKIO_DEDICATED_IO;
 use feldera_types::adapter_stats::ConnectorHealth;
@@ -111,12 +111,6 @@ const DEFAULT_MAX_CONCURRENT_READERS: usize = 6;
 /// Used to detect conflicting values of `max_concurrent_readers` during parallel
 /// connector initialization.
 static MAX_CONCURRENT_READERS: AtomicUsize = AtomicUsize::new(0);
-
-/// Takes a column name from a DeltaLake schema and returns a quoted string
-/// that can be used in datafusion queries like `select "foo""bar" from my_table`.
-fn quote_sql_identifier<S: AsRef<str>>(ident: S) -> String {
-    format!("\"{}\"", ident.as_ref().replace("\"", "\"\""))
-}
 
 /// Format a DataFusion error, appending actionable guidance when the
 /// underlying variant is `ResourcesExhausted` (the shared memory pool ran
@@ -883,29 +877,6 @@ struct CatchupFollowState {
     transaction: Option<Option<String>>,
 }
 
-/// A set of column names compared case-insensitively. Delta schemas carry no
-/// case-sensitivity information, so names are stored and probed in lowercased
-/// form (mirrors the long-standing matching in [`used_columns`](DeltaTableInputEndpointInner::used_columns)).
-///
-/// SQL is case-sensitive for quoted column names, but an external table cannot
-/// hold two columns with the same lowercase form, so collapsing to a single
-/// canonical form is safe here.
-#[derive(Default)]
-struct ColumnNameSet {
-    lowercase: BTreeSet<String>,
-}
-
-impl ColumnNameSet {
-    fn from_names(names: impl IntoIterator<Item = String>) -> Self {
-        let lowercase = names.into_iter().map(|c| c.to_lowercase()).collect();
-        Self { lowercase }
-    }
-
-    fn contains(&self, name: &str) -> bool {
-        self.lowercase.contains(&name.to_lowercase())
-    }
-}
-
 struct DeltaTableInputEndpointInner {
     endpoint_name: String,
     schema: Relation,
@@ -1090,8 +1061,7 @@ impl DeltaTableInputEndpointInner {
     fn skip_unused_columns(&self) -> bool {
         // Old-style: property in the connector configuration.
         // New-style: property in the table definition.
-        self.config.skip_unused_columns
-            || self.schema.get_property("skip_unused_columns") == Some("true")
+        self.config.skip_unused_columns || self.schema.skip_unused_columns()
     }
 
     fn new_follow_transaction_label(&self) -> Option<Option<String>> {

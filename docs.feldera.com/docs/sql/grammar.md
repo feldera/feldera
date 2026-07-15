@@ -234,8 +234,8 @@ reading columns from the input that are not used in any view
 definitions. To be skipped, the columns must be either nullable or
 have default values. This can improve ingestion performance,
 especially for wide tables.  Not all connectors support this feature;
-currently only the Delta table connectors can take advantage of this
-feature.
+currently only the Delta table and Iceberg connectors can take
+advantage of this feature.
 
 Note: The simplest way to exclude unused columns is to omit them from
 the Feldera SQL table declaration. The connector never reads columns

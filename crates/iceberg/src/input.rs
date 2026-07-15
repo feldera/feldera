@@ -1,6 +1,8 @@
 use crate::iceberg_input_serde_config;
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use chrono::{DateTime, Utc};
+use datafusion::arrow::datatypes::Schema as ArrowSchema;
+use datafusion::catalog::TableProvider;
 use datafusion::prelude::{DataFrame, SQLOptions, SessionContext};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
@@ -12,14 +14,16 @@ use feldera_adapterlib::{
         IntegratedInputEndpoint, NonFtInputReaderCommand,
     },
     utils::datafusion::{
-        array_to_string, create_session_context, execute_query_collect, execute_singleton_query,
+        array_to_string, columns_referenced_by_expression, create_session_context,
+        execute_query_collect, execute_singleton_query, quote_sql_identifier,
         timestamp_to_sql_expression, validate_sql_expression, validate_timestamp_column,
+        ColumnNameSet,
     },
     PipelineState,
 };
 use feldera_types::{
     config::{FtModel, PipelineConfig},
-    program_schema::Relation,
+    program_schema::{Field, Relation},
     transport::iceberg::{IcebergCatalogType, IcebergReaderConfig},
 };
 use futures_util::StreamExt;
@@ -44,7 +48,7 @@ use iceberg_catalog_s3tables::{
 use iceberg_datafusion::IcebergStaticTableProvider;
 use iceberg_storage_opendal::OpenDalResolvingStorageFactory;
 use log::{debug, info, trace};
-use std::{sync::Arc, thread};
+use std::{collections::BTreeSet, sync::Arc, thread};
 use tokio::{
     select,
     sync::{
@@ -69,6 +73,89 @@ const S3TABLES_PROP_SECRET_ACCESS_KEY: &str = "aws_secret_access_key";
 const S3TABLES_PROP_SESSION_TOKEN: &str = "aws_session_token";
 const S3TABLES_PROP_PROFILE_NAME: &str = "profile_name";
 const S3TABLES_PROP_REGION_NAME: &str = "region_name";
+
+/// SQL columns named by the connector's own `snapshot_filter` expression,
+/// case-folded for matching. These are kept even when marked unused, so the
+/// expression is guaranteed to resolve them (mirrors the Delta connector; for
+/// the snapshot queries issued here a `where` clause could also reference
+/// unprojected columns).
+///
+/// The filter is validated before columns are computed, so it parses here; a
+/// parse error is therefore unreachable and contributes no columns rather
+/// than failing the connector a second time.
+fn config_referenced_columns(config: &IcebergReaderConfig) -> ColumnNameSet {
+    let mut columns = BTreeSet::new();
+    if let Some(filter) = &config.snapshot_filter {
+        columns.extend(columns_referenced_by_expression(filter).unwrap_or_default());
+    }
+    ColumnNameSet::from_names(columns)
+}
+
+/// True if a column's *shape* allows omitting it: no user-visible result
+/// depends on it (`unused`), and omitting it lets us substitute NULL or its
+/// default value (it is nullable or has a default).
+///
+/// This is the shape-only rule; [`can_skip_column`] adds the
+/// filter-reference check before a column is actually skipped.
+fn is_unused_and_omittable(field: &Field) -> bool {
+    field.unused && (field.columntype.nullable || field.default.is_some())
+}
+
+/// True if a column may actually be skipped: its shape permits omitting it
+/// ([`is_unused_and_omittable`]) *and* the `snapshot_filter` expression does
+/// not reference it.
+fn can_skip_column(field: &Field, config_referenced: &ColumnNameSet) -> bool {
+    is_unused_and_omittable(field) && !config_referenced.contains(&field.name.name())
+}
+
+/// SQL columns the connector reads, matched case-insensitively against
+/// Iceberg column names. When the SQL table declaration sets the
+/// `skip_unused_columns` property, skippable unused columns are removed.
+fn used_sql_columns(schema: &Relation, config: &IcebergReaderConfig) -> ColumnNameSet {
+    let skip = schema.skip_unused_columns();
+    let config_referenced = config_referenced_columns(config);
+    ColumnNameSet::from_names(
+        schema
+            .fields
+            .iter()
+            .filter(|f| !skip || !can_skip_column(f, &config_referenced))
+            .map(|f| f.name.name()),
+    )
+}
+
+/// Compute the subset of columns in the Iceberg table snapshot schema that
+/// occur in the SQL table declaration (minus columns removed by
+/// [`used_sql_columns`]), preserving the table schema's column order.
+///
+/// Snapshot queries select this subset instead of `*`, so the connector never
+/// reads table columns the pipeline does not ingest. Besides being wasteful,
+/// reading such columns can fail when their Arrow type is not supported by
+/// the Feldera deserializer.
+///
+/// Iceberg schemas carry no case-sensitivity information, so column names are
+/// matched in lowercased form (see [`ColumnNameSet`]).
+fn used_columns(
+    table_schema: &ArrowSchema,
+    schema: &Relation,
+    config: &IcebergReaderConfig,
+) -> Vec<String> {
+    let used = used_sql_columns(schema, config);
+    table_schema
+        .fields()
+        .iter()
+        .filter(|f| used.contains(f.name()))
+        .map(|f| f.name().to_string())
+        .collect()
+}
+
+/// Quoted, comma-separated column list for `select {} from snapshot` queries.
+fn used_column_list(columns: &[String]) -> String {
+    columns
+        .iter()
+        .map(quote_sql_identifier)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
 enum SnapshotDescr {
     /// Open the latest snapshot (default)
@@ -304,19 +391,26 @@ impl IcebergInputEndpointInner {
         }
     }
 
-    /// Load the entire table snapshot as a single "select * where <filter>" query.
+    /// Load the entire table snapshot as a single
+    /// "select <used_columns> where <filter>" query.
     async fn read_unordered_snapshot(
         &self,
+        used_columns: &[String],
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) {
-        // Execute the snapshot query; push snapshot data to the circuit.
-        info!("iceberg {}: reading initial snapshot", &self.endpoint_name,);
+        let column_names = used_column_list(used_columns);
 
-        let mut snapshot_query = "select * from snapshot".to_string();
+        let mut snapshot_query = format!("select {column_names} from snapshot");
         if let Some(filter) = &self.config.snapshot_filter {
             snapshot_query = format!("{snapshot_query} where {filter}");
         }
+
+        // Execute the snapshot query; push snapshot data to the circuit.
+        info!(
+            "iceberg {}: reading initial snapshot: {snapshot_query}",
+            &self.endpoint_name,
+        );
 
         self.execute_snapshot_query(&snapshot_query, "initial snapshot", input_stream, receiver)
             .await;
@@ -330,17 +424,19 @@ impl IcebergInputEndpointInner {
 
     async fn read_ordered_snapshot(
         &self,
+        used_columns: &[String],
         input_stream: &mut dyn ArrowStream,
         schema: &Relation,
         receiver: &mut Receiver<PipelineState>,
     ) {
-        self.read_ordered_snapshot_inner(input_stream, schema, receiver)
+        self.read_ordered_snapshot_inner(used_columns, input_stream, schema, receiver)
             .await
             .unwrap_or_else(|e| self.consumer.error(true, e, None));
     }
 
     async fn read_ordered_snapshot_inner(
         &self,
+        used_columns: &[String],
         input_stream: &mut dyn ArrowStream,
         schema: &Relation,
         receiver: &mut Receiver<PipelineState>,
@@ -409,6 +505,8 @@ impl IcebergInputEndpointInner {
         let min = timestamp_to_sql_expression(&timestamp_field.columntype, &min);
         let max = timestamp_to_sql_expression(&timestamp_field.columntype, &max);
 
+        let column_names = used_column_list(used_columns);
+
         let mut start = min.clone();
         let mut done = "false".to_string();
 
@@ -423,7 +521,7 @@ impl IcebergInputEndpointInner {
 
             // Query the table for the range.
             let mut range_query =
-                format!("select * from snapshot where {timestamp_column} >= {start} and {timestamp_column} < {end}");
+                format!("select {column_names} from snapshot where {timestamp_column} >= {start} and {timestamp_column} < {end}");
             if let Some(filter) = &self.config.snapshot_filter {
                 range_query = format!("{range_query} and {filter}");
             }
@@ -460,9 +558,12 @@ impl IcebergInputEndpointInner {
 
         let table = Arc::new(table);
 
-        if let Err(e) = self.prepare_snapshot_query(&table, &schema).await {
-            let _ = init_status_sender.send(Err(e)).await;
-            return;
+        let used_columns = match self.prepare_snapshot_query(&table, &schema).await {
+            Err(e) => {
+                let _ = init_status_sender.send(Err(e)).await;
+                return;
+            }
+            Ok(used_columns) => used_columns,
         };
 
         // Code before this point is part of endpoint initialization.
@@ -472,12 +573,17 @@ impl IcebergInputEndpointInner {
 
         if self.config.snapshot() && self.config.timestamp_column.is_none() {
             // Read snapshot chunk-by-chunk.
-            self.read_unordered_snapshot(input_stream.as_mut(), &mut receiver)
+            self.read_unordered_snapshot(&used_columns, input_stream.as_mut(), &mut receiver)
                 .await;
         } else if self.config.snapshot() {
             // Read the entire snapshot in one query.
-            self.read_ordered_snapshot(input_stream.as_mut(), &schema, &mut receiver)
-                .await;
+            self.read_ordered_snapshot(
+                &used_columns,
+                input_stream.as_mut(),
+                &schema,
+                &mut receiver,
+            )
+            .await;
         };
 
         self.consumer.eoi();
@@ -819,14 +925,22 @@ impl IcebergInputEndpointInner {
     ///
     /// * register snapshot as a datafusion table
     /// * validate snapshot config: filter condition and timestamp column
+    ///
+    /// Returns the columns snapshot queries must select (see [`used_columns`]);
+    /// empty when the configuration requires no snapshot.
     async fn prepare_snapshot_query(
         &self,
         table: &IcebergTable,
         schema: &Relation,
-    ) -> Result<(), ControllerError> {
+    ) -> Result<Vec<String>, ControllerError> {
         if !self.config.snapshot() {
-            return Ok(());
+            return Ok(Vec::new());
         }
+
+        // Validate the filter before `config_referenced_columns` extracts
+        // column names from it, so an invalid filter fails with a parse error
+        // rather than being silently ignored during column selection.
+        self.validate_snapshot_filter()?;
 
         trace!(
             "iceberg {}: registering table with Datafusion",
@@ -870,6 +984,14 @@ impl IcebergInputEndpointInner {
             )
         })?;
 
+        let used_columns = used_columns(provider.schema().as_ref(), schema, &self.config);
+        if used_columns.is_empty() {
+            return Err(ControllerError::invalid_transport_configuration(
+                &self.endpoint_name,
+                "the connector would read no columns: none of the columns declared in the SQL table exist in the Iceberg table (columns skipped via the 'skip_unused_columns' table property don't count); check that the connector points to the correct table",
+            ));
+        }
+
         self.datafusion
             .register_table("snapshot", Arc::new(provider))
             .map_err(|e| {
@@ -879,8 +1001,6 @@ impl IcebergInputEndpointInner {
                     anyhow!("failed to register table snapshot with datafusion: {e}"),
                 )
             })?;
-
-        self.validate_snapshot_filter()?;
 
         if let Some(timestamp_column) = &self.config.timestamp_column {
             validate_timestamp_column(
@@ -893,7 +1013,7 @@ impl IcebergInputEndpointInner {
             .await?;
         };
 
-        Ok(())
+        Ok(used_columns)
     }
 
     /// Execute a SQL query to load a complete or partial snapshot of the table.
@@ -1013,10 +1133,159 @@ async fn wait_running(receiver: &mut Receiver<PipelineState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use datafusion::arrow::datatypes::{DataType, Field as ArrowField};
+    use feldera_types::program_schema::{ColumnType, PropertyValue, SourcePosition, SqlIdentifier};
+    use serde_json::json;
+    use std::collections::BTreeMap;
 
     #[test]
     fn storage_factory_constructs() {
         // Smoke test; scheme dispatch is covered upstream in iceberg-rust.
         let _factory = storage_factory();
+    }
+
+    fn config(value: serde_json::Value) -> IcebergReaderConfig {
+        serde_json::from_value(value).unwrap()
+    }
+
+    fn snapshot_config() -> IcebergReaderConfig {
+        config(json!({"mode": "snapshot", "metadata_location": "/tmp/metadata.json"}))
+    }
+
+    /// SQL field named `name`; `nullable`, `unused`, and `default` control
+    /// whether `skip_unused_columns` may skip it.
+    fn field(name: &str, nullable: bool, unused: bool, default: Option<&str>) -> Field {
+        let mut field = Field::new(SqlIdentifier::new(name, false), ColumnType::int(nullable))
+            .with_unused(unused);
+        field.default = default.map(String::from);
+        field
+    }
+
+    fn relation(fields: Vec<Field>, skip_unused_columns: bool) -> Relation {
+        let zero = SourcePosition {
+            start_line_number: 0,
+            start_column: 0,
+            end_line_number: 0,
+            end_column: 0,
+        };
+        let mut properties = BTreeMap::new();
+        if skip_unused_columns {
+            properties.insert(
+                "skip_unused_columns".to_string(),
+                PropertyValue {
+                    value: "true".to_string(),
+                    key_position: zero,
+                    value_position: zero,
+                },
+            );
+        }
+        Relation::new(
+            SqlIdentifier::new("test_table", false),
+            fields,
+            false,
+            properties,
+        )
+    }
+
+    fn arrow_schema(names: &[&str]) -> ArrowSchema {
+        ArrowSchema::new(
+            names
+                .iter()
+                .map(|name| ArrowField::new(*name, DataType::Int32, true))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// The projection is the intersection of the Iceberg schema and the SQL
+    /// declaration: table-only columns (`b`, `uuid`) are never read, and
+    /// SQL-only columns (`missing`) are never selected. Output follows table
+    /// schema order, not declaration order.
+    #[test]
+    fn used_columns_selects_sql_declared_table_columns_in_table_order() {
+        let schema = relation(
+            vec![
+                field("c", true, false, None),
+                field("a", true, false, None),
+                field("missing", true, false, None),
+            ],
+            false,
+        );
+        let table_schema = arrow_schema(&["a", "b", "c", "uuid"]);
+
+        assert_eq!(
+            used_columns(&table_schema, &schema, &snapshot_config()),
+            vec!["a", "c"]
+        );
+    }
+
+    /// Names match case-insensitively, and the query uses the table's own
+    /// spelling (quoted identifiers resolve case-sensitively in datafusion).
+    #[test]
+    fn used_columns_matches_case_insensitively() {
+        let schema = relation(vec![field("tstz", true, false, None)], false);
+        let table_schema = arrow_schema(&["TsTz"]);
+
+        assert_eq!(
+            used_columns(&table_schema, &schema, &snapshot_config()),
+            vec!["TsTz"]
+        );
+    }
+
+    #[test]
+    fn used_columns_empty_when_nothing_matches() {
+        let schema = relation(vec![field("x", true, false, None)], false);
+        let table_schema = arrow_schema(&["a", "b"]);
+
+        assert!(used_columns(&table_schema, &schema, &snapshot_config()).is_empty());
+    }
+
+    /// With the `skip_unused_columns` table property, a column is dropped only
+    /// when it is unused *and* omittable (nullable or defaulted) *and* not
+    /// referenced by `snapshot_filter`. Without the property, everything the
+    /// SQL table declares is read.
+    #[test]
+    fn skip_unused_columns_drops_only_omittable_unreferenced_columns() {
+        let fields = vec![
+            field("used", false, false, None), // read by a view -> kept
+            field("unused_nullable", true, true, None), // skippable -> dropped
+            field("unused_nonnull", false, true, None), // not omittable -> kept
+            field("unused_default", false, true, Some("0")), // defaulted -> dropped
+            field("unused_filtered", true, true, None), // filter needs it -> kept
+        ];
+        let table_schema = arrow_schema(&[
+            "used",
+            "unused_nullable",
+            "unused_nonnull",
+            "unused_default",
+            "unused_filtered",
+        ]);
+        let config = config(json!({
+            "mode": "snapshot",
+            "metadata_location": "/tmp/metadata.json",
+            "snapshot_filter": "unused_filtered > 10",
+        }));
+
+        assert_eq!(
+            used_columns(&table_schema, &relation(fields.clone(), false), &config).len(),
+            5
+        );
+        assert_eq!(
+            used_columns(&table_schema, &relation(fields, true), &config),
+            vec!["used", "unused_nonnull", "unused_filtered"]
+        );
+    }
+
+    #[test]
+    fn used_column_list_quotes_identifiers() {
+        let columns = vec![
+            "simple".to_string(),
+            "with\"quote".to_string(),
+            "With Space".to_string(),
+        ];
+
+        assert_eq!(
+            used_column_list(&columns),
+            r#""simple", "with""quote", "With Space""#
+        );
     }
 }

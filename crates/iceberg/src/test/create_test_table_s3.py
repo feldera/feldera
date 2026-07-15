@@ -20,6 +20,7 @@ from pyiceberg.types import (
     DecimalType,
     BinaryType,
     FixedType,
+    UUIDType,
 )
 from pyiceberg.partitioning import PartitionSpec, PartitionField
 from pyiceberg.transforms import DayTransform
@@ -28,6 +29,7 @@ from datetime import time, timedelta
 import datetime
 import os
 import sys
+import uuid
 import pyarrow as pa
 import pandas as pd
 import numpy as np
@@ -55,6 +57,12 @@ parser.add_argument(
     help="Number of rows to generate (default: 1000000)",
 )
 parser.add_argument("--json-file", help="JSON file to load data from")
+parser.add_argument(
+    "--extra-columns",
+    action="store_true",
+    help="Add columns that the Feldera SQL test schemas do not declare "
+    "(a 'uuid' and a string column), which the connector must not read",
+)
 
 
 args = parser.parse_args()
@@ -110,7 +118,7 @@ else:
         pass
 
 # Iceberg schema (matches `IcebergTestStruct`)
-schema = Schema(
+schema_fields = [
     NestedField(1, "b", BooleanType(), required=True),
     NestedField(2, "i", IntegerType(), required=True),
     NestedField(3, "l", LongType(), required=True),
@@ -121,29 +129,40 @@ schema = Schema(
     NestedField(8, "tm", TimeType(), required=True),
     NestedField(9, "ts", TimestampType(), required=True),
     NestedField(10, "s", StringType(), required=True),
-    # NestedField(11, "uuid", UUIDType(), required=True),
     NestedField(11, "fixed", FixedType(5), required=True),
     NestedField(12, "varbin", BinaryType(), required=True),
-)
+]
 
 # Equivalent arrow schema
-arrow_schema = pa.schema(
-    [
-        pa.field("b", pa.bool_(), nullable=False),
-        pa.field("i", pa.int32(), nullable=False),
-        pa.field("l", pa.int64(), nullable=False),
-        pa.field("r", pa.float32(), nullable=False),
-        pa.field("d", pa.float64(), nullable=False),
-        pa.field("dec", pa.decimal128(10, 3), nullable=False),
-        pa.field("dt", pa.date32(), nullable=False),
-        pa.field("tm", pa.time64("us"), nullable=False),
-        pa.field("ts", pa.timestamp("us"), nullable=False),
-        pa.field("s", pa.string(), nullable=False),
-        # pa.field("uuid", pa.binary(16), nullable=False),
-        pa.field("fixed", pa.binary(5), nullable=False),
-        pa.field("varbin", pa.binary(), nullable=False),
+arrow_fields = [
+    pa.field("b", pa.bool_(), nullable=False),
+    pa.field("i", pa.int32(), nullable=False),
+    pa.field("l", pa.int64(), nullable=False),
+    pa.field("r", pa.float32(), nullable=False),
+    pa.field("d", pa.float64(), nullable=False),
+    pa.field("dec", pa.decimal128(10, 3), nullable=False),
+    pa.field("dt", pa.date32(), nullable=False),
+    pa.field("tm", pa.time64("us"), nullable=False),
+    pa.field("ts", pa.timestamp("us"), nullable=False),
+    pa.field("s", pa.string(), nullable=False),
+    pa.field("fixed", pa.binary(5), nullable=False),
+    pa.field("varbin", pa.binary(), nullable=False),
+]
+
+# Columns that the Feldera SQL test schemas do not declare; the connector
+# must never select them. `uuid` exercises an extension-typed column.
+if args.extra_columns:
+    schema_fields += [
+        NestedField(13, "uuid", UUIDType(), required=False),
+        NestedField(14, "extra_s", StringType(), required=False),
     ]
-)
+    arrow_fields += [
+        pa.field("uuid", pa.uuid(), nullable=True),
+        pa.field("extra_s", pa.string(), nullable=True),
+    ]
+
+schema = Schema(*schema_fields)
+arrow_schema = pa.schema(arrow_fields)
 
 partition_spec = PartitionSpec(
     PartitionField(source_id=9, field_id=1000, transform=DayTransform(), name="date")
@@ -233,6 +252,11 @@ else:
     pandas_df = pd.DataFrame(data)
 
     # print(pandas_df.head())
+
+if args.extra_columns:
+    print("Adding extra columns not declared in the Feldera SQL test schemas")
+    pandas_df["uuid"] = [uuid.uuid4().bytes for _ in range(len(pandas_df))]
+    pandas_df["extra_s"] = [f"extra_{i}" for i in range(len(pandas_df))]
 
 print("Generating Pandas dataframe")
 

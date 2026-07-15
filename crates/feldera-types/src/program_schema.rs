@@ -258,6 +258,13 @@ impl Relation {
         self.properties.get(name).map(|p| p.value.as_str())
     }
 
+    /// `true` if the table declaration sets the `skip_unused_columns`
+    /// property, which asks connectors not to read declared-but-unused
+    /// columns.
+    pub fn skip_unused_columns(&self) -> bool {
+        self.get_property("skip_unused_columns") == Some("true")
+    }
+
     pub fn with_primary_key<'a>(
         mut self,
         primary_key: impl IntoIterator<Item = &'a SqlIdentifier>,
@@ -1216,6 +1223,45 @@ mod tests {
                 t.as_wire_str()
             );
         }
+    }
+
+    /// Only the exact property value "true" enables `skip_unused_columns`;
+    /// connectors have always compared the value verbatim.
+    #[test]
+    fn relation_skip_unused_columns_property() {
+        use super::{PropertyValue, Relation, SourcePosition};
+        use std::collections::BTreeMap;
+
+        let zero = SourcePosition {
+            start_line_number: 0,
+            start_column: 0,
+            end_line_number: 0,
+            end_column: 0,
+        };
+        let relation = |value: Option<&str>| {
+            let mut properties = BTreeMap::new();
+            if let Some(value) = value {
+                properties.insert(
+                    "skip_unused_columns".to_string(),
+                    PropertyValue {
+                        value: value.to_string(),
+                        key_position: zero,
+                        value_position: zero,
+                    },
+                );
+            }
+            Relation::new(
+                SqlIdentifier::new("t", false),
+                Vec::new(),
+                false,
+                properties,
+            )
+        };
+
+        assert!(relation(Some("true")).skip_unused_columns());
+        assert!(!relation(Some("false")).skip_unused_columns());
+        assert!(!relation(Some("TRUE")).skip_unused_columns());
+        assert!(!relation(None).skip_unused_columns());
     }
 
     #[test]

@@ -156,6 +156,13 @@ The following table lists supported Iceberg data types and corresponding Feldera
 Types that are currently not supported include Iceberg's nested data types (`struct`s,
 `list`s and `map`s), `uuid`, and timestamps with time zone.
 
+## Column selection
+
+The connector reads only the columns that appear in the Feldera SQL table
+declaration. Other columns of the Iceberg table are never read. In addition,
+when the table declaration sets the [`skip_unused_columns` property](/sql/grammar#ignoring-unused-columns), the connector skips declared columns that no view uses, provided they are
+nullable or have default values.
+
 <!--  Uncomment when https://github.com/apache/iceberg-rust/issues/811 is resolved>
 <!-- ## Ingesting time series data from Iceberg
 
