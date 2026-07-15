@@ -33,4 +33,9 @@ SELECT ALL + NULLIF ( - COUNT ( * ), + 47 * - 93 * MAX ( 45 ) * - 63 * - 56 / - 
 SELECT ALL - col0 AS col2, - 22 / + - 41 * + col0 AS col2 FROM tab2 AS cor0 GROUP BY col0 HAVING + SUM ( ALL - - col2 ) IS NOT NULL
 // test/random/groupby/slt_good_12.test: ambiguous query; Postgres rejects this query as well
 SELECT + COUNT ( * ) AS col1, - 0 * + - 69 * + ( + 53 ) AS col1 FROM tab0 WHERE NOT NULL IS NOT NULL GROUP BY col2 HAVING ( COUNT ( col1 ) ) IS NULL
-
+// test/index/random/1000/slt_good_6.test: test 8506-8510 (identical!): arithmetic overflow; reproduced on Postgres
+SELECT ALL + - CAST ( NULL AS INTEGER ) + + col3 FROM tab0 AS cor0 WHERE col3 * + col0 * + - CAST ( col1 AS INTEGER ) * col4 + - + col4 IS NULL
+SELECT ALL + - CAST ( NULL AS INTEGER ) + + col3 FROM tab1 AS cor0 WHERE col3 * + col0 * + - CAST ( col1 AS INTEGER ) * col4 + - + col4 IS NULL
+SELECT ALL + - CAST ( NULL AS INTEGER ) + + col3 FROM tab2 AS cor0 WHERE col3 * + col0 * + - CAST ( col1 AS INTEGER ) * col4 + - + col4 IS NULL
+SELECT ALL + - CAST ( NULL AS INTEGER ) + + col3 FROM tab3 AS cor0 WHERE col3 * + col0 * + - CAST ( col1 AS INTEGER ) * col4 + - + col4 IS NULL
+SELECT ALL + - CAST ( NULL AS INTEGER ) + + col3 FROM tab4 AS cor0 WHERE col3 * + col0 * + - CAST ( col1 AS INTEGER ) * col4 + - + col4 IS NULL
