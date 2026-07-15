@@ -208,6 +208,88 @@ class TestPipeline(SharedTestPipeline):
         table_pipeline = pa.Table.from_batches(batches_pipeline)
         assert table_pipeline.column("id").to_pylist() == expected_ids
 
+    def test_adhoc_json_functions(self):
+        """
+        -- Ad-hoc queries read VARIANT columns as JSON-encoded strings and
+        -- take them apart with datafusion-functions-json (issue #6644).
+        CREATE TABLE json_docs (id INT NOT NULL, doc VARIANT) WITH ('materialized' = 'true');
+        """
+        self.pipeline.start()
+        self.pipeline.input_json(
+            "json_docs",
+            [
+                {"id": 1, "doc": {"name": "Bob", "scores": [8, 10], "active": True}},
+                {
+                    "id": 2,
+                    "doc": {
+                        "name": "Ann",
+                        "scores": [3],
+                        "address": {"city": "Berlin"},
+                    },
+                },
+                {"id": 3, "doc": None},
+            ],
+        )
+
+        # A bare VARIANT column comes back as a JSON-encoded string.
+        got = list(self.pipeline.query("SELECT doc FROM json_docs WHERE id = 1"))
+        assert json.loads(got[0]["doc"]) == {
+            "name": "Bob",
+            "scores": [8, 10],
+            "active": True,
+        }
+
+        # Typed getters pull concrete values out of the VARIANT column.
+        # A missing key ('scores' of row 2 has one element; indexes are
+        # 0-based) and a NULL document both yield NULL.
+        got = list(
+            self.pipeline.query(
+                "SELECT id, json_get_str(doc, 'name') AS name,"
+                " json_get_int(doc, 'scores', 1) AS second_score"
+                " FROM json_docs ORDER BY id"
+            )
+        )
+        assert got == [
+            {"id": 1, "name": "Bob", "second_score": 10},
+            {"id": 2, "name": "Ann", "second_score": None},
+            {"id": 3, "name": None, "second_score": None},
+        ]
+
+        # Nested paths mix object keys and array indexes.
+        got = list(
+            self.pipeline.query(
+                "SELECT json_get_str(doc, 'address', 'city') AS city"
+                " FROM json_docs WHERE id = 2"
+            )
+        )
+        assert got == [{"city": "Berlin"}]
+
+        # JSON predicates filter on document contents.
+        got = list(
+            self.pipeline.query(
+                "SELECT id FROM json_docs WHERE json_contains(doc, 'address')"
+            )
+        )
+        assert got == [{"id": 2}]
+        got = list(
+            self.pipeline.query(
+                "SELECT id FROM json_docs WHERE json_get_bool(doc, 'active') = TRUE"
+            )
+        )
+        assert got == [{"id": 1}]
+
+        # `->>` is shorthand for json_as_text; casting json_get is rewritten
+        # to the matching typed getter (json_get_int here).
+        got = list(
+            self.pipeline.query(
+                "SELECT doc->>'name' AS name,"
+                " CAST(json_get(doc, 'scores', 0) AS BIGINT) AS first_score"
+                " FROM json_docs WHERE id = 1"
+            )
+        )
+        assert got == [{"name": "Bob", "first_score": 8}]
+        self.pipeline.stop(force=True)
+
     def test_local(self):
         """
         CREATE TABLE students (
