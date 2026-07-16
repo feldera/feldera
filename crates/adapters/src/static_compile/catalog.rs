@@ -101,6 +101,24 @@ impl Catalog {
                 .shard_workers_accumulate(hosts[ordinal].workers.clone())
                 .into_parts();
 
+            // The output gather is collaborative: every host shards its slice of
+            // the view to the owning host's workers, which accumulate and emit
+            // it. The accumulator's `enable_count` is per-host and is enabled
+            // only when an output connector attaches, which in a multihost
+            // pipeline happens only on the owning host (connectors, including
+            // dynamic HTTP `listen`, are assigned to one host). A non-owning
+            // host would therefore leave its accumulator disabled and send an
+            // empty batch instead of its slice, silently dropping every view
+            // record computed on that host.
+            //
+            // Enable the accumulator on every host so the gather is always
+            // complete. Materialized views already get this via the integral's
+            // `into_enabled_stream`; do the same for the delta gather. This
+            // gathers a view even when it has no connector; a future
+            // optimization could propagate the owning host's connector state to
+            // the other hosts to skip that work.
+            enabled_count.enable();
+
             let integral = if integrate {
                 Some(
                     stream.shard_workers_accumulate_integrate_trace(hosts[ordinal].workers.clone()),
