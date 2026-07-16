@@ -37,8 +37,9 @@ const trimZeros = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
 
 /**
  * Format a duration given in microseconds using an adaptive unit (µs / ms / s)
- * with roughly three significant figures.
+ * with roughly three significant figures. Zero is rendered bare, without a unit.
  *
+ *   formatDuration(0)         -> "0"
  *   formatDuration(340)       -> "340 µs"
  *   formatDuration(1_200)     -> "1.2 ms"
  *   formatDuration(2_100_000) -> "2.1 s"
@@ -46,6 +47,9 @@ const trimZeros = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
 export const formatDuration = (micros: number | null | undefined): string => {
   if (typeof micros !== 'number' || !Number.isFinite(micros)) {
     return '—'
+  }
+  if (micros === 0) {
+    return '0'
   }
   const [value, unit] =
     micros < 1_000
