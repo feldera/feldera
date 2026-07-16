@@ -52,8 +52,11 @@ describe('formatQty', () => {
 })
 
 describe('formatDuration', () => {
+  it('renders zero without a unit', () => {
+    expect(formatDuration(0)).toBe('0')
+  })
+
   it('uses microseconds below 1ms', () => {
-    expect(formatDuration(0)).toBe('0 µs')
     expect(formatDuration(340)).toBe('340 µs')
     expect(formatDuration(999)).toBe('999 µs')
   })

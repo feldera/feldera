@@ -1,12 +1,8 @@
 <script lang="ts">
+  import { Popover } from 'common-ui'
   import type { EChartsOption } from 'echarts'
   import { LineChart } from 'echarts/charts'
-  import {
-    GridComponent,
-    LegendComponent,
-    TitleComponent,
-    TooltipComponent
-  } from 'echarts/components'
+  import { GridComponent, TitleComponent, TooltipComponent } from 'echarts/components'
   import { type EChartsType, init, use } from 'echarts/core'
   import { CanvasRenderer } from 'echarts/renderers'
   import { Chart } from 'svelte-echarts'
@@ -28,22 +24,15 @@
     keepMs: number
     pipeline: { current: Pipeline }
   } = $props()
-  use([LineChart, GridComponent, CanvasRenderer, TitleComponent, TooltipComponent, LegendComponent])
+  use([LineChart, GridComponent, CanvasRenderer, TitleComponent, TooltipComponent])
 
   const pipelineName = $derived(pipeline.current.name)
   const latency = $derived(calcPipelineLatency(metrics))
   const xAxisMax = $derived(timeSeriesAxisMax(metrics))
 
-  // Latest p50 (baseline) of each family, for the title. Completion is shown as
-  // its extra cost over processing (the downstream/delivery portion), since
-  // completion latency includes processing.
+  // Latest p50 (baseline) of each family, for the title.
   const currentProcessing = $derived(latency.series.processingP50.at(-1)?.[1])
   const currentCompletion = $derived(latency.series.completionP50.at(-1)?.[1])
-  const completionDelta = $derived(
-    currentProcessing !== undefined && currentCompletion !== undefined
-      ? Math.max(0, currentCompletion - currentProcessing)
-      : undefined
-  )
 
   // Hue distinguishes the latency family, line style the percentile, so the
   // chart stays legible for colour-blind viewers and in grayscale.
@@ -95,6 +84,10 @@
   let fullWidth = $state(0)
   const compactTitle = $derived(fullWidth > 0 && availWidth > 0 && fullWidth > availWidth)
 
+  // Height of the title row, so the p99 toggle can be overlaid just below it (in
+  // the chart's top margin) without a second flow row shifting the x-axis.
+  let headerHeight = $state(0)
+
   const toData = (points: [number, number][]) => points.map((p) => ({ id: p[0], value: p }))
 
   // A p99 series is emptied rather than removed when hidden, so its colour/style
@@ -130,22 +123,11 @@
     animationEasingUpdate: 'linear' as const,
     grid: {
       // Match the sibling tiles' bottom/left/right so the x-axis lines up; the
-      // extra top room holds the legend.
+      // extra top room holds the overlaid p99 toggle row.
       top: 28,
       left: 64,
       right: 50,
       bottom: 48
-    },
-    legend: {
-      show: true,
-      top: 0,
-      left: 'center' as const,
-      selectedMode: false,
-      data: seriesDefs.filter((d) => !d.isP99).map((d) => d.name),
-      formatter: (name: string) => name.replace(/ median$/, ''),
-      itemWidth: 20,
-      itemHeight: 8,
-      textStyle: { fontSize: 12 }
     },
     xAxis: {
       animationDuration: 0,
@@ -207,16 +189,61 @@
 
 <div class="absolute h-full w-full py-4">
   <!-- One-line flow header, same height as the sibling tiles, so the chart
-       canvas (and its x-axis) sits at the same vertical position. -->
-  <div class="flex items-center gap-2 px-4 pb-2">
-    <div bind:clientWidth={availWidth} class="min-w-0 flex-1 overflow-hidden whitespace-nowrap">
+       canvas (and its x-axis) sits at the same vertical position. The thick
+       underline under each value doubles as the legend colour key. -->
+  <div bind:clientHeight={headerHeight} class="flex items-center gap-2 px-4 pb-0.5">
+    <div
+      bind:clientWidth={availWidth}
+      class="min-w-0 flex-1 overflow-hidden pb-1.5 whitespace-nowrap"
+    >
       {#if compactTitle}
-        Latency: {formatDuration(currentProcessing)} + {formatDuration(completionDelta)}
+        Latency:
+        <span class="border-b-[3px]" style="border-color: {processingColor}"
+          >{formatDuration(currentProcessing)}</span
+        >
+        |
+        <span class="border-b-[3px]" style="border-color: {completionColor}"
+          >{formatDuration(currentCompletion)}</span
+        >
       {:else}
-        Latency: {formatDuration(currentProcessing)} processing + {formatDuration(completionDelta)} completion
+        Latency:
+        <span class="border-b-[3px]" style="border-color: {processingColor}"
+          >{formatDuration(currentProcessing)}</span
+        >
+        step |
+        <span class="border-b-[3px]" style="border-color: {completionColor}"
+          >{formatDuration(currentCompletion)}</span
+        >
+        end-to-end
       {/if}
     </div>
-    <label class="flex shrink-0 cursor-pointer items-center gap-1 text-sm">
+    <div class="shrink-0">
+      <span
+        class="fd fd-circle-help cursor-help text-[18px] leading-none text-surface-600-400"
+        aria-label="About latency metrics"
+      ></span>
+      <Popover placement="top-start" class="w-96">
+        <p class="mb-1">
+          Time from record ingest, median across input connectors.
+          <br /><b>Step</b>: until the record has been processed by the circuit.
+          <br /><b>End-to-end</b>: until the related output changes have been written to all
+          outputs.
+        </p>
+        <a
+          href="https://docs.feldera.com/pipelines/latency/"
+          target="_blank"
+          rel="noreferrer"
+          class="text-primary-500 underline">Documentation</a
+        >
+      </Popover>
+    </div>
+  </div>
+  <!-- p99 toggle in the chart's top margin, right-aligned. -->
+  <div
+    class="pointer-events-none absolute inset-x-0 z-10 flex justify-end px-4"
+    style="top: calc(1rem + {headerHeight}px)"
+  >
+    <label class="pointer-events-auto flex cursor-pointer items-center gap-1 text-sm">
       p99
       <input type="checkbox" class="checkbox" bind:checked={showP99} />
     </label>
@@ -227,7 +254,7 @@
     bind:clientWidth={fullWidth}
     class="pointer-events-none invisible absolute top-0 whitespace-nowrap"
   >
-    Latency: {formatDuration(currentProcessing)} processing + {formatDuration(completionDelta)} completion
+    Latency: {formatDuration(currentProcessing)} step | {formatDuration(currentCompletion)} end-to-end
   </span>
   {#key pipelineName}
     <Chart init={(dom, theme, opts) => (ref = init(dom, theme, opts))} {options} />
