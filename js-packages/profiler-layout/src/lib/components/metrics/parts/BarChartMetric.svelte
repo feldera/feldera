@@ -1,33 +1,38 @@
 <script lang="ts">
   import { Popover, Tooltip } from 'common-ui'
-  import { MissingValue, type PropertyValue } from 'profiler-lib'
+  import { MissingValue, type TooltipCell } from 'profiler-lib'
   import { barColor, logScale01, skewTextColor } from '../colors'
 
   interface Props {
     label: string
     metricId: string
-    /** Per-worker values. Missing readings appear as `MissingValue` and are skipped by the
-     * statistics; their bar height is forced to zero. */
-    values: PropertyValue[]
+    /** One cell per worker. `value` is the reading (`MissingValue` when absent, skipped by the
+     * statistics). `percentile` (0-100) is normalized against the metric's range across all nodes,
+     * so bar height and color express magnitude relative to the whole circuit. */
+    cells: TooltipCell[]
     expanded: boolean
     onToggle: () => void
   }
-  const { label, metricId, values, expanded, onToggle }: Props = $props()
+  const { label, metricId, cells, expanded, onToggle }: Props = $props()
 
   /**
-   * Collapsed-view preview style:
-   *  - 'values': show avg/min/max numbers, hide bars (bars animate up from zero on expand).
-   *  - 'bars':   show short bars, hide avg/min/max (numbers fade in on expand).
+   * Collapsed-view preview style (avg/min/max numbers show in both):
+   *  - 'values': hide bars (they animate up from zero on expand).
+   *  - 'bars':   show short 6px bars that grow on expand.
    */
-  const previewMode: 'values' | 'bars' = 'values' as 'values' | 'bars'
+  const previewMode: 'values' | 'bars' = 'bars'
 
-  // Bar maths use the strictly-numeric subset. String-valued cells (enum metrics like balancer
-  // policy) skip this — they render flat bars but still contribute to the Avg column via
-  // `.average()` (returns the mode). Min/Max are suppressed for non-comparable kinds.
+  const previewBarHeight = previewMode === 'bars' ? 2 : 0
+  const minBarHeight = 6
+  const maxBarHeight = 32
+
+  // Node-local numeric subset, used only for the Skew % column. Bar height and color come from
+  // each cell's global `percentile` instead. String-valued cells (enum metrics like balancer
+  // policy) contribute nothing here but still show in the Avg column via `.average()` (the mode).
   const numbers = $derived.by(() => {
     const out: number[] = []
-    for (const v of values) {
-      const n = v.getNumericValue()
+    for (const c of cells) {
+      const n = c.value.getNumericValue()
       if (n.isSome()) {
         out.push(n.unwrap())
       }
@@ -58,7 +63,7 @@
   // StringValue) the ordering is nominal — "min false / max true" or the lexicographic ends of
   // an enum carry no information — so we suppress Min/Max and show only Avg (the mode).
   const display = $derived.by(() => {
-    const real = values.filter((v) => !(v instanceof MissingValue))
+    const real = cells.map((c) => c.value).filter((v) => !(v instanceof MissingValue))
     if (real.length === 0) {
       return { avg: MissingValue.INSTANCE, min: MissingValue.INSTANCE, max: MissingValue.INSTANCE }
     }
@@ -90,20 +95,17 @@
     return ((stats.max - stats.min) / scale) * 100
   })
 
-  function bar(v: PropertyValue) {
-    const collapsedHeight = previewMode === 'bars' ? 12 : 0
-    if (stats.n === 0 || stats.max === stats.min) {
-      return { t: 0, height: expanded ? 12 : collapsedHeight }
-    }
-    const num = v.getNumericValue()
-    const raw = num.isSome() ? (num.unwrap() - stats.min) / (stats.max - stats.min) : 0
-    const t = logScale01(raw)
-    const height = expanded ? 12 + (32 - 12) * t : collapsedHeight
+  // Height and color both scale with the global percentile (0-100, magnitude across all nodes),
+  // log-compressed so small values stay visible. Collapsed preview bars keep a fixed short height.
+  function bar(percentile: number) {
+    const t = logScale01(percentile / 100)
+    const height = expanded ? minBarHeight + (maxBarHeight - minBarHeight) * t : previewBarHeight
     return { t, height }
   }
 
-  const chartHeight = $derived(expanded ? 32 : previewMode === 'bars' ? 12 : 0)
-  const showValues = $derived(expanded || previewMode === 'values')
+  const chartHeight = $derived(expanded ? maxBarHeight : previewBarHeight)
+  // Avg/min/max stay visible in both preview modes, expanded or collapsed.
+  const showValues = true
 </script>
 
 <!-- Col 1: label -->
@@ -145,23 +147,26 @@
 <!-- Bar chart row spans full block width; container height + each bar height animate.
      Each bar gets a hover tooltip showing the worker index and the formatted reading. -->
 <div
-  class="bar-chart col-span-5 flex items-end gap-0.5"
-  style:height="{chartHeight}px"
+  class="bar-chart col-span-5 flex items-end gap-0.5 mb-2"
+  style:min-height="{chartHeight}px"
+  style:margin-top="{expanded ? "8px" : "2px"}"
 >
-  {#each values as v, i (i)}
-    {@const b = bar(v)}
+  {#each cells as c, i (i)}
+    {@const b = bar(c.percentile)}
     <div
       class="flex-1 rounded-sm transition-[height,background-color] duration-200 ease-in-out"
       style:height="{b.height}px"
       style:background-color={barColor(b.t)}
     ></div>
-    <Tooltip class="whitespace-nowrap" placement="top">Worker {i}: {v.toString()}</Tooltip>
+    <Tooltip class="whitespace-nowrap" placement="top">Worker {i}: {c.value.toString()}</Tooltip>
   {/each}
 </div>
 
 <style>
   .bar-chart {
-    transition: height 200ms ease;
+    transition:
+      min-height 200ms ease,
+      margin-top 200ms ease;
   }
   .value-cell {
     transition: opacity 150ms ease;

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import type { PropertyValue } from 'profiler-lib'
   import type { RenderableMetric } from '../dispatch'
   import BarChartMetric from '../parts/BarChartMetric.svelte'
 
@@ -24,9 +23,6 @@
     }
     expandedIds = next
   }
-  function values(row: RenderableMetric): PropertyValue[] {
-    return row.row.cells.map((c) => c.value)
-  }
 
   // Sticky header cells: the box-shadow paints `--header-bg` outward to cover the grid gaps
   // (gap-x 0.75rem, gap-y 0.5rem) so scrolling rows below remain hidden. Height + leading
@@ -38,7 +34,7 @@
 <div class="metrics-block rounded-container bg-white-dark px-4 py-2 shadow-sm" data-block-id={id}>
   <div class="scrollbar overflow-x-auto overflow-y-visible">
   <div
-    class="grid min-w-96 items-baseline gap-x-3 gap-y-2 pb-2"
+    class="grid min-w-96 items-baseline gap-x-3 gap-y-0 pb-2"
     style="grid-template-columns: minmax(8rem, 1fr) 4rem 4rem 4rem 4.5rem;"
   >
     <!-- Header row: title + Avg / Min / Max headers. The rightmost (skew) column has no header
@@ -59,7 +55,7 @@
       <BarChartMetric
         label={entry.label}
         metricId={entry.row.metric}
-        values={values(entry)}
+        cells={entry.row.cells}
         expanded={isExpanded(entry)}
         onToggle={() => toggle(entry)}
       />

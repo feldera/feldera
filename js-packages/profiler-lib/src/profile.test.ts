@@ -10,6 +10,7 @@ import {
     StringValue,
     TimeValue
 } from './profile.js'
+import { NumericRange } from './util.js'
 
 describe('CircuitProfile.isTop', () => {
     it('recognises the toplevel node by the parsed root id', () => {
@@ -301,5 +302,43 @@ describe('PropertyValue contract', () => {
             // Self-average: every kind should accept an empty `others` array without throwing.
             expect(() => v.average([])).not.toThrow()
         }
+    })
+})
+
+// The profiler colors per-worker bars against the metric's range across ALL nodes
+// (`CircuitProfile.dataRange`, built by unioning each node's per-worker values), not against the
+// current node's local spread. `computePropertyRanges` composes `NumericRange.union` + `percents`;
+// these tests pin that composition so a value's color depends on the whole circuit.
+describe('NumericRange cross-node normalization', () => {
+    // Two nodes: A workers [10, 20], B workers [100, 200]. The global range unions to [10, 200].
+    const nodeA = NumericRange.getRange([10, 20])
+    const nodeB = NumericRange.getRange([100, 200])
+    const global = nodeA.union(nodeB)
+
+    it('union spans the min and max across every node', () => {
+        expect(global.min).toBe(10)
+        expect(global.max).toBe(200)
+    })
+
+    it('normalizes a value against the global range, not its own node', () => {
+        // A's local max (20) is near the bottom of the circuit, so it colors cool, not hot.
+        // Local normalization would place 20 at 100% of node A's [10, 20] range — the regression.
+        expect(global.percents(20)).toBeCloseTo((100 * (20 - 10)) / (200 - 10), 5)
+        expect(global.percents(20)).toBeLessThan(10)
+        expect(nodeA.percents(20)).toBe(100)
+        expect(global.percents(200)).toBe(100)
+    })
+
+    it('a value has the same color wherever it appears, regardless of node-local spread', () => {
+        // 100 sits at the same global percentile whether reached from node A or node B.
+        expect(global.percents(100)).toBeCloseTo(nodeA.union(nodeB).percents(100), 5)
+    })
+
+    it('degenerate ranges collapse to a single point value', () => {
+        // Empty (no numeric readings) unions away; a single distinct value yields a point range.
+        const empty = NumericRange.empty()
+        expect(empty.union(nodeA)).toEqual(nodeA)
+        const point = NumericRange.getRange([42, 42])
+        expect(point.isPoint()).toBe(true)
     })
 })
