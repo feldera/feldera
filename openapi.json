@@ -13322,10 +13322,38 @@
           "s"
         ],
         "properties": {
+          "cp50": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Completion latency (ingest to all outputs pushed), microseconds:\np50 across connectors.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "cp99": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Completion latency, microseconds: p99 across connectors.",
+            "nullable": true,
+            "minimum": 0
+          },
           "m": {
             "type": "integer",
             "format": "int64",
             "description": "Memory usage in bytes.",
+            "minimum": 0
+          },
+          "pp50": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Processing latency (ingest to circuit-processed), microseconds:\np50 across connectors of each connector's median. Absent without samples.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "pp99": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Processing latency, microseconds: p99 across connectors.",
+            "nullable": true,
             "minimum": 0
           },
           "r": {

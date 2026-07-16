@@ -2314,6 +2314,72 @@ export type GlueCatalogConfig = {
   'glue.warehouse'?: string | null
 }
 
+/**
+ * A boolean filter over the headers of a Kafka message.
+ *
+ * The Kafka input connector uses this to drop messages whose headers do not
+ * satisfy a predicate.  It is a tree of boolean operators (`and`, `or`, `not`)
+ * whose leaves are regular expression tests on individual header values.  It
+ * serializes as an externally tagged JSON object, for example:
+ *
+ * ```json
+ * {
+ * "and": [
+ * { "header": { "name": "event-type", "pattern": "created|updated" } },
+ * { "not": { "header": { "name": "source", "pattern": "test-.*" } } }
+ * ]
+ * }
+ * ```
+ *
+ * This admits a message only if it has an `event-type` header valued exactly
+ * `created` or `updated` and does not have a `source` header whose value
+ * starts with `test-`.
+ */
+export type HeaderFilter =
+  | {
+      header: HeaderMatch
+    }
+  | {
+      /**
+       * Conjunction: matches when every nested filter matches.  Must have at
+       * least one operand.
+       */
+      and: Array<HeaderFilter>
+    }
+  | {
+      /**
+       * Disjunction: matches when at least one nested filter matches.  Must have
+       * at least one operand.
+       */
+      or: Array<HeaderFilter>
+    }
+  | {
+      not: HeaderFilter
+    }
+
+/**
+ * A leaf of a [`HeaderFilter`]: a regular expression tested against the value
+ * of a named Kafka header.
+ */
+export type HeaderMatch = {
+  /**
+   * Name of the header to test, matched exactly against the header key.
+   */
+  name: string
+  /**
+   * Regular expression ([Rust `regex` crate
+   * syntax](https://docs.rs/regex/latest/regex/#syntax)) tested against the
+   * header value.
+   *
+   * The value is matched as raw bytes, so non-UTF-8 values and byte patterns
+   * work.  The pattern must match the *entire* value: it is anchored
+   * automatically, so `^`/`$` are unnecessary (though harmless).  A header
+   * present with a null value is matched as an empty byte sequence; a header
+   * that appears more than once matches if any of its values match.
+   */
+  pattern: string
+}
+
 export type HealthStatus = {
   all_healthy: boolean
   api: ServiceStatus
@@ -2357,7 +2423,7 @@ export type HttpOutputConfig = {
   backpressure?: boolean
 }
 
-export type IcebergCatalogType = 'rest' | 'glue'
+export type IcebergCatalogType = 'rest' | 'glue' | 's3tables'
 
 /**
  * Iceberg table read mode.
@@ -2378,7 +2444,8 @@ export type IcebergIngestMode = 'snapshot' | 'follow' | 'snapshot_and_follow'
  * Iceberg input connector configuration.
  */
 export type IcebergReaderConfig = GlueCatalogConfig &
-  RestCatalogConfig & {
+  RestCatalogConfig &
+  S3TablesCatalogConfig & {
     catalog_type?: IcebergCatalogType | null
     /**
      * Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,
@@ -2686,6 +2753,7 @@ export type KafkaInputConfig = {
    * consumer group during initialization.
    */
   group_join_timeout_secs?: number
+  header_filter?: HeaderFilter | null
   /**
    * Whether to include Kafka headers in the record metadata.
    *
@@ -2817,6 +2885,8 @@ export type KafkaInputConfig = {
   [key: string]:
     | string
     | number
+    | HeaderFilter
+    | null
     | boolean
     | null
     | boolean
@@ -5076,13 +5146,71 @@ export type S3InputConfig = {
 }
 
 /**
+ * Amazon S3 Tables catalog config.
+ */
+export type S3TablesCatalogConfig = {
+  /**
+   * Access key id used to access the S3 Tables catalog.
+   */
+  's3tables.access-key-id'?: string | null
+  /**
+   * Custom endpoint URL for the S3 Tables service.
+   *
+   * Primarily used to target a local or mock S3 Tables implementation for testing.
+   * When omitted, the default regional endpoint is used.
+   */
+  's3tables.endpoint'?: string | null
+  /**
+   * Profile used to access the S3 Tables catalog.
+   */
+  's3tables.profile-name'?: string | null
+  /**
+   * Region of the S3 Tables catalog.
+   */
+  's3tables.region'?: string | null
+  /**
+   * Secret access key used to access the S3 Tables catalog.
+   */
+  's3tables.secret-access-key'?: string | null
+  /**
+   * Static session token used to access the S3 Tables catalog.
+   */
+  's3tables.session-token'?: string | null
+  /**
+   * ARN of the S3 table bucket that contains the table.
+   *
+   * Note that this is the ARN of the table *bucket*, not of an individual table,
+   * e.g., `"arn:aws:s3tables:us-east-2:123456789012:bucket/my-bucket"`.
+   */
+  's3tables.table-bucket-arn'?: string | null
+}
+
+/**
  * One sample of time-series data.
  */
 export type SampleStatistics = {
   /**
+   * Completion latency (ingest to all outputs pushed), microseconds:
+   * p50 across connectors.
+   */
+  cp50?: number | null
+  /**
+   * Completion latency, microseconds: p99 across connectors.
+   */
+  cp99?: number | null
+  /**
    * Memory usage in bytes.
    */
   m: number
+  /**
+   * Processing latency (ingest to circuit-processed), microseconds:
+   * p50 across connectors of each connector's median. Absent without samples.
+   */
+  pp50?: number | null
+  /**
+   * Processing latency, microseconds: p99 across connectors.
+   */
+  pp99?: number | null
   /**
    * Records processed.
    */
@@ -7730,40 +7858,6 @@ export type PostPipelineInputConnectorActionError =
 export type PostPipelineInputConnectorActionResponses = {
   /**
    * Action has been processed
-   */
-  200: unknown
-}
-
-export type PostPipelineTestingData = {
-  body?: never
-  path: {
-    /**
-     * Unique pipeline name
-     */
-    pipeline_name: string
-  }
-  query?: {
-    set_platform_version?: string | null
-  }
-  url: '/v0/pipelines/{pipeline_name}/testing'
-}
-
-export type PostPipelineTestingErrors = {
-  /**
-   * Pipeline with that name does not exist
-   */
-  404: ErrorResponse
-  /**
-   * Endpoint is disabled. Set FELDERA_UNSTABLE_FEATURES="testing" to enable.
-   */
-  405: ErrorResponse
-}
-
-export type PostPipelineTestingError = PostPipelineTestingErrors[keyof PostPipelineTestingErrors]
-
-export type PostPipelineTestingResponses = {
-  /**
-   * Request successfully processed
    */
   200: unknown
 }

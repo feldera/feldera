@@ -167,9 +167,6 @@ import type {
   PostPipelineStopData,
   PostPipelineStopErrors,
   PostPipelineStopResponses,
-  PostPipelineTestingData,
-  PostPipelineTestingErrors,
-  PostPipelineTestingResponses,
   PostUpdateRuntimeData,
   PostUpdateRuntimeErrors,
   PostUpdateRuntimeResponses,
@@ -1493,27 +1490,6 @@ export const postPipelineInputConnectorAction = <ThrowOnError extends boolean = 
     responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}',
-    ...options
-  })
-
-/**
- * Test Endpoint
- *
- * This endpoint is used as part of the test harness. Only available if the `testing`
- * unstable feature is enabled. Do not use in production.
- */
-export const postPipelineTesting = <ThrowOnError extends boolean = true>(
-  options: Options<PostPipelineTestingData, ThrowOnError>
-) =>
-  (options.client ?? client).post<
-    PostPipelineTestingResponses,
-    PostPipelineTestingErrors,
-    ThrowOnError,
-    'data'
-  >({
-    responseStyle: 'data',
-    security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/v0/pipelines/{pipeline_name}/testing',
     ...options
   })
 
