@@ -34,4 +34,22 @@ pub struct SampleStatistics {
     /// Storage usage in bytes.
     #[serde(rename = "s")]
     pub storage_bytes: u64,
+
+    /// Processing latency (ingest to circuit-processed), microseconds:
+    /// p50 across connectors of each connector's median. Absent without samples.
+    #[serde(rename = "pp50", skip_serializing_if = "Option::is_none", default)]
+    pub processing_latency_p50_micros: Option<u64>,
+
+    /// Processing latency, microseconds: p99 across connectors.
+    #[serde(rename = "pp99", skip_serializing_if = "Option::is_none", default)]
+    pub processing_latency_p99_micros: Option<u64>,
+
+    /// Completion latency (ingest to all outputs pushed), microseconds:
+    /// p50 across connectors.
+    #[serde(rename = "cp50", skip_serializing_if = "Option::is_none", default)]
+    pub completion_latency_p50_micros: Option<u64>,
+
+    /// Completion latency, microseconds: p99 across connectors.
+    #[serde(rename = "cp99", skip_serializing_if = "Option::is_none", default)]
+    pub completion_latency_p99_micros: Option<u64>,
 }
