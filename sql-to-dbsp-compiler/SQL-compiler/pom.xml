@@ -107,7 +107,10 @@
                                     <groupId>org.apache.calcite</groupId>
                                     <artifactId>calcite-core</artifactId>
                                     <type>jar</type>
-                                    <overWrite>true</overWrite>
+                                    <!-- overWrite=false: re-unpack only when the jar is newer,
+                                         so the template keeps a stable mtime and incremental
+                                         builds can skip parser regeneration. -->
+                                    <overWrite>false</overWrite>
                                     <outputDirectory>${project.build.directory}/</outputDirectory>
                                     <includes>**/Parser.jj</includes>
                                 </artifactItem>
@@ -160,8 +163,40 @@
                         </goals>
                         <configuration>
                             <cfgFile>${project.build.directory}/codegen/config.fmpp</cfgFile>
-                            <outputDirectory>target/generated-sources</outputDirectory>
+                            <!-- FMPP rewrites its outputs unconditionally, so it renders
+                                 into a staging directory; the antrun step below copies to
+                                 generated-sources only files whose content changed. -->
+                            <outputDirectory>target/fmpp-generated</outputDirectory>
                             <templateDirectory>${project.build.directory}/codegen/templates</templateDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Publish FMPP outputs, preserving the mtime of unchanged files.
+                 The JavaCC plugin skips grammars that are older than the parser
+                 generated from them, and the Java compiler skips compilation when
+                 no source changed; both checks work only if an unchanged Parser.jj
+                 keeps its mtime across builds. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>sync-fmpp-output</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <copy todir="${project.build.directory}/generated-sources" overwrite="true">
+                                    <fileset dir="${project.build.directory}/fmpp-generated">
+                                        <different targetdir="${project.build.directory}/generated-sources"
+                                                   ignoreFileTimes="true"/>
+                                    </fileset>
+                                </copy>
+                            </target>
                         </configuration>
                     </execution>
                 </executions>
