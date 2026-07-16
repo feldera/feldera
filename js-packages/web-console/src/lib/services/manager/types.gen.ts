@@ -618,7 +618,7 @@ export type Condition = {
   literal?: boolean
   op?: Op | null
   operands?: Array<Operand> | null
-  [key: string]: unknown | boolean | Op | null | Array<Operand> | null | undefined
+  [key: string]: unknown
 }
 
 export type Configuration = {
@@ -1712,59 +1712,7 @@ export type DevTweaks = {
    * `false`
    */
   streaming_exchange?: boolean | null
-  [key: string]:
-    | unknown
-    | boolean
-    | null
-    | number
-    | null
-    | number
-    | null
-    | number
-    | null
-    | number
-    | null
-    | number
-    | null
-    | BufferCacheAllocationStrategy
-    | null
-    | BufferCacheStrategy
-    | null
-    | number
-    | null
-    | boolean
-    | null
-    | boolean
-    | null
-    | boolean
-    | null
-    | number
-    | null
-    | boolean
-    | null
-    | boolean
-    | null
-    | number
-    | null
-    | MergerType
-    | null
-    | number
-    | null
-    | number
-    | null
-    | boolean
-    | null
-    | string
-    | null
-    | number
-    | null
-    | boolean
-    | null
-    | number
-    | null
-    | boolean
-    | null
-    | undefined
+  [key: string]: unknown
 }
 
 export type DisplaySchedule =
@@ -2314,6 +2262,72 @@ export type GlueCatalogConfig = {
   'glue.warehouse'?: string | null
 }
 
+/**
+ * A boolean filter over the headers of a Kafka message.
+ *
+ * The Kafka input connector uses this to drop messages whose headers do not
+ * satisfy a predicate.  It is a tree of boolean operators (`and`, `or`, `not`)
+ * whose leaves are regular expression tests on individual header values.  It
+ * serializes as an externally tagged JSON object, for example:
+ *
+ * ```json
+ * {
+ * "and": [
+ * { "header": { "name": "event-type", "pattern": "created|updated" } },
+ * { "not": { "header": { "name": "source", "pattern": "test-.*" } } }
+ * ]
+ * }
+ * ```
+ *
+ * This admits a message only if it has an `event-type` header valued exactly
+ * `created` or `updated` and does not have a `source` header whose value
+ * starts with `test-`.
+ */
+export type HeaderFilter =
+  | {
+      header: HeaderMatch
+    }
+  | {
+      /**
+       * Conjunction: matches when every nested filter matches.  Must have at
+       * least one operand.
+       */
+      and: Array<HeaderFilter>
+    }
+  | {
+      /**
+       * Disjunction: matches when at least one nested filter matches.  Must have
+       * at least one operand.
+       */
+      or: Array<HeaderFilter>
+    }
+  | {
+      not: HeaderFilter
+    }
+
+/**
+ * A leaf of a [`HeaderFilter`]: a regular expression tested against the value
+ * of a named Kafka header.
+ */
+export type HeaderMatch = {
+  /**
+   * Name of the header to test, matched exactly against the header key.
+   */
+  name: string
+  /**
+   * Regular expression ([Rust `regex` crate
+   * syntax](https://docs.rs/regex/latest/regex/#syntax)) tested against the
+   * header value.
+   *
+   * The value is matched as raw bytes, so non-UTF-8 values and byte patterns
+   * work.  The pattern must match the *entire* value: it is anchored
+   * automatically, so `^`/`$` are unnecessary (though harmless).  A header
+   * present with a null value is matched as an empty byte sequence; a header
+   * that appears more than once matches if any of its values match.
+   */
+  pattern: string
+}
+
 export type HealthStatus = {
   all_healthy: boolean
   api: ServiceStatus
@@ -2357,7 +2371,7 @@ export type HttpOutputConfig = {
   backpressure?: boolean
 }
 
-export type IcebergCatalogType = 'rest' | 'glue'
+export type IcebergCatalogType = 'rest' | 'glue' | 's3tables'
 
 /**
  * Iceberg table read mode.
@@ -2378,7 +2392,8 @@ export type IcebergIngestMode = 'snapshot' | 'follow' | 'snapshot_and_follow'
  * Iceberg input connector configuration.
  */
 export type IcebergReaderConfig = GlueCatalogConfig &
-  RestCatalogConfig & {
+  RestCatalogConfig &
+  S3TablesCatalogConfig & {
     catalog_type?: IcebergCatalogType | null
     /**
      * Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,
@@ -2686,6 +2701,7 @@ export type KafkaInputConfig = {
    * consumer group during initialization.
    */
   group_join_timeout_secs?: number
+  header_filter?: HeaderFilter | null
   /**
    * Whether to include Kafka headers in the record metadata.
    *
@@ -2817,6 +2833,8 @@ export type KafkaInputConfig = {
   [key: string]:
     | string
     | number
+    | HeaderFilter
+    | null
     | boolean
     | null
     | boolean
@@ -3024,7 +3042,7 @@ export type MetricsParameters = {
 export type MirInput = {
   node: string
   output: number
-  [key: string]: unknown | string | number
+  [key: string]: unknown
 }
 
 export type MirNode = {
@@ -3036,22 +3054,7 @@ export type MirNode = {
   positions?: Array<SourcePosition>
   table?: string | null
   view?: string | null
-  [key: string]:
-    | unknown
-    | CalciteId
-    | null
-    | Array<MirInput>
-    | string
-    | Array<MirInput | null>
-    | null
-    | string
-    | null
-    | Array<SourcePosition>
-    | string
-    | null
-    | string
-    | null
-    | undefined
+  [key: string]: unknown
 }
 
 export type MonitorStatus = 'InitialUnhealthy' | 'Unhealthy' | 'Healthy'
@@ -3204,13 +3207,13 @@ export type Op = {
   kind: string
   name: string
   syntax: string
-  [key: string]: unknown | string
+  [key: string]: unknown
 }
 
 export type Operand = {
   input?: number | null
   name?: string | null
-  [key: string]: unknown | number | null | string | null | undefined
+  [key: string]: unknown
 }
 
 export type OutputBufferConfig = {
@@ -4483,28 +4486,7 @@ export type Rel = {
    * e.g., usually is of the form `[$namespace, $table] / [schema, table]`
    */
   table?: Array<string> | null
-  [key: string]:
-    | unknown
-    | Array<unknown>
-    | null
-    | boolean
-    | null
-    | Condition
-    | null
-    | Array<Operand>
-    | null
-    | Array<string>
-    | null
-    | Array<number>
-    | null
-    | number
-    | Array<number>
-    | string
-    | null
-    | string
-    | Array<string>
-    | null
-    | undefined
+  [key: string]: unknown
 }
 
 /**
@@ -5073,6 +5055,46 @@ export type S3InputConfig = {
    * AWS region.
    */
   region: string
+}
+
+/**
+ * Amazon S3 Tables catalog config.
+ */
+export type S3TablesCatalogConfig = {
+  /**
+   * Access key id used to access the S3 Tables catalog.
+   */
+  's3tables.access-key-id'?: string | null
+  /**
+   * Custom endpoint URL for the S3 Tables service.
+   *
+   * Primarily used to target a local or mock S3 Tables implementation for testing.
+   * When omitted, the default regional endpoint is used.
+   */
+  's3tables.endpoint'?: string | null
+  /**
+   * Profile used to access the S3 Tables catalog.
+   */
+  's3tables.profile-name'?: string | null
+  /**
+   * Region of the S3 Tables catalog.
+   */
+  's3tables.region'?: string | null
+  /**
+   * Secret access key used to access the S3 Tables catalog.
+   */
+  's3tables.secret-access-key'?: string | null
+  /**
+   * Static session token used to access the S3 Tables catalog.
+   */
+  's3tables.session-token'?: string | null
+  /**
+   * ARN of the S3 table bucket that contains the table.
+   *
+   * Note that this is the ARN of the table *bucket*, not of an individual table,
+   * e.g., `"arn:aws:s3tables:us-east-2:123456789012:bucket/my-bucket"`.
+   */
+  's3tables.table-bucket-arn'?: string | null
 }
 
 /**
@@ -7730,40 +7752,6 @@ export type PostPipelineInputConnectorActionError =
 export type PostPipelineInputConnectorActionResponses = {
   /**
    * Action has been processed
-   */
-  200: unknown
-}
-
-export type PostPipelineTestingData = {
-  body?: never
-  path: {
-    /**
-     * Unique pipeline name
-     */
-    pipeline_name: string
-  }
-  query?: {
-    set_platform_version?: string | null
-  }
-  url: '/v0/pipelines/{pipeline_name}/testing'
-}
-
-export type PostPipelineTestingErrors = {
-  /**
-   * Pipeline with that name does not exist
-   */
-  404: ErrorResponse
-  /**
-   * Endpoint is disabled. Set FELDERA_UNSTABLE_FEATURES="testing" to enable.
-   */
-  405: ErrorResponse
-}
-
-export type PostPipelineTestingError = PostPipelineTestingErrors[keyof PostPipelineTestingErrors]
-
-export type PostPipelineTestingResponses = {
-  /**
-   * Request successfully processed
    */
   200: unknown
 }

@@ -167,9 +167,6 @@ import type {
   PostPipelineStopData,
   PostPipelineStopErrors,
   PostPipelineStopResponses,
-  PostPipelineTestingData,
-  PostPipelineTestingErrors,
-  PostPipelineTestingResponses,
   PostUpdateRuntimeData,
   PostUpdateRuntimeErrors,
   PostUpdateRuntimeResponses,
@@ -189,8 +186,9 @@ import type {
 
 export type Options<
   TData extends TDataShape = TDataShape,
-  ThrowOnError extends boolean = boolean
-> = Options2<TData, ThrowOnError> & {
+  ThrowOnError extends boolean = boolean,
+  TResponse = unknown
+> = Options2<TData, ThrowOnError, TResponse> & {
   /**
    * You can provide a client instance returned by `createClient()` instead of
    * individual options. This might be also useful if you want to implement a
@@ -1493,27 +1491,6 @@ export const postPipelineInputConnectorAction = <ThrowOnError extends boolean = 
     responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}',
-    ...options
-  })
-
-/**
- * Test Endpoint
- *
- * This endpoint is used as part of the test harness. Only available if the `testing`
- * unstable feature is enabled. Do not use in production.
- */
-export const postPipelineTesting = <ThrowOnError extends boolean = true>(
-  options: Options<PostPipelineTestingData, ThrowOnError>
-) =>
-  (options.client ?? client).post<
-    PostPipelineTestingResponses,
-    PostPipelineTestingErrors,
-    ThrowOnError,
-    'data'
-  >({
-    responseStyle: 'data',
-    security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/v0/pipelines/{pipeline_name}/testing',
     ...options
   })
 
