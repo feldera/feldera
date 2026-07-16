@@ -356,7 +356,7 @@ where
                     )
                 });
             for waiter in remote_waiters {
-                waiter.wait().await;
+                waiter.await;
             }
         }
     }

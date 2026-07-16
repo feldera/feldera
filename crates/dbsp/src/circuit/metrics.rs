@@ -4,7 +4,10 @@
 //! backends maintain via [`metrics`] crate interfaces.
 
 use std::{
-    sync::{Mutex, atomic::AtomicU64},
+    sync::{
+        Mutex,
+        atomic::{AtomicU64, AtomicUsize},
+    },
     time::Duration,
 };
 
@@ -32,3 +35,14 @@ pub static DBSP_STEP_LATENCY_MICROSECONDS: Mutex<SlidingHistogram> =
 /// Latency of individual operator commits, in microseconds.
 pub static DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS: ExponentialHistogram =
     ExponentialHistogram::new();
+
+/// Number of exchange messages received from other hosts, in a multihost
+/// pipeline.
+pub static EXCHANGE_MESSAGES_RECEIVED: AtomicUsize = AtomicUsize::new(0);
+
+/// The subset of [EXCHANGE_MESSAGES_RECEIVED] that were duplicates.
+///
+/// Duplicates occur when a connection between hosts drops and is reestablished.
+/// In a healthy pipeline, this value should be zero or a tiny fraction of
+/// [EXCHANGE_MESSAGES_RECEIVED].
+pub static DUPLICATE_EXCHANGE_MESSAGES_RECEIVED: AtomicUsize = AtomicUsize::new(0);

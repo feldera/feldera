@@ -237,6 +237,12 @@ impl Layout {
         }
     }
 
+    /// Returns the host index corresponding to the given `worker_idx`.
+    pub fn worker_idx_to_host_idx(&self, worker_idx: usize) -> Option<usize> {
+        self.all_hosts()
+            .position(|workers| workers.contains(&worker_idx))
+    }
+
     /// Returns [`HostInfo`] for this host when running in multihost mode,
     /// or `None` for solo pipelines.
     ///
