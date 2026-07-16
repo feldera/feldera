@@ -204,17 +204,21 @@ public class RewriteNow extends CircuitCloneVisitor {
         return result;
     }
 
+    void warnExpensive(@Nullable DBSPExpression expression) {
+        this.compiler.reportWarning(
+                Objects.requireNonNull(expression).getSourcePosition(), "Inefficient pattern",
+                "NOW() expression is used in a pattern that could require expensive computations\n"
+                        + "See https://docs.feldera.com/sql/datetime/#now");
+    }
+
     @Override
     public void postorder(DBSPMapOperator operator) {
         ContainsNow cn = new ContainsNow(this.compiler(), true);
         DBSPExpression function = operator.getFunction();
         cn.apply(function);
         if (cn.found()) {
-            this.compiler.reportWarning(
-                    Objects.requireNonNull(cn.nowExpression).getSourcePosition(), "Inefficient pattern",
-                    "NOW() expression is used in a pattern that could require expensive computations\n"
-                    + "See https://docs.feldera.com/sql/datetime/#now");
             OutputPort input = this.mapped(operator.input());
+            this.warnExpensive(cn.nowExpression);
             DBSPSimpleOperator join = this.createJoin(input.simpleNode(), operator);
             RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
             function = rn.apply(function).to(DBSPExpression.class);
@@ -441,6 +445,7 @@ public class RewriteNow extends CircuitCloneVisitor {
             DBSPSimpleOperator join = this.createJoin(result, operator);
             RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
             DBSPExpression filterBody = leftOver.to(NonTemporalFilter.class).expression().wrapBoolIfNeeded();
+            this.warnExpensive(filterBody);
             function = filterBody.closure(function.parameters);
             function = rn.apply(function).to(DBSPClosureExpression.class);
             DBSPSimpleOperator filter = new DBSPFilterOperator(operator.getRelNode(), function, join.outputPort());

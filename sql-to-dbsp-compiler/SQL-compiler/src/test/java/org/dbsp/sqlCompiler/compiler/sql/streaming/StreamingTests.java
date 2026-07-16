@@ -2512,6 +2512,234 @@ public class StreamingTests extends StreamingTestBase {
                  z| -1""");
     }
 
+    @Test
+    public void issue6655() {
+        // Test AggregateNowFilterRule: result is NULL for SUM and 0 for COUNT.
+        String sql = """
+                CREATE TABLE T(k VARCHAR, tt TIMESTAMP);
+                CREATE VIEW V AS
+                SELECT k,
+                       SUM(CASE WHEN tt >= NOW() - INTERVAL 1 DAY THEN 1 END) AS s,
+                       COUNT(CASE WHEN tt >= NOW() - INTERVAL 1 DAY THEN 1 END) AS c,
+                       COUNT(*) AS total
+                FROM T GROUP BY k;""";
+        var ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            int window = 0;
+            int aggregate = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void postorder(DBSPAggregateLinearPostprocessOperator operator) {
+                this.aggregate++;
+            }
+
+            @Override
+            public void endVisit() {
+                // SUM and COUNT share one condition, so one window suffices
+                Assert.assertEquals(1, this.window);
+                // ... and both live in one filtered aggregate; the anchor
+                // aggregate computing COUNT(*) is the second one
+                Assert.assertEquals(2, this.aggregate);
+            }
+        };
+        ccs.visit(visitor);
+        ccs.step("""
+                INSERT INTO NOW VALUES('2020-01-01 00:00:00');
+                INSERT INTO T VALUES('a', '2020-01-01 00:00:00');
+                INSERT INTO T VALUES('b', '2019-12-30 00:00:00');""", """
+                 k | s    | c | total | weight
+                --------------------------------
+                 a| 1    | 1 | 1     | 1
+                 b|NULL  | 0 | 1     | 1""");
+        // Two days later a's row leaves the window; b is unchanged
+        ccs.step("INSERT INTO NOW VALUES('2020-01-03 00:00:00')", """
+                 k | s    | c | total | weight
+                --------------------------------
+                 a| 1    | 1 | 1     | -1
+                 a|NULL  | 0 | 1     | 1""");
+    }
+
+    @Test
+    public void issue6655a() {
+        // Aggregates with two different temporal conditions:
+        // AggregateNowFilterRule peels one condition per application,
+        // so each condition gets its own window operator.
+        String sql = """
+                CREATE TABLE T(k VARCHAR, tt TIMESTAMP);
+                CREATE VIEW V AS
+                SELECT k,
+                       SUM(CASE WHEN tt >= NOW() - INTERVAL 1 DAY THEN 1 END) AS d,
+                       SUM(CASE WHEN tt >= NOW() - INTERVAL 7 DAYS THEN 1 END) AS w,
+                       COUNT(*) AS total
+                FROM T GROUP BY k;""";
+        var ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            int window = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(2, this.window);
+            }
+        };
+        ccs.visit(visitor);
+        ccs.step("""
+                INSERT INTO NOW VALUES('2020-01-10 00:00:00');
+                INSERT INTO T VALUES('a', '2020-01-10 00:00:00');
+                INSERT INTO T VALUES('a', '2020-01-05 00:00:00');""", """
+                 k | d    | w    | total | weight
+                ----------------------------------
+                 a| 1    | 2    | 2     | 1""");
+        // Two days later the newest row leaves the 1-day window;
+        // both rows are still inside the 7-day window
+        ccs.step("INSERT INTO NOW VALUES('2020-01-12 00:00:00')", """
+                 k | d    | w    | total | weight
+                ----------------------------------
+                 a| 1    | 2    | 2     | -1
+                 a|NULL  | 2    | 2     | 1""");
+        // Ten days after the first step both rows have left both windows
+        ccs.step("INSERT INTO NOW VALUES('2020-01-20 00:00:00')", """
+                 k | d    | w    | total | weight
+                ----------------------------------
+                 a|NULL  | 2    | 2     | -1
+                 a|NULL  |NULL  | 2     | 1""");
+    }
+
+    @Test
+    public void issue6655b() {
+        // AggregateNowFilterRule without GROUP BY: no join is needed,
+        // the aggregate runs directly over the temporal filter.
+        String sql = """
+                CREATE TABLE T(tt TIMESTAMP);
+                CREATE VIEW V AS
+                SELECT SUM(CASE WHEN tt >= NOW() - INTERVAL 1 DAY THEN 1 END) AS s
+                FROM T;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("""
+                INSERT INTO NOW VALUES('2020-01-01 00:00:00');
+                INSERT INTO T VALUES('2020-01-01 00:00:00');""", """
+                 s | weight
+                -----------
+                 1 | 1""");
+        ccs.step("INSERT INTO NOW VALUES('2020-01-03 00:00:00')", """
+                 s | weight
+                -----------
+                 1 | -1
+                NULL | 1""");
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            int window = 0;
+
+            @Override
+            public void postorder(DBSPJoinBaseOperator operator) {
+                Assert.fail();
+            }
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.window);
+            }
+        };
+        ccs.visit(visitor);
+    }
+
+    @Test
+    public void issue6655c() {
+        String sql = """
+                CREATE TABLE T(
+                   id INT,
+                   tt TIMESTAMP
+                );
+
+                CREATE VIEW V AS
+                SELECT
+                    id,
+                    SUM(CASE WHEN tt >= (NOW() - INTERVAL '24' HOUR) THEN 1 END) AS tc_24h,
+                    SUM(CASE WHEN tt >= (NOW() - INTERVAL '1' HOUR) THEN 1 END) AS tc_1h,
+                    MAX(tt) AS max_tt
+                FROM T
+                WHERE tt BETWEEN (NOW() - INTERVAL '25' HOUR) AND NOW()
+                  AND id IS NOT NULL
+                GROUP BY id;""";
+        var ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            int window = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void endVisit() {
+                // one window for the WHERE, one per aggregate condition.
+                Assert.assertEquals(3, this.window);
+            }
+        };
+        ccs.visit(visitor);
+        // id 1: one row in all windows, one row only in the 24h window;
+        // id 2: row between 25h and 24h ago, in WHERE but in no window;
+        // the NULL id is removed by the WHERE clause
+        ccs.step("""
+                INSERT INTO NOW VALUES('2020-01-01 12:00:00');
+                INSERT INTO T VALUES(1, '2020-01-01 11:30:00');
+                INSERT INTO T VALUES(1, '2020-01-01 00:00:00');
+                INSERT INTO T VALUES(2, '2019-12-31 11:30:00');
+                INSERT INTO T VALUES(NULL, '2020-01-01 11:45:00');""", """
+                 id | tc_24h | tc_1h | max_tt              | weight
+                -----------------------------------------------------
+                 1  | 2      | 1     | 2020-01-01 11:30:00 | 1
+                 2  |NULL    |NULL   | 2019-12-31 11:30:00 | 1""");
+        // One hour later id 1 has no rows in the 1h window,
+        // and id 2's row leaves the WHERE band
+        ccs.step("INSERT INTO NOW VALUES('2020-01-01 13:00:00')", """
+                 id | tc_24h | tc_1h | max_tt              | weight
+                -----------------------------------------------------
+                 1  | 2      | 1     | 2020-01-01 11:30:00 | -1
+                 1  | 2      |NULL   | 2020-01-01 11:30:00 | 1
+                 2  |NULL    |NULL   | 2019-12-31 11:30:00 | -1""");
+        // A day later id 1's rows leave the WHERE band as well
+        ccs.step("INSERT INTO NOW VALUES('2020-01-02 13:00:00')", """
+                 id | tc_24h | tc_1h | max_tt              | weight
+                -----------------------------------------------------
+                 1  | 2      |NULL   | 2020-01-01 11:30:00 | -1""");
+    }
+
+    @Test
+    public void issue6655d() {
+        // ARRAY_AGG must not be moved by AggregateNowFilterRule (results would be wrong if it was).
+        String sql = """
+                CREATE TABLE T(k VARCHAR, tt TIMESTAMP, x INT);
+                CREATE VIEW V AS
+                SELECT k, ARRAY_AGG(x) FILTER (WHERE tt >= NOW() - INTERVAL 1 DAY) AS agg
+                FROM T GROUP BY k;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("""
+                INSERT INTO NOW VALUES('2020-01-01 00:00:00');
+                INSERT INTO T VALUES('a', '2020-01-01 00:00:00', 10);""", """
+                 k | agg  | weight
+                -------------------
+                 a|{ 10 } | 1""");
+        ccs.step("INSERT INTO NOW VALUES('2020-01-03 00:00:00')", """
+                 k | agg  | weight
+                -------------------
+                 a|{ 10 } | -1
+                 a|{}     | 1""");
+    }
+
     static final String issue4909data = """
             INSERT INTO T VALUES ('alpha', TRUE, '2025-10-20 14:23:00', '2025-10-19 09:15:00', '2025-10-18 17:45:00', 'lp1', '2025-10-20 20:00:00');
                 INSERT INTO T VALUES ('bravo', FALSE, '2025-10-15 11:00:00', '2025-10-14 08:30:00', '2025-10-13 19:10:00', 'lp2', '2025-10-15 22:00:00');

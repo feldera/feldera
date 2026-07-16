@@ -426,6 +426,16 @@ result.  A conjunction of such terms is also accepted if all terms
 involve the same expression (e.g.: `T.ts >= NOW() - INTERVAL 1 DAYS
 AND T.ts <= NOW() + INTERVAL 1 DAYS`).
 
+Such conditions are also recognized when they guard the argument of an
+aggregate, either in a `CASE` expression or in a `FILTER` clause.  Both
+of the following views count the rows from the last day, and both are
+implemented with a temporal filter:
+
+```sql
+SELECT COUNT(CASE WHEN T.ts >= NOW() - INTERVAL 1 DAYS THEN 1 END) FROM T;
+SELECT COUNT(*) FILTER (WHERE T.ts >= NOW() - INTERVAL 1 DAYS) FROM T;
+```
+
 ## Date parsing and formatting
 
 We support the following functions for formatting and parsing date-like values:

@@ -439,6 +439,32 @@ public class Regression2Tests extends SqlIoTest {
     }
 
     @Test
+    public void issue6658a() {
+        // now() used in SELECT
+        String sql = """
+                CREATE TABLE transactions (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW window_computation AS
+                SELECT id, ts
+                FROM transactions
+                WHERE LEAST(ts, NOW()) < ts - INTERVAL 1 DAY;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.quiet = false;
+        PrintStream saved = System.err;
+        System.setErr(NullPrintStream.INSTANCE);
+        compiler.submitStatementsForCompilation(sql);
+        System.setErr(saved);
+        TestUtil.assertMessagesContain(compiler, """
+                warning: Inefficient pattern: NOW() expression is used in a pattern that could require expensive computations
+                See https://docs.feldera.com/sql/datetime/#now
+                    7|FROM transactions
+                    8|WHERE LEAST(ts, NOW()) < ts - INTERVAL 1 DAY;
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^""");
+    }
+
+    @Test
     public void issue5541c() {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.ioOptions.quiet = false;

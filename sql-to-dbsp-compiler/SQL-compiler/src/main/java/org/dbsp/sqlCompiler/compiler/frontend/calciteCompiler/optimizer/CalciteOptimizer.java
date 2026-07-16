@@ -256,7 +256,13 @@ public class CalciteOptimizer implements IWritesLogs {
                 PruneEmptyRules.SORT_FETCH_ZERO_INSTANCE
         ));
         this.addStep(new SimpleOptimizerStep("Convert complex aggregates", 0,
-                new MaxCaseToCountRule()
+                // MaxCaseToCountRule must run before AGGREGATE_CASE_TO_FILTER:
+                // both match MAX(CASE WHEN c THEN 1 END), but a COUNT-based
+                // rewrite is linear.
+                new MaxCaseToCountRule(),
+                // Prepares inputs for next rule
+                CoreRules.AGGREGATE_CASE_TO_FILTER,
+                new AggregateNowFilterRule()
         ));
         this.addStep(new SimpleOptimizerStep("Simplify set operations", 0,
                 CoreRules.UNION_MERGE,
