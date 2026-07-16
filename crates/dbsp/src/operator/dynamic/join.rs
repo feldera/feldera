@@ -1587,10 +1587,10 @@ where
             }
 
             let delta = self.delta.borrow_mut().take().expect("no input delta provided before flush");
-            let delta_len = delta.len();
+            let delta_key_count = delta.key_count();
 
             let trace = trace.unwrap();
-            let trace_len = if self.saturate { usize::MAX } else { trace.len() };
+            let trace_key_count = if self.saturate { usize::MAX } else { trace.key_count() };
 
             self.empty_input.set(delta.is_empty());
             self.empty_output.set(true);
@@ -1621,7 +1621,7 @@ where
             let mut val = self.right_factories.val_factory().default_box();
 
             let mut joint_cursor =
-                JointKeyCursor::new(delta_cursor, trace_cursor, fetched.is_none() && (delta_len > trace_len));
+                JointKeyCursor::new(delta_cursor, trace_cursor, fetched.is_none() && (delta_key_count > trace_key_count));
 
             let batch = if size_of::<T::Time>() != 0 {
                 let time = self.clock.time();
