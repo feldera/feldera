@@ -115,6 +115,25 @@ impl ExponentialHistogramSnapshot {
     pub fn sum(&self) -> u64 {
         self.sum
     }
+
+    /// Approximate `q`-quantile (`q` in `0.0..=1.0`), as the lower bound of the
+    /// containing bucket. `None` if empty.
+    pub fn quantile(&self, q: f64) -> Option<u64> {
+        let total: u64 = self.buckets.iter().sum();
+        if total == 0 {
+            return None;
+        }
+        let rank = ((q.clamp(0.0, 1.0) * total as f64).ceil() as u64).clamp(1, total);
+        let mut cumulative = 0u64;
+        for (index, count) in self.buckets.iter().enumerate() {
+            cumulative += *count;
+            if cumulative >= rank {
+                return Some(*bucket_to_range(index).start());
+            }
+        }
+        // Unreachable: `cumulative` reaches `total >= rank` in the loop.
+        Some(*bucket_to_range(N_BUCKETS - 1).start())
+    }
 }
 
 pub struct Bucket {
@@ -278,7 +297,52 @@ impl SlidingHistogram {
 
 #[cfg(test)]
 mod test {
-    use crate::histogram::{N_BUCKETS, bucket_to_range, number_to_bucket};
+    use crate::histogram::{ExponentialHistogram, N_BUCKETS, bucket_to_range, number_to_bucket};
+
+    #[test]
+    fn quantile_empty() {
+        let hist = ExponentialHistogram::new();
+        assert_eq!(hist.snapshot().quantile(0.5), None);
+        assert_eq!(hist.snapshot().quantile(0.99), None);
+    }
+
+    #[test]
+    fn quantile_single_sample() {
+        let hist = ExponentialHistogram::new();
+        hist.record(42u64);
+        // 42 lands in the bucket for [40, 49]; the lower bound is 40.
+        assert_eq!(hist.snapshot().quantile(0.0), Some(40));
+        assert_eq!(hist.snapshot().quantile(0.5), Some(40));
+        assert_eq!(hist.snapshot().quantile(1.0), Some(40));
+    }
+
+    #[test]
+    fn quantile_all_same_bucket() {
+        let hist = ExponentialHistogram::new();
+        for _ in 0..100 {
+            hist.record(5u64);
+        }
+        // Values 0..=9 each occupy their own bucket, so 5 is exact.
+        assert_eq!(hist.snapshot().quantile(0.5), Some(5));
+        assert_eq!(hist.snapshot().quantile(0.99), Some(5));
+    }
+
+    #[test]
+    fn quantile_known_distribution() {
+        let hist = ExponentialHistogram::new();
+        // 99 fast samples (bucket [0,0]) and 1 slow sample (bucket [900,999]).
+        for _ in 0..99 {
+            hist.record(0u64);
+        }
+        hist.record(950u64);
+        let snap = hist.snapshot();
+        // p50 stays with the fast majority.
+        assert_eq!(snap.quantile(0.5), Some(0));
+        // p99 (ceil(0.99*100)=99th value) is still the last fast sample.
+        assert_eq!(snap.quantile(0.99), Some(0));
+        // p100 reaches the lone slow sample: bucket [900, 999], lower bound 900.
+        assert_eq!(snap.quantile(1.0), Some(900));
+    }
 
     #[test]
     fn buckets() {

@@ -255,3 +255,40 @@ export const calcPipelineThroughput = (metrics: TimeSeriesEntry[]) => {
     : 0
   return { series, current, average, yMin, yMax }
 }
+
+/** Rounds a set of latency values up to a "nice" axis maximum, or 1000µs when empty. */
+const niceLatencyMax = (values: number[]) => {
+  const valueMax = values.length ? Math.max(...values) : 0
+  const yMaxStep = valueMax > 0 ? 10 ** Math.ceil(Math.log10(valueMax)) / 5 : 1
+  return valueMax !== 0 ? Math.ceil((valueMax * 1.25) / yMaxStep) * yMaxStep : 1000
+}
+
+/**
+ * Latency time series for the performance graph, in microseconds.
+ *
+ * Produces four series - processing (ingest to circuit-processed) and
+ * completion (ingest to all outputs pushed), each at p50 and p99 across
+ * connectors. Samples whose field is absent (no connector had latency data that
+ * second) are skipped, so a series can be shorter than `metrics` or empty.
+ *
+ * Two axis maxima are returned: `yMax` scaled to the p99 lines, and
+ * `yMaxBaseline` scaled to the p50 lines only, so the axis can tighten when the
+ * p99 lines are hidden.
+ */
+export const calcPipelineLatency = (metrics: TimeSeriesEntry[]) => {
+  const pick = (key: 'pp50' | 'pp99' | 'cp50' | 'cp99') =>
+    metrics.flatMap((m) => (typeof m[key] === 'number' ? [tuple(m.t, m[key] as number)] : []))
+  const series = {
+    processingP50: pick('pp50'),
+    processingP99: pick('pp99'),
+    completionP50: pick('cp50'),
+    completionP99: pick('cp99')
+  }
+  const p99Values = [...series.processingP99, ...series.completionP99].map((p) => p[1])
+  const p50Values = [...series.processingP50, ...series.completionP50].map((p) => p[1])
+  const yMin = 0
+  const yMax = niceLatencyMax(p99Values)
+  const yMaxBaseline = niceLatencyMax(p50Values)
+  const hasData = p50Values.length > 0 || p99Values.length > 0
+  return { series, yMin, yMax, yMaxBaseline, hasData }
+}
