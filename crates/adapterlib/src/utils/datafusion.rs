@@ -224,11 +224,9 @@ where
         .with_runtime_env(runtime_env)
         .with_default_features()
         .build();
-    // DataFusion has no VARIANT type; VARIANT columns reach it as
-    // JSON-encoded strings. The `datafusion-functions-json` family
-    // (`json_get_str`, `json_contains`, ...) lets queries take such
-    // strings apart. Of the crate's operators only `->>` is reachable:
-    // `->` and `?` do not parse in the default (generic) SQL dialect.
+    // JSON functions for querying VARIANT columns, which reach DataFusion
+    // as JSON-encoded strings. Note: the crate's `->` and `?` operators do
+    // not parse in the default (generic) SQL dialect; `->>` works.
     datafusion_functions_json::register_all(&mut state)
         .expect("registering JSON functions on a fresh session state cannot fail");
     SessionContext::from(state)
@@ -740,9 +738,7 @@ mod tests {
         assert_eq!(ctx.copied_config().target_partitions(), 99);
     }
 
-    /// The JSON function family must be registered on every context built
-    /// here: ad-hoc queries rely on it to take apart VARIANT columns, which
-    /// DataFusion sees as JSON-encoded strings (issue #6644).
+    /// Every context built here must provide the JSON function family.
     #[test]
     fn create_session_context_registers_json_functions() {
         let storage = TempStorage::new("feldera-datafusion-create-session-context-json-test");

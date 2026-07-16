@@ -706,9 +706,9 @@ mod tests {
     }
 
     /// Ad-hoc queries can take apart VARIANT columns with the JSON function
-    /// family from `datafusion-functions-json` (issue #6644). VARIANT values
-    /// reach DataFusion as JSON-encoded Utf8 strings; the in-memory table
-    /// below stands in for a materialized table with a VARIANT column.
+    /// family from `datafusion-functions-json`. VARIANT values reach
+    /// DataFusion as JSON-encoded Utf8 strings; the in-memory table below
+    /// stands in for a materialized table with a VARIANT column.
     ///
     /// The state must come from `create_session_context`, which registers
     /// the functions; the plain `test_state()` used elsewhere in this
@@ -796,8 +796,7 @@ mod tests {
         assert!(scores.is_null(1));
         assert!(scores.is_null(2));
 
-        // JSON predicates filter on document contents, as in the queries
-        // from issue #6644.
+        // JSON predicates filter on document contents.
         for (query, expected_id) in [
             ("SELECT id FROM t WHERE json_contains(val, 'extra')", 2),
             (
@@ -815,8 +814,7 @@ mod tests {
             assert_eq!(ids.value(0), expected_id, "query: {query}");
         }
 
-        // `->>` is shorthand for `json_as_text`, and casting `json_get` is
-        // rewritten to the matching typed getter.
+        // The `->>` operator and casting `json_get` to a concrete type.
         let batches = collect_rows(
             ctx.state(),
             "SELECT val->>'name' AS name, \

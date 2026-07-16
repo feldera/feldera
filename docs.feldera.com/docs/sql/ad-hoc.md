@@ -161,12 +161,13 @@ insert into complex_types values ([1,2,3], struct(2, 'b'), '{"field": 3}', MAP([
 
 ### Querying VARIANT Columns with JSON Functions
 
-Datafusion has no equivalent of the Feldera SQL [`VARIANT`](/sql/json) type. An ad-hoc query
+Datafusion currently has no equivalent of the Feldera SQL [`VARIANT`](/sql/json) type. An ad-hoc query
 receives a `VARIANT` column as a string that holds the JSON-encoded value, so the Feldera SQL
 subscript syntax (`doc['name']`) does not work in ad-hoc queries. Instead, ad-hoc queries
 take JSON strings apart with the
 [datafusion-functions-json](https://github.com/datafusion-contrib/datafusion-functions-json)
-function family. These functions also apply to string columns that hold JSON text.
+function family. These functions can be used on any string column that can be decoded as
+legal JSON.
 
 | Function                          | Return type     | Description                                                            |
 |-----------------------------------|-----------------|------------------------------------------------------------------------|
@@ -202,15 +203,9 @@ WHERE json_get_bool(doc, 'active') = TRUE
   AND json_get_int(doc, 'scores', 0) > 5;
 ```
 
-Notes:
-
-- `json_get` returns a value of a union type that only the `text` and `arrow_ipc` output
-  formats can render. To use `json_get` results in the `json` or `parquet` output format,
-  cast them to a concrete type; the cast is rewritten to the matching typed getter, so
-  `json_get(doc, 'scores', 0)::BIGINT` and `CAST(json_get(doc, 'scores', 0) AS BIGINT)`
-  both execute as `json_get_int(doc, 'scores', 0)`.
-- Of the operators provided by the crate, only `->>` (alias of `json_as_text`) is
-  available; `->` and `?` do not parse in the SQL dialect used by ad-hoc queries.
+`json_get` returns a value of a special union type. Prefer the typed getters
+(`json_get_int`, ...) or cast the result to a concrete type, e.g.
+`json_get(doc, 'scores', 0)::BIGINT`.
 
 ### Parameterized Queries with PREPARE / EXECUTE
 

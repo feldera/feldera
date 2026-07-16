@@ -210,8 +210,6 @@ class TestPipeline(SharedTestPipeline):
 
     def test_adhoc_json_functions(self):
         """
-        -- Ad-hoc queries read VARIANT columns as JSON-encoded strings and
-        -- take them apart with datafusion-functions-json (issue #6644).
         CREATE TABLE json_docs (id INT NOT NULL, doc VARIANT) WITH ('materialized' = 'true');
         """
         self.pipeline.start()
@@ -239,9 +237,6 @@ class TestPipeline(SharedTestPipeline):
             "active": True,
         }
 
-        # Typed getters pull concrete values out of the VARIANT column.
-        # A missing key ('scores' of row 2 has one element; indexes are
-        # 0-based) and a NULL document both yield NULL.
         got = list(
             self.pipeline.query(
                 "SELECT id, json_get_str(doc, 'name') AS name,"
@@ -278,8 +273,6 @@ class TestPipeline(SharedTestPipeline):
         )
         assert got == [{"id": 1}]
 
-        # `->>` is shorthand for json_as_text; casting json_get is rewritten
-        # to the matching typed getter (json_get_int here).
         got = list(
             self.pipeline.query(
                 "SELECT doc->>'name' AS name,"
