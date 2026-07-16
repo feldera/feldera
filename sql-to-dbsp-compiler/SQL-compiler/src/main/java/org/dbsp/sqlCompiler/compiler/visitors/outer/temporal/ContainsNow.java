@@ -5,15 +5,20 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.Logger;
+
+import javax.annotation.Nullable;
 
 /** Discovers whether an expression contains a call to the now() function. */
 class ContainsNow extends InnerVisitor {
     public boolean found;
     /** If true the 'found' is reset for each invocation. */
     public final boolean perExpression;
+    @Nullable
+    DBSPExpression nowExpression = null;
 
     public ContainsNow(DBSPCompiler compiler, boolean perExpression) {
         super(compiler);
@@ -23,7 +28,7 @@ class ContainsNow extends InnerVisitor {
 
     static boolean isNow(DBSPApplyExpression node) {
         String name = node.getFunctionName();
-        return name != null && name.equalsIgnoreCase("now");
+        return name != null && name.equalsIgnoreCase("now") && node.arguments.length == 0;
     }
 
     @Override
@@ -41,7 +46,8 @@ class ContainsNow extends InnerVisitor {
             Logger.INSTANCE.belowLevel(this, 1)
                     .append("Found 'now' call")
                     .newline();
-            found = true;
+            this.found = true;
+            this.nowExpression = node;
             return VisitDecision.STOP;
         }
         return super.preorder(node);

@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -410,6 +411,31 @@ public class Regression2Tests extends SqlIoTest {
                  min
                 ----------
                  { 1, 2 }""");
+    }
+
+    @Test
+    public void issue6658() {
+        // now() used in SELECT
+        String sql = """
+                CREATE TABLE transactions (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW window_computation AS
+                SELECT ts > NOW()
+                FROM transactions;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.quiet = false;
+        PrintStream saved = System.err;
+        System.setErr(NullPrintStream.INSTANCE);
+        compiler.submitStatementsForCompilation(sql);
+        System.setErr(saved);
+        TestUtil.assertMessagesContain(compiler, """
+                warning: Inefficient pattern: NOW() expression is used in a pattern that could require expensive computations
+                See https://docs.feldera.com/sql/datetime/#now
+                    6|SELECT ts > NOW()
+                                  ^^^^^
+                    7|FROM transactions;""");
     }
 
     @Test

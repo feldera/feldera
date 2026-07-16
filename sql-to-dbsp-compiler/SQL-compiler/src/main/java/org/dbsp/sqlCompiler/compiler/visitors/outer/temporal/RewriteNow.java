@@ -210,6 +210,10 @@ public class RewriteNow extends CircuitCloneVisitor {
         DBSPExpression function = operator.getFunction();
         cn.apply(function);
         if (cn.found()) {
+            this.compiler.reportWarning(
+                    Objects.requireNonNull(cn.nowExpression).getSourcePosition(), "Inefficient pattern",
+                    "NOW() expression is used in a pattern that could require expensive computations\n"
+                    + "See https://docs.feldera.com/sql/datetime/#now");
             OutputPort input = this.mapped(operator.input());
             DBSPSimpleOperator join = this.createJoin(input.simpleNode(), operator);
             RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
