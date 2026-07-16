@@ -13,9 +13,12 @@
     "check": "svelte-kit sync && svelte-check --threshold error",
     "check:watch": "svelte-kit sync && svelte-check --threshold error --watch",
     "test": "vitest --run",
+    "test-watch": "vitest",
+    "test-unit": "vitest --run --project component --project unit",
+    "test-component": "vitest --run --project component",
     "format": "biome check --write ."
   },
-  "files": ["dist", "!dist/**/*.test.*", "!dist/**/*.spec.*"],
+  "files": ["dist", "!dist/**/*.test.*", "!dist/**/*.spec.*", "!dist/test-support/**"],
   "sideEffects": ["**/*.css"],
   "svelte": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -63,7 +66,8 @@
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",
     "vite": "^8.0.0",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "vitest-browser-svelte": "^2.1.1"
   },
   "overrides": {
     "devalue": "^5.6.2"

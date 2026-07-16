@@ -29,6 +29,11 @@ jobs:
         run: bun run test-unit
         working-directory: js-packages/web-console
 
+      - name: Run profiler-layout vitest unit & component tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: bun run test-unit
+        working-directory: js-packages/profiler-layout
+
       - name: Show Kubernetes node
         if: always()
         run: |
