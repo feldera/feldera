@@ -24,22 +24,38 @@ privileges.
 
 Use transport name `postgres_cdc_input`.
 
-| Property                  | Type    | Default | Description                                                                                                                                                                        |
-| ------------------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `uri`\*                   | string  |         | PostgreSQL connection URI, e.g. `"postgres://postgres:password@localhost:5432/postgres"`. It must include a username, host, and database name. The user needs `REPLICATION` privilege. |
-| `publication`\*           | string  |         | Name of an existing PostgreSQL publication. The publication must include `source_table`.                                                                                           |
-| `source_table`\*          | string  |         | PostgreSQL table to replicate, usually schema-qualified, e.g. `"public.orders"`.                                                                                                  |
-| `ssl_ca_pem`              | string  |         | CA certificates in PEM format. Setting this enables TLS and takes precedence over `ssl_ca_location`.                                                                               |
-| `ssl_ca_location`         | string  |         | Path to a PEM file containing CA certificates. Used when `ssl_ca_pem` is not set.                                                                                                  |
-| `streaming_ack_hold_ms`   | integer | `2000`  | Time to wait for a nonterminal CDC batch to become durable before ingestion may continue without advancing its PostgreSQL WAL position. Must be greater than zero.                  |
-| `discard_shutdown_errors` | boolean | `true`  | Whether to retry a table when the previous connector run stopped before acknowledging pending data.                                                                                |
-| `discard_table_errors`    | boolean | `false` | Whether to retry tables with persisted replication errors at startup. See [Discarding table errors](#discarding-table-errors).                                                      |
+| Property                  | Type    | Default | Description                                                                                                                                                                                                |
+| ------------------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `uri`\*                   | string  |         | PostgreSQL connection URI, e.g. `"postgres://postgres:password@localhost:5432/postgres"`. It must include a username, host, and database name. The user needs `REPLICATION` privilege.                         |
+| `publication`\*           | string  |         | Name of an existing PostgreSQL publication. The publication must include `source_table`.                                                                                                                   |
+| `source_table`\*          | string  |         | PostgreSQL table to replicate, usually schema-qualified, e.g. `"public.orders"`.                                                                                                                          |
+| `transaction_mode`        | enum    | `none`  | Controls transactions during initial synchronization. Supported values are `none` and `snapshot`. See [Transactions](#transactions).                                                                       |
+| `ssl_ca_pem`              | string  |         | CA certificates in PEM format. Setting this enables TLS and takes precedence over `ssl_ca_location`.                                                                                                       |
+| `ssl_ca_location`         | string  |         | Path to a PEM file containing CA certificates. Used when `ssl_ca_pem` is not set.                                                                                                                          |
+| `streaming_ack_hold_ms`   | integer | `2000`  | Time to wait for a nonterminal CDC batch to become durable before ingestion may continue without advancing its PostgreSQL WAL position. Terminal snapshot batches always wait for durability. Must be greater than zero. |
+| `discard_shutdown_errors` | boolean | `true`  | Whether to retry a table when the previous connector run stopped before acknowledging pending data.                                                                                                        |
+| `discard_table_errors`    | boolean | `false` | Whether to retry tables with persisted replication errors at startup. See [Discarding table errors](#discarding-table-errors).                                                                              |
 
 [*]: Required fields
 
 The CDC connector does not support client-certificate TLS options
 (`ssl_client_pem`, `ssl_client_location`, `ssl_client_key`,
 `ssl_client_key_location`, or `ssl_certificate_chain_location`).
+
+## Transactions
+
+The `transaction_mode` property controls whether the connector groups initial
+synchronization into [Feldera transactions](/pipelines/transactions):
+
+- `none` - do not create transactions automatically.
+- `snapshot` - use one transaction for the initial PostgreSQL table copy and a
+  second transaction for the WAL changes ETL applies while catching up from the
+  copy's consistent snapshot. Each transaction is committed only after its
+  complete phase has been queued.
+
+The two phases cannot share one transaction: ETL waits for the copied rows to
+become durable before it starts WAL catchup. Once catchup completes, subsequent
+steady-state CDC changes are ingested without transactions.
 
 ## PostgreSQL setup
 
