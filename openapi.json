@@ -11969,6 +11969,9 @@
                 "default": 2000,
                 "minimum": 0
               },
+              "transaction_mode": {
+                "$ref": "#/components/schemas/PostgresCdcTransactionMode"
+              },
               "uri": {
                 "type": "string",
                 "description": "Postgres connection URI. The user must have REPLICATION privilege.\nSee: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>"
