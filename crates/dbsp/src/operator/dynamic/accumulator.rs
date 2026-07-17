@@ -125,7 +125,7 @@ impl EnableCount {
     ///
     /// This must be paired with a prior call to [EnableCount::enable].
     pub fn disable(&self) {
-        let old = self.0.fetch_add(1, Ordering::AcqRel);
+        let old = self.0.fetch_sub(1, Ordering::AcqRel);
         assert!(old > 0);
     }
 }
