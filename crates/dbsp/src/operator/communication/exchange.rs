@@ -1406,6 +1406,7 @@ where
 
     async fn eval_owned(&mut self, input: D) {
         if self.phase.is_inactive(self.exchange.activity) {
+            assert_eq!(input.num_entries_deep(), 0);
             return;
         };
         let flushed = if self.phase == Phase::Flush {
