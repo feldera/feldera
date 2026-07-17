@@ -1352,6 +1352,13 @@ impl Runtime {
     pub(crate) fn take_exchange_listener(&self) -> Option<TcpListener> {
         self.inner().exchange_listener.lock().unwrap().take()
     }
+
+    /// Returns [DevTweaks] for this `Runtime`.
+    ///
+    /// Use [Runtime::with_dev_tweaks] if there's not a `Runtime` handy already.
+    pub fn dev_tweaks(&self) -> &DevTweaks {
+        &self.inner().dev_tweaks
+    }
 }
 
 /// A synchronization primitive that allows multiple threads within a runtime to agree

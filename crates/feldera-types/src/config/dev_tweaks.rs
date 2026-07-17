@@ -263,10 +263,12 @@ pub struct DevTweaks {
     pub now_http_driven: Option<bool>,
 
     /// Enable streaming exchange.
-    ///
-    /// `false`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub streaming_exchange: Option<bool>,
+
+    /// Optimize input operators during transaction commit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optimize_input_during_commit: Option<bool>,
 
     /// Options not understood by this particular version.
     ///
@@ -350,6 +352,10 @@ impl DevTweaks {
 
     pub fn streaming_exchange(&self) -> bool {
         self.streaming_exchange.unwrap_or(true)
+    }
+
+    pub fn optimize_input_during_commit(&self) -> bool {
+        self.optimize_input_during_commit.unwrap_or(true)
     }
 }
 

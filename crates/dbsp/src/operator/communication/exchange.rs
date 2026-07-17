@@ -849,7 +849,11 @@ where
             mailboxes,
             deserialization_usecs: AtomicU64::new(0),
             deserialized_bytes: AtomicUsize::new(0),
-            activity,
+            activity: if runtime.dev_tweaks().optimize_input_during_commit() {
+                activity
+            } else {
+                ExchangeActivity::AllSteps
+            },
         });
 
         directory.insert(exchange_id, exchange.clone());
