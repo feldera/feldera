@@ -58,6 +58,13 @@ pub(crate) struct DynamoDBOutputMetrics {
     /// value points to a view that does not satisfy the connector's uniqueness
     /// requirement.
     duplicate_keys_skipped: AtomicU64,
+
+    /// Writes discarded because their configured condition expression was not
+    /// met (for example an `attribute_not_exists` guard on an existing key).
+    /// This is the intended, non-error path of conditional writes: the count is
+    /// how many writes the condition suppressed, such as duplicates prevented
+    /// across a pipeline restart.
+    condition_check_failures: AtomicU64,
 }
 
 impl DynamoDBOutputMetrics {
@@ -104,6 +111,12 @@ impl DynamoDBOutputMetrics {
     /// Record an output record skipped due to a non-unique key.
     pub(super) fn record_duplicate_key_skip(&self) {
         self.duplicate_keys_skipped.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Add `count` writes discarded because their condition expression was not met.
+    pub(super) fn record_condition_check_failures(&self, count: u64) {
+        self.condition_check_failures
+            .fetch_add(count, Ordering::Relaxed);
     }
 }
 
@@ -155,6 +168,13 @@ impl ConnectorMetrics for DynamoDBOutputMetrics {
                 "Total number of output records skipped because their key was not unique.",
                 ValueType::Counter,
                 self.duplicate_keys_skipped.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "dynamodb_output_condition_check_failures_total",
+                "Total number of writes discarded because their configured condition expression \
+                 was not met.",
+                ValueType::Counter,
+                self.condition_check_failures.load(Ordering::Relaxed) as f64,
             ),
         ]
     }

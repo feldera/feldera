@@ -30,6 +30,8 @@ the index must include both columns.
 | `max_concurrent_requests`        | integer | `64`      | Maximum number of DynamoDB write requests in flight per worker thread at any one time. The connector blocks the encoding thread when this limit is reached, applying backpressure to the pipeline.                                                                                                                                                                                                      |
 | `threads`                        | integer | `1`       | Number of parallel worker threads used to encode and write disjoint key ranges. Each thread makes its own DynamoDB API calls. Increasing this value can improve throughput for large batches.                                                                                                                                                                                                           |
 | `max_retries`                    | integer | `10`      | Maximum number of retries for a failed or partially-applied DynamoDB write. For `batch` mode, retries apply to items returned as unprocessed in a successful response. For `transactional` mode, retries apply to failed `TransactWriteItems` calls. Set to `null` to retry indefinitely. Transient errors such as throttling are handled separately by the AWS SDK and do not count toward this limit. |
+| `put_condition_expression`       | string  |           | Optional [condition expression](#conditional-writes) evaluated before every put. Available only in `transactional` mode.                                                                                                                                                                                                                                                                               |
+| `delete_condition_expression`    | string  |           | Optional [condition expression](#conditional-writes) evaluated before every delete. Available only in `transactional` mode.                                                                                                                                                                                                                                                                            |
 
 [*]: Required fields
 
@@ -54,6 +56,46 @@ API. This mode:
 
 - Guarantees atomicity for each transaction chunk of up to 100 items
 - Is substantially slower than batch mode due to the overhead of ACID transactions
+
+## Conditional writes
+
+Transactional mode can ask DynamoDB to check a condition before changing an
+item. Set `put_condition_expression` for inserts and upserts, or
+`delete_condition_expression` for deletes. The condition is evaluated against
+the item currently stored under the same key. When it is false, the connector
+skips that change and continues writing the other records in the transaction.
+
+Conditions can prevent unwanted overwrites, limit deletes to items in an
+expected state, or make replayed input harmless. For example:
+
+- `attribute_not_exists(id)` writes only when the key is not already present.
+- `attribute_exists(id)` writes or deletes only when the item already exists.
+- `attribute_exists(id) AND attribute_not_exists(archived_at)` combines checks
+  when more than one property matters.
+
+:::warning
+
+`put_condition_expression` gates every put, and the connector cannot
+distinguish a replayed insert from a legitimate update: both are puts. A guard
+such as `attribute_not_exists(id)` therefore suppresses updates to existing
+keys as well as replayed duplicates. Use it only when the view is
+insert-only, or when dropping updates is intended.
+
+:::
+
+```json
+{
+  "write_mode": "transactional",
+  "put_condition_expression": "attribute_not_exists(id)",
+  "delete_condition_expression": "attribute_exists(id)"
+}
+```
+
+The connector currently accepts only the condition expression itself. It does
+not accept DynamoDB `ExpressionAttributeNames` or `ExpressionAttributeValues`,
+so aliases such as `#status` and value placeholders such as `:expected` cannot
+be resolved. Attribute names used directly in an expression must not be
+[DynamoDB reserved words](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ReservedWords.html).
 
 ## Item-size limit
 

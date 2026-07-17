@@ -78,6 +78,10 @@ pub(crate) struct DynamoDBWorker {
     write_mode: DynamoDBWriteMode,
     batch_size: usize,
     max_retries: Option<u8>,
+    /// Condition expression applied to every put (transactional mode only).
+    put_condition: Option<String>,
+    /// Condition expression applied to every delete (transactional mode only).
+    delete_condition: Option<String>,
     client: Client,
     key_schema: Relation,
     value_schema: Relation,
@@ -144,6 +148,8 @@ impl DynamoDBWorker {
             write_mode: config.write_mode,
             batch_size: config.effective_batch_size(),
             max_retries: config.max_retries,
+            put_condition: config.put_condition_expression.clone(),
+            delete_condition: config.delete_condition_expression.clone(),
             client,
             key_schema: key_schema.clone(),
             value_schema: value_schema.clone(),
@@ -267,6 +273,8 @@ impl DynamoDBWorker {
         let endpoint_name = self.endpoint_name.clone();
         let table = self.table.clone();
         let write_mode = self.write_mode;
+        let put_condition = self.put_condition.clone();
+        let delete_condition = self.delete_condition.clone();
         let max_retries: Option<usize> = self.max_retries.map(|n| n as usize);
         self.metrics.record_write_chunk();
         let task_metrics = self.metrics.clone();
@@ -276,22 +284,31 @@ impl DynamoDBWorker {
             async move {
                 let _permit = permit;
                 let start = Instant::now();
-                let result: AnyResult<u64> = match write_mode {
-                    DynamoDBWriteMode::Batch => {
-                        helpers::write_batch_chunk(
-                            client,
-                            endpoint_name.clone(),
-                            table,
-                            requests,
-                            max_retries,
-                            &task_metrics,
-                        )
-                        .await
-                    }
+                let result: AnyResult<helpers::TransactChunkOutcome> = match write_mode {
+                    DynamoDBWriteMode::Batch => helpers::write_batch_chunk(
+                        client,
+                        endpoint_name.clone(),
+                        table,
+                        requests,
+                        max_retries,
+                        &task_metrics,
+                    )
+                    .await
+                    .map(|retries| helpers::TransactChunkOutcome {
+                        retries,
+                        suppressed: 0,
+                    }),
                     DynamoDBWriteMode::Transactional => {
                         let transact_items = requests
                             .iter()
-                            .map(|r| helpers::to_transact_item(&table, r))
+                            .map(|r| {
+                                helpers::to_transact_item(
+                                    &table,
+                                    r,
+                                    put_condition.as_deref(),
+                                    delete_condition.as_deref(),
+                                )
+                            })
                             .collect::<AnyResult<Vec<_>>>()?;
                         helpers::write_transact_chunk(
                             client,
@@ -312,14 +329,19 @@ impl DynamoDBWorker {
                     "dynamodb: flushed batch",
                 );
                 // Count rows and bytes as written only once the chunk lands in
-                // DynamoDB; a failed chunk drops its items rather than recording
-                // progress.
+                // DynamoDB. A failed chunk drops its items rather than recording
+                // progress, and items suppressed by a condition expression were
+                // never written, so they are excluded here. Per-item byte sizes
+                // are not retained past the flush, so the suppressed bytes are
+                // estimated by the written fraction of the chunk.
                 match result {
-                    Ok(retries) => {
-                        task_records_written.fetch_add(rows as u64, Ordering::Relaxed);
-                        task_bytes_written.fetch_add(bytes as u64, Ordering::Relaxed);
-                        task_metrics.record_retries(retries);
-                        Ok(retries)
+                    Ok(outcome) => {
+                        let (written, written_bytes) =
+                            helpers::written_totals(rows, bytes, outcome.suppressed);
+                        task_records_written.fetch_add(written, Ordering::Relaxed);
+                        task_bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
+                        task_metrics.record_retries(outcome.retries);
+                        Ok(outcome.retries)
                     }
                     Err(error) => Err(error),
                 }

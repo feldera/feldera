@@ -39,7 +39,7 @@ use crate::format::Encoder;
 use crate::static_compile::seroutput::SerBatchImpl;
 use crate::test::{TestStruct, test_circuit_with_index, wait};
 
-use super::helpers::make_client;
+use super::helpers::{make_client, to_transact_item};
 use super::metrics::DynamoDBOutputMetrics;
 use super::output::{DynamoDBOutputEndpoint, DynamoDBWorker};
 
@@ -323,6 +323,8 @@ fn config(batch_size: usize) -> DynamoDBWriterConfig {
         max_concurrent_requests: 16,
         threads: 1,
         max_retries: Some(10),
+        put_condition_expression: None,
+        delete_condition_expression: None,
     }
 }
 
@@ -351,6 +353,8 @@ fn endpoint_config(
         max_concurrent_requests: 16,
         threads,
         max_retries: Some(10),
+        put_condition_expression: None,
+        delete_condition_expression: None,
     }
 }
 
@@ -1178,6 +1182,46 @@ fn encoder_json_to_attribute_value_encodes_nested_values() {
     assert!(item.get("map").unwrap().is_m());
 }
 
+#[test]
+fn to_transact_item_attaches_conditions_per_operation() {
+    use aws_sdk_dynamodb::types::{DeleteRequest, PutRequest, WriteRequest};
+
+    let item = HashMap::from([("id".to_string(), AttributeValue::N("1".to_string()))]);
+    let put = WriteRequest::builder()
+        .put_request(PutRequest::builder().set_item(Some(item)).build().unwrap())
+        .build();
+    let delete = WriteRequest::builder()
+        .delete_request(
+            DeleteRequest::builder()
+                .set_key(Some(HashMap::from([(
+                    "id".to_string(),
+                    AttributeValue::N("1".to_string()),
+                )])))
+                .build()
+                .unwrap(),
+        )
+        .build();
+
+    // A put carries the put condition; a delete carries the delete condition.
+    let transact_put =
+        to_transact_item("t", &put, Some("attribute_not_exists(id)"), Some("bogus")).unwrap();
+    assert_eq!(
+        transact_put.put().unwrap().condition_expression(),
+        Some("attribute_not_exists(id)")
+    );
+
+    let transact_delete =
+        to_transact_item("t", &delete, Some("bogus"), Some("attribute_exists(id)")).unwrap();
+    assert_eq!(
+        transact_delete.delete().unwrap().condition_expression(),
+        Some("attribute_exists(id)")
+    );
+
+    // No condition attached when none is configured.
+    let unconditional = to_transact_item("t", &put, None, None).unwrap();
+    assert_eq!(unconditional.put().unwrap().condition_expression(), None);
+}
+
 fn dynamodb_endpoint_url() -> Option<String> {
     const DEFAULT_DYNAMODB_ENDPOINT: &str = "http://127.0.0.1:8000";
 
@@ -1507,6 +1551,172 @@ fn dynamodb_delete() {
     assert_eq!(attr_n(&rows[0], "id"), "3");
     assert_eq!(attr_s(&rows[0], "sort"), "c");
     assert_eq!(attr_s(&rows[0], "s"), "three");
+}
+
+/// Builds a single-threaded transactional endpoint carrying the given condition
+/// expressions, retaining `metrics` so the test can inspect the suppressed-write
+/// count. A single worker keeps every item in one transaction, exercising the
+/// discard-and-retry path when part of that transaction fails its condition.
+fn dynamodb_conditional_endpoint(
+    table: &str,
+    endpoint_url: Option<&str>,
+    put_condition: Option<&str>,
+    delete_condition: Option<&str>,
+    metrics: Arc<DynamoDBOutputMetrics>,
+) -> DynamoDBOutputEndpoint {
+    let mut config = endpoint_config(table.to_string(), endpoint_url.map(str::to_string), 1);
+    config.write_mode = DynamoDBWriteMode::Transactional;
+    config.batch_size = None;
+    config.put_condition_expression = put_condition.map(str::to_string);
+    config.delete_condition_expression = delete_condition.map(str::to_string);
+    DynamoDBOutputEndpoint::new_with_metrics(
+        EndpointId::default(),
+        "test_endpoint",
+        &config,
+        &Some(key_relation()),
+        &value_relation(),
+        Weak::new(),
+        true,
+        metrics,
+    )
+    .unwrap()
+}
+
+/// Writes an item directly, standing in for a row left by an earlier pipeline run.
+fn seed_item(client: &Client, table: &str, id: i32, sort: &str, marker: &str) {
+    TOKIO
+        .block_on(
+            client
+                .put_item()
+                .table_name(table)
+                .item("id", AttributeValue::N(id.to_string()))
+                .item("sort", AttributeValue::S(sort.to_string()))
+                .item("s", AttributeValue::S(marker.to_string()))
+                .send(),
+        )
+        .unwrap();
+}
+
+#[test]
+fn dynamodb_conditional_put_skips_existing_row() {
+    let endpoint_url = dynamodb_endpoint_url();
+    let client = dynamodb_client(endpoint_url.as_deref());
+    wait_for_dynamodb(&client);
+
+    let table = test_table_name("conditional_put_skip");
+    let _table_guard = TempDynamoTable::new(&client, &table, true);
+
+    // A row already present, as if written before a pipeline restart.
+    seed_item(&client, &table, 1, "a", "original");
+
+    let metrics = Arc::new(DynamoDBOutputMetrics::default());
+    let mut endpoint = dynamodb_conditional_endpoint(
+        &table,
+        endpoint_url.as_deref(),
+        Some("attribute_not_exists(id)"),
+        None,
+        metrics.clone(),
+    );
+
+    // One transaction: re-emit the existing key with a new value (must be
+    // suppressed) alongside a genuinely new key (must land). The whole
+    // transaction is first cancelled by the existing key; the connector drops
+    // that item and retries the rest.
+    encode_endpoint_batch(
+        &mut endpoint,
+        &build_batch(vec![
+            (record(1, "a", Some(10), "reprocessed"), 1),
+            (record(2, "b", Some(20), "fresh"), 1),
+        ]),
+    );
+
+    let rows = scan_table(&client, &table);
+    assert_eq!(rows.len(), 2);
+    // The existing row was left untouched.
+    assert_eq!(attr_n(&rows[0], "id"), "1");
+    assert_eq!(attr_s(&rows[0], "s"), "original");
+    // The new row was written.
+    assert_eq!(attr_n(&rows[1], "id"), "2");
+    assert_eq!(attr_s(&rows[1], "s"), "fresh");
+
+    assert_eq!(
+        dynamodb_metric(&metrics, "dynamodb_output_condition_check_failures_total"),
+        1.0
+    );
+}
+
+#[test]
+fn dynamodb_conditional_put_writes_all_new_rows() {
+    let endpoint_url = dynamodb_endpoint_url();
+    let client = dynamodb_client(endpoint_url.as_deref());
+    wait_for_dynamodb(&client);
+
+    let table = test_table_name("conditional_put_all_new");
+    let _table_guard = TempDynamoTable::new(&client, &table, true);
+
+    let metrics = Arc::new(DynamoDBOutputMetrics::default());
+    let mut endpoint = dynamodb_conditional_endpoint(
+        &table,
+        endpoint_url.as_deref(),
+        Some("attribute_not_exists(id)"),
+        None,
+        metrics.clone(),
+    );
+
+    // No key exists yet, so the condition holds for every put.
+    encode_endpoint_batch(
+        &mut endpoint,
+        &build_batch(vec![
+            (record(1, "a", Some(10), "one"), 1),
+            (record(2, "b", Some(20), "two"), 1),
+        ]),
+    );
+
+    let rows = scan_table(&client, &table);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(attr_s(&rows[0], "s"), "one");
+    assert_eq!(attr_s(&rows[1], "s"), "two");
+    assert_eq!(
+        dynamodb_metric(&metrics, "dynamodb_output_condition_check_failures_total"),
+        0.0
+    );
+}
+
+#[test]
+fn dynamodb_conditional_delete_skips_absent_row() {
+    let endpoint_url = dynamodb_endpoint_url();
+    let client = dynamodb_client(endpoint_url.as_deref());
+    wait_for_dynamodb(&client);
+
+    let table = test_table_name("conditional_delete");
+    let _table_guard = TempDynamoTable::new(&client, &table, true);
+
+    seed_item(&client, &table, 1, "a", "original");
+
+    let metrics = Arc::new(DynamoDBOutputMetrics::default());
+    let mut endpoint = dynamodb_conditional_endpoint(
+        &table,
+        endpoint_url.as_deref(),
+        None,
+        Some("attribute_exists(id)"),
+        metrics.clone(),
+    );
+
+    // Delete the existing key (condition holds) and a key that was never written
+    // (condition fails, delete suppressed).
+    encode_endpoint_batch(
+        &mut endpoint,
+        &build_batch(vec![
+            (record(1, "a", Some(10), "original"), -1),
+            (record(2, "b", Some(20), "absent"), -1),
+        ]),
+    );
+
+    assert!(scan_table(&client, &table).is_empty());
+    assert_eq!(
+        dynamodb_metric(&metrics, "dynamodb_output_condition_check_failures_total"),
+        1.0
+    );
 }
 
 #[test]

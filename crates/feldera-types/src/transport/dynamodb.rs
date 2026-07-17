@@ -143,6 +143,37 @@ pub struct DynamoDBWriterConfig {
     #[serde(default = "default_max_retries")]
     #[schema(default = default_max_retries)]
     pub max_retries: Option<u8>,
+
+    /// [Condition expression] evaluated before each put (insert or upsert).
+    ///
+    /// When the condition is false, the record is skipped without failing the
+    /// connector. This option requires `transactional` [`write_mode`].
+    ///
+    /// The condition gates every value write, and the connector cannot tell a
+    /// replayed insert from a legitimate update: both arrive as puts. A guard
+    /// such as `attribute_not_exists(id)` therefore also suppresses updates to
+    /// existing keys, not just replayed duplicates. Choose the expression
+    /// accordingly.
+    ///
+    /// The connector does not currently support `ExpressionAttributeNames` or
+    /// `ExpressionAttributeValues`, so the expression cannot use placeholders.
+    ///
+    /// [Condition expression]: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.ConditionExpressions.html
+    /// [`write_mode`]: Self::write_mode
+    #[serde(default)]
+    pub put_condition_expression: Option<String>,
+
+    /// [Condition expression] evaluated before each delete.
+    ///
+    /// When the condition is false, the delete is skipped without failing the
+    /// connector. This option requires `transactional` [`write_mode`]. The
+    /// expression cannot use `ExpressionAttributeNames` or
+    /// `ExpressionAttributeValues` placeholders.
+    ///
+    /// [Condition expression]: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.ConditionExpressions.html
+    /// [`write_mode`]: Self::write_mode
+    #[serde(default)]
+    pub delete_condition_expression: Option<String>,
 }
 
 impl DynamoDBWriterConfig {
@@ -202,6 +233,25 @@ impl DynamoDBWriterConfig {
                 );
             }
         }
+        for (field, expression) in [
+            ("put_condition_expression", &self.put_condition_expression),
+            (
+                "delete_condition_expression",
+                &self.delete_condition_expression,
+            ),
+        ] {
+            if let Some(expression) = expression {
+                if expression.trim().is_empty() {
+                    return Err(format!("{field} cannot be empty"));
+                }
+                if self.write_mode != DynamoDBWriteMode::Transactional {
+                    return Err(format!(
+                        "{field} requires the 'transactional' write mode; conditional writes \
+                         are not supported for 'batch' writes"
+                    ));
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -232,6 +282,8 @@ mod tests {
             max_concurrent_requests: 16,
             threads: 1,
             max_retries: Some(10u8),
+            put_condition_expression: None,
+            delete_condition_expression: None,
         }
     }
 
@@ -337,6 +389,39 @@ mod tests {
             .validate()
             .is_ok()
         );
+    }
+
+    #[test]
+    fn condition_requires_transactional_write_mode() {
+        // A put condition in batch mode is rejected.
+        let batch = DynamoDBWriterConfig {
+            put_condition_expression: Some("attribute_not_exists(id)".to_string()),
+            ..config(DynamoDBWriteMode::Batch, None)
+        };
+        assert!(batch.validate().is_err());
+
+        // The same condition is accepted in transactional mode.
+        let transactional = DynamoDBWriterConfig {
+            put_condition_expression: Some("attribute_not_exists(id)".to_string()),
+            ..config(DynamoDBWriteMode::Transactional, None)
+        };
+        assert!(transactional.validate().is_ok());
+
+        // A delete condition in batch mode is rejected as well.
+        let batch_delete = DynamoDBWriterConfig {
+            delete_condition_expression: Some("attribute_exists(id)".to_string()),
+            ..config(DynamoDBWriteMode::Batch, None)
+        };
+        assert!(batch_delete.validate().is_err());
+    }
+
+    #[test]
+    fn blank_condition_is_rejected() {
+        let cfg = DynamoDBWriterConfig {
+            put_condition_expression: Some("   ".to_string()),
+            ..config(DynamoDBWriteMode::Transactional, None)
+        };
+        assert!(cfg.validate().is_err());
     }
 
     #[test]

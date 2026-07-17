@@ -9086,6 +9086,11 @@
             "nullable": true,
             "minimum": 0
           },
+          "delete_condition_expression": {
+            "type": "string",
+            "description": "[Condition expression] evaluated before each delete.\n\nWhen the condition is false, the delete is skipped without failing the\nconnector. This option requires `transactional` [`write_mode`]. The\nexpression cannot use `ExpressionAttributeNames` or\n`ExpressionAttributeValues` placeholders.\n\n[Condition expression]: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.ConditionExpressions.html\n[`write_mode`]: Self::write_mode",
+            "nullable": true
+          },
           "endpoint_url": {
             "type": "string",
             "description": "Optional endpoint URL, for example when using a local\nDynamoDB-compatible service.",
@@ -9110,6 +9115,11 @@
             "default": 10,
             "nullable": true,
             "minimum": 0
+          },
+          "put_condition_expression": {
+            "type": "string",
+            "description": "[Condition expression] evaluated before each put (insert or upsert).\n\nWhen the condition is false, the record is skipped without failing the\nconnector. This option requires `transactional` [`write_mode`].\n\nThe condition gates every value write, and the connector cannot tell a\nreplayed insert from a legitimate update: both arrive as puts. A guard\nsuch as `attribute_not_exists(id)` therefore also suppresses updates to\nexisting keys, not just replayed duplicates. Choose the expression\naccordingly.\n\nThe connector does not currently support `ExpressionAttributeNames` or\n`ExpressionAttributeValues`, so the expression cannot use placeholders.\n\n[Condition expression]: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.ConditionExpressions.html\n[`write_mode`]: Self::write_mode",
+            "nullable": true
           },
           "region": {
             "type": "string",
