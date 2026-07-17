@@ -8973,6 +8973,12 @@
             "default": null,
             "nullable": true
           },
+          "optimize_input_during_commit": {
+            "type": "boolean",
+            "description": "Optimize input operators during transaction commit.",
+            "default": null,
+            "nullable": true
+          },
           "splitter_chunk_size_records": {
             "type": "integer",
             "format": "int64",
@@ -8997,7 +9003,7 @@
           },
           "streaming_exchange": {
             "type": "boolean",
-            "description": "Enable streaming exchange.\n\n`false`",
+            "description": "Enable streaming exchange.",
             "default": null,
             "nullable": true
           }
