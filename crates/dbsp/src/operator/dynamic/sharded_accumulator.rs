@@ -77,7 +77,7 @@ where
             && Runtime::with_dev_tweaks(|d| d.streaming_exchange())
             && let Some(runtime) = Runtime::runtime()
             && runtime.layout().n_workers() > 1
-            && runtime.get_step_size() == StepSize::Microsteps
+            && runtime.step_size() == StepSize::Microsteps
         {
             let remote_waiter_node_id = if runtime.layout().is_multihost() {
                 let clients = ExchangeClients::for_runtime(&runtime);

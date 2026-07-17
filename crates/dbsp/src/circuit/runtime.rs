@@ -1080,7 +1080,7 @@ impl Runtime {
         self.inner().mode
     }
 
-    pub fn get_step_size(&self) -> StepSize {
+    pub fn step_size(&self) -> StepSize {
         self.inner().step_size
     }
 
