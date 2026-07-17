@@ -18,6 +18,7 @@ use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
+use datafusion::execution::memory_pool::MemoryLimit;
 use datafusion::physical_plan::{PhysicalExpr, displayable};
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
 use dbsp::circuit::tokio::TOKIO;
@@ -117,13 +118,24 @@ static MAX_CONCURRENT_READERS: AtomicUsize = AtomicUsize::new(0);
 /// out). `find_root` walks past `Context(...)` / `ArrowError(...)` wrappers
 /// so the check is robust to the deeply nested errors DataFusion typically
 /// produces during sort/merge.
-fn format_datafusion_error(prefix: &str, e: &DataFusionError) -> String {
+fn format_datafusion_error(
+    session_ctx: &SessionContext,
+    prefix: &str,
+    e: &DataFusionError,
+) -> String {
     let base = format!("{prefix}: {e:?}");
     if matches!(e.find_root(), DataFusionError::ResourcesExhausted(_)) {
+        let memory_limit = session_ctx.runtime_env().memory_pool.memory_limit();
+        let current_pool_limit = match memory_limit {
+            MemoryLimit::Finite(size) => format!("{} MB", size / 1024 / 1024),
+            MemoryLimit::Infinite => "infinite".to_string(),
+            MemoryLimit::Unknown => "unknown".to_string(),
+        };
+
         format!(
             "{base}\n\
-             DataFusion memory pool is exhausted. \
-             Consider increasing 'datafusion_memory_mb' in the pipeline runtime config. \
+             DataFusion memory pool is exhausted. Current datafusion memory pool limit: {current_pool_limit}. \
+             Consider setting or increasing 'datafusion_memory_mb' in the pipeline runtime config. \
              If raising the budget is not an option, reduce 'io_workers' / 'workers' or \
              set the env var 'DELTA_DF_TARGET_PARTITIONS=1' to lower per-scan parallelism.\n"
         )
@@ -2581,6 +2593,7 @@ impl DeltaTableInputEndpointInner {
                     );
 
                     return Err(format_datafusion_error(
+                        &self.datafusion,
                         &format!("error retrieving batch {num_batches}"),
                         &e,
                     ));
@@ -3495,8 +3508,16 @@ async fn wait_running(receiver: &mut Receiver<PipelineState>) {
 
 #[cfg(test)]
 mod format_datafusion_error_tests {
+    use std::sync::Arc;
+
     use super::format_datafusion_error;
-    use datafusion::common::DataFusionError;
+    use datafusion::{
+        common::DataFusionError,
+        execution::{
+            SessionStateBuilder, memory_pool::GreedyMemoryPool, runtime_env::RuntimeEnvBuilder,
+        },
+        prelude::SessionContext,
+    };
 
     #[test]
     fn appends_pool_hint_for_resources_exhausted() {
@@ -3504,7 +3525,8 @@ mod format_datafusion_error_tests {
             "Failed to allocate additional 64.0 MB ...".to_string(),
         );
         let wrapped = DataFusionError::Context("external sort".to_string(), Box::new(inner));
-        let msg = format_datafusion_error("error retrieving batch 0", &wrapped);
+        let session_context = SessionContext::new();
+        let msg = format_datafusion_error(&session_context, "error retrieving batch 0", &wrapped);
         assert!(
             msg.contains("DataFusion memory pool is exhausted"),
             "missing actionable hint; got: {msg}"
@@ -3518,7 +3540,8 @@ mod format_datafusion_error_tests {
     #[test]
     fn passes_through_unrelated_errors() {
         let other = DataFusionError::Plan("bad column reference".to_string());
-        let msg = format_datafusion_error("error retrieving batch 0", &other);
+        let session_context = SessionContext::new();
+        let msg = format_datafusion_error(&session_context, "error retrieving batch 0", &other);
         assert!(
             !msg.contains("memory pool"),
             "spurious pool hint on non-exhaustion error; got: {msg}"
@@ -3526,6 +3549,30 @@ mod format_datafusion_error_tests {
         assert!(
             msg.contains("bad column reference"),
             "lost the original error text; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn logs_pool_size_correctly() {
+        let inner = DataFusionError::ResourcesExhausted(
+            "Failed to allocate additional 64.0 MB ...".to_string(),
+        );
+        let wrapped = DataFusionError::Context("external sort".to_string(), Box::new(inner));
+        // restrict to using at most 10MB of memory
+        let pool_size = 10 * 1024 * 1024;
+        let runtime_env = RuntimeEnvBuilder::new()
+            .with_memory_pool(Arc::new(GreedyMemoryPool::new(pool_size)))
+            .build()
+            .unwrap();
+        let state = SessionStateBuilder::new()
+            .with_runtime_env(runtime_env.into())
+            .with_default_features()
+            .build();
+        let session_context = SessionContext::new_with_state(state);
+        let msg = format_datafusion_error(&session_context, "error retrieving batch 0", &wrapped);
+        assert!(
+            msg.contains("Current datafusion memory pool limit: 10 MB"),
+            "missing actionable hint; got: {msg}"
         );
     }
 }
