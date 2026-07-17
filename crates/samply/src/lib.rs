@@ -721,6 +721,7 @@ impl Capture {
         }
 
         Annotations {
+            start_time: self.start_time,
             end_time,
             markers,
             memory: self.take_memory(),
@@ -825,6 +826,7 @@ impl AnnotationOptions {
 ///
 /// Obtained from [Capture::finish].
 pub struct Annotations {
+    start_time: Timestamp,
     end_time: Timestamp,
     markers: HashMap<usize, (Option<String>, Blocks)>,
     memory: Vec<(Timestamp, usize)>,
@@ -970,7 +972,7 @@ impl Annotations {
                     thread
                         .markers
                         .start_time
-                        .push(to_profile_time(marker.start));
+                        .push(to_profile_time(marker.start.max(self.start_time)));
                     thread.markers.end_time.push(to_profile_time(
                         marker.end.timestamp().unwrap_or(self.end_time),
                     ));
