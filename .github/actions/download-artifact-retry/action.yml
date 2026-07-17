@@ -52,8 +52,8 @@ runs:
         artifact_json=$(curl -fsSL \
           -H "Authorization: Bearer ${GH_TOKEN}" \
           -H "Accept: application/vnd.github+json" \
-          "${api}/actions/runs/${RUN_ID}/artifacts?per_page=100" \
-          | jq -c --arg name "${ARTIFACT_NAME}" '.artifacts[] | select(.name == $name)')
+          "${api}/actions/runs/${RUN_ID}/artifacts?name=${ARTIFACT_NAME}&per_page=100" \
+          | jq -c '.artifacts[0] // empty')
 
         if [ -z "$artifact_json" ]; then
           echo "::error::No artifact named '${ARTIFACT_NAME}' found in run ${RUN_ID}"
@@ -61,8 +61,13 @@ runs:
         fi
 
         artifact_id=$(jq -r '.id' <<<"$artifact_json")
-        expected_size=$(jq -r '.size_in_bytes' <<<"$artifact_json")
-        expected_digest=$(jq -r '.digest' <<<"$artifact_json" | sed 's/^sha256://')
+        expected_size=$(jq -r '.size_in_bytes // empty' <<<"$artifact_json")
+        expected_digest=$(jq -r '.digest // empty' <<<"$artifact_json" | sed 's/^sha256://')
+
+        if [ -z "$expected_digest" ] || [ -z "$expected_size" ]; then
+          echo "::error::Artifact '${ARTIFACT_NAME}' has no recorded size/digest to verify against, cannot verify integrity"
+          exit 1
+        fi
 
         zip_path="$(mktemp -d)/${ARTIFACT_NAME}.zip"
         attempt=1
@@ -70,23 +75,29 @@ runs:
         while true; do
           echo "==> Download attempt ${attempt}/${MAX_ATTEMPTS}: ${ARTIFACT_NAME} (expecting ${expected_size} bytes)"
 
-          curl -fsSL \
+          curl -fsSL --retry 3 --retry-connrefused --retry-delay 2 \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -o "$zip_path" \
             "${api}/actions/artifacts/${artifact_id}/zip"
 
-          actual_digest=$(sha256sum "$zip_path" | awk '{print $1}')
+          actual_size=$(wc -c <"$zip_path" | tr -d ' ')
 
-          if [ "$actual_digest" = "$expected_digest" ]; then
-            echo "==> Checksum verified (sha256:${actual_digest})"
-            break
+          if [ "$actual_size" != "$expected_size" ]; then
+            echo "::warning::Size mismatch on attempt ${attempt} for '${ARTIFACT_NAME}' (expected ${expected_size} bytes, got ${actual_size}) — download was truncated"
+          else
+            actual_digest=$(sha256sum "$zip_path" | awk '{print $1}')
+
+            if [ "$actual_digest" = "$expected_digest" ]; then
+              echo "==> Checksum verified (sha256:${actual_digest})"
+              break
+            fi
+
+            echo "::warning::Checksum mismatch on attempt ${attempt} for '${ARTIFACT_NAME}' (expected sha256:${expected_digest}, got sha256:${actual_digest}) — download was corrupted in transit"
           fi
 
-          echo "::warning::Checksum mismatch on attempt ${attempt} for '${ARTIFACT_NAME}' (expected sha256:${expected_digest}, got sha256:${actual_digest}) — download was truncated or corrupted in transit"
-
           if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
-            echo "::error::Artifact '${ARTIFACT_NAME}' failed checksum verification after ${MAX_ATTEMPTS} attempts"
+            echo "::error::Artifact '${ARTIFACT_NAME}' failed integrity verification after ${MAX_ATTEMPTS} attempts"
             exit 1
           fi
 
