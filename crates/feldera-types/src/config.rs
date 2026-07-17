@@ -136,6 +136,16 @@ impl PipelineConfig {
         )
     }
 
+    /// Extract the compiler-generated subset of the configuration (connectors
+    /// and program IR) used to compute pipeline diffs.
+    pub fn program_info_subset(&self) -> PipelineConfigProgramInfo {
+        PipelineConfigProgramInfo {
+            inputs: self.inputs.clone(),
+            outputs: self.outputs.clone(),
+            program_ir: self.program_ir.clone(),
+        }
+    }
+
     pub fn with_storage(self, storage: Option<(StorageConfig, StorageOptions)>) -> Self {
         let (storage_config, storage_options) = storage.unzip();
         Self {

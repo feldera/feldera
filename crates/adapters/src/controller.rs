@@ -146,7 +146,6 @@ use validate::validate_config;
 mod checkpoint;
 mod error;
 mod journal;
-mod pipeline_diff;
 #[cfg(target_os = "macos")]
 mod samply_spawn;
 mod stats;
@@ -176,8 +175,8 @@ use feldera_types::config::{
 };
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
+pub use feldera_types::pipeline_diff::compute_pipeline_diff;
 use feldera_types::program_schema::{SqlIdentifier, canonical_identifier};
-pub use pipeline_diff::compute_pipeline_diff;
 pub use stats::{CompletionToken, ControllerStatus, ControllerStatusContext, InputEndpointStatus};
 
 /// Maximal number of concurrent API connections per circuit
@@ -5336,7 +5335,10 @@ impl ControllerInit {
 
         let storage = storage.with_init_checkpoint(circuit.map(|circuit| circuit.uuid));
 
-        let pipeline_diff = compute_pipeline_diff(&checkpoint_config, &config)?;
+        let pipeline_diff = compute_pipeline_diff(
+            &checkpoint_config.program_info_subset(),
+            &config.program_info_subset(),
+        )?;
 
         // Record which surviving output connectors changed across the
         // restart. The cumulative `transmitted_records` counter is preserved

@@ -1666,3 +1666,13 @@ impl From<SuspendError> for ControllerError {
         Self::SuspendError(error)
     }
 }
+
+impl From<feldera_types::pipeline_diff::PipelineDiffError> for ControllerError {
+    fn from(error: feldera_types::pipeline_diff::PipelineDiffError) -> Self {
+        match error {
+            feldera_types::pipeline_diff::PipelineDiffError::BootstrapNotAllowed { error } => {
+                Self::BootstrapNotAllowed { error }
+            }
+        }
+    }
+}
