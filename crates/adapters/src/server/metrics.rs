@@ -5,8 +5,8 @@ use itertools::Itertools;
 use std::{
     fmt::{Display, Write},
     sync::atomic::{
-        AtomicI8, AtomicI16, AtomicI32, AtomicI64, AtomicU8, AtomicU16, AtomicU32, AtomicU64,
-        Ordering,
+        AtomicI8, AtomicI16, AtomicI32, AtomicI64, AtomicIsize, AtomicU8, AtomicU16, AtomicU32,
+        AtomicU64, AtomicUsize, Ordering,
     },
 };
 
@@ -737,10 +737,12 @@ from_atomic!(AtomicU8);
 from_atomic!(AtomicU16);
 from_atomic!(AtomicU32);
 from_atomic!(AtomicU64);
+from_atomic!(AtomicUsize);
 from_atomic!(AtomicI8);
 from_atomic!(AtomicI16);
 from_atomic!(AtomicI32);
 from_atomic!(AtomicI64);
+from_atomic!(AtomicIsize);
 
 /// Represents `DateTime` in metrics as the number of seconds since the Unix
 /// epoch.
