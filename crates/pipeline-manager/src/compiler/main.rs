@@ -5,7 +5,8 @@ use crate::compiler::rust_compiler::{
     perform_rust_compilation, rust_compiler_task, RustCompilationError, RustCompilationResult,
 };
 use crate::compiler::sql_compiler::{
-    perform_sql_compilation, sql_compiler_task, SqlCompilationError,
+    ephemeral_compilation_dir, perform_sql_compilation, sql_compiler_task, validate_program,
+    ProgramValidationRequest, SqlCompilationError, SqlCompilationOutput,
 };
 use crate::compiler::util::{
     pipeline_binary_filename, program_info_filename, validate_is_sha256_checksum,
@@ -472,6 +473,29 @@ async fn upload_program_info(
     })))
 }
 
+/// Validates a SQL program by running the SQL compiler without persisting
+/// anything or building the Rust binary. Returns the derived schema and
+/// connectors, and, when `ir` is set in the request, the program IR.
+///
+/// Backs the user-facing `/v0/validate_program` endpoint and supplies the IR to
+/// the `/diff` endpoint. Always responds with HTTP 200 and a
+/// `ValidateProgramResponse`; transport-level failures surface on the caller side.
+#[post("/validate_program")]
+async fn validate_program_endpoint(
+    common_config: web::Data<CommonConfig>,
+    config: web::Data<CompilerConfig>,
+    body: web::Json<ProgramValidationRequest>,
+) -> Result<HttpResponse, ManagerError> {
+    let ProgramValidationRequest {
+        program_config,
+        program_code,
+        ir,
+    } = body.into_inner();
+    let response =
+        validate_program(&common_config, &config, &program_config, &program_code, ir).await;
+    Ok(HttpResponse::Ok().json(response))
+}
+
 async fn save_file(
     target_file_path: &Path,
     mut payload: web::Payload,
@@ -556,6 +580,12 @@ async fn create_working_directory_if_not_exists(
             })?;
         info!("Compiler server has created a new working directory");
     }
+
+    // Wipe leftover ephemeral (IR-only) compilation directories from a previous
+    // run; no compilation is in progress at startup, so any that exist are
+    // orphans (see `ephemeral_compilation_dir`).
+    let _ = fs::remove_dir_all(ephemeral_compilation_dir(config)).await;
+
     Ok(())
 }
 
@@ -601,6 +631,7 @@ pub async fn compiler_precompile(
         program_version,
         &program_config,
         program_code,
+        SqlCompilationOutput::Full,
     )
     .await
     .map_err(|e| match e {
@@ -712,16 +743,19 @@ pub async fn compiler_main(
 
     // Spawn HTTP server thread
     let config = web::Data::new(config.clone());
+    let common_config_data = web::Data::new(common_config.clone());
     let probe = web::Data::new(DbProbe::new(db.clone()).await);
     let server = HttpServer::new(move || {
         actix_web::App::new()
             .app_data(config.clone())
+            .app_data(common_config_data.clone())
             .app_data(probe.clone())
             .service(check_compilation_artifacts)
             .service(get_binary)
             .service(get_program_info)
             .service(upload_binary)
             .service(upload_program_info)
+            .service(validate_program_endpoint)
             .service(healthz)
     })
     .workers(common_config.http_workers)

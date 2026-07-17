@@ -545,6 +545,47 @@ async fn read_program_code(
     }
 }
 
+/// Validate a SQL program via `POST /v0/validate_program` and print the result
+/// (success, SQL errors/warnings, or a system error) as pretty JSON. Validation
+/// failures are reported in the output; the command exits non-zero only on a
+/// system-level error.
+async fn validate_program(
+    program_path: Option<String>,
+    stdin: bool,
+    runtime_version: Option<String>,
+    ir: bool,
+    client: Client,
+) {
+    let program_code = match read_program_code(program_path, stdin).await {
+        Ok(Some(program_code)) => program_code,
+        Ok(None) => {
+            eprintln!("No SQL program provided: pass a program file path or --stdin.");
+            std::process::exit(1);
+        }
+        Err(()) => std::process::exit(1),
+    };
+    let response = client
+        .post_validate_program()
+        .body(ValidateProgramRequest {
+            program_code,
+            runtime_version,
+            ir: Some(ir),
+        })
+        .send()
+        .await
+        .map_err(handle_errors_fatal(
+            client.baseurl().clone(),
+            "Failed to validate program",
+            1,
+        ))
+        .unwrap();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&response.into_inner())
+            .expect("failed to serialize validation response")
+    );
+}
+
 async fn wait_for_status(
     client: &Client,
     name: String,
@@ -2135,6 +2176,36 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 }
             }
         }
+        PipelineAction::Diff {
+            name,
+            program_path,
+            stdin,
+            runtime_version,
+        } => {
+            let program_code = read_program_code(program_path, stdin)
+                .await
+                .unwrap_or_else(|()| std::process::exit(1));
+            let response = client
+                .post_pipeline_diff()
+                .pipeline_name(name.clone())
+                .body(PipelineDiffRequest {
+                    program_code,
+                    runtime_version,
+                })
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to compute pipeline diff",
+                    1,
+                ))
+                .unwrap();
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&response.into_inner())
+                    .expect("failed to serialize pipeline diff")
+            );
+        }
         PipelineAction::Rebalance { name } => {
             client
                 .post_pipeline_rebalance()
@@ -3147,6 +3218,12 @@ fn main() {
                 Commands::Apikey { action } => api_key_commands(cli.format, action, client()).await,
                 Commands::Pipelines => pipelines(cli.format, client()).await,
                 Commands::Pipeline(action) => pipeline(cli.format, action, client()).await,
+                Commands::ValidateProgram {
+                    program_path,
+                    stdin,
+                    runtime_version,
+                    ir,
+                } => validate_program(program_path, stdin, runtime_version, ir, client()).await,
                 Commands::Cluster { action } => cluster(cli.format, action, client()).await,
                 Commands::Debug { action } => debug::debug(cli.format, action, client()).await,
             }

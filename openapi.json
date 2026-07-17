@@ -3569,6 +3569,105 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/diff": {
+      "post": {
+        "tags": [
+          "Pipeline Lifecycle"
+        ],
+        "summary": "Compute Program Diff",
+        "description": "Compute the diff between the pipeline's current program and a proposed new\nversion, without modifying or restarting the pipeline.\n\nThe diff lists the tables, views, and connectors that would be added,\nremoved, or modified. It is the same diff shown when approving changes during\nbootstrapping, letting you preview the effect of a change before applying it.\n\nThe baseline is the pipeline's currently configured program compiled with its\nruntime, not necessarily the program in the latest checkpoint (which may have\nbeen produced by a different program or runtime version).",
+        "operationId": "post_pipeline_diff",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The proposed new SQL program and/or runtime version (both optional)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PipelineDiffRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Diff successfully computed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineDiff"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The new program failed to compile or the change cannot be bootstrapped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline does not exist or its current program has not been compiled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The compiler service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The compiler did not respond within the configured timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/dismiss_error": {
       "post": {
         "tags": [
@@ -6979,6 +7078,84 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/validate_program": {
+      "post": {
+        "tags": [
+          "Pipeline Lifecycle"
+        ],
+        "summary": "Validate Program",
+        "description": "Validate a SQL program by compiling it, without creating a pipeline or\nbuilding the pipeline binary. Reports SQL errors and warnings and the derived\nschema and connectors. Set `ir` to also return the program IR (dataflow).\n\nNote that this endpoint returns HTTP 200, regardless of whether validation\nsucceeds or fails. The validation result, including any compiler warnings and errors,\nis encoded in the `ValidateProgramResponse` response body.",
+        "operationId": "post_validate_program",
+        "requestBody": {
+          "description": "The SQL program to validate, an optional runtime version, and whether to return the IR",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateProgramRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Validation completed; the body reports success, SQL errors, or a system error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidateProgramResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The requested runtime version is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The compiler service is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The compiler did not respond within the configured timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -11374,6 +11551,22 @@
           }
         }
       },
+      "PipelineDiffRequest": {
+        "type": "object",
+        "description": "Request body for the pipeline diff endpoint.",
+        "properties": {
+          "program_code": {
+            "type": "string",
+            "description": "New SQL program code to compare against. If omitted, the pipeline's\ncurrent program code is used.",
+            "nullable": true
+          },
+          "runtime_version": {
+            "type": "string",
+            "description": "Runtime version to compile the new program with: a version tag\n(`vX.Y.Z`) or a 40-character git SHA. If omitted, the platform's default\nruntime is used.",
+            "nullable": true
+          }
+        }
+      },
       "PipelineFieldSelector": {
         "type": "string",
         "enum": [
@@ -14592,6 +14785,91 @@
             "type": "string"
           }
         }
+      },
+      "ValidateProgramRequest": {
+        "type": "object",
+        "description": "Request body for the program validation endpoint.",
+        "required": [
+          "program_code"
+        ],
+        "properties": {
+          "ir": {
+            "type": "boolean",
+            "description": "Return the program IR (dataflow) in the response. `false` by default;\nmost callers only need to know whether the program is valid."
+          },
+          "program_code": {
+            "type": "string",
+            "description": "SQL program code to validate."
+          },
+          "runtime_version": {
+            "type": "string",
+            "description": "Runtime version to compile with: a version tag (`vX.Y.Z`) or a\n40-character git SHA. If omitted, the platform's default runtime is used.",
+            "nullable": true
+          }
+        }
+      },
+      "ValidateProgramResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "Success"
+            ],
+            "properties": {
+              "Success": {
+                "type": "object",
+                "description": "Validation succeeded; `program_info` is the serialized `ProgramInfo` with\nthe Rust artifacts omitted (and the dataflow omitted unless `ir` was set).",
+                "required": [
+                  "program_info"
+                ],
+                "properties": {
+                  "program_info": {}
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "SqlError"
+            ],
+            "properties": {
+              "SqlError": {
+                "type": "object",
+                "description": "The SQL program failed to compile.",
+                "required": [
+                  "info"
+                ],
+                "properties": {
+                  "info": {
+                    "$ref": "#/components/schemas/SqlCompilationInfo"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "SystemError"
+            ],
+            "properties": {
+              "SystemError": {
+                "type": "object",
+                "description": "A system error prevented validation (e.g., the runtime-specific SQL\ncompiler could not be downloaded).",
+                "required": [
+                  "error"
+                ],
+                "properties": {
+                  "error": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": "Outcome of validating a SQL program."
       },
       "Version": {
         "type": "integer",

@@ -2153,6 +2153,7 @@ mod test {
                 api_port: 8080,
                 compiler_host,
                 compiler_port,
+                sql_compilation_timeout_secs: 120,
                 runner_host: "127.0.0.1".to_string(),
                 runner_port: 8089,
                 http_workers: 1,

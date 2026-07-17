@@ -22,6 +22,7 @@ use feldera_ir::Dataflow;
 use feldera_observability::ReqwestTracingExt;
 use futures_util::StreamExt;
 use indoc::formatdoc;
+use serde::{Deserialize, Serialize};
 use std::fs::Metadata;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -35,6 +36,7 @@ use tokio::{
     time::{sleep, Duration},
 };
 use tracing::{debug, error, info, trace, warn};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// The frequency at which the compiler polls the database for new SQL compilation requests.
@@ -208,6 +210,7 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
         pipeline.program_version,
         &pipeline.program_config,
         &pipeline.program_code,
+        SqlCompilationOutput::Full,
     )
     .await;
 
@@ -472,6 +475,27 @@ async fn fetch_sql_compiler(
     Ok(())
 }
 
+/// Selects what SQL compilation produces.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum SqlCompilationOutput {
+    /// Full output including the generated Rust crates (for the Rust compiler).
+    Full,
+    /// IR only: schema, dataflow, and connectors. Skips packaging the generated
+    /// Rust, which is not needed to compute pipeline diffs.
+    IrOnly,
+}
+
+/// Root directory for ephemeral (IR-only) SQL compilations. It is wiped on
+/// compiler startup so that any directory orphaned by a crash mid-compile is
+/// reaped; `cleanup_sql_compilation` deliberately ignores it, as it only manages
+/// `pipeline-<uuid>` directories.
+pub(crate) fn ephemeral_compilation_dir(config: &CompilerConfig) -> PathBuf {
+    config
+        .working_dir()
+        .join("sql-compilation")
+        .join("ephemeral")
+}
+
 /// Performs the SQL compilation:
 /// - Prepares a working directory for input and output
 /// - Call the SQL-to-DBSP compiler executable via a process
@@ -488,6 +512,7 @@ pub(crate) async fn perform_sql_compilation(
     program_version: Version,
     program_config: &serde_json::Value,
     program_code: &str,
+    output: SqlCompilationOutput,
 ) -> Result<(serde_json::Value, Duration, SqlCompilationInfo), SqlCompilationError> {
     let start = Instant::now();
 
@@ -536,11 +561,18 @@ pub(crate) async fn perform_sql_compilation(
         }
     );
 
-    // Recreate working directory for the input/output of the SQL compiler
-    let working_dir = config
-        .working_dir()
-        .join("sql-compilation")
-        .join(format!("pipeline-{pipeline_id}"));
+    // Recreate working directory for the input/output of the SQL compiler.
+    // IR-only (ephemeral) compiles run under a dedicated `ephemeral/` root (wiped
+    // on compiler startup); see `ephemeral_compilation_dir`.
+    let working_dir = match output {
+        SqlCompilationOutput::Full => config
+            .working_dir()
+            .join("sql-compilation")
+            .join(format!("pipeline-{pipeline_id}")),
+        SqlCompilationOutput::IrOnly => {
+            ephemeral_compilation_dir(config).join(pipeline_id.to_string())
+        }
+    };
     recreate_dir(&working_dir)
         .await
         .map_err(|e| SqlCompilationError::SystemError(e.to_string()))?;
@@ -769,11 +801,18 @@ pub(crate) async fn perform_sql_compilation(
             )
         })?;
 
-        // The base64-encoded gzipped tar archive of the Rust output directory
-        let main_rust = encode_dir_as_string(&output_rust_directory_path)?;
-
-        // Read stubs.rs
-        let stubs = read_file_content(&output_rust_udf_stubs_file_path).await?;
+        // For IR-only compilation (used to compute diffs), skip packaging the
+        // generated Rust: only the schema, dataflow, and connectors are needed.
+        let (main_rust, stubs) = match output {
+            SqlCompilationOutput::Full => {
+                // The base64-encoded gzipped tar archive of the Rust output directory
+                let main_rust = encode_dir_as_string(&output_rust_directory_path)?;
+                // Read stubs.rs
+                let stubs = read_file_content(&output_rust_udf_stubs_file_path).await?;
+                (main_rust, stubs)
+            }
+            SqlCompilationOutput::IrOnly => (String::new(), String::new()),
+        };
 
         // Generate the program information
         match generate_program_info(schema, main_rust, stubs, Some(dataflow)) {
@@ -798,6 +837,124 @@ pub(crate) async fn perform_sql_compilation(
         }
     } else {
         Err(SqlCompilationError::SqlError(compilation_info))
+    }
+}
+
+/// Request body for the compiler's `/validate_program` endpoint.
+///
+/// Carries a SQL program and its configuration to validate, optionally returning
+/// the IR, without creating a pipeline.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ProgramValidationRequest {
+    /// Program configuration as a JSON value (includes the runtime version).
+    pub program_config: serde_json::Value,
+    /// SQL program code to validate.
+    pub program_code: String,
+    /// Include the program IR (dataflow) in the response. When `false`, only the
+    /// schema and connectors are returned.
+    pub ir: bool,
+}
+
+/// Outcome of validating a SQL program.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub(crate) enum ValidateProgramResponse {
+    /// Validation succeeded; `program_info` is the serialized `ProgramInfo` with
+    /// the Rust artifacts omitted (and the dataflow omitted unless `ir` was set).
+    Success { program_info: serde_json::Value },
+    /// The SQL program failed to compile.
+    SqlError { info: SqlCompilationInfo },
+    /// A system error prevented validation (e.g., the runtime-specific SQL
+    /// compiler could not be downloaded).
+    SystemError { error: String },
+}
+
+/// Validate `program_code` by running the SQL compiler, without creating a
+/// pipeline or building the Rust binary. Returns the derived schema and
+/// connectors, and, when `ir` is `true`, the program IR (dataflow).
+///
+/// Runs the SQL compiler in a throwaway working directory using a synthetic
+/// pipeline id and no database connection, then removes the directory. A
+/// non-platform runtime version is downloaded on demand and requires the
+/// `runtime_version` unstable feature.
+pub(crate) async fn validate_program(
+    common_config: &CommonConfig,
+    config: &CompilerConfig,
+    program_config: &serde_json::Value,
+    program_code: &str,
+    ir: bool,
+) -> ValidateProgramResponse {
+    // Reject a custom runtime version when the feature is disabled instead of
+    // silently falling back to the platform runtime, which would produce a
+    // misleading result.
+    match validate_program_config(program_config, true) {
+        Ok(validated) => {
+            if validated
+                .runtime_version
+                .as_ref()
+                .is_some_and(|selector| !selector.is_platform())
+                && !has_unstable_feature("runtime_version")
+            {
+                return ValidateProgramResponse::SystemError {
+                    error: "A custom runtime version was requested, but this Feldera instance does not have the 'runtime_version' feature enabled.".to_string(),
+                };
+            }
+        }
+        Err(e) => {
+            return ValidateProgramResponse::SystemError {
+                error: format!("Invalid program configuration: {e}"),
+            };
+        }
+    }
+
+    let synthetic_id = PipelineId(Uuid::now_v7());
+    let result = perform_sql_compilation(
+        common_config,
+        config,
+        None,
+        TenantId(Uuid::nil()),
+        synthetic_id,
+        None,
+        &common_config.platform_version,
+        Version(1),
+        program_config,
+        program_code,
+        SqlCompilationOutput::IrOnly,
+    )
+    .await;
+
+    // Remove the throwaway working directory (best effort). Any directory left
+    // behind by a crash before this point is reaped when the ephemeral root is
+    // wiped on the next compiler startup.
+    let working_dir = ephemeral_compilation_dir(config).join(synthetic_id.to_string());
+    let _ = fs::remove_dir_all(&working_dir).await;
+
+    match result {
+        Ok((mut program_info, _duration, _info)) => {
+            if let Some(object) = program_info.as_object_mut() {
+                // The generated Rust and UDF stubs are build artifacts, not part
+                // of a validation result; always drop them.
+                object.remove("main_rust");
+                object.remove("udf_stubs");
+                // The IR (dataflow) is only returned on request; most callers
+                // just want to know whether the program is valid.
+                if !ir {
+                    object.insert("dataflow".to_string(), serde_json::Value::Null);
+                }
+            }
+            ValidateProgramResponse::Success { program_info }
+        }
+        Err(SqlCompilationError::SqlError(info)) => ValidateProgramResponse::SqlError { info },
+        Err(SqlCompilationError::SystemError(error)) => {
+            ValidateProgramResponse::SystemError { error }
+        }
+        Err(SqlCompilationError::TerminatedBySignal) => ValidateProgramResponse::SystemError {
+            error: "SQL compilation was terminated by a signal".to_string(),
+        },
+        Err(SqlCompilationError::NoLongerExists | SqlCompilationError::Outdated) => {
+            ValidateProgramResponse::SystemError {
+                error: "SQL compilation was unexpectedly preempted".to_string(),
+            }
+        }
     }
 }
 

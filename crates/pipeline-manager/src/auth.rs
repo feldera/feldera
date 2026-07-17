@@ -1056,6 +1056,7 @@ mod test {
             api_port: 0,
             compiler_host: "127.0.0.1".to_string(),
             compiler_port: 8085,
+            sql_compilation_timeout_secs: 120,
             runner_host: "127.0.0.1".to_string(),
             runner_port: 8089,
             platform_version: "v0".to_string(),

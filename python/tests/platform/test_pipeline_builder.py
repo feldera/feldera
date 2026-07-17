@@ -30,6 +30,25 @@ class TestPipelineBuilder(PipelineTestCase):
 
         pipeline_name = self.register_for_cleanup("test_connector_orchestration")
 
+        # Validate the program via /validate_program without creating a pipeline.
+        # The result reports success plus the derived schema and connectors; the
+        # IR (dataflow) is omitted unless requested.
+        validated = TEST_CLIENT.validate_program(sql)
+        assert "Success" in validated, validated
+        program_info = validated["Success"]["program_info"]
+        assert "numbers.c1" in program_info["input_connectors"]
+        assert program_info["schema"] is not None
+        assert program_info["dataflow"] is None  # ir defaults to False
+        # Requesting the IR includes the dataflow.
+        validated_ir = TEST_CLIENT.validate_program(sql, ir=True)
+        assert validated_ir["Success"]["program_info"]["dataflow"] is not None
+        # An invalid program is reported as a SqlError in the result, not raised.
+        invalid = TEST_CLIENT.validate_program(
+            "CREATE MATERIALIZED VIEW v AS SELECT * FROM no_such_table;"
+        )
+        assert "SqlError" in invalid, invalid
+        assert invalid["SqlError"]["info"]["messages"]
+
         pipeline = PipelineBuilder(
             TEST_CLIENT,
             pipeline_name,

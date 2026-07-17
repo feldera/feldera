@@ -30,6 +30,12 @@ pub enum ApiError {
     ProgramInfoMissesDataflow { pipeline_name: String },
     InvalidProgramInfo { error: String },
     ProgramNotCompiled { pipeline_name: String },
+    CompilerUnavailable { reason: String },
+    CompilerTimeout { timeout_secs: u64 },
+    InvalidRuntimeVersion { error: String },
+    InvalidNewProgramSql { error: String },
+    NewProgramCompilationFailed { error: String },
+    BootstrapNotAllowed { error: String },
 }
 
 impl DetailedError for ApiError {
@@ -53,6 +59,12 @@ impl DetailedError for ApiError {
             Self::ProgramInfoMissesDataflow { .. } => Cow::from("ProgramInfoMissesDataflow"),
             Self::InvalidProgramInfo { .. } => Cow::from("InvalidProgramInfo"),
             Self::ProgramNotCompiled { .. } => Cow::from("ProgramNotCompiled"),
+            Self::CompilerUnavailable { .. } => Cow::from("CompilerUnavailable"),
+            Self::CompilerTimeout { .. } => Cow::from("CompilerTimeout"),
+            Self::InvalidRuntimeVersion { .. } => Cow::from("InvalidRuntimeVersion"),
+            Self::InvalidNewProgramSql { .. } => Cow::from("InvalidNewProgramSql"),
+            Self::NewProgramCompilationFailed { .. } => Cow::from("NewProgramCompilationFailed"),
+            Self::BootstrapNotAllowed { .. } => Cow::from("BootstrapNotAllowed"),
         }
     }
 }
@@ -121,6 +133,33 @@ impl Display for ApiError {
                     "Pipeline '{pipeline_name}' has not been compiled yet. Please compile the pipeline first."
                 )
             }
+            Self::CompilerUnavailable { reason } => {
+                write!(f, "The compiler service is unavailable: {reason}")
+            }
+            Self::CompilerTimeout { timeout_secs } => {
+                write!(
+                    f,
+                    "The compiler did not respond within the configured {timeout_secs}s timeout. If the program is large and needs longer to compile, increase the 'sql_compilation_timeout_secs' configuration setting (or the FELDERA_SQL_COMPILATION_TIMEOUT_SECS environment variable)."
+                )
+            }
+            Self::InvalidRuntimeVersion { error } => {
+                write!(f, "Invalid runtime version: {error}")
+            }
+            Self::InvalidNewProgramSql { error } => {
+                write!(
+                    f,
+                    "The proposed new SQL program has compilation errors: {error}"
+                )
+            }
+            Self::NewProgramCompilationFailed { error } => {
+                write!(
+                    f,
+                    "The proposed new program could not be compiled because of an internal error (for example, the compiler service failed or a runtime version could not be downloaded): {error}"
+                )
+            }
+            Self::BootstrapNotAllowed { error } => {
+                write!(f, "The requested change cannot be bootstrapped: {error}")
+            }
         }
     }
 }
@@ -152,6 +191,12 @@ impl ResponseError for ApiError {
             Self::ProgramInfoMissesDataflow { .. } => StatusCode::NOT_FOUND,
             Self::InvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::ProgramNotCompiled { .. } => StatusCode::NOT_FOUND,
+            Self::CompilerUnavailable { .. } => StatusCode::SERVICE_UNAVAILABLE,
+            Self::CompilerTimeout { .. } => StatusCode::GATEWAY_TIMEOUT,
+            Self::InvalidRuntimeVersion { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidNewProgramSql { .. } => StatusCode::BAD_REQUEST,
+            Self::NewProgramCompilationFailed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::BootstrapNotAllowed { .. } => StatusCode::BAD_REQUEST,
         }
     }
 

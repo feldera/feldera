@@ -3,6 +3,8 @@ use crate::api::examples;
 use crate::api::main::ServerState;
 #[cfg(not(feature = "feldera-enterprise"))]
 use crate::common_error::CommonError;
+use crate::compiler::{ProgramValidationRequest, ValidateProgramResponse};
+use crate::config::CommonConfig;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::types::combined_status::{combine_since, CombinedDesiredStatus, CombinedStatus};
@@ -10,7 +12,9 @@ use crate::db::types::pipeline::{
     ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PatchClientMetadata,
     PipelineDescr, PipelineId,
 };
-use crate::db::types::program::{ProgramConfig, ProgramError, ProgramStatus};
+use crate::db::types::program::{
+    ProgramConfig, ProgramError, ProgramInfo, ProgramStatus, RuntimeSelector,
+};
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
@@ -30,6 +34,7 @@ use chrono::{DateTime, Utc};
 use feldera_types::adapter_stats::PipelineStatsErrorsResponse;
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
+use feldera_types::pipeline_diff::{compute_pipeline_diff, PipelineDiff};
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
     BootstrapConfig, BootstrapPolicy, ConnectorStats, RuntimeDesiredStatus, RuntimeStatus,
@@ -40,7 +45,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-#[cfg(feature = "feldera-enterprise")]
 use std::time::Duration;
 use tracing::{debug, error, info};
 use utoipa::{IntoParams, ToSchema};
@@ -1337,6 +1341,311 @@ pub(crate) async fn post_update_runtime(
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(returned_pipeline))
+}
+
+/// Request body for the pipeline diff endpoint.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PipelineDiffRequest {
+    /// New SQL program code to compare against. If omitted, the pipeline's
+    /// current program code is used.
+    #[serde(default)]
+    pub program_code: Option<String>,
+
+    /// Runtime version to compile the new program with: a version tag
+    /// (`vX.Y.Z`) or a 40-character git SHA. If omitted, the platform's default
+    /// runtime is used.
+    #[serde(default)]
+    pub runtime_version: Option<String>,
+}
+
+/// Validate a program on the compiler service and return its raw response.
+///
+/// Only transport-level failures produce an error (`CompilerUnavailable`); SQL
+/// and system errors are carried in the returned [`ValidateProgramResponse`], so
+/// each caller can decide how to surface them. `ir` requests the program IR
+/// (needed for computing a diff, unnecessary for plain validation).
+async fn call_compiler_validate(
+    common_config: &CommonConfig,
+    program_config: serde_json::Value,
+    program_code: String,
+    ir: bool,
+) -> Result<ValidateProgramResponse, ApiError> {
+    let protocol = if common_config.enable_https {
+        "https"
+    } else {
+        "http"
+    };
+    let url = format!(
+        "{protocol}://{}:{}/validate_program",
+        common_config.compiler_host, common_config.compiler_port
+    );
+    let client = common_config.reqwest_client().await;
+    let response = client
+        .post(&url)
+        .timeout(Duration::from_secs(
+            common_config.sql_compilation_timeout_secs,
+        ))
+        .json(&ProgramValidationRequest {
+            program_config,
+            program_code,
+            ir,
+        })
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_timeout() {
+                ApiError::CompilerTimeout {
+                    timeout_secs: common_config.sql_compilation_timeout_secs,
+                }
+            } else {
+                ApiError::CompilerUnavailable {
+                    reason: format!("failed to reach the compiler service: {e}"),
+                }
+            }
+        })?;
+    if !response.status().is_success() {
+        return Err(ApiError::CompilerUnavailable {
+            reason: format!("compiler service returned status {}", response.status()),
+        });
+    }
+    response
+        .json::<ValidateProgramResponse>()
+        .await
+        .map_err(|e| ApiError::CompilerUnavailable {
+            reason: format!("invalid response from the compiler service: {e}"),
+        })
+}
+
+/// Compute Program Diff
+///
+/// Compute the diff between the pipeline's current program and a proposed new
+/// version, without modifying or restarting the pipeline.
+///
+/// The diff lists the tables, views, and connectors that would be added,
+/// removed, or modified. It is the same diff shown when approving changes during
+/// bootstrapping, letting you preview the effect of a change before applying it.
+///
+/// The baseline is the pipeline's currently configured program compiled with its
+/// runtime, not necessarily the program in the latest checkpoint (which may have
+/// been produced by a different program or runtime version).
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    request_body(
+        content = PipelineDiffRequest,
+        description = "The proposed new SQL program and/or runtime version (both optional)"
+    ),
+    responses(
+        (status = OK
+            , description = "Diff successfully computed"
+            , body = PipelineDiff),
+        (status = NOT_FOUND
+            , description = "Pipeline does not exist or its current program has not been compiled"
+            , body = ErrorResponse),
+        (status = BAD_REQUEST
+            , description = "The new program failed to compile or the change cannot be bootstrapped"
+            , body = ErrorResponse),
+        (status = SERVICE_UNAVAILABLE
+            , description = "The compiler service is unavailable"
+            , body = ErrorResponse),
+        (status = GATEWAY_TIMEOUT
+            , description = "The compiler did not respond within the configured timeout"
+            , body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline Lifecycle"
+)]
+#[post("/pipelines/{pipeline_name}/diff")]
+pub(crate) async fn post_pipeline_diff(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    body: web::Json<PipelineDiffRequest>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    let request = body.into_inner();
+
+    // Load the pipeline together with its compiled program info.
+    let pipeline = state
+        .db
+        .lock()
+        .await
+        .get_pipeline(*tenant_id, &pipeline_name)
+        .await?;
+
+    // The current program must be successfully compiled and carry a dataflow IR.
+    if pipeline.program_status != ProgramStatus::Success {
+        return Err(ApiError::ProgramNotCompiled { pipeline_name }.into());
+    }
+    let Some(program_info_value) = &pipeline.program_info else {
+        return Err(ApiError::ProgramNotCompiled { pipeline_name }.into());
+    };
+    let old_program_info: ProgramInfo = serde_json::from_value(program_info_value.clone())
+        .map_err(|e| ApiError::InvalidProgramInfo {
+            error: format!("failed to parse the current program info: {e}"),
+        })?;
+    if old_program_info.dataflow.is_none() {
+        return Err(ApiError::ProgramInfoMissesDataflow { pipeline_name }.into());
+    }
+    let old_subset = old_program_info.to_pipeline_config_program_info();
+
+    // Determine the new SQL program and runtime version.
+    let new_program_code = request
+        .program_code
+        .unwrap_or_else(|| pipeline.program_code.clone());
+    let runtime_version = match request.runtime_version {
+        None => None,
+        Some(selector) => Some(
+            RuntimeSelector::try_from(selector)
+                .map_err(|error| ApiError::InvalidRuntimeVersion { error })?,
+        ),
+    };
+    let program_config = ProgramConfig {
+        profile: None,
+        cache: false,
+        runtime_version,
+        use_platform_compiler: false,
+    };
+    let program_config = serde_json::to_value(&program_config).map_err(|e| {
+        ApiError::NewProgramCompilationFailed {
+            error: format!("failed to serialize program configuration: {e}"),
+        }
+    })?;
+
+    // Validate the new program on the compiler service, requesting the IR
+    // (`ir = true`) because the diff is computed from it.
+    let new_program_info_value =
+        match call_compiler_validate(&state.common_config, program_config, new_program_code, true)
+            .await?
+        {
+            ValidateProgramResponse::Success { program_info } => program_info,
+            ValidateProgramResponse::SqlError { info } => {
+                return Err(ApiError::InvalidNewProgramSql {
+                    error: serde_json::to_string_pretty(&info.messages).unwrap_or_default(),
+                }
+                .into());
+            }
+            ValidateProgramResponse::SystemError { error } => {
+                return Err(ApiError::NewProgramCompilationFailed { error }.into());
+            }
+        };
+    let new_program_info: ProgramInfo =
+        serde_json::from_value(new_program_info_value).map_err(|e| {
+            ApiError::InvalidProgramInfo {
+                error: format!("failed to parse the new program info: {e}"),
+            }
+        })?;
+    let new_subset = new_program_info.to_pipeline_config_program_info();
+
+    // Compute the diff between the current and the proposed program.
+    let diff: PipelineDiff = compute_pipeline_diff(&old_subset, &new_subset).map_err(|e| {
+        ApiError::BootstrapNotAllowed {
+            error: e.to_string(),
+        }
+    })?;
+
+    info!(
+        pipeline = %pipeline_name,
+        tenant = %tenant_id.0,
+        "Computed pipeline diff"
+    );
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(diff))
+}
+
+/// Request body for the program validation endpoint.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ValidateProgramRequest {
+    /// SQL program code to validate.
+    pub program_code: String,
+
+    /// Runtime version to compile with: a version tag (`vX.Y.Z`) or a
+    /// 40-character git SHA. If omitted, the platform's default runtime is used.
+    #[serde(default)]
+    pub runtime_version: Option<String>,
+
+    /// Return the program IR (dataflow) in the response. `false` by default;
+    /// most callers only need to know whether the program is valid.
+    #[serde(default)]
+    pub ir: bool,
+}
+
+/// Validate Program
+///
+/// Validate a SQL program by compiling it, without creating a pipeline or
+/// building the pipeline binary. Reports SQL errors and warnings and the derived
+/// schema and connectors. Set `ir` to also return the program IR (dataflow).
+///
+/// Note that this endpoint returns HTTP 200, regardless of whether validation
+/// succeeds or fails. The validation result, including any compiler warnings and errors,
+/// is encoded in the `ValidateProgramResponse` response body.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    request_body(
+        content = ValidateProgramRequest,
+        description = "The SQL program to validate, an optional runtime version, and whether to return the IR"
+    ),
+    responses(
+        (status = OK
+            , description = "Validation completed; the body reports success, SQL errors, or a system error"
+            , body = ValidateProgramResponse),
+        (status = BAD_REQUEST
+            , description = "The requested runtime version is invalid"
+            , body = ErrorResponse),
+        (status = SERVICE_UNAVAILABLE
+            , description = "The compiler service is unavailable"
+            , body = ErrorResponse),
+        (status = GATEWAY_TIMEOUT
+            , description = "The compiler did not respond within the configured timeout"
+            , body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline Lifecycle"
+)]
+#[post("/validate_program")]
+pub(crate) async fn post_validate_program(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    body: web::Json<ValidateProgramRequest>,
+) -> Result<HttpResponse, ManagerError> {
+    let request = body.into_inner();
+
+    let runtime_version = match request.runtime_version {
+        None => None,
+        Some(selector) => Some(
+            RuntimeSelector::try_from(selector)
+                .map_err(|error| ApiError::InvalidRuntimeVersion { error })?,
+        ),
+    };
+    let program_config = ProgramConfig {
+        profile: None,
+        cache: false,
+        runtime_version,
+        use_platform_compiler: false,
+    };
+    let program_config = serde_json::to_value(&program_config).map_err(|e| {
+        ApiError::NewProgramCompilationFailed {
+            error: format!("failed to serialize program configuration: {e}"),
+        }
+    })?;
+
+    let response = call_compiler_validate(
+        &state.common_config,
+        program_config,
+        request.program_code,
+        request.ir,
+    )
+    .await?;
+
+    info!(tenant = %tenant_id.0, "Validated program");
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(response))
 }
 
 /// Delete Pipeline

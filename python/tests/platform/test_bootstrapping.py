@@ -54,6 +54,14 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     print("Adding new view v2")
     sql += """CREATE MATERIALIZED VIEW v2 AS SELECT COUNT(*) AS c FROM t1;
     """
+
+    # Preview the change via the /diff endpoint BEFORE modifying the pipeline.
+    # The baseline is the currently-configured program (which matches the
+    # checkpoint), so the preview must equal the approval_diff produced by the
+    # real bootstrap of the same change below.
+    endpoint_diff = pipeline.diff(program_code=sql)
+    print(f"Endpoint diff: {endpoint_diff}")
+
     pipeline.modify(sql=sql)
 
     try:
@@ -102,6 +110,9 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         "removed_views": [],
     }
 
+    # The /diff endpoint must predict the same diff as the real bootstrap.
+    assert endpoint_diff == diff
+
     pipeline.approve()
 
     # Wait for the pipeline to reach RUNNING status (up to 300 seconds)
@@ -128,6 +139,8 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
 CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
     """
     )
+    endpoint_diff = pipeline.diff(program_code=sql_with_new_table)
+    print(f"Endpoint diff: {endpoint_diff}")
     pipeline.modify(sql=sql_with_new_table)
 
     pipeline.start(bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL)
@@ -142,6 +155,9 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
         "removed_tables": [],
         "removed_views": [],
     }
+
+    # The /diff endpoint must predict the same diff as the real bootstrap.
+    assert endpoint_diff == diff
 
     pipeline.approve()
 
@@ -169,6 +185,8 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
 CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
     """
     )
+    endpoint_diff = pipeline.diff(program_code=sql_with_new_table)
+    print(f"Endpoint diff: {endpoint_diff}")
     pipeline.modify(sql=sql_with_new_table)
 
     pipeline.start(bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL)
@@ -183,6 +201,9 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
         "removed_tables": [],
         "removed_views": [],
     }
+
+    # The /diff endpoint must predict the same diff as the real bootstrap.
+    assert endpoint_diff == diff
 
     pipeline.approve()
 
@@ -215,6 +236,8 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
         + """CREATE TABLE t2(y int, s string) WITH ('materialized'='true');
     """
     )
+    endpoint_diff = pipeline.diff(program_code=sql_with_new_table)
+    print(f"Endpoint diff: {endpoint_diff}")
     pipeline.modify(sql=sql_with_new_table)
 
     pipeline.start(bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL)
@@ -229,6 +252,9 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
         "removed_tables": [],
         "removed_views": ["v3"],
     }
+
+    # The /diff endpoint must predict the same diff as the real bootstrap.
+    assert endpoint_diff == diff
 
     pipeline.approve()
 
@@ -249,6 +275,8 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
     original_sql = sql
 
     sql_with_new_table = original_sql
+    endpoint_diff = pipeline.diff(program_code=sql_with_new_table)
+    print(f"Endpoint diff: {endpoint_diff}")
     pipeline.modify(sql=sql_with_new_table)
 
     pipeline.start(bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL)
@@ -263,6 +291,9 @@ CREATE MATERIALIZED VIEW v3 AS SELECT MAX(y) AS m FROM t2;
         "removed_views": [],
         "removed_tables": ["t2"],
     }
+
+    # The /diff endpoint must predict the same diff as the real bootstrap.
+    assert endpoint_diff == diff
 
     pipeline.approve()
 

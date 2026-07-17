@@ -880,6 +880,92 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             body={"delta_ms": delta_ms},
         )
 
+    def pipeline_diff(
+        self,
+        pipeline_name: str,
+        program_code: Optional[str] = None,
+        runtime_version: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Compute the diff between the pipeline's current program and a proposed
+        new version, without modifying or restarting the pipeline.
+
+        The diff lists the tables, views, and connectors that would be added,
+        removed, or modified. It is the same diff shown when approving changes
+        during bootstrapping, so it lets you preview the effect of a change
+        before applying it.
+
+        The baseline is the pipeline's currently configured program compiled
+        with its runtime, not necessarily the program in the latest checkpoint
+        (which may have been produced by a different program or runtime).
+
+        :param pipeline_name: The name of the pipeline.
+
+        :param program_code: New SQL program code to compare against. If
+            ``None`` (the default), the pipeline's current program code is used.
+
+        :param runtime_version: Runtime version to compile the new program with:
+            a version tag (``vX.Y.Z``) or a 40-character git SHA. If ``None``
+            (the default), the platform's default runtime is used.
+
+        :return: The pipeline diff as a dict (see the ``PipelineDiff`` schema).
+
+        :raises FelderaAPIError: If the current program is not compiled, the new
+            program fails to compile, the change cannot be bootstrapped, or the
+            compiler service is unavailable.
+        """
+
+        body: Dict[str, Any] = {}
+        if program_code is not None:
+            body["program_code"] = program_code
+        if runtime_version is not None:
+            body["runtime_version"] = runtime_version
+
+        return self.http.post(
+            path=f"/pipelines/{pipeline_name}/diff",
+            body=body,
+        )
+
+    def validate_program(
+        self,
+        program_code: str,
+        runtime_version: Optional[str] = None,
+        ir: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Validate a SQL program by compiling it, without creating a pipeline or
+        building the pipeline binary.
+
+        Reports SQL errors and warnings and the derived schema and connectors.
+        Set ``ir`` to also return the program IR (dataflow).
+
+        A SQL compilation error is reported in the returned result (as
+        ``SqlError``), not raised. ``FelderaAPIError`` is raised only for a
+        system-level failure, such as an invalid runtime version or the
+        compiler service being unavailable.
+
+        :param program_code: The SQL program to validate.
+
+        :param runtime_version: Runtime version to compile the program with: a
+            version tag (``vX.Y.Z``) or a 40-character git SHA. If ``None`` (the
+            default), the platform's default runtime is used.
+
+        :param ir: Also return the program IR (dataflow) in the result.
+
+        :return: The validation result as a dict (see the
+            ``ValidateProgramResponse`` schema): one of ``{"Success": {...}}``,
+            ``{"SqlError": {...}}``, or ``{"SystemError": {...}}``.
+        """
+
+        body: Dict[str, Any] = {"program_code": program_code, "ir": ir}
+        if runtime_version is not None:
+            body["runtime_version"] = runtime_version
+
+        return self.http.post(
+            path="/validate_program",
+            body=body,
+        )
+
     def commit_transaction(
         self,
         pipeline_name: str,

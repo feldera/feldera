@@ -190,6 +190,8 @@ It contains the following fields:
         endpoints::pipeline_management::put_pipeline,
         endpoints::pipeline_management::patch_pipeline,
         endpoints::pipeline_management::post_update_runtime,
+        endpoints::pipeline_management::post_pipeline_diff,
+        endpoints::pipeline_management::post_validate_program,
         endpoints::pipeline_management::delete_pipeline,
         endpoints::pipeline_management::post_pipeline_start,
         endpoints::pipeline_management::post_pipeline_stop,
@@ -293,6 +295,9 @@ It contains the following fields:
         crate::api::endpoints::pipeline_management::PostPutPipeline,
         crate::api::endpoints::pipeline_management::PatchPipeline,
         crate::api::endpoints::pipeline_management::PostStopPipelineParameters,
+        crate::api::endpoints::pipeline_management::PipelineDiffRequest,
+        crate::api::endpoints::pipeline_management::ValidateProgramRequest,
+        crate::compiler::ValidateProgramResponse,
         crate::db::types::monitor::PipelineMonitorEventId,
         crate::api::endpoints::pipeline_management::pipeline_events::PipelineMonitorEventSelectedInfo,
         crate::api::endpoints::pipeline_management::pipeline_events::PipelineMonitorEventFieldSelector,
@@ -661,6 +666,8 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_management::patch_pipeline)
         .service(endpoints::pipeline_management::post_pipeline_testing)
         .service(endpoints::pipeline_management::post_update_runtime)
+        .service(endpoints::pipeline_management::post_pipeline_diff)
+        .service(endpoints::pipeline_management::post_validate_program)
         .service(endpoints::pipeline_management::delete_pipeline)
         .service(endpoints::pipeline_management::post_pipeline_start)
         .service(endpoints::pipeline_management::post_pipeline_stop)

@@ -177,6 +177,29 @@ pub enum Commands {
     /// If no sub-command is specified retrieves all configuration data for the pipeline.
     #[command(flatten)]
     Pipeline(PipelineAction),
+    /// Validate a SQL program by compiling it, without creating a pipeline.
+    ///
+    /// Prints, as a JSON object, whether the program is valid, along with any
+    /// SQL compiler warnings and errors and the derived schema and connectors.
+    /// A SQL compilation error is reported in the output, not as a command
+    /// failure; the command fails only on a system error (e.g. an invalid
+    /// runtime version or an unavailable compiler).
+    ValidateProgram {
+        /// Path to a file with the SQL program to validate. If omitted, read
+        /// the program from stdin (pass `--stdin`).
+        #[arg(value_hint = ValueHint::FilePath, conflicts_with = "stdin")]
+        program_path: Option<String>,
+        /// Read the SQL program from stdin.
+        #[arg(long, default_value_t = false, conflicts_with = "program_path")]
+        stdin: bool,
+        /// Runtime version to compile with: a version tag (`vX.Y.Z`) or a
+        /// 40-character git SHA. If omitted, the platform's default runtime is used.
+        #[arg(long)]
+        runtime_version: Option<String>,
+        /// Also return the program IR (dataflow) in the output.
+        #[arg(long, default_value_t = false)]
+        ir: bool,
+    },
     /// Manage API keys.
     Apikey {
         #[command(subcommand)]
@@ -529,6 +552,30 @@ pub enum PipelineAction {
     Program {
         #[command(subcommand)]
         action: ProgramAction,
+    },
+    /// Compute the diff between the pipeline's current program and a proposed
+    /// new version, without modifying or restarting the pipeline.
+    ///
+    /// Prints, as a JSON object, the tables, views, and connectors that would
+    /// be added, removed, or modified. This is the same diff shown when
+    /// approving changes during bootstrapping.
+    Diff {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// Path to a file with the new SQL program to compare against.
+        /// If omitted (and `--stdin` is not set), the pipeline's current
+        /// program code is used.
+        #[arg(value_hint = ValueHint::FilePath, conflicts_with = "stdin")]
+        program_path: Option<String>,
+        /// Read the new SQL program from stdin.
+        #[arg(long, default_value_t = false, conflicts_with = "program_path")]
+        stdin: bool,
+        /// Runtime version to compile the new program with: a version tag
+        /// (`vX.Y.Z`) or a 40-character git SHA. If omitted, the platform's
+        /// default runtime is used.
+        #[arg(long)]
+        runtime_version: Option<String>,
     },
     /// Retrieve the runtime configuration of a pipeline.
     #[clap(aliases = &["cfg"])]

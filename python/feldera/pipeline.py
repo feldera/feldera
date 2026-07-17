@@ -819,6 +819,44 @@ metrics"""
 
         return self.client.advance_clock(self.name, delta_ms)
 
+    def diff(
+        self,
+        program_code: Optional[str] = None,
+        runtime_version: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Compute the diff between this pipeline's current program and a proposed
+        new version, without modifying or restarting the pipeline.
+
+        The diff lists the tables, views, and connectors that would be added,
+        removed, or modified. It is the same diff shown when approving changes
+        during bootstrapping, so it lets you preview the effect of a change
+        before applying it.
+
+        The baseline is this pipeline's currently configured program compiled
+        with its runtime, not necessarily the program in the latest checkpoint
+        (which may have been produced by a different program or runtime).
+
+        :param program_code: New SQL program code to compare against. If
+            ``None`` (the default), the pipeline's current program code is used.
+
+        :param runtime_version: Runtime version to compile the new program with:
+            a version tag (``vX.Y.Z``) or a 40-character git SHA. If ``None``
+            (the default), the platform's default runtime is used.
+
+        :return: The pipeline diff as a dict (see the ``PipelineDiff`` schema).
+
+        :raises FelderaAPIError: If the current program is not compiled, the new
+            program fails to compile, the change cannot be bootstrapped, or the
+            compiler service is unavailable.
+        """
+
+        return self.client.pipeline_diff(
+            self.name,
+            program_code=program_code,
+            runtime_version=runtime_version,
+        )
+
     def start_transaction(self) -> int:
         """
         Start a new transaction.

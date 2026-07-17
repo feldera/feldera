@@ -304,6 +304,109 @@ All of this functionality is also available via the Python SDK and the `fda` CLI
   Use `/approve?silent_bootstrap=true` to approve the changes while suppressing
   output connector records produced during bootstrapping.
 
+### Previewing changes without restarting
+
+Use the [`/diff` endpoint](/api/compute-program-diff) to compute the diff between a
+pipeline's current program and a proposed new version without modifying or restarting the
+pipeline. It reports the same added, modified, and removed tables, views, and connectors
+that the `AwaitingApproval` state reports, formatted as JSON, so you can preview the effect
+of a change while editing.
+
+The request body has two optional fields:
+
+* `program_code`: the new SQL program to compare against. When omitted, the pipeline's
+  current program is used.
+* `runtime_version`: the runtime to compile the new program with (a `vX.Y.Z` tag or a git
+  SHA). When omitted, the runtime of the installed Feldera platform is used.
+
+The baseline for the diff is the pipeline's currently configured program compiled with the
+specified runtime, not the program stored in the latest checkpoint. The two usually match,
+but can differ when the last checkpoint was produced by a different program or runtime
+version (for example, an S3 checkpoint written by another pipeline).
+
+The endpoint requires the pipeline's current program to have compiled successfully. It
+returns `400 Bad Request` if the new program does not compile or the change cannot be
+bootstrapped, and `503`/`504` if the compiler is unavailable or does not respond in time.
+
+For example, if `my_pipeline` currently defines a table `t` and a view `v`, previewing the
+addition of a view `v2`:
+
+```bash
+curl -X POST http://localhost:8080/v0/pipelines/my_pipeline/diff \
+  -H 'Content-Type: application/json' \
+  -d '{"program_code": "CREATE TABLE t(x INT);
+                        CREATE MATERIALIZED VIEW v AS SELECT COUNT(*) AS c FROM t;
+                        CREATE MATERIALIZED VIEW v2 AS SELECT MAX(x) AS m FROM t;"}'
+```
+
+returns (HTTP `200`):
+
+```json
+{
+  "program_diff": {
+    "added_tables": [], "removed_tables": [], "modified_tables": [],
+    "added_views": ["v2"], "removed_views": [], "modified_views": []
+  },
+  "program_diff_error": null,
+  "added_input_connectors": [], "removed_input_connectors": [], "modified_input_connectors": [],
+  "added_output_connectors": [], "removed_output_connectors": [], "modified_output_connectors": []
+}
+```
+
+This functionality is also available via the Python SDK (`pipeline.diff(...)`) and the
+`fda` CLI (`fda diff <pipeline_name> [program.sql] [--runtime-version <version>]`).
+
+### Validating a program
+
+Use the [`/validate_program` endpoint](/api/validate-program) to validate a SQL program without creating
+or modifying a pipeline. The request body takes the SQL in
+`program_code`, an optional `runtime_version`, and an optional `ir` flag (default `false`)
+that, when `true`, also returns the program's IR (dataflow):
+
+```bash
+curl -X POST http://localhost:8080/v0/validate_program \
+  -H 'Content-Type: application/json' \
+  -d '{"program_code": "CREATE TABLE t(x INT); CREATE MATERIALIZED VIEW v AS SELECT COUNT(*) AS c FROM t;"}'
+```
+
+A valid program returns (HTTP `200`) the derived schema and connectors:
+
+```json
+{"Success": {"program_info": {"schema": {"inputs": [], "outputs": []},
+                              "input_connectors": {}, "output_connectors": {}, "dataflow": null}}}
+```
+
+Note that `/validate_program` returns HTTP `200` even when the program is invalid. Inspect
+the response body to determine the outcome: `Success`, `SqlError` (the program has SQL
+errors), or `SystemError` (validation could not run). For example, an invalid program:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:8080/v0/validate_program \
+  -H 'Content-Type: application/json' \
+  -d '{"program_code": "CREATE MATERIALIZED VIEW v AS SELECT * FROM no_such_table;"}'
+# 200
+```
+
+still returns `200`, with the errors carried in the body:
+
+```json
+{"SqlError": {"info": {"exit_code": 1, "messages": [{"error": true, "message": "Object 'no_such_table' not found"}]}}}
+```
+
+This functionality is also available via the Python SDK (`client.validate_program(...)`) and
+the `fda` CLI (`fda validate-program [program.sql] [--ir] [--runtime-version <version>]`).
+
+Specifying a non-default `runtime_version` for either endpoint requires the `runtime_version`
+unstable feature to be enabled on the platform, via the [`unstableFeatures` Helm
+value](/get-started/enterprise/helm-chart-reference#miscellaneous) (or the
+`FELDERA_UNSTABLE_FEATURES` environment variable). If the feature is disabled, the request
+fails (`/validate_program` returns a `SystemError`). When it is enabled, the compiler downloads
+the matching SQL compiler on demand, which requires outbound network access (see [Custom Runtime
+Usage](/operations/required-domains#custom-runtime-usage-optional)); in a restricted or
+air-gapped environment (for example, behind a firewall) the download can fail and the request
+returns an error. The platform's default runtime is always available locally, needs no feature
+flag, and never triggers a download.
+
 ## WebConsole
 
 Bootstrapping is also supported via the WebConsole. The WebConsole always starts pipelines with `bootstrap_policy=await_approval`.
