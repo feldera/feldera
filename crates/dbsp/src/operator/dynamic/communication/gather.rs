@@ -8,7 +8,7 @@ use crate::{
         runtime::{WorkerLocation, WorkerLocations},
     },
     circuit_cache_key,
-    operator::communication::{ExchangeActivity, Mailbox, new_exchange_operators},
+    operator::communication::{Mailbox, new_exchange_operators},
     trace::{Batch, deserialize_indexed_wset, merge_batches, serialize_indexed_wset},
 };
 use arc_swap::ArcSwap;
@@ -159,7 +159,6 @@ where
                             },
                             move |data| deserialize_indexed_wset(&factories_clone, &data),
                             |batches: &mut Vec<B>, batch: B| batches.push(batch),
-                            ExchangeActivity::AllSteps,
                         )
                         .unwrap();
 

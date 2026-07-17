@@ -5,7 +5,7 @@ use size_of::SizeOf;
 use crate::circuit::checkpointer::Checkpoint;
 use crate::circuit::runtime::{WorkerLocation, WorkerLocations};
 use crate::dynamic::{DynData, DynUnit};
-use crate::operator::communication::{ExchangeActivity, Mailbox};
+use crate::operator::communication::Mailbox;
 use crate::operator::dynamic::{MonoIndexedZSet, MonoZSet};
 use crate::{
     Circuit, NumEntries, RootCircuit, Stream,
@@ -111,7 +111,6 @@ where
                         *result = waterline;
                     }
                 },
-                ExchangeActivity::AllSteps,
             );
 
             match exchange {
@@ -192,7 +191,6 @@ where
                     let old_result = clone_box(result);
                     least_upper_bound(&old_result, &waterline, result.as_mut());
                 },
-                ExchangeActivity::AllSteps,
             );
 
             match exchange {
