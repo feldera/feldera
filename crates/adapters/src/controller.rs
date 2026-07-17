@@ -5616,7 +5616,8 @@ Using the Kubernetes limit as the RSS memory limit."
             .with_pin_cpus(pipeline_config.global.pin_cpus.clone())
             .with_storage(storage)
             .with_mode(Mode::Persistent)
-            .with_dev_tweaks(dev_tweaks))
+            .with_dev_tweaks(dev_tweaks)
+            .with_allow_input_during_commit(false))
     }
 
     /// Create a new I/O controller using config in `self`.

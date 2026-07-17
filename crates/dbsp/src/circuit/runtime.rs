@@ -275,6 +275,7 @@ struct RuntimeInner {
     layout: Layout,
     mode: Mode,
     step_size: StepSize,
+    allow_input_during_commit: bool,
     dev_tweaks: DevTweaks,
 
     /// User-configured process memory limit.
@@ -504,6 +505,7 @@ impl RuntimeInner {
             layout: config.layout,
             mode: config.mode,
             step_size: config.step_size,
+            allow_input_during_commit: config.allow_input_during_commit,
             dev_tweaks: config.dev_tweaks,
             max_rss: config.max_rss_bytes,
             process_rss: AtomicU64::new(process_rss_bytes().unwrap_or_default()),
@@ -1080,6 +1082,10 @@ impl Runtime {
 
     pub fn get_step_size(&self) -> StepSize {
         self.inner().step_size
+    }
+
+    pub fn allow_input_during_commit(&self) -> bool {
+        self.inner().allow_input_during_commit
     }
 
     /// Returns the worker index as a string.

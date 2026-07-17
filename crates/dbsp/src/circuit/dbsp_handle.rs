@@ -345,6 +345,16 @@ pub struct CircuitConfig {
     /// Whether the circuit can use microsteps.
     pub step_size: StepSize,
 
+    /// Whether to support inserting input during transaction commit.
+    ///
+    /// For transactions to have their full performance benefit, data should be
+    /// input into the circuit only before starting commit.  Client code that
+    /// does this can enable further optimizations by setting this field to
+    /// false.  Simple DBSP users (such as the `nexmark` benchmark) that
+    /// decouple input from running steps and might insert data during commit
+    /// should set this to true.
+    pub allow_input_during_commit: bool,
+
     /// Storage configuration. If present, then storage is enabled.
     pub storage: Option<CircuitStorageConfig>,
 
@@ -509,6 +519,7 @@ impl CircuitConfig {
             pin_cpus: Vec::new(),
             mode: Mode::Ephemeral,
             step_size: StepSize::default(),
+            allow_input_during_commit: true,
             storage: None,
             dev_tweaks: DevTweaks::default(),
             exchange_listener: None,
@@ -527,6 +538,11 @@ impl CircuitConfig {
 
     pub fn with_step_size(mut self, step_size: StepSize) -> Self {
         self.step_size = step_size;
+        self
+    }
+
+    pub fn with_allow_input_during_commit(mut self, allow_input_during_commit: bool) -> Self {
+        self.allow_input_during_commit = allow_input_during_commit;
         self
     }
 

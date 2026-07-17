@@ -849,7 +849,9 @@ where
             mailboxes,
             deserialization_usecs: AtomicU64::new(0),
             deserialized_bytes: AtomicUsize::new(0),
-            activity: if runtime.dev_tweaks().optimize_input_during_commit() {
+            activity: if runtime.dev_tweaks().optimize_input_during_commit()
+                && !runtime.allow_input_during_commit()
+            {
                 activity
             } else {
                 ExchangeActivity::AllSteps
@@ -1406,7 +1408,11 @@ where
 
     async fn eval_owned(&mut self, input: D) {
         if self.phase.is_inactive(self.exchange.activity) {
-            assert_eq!(input.num_entries_deep(), 0);
+            assert_eq!(
+                input.num_entries_deep(),
+                0,
+                "cannot process input received during commit (see [CircuitConfig::allow_input_during_commit] for more information)"
+            );
             return;
         };
         let flushed = if self.phase == Phase::Flush {
