@@ -75,7 +75,7 @@ fn accumulate_trace_with_balancer_test_circuit(
     // output operator only consults the count to force-enable a bootstrap
     // circuit's accumulator, which this test never exercises, so a
     // permanently-enabled count keeps it out of bootstrap caching mode.
-    let mut enable_count = EnableCount::new();
+    let enable_count = EnableCount::new();
     enable_count.enable();
     let (balanced_stream_output, output_handle) =
         AccumulateOutput::<OrdIndexedZSet<u64, u64>>::new(enable_count);
