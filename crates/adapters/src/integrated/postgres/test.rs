@@ -2396,6 +2396,7 @@ mod cdc_tests {
     use super::*;
     use crate::test::wait;
     use feldera_types::config::PipelineConfig;
+    use feldera_types::transport::postgres::PostgresCdcTransactionMode;
     use pg::pg_connect;
 
     /// Helper: creates a table, publication, and sets REPLICA IDENTITY FULL.
@@ -3055,6 +3056,7 @@ mod cdc_tests {
         streaming_ack_hold_ms: u64,
         discard_shutdown_errors: bool,
         discard_table_errors: bool,
+        transaction_mode: PostgresCdcTransactionMode,
         max_batch_size: Option<u64>,
         min_batch_size_records: u64,
         max_buffering_delay_usecs: u64,
@@ -3069,6 +3071,7 @@ mod cdc_tests {
                 discard_shutdown_errors:
                     feldera_types::transport::postgres::default_discard_shutdown_errors(),
                 discard_table_errors: false,
+                transaction_mode: PostgresCdcTransactionMode::None,
                 max_batch_size: None,
                 min_batch_size_records: 0,
                 max_buffering_delay_usecs: 0,
@@ -3129,6 +3132,7 @@ mod cdc_tests {
                             "streaming_ack_hold_ms": options.streaming_ack_hold_ms,
                             "discard_shutdown_errors": options.discard_shutdown_errors,
                             "discard_table_errors": options.discard_table_errors,
+                            "transaction_mode": options.transaction_mode,
                         },
                     },
                 },
@@ -3227,6 +3231,11 @@ mod cdc_tests {
                 .and_then(|v| v.as_i64())
                 == Some(id)
         })
+    }
+
+    fn cdc_transaction_idle(controller: &Controller) -> bool {
+        let metrics = controller.api_status(false).global_metrics;
+        metrics.transaction_status == feldera_types::adapter_stats::TransactionStatus::NoTransaction
     }
 
     // -------------------------------------------------------------------
@@ -4844,6 +4853,31 @@ mod cdc_tests {
         format!("supabase_etl_apply_{pipeline_id}")
     }
 
+    fn table_sync_slot_exists(
+        table: &mut CdcTestTable,
+        source_table: &str,
+        source_table_oid: i32,
+    ) -> bool {
+        let connector_url = cdc_connector_url(&table.url);
+        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+            &connector_url,
+            &table.publication_name,
+            source_table,
+        );
+        let slot_name = format!("supabase_etl_table_sync_{pipeline_id}_{source_table_oid}");
+
+        table
+            .client
+            .query_one(
+                "SELECT EXISTS (
+                    SELECT 1 FROM pg_replication_slots WHERE slot_name = $1
+                )",
+                &[&slot_name],
+            )
+            .map(|row| row.get(0))
+            .unwrap_or(false)
+    }
+
     fn confirmed_flush_lsn(table: &mut CdcTestTable, source_table: &str) -> Option<String> {
         let slot_name = apply_slot_name(table, source_table);
         table
@@ -4940,6 +4974,178 @@ mod cdc_tests {
             )
             .map(|row| row.get::<_, bool>(0))
             .unwrap_or(false)
+    }
+
+    /// `transaction_mode: snapshot` uses one transaction for COPY and another
+    /// for the table-sync WAL catchup, then leaves steady-state CDC outside a
+    /// connector-managed transaction.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    fn test_cdc_snapshot_transactions_cover_copy_and_catchup() {
+        let url = postgres_url();
+        let table_name = unique_pg_name("cdc_test_snapshot_transactions");
+        let publication = unique_pg_name("cdc_pub_snapshot_transactions");
+        const SNAPSHOT_ROWS: usize = 12;
+        const CATCHUP_ROWS: usize = 12;
+        const CATCHUP_ANCHOR_ID: i64 = 500;
+
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
+        table.execute(&format!(
+            "INSERT INTO {table_name} (id, b, i, s) \
+             SELECT id, true, id * 10, repeat('s', 1024 * 1024) \
+             FROM generate_series(1, {SNAPSHOT_ROWS}) AS id"
+        ));
+
+        let source_table = format!("public.{table_name}");
+        let source_table_oid = table_oid(&mut table, &source_table);
+        let storage = tempfile::tempdir().unwrap();
+        let output = NamedTempFile::new().unwrap();
+        let (controller, errors) = cdc_ft_test_circuit_with_options(
+            &url,
+            &publication,
+            &source_table,
+            storage.path(),
+            output.path(),
+            CdcFtTestOptions {
+                streaming_ack_hold_ms: 100,
+                transaction_mode: PostgresCdcTransactionMode::Snapshot,
+                max_batch_size: Some(1),
+                min_batch_size_records: 1_000_000,
+                max_buffering_delay_usecs: 3_600_000_000,
+                ..Default::default()
+            },
+        );
+        controller.start();
+
+        wait(
+            || {
+                table_sync_slot_exists(&mut table, &source_table, source_table_oid)
+                    || !errors.is_empty()
+            },
+            60_000,
+        )
+        .expect("timeout: etl table-copy slot was not created");
+        assert!(
+            errors.is_empty(),
+            "unexpected error starting table COPY: {:?}",
+            errors.try_recv()
+        );
+        assert_eq!(
+            count_inserts(&read_output_json(output.path())),
+            0,
+            "COPY rows became visible before the transaction committed"
+        );
+
+        // These rows are newer than the COPY snapshot and must be ingested by
+        // the table-sync worker's catchup transaction.
+        table.execute(&format!(
+            "INSERT INTO {table_name} (id, b, i, s) \
+             SELECT 100 + id, false, id * 10, repeat('c', 1024 * 1024) \
+             FROM generate_series(1, {CATCHUP_ROWS}) AS id"
+        ));
+
+        let mut first_visible_count = 0;
+        wait(
+            || {
+                first_visible_count = count_inserts(&read_output_json(output.path()));
+                first_visible_count > 0 || !errors.is_empty()
+            },
+            120_000,
+        )
+        .expect("COPY transaction did not publish its snapshot rows");
+        assert_eq!(
+            first_visible_count, SNAPSHOT_ROWS,
+            "COPY transaction exposed only part of the snapshot"
+        );
+        wait(
+            || cdc_transaction_idle(&controller) || !errors.is_empty(),
+            30_000,
+        )
+        .expect("timeout: COPY transaction did not become idle");
+        assert!(
+            errors.is_empty(),
+            "unexpected error committing COPY transaction: {:?}",
+            errors.try_recv()
+        );
+
+        controller.checkpoint().expect("COPY checkpoint failed");
+        wait(
+            || copy_state_persisted(&mut table, source_table_oid) || !errors.is_empty(),
+            60_000,
+        )
+        .expect("timeout: etl did not persist COPY completion");
+
+        assert_eq!(
+            count_inserts(&read_output_json(output.path())),
+            SNAPSHOT_ROWS,
+            "catchup rows became visible before the transaction committed"
+        );
+
+        // As in the other initial-sync tests, drive the replication stream
+        // after catchup starts so etl can observe that it reached its target
+        // LSN even when PostgreSQL was otherwise idle.
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES \
+             ({CATCHUP_ANCHOR_ID}, true, {CATCHUP_ANCHOR_ID}, 'catchup_anchor')"
+        ));
+
+        let mut first_count_after_copy = SNAPSHOT_ROWS;
+        wait(
+            || {
+                first_count_after_copy = count_inserts(&read_output_json(output.path()));
+                first_count_after_copy > SNAPSHOT_ROWS || !errors.is_empty()
+            },
+            30_000,
+        )
+        .expect("catchup transaction did not publish its WAL rows atomically");
+        assert!(
+            (SNAPSHOT_ROWS + CATCHUP_ROWS..=SNAPSHOT_ROWS + CATCHUP_ROWS + 1)
+                .contains(&first_count_after_copy),
+            "catchup transaction exposed only part of its WAL rows: first visible count was \
+             {first_count_after_copy}"
+        );
+        assert!(
+            errors.is_empty(),
+            "unexpected error committing catchup transaction: {:?}",
+            errors.try_recv()
+        );
+
+        controller.checkpoint().expect("catchup checkpoint failed");
+        wait(
+            || table_ready(&mut table, source_table_oid) || !errors.is_empty(),
+            60_000,
+        )
+        .expect("timeout: etl table did not become ready after catchup");
+        wait(
+            || {
+                count_inserts(&read_output_json(output.path())) == SNAPSHOT_ROWS + CATCHUP_ROWS + 1
+                    || !errors.is_empty()
+            },
+            60_000,
+        )
+        .expect("timeout: main apply worker did not publish remaining WAL rows");
+
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (1000, true, 1000, 'steady')"
+        ));
+        wait(
+            || has_insert_id(&read_output_json(output.path()), 1000) || !errors.is_empty(),
+            60_000,
+        )
+        .expect("timeout: steady-state row did not reach output");
+        assert!(
+            errors.is_empty(),
+            "unexpected error during steady-state CDC: {:?}",
+            errors.try_recv()
+        );
+        assert!(
+            cdc_transaction_idle(&controller),
+            "steady-state CDC unexpectedly started a connector transaction"
+        );
+
+        controller.stop().unwrap();
     }
 
     /// The terminal snapshot barrier must stay behind every copied row across

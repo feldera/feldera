@@ -67,6 +67,23 @@ impl PostgresTlsConfig {
     }
 }
 
+/// PostgreSQL CDC input transaction mode.
+///
+/// Determines whether the connector groups the initial table synchronization
+/// into Feldera transactions.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema, Default)]
+pub enum PostgresCdcTransactionMode {
+    /// Do not create transactions automatically.
+    #[default]
+    #[serde(rename = "none")]
+    None,
+
+    /// Ingest the initial table copy and its WAL catchup in two separate
+    /// transactions. Steady-state changes are not transactional.
+    #[serde(rename = "snapshot")]
+    Snapshot,
+}
+
 /// Postgres CDC input connector configuration.
 ///
 /// Uses logical replication to capture ongoing changes from a Postgres database.
@@ -85,6 +102,13 @@ pub struct PostgresCdcReaderConfig {
     /// Postgres table to replicate (e.g. "public.orders").
     /// Must be included in the publication.
     pub source_table: String,
+
+    /// Transaction mode.
+    ///
+    /// See [`PostgresCdcTransactionMode`]. When omitted, defaults to
+    /// [`PostgresCdcTransactionMode::None`].
+    #[serde(default)]
+    pub transaction_mode: PostgresCdcTransactionMode,
 
     /// TLS/SSL configuration.
     #[serde(flatten)]
@@ -349,6 +373,7 @@ mod tests {
             uri: "postgres://user:password@localhost:5432/database".to_string(),
             publication: "publication".to_string(),
             source_table: "public.table".to_string(),
+            transaction_mode: PostgresCdcTransactionMode::None,
             tls,
             streaming_ack_hold_ms: default_streaming_ack_hold_ms(),
             discard_shutdown_errors: default_discard_shutdown_errors(),

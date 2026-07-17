@@ -54,7 +54,7 @@
 //! # Lifecycle and errors
 //!
 //! Pausing the Feldera pipeline stops the destination from accepting new etl batches; already
-//! queued records can still drain. [`TableErrorMonitor`] turns non-retriable per-table etl errors,
+//! queued records can still drain. [`TableStateMonitor`] turns non-retriable source-table errors,
 //! such as unsupported source schema changes, into connector errors instead of allowing the input
 //! to stall silently. Terminating or dropping the connector shuts down the etl pipeline and its
 //! completion watcher.
@@ -67,9 +67,25 @@
 //! replication position does not include it and the write must be replayed. On startup,
 //! `discard_shutdown_errors` therefore defaults to `true` and rolls back only this dropped-ack
 //! error. Other persisted table errors remain intact unless `discard_table_errors` is enabled.
+//!
+//! # Transactions
+//!
+//! With `transaction_mode: snapshot`, initial synchronization is split into two Feldera
+//! transactions: one for the PostgreSQL table copy and one for the WAL catchup. etl cannot start
+//! WAL catchup until the table copy has been marked durable. With fault tolerance enabled, this
+//! means the copy transaction must first be committed and checkpointed; the catchup transaction
+//! can then run and become durable independently.
+//!
+//! The copy transaction commits at etl's terminal copy barrier, and the catchup transaction commits
+//! with its terminal durable write. Sometimes there are no WAL records to catch up: the table-sync
+//! worker is already at the handoff LSN, so etl moves directly to `SyncDone` without calling the
+//! destination. No catchup transaction is opened in that case; the table state monitor only retires
+//! the pending catchup phase. Writes from the main apply worker are not grouped into
+//! connector-managed transactions, so steady-state CDC continues normally.
 
 use crate::transport::{
-    InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint, NonFtInputReaderCommand,
+    InputEndpoint, InputQueue, InputQueueEntry, InputReaderCommand, IntegratedInputEndpoint,
+    NonFtInputReaderCommand,
 };
 use crate::{ControllerError, InputConsumer, InputReader, PipelineState, RecordFormat};
 use anyhow::{Result as AnyResult, anyhow};
@@ -88,15 +104,17 @@ use etl::error::{ErrorKind, EtlResult};
 use etl::etl_error;
 use etl::event::Event;
 use etl::pipeline::{Pipeline, ShutdownTx};
-use etl::schema::ReplicatedTableSchema;
-use etl::store::{PostgresStore, StateStore, TableRetryPolicy, TableState};
+use etl::schema::{ReplicatedTableSchema, TableId};
+use etl::store::{PostgresStore, SchemaStore, StateStore, TableRetryPolicy, TableState};
 use feldera_adapterlib::catalog::{DeCollectionStream, InputCollectionHandle};
-use feldera_adapterlib::format::ParseError;
+use feldera_adapterlib::format::{InputBuffer, ParseError};
 use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_types::config::FtModel;
 use feldera_types::coordination::Completion;
 use feldera_types::format::json::JsonFlavor;
-use feldera_types::transport::postgres::{PostgresCdcReaderConfig, PostgresTlsConfig};
+use feldera_types::transport::postgres::{
+    PostgresCdcReaderConfig, PostgresCdcTransactionMode, PostgresTlsConfig,
+};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::future::pending;
@@ -117,6 +135,7 @@ use super::tls::make_etl_tls_config;
 const DROPPED_DESTINATION_ACK_ERROR: &str =
     "[DestinationError] Async result channel closed before sending";
 const MAX_ERROR_ROLLBACKS_PER_TABLE: usize = 32;
+const MAX_QUEUED_BUFFER_BYTES: usize = 2 * 1024 * 1024;
 
 /// An etl write acknowledgment deferred until Feldera has processed the data it covers.
 /// The ack is tagged by write type because snapshot and stream acks follow different rules.
@@ -547,7 +566,6 @@ impl PostgresCdcInputInner {
         } else {
             (None, None)
         };
-
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
@@ -638,33 +656,51 @@ impl PostgresCdcInputInner {
             }
         };
 
-        let discard_errors_result = if self.config.discard_table_errors {
-            self.discard_table_errors(&store).await
-        } else if self.config.discard_shutdown_errors {
-            self.discard_shutdown_errors(&store).await
-        } else {
-            Ok(())
-        };
-        if let Err(e) = discard_errors_result {
-            let _ = init_status_sender.send(Err(e));
-            return;
+        let discard_all_errors = self.config.discard_table_errors;
+        if discard_all_errors || self.config.discard_shutdown_errors {
+            let discard_result = async {
+                store.load_table_states().await?;
+                store.load_table_schemas().await?;
+                discard_matching_table_errors(
+                    &self.endpoint_name,
+                    &self.config.source_table,
+                    &store,
+                    discard_all_errors,
+                )
+                .await
+            }
+            .await;
+            if let Err(e) = discard_result {
+                let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
+                    &self.endpoint_name,
+                    true,
+                    anyhow!("failed to discard persisted etl table errors: {e}"),
+                )));
+                return;
+            }
         }
 
-        let destination = FelderaDestination {
-            input_stream: Arc::new(Mutex::new(input_stream)),
-            queue: Arc::clone(&self.queue),
-            source_table: self.config.source_table.clone(),
-            endpoint_name: self.endpoint_name.clone(),
+        let destination = FelderaDestination::new(
+            input_stream,
+            self.endpoint_name.clone(),
+            self.config.source_table.clone(),
+            self.config.transaction_mode,
+            self.pipeline_id,
+            Arc::clone(&self.queue),
+            store.clone(),
             feldera_required_columns,
-            completion_task_tx: self.completion_task_tx.clone(),
-            queued_acks: Arc::clone(&self.queued_acks),
-            pipeline_state_rx: receiver.clone(),
-        };
+            self.completion_task_tx.clone(),
+            Arc::clone(&self.queued_acks),
+            receiver.clone(),
+        );
+        let snapshot_transactions = destination.snapshot_transactions();
 
-        let table_error_monitor = TableErrorMonitor {
+        let table_state_monitor = TableStateMonitor {
             endpoint_name: self.endpoint_name.clone(),
+            source_table: self.config.source_table.clone(),
             consumer: self.consumer.clone(),
             store: store.clone(),
+            snapshot_transactions,
         };
         let mut pipeline = Pipeline::new(pipeline_config, store, destination);
         self.set_etl_shutdown_tx(pipeline.shutdown_tx());
@@ -704,7 +740,7 @@ impl PostgresCdcInputInner {
             _ => None,
         };
 
-        // Run the pipeline alongside a watcher for non-retriable per-table
+        // Run the pipeline alongside a watcher for non-retriable source-table
         // errors. etl marks a table errored (e.g. on a source schema change)
         // without failing the whole pipeline, so `pipeline.wait` would block
         // forever while the input silently stalls; the watcher reports such an
@@ -722,7 +758,7 @@ impl PostgresCdcInputInner {
                 abort_completion_watcher(&mut completion_handle).await;
                 (pipeline_wait.as_mut().await, false)
             }
-            _ = table_error_monitor.run() => {
+            _ = table_state_monitor.run() => {
                 self.shutdown_etl_pipeline();
                 abort_completion_watcher(&mut completion_handle).await;
                 (pipeline_wait.as_mut().await, false)
@@ -758,143 +794,76 @@ impl PostgresCdcInputInner {
             let _ = shutdown_tx.shutdown();
         }
     }
+}
 
-    /// Roll back persisted errors caused by a destination acknowledgment being
-    /// dropped by a previous connector run.
-    async fn discard_shutdown_errors(&self, store: &PostgresStore) -> Result<(), ControllerError> {
-        self.discard_matching_table_errors(store, false).await
+/// Roll back matching persisted `Errored` states for the configured source
+/// table before starting etl. Errored states can stack, so keep rolling back
+/// until another state surfaces. If rollback fails or reaches the rollback
+/// limit, reset the table to `Init`.
+async fn discard_matching_table_errors(
+    endpoint_name: &str,
+    source_table: &str,
+    store: &PostgresStore,
+    discard_all: bool,
+) -> EtlResult<()> {
+    let Some(table_id) = target_table_id(store, source_table).await? else {
+        return Ok(());
+    };
+    let Some(state) = store.get_table_state(table_id).await? else {
+        return Ok(());
+    };
+    if !should_discard_table_error(&state, discard_all) {
+        return Ok(());
     }
 
-    /// Roll back every persisted `Errored` table state so etl retries those
-    /// tables on this run (the `discard_table_errors` config option).
-    async fn discard_table_errors(&self, store: &PostgresStore) -> Result<(), ControllerError> {
-        self.discard_matching_table_errors(store, true).await
-    }
+    warn!(
+        "postgres_cdc {}: discarding persisted etl {} error for table {table_id} before startup",
+        endpoint_name,
+        if discard_all { "table" } else { "shutdown" },
+    );
 
-    /// Roll back matching persisted `Errored` table states.
-    ///
-    /// Errored states can stack, so keep rolling back until something else
-    /// surfaces. If a rollback fails, reset the table to `Init` instead,
-    /// which re-copies it from scratch.
-    async fn discard_matching_table_errors(
-        &self,
-        store: &PostgresStore,
-        discard_all: bool,
-    ) -> Result<(), ControllerError> {
-        store.load_table_states().await.map_err(|e| {
-            ControllerError::input_transport_error(
-                &self.endpoint_name,
-                true,
-                anyhow!("failed to load etl table states before discarding errors: {e}"),
-            )
-        })?;
-
-        let states = store.get_table_states().await.map_err(|e| {
-            ControllerError::input_transport_error(
-                &self.endpoint_name,
-                true,
-                anyhow!("failed to read etl table states before discarding errors: {e}"),
-            )
-        })?;
-
-        let errored_table_ids: Vec<_> = states
-            .iter()
-            .filter_map(|(table_id, state)| {
-                should_discard_table_error(state, discard_all).then_some(*table_id)
-            })
-            .collect();
-
-        if errored_table_ids.is_empty() {
-            return Ok(());
-        }
-
-        warn!(
-            "postgres_cdc {}: discarding {} persisted etl {} error(s) before startup",
-            &self.endpoint_name,
-            errored_table_ids.len(),
-            if discard_all { "table" } else { "shutdown" },
-        );
-
-        for table_id in errored_table_ids {
-            let mut discarded = 0usize;
-            loop {
-                let Some(state) = store.get_table_state(table_id).await.map_err(|e| {
-                    ControllerError::input_transport_error(
-                        &self.endpoint_name,
-                        true,
-                        anyhow!("failed to read etl table state for table {table_id}: {e}"),
-                    )
-                })?
-                else {
-                    break;
-                };
-                if !should_discard_table_error(&state, discard_all) {
-                    break;
-                }
-
-                if discarded == MAX_ERROR_ROLLBACKS_PER_TABLE {
-                    warn!(
-                        "postgres_cdc {}: table {table_id} still has a matching etl error after \
-                         {MAX_ERROR_ROLLBACKS_PER_TABLE} rollbacks; resetting table state to init",
-                        &self.endpoint_name
-                    );
-                    store
-                        .update_table_state(table_id, TableState::Init)
-                        .await
-                        .map_err(|e| {
-                            ControllerError::input_transport_error(
-                                &self.endpoint_name,
-                                true,
-                                anyhow!(
-                                    "failed to reset etl table state for table {table_id} after \
-                                     reaching the rollback limit: {e}"
-                                ),
-                            )
-                        })?;
-                    break;
-                }
-
-                match store.rollback_table_state(table_id).await {
-                    Ok(restored_state) => {
-                        discarded += 1;
-                        info!(
-                            "postgres_cdc {}: discarded etl table error for table {table_id}, \
-                             restored previous state {restored_state}",
-                            &self.endpoint_name
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "postgres_cdc {}: failed to roll back etl table error for table \
-                             {table_id}: {e}; resetting table state to init",
-                            &self.endpoint_name
-                        );
-                        store
-                            .update_table_state(table_id, TableState::Init)
-                            .await
-                            .map_err(|e| {
-                                ControllerError::input_transport_error(
-                                    &self.endpoint_name,
-                                    true,
-                                    anyhow!(
-                                        "failed to reset etl table state for table {table_id} \
-                                         after discarding error: {e}"
-                                    ),
-                                )
-                            })?;
-                        discarded += 1;
-                    }
-                }
-            }
-
-            debug!(
-                "postgres_cdc {}: discarded {discarded} etl table error state(s) for table {table_id}",
-                &self.endpoint_name
+    let mut discarded = 0usize;
+    let mut state = state;
+    while should_discard_table_error(&state, discard_all) {
+        if discarded == MAX_ERROR_ROLLBACKS_PER_TABLE {
+            warn!(
+                "postgres_cdc {}: table {table_id} still has a matching etl error after \
+                 {MAX_ERROR_ROLLBACKS_PER_TABLE} rollbacks; resetting table state to init",
+                endpoint_name
             );
+            store.update_table_state(table_id, TableState::Init).await?;
+            break;
         }
 
-        Ok(())
+        match store.rollback_table_state(table_id).await {
+            Ok(restored_state) => {
+                discarded += 1;
+                info!(
+                    "postgres_cdc {}: discarded etl table error for table {table_id}, \
+                             restored previous state {restored_state}",
+                    endpoint_name
+                );
+                state = restored_state;
+            }
+            Err(e) => {
+                warn!(
+                    "postgres_cdc {}: failed to roll back etl table error for table \
+                             {table_id}: {e}; resetting table state to init",
+                    endpoint_name
+                );
+                store.update_table_state(table_id, TableState::Init).await?;
+                discarded += 1;
+                break;
+            }
+        }
     }
+
+    debug!(
+        "postgres_cdc {}: discarded {discarded} etl table error state(s) for table {table_id}",
+        endpoint_name
+    );
+
+    Ok(())
 }
 
 fn should_discard_table_error(state: &TableState, discard_all: bool) -> bool {
@@ -912,16 +881,18 @@ impl Drop for PostgresCdcInputInner {
     }
 }
 
-/// Monitor that turns etl table-state failures into Feldera connector failures.
-struct TableErrorMonitor {
+/// Monitor the configured source table's etl state.
+struct TableStateMonitor {
     endpoint_name: String,
+    source_table: String,
     consumer: Box<dyn InputConsumer>,
     store: PostgresStore,
+    snapshot_transactions: Arc<SnapshotTransactions>,
 }
 
-impl TableErrorMonitor {
-    /// Surface a non-retriable per-table replication error as a fatal endpoint
-    /// error.
+impl TableStateMonitor {
+    /// Retire an idle catchup phase and surface non-retriable source-table
+    /// errors as fatal endpoint errors.
     ///
     /// When etl cannot continue replicating a table — most notably after a
     /// source schema change, which Feldera does not support — it marks the
@@ -932,6 +903,10 @@ impl TableErrorMonitor {
     /// consumer so the controller fails the endpoint. `TimedRetry` errors are
     /// left alone: etl retries them and, once retries are exhausted, the apply
     /// worker propagates the failure through `pipeline.wait`.
+    ///
+    /// etl can enter catchup with its current LSN already at the target. It then
+    /// moves to `SyncDone` with an empty batch, so there is no destination write
+    /// to retire the pending catchup phase.
     async fn run(self) {
         const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -949,38 +924,279 @@ impl TableErrorMonitor {
                 }
             };
 
-            for (table_id, state) in states.iter() {
-                let TableState::Errored {
-                    reason,
-                    solution,
-                    retry_policy,
-                    ..
-                } = state
-                else {
-                    continue;
-                };
-
-                // A timed retry clears on its own; leave it to etl.
-                if matches!(retry_policy, TableRetryPolicy::TimedRetry { .. }) {
+            let table_id = match target_table_id(&self.store, &self.source_table).await {
+                Ok(Some(table_id)) => table_id,
+                Ok(None) => continue,
+                Err(e) => {
+                    debug!(
+                        "postgres_cdc {}: failed to resolve source table state: {e}",
+                        &self.endpoint_name
+                    );
                     continue;
                 }
+            };
+            let Some(state) = states.get(&table_id) else {
+                continue;
+            };
 
-                let detail = match solution {
-                    Some(solution) => format!("{reason} ({solution})"),
-                    None => reason.clone(),
-                };
-                error!(
-                    "postgres_cdc {}: table {table_id} replication errored: {detail}",
-                    &self.endpoint_name
-                );
-                self.consumer.error(
-                    true,
-                    anyhow!("postgres replication error on table {table_id}: {detail}"),
-                    None,
-                );
-                return;
+            if matches!(state, TableState::SyncDone { .. } | TableState::Ready) {
+                self.snapshot_transactions
+                    .finish_catchup_after_etl_completion(table_id);
             }
+
+            let TableState::Errored {
+                reason,
+                solution,
+                retry_policy,
+                ..
+            } = state
+            else {
+                continue;
+            };
+
+            // A timed retry clears on its own; leave it to etl.
+            if matches!(retry_policy, TableRetryPolicy::TimedRetry { .. }) {
+                continue;
+            }
+
+            let detail = match solution {
+                Some(solution) => format!("{reason} ({solution})"),
+                None => reason.clone(),
+            };
+            error!(
+                "postgres_cdc {}: table {table_id} replication errored: {detail}",
+                &self.endpoint_name
+            );
+            self.consumer.error(
+                true,
+                anyhow!("postgres replication error on table {table_id}: {detail}"),
+                None,
+            );
+            return;
         }
+    }
+}
+
+enum SnapshotPhase {
+    /// Phase is unknown until startup reconciles etl's durable table state.
+    Uninitialized,
+    /// Transactions are disabled, or initial sync is already complete.
+    Inactive,
+    /// Initial table COPY.
+    Copy {
+        started: bool,
+        table_id: Option<TableId>,
+    },
+    /// WAL catchup after a durable COPY.
+    Catchup { started: bool, table_id: TableId },
+}
+
+impl SnapshotPhase {
+    fn start_copy(&mut self, table_id: TableId) -> bool {
+        let Self::Copy {
+            started,
+            table_id: copy_table_id,
+        } = self
+        else {
+            return false;
+        };
+
+        *copy_table_id = Some(table_id);
+        if *started {
+            false
+        } else {
+            *started = true;
+            true
+        }
+    }
+
+    fn finish_copy(&mut self, table_id: TableId) -> bool {
+        let Self::Copy {
+            started,
+            table_id: copy_table_id,
+        } = self
+        else {
+            return false;
+        };
+
+        debug_assert!(copy_table_id.is_none_or(|id| id == table_id));
+        let commit = *started;
+        *self = Self::Catchup {
+            started: false,
+            table_id,
+        };
+        commit
+    }
+
+    fn start_catchup(&mut self, table_id: Option<TableId>, has_data: bool) -> bool {
+        let Self::Catchup {
+            started,
+            table_id: catchup_table_id,
+        } = self
+        else {
+            return false;
+        };
+
+        if table_id != Some(*catchup_table_id) || !has_data || *started {
+            false
+        } else {
+            *started = true;
+            true
+        }
+    }
+
+    fn finish_catchup(&mut self) -> bool {
+        let Self::Catchup { started, .. } = self else {
+            return false;
+        };
+
+        let commit = *started;
+        *self = Self::Inactive;
+        commit
+    }
+}
+
+/// Shares snapshot transaction state between etl workers and the table-state
+/// monitor.
+///
+/// The COPY transaction starts when the first row buffer is queued, so an empty
+/// table does not create a transaction. On restart, `Destination::startup`
+/// reads etl's table state, which is persisted in the source Postgres database,
+/// to restore whether this connector is copying, catching up, or already live.
+struct SnapshotTransactions {
+    source_table: String,
+    transaction_mode: PostgresCdcTransactionMode,
+    pipeline_id: u64,
+    queue: Arc<CdcInputQueue>,
+    startup_store: Mutex<Option<PostgresStore>>,
+    phase: Mutex<SnapshotPhase>,
+}
+
+impl SnapshotTransactions {
+    fn new(
+        source_table: String,
+        transaction_mode: PostgresCdcTransactionMode,
+        pipeline_id: u64,
+        queue: Arc<CdcInputQueue>,
+        store: PostgresStore,
+    ) -> Self {
+        Self {
+            source_table,
+            transaction_mode,
+            pipeline_id,
+            queue,
+            startup_store: Mutex::new(Some(store)),
+            phase: Mutex::new(SnapshotPhase::Uninitialized),
+        }
+    }
+
+    async fn initialize(&self) -> EtlResult<()> {
+        let store = self.startup_store.lock().unwrap().take().ok_or_else(|| {
+            etl_error!(
+                ErrorKind::DestinationError,
+                "Postgres CDC destination initialized more than once"
+            )
+        })?;
+        let phase = self.initial_phase(&store).await?;
+        *self.phase.lock().unwrap() = phase;
+        Ok(())
+    }
+
+    /// Restore the transaction phase after a connector restart. This is the
+    /// only path that can enter catchup without finishing COPY in this process.
+    async fn initial_phase(&self, store: &PostgresStore) -> EtlResult<SnapshotPhase> {
+        if self.transaction_mode == PostgresCdcTransactionMode::None {
+            return Ok(SnapshotPhase::Inactive);
+        }
+
+        let table_id = target_table_id(store, &self.source_table).await?;
+        let Some(table_id) = table_id else {
+            // On the first run etl has not stored the source schema yet. The
+            // first write_table_rows call supplies the table id.
+            return Ok(SnapshotPhase::Copy {
+                started: false,
+                table_id: None,
+            });
+        };
+
+        let state = store.get_table_state(table_id).await?;
+        Ok(match state {
+            None | Some(TableState::Init | TableState::DataSync) => SnapshotPhase::Copy {
+                started: false,
+                table_id: Some(table_id),
+            },
+            Some(
+                TableState::FinishedCopy | TableState::SyncWait { .. } | TableState::Catchup { .. },
+            ) => SnapshotPhase::Catchup {
+                started: false,
+                table_id,
+            },
+            Some(TableState::SyncDone { .. } | TableState::Ready | TableState::Errored { .. }) => {
+                SnapshotPhase::Inactive
+            }
+        })
+    }
+
+    fn lock_phase(&self) -> std::sync::MutexGuard<'_, SnapshotPhase> {
+        let phase = self.phase.lock().unwrap();
+        assert!(
+            !matches!(&*phase, SnapshotPhase::Uninitialized),
+            "etl calls destination startup before submitting writes"
+        );
+        phase
+    }
+
+    /// Start the COPY transaction on its first queued row buffer.
+    fn start_copy(&self, table_id: TableId) -> Option<Option<String>> {
+        self.lock_phase()
+            .start_copy(table_id)
+            .then(|| Some(self.transaction_label("copy")))
+    }
+
+    fn finish_copy(&self, table_id: TableId) -> bool {
+        self.lock_phase().finish_copy(table_id)
+    }
+
+    fn start_catchup(&self, table_id: Option<TableId>, has_data: bool) -> Option<Option<String>> {
+        self.lock_phase()
+            .start_catchup(table_id, has_data)
+            .then(|| Some(self.transaction_label("catchup")))
+    }
+
+    fn finish_catchup(&self) -> bool {
+        self.lock_phase().finish_catchup()
+    }
+
+    /// Finish catchup when etl reaches `SyncDone` without sending a terminal
+    /// destination write.
+    ///
+    /// etl can take this path when idle progress reaches the catchup target:
+    /// <https://github.com/supabase/etl/pull/902#discussion_r3600970636>
+    fn finish_catchup_after_etl_completion(&self, table_id: TableId) {
+        let mut phase = self.phase.lock().unwrap();
+        let should_finish = match &*phase {
+            SnapshotPhase::Catchup {
+                table_id: catchup_table_id,
+                ..
+            } => *catchup_table_id == table_id,
+            _ => false,
+        };
+        let commit = should_finish && phase.finish_catchup();
+        if commit {
+            // Earlier catchup writes opened a transaction, but etl reached
+            // SyncDone without a terminal write that could close it.
+            self.queue.push_entry(
+                InputQueueEntry::new_with_aux(Utc::now(), DeferredSenders::new())
+                    .with_commit_transaction(true),
+                Vec::new(),
+            );
+        }
+    }
+
+    /// Labels are intentionally stable across connector restarts: each
+    /// pipeline has at most one copy and one catchup transaction.
+    fn transaction_label(&self, phase: &str) -> String {
+        format!("snapshot-{phase}-{}", self.pipeline_id)
     }
 }
 
@@ -991,6 +1207,7 @@ struct FelderaDestination {
     queue: Arc<CdcInputQueue>,
     source_table: String,
     endpoint_name: String,
+    snapshot_transactions: Arc<SnapshotTransactions>,
     /// Canonical names of the non-nullable Feldera columns. Each must be present
     /// (by name) in the target Postgres table schema etl passes with each target
     /// batch/event. Nullable and extra columns need not match.
@@ -1009,6 +1226,10 @@ struct FelderaDestination {
 impl Destination for FelderaDestination {
     fn name() -> &'static str {
         "feldera"
+    }
+
+    async fn startup(&self) -> EtlResult<()> {
+        self.snapshot_transactions.initialize().await
     }
 
     async fn drop_table_for_copy(
@@ -1069,11 +1290,14 @@ impl Destination for FelderaDestination {
             }
             bytes += json_str.len();
 
-            if bytes >= 2 * 1024 * 1024 {
-                self.queue.push_with_aux(
+            if bytes >= MAX_QUEUED_BUFFER_BYTES {
+                self.push_queue_entry(
                     (stream.take_all(), errors),
                     timestamp,
                     DeferredSenders::new(),
+                    self.snapshot_transactions
+                        .start_copy(replicated_table_schema.id()),
+                    false,
                 );
                 queued_data = true;
                 bytes = 0;
@@ -1082,15 +1306,22 @@ impl Destination for FelderaDestination {
         }
 
         if bytes > 0 || !errors.is_empty() {
-            self.queue.push_with_aux(
+            self.push_queue_entry(
                 (stream.take_all(), errors),
                 timestamp,
                 DeferredSenders::new(),
+                self.snapshot_transactions
+                    .start_copy(replicated_table_schema.id()),
+                false,
             );
             queued_data = true;
         }
 
-        self.ack_snapshot_copy(queued_data, async_result);
+        let commit_transaction = !queued_data
+            && self
+                .snapshot_transactions
+                .finish_copy(replicated_table_schema.id());
+        self.ack_snapshot_copy(queued_data, commit_transaction, async_result);
         Ok(())
     }
 
@@ -1102,6 +1333,7 @@ impl Destination for FelderaDestination {
     ) -> EtlResult<()> {
         self.wait_unpaused().await?;
 
+        let target_table_id = self.target_table_id_for_events(&events);
         let mut stream = self.input_stream.lock().unwrap();
         let mut bytes = 0;
         let mut errors = Vec::new();
@@ -1209,11 +1441,12 @@ impl Destination for FelderaDestination {
                 // Relation events carry only schema, no row data. etl detects
                 // schema changes upstream (it refuses to forward a Relation
                 // whose schema differs from the resolved one) and marks the
-                // table errored; we surface that via `TableErrorMonitor`.
-                Event::Relation(_) | Event::Begin(_) | Event::Commit(_) | Event::Unsupported => {}
+                // table errored; we surface that via `TableStateMonitor`.
+                Event::Relation(_) => {}
+                Event::Begin(_) | Event::Commit(_) | Event::Unsupported => {}
             }
 
-            if bytes >= 2 * 1024 * 1024 {
+            if bytes >= MAX_QUEUED_BUFFER_BYTES {
                 queue_entries.push((stream.take_all(), errors));
                 bytes = 0;
                 errors = Vec::new();
@@ -1223,29 +1456,38 @@ impl Destination for FelderaDestination {
         if bytes > 0 || !errors.is_empty() {
             queue_entries.push((stream.take_all(), errors));
         }
-
         let ack = DeferredAck::Stream {
             result: async_result,
             durability,
         };
+        let terminal = durability == WriteEventsDurability::RequireDurable;
+        let mut start_transaction = self
+            .snapshot_transactions
+            .start_catchup(target_table_id, !queue_entries.is_empty());
+        let commit_transaction = terminal && self.snapshot_transactions.finish_catchup();
+
         if let Some(last_entry) = queue_entries.pop() {
             for entry in queue_entries {
-                self.queue
-                    .push_with_aux(entry, timestamp, DeferredSenders::new());
+                self.push_queue_entry(
+                    entry,
+                    timestamp,
+                    DeferredSenders::new(),
+                    start_transaction.take(),
+                    false,
+                );
             }
-            if self.completion_task_tx.is_some() {
-                // Increment before pushing so the count cannot underflow if
-                // the reader flushes and decrements before this lands.
-                self.queued_acks.fetch_add(1, Ordering::Release);
-                self.queue.push_with_aux(last_entry, timestamp, vec![ack]);
-                // etl waits for this ack before sending more events. Keep
-                // taking steps until the queue entry carrying it is flushed.
-                self.queue.consumer.request_step();
-            } else {
-                self.queue
-                    .push_with_aux(last_entry, timestamp, DeferredSenders::new());
-                ack.complete();
-            }
+            self.queue_stream_ack(
+                last_entry,
+                timestamp,
+                ack,
+                start_transaction,
+                commit_transaction,
+            );
+        } else if commit_transaction {
+            // Catchup can end with only BEGIN/COMMIT events and no row buffer.
+            // Queue an empty entry so the Feldera transaction still closes
+            // after all preceding catchup data.
+            self.queue_stream_ack((None, Vec::new()), timestamp, ack, None, true);
         } else {
             self.ack_no_row_stream_write(ack);
         }
@@ -1255,39 +1497,169 @@ impl Destination for FelderaDestination {
 }
 
 impl FelderaDestination {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        input_stream: Box<dyn DeCollectionStream>,
+        endpoint_name: String,
+        source_table: String,
+        transaction_mode: PostgresCdcTransactionMode,
+        pipeline_id: u64,
+        queue: Arc<CdcInputQueue>,
+        store: PostgresStore,
+        feldera_required_columns: Vec<String>,
+        completion_task_tx: Option<mpsc::UnboundedSender<CompletionMessage>>,
+        queued_acks: Arc<AtomicUsize>,
+        pipeline_state_rx: Receiver<PipelineState>,
+    ) -> Self {
+        let snapshot_transactions = Arc::new(SnapshotTransactions::new(
+            source_table.clone(),
+            transaction_mode,
+            pipeline_id,
+            Arc::clone(&queue),
+            store,
+        ));
+        Self {
+            input_stream: Arc::new(Mutex::new(input_stream)),
+            queue,
+            source_table,
+            endpoint_name,
+            snapshot_transactions,
+            feldera_required_columns,
+            completion_task_tx,
+            queued_acks,
+            pipeline_state_rx,
+        }
+    }
+
+    fn snapshot_transactions(&self) -> Arc<SnapshotTransactions> {
+        Arc::clone(&self.snapshot_transactions)
+    }
+
+    fn target_table_id_for_events(&self, events: &[Event]) -> Option<TableId> {
+        events.iter().find_map(|event| match event {
+            Event::Insert(insert) => {
+                self.target_table_id_for_schema(&insert.replicated_table_schema)
+            }
+            Event::Update(update) => {
+                self.target_table_id_for_schema(&update.replicated_table_schema)
+            }
+            Event::Delete(delete) => {
+                self.target_table_id_for_schema(&delete.replicated_table_schema)
+            }
+            Event::Relation(relation) => {
+                self.target_table_id_for_schema(&relation.replicated_table_schema)
+            }
+            Event::Truncate(truncate) => truncate
+                .truncated_tables
+                .iter()
+                .find_map(|schema| self.target_table_id_for_schema(schema)),
+            Event::Begin(_) | Event::Commit(_) | Event::Unsupported => None,
+        })
+    }
+
+    fn target_table_id_for_schema(&self, schema: &ReplicatedTableSchema) -> Option<TableId> {
+        let name = schema.name();
+        self.is_target_table(&name.schema, &name.name)
+            .then(|| schema.id())
+    }
+
+    fn push_queue_entry(
+        &self,
+        (buffer, errors): (Option<Box<dyn InputBuffer>>, Vec<ParseError>),
+        timestamp: chrono::DateTime<Utc>,
+        senders: DeferredSenders,
+        start_transaction: Option<Option<String>>,
+        commit_transaction: bool,
+    ) {
+        self.queue.push_entry(
+            InputQueueEntry::new_with_aux(timestamp, senders)
+                .with_buffer(buffer)
+                .with_start_transaction(start_transaction)
+                .with_commit_transaction(commit_transaction),
+            errors,
+        );
+    }
+
+    fn queue_stream_ack(
+        &self,
+        entry: (Option<Box<dyn InputBuffer>>, Vec<ParseError>),
+        timestamp: chrono::DateTime<Utc>,
+        ack: DeferredAck,
+        start_transaction: Option<Option<String>>,
+        commit_transaction: bool,
+    ) {
+        if self.completion_task_tx.is_some() {
+            self.queued_acks.fetch_add(1, Ordering::Release);
+            self.push_queue_entry(
+                entry,
+                timestamp,
+                vec![ack],
+                start_transaction,
+                commit_transaction,
+            );
+            // etl waits for this ack before sending more events. Keep taking
+            // steps until the queue entry carrying it is flushed.
+            self.queue.consumer.request_step();
+        } else {
+            self.push_queue_entry(
+                entry,
+                timestamp,
+                DeferredSenders::new(),
+                start_transaction,
+                commit_transaction,
+            );
+            ack.complete();
+        }
+    }
+
     /// Answer a table-copy write.
     ///
-    /// Without completion tracking there is nothing to wait for, so every
-    /// write is `Durable` immediately.
-    ///
-    /// With tracking, a batch that queued rows is answered `Accepted` right
-    /// away: Feldera owns the rows, and etl keeps copying while they wait for
-    /// the completion frontier.
+    /// A batch that queued rows is answered `Accepted` right away: Feldera owns
+    /// the rows, and etl keeps copying. This also forces etl to send its terminal
+    /// empty write, including when completion tracking is unavailable, so the
+    /// copy transaction always gets its commit barrier.
     ///
     /// The one empty write etl sends at the end of the copy (an empty table
-    /// sends only this) is the table's durability barrier: answering it
-    /// `Durable` tells etl the whole snapshot is safe. So instead of answering
-    /// now, queue it behind all the snapshot data and let the completion
-    /// watcher answer once its step passes the frontier.
-    fn ack_snapshot_copy(&self, queued_data: bool, async_result: WriteTableRowsResult) {
-        if self.completion_task_tx.is_none() {
-            async_result.send(Ok(DestinationWriteStatus::Durable));
-        } else if queued_data {
-            async_result.send(Ok(DestinationWriteStatus::Accepted));
-        } else {
-            // At most one barrier can be live at a time: only the configured
-            // source table's copy reaches this branch. Every other publication
-            // table fails the column match in `write_table_rows` and is acked
-            // Durable immediately.
-            //
-            // Increment before pushing so the count cannot underflow if the
-            // reader flushes and decrements before this increment lands.
-            self.queued_acks.fetch_add(1, Ordering::Release);
-            self.queue.push_with_aux(
-                (None, Vec::new()),
-                Utc::now(),
-                vec![DeferredAck::SnapshotCopyBarrier(async_result)],
-            );
+    /// sends only this) is the table's durability barrier. With tracking, queue
+    /// it behind all snapshot data until the watcher passes its step. Without
+    /// tracking, queue an empty commit entry when it closes a copy transaction,
+    /// then answer `Durable` immediately.
+    fn ack_snapshot_copy(
+        &self,
+        queued_data: bool,
+        commit_transaction: bool,
+        async_result: WriteTableRowsResult,
+    ) {
+        let tracking = self.completion_task_tx.is_some();
+        match immediate_snapshot_copy_status(tracking, queued_data) {
+            Some(DestinationWriteStatus::Accepted) => {
+                async_result.send(Ok(DestinationWriteStatus::Accepted));
+            }
+            Some(DestinationWriteStatus::Durable) => {
+                if commit_transaction {
+                    self.push_queue_entry(
+                        (None, Vec::new()),
+                        Utc::now(),
+                        DeferredSenders::new(),
+                        None,
+                        true,
+                    );
+                }
+                async_result.send(Ok(DestinationWriteStatus::Durable));
+            }
+            None => {
+                // We only copy the configured source table. write_table_rows
+                // ignores every other table in the publication and immediately
+                // marks its batches durable.
+                self.queued_acks.fetch_add(1, Ordering::Release);
+                self.push_queue_entry(
+                    (None, Vec::new()),
+                    Utc::now(),
+                    vec![DeferredAck::SnapshotCopyBarrier(async_result)],
+                    None,
+                    commit_transaction,
+                );
+            }
         }
     }
 
@@ -1327,10 +1699,7 @@ impl FelderaDestination {
     }
 
     fn is_target_table(&self, schema_name: &str, table_name: &str) -> bool {
-        let qualified = format!("{schema_name}.{table_name}");
-        self.source_table == qualified
-            || self.source_table == table_name
-            || self.source_table == format!("\"{schema_name}\".\"{table_name}\"")
+        is_target_table(&self.source_table, schema_name, table_name)
     }
 
     /// Resolve the replicated column names for `schema`.
@@ -1382,6 +1751,34 @@ impl FelderaDestination {
             )
         ))
     }
+}
+
+/// Return the COPY status that can be reported immediately.
+fn immediate_snapshot_copy_status(
+    tracking: bool,
+    queued_data: bool,
+) -> Option<DestinationWriteStatus> {
+    match (tracking, queued_data) {
+        (_, true) => Some(DestinationWriteStatus::Accepted),
+        (false, false) => Some(DestinationWriteStatus::Durable),
+        (true, false) => None,
+    }
+}
+
+async fn target_table_id(store: &PostgresStore, source_table: &str) -> EtlResult<Option<TableId>> {
+    Ok(store
+        .get_table_schemas()
+        .await?
+        .iter()
+        .find(|schema| is_target_table(source_table, &schema.name.schema, &schema.name.name))
+        .map(|schema| schema.id))
+}
+
+fn is_target_table(source_table: &str, schema_name: &str, table_name: &str) -> bool {
+    let qualified = format!("{schema_name}.{table_name}");
+    source_table == qualified
+        || source_table == table_name
+        || source_table == format!("\"{schema_name}\".\"{table_name}\"")
 }
 
 /// Replicated column names of `schema`, in the order etl emits cell values for
@@ -1923,6 +2320,95 @@ mod tests {
         assert!(!should_discard_table_error(&replication_error, false));
         assert!(should_discard_table_error(&shutdown_error, true));
         assert!(should_discard_table_error(&replication_error, true));
+    }
+
+    #[test]
+    fn snapshot_transaction_moves_from_copy_to_catchup() {
+        let table_id = TableId::new(42);
+        let mut phase = SnapshotPhase::Copy {
+            started: false,
+            table_id: None,
+        };
+
+        assert!(phase.start_copy(table_id));
+        assert!(!phase.start_copy(table_id));
+        assert!(phase.finish_copy(table_id));
+        assert!(matches!(
+            &phase,
+            SnapshotPhase::Catchup {
+                started,
+                table_id: id,
+            } if !*started && *id == table_id
+        ));
+
+        assert!(phase.start_catchup(Some(table_id), true));
+        assert!(!phase.start_catchup(Some(table_id), true));
+        assert!(phase.finish_catchup());
+        assert!(matches!(phase, SnapshotPhase::Inactive));
+    }
+
+    #[test]
+    fn snapshot_catchup_only_starts_for_target_table_with_data() {
+        let table_id = TableId::new(42);
+        let mut phase = SnapshotPhase::Catchup {
+            started: false,
+            table_id,
+        };
+
+        assert!(!phase.start_catchup(Some(TableId::new(43)), true));
+        assert!(!phase.start_catchup(Some(table_id), false));
+        assert!(!phase.start_catchup(None, true));
+        assert!(phase.start_catchup(Some(table_id), true));
+    }
+
+    #[test]
+    fn snapshot_empty_copy_moves_to_catchup_without_commit() {
+        let table_id = TableId::new(42);
+        let mut phase = SnapshotPhase::Copy {
+            started: false,
+            table_id: Some(table_id),
+        };
+
+        assert!(!phase.finish_copy(table_id));
+        assert!(matches!(
+            &phase,
+            SnapshotPhase::Catchup {
+                started,
+                table_id: id,
+            } if !*started && *id == table_id
+        ));
+    }
+
+    #[test]
+    fn snapshot_unstarted_catchup_finishes_without_commit() {
+        let mut phase = SnapshotPhase::Catchup {
+            started: false,
+            table_id: TableId::new(42),
+        };
+
+        assert!(!phase.finish_catchup());
+        assert!(matches!(phase, SnapshotPhase::Inactive));
+    }
+
+    #[test]
+    fn snapshot_copy_without_tracking_forces_terminal_barrier() {
+        assert_eq!(
+            immediate_snapshot_copy_status(false, true),
+            Some(DestinationWriteStatus::Accepted)
+        );
+        assert_eq!(
+            immediate_snapshot_copy_status(false, false),
+            Some(DestinationWriteStatus::Durable)
+        );
+    }
+
+    #[test]
+    fn tracked_snapshot_copy_defers_terminal_barrier() {
+        assert_eq!(
+            immediate_snapshot_copy_status(true, true),
+            Some(DestinationWriteStatus::Accepted)
+        );
+        assert_eq!(immediate_snapshot_copy_status(true, false), None);
     }
 
     fn test_ack(kind: TestAckKind, tx: std::sync::mpsc::Sender<TestAckStatus>) -> DeferredAck {
