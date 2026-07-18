@@ -303,8 +303,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     void emitBalancerHints() {
-        for (var hint: this.postfix.balancerHints)
-            hint.emit(this.builder);
+        CircuitPostfix.emitBalancerHints(this.builder, this.postfix.balancerHints);
     }
 
     @Override

@@ -81,6 +81,19 @@ public class CircuitPostfix extends CircuitVisitor {
         this.balancerHints.add(hint);
     }
 
+    /** Emit the recorded balancer hints, gated on adaptive joins being enabled.
+     * When adaptive joins are disabled (`dev_tweaks.adaptive_joins`), the streams a
+     * hint references are never registered with the balancer; `adaptive_joins_enabled`
+     * then returns false (logging a warning) and the hints are skipped. */
+    public static void emitBalancerHints(IIndentStream builder, List<BalancerHint> hints) {
+        if (hints.isEmpty())
+            return;
+        builder.append("if circuit.adaptive_joins_enabled() {").increase().newline();
+        for (BalancerHint hint: hints)
+            hint.emit(builder);
+        builder.decrease().append("}").newline();
+    }
+
     public void clearRegions() {
         this.regionsCreated.clear();
     }

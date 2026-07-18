@@ -1088,6 +1088,14 @@ impl Runtime {
         self.inner().allow_input_during_commit
     }
 
+    /// Whether adaptive (dynamically balanced) joins are enabled, per
+    /// `dev_tweaks.adaptive_joins`. Unlike [`Self::with_dev_tweaks`], this reads the
+    /// runtime's configured tweaks, so it is valid off the worker threads (e.g. on
+    /// the thread that owns the `DBSPHandle`).
+    pub fn adaptive_joins(&self) -> bool {
+        self.inner().dev_tweaks.adaptive_joins()
+    }
+
     /// Returns the worker index as a string.
     ///
     /// This is useful for metric labels.
