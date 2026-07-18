@@ -776,6 +776,9 @@ impl BalancerInner {
 
     /// Set a hint for a stream.
     ///
+    /// Fails with `NotRegisteredWithBalancer` if the stream is not managed by the balancer,
+    /// i.e., it is not an input to an adaptively balanced join.
+    ///
     /// Fails if the hint specifies a fixed policy that cannot be enforced in the current state, i.e.,
     /// it either contradicts the set of existing hints for other streams (e.g., we refuse to join
     /// two streams both of which have Broadcast policies) or the policy cannot be enforced during the
@@ -789,7 +792,15 @@ impl BalancerInner {
         //     Runtime::worker_index(),
         //     hint
         // );
-        let cluster_index = *self.stream_to_cluster.get(&node_id).unwrap();
+        // A stream is absent from `stream_to_cluster` when it is not an input to an
+        // adaptively balanced join (e.g. an input to a plain stream join, such as a
+        // `now()` cross join, or a join the compiler could not make adaptive). Setting
+        // a policy hint on such a stream is meaningless, so reject it with an error
+        // instead of panicking and taking down the worker thread.
+        let cluster_index = *self
+            .stream_to_cluster
+            .get(&node_id)
+            .ok_or(BalancerError::NotRegisteredWithBalancer(node_id))?;
 
         // Apply the hint to the stored hints, remembering the previous value so we
         // can roll back if the hint turns out to be unenforceable. The hint must be
