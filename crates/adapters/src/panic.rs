@@ -26,12 +26,23 @@ mod tests {
 
     use crate::panic::{N_PANICS, enable_counting_panics};
 
+    /// Test that [enable_counting_panics] actually increments [N_PANICS].
+    ///
+    /// This is set to be ignored because it races with proptest initialization:
+    /// both [enable_counting_panics] and proptests set a panic hook, which is
+    /// unavoidably racy.  See https://github.com/rust-lang/rust/issues/92649
+    /// for an explanation of the race and a proposed way to avoid it (currently
+    /// available only in nightly).
     #[test]
+    #[ignore = "races with proptests"]
     fn test_counting_panics() {
         enable_counting_panics();
         let panics_before = N_PANICS.load(Ordering::Relaxed);
         std::thread::spawn(|| panic!()).join().unwrap_err();
         let panics_after = N_PANICS.load(Ordering::Relaxed);
-        assert!(panics_after > panics_before);
+        assert!(
+            panics_after > panics_before,
+            "{panics_after} should be greater than {panics_before}"
+        );
     }
 }
