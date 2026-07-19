@@ -4,18 +4,19 @@ use feldera_adapterlib::transport::{AsyncErrorCallback, OutputEndpoint};
 use feldera_types::transport::s2::S2OutputConfig;
 use s2_sdk::{
     S2, S2Stream,
-    producer::{Producer, ProducerConfig},
-    types::{AccountEndpoint, AppendRecord, BasinEndpoint, RetryConfig, S2Config, S2Endpoints},
+    types::{
+        AccountEndpoint, AppendInput, AppendRecord, AppendRecordBatch, BasinEndpoint,
+        RECORD_BATCH_MAX, RetryConfig, S2Config, S2Endpoints,
+    },
 };
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{Instrument, error, info, info_span, span::EnteredSpan};
+use tracing::{Instrument, error, info_span, span::EnteredSpan};
 
 pub struct S2OutputEndpoint {
     config: S2OutputConfig,
     s2_stream: Arc<S2Stream>,
-    producer: Option<Producer>,
 }
 
 impl S2OutputEndpoint {
@@ -64,7 +65,6 @@ impl S2OutputEndpoint {
         Ok(Self {
             config,
             s2_stream: Arc::new(s2_stream),
-            producer: None,
         })
     }
 
@@ -80,38 +80,45 @@ impl S2OutputEndpoint {
 
 impl OutputEndpoint for S2OutputEndpoint {
     fn connect(&mut self, _async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
-        let _guard = self.span();
-        let producer = TOKIO.block_on(async { self.s2_stream.producer(ProducerConfig::new()) });
-        info!("S2 producer connected");
-        self.producer = Some(producer);
         Ok(())
     }
 
     fn max_buffer_size_bytes(&self) -> usize {
-        // S2 enforces a 1MB limit per AppendRecord.
+        // S2 enforces a 1MB metered size limit per AppendRecordBatch.
         // Use a conservative limit to leave room for framing overhead.
         1_000_000
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
         let _guard = self.span();
-        let producer = self
-            .producer
-            .as_ref()
-            .ok_or_else(|| anyhow!("s2: push_buffer called before connect"))?;
+        let s2_stream = self.s2_stream.clone();
 
-        let record = AppendRecord::new(buffer.to_vec())
-            .context("s2: failed to create AppendRecord from buffer")?;
+        // The output format emits one record per line. Split the buffer into
+        // individual S2 records and append them as native S2 batches, honoring
+        // the SDK's per-batch record-count limit.
+        let records = buffer
+            .split(|&b| b == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| {
+                AppendRecord::new(line.to_vec())
+                    .context("s2: failed to create AppendRecord from line")
+            })
+            .collect::<AnyResult<Vec<_>>>()?;
+
+        if records.is_empty() {
+            return Ok(());
+        }
 
         TOKIO
-            .block_on(async {
-                let ticket = producer
-                    .submit(record)
-                    .await
-                    .map_err(|e| anyhow!("s2: failed to submit record: {e}"))?;
-                ticket
-                    .await
-                    .map_err(|e| anyhow!("s2: failed to get ack for record: {e}"))?;
+            .block_on(async move {
+                for chunk in records.chunks(RECORD_BATCH_MAX.count) {
+                    let batch = AppendRecordBatch::try_from_iter(chunk.iter().cloned())
+                        .map_err(|e| anyhow!("s2: failed to create AppendRecordBatch: {e}"))?;
+                    s2_stream
+                        .append(AppendInput::new(batch))
+                        .await
+                        .map_err(|e| anyhow!("s2: failed to append records: {e}"))?;
+                }
                 Ok::<_, AnyError>(())
             })
             .map_err(|e| {
