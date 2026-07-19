@@ -823,10 +823,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(expression);
         if (expression.getType().mayBeNull)
             this.builder.append("Some(");
+        boolean fv = this.compiler.metadata.useFlatVariant();
         if (expression.isSqlNull) {
-            this.builder.append("Variant::SqlNull");
+            this.builder.append(fv ? "FlatVariant::sql_null()" : "Variant::SqlNull");
         } else {
-            this.builder.append("Variant::from(");
+            this.builder.append(fv ? "FlatVariant::from(" : "Variant::from(");
             expression.value.accept(this);
             this.builder.append(")");
         }
@@ -841,7 +842,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (literal.mayBeNull())
             this.builder.append("Some(");
         this.push(literal);
-        this.builder.append("Variant::VariantNull");
+        this.builder.append(this.compiler.metadata.useFlatVariant()
+                ? "FlatVariant::variant_null()" : "Variant::VariantNull");
         if (literal.mayBeNull())
             this.builder.append(")");
         this.pop(literal);
@@ -2607,12 +2609,18 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPTypeBaseType type) {
         this.push(type);
+        String rustName = type.getRustString();
+        // With SET feldera_flat_variant = 'on', VARIANT columns use the
+        // flat-buffer runtime type. Connector metadata and the cast/index
+        // function grid keep the enum Variant.
+        if (type.is(DBSPTypeVariant.class) && this.compiler.metadata.useFlatVariant())
+            rustName = "FlatVariant";
         if (this.compact) {
-            this.builder.append(type.getRustString());
+            this.builder.append(rustName);
             if (type.mayBeNull)
                 this.builder.append("?");
         } else {
-            type.wrapOption(this.builder, type.getRustString());
+            type.wrapOption(this.builder, rustName);
         }
         this.pop(type);
         return VisitDecision.STOP;

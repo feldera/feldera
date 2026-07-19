@@ -50,6 +50,8 @@ pub use uuid::*;
 #[doc(hidden)]
 pub mod variant;
 pub use variant::*;
+pub mod flat_variant;
+pub use flat_variant::FlatVariant;
 #[doc(hidden)]
 pub mod rfc3339;
 #[doc(hidden)]

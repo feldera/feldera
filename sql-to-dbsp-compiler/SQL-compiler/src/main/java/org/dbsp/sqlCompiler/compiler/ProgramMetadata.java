@@ -46,7 +46,8 @@ public class ProgramMetadata implements IJson {
     static final Set<String> reserved = Set.of(
             DBSPCompiler.WARNINGS_ARE_ERRORS.toLowerCase(Locale.ENGLISH),
             ProgramMetadata.AVOID_STAR_JOINS.toLowerCase(Locale.ENGLISH),
-            ProgramMetadata.ENFORCE_POSITIVE_INPUTS.toLowerCase(Locale.ENGLISH)
+            ProgramMetadata.ENFORCE_POSITIVE_INPUTS.toLowerCase(Locale.ENGLISH),
+            ProgramMetadata.USE_FLAT_VARIANT.toLowerCase(Locale.ENGLISH)
     );
 
     private boolean known(String variable) {
@@ -114,9 +115,20 @@ public class ProgramMetadata implements IJson {
     /** When set to {@code true}, inserts a weight-validation check after every
      * input table that has no primary key. */
     public static final String ENFORCE_POSITIVE_INPUTS = "ENFORCE_POSITIVE_INPUTS";
+    /** When set to {@code true}, VARIANT columns use the flat-buffer
+     * {@code FlatVariant} runtime type instead of the enum {@code Variant}.
+     * Programs that cast or index VARIANT values cannot enable this yet:
+     * the runtime cast/index function grid still operates on the enum. */
+    public static final String USE_FLAT_VARIANT = "FELDERA_FLAT_VARIANT";
 
     public boolean noStarJoins() {
         return this.isExplicitlyOn(AVOID_STAR_JOINS);
+    }
+
+    /** Returns {@code true} if VARIANT columns should use the flat-buffer
+     * {@code FlatVariant} runtime type. */
+    public boolean useFlatVariant() {
+        return this.isExplicitlyOn(USE_FLAT_VARIANT);
     }
 
     /** Returns {@code true} if weight validation should be inserted after
