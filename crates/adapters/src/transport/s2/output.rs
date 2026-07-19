@@ -5,14 +5,12 @@ use feldera_types::transport::s2::S2OutputConfig;
 use s2_sdk::{
     S2, S2Stream,
     producer::{Producer, ProducerConfig},
-    types::{
-        AccountEndpoint, AppendRecord, BasinEndpoint, RetryConfig, S2Config, S2Endpoints,
-    },
+    types::{AccountEndpoint, AppendRecord, BasinEndpoint, RetryConfig, S2Config, S2Endpoints},
 };
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{error, info, info_span, span::EnteredSpan, Instrument};
+use tracing::{Instrument, error, info, info_span, span::EnteredSpan};
 
 pub struct S2OutputEndpoint {
     config: S2OutputConfig,
@@ -83,9 +81,7 @@ impl S2OutputEndpoint {
 impl OutputEndpoint for S2OutputEndpoint {
     fn connect(&mut self, _async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
         let _guard = self.span();
-        let producer = TOKIO.block_on(async {
-            self.s2_stream.producer(ProducerConfig::new())
-        });
+        let producer = TOKIO.block_on(async { self.s2_stream.producer(ProducerConfig::new()) });
         info!("S2 producer connected");
         self.producer = Some(producer);
         Ok(())

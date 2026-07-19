@@ -2,10 +2,7 @@
 mod tests {
     use std::borrow::Cow;
 
-    use feldera_types::config::{
-        ConnectorConfig, FormatConfig, OutputBufferConfig, TransportConfig,
-        default_max_queued_records,
-    };
+    use feldera_types::config::{ConnectorConfig, FormatConfig, TransportConfig};
     use feldera_types::transport::s2::{S2InputConfig, S2OutputConfig, S2StartFrom};
     use serde_json::{self, json};
 
@@ -53,22 +50,48 @@ mod tests {
         // Empty range (no messages processed)
         let meta = Metadata {
             seq_num_range: 0..0,
+            position_resolved: true,
         };
         let json = serde_json::to_value(&meta).unwrap();
         let restored = Metadata::from_resume_info(Some(json)).unwrap();
         assert_eq!(restored.seq_num_range, 0..0);
+        assert!(restored.position_resolved);
 
         // Non-empty range
         let meta = Metadata {
             seq_num_range: 6..10,
+            position_resolved: true,
         };
         let json = serde_json::to_value(&meta).unwrap();
         let restored = Metadata::from_resume_info(Some(json)).unwrap();
         assert_eq!(restored.seq_num_range, 6..10);
+        assert!(restored.position_resolved);
 
-        // None resume info -> start from beginning
+        // None resume info -> start from the configured position.
         let restored = Metadata::from_resume_info(None).unwrap();
         assert_eq!(restored.seq_num_range, 0..0);
+        assert!(!restored.position_resolved);
+    }
+
+    #[test]
+    fn legacy_metadata_defaults_to_unresolved_position() {
+        use crate::transport::s2::S2Metadata as Metadata;
+
+        let restored = Metadata::from_resume_info(Some(json!({
+            "seq_num_range": { "start": 0, "end": 0 }
+        })))
+        .unwrap();
+        assert!(!restored.position_resolved);
+    }
+
+    #[test]
+    fn replay_read_is_bounded_to_checkpoint_range() {
+        use crate::transport::s2::make_replay_read_input;
+        use s2_sdk::types::ReadFrom;
+
+        let input = make_replay_read_input(&(6..10));
+        assert!(matches!(input.start.from, ReadFrom::SeqNum(6)));
+        assert_eq!(input.stop.limits.count, Some(4));
     }
 
     #[test]
@@ -129,29 +152,21 @@ mod tests {
 
     #[test]
     fn connector_config_insert_delete_format_roundtrip() {
-        let config = ConnectorConfig {
-            transport: TransportConfig::S2Input(S2InputConfig {
+        let config = ConnectorConfig::new(
+            TransportConfig::S2Input(S2InputConfig {
                 basin: "test-basin".to_string(),
                 stream: "test-stream".to_string(),
                 auth_token: "tok_test123".to_string(),
                 endpoint: Some("http://localhost:8080".to_string()),
                 start_from: S2StartFrom::Beginning,
             }),
-            format: Some(FormatConfig {
+            Some(FormatConfig {
                 name: Cow::from("json"),
                 config: json!({
                     "update_format": "insert_delete"
                 }),
             }),
-            index: None,
-            output_buffer_config: OutputBufferConfig::default(),
-            max_batch_size: None,
-            max_worker_batch_size: None,
-            max_queued_records: default_max_queued_records(),
-            paused: false,
-            labels: Vec::new(),
-            start_after: None,
-        };
+        );
 
         let serialized = serde_json::to_value(&config).unwrap();
         let deserialized: ConnectorConfig = serde_json::from_value(serialized).unwrap();
