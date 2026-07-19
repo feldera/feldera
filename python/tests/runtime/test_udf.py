@@ -234,6 +234,15 @@ pub fn nstruct2nstruct(i: Tup2<Option<i32>, Option<SqlString>>) -> Result<Tup2<O
 }
         """
 
+        # Under the FlatVariant representation (FELDERA_FLAT_VARIANT), UDFs receive
+        # and return FlatVariant; the identity UDF bodies only need the type
+        # name swapped.
+        import os
+        import re
+
+        if os.environ.get("FELDERA_FLAT_VARIANT", "").lower() in ("1", "on", "true"):
+            udfs = re.sub(r"\bVariant\b", "FlatVariant", udfs)
+
         pipeline = PipelineBuilder(
             TEST_CLIENT,
             name=self.register_for_cleanup("test_udfs"),

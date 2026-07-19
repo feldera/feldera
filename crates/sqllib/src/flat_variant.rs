@@ -721,14 +721,16 @@ impl TryFrom<Variant> for FlatVariant {
     }
 }
 
+// Mirrors the enum's behavior for VARIANT elements: `Option<Variant>` gets
+// its `TryFrom<Variant>` from core's `From<T> for Option<T>`, which always
+// wraps in `Some`. A JSON null inside a map or array therefore stays a
+// variant-null VALUE (MapTests#mapValuesVariant depends on this); it does
+// not become a Rust `None`.
 impl TryFrom<Variant> for Option<FlatVariant> {
     type Error = Box<dyn std::error::Error>;
 
     fn try_from(value: Variant) -> Result<Self, Self::Error> {
-        match value {
-            Variant::SqlNull | Variant::VariantNull => Ok(None),
-            value => Ok(Some(FlatVariant::from(&value))),
-        }
+        Ok(Some(FlatVariant::from(&value)))
     }
 }
 
@@ -850,7 +852,10 @@ impl rkyv::Archive for FlatVariant {
 
     unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
         let (fp, fo) = rkyv::out_field!(out.bytes);
-        ArchivedVec::resolve_from_slice(self.as_bytes(), pos + fp, resolver, fo);
+        // SAFETY: `fo` points into `out`, which the caller guarantees is
+        // valid for writes at the archived position, and the resolver was
+        // produced by serializing exactly `self.as_bytes()`.
+        unsafe { ArchivedVec::resolve_from_slice(self.as_bytes(), pos + fp, resolver, fo) };
     }
 }
 
@@ -1322,6 +1327,33 @@ mod tests {
             let old = a.index_string(&key);
             let new = a2.index_string(&key);
             prop_assert_eq!(&Variant::from(&new), &old);
+        }
+    }
+
+    /// The MAP cast must treat a JSON null member exactly like the enum
+    /// path, where `Option<Variant>::try_from` always wraps in `Some`
+    /// (MapTests#mapValuesVariant regression).
+    #[test]
+    fn map_cast_null_member() {
+        let json = r#"{"a":"1","d":null}"#;
+        let v1: Variant = serde_json::from_str(json).unwrap();
+        let v2: FlatVariant = serde_json::from_str(json).unwrap();
+        let m1 = crate::casts::cast_to_mapN_VN::<SqlString, Option<Variant>>(Some(v1))
+            .unwrap()
+            .unwrap();
+        let m2 = crate::flat_variant::casts::cast_to_mapN_FVN::<SqlString, Option<FlatVariant>>(
+            Some(v2),
+        )
+        .unwrap()
+        .unwrap();
+        for key in ["a", "d"] {
+            let e1 = m1.get(&SqlString::from_ref(key)).expect("key present");
+            let e2 = m2.get(&SqlString::from_ref(key)).expect("key present");
+            assert_eq!(
+                e1.as_ref().map(FlatVariant::from),
+                e2.clone(),
+                "MAP element for {key} diverges from the enum path"
+            );
         }
     }
 

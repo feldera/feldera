@@ -3,12 +3,14 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.VariantMode;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
@@ -52,6 +54,10 @@ public class StubsWriter extends BaseRustCodeGenerator {
     // For a function prototype like f(s: i32) -> i32;
     // generate a body like
     // udf::f(s)
+    //
+    // Under the FlatVariant mode, VARIANT parameters and results render as
+    // FlatVariant, and the udf.rs implementation must be written against
+    // FlatVariant as well: the representation choice is program-wide.
     DBSPFunction generateStubBody(DBSPFunction function) {
         String name = "udf::" + function.name;
         List<DBSPExpression> arguments = Linq.map(function.parameters, DBSPParameter::asVariable);
