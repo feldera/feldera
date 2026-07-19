@@ -960,12 +960,12 @@ pub fn generate_pipeline_config(
 mod tests {
     use super::{RuntimeSelector, determine_connector_endpoint_names, generate_program_info};
     use crate::db::types::program::ConnectorGenerationError::RelationConnectorNameCollision;
-    use std::collections::BTreeMap;
     use feldera_types::config::{ConnectorConfig, TransportConfig};
     use feldera_types::program_schema::{
         ProgramSchema, PropertyValue, Relation, SourcePosition, SqlIdentifier,
     };
     use feldera_types::transport::datagen::DatagenInputConfig;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_runtime_version_validation() {
@@ -1157,8 +1157,15 @@ mod tests {
             outputs: vec![],
         };
 
-        let program_info =
-            generate_program_info(schema, String::new(), String::new(), None).unwrap();
-        assert!(program_info.input_connectors.contains_key("events.unnamed-0"));
+        let program_info = generate_program_info(
+            serde_json::to_value(schema).unwrap(),
+            String::new(),
+            String::new(),
+            None,
+        )
+        .unwrap();
+        assert!(program_info
+            .input_connectors
+            .contains_key("events.unnamed-0"));
     }
 }

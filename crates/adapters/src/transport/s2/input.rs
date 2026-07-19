@@ -16,8 +16,8 @@ use futures::StreamExt;
 use s2_sdk::{
     S2,
     types::{
-        AccountEndpoint, BasinEndpoint, ReadFrom, ReadInput, ReadStart, RetryConfig, S2Config,
-        S2Endpoints,
+        AccountEndpoint, BasinEndpoint, ReadFrom, ReadInput, ReadLimits, ReadStart, ReadStop,
+        RetryConfig, S2Config, S2Endpoints,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,7 @@ use serde_json::Value as JsonValue;
 use std::hash::Hasher;
 use std::num::NonZeroU32;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::{
     select,
@@ -39,6 +39,8 @@ use xxhash_rust::xxh3::Xxh3Default;
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Metadata {
     pub(crate) seq_num_range: std::ops::Range<u64>,
+    #[serde(default)]
+    pub(crate) position_resolved: bool,
 }
 
 impl Metadata {
@@ -48,6 +50,7 @@ impl Metadata {
             .transpose()?
             .unwrap_or(Self {
                 seq_num_range: 0..0,
+                position_resolved: false,
             }))
     }
 }
@@ -92,6 +95,12 @@ impl TransportInputEndpoint for S2InputEndpoint {
 
 fn make_read_input(start_seq: u64) -> ReadInput {
     ReadInput::new().with_start(ReadStart::new().with_from(ReadFrom::SeqNum(start_seq)))
+}
+
+pub(crate) fn make_replay_read_input(seq_num_range: &std::ops::Range<u64>) -> ReadInput {
+    let count = usize::try_from(seq_num_range.end - seq_num_range.start).unwrap_or(usize::MAX);
+    make_read_input(seq_num_range.start)
+        .with_stop(ReadStop::new().with_limits(ReadLimits::new().with_count(count)))
 }
 
 fn config_to_read_input(config: &S2InputConfig) -> ReadInput {
@@ -200,6 +209,7 @@ impl S2Reader {
         let mut canceller: Option<Canceller> = None;
         let queue = Arc::new(InputQueue::<u64>::new(consumer.clone()));
         let next_seq = Arc::new(AtomicU64::new(resume_info.seq_num_range.end));
+        let position_resolved = Arc::new(AtomicBool::new(resume_info.position_resolved));
         let s2_stream = Arc::new(s2_stream);
 
         let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
@@ -209,9 +219,9 @@ impl S2Reader {
             info!("Replay: {:?}", metadata);
             if !metadata.seq_num_range.is_empty() {
                 let first = metadata.seq_num_range.start;
-                let last = metadata.seq_num_range.end - 1;
+                let end = metadata.seq_num_range.end;
 
-                let read_input = make_read_input(first);
+                let read_input = make_replay_read_input(&metadata.seq_num_range);
                 let mut session = s2_stream.read_session(read_input).await.with_context(|| {
                     format!("Failed to create read session for replay from {first}")
                 })?;
@@ -219,14 +229,16 @@ impl S2Reader {
                 let mut hasher = Xxh3Default::new();
                 let mut buffer_size = BufferSize::default();
                 let mut replay_parser = parser.fork();
-                let mut done = false;
+                let mut expected_seq = first;
 
                 while let Some(result) = session.next().await {
                     let batch = result.map_err(|e| anyhow!("S2 read error during replay: {e}"))?;
                     for record in &batch.records {
-                        if record.seq_num > last {
-                            done = true;
-                            break;
+                        if record.seq_num != expected_seq {
+                            return Err(anyhow!(
+                                "S2 replay expected sequence number {expected_seq}, but received {}",
+                                record.seq_num
+                            ));
                         }
                         let data = &record.body;
                         let (buffer, errors) = replay_parser.parse(data, None);
@@ -241,18 +253,19 @@ impl S2Reader {
                         };
                         consumer.buffered(amt);
                         buffer_size += amt;
-                        if record.seq_num == last {
-                            done = true;
-                            break;
-                        }
-                    }
-                    if done {
-                        break;
+                        expected_seq += 1;
                     }
                 }
 
+                if expected_seq != end {
+                    return Err(anyhow!(
+                        "S2 replay ended at sequence number {expected_seq}, before expected end {end}; the checkpointed records may have been trimmed"
+                    ));
+                }
+
                 consumer.replayed(buffer_size, hasher.finish());
-                next_seq.store(last + 1, Ordering::Release);
+                next_seq.store(end, Ordering::Release);
+                position_resolved.store(true, Ordering::Release);
             } else {
                 consumer.replayed(BufferSize::default(), Xxh3Default::new().finish());
             }
@@ -276,6 +289,7 @@ impl S2Reader {
                     info!("Queued {:?} records ({seq_range:?})", buffer_size);
                     let metadata_json = serde_json::to_value(&Metadata {
                         seq_num_range: seq_range,
+                        position_resolved: position_resolved.load(Ordering::Acquire),
                     })?;
                     let timestamp = batches.last().map(|(ts, _)| *ts).unwrap_or_else(Utc::now);
                     let hash = hasher.map(|h| h.finish()).unwrap_or(0);
@@ -299,10 +313,21 @@ impl S2Reader {
                     let cur_seq = next_seq.load(Ordering::Acquire);
                     info!("Extend from {cur_seq}");
                     if canceller.is_none() {
+                        if !position_resolved.load(Ordering::Acquire)
+                            && matches!(config.start_from, S2StartFrom::Tail)
+                        {
+                            let tail = s2_stream
+                                .check_tail()
+                                .await
+                                .context("Failed to resolve the S2 tail position")?;
+                            next_seq.store(tail.seq_num, Ordering::Release);
+                            position_resolved.store(true, Ordering::Release);
+                        }
                         canceller = Some(spawn_s2_reader(
                             s2_stream.clone(),
                             config.clone(),
                             next_seq.clone(),
+                            position_resolved.clone(),
                             queue.clone(),
                             consumer.clone(),
                             parser.fork(),
@@ -323,6 +348,7 @@ fn spawn_s2_reader(
     s2_stream: Arc<s2_sdk::S2Stream>,
     config: Arc<S2InputConfig>,
     next_seq: Arc<AtomicU64>,
+    position_resolved: Arc<AtomicBool>,
     queue: Arc<InputQueue<u64>>,
     consumer: Box<dyn InputConsumer>,
     mut parser: Box<dyn Parser>,
@@ -366,10 +392,14 @@ fn spawn_s2_reader(
                     result = session.next() => {
                         match result {
                             Some(Ok(batch)) => {
-                                // Successfully received a batch
+                                if let Some(tail) = &batch.tail {
+                                    next_seq.fetch_max(tail.seq_num, Ordering::AcqRel);
+                                    position_resolved.store(true, Ordering::Release);
+                                }
                                 for record in &batch.records {
                                     trace!("Got record #{}", record.seq_num);
                                     next_seq.store(record.seq_num + 1, Ordering::Release);
+                                    position_resolved.store(true, Ordering::Release);
                                     let data = &record.body;
                                     queue.push_with_aux(parser.parse(data, None), Utc::now(), record.seq_num);
                                 }
@@ -416,6 +446,10 @@ impl Canceller {
 }
 
 impl InputReader for S2Reader {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
     fn request(&self, command: InputReaderCommand) {
         let _ = self.command_sender.send(command);
     }
