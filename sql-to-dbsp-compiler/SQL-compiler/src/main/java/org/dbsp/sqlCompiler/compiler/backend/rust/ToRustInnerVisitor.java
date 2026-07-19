@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.compiler.VariantMode;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
@@ -823,7 +824,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(expression);
         if (expression.getType().mayBeNull)
             this.builder.append("Some(");
-        boolean fv = this.compiler.metadata.useFlatVariant();
+        boolean fv = VariantMode.isEnabled();
         if (expression.isSqlNull) {
             this.builder.append(fv ? "FlatVariant::sql_null()" : "Variant::SqlNull");
         } else {
@@ -842,7 +843,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (literal.mayBeNull())
             this.builder.append("Some(");
         this.push(literal);
-        this.builder.append(this.compiler.metadata.useFlatVariant()
+        this.builder.append(VariantMode.isEnabled()
                 ? "FlatVariant::variant_null()" : "Variant::VariantNull");
         if (literal.mayBeNull())
             this.builder.append(")");
@@ -1738,7 +1739,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             }
             case VARIANT_INDEX: {
                 DBSPType indexType = expression.right.getType();
-                this.builder.append("indexV")
+                this.builder.append(VariantMode.isEnabled() ? "indexFV" : "indexV")
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(indexType.nullableUnderlineSuffix())
                         .append("(");
@@ -2609,18 +2610,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPTypeBaseType type) {
         this.push(type);
-        String rustName = type.getRustString();
-        // With SET feldera_flat_variant = 'on', VARIANT columns use the
-        // flat-buffer runtime type. Connector metadata and the cast/index
-        // function grid keep the enum Variant.
-        if (type.is(DBSPTypeVariant.class) && this.compiler.metadata.useFlatVariant())
-            rustName = "FlatVariant";
         if (this.compact) {
-            this.builder.append(rustName);
+            this.builder.append(type.getRustString());
             if (type.mayBeNull)
                 this.builder.append("?");
         } else {
-            type.wrapOption(this.builder, rustName);
+            type.wrapOption(this.builder, type.getRustString());
         }
         this.pop(type);
         return VisitDecision.STOP;

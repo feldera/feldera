@@ -60,6 +60,16 @@ impl GeoPoint {
     }
 
     #[doc(hidden)]
+    pub fn left(&self) -> F64 {
+        self.0
+    }
+
+    #[doc(hidden)]
+    pub fn right(&self) -> F64 {
+        self.1
+    }
+
+    #[doc(hidden)]
     pub fn to_point(&self) -> Point {
         Point::new(self.0.into_inner(), self.1.into_inner())
     }

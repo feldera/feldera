@@ -72,6 +72,11 @@ public class ProgramMetadata implements IJson {
                             " does not control any known settings");
         }
         this.variables.put(variable, value);
+        // The variant representation must be fixed before any expression of
+        // the program is compiled to Rust names; SET statements precede other
+        // statements, so updating the global mode here is early enough.
+        if (variable.equals(USE_FLAT_VARIANT.toLowerCase(Locale.ENGLISH)))
+            VariantMode.set(!this.isFalsy(variable));
     }
 
     public boolean hasValue(String variable) {
@@ -126,9 +131,15 @@ public class ProgramMetadata implements IJson {
     }
 
     /** Returns {@code true} if VARIANT columns should use the flat-buffer
-     * {@code FlatVariant} runtime type. */
+     * {@code FlatVariant} runtime type.
+     *
+     * Programs opt in with {@code SET feldera_flat_variant = 'on'}. The
+     * {@code FELDERA_FLAT_VARIANT} environment variable sets the default for
+     * every program compiled by this process, so a whole test suite can run
+     * against FlatVariant without editing each test; an explicit SET statement
+     * still wins over the environment. See {@link VariantMode}. */
     public boolean useFlatVariant() {
-        return this.isExplicitlyOn(USE_FLAT_VARIANT);
+        return VariantMode.isEnabled();
     }
 
     /** Returns {@code true} if weight validation should be inserted after

@@ -7,11 +7,12 @@
 //! deserialization is one allocation plus a memcpy, drop is a single dealloc,
 //! and equality is usually a memcmp.
 //!
-//! Programs opt in with `SET feldera_flat_variant = 'on'`, which makes the SQL
-//! compiler emit `FlatVariant` for VARIANT columns. The cast and index function
-//! grid (`cast_to_V_*`, `indexV*`) still operates on the enum `Variant`;
-//! programs that use those operations on VARIANT values cannot enable
-//! FlatVariant yet.
+//! Programs opt in with `SET feldera_flat_variant = 'on'` (or globally with the
+//! `FELDERA_FLAT_VARIANT` environment variable), which makes the SQL compiler
+//! emit `FlatVariant` for VARIANT columns and the `FV` function-name grid
+//! (`cast_to_FV_*`, `indexFV*`, `parse_json_fv`, `to_json_FV`, `typeof_fv`,
+//! `variantnull_fv`; see `flat_variant::casts`). Connector metadata keeps the enum
+//! `Variant`.
 //!
 //! # Encoding
 //!
@@ -38,6 +39,9 @@
 //! compare equal across different bit patterns), so `Eq` uses a memcmp fast
 //! path with a structural fallback and `Hash` delegates float payloads to
 //! the `F32`/`F64` wrappers.
+
+#[doc(hidden)]
+pub mod casts;
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -580,7 +584,12 @@ fn encode_variant(w: &mut Writer, v: &Variant) -> Range<usize> {
         Variant::ShortInterval(i) => w.scalar(TAG_SHORT_INTERVAL, &i.microseconds().to_le_bytes()),
         Variant::LongInterval(i) => w.scalar(TAG_LONG_INTERVAL, &i.months().to_le_bytes()),
         Variant::Binary(b) => w.scalar(TAG_BINARY, b.as_slice()),
-        Variant::Geometry(_) => unimplemented!("GEOMETRY inside FLAT_VARIANT is not supported"),
+        Variant::Geometry(g) => {
+            let mut payload = [0u8; 16];
+            payload[..8].copy_from_slice(&g.left().into_inner().to_le_bytes());
+            payload[8..].copy_from_slice(&g.right().into_inner().to_le_bytes());
+            w.scalar(TAG_GEOMETRY, &payload)
+        }
         Variant::Uuid(u) => w.scalar(TAG_UUID, &u.to_bytes()[..]),
         Variant::Array(items) => {
             let children: Vec<Range<usize>> =
@@ -652,7 +661,10 @@ fn decode_variant(bytes: &[u8]) -> Variant {
             payload.try_into().unwrap(),
         ))),
         TAG_BINARY => Variant::Binary(ByteArray::new(payload)),
-        TAG_GEOMETRY => unimplemented!("GEOMETRY inside FLAT_VARIANT is not supported"),
+        TAG_GEOMETRY => Variant::Geometry(crate::GeoPoint::new(
+            f64::from_le_bytes(payload[..8].try_into().unwrap()),
+            f64::from_le_bytes(payload[8..].try_into().unwrap()),
+        )),
         TAG_UUID => Variant::Uuid(Uuid::from_bytes(payload.try_into().unwrap())),
         TAG_ARRAY => {
             let c = Container::new(bytes);
@@ -683,13 +695,138 @@ impl From<&FlatVariant> for Variant {
     }
 }
 
-/// Constructors used by generated code for VARIANT literals.
-impl<T> From<T> for FlatVariant
+impl From<FlatVariant> for Variant {
+    fn from(v: FlatVariant) -> Self {
+        Variant::from(&v)
+    }
+}
+
+impl From<Option<FlatVariant>> for Variant {
+    fn from(v: Option<FlatVariant>) -> Self {
+        match v {
+            None => Variant::SqlNull,
+            Some(v) => Variant::from(&v),
+        }
+    }
+}
+
+/// Conversion is total: every enum value encodes. The fallible signature
+/// matches the element bound of the enum's generic Array/Map conversions,
+/// which lets `Array<FlatVariant>: TryFrom<Variant>` come from those impls.
+impl TryFrom<Variant> for FlatVariant {
+    type Error = Box<dyn std::error::Error>;
+
+    fn try_from(value: Variant) -> Result<Self, Self::Error> {
+        Ok(FlatVariant::from(&value))
+    }
+}
+
+impl TryFrom<Variant> for Option<FlatVariant> {
+    type Error = Box<dyn std::error::Error>;
+
+    fn try_from(value: Variant) -> Result<Self, Self::Error> {
+        match value {
+            Variant::SqlNull | Variant::VariantNull => Ok(None),
+            value => Ok(Some(FlatVariant::from(&value))),
+        }
+    }
+}
+
+/// Constructors used by generated code for VARIANT literals and casts.
+///
+/// An explicit list instead of a blanket over `Variant: From<T>`: the
+/// blanket would collide with the reflexive `From<FlatVariant>` once
+/// `Variant: From<FlatVariant>` exists.
+macro_rules! fv_from {
+    ($($t:ty),* $(,)?) => {$(
+        impl From<$t> for FlatVariant {
+            fn from(value: $t) -> Self {
+                FlatVariant::from(&Variant::from(value))
+            }
+        }
+        impl From<Option<$t>> for FlatVariant {
+            fn from(value: Option<$t>) -> Self {
+                FlatVariant::from(&Variant::from(value))
+            }
+        }
+    )*};
+}
+
+fv_from!(
+    bool,
+    i8,
+    i16,
+    i32,
+    i64,
+    u8,
+    u16,
+    u32,
+    u64,
+    F32,
+    F64,
+    SqlString,
+    Date,
+    Time,
+    Timestamp,
+    TimestampTz,
+    ShortInterval,
+    LongInterval,
+    crate::GeoPoint,
+    ByteArray,
+    Uuid,
+);
+
+impl<const P: usize, const S: usize> From<crate::SqlDecimal<P, S>> for FlatVariant {
+    fn from(value: crate::SqlDecimal<P, S>) -> Self {
+        FlatVariant::from(&Variant::from(value))
+    }
+}
+
+impl<const P: usize, const S: usize> From<Option<crate::SqlDecimal<P, S>>> for FlatVariant {
+    fn from(value: Option<crate::SqlDecimal<P, S>>) -> Self {
+        FlatVariant::from(&Variant::from(value))
+    }
+}
+
+impl<T> From<crate::Array<T>> for FlatVariant
 where
     Variant: From<T>,
+    T: Clone,
 {
-    fn from(value: T) -> Self {
-        FlatVariant::from(&Variant::from(value))
+    fn from(value: crate::Array<T>) -> Self {
+        FlatVariant::from(&<Variant as From<crate::Array<T>>>::from(value))
+    }
+}
+
+impl<T> From<Option<crate::Array<T>>> for FlatVariant
+where
+    Variant: From<T>,
+    T: Clone,
+{
+    fn from(value: Option<crate::Array<T>>) -> Self {
+        FlatVariant::from(&<Variant as From<Option<crate::Array<T>>>>::from(value))
+    }
+}
+
+impl<K, V> From<crate::Map<K, V>> for FlatVariant
+where
+    Variant: From<K> + From<V>,
+    K: Clone + Ord,
+    V: Clone,
+{
+    fn from(value: crate::Map<K, V>) -> Self {
+        FlatVariant::from(&<Variant as From<crate::Map<K, V>>>::from(value))
+    }
+}
+
+impl<K, V> From<Option<crate::Map<K, V>>> for FlatVariant
+where
+    Variant: From<K> + From<V>,
+    K: Clone + Ord,
+    V: Clone,
+{
+    fn from(value: Option<crate::Map<K, V>>) -> Self {
+        FlatVariant::from(&<Variant as From<Option<crate::Map<K, V>>>>::from(value))
     }
 }
 
@@ -1038,7 +1175,11 @@ impl Serialize for Enc<'_> {
                 }
                 seq.end()
             }
-            TAG_GEOMETRY => unimplemented!("GEOMETRY inside FLAT_VARIANT is not supported"),
+            TAG_GEOMETRY => crate::GeoPoint::new(
+                f64::from_le_bytes(p[..8].try_into().unwrap()),
+                f64::from_le_bytes(p[8..].try_into().unwrap()),
+            )
+            .serialize_with_context(serializer, &json_config()),
             TAG_UUID => Uuid::from_bytes(p.try_into().unwrap())
                 .serialize_with_context(serializer, &json_config()),
             TAG_ARRAY => {
@@ -1112,6 +1253,8 @@ mod tests {
             proptest::collection::vec(any::<u8>(), 0..40)
                 .prop_map(|b| Variant::Binary(ByteArray::new(&b))),
             any::<[u8; 16]>().prop_map(|b| Variant::Uuid(Uuid::from_bytes(b))),
+            (any::<f64>(), any::<f64>())
+                .prop_map(|(a, b)| Variant::Geometry(crate::GeoPoint::new(a, b))),
         ]
     }
 

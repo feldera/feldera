@@ -38,10 +38,18 @@ public abstract class DBSPTypeBaseType extends DBSPType {
     }
 
     public String shortName() {
+        // Under FlatVariant the whole cast-function name grid switches with the
+        // short name (cast_to_FV_*, to_json_FV, ...).
+        if (this.code == DBSPTypeCode.VARIANT
+                && org.dbsp.sqlCompiler.compiler.VariantMode.isEnabled())
+            return "FV";
         return this.code.shortName;
     }
 
     public String getRustString() {
+        if (this.code == DBSPTypeCode.VARIANT
+                && org.dbsp.sqlCompiler.compiler.VariantMode.isEnabled())
+            return "FlatVariant";
         return this.code.rustName;
     }
 

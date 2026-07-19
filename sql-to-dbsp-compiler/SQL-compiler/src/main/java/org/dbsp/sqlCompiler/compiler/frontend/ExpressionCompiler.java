@@ -42,6 +42,7 @@ import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
 import org.apache.calcite.util.TimestampWithTimeZoneString;
+import org.dbsp.sqlCompiler.compiler.VariantMode;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
@@ -1582,8 +1583,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         }
                         return accumulator.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
                     }
-                    case "now":
                     case "variantnull":
+                        return compileFunction(
+                                VariantMode.isEnabled() ? "variantnull_fv" : "variantnull",
+                                node, type, ops, 0);
+                    case "now":
                     case "connector_metadata":
                         return compileFunction(call, node, type, ops, 0);
                     case "gunzip": {
@@ -1592,14 +1596,28 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                 DBSPCastExpression.CastType.SqlUnsafe));
                         return compileStrictFunction(call, node, type, ops, 1);
                     }
-                    case "to_int":
                     case "typeof":
+                        return compileFunction(
+                                VariantMode.isEnabled() ? "typeof_fv" : "typeof",
+                                node, type, ops, 1);
+                    case "to_int":
                         return compileFunction(call, node, type, ops, 1);
-                    case "parse_json":
+                    case "parse_json": {
+                        DBSPExpression expr = this.strictnessCheck(ops, type);
+                        if (expr != null)
+                            return expr;
+                        // The argument is a string, so the polymorphic suffix
+                        // cannot distinguish the variant representation.
+                        return compilePolymorphicFunction(false,
+                                VariantMode.isEnabled() ? "parse_json_fv" : "parse_json",
+                                node, type, ops, 1);
+                    }
                     case "to_json": {
                         DBSPExpression expr = this.strictnessCheck(ops, type);
                         if (expr != null)
                             return expr;
+                        // The variant argument's V/FV suffix selects the
+                        // implementation.
                         return compilePolymorphicFunction(false, call, node, type, ops, 1);
                     }
                     case "sequence": {
