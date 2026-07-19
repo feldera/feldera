@@ -181,6 +181,58 @@ fn test_transaction() {
     wait_for_data(endpoint.as_ref(), &consumer);
 }
 
+/// Regression test: a datagen connector must answer a `Queue` that arrives
+/// immediately after an `Extend`, even at end-of-input.
+///
+/// `Unparker::unpark` coalesces wake-ups into a single token, so an `Extend`
+/// followed right away by a `Queue` (exactly what the controller does when it
+/// resumes inputs at a concurrent-bootstrap cutover: the backpressure thread
+/// `extend()`s the reader and the circuit thread immediately `queue()`s it)
+/// reaches the generator as one wake-up. A command loop that handled only one
+/// command per wake-up would process the `Extend`, re-park (the generator is
+/// already at end-of-input, so it has no work), and strand the `Queue` with no
+/// pending token. `extended()` would never be called and the controller's input
+/// step would hang forever waiting for the connector.
+#[test]
+fn test_eoi_extend_queue_burst_no_deadlock() {
+    let config = serde_json::from_value(json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "datagen",
+            "config": { "plan": [{ "limit": 10, "fields": {} }] }
+        }
+    }))
+    .unwrap();
+    let (endpoint, consumer, _zset) =
+        mk_pipeline::<TestStruct2, TestStruct2>(config, TestStruct2::schema()).unwrap();
+
+    // Drive the generator to end-of-input and flush its rows, leaving its worker
+    // thread parked and waiting for the next command.
+    wait_for_data(endpoint.as_ref(), &consumer);
+    assert!(consumer.state().eoi);
+    thread::sleep(Duration::from_millis(200)); // let the worker reach `park()`
+    let baseline = consumer.state().n_extended;
+
+    // The cutover burst: `Extend` then `Queue`, back to back, so their unparks
+    // coalesce into one wake-up.
+    endpoint.extend();
+    endpoint.queue(false);
+
+    // The `Queue` must be answered with `extended()`. Before the fix the worker
+    // handled only the `Extend`, re-parked, and stranded the `Queue`, deadlocking
+    // here. Fail fast rather than hang the test suite.
+    for _ in 0..500 {
+        if consumer.state().n_extended > baseline {
+            return;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    panic!(
+        "datagen did not answer Queue after an Extend+Queue burst at end-of-input; \
+         the controller's input step would deadlock"
+    );
+}
+
 #[test]
 fn test_limit_increment() {
     let config = serde_json::from_value(json!({

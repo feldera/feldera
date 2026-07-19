@@ -610,12 +610,24 @@ impl InputGenerator {
         let mut completed = VecDeque::new();
         let mut transaction_size = 0;
         loop {
-            match command_receiver.try_recv()? {
+            // Handle every command that is currently available before parking.
+            // The unparker coalesces wake-ups into a single token, so parking
+            // after handling just one command can strand a pending command (for
+            // example an Extend immediately followed by a Queue when inputs resume
+            // after a concurrent-bootstrap cutover) and deadlock the controller's
+            // input step, which blocks waiting for the Queue response.
+            let processed_command = match command_receiver.try_recv()? {
                 Some(command @ InputReaderCommand::Replay { .. }) => {
                     unreachable!("{command:?} must be at the beginning of the command stream")
                 }
-                Some(InputReaderCommand::Extend) => running = true,
-                Some(InputReaderCommand::Pause) => running = false,
+                Some(InputReaderCommand::Extend) => {
+                    running = true;
+                    true
+                }
+                Some(InputReaderCommand::Pause) => {
+                    running = false;
+                    true
+                }
                 Some(InputReaderCommand::Queue { .. }) => {
                     let mut total = BufferSize::empty();
                     let mut hasher = consumer.hasher();
@@ -702,10 +714,11 @@ impl InputGenerator {
                         transaction_size = 0;
                     }
                     consumer.extended(total, Some(resume), watermarks);
+                    true
                 }
                 Some(InputReaderCommand::Disconnect) => break,
-                None => (),
-            }
+                None => false,
+            };
 
             while let Ok(completion) = completion_receiver.try_recv() {
                 let batch = &completion.batch;
@@ -728,7 +741,10 @@ impl InputGenerator {
                     running = false;
                     consumer.eoi();
                 }
-            } else {
+            } else if !processed_command {
+                // Only park when the command channel is drained. If we handled a
+                // command this iteration there may be more queued behind a
+                // coalesced wake-up, so loop back and drain them before sleeping.
                 parker.park();
             }
         }
