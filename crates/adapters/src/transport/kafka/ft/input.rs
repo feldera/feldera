@@ -536,19 +536,26 @@ impl KafkaFtInputReaderInner {
             buffers: Box<dyn StagedBuffers>,
             timestamp: DateTime<Utc>,
             amt: BufferSize,
-            hash: u64,
+            hash: Option<u64>,
             offsets: Vec<Range<i64>>,
         }
         struct Stager {
             buffers: VecDeque<StagedBuffer>,
             offsets: Vec<Range<i64>>,
-            hasher: KafkaFtHasher,
+            /// `Some` only with exactly-once fault tolerance: the step hash is
+            /// verified on replay, which never happens below that level, and
+            /// hashing every parsed row is expensive.
+            hasher: Option<KafkaFtHasher>,
             inputs: Vec<Box<dyn InputBuffer>>,
             amt: BufferSize,
             timestamp: Option<DateTime<Utc>>,
         }
         impl Stager {
-            fn new(receivers: &BTreeMap<&i32, Arc<PartitionReceiver>>, partitions: &[i32]) -> Self {
+            fn new(
+                receivers: &BTreeMap<&i32, Arc<PartitionReceiver>>,
+                partitions: &[i32],
+                hashing: bool,
+            ) -> Self {
                 Self {
                     buffers: VecDeque::new(),
                     offsets: receivers
@@ -558,7 +565,7 @@ impl KafkaFtInputReaderInner {
                             next_offset..next_offset
                         })
                         .collect(),
-                    hasher: KafkaFtHasher::new(partitions),
+                    hasher: hashing.then(|| KafkaFtHasher::new(partitions)),
                     inputs: Vec::new(),
                     amt: BufferSize::default(),
                     timestamp: None,
@@ -576,7 +583,7 @@ impl KafkaFtInputReaderInner {
                     buffers: parser.stage(std::mem::take(&mut self.inputs)),
                     timestamp: self.timestamp.take().unwrap_or_else(Utc::now),
                     amt: std::mem::take(&mut self.amt),
-                    hash: self.hasher.take(),
+                    hash: self.hasher.as_mut().map(KafkaFtHasher::take),
                     offsets: self.take_offsets(),
                 }
             }
@@ -600,7 +607,9 @@ impl KafkaFtInputReaderInner {
                 let amt = msg.len();
                 consumer.buffered(amt);
                 self.amt += amt;
-                self.hasher.add(partition, &msg);
+                if let Some(hasher) = &mut self.hasher {
+                    hasher.add(partition, &msg);
+                }
                 if let Some(buffer) = msg {
                     self.inputs.push(buffer);
                 }
@@ -620,7 +629,13 @@ impl KafkaFtInputReaderInner {
                 }
             }
         }
-        let mut stager = Stager::new(&receivers, &partitions);
+        // The step hash is only ever verified when the pipeline replays a
+        // step, which requires exactly-once fault tolerance; below that
+        // level, skip hashing (it walks every parsed row) and emit
+        // `Resume::Seek`, which still carries the offsets needed for
+        // suspend/resume.
+        let hashing = consumer.pipeline_fault_tolerance() == Some(FtModel::ExactlyOnce);
+        let mut stager = Stager::new(&receivers, &partitions, hashing);
 
         loop {
             let was_running = running;
@@ -640,11 +655,7 @@ impl KafkaFtInputReaderInner {
                         .unwrap();
                         consumer.extended(
                             buffer.amt,
-                            Some(Resume::Replay {
-                                hash: buffer.hash,
-                                seek: metadata.clone(),
-                                replay: rmpv::Value::Nil,
-                            }),
+                            Some(Resume::new_metadata_only(metadata.clone(), buffer.hash)),
                             vec![Watermark::new(buffer.timestamp, Some(metadata))],
                         );
                     }
