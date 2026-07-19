@@ -1190,7 +1190,26 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         .append(": &Option<Variant>| Some(");
                 IDBSPInnerNode defaultValue = CreateRuntimeErrorWrappers.wrapCasts(this.compiler, meta.defaultValue);
                 defaultValue = rw.apply(defaultValue);
-                defaultValue.accept(this);
+                // Connector metadata is always built by the adapters as the
+                // enum Variant, so the default expression uses the enum
+                // function grid even under FlatVariant. A VARIANT column then
+                // needs one conversion at the column boundary; every other
+                // column type is produced directly by the enum casts.
+                boolean flatVariant = VariantMode.isEnabled();
+                // The field's Rust type may wrap the column type in Option
+                // (nullable column of a nullable type).
+                DBSPType columnType = isOption ? user.typeArgs[0] : field.type;
+                boolean convert = flatVariant && columnType.is(DBSPTypeVariant.class);
+                if (convert)
+                    this.builder.append(columnType.mayBeNull ? "variant_to_fvN(" : "variant_to_fv(");
+                VariantMode.set(false);
+                try {
+                    defaultValue.accept(this);
+                } finally {
+                    VariantMode.set(flatVariant);
+                }
+                if (convert)
+                    this.builder.append(")");
                 this.builder.append(".into())");
             }
 

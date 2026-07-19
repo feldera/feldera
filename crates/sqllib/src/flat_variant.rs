@@ -71,32 +71,32 @@ use crate::{
 };
 
 // Tags equal the Variant enum discriminants (variant.rs declaration order).
-const TAG_SQL_NULL: u8 = 0;
-const TAG_VARIANT_NULL: u8 = 1;
-const TAG_BOOLEAN: u8 = 2;
-const TAG_TINYINT: u8 = 3;
-const TAG_SMALLINT: u8 = 4;
-const TAG_INT: u8 = 5;
-const TAG_BIGINT: u8 = 6;
-const TAG_UTINYINT: u8 = 7;
-const TAG_USMALLINT: u8 = 8;
-const TAG_UINT: u8 = 9;
-const TAG_UBIGINT: u8 = 10;
-const TAG_REAL: u8 = 11;
-const TAG_DOUBLE: u8 = 12;
-const TAG_DECIMAL: u8 = 13;
-const TAG_STRING: u8 = 14;
-const TAG_DATE: u8 = 15;
-const TAG_TIME: u8 = 16;
-const TAG_TIMESTAMP: u8 = 17;
-const TAG_SHORT_INTERVAL: u8 = 18;
-const TAG_LONG_INTERVAL: u8 = 19;
-const TAG_BINARY: u8 = 20;
-const TAG_GEOMETRY: u8 = 21;
-const TAG_UUID: u8 = 22;
-const TAG_ARRAY: u8 = 23;
-const TAG_MAP: u8 = 24;
-const TAG_TIMESTAMP_TZ: u8 = 25;
+pub(crate) const TAG_SQL_NULL: u8 = 0;
+pub(crate) const TAG_VARIANT_NULL: u8 = 1;
+pub(crate) const TAG_BOOLEAN: u8 = 2;
+pub(crate) const TAG_TINYINT: u8 = 3;
+pub(crate) const TAG_SMALLINT: u8 = 4;
+pub(crate) const TAG_INT: u8 = 5;
+pub(crate) const TAG_BIGINT: u8 = 6;
+pub(crate) const TAG_UTINYINT: u8 = 7;
+pub(crate) const TAG_USMALLINT: u8 = 8;
+pub(crate) const TAG_UINT: u8 = 9;
+pub(crate) const TAG_UBIGINT: u8 = 10;
+pub(crate) const TAG_REAL: u8 = 11;
+pub(crate) const TAG_DOUBLE: u8 = 12;
+pub(crate) const TAG_DECIMAL: u8 = 13;
+pub(crate) const TAG_STRING: u8 = 14;
+pub(crate) const TAG_DATE: u8 = 15;
+pub(crate) const TAG_TIME: u8 = 16;
+pub(crate) const TAG_TIMESTAMP: u8 = 17;
+pub(crate) const TAG_SHORT_INTERVAL: u8 = 18;
+pub(crate) const TAG_LONG_INTERVAL: u8 = 19;
+pub(crate) const TAG_BINARY: u8 = 20;
+pub(crate) const TAG_GEOMETRY: u8 = 21;
+pub(crate) const TAG_UUID: u8 = 22;
+pub(crate) const TAG_ARRAY: u8 = 23;
+pub(crate) const TAG_MAP: u8 = 24;
+pub(crate) const TAG_TIMESTAMP_TZ: u8 = 25;
 
 // The type
 
@@ -116,7 +116,7 @@ impl FlatVariant {
     ///
     /// The bytes must be a valid encoding (produced by this module); no
     /// validation is performed beyond non-emptiness.
-    fn from_bytes(bytes: &[u8]) -> Self {
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Self {
         assert!(!bytes.is_empty(), "encoded value cannot be empty");
         FlatVariant {
             buf: Arc::from(bytes),
@@ -126,7 +126,7 @@ impl FlatVariant {
     }
 
     #[inline]
-    fn as_bytes(&self) -> &[u8] {
+    pub(crate) fn as_bytes(&self) -> &[u8] {
         &self.buf[self.start as usize..(self.start + self.len) as usize]
     }
 
@@ -287,9 +287,9 @@ impl SizeOf for FlatVariant {
 
 // Container access
 
-struct Container<'a> {
+pub(crate) struct Container<'a> {
     body: &'a [u8],
-    count: usize,
+    pub(crate) count: usize,
     is_map: bool,
 }
 
@@ -300,7 +300,7 @@ fn read_u32(bytes: &[u8], at: usize) -> u32 {
 
 impl<'a> Container<'a> {
     /// `value` is one complete encoded value with an Array or Map tag.
-    fn new(value: &'a [u8]) -> Self {
+    pub(crate) fn new(value: &'a [u8]) -> Self {
         let is_map = match value[0] {
             TAG_ARRAY => false,
             TAG_MAP => true,
@@ -328,7 +328,7 @@ impl<'a> Container<'a> {
 
     /// Range of element `i` (array) or key `i` (map), relative to the start
     /// of the complete value (including its tag byte).
-    fn element(&self, i: usize) -> Range<usize> {
+    pub(crate) fn element(&self, i: usize) -> Range<usize> {
         debug_assert!(i < self.count);
         let base = self.payload_base();
         let start = if i == 0 { 0 } else { self.end(0, i - 1) };
@@ -337,7 +337,7 @@ impl<'a> Container<'a> {
     }
 
     /// Range of map value `i`, relative to the start of the complete value.
-    fn map_value(&self, i: usize) -> Range<usize> {
+    pub(crate) fn map_value(&self, i: usize) -> Range<usize> {
         debug_assert!(self.is_map && i < self.count);
         let keys_total = if self.count == 0 {
             0
@@ -365,7 +365,7 @@ fn f64_at(b: &[u8], at: usize) -> F64 {
 /// Total order over two complete encoded values; matches the derived Ord of
 /// the `Variant` enum exactly, including the lexicographic (i128, u8) order
 /// of SqlDecimal and the F32/F64 total order.
-fn cmp_values(a: &[u8], b: &[u8]) -> Ordering {
+pub(crate) fn cmp_values(a: &[u8], b: &[u8]) -> Ordering {
     let (ta, tb) = (a[0], b[0]);
     if ta != tb {
         return ta.cmp(&tb);
@@ -475,21 +475,33 @@ fn hash_value<H: Hasher>(value: &[u8], state: &mut H) {
 /// each as a complete value somewhere in the scratch; containers are then
 /// assembled after their children with `extend_from_within`, so bytes are
 /// copied O(depth) times and nothing is allocated per node.
-struct Writer {
-    out: Vec<u8>,
+///
+/// Public because it appears in `EncodeFV::encode`; not part of the
+/// supported API.
+#[doc(hidden)]
+pub struct Writer {
+    pub(crate) out: Vec<u8>,
 }
 
 impl Writer {
     #[inline]
-    fn scalar(&mut self, tag: u8, payload: &[u8]) -> Range<usize> {
+    pub(crate) fn scalar(&mut self, tag: u8, payload: &[u8]) -> Range<usize> {
         let start = self.out.len();
         self.out.push(tag);
         self.out.extend_from_slice(payload);
         start..self.out.len()
     }
 
+    /// Append a complete, already encoded value verbatim.
+    #[inline]
+    pub(crate) fn raw(&mut self, value: &[u8]) -> Range<usize> {
+        let start = self.out.len();
+        self.out.extend_from_slice(value);
+        start..self.out.len()
+    }
+
     /// Assemble an array from child value ranges within this writer.
-    fn array(&mut self, children: &[Range<usize>]) -> Range<usize> {
+    pub(crate) fn array(&mut self, children: &[Range<usize>]) -> Range<usize> {
         let start = self.out.len();
         self.out.push(TAG_ARRAY);
         let count = children.len() as u32;
@@ -507,7 +519,7 @@ impl Writer {
 
     /// Assemble a map from (key, value) ranges within this writer. Entries
     /// must be sorted ascending by encoded key with no duplicates.
-    fn map(&mut self, entries: &[(Range<usize>, Range<usize>)]) -> Range<usize> {
+    pub(crate) fn map(&mut self, entries: &[(Range<usize>, Range<usize>)]) -> Range<usize> {
         let start = self.out.len();
         self.out.push(TAG_MAP);
         let count = entries.len() as u32;
@@ -534,7 +546,7 @@ impl Writer {
 
 /// Sort map entries by encoded key and drop duplicate keys, keeping the last
 /// occurrence (BTreeMap insert semantics: a later insert overwrites).
-fn sort_map_entries(out: &[u8], entries: &mut Vec<(Range<usize>, Range<usize>)>) {
+pub(crate) fn sort_map_entries(out: &[u8], entries: &mut Vec<(Range<usize>, Range<usize>)>) {
     entries.sort_by(|a, b| cmp_values(&out[a.0.clone()], &out[b.0.clone()]));
     let mut w = 0;
     for i in 0..entries.len() {
@@ -695,37 +707,45 @@ impl From<&FlatVariant> for Variant {
     }
 }
 
+#[cfg(test)]
 impl From<FlatVariant> for Variant {
     fn from(v: FlatVariant) -> Self {
         Variant::from(&v)
     }
 }
 
-impl From<Option<FlatVariant>> for Variant {
-    fn from(v: Option<FlatVariant>) -> Self {
-        match v {
-            None => Variant::SqlNull,
-            Some(v) => Variant::from(&v),
-        }
+// The connector-metadata boundary: metadata is always built by the adapters
+// as the enum Variant, and a metadata DEFAULT expression for a FlatVariant
+// VARIANT column converts once here. The only sanctioned production use of
+// an enum-to-flat conversion.
+impl From<Variant> for FlatVariant {
+    fn from(v: Variant) -> Self {
+        FlatVariant::from(&v)
     }
 }
 
-/// Conversion is total: every enum value encodes. The fallible signature
-/// matches the element bound of the enum's generic Array/Map conversions,
-/// which lets `Array<FlatVariant>: TryFrom<Variant>` come from those impls.
-impl TryFrom<Variant> for FlatVariant {
-    type Error = Box<dyn std::error::Error>;
-
-    fn try_from(value: Variant) -> Result<Self, Self::Error> {
-        Ok(FlatVariant::from(&value))
-    }
+/// See [`From<Variant>`]: the connector-metadata boundary conversion for a
+/// nullable VARIANT column with a metadata DEFAULT.
+#[doc(hidden)]
+pub fn variant_to_fvN(v: Option<Variant>) -> Option<FlatVariant> {
+    v.map(|v| FlatVariant::from(&v))
 }
+
+/// See [`From<Variant>`]: the non-null variant of the boundary conversion.
+#[doc(hidden)]
+pub fn variant_to_fv(v: Variant) -> FlatVariant {
+    FlatVariant::from(&v)
+}
+
+// TryFrom<Variant> for FlatVariant comes from core's blanket over the
+// From<Variant> boundary conversion above.
 
 // Mirrors the enum's behavior for VARIANT elements: `Option<Variant>` gets
 // its `TryFrom<Variant>` from core's `From<T> for Option<T>`, which always
 // wraps in `Some`. A JSON null inside a map or array therefore stays a
 // variant-null VALUE (MapTests#mapValuesVariant depends on this); it does
-// not become a Rust `None`.
+// not become a Rust `None`. Test-only, like the other bridges.
+#[cfg(test)]
 impl TryFrom<Variant> for Option<FlatVariant> {
     type Error = Box<dyn std::error::Error>;
 
@@ -743,12 +763,12 @@ macro_rules! fv_from {
     ($($t:ty),* $(,)?) => {$(
         impl From<$t> for FlatVariant {
             fn from(value: $t) -> Self {
-                FlatVariant::from(&Variant::from(value))
+                crate::flat_variant::casts::encode_document(&value)
             }
         }
         impl From<Option<$t>> for FlatVariant {
             fn from(value: Option<$t>) -> Self {
-                FlatVariant::from(&Variant::from(value))
+                crate::flat_variant::casts::encode_document(&value)
             }
         }
     )*};
@@ -780,55 +800,41 @@ fv_from!(
 
 impl<const P: usize, const S: usize> From<crate::SqlDecimal<P, S>> for FlatVariant {
     fn from(value: crate::SqlDecimal<P, S>) -> Self {
-        FlatVariant::from(&Variant::from(value))
+        crate::flat_variant::casts::encode_document(&value)
     }
 }
 
 impl<const P: usize, const S: usize> From<Option<crate::SqlDecimal<P, S>>> for FlatVariant {
     fn from(value: Option<crate::SqlDecimal<P, S>>) -> Self {
-        FlatVariant::from(&Variant::from(value))
+        crate::flat_variant::casts::encode_document(&value)
     }
 }
 
-impl<T> From<crate::Array<T>> for FlatVariant
-where
-    Variant: From<T>,
-    T: Clone,
-{
+impl<T: crate::flat_variant::casts::EncodeFV> From<crate::Array<T>> for FlatVariant {
     fn from(value: crate::Array<T>) -> Self {
-        FlatVariant::from(&<Variant as From<crate::Array<T>>>::from(value))
+        crate::flat_variant::casts::encode_document(&value)
     }
 }
 
-impl<T> From<Option<crate::Array<T>>> for FlatVariant
-where
-    Variant: From<T>,
-    T: Clone,
-{
+impl<T: crate::flat_variant::casts::EncodeFV> From<Option<crate::Array<T>>> for FlatVariant {
     fn from(value: Option<crate::Array<T>>) -> Self {
-        FlatVariant::from(&<Variant as From<Option<crate::Array<T>>>>::from(value))
+        crate::flat_variant::casts::encode_document(&value)
     }
 }
 
-impl<K, V> From<crate::Map<K, V>> for FlatVariant
-where
-    Variant: From<K> + From<V>,
-    K: Clone + Ord,
-    V: Clone,
+impl<K: crate::flat_variant::casts::EncodeFV, V: crate::flat_variant::casts::EncodeFV>
+    From<crate::Map<K, V>> for FlatVariant
 {
     fn from(value: crate::Map<K, V>) -> Self {
-        FlatVariant::from(&<Variant as From<crate::Map<K, V>>>::from(value))
+        crate::flat_variant::casts::encode_document(&value)
     }
 }
 
-impl<K, V> From<Option<crate::Map<K, V>>> for FlatVariant
-where
-    Variant: From<K> + From<V>,
-    K: Clone + Ord,
-    V: Clone,
+impl<K: crate::flat_variant::casts::EncodeFV, V: crate::flat_variant::casts::EncodeFV>
+    From<Option<crate::Map<K, V>>> for FlatVariant
 {
     fn from(value: Option<crate::Map<K, V>>) -> Self {
-        FlatVariant::from(&<Variant as From<Option<crate::Map<K, V>>>>::from(value))
+        crate::flat_variant::casts::encode_document(&value)
     }
 }
 
@@ -841,7 +847,7 @@ pub struct ArchivedFlatVariant {
 
 impl ArchivedFlatVariant {
     #[inline]
-    fn as_bytes(&self) -> &[u8] {
+    pub(crate) fn as_bytes(&self) -> &[u8] {
         self.bytes.as_slice()
     }
 }
@@ -1253,7 +1259,14 @@ mod tests {
             any::<i64>().prop_map(Variant::BigInt),
             any::<u64>().prop_map(Variant::UBigInt),
             any::<f64>().prop_map(|f| Variant::Double(f.into())),
-            (any::<i128>(), any::<u8>()).prop_map(Variant::SqlDecimal),
+            // DynamicDecimal panics on unrepresentable (significand, scale)
+            // pairs in both grids; stay within its domain.
+            (
+                -1_000_000_000_000_000_000_000_000_000i128
+                    ..1_000_000_000_000_000_000_000_000_000i128,
+                0u8..30
+            )
+                .prop_map(Variant::SqlDecimal),
             ".{0,24}".prop_map(|s| Variant::String(SqlString::from(s))),
             proptest::collection::vec(any::<u8>(), 0..40)
                 .prop_map(|b| Variant::Binary(ByteArray::new(&b))),
@@ -1353,6 +1366,59 @@ mod tests {
                 e1.as_ref().map(FlatVariant::from),
                 e2.clone(),
                 "MAP element for {key} diverges from the enum path"
+            );
+        }
+    }
+
+    /// Native casts must agree with the enum cast grid: same Ok/Err status
+    /// and equal values (error text may differ).
+    #[test]
+    fn casts_match_enum_grid() {
+        use crate::casts as c1;
+        use crate::flat_variant::casts as c2;
+        fn norm<T>(r: crate::error::SqlResult<Option<T>>) -> Result<Option<T>, ()> {
+            r.map_err(|_| ())
+        }
+        use proptest::strategy::ValueTree;
+        let mut runner = proptest::test_runner::TestRunner::deterministic();
+        let strategy = variant();
+        for _ in 0..500 {
+            let a = strategy.new_tree(&mut runner).expect("strategy").current();
+            let a2 = FlatVariant::from(&a);
+            assert_eq!(
+                norm(c1::cast_to_i64N_V(a.clone())),
+                norm(c2::cast_to_i64N_FV(a2.clone())),
+                "i64 cast diverges for {a:?}"
+            );
+            assert_eq!(
+                norm(c1::cast_to_u8N_V(a.clone())),
+                norm(c2::cast_to_u8N_FV(a2.clone())),
+                "u8 cast diverges for {a:?}"
+            );
+            assert_eq!(
+                norm(c1::cast_to_dN_V(a.clone())),
+                norm(c2::cast_to_dN_FV(a2.clone())),
+                "double cast diverges for {a:?}"
+            );
+            assert_eq!(
+                norm(c1::cast_to_bN_V(a.clone())),
+                norm(c2::cast_to_bN_FV(a2.clone())),
+                "bool cast diverges for {a:?}"
+            );
+            assert_eq!(
+                norm(c1::cast_to_sN_V(a.clone(), -1, false)),
+                norm(c2::cast_to_sN_FV(a2.clone(), -1, false)),
+                "string cast diverges for {a:?}"
+            );
+            assert_eq!(
+                norm(c1::cast_to_DateN_V(a.clone())),
+                norm(c2::cast_to_DateN_FV(a2.clone())),
+                "date cast diverges for {a:?}"
+            );
+            assert_eq!(
+                norm(c1::cast_to_SqlDecimalN_V::<10, 2>(a.clone())),
+                norm(c2::cast_to_SqlDecimalN_FV::<10, 2>(a2.clone())),
+                "decimal cast diverges for {a:?}"
             );
         }
     }

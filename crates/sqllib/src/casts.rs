@@ -178,7 +178,7 @@ pub fn handle_error_safe<T>(value: SqlResult<Option<T>>) -> Option<T> {
     value.unwrap_or_default()
 }
 
-fn cast_null(t: &str) -> Box<SqlRuntimeError> {
+pub(crate) fn cast_null(t: &str) -> Box<SqlRuntimeError> {
     SqlRuntimeError::from_string(format!("cast of NULL value to non-null type {}", t))
 }
 
