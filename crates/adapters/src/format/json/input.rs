@@ -466,9 +466,7 @@ impl Parser for JsonParser {
                     // On parse failure, check if the user sent insert/delete
                     // envelopes with the raw format and provide a better hint.
                     if errors.len() > errors_before {
-                        if let Some(error) =
-                            Self::raw_format_insert_delete_mismatch_error(update)
-                        {
+                        if let Some(error) = Self::raw_format_insert_delete_mismatch_error(update) {
                             errors.truncate(errors_before);
                             errors.push(error);
                         }

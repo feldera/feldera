@@ -244,6 +244,10 @@ public final class ConnectorValidator {
                     validateConfig(transportConfig, outerJson, configPointer,
                             outerStart, S3InputConfig.class, reporter);
                     break;
+                case "s2_input":
+                    validateConfig(transportConfig, outerJson, configPointer,
+                            outerStart, S2InputConfig.class, reporter);
+                    break;
                 case "clock":
                     validateConfig(transportConfig, outerJson, configPointer,
                             outerStart, ClockConfig.class, reporter);
@@ -299,6 +303,10 @@ public final class ConnectorValidator {
                 case "redis_output":
                     validateConfig(transportConfig, outerJson, configPointer,
                             outerStart, RedisOutputConfig.class, reporter);
+                    break;
+                case "s2_output":
+                    validateConfig(transportConfig, outerJson, configPointer,
+                            outerStart, S2OutputConfig.class, reporter);
                     break;
                 case "null":
                     break;
