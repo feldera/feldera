@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 /// Where to start reading from the S2 stream.
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub enum S2StartFrom {
     /// Start from a specific sequence number.
     SeqNum(u64),
@@ -11,15 +11,10 @@ pub enum S2StartFrom {
     /// Start from N records before the tail.
     TailOffset(u64),
     /// Start from the beginning (sequence number 0).
+    #[default]
     Beginning,
     /// Start from the tail (new records only).
     Tail,
-}
-
-impl Default for S2StartFrom {
-    fn default() -> Self {
-        Self::Beginning
-    }
 }
 
 /// Configuration for reading from an S2 stream.

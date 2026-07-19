@@ -465,11 +465,11 @@ impl Parser for JsonParser {
                     self.apply_update::<&RawValue>(update, &metadata, &mut errors);
                     // On parse failure, check if the user sent insert/delete
                     // envelopes with the raw format and provide a better hint.
-                    if errors.len() > errors_before {
-                        if let Some(error) = Self::raw_format_insert_delete_mismatch_error(update) {
-                            errors.truncate(errors_before);
-                            errors.push(error);
-                        }
+                    if errors.len() > errors_before
+                        && let Some(error) = Self::raw_format_insert_delete_mismatch_error(update)
+                    {
+                        errors.truncate(errors_before);
+                        errors.push(error);
                     }
                 }
                 JsonUpdateFormat::Redis | JsonUpdateFormat::Snowflake => {
