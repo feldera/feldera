@@ -176,9 +176,7 @@ pub fn output_transport_config_to_endpoint(
             Ok(Some(Box::new(RedisOutputEndpoint::new(config)?)))
         }
         #[cfg(feature = "with-s2")]
-        TransportConfig::S2Output(config) => {
-            Ok(Some(Box::new(S2OutputEndpoint::new(config)?)))
-        }
+        TransportConfig::S2Output(config) => Ok(Some(Box::new(S2OutputEndpoint::new(config)?))),
         TransportConfig::NullOutput => Ok(Some(Box::new(NullOutputEndpoint))),
         _ => Ok(None),
     }
