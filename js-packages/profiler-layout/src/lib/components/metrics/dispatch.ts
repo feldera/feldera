@@ -55,8 +55,7 @@ export function buildBlocks(attrs: NodeAttributes, showAdvanced: boolean): Rende
   const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
   for (const entries of byCategory.values()) {
     entries.sort(
-      (a, b) =>
-        collator.compare(a.label, b.label) || collator.compare(a.row.metric, b.row.metric)
+      (a, b) => collator.compare(a.label, b.label) || collator.compare(a.row.metric, b.row.metric)
     )
   }
 

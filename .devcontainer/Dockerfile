@@ -77,7 +77,7 @@ ENV PATH="$HOME/.cargo/bin:$PATH"
 ## Install Bun.js
 RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.3"
 ENV PATH="$HOME/.bun/bin:$PATH"
-RUN $HOME/.bun/bin/bun install --global @hey-api/openapi-ts
+RUN $HOME/.bun/bin/bun install --global @hey-api/openapi-ts @biomejs/biome
 
 ## Install Claude Code
 RUN curl -fsSL https://claude.ai/install.sh | bash
