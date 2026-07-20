@@ -331,6 +331,105 @@ def test_json_ingress(pipeline_name):
     assert any(row["c1"] == 16 for row in got)
 
 
+def _read_csv_rows(resp, min_rows: int, timeout_s: float = 10.0):
+    """
+    Read at least min_rows CSV rows from a streaming csv-format egress
+    response; each stream line is a JSON object with a text_data field.
+    """
+    rows = []
+    start = time.monotonic()
+    for line in resp.iter_lines():
+        if time.monotonic() - start > timeout_s:
+            raise TimeoutError(f"Timeout reading csv rows, got {len(rows)}")
+        if not line:
+            continue
+        payload = json.loads(line.decode("utf-8"))
+        text = payload.get("text_data")
+        if text:
+            rows.extend(r for r in text.splitlines() if r.strip())
+        if len(rows) >= min_rows:
+            break
+    return rows
+
+
+@gen_pipeline_name
+def test_variant_column_json_and_csv(pipeline_name):
+    """
+    A VARIANT column round-trips through json and csv ingress and csv
+    egress: json carries the value inline, csv carries it as a
+    JSON-encoded string field.
+    """
+    sql = (
+        "CREATE TABLE t1(id integer, v VARIANT) WITH ('materialized'='true'); "
+        "CREATE MATERIALIZED VIEW v1 AS SELECT id, v, "
+        "CAST(v['name'] AS VARCHAR) AS name, TYPEOF(v) AS ty FROM t1;"
+    )
+    create_pipeline(pipeline_name, sql)
+    start_pipeline(pipeline_name)
+
+    # Subscribe to the csv change stream before ingesting.
+    egress = http_request(
+        "POST",
+        api_url(f"/pipelines/{pipeline_name}/egress/V1?format=csv&backpressure=true"),
+        stream=True,
+    )
+    assert egress.status_code == HTTPStatus.OK, egress.text
+
+    # json ingress: the VARIANT value is inline JSON of any shape.
+    _ingress_and_wait_token(
+        pipeline_name,
+        "t1",
+        '{"id":1,"v":{"name":"Bob","scores":[1,2.5,null],"ok":true}}\n'
+        '{"id":2,"v":[1,"two"]}\n'
+        '{"id":3,"v":"plain"}\n'
+        '{"id":4,"v":42}\n'
+        '{"id":5,"v":null}',
+        format="json",
+        update_format="raw",
+    )
+
+    # csv ingress: the VARIANT field is a JSON-encoded string with CSV
+    # quote doubling.
+    _ingress_and_wait_token(
+        pipeline_name,
+        "t1",
+        '6,"{""name"":""Ann"",""scores"":[3]}"\n7,"[3,4]"',
+        format="csv",
+        update_format="raw",
+        content_type="text/csv",
+    )
+
+    got = adhoc_query_json(pipeline_name, "select id, v, name, ty from v1 order by id")
+    by_id = {row["id"]: row for row in got}
+    assert len(by_id) == 7, by_id
+
+    # Bare VARIANT comes back from adhoc queries as a JSON-encoded string.
+    assert json.loads(by_id[1]["v"]) == {
+        "name": "Bob",
+        "scores": [1, 2.5, None],
+        "ok": True,
+    }
+    assert by_id[1]["name"] == "Bob"
+    assert by_id[1]["ty"] == "MAP"
+    assert json.loads(by_id[2]["v"]) == [1, "two"]
+    assert by_id[2]["ty"] == "ARRAY"
+    assert json.loads(by_id[3]["v"]) == "plain"
+    assert by_id[3]["ty"] == "VARCHAR"
+    assert json.loads(by_id[4]["v"]) == 42
+    assert by_id[5]["v"] is None
+    assert json.loads(by_id[6]["v"]) == {"name": "Ann", "scores": [3]}
+    assert by_id[6]["name"] == "Ann"
+    assert by_id[6]["ty"] == "MAP"
+    assert json.loads(by_id[7]["v"]) == [3, 4]
+    assert by_id[7]["ty"] == "ARRAY"
+
+    # csv egress renders the VARIANT as a JSON-encoded string field.
+    rows = _read_csv_rows(egress, min_rows=7)
+    assert any('"{""name"":""Bob""' in r for r in rows), rows
+    assert any('"[1,""two""]"' in r for r in rows), rows
+    assert any('"{""name"":""Ann""' in r for r in rows), rows
+
+
 @gen_pipeline_name
 def test_map_column(pipeline_name):
     """
