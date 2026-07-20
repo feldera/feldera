@@ -1,8 +1,9 @@
 <script lang="ts">
+  import type { SearchDirection } from 'common-ui'
   import { SvelteSet } from 'svelte/reactivity'
   import { slide } from 'svelte/transition'
   import type { Severity, TriageResults } from 'triage-types'
-  import type { LookupCoordinator } from '../functions/lookup'
+  import type { LookupCoordinator, SearchProgress } from '../functions/lookup'
   import { getCategory, severityLabel, severityOrder } from '../functions/triage'
 
   interface Props {
@@ -35,29 +36,41 @@
     )
   )
 
-  function runSearch(query: string) {
+  function matchesQuery(index: number, q: string): boolean {
+    const r = visibleResults[index]
+    return (
+      r.rule.toLowerCase().includes(q) ||
+      r.message.toLowerCase().includes(q) ||
+      JSON.stringify(r.details).toLowerCase().includes(q)
+    )
+  }
+
+  // Move the cursor to the next / previous matching row, wrapping at the ends, and scroll it
+  // into view. Returns the match count so the layout can enable/disable the nav buttons.
+  function runSearch(query: string, direction: SearchDirection): SearchProgress {
     if (!query) {
       lastMatchIndex = -1
-      return
+      return { current: 0, total: 0 }
     }
     const q = query.toLowerCase()
-    const startSearch = lastMatchIndex + 1
-    const total = visibleResults.length
-
-    for (let i = 0; i < total; i++) {
-      const idx = (startSearch + i) % total
-      const r = visibleResults[idx]
-      if (
-        r.rule.toLowerCase().includes(q) ||
-        r.message.toLowerCase().includes(q) ||
-        JSON.stringify(r.details).toLowerCase().includes(q)
-      ) {
-        lastMatchIndex = idx
-        rowElements[idx]?.scrollIntoView({ block: 'center' })
-        return
+    const matches: number[] = []
+    for (let i = 0; i < visibleResults.length; i++) {
+      if (matchesQuery(i, q)) {
+        matches.push(i)
       }
     }
-    lastMatchIndex = -1
+    if (matches.length === 0) {
+      lastMatchIndex = -1
+      return { current: 0, total: 0 }
+    }
+    // First match strictly after (next) / before (prev) the current cursor, wrapping around.
+    const idx =
+      direction === 'prev'
+        ? (matches.filter((m) => m < lastMatchIndex).at(-1) ?? matches.at(-1)!)
+        : (matches.find((m) => m > lastMatchIndex) ?? matches[0])
+    lastMatchIndex = idx
+    rowElements[idx]?.scrollIntoView({ block: 'center' })
+    return { current: matches.indexOf(idx) + 1, total: matches.length }
   }
 
   $effect(() => {

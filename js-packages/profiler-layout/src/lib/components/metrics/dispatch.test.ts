@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
 import type { NodeAttributes, TooltipRow } from 'profiler-lib'
+import { describe, expect, it } from 'vitest'
 import { buildBlocks } from './dispatch.js'
 
 function row(metric: string): TooltipRow {
@@ -21,12 +21,7 @@ function makeAttrs(metrics: string[]): NodeAttributes {
 describe('buildBlocks', () => {
   it('orders metrics lexicographically inside each block (case-insensitive)', () => {
     // Metric IDs span categories; the order is intentionally scrambled to confirm the sort.
-    const attrs = makeAttrs([
-      'zeta_seconds',
-      'Alpha_count',
-      'gamma_size',
-      'alpha_total'
-    ])
+    const attrs = makeAttrs(['zeta_seconds', 'Alpha_count', 'gamma_size', 'alpha_total'])
     const blocks = buildBlocks(attrs, /* showAdvanced */ true)
     // All metrics fall into the same "Other" bucket (no descriptions registered),
     // so we expect a single block whose entries are alphabetised by label.

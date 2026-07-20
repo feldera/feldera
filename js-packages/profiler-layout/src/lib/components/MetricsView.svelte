@@ -32,7 +32,9 @@
   import MetricsDistributionBlock from './metrics/blocks/MetricsDistributionBlock.svelte'
   import { buildBlocks, type RenderableBlock } from './metrics/dispatch'
   import { buildGlobalMetrics, type GlobalMetrics } from '../functions/globalMetrics'
-  import type { LookupCoordinator } from '../functions/lookup'
+  import type { LookupCoordinator, SearchProgress } from '../functions/lookup'
+  import { buildSearchTargets, matchTargets } from '../functions/metricsSearch'
+  import type { SearchDirection } from 'common-ui'
 
   interface Props {
     mode: MetricsMode
@@ -51,8 +53,15 @@
     onSearchNode?: (query: string) => void
   }
 
-  const { mode, tooltipData, rootNodeId, globalMetrics, showAdvanced, lookup, onSearchNode }: Props =
-    $props()
+  const {
+    mode,
+    tooltipData,
+    rootNodeId,
+    globalMetrics,
+    showAdvanced,
+    lookup,
+    onSearchNode
+  }: Props = $props()
 
   // Pipeline-wide totals for the overview's "Global stats" tile. Empty (so the tile is hidden) on
   // any non-overview view or when the bundle carried no stats.
@@ -80,6 +89,21 @@
   )
   const showAttributesView = $derived(mode === 'overview' || mode === 'node')
 
+  const genericTable = $derived(
+    tooltipData && 'genericTable' in tooltipData ? tooltipData.genericTable : null
+  )
+
+  // Scroll targets the search can jump to in the current view, in DOM order; each carries a
+  // `data-block-id` anchor (see {@link buildSearchTargets}).
+  const searchTargets = $derived(
+    buildSearchTargets({
+      showAttributesView,
+      globalEntries: globalMetricEntries,
+      blocks,
+      topNodeRows: genericTable?.rows ?? []
+    })
+  )
+
   let containerEl: HTMLDivElement | undefined = $state()
 
   // Container-width-driven column count. A ResizeObserver tracks the scroll container's
@@ -98,47 +122,40 @@
     return () => observer.disconnect()
   })
 
-  // Search priorities: block title, then metric label, then metric id. Always returns the
-  // *block* to scroll to — metrics in distribution blocks share grid cells with their
-  // siblings and don't have a single DOM anchor, so block-level is the reliable target.
-  function findMatchingBlockId(query: string): string | null {
-    const q = query.trim().toLowerCase()
-    if (!q || blocks.length === 0) return null
-    for (const b of blocks) {
-      if (b.title?.toLowerCase().includes(q)) return b.id
-    }
-    for (const b of blocks) {
-      for (const e of b.entries) {
-        if (e.label.toLowerCase().includes(q)) return b.id
-      }
-    }
-    for (const b of blocks) {
-      for (const e of b.entries) {
-        if (e.row.metric.toLowerCase().includes(q)) return b.id
-      }
-    }
-    return null
-  }
+  // Search cursor. A new query starts at the first match; repeating the same query steps the
+  // cursor (Enter / down → next, Shift-Enter / up → previous), wrapping modulo the match count.
+  // Imperative — no $state on purpose
+  let searchQuery = ''
+  let matchCursor = 0
 
-  // Imperative handler. Each Enter on the panel's search input calls this directly via the
-  // lookup coordinator, so identical queries still re-fire (unlike a reactive `$effect` on a
-  // query prop, where Svelte would dedupe equal values).
-  function runSearch(query: string) {
-    if (!containerEl) return
-    const matchId = findMatchingBlockId(query)
-    if (!matchId) return
-    const el = containerEl.querySelector<HTMLElement>(`[data-block-id="${matchId}"]`)
+  // Called imperatively on every submit, so pressing Enter again on the same query advances to the
+  // next match rather than being ignored. Matches are the full target list in DOM order,
+  // so a new query starts at the first match from the top.
+  // Returns the match count so the layout can enable/disable the nav buttons.
+  function runSearch(query: string, direction: SearchDirection): SearchProgress {
+    if (!containerEl) return { current: 0, total: 0 }
+    const ids = matchTargets(searchTargets, query)
+    if (ids.length === 0) {
+      searchQuery = query
+      return { current: 0, total: 0 }
+    }
+    if (query === searchQuery) {
+      matchCursor += direction === 'prev' ? -1 : 1
+    } else {
+      matchCursor = 0
+      searchQuery = query
+    }
+    const n = ids.length
+    matchCursor = ((matchCursor % n) + n) % n
+    const el = containerEl.querySelector<HTMLElement>(`[data-block-id="${ids[matchCursor]}"]`)
     el?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    return { current: matchCursor + 1, total: n }
   }
 
   $effect(() => {
     if (!lookup) return
     return lookup.register('Metrics', runSearch)
   })
-
-  const genericTable = $derived(
-    tooltipData && 'genericTable' in tooltipData ? tooltipData.genericTable : null
-  )
 </script>
 
 {#snippet attributesView()}
@@ -205,8 +222,8 @@
           </tr>
         </thead>
         <tbody>
-          {#each genericTable.rows as row}
-            <tr class="border-t border-surface-200-800">
+          {#each genericTable.rows as row, i}
+            <tr class="border-t border-surface-200-800" data-block-id="top-node-{i}">
               <td class="px-2 py-1">
                 <button
                   type="button"

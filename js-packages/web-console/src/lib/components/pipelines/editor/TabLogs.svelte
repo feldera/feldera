@@ -47,14 +47,15 @@
     pipeline,
     deleted = false,
     logSearch = emptySearchState,
-    onLogSearchShortcut
+    onLogMatchCountChange
   }: {
     pipeline: { current: ExtendedPipeline }
     deleted?: boolean
+    /** Committed search state, owned by the monitoring panel (which hosts the search bar in
+     *  its toolbar). */
     logSearch?: SearchState
-    /** Invoked when the user presses Ctrl-F / Cmd-F inside the log list — the monitoring
-     *  panel uses this to focus its search input. */
-    onLogSearchShortcut?: () => void
+    /** Reports the current match count so the panel can drive its search counter/nav buttons. */
+    onLogMatchCountChange?: (count: number) => void
   } = $props()
   let pipelineName = $derived(pipeline.current.name)
 
@@ -325,7 +326,7 @@
     <LogsStreamList
       logs={pipelineLogs}
       search={logSearch}
-      onSearchShortcut={onLogSearchShortcut}
+      onMatchCountChange={onLogMatchCountChange}
       {onStickToBottomChange}
     ></LogsStreamList>
   {/key}

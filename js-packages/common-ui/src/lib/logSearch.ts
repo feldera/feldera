@@ -26,13 +26,33 @@ export type SearchState = {
 /** The starting state — no pattern, cursor at zero. */
 export const emptySearchState: SearchState = { pattern: null, occurrenceIndex: 0 }
 
+/** Direction a "submit search" interaction moves the cursor: `next` (Enter) steps forward,
+ *  `prev` (Shift-Enter) steps backward. */
+export type SearchDirection = 'next' | 'prev'
+
+/** True for the browser "find in page" shortcut (Ctrl-F / Cmd-F, no other modifiers). */
+export function isFindShortcut(e: KeyboardEvent): boolean {
+  return (e.key === 'f' || e.key === 'F') && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey
+}
+
+/**
+ * The state for a committed in-view search.
+ */
+export type SearchProgress = { current: number; total: number }
+
 /** True when two patterns describe the same search — used by hosts to decide whether
  *  pressing Enter should advance to the next match (same pattern) or jump to the first
  *  match of a new pattern (different pattern). */
 export function searchPatternsEqual(a: SearchPattern | null, b: SearchPattern | null): boolean {
-  if (a === b) return true
-  if (!a || !b) return false
-  if (a.kind !== b.kind) return false
+  if (a === b) {
+    return true
+  }
+  if (!a || !b) {
+    return false
+  }
+  if (a.kind !== b.kind) {
+    return false
+  }
   if (a.kind === 'substring' && b.kind === 'substring') {
     return a.query === b.query && !!a.caseSensitive === !!b.caseSensitive
   }
@@ -43,19 +63,24 @@ export function searchPatternsEqual(a: SearchPattern | null, b: SearchPattern | 
 }
 
 /**
- * Compute the next {@link SearchState} for a "submit search" interaction (typically Enter
- * on the panel's search input).
+ * Compute the next {@link SearchState} for advancing a search.
  *   - `next = null` (or an empty pattern): clear the search.
- *   - `next` equals the current pattern: advance to the next match (`occurrenceIndex + 1`).
- *   - `next` differs from the current pattern: jump to the first match of the new pattern.
- *
- * Centralising this here keeps every host's submit handler identical and ensures the
- * cursor semantics stay consistent across log views.
+ *   - `next` equals the current pattern: step the cursor one match in `direction`
+ *     (`occurrenceIndex ± 1`). {@link findOccurrence} wraps the index, so no bounds check.
+ *   - `next` differs from the current pattern: jump to the first match of the new pattern,
+ *     regardless of direction.
  */
-export function advanceSearch(state: SearchState, next: SearchPattern | null): SearchState {
-  if (!next) return emptySearchState
+export function advanceSearch(
+  state: SearchState,
+  next: SearchPattern | null,
+  direction: SearchDirection = 'next'
+): SearchState {
+  if (!next) {
+    return emptySearchState
+  }
   if (searchPatternsEqual(state.pattern, next)) {
-    return { pattern: state.pattern, occurrenceIndex: state.occurrenceIndex + 1 }
+    const step = direction === 'prev' ? -1 : 1
+    return { pattern: state.pattern, occurrenceIndex: state.occurrenceIndex + step }
   }
   return { pattern: next, occurrenceIndex: 0 }
 }
@@ -69,7 +94,9 @@ export type MatchRange = readonly [start: number, end: number]
 
 export function compileSearchPattern(pattern: SearchPattern): LineMatcher {
   if (pattern.kind === 'substring') {
-    if (!pattern.query) return null
+    if (!pattern.query) {
+      return null
+    }
     if (pattern.caseSensitive) {
       const q = pattern.query
       return (line) => line.includes(q)
@@ -78,7 +105,9 @@ export function compileSearchPattern(pattern: SearchPattern): LineMatcher {
     return (line) => line.toLowerCase().includes(q)
   }
   if (pattern.kind === 'regex') {
-    if (!pattern.source) return null
+    if (!pattern.source) {
+      return null
+    }
     try {
       const re = new RegExp(pattern.source, pattern.flags)
       return (line) => re.test(line)
@@ -101,7 +130,9 @@ export function compileSearchPattern(pattern: SearchPattern): LineMatcher {
 export function findMatchOffsets(line: string, pattern: SearchPattern): MatchRange[] {
   const offsets: MatchRange[] = []
   if (pattern.kind === 'substring') {
-    if (!pattern.query) return offsets
+    if (!pattern.query) {
+      return offsets
+    }
     const haystack = pattern.caseSensitive ? line : line.toLowerCase()
     const needle = pattern.caseSensitive ? pattern.query : pattern.query.toLowerCase()
     let idx = haystack.indexOf(needle)
@@ -112,7 +143,9 @@ export function findMatchOffsets(line: string, pattern: SearchPattern): MatchRan
     return offsets
   }
   if (pattern.kind === 'regex') {
-    if (!pattern.source) return offsets
+    if (!pattern.source) {
+      return offsets
+    }
     let re: RegExp
     try {
       const flags = pattern.flags ?? ''
@@ -191,7 +224,9 @@ export function applySearchHighlight(
   for (const [s, e] of offsets) {
     const startPos = locate(s)
     const endPos = locate(e)
-    if (!startPos || !endPos) continue
+    if (!startPos || !endPos) {
+      continue
+    }
     const r = new Range()
     r.setStart(startPos.node, startPos.offset)
     r.setEnd(endPos.node, endPos.offset)
@@ -220,13 +255,43 @@ export function findOccurrence(
   occurrenceIndex: number
 ): number {
   const matcher = compileSearchPattern(pattern)
-  if (!matcher) return -1
+  if (!matcher) {
+    return -1
+  }
   const matches: number[] = []
   for (let i = 0; i < lines.length; i++) {
-    if (matcher(lines[i])) matches.push(i)
+    if (matcher(lines[i])) {
+      matches.push(i)
+    }
   }
-  if (matches.length === 0) return -1
+  if (matches.length === 0) {
+    return -1
+  }
   const n = matches.length
   const wrapped = ((occurrenceIndex % n) + n) % n
   return matches[wrapped]
+}
+
+/**
+ * Count the matching lines for `pattern` — the number of "next match" steps before the cursor
+ * wraps. Hosts use this to enable/disable the search nav buttons (0 - nothing to navigate).
+ *
+ * One match per line: multiple substrings on the same line count once, matching
+ * {@link findOccurrence}. Returns `0` for an empty or invalid pattern.
+ */
+export function countOccurrences(lines: readonly string[], pattern: SearchPattern | null): number {
+  if (!pattern) {
+    return 0
+  }
+  const matcher = compileSearchPattern(pattern)
+  if (!matcher) {
+    return 0
+  }
+  let count = 0
+  for (const line of lines) {
+    if (matcher(line)) {
+      count++
+    }
+  }
+  return count
 }

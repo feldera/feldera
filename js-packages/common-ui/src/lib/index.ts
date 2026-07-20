@@ -26,13 +26,19 @@ export {
   advanceSearch,
   applySearchHighlight,
   compileSearchPattern,
+  countOccurrences,
   emptySearchState,
   findMatchOffsets,
   findOccurrence,
+  isFindShortcut,
   searchPatternsEqual,
   type LineMatcher,
   type MatchRange,
+  type SearchDirection,
   type SearchPattern,
+  type SearchProgress,
   type SearchState
 } from './logSearch'
+export { default as SearchBar } from './SearchBar.svelte'
+export { useShortcut } from './useShortcut.svelte'
 export { sliceLinesForCopy, type CopySlice } from './logCopy'

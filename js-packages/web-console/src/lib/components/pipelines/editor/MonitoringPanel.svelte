@@ -33,7 +33,16 @@
     extractProgramErrors,
     numConnectorsWithProblems
   } from '$lib/compositions/health/systemErrors'
-  import { TabsPanel, advanceSearch, emptySearchState, type SearchState } from 'common-ui'
+  import {
+    TabsPanel,
+    SearchBar,
+    advanceSearch,
+    emptySearchState,
+    isFindShortcut,
+    useShortcut,
+    type SearchDirection,
+    type SearchState
+  } from 'common-ui'
 
   let {
     pipeline,
@@ -147,34 +156,54 @@
 
   const runtimeErrorsCount = $derived(connectorsWithErrorsCount + memoryPressureErrorCount)
 
-  // Local input binding. The committed search (what the list actually runs) lives in
-  // `logSearch` and only advances on Enter — so typing doesn't search as-you-type.
+  // Log search lives here, with the toolbar that hosts the search bar. The committed search
+  // (what the list runs) advances only on submit, so typing doesn't search as-you-type. The
+  // log list reports its match count so the counter and nav buttons stay in sync.
   let logSearchInput = $state('')
   let logSearch: SearchState = $state(emptySearchState)
-  // Bound to the search <input> so Ctrl-F / Cmd-F inside the log list can focus it.
-  let logSearchInputEl: HTMLInputElement | undefined = $state()
-  const onLogSearchShortcut = () => {
-    logSearchInputEl?.focus()
-    logSearchInputEl?.select()
-  }
+  let logMatchCount = $state(0)
+  let searchBar: ReturnType<typeof SearchBar> | undefined = $state()
+  // Single source of truth for the search bar: derived from the committed `logSearch`. No
+  // committed pattern → null (counter hidden, nav disabled, nothing highlighted).
+  const searchResults = $derived.by(() => {
+    if (!logSearch.pattern) return null
+    const total = logMatchCount
+    const current = total > 0 ? (((logSearch.occurrenceIndex % total) + total) % total) + 1 : 0
+    return { current, total }
+  })
 
-  // Enter on the search input: empty input clears, same pattern cycles to the next match,
-  // new pattern jumps to the first match.
-  const submitLogSearch = () => {
+  // Submit: empty input clears, same pattern steps one match in `direction`, new pattern jumps
+  // to the first match.
+  const submitLogSearch = (direction: SearchDirection = 'next') => {
     logSearch = advanceSearch(
       logSearch,
-      logSearchInput ? { kind: 'substring', query: logSearchInput } : null
+      logSearchInput ? { kind: 'substring', query: logSearchInput } : null,
+      direction
     )
   }
-  // Escape clears the input and the highlight — submitting an empty query resets `logSearch`
-  // to `emptySearchState` (pattern null), which un-highlights the list.
-  const clearLogSearch = () => {
-    logSearchInput = ''
-    submitLogSearch()
+  // Drop the committed search (highlight + counter). The search bar owns and clears the input
+  // text itself; this only resets what the log list is searching for.
+  const resetLogSearch = () => {
+    logSearch = emptySearchState
   }
 
+  // Ctrl-F / Cmd-F opens (or refocuses) the log search whenever the Logs tab is shown, regardless
+  // of which element holds focus.
+  useShortcut(
+    isFindShortcut,
+    () => searchBar?.activate(),
+    () => currentTab === 'Logs'
+  )
+
   // Updating individual properties in an $effect avoids unnecessary reactive updates within tab components
-  let tabProps = $state({ metrics, pipeline, errors, deleted, logSearch, onLogSearchShortcut })
+  let tabProps = $state({
+    metrics,
+    pipeline,
+    errors,
+    deleted,
+    logSearch,
+    onLogMatchCountChange: (count: number) => (logMatchCount = count)
+  })
   $effect(() => {
     tabProps.metrics = metrics
   })
@@ -236,18 +265,17 @@
 {/snippet}
 
 {#snippet TabBarEndLogs()}
-  <div class="ml-auto flex gap-2">
-    <input
-      bind:this={logSearchInputEl}
+  <div class="ml-auto flex items-center gap-2">
+    <SearchBar
+      bind:this={searchBar}
       bind:value={logSearchInput}
-      type="text"
       placeholder="Search logs"
-      title="Search within logs (Enter to jump to next match, Esc to clear, Ctrl/Cmd-F to focus from the log list)"
-      onkeydown={(e) => {
-        if (e.key === 'Enter') submitLogSearch()
-        else if (e.key === 'Escape') clearLogSearch()
-      }}
-      class="input ml-auto h-8 w-28 text-sm sm:w-32"
+      title="Search logs (Enter / Shift+Enter to step matches, Esc to clear, Ctrl/Cmd-F to toggle)"
+      results={searchResults}
+      onnext={() => submitLogSearch('next')}
+      onprevious={() => submitLogSearch('prev')}
+      onclear={resetLogSearch}
+      inputClass="h-8 w-40 text-sm"
     />
     {@render PipelineInfoHeader()}
   </div>
