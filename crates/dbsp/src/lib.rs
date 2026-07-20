@@ -100,8 +100,8 @@ pub use crate::time::Timestamp;
 pub use algebra::{DynZWeight, ZWeight};
 
 pub use circuit::{
-    ChildCircuit, Circuit, CircuitHandle, Consensus, DBSPHandle, NestedCircuit, RootCircuit,
-    Runtime, RuntimeError, SchedulerError, Stream, WeakRuntime,
+    ChildCircuit, Circuit, CircuitBase, CircuitHandle, Consensus, DBSPHandle, NestedCircuit,
+    RootCircuit, Runtime, RuntimeError, SchedulerError, Stream, WeakRuntime,
 };
 #[cfg(not(feature = "backend-mode"))]
 pub use operator::FilterMap;
