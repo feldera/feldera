@@ -612,10 +612,12 @@ pub(crate) async fn streaming_proxy(
     // compression causes gzip frame buffering that blocks streaming clients (see the
     // `Content-Encoding: identity` override below). `.no_decompress()` above suppresses
     // awc's own `Accept-Encoding` header; here we also strip the client's.
+    // `authorization` has already been handled by the API server, and is thus not needed
+    // to be forwarded to the pipeline itself.
     for header in request
         .headers()
         .into_iter()
-        .filter(|(h, _)| *h != "connection" && *h != "accept-encoding")
+        .filter(|(h, _)| *h != "connection" && *h != "accept-encoding" && *h != "authorization")
     {
         new_request = new_request.append_header(header);
     }
