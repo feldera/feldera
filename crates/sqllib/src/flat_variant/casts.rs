@@ -2,7 +2,7 @@
 //! JSON functions the SQL compiler emits when the flat_variant mode is on.
 //!
 //! Everything here runs natively on the flat encoding; no enum `Variant` is
-//! built on any path. Reads go through [`FVRef`], a zero-allocation borrowed
+//! built on any path. Reads go through `FVRef`, a zero-allocation borrowed
 //! view whose match arms mirror the enum implementations in `variant.rs` and
 //! `casts.rs` one to one, so conversion semantics (string fallbacks, numeric
 //! coercion, error text) stay aligned by construction; writes go through
@@ -1049,10 +1049,6 @@ pub fn variantnull_fv() -> FlatVariant {
     FlatVariant::variant_null()
 }
 
-#[doc(hidden)]
-pub fn from_json_string2<T>(value: &str) -> Option<T>
-where
-    T: for<'de> serde::Deserialize<'de>,
-{
-    serde_json::from_str::<T>(value).ok()
-}
+// No from_json_string2: the compiler emits `from_json_string` (variant.rs)
+// in both variant modes; its AUX type parameter is generic on every
+// implementing type, so FlatVariant programs use it unchanged.

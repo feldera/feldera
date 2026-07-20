@@ -1130,15 +1130,30 @@ fn json_config() -> SqlSerdeConfig {
 }
 
 /// Serializes the encoded value at `bytes`, delegating scalar rendering to
-/// the same sqllib serializers `Variant` uses.
-struct Enc<'a>(&'a [u8]);
+/// the same sqllib serializers `Variant` uses. `config` selects the scalar
+/// sub-formats (decimal, binary, timestamp, ...), exactly like the enum's
+/// `VariantFormat::Json` arm, which threads the caller's config into every
+/// nested scalar (the Postgres output flavor depends on this).
+struct Enc<'a> {
+    bytes: &'a [u8],
+    config: &'a SqlSerdeConfig,
+}
+
+impl<'a> Enc<'a> {
+    fn child(&self, bytes: &'a [u8]) -> Enc<'a> {
+        Enc {
+            bytes,
+            config: self.config,
+        }
+    }
+}
 
 impl Serialize for Enc<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let bytes = self.0;
+        let bytes = self.bytes;
         let p = &bytes[1..];
         match bytes[0] {
             TAG_SQL_NULL | TAG_VARIANT_NULL => serializer.serialize_none(),
@@ -1155,49 +1170,44 @@ impl Serialize for Enc<'_> {
             TAG_DOUBLE => serializer.serialize_f64(f64::from_le_bytes(p.try_into().unwrap())),
             TAG_DECIMAL => {
                 DynamicDecimal::new(i128::from_le_bytes(p[..16].try_into().unwrap()), p[16])
-                    .serialize_with_context(serializer, &json_config())
+                    .serialize_with_context(serializer, self.config)
             }
             TAG_STRING => serializer.serialize_str(std::str::from_utf8(p).expect("encoded UTF-8")),
             TAG_DATE => Date::from_days(i32::from_le_bytes(p.try_into().unwrap()))
-                .serialize_with_context(serializer, &json_config()),
+                .serialize_with_context(serializer, self.config),
             TAG_TIME => Time::from_nanoseconds(u64::from_le_bytes(p.try_into().unwrap()))
-                .serialize_with_context(serializer, &json_config()),
+                .serialize_with_context(serializer, self.config),
             TAG_TIMESTAMP => {
                 Timestamp::from_microseconds(i64::from_le_bytes(p.try_into().unwrap()))
-                    .serialize_with_context(serializer, &json_config())
+                    .serialize_with_context(serializer, self.config)
             }
             TAG_TIMESTAMP_TZ => {
                 TimestampTz::from_microseconds(i64::from_le_bytes(p.try_into().unwrap()))
-                    .serialize_with_context(serializer, &json_config())
+                    .serialize_with_context(serializer, self.config)
             }
             TAG_SHORT_INTERVAL => {
                 ShortInterval::from_microseconds(i64::from_le_bytes(p.try_into().unwrap()))
-                    .serialize_with_context(serializer, &json_config())
+                    .serialize_with_context(serializer, self.config)
             }
             TAG_LONG_INTERVAL => {
                 LongInterval::from_months(i32::from_le_bytes(p.try_into().unwrap()))
-                    .serialize_with_context(serializer, &json_config())
+                    .serialize_with_context(serializer, self.config)
             }
-            // ByteArray serializes as a JSON array of numbers.
-            TAG_BINARY => {
-                let mut seq = serializer.serialize_seq(Some(p.len()))?;
-                for byte in p {
-                    seq.serialize_element(byte)?;
-                }
-                seq.end()
-            }
+            // ByteArray honors the config's binary format (number array by
+            // default, PgHex for the Postgres flavor).
+            TAG_BINARY => ByteArray::new(p).serialize_with_context(serializer, self.config),
             TAG_GEOMETRY => crate::GeoPoint::new(
                 f64::from_le_bytes(p[..8].try_into().unwrap()),
                 f64::from_le_bytes(p[8..].try_into().unwrap()),
             )
-            .serialize_with_context(serializer, &json_config()),
+            .serialize_with_context(serializer, self.config),
             TAG_UUID => Uuid::from_bytes(p.try_into().unwrap())
-                .serialize_with_context(serializer, &json_config()),
+                .serialize_with_context(serializer, self.config),
             TAG_ARRAY => {
                 let c = Container::new(bytes);
                 let mut seq = serializer.serialize_seq(Some(c.count))?;
                 for i in 0..c.count {
-                    seq.serialize_element(&Enc(&bytes[c.element(i)]))?;
+                    seq.serialize_element(&self.child(&bytes[c.element(i)]))?;
                 }
                 seq.end()
             }
@@ -1205,7 +1215,10 @@ impl Serialize for Enc<'_> {
                 let c = Container::new(bytes);
                 let mut map = serializer.serialize_map(Some(c.count))?;
                 for i in 0..c.count {
-                    map.serialize_entry(&Enc(&bytes[c.element(i)]), &Enc(&bytes[c.map_value(i)]))?;
+                    map.serialize_entry(
+                        &self.child(&bytes[c.element(i)]),
+                        &self.child(&bytes[c.map_value(i)]),
+                    )?;
                 }
                 map.end()
             }
@@ -1219,7 +1232,12 @@ impl Serialize for FlatVariant {
     where
         S: Serializer,
     {
-        Enc(self.as_bytes()).serialize(serializer)
+        let config = json_config();
+        Enc {
+            bytes: self.as_bytes(),
+            config: &config,
+        }
+        .serialize(serializer)
     }
 }
 
@@ -1240,7 +1258,11 @@ impl SerializeWithContext<SqlSerdeConfig> for FlatVariant {
                     ))
                 })?)
             }
-            VariantFormat::Json => self.serialize(serializer),
+            VariantFormat::Json => Enc {
+                bytes: self.as_bytes(),
+                config: context,
+            }
+            .serialize(serializer),
         }
     }
 }
@@ -1256,8 +1278,14 @@ mod tests {
             Just(Variant::VariantNull),
             any::<bool>().prop_map(Variant::Boolean),
             any::<i8>().prop_map(Variant::TinyInt),
+            any::<i16>().prop_map(Variant::SmallInt),
+            any::<i32>().prop_map(Variant::Int),
             any::<i64>().prop_map(Variant::BigInt),
+            any::<u8>().prop_map(Variant::UTinyInt),
+            any::<u16>().prop_map(Variant::USmallInt),
+            any::<u32>().prop_map(Variant::UInt),
             any::<u64>().prop_map(Variant::UBigInt),
+            any::<f32>().prop_map(|f| Variant::Real(f.into())),
             any::<f64>().prop_map(|f| Variant::Double(f.into())),
             // DynamicDecimal panics on unrepresentable (significand, scale)
             // pairs in both grids; stay within its domain.
@@ -1268,6 +1296,17 @@ mod tests {
             )
                 .prop_map(Variant::SqlDecimal),
             ".{0,24}".prop_map(|s| Variant::String(SqlString::from(s))),
+            // Ranges renderable by chrono; string casts format these.
+            (-100_000i32..100_000).prop_map(|d| Variant::Date(Date::from_days(d))),
+            (0u64..86_400_000_000_000).prop_map(|n| Variant::Time(Time::from_nanoseconds(n))),
+            (-4_000_000_000_000_000i64..4_000_000_000_000_000)
+                .prop_map(|us| Variant::Timestamp(Timestamp::from_microseconds(us))),
+            (-4_000_000_000_000_000i64..4_000_000_000_000_000)
+                .prop_map(|us| Variant::TimestampTz(TimestampTz::from_microseconds(us))),
+            (-1_000_000_000_000_000i64..1_000_000_000_000_000)
+                .prop_map(|us| Variant::ShortInterval(ShortInterval::from_microseconds(us))),
+            (-1_000_000i32..1_000_000)
+                .prop_map(|m| Variant::LongInterval(LongInterval::from_months(m))),
             proptest::collection::vec(any::<u8>(), 0..40)
                 .prop_map(|b| Variant::Binary(ByteArray::new(&b))),
             any::<[u8; 16]>().prop_map(|b| Variant::Uuid(Uuid::from_bytes(b))),
@@ -1370,56 +1409,811 @@ mod tests {
         }
     }
 
-    /// Native casts must agree with the enum cast grid: same Ok/Err status
-    /// and equal values (error text may differ).
+    /// Compares one nullable-result from-variant cast pair on one value:
+    /// same Ok/Err status and equal values (error text may differ).
+    fn check_from<T: PartialEq + std::fmt::Debug>(
+        a: &Variant,
+        a2: &FlatVariant,
+        f1: impl Fn(Variant) -> crate::error::SqlResult<Option<T>>,
+        f2: impl Fn(FlatVariant) -> crate::error::SqlResult<Option<T>>,
+        what: &str,
+    ) {
+        assert_eq!(
+            f1(a.clone()).map_err(|_| ()),
+            f2(a2.clone()).map_err(|_| ()),
+            "{what} cast diverges for {a:?}"
+        );
+    }
+
+    /// Every from-variant cast in the native grid must agree with the enum
+    /// grid, over the full range of encoded values.
     #[test]
     fn casts_match_enum_grid() {
         use crate::casts as c1;
         use crate::flat_variant::casts as c2;
-        fn norm<T>(r: crate::error::SqlResult<Option<T>>) -> Result<Option<T>, ()> {
-            r.map_err(|_| ())
-        }
         use proptest::strategy::ValueTree;
+
+        /// Interval unit names share one implementation per underlying type;
+        /// still call every generated name once.
+        macro_rules! check_interval_units {
+            ($a:expr, $a2:expr, $($name:ident),* $(,)?) => {::paste::paste! {$(
+                check_from($a, $a2,
+                    c1::[<cast_to_ $name N_V>], c2::[<cast_to_ $name N_FV>],
+                    stringify!($name));
+            )*}};
+        }
+
         let mut runner = proptest::test_runner::TestRunner::deterministic();
         let strategy = variant();
         for _ in 0..500 {
             let a = strategy.new_tree(&mut runner).expect("strategy").current();
             let a2 = FlatVariant::from(&a);
+
+            check_from(&a, &a2, c1::cast_to_bN_V, c2::cast_to_bN_FV, "bool");
+            check_from(&a, &a2, c1::cast_to_i8N_V, c2::cast_to_i8N_FV, "i8");
+            check_from(&a, &a2, c1::cast_to_i16N_V, c2::cast_to_i16N_FV, "i16");
+            check_from(&a, &a2, c1::cast_to_i32N_V, c2::cast_to_i32N_FV, "i32");
+            check_from(&a, &a2, c1::cast_to_i64N_V, c2::cast_to_i64N_FV, "i64");
+            check_from(&a, &a2, c1::cast_to_u8N_V, c2::cast_to_u8N_FV, "u8");
+            check_from(&a, &a2, c1::cast_to_u16N_V, c2::cast_to_u16N_FV, "u16");
+            check_from(&a, &a2, c1::cast_to_u32N_V, c2::cast_to_u32N_FV, "u32");
+            check_from(&a, &a2, c1::cast_to_u64N_V, c2::cast_to_u64N_FV, "u64");
+            check_from(&a, &a2, c1::cast_to_fN_V, c2::cast_to_fN_FV, "real");
+            check_from(&a, &a2, c1::cast_to_dN_V, c2::cast_to_dN_FV, "double");
+            check_from(
+                &a,
+                &a2,
+                |v| c1::cast_to_sN_V(v, -1, false),
+                |v| c2::cast_to_sN_FV(v, -1, false),
+                "varchar",
+            );
+            check_from(
+                &a,
+                &a2,
+                |v| c1::cast_to_sN_V(v, 3, true),
+                |v| c2::cast_to_sN_FV(v, 3, true),
+                "char(3)",
+            );
+            check_from(
+                &a,
+                &a2,
+                |v| c1::cast_to_bytesN_V(v, -1, false),
+                |v| c2::cast_to_bytesN_FV(v, -1, false),
+                "binary",
+            );
+            check_from(
+                &a,
+                &a2,
+                c1::cast_to_SqlDecimalN_V::<10, 2>,
+                c2::cast_to_SqlDecimalN_FV::<10, 2>,
+                "decimal(10,2)",
+            );
+            check_from(
+                &a,
+                &a2,
+                c1::cast_to_SqlDecimalN_V::<38, 10>,
+                c2::cast_to_SqlDecimalN_FV::<38, 10>,
+                "decimal(38,10)",
+            );
+            check_from(&a, &a2, c1::cast_to_DateN_V, c2::cast_to_DateN_FV, "date");
+            check_from(&a, &a2, c1::cast_to_TimeN_V, c2::cast_to_TimeN_FV, "time");
+            check_from(
+                &a,
+                &a2,
+                c1::cast_to_TimestampN_V,
+                c2::cast_to_TimestampN_FV,
+                "timestamp",
+            );
+            check_from(
+                &a,
+                &a2,
+                c1::cast_to_TimestampTzN_V,
+                c2::cast_to_TimestampTzN_FV,
+                "timestamptz",
+            );
+            check_from(&a, &a2, c1::cast_to_UuidN_V, c2::cast_to_UuidN_FV, "uuid");
+            check_from(
+                &a,
+                &a2,
+                c1::cast_to_GeoPointN_V,
+                c2::cast_to_GeoPointN_FV,
+                "geopoint",
+            );
+            check_interval_units!(
+                &a,
+                &a2,
+                ShortInterval_DAYS,
+                ShortInterval_HOURS,
+                ShortInterval_DAYS_TO_HOURS,
+                ShortInterval_MINUTES,
+                ShortInterval_DAYS_TO_MINUTES,
+                ShortInterval_HOURS_TO_MINUTES,
+                ShortInterval_SECONDS,
+                ShortInterval_DAYS_TO_SECONDS,
+                ShortInterval_HOURS_TO_SECONDS,
+                ShortInterval_MINUTES_TO_SECONDS,
+                LongInterval_YEARS_TO_MONTHS,
+                LongInterval_MONTHS,
+                LongInterval_YEARS,
+            );
+
+            // Containers over every decodable element type.
+            macro_rules! check_vec_elem {
+                ($($t:ty),* $(,)?) => {$(
+                    check_from(&a, &a2,
+                        c1::cast_to_vecN_V::<$t>, c2::cast_to_vecN_FV::<$t>,
+                        concat!("array<", stringify!($t), ">"));
+                )*};
+            }
+            check_vec_elem!(
+                bool,
+                i8,
+                i16,
+                i32,
+                u8,
+                u16,
+                u32,
+                u64,
+                F32,
+                F64,
+                Date,
+                Time,
+                Timestamp,
+                TimestampTz,
+                ShortInterval,
+                LongInterval,
+                Uuid,
+                ByteArray,
+                crate::GeoPoint,
+                crate::SqlDecimal<10, 2>,
+            );
+
+            // Containers with concrete element types, nullable and not.
+            check_from(
+                &a,
+                &a2,
+                c1::cast_to_vecN_V::<i64>,
+                c2::cast_to_vecN_FV::<i64>,
+                "bigint array",
+            );
+            check_from(
+                &a,
+                &a2,
+                c1::cast_to_vecN_V::<Option<i64>>,
+                c2::cast_to_vecN_FV::<Option<i64>>,
+                "nullable bigint array",
+            );
+            check_from(
+                &a,
+                &a2,
+                c1::cast_to_mapN_V::<SqlString, i64>,
+                c2::cast_to_mapN_FV::<SqlString, i64>,
+                "map<varchar,bigint>",
+            );
+            check_from(
+                &a,
+                &a2,
+                c1::cast_to_mapN_V::<SqlString, Option<i64>>,
+                c2::cast_to_mapN_FV::<SqlString, Option<i64>>,
+                "map<varchar,bigint null>",
+            );
+
+            // Containers with VARIANT elements; compare via the bridge.
             assert_eq!(
-                norm(c1::cast_to_i64N_V(a.clone())),
-                norm(c2::cast_to_i64N_FV(a2.clone())),
-                "i64 cast diverges for {a:?}"
+                c1::cast_to_vecN_V::<Variant>(a.clone())
+                    .map(|o| o.map(|arr| arr.iter().map(FlatVariant::from).collect::<Vec<_>>()))
+                    .map_err(|_| ()),
+                c2::cast_to_vecN_FV::<FlatVariant>(a2.clone())
+                    .map(|o| o.map(|arr| arr.to_vec()))
+                    .map_err(|_| ()),
+                "variant array cast diverges for {a:?}"
+            );
+
+            // Non-null container forms error on mismatched input.
+            assert_eq!(
+                c1::cast_to_vec_V::<i64>(a.clone()).map_err(|_| ()),
+                c2::cast_to_vec_FV::<i64>(a2.clone()).map_err(|_| ()),
+                "non-null array cast diverges for {a:?}"
             );
             assert_eq!(
-                norm(c1::cast_to_u8N_V(a.clone())),
-                norm(c2::cast_to_u8N_FV(a2.clone())),
-                "u8 cast diverges for {a:?}"
+                c1::cast_to_map_V::<SqlString, i64>(a.clone()).map_err(|_| ()),
+                c2::cast_to_map_FV::<SqlString, i64>(a2.clone()).map_err(|_| ()),
+                "non-null map cast diverges for {a:?}"
+            );
+
+            // VARIANT-to-VARIANT, TYPEOF, TO_JSON, and typed indexing.
+            assert_eq!(
+                FlatVariant::from(&c1::cast_to_V_VN(Some(a.clone())).unwrap()),
+                c2::cast_to_FV_FVN(Some(a2.clone())).unwrap(),
+                "variant unwrap diverges for {a:?}"
             );
             assert_eq!(
-                norm(c1::cast_to_dN_V(a.clone())),
-                norm(c2::cast_to_dN_FV(a2.clone())),
-                "double cast diverges for {a:?}"
+                crate::variant::typeof_(a.clone()),
+                c2::typeof_fv_(a2.clone()),
+                "typeof diverges for {a:?}"
             );
             assert_eq!(
-                norm(c1::cast_to_bN_V(a.clone())),
-                norm(c2::cast_to_bN_FV(a2.clone())),
-                "bool cast diverges for {a:?}"
+                crate::string::to_json_V(a.clone()),
+                c2::to_json_FV(a2.clone()),
+                "to_json diverges for {a:?}"
+            );
+            for idx in [-1i32, 0, 1, 2] {
+                assert_eq!(
+                    crate::variant::indexV__(&a, idx).map(|v| FlatVariant::from(&v)),
+                    c2::indexFV__(&a2, idx),
+                    "index {idx} diverges for {a:?}"
+                );
+            }
+            assert_eq!(
+                crate::variant::indexV__(&a, SqlString::from_ref("a"))
+                    .map(|v| FlatVariant::from(&v)),
+                c2::indexFV__(&a2, SqlString::from_ref("a")),
+                "string index diverges for {a:?}"
+            );
+        }
+
+        // Null propagation through the N-input forms.
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_V_VN(None).unwrap()),
+            c2::cast_to_FV_FVN(None).unwrap(),
+        );
+        assert_eq!(c2::cast_to_i64N_FVN(None).unwrap(), None);
+        assert_eq!(
+            c2::cast_to_sN_FVN(None, -1, false).unwrap(),
+            c1::cast_to_sN_VN(None, -1, false).unwrap()
+        );
+    }
+
+    /// Every to-variant cast in the native grid produces the same document
+    /// the enum grid produces, for all four nullability shapes.
+    #[test]
+    fn to_variant_casts_match_enum_grid() {
+        use crate::casts as c1;
+        use crate::flat_variant::casts as c2;
+
+        macro_rules! check_to_variant {
+            ($name:ident, $v:expr) => {{
+                ::paste::paste! {
+                    let v = $v;
+                    assert_eq!(
+                        FlatVariant::from(&c1::[<cast_to_V_ $name>](v.clone()).unwrap()),
+                        c2::[<cast_to_FV_ $name>](v.clone()).unwrap(),
+                        concat!(stringify!($name), ": V form diverges")
+                    );
+                    assert_eq!(
+                        FlatVariant::from(&c1::[<cast_to_VN_ $name>](v.clone()).unwrap().unwrap()),
+                        c2::[<cast_to_FVN_ $name>](v.clone()).unwrap().unwrap(),
+                        concat!(stringify!($name), ": VN form diverges")
+                    );
+                    assert_eq!(
+                        FlatVariant::from(&c1::[<cast_to_V_ $name N>](Some(v.clone())).unwrap()),
+                        c2::[<cast_to_FV_ $name N>](Some(v.clone())).unwrap(),
+                        concat!(stringify!($name), ": V/Some form diverges")
+                    );
+                    assert_eq!(
+                        FlatVariant::from(&c1::[<cast_to_V_ $name N>](None).unwrap()),
+                        c2::[<cast_to_FV_ $name N>](None).unwrap(),
+                        concat!(stringify!($name), ": V/None form diverges")
+                    );
+                    assert_eq!(
+                        FlatVariant::from(&c1::[<cast_to_VN_ $name N>](Some(v.clone())).unwrap().unwrap()),
+                        c2::[<cast_to_FVN_ $name N>](Some(v)).unwrap().unwrap(),
+                        concat!(stringify!($name), ": VN/Some form diverges")
+                    );
+                }
+            }};
+        }
+
+        check_to_variant!(b, true);
+        check_to_variant!(i8, -5i8);
+        check_to_variant!(i16, -300i16);
+        check_to_variant!(i32, 123_456i32);
+        check_to_variant!(i64, -9_000_000_000i64);
+        check_to_variant!(u8, 200u8);
+        check_to_variant!(u16, 60_000u16);
+        check_to_variant!(u32, 4_000_000_000u32);
+        check_to_variant!(u64, 18_000_000_000_000_000_000u64);
+        check_to_variant!(f, F32::new(1.5));
+        check_to_variant!(d, F64::new(-2.25));
+        check_to_variant!(s, SqlString::from_ref("hello"));
+        check_to_variant!(bytes, ByteArray::new(&[1u8, 2, 3]));
+        check_to_variant!(Date, Date::from_days(19_000));
+        check_to_variant!(Time, Time::from_nanoseconds(43_200_000_000_000));
+        check_to_variant!(
+            Timestamp,
+            Timestamp::from_microseconds(1_700_000_000_000_000)
+        );
+        check_to_variant!(
+            TimestampTz,
+            TimestampTz::from_microseconds(1_700_000_000_000_000)
+        );
+        check_to_variant!(Uuid, Uuid::from_bytes([9; 16]));
+        check_to_variant!(GeoPoint, crate::GeoPoint::new(1.0, -2.0));
+        let short = ShortInterval::from_microseconds(90_061_000_000);
+        check_to_variant!(ShortInterval_DAYS, short);
+        check_to_variant!(ShortInterval_HOURS, short);
+        check_to_variant!(ShortInterval_DAYS_TO_HOURS, short);
+        check_to_variant!(ShortInterval_MINUTES, short);
+        check_to_variant!(ShortInterval_DAYS_TO_MINUTES, short);
+        check_to_variant!(ShortInterval_HOURS_TO_MINUTES, short);
+        check_to_variant!(ShortInterval_SECONDS, short);
+        check_to_variant!(ShortInterval_DAYS_TO_SECONDS, short);
+        check_to_variant!(ShortInterval_HOURS_TO_SECONDS, short);
+        check_to_variant!(ShortInterval_MINUTES_TO_SECONDS, short);
+        let long = LongInterval::from_months(25);
+        check_to_variant!(LongInterval_YEARS_TO_MONTHS, long);
+        check_to_variant!(LongInterval_MONTHS, long);
+        check_to_variant!(LongInterval_YEARS, long);
+
+        let dec = crate::SqlDecimal::<10, 2>::try_from(DynamicDecimal::new(12_345, 2)).unwrap();
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_V_SqlDecimal::<10, 2>(dec).unwrap()),
+            c2::cast_to_FV_SqlDecimal::<10, 2>(dec).unwrap(),
+        );
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_V_SqlDecimalN::<10, 2>(Some(dec)).unwrap()),
+            c2::cast_to_FV_SqlDecimalN::<10, 2>(Some(dec)).unwrap(),
+        );
+
+        let arr: crate::Array<i32> = vec![1, 2, 3].into();
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_V_vec(arr.clone()).unwrap()),
+            c2::cast_to_FV_vec(arr.clone()).unwrap(),
+        );
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_VN_vec(arr.clone()).unwrap().unwrap()),
+            c2::cast_to_FVN_vec(arr.clone()).unwrap().unwrap(),
+        );
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_V_vecN(Some(arr.clone())).unwrap()),
+            c2::cast_to_FV_vecN(Some(arr.clone())).unwrap(),
+        );
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_V_vecN::<i32>(None).unwrap()),
+            c2::cast_to_FV_vecN::<i32>(None).unwrap(),
+        );
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_VN_vecN(Some(arr.clone())).unwrap().unwrap()),
+            c2::cast_to_FVN_vecN(Some(arr)).unwrap().unwrap(),
+        );
+        let opt_arr: crate::Array<Option<i32>> = vec![Some(1), None].into();
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_V_vec(opt_arr.clone()).unwrap()),
+            c2::cast_to_FV_vec(opt_arr).unwrap(),
+        );
+        // VARIANT elements encode through EncodeFV for FlatVariant itself.
+        let var_arr: crate::Array<Variant> = vec![Variant::BigInt(1), Variant::VariantNull].into();
+        let var_arr2: crate::Array<FlatVariant> = var_arr
+            .iter()
+            .map(FlatVariant::from)
+            .collect::<Vec<_>>()
+            .into();
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_V_vec(var_arr).unwrap()),
+            c2::cast_to_FV_vec(var_arr2).unwrap(),
+        );
+
+        let map: crate::Map<SqlString, i32> =
+            BTreeMap::from([(SqlString::from_ref("a"), 1), (SqlString::from_ref("b"), 2)]).into();
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_V_map(map.clone()).unwrap()),
+            c2::cast_to_FV_map(map.clone()).unwrap(),
+        );
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_VN_map(map.clone()).unwrap().unwrap()),
+            c2::cast_to_FVN_map(map.clone()).unwrap().unwrap(),
+        );
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_V_mapN(Some(map.clone())).unwrap()),
+            c2::cast_to_FV_mapN(Some(map.clone())).unwrap(),
+        );
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_V_mapN::<SqlString, i32>(None).unwrap()),
+            c2::cast_to_FV_mapN::<SqlString, i32>(None).unwrap(),
+        );
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_VN_mapN(Some(map.clone())).unwrap().unwrap()),
+            c2::cast_to_FVN_mapN(Some(map)).unwrap().unwrap(),
+        );
+
+        assert_eq!(
+            FlatVariant::from(&crate::variant::variantnull()),
+            c2::variantnull_fv(),
+        );
+    }
+
+    /// The Option-input (`*_FVN`) wrappers, the non-null string/binary and
+    /// container forms, the index/typeof/json helper grid, the literal
+    /// `From` constructors, and the metadata boundary helpers all agree
+    /// with their enum counterparts.
+    #[test]
+    fn remaining_grid_matches_enum() {
+        use crate::casts as c1;
+        use crate::flat_variant::casts as c2;
+
+        macro_rules! check_optional_from {
+            ($a:expr, $a2:expr, $($name:ident),* $(,)?) => {::paste::paste! {$(
+                assert_eq!(c2::[<cast_to_ $name N_FVN>](None).unwrap(), None);
+                assert_eq!(
+                    c1::[<cast_to_ $name N_VN>](Some($a.clone())).map_err(|_| ()),
+                    c2::[<cast_to_ $name N_FVN>](Some($a2.clone())).map_err(|_| ()),
+                    concat!(stringify!($name), " optional cast diverges for {:?}"), $a
+                );
+            )*}};
+        }
+
+        for a in [
+            Variant::BigInt(7),
+            Variant::String(SqlString::from_ref("2020-01-01")),
+            Variant::VariantNull,
+            Variant::Boolean(true),
+        ] {
+            let a2 = FlatVariant::from(&a);
+            check_optional_from!(
+                &a,
+                &a2,
+                b,
+                i8,
+                i16,
+                i32,
+                i64,
+                u8,
+                u16,
+                u32,
+                u64,
+                f,
+                d,
+                Date,
+                Time,
+                Timestamp,
+                TimestampTz,
+                Uuid,
+                GeoPoint,
+                ShortInterval_DAYS,
+                ShortInterval_HOURS,
+                ShortInterval_DAYS_TO_HOURS,
+                ShortInterval_MINUTES,
+                ShortInterval_DAYS_TO_MINUTES,
+                ShortInterval_HOURS_TO_MINUTES,
+                ShortInterval_SECONDS,
+                ShortInterval_DAYS_TO_SECONDS,
+                ShortInterval_HOURS_TO_SECONDS,
+                ShortInterval_MINUTES_TO_SECONDS,
+                LongInterval_YEARS_TO_MONTHS,
+                LongInterval_MONTHS,
+                LongInterval_YEARS,
             );
             assert_eq!(
-                norm(c1::cast_to_sN_V(a.clone(), -1, false)),
-                norm(c2::cast_to_sN_FV(a2.clone(), -1, false)),
-                "string cast diverges for {a:?}"
+                c1::cast_to_SqlDecimalN_VN::<10, 2>(Some(a.clone())).map_err(|_| ()),
+                c2::cast_to_SqlDecimalN_FVN::<10, 2>(Some(a2.clone())).map_err(|_| ()),
             );
             assert_eq!(
-                norm(c1::cast_to_DateN_V(a.clone())),
-                norm(c2::cast_to_DateN_FV(a2.clone())),
-                "date cast diverges for {a:?}"
+                c1::cast_to_sN_VN(Some(a.clone()), -1, false).map_err(|_| ()),
+                c2::cast_to_sN_FVN(Some(a2.clone()), -1, false).map_err(|_| ()),
             );
             assert_eq!(
-                norm(c1::cast_to_SqlDecimalN_V::<10, 2>(a.clone())),
-                norm(c2::cast_to_SqlDecimalN_FV::<10, 2>(a2.clone())),
-                "decimal cast diverges for {a:?}"
+                c1::cast_to_bytesN_VN(Some(a.clone()), -1, false).map_err(|_| ()),
+                c2::cast_to_bytesN_FVN(Some(a2.clone()), -1, false).map_err(|_| ()),
             );
+            assert_eq!(
+                c1::cast_to_vecN_VN::<i64>(Some(a.clone())).map_err(|_| ()),
+                c2::cast_to_vecN_FVN::<i64>(Some(a2.clone())).map_err(|_| ()),
+            );
+            assert_eq!(
+                c1::cast_to_mapN_VN::<SqlString, i64>(Some(a.clone())).map_err(|_| ()),
+                c2::cast_to_mapN_FVN::<SqlString, i64>(Some(a2.clone())).map_err(|_| ()),
+            );
+        }
+        assert_eq!(c2::cast_to_SqlDecimalN_FVN::<10, 2>(None).unwrap(), None);
+        assert_eq!(c2::cast_to_vecN_FVN::<i64>(None).unwrap(), None);
+        assert_eq!(c2::cast_to_mapN_FVN::<SqlString, i64>(None).unwrap(), None);
+        assert_eq!(c2::cast_to_bytesN_FVN(None, -1, false).unwrap(), None);
+
+        // Non-null result forms on inputs they accept.
+        let s = Variant::String(SqlString::from_ref("abc"));
+        let s2 = FlatVariant::from(&s);
+        assert_eq!(
+            c1::cast_to_s_V(s.clone(), -1, false).unwrap(),
+            c2::cast_to_s_FV(s2.clone(), -1, false).unwrap(),
+        );
+        assert_eq!(
+            c1::cast_to_s_VN(Some(s.clone()), -1, false).unwrap(),
+            c2::cast_to_s_FVN(Some(s2.clone()), -1, false).unwrap(),
+        );
+        let bin = Variant::Binary(ByteArray::new(&[1, 2]));
+        let bin2 = FlatVariant::from(&bin);
+        assert_eq!(
+            c1::cast_to_bytes_V(bin.clone(), -1, false).unwrap(),
+            c2::cast_to_bytes_FV(bin2.clone(), -1, false).unwrap(),
+        );
+        assert_eq!(
+            c1::cast_to_bytes_VN(Some(bin.clone()), -1, false).unwrap(),
+            c2::cast_to_bytes_FVN(Some(bin2.clone()), -1, false).unwrap(),
+        );
+        let arr = Variant::Array(vec![Variant::BigInt(1), Variant::BigInt(2)].into());
+        let arr2 = FlatVariant::from(&arr);
+        assert_eq!(
+            c1::cast_to_vec_VN::<i64>(Some(arr.clone())).unwrap(),
+            c2::cast_to_vec_FVN::<i64>(Some(arr2.clone())).unwrap(),
+        );
+        assert_eq!(c2::cast_to_vec_FVN::<i64>(None).unwrap(), None);
+        let map = Variant::Map(
+            BTreeMap::from([(
+                Variant::String(SqlString::from_ref("k")),
+                Variant::BigInt(3),
+            )])
+            .into(),
+        );
+        let map2 = FlatVariant::from(&map);
+        assert_eq!(
+            c1::cast_to_map_VN::<SqlString, i64>(Some(map.clone())).unwrap(),
+            c2::cast_to_map_FVN::<SqlString, i64>(Some(map2.clone())).unwrap(),
+        );
+        assert_eq!(c2::cast_to_map_FVN::<SqlString, i64>(None).unwrap(), None);
+
+        // To-variant decimal VN forms.
+        let dec = crate::SqlDecimal::<10, 2>::try_from(DynamicDecimal::new(777, 1)).unwrap();
+        assert_eq!(
+            FlatVariant::from(&c1::cast_to_VN_SqlDecimal::<10, 2>(dec).unwrap().unwrap()),
+            c2::cast_to_FVN_SqlDecimal::<10, 2>(dec).unwrap().unwrap(),
+        );
+        assert_eq!(
+            FlatVariant::from(
+                &c1::cast_to_VN_SqlDecimalN::<10, 2>(Some(dec))
+                    .unwrap()
+                    .unwrap()
+            ),
+            c2::cast_to_FVN_SqlDecimalN::<10, 2>(Some(dec))
+                .unwrap()
+                .unwrap(),
+        );
+
+        // Index forms over an array and a map, all nullability shapes.
+        let v1 = crate::variant::indexV_N(&arr, Some(1i32)).map(|v| FlatVariant::from(&v));
+        assert_eq!(v1, c2::indexFV_N(&arr2, Some(1i32)));
+        assert_eq!(c2::indexFV_N::<i32>(&arr2, None), None);
+        assert_eq!(
+            crate::variant::indexVN_(&Some(map.clone()), SqlString::from_ref("k"))
+                .map(|v| FlatVariant::from(&v)),
+            c2::indexFVN_(&Some(map2.clone()), SqlString::from_ref("k")),
+        );
+        assert_eq!(c2::indexFVN_(&None, SqlString::from_ref("k")), None);
+        assert_eq!(
+            crate::variant::indexVNN(&Some(map.clone()), Some(SqlString::from_ref("k")))
+                .map(|v| FlatVariant::from(&v)),
+            c2::indexFVNN(&Some(map2.clone()), Some(SqlString::from_ref("k"))),
+        );
+        assert_eq!(c2::indexFVNN::<i32>(&None, None), None);
+
+        // TYPEOF, PARSE_JSON, TO_JSON helper forms.
+        assert_eq!(
+            crate::variant::typeofN(Some(map.clone())),
+            c2::typeof_fvN(Some(map2.clone()))
+        );
+        assert_eq!(crate::variant::typeofN(None), c2::typeof_fvN(None));
+        assert_eq!(
+            crate::string::parse_json_sN(Some(SqlString::from_ref("[1]")))
+                .map(|v| FlatVariant::from(&v)),
+            c2::parse_json_fv_sN(Some(SqlString::from_ref("[1]"))),
+        );
+        assert_eq!(c2::parse_json_fv_sN(None), None);
+        assert_eq!(c2::parse_json_fv_nullN(None), None);
+        assert_eq!(
+            crate::string::to_json_VN(Some(map.clone())),
+            c2::to_json_FVN(Some(map2.clone()))
+        );
+        assert_eq!(c2::to_json_FVN(None), None);
+
+        // Metadata boundary helpers.
+        assert_eq!(variant_to_fv(map.clone()), map2);
+        assert_eq!(variant_to_fvN(Some(map.clone())), Some(map2.clone()));
+        assert_eq!(variant_to_fvN(None), None);
+
+        // Literal From constructors match encoding through the enum.
+        macro_rules! check_literal_from {
+            ($($v:expr),* $(,)?) => {$(
+                let value = $v;
+                assert_eq!(
+                    FlatVariant::from(value.clone()),
+                    FlatVariant::from(&Variant::from(value.clone())),
+                    "literal From diverges for {:?}", Variant::from(value.clone())
+                );
+                assert_eq!(
+                    FlatVariant::from(Some(value.clone())),
+                    FlatVariant::from(&Variant::from(Some(value))),
+                );
+            )*};
+        }
+        check_literal_from!(
+            true,
+            -5i8,
+            -300i16,
+            123_456i32,
+            -9_000_000_000i64,
+            200u8,
+            60_000u16,
+            4_000_000_000u32,
+            18_000_000_000_000_000_000u64,
+            F32::new(1.5),
+            F64::new(-2.25),
+            SqlString::from_ref("lit"),
+            Date::from_days(19_000),
+            Time::from_nanoseconds(1_000_000_000),
+            Timestamp::from_microseconds(1_700_000_000_000_000),
+            TimestampTz::from_microseconds(1_700_000_000_000_000),
+            ShortInterval::from_microseconds(90_061_000_000),
+            LongInterval::from_months(25),
+            crate::GeoPoint::new(1.0, -2.0),
+            ByteArray::new(&[4u8, 5]),
+            Uuid::from_bytes([3; 16]),
+            dec,
+        );
+        let native_arr: crate::Array<i32> = vec![1, 2].into();
+        assert_eq!(
+            FlatVariant::from(native_arr.clone()),
+            FlatVariant::from(&<Variant as From<crate::Array<i32>>>::from(
+                native_arr.clone()
+            )),
+        );
+        assert_eq!(
+            FlatVariant::from(Some(native_arr.clone())),
+            FlatVariant::from(&<Variant as From<Option<crate::Array<i32>>>>::from(Some(
+                native_arr
+            ))),
+        );
+        let native_map: crate::Map<SqlString, i32> =
+            BTreeMap::from([(SqlString::from_ref("m"), 9)]).into();
+        assert_eq!(
+            FlatVariant::from(native_map.clone()),
+            FlatVariant::from(&<Variant as From<crate::Map<SqlString, i32>>>::from(
+                native_map.clone()
+            )),
+        );
+        assert_eq!(
+            FlatVariant::from(Some(native_map.clone())),
+            FlatVariant::from(
+                &<Variant as From<Option<crate::Map<SqlString, i32>>>>::from(Some(native_map))
+            ),
+        );
+
+        // SqlDecimal as a container element.
+        let dec_arr = Variant::Array(vec![Variant::SqlDecimal((123, 2))].into());
+        let dec_arr2 = FlatVariant::from(&dec_arr);
+        assert_eq!(
+            c1::cast_to_vecN_V::<crate::SqlDecimal<10, 2>>(dec_arr).map_err(|_| ()),
+            c2::cast_to_vecN_FV::<crate::SqlDecimal<10, 2>>(dec_arr2).map_err(|_| ()),
+        );
+    }
+
+    /// Float payloads with distinct bit patterns compare and hash like the
+    /// enum: negative zero equals zero, NaN equals NaN.
+    #[test]
+    fn float_edge_semantics_match_enum() {
+        let cases = [
+            (
+                Variant::Double(F64::new(0.0)),
+                Variant::Double(F64::new(-0.0)),
+            ),
+            (
+                Variant::Double(F64::new(f64::NAN)),
+                Variant::Double(F64::new(f64::from_bits(0x7ff8_0000_0000_0001))),
+            ),
+            (Variant::Real(F32::new(0.0)), Variant::Real(F32::new(-0.0))),
+            (
+                Variant::Real(F32::new(f32::NAN)),
+                Variant::Real(F32::new(f32::from_bits(0x7fc0_0001))),
+            ),
+        ];
+        for (a, b) in cases {
+            let (a2, b2) = (FlatVariant::from(&a), FlatVariant::from(&b));
+            assert_eq!(a == b, a2 == b2, "eq diverges for {a:?} vs {b:?}");
+            assert_eq!(a.cmp(&b), a2.cmp(&b2), "ord diverges for {a:?} vs {b:?}");
+            if a2 == b2 {
+                assert_eq!(hash_of(&a2), hash_of(&b2), "hash diverges for {a:?}");
+            }
+        }
+    }
+
+    /// Deserializing through serde_json::Value (which emits plain
+    /// f64/u64/i64 numbers instead of serde_json's private decimal
+    /// representation) matches the enum, covering the visitor paths that
+    /// non-JSON deserializers take.
+    #[test]
+    fn value_deserializer_matches_enum() {
+        let cases = [
+            serde_json::json!(1.5),
+            serde_json::json!(-7),
+            serde_json::json!(18446744073709551615u64),
+            serde_json::json!(null),
+            serde_json::json!({"a": [1.25, "s", null], "b": true}),
+        ];
+        for case in cases {
+            let v1: Variant = serde_json::from_value(case.clone()).unwrap();
+            let v2: FlatVariant = serde_json::from_value(case.clone()).unwrap();
+            assert_eq!(
+                FlatVariant::from(&v1),
+                v2,
+                "value parse diverges for {case}"
+            );
+        }
+    }
+
+    /// PARSE_JSON agrees with the enum on valid and invalid input.
+    #[test]
+    fn parse_json_matches_enum() {
+        let cases = [
+            r#"null"#,
+            r#"true"#,
+            r#"-5"#,
+            r#"18446744073709551616"#,
+            r#"0.1"#,
+            r#""hello""#,
+            r#"[1, "two", null, {"a": false}]"#,
+            r#"{"b": 1, "a": [2.5]}"#,
+            // Invalid inputs; both grids return SQL NULL.
+            "",
+            "{",
+            "nul",
+            "[1,",
+            "\"unterminated",
+            "not json at all",
+        ];
+        for case in cases {
+            let v1 = crate::string::parse_json_s(SqlString::from_ref(case));
+            let v2 = crate::flat_variant::casts::parse_json_fv_s(SqlString::from_ref(case));
+            assert_eq!(
+                FlatVariant::from(&v1),
+                v2,
+                "parse_json diverges for {case:?}"
+            );
+        }
+    }
+
+    /// Both types render identical JSON under every serde config whose
+    /// variant format is `Json`, including flavors with non-default scalar
+    /// sub-formats (Postgres: decimals as strings, binary as PgHex).
+    #[test]
+    fn serialize_context_matches_enum() {
+        use feldera_types::format::json::JsonFlavor;
+        use feldera_types::serde_with_context::SerializationContext;
+
+        let value = Variant::Map(
+            [
+                (
+                    Variant::String(SqlString::from_ref("dec")),
+                    Variant::SqlDecimal((12345, 2)),
+                ),
+                (
+                    Variant::String(SqlString::from_ref("bin")),
+                    Variant::Binary(ByteArray::new(&[1, 2, 0xab])),
+                ),
+                (
+                    Variant::String(SqlString::from_ref("ts")),
+                    Variant::Timestamp(Timestamp::from_microseconds(1_700_000_000_000_000)),
+                ),
+                (
+                    Variant::String(SqlString::from_ref("id")),
+                    Variant::Uuid(Uuid::from_bytes([7; 16])),
+                ),
+                (
+                    Variant::String(SqlString::from_ref("arr")),
+                    Variant::Array(
+                        vec![Variant::SqlDecimal((5, 1)), Variant::Real(1.5.into())].into(),
+                    ),
+                ),
+            ]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>()
+            .into(),
+        );
+        let value2 = FlatVariant::from(&value);
+        for flavor in [JsonFlavor::Default, JsonFlavor::Postgres] {
+            let config = SqlSerdeConfig::from(flavor.clone());
+            let s1 = serde_json::to_string(&SerializationContext::new(&config, &value))
+                .expect("enum serializes");
+            let s2 = serde_json::to_string(&SerializationContext::new(&config, &value2))
+                .expect("flat serializes");
+            assert_eq!(s1, s2, "output diverges under {flavor:?}");
         }
     }
 

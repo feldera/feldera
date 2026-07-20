@@ -2625,8 +2625,13 @@ pub fn cast_to_ShortInterval_DAYS_TO_HOURS_s(value: SqlString) -> SqlResult<Shor
 
 #[doc(hidden)]
 pub fn cast_to_ShortInterval_MINUTES_s(value: SqlString) -> SqlResult<ShortInterval> {
-    let value: i64 = value.str().parse().unwrap();
-    cast_to_ShortInterval_MINUTES_i64(value)
+    match value.str().parse::<i64>() {
+        Ok(value) => cast_to_ShortInterval_MINUTES_i64(value),
+        Err(e) => Err(SqlRuntimeError::from_string(format!(
+            "Error converting '{value}' to INTERVAL MINUTES: {}",
+            e
+        ))),
+    }
 }
 
 #[doc(hidden)]
