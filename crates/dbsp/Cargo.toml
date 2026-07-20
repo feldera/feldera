@@ -167,6 +167,18 @@ harness = false
 name = "filter_predictor"
 harness = false
 
+[[bench]]
+name = "transitive_closure_acyclic"
+harness = false
+
+[[bench]]
+name = "transitive_closure_cyclic"
+harness = false
+
+[[bench]]
+name = "graph_coloring"
+harness = false
+
 [[example]]
 name = "orgchart"
 
