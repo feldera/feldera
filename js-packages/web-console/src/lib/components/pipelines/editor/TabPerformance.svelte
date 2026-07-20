@@ -231,7 +231,7 @@
     >
       {#snippet main()}
         <div
-          class="-mr-2 scrollbar flex min-w-0 flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto pr-2"
+          class="-mr-2 scrollbar flex h-full min-w-0 flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto pr-2"
         >
           <div class="flex w-full flex-col gap-4">
             {#if pipeline.current.status === 'Unavailable'}

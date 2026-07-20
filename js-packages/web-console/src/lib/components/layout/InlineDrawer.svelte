@@ -40,7 +40,7 @@
 </script>
 
 {#snippet mainPane()}
-  <Pane order={mainOrder} minSize={mainMinSize} class="!overflow-visible">
+  <Pane order={mainOrder} minSize={mainMinSize} class="min-w-0 !overflow-visible">
     {@render main()}
   </Pane>
 {/snippet}
@@ -50,7 +50,7 @@
     defaultSize={percentValue(defaultSize)}
     minSize={percentValue(minSize)}
     maxSize={percentValue(maxSize)}
-    class="!overflow-visible"
+    class="min-w-0 !overflow-visible"
   >
     <div class="h-full {_class}">
       {@render children()}
