@@ -104,6 +104,18 @@ pub(crate) const TAG_TIMESTAMP_TZ: u8 = 25;
 ///
 /// Cloning bumps a refcount; sub-value access (`index`, `index_string`)
 /// returns views into the shared buffer without copying the subtree.
+///
+/// # Examples
+///
+/// Values are built from JSON or from native values via `From`:
+///
+/// ```
+/// use feldera_sqllib::FlatVariant;
+///
+/// let doc: FlatVariant = serde_json::from_str(r#"{"user": {"id": 5}}"#).unwrap();
+/// assert_eq!(doc.index_string("user").index_string("id"), FlatVariant::from(5u64));
+/// assert_eq!(doc.to_json_string().unwrap(), r#"{"user":{"id":5}}"#);
+/// ```
 #[derive(Clone, IsNone)]
 pub struct FlatVariant {
     buf: Arc<[u8]>,
@@ -141,6 +153,15 @@ impl FlatVariant {
     }
 
     /// The SQL NULL value (`Variant::SqlNull` equivalent).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use feldera_sqllib::FlatVariant;
+    ///
+    /// assert_eq!(FlatVariant::sql_null(), FlatVariant::default());
+    /// assert_eq!(FlatVariant::sql_null().to_json_string().unwrap(), "null");
+    /// ```
     pub fn sql_null() -> FlatVariant {
         static NULL: OnceLock<Arc<[u8]>> = OnceLock::new();
         let buf = NULL.get_or_init(|| Arc::from(&[TAG_SQL_NULL][..])).clone();
@@ -152,6 +173,18 @@ impl FlatVariant {
     }
 
     /// The JSON null value (`Variant::VariantNull` equivalent).
+    ///
+    /// # Examples
+    ///
+    /// A JSON null is a value of its own, distinct from the SQL NULL:
+    ///
+    /// ```
+    /// use feldera_sqllib::FlatVariant;
+    ///
+    /// let null: FlatVariant = serde_json::from_str("null").unwrap();
+    /// assert_eq!(null, FlatVariant::variant_null());
+    /// assert_ne!(null, FlatVariant::sql_null());
+    /// ```
     pub fn variant_null() -> FlatVariant {
         static NULL: OnceLock<Arc<[u8]>> = OnceLock::new();
         let buf = NULL
@@ -167,6 +200,16 @@ impl FlatVariant {
     /// Map lookup by string key; missing key or non-map yields SqlNull.
     /// Same semantics as `Variant::index_string`, but the result shares the
     /// buffer instead of cloning the subtree.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use feldera_sqllib::FlatVariant;
+    ///
+    /// let doc: FlatVariant = serde_json::from_str(r#"{"a": 1}"#).unwrap();
+    /// assert_eq!(doc.index_string("a"), FlatVariant::from(1u64));
+    /// assert_eq!(doc.index_string("missing"), FlatVariant::sql_null());
+    /// ```
     pub fn index_string<I: AsRef<str>>(&self, index: I) -> FlatVariant {
         let bytes = self.as_bytes();
         if bytes[0] != TAG_MAP {
@@ -184,6 +227,17 @@ impl FlatVariant {
 
     /// Same semantics as `Variant::index`: 1-based array indexing with
     /// numeric key coercion, map lookup by exact key, None otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use feldera_sqllib::FlatVariant;
+    ///
+    /// let arr: FlatVariant = serde_json::from_str("[10, 20, 30]").unwrap();
+    /// // SQL array indexes start at 1.
+    /// assert_eq!(arr.index(&FlatVariant::from(1i32)), Some(FlatVariant::from(10u64)));
+    /// assert_eq!(arr.index(&FlatVariant::from(9i32)), None);
+    /// ```
     pub fn index(&self, index: &FlatVariant) -> Option<FlatVariant> {
         let bytes = self.as_bytes();
         match bytes[0] {
@@ -235,6 +289,17 @@ impl FlatVariant {
         })
     }
 
+    /// The canonical JSON text of this value; same output as
+    /// `Variant::to_json_string`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use feldera_sqllib::FlatVariant;
+    ///
+    /// let doc: FlatVariant = serde_json::from_str(r#"{ "b" : 1, "a" : [true] }"#).unwrap();
+    /// assert_eq!(doc.to_json_string().unwrap(), r#"{"a":[true],"b":1}"#);
+    /// ```
     pub fn to_json_string(&self) -> Result<String, Box<dyn std::error::Error>> {
         Ok(serde_json::to_string(self)?)
     }
@@ -1414,13 +1479,13 @@ mod tests {
     fn check_from<T: PartialEq + std::fmt::Debug>(
         a: &Variant,
         a2: &FlatVariant,
-        f1: impl Fn(Variant) -> crate::error::SqlResult<Option<T>>,
-        f2: impl Fn(FlatVariant) -> crate::error::SqlResult<Option<T>>,
+        enum_cast: impl Fn(Variant) -> crate::error::SqlResult<Option<T>>,
+        flat_cast: impl Fn(FlatVariant) -> crate::error::SqlResult<Option<T>>,
         what: &str,
     ) {
         assert_eq!(
-            f1(a.clone()).map_err(|_| ()),
-            f2(a2.clone()).map_err(|_| ()),
+            enum_cast(a.clone()).map_err(|_| ()),
+            flat_cast(a2.clone()).map_err(|_| ()),
             "{what} cast diverges for {a:?}"
         );
     }
@@ -1969,8 +2034,8 @@ mod tests {
         );
 
         // Index forms over an array and a map, all nullability shapes.
-        let v1 = crate::variant::indexV_N(&arr, Some(1i32)).map(|v| FlatVariant::from(&v));
-        assert_eq!(v1, c2::indexFV_N(&arr2, Some(1i32)));
+        let expected = crate::variant::indexV_N(&arr, Some(1i32)).map(|v| FlatVariant::from(&v));
+        assert_eq!(expected, c2::indexFV_N(&arr2, Some(1i32)));
         assert_eq!(c2::indexFV_N::<i32>(&arr2, None), None);
         assert_eq!(
             crate::variant::indexVN_(&Some(map.clone()), SqlString::from_ref("k"))
@@ -2209,11 +2274,11 @@ mod tests {
         let value2 = FlatVariant::from(&value);
         for flavor in [JsonFlavor::Default, JsonFlavor::Postgres] {
             let config = SqlSerdeConfig::from(flavor.clone());
-            let s1 = serde_json::to_string(&SerializationContext::new(&config, &value))
+            let enum_json = serde_json::to_string(&SerializationContext::new(&config, &value))
                 .expect("enum serializes");
-            let s2 = serde_json::to_string(&SerializationContext::new(&config, &value2))
+            let flat_json = serde_json::to_string(&SerializationContext::new(&config, &value2))
                 .expect("flat serializes");
-            assert_eq!(s1, s2, "output diverges under {flavor:?}");
+            assert_eq!(enum_json, flat_json, "output diverges under {flavor:?}");
         }
     }
 
