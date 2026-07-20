@@ -331,6 +331,30 @@ public class WinAggPostTests extends PostBaseTests {
                 (9 rows)""");
     }
 
+    @Test
+    public void testWindowVariance() {
+        this.qst("""
+                -- [CALCITE-2402] VAR_POP, VAR_SAMP functions
+                -- VAR_POP(x) = (SUM(x * x) - SUM(x) * SUM(x) / COUNT(x)) / COUNT(x)
+                -- VAR_SAMP(x) = (SUM(x * x) - SUM(x) * SUM(x) / COUNT(x)) / (COUNT(x) - 1)
+                select age, deptno,
+                 var_pop(age) over() as "var_pop",
+                 var_pop(age) over(partition by age) as "var_pop by age",
+                 var_samp(age) over() as "var_samp",
+                 var_samp(age) over(partition by gender) as "var_samp by gender"
+                from emps order by age;
+                +-----+--------+---------+----------------+----------+--------------------+
+                | AGE | DEPTNO | var_pop | var_pop by age | var_samp | var_samp by gender |
+                +-----+--------+---------+----------------+----------+--------------------+
+                |   5 |     20 |    1005 |              0 |     1508 |                    |
+                |  25 |     10 |    1005 |              0 |     1508 |                    |
+                |  80 |     20 |    1005 |              0 |     1508 |                    |
+                |     |     40 |    1005 |                |     1508 |                    |
+                |     |     40 |    1005 |                |     1508 |                    |
+                +-----+--------+---------+----------------+----------+--------------------+
+                (5 rows)""");
+    }
+
     @Test @Ignore("unsupported aggregate functions")
     public void test4() {
         this.qst("""
@@ -412,26 +436,6 @@ public class WinAggPostTests extends PostBaseTests {
                 |     |     40 | M      |     1508 |         58 |                      0 |
                 |     |     40 | F      |     1508 |         58 |                      0 |
                 +-----+--------+--------+----------+------------+------------------------+
-                (5 rows)
-
-                -- [CALCITE-2402] VAR_POP, VAR_SAMP functions
-                -- VAR_POP(x) = (SUM(x * x) - SUM(x) * SUM(x) / COUNT(x)) / COUNT(x)
-                -- VAR_SAMP(x) = (SUM(x * x) - SUM(x) * SUM(x) / COUNT(x)) / (COUNT(x) - 1)
-                select emps."AGE", emps."DEPTNO", emps."GENDER",
-                 var_pop(emps."AGE") over() as "var_pop",
-                 var_pop(emps."AGE") over(partition by emps."AGE") as "var_pop by age",
-                 var_samp(emps."AGE") over() as "var_samp",
-                 var_samp(emps."AGE") over(partition by emps."GENDER") as "var_samp by gender"
-                from emps order by emps."AGE";
-                +-----+--------+--------+---------+----------------+----------+--------------------+
-                | AGE | DEPTNO | GENDER | var_pop | var_pop by age | var_samp | var_samp by gender |
-                +-----+--------+--------+---------+----------------+----------+--------------------+
-                |   5 |     20 | F      |    1005 |              0 |     1508 |                    |
-                |  25 |     10 |        |    1005 |              0 |     1508 |                    |
-                |  80 |     20 | M      |    1005 |              0 |     1508 |                    |
-                |     |     40 | F      |    1005 |                |     1508 |                    |
-                |     |     40 | M      |    1005 |                |     1508 |                    |
-                +-----+--------+--------+---------+----------------+----------+--------------------+
                 (5 rows)
 
                 -- [CALCITE-2402] REGR_SXX, REGR_SXY, REGR_SYY functions

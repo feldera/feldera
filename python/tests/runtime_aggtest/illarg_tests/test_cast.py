@@ -468,11 +468,11 @@ class illarg_safe_cast_map_illegal(TstView):
 class illarg_safe_cast_row_illegal(TstView):
     def __init__(self):
         self.sql = """CREATE MATERIALIZED VIEW safe_cast_row_illegal AS SELECT
-                      SAFE_CAST(roww AS ROW(i1 INT, v1 VARCHAR)) AS to_row
+                      SAFE_CAST(roww AS ROW(i1 INT, v1 DOUBLE)) AS to_row
                       FROM illegal_tbl
                       WHERE id = 0;"""
         self.expected_error = (
-            "SAFE_CAST cannot be used to convert ROW(INT, VARCHAR) to ROW(INT, VARCHAR)"
+            "SAFE_CAST cannot be used to convert ROW(INT, VARCHAR) to ROW(INT, DOUBLE)"
         )
 
 

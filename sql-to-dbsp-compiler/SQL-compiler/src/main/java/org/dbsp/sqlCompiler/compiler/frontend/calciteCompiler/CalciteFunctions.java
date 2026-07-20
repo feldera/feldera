@@ -229,6 +229,12 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                 """
                 runtime_aggtest/aggregate_tests/test_{stddev_samp,decimal_stddev_samp,empty_set}.py|
                 runtime_aggtest/aggregate_tests3/test_un_int_stddev.py""", true),
+            new Func(SqlStdOperatorTable.VARIANCE, "VARIANCE", SqlLibrary.STANDARD, "aggregates#variance",
+                FunctionDocumentation.NO_FILE, true),
+            new Func(SqlStdOperatorTable.VAR_POP, "VAR_POP", SqlLibrary.STANDARD, "aggregates#var_pop",
+                FunctionDocumentation.NO_FILE, true),
+            new Func(SqlStdOperatorTable.VAR_SAMP, "VAR_SAMP", SqlLibrary.STANDARD, "aggregates#var_samp",
+                FunctionDocumentation.NO_FILE, true),
             // window
             new Func(SqlStdOperatorTable.DENSE_RANK, "DENSE_RANK", SqlLibrary.STANDARD, "aggregates#dense_rank",
                 "runtime_aggtest/illarg_tests2/test_window_agg.py", true),
@@ -519,9 +525,6 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                      runtime_aggtest/illarg_tests/test_cmp_operators.py|
                      runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
                      """, false),
-            new Func(SqlLibraryOperators.SAFE_CAST, "SAFE_CAST", SqlLibrary.BIG_QUERY, "casts#safe-casts",
-                    "runtime_aggtest/illarg_tests/test_cast.py",false),
-
             new Func(SqlLibraryOperators.REGEXP_REPLACE_2, "REGEXP_REPLACE", SqlLibrary.REDSHIFT, "string#regexp_replace",
                     "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
             new Func(SqlLibraryOperators.REGEXP_REPLACE_3, "REGEXP_REPLACE", SqlLibrary.REDSHIFT, "string#regexp_replace",

@@ -1735,6 +1735,45 @@ public class AggScottTests extends ScottBaseTests {
     }
 
     @Test
+    public void testVariance() {
+        this.qst("""
+                -- [CALCITE-1776, CALCITE-2402] VAR_POP, VAR_SAMP
+                -- The arguments are cast to a wider DECIMAL because the variance,
+                -- which uses squared values, overflows DECIMAL(7,2)
+                SELECT
+                  var_pop(CAST(COMM AS DECIMAL(12, 4))) as "VAR_POP(COMM)",
+                  var_samp(CAST(SAL AS DECIMAL(12, 4))) as "VAR_SAMP(SAL)"
+                from emp;
+                +---------------+---------------+
+                | VAR_POP(COMM) | VAR_SAMP(SAL) |
+                +---------------+---------------+
+                |   272500.0000 |  1398313.8736 |
+                +---------------+---------------+
+                (1 row)
+
+                -- [CALCITE-1776, CALCITE-2402] VAR_POP, VAR_SAMP with group by
+                SELECT
+                  MONTH(HIREDATE) as "MONTH",
+                  var_pop(CAST(COMM AS DECIMAL(12, 4))) as "VAR_POP(COMM)",
+                  var_samp(CAST(COMM AS DECIMAL(12, 4))) as "VAR_SAMP(COMM)"
+                from emp
+                group by MONTH(HIREDATE);
+                +-------+---------------+----------------+
+                | MONTH | VAR_POP(COMM) | VAR_SAMP(COMM) |
+                +-------+---------------+----------------+
+                |     1 |               |                |
+                |    11 |               |                |
+                |    12 |               |                |
+                |     2 |    10000.0000 |     20000.0000 |
+                |     4 |               |                |
+                |     5 |               |                |
+                |     6 |               |                |
+                |     9 |   490000.0000 |    980000.0000 |
+                +-------+---------------+----------------+
+                (8 rows)""");
+    }
+
+    @Test
     public void bitTests() {
         this.qst("""
                 -- BIT_AND, BIT_OR, BIT_XOR aggregate functions

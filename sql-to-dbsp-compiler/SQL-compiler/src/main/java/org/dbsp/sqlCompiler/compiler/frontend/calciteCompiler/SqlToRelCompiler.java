@@ -141,9 +141,6 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExtendedSqlParserPos;
-import org.dbsp.sqlCompiler.compiler.frontend.SqlComment;
-import org.dbsp.sqlCompiler.compiler.frontend.SqlCommentParser;
-import org.dbsp.sqlCompiler.compiler.frontend.SqlPrettyPrinter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
@@ -836,6 +833,18 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
     }
 
+    /** Replace calls to SqlCastIOperator which are SAFE_CASTS with calls to SqlSafeCastOperator */
+    static class ReplaceSafeCasts extends SqlShuttle {
+        @Override
+        public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlCall call) {
+            SqlCall newCall = Objects.requireNonNull((SqlCall) super.visit(call));
+            if (newCall.getOperator().kind == SqlKind.SAFE_CAST) {
+                return SqlSafeCastFunction.INSTANCE.createCall(call.getParserPosition(), call.getOperandList());
+            }
+            return newCall;
+        }
+    }
+
     SqlNode postParsingProcess(SqlNode node, boolean saveLines) {
         node.accept(this.getExtraValidator());
         if (this.options.languageOptions.unaryPlusNoop) {
@@ -844,6 +853,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
         ReplacePositions replace = new ReplacePositions(!saveLines);
         node = Objects.requireNonNull(replace.visitNode(node));
+        ReplaceSafeCasts replace1 = new ReplaceSafeCasts();
+        node = Objects.requireNonNull(replace1.visitNode(node));
         return node;
     }
 
@@ -855,18 +866,9 @@ public class SqlToRelCompiler implements IWritesLogs {
     /** Given a list of statements separated by semicolons, parse all of them.
      * @param saveLines True if the lines are from the user program; false if they are internally generated. */
     public List<ParsedStatement> parseStatements(String statements, boolean saveLines) throws SqlParseException {
-        // Debugging flag for (partially) testing SqlPrettyPrinter
-        final boolean ROUND_TRIP_CHECK = false;
-
         SqlParser sqlParser = this.createSqlParser(statements, saveLines);
         List<ParsedStatement> result = new ArrayList<>();
         SqlNodeList sqlNodes = sqlParser.parseStmtList();
-        if (saveLines && ROUND_TRIP_CHECK) {
-            List<SqlComment> comments = SqlCommentParser.parse(statements);
-            String sql = SqlPrettyPrinter.toString(sqlNodes, comments);
-            // System.out.println(sql);
-            this.createSqlParser(sql, false).parseStmtList();
-        }
         for (SqlNode node: sqlNodes) {
             SqlNode sqlNode = this.postParsingProcess(node, saveLines);
             ParsedStatement stat = new ParsedStatement(sqlNode, saveLines);
@@ -974,7 +976,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         } else if (typeName instanceof SqlMapTypeNameSpec map) {
             SqlDataTypeSpec key = map.getKeyType();
             SqlDataTypeSpec value = map.getValType();
-            RelDataType keyType = this.specToRel(key, false);
+            RelDataType keyType = this.specToRel(key, true);
             RelDataType valueType = this.specToRel(value, false);
             // keyType = this.createNullableType(keyType);
             valueType = this.createNullableType(valueType);
@@ -990,7 +992,7 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     /** Convert a type from Sql to Rel.  Insert user-defined types in the {@link SqlToRelCompiler#udt} map.
      * @param spec            Type specification in Sql representation.
-     * @param neverNullable   If true never return a nullable type.  Used for primary keys. */
+     * @param neverNullable   If true never return a nullable type.  Used for primary keys and map key types. */
     public RelDataType specToRel(SqlDataTypeSpec spec, boolean neverNullable) {
         SqlTypeNameSpec typeSpec = spec.getTypeNameSpec();
         RelDataType result;

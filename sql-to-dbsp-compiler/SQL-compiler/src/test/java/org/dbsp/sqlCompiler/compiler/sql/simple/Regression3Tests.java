@@ -789,4 +789,26 @@ public class Regression3Tests extends SqlIoTest {
                 SELECT id, TRANSFORM(arr, x -> (x).name) AS names FROM t;""");
         ccs.stepWeightOne(insert, expected);
     }
+
+    @Test
+    public void testMapCast() {
+        this.getCCS("""
+                CREATE TABLE T(id INT, mapp MAP<VARCHAR, INT>);
+                CREATE MATERIALIZED VIEW V AS SELECT
+                SAFE_CAST(mapp AS MAP<VARCHAR, VARCHAR>) AS map FROM T;
+                --MAP[id, id] as map1 FROM T;""");
+    }
+
+    @Test
+    public void testMapNullable() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(id INT);
+                CREATE MATERIALIZED VIEW V AS SELECT
+                MAP[id, id] as m FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(NULL);", """
+                 m
+                -------------
+                 {NULL: NULL}
+                """);
+    }
 }

@@ -853,13 +853,15 @@ public class AggregateCompiler implements ICompilerComponent {
         }
     }
 
-    /** An expression which computes the standard deviation given the sum of squares, sum, and count:
-     * denom = if (sampl) { n - 1 } else { n };
-     * sqrt ( max(0, (sumSq - (sum^2 / n) ) / denom)
+    /** An expression which computes the variance given the sum of squares, sum, and count:
+     * denom = if (isSamp) { n - 1 } else { n };
+     * variance = (sumSq - (sum^2 / n)) / denom
+     * If sqrt is true, computes the standard deviation sqrt(max(0, variance)) instead.
      * Division uses the special operator which returns NULL when the denominator is NULL.
-     * The max is used because FP computations can sometimes produce a negative result. */
-    DBSPExpression stddev(boolean isSamp, DBSPType intermediateResultType,
-                          DBSPExpression sumSquares, DBSPExpression sum, DBSPExpression count) {
+     * The max is used because FP computations can sometimes produce a negative result,
+     * and sqrt would fail. */
+    DBSPExpression variance(boolean isSamp, boolean sqrt, DBSPType intermediateResultType,
+                            DBSPExpression sumSquares, DBSPExpression sum, DBSPExpression count) {
         DBSPExpression sumSquared = ExpressionCompiler.makeBinaryExpression(
                 this.node, intermediateResultType, DBSPOpcode.MUL,
                 sum, sum);
@@ -874,23 +876,30 @@ public class AggregateCompiler implements ICompilerComponent {
                 this.node, intermediateResultType, DBSPOpcode.SUB,
                 count, intermediateResultType.to(IsNumericType.class).getOne()) :
                 count;
-        // We need to call sqrt, which only works for doubles.
-        DBSPType sqrtType = new DBSPTypeDouble(node, intermediateResultType.mayBeNull);
         DBSPExpression div = ExpressionCompiler.makeBinaryExpression(
                 this.node, intermediateResultType, DBSPOpcode.DIV_NULL,
-                sub, denom).cast(this.node, sqrtType, DBSPCastExpression.CastType.SqlUnsafe);
+                sub, denom);
+        if (!sqrt)
+            return div.cast(this.node, this.nullableResultType, DBSPCastExpression.CastType.SqlUnsafe);
+        // We need to call sqrt, which only works for doubles.
+        DBSPType sqrtType = new DBSPTypeDouble(node, intermediateResultType.mayBeNull);
+        div = div.cast(this.node, sqrtType, DBSPCastExpression.CastType.SqlUnsafe);
         // Prevent sqrt from negative values if computations are unstable
         DBSPExpression max = ExpressionCompiler.makeBinaryExpression(
                 this.node, sqrtType, DBSPOpcode.MAX,
                 div, sqrtType.to(IsNumericType.class).getZero());
-        DBSPExpression sqrt = ExpressionCompiler.compilePolymorphicFunction(
+        DBSPExpression sqrtValue = ExpressionCompiler.compilePolymorphicFunction(
                 false, "sqrt", this.node, sqrtType, Linq.list(max), 1);
-        return sqrt.cast(this.node, this.nullableResultType, DBSPCastExpression.CastType.SqlUnsafe);
+        return sqrtValue.cast(this.node, this.nullableResultType, DBSPCastExpression.CastType.SqlUnsafe);
     }
 
-    IAggregate doStddev(SqlAvgAggFunction function) {
-        Utilities.enforce(function.getKind() == SqlKind.STDDEV_POP || function.getKind() == SqlKind.STDDEV_SAMP);
-        final boolean isSamp = function.getKind() == SqlKind.STDDEV_SAMP;
+    IAggregate doVariance(SqlAvgAggFunction function) {
+        final SqlKind kind = function.getKind();
+        Utilities.enforce(kind == SqlKind.STDDEV_POP || kind == SqlKind.STDDEV_SAMP ||
+                kind == SqlKind.VAR_POP || kind == SqlKind.VAR_SAMP);
+        final boolean isSamp = kind == SqlKind.STDDEV_SAMP || kind == SqlKind.VAR_SAMP;
+        // The standard deviation is the square root of the variance
+        final boolean sqrt = kind == SqlKind.STDDEV_POP || kind == SqlKind.STDDEV_SAMP;
         final DBSPType aggregatedValueType = this.getAggregatedValueType();
         final DBSPType intermediateResultType = this.partialResultType.withMayBeNull(true);
         DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
@@ -918,7 +927,7 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPExpression mapBody = new DBSPTupleExpression(first, second, third, one);
 
             DBSPVariablePath postVar = mapBody.getType().var();
-            DBSPExpression postBody = this.stddev(isSamp, intermediateResultType,
+            DBSPExpression postBody = this.variance(isSamp, sqrt, intermediateResultType,
                     postVar.field(0), postVar.field(1),
                     postVar.field(2).cast(node, intermediateResultType, DBSPCastExpression.CastType.SqlUnsafe));
 
@@ -973,8 +982,8 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPExpression increment = new DBSPTupleExpression(sum, count, sumSquares);
 
             DBSPVariablePath a = tripleType.var();
-            DBSPExpression postBody = this.stddev(
-                    isSamp, intermediateResultType, a.field(sumSquaresIndex), a.field(sumIndex), a.field(countIndex));
+            DBSPExpression postBody = this.variance(
+                    isSamp, sqrt, intermediateResultType, a.field(sumSquaresIndex), a.field(sumIndex), a.field(countIndex));
             DBSPClosureExpression post = new DBSPClosureExpression(node, postBody, a.asParameter());
             DBSPTypeUser semigroup = new DBSPTypeUser(node, SEMIGROUP, "TripleSemigroup", false,
                     intermediateResultType, intermediateResultType, intermediateResultType,
@@ -992,7 +1001,7 @@ public class AggregateCompiler implements ICompilerComponent {
     void processAvg(SqlAvgAggFunction function) {
         IAggregate implementation = switch (function.getKind()) {
             case AVG -> this.doAverage(function);
-            case STDDEV_POP, STDDEV_SAMP -> this.doStddev(function);
+            case STDDEV_POP, STDDEV_SAMP, VAR_POP, VAR_SAMP -> this.doVariance(function);
             default -> throw new UnimplementedException("Statistical aggregate function not yet implemented", 172, node);
         };
         this.setResult(implementation);

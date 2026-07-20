@@ -122,6 +122,18 @@ should write `SELECT SUM(CAST col AS BIGINT)`.
      <td><a id="stddev_samp"></a><code>STDDEV_SAMP( [ ALL | DISTINCT ] value)</code></td>
      <td>Returns the sample standard deviation of numeric across all input values</td>
   </tr>
+  <tr>
+     <td><a id="var_pop"></a><code>VAR_POP( [ ALL | DISTINCT ] value)</code></td>
+     <td>Returns the population variance of numeric across all input values.</td>
+  </tr>
+  <tr>
+     <td><a id="var_samp"></a><code>VAR_SAMP( [ ALL | DISTINCT ] value)</code></td>
+     <td>Returns the sample variance of numeric across all input values.</td>
+  </tr>
+  <tr>
+     <td><a id="variance"></a><code>VARIANCE( [ ALL | DISTINCT ] value)</code></td>
+     <td>Synonym for <code>VAR_SAMP</code></td>
+  </tr>
 </table>
 
 Comparisons like `MAX`, `MIN`, `ARG_MIN`, and `ARG_MAX` are defined

@@ -270,6 +270,79 @@ public class AggTests extends PostBaseTests {
     }
 
     @Test
+    public void varianceTests() {
+        this.qst("""
+                -- Denominator of 0 in SAMP
+                select var_samp(deptno) as v from emp WHERE deptno = 60;
+                +---+
+                | V |
+                +---+
+                |   |
+                +---+
+                (1 row)
+
+                -- var_pop
+                select var_pop(deptno) as v from emp;
+                +-----+
+                | V   |
+                +-----+
+                | 318 |
+                +-----+
+                (1 row)
+
+                -- var_samp
+                select var_samp(deptno) as v from emp;
+                +-----+
+                | V   |
+                +-----+
+                | 364 |
+                +-----+
+                (1 row)
+
+                -- variance is a synonym for var_samp
+                select variance(deptno) as v from emp;
+                +-----+
+                | V   |
+                +-----+
+                | 364 |
+                +-----+
+                (1 row)
+
+                -- variance of FP values; the results are cast to VARCHAR
+                select cast(var_pop(cast(deptno as double)) as varchar) as vp,
+                  cast(var_samp(cast(deptno as double)) as varchar) as vs
+                from emp;
+                +--------+-------------------+
+                | VP     | VS                |
+                +--------+-------------------+
+                | 318.75 | 364.2857142857143 |
+                +--------+-------------------+
+                (1 row)
+
+                -- [CALCITE-7192] lost FILTER condition when decomposition
+                select gender,
+                  stddev_pop(deptno) as p,
+                  stddev_pop(deptno) filter (where deptno > 50) as pf,
+                  stddev_samp(deptno) as s,
+                  stddev_samp(deptno) filter (where deptno > 40) as sf,
+                  var_pop(deptno) as vp,
+                  var_pop(deptno) filter (where deptno > 30) as vpf,
+                  var_samp(deptno) as vs,
+                  var_samp(deptno) filter (where deptno > 20) as vsf,
+                  avg(deptno) as a,
+                  avg(deptno) filter (where deptno > 10) as af
+                from emp
+                group by gender;
+                +--------+----+----+----+----+-----+-----+-----+-----+----+----+
+                | GENDER | P  | PF | S  | SF | VP  | VPF | VS  | VSF | A  | AF |
+                +--------+----+----+----+----+-----+-----+-----+-----+----+----+
+                | F      | 17 |  0 | 19 |  7 | 304 |  25 | 380 | 225 | 36 | 42 |
+                | M      | 17 |    | 20 |    | 289 |   0 | 433 |     | 26 | 35 |
+                +--------+----+----+----+----+-----+-----+-----+-----+----+----+
+                (2 rows)""");
+    }
+
+    @Test
     @Ignore("multiset not yet implemented")
     public void testIntersection() {
         this.qst("""

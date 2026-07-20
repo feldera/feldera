@@ -153,6 +153,7 @@ public class ConvertletTable extends ReflectiveConvertletTable {
 
         // Register convertlets for specific objects.
         registerOp(CAST, this::convertCast);
+        registerOp(SqlSafeCastFunction.INSTANCE, this::convertCast);
         registerOp(SqlLibraryOperators.SAFE_CAST, this::convertCast);
         registerOp(SqlLibraryOperators.TRY_CAST, this::convertCast);
         registerOp(SqlLibraryOperators.INFIX_CAST, this::convertCast);
@@ -808,9 +809,11 @@ public class ConvertletTable extends ReflectiveConvertletTable {
             return arg;
         }
         final SqlDataTypeSpec dataType = (SqlDataTypeSpec) right;
-        RelDataType type =
-                SqlCastFunction.deriveType(cx.getTypeFactory(), arg.getType(),
-                        dataType.deriveType(validator), safe);
+        RelDataType type;
+        if (kind == SqlKind.SAFE_CAST)
+            type = SqlSafeCastFunction.deriveType(cx.getTypeFactory(), arg.getType(), dataType.deriveType(validator));
+        else
+            type = SqlCastFunction.deriveType(cx.getTypeFactory(), arg.getType(), dataType.deriveType(validator), false);
         if (null != dataType.getCollectionsTypeName()) {
             RelDataType argComponentType = arg.getType().getComponentType();
 
