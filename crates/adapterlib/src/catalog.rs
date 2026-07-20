@@ -31,6 +31,7 @@ use crate::errors::controller::ControllerError;
 use crate::format::InputBuffer;
 use crate::postprocess::PostprocessorRegistry;
 use crate::preprocess::PreprocessorRegistry;
+use crate::transport::{InputTransportRegistry, OutputTransportRegistry};
 
 /// Descriptor that specifies the format in which records are received
 /// or into which they should be encoded before sending.
@@ -1166,6 +1167,12 @@ pub trait CircuitCatalog: Send + Sync {
 
     /// The registry used to insert new user-defined postprocessors
     fn postprocessor_registry(&self) -> Arc<Mutex<PostprocessorRegistry>>;
+
+    /// The registry used to look up input transport endpoint factories.
+    fn input_transport_registry(&self) -> Arc<Mutex<InputTransportRegistry>>;
+
+    /// The registry used to look up output transport endpoint factories.
+    fn output_transport_registry(&self) -> Arc<Mutex<OutputTransportRegistry>>;
 }
 
 #[doc(hidden)]

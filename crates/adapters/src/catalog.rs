@@ -1,6 +1,8 @@
 use feldera_adapterlib::{
-    errors::controller::ControllerError, postprocess::PostprocessorRegistry,
+    errors::controller::ControllerError,
+    postprocess::PostprocessorRegistry,
     preprocess::PreprocessorRegistry,
+    transport::{InputTransportRegistry, OutputTransportRegistry},
 };
 use feldera_types::program_schema::SqlIdentifier;
 use std::{
@@ -14,6 +16,8 @@ pub use feldera_adapterlib::catalog::*;
 pub struct Catalog {
     input_collection_handles: BTreeMap<SqlIdentifier, InputCollectionHandle>,
     output_batch_handles: BTreeMap<SqlIdentifier, OutputCollectionHandles>,
+    input_transport_registry: Arc<Mutex<InputTransportRegistry>>,
+    output_transport_registry: Arc<Mutex<OutputTransportRegistry>>,
     preprocessor_registry: Arc<Mutex<PreprocessorRegistry>>,
     postprocessor_registry: Arc<Mutex<PostprocessorRegistry>>,
 }
@@ -29,6 +33,12 @@ impl Catalog {
         Self {
             input_collection_handles: BTreeMap::new(),
             output_batch_handles: BTreeMap::new(),
+            input_transport_registry: Arc::new(Mutex::new(
+                crate::transport::builtin_input_transport_registry(),
+            )),
+            output_transport_registry: Arc::new(Mutex::new(
+                crate::transport::builtin_output_transport_registry(),
+            )),
             preprocessor_registry: Arc::new(Mutex::new(PreprocessorRegistry::new())),
             postprocessor_registry: Arc::new(Mutex::new(PostprocessorRegistry::new())),
         }
@@ -127,5 +137,13 @@ impl CircuitCatalog for Catalog {
 
     fn postprocessor_registry(&self) -> Arc<Mutex<PostprocessorRegistry>> {
         self.postprocessor_registry.clone()
+    }
+
+    fn input_transport_registry(&self) -> Arc<Mutex<InputTransportRegistry>> {
+        self.input_transport_registry.clone()
+    }
+
+    fn output_transport_registry(&self) -> Arc<Mutex<OutputTransportRegistry>> {
+        self.output_transport_registry.clone()
     }
 }

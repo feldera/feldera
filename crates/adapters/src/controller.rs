@@ -33,9 +33,8 @@ use crate::controller::sync::{
 use crate::panic::N_PANICS;
 use crate::server::metrics::{HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, Value};
 use crate::server::{InitializationState, ServerState};
-use crate::transport::Step;
 use crate::transport::clock::now_endpoint_config;
-use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
+use crate::transport::{Step, input_transport_uses_registry, output_transport_uses_registry};
 use crate::util::{LongOperationWarning, run_on_thread_pool};
 use crate::{
     CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint, ParseError,
@@ -94,7 +93,9 @@ use feldera_types::coordination::{
 use feldera_types::format::json::JsonLines;
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::runtime_status::BootstrapPolicy;
-use feldera_types::secret_resolver::resolve_secret_references_in_connector_config;
+use feldera_types::secret_resolver::{
+    resolve_secret_references_in_connector_config, resolve_secret_references_via_json,
+};
 use feldera_types::suspend::{PermanentSuspendError, SuspendError, TemporarySuspendError};
 use feldera_types::time_series::SampleStatistics;
 use feldera_types::transaction::{
@@ -6978,12 +6979,32 @@ impl ControllerInner {
         endpoint_config: &InputEndpointConfig,
         resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
-        let endpoint = input_transport_config_to_endpoint(
-            &endpoint_config.connector_config.transport,
-            endpoint_name,
+        let transport_config = resolve_secret_references_via_json(
             &self.secrets_dir,
+            &endpoint_config.connector_config.transport,
         )
         .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
+        let transport_name = transport_config.name();
+        let factory = self
+            .catalog
+            .input_transport_registry()
+            .lock()
+            .unwrap()
+            .get(&transport_name);
+        let endpoint = match factory {
+            Some(factory) => Some(
+                factory
+                    .create(&transport_config)
+                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?,
+            ),
+            None if input_transport_uses_registry(&transport_config) => {
+                return Err(ControllerError::unknown_input_transport(
+                    endpoint_name,
+                    &transport_name,
+                ));
+            }
+            None => None,
+        };
 
         // If `endpoint` is `None`, it means that the endpoint config specifies an integrated
         // input connector.  Such endpoints are instantiated inside `add_input_endpoint`.
@@ -7298,13 +7319,36 @@ impl ControllerInner {
         endpoint_config: &OutputEndpointConfig,
         initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Result<EndpointId, ControllerError> {
-        let endpoint = output_transport_config_to_endpoint(
-            &endpoint_config.connector_config.transport,
-            endpoint_name,
-            self.fault_tolerance == Some(FtModel::ExactlyOnce),
+        let transport_config = resolve_secret_references_via_json(
             &self.secrets_dir,
+            &endpoint_config.connector_config.transport,
         )
         .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
+        let transport_name = transport_config.name();
+        let factory = self
+            .catalog
+            .output_transport_registry()
+            .lock()
+            .unwrap()
+            .get(&transport_name);
+        let endpoint = match factory {
+            Some(factory) => Some(
+                factory
+                    .create(
+                        &transport_config,
+                        endpoint_name,
+                        self.fault_tolerance == Some(FtModel::ExactlyOnce),
+                    )
+                    .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?,
+            ),
+            None if output_transport_uses_registry(&transport_config) => {
+                return Err(ControllerError::unknown_output_transport(
+                    endpoint_name,
+                    &transport_name,
+                ));
+            }
+            None => None,
+        };
 
         // If `endpoint` is `None`, it means that the endpoint config specifies an integrated
         // output connector.  Such endpoints are instantiated inside `add_output_endpoint`.
