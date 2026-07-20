@@ -28,6 +28,8 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: bun run test-unit
         working-directory: js-packages/web-console
+        env:
+          VITEST_MAX_WORKERS: "4"
 
       - name: Show Kubernetes node
         if: always()

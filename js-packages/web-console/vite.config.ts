@@ -17,6 +17,12 @@ import { svelteCssVirtualModuleFallback } from './src/lib/vite-plugins/svelte-cs
 
 const snapshotsDir = path.resolve(__dirname, 'playwright-snapshots')
 
+// Cap test workers in CI, where vitest's autodetection sees every host core and
+// oversubscribes the pod, starving browser tests into per-test timeouts.
+const testMaxWorkers = process.env.VITEST_MAX_WORKERS
+  ? Math.max(1, Number(process.env.VITEST_MAX_WORKERS))
+  : undefined
+
 // Deps that vitest browser tests need pre-bundled. With noDiscovery: true
 // (below), only these explicit deps are pre-bundled during tests.
 // If a new test imports a dep that causes "new dependencies optimized"
@@ -226,6 +232,7 @@ export default defineConfig(async () => {
     test: {
       expect: { requireAssertions: true },
       watch: false,
+      maxWorkers: testMaxWorkers,
       resolveSnapshotPath(testPath, snapExtension) {
         // Svelte component tests (client project) → playwright-snapshots/component/
         if (/\.svelte\.(test|spec)\.[jt]s$/.test(testPath)) {
