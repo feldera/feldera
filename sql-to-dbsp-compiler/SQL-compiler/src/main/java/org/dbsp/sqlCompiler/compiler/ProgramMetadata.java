@@ -15,6 +15,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.util.IJson;
 import org.dbsp.util.Utilities;
 
@@ -97,6 +98,13 @@ public class ProgramMetadata implements IJson {
             Boolean value = expression.to(DBSPBoolLiteral.class).value;
             if (value == null) return true;
             return !value;
+        } else if (expression.is(DBSPStringLiteral.class)) {
+            // Quoted SET values: 'off', 'false', and '0' disable a feature,
+            // matching the unquoted keywords.
+            String value = expression.to(DBSPStringLiteral.class).value;
+            if (value == null) return true;
+            return value.equalsIgnoreCase("off") || value.equalsIgnoreCase("false")
+                    || value.equals("0") || value.isEmpty();
         } else {
             return expression.is(DBSPNullLiteral.class);
         }

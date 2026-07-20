@@ -2343,6 +2343,18 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void testQuotedSetOff() {
+        // A quoted 'off' disables a feature exactly like the unquoted
+        // keyword: the unused-column warning must stay a warning.
+        var cc = this.getCC("""
+            SET FELDERA_WARNINGS_ARE_ERRORS = 'off';
+            CREATE TABLE T(x INT, y INT); -- unused column produces a warning
+            CREATE VIEW V AS SELECT x FROM T;""");
+        Assert.assertEquals(0, cc.compiler.messages.errorCount());
+        Assert.assertEquals(1, cc.compiler.messages.warningCount());
+    }
+
+    @Test
     public void testSilenceWarning() {
         var cc = this.getCC("""
             SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = ON;
