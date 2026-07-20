@@ -2,12 +2,16 @@
   import { Switch } from '@skeletonlabs/skeleton-svelte'
   import type { ZipItem } from 'but-unzip'
   import {
+    isFindShortcut,
     PersistentContent,
+    SearchBar,
+    type SearchDirection,
     SegmentedControl,
     Select,
     type TabSpec,
     TabsPanel,
-    usePersistentRect
+    usePersistentRect,
+    useShortcut
   } from 'common-ui'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type {
@@ -22,7 +26,7 @@
   import { type Snippet, untrack } from 'svelte'
   import type { TriageResults } from 'triage-types'
   import type { GlobalMetrics } from '../functions/globalMetrics'
-  import { createLookupCoordinator } from '../functions/lookup'
+  import { createLookupCoordinator, type SearchProgress } from '../functions/lookup'
   import { type AnalysisView, isNodeView, metricsModeOf } from '../functions/metricsMode'
   import { severityLabel, uniqueCategories, uniqueSeverities } from '../functions/triage'
   import type { MetricsMode } from './MetricsView.svelte'
@@ -110,13 +114,30 @@
   const issueSeverities = $derived(uniqueSeverities(triageResults.results))
   let nodeSearchQuery = $state('')
   let lookupQuery = $state('')
-  // Bound to the shared analysis-panel lookup <input>. Tabs (e.g. the log list) can request
-  // focus via the `onSearchShortcut` callback threaded through `analysisTabProps`.
-  let searchInputEl: HTMLInputElement | undefined = $state()
-  const onAnalysisSearchShortcut = () => {
-    searchInputEl?.focus()
-    searchInputEl?.select()
-  }
+  // The single source of truth for committed search results, shared by the counter, the match
+  // highlight, and the nav buttons:
+  //   - `null`         → no active search (nothing highlighted, nothing to navigate).
+  //   - `{ total: 0 }` → searched, but the query matched nothing ("No results").
+  //   - `total > 0`    → `current` (1-based) of `total` matches.
+  // Editing or clearing the query must set this back to `null` so all three reset together.
+  let lookupProgress = $state<SearchProgress | null>(null)
+  let searchBar: ReturnType<typeof SearchBar> | undefined = $state()
+  let nodeSearchInput: HTMLInputElement | undefined = $state()
+
+  // Ctrl/Cmd-F targets the "Search node" input while focused on the circuit diagram, otherwise the
+  // active tab's search. Inactive on Config (no in-tab search), so native find runs there.
+  useShortcut(
+    isFindShortcut,
+    () => {
+      if (profilerDiagram?.isFocused()) {
+        nodeSearchInput?.focus()
+        nodeSearchInput?.select()
+      } else {
+        searchBar?.activate()
+      }
+    },
+    () => currentTab !== 'Config'
+  )
   let highlightRanges: SourcePositionRange[] = $state([])
 
   // The graph panel's diagram is hoisted to a <PersistentContent> overlay so it survives the
@@ -248,15 +269,21 @@
     }
   }
 
-  function handleLookup() {
-    if (lookupQuery) {
-      lookup.execute(currentTab, lookupQuery)
-    }
+  function handleLookup(direction: SearchDirection = 'next') {
+    lookupProgress = lookupQuery ? lookup.execute(currentTab, lookupQuery, direction) : null
+  }
+
+  // Drop the active tab's committed results: run its search with an empty query to clear the
+  // highlight, then null the progress.
+  function resetLookup() {
+    lookup.execute(currentTab, '', 'next')
+    lookupProgress = null
   }
 
   $effect(() => {
     currentTab
     lookupQuery = ''
+    lookupProgress = null
   })
 
   // SQL panel tab state. Single-tab; bound state is required by TabsPanel.
@@ -283,8 +310,7 @@
     triageResults,
     issueSeverityFilter,
     issueCategoryFilter,
-    onSearchNode: (query) => profilerDiagram?.search(query),
-    onSearchShortcut: onAnalysisSearchShortcut
+    onSearchNode: (query) => profilerDiagram?.search(query)
   })
   const analysisTabs = $derived<TabSpec<AnalysisTabProps>[]>([
     {
@@ -321,10 +347,12 @@
 
 <!-- ── Graph panel (dataflow graph) ────────────────────────────────────────── -->
 {#snippet graphPanel()}
+  <!-- Clip only with a profile: without one the panel is short and clipping would hide the
+       "Load profile" dropdown that overflows it. -->
   <div
-    class="flex flex-col overflow-hidden rounded-container bg-surface-50-950 {hasProfile
-      ? 'h-full'
-      : ''}"
+    class="flex flex-col rounded-container bg-surface-50-950 {hasProfile
+      ? 'h-full overflow-hidden'
+      : 'overflow-visible'}"
   >
     <!-- Header -->
     <div class="flex flex-shrink-0 flex-wrap items-center gap-2 p-4">
@@ -333,11 +361,18 @@
       {#if hasProfile}
         <div class="ml-auto">
           <input
+            bind:this={nodeSearchInput}
             bind:value={nodeSearchQuery}
             type="text"
             placeholder="Search node"
             title="Search for a node by ID, by table or view name, or by a substring of a persistent ID"
-            onkeydown={(e) => e.key === 'Enter' && handleSearch()}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') {
+                handleSearch()
+              } else if (e.key === 'Escape') {
+                nodeSearchInput?.blur()
+              }
+            }}
             class="input h-6 w-36 text-sm"
           />
         </div>
@@ -414,18 +449,20 @@
         {/each}
       </Select>
     {/if}
-    <input
-      bind:this={searchInputEl}
+    <SearchBar
+      bind:this={searchBar}
       bind:value={lookupQuery}
-      type="text"
       placeholder={currentTab === 'Logs'
         ? 'Search logs'
         : currentTab === 'Issues'
           ? 'Search issues'
           : 'Search metrics'}
-      title="Search within active tab (Enter to jump, Ctrl/Cmd-F to focus)"
-      onkeydown={(e) => e.key === 'Enter' && handleLookup()}
-      class="input h-6 w-28 text-sm"
+      title="Search within active tab (Enter / Shift+Enter to step matches, Ctrl/Cmd-F to toggle)"
+      results={lookupProgress}
+      onnext={() => handleLookup('next')}
+      onprevious={() => handleLookup('prev')}
+      onclear={resetLookup}
+      inputClass="h-8 w-40 text-sm"
     />
   </div>
 {/snippet}

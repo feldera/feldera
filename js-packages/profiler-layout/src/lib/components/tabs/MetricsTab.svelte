@@ -30,8 +30,6 @@
     issueCategoryFilter: string
     /** Links the metrics node title back to (searches for) the node in the diagram. */
     onSearchNode?: (query: string) => void
-    /** Called when the user presses the search shortcut inside the tab. */
-    onSearchShortcut?: () => void
   }
 </script>
 

@@ -7,21 +7,22 @@
   externally-owned `search` state; they wire the search input wherever fits their layout.
 -->
 <script lang="ts">
-  import { untrack, type Snippet } from 'svelte'
-  import { Virtualizer, type VirtualizerHandle } from 'virtua/svelte'
   import stripAnsi from 'strip-ansi'
+  import { type Snippet, untrack } from 'svelte'
+  import { Virtualizer, type VirtualizerHandle } from 'virtua/svelte'
   import ANSIDecoratedText from './ANSIDecoratedText.svelte'
-  import ScrollDownFab from './ScrollDownFab.svelte'
-  import { useReverseScrollContainer } from './useReverseScrollContainer.svelte'
-  import { virtualSelect } from './userSelect'
-  import { sliceLinesForCopy, type CopySlice } from './logCopy'
+  import { type CopySlice, sliceLinesForCopy } from './logCopy'
   import {
     applySearchHighlight,
+    countOccurrences,
     emptySearchState,
     findMatchOffsets,
     findOccurrence,
     type SearchState
   } from './logSearch'
+  import ScrollDownFab from './ScrollDownFab.svelte'
+  import { useReverseScrollContainer } from './useReverseScrollContainer.svelte'
+  import { virtualSelect } from './userSelect'
 
   interface Props {
     /** Lines to render, one per row. Hosts pre-split their source into lines. */
@@ -51,13 +52,12 @@
      * joins the selected `lines` with `\n`; rows that already carry a trailing newline
      * need an override that joins with `''` (see {@link sliceLinesForCopy}). */
     getCopyContent?: (slice: CopySlice) => string
-    /** Invoked when the user presses Ctrl-F / Cmd-F while focus is inside the log list.
-     *  Hosts typically focus their search input here. When omitted, the browser's native
-     *  find-in-page is left to handle the shortcut. */
-    onSearchShortcut?: () => void
     /** Fired whenever stick-to-bottom toggles: `true` when the view re-anchors to the
      *  bottom, `false` when the user scrolls up off the bottom. */
     onStickToBottomChange?: (stickToBottom: boolean) => void
+    /** Fired with the number of lines matching the current search pattern (0 when the search
+     *  is cleared). Hosts use it to enable/disable their search nav buttons. */
+    onMatchCountChange?: (count: number) => void
   }
 
   let {
@@ -70,8 +70,8 @@
     style,
     header,
     getCopyContent,
-    onSearchShortcut,
-    onStickToBottomChange
+    onStickToBottomChange,
+    onMatchCountChange
   }: Props = $props()
 
   // Reverse-scroll lives here (not in wrappers) so search behaviour and auto-scroll behaviour
@@ -103,6 +103,13 @@
   const matchedIndex = $derived(
     search.pattern ? findOccurrence(lines, search.pattern, search.occurrenceIndex) : -1
   )
+
+  // Report the match count so the host can enable/disable its search nav buttons. Recomputes
+  // as the pattern changes or streaming appends lines that match.
+  const matchCount = $derived(countOccurrences(lines, search.pattern))
+  $effect(() => {
+    onMatchCountChange?.(matchCount)
+  })
 
   function paintHighlight() {
     if (!scrollContainer || matchedIndex < 0 || !search.pattern) {
@@ -140,10 +147,14 @@
   $effect(() => {
     const pattern = search.pattern
     const occ = search.occurrenceIndex
-    if (!pattern) return
+    if (!pattern) {
+      return
+    }
     untrack(() => {
       const idx = findOccurrence(lines, pattern, occ)
-      if (idx < 0) return
+      if (idx < 0) {
+        return
+      }
       // Drop stick-to-bottom so a streaming log doesn't scroll away from the match the user
       // jumped to. They regain auto-scroll by scrolling back to the bottom themselves.
       reverseScroll.stickToBottom = false
@@ -182,20 +193,6 @@
     use:virtualSelect={{
       getRoot: (node) => node.firstElementChild!,
       getCopyContent: getCopyContent ?? defaultGetCopyContent
-    }}
-    onkeydown={(e) => {
-      // Ctrl-F (Win/Linux) or Cmd-F (Mac) — redirect to host's search input. Only intercept
-      // when the host supplied a handler; otherwise the browser's find-in-page is left alone.
-      if (
-        onSearchShortcut &&
-        (e.key === 'f' || e.key === 'F') &&
-        (e.ctrlKey || e.metaKey) &&
-        !e.altKey &&
-        !e.shiftKey
-      ) {
-        e.preventDefault()
-        onSearchShortcut()
-      }
     }}
   >
     <Virtualizer

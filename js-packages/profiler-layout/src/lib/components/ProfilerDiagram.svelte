@@ -25,8 +25,25 @@
   const { profileData, dataflowData, programCode, callbacks, class: className }: Props = $props()
 
   // DOM element references
+  let element: HTMLDivElement | undefined = $state()
   let graphContainer: HTMLDivElement | undefined = $state()
   let navigatorContainer: HTMLDivElement | undefined = $state()
+
+  // Tracked from pointerdown rather than DOM focus because the visualizer consumes its own pointer
+  // events, so the graph never holds a focusable target.
+  let pointerOnGraph = $state(false)
+  $effect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      pointerOnGraph = !!element && element.contains(e.target as Node | null)
+    }
+    window.addEventListener('pointerdown', onPointerDown, { capture: true })
+    return () => window.removeEventListener('pointerdown', onPointerDown, { capture: true })
+  })
+
+  /** Whether the graph is the user's current focus. */
+  export function isFocused(): boolean {
+    return pointerOnGraph
+  }
 
   // Visualizer instance and profile data (combined as their lifecycle is connected)
   let instance = $state<{ visualizer: Visualizer; profile: CircuitProfile } | null>(null)
@@ -118,7 +135,7 @@
   })
 </script>
 
-<div class="visualizer-wrapper {className || ''}" data-testid="visualizer-diagram">
+<div bind:this={element} class="visualizer-wrapper {className || ''}" data-testid="visualizer-diagram">
   <!-- Main graph visualization (full size) -->
   <div bind:this={graphContainer} class="visualizer-graph"></div>
 
