@@ -551,8 +551,8 @@ class TestCheckpointSync(SharedTestPipeline):
 
         with self.assertRaisesRegex(
             RuntimeError,
-            "S3 bucket is owned by pipeline 'pipeline-[^']+'[\\s\\S]*"
-            "Current pipeline is 'pipeline-[^']+'[\\s\\S]*"
+            "S3 checkpoint bucket is already owned by [\\s\\S]*id: pipeline-[^,)]+[\\s\\S]*"
+            "Current pipeline is [\\s\\S]*id: pipeline-[^,)]+[\\s\\S]*"
             "Refusing to write checkpoint data",
         ):
             intruder.sync_checkpoint(wait=True)
