@@ -49,10 +49,18 @@
   const { formatElapsedTime } = useElapsedTime()
 
   let timeSeries: TimeSeriesEntry[] = $state([])
+  // Metrics stream lifecycle. 'connecting' is the initial sate and never happens again,
+  // stream can be 'interrupted' every time the 'live' conection drops
+  let metricsStreamState = $state<'connecting' | 'live' | 'interrupted'>('connecting')
 
   let statusTab: 'age' | 'updated' = $state('age')
   const isXl = useIsScreenXl()
   const api = usePipelineManager()
+  // Background polling races pipeline shutdown/startup, so don't show toast popups
+  // when the expected "pipeline not running" errors happen while reconnecting.
+  const pollingApi = api.silence((e) =>
+    ['PipelineInteractionNotDeployed', 'PipelineUnavailable'].includes(e?.error_code)
+  )
 
   type DrawerState =
     | {
@@ -81,6 +89,8 @@
   const metricsAvailable = $derived(metricsStatus === 'yes')
   // When metrics are temporarily unavailable ('missing'), freeze graphs and stats until the pipeline is reachable again.
   const metricsDesired = $derived(metricsStatus === 'yes' || metricsStatus === 'missing')
+  // Show the reconnect banner only after a live stream has dropped, never during the first connect.
+  const metricsStreamInterrupted = $derived(metricsAvailable && metricsStreamState === 'interrupted')
 
   // Keep reconnecting to time_series_stream for as long as the tab is mounted and metrics are desired
   // Reconnect on end-of-stream immediately, or with 1s backoff on mid-stream or stream-open errors
@@ -103,6 +113,7 @@
     // Start each session with empty stats so a previous pipeline's samples
     // never bleed into the newly selected one.
     timeSeries = []
+    metricsStreamState = 'connecting'
     let cancelled = false
     let cancelActive: (() => void) | undefined
 
@@ -118,7 +129,7 @@
           await sleep(RECONNECT_BACKOFF_MS)
           continue
         }
-        const result = await api.pipelineTimeSeriesStream(targetPipelineName)
+        const result = await pollingApi.pipelineTimeSeriesStream(targetPipelineName)
         if (cancelled) {
           if (!(result instanceof Error)) {
             result.cancel()
@@ -135,6 +146,7 @@
           abortCtrl.abort()
           result.cancel()
         }
+        metricsStreamState = 'live'
 
         // Subscribe to the metrics stream, overwrite the previous data only when the first sample is received.
         try {
@@ -161,6 +173,7 @@
           }
         }
         cancelActive = undefined
+        metricsStreamState = 'interrupted'
       }
     }
     runMetricsStream()
@@ -184,10 +197,10 @@
     }
     // Poll checkpoint-related endpoints so the UI stays current with ongoing checkpoint activity.
     const fetchCheckpoints = () => {
-      api.getPipelineCheckpoints(pipelineName).then((v) => {
+      pollingApi.getPipelineCheckpoints(pipelineName).then((v) => {
         checkpoints = v
       })
-      api.getCheckpointStatus(pipelineName).then((v) => {
+      pollingApi.getCheckpointStatus(pipelineName).then((v) => {
         checkpointStatus = v
       })
     }
@@ -225,9 +238,14 @@
               <WarningBanner class="rounded!">
                 Pipeline has been unavailable for {formatElapsedTime(
                   new Date(pipeline.current.deploymentStatusSince)
-                )} since {Dayjs(pipeline.current.deploymentStatusSince).format('MMM D, YYYY h:mm A')}.
-                Showing the last known metrics while reconnecting. You can attempt to suspend or shut it
-                down.
+                )} since {Dayjs(pipeline.current.deploymentStatusSince).format(
+                  'MMM D, YYYY h:mm A'
+                )}. Showing the last known metrics while reconnecting. You can attempt to suspend or
+                shut it down.
+              </WarningBanner>
+            {:else if metricsStreamInterrupted}
+              <WarningBanner class="rounded!">
+                Not receiving live metrics. Attempting to reconnect...
               </WarningBanner>
             {/if}
             <div class="flex flex-wrap gap-4">

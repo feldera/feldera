@@ -121,58 +121,179 @@ export const usePipelineManager = (options?: FetchOptions) => {
     return false
   }
 
-  const reportError = _trackHealth(options, toastError('API request'), doNotReportIfCancelled)
   const trackHealth = _trackHealth(options)
 
-  const getPipelineSupportBundle = (
-    ...[pipelineName, options, onProgress]: Parameters<typeof _getPipelineSupportBundle>
-  ) => {
-    const result = _getPipelineSupportBundle(pipelineName, options, onProgress)
+  // Build the API surface against a given error reporter. `.silence()` reuses this to produce a
+  // variant whose toasts are suppressed for errors matching a predicate
+  const build = (reportError: ReturnType<typeof _trackHealth>) => {
+    const getPipelineSupportBundle = (
+      ...[pipelineName, options, onProgress]: Parameters<typeof _getPipelineSupportBundle>
+    ) => {
+      const result = _getPipelineSupportBundle(pipelineName, options, onProgress)
+      return {
+        cancel: result.cancel,
+
+        dataPromise: reportError(
+          () => {
+            const download = result.downloadPromise.then(async (download) => ({
+              filename: download.filename,
+              data: await download.dataPromise
+            }))
+            return download
+          },
+          () => `Failed to download support bundle of pipeline ${pipelineName}`
+        )()
+      }
+    }
+
+    const downloadPipelineSupportBundle = (
+      pipelineName: string,
+      options: Partial<SupportBundleOptions>,
+      onProgress?: (bytesDownloaded: number, bytesTotal: number) => void
+    ) => {
+      const { dataPromise, cancel } = getPipelineSupportBundle(pipelineName, options, onProgress)
+      dataPromise.then((download) => triggerFileDownload(download.filename, download.data))
+      return {
+        cancel,
+        dataPromise
+      }
+    }
+
+    const downloadSamplyProfile = async (
+      pipelineName: string,
+      latest: boolean,
+      onProgress?: (bytesDownloaded: number, bytesTotal: number) => void
+    ) => {
+      const result = await getSamplyProfile(pipelineName, latest, onProgress)
+      if ('expectedInSeconds' in result) {
+        return result
+      }
+      result.downloadPromise.then((download) =>
+        download.dataPromise.then((data) => {
+          triggerFileDownload(download.filename, data)
+        })
+      )
+      return { cancel: result.cancel }
+    }
+
     return {
-      cancel: result.cancel,
-
-      dataPromise: reportError(
-        () => {
-          const download = result.downloadPromise.then(async (download) => ({
-            filename: download.filename,
-            data: await download.dataPromise
-          }))
-          return download
-        },
-        () => `Failed to download support bundle of pipeline ${pipelineName}`
-      )()
+      getExtendedPipeline: reportError(
+        getExtendedPipeline,
+        (pipelineName) => `Failed to fetch ${pipelineName} pipeline`
+      ),
+      postPipeline: reportError(
+        postPipeline,
+        (pipelineName) => `Failed to create ${pipelineName} pipeline`
+      ),
+      putPipeline: reportError(
+        putPipeline,
+        (pipelineName) => `Failed to update ${pipelineName} pipeline`
+      ),
+      patchPipeline: reportError(
+        patchPipeline,
+        (pipelineName) => `Failed to update ${pipelineName} pipeline`
+      ),
+      getPipelines: trackHealth(getPipelines),
+      getPipelineThumb: reportError(
+        getPipelineThumb,
+        (pipelineName) => `Failed to get ${pipelineName} pipeline's status`
+      ),
+      getPipelineStats: getPipelineStats,
+      deletePipeline: reportError(
+        deletePipeline,
+        (pipelineName) => `Failed to delete ${pipelineName} pipeline`
+      ),
+      postPipelineAction: reportError(
+        postPipelineAction,
+        (pipelineName, action) => `Failed to ${action} ${pipelineName} pipeline`
+      ),
+      postUpdateRuntime: reportError(
+        postUpdateRuntime,
+        (pipelineName) => `Failed to update runtime for ${pipelineName} pipeline`
+      ),
+      getAuthConfig: getAuthConfig,
+      getConfig: getConfig,
+      getConfigSession: reportError(
+        getConfigSession,
+        () => 'Failed to fetch session configuration'
+      ),
+      getApiKeys: reportError(getApiKeys, () => 'Failed to fetch API keys'),
+      postApiKey: async (name: string, options?: FetchOptions | undefined) => {
+        const x = await reportError(postApiKey, (keyName) => `Failed to create ${keyName} API key`)(
+          name,
+          options
+        )
+        return x
+      },
+      deleteApiKey: reportError(deleteApiKey, (keyName) => `Failed to delete ${keyName} API key`),
+      dismissDeploymentError: reportError(
+        dismissDeploymentError,
+        (pipelineName) => `Failed to dismiss deployment error for ${pipelineName} pipeline`
+      ),
+      getClusterEvents: reportError(getClusterEvents),
+      getClusterEvent: reportError(getClusterEvent),
+      getPipelineEvents: reportError(
+        getPipelineEvents,
+        (pipelineName) => `Failed to fetch ${pipelineName} pipeline events`
+      ),
+      getPipelineEvent: reportError(
+        getPipelineEvent,
+        (pipelineName) => `Failed to fetch ${pipelineName} pipeline event`
+      ),
+      getSamplyProfile: reportError(getSamplyProfile),
+      downloadSamplyProfile: reportError(
+        downloadSamplyProfile,
+        (pipelineName) => `Failed to download samply profile for ${pipelineName} pipeline`
+      ),
+      collectSamplyProfile: reportError(collectSamplyProfile),
+      relationEgressStream: reportError(
+        relationEgressStream,
+        (_, relationName) => `Failed to connect to the egress stream of relation ${relationName}`
+      ),
+      pipelineLogsStream: reportError(
+        pipelineLogsStream,
+        () => `Failed to connect to the log stream`
+      ),
+      adHocQuery: reportError(adHocQuery, () => `Failed to invoke an ad-hoc query`),
+      pipelineTimeSeriesStream: reportError(
+        pipelineTimeSeriesStream,
+        () => `Failed to connect to the time series stream`
+      ),
+      relationIngress: reportError(
+        relationIngress,
+        (_, tableName) => `Failed to push data to the ${tableName} table`
+      ),
+      getDemos: reportError(getDemos, () => `Failed to fetch available demos`),
+      downloadPipelineSupportBundle,
+      getPipelineCheckpoints: reportError(
+        getPipelineCheckpoints,
+        (pipelineName) => `Failed to fetch checkpoints for ${pipelineName}`
+      ),
+      checkpointPipeline: reportError(
+        checkpointPipeline,
+        (pipelineName) => `Failed to initiate checkpoint for ${pipelineName}`
+      ),
+      getCheckpointStatus: reportError(
+        getCheckpointStatus,
+        (pipelineName) => `Failed to fetch checkpoint status for ${pipelineName}`
+      ),
+      syncCheckpoint: reportError(
+        syncCheckpoint,
+        (pipelineName) => `Failed to sync checkpoint for ${pipelineName}`
+      ),
+      getCheckpointSyncStatus: reportError(
+        getCheckpointSyncStatus,
+        (pipelineName) => `Failed to fetch checkpoint sync status for ${pipelineName}`
+      ),
+      getPipelineDataflowGraph: reportError(
+        getPipelineDataflowGraph,
+        (pipelineName) => `Failed to load dataflow graph of pipeline ${pipelineName}`
+      ),
+      getPipelineSupportBundle
     }
   }
 
-  const downloadPipelineSupportBundle = (
-    pipelineName: string,
-    options: Partial<SupportBundleOptions>,
-    onProgress?: (bytesDownloaded: number, bytesTotal: number) => void
-  ) => {
-    const { dataPromise, cancel } = getPipelineSupportBundle(pipelineName, options, onProgress)
-    dataPromise.then((download) => triggerFileDownload(download.filename, download.data))
-    return {
-      cancel,
-      dataPromise
-    }
-  }
-
-  const downloadSamplyProfile = async (
-    pipelineName: string,
-    latest: boolean,
-    onProgress?: (bytesDownloaded: number, bytesTotal: number) => void
-  ) => {
-    const result = await getSamplyProfile(pipelineName, latest, onProgress)
-    if ('expectedInSeconds' in result) {
-      return result
-    }
-    result.downloadPromise.then((download) =>
-      download.dataPromise.then((data) => {
-        triggerFileDownload(download.filename, data)
-      })
-    )
-    return { cancel: result.cancel }
-  }
+  const reportError = _trackHealth(options, toastError('API request'), doNotReportIfCancelled)
 
   return {
     get isNetworkHealthy() {
@@ -181,115 +302,19 @@ export const usePipelineManager = (options?: FetchOptions) => {
     get isAuthHealthy() {
       return isAuthHealthy
     },
-    getExtendedPipeline: reportError(
-      getExtendedPipeline,
-      (pipelineName) => `Failed to fetch ${pipelineName} pipeline`
-    ),
-    postPipeline: reportError(
-      postPipeline,
-      (pipelineName) => `Failed to create ${pipelineName} pipeline`
-    ),
-    putPipeline: reportError(
-      putPipeline,
-      (pipelineName) => `Failed to update ${pipelineName} pipeline`
-    ),
-    patchPipeline: reportError(
-      patchPipeline,
-      (pipelineName) => `Failed to update ${pipelineName} pipeline`
-    ),
-    getPipelines: trackHealth(getPipelines),
-    getPipelineThumb: reportError(
-      getPipelineThumb,
-      (pipelineName) => `Failed to get ${pipelineName} pipeline's status`
-    ),
-    getPipelineStats: getPipelineStats,
-    deletePipeline: reportError(
-      deletePipeline,
-      (pipelineName) => `Failed to delete ${pipelineName} pipeline`
-    ),
-    postPipelineAction: reportError(
-      postPipelineAction,
-      (pipelineName, action) => `Failed to ${action} ${pipelineName} pipeline`
-    ),
-    postUpdateRuntime: reportError(
-      postUpdateRuntime,
-      (pipelineName) => `Failed to update runtime for ${pipelineName} pipeline`
-    ),
-    getAuthConfig: getAuthConfig,
-    getConfig: getConfig,
-    getConfigSession: reportError(getConfigSession, () => 'Failed to fetch session configuration'),
-    getApiKeys: reportError(getApiKeys, () => 'Failed to fetch API keys'),
-    postApiKey: async (name: string, options?: FetchOptions | undefined) => {
-      const x = await reportError(postApiKey, (keyName) => `Failed to create ${keyName} API key`)(
-        name,
-        options
+    ...build(reportError),
+    /**
+     * Returns an API variant whose error toasts are suppressed for errors matching `predicate`.
+     * The predicate receives the API error body (carrying `error_code`)
+     * @example api.silence((e) => e?.error_code === 'PipelineInteractionNotDeployed').getCheckpointStatus(name)
+     */
+    silence: (predicate: (error: any) => boolean) =>
+      build(
+        _trackHealth(
+          options,
+          toastError('API request'),
+          (error) => doNotReportIfCancelled(error) || predicate((error as any)?.cause ?? error)
+        )
       )
-      return x
-    },
-    deleteApiKey: reportError(deleteApiKey, (keyName) => `Failed to delete ${keyName} API key`),
-    dismissDeploymentError: reportError(
-      dismissDeploymentError,
-      (pipelineName) => `Failed to dismiss deployment error for ${pipelineName} pipeline`
-    ),
-    getClusterEvents: reportError(getClusterEvents),
-    getClusterEvent: reportError(getClusterEvent),
-    getPipelineEvents: reportError(
-      getPipelineEvents,
-      (pipelineName) => `Failed to fetch ${pipelineName} pipeline events`
-    ),
-    getPipelineEvent: reportError(
-      getPipelineEvent,
-      (pipelineName) => `Failed to fetch ${pipelineName} pipeline event`
-    ),
-    getSamplyProfile: reportError(getSamplyProfile),
-    downloadSamplyProfile: reportError(
-      downloadSamplyProfile,
-      (pipelineName) => `Failed to download samply profile for ${pipelineName} pipeline`
-    ),
-    collectSamplyProfile: reportError(collectSamplyProfile),
-    relationEgressStream: reportError(
-      relationEgressStream,
-      (_, relationName) => `Failed to connect to the egress stream of relation ${relationName}`
-    ),
-    pipelineLogsStream: reportError(
-      pipelineLogsStream,
-      () => `Failed to connect to the log stream`
-    ),
-    adHocQuery: reportError(adHocQuery, () => `Failed to invoke an ad-hoc query`),
-    pipelineTimeSeriesStream: reportError(
-      pipelineTimeSeriesStream,
-      () => `Failed to connect to the time series stream`
-    ),
-    relationIngress: reportError(
-      relationIngress,
-      (_, tableName) => `Failed to push data to the ${tableName} table`
-    ),
-    getDemos: reportError(getDemos, () => `Failed to fetch available demos`),
-    downloadPipelineSupportBundle,
-    getPipelineCheckpoints: reportError(
-      getPipelineCheckpoints,
-      (pipelineName) => `Failed to fetch checkpoints for ${pipelineName}`
-    ),
-    checkpointPipeline: reportError(
-      checkpointPipeline,
-      (pipelineName) => `Failed to initiate checkpoint for ${pipelineName}`
-    ),
-    getCheckpointStatus: reportError(
-      getCheckpointStatus,
-      (pipelineName) => `Failed to fetch checkpoint status for ${pipelineName}`
-    ),
-    syncCheckpoint: reportError(
-      syncCheckpoint,
-      (pipelineName) => `Failed to sync checkpoint for ${pipelineName}`
-    ),
-    getCheckpointSyncStatus: reportError(
-      getCheckpointSyncStatus,
-      (pipelineName) => `Failed to fetch checkpoint sync status for ${pipelineName}`
-    ),
-    getPipelineDataflowGraph: reportError(
-      getPipelineDataflowGraph,
-      (pipelineName) => `Failed to load dataflow graph of pipeline ${pipelineName}`
-    ),
-    getPipelineSupportBundle
   }
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { slide } from 'svelte/transition'
   import type { Snippet } from '$lib/types/svelte'
 
   const styles = {
@@ -18,7 +19,7 @@
   }: { children: Snippet; class?: string; variant?: keyof typeof styles } = $props()
 </script>
 
-<div class="flex gap-2 p-2 {styles[variant].colorClass} {classes} rounded-t">
+<div transition:slide class="flex gap-2 p-2 {styles[variant].colorClass} {classes} rounded-t">
   <span class="{styles[variant].iconClass} text-[20px]"></span>
   <span>
     {@render children()}
