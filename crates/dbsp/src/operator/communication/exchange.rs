@@ -101,10 +101,15 @@ struct ExchangeHeader {
 }
 
 impl ExchangeHeader {
+    /// Returns the number of bytes that `ExchangeHeader::to_bytes()` will
+    /// return for the given `count`.
     fn len_for_count(count: usize) -> usize {
         (4 + 8 + 1 + 4) + 8 * count
     }
 
+    /// Serializes this header into a `Vec` that contains
+    /// `Self::len_for_count(count)` bytes, where `count` is
+    /// `self.payload_lens()`.
     fn to_bytes(&self) -> Vec<u8> {
         let len = Self::len_for_count(self.payload_lens.len());
         let mut cursor = Cursor::new(Vec::with_capacity(len));
@@ -113,6 +118,8 @@ impl ExchangeHeader {
         cursor.into_inner()
     }
 
+    /// Deserializes an `ExchangeHeader` with `count` payload lengths from
+    /// `bytes`.  `bytes.len()` must equal `Self::len_for_count(count)`.
     fn from_bytes(count: usize, bytes: &[u8]) -> Self {
         debug_assert_eq!(bytes.len(), Self::len_for_count(count));
         let mut cursor = Cursor::new(bytes);
@@ -121,6 +128,7 @@ impl ExchangeHeader {
         this
     }
 
+    /// Reads an `ExchangeHeader` with `count` payload lengths from `stream`.
     async fn read<S>(count: usize, stream: &mut S) -> std::io::Result<Option<Self>>
     where
         Self: Sized,
