@@ -1612,13 +1612,27 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                 VariantMode.isEnabled() ? "parse_json_fv" : "parse_json",
                                 node, type, ops, 1);
                     }
-                    case "to_json": {
+                    case "to_json":
+                    case "json_each_bigint":
+                    case "json_each_string":
+                    case "json_each_boolean":
+                    case "json_each_date":
+                    case "json_each_time":
+                    case "json_each_timestamp":
+                    case "json_keys":
+                    case "json_object_keys": {
                         DBSPExpression expr = this.strictnessCheck(ops, type);
                         if (expr != null)
                             return expr;
                         // The variant argument's V/FV suffix selects the
                         // implementation.
                         return compilePolymorphicFunction(false, call, node, type, ops, 1);
+                    }
+                    case "variant_merge": {
+                        DBSPExpression expr = this.strictnessCheck(ops, type);
+                        if (expr != null)
+                            return expr;
+                        return compilePolymorphicFunction(false, call, node, type, ops, 2);
                     }
                     case "sequence": {
                         for (int i = 0; i < ops.size(); i++)
@@ -1738,6 +1752,32 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return new DBSPApplyExpression(
                                 node, method, type.withMayBeNull(nullable), ops.get(0), ops.get(1))
                                 .cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
+                    }
+                    case "variant_filter":
+                    case "variant_deep_filter": {
+                        validateArgCount(node, operationName, ops.size(), 2);
+                        // The base name switches with the variant representation,
+                        // like typeof.  The result is nullable regardless of the
+                        // argument: a dropped non-map variant produces NULL
+                        String method = (VariantMode.isEnabled() ? opName + "_fv" : opName) +
+                                ops.get(0).getType().nullableUnderlineSuffix();
+                        return new DBSPApplyExpression(node, method, type, ops.get(0), ops.get(1));
+                    }
+                    case "variant_map":
+                    case "variant_deep_map": {
+                        validateArgCount(node, operationName, ops.size(), 2);
+                        // The lambda may produce a value of any type;
+                        // convert its result to a VARIANT
+                        DBSPClosureExpression mapper = ops.get(1).to(DBSPClosureExpression.class);
+                        DBSPType variant = DBSPTypeVariant.INSTANCE_NULLABLE;
+                        DBSPExpression converted = mapper;
+                        if (!mapper.getResultType().sameType(variant))
+                            converted = mapper.body
+                                    .cast(node, variant, DBSPCastExpression.CastType.SqlUnsafe)
+                                    .closure(mapper.parameters);
+                        String method = (VariantMode.isEnabled() ? opName + "_fv" : opName) +
+                                ops.get(0).getType().nullableUnderlineSuffix();
+                        return new DBSPApplyExpression(node, method, type, ops.get(0), converted);
                     }
                     case "convert_timezone": {
                         validateArgCount(node, operationName, ops.size(), 3);

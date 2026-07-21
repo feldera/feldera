@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 use std::borrow::Cow;
 use std::cmp::Ord;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::fmt::Display;
@@ -1026,6 +1026,449 @@ pub fn variantnull() -> Variant {
     Variant::VariantNull
 }
 
+/////////////// JSON_EACH_* functions
+
+/// True if the variant holds a numeric value with no fractional part.
+/// The integer extraction functions use this filter so that a field holding
+/// e.g. 2.5 is not silently truncated to 2; such fields can still be
+/// selected with `variant_filter_`.
+fn is_integral_numeric_variant(value: &Variant) -> bool {
+    match value {
+        Variant::TinyInt(_)
+        | Variant::SmallInt(_)
+        | Variant::Int(_)
+        | Variant::BigInt(_)
+        | Variant::UTinyInt(_)
+        | Variant::USmallInt(_)
+        | Variant::UInt(_)
+        | Variant::UBigInt(_) => true,
+        Variant::Real(x) => x.into_inner().fract() == 0.0,
+        Variant::Double(x) => x.into_inner().fract() == 0.0,
+        Variant::SqlDecimal((sig, exp)) => match 10i128.checked_pow(*exp as u32) {
+            Some(divisor) => sig % divisor == 0,
+            None => *sig == 0,
+        },
+        _ => false,
+    }
+}
+
+/// Extract from a variant holding a map all fields whose values have a runtime
+/// type accepted by `keep` and convert to `T`.  The `keep` filter selects by
+/// runtime type before conversion, so e.g. a string field never converts to a
+/// number.  Fields that do not qualify or do not convert are omitted; so are
+/// fields with non-string keys.  A variant that does not hold a map produces
+/// an empty result.
+fn json_each_typed<T>(value: Variant, keep: fn(&Variant) -> bool) -> Map<SqlString, Option<T>>
+where
+    T: TryFrom<Variant>,
+{
+    let mut result = BTreeMap::<SqlString, Option<T>>::new();
+    if let Variant::Map(map) = value {
+        for (key, val) in map.iter() {
+            let Variant::String(key) = key else { continue };
+            if !keep(val) {
+                continue;
+            }
+            if let Ok(converted) = T::try_from(val.clone()) {
+                result.insert(key.clone(), Some(converted));
+            }
+        }
+    }
+    result.into()
+}
+
+macro_rules! json_each {
+    ($type_name:ident, $type:ty, $keep:expr) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<json_each_ $type_name _V>](value: Variant) -> Map<SqlString, Option<$type>> {
+                json_each_typed(value, $keep)
+            }
+
+            crate::some_polymorphic_function1!([<json_each_ $type_name>], V, Variant, Map<SqlString, Option<$type>>);
+        }
+    };
+}
+
+json_each!(bigint, i64, is_integral_numeric_variant);
+json_each!(string, SqlString, |v| matches!(v, Variant::String(_)));
+json_each!(boolean, bool, |v| matches!(v, Variant::Boolean(_)));
+json_each!(date, Date, |v| matches!(
+    v,
+    Variant::Date(_) | Variant::String(_)
+));
+json_each!(time, Time, |v| matches!(
+    v,
+    Variant::Time(_) | Variant::String(_)
+));
+json_each!(timestamp, Timestamp, |v| matches!(
+    v,
+    Variant::Timestamp(_) | Variant::String(_)
+));
+
+/////////////// JSON_OBJECT_KEYS and JSON_KEYS
+
+/// The top-level keys of a variant holding a map, sorted, following the
+/// Postgres `json_object_keys` function.  Non-string keys are skipped.
+/// A variant that does not hold a map produces an empty result.
+#[doc(hidden)]
+pub fn json_object_keys_V(value: Variant) -> Array<SqlString> {
+    let mut result = Vec::new();
+    if let Variant::Map(map) = value {
+        for key in map.keys() {
+            if let Variant::String(key) = key {
+                result.push(key.clone());
+            }
+        }
+    }
+    result.into()
+}
+
+crate::some_polymorphic_function1!(json_object_keys, V, Variant, Array<SqlString>);
+
+/// The keys of all nested objects in a variant, as dot-joined paths,
+/// deduplicated and sorted, following the BigQuery `JSON_KEYS` function in
+/// 'strict' mode: arrays are not traversed, and keys that are not
+/// identifiers are double-quoted.  Non-string keys are skipped.
+/// A variant that does not hold a map produces an empty result.
+#[doc(hidden)]
+pub fn json_keys_V(value: Variant) -> Array<SqlString> {
+    fn collect(prefix: &str, map: &Map<Variant, Variant>, result: &mut BTreeSet<SqlString>) {
+        for (key, val) in map.iter() {
+            let Variant::String(key) = key else { continue };
+            let path = append_path_component(prefix, key.str());
+            if let Variant::Map(inner) = val {
+                collect(&path, inner, result);
+            }
+            result.insert(SqlString::from(path));
+        }
+    }
+    let mut result = BTreeSet::new();
+    if let Variant::Map(map) = value {
+        collect("", &map, &mut result);
+    }
+    result.into_iter().collect::<Vec<_>>().into()
+}
+
+crate::some_polymorphic_function1!(json_keys, V, Variant, Array<SqlString>);
+
+/////////////// VARIANT_FILTER and VARIANT_DEEP_FILTER
+
+/// An item is kept only when the predicate is 'true', like a SQL WHERE clause.
+pub(crate) fn predicate_keeps<B: Into<Option<bool>>>(result: B) -> bool {
+    result.into() == Some(true)
+}
+
+/// True if the key can appear in a path without quotes.
+fn is_identifier_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Append a member-access component to a path.  A key that is not an
+/// identifier is double-quoted, with backslashes escaping embedded quotes
+/// and backslashes, so that paths are unambiguous: the key `a.b` produces
+/// the path component `"a.b"`, distinct from the nested path `a.b`.
+pub(crate) fn append_path_component(prefix: &str, key: &str) -> String {
+    let mut result = String::with_capacity(prefix.len() + key.len() + 4);
+    result.push_str(prefix);
+    if !prefix.is_empty() {
+        result.push('.');
+    }
+    if is_identifier_key(key) {
+        result.push_str(key);
+    } else {
+        result.push('"');
+        for c in key.chars() {
+            if c == '"' || c == '\\' {
+                result.push('\\');
+            }
+            result.push(c);
+        }
+        result.push('"');
+    }
+    result
+}
+
+/// Filter a variant with a predicate over (label, value) items.  A variant
+/// holding a map contributes one item per field, labeled by its key; any
+/// other variant is a single item with a `None` label, kept whole or dropped
+/// entirely.  A dropped non-map variant produces `None` (SQL `NULL`).
+#[doc(hidden)]
+pub fn variant_filter_<F, B>(value: Variant, predicate: F) -> Option<Variant>
+where
+    F: Fn(&Option<Variant>, &Variant) -> B,
+    B: Into<Option<bool>>,
+{
+    match value {
+        Variant::Map(map) => {
+            let mut result = BTreeMap::new();
+            for (key, val) in map.iter() {
+                if predicate_keeps(predicate(&Some(key.clone()), val)) {
+                    result.insert(key.clone(), val.clone());
+                }
+            }
+            Some(Variant::Map(result.into()))
+        }
+        other => {
+            if predicate_keeps(predicate(&None, &other)) {
+                Some(other)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+#[doc(hidden)]
+pub fn variant_filterN<F, B>(value: Option<Variant>, predicate: F) -> Option<Variant>
+where
+    F: Fn(&Option<Variant>, &Variant) -> B,
+    B: Into<Option<bool>>,
+{
+    variant_filter_(value?, predicate)
+}
+
+/// Recurse into a kept container; leaves are kept as they are.
+fn deep_filter_value<F, B>(path: &str, value: &Variant, predicate: &F) -> Variant
+where
+    F: Fn(&Option<SqlString>, &Variant) -> B,
+    B: Into<Option<bool>>,
+{
+    match value {
+        Variant::Map(inner) => Variant::Map(deep_filter_map(path, inner, predicate)),
+        Variant::Array(inner) => Variant::Array(deep_filter_array(path, inner, predicate)),
+        other => other.clone(),
+    }
+}
+
+fn deep_filter_map<F, B>(
+    prefix: &str,
+    map: &Map<Variant, Variant>,
+    predicate: &F,
+) -> Map<Variant, Variant>
+where
+    F: Fn(&Option<SqlString>, &Variant) -> B,
+    B: Into<Option<bool>>,
+{
+    let mut result = BTreeMap::new();
+    for (key, val) in map.iter() {
+        let Variant::String(k) = key else {
+            // A key that is not a string cannot appear in a path;
+            // keep the field untouched rather than deleting data silently
+            result.insert(key.clone(), val.clone());
+            continue;
+        };
+        let path = append_path_component(prefix, k.str());
+        let label = Some(SqlString::from_ref(&path));
+        if predicate_keeps(predicate(&label, val)) {
+            result.insert(key.clone(), deep_filter_value(&path, val, predicate));
+        }
+    }
+    result.into()
+}
+
+fn deep_filter_array<F, B>(prefix: &str, array: &Array<Variant>, predicate: &F) -> Array<Variant>
+where
+    F: Fn(&Option<SqlString>, &Variant) -> B,
+    B: Into<Option<bool>>,
+{
+    let mut result = Vec::new();
+    for (index, val) in array.iter().enumerate() {
+        // SQL array indexes start from 1
+        let path = format!("{prefix}[{}]", index + 1);
+        let label = Some(SqlString::from_ref(&path));
+        if predicate_keeps(predicate(&label, val)) {
+            result.push(deep_filter_value(&path, val, predicate));
+        }
+    }
+    result.into()
+}
+
+/// Like `variant_filter_`, but recursive: the label is the dot-joined path of
+/// the item, a string (array elements use 1-based bracket components, e.g.
+/// "a[1].b"; keys that are not identifiers are double-quoted), and containers
+/// kept by the predicate have their contents filtered recursively.  The
+/// predicate receives the original, unfiltered value of each item.
+#[doc(hidden)]
+pub fn variant_deep_filter_<F, B>(value: Variant, predicate: F) -> Option<Variant>
+where
+    F: Fn(&Option<SqlString>, &Variant) -> B,
+    B: Into<Option<bool>>,
+{
+    match value {
+        Variant::Map(map) => Some(Variant::Map(deep_filter_map("", &map, &predicate))),
+        Variant::Array(array) => Some(Variant::Array(deep_filter_array("", &array, &predicate))),
+        other => {
+            if predicate_keeps(predicate(&None, &other)) {
+                Some(other)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+#[doc(hidden)]
+pub fn variant_deep_filterN<F, B>(value: Option<Variant>, predicate: F) -> Option<Variant>
+where
+    F: Fn(&Option<SqlString>, &Variant) -> B,
+    B: Into<Option<bool>>,
+{
+    variant_deep_filter_(value?, predicate)
+}
+
+/////////////// VARIANT_MAP
+
+/// Map a variant with a function over (label, value) items, building an
+/// isomorphic result: a variant holding a map produces a map with the same
+/// keys and the mapped values; any other variant is a single item with a
+/// `None` label whose mapped value is the result.  A SQL `NULL` produced by
+/// the mapper becomes a variant `SqlNull` inside a map.  Top-level only.
+#[doc(hidden)]
+pub fn variant_map_<F, R>(value: Variant, mapper: F) -> Option<Variant>
+where
+    F: Fn(&Option<Variant>, &Variant) -> R,
+    R: Into<Option<Variant>>,
+{
+    match value {
+        Variant::Map(map) => {
+            let mut result = BTreeMap::new();
+            for (key, val) in map.iter() {
+                let mapped = mapper(&Some(key.clone()), val)
+                    .into()
+                    .unwrap_or(Variant::SqlNull);
+                result.insert(key.clone(), mapped);
+            }
+            Some(Variant::Map(result.into()))
+        }
+        other => mapper(&None, &other).into(),
+    }
+}
+
+#[doc(hidden)]
+pub fn variant_mapN<F, R>(value: Option<Variant>, mapper: F) -> Option<Variant>
+where
+    F: Fn(&Option<Variant>, &Variant) -> R,
+    R: Into<Option<Variant>>,
+{
+    variant_map_(value?, mapper)
+}
+
+/////////////// VARIANT_DEEP_MAP
+
+/// Map one node; containers recurse, leaves are transformed.
+fn deep_map_value<F, R>(path: &str, value: &Variant, mapper: &F) -> Variant
+where
+    F: Fn(&Option<SqlString>, &Variant) -> R,
+    R: Into<Option<Variant>>,
+{
+    match value {
+        Variant::Map(inner) => Variant::Map(deep_map_map(path, inner, mapper)),
+        Variant::Array(inner) => Variant::Array(deep_map_array(path, inner, mapper)),
+        leaf => mapper(&Some(SqlString::from_ref(path)), leaf)
+            .into()
+            .unwrap_or(Variant::SqlNull),
+    }
+}
+
+fn deep_map_map<F, R>(
+    prefix: &str,
+    map: &Map<Variant, Variant>,
+    mapper: &F,
+) -> Map<Variant, Variant>
+where
+    F: Fn(&Option<SqlString>, &Variant) -> R,
+    R: Into<Option<Variant>>,
+{
+    let mut result = BTreeMap::new();
+    for (key, val) in map.iter() {
+        let Variant::String(k) = key else {
+            // A key that is not a string cannot appear in a path;
+            // keep the field untouched
+            result.insert(key.clone(), val.clone());
+            continue;
+        };
+        let path = append_path_component(prefix, k.str());
+        result.insert(key.clone(), deep_map_value(&path, val, mapper));
+    }
+    result.into()
+}
+
+fn deep_map_array<F, R>(prefix: &str, array: &Array<Variant>, mapper: &F) -> Array<Variant>
+where
+    F: Fn(&Option<SqlString>, &Variant) -> R,
+    R: Into<Option<Variant>>,
+{
+    let mut result = Vec::with_capacity(array.len());
+    for (index, val) in array.iter().enumerate() {
+        // SQL array indexes start from 1
+        let path = format!("{prefix}[{}]", index + 1);
+        result.push(deep_map_value(&path, val, mapper));
+    }
+    result.into()
+}
+
+/// Like `variant_map_`, but recursive, and applied only to leaves: the
+/// structure of nested objects and arrays is preserved exactly, and the
+/// mapper transforms every non-container value, labeled by its dot-joined
+/// path (array elements use 1-based bracket components, e.g. "a[1].b";
+/// keys that are not identifiers are double-quoted).  JSON nulls are
+/// leaves too.
+#[doc(hidden)]
+pub fn variant_deep_map_<F, R>(value: Variant, mapper: F) -> Option<Variant>
+where
+    F: Fn(&Option<SqlString>, &Variant) -> R,
+    R: Into<Option<Variant>>,
+{
+    match value {
+        Variant::Map(map) => Some(Variant::Map(deep_map_map("", &map, &mapper))),
+        Variant::Array(array) => Some(Variant::Array(deep_map_array("", &array, &mapper))),
+        leaf => mapper(&None, &leaf).into(),
+    }
+}
+
+#[doc(hidden)]
+pub fn variant_deep_mapN<F, R>(value: Option<Variant>, mapper: F) -> Option<Variant>
+where
+    F: Fn(&Option<SqlString>, &Variant) -> R,
+    R: Into<Option<Variant>>,
+{
+    variant_deep_map_(value?, mapper)
+}
+
+/////////////// VARIANT_MERGE
+
+/// Merge two variants recursively, following the JSON Merge Patch algorithm
+/// (RFC 7386) with one difference: JSON null values are ordinary values and
+/// never delete fields.  When both arguments hold maps, their fields are
+/// merged, recursing on common keys; in every other case, including two
+/// arrays, the second argument wins.
+#[doc(hidden)]
+pub fn variant_merge_V_V(left: Variant, right: Variant) -> Variant {
+    match (left, right) {
+        (left @ Variant::Map(_), Variant::Map(right)) if right.is_empty() => left,
+        (Variant::Map(left), Variant::Map(right)) => {
+            let mut result = (*left).clone();
+            for (key, value) in right.iter() {
+                let merged = match result.remove(key) {
+                    Some(existing) => variant_merge_V_V(existing, value.clone()),
+                    None => value.clone(),
+                };
+                result.insert(key.clone(), merged);
+            }
+            Variant::Map(result.into())
+        }
+        (_, right) => right,
+    }
+}
+
+crate::some_polymorphic_function2!(variant_merge, V, Variant, V, Variant, Variant);
+
 pub fn from_json_string<T>(json: &str) -> Option<T>
 where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
@@ -1325,5 +1768,432 @@ mod test {
             expected,
             serde_json::from_str::<serde_json::Value>(&s).unwrap()
         );
+    }
+
+    /// A heterogeneous JSON object exercising every extraction function.
+    fn each_test_object() -> Variant {
+        serde_json::from_str::<Variant>(
+            r#"{
+                "i": 1,
+                "neg": -5,
+                "big": 5000000000,
+                "huge": 18446744073709551615,
+                "dec": 2.5,
+                "s": "text",
+                "snum": "7",
+                "b": true,
+                "n": null,
+                "arr": [1, 2],
+                "obj": {"x": 1},
+                "date": "2024-01-01",
+                "time": "17:30:40",
+                "ts": "2024-12-19 16:39:57"
+            }"#,
+        )
+        .unwrap()
+    }
+
+    fn keys<T>(map: &crate::Map<SqlString, Option<T>>) -> Vec<&str> {
+        map.keys().map(|k| k.str()).collect()
+    }
+
+    #[test]
+    fn json_each_bigint_extracts_only_numeric_fields_in_range() {
+        use super::json_each_bigint_V;
+
+        let bigints = json_each_bigint_V(each_test_object());
+        // "huge" exceeds the i64 range; "dec" is fractional;
+        // "snum" is a string, never parsed; "n" is a null
+        assert_eq!(keys(&bigints), vec!["big", "i", "neg"]);
+        assert_eq!(
+            bigints.get(&SqlString::from_ref("big")),
+            Some(&Some(5000000000i64))
+        );
+        assert_eq!(bigints.get(&SqlString::from_ref("i")), Some(&Some(1)));
+        assert_eq!(bigints.get(&SqlString::from_ref("neg")), Some(&Some(-5)));
+    }
+
+    #[test]
+    fn json_each_string_keeps_only_string_fields() {
+        use super::json_each_string_V;
+
+        let strings = json_each_string_V(each_test_object());
+        // Only fields holding strings; numbers and booleans are not stringified
+        assert_eq!(keys(&strings), vec!["date", "s", "snum", "time", "ts"]);
+        assert_eq!(
+            strings.get(&SqlString::from_ref("s")),
+            Some(&Some(SqlString::from_ref("text")))
+        );
+    }
+
+    #[test]
+    fn json_each_datetime_parses_strings() {
+        use super::{
+            json_each_boolean_V, json_each_date_V, json_each_time_V, json_each_timestamp_V,
+        };
+        use chrono::{NaiveDate, NaiveTime};
+
+        let bools = json_each_boolean_V(each_test_object());
+        assert_eq!(keys(&bools), vec!["b"]);
+
+        // JSON has no date or time types, so strings that parse using the
+        // grammar of the corresponding SQL literal qualify; each grammar
+        // accepts only its own fields of the test object, and strings such
+        // as "text" or "7" parse as none of them
+        let dates = json_each_date_V(each_test_object());
+        assert_eq!(keys(&dates), vec!["date"]);
+        assert_eq!(
+            dates.get(&SqlString::from_ref("date")),
+            Some(&Some(Date::from_date(
+                NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()
+            )))
+        );
+        assert_eq!(keys(&json_each_time_V(each_test_object())), vec!["time"]);
+        // a date-only string is also a valid midnight timestamp
+        assert_eq!(
+            keys(&json_each_timestamp_V(each_test_object())),
+            vec!["date", "ts"]
+        );
+
+        // Genuinely typed values, as produced by CAST(x AS VARIANT), also
+        // qualify
+        let date = Date::from_date(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap());
+        let time = Time::from_time(NaiveTime::from_hms_opt(17, 30, 40).unwrap());
+        let typed = Variant::Map(
+            [
+                (
+                    Variant::String(SqlString::from_ref("d")),
+                    Variant::Date(date),
+                ),
+                (
+                    Variant::String(SqlString::from_ref("t")),
+                    Variant::Time(time),
+                ),
+            ]
+            .into_iter()
+            .collect::<BTreeMap<Variant, Variant>>()
+            .into(),
+        );
+        let dates = json_each_date_V(typed.clone());
+        assert_eq!(keys(&dates), vec!["d"]);
+        assert_eq!(dates.get(&SqlString::from_ref("d")), Some(&Some(date)));
+        let times = json_each_time_V(typed);
+        assert_eq!(keys(&times), vec!["t"]);
+    }
+
+    #[test]
+    fn json_each_non_map_returns_empty() {
+        use super::{json_each_bigint_V, json_each_bigint_VN, json_each_string_V};
+
+        assert!(json_each_bigint_V(Variant::BigInt(5)).is_empty());
+        assert!(json_each_string_V(serde_json::from_str::<Variant>("[1, 2]").unwrap()).is_empty());
+        assert!(json_each_bigint_V(Variant::VariantNull).is_empty());
+        assert!(json_each_bigint_V(Variant::SqlNull).is_empty());
+        // SQL NULL argument propagates to a NULL result
+        assert_eq!(json_each_bigint_VN(None), None);
+        assert!(
+            json_each_bigint_VN(Some(Variant::Boolean(true)))
+                .unwrap()
+                .is_empty()
+        );
+
+        // Non-string keys are skipped
+        let int_keys = Variant::Map(
+            [(Variant::BigInt(1), Variant::BigInt(2))]
+                .into_iter()
+                .collect::<BTreeMap<Variant, Variant>>()
+                .into(),
+        );
+        assert!(json_each_bigint_V(int_keys).is_empty());
+    }
+
+    fn strs(array: &crate::Array<SqlString>) -> Vec<&str> {
+        array.iter().map(|s| s.str()).collect()
+    }
+
+    #[test]
+    fn json_object_keys_returns_top_level_keys() {
+        use super::{json_object_keys_V, json_object_keys_VN};
+
+        // All top-level keys sorted, including those holding nulls,
+        // arrays and nested objects
+        let keys = json_object_keys_V(each_test_object());
+        assert_eq!(
+            strs(&keys),
+            vec![
+                "arr", "b", "big", "date", "dec", "huge", "i", "n", "neg", "obj", "s", "snum",
+                "time", "ts"
+            ]
+        );
+
+        assert!(json_object_keys_V(Variant::BigInt(5)).is_empty());
+        assert!(json_object_keys_V(serde_json::from_str::<Variant>("[1, 2]").unwrap()).is_empty());
+        assert_eq!(json_object_keys_VN(None), None);
+    }
+
+    #[test]
+    fn variant_filter_by_predicate() {
+        use super::variant_filter_;
+
+        // Keep only string-valued fields
+        let filtered = variant_filter_(each_test_object(), |_k, v| matches!(v, Variant::String(_)));
+        let Some(Variant::Map(map)) = &filtered else {
+            panic!("expected a map")
+        };
+        let keys: Vec<&str> = map
+            .keys()
+            .map(|k| match k {
+                Variant::String(s) => s.str(),
+                _ => panic!("expected string keys"),
+            })
+            .collect();
+        assert_eq!(keys, vec!["date", "s", "snum", "time", "ts"]);
+
+        // Strip fields holding JSON nulls; "n" disappears
+        let stripped = variant_filter_(each_test_object(), |_k, v| {
+            !matches!(v, Variant::VariantNull)
+        });
+        let Some(Variant::Map(map)) = &stripped else {
+            panic!("expected a map")
+        };
+        assert!(!map.contains_key(&Variant::String(SqlString::from_ref("n"))) && map.len() == 13);
+
+        // A non-map variant is a single item with a None label
+        let kept = variant_filter_(Variant::BigInt(5), |k, _v| k.is_none());
+        assert_eq!(kept, Some(Variant::BigInt(5)));
+        let dropped = variant_filter_(Variant::BigInt(5), |_k, v| matches!(v, Variant::String(_)));
+        assert_eq!(dropped, None);
+
+        // Arrays are kept whole or dropped, not filtered element-wise
+        let arr = serde_json::from_str::<Variant>("[1, 2]").unwrap();
+        assert_eq!(
+            variant_filter_(arr.clone(), |k, _v| k.is_none()),
+            Some(arr.clone())
+        );
+        assert_eq!(variant_filter_(arr, |k, _v| k.is_some()), None);
+
+        // A NULL predicate result drops, like a SQL WHERE clause
+        let dropped = variant_filter_(Variant::BigInt(5), |_k, _v| None::<bool>);
+        assert_eq!(dropped, None);
+    }
+
+    #[test]
+    fn variant_deep_filter_recurses_with_paths() {
+        use super::variant_deep_filter_;
+
+        fn nested() -> Variant {
+            serde_json::from_str::<Variant>(
+                r#"{"a": {"b": 1, "c": {"d": 2}}, "e": [{"f": 3}, 4], "g": 5}"#,
+            )
+            .unwrap()
+        }
+        fn path_str(k: &Option<SqlString>) -> String {
+            match k {
+                Some(s) => s.str().to_string(),
+                None => String::new(),
+            }
+        }
+        fn to_json(v: &Option<Variant>) -> String {
+            v.as_ref().unwrap().to_json_string().unwrap()
+        }
+
+        // Dropping an inner path removes only that subtree
+        let result = variant_deep_filter_(nested(), |k, _v| path_str(k) != "a.c");
+        assert_eq!(to_json(&result), r#"{"a":{"b":1},"e":[{"f":3},4],"g":5}"#);
+
+        // Array elements have 1-based bracket path components and recurse
+        let result = variant_deep_filter_(nested(), |k, _v| path_str(k) != "e[1].f");
+        assert_eq!(
+            to_json(&result),
+            r#"{"a":{"b":1,"c":{"d":2}},"e":[{},4],"g":5}"#
+        );
+
+        // Dropping an element shrinks the array
+        let result = variant_deep_filter_(nested(), |k, _v| path_str(k) != "e[1]");
+        assert_eq!(
+            to_json(&result),
+            r#"{"a":{"b":1,"c":{"d":2}},"e":[4],"g":5}"#
+        );
+
+        // A top-level array is filtered element-wise
+        let array = serde_json::from_str::<Variant>(r#"[1, {"x": 2}, 3]"#).unwrap();
+        let result = variant_deep_filter_(array, |k, _v| path_str(k) != "[2].x");
+        assert_eq!(to_json(&result), r#"[1,{},3]"#);
+
+        // A scalar is a single item with no label
+        assert_eq!(
+            variant_deep_filter_(Variant::BigInt(5), |k, _v| k.is_none()),
+            Some(Variant::BigInt(5))
+        );
+        assert_eq!(
+            variant_deep_filter_(Variant::BigInt(5), |k, _v| k.is_some()),
+            None
+        );
+    }
+
+    #[test]
+    fn deep_path_components_are_quoted() {
+        use super::{variant_deep_filter_, variant_deep_map_};
+
+        // A key that is not an identifier is double-quoted in paths, so a
+        // key containing a dot cannot be confused with nesting
+        let v =
+            serde_json::from_str::<Variant>(r#"{"example.com": {"a": 1}, "example": {"b": 2}}"#)
+                .unwrap();
+        let kept = variant_deep_filter_(v, |p, _v| {
+            let path = p.as_ref().map(|s| s.str()).unwrap_or("");
+            path == "example" || !path.starts_with("example.")
+        });
+        assert_eq!(
+            kept.unwrap().to_json_string().unwrap(),
+            r#"{"example":{},"example.com":{"a":1}}"#
+        );
+
+        // The mapper sees the quoted path, with embedded quotes escaped
+        let v = serde_json::from_str::<Variant>(r#"{"a\"b": 1, "_ok9": 2}"#).unwrap();
+        let mapped = variant_deep_map_(v, |p, _v| p.as_ref().map(|s| Variant::String(s.clone())));
+        assert_eq!(
+            mapped.unwrap().to_json_string().unwrap(),
+            r#"{"_ok9":"_ok9","a\"b":"\"a\\\"b\""}"#
+        );
+    }
+
+    #[test]
+    fn variant_merge_merges_recursively() {
+        use super::{variant_merge_V_V, variant_merge_VN_V};
+
+        fn parse(s: &str) -> Variant {
+            serde_json::from_str::<Variant>(s).unwrap()
+        }
+        fn merged_json(left: &str, right: &str) -> String {
+            variant_merge_V_V(parse(left), parse(right))
+                .to_json_string()
+                .unwrap()
+        }
+
+        // Objects merge recursively; fields of the second win on common keys
+        assert_eq!(
+            merged_json(
+                r#"{"a": {"x": 1, "y": 2}, "b": 1}"#,
+                r#"{"a": {"x": 9, "z": 3}, "c": 4}"#
+            ),
+            r#"{"a":{"x":9,"y":2,"z":3},"b":1,"c":4}"#
+        );
+
+        // Arrays are replaced, not concatenated
+        assert_eq!(
+            merged_json(r#"{"a": [1, 2]}"#, r#"{"a": [3]}"#),
+            r#"{"a":[3]}"#
+        );
+
+        // A JSON null is an ordinary value; it does not delete the field
+        assert_eq!(
+            merged_json(r#"{"a": 1, "b": 2}"#, r#"{"a": null}"#),
+            r#"{"a":null,"b":2}"#
+        );
+
+        // When either argument is not an object, the second wins
+        assert_eq!(merged_json("5", "6"), "6");
+        assert_eq!(merged_json(r#"{"a": 1}"#, "[1]"), "[1]");
+        assert_eq!(merged_json("[1]", r#"{"a": 1}"#), r#"{"a":1}"#);
+
+        // A SQL NULL argument propagates
+        assert_eq!(variant_merge_VN_V(None, parse(r#"{"a": 1}"#)), None);
+    }
+
+    #[test]
+    fn variant_map_builds_isomorphic_object() {
+        use super::variant_map_;
+
+        // Replace every value by its key
+        let mapped = variant_map_(each_test_object(), |k, _v| k.clone());
+        let Some(Variant::Map(map)) = &mapped else {
+            panic!("expected a map")
+        };
+        assert_eq!(map.len(), 14);
+        assert_eq!(
+            map.get(&Variant::String(SqlString::from_ref("i"))),
+            Some(&Variant::String(SqlString::from_ref("i")))
+        );
+
+        // A SQL NULL mapper result becomes a SqlNull variant inside the map
+        let nulled = variant_map_(each_test_object(), |_k, _v| None::<Variant>);
+        let Some(Variant::Map(map)) = &nulled else {
+            panic!("expected a map")
+        };
+        assert!(map.values().all(|v| matches!(v, Variant::SqlNull)));
+
+        // A non-map variant is a single item with a None label
+        let mapped = variant_map_(Variant::BigInt(5), |k, v| {
+            assert!(k.is_none());
+            match v {
+                Variant::BigInt(x) => Some(Variant::BigInt(x + 1)),
+                _ => None,
+            }
+        });
+        assert_eq!(mapped, Some(Variant::BigInt(6)));
+        // A NULL mapper result for a non-map variant is a SQL NULL
+        assert_eq!(
+            variant_map_(Variant::BigInt(5), |_k, _v| None::<Variant>),
+            None
+        );
+    }
+
+    #[test]
+    fn variant_deep_map_transforms_leaves() {
+        use super::variant_deep_map_;
+
+        let nested =
+            serde_json::from_str::<Variant>(r#"{"a": {"b": 1}, "e": [1, "x"], "n": null}"#)
+                .unwrap();
+
+        // Replace every leaf by its path: structure is preserved exactly,
+        // and JSON nulls are leaves too
+        let mapped = variant_deep_map_(nested.clone(), |p, _v| {
+            p.as_ref().map(|s| Variant::String(s.clone()))
+        });
+        assert_eq!(
+            mapped.unwrap().to_json_string().unwrap(),
+            r#"{"a":{"b":"a.b"},"e":["e[1]","e[2]"],"n":"n"}"#
+        );
+
+        // A SQL NULL mapper result becomes a JSON null in place
+        let nulled = variant_deep_map_(nested, |_p, _v| None::<Variant>);
+        assert_eq!(
+            nulled.unwrap().to_json_string().unwrap(),
+            r#"{"a":{"b":null},"e":[null,null],"n":null}"#
+        );
+
+        // A top-level scalar is a single leaf with no label
+        let mapped = variant_deep_map_(Variant::BigInt(5), |p, v| {
+            assert!(p.is_none());
+            match v {
+                Variant::BigInt(x) => Some(Variant::BigInt(x + 1)),
+                _ => None,
+            }
+        });
+        assert_eq!(mapped, Some(Variant::BigInt(6)));
+    }
+
+    #[test]
+    fn json_keys_returns_nested_paths() {
+        use super::json_keys_V;
+
+        // Every key at every level; arrays are not traversed ("e.f" is absent)
+        let v = serde_json::from_str::<Variant>(
+            r#"{"a": {"b": 1, "c": {"d": 2}}, "e": [{"f": 3}], "g": 4}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            strs(&json_keys_V(v)),
+            vec!["a", "a.b", "a.c", "a.c.d", "e", "g"]
+        );
+
+        // A key containing a dot is escaped using double quotes, like in
+        // BigQuery, so it cannot collide with a nested path
+        let v = serde_json::from_str::<Variant>(r#"{"a.b": 1, "a": {"b": 2}}"#).unwrap();
+        assert_eq!(strs(&json_keys_V(v)), vec!["\"a.b\"", "a", "a.b"]);
+
+        assert!(json_keys_V(Variant::BigInt(5)).is_empty());
     }
 }

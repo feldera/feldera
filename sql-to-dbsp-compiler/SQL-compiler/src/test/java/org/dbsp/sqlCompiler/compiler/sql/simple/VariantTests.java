@@ -82,6 +82,461 @@ public class VariantTests extends SqlIoTest {
         ccs.addChange(change);
     }
 
+    /** A heterogeneous JSON object exercising every JSON_EACH_* function. */
+    static final String JSON_EACH_OBJECT = "PARSE_JSON('{\"b\": true, \"big\": 5000000000, \"dec\": 2.5, " +
+            "\"i\": 1, \"n\": null, \"neg\": -5, \"s\": \"text\", \"snum\": \"7\", \"arr\": [1, 2]}')";
+
+    @Test
+    public void testJsonEachBigint() {
+        // "dec" is fractional and "snum" is a string: neither is a BIGINT field
+        this.qst("""
+                SELECT * FROM UNNEST(JSON_EACH_BIGINT(%s)) AS kv(k, v);
+                 k   | v
+                ----------
+                 big | 5000000000
+                 i   | 1
+                 neg | -5
+                (3 rows)""".formatted(JSON_EACH_OBJECT));
+    }
+
+    @Test
+    public void testJsonEachStringBoolean() {
+        // Non-string scalars are not stringified
+        this.qst("""
+                SELECT * FROM UNNEST(JSON_EACH_STRING(%s)) AS kv(k, v);
+                 k    | v
+                -----------
+                 s    | text
+                 snum | 7
+                (2 rows)
+
+                SELECT * FROM UNNEST(JSON_EACH_BOOLEAN(%s)) AS kv(k, v);
+                 k | v
+                --------
+                 b | true
+                (1 row)""".formatted(JSON_EACH_OBJECT, JSON_EACH_OBJECT));
+    }
+
+    @Test
+    public void testJsonEachDateTime() {
+        // JSON has no date/time types, so strings are parsed using the
+        // grammar of the corresponding SQL literal; strings that do not
+        // parse are omitted.
+        this.qst("""
+                SELECT * FROM UNNEST(JSON_EACH_DATE(PARSE_JSON('{"d": "2024-01-01", "s": "text", "t": "17:30:40"}'))) AS kv(k, v);
+                 k | v
+                --------
+                 d | 2024-01-01
+                (1 row)
+
+                SELECT * FROM UNNEST(JSON_EACH_TIME(PARSE_JSON('{"d": "2024-01-01", "s": "text", "t": "17:30:40"}'))) AS kv(k, v);
+                 k | v
+                --------
+                 t | 17:30:40
+                (1 row)
+
+                SELECT * FROM UNNEST(JSON_EACH_TIMESTAMP(PARSE_JSON('{"d": "2024-01-01", "ts": "2024-12-19 16:39:57"}'))) AS kv(k, v);
+                 k  | v
+                ---------
+                 d  | 2024-01-01 00:00:00
+                 ts | 2024-12-19 16:39:57
+                (2 rows)
+
+                SELECT * FROM UNNEST(JSON_EACH_DATE(CAST(MAP['d', CAST(DATE '2024-01-01' AS VARIANT), 's', CAST('x' AS VARIANT)] AS VARIANT))) AS kv(k, v);
+                 k | v
+                --------
+                 d | 2024-01-01
+                (1 row)
+
+                SELECT * FROM UNNEST(JSON_EACH_TIME(CAST(MAP['d', CAST(DATE '2024-01-01' AS VARIANT), 's', CAST('x' AS VARIANT)] AS VARIANT))) AS kv(k, v);
+                 k | v
+                --------
+                (0 rows)""");
+    }
+
+    @Test
+    public void testJsonEachNonObject() {
+        // Negative tests for JSON_EACH_BIGINT
+        this.qst("""
+                SELECT * FROM UNNEST(JSON_EACH_BIGINT(PARSE_JSON('[1, 2]'))) AS kv(k, v);
+                 k | v
+                --------
+                (0 rows)
+
+                SELECT * FROM UNNEST(JSON_EACH_BIGINT(PARSE_JSON('5'))) AS kv(k, v);
+                 k | v
+                --------
+                (0 rows)
+
+                SELECT * FROM UNNEST(JSON_EACH_BIGINT(PARSE_JSON('null'))) AS kv(k, v);
+                 k | v
+                --------
+                (0 rows)
+
+                SELECT * FROM UNNEST(JSON_EACH_BIGINT(CAST(NULL AS VARIANT))) AS kv(k, v);
+                 k | v
+                --------
+                (0 rows)""");
+    }
+
+    @Test
+    public void testJsonFilter() {
+        // Filter by runtime type, by value, and by key; TO_JSON serializes
+        // the VARIANT results, which the test harness cannot compare directly
+        this.qst("""
+                SELECT TO_JSON(VARIANT_FILTER(%s, (k, v) -> TYPEOF(v) = 'VARCHAR'));
+                 r
+                ---
+                 {"s":"text","snum":"7"}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_FILTER(PARSE_JSON('{"name": "Ada", "age": 36, "address": {"city": "Boston", "zip": "02115"}, "tags": [1, 2], "note": null}'), (k, x) -> TYPEOF(x) = 'VARCHAR'));
+                 r
+                ---
+                 {"name":"Ada"}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_FILTER(%s, (k, v) -> v <> VARIANTNULL()));
+                 r
+                ---
+                 {"arr":[1,2],"b":true,"big":5000000000,"dec":2.5,"i":1,"neg":-5,"s":"text","snum":"7"}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_FILTER(%s, (k, v) -> CAST(k AS VARCHAR) LIKE 's%%'));
+                 r
+                ---
+                 {"s":"text","snum":"7"}
+                (1 row)""".formatted(JSON_EACH_OBJECT, JSON_EACH_OBJECT, JSON_EACH_OBJECT));
+    }
+
+    @Test
+    public void testJsonFilterNonObject() {
+        // A non-map variant is a single item with a NULL label:
+        // kept whole or dropped to SQL NULL
+        this.qst("""
+                SELECT TO_JSON(VARIANT_FILTER(PARSE_JSON('5'), (k, v) -> k IS NULL));
+                 r
+                ---
+                 5
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_FILTER(PARSE_JSON('5'), (k, v) -> k IS NOT NULL));
+                 r
+                ---
+                NULL
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_FILTER(PARSE_JSON('[1, 2]'), (k, v) -> k IS NULL));
+                 r
+                ---
+                 [1,2]
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_FILTER(CAST(NULL AS VARIANT), (k, v) -> TRUE));
+                 r
+                ---
+                NULL
+                (1 row)""");
+    }
+
+    /** A nested JSON object exercising VARIANT_DEEP_FILTER and JSON_KEYS. */
+    static final String NESTED_OBJECT =
+            "PARSE_JSON('{\"a\": {\"b\": 1, \"c\": {\"d\": 2}}, \"e\": [{\"f\": 3}, 4], \"g\": 5}')";
+
+    @Test
+    public void testDeepFilterQuotedPaths() {
+        this.qst("""
+                SELECT TO_JSON(VARIANT_DEEP_FILTER(PARSE_JSON('{"example.com": {"a": 1}, "example": {"b": 2}}'), (p, v) -> p = 'example' OR p NOT LIKE 'example.%'));
+                 r
+                ---
+                 {"example":{},"example.com":{"a":1}}
+                (1 row)""");
+    }
+
+    @Test
+    public void testJsonDeepFilter() {
+        // Paths are dot-joined; array elements use 1-based bracket components;
+        // dropping an inner path removes only that subtree
+        this.qst("""
+                SELECT TO_JSON(VARIANT_DEEP_FILTER(PARSE_JSON('{"a": {"b": 1, "c": {"d": 2}}}'), (p, x) -> p <> 'a.c'));
+                 r
+                ---
+                 {"a":{"b":1}}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_DEEP_FILTER(%s, (p, v) -> p <> 'a.c'));
+                 r
+                ---
+                 {"a":{"b":1},"e":[{"f":3},4],"g":5}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_DEEP_FILTER(%s, (p, v) -> p <> 'e[1].f'));
+                 r
+                ---
+                 {"a":{"b":1,"c":{"d":2}},"e":[{},4],"g":5}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_DEEP_FILTER(%s, (p, v) -> p <> 'e[1]'));
+                 r
+                ---
+                 {"a":{"b":1,"c":{"d":2}},"e":[4],"g":5}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_DEEP_FILTER(PARSE_JSON('[1, {"x": 2}, 3]'), (p, v) -> p <> '[2].x'));
+                 r
+                ---
+                 [1,{},3]
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_DEEP_FILTER(PARSE_JSON('5'), (p, v) -> p IS NULL));
+                 r
+                ---
+                 5
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_DEEP_FILTER(CAST(NULL AS VARIANT), (p, v) -> TRUE));
+                 r
+                ---
+                NULL
+                (1 row)""".formatted(NESTED_OBJECT, NESTED_OBJECT, NESTED_OBJECT));
+    }
+
+    @Test
+    public void testVariantMap() {
+        this.qst("""
+                SELECT TO_JSON(VARIANT_MAP(PARSE_JSON('{"a": 1, "b": 2}'), (k, v) -> CAST(v AS BIGINT) * 2));
+                 r
+                ---
+                 {"a":2,"b":4}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_MAP(PARSE_JSON('{"a": 1, "b": 2}'), (k, v) -> k));
+                 r
+                ---
+                 {"a":"a","b":"b"}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_MAP(PARSE_JSON('{"a": 1, "b": "x"}'), (k, v) -> CAST(v AS BIGINT) * 2));
+                 r
+                ---
+                 {"a":2,"b":null}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_MAP(PARSE_JSON('{"a": 1, "b": "x"}'), (k, v) -> TYPEOF(v)));
+                 r
+                ---
+                 {"a":"BIGINT UNSIGNED","b":"VARCHAR"}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_MAP(PARSE_JSON('{"a": 1, "b": "x"}'), (k, v) -> CAST(v AS BIGINT)));
+                 r
+                ---
+                 {"a":1,"b":null}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_MAP(PARSE_JSON('5'), (k, v) -> CAST(v AS BIGINT) + 1));
+                 r
+                ---
+                 6
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_MAP(CAST(NULL AS VARIANT), (k, v) -> v));
+                 r
+                ---
+                NULL
+                (1 row)""");
+    }
+
+    @Test
+    public void testVariantDeepMap() {
+        // Structure is preserved exactly; the lambda transforms only leaves,
+        // labeled by their dot-joined path; JSON nulls are leaves too
+        this.qst("""
+                SELECT TO_JSON(VARIANT_DEEP_MAP(PARSE_JSON('{"a": {"b": 1}, "e": [1, 2]}'), (p, v) -> p));
+                 r
+                ---
+                 {"a":{"b":"a.b"},"e":["e[1]","e[2]"]}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_DEEP_MAP(PARSE_JSON('{"a": {"b": 1}, "e": [1, 2], "s": "x"}'), (p, v) -> CAST(v AS BIGINT) * 2));
+                 r
+                ---
+                 {"a":{"b":2},"e":[2,4],"s":null}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_DEEP_MAP(PARSE_JSON('{"user": {"name": "Ada", "ssn": "123"}, "id": 7}'), (p, x) -> CASE WHEN p LIKE 'user.%' THEN CAST('***' AS VARIANT) ELSE x END));
+                 r
+                ---
+                 {"id":7,"user":{"name":"***","ssn":"***"}}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_DEEP_MAP(PARSE_JSON('5'), (p, v) -> CAST(v AS BIGINT) + 1));
+                 r
+                ---
+                 6
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_DEEP_MAP(CAST(NULL AS VARIANT), (p, v) -> v));
+                 r
+                ---
+                NULL
+                (1 row)""");
+    }
+
+    @Test
+    public void testVariantMerge() {
+        this.qst("""
+                SELECT TO_JSON(VARIANT_MERGE(PARSE_JSON('{"a": {"x": 1, "y": 2}, "b": 1}'), PARSE_JSON('{"a": {"x": 9, "z": 3}, "c": 4}')));
+                 r
+                ---
+                 {"a":{"x":9,"y":2,"z":3},"b":1,"c":4}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_MERGE(PARSE_JSON('{"a": 1}'), CAST(MAP['new', CAST(5 AS VARIANT)] AS VARIANT)));
+                 r
+                ---
+                 {"a":1,"new":5}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_MERGE(PARSE_JSON('{"a": [1, 2]}'), PARSE_JSON('{"a": [3]}')));
+                 r
+                ---
+                 {"a":[3]}
+                (1 row)
+
+
+                SELECT TO_JSON(VARIANT_MERGE(PARSE_JSON('{"a": 1}'), PARSE_JSON('{"new": 5}')));
+                 r
+                ---
+                 {"a":1,"new":5}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_MERGE(PARSE_JSON('{"a": 1, "b": 2}'), PARSE_JSON('{"a": null}')));
+                 r
+                ---
+                 {"a":null,"b":2}
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_MERGE(PARSE_JSON('5'), PARSE_JSON('6')));
+                 r
+                ---
+                 6
+                (1 row)
+
+                SELECT TO_JSON(VARIANT_MERGE(CAST(NULL AS VARIANT), PARSE_JSON('{"a": 1}')));
+                 r
+                ---
+                NULL
+                (1 row)""");
+    }
+
+    @Test
+    public void testLambdaTypeChecking() {
+        // A predicate with the wrong number of parameters is rejected
+        this.queryFailingInCompilation(
+                "SELECT VARIANT_FILTER(PARSE_JSON('{}'), (k) -> TRUE)",
+                "VARIANT_FILTER(<VARIANT>, <FUNCTION(VARIANT, VARIANT)-><BOOLEAN>>)");
+        this.queryFailingInCompilation(
+                "SELECT VARIANT_FILTER(PARSE_JSON('{}'), (k, v, x) -> TRUE)",
+                "VARIANT_FILTER(<VARIANT>, <FUNCTION(VARIANT, VARIANT)-><BOOLEAN>>)");
+        // A predicate that does not return BOOLEAN is rejected
+        this.queryFailingInCompilation(
+                "SELECT VARIANT_FILTER(PARSE_JSON('{}'), (k, v) -> 5)",
+                "VARIANT_FILTER(<VARIANT>, <FUNCTION(VARIANT, VARIANT)-><BOOLEAN>>)");
+        // The first argument must be a VARIANT
+        this.queryFailingInCompilation(
+                "SELECT VARIANT_FILTER(5, (k, v) -> TRUE)",
+                "VARIANT_FILTER(<VARIANT>, <FUNCTION(VARIANT, VARIANT)-><BOOLEAN>>)");
+        // A non-lambda second argument is rejected
+        this.queryFailingInCompilation(
+                "SELECT VARIANT_FILTER(PARSE_JSON('{}'), 5)",
+                "VARIANT_FILTER(<VARIANT>, <FUNCTION(VARIANT, VARIANT)-><BOOLEAN>>)");
+        // In VARIANT_DEEP_FILTER the path is a VARCHAR, not a VARIANT:
+        // TYPEOF requires a VARIANT argument
+        this.queryFailingInCompilation(
+                "SELECT VARIANT_DEEP_FILTER(PARSE_JSON('{}'), (p, v) -> TYPEOF(p) = 'VARCHAR')",
+                "TYPEOF");
+        // The same rules apply to the map functions; arity checked here
+        this.queryFailingInCompilation(
+                "SELECT VARIANT_MAP(PARSE_JSON('{}'), (k) -> k)",
+                "VARIANT_MAP(<VARIANT>, <FUNCTION(VARIANT, VARIANT)-><ANY>>)");
+    }
+
+    @Test
+    public void testJsonObjectKeys() {
+        // Top-level keys, sorted, including those holding nulls, arrays
+        // and nested objects; non-objects and NULL produce no rows
+        this.qst("""
+                SELECT * FROM UNNEST(JSON_OBJECT_KEYS(%s)) AS t(k);
+                 k
+                ------
+                 arr
+                 b
+                 big
+                 dec
+                 i
+                 n
+                 neg
+                 s
+                 snum
+                (9 rows)
+
+                SELECT * FROM UNNEST(JSON_OBJECT_KEYS(PARSE_JSON('{"a": 1, "b": {"c": 2}, "d": null}'))) AS t(k);
+                 k
+                ------
+                 a
+                 b
+                 d
+                (3 rows)
+
+                SELECT * FROM UNNEST(JSON_OBJECT_KEYS(PARSE_JSON('[1, 2]'))) AS t(k);
+                 k
+                ------
+                (0 rows)
+
+                SELECT * FROM UNNEST(JSON_OBJECT_KEYS(CAST(NULL AS VARIANT))) AS t(k);
+                 k
+                ------
+                (0 rows)""".formatted(JSON_EACH_OBJECT));
+    }
+
+    @Test
+    public void testJsonKeys() {
+        // Every key at every level as a dot-joined path; arrays are not
+        // traversed, so "e.f" is absent.  Keys containing special characters
+        // are escaped using double quotes, like in BigQuery, so a key with a
+        // dot cannot collide with a nested path.
+        this.qst("""
+                SELECT * FROM UNNEST(JSON_KEYS(PARSE_JSON('{"a.b": 1, "a": {"b": 2}}'))) AS t(k);
+                 k
+                ------
+                 "a.b"
+                 a
+                 a.b
+                (3 rows)
+
+                SELECT * FROM UNNEST(JSON_KEYS(PARSE_JSON('{"a": {"b": 1, "c": {"d": 2}}, "e": [{"f": 3}], "g": 4}'))) AS t(k);
+                 k
+                ------
+                 a
+                 a.b
+                 a.c
+                 a.c.d
+                 e
+                 g
+                (6 rows)
+
+                SELECT * FROM UNNEST(JSON_KEYS(PARSE_JSON('5'))) AS t(k);
+                 k
+                ------
+                (0 rows)
+
+                SELECT * FROM UNNEST(JSON_KEYS(CAST(NULL AS VARIANT))) AS t(k);
+                 k
+                ------
+                (0 rows)""");
+    }
+
     @Test
     public void testUDT() {
         this.compileRustTestCase("""

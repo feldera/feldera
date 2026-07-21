@@ -1,15 +1,21 @@
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
+import org.apache.calcite.sql.SqlFunctionCategory;
+import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlOperatorTable;
+import org.apache.calcite.sql.SqlSyntax;
 import org.apache.calcite.sql.fun.SqlLibrary;
 import org.apache.calcite.sql.fun.SqlLibraryOperatorTableFactory;
 import org.apache.calcite.sql.fun.SqlLibraryOperators;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.util.SqlOperatorTables;
+import org.apache.calcite.sql.validate.SqlNameMatcher;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 /** Handle the loading of the functions from the Calcite library.
  * We create a custom SqlOperatorTable rather than loading all existing functions in each library,
@@ -713,6 +719,35 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
 
     public static final CalciteFunctions INSTANCE = new CalciteFunctions();
 
+    /** Hides from an operator table the operators selected by a predicate. */
+    static class HidingOperatorTable implements SqlOperatorTable {
+        final SqlOperatorTable table;
+        final Predicate<SqlOperator> hide;
+
+        HidingOperatorTable(SqlOperatorTable table, Predicate<SqlOperator> hide) {
+            this.table = table;
+            this.hide = hide;
+        }
+
+        @Override
+        public void lookupOperatorOverloads(
+                SqlIdentifier opName, @Nullable SqlFunctionCategory category, SqlSyntax syntax,
+                List<SqlOperator> operatorList, SqlNameMatcher nameMatcher) {
+            List<SqlOperator> found = new ArrayList<>();
+            this.table.lookupOperatorOverloads(opName, category, syntax, found, nameMatcher);
+            for (SqlOperator operator : found)
+                if (!this.hide.test(operator))
+                    operatorList.add(operator);
+        }
+
+        @Override
+        public List<SqlOperator> getOperatorList() {
+            return this.table.getOperatorList().stream()
+                    .filter(operator -> !this.hide.test(operator))
+                    .toList();
+        }
+    }
+
     /** Return all the functions supported from Calcite's libraries */
     public SqlOperatorTable getFunctions() {
         List<SqlOperator> operators = new ArrayList<>();
@@ -721,7 +756,10 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                 operators.add(func.function);
         }
         return SqlOperatorTables.chain(
-                SqlLibraryOperatorTableFactory.INSTANCE.getOperatorTable(SqlLibrary.STANDARD),
+                // Feldera defines its own JSON_* functions
+                new HidingOperatorTable(
+                        SqlLibraryOperatorTableFactory.INSTANCE.getOperatorTable(SqlLibrary.STANDARD),
+                        operator -> operator.getName().startsWith("JSON_")),
                 new SqlToRelCompiler.CaseInsensitiveOperatorTable(
                         SqlOperatorTables.spatialInstance().getOperatorList()),
                 new SqlToRelCompiler.CaseInsensitiveOperatorTable(operators));

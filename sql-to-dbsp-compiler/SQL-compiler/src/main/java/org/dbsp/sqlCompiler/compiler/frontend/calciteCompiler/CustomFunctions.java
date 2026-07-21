@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlCallBinding;
@@ -77,6 +78,14 @@ public class CustomFunctions {
         this.functions.add(GreatestNonNullsFunction.INSTANCE);
         this.functions.add(GunzipFunction.INSTANCE);
         this.functions.add(InitcapSpacesFunction.INSTANCE);
+        this.functions.add(JsonEachFunction.BIGINT);
+        this.functions.add(JsonEachFunction.BOOLEAN);
+        this.functions.add(JsonEachFunction.DATE);
+        this.functions.add(JsonEachFunction.STRING);
+        this.functions.add(JsonEachFunction.TIME);
+        this.functions.add(JsonEachFunction.TIMESTAMP);
+        this.functions.add(JsonKeysFunction.KEYS);
+        this.functions.add(JsonKeysFunction.OBJECT_KEYS);
         this.functions.add(LeastNonNullsFunction.INSTANCE);
         this.functions.add(MakeDateFunction.INSTANCE);
         this.functions.add(MakeTimeFunction.INSTANCE);
@@ -94,6 +103,11 @@ public class CustomFunctions {
         this.functions.add(SplitPartFunction.INSTANCE);
         this.functions.add(ToIntFunction.INSTANCE);
         this.functions.add(ToJsonFunction.INSTANCE);
+        this.functions.add(VariantFilterFunction.DEEP);
+        this.functions.add(VariantFilterFunction.INSTANCE);
+        this.functions.add(VariantMapFunction.DEEP);
+        this.functions.add(VariantMapFunction.INSTANCE);
+        this.functions.add(VariantMergeFunction.INSTANCE);
         this.functions.add(XxHashFunction.INSTANCE);
         this.functions.add(WriteLogFunction.INSTANCE);
         this.udf = new HashMap<>();
@@ -599,6 +613,81 @@ public class CustomFunctions {
             super("PARSE_TIMESTAMP", ReturnTypes.TIMESTAMP.andThen(SqlTypeTransforms.FORCE_NULLABLE),
                     OperandTypes.STRING_STRING, SqlFunctionCategory.TIMEDATE,
                     "datetime#date-parsing-and-formatting", FunctionDocumentation.NO_FILE);
+        }
+    }
+
+    /** JSON_EACH_&lt;T&gt;(variant) returns a MAP&lt;VARCHAR, T&gt; holding all fields of
+     * a variant object whose values have the runtime type T.  Fields with values
+     * of other types are not present in the result.  Since JSON has no date or
+     * time types, the DATE, TIME, and TIMESTAMP functions also accept strings,
+     * parsed using the grammar of the corresponding SQL literal.  A variant
+     * that does not hold an object produces an empty map. */
+    static class JsonEachFunction extends NonOptimizedFunction {
+        static final JsonEachFunction BIGINT = new JsonEachFunction("JSON_EACH_BIGINT", SqlTypeName.BIGINT);
+        static final JsonEachFunction STRING = new JsonEachFunction("JSON_EACH_STRING", SqlTypeName.VARCHAR);
+        static final JsonEachFunction BOOLEAN = new JsonEachFunction("JSON_EACH_BOOLEAN", SqlTypeName.BOOLEAN);
+        static final JsonEachFunction DATE = new JsonEachFunction("JSON_EACH_DATE", SqlTypeName.DATE);
+        static final JsonEachFunction TIME = new JsonEachFunction("JSON_EACH_TIME", SqlTypeName.TIME);
+        static final JsonEachFunction TIMESTAMP = new JsonEachFunction("JSON_EACH_TIMESTAMP", SqlTypeName.TIMESTAMP);
+
+        private JsonEachFunction(String name, SqlTypeName valueTypeName) {
+            super(name,
+                    opBinding -> mapReturnType(opBinding, valueTypeName),
+                    OperandTypes.VARIANT,
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION,
+                    "json#json_each", FunctionDocumentation.NO_FILE);
+        }
+
+        /** MAP&lt;VARCHAR, valueTypeName&gt; with nullable values;
+         * the map itself is nullable iff the argument is. */
+        private static RelDataType mapReturnType(SqlOperatorBinding opBinding, SqlTypeName valueTypeName) {
+            RelDataTypeFactory typeFactory = opBinding.getTypeFactory();
+            RelDataType keyType = typeFactory.createSqlType(SqlTypeName.VARCHAR);
+            RelDataType valueType = typeFactory.createTypeWithNullability(
+                    typeFactory.createSqlType(valueTypeName), true);
+            RelDataType mapType = typeFactory.createMapType(keyType, valueType);
+            return typeFactory.createTypeWithNullability(
+                    mapType, opBinding.getOperandType(0).isNullable());
+        }
+    }
+
+    /** Functions returning the keys of a variant object as ARRAY&lt;VARCHAR&gt;.
+     * A variant that does not hold an object produces an empty array. */
+    static class JsonKeysFunction extends NonOptimizedFunction {
+        static final JsonKeysFunction OBJECT_KEYS =
+                new JsonKeysFunction("JSON_OBJECT_KEYS", "json#json_object_keys");
+        static final JsonKeysFunction KEYS =
+                new JsonKeysFunction("JSON_KEYS", "json#json_keys");
+
+        private JsonKeysFunction(String name, String documentation) {
+            super(name,
+                    JsonKeysFunction::arrayReturnType,
+                    OperandTypes.VARIANT,
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION,
+                    documentation, FunctionDocumentation.NO_FILE);
+        }
+
+        /** ARRAY&lt;VARCHAR&gt; with non-null elements;
+         * the array itself is nullable iff the argument is. */
+        private static RelDataType arrayReturnType(SqlOperatorBinding opBinding) {
+            RelDataTypeFactory typeFactory = opBinding.getTypeFactory();
+            RelDataType elementType = typeFactory.createSqlType(SqlTypeName.VARCHAR);
+            RelDataType arrayType = typeFactory.createArrayType(elementType, -1);
+            return typeFactory.createTypeWithNullability(
+                    arrayType, opBinding.getOperandType(0).isNullable());
+        }
+    }
+
+    static class VariantMergeFunction extends NonOptimizedFunction {
+        static final VariantMergeFunction INSTANCE = new VariantMergeFunction();
+
+        private VariantMergeFunction() {
+            super("VARIANT_MERGE",
+                    ReturnTypes.VARIANT.andThen(SqlTypeTransforms.TO_NULLABLE),
+                    OperandTypes.sequence("VARIANT_MERGE(<VARIANT>, <VARIANT>)",
+                            OperandTypes.VARIANT, OperandTypes.VARIANT),
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION,
+                    "json#variant_merge", FunctionDocumentation.NO_FILE);
         }
     }
 
