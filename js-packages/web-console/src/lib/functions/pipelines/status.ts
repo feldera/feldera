@@ -245,7 +245,7 @@ export const isMetricsAvailable = (status: PipelineStatus) => {
     .with('Running', () => 'yes')
     .with('Pausing', () => 'yes')
     .with('Resuming', () => 'yes')
-    .with('Stopping', () => 'no')
+    .with('Stopping', () => 'yes')
     .with(
       { Queued: P.any },
       { CompilingSql: P.any },
