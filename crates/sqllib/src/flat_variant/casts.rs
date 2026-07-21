@@ -1,13 +1,11 @@
-//! The `FV` runtime function grid for [`FlatVariant`]: casts, indexing, and the
-//! JSON functions the SQL compiler emits when the flat_variant mode is on.
+//! The `FV` cast grid for [`FlatVariant`]: the cast functions the SQL
+//! compiler emits when the flat_variant mode is on.
 //!
-//! Everything here runs natively on the flat encoding; no enum `Variant` is
-//! built on any path. Reads go through `FVRef`, a zero-allocation borrowed
-//! view whose match arms mirror the enum implementations in `variant.rs` and
-//! `casts.rs` one to one, so conversion semantics (string fallbacks, numeric
-//! coercion, error text) stay aligned by construction; writes go through
-//! [`EncodeFV`], which appends `[tag][payload]` bytes directly. The in-crate
-//! differential tests and the compiler's variant test suites pin the parity.
+//! Everything here runs natively on the flat encoding. Reads go through
+//! `FVRef`, a zero-allocation borrowed view over one encoded value; writes
+//! go through [`EncodeFV`], which appends `[tag][payload]` bytes directly.
+//! The in-crate differential tests and the compiler's variant test suites
+//! pin the conversion semantics (string fallbacks, numeric coercion).
 
 use std::error::Error;
 use std::ops::Range;
@@ -16,23 +14,18 @@ use dbsp::algebra::{F32, F64};
 use feldera_fxp::DynamicDecimal;
 
 use crate::casts::*;
-use crate::error::{SqlResult, SqlRuntimeError};
+use crate::error::{SqlResult, SqlRuntimeError, r2o};
 use crate::flat_variant::{
     Container, FlatVariant, TAG_ARRAY, TAG_BIGINT, TAG_BINARY, TAG_BOOLEAN, TAG_DATE, TAG_DECIMAL,
     TAG_DOUBLE, TAG_GEOMETRY, TAG_INT, TAG_LONG_INTERVAL, TAG_MAP, TAG_REAL, TAG_SHORT_INTERVAL,
     TAG_SMALLINT, TAG_SQL_NULL, TAG_STRING, TAG_TIME, TAG_TIMESTAMP, TAG_TIMESTAMP_TZ, TAG_TINYINT,
     TAG_UBIGINT, TAG_UINT, TAG_USMALLINT, TAG_UTINYINT, TAG_UUID, TAG_VARIANT_NULL, Writer,
-    sort_map_entries,
+    payload_array, sort_map_entries,
 };
 use crate::{
     Array, ByteArray, Date, GeoPoint, LongInterval, Map, ShortInterval, SqlDecimal, SqlString,
     Time, Timestamp, TimestampTz, Uuid, to_hex_,
 };
-
-/// `Ok(t)` to `Ok(Some(t))`, like `r2o` in casts.rs.
-fn r2o<T, E>(result: Result<T, E>) -> Result<Option<T>, E> {
-    result.map(Some)
-}
 
 // Borrowed view over one encoded value
 
@@ -78,47 +71,44 @@ pub(crate) fn view(bytes: &[u8]) -> FVRef<'_> {
         TAG_VARIANT_NULL => FVRef::VariantNull,
         TAG_BOOLEAN => FVRef::Boolean(p[0] != 0),
         TAG_TINYINT => FVRef::TinyInt(p[0] as i8),
-        TAG_SMALLINT => FVRef::SmallInt(i16::from_le_bytes(p.try_into().unwrap())),
-        TAG_INT => FVRef::Int(i32::from_le_bytes(p.try_into().unwrap())),
-        TAG_BIGINT => FVRef::BigInt(i64::from_le_bytes(p.try_into().unwrap())),
+        TAG_SMALLINT => FVRef::SmallInt(i16::from_le_bytes(payload_array(p))),
+        TAG_INT => FVRef::Int(i32::from_le_bytes(payload_array(p))),
+        TAG_BIGINT => FVRef::BigInt(i64::from_le_bytes(payload_array(p))),
         TAG_UTINYINT => FVRef::UTinyInt(p[0]),
-        TAG_USMALLINT => FVRef::USmallInt(u16::from_le_bytes(p.try_into().unwrap())),
-        TAG_UINT => FVRef::UInt(u32::from_le_bytes(p.try_into().unwrap())),
-        TAG_UBIGINT => FVRef::UBigInt(u64::from_le_bytes(p.try_into().unwrap())),
-        TAG_REAL => FVRef::Real(F32::new(f32::from_le_bytes(p.try_into().unwrap()))),
-        TAG_DOUBLE => FVRef::Double(F64::new(f64::from_le_bytes(p.try_into().unwrap()))),
-        TAG_DECIMAL => FVRef::Decimal(i128::from_le_bytes(p[..16].try_into().unwrap()), p[16]),
+        TAG_USMALLINT => FVRef::USmallInt(u16::from_le_bytes(payload_array(p))),
+        TAG_UINT => FVRef::UInt(u32::from_le_bytes(payload_array(p))),
+        TAG_UBIGINT => FVRef::UBigInt(u64::from_le_bytes(payload_array(p))),
+        TAG_REAL => FVRef::Real(F32::new(f32::from_le_bytes(payload_array(p)))),
+        TAG_DOUBLE => FVRef::Double(F64::new(f64::from_le_bytes(payload_array(p)))),
+        TAG_DECIMAL => FVRef::Decimal(i128::from_le_bytes(payload_array(&p[..16])), p[16]),
         TAG_STRING => FVRef::String(std::str::from_utf8(p).expect("encoded string is UTF-8")),
-        TAG_DATE => FVRef::Date(Date::from_days(i32::from_le_bytes(p.try_into().unwrap()))),
-        TAG_TIME => FVRef::Time(Time::from_nanoseconds(u64::from_le_bytes(
-            p.try_into().unwrap(),
-        ))),
+        TAG_DATE => FVRef::Date(Date::from_days(i32::from_le_bytes(payload_array(p)))),
+        TAG_TIME => FVRef::Time(Time::from_nanoseconds(u64::from_le_bytes(payload_array(p)))),
         TAG_TIMESTAMP => FVRef::Timestamp(Timestamp::from_microseconds(i64::from_le_bytes(
-            p.try_into().unwrap(),
+            payload_array(p),
         ))),
         TAG_TIMESTAMP_TZ => FVRef::TimestampTz(TimestampTz::from_microseconds(i64::from_le_bytes(
-            p.try_into().unwrap(),
+            payload_array(p),
         ))),
         TAG_SHORT_INTERVAL => FVRef::ShortInterval(ShortInterval::from_microseconds(
-            i64::from_le_bytes(p.try_into().unwrap()),
+            i64::from_le_bytes(payload_array(p)),
         )),
         TAG_LONG_INTERVAL => FVRef::LongInterval(LongInterval::from_months(i32::from_le_bytes(
-            p.try_into().unwrap(),
+            payload_array(p),
         ))),
         TAG_BINARY => FVRef::Binary(p),
         TAG_GEOMETRY => FVRef::Geometry(GeoPoint::new(
-            f64::from_le_bytes(p[..8].try_into().unwrap()),
-            f64::from_le_bytes(p[8..].try_into().unwrap()),
+            f64::from_le_bytes(payload_array(&p[..8])),
+            f64::from_le_bytes(payload_array(&p[8..])),
         )),
-        TAG_UUID => FVRef::Uuid(Uuid::from_bytes(p.try_into().unwrap())),
+        TAG_UUID => FVRef::Uuid(Uuid::from_bytes(payload_array(p))),
         TAG_ARRAY => FVRef::Array,
         TAG_MAP => FVRef::Map,
         tag => unreachable!("invalid tag {tag}"),
     }
 }
 
-/// The SQL type name of an encoded value; mirrors
-/// `Variant::get_type_string`.
+/// The SQL type name of an encoded value, as reported by TYPEOF.
 pub(crate) fn type_string(bytes: &[u8]) -> &'static str {
     match bytes[0] {
         TAG_SQL_NULL => "NULL",
@@ -161,23 +151,21 @@ fn cannot_convert(bytes: &[u8], to: &str) -> Box<SqlRuntimeError> {
 
 // Encoding: native value -> flat bytes
 
-/// Appends one complete encoded value to the writer. The counterpart of the
-/// enum's `From<T> for Variant`.
+/// A value that can be encoded as a VARIANT.
 ///
 /// Public because it bounds the public container-cast functions; not part of
 /// the supported API.
 #[doc(hidden)]
 pub trait EncodeFV {
+    /// Appends this value's complete encoding to the writer and returns the
+    /// range it occupies there.
     fn encode(&self, w: &mut Writer) -> Range<usize>;
 }
 
-/// Build a right-sized document from one encodable value.
+/// Build a document from one encodable value; the document's buffer holds
+/// exactly the encoded bytes, with no spare capacity.
 pub(crate) fn encode_document<T: EncodeFV + ?Sized>(value: &T) -> FlatVariant {
-    let mut w = Writer {
-        out: Vec::with_capacity(64),
-    };
-    let range = value.encode(&mut w);
-    FlatVariant::from_bytes(&w.out[range])
+    crate::flat_variant::build_document_infallible(|w| value.encode(w))
 }
 
 macro_rules! encode_le {
@@ -229,7 +217,7 @@ pub(crate) fn decimal_payload(significand: i128, scale: u8) -> [u8; 17] {
 
 impl<const P: usize, const S: usize> EncodeFV for SqlDecimal<P, S> {
     fn encode(&self, w: &mut Writer) -> Range<usize> {
-        // Mirrors From<SqlDecimal<P, S>> for Variant: through DynamicDecimal.
+        // Through DynamicDecimal, which drops the compile-time precision.
         let dd = DynamicDecimal::from(*self);
         w.scalar(
             TAG_DECIMAL,
@@ -307,7 +295,7 @@ impl EncodeFV for FlatVariant {
     }
 }
 
-/// None encodes as SqlNull, mirroring `From<Option<T>> for Variant`.
+/// None encodes as SqlNull.
 impl<T: EncodeFV> EncodeFV for Option<T> {
     fn encode(&self, w: &mut Writer) -> Range<usize> {
         match self {
@@ -319,19 +307,23 @@ impl<T: EncodeFV> EncodeFV for Option<T> {
 
 impl<T: EncodeFV> EncodeFV for Array<T> {
     fn encode(&self, w: &mut Writer) -> Range<usize> {
-        let children: Vec<Range<usize>> = self.iter().map(|item| item.encode(w)).collect();
-        w.array(&children)
+        w.array_in_place(self.len(), |w, i| {
+            self[i].encode(w);
+        })
     }
 }
 
 impl<K: EncodeFV, V: EncodeFV> EncodeFV for Map<K, V> {
     fn encode(&self, w: &mut Writer) -> Range<usize> {
+        // Unlike arrays, maps cannot be encoded in place: K's Rust order
+        // need not match the canonical encoded order (a decimal key's
+        // encoding depends on its scale), so the entries are sorted after
+        // encoding. Key encodings are injective, so entries from a
+        // well-formed map never collapse.
         let mut entries: Vec<(Range<usize>, Range<usize>)> = self
             .iter()
             .map(|(k, v)| (k.encode(w), v.encode(w)))
             .collect();
-        // Key encodings are injective, so entries from a well-formed map
-        // never collapse; sorting matches the canonical key order.
         sort_map_entries(&w.out, &mut entries);
         w.map(&entries)
     }
@@ -339,9 +331,9 @@ impl<K: EncodeFV, V: EncodeFV> EncodeFV for Map<K, V> {
 
 // Decoding: flat bytes -> native value (container element semantics)
 
-/// Converts one encoded value to a native value, mirroring the enum's
-/// `TryFrom<Variant>` impls arm for arm (`into!`, `into_numeric!`, and the
-/// manual SqlString/SqlDecimal/Array/Map impls in variant.rs).
+/// Converts one encoded value to a native value, applying the VARIANT cast
+/// semantics: exact type matches succeed, strings parse, numeric types
+/// coerce with range checks, and anything else is an error.
 ///
 /// Public because it bounds the public container-cast functions; not part of
 /// the supported API.
@@ -440,7 +432,7 @@ decode_numeric!(u64, u64, "BIGINT UNSIGNED");
 decode_numeric!(F32, f, "REAL");
 decode_numeric!(F64, d, "DOUBLE");
 
-/// Mirrors `TryFrom<Variant> for SqlString` (variant.rs): renders scalars.
+/// Renders any scalar as its SQL string form; containers are an error.
 impl DecodeFV for SqlString {
     fn decode(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
         Ok(match view(bytes) {
@@ -479,7 +471,7 @@ impl DecodeFV for SqlString {
     }
 }
 
-/// Mirrors `TryFrom<Variant> for SqlDecimal<P, S>` (variant.rs:850-899).
+/// Numeric coercion into a decimal with the target's precision and scale.
 impl<const P: usize, const S: usize> DecodeFV for SqlDecimal<P, S> {
     fn decode(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
         match cast_to_SqlDecimalN_FV::<P, S>(FlatVariant::from_bytes(bytes))? {
@@ -572,8 +564,8 @@ macro_rules! cast_to_flat_variant {
     };
 }
 
-/// From-variant casts, mirroring `cast_from_variant!`: exact tag, string
-/// fallback, else None.
+/// From-variant casts: exact tag matches succeed, strings parse, anything
+/// else is NULL.
 macro_rules! cast_from_flat_variant {
     ($name: ident, $type: ty, $pattern:pat => $value:expr) => {
         ::paste::paste! {
@@ -599,7 +591,8 @@ macro_rules! cast_from_flat_variant {
     };
 }
 
-/// From-variant numeric casts, mirroring `cast_from_variant_numeric!`.
+/// From-variant numeric casts: every numeric tag coerces with range
+/// checks, strings parse, anything else is NULL.
 macro_rules! cast_from_flat_variant_numeric {
     ($name: ident, $type: ty) => {
         ::paste::paste! {
@@ -705,8 +698,8 @@ cast_flat_variant_interval!(LongInterval_YEARS_TO_MONTHS, LongInterval, LongInte
 cast_flat_variant_interval!(LongInterval_MONTHS, LongInterval, LongInterval);
 cast_flat_variant_interval!(LongInterval_YEARS, LongInterval, LongInterval);
 
-// String and binary from-variant casts carry size arguments; they mirror
-// cast_to_s_V / cast_to_bytes_V in casts.rs.
+// Like every cast producing CHAR/VARCHAR/BINARY, the string and binary
+// from-variant casts carry the target type's size and fixedness arguments.
 
 #[doc(hidden)]
 pub fn cast_to_s_FV(value: FlatVariant, size: i32, fixed: bool) -> SqlResult<SqlString> {
@@ -790,7 +783,7 @@ pub fn cast_to_bytesN_FVN(
     }
 }
 
-/// Mirrors cast_to_SqlDecimalN_V (casts.rs) arm for arm.
+/// Numeric coercion into a decimal; non-numeric variants become NULL.
 #[doc(hidden)]
 pub fn cast_to_SqlDecimalN_FV<const P: usize, const S: usize>(
     value: FlatVariant,
@@ -958,97 +951,3 @@ pub fn cast_to_mapN_FVN<K: DecodeFV + Ord, V: DecodeFV>(
         Some(value) => cast_to_mapN_FV(value),
     }
 }
-
-// Indexing (VARIANT_INDEX opcode), native on the flat encoding
-
-// Return type is always Option<FlatVariant>, matching the indexV grid.
-#[doc(hidden)]
-pub fn indexFV__<T>(value: &FlatVariant, index: T) -> Option<FlatVariant>
-where
-    T: Into<FlatVariant>,
-{
-    value.index(&index.into())
-}
-
-#[doc(hidden)]
-pub fn indexFV_N<T>(value: &FlatVariant, index: Option<T>) -> Option<FlatVariant>
-where
-    T: Into<FlatVariant>,
-{
-    let index = index?;
-    indexFV__(value, index)
-}
-
-#[doc(hidden)]
-pub fn indexFVN_<T>(value: &Option<FlatVariant>, index: T) -> Option<FlatVariant>
-where
-    T: Into<FlatVariant>,
-{
-    match value {
-        None => None,
-        Some(value) => indexFV__(value, index),
-    }
-}
-
-#[doc(hidden)]
-pub fn indexFVNN<T>(value: &Option<FlatVariant>, index: Option<T>) -> Option<FlatVariant>
-where
-    T: Into<FlatVariant>,
-{
-    match value {
-        None => None,
-        Some(value) => indexFV_N(value, index),
-    }
-}
-
-// JSON functions and TYPEOF
-
-#[doc(hidden)]
-pub fn parse_json_fv_s(value: SqlString) -> FlatVariant {
-    serde_json::from_str::<FlatVariant>(value.str()).unwrap_or_default()
-}
-
-#[doc(hidden)]
-pub fn parse_json_fv_sN(value: Option<SqlString>) -> Option<FlatVariant> {
-    value.map(parse_json_fv_s)
-}
-
-#[doc(hidden)]
-pub fn parse_json_fv_nullN(_value: Option<()>) -> Option<FlatVariant> {
-    None
-}
-
-#[doc(hidden)]
-pub fn to_json_FV(value: FlatVariant) -> Option<SqlString> {
-    match value.to_json_string() {
-        Ok(s) => Some(SqlString::from(s)),
-        _ => None,
-    }
-}
-
-#[doc(hidden)]
-pub fn to_json_FVN(value: Option<FlatVariant>) -> Option<SqlString> {
-    value.and_then(to_json_FV)
-}
-
-#[doc(hidden)]
-pub fn typeof_fv_(value: FlatVariant) -> SqlString {
-    SqlString::from_ref(type_string(value.as_bytes()))
-}
-
-#[doc(hidden)]
-pub fn typeof_fvN(value: Option<FlatVariant>) -> SqlString {
-    match value {
-        None => SqlString::from_ref("NULL"),
-        Some(value) => typeof_fv_(value),
-    }
-}
-
-#[doc(hidden)]
-pub fn variantnull_fv() -> FlatVariant {
-    FlatVariant::variant_null()
-}
-
-// No from_json_string2: the compiler emits `from_json_string` (variant.rs)
-// in both variant modes; its AUX type parameter is generic on every
-// implementing type, so FlatVariant programs use it unchanged.

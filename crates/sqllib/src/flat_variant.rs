@@ -4,8 +4,9 @@
 //! are ranges into the shared buffer. Compared to [`crate::variant::Variant`]
 //! (a recursive enum over `Arc<BTreeMap>`/`Arc<Vec>`), building a value from
 //! JSON is a linear buffer write, rkyv serialization is one bulk write,
-//! deserialization is one allocation plus a memcpy, drop is a single dealloc,
-//! and equality is usually a memcmp.
+//! deserialization is one allocation plus a memcpy, drop is a single
+//! dealloc, and, because the encoding is canonical (map keys are stored
+//! sorted), equality is a memcmp except through float payloads.
 //!
 //! Programs opt in with `SET feldera_flat_variant = 'on'` (or globally with the
 //! `FELDERA_FLAT_VARIANT` environment variable), which makes the SQL compiler
@@ -25,9 +26,9 @@
 //! bytes (length implied by the value extent). Containers:
 //!
 //! ```text
-//! Array:  [count: u32][end_i: u32 x count][child bytes x count]
+//! Array:  [count: u32][end_i: u32 x count][children's encodings, concatenated]
 //! Map:    [count: u32][key_end_i: u32 x count][val_end_i: u32 x count]
-//!         [key bytes x count][val bytes x count]
+//!         [keys' encodings, concatenated][values' encodings, concatenated]
 //! ```
 //!
 //! `end_i` is the cumulative END of element i relative to the start of its
@@ -42,6 +43,7 @@
 
 #[doc(hidden)]
 pub mod casts;
+pub mod functions;
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -70,7 +72,10 @@ use crate::{
     ByteArray, Date, LongInterval, ShortInterval, SqlString, Time, Timestamp, TimestampTz, Uuid,
 };
 
-// Tags equal the Variant enum discriminants (variant.rs declaration order).
+// The numeric tag order defines the type rank used by Ord and the sorted
+// map-key order, and it matches the Variant enum's discriminant order so
+// the two representations sort identically. Reordering or renumbering tags
+// changes the persisted encoding.
 pub(crate) const TAG_SQL_NULL: u8 = 0;
 pub(crate) const TAG_VARIANT_NULL: u8 = 1;
 pub(crate) const TAG_BOOLEAN: u8 = 2;
@@ -102,7 +107,8 @@ pub(crate) const TAG_TIMESTAMP_TZ: u8 = 25;
 
 /// A SQL VARIANT value stored as one flat, canonically encoded byte buffer.
 ///
-/// Cloning bumps a refcount; sub-value access (`index`, `index_string`)
+/// Cloning bumps a refcount; sub-value access (`index_from_one`,
+/// `index_string`)
 /// returns views into the shared buffer without copying the subtree.
 ///
 /// # Examples
@@ -133,7 +139,7 @@ impl FlatVariant {
         FlatVariant {
             buf: Arc::from(bytes),
             start: 0,
-            len: bytes.len() as u32,
+            len: bytes.len().try_into().expect("no more than 4 GB of data"),
         }
     }
 
@@ -145,6 +151,9 @@ impl FlatVariant {
     /// A sub-value sharing this value's buffer; `range` is relative to
     /// `self.as_bytes()`.
     fn subvalue(&self, range: Range<usize>) -> FlatVariant {
+        debug_assert!(range.start < self.len as usize);
+        debug_assert!(range.end <= self.len as usize);
+        debug_assert!(range.end > range.start);
         FlatVariant {
             buf: self.buf.clone(),
             start: self.start + range.start as u32,
@@ -164,7 +173,7 @@ impl FlatVariant {
     /// ```
     pub fn sql_null() -> FlatVariant {
         static NULL: OnceLock<Arc<[u8]>> = OnceLock::new();
-        let buf = NULL.get_or_init(|| Arc::from(&[TAG_SQL_NULL][..])).clone();
+        let buf = NULL.get_or_init(|| Arc::from([TAG_SQL_NULL])).clone();
         FlatVariant {
             buf,
             start: 0,
@@ -187,9 +196,7 @@ impl FlatVariant {
     /// ```
     pub fn variant_null() -> FlatVariant {
         static NULL: OnceLock<Arc<[u8]>> = OnceLock::new();
-        let buf = NULL
-            .get_or_init(|| Arc::from(&[TAG_VARIANT_NULL][..]))
-            .clone();
+        let buf = NULL.get_or_init(|| Arc::from([TAG_VARIANT_NULL])).clone();
         FlatVariant {
             buf,
             start: 0,
@@ -216,17 +223,14 @@ impl FlatVariant {
             return FlatVariant::sql_null();
         }
         let key = index.as_ref();
-        let mut probe = Vec::with_capacity(1 + key.len());
-        probe.push(TAG_STRING);
-        probe.extend_from_slice(key.as_bytes());
-        match self.find_key(&probe) {
+        match self.find_key_by(|encoded| cmp_with_string_key(encoded, key)) {
             Some(i) => self.subvalue(Container::new(bytes).map_value(i)),
             None => FlatVariant::sql_null(),
         }
     }
 
-    /// Same semantics as `Variant::index`: 1-based array indexing with
-    /// numeric key coercion, map lookup by exact key, None otherwise.
+    /// VARIANT indexing: 1-based array access with numeric key coercion,
+    /// map lookup by exact key, None otherwise.
     ///
     /// # Examples
     ///
@@ -235,10 +239,10 @@ impl FlatVariant {
     ///
     /// let arr: FlatVariant = serde_json::from_str("[10, 20, 30]").unwrap();
     /// // SQL array indexes start at 1.
-    /// assert_eq!(arr.index(&FlatVariant::from(1i32)), Some(FlatVariant::from(10u64)));
-    /// assert_eq!(arr.index(&FlatVariant::from(9i32)), None);
+    /// assert_eq!(arr.index_from_one(&FlatVariant::from(1i32)), Some(FlatVariant::from(10u64)));
+    /// assert_eq!(arr.index_from_one(&FlatVariant::from(9i32)), None);
     /// ```
-    pub fn index(&self, index: &FlatVariant) -> Option<FlatVariant> {
+    pub fn index_from_one(&self, index: &FlatVariant) -> Option<FlatVariant> {
         let bytes = self.as_bytes();
         match bytes[0] {
             TAG_ARRAY => {
@@ -257,13 +261,19 @@ impl FlatVariant {
 
     /// Binary search the sorted key area of a map for an encoded key.
     fn find_key(&self, probe: &[u8]) -> Option<usize> {
+        self.find_key_by(|encoded| cmp_values(encoded, probe))
+    }
+
+    /// Binary search the sorted key area of a map with `cmp`, which compares
+    /// an encoded key against the probe.
+    fn find_key_by(&self, cmp: impl Fn(&[u8]) -> Ordering) -> Option<usize> {
         let bytes = self.as_bytes();
         let c = Container::new(bytes);
         let mut lo = 0usize;
         let mut hi = c.count;
         while lo < hi {
             let mid = (lo + hi) / 2;
-            match cmp_values(&bytes[c.element(mid)], probe) {
+            match cmp(&bytes[c.element(mid)]) {
                 Ordering::Less => lo = mid + 1,
                 Ordering::Greater => hi = mid,
                 Ordering::Equal => return Some(mid),
@@ -278,13 +288,13 @@ impl FlatVariant {
         let p = &b[1..];
         Some(match b[0] {
             TAG_TINYINT => (p[0] as i8) as isize,
-            TAG_SMALLINT => i16::from_le_bytes(p.try_into().unwrap()) as isize,
-            TAG_INT => i32::from_le_bytes(p.try_into().unwrap()) as isize,
-            TAG_BIGINT => i64::from_le_bytes(p.try_into().unwrap()) as isize,
+            TAG_SMALLINT => i16::from_le_bytes(payload_array(p)) as isize,
+            TAG_INT => i32::from_le_bytes(payload_array(p)) as isize,
+            TAG_BIGINT => i64::from_le_bytes(payload_array(p)) as isize,
             TAG_UTINYINT => p[0] as isize,
-            TAG_USMALLINT => u16::from_le_bytes(p.try_into().unwrap()) as isize,
-            TAG_UINT => u32::from_le_bytes(p.try_into().unwrap()) as isize,
-            TAG_UBIGINT => isize::try_from(u64::from_le_bytes(p.try_into().unwrap())).ok()?,
+            TAG_USMALLINT => u16::from_le_bytes(payload_array(p)) as isize,
+            TAG_UINT => u32::from_le_bytes(payload_array(p)) as isize,
+            TAG_UBIGINT => isize::try_from(u64::from_le_bytes(payload_array(p))).ok()?,
             _ => return None,
         })
     }
@@ -345,13 +355,17 @@ impl fmt::Debug for FlatVariant {
 
 impl SizeOf for FlatVariant {
     fn size_of_children(&self, context: &mut size_of::Context) {
-        // The whole document buffer, shared by all sub-values holding it.
-        context.add(self.buf.len());
+        // The Arc impl deduplicates by pointer, so sub-values sharing one
+        // document buffer count it once per context.
+        self.buf.size_of_children(context);
     }
 }
 
 // Container access
 
+/// Read access to one encoded array or map: the child count, the range of
+/// each element or key, and the range of each map value, all resolved
+/// through the end-offset tables in O(1) per child.
 pub(crate) struct Container<'a> {
     body: &'a [u8],
     pub(crate) count: usize,
@@ -360,7 +374,7 @@ pub(crate) struct Container<'a> {
 
 #[inline]
 fn read_u32(bytes: &[u8], at: usize) -> u32 {
-    u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
+    u32::from_le_bytes(payload_array(&bytes[at..at + 4]))
 }
 
 impl<'a> Container<'a> {
@@ -419,17 +433,28 @@ impl<'a> Container<'a> {
 
 #[inline]
 fn f32_at(b: &[u8], at: usize) -> F32 {
-    F32::new(f32::from_le_bytes(b[at..at + 4].try_into().unwrap()))
+    F32::new(f32::from_le_bytes(payload_array(&b[at..at + 4])))
 }
 
 #[inline]
 fn f64_at(b: &[u8], at: usize) -> F64 {
-    F64::new(f64::from_le_bytes(b[at..at + 8].try_into().unwrap()))
+    F64::new(f64::from_le_bytes(payload_array(&b[at..at + 8])))
 }
 
-/// Total order over two complete encoded values; matches the derived Ord of
-/// the `Variant` enum exactly, including the lexicographic (i128, u8) order
-/// of SqlDecimal and the F32/F64 total order.
+/// `cmp_values` against a string key without materializing the key's
+/// encoding: tag rank first, then payload bytes (str Ord is bytewise).
+fn cmp_with_string_key(encoded: &[u8], key: &str) -> Ordering {
+    match encoded[0].cmp(&TAG_STRING) {
+        Ordering::Equal => encoded[1..].cmp(key.as_bytes()),
+        rank => rank,
+    }
+}
+
+/// Total order over two complete encoded values: tag rank first, then
+/// payload. This is the storage order backing Ord, sorted map keys, and
+/// map lookup, not SQL comparison semantics: decimals order
+/// lexicographically by (significand, scale) rather than numerically, and
+/// floats use the F32/F64 total order.
 pub(crate) fn cmp_values(a: &[u8], b: &[u8]) -> Ordering {
     let (ta, tb) = (a[0], b[0]);
     if ta != tb {
@@ -439,27 +464,31 @@ pub(crate) fn cmp_values(a: &[u8], b: &[u8]) -> Ordering {
     match ta {
         TAG_SQL_NULL | TAG_VARIANT_NULL => Ordering::Equal,
         TAG_TINYINT => (pa[0] as i8).cmp(&(pb[0] as i8)),
-        TAG_SMALLINT => i16::from_le_bytes(pa.try_into().unwrap())
-            .cmp(&i16::from_le_bytes(pb.try_into().unwrap())),
-        TAG_INT | TAG_DATE | TAG_LONG_INTERVAL => i32::from_le_bytes(pa.try_into().unwrap())
-            .cmp(&i32::from_le_bytes(pb.try_into().unwrap())),
+        TAG_SMALLINT => {
+            i16::from_le_bytes(payload_array(pa)).cmp(&i16::from_le_bytes(payload_array(pb)))
+        }
+        TAG_INT | TAG_DATE | TAG_LONG_INTERVAL => {
+            i32::from_le_bytes(payload_array(pa)).cmp(&i32::from_le_bytes(payload_array(pb)))
+        }
         TAG_BIGINT | TAG_TIMESTAMP | TAG_SHORT_INTERVAL | TAG_TIMESTAMP_TZ => {
-            i64::from_le_bytes(pa.try_into().unwrap())
-                .cmp(&i64::from_le_bytes(pb.try_into().unwrap()))
+            i64::from_le_bytes(payload_array(pa)).cmp(&i64::from_le_bytes(payload_array(pb)))
         }
         TAG_BOOLEAN | TAG_UTINYINT => pa[0].cmp(&pb[0]),
-        TAG_USMALLINT => u16::from_le_bytes(pa.try_into().unwrap())
-            .cmp(&u16::from_le_bytes(pb.try_into().unwrap())),
-        TAG_UINT => u32::from_le_bytes(pa.try_into().unwrap())
-            .cmp(&u32::from_le_bytes(pb.try_into().unwrap())),
-        TAG_UBIGINT | TAG_TIME => u64::from_le_bytes(pa.try_into().unwrap())
-            .cmp(&u64::from_le_bytes(pb.try_into().unwrap())),
+        TAG_USMALLINT => {
+            u16::from_le_bytes(payload_array(pa)).cmp(&u16::from_le_bytes(payload_array(pb)))
+        }
+        TAG_UINT => {
+            u32::from_le_bytes(payload_array(pa)).cmp(&u32::from_le_bytes(payload_array(pb)))
+        }
+        TAG_UBIGINT | TAG_TIME => {
+            u64::from_le_bytes(payload_array(pa)).cmp(&u64::from_le_bytes(payload_array(pb)))
+        }
         TAG_REAL => f32_at(pa, 0).cmp(&f32_at(pb, 0)),
         TAG_DOUBLE => f64_at(pa, 0).cmp(&f64_at(pb, 0)),
         TAG_GEOMETRY => (f64_at(pa, 0), f64_at(pa, 8)).cmp(&(f64_at(pb, 0), f64_at(pb, 8))),
         TAG_DECIMAL => {
-            let da = i128::from_le_bytes(pa[..16].try_into().unwrap());
-            let db = i128::from_le_bytes(pb[..16].try_into().unwrap());
+            let da = i128::from_le_bytes(payload_array(&pa[..16]));
+            let db = i128::from_le_bytes(payload_array(&pb[..16]));
             (da, pa[16]).cmp(&(db, pb[16]))
         }
         // str Ord and SmallVec<u8> Ord are both bytewise; Uuid stores
@@ -495,9 +524,12 @@ pub(crate) fn cmp_values(a: &[u8], b: &[u8]) -> Ordering {
     }
 }
 
-/// Equality with a byte-compare fast path; falls back to the structural walk
-/// because float payloads can compare equal across different bit patterns.
+/// Equality of two complete encoded values.
 fn eq_values(a: &[u8], b: &[u8]) -> bool {
+    // The encoding is canonical, so equal bytes mean equal values. The
+    // reverse fails only through float payloads (negative zero and NaN
+    // compare equal across different bit patterns), hence the structural
+    // fallback.
     a == b || cmp_values(a, b).is_eq()
 }
 
@@ -536,16 +568,62 @@ fn hash_value<H: Hasher>(value: &[u8], state: &mut H) {
 
 // Writer
 
-/// Appends encoded values to a scratch buffer. Children are encoded first,
-/// each as a complete value somewhere in the scratch; containers are then
-/// assembled after their children with `extend_from_within`, so bytes are
-/// copied O(depth) times and nothing is allocated per node.
+/// Appends encoded values to a scratch buffer.
+///
+/// A container whose child count is known upfront is encoded in place:
+/// the header is reserved first and the end-offset tables are backpatched
+/// as the children land directly behind it (`array_in_place`,
+/// `begin_map_in_place`). When the count is unknown (serde without a size
+/// hint) or the entries need sorting, children are encoded first anywhere
+/// in the scratch and the container is assembled after them with
+/// `extend_from_within`, copying bytes O(depth) times.
 ///
 /// Public because it appears in `EncodeFV::encode`; not part of the
 /// supported API.
 #[doc(hidden)]
 pub struct Writer {
     pub(crate) out: Vec<u8>,
+}
+
+/// Checked conversion for every count and end offset written into a
+/// container's u32 tables; a wrap here would silently corrupt the encoding.
+#[inline]
+fn encoded_u32(value: usize) -> u32 {
+    value.try_into().expect("no more than 4 GB of data")
+}
+
+/// Fixed-width payload accessor: the tag determines the payload width, so
+/// the conversion cannot fail on a well-formed encoding.
+#[inline]
+pub(crate) fn payload_array<const N: usize>(payload: &[u8]) -> [u8; N] {
+    payload.try_into().expect("payload width matches the tag")
+}
+
+/// A reserved, zero-filled end-offset table inside a [`Writer`], backpatched
+/// one child at a time.
+pub(crate) struct EndTable {
+    /// Byte position of the table in the writer.
+    table: usize,
+    /// Byte position where this table's payload area starts; for a map's
+    /// value table this is only known after the keys, so it is set late.
+    payload_start: usize,
+    /// Index of the next child to record.
+    next: usize,
+}
+
+impl EndTable {
+    /// Record that the next child's encoding ends at the writer's current
+    /// position.
+    pub(crate) fn record_end(&mut self, w: &mut Writer) {
+        debug_assert!(
+            self.payload_start <= w.out.len(),
+            "value table used before begin_map_values"
+        );
+        let end = encoded_u32(w.out.len() - self.payload_start);
+        let slot = self.table + 4 * self.next;
+        w.out[slot..slot + 4].copy_from_slice(&end.to_le_bytes());
+        self.next += 1;
+    }
 }
 
 impl Writer {
@@ -565,16 +643,84 @@ impl Writer {
         start..self.out.len()
     }
 
+    /// Reserve a zero-filled end-offset table for `count` children.
+    fn reserve_table(&mut self, count: usize) -> usize {
+        let table = self.out.len();
+        self.out.resize(table + 4 * count, 0);
+        table
+    }
+
+    /// Encode an array of `count` children in place: `encode_child(w, i)`
+    /// appends the i-th child, and the end-offset table is backpatched as
+    /// the children land behind the header, with no copying.
+    pub(crate) fn array_in_place(
+        &mut self,
+        count: usize,
+        mut encode_child: impl FnMut(&mut Writer, usize),
+    ) -> Range<usize> {
+        let start = self.out.len();
+        self.out.push(TAG_ARRAY);
+        self.out
+            .extend_from_slice(&encoded_u32(count).to_le_bytes());
+        let table = self.reserve_table(count);
+        let mut ends = EndTable {
+            table,
+            payload_start: self.out.len(),
+            next: 0,
+        };
+        for i in 0..count {
+            encode_child(self, i);
+            ends.record_end(self);
+        }
+        start..self.out.len()
+    }
+
+    /// Encode a map of `count` entries in place. The caller encodes all keys
+    /// first, then all values, calling `record_end` after each; keys must
+    /// arrive sorted ascending by encoded key with no duplicates (the map
+    /// layout stores the key and value areas separately). Returns the two
+    /// end tables and the container's start.
+    pub(crate) fn begin_map_in_place(&mut self, count: usize) -> (usize, EndTable, EndTable) {
+        let start = self.out.len();
+        self.out.push(TAG_MAP);
+        self.out
+            .extend_from_slice(&encoded_u32(count).to_le_bytes());
+        let key_table = self.reserve_table(count);
+        let val_table = self.reserve_table(count);
+        let payload_start = self.out.len();
+        (
+            start,
+            EndTable {
+                table: key_table,
+                payload_start,
+                next: 0,
+            },
+            EndTable {
+                table: val_table,
+                // The value area starts after the keys; fixed up by
+                // `begin_map_values`.
+                payload_start: usize::MAX,
+                next: 0,
+            },
+        )
+    }
+
+    /// Mark the end of the key area of an in-place map: values encoded from
+    /// here on are recorded relative to the current position.
+    pub(crate) fn begin_map_values(&mut self, val_ends: &mut EndTable) {
+        val_ends.payload_start = self.out.len();
+    }
+
     /// Assemble an array from child value ranges within this writer.
     pub(crate) fn array(&mut self, children: &[Range<usize>]) -> Range<usize> {
         let start = self.out.len();
         self.out.push(TAG_ARRAY);
-        let count = children.len() as u32;
-        self.out.extend_from_slice(&count.to_le_bytes());
-        let mut end = 0u32;
+        self.out
+            .extend_from_slice(&encoded_u32(children.len()).to_le_bytes());
+        let mut end = 0usize;
         for r in children {
-            end += r.len() as u32;
-            self.out.extend_from_slice(&end.to_le_bytes());
+            end += r.len();
+            self.out.extend_from_slice(&encoded_u32(end).to_le_bytes());
         }
         for r in children {
             self.out.extend_from_within(r.clone());
@@ -587,17 +733,17 @@ impl Writer {
     pub(crate) fn map(&mut self, entries: &[(Range<usize>, Range<usize>)]) -> Range<usize> {
         let start = self.out.len();
         self.out.push(TAG_MAP);
-        let count = entries.len() as u32;
-        self.out.extend_from_slice(&count.to_le_bytes());
-        let mut end = 0u32;
+        self.out
+            .extend_from_slice(&encoded_u32(entries.len()).to_le_bytes());
+        let mut end = 0usize;
         for (k, _) in entries {
-            end += k.len() as u32;
-            self.out.extend_from_slice(&end.to_le_bytes());
+            end += k.len();
+            self.out.extend_from_slice(&encoded_u32(end).to_le_bytes());
         }
-        let mut end = 0u32;
+        let mut end = 0usize;
         for (_, v) in entries {
-            end += v.len() as u32;
-            self.out.extend_from_slice(&end.to_le_bytes());
+            end += v.len();
+            self.out.extend_from_slice(&encoded_u32(end).to_le_bytes());
         }
         for (k, _) in entries {
             self.out.extend_from_within(k.clone());
@@ -628,10 +774,6 @@ pub(crate) fn sort_map_entries(out: &[u8], entries: &mut Vec<(Range<usize>, Rang
 // Conversion from/to the enum Variant
 
 /// Encode one `Variant` into the writer; returns the value's range.
-///
-/// Panics on `Variant::Geometry`: `GeoPoint` exposes no accessors, JSON
-/// input can never produce it, and no cast from GEOMETRY to VARIANT exists
-/// for FlatVariant programs.
 fn encode_variant(w: &mut Writer, v: &Variant) -> Range<usize> {
     match v {
         Variant::SqlNull => w.scalar(TAG_SQL_NULL, &[]),
@@ -648,10 +790,7 @@ fn encode_variant(w: &mut Writer, v: &Variant) -> Range<usize> {
         Variant::Real(x) => w.scalar(TAG_REAL, &x.into_inner().to_le_bytes()),
         Variant::Double(x) => w.scalar(TAG_DOUBLE, &x.into_inner().to_le_bytes()),
         Variant::SqlDecimal((sig, scale)) => {
-            let mut payload = [0u8; 17];
-            payload[..16].copy_from_slice(&sig.to_le_bytes());
-            payload[16] = *scale;
-            w.scalar(TAG_DECIMAL, &payload)
+            w.scalar(TAG_DECIMAL, &casts::decimal_payload(*sig, *scale))
         }
         Variant::String(s) => w.scalar(TAG_STRING, s.str().as_bytes()),
         Variant::Date(d) => w.scalar(TAG_DATE, &d.days().to_le_bytes()),
@@ -668,30 +807,72 @@ fn encode_variant(w: &mut Writer, v: &Variant) -> Range<usize> {
             w.scalar(TAG_GEOMETRY, &payload)
         }
         Variant::Uuid(u) => w.scalar(TAG_UUID, &u.to_bytes()[..]),
-        Variant::Array(items) => {
-            let children: Vec<Range<usize>> =
-                items.iter().map(|item| encode_variant(w, item)).collect();
-            w.array(&children)
-        }
+        Variant::Array(items) => w.array_in_place(items.len(), |w, i| {
+            encode_variant(w, &items[i]);
+        }),
         Variant::Map(map) => {
             // BTreeMap iterates in Variant Ord order, which equals
             // cmp_values order on the encodings: sorted and deduplicated.
-            let entries: Vec<(Range<usize>, Range<usize>)> = map
-                .iter()
-                .map(|(k, val)| (encode_variant(w, k), encode_variant(w, val)))
-                .collect();
-            w.map(&entries)
+            let (start, mut key_ends, mut val_ends) = w.begin_map_in_place(map.len());
+            for k in map.keys() {
+                encode_variant(w, k);
+                key_ends.record_end(w);
+            }
+            w.begin_map_values(&mut val_ends);
+            for val in map.values() {
+                encode_variant(w, val);
+                val_ends.record_end(w);
+            }
+            start..w.out.len()
         }
     }
 }
 
+/// Run `enc` against a per-thread scratch writer and copy the returned
+/// range into a right-sized document. Document construction (serde, enum
+/// conversion, casts) funnels through here to reuse the scratch buffer.
+/// A reentrant call takes a fresh buffer and only misses the reuse.
+pub(crate) fn build_document<E>(
+    enc: impl FnOnce(&mut Writer) -> Result<Range<usize>, E>,
+) -> Result<FlatVariant, E> {
+    thread_local! {
+        static SCRATCH: std::cell::RefCell<Vec<u8>> =
+            std::cell::RefCell::new(Vec::with_capacity(4096));
+    }
+    // Don't let one huge document pin its buffer in the thread-local
+    // forever; oversized scratches shrink back to this cap.
+    const SCRATCH_RETAIN_BYTES: usize = 2 << 20;
+    SCRATCH.with(|scratch| {
+        let mut w = Writer {
+            out: std::mem::take(&mut *scratch.borrow_mut()),
+        };
+        w.out.clear();
+        let result = enc(&mut w);
+        let out = result.map(|range| FlatVariant::from_bytes(&w.out[range]));
+        if w.out.capacity() > SCRATCH_RETAIN_BYTES {
+            w.out.clear();
+            w.out.shrink_to(SCRATCH_RETAIN_BYTES);
+        }
+        *scratch.borrow_mut() = w.out;
+        out
+    })
+}
+
+/// [`build_document`] for encoders that cannot fail.
+pub(crate) fn build_document_infallible(
+    enc: impl FnOnce(&mut Writer) -> Range<usize>,
+) -> FlatVariant {
+    match build_document::<std::convert::Infallible>(|w| Ok(enc(w))) {
+        Ok(document) => document,
+    }
+}
+
+/// The connector-metadata boundary: the adapters always build metadata as
+/// the enum `Variant`, and a metadata DEFAULT expression for a FlatVariant
+/// column converts it once here. Goes away with the enum.
 impl From<&Variant> for FlatVariant {
     fn from(v: &Variant) -> Self {
-        let mut w = Writer {
-            out: Vec::with_capacity(256),
-        };
-        let range = encode_variant(&mut w, v);
-        FlatVariant::from_bytes(&w.out[range])
+        build_document_infallible(|w| encode_variant(w, v))
     }
 }
 
@@ -703,46 +884,44 @@ fn decode_variant(bytes: &[u8]) -> Variant {
         TAG_VARIANT_NULL => Variant::VariantNull,
         TAG_BOOLEAN => Variant::Boolean(payload[0] != 0),
         TAG_TINYINT => Variant::TinyInt(payload[0] as i8),
-        TAG_SMALLINT => Variant::SmallInt(i16::from_le_bytes(payload.try_into().unwrap())),
-        TAG_INT => Variant::Int(i32::from_le_bytes(payload.try_into().unwrap())),
-        TAG_BIGINT => Variant::BigInt(i64::from_le_bytes(payload.try_into().unwrap())),
+        TAG_SMALLINT => Variant::SmallInt(i16::from_le_bytes(payload_array(payload))),
+        TAG_INT => Variant::Int(i32::from_le_bytes(payload_array(payload))),
+        TAG_BIGINT => Variant::BigInt(i64::from_le_bytes(payload_array(payload))),
         TAG_UTINYINT => Variant::UTinyInt(payload[0]),
-        TAG_USMALLINT => Variant::USmallInt(u16::from_le_bytes(payload.try_into().unwrap())),
-        TAG_UINT => Variant::UInt(u32::from_le_bytes(payload.try_into().unwrap())),
-        TAG_UBIGINT => Variant::UBigInt(u64::from_le_bytes(payload.try_into().unwrap())),
-        TAG_REAL => Variant::Real(f32::from_le_bytes(payload.try_into().unwrap()).into()),
-        TAG_DOUBLE => Variant::Double(f64::from_le_bytes(payload.try_into().unwrap()).into()),
+        TAG_USMALLINT => Variant::USmallInt(u16::from_le_bytes(payload_array(payload))),
+        TAG_UINT => Variant::UInt(u32::from_le_bytes(payload_array(payload))),
+        TAG_UBIGINT => Variant::UBigInt(u64::from_le_bytes(payload_array(payload))),
+        TAG_REAL => Variant::Real(f32::from_le_bytes(payload_array(payload)).into()),
+        TAG_DOUBLE => Variant::Double(f64::from_le_bytes(payload_array(payload)).into()),
         TAG_DECIMAL => Variant::SqlDecimal((
-            i128::from_le_bytes(payload[..16].try_into().unwrap()),
+            i128::from_le_bytes(payload_array(&payload[..16])),
             payload[16],
         )),
         TAG_STRING => Variant::String(SqlString::from_ref(
             std::str::from_utf8(payload).expect("encoded string must be UTF-8"),
         )),
-        TAG_DATE => Variant::Date(Date::from_days(i32::from_le_bytes(
-            payload.try_into().unwrap(),
-        ))),
-        TAG_TIME => Variant::Time(Time::from_nanoseconds(u64::from_le_bytes(
-            payload.try_into().unwrap(),
-        ))),
+        TAG_DATE => Variant::Date(Date::from_days(i32::from_le_bytes(payload_array(payload)))),
+        TAG_TIME => Variant::Time(Time::from_nanoseconds(u64::from_le_bytes(payload_array(
+            payload,
+        )))),
         TAG_TIMESTAMP => Variant::Timestamp(Timestamp::from_microseconds(i64::from_le_bytes(
-            payload.try_into().unwrap(),
+            payload_array(payload),
         ))),
         TAG_TIMESTAMP_TZ => Variant::TimestampTz(TimestampTz::from_microseconds(
-            i64::from_le_bytes(payload.try_into().unwrap()),
+            i64::from_le_bytes(payload_array(payload)),
         )),
         TAG_SHORT_INTERVAL => Variant::ShortInterval(ShortInterval::from_microseconds(
-            i64::from_le_bytes(payload.try_into().unwrap()),
+            i64::from_le_bytes(payload_array(payload)),
         )),
         TAG_LONG_INTERVAL => Variant::LongInterval(LongInterval::from_months(i32::from_le_bytes(
-            payload.try_into().unwrap(),
+            payload_array(payload),
         ))),
         TAG_BINARY => Variant::Binary(ByteArray::new(payload)),
         TAG_GEOMETRY => Variant::Geometry(crate::GeoPoint::new(
-            f64::from_le_bytes(payload[..8].try_into().unwrap()),
-            f64::from_le_bytes(payload[8..].try_into().unwrap()),
+            f64::from_le_bytes(payload_array(&payload[..8])),
+            f64::from_le_bytes(payload_array(&payload[8..])),
         )),
-        TAG_UUID => Variant::Uuid(Uuid::from_bytes(payload.try_into().unwrap())),
+        TAG_UUID => Variant::Uuid(Uuid::from_bytes(payload_array(payload))),
         TAG_ARRAY => {
             let c = Container::new(bytes);
             let items: Vec<Variant> = (0..c.count)
@@ -805,11 +984,10 @@ pub fn variant_to_fv(v: Variant) -> FlatVariant {
 // TryFrom<Variant> for FlatVariant comes from core's blanket over the
 // From<Variant> boundary conversion above.
 
-// Mirrors the enum's behavior for VARIANT elements: `Option<Variant>` gets
-// its `TryFrom<Variant>` from core's `From<T> for Option<T>`, which always
-// wraps in `Some`. A JSON null inside a map or array therefore stays a
-// variant-null VALUE (MapTests#mapValuesVariant depends on this); it does
-// not become a Rust `None`. Test-only, like the other bridges.
+// A VARIANT container element is always `Some`: a JSON null inside a map
+// or array stays a variant-null VALUE (MapTests#mapValuesVariant depends
+// on this); it does not become a Rust `None`. Test-only, like the other
+// bridges.
 #[cfg(test)]
 impl TryFrom<Variant> for Option<FlatVariant> {
     type Error = Box<dyn std::error::Error>;
@@ -970,9 +1148,9 @@ impl Hash for ArchivedFlatVariant {
 
 // serde: JSON -> FlatVariant without an intermediate tree
 
-/// Appends one complete encoded value to the writer, yielding its range.
-/// Mirrors `VariantVisitor` (variant.rs) including the serde_json
-/// arbitrary-precision number handling.
+/// serde visitor that appends one complete encoded value to the writer,
+/// yielding its range. Handles serde_json's arbitrary-precision numbers,
+/// which arrive as a single-entry map with a private marker key.
 struct BuildValue<'w> {
     w: &'w mut Writer,
 }
@@ -1012,7 +1190,9 @@ impl<'de> Visitor<'de> for BuildValue<'_> {
 
     #[inline]
     fn visit_i128<E>(self, value: i128) -> Result<Self::Value, E> {
-        Ok(self.w.scalar(TAG_DECIMAL, &decimal_payload(value, 0)))
+        Ok(self
+            .w
+            .scalar(TAG_DECIMAL, &casts::decimal_payload(value, 0)))
     }
 
     #[inline]
@@ -1068,7 +1248,7 @@ impl<'de> Visitor<'de> for BuildValue<'_> {
                 let number: DynamicDecimal = map.next_value()?;
                 Ok(self.w.scalar(
                     TAG_DECIMAL,
-                    &decimal_payload(number.significand(), number.exponent()),
+                    &casts::decimal_payload(number.significand(), number.exponent()),
                 ))
             }
             Some(KeyClass::Map(first_key)) => {
@@ -1087,13 +1267,6 @@ impl<'de> Visitor<'de> for BuildValue<'_> {
             None => Ok(self.w.map(&[])),
         }
     }
-}
-
-fn decimal_payload(significand: i128, scale: u8) -> [u8; 17] {
-    let mut payload = [0u8; 17];
-    payload[..16].copy_from_slice(&significand.to_le_bytes());
-    payload[16] = scale;
-    payload
 }
 
 /// serde_json's private token for arbitrary-precision numbers.
@@ -1144,25 +1317,7 @@ impl<'de> Deserialize<'de> for FlatVariant {
     where
         D: Deserializer<'de>,
     {
-        // Reuse one scratch buffer per thread; the final document is copied
-        // into a right-sized Arc.
-        thread_local! {
-            static SCRATCH: std::cell::RefCell<Vec<u8>> =
-                std::cell::RefCell::new(Vec::with_capacity(4096));
-        }
-        SCRATCH.with(|scratch| {
-            let mut w = Writer {
-                out: std::mem::take(&mut *scratch.borrow_mut()),
-            };
-            w.out.clear();
-            let result = BuildValue { w: &mut w }.deserialize(deserializer);
-            let out = match result {
-                Ok(range) => Ok(FlatVariant::from_bytes(&w.out[range])),
-                Err(e) => Err(e),
-            };
-            *scratch.borrow_mut() = w.out;
-            out
-        })
+        build_document(|w| BuildValue { w }.deserialize(deserializer))
     }
 }
 
@@ -1194,11 +1349,10 @@ fn json_config() -> SqlSerdeConfig {
     SqlSerdeConfig::default().with_variant_format(VariantFormat::Json)
 }
 
-/// Serializes the encoded value at `bytes`, delegating scalar rendering to
-/// the same sqllib serializers `Variant` uses. `config` selects the scalar
-/// sub-formats (decimal, binary, timestamp, ...), exactly like the enum's
-/// `VariantFormat::Json` arm, which threads the caller's config into every
-/// nested scalar (the Postgres output flavor depends on this).
+/// Serializes the encoded value at `bytes` through the sqllib scalar
+/// serializers. `config` selects the scalar sub-formats (decimal, binary,
+/// timestamp, ...) and is threaded into every nested scalar; output
+/// connectors with non-default sub-formats depend on this.
 struct Enc<'a> {
     bytes: &'a [u8],
     config: &'a SqlSerdeConfig,
@@ -1224,50 +1378,44 @@ impl Serialize for Enc<'_> {
             TAG_SQL_NULL | TAG_VARIANT_NULL => serializer.serialize_none(),
             TAG_BOOLEAN => serializer.serialize_bool(p[0] != 0),
             TAG_TINYINT => serializer.serialize_i8(p[0] as i8),
-            TAG_SMALLINT => serializer.serialize_i16(i16::from_le_bytes(p.try_into().unwrap())),
-            TAG_INT => serializer.serialize_i32(i32::from_le_bytes(p.try_into().unwrap())),
-            TAG_BIGINT => serializer.serialize_i64(i64::from_le_bytes(p.try_into().unwrap())),
+            TAG_SMALLINT => serializer.serialize_i16(i16::from_le_bytes(payload_array(p))),
+            TAG_INT => serializer.serialize_i32(i32::from_le_bytes(payload_array(p))),
+            TAG_BIGINT => serializer.serialize_i64(i64::from_le_bytes(payload_array(p))),
             TAG_UTINYINT => serializer.serialize_u8(p[0]),
-            TAG_USMALLINT => serializer.serialize_u16(u16::from_le_bytes(p.try_into().unwrap())),
-            TAG_UINT => serializer.serialize_u32(u32::from_le_bytes(p.try_into().unwrap())),
-            TAG_UBIGINT => serializer.serialize_u64(u64::from_le_bytes(p.try_into().unwrap())),
-            TAG_REAL => serializer.serialize_f32(f32::from_le_bytes(p.try_into().unwrap())),
-            TAG_DOUBLE => serializer.serialize_f64(f64::from_le_bytes(p.try_into().unwrap())),
-            TAG_DECIMAL => {
-                DynamicDecimal::new(i128::from_le_bytes(p[..16].try_into().unwrap()), p[16])
-                    .serialize_with_context(serializer, self.config)
-            }
+            TAG_USMALLINT => serializer.serialize_u16(u16::from_le_bytes(payload_array(p))),
+            TAG_UINT => serializer.serialize_u32(u32::from_le_bytes(payload_array(p))),
+            TAG_UBIGINT => serializer.serialize_u64(u64::from_le_bytes(payload_array(p))),
+            TAG_REAL => serializer.serialize_f32(f32::from_le_bytes(payload_array(p))),
+            TAG_DOUBLE => serializer.serialize_f64(f64::from_le_bytes(payload_array(p))),
+            TAG_DECIMAL => DynamicDecimal::new(i128::from_le_bytes(payload_array(&p[..16])), p[16])
+                .serialize_with_context(serializer, self.config),
             TAG_STRING => serializer.serialize_str(std::str::from_utf8(p).expect("encoded UTF-8")),
-            TAG_DATE => Date::from_days(i32::from_le_bytes(p.try_into().unwrap()))
+            TAG_DATE => Date::from_days(i32::from_le_bytes(payload_array(p)))
                 .serialize_with_context(serializer, self.config),
-            TAG_TIME => Time::from_nanoseconds(u64::from_le_bytes(p.try_into().unwrap()))
+            TAG_TIME => Time::from_nanoseconds(u64::from_le_bytes(payload_array(p)))
                 .serialize_with_context(serializer, self.config),
-            TAG_TIMESTAMP => {
-                Timestamp::from_microseconds(i64::from_le_bytes(p.try_into().unwrap()))
-                    .serialize_with_context(serializer, self.config)
-            }
+            TAG_TIMESTAMP => Timestamp::from_microseconds(i64::from_le_bytes(payload_array(p)))
+                .serialize_with_context(serializer, self.config),
             TAG_TIMESTAMP_TZ => {
-                TimestampTz::from_microseconds(i64::from_le_bytes(p.try_into().unwrap()))
+                TimestampTz::from_microseconds(i64::from_le_bytes(payload_array(p)))
                     .serialize_with_context(serializer, self.config)
             }
             TAG_SHORT_INTERVAL => {
-                ShortInterval::from_microseconds(i64::from_le_bytes(p.try_into().unwrap()))
+                ShortInterval::from_microseconds(i64::from_le_bytes(payload_array(p)))
                     .serialize_with_context(serializer, self.config)
             }
-            TAG_LONG_INTERVAL => {
-                LongInterval::from_months(i32::from_le_bytes(p.try_into().unwrap()))
-                    .serialize_with_context(serializer, self.config)
-            }
-            // ByteArray honors the config's binary format (number array by
-            // default, PgHex for the Postgres flavor).
+            TAG_LONG_INTERVAL => LongInterval::from_months(i32::from_le_bytes(payload_array(p)))
+                .serialize_with_context(serializer, self.config),
+            // ByteArray honors the config's binary format.
             TAG_BINARY => ByteArray::new(p).serialize_with_context(serializer, self.config),
             TAG_GEOMETRY => crate::GeoPoint::new(
-                f64::from_le_bytes(p[..8].try_into().unwrap()),
-                f64::from_le_bytes(p[8..].try_into().unwrap()),
+                f64::from_le_bytes(payload_array(&p[..8])),
+                f64::from_le_bytes(payload_array(&p[8..])),
             )
             .serialize_with_context(serializer, self.config),
-            TAG_UUID => Uuid::from_bytes(p.try_into().unwrap())
-                .serialize_with_context(serializer, self.config),
+            TAG_UUID => {
+                Uuid::from_bytes(payload_array(p)).serialize_with_context(serializer, self.config)
+            }
             TAG_ARRAY => {
                 let c = Container::new(bytes);
                 let mut seq = serializer.serialize_seq(Some(c.count))?;
@@ -1496,6 +1644,7 @@ mod tests {
     fn casts_match_enum_grid() {
         use crate::casts as c1;
         use crate::flat_variant::casts as c2;
+        use crate::flat_variant::functions as f2;
         use proptest::strategy::ValueTree;
 
         /// Interval unit names share one implementation per underlying type;
@@ -1694,25 +1843,25 @@ mod tests {
             );
             assert_eq!(
                 crate::variant::typeof_(a.clone()),
-                c2::typeof_fv_(a2.clone()),
+                f2::typeof_fv_(a2.clone()),
                 "typeof diverges for {a:?}"
             );
             assert_eq!(
                 crate::string::to_json_V(a.clone()),
-                c2::to_json_FV(a2.clone()),
+                f2::to_json_FV(a2.clone()),
                 "to_json diverges for {a:?}"
             );
             for idx in [-1i32, 0, 1, 2] {
                 assert_eq!(
                     crate::variant::indexV__(&a, idx).map(|v| FlatVariant::from(&v)),
-                    c2::indexFV__(&a2, idx),
+                    f2::indexFV__(&a2, idx),
                     "index {idx} diverges for {a:?}"
                 );
             }
             assert_eq!(
                 crate::variant::indexV__(&a, SqlString::from_ref("a"))
                     .map(|v| FlatVariant::from(&v)),
-                c2::indexFV__(&a2, SqlString::from_ref("a")),
+                f2::indexFV__(&a2, SqlString::from_ref("a")),
                 "string index diverges for {a:?}"
             );
         }
@@ -1735,6 +1884,7 @@ mod tests {
     fn to_variant_casts_match_enum_grid() {
         use crate::casts as c1;
         use crate::flat_variant::casts as c2;
+        use crate::flat_variant::functions as f2;
 
         macro_rules! check_to_variant {
             ($name:ident, $v:expr) => {{
@@ -1883,7 +2033,7 @@ mod tests {
 
         assert_eq!(
             FlatVariant::from(&crate::variant::variantnull()),
-            c2::variantnull_fv(),
+            f2::variantnull_fv(),
         );
     }
 
@@ -1895,6 +2045,7 @@ mod tests {
     fn remaining_grid_matches_enum() {
         use crate::casts as c1;
         use crate::flat_variant::casts as c2;
+        use crate::flat_variant::functions as f2;
 
         macro_rules! check_optional_from {
             ($a:expr, $a2:expr, $($name:ident),* $(,)?) => {::paste::paste! {$(
@@ -2035,39 +2186,39 @@ mod tests {
 
         // Index forms over an array and a map, all nullability shapes.
         let expected = crate::variant::indexV_N(&arr, Some(1i32)).map(|v| FlatVariant::from(&v));
-        assert_eq!(expected, c2::indexFV_N(&arr2, Some(1i32)));
-        assert_eq!(c2::indexFV_N::<i32>(&arr2, None), None);
+        assert_eq!(expected, f2::indexFV_N(&arr2, Some(1i32)));
+        assert_eq!(f2::indexFV_N::<i32>(&arr2, None), None);
         assert_eq!(
             crate::variant::indexVN_(&Some(map.clone()), SqlString::from_ref("k"))
                 .map(|v| FlatVariant::from(&v)),
-            c2::indexFVN_(&Some(map2.clone()), SqlString::from_ref("k")),
+            f2::indexFVN_(&Some(map2.clone()), SqlString::from_ref("k")),
         );
-        assert_eq!(c2::indexFVN_(&None, SqlString::from_ref("k")), None);
+        assert_eq!(f2::indexFVN_(&None, SqlString::from_ref("k")), None);
         assert_eq!(
             crate::variant::indexVNN(&Some(map.clone()), Some(SqlString::from_ref("k")))
                 .map(|v| FlatVariant::from(&v)),
-            c2::indexFVNN(&Some(map2.clone()), Some(SqlString::from_ref("k"))),
+            f2::indexFVNN(&Some(map2.clone()), Some(SqlString::from_ref("k"))),
         );
-        assert_eq!(c2::indexFVNN::<i32>(&None, None), None);
+        assert_eq!(f2::indexFVNN::<i32>(&None, None), None);
 
         // TYPEOF, PARSE_JSON, TO_JSON helper forms.
         assert_eq!(
             crate::variant::typeofN(Some(map.clone())),
-            c2::typeof_fvN(Some(map2.clone()))
+            f2::typeof_fvN(Some(map2.clone()))
         );
-        assert_eq!(crate::variant::typeofN(None), c2::typeof_fvN(None));
+        assert_eq!(crate::variant::typeofN(None), f2::typeof_fvN(None));
         assert_eq!(
             crate::string::parse_json_sN(Some(SqlString::from_ref("[1]")))
                 .map(|v| FlatVariant::from(&v)),
-            c2::parse_json_fv_sN(Some(SqlString::from_ref("[1]"))),
+            f2::parse_json_fv_sN(Some(SqlString::from_ref("[1]"))),
         );
-        assert_eq!(c2::parse_json_fv_sN(None), None);
-        assert_eq!(c2::parse_json_fv_nullN(None), None);
+        assert_eq!(f2::parse_json_fv_sN(None), None);
+        assert_eq!(f2::parse_json_fv_nullN(None), None);
         assert_eq!(
             crate::string::to_json_VN(Some(map.clone())),
-            c2::to_json_FVN(Some(map2.clone()))
+            f2::to_json_FVN(Some(map2.clone()))
         );
-        assert_eq!(c2::to_json_FVN(None), None);
+        assert_eq!(f2::to_json_FVN(None), None);
 
         // Metadata boundary helpers.
         assert_eq!(variant_to_fv(map.clone()), map2);
@@ -2225,7 +2376,7 @@ mod tests {
         ];
         for case in cases {
             let v1 = crate::string::parse_json_s(SqlString::from_ref(case));
-            let v2 = crate::flat_variant::casts::parse_json_fv_s(SqlString::from_ref(case));
+            let v2 = crate::flat_variant::functions::parse_json_fv_s(SqlString::from_ref(case));
             assert_eq!(
                 FlatVariant::from(&v1),
                 v2,
@@ -2283,7 +2434,8 @@ mod tests {
     }
 
     /// Real JSON parses identically through both types and emits identical
-    /// output text.
+    /// output text; both store map keys sorted, so unsorted and duplicate
+    /// input keys normalize the same way.
     #[test]
     fn json_differential() {
         let cases = [
