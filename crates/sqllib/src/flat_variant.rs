@@ -12,8 +12,9 @@
 //! `FELDERA_FLAT_VARIANT` environment variable), which makes the SQL compiler
 //! emit `FlatVariant` for VARIANT columns and the `FV` function-name grid
 //! (`cast_to_FV_*`, `indexFV*`, `parse_json_fv`, `to_json_FV`, `typeof_fv`,
-//! `variantnull_fv`; see `flat_variant::casts`). Connector metadata keeps the enum
-//! `Variant`.
+//! `variantnull_fv`, and the JSON_*/VARIANT_* transformation functions; see
+//! `flat_variant::casts` and `flat_variant::functions`). Connector metadata
+//! keeps the enum `Variant`.
 //!
 //! # Encoding
 //!
@@ -2465,5 +2466,187 @@ mod tests {
                 "output mismatch for {case}"
             );
         }
+    }
+
+    // Differential tests for the native JSON_*/VARIANT_* functions.
+
+    fn filter_predicate(label: &Option<Variant>, v: &Variant) -> Option<bool> {
+        if matches!(v, Variant::Boolean(_)) {
+            return None;
+        }
+        // Result depends on both labels and values in v.
+        Some(
+            matches!(label, Some(Variant::String(s)) if hash_of(&s.str()) % 2 == 0)
+                || matches!(v, Variant::String(_) | Variant::Map(_)),
+        )
+    }
+
+    fn deep_predicate(label: &Option<SqlString>, v: &Variant) -> Option<bool> {
+        if matches!(v, Variant::Boolean(_)) {
+            return None;
+        }
+        Some(
+            !label
+                .as_ref()
+                // Hashes the JSON path
+                .map_or(0, |p| hash_of(&p.str()))
+                .is_multiple_of(4),
+        )
+    }
+
+    fn map_mapper(label: &Option<Variant>, v: &Variant) -> Option<Variant> {
+        if matches!(v, Variant::Boolean(_)) {
+            return None;
+        }
+        // Result incorporates JSON labels.
+        Some(Variant::Array(
+            vec![label.clone().unwrap_or(Variant::SqlNull), v.clone()].into(),
+        ))
+    }
+
+    fn deep_mapper(label: &Option<SqlString>, v: &Variant) -> Option<Variant> {
+        if matches!(v, Variant::VariantNull) {
+            return None;
+        }
+        let path = label.as_ref().map_or("", |p| p.str());
+        Some(Variant::String(SqlString::from(format!("{path}={v:?}"))))
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(500))]
+
+        #[test]
+        fn variant_filter_matches_enum(a in variant()) {
+            let a2 = FlatVariant::from(&a);
+            let r1 = crate::variant::variant_filter_(a.clone(), filter_predicate);
+            let r2 = functions::variant_filter_fv_(
+                a2,
+                |l: &Option<FlatVariant>, v: &FlatVariant| {
+                    filter_predicate(&l.as_ref().map(Variant::from), &Variant::from(v))
+                },
+            );
+            prop_assert_eq!(r1, r2.as_ref().map(Variant::from));
+        }
+
+        #[test]
+        fn variant_map_matches_enum(a in variant()) {
+            let a2 = FlatVariant::from(&a);
+            let r1 = crate::variant::variant_map_(a.clone(), map_mapper);
+            let r2 = functions::variant_map_fv_(
+                a2,
+                |l: &Option<FlatVariant>, v: &FlatVariant| {
+                    map_mapper(&l.as_ref().map(Variant::from), &Variant::from(v))
+                        .map(|r| FlatVariant::from(&r))
+                },
+            );
+            prop_assert_eq!(r1, r2.as_ref().map(Variant::from));
+        }
+
+        #[test]
+        fn variant_deep_filter_matches_enum(a in variant()) {
+            let a2 = FlatVariant::from(&a);
+            let r1 = crate::variant::variant_deep_filter_(a.clone(), deep_predicate);
+            let r2 = functions::variant_deep_filter_fv_(
+                a2,
+                |l: &Option<SqlString>, v: &FlatVariant| deep_predicate(l, &Variant::from(v)),
+            );
+            prop_assert_eq!(r1, r2.as_ref().map(Variant::from));
+        }
+
+        #[test]
+        fn variant_deep_map_matches_enum(a in variant()) {
+            let a2 = FlatVariant::from(&a);
+            let r1 = crate::variant::variant_deep_map_(a.clone(), deep_mapper);
+            let r2 = functions::variant_deep_map_fv_(
+                a2,
+                |l: &Option<SqlString>, v: &FlatVariant| {
+                    deep_mapper(l, &Variant::from(v)).map(|r| FlatVariant::from(&r))
+                },
+            );
+            prop_assert_eq!(r1, r2.as_ref().map(Variant::from));
+        }
+
+        #[test]
+        fn json_each_matches_enum(a in variant()) {
+            use crate::variant as v;
+            let a2 = FlatVariant::from(&a);
+            prop_assert_eq!(v::json_each_bigint_V(a.clone()), functions::json_each_bigint_FV(a2.clone()));
+            prop_assert_eq!(v::json_each_string_V(a.clone()), functions::json_each_string_FV(a2.clone()));
+            prop_assert_eq!(v::json_each_boolean_V(a.clone()), functions::json_each_boolean_FV(a2.clone()));
+            prop_assert_eq!(v::json_each_date_V(a.clone()), functions::json_each_date_FV(a2.clone()));
+            prop_assert_eq!(v::json_each_time_V(a.clone()), functions::json_each_time_FV(a2.clone()));
+            prop_assert_eq!(v::json_each_timestamp_V(a), functions::json_each_timestamp_FV(a2));
+        }
+
+        #[test]
+        fn json_keys_match_enum(a in variant()) {
+            let a2 = FlatVariant::from(&a);
+            prop_assert_eq!(
+                crate::variant::json_object_keys_V(a.clone()),
+                functions::json_object_keys_FV(a2.clone())
+            );
+            prop_assert_eq!(crate::variant::json_keys_V(a), functions::json_keys_FV(a2));
+        }
+
+        #[test]
+        fn variant_merge_matches_enum(a in variant(), b in variant()) {
+            let (a2, b2) = (FlatVariant::from(&a), FlatVariant::from(&b));
+            prop_assert_eq!(
+                FlatVariant::from(&crate::variant::variant_merge_V_V(a, b)),
+                functions::variant_merge_FV_FV(a2, b2)
+            );
+        }
+    }
+
+    #[test]
+    fn json_each_edge_cases_match_enum() {
+        use crate::variant as v;
+        let json = r#"{"i": 5, "f": 2.5, "g": 2.0, "d": 1.23, "e": 100.00,
+                       "s": "2024-01-01", "t": "17:30:40", "ts": "2024-12-19 16:39:57",
+                       "b": true, "n": null, "big": 5000000000, "neg": -3, "x": "text"}"#;
+        let a: Variant = serde_json::from_str(json).unwrap();
+        let a2: FlatVariant = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            v::json_each_bigint_V(a.clone()),
+            functions::json_each_bigint_FV(a2.clone())
+        );
+        assert_eq!(
+            v::json_each_string_V(a.clone()),
+            functions::json_each_string_FV(a2.clone())
+        );
+        assert_eq!(
+            v::json_each_boolean_V(a.clone()),
+            functions::json_each_boolean_FV(a2.clone())
+        );
+        assert_eq!(
+            v::json_each_date_V(a.clone()),
+            functions::json_each_date_FV(a2.clone())
+        );
+        assert_eq!(
+            v::json_each_time_V(a.clone()),
+            functions::json_each_time_FV(a2.clone())
+        );
+        assert_eq!(
+            v::json_each_timestamp_V(a.clone()),
+            functions::json_each_timestamp_FV(a2.clone())
+        );
+        assert_eq!(v::json_keys_V(a), functions::json_keys_FV(a2));
+
+        // Float and decimal values never come from JSON text; build them
+        // directly to cover the fractional-number filter arms.
+        let map: BTreeMap<Variant, Variant> = [
+            ("r1", Variant::Real(2.5f32.into())),
+            ("r2", Variant::Real(2.0f32.into())),
+            ("d1", Variant::Double(0.5f64.into())),
+            ("d2", Variant::Double((-3.0f64).into())),
+            ("dec", Variant::SqlDecimal((12345, 2))),
+            ("dec0", Variant::SqlDecimal((12300, 2))),
+        ]
+        .into_iter()
+        .map(|(k, val)| (Variant::String(SqlString::from_ref(k)), val))
+        .collect();
+        let b = Variant::Map(map.into());
+        let b2 = FlatVariant::from(&b);
+        assert_eq!(v::json_each_bigint_V(b), functions::json_each_bigint_FV(b2));
     }
 }

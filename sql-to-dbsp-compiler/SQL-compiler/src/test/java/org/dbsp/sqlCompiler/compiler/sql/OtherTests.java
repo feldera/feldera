@@ -84,8 +84,10 @@ import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Miscellaneous tests that do not fit into standard categories */
@@ -721,6 +723,25 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 GROUP BY id;""");
     }
 
+    /** Node 25 needs a --localstorage-file for the WebStorage API, which
+     * the Docusaurus build touches.  Older Node versions reject the flag,
+     * so pass it only when needed. */
+    static Map<String, String> nodeLocalStorageWorkaround() throws IOException, InterruptedException {
+        Process process = new ProcessBuilder("node", "--version").start();
+        String version = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        process.waitFor();
+        int major = Integer.parseInt(version.replaceFirst("^v", "").split("\\.")[0]);
+        Map<String, String> environment = new HashMap<>();
+        if (major >= 25) {
+            File storage = File.createTempFile("localstorage", ".json");
+            storage.deleteOnExit();
+            String options = System.getenv().getOrDefault("NODE_OPTIONS", "");
+            environment.put("NODE_OPTIONS",
+                    (options + " --localstorage-file=" + storage.getAbsolutePath()).trim());
+        }
+        return environment;
+    }
+
     @Test @Ignore("To be invoked manually every time a new function is added")
     public void generateFunctionIndex() throws IOException, InterruptedException {
         // When invoked it generates documentation for the supported functions and operators
@@ -730,7 +751,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         Utilities.runProcess(BaseSQLTests.PROJECT_DIRECTORY + "/../docs.feldera.com",
                 "yarn");
         Utilities.runProcess(BaseSQLTests.PROJECT_DIRECTORY + "/../docs.feldera.com",
-                "yarn", "build");
+                nodeLocalStorageWorkaround(), new String[] {"yarn", "build"});
     }
 
     @Test
