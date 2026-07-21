@@ -3373,6 +3373,36 @@ mod test_http_helpers {
         bootstrap_config: BootstrapConfig,
         persistent_output_ids: &'static [Option<&'static str>],
     ) -> TestServer {
+        start_test_server_with_state(
+            config_str,
+            deployment_id,
+            bootstrap_config,
+            persistent_output_ids,
+            false,
+        )
+        .await
+        .0
+    }
+
+    /// Like [start_test_server_with_options], but also returns the
+    /// [ServerState] so a test can reach the controller directly (e.g. to
+    /// simulate an ungraceful crash via [crash_pipeline]).
+    ///
+    /// When `with_program_ir` is set, a minimal (empty) `program_ir` is injected
+    /// into the pipeline config. The test circuit is a Rust closure with no
+    /// compiled program, so its checkpoint normally carries no program info,
+    /// which makes `compute_pipeline_diff` fail and forces the journal to be
+    /// discarded on restart (no replay). Injecting an identical empty
+    /// `program_ir` makes the diff empty across a same-program restart, so the
+    /// journal is replayed -- required to exercise the fault-tolerant replay
+    /// path in-process.
+    pub(super) async fn start_test_server_with_state(
+        config_str: &str,
+        deployment_id: Uuid,
+        bootstrap_config: BootstrapConfig,
+        persistent_output_ids: &'static [Option<&'static str>],
+        with_program_ir: bool,
+    ) -> (TestServer, WebData<ServerState>) {
         let mut config_file = NamedTempFile::new().unwrap();
         config_file.write_all(config_str.as_bytes()).unwrap();
 
@@ -3407,7 +3437,13 @@ mod test_http_helpers {
             host_id: None,
         };
 
-        let config = parse_config(&args.config_file).unwrap();
+        let mut config = parse_config(&args.config_file).unwrap();
+        if with_program_ir {
+            config.program_ir = Some(feldera_types::config::ProgramIr {
+                mir: std::collections::HashMap::new(),
+                program_schema: serde_json::json!({ "inputs": [], "outputs": [] }),
+            });
+        }
         let builder = ControllerBuilder::new(&config).unwrap();
         thread::spawn(move || {
             bootstrap(
@@ -3423,6 +3459,7 @@ mod test_http_helpers {
             )
         });
 
+        let state_ret = state.clone();
         let server =
             actix_test::start(move || build_app(App::new().wrap(Logger::default()), state.clone()));
 
@@ -3433,7 +3470,20 @@ mod test_http_helpers {
             sleep(Duration::from_millis(200));
         }
 
-        server
+        (server, state_ret)
+    }
+
+    /// Simulate an ungraceful crash of a fault-tolerant pipeline: terminate the
+    /// circuit WITHOUT writing a checkpoint (unlike `/suspend`), so the journal
+    /// tail must be replayed on the next restart, and wait for the storage lock
+    /// to be released so a new server can reopen the same storage directory.
+    pub(super) async fn crash_pipeline(state: &WebData<ServerState>, storage_dir: &Path) {
+        let controller = state.take_controller().expect("controller present");
+        tokio::task::spawn_blocking(move || controller.stop())
+            .await
+            .unwrap()
+            .expect("controller stops cleanly");
+        wait_for_storage_unlock(storage_dir).await;
     }
 
     pub(super) fn flatten_and_sort_batches(data: &[Vec<TestStruct>]) -> Vec<TestStruct> {
@@ -3753,9 +3803,9 @@ mod test_http {
         ensure_default_crypto_provider,
         server::test_http_helpers::{
             adhoc_query_count, assert_no_file_output, batch_num_records, commit_transaction,
-            pause_pipeline, send_input, send_input_no_wait, start_pipeline,
-            start_test_server_with_options, start_transaction, suspend_pipeline, test_batches,
-            wait_for_file_output,
+            crash_pipeline, pause_pipeline, send_input, send_input_no_wait, start_pipeline,
+            start_test_server_with_options, start_test_server_with_state, start_transaction,
+            suspend_pipeline, test_batches, wait_for_file_output,
         },
         test::{
             TestStruct, async_wait, generate_test_batches,
@@ -4222,6 +4272,96 @@ outputs:
         assert_eq!(
             count, 10,
             "ad-hoc query observed a stale snapshot after the pipeline reported Running"
+        );
+
+        suspend_pipeline(&server, Some(&storage_dir)).await;
+    }
+
+    /// Regression test for the fault-tolerant *replay* path, the analogue of
+    /// [test_concurrent_bootstrap_adhoc_snapshot]: after a restart that replays
+    /// the journal, an ad-hoc query must observe the replayed state.
+    ///
+    /// The ad-hoc snapshot is refreshed only by a circuit step (`update_snapshot`
+    /// inside `step`) and is not part of the checkpoint. If the pipeline reports
+    /// `Running` (clears `restoring`) as soon as the journal is exhausted, before
+    /// a step has refreshed the snapshot with the replayed state, an ad-hoc query
+    /// reads the stale (empty) pre-replay snapshot and returns 0.
+    ///
+    /// We crash the pipeline WITHOUT a checkpoint so the restart must replay,
+    /// then query once right after `Running` -- no polling and no post-restart
+    /// input (feeding any would trigger a step and mask the bug).
+    #[actix_web::test]
+    async fn test_ft_replay_adhoc_snapshot() {
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        let output_path = tempdir.path().join("output.csv");
+        std::fs::create_dir(&storage_dir).unwrap();
+
+        let config_str = format!(
+            r#"
+name: test
+workers: 1
+storage_config:
+    path: "{}"
+storage: true
+fault_tolerance: latest_checkpoint
+clock_resolution_usecs:
+inputs:
+outputs:
+    test_output1:
+        stream: test_output1
+        transport:
+            name: file_output
+            config:
+                path: "{}"
+        format:
+            name: csv
+            config: {{}}
+"#,
+            storage_dir.display(),
+            output_path.display()
+        );
+
+        let batch = test_batches(0, 10);
+
+        // Start the fault-tolerant pipeline and ingest 10 rows. The input step is
+        // journaled; `send_input` waits for it to complete.
+        let (server, state) = start_test_server_with_state(
+            &config_str,
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[Some("v0")],
+            true,
+        )
+        .await;
+        start_pipeline(&server).await;
+        send_input(&server, &batch).await;
+        wait_for_file_output(&output_path, &batch).await;
+
+        // Crash WITHOUT a checkpoint: the journaled input survives and must be
+        // replayed on restart (the `checkpoint_before = false` case).
+        crash_pipeline(&state, &storage_dir).await;
+        drop(server);
+
+        // Restart: reopen the initial (step 0) checkpoint and REPLAY the journal.
+        // `start_pipeline` waits for `Running`, reached only after `restoring`
+        // clears. Once `Running`, the ad-hoc snapshot must already hold the 10
+        // replayed rows -- queried once, with no polling and no new input.
+        let (server, _state) = start_test_server_with_state(
+            &config_str,
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[Some("v0")],
+            true,
+        )
+        .await;
+        start_pipeline(&server).await;
+        let count = adhoc_query_count(&server, "SELECT COUNT(*) AS c FROM test_output1").await;
+        assert_eq!(
+            count, 10,
+            "ad-hoc query observed a stale snapshot after fault-tolerant replay"
         );
 
         suspend_pipeline(&server, Some(&storage_dir)).await;

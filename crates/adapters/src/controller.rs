@@ -2627,6 +2627,15 @@ struct CircuitThread {
     /// pre-existing views stay live; `Synchronize` during the brief
     /// stop-the-world cutover window.
     concurrent_phase: ConcurrentPhase,
+
+    /// Set when journal replay has just finished but the ad-hoc snapshot has not
+    /// yet been refreshed with the replayed state, so `restoring` must stay set
+    /// (the pipeline keeps reporting `Replaying` and rejecting ad-hoc queries)
+    /// until a step runs [Self::update_snapshot]. The step that exhausts the
+    /// journal is usually mid-transaction, so it cannot refresh the snapshot
+    /// itself; this defers clearing `restoring` to the next transaction-boundary
+    /// step. Analogous to the concurrent-bootstrap `Finalizing` phase.
+    replay_finalize: bool,
 }
 
 /// Phase of a concurrent bootstrap driven by [`CircuitThread`].
@@ -3085,6 +3094,7 @@ impl CircuitThread {
             pending_step_metadata: None,
             replay_consumed: false,
             concurrent_phase,
+            replay_finalize: false,
         })
     }
 
@@ -3214,7 +3224,10 @@ impl CircuitThread {
             match trigger.trigger(
                 self.last_checkpoint(),
                 self.last_checkpoint_sync(),
-                self.replaying(),
+                // `replay_finalize` keeps forcing steps after the journal is
+                // exhausted until a step refreshes the ad-hoc snapshot with the
+                // replayed state (see `step` and `clear_restoring`).
+                self.replaying() || self.replay_finalize,
                 // `status.bootstrap_in_progress` is cleared one transaction after circuit bootstrapping is complete,
                 // which is required to initialize the output snapshots.
                 // We want the trigger to trigger that extra transaction; therefore we pass `status.bootstrap_in_progress`
@@ -3443,10 +3456,24 @@ impl CircuitThread {
             .map_err(|_| ControllerError::dbsp_panic())
     }
 
+    /// Clears the `restoring` flag (so the pipeline reports `Running` and admits
+    /// ad-hoc queries) and starts the backpressure thread so input can flow.
+    /// Both operations are idempotent (`backpressure_thread.start` no-ops after
+    /// the first call), so this is safe to call every step.
+    fn clear_restoring(&mut self) {
+        self.controller.restoring.store(false, Ordering::Release);
+        self.backpressure_thread.start();
+    }
+
     fn finish_replaying(&mut self) {
-        if !self.replaying() {
-            self.controller.restoring.store(false, Ordering::Release);
-            self.backpressure_thread.start();
+        // Clear `restoring` (and release backpressure) once there is nothing
+        // left to replay, EXCEPT while `replay_finalize` is pending: after an
+        // actual replay we keep `restoring` set until a step refreshes the
+        // ad-hoc snapshot with the replayed state (see `step`); otherwise the
+        // pipeline would report `Running` and admit ad-hoc queries against the
+        // stale pre-replay snapshot.
+        if !self.replaying() && !self.replay_finalize {
+            self.clear_restoring();
         }
     }
 
@@ -3511,6 +3538,16 @@ impl CircuitThread {
                     .with_category("Step")
                     .with_tooltip(|| format!("update ad-hoc tables after step {}", self.step))
                     .in_scope(|| self.update_snapshot());
+
+                // If we just finished replaying, this transaction-boundary step
+                // has now refreshed the ad-hoc snapshot with the replayed state,
+                // so it is finally safe to clear `restoring` and admit ad-hoc
+                // queries. Deferred from the step that exhausted the journal,
+                // which is typically mid-transaction and skips `update_snapshot`.
+                if self.replay_finalize {
+                    self.replay_finalize = false;
+                    self.clear_restoring();
+                }
             }
 
             // If bootstrapping has completed, clear self.bootstrapping, but don't update the status flag
@@ -3552,7 +3589,15 @@ impl CircuitThread {
         self.push_output(processed_records);
         let replay_consumed = self.replay_consumed;
         if let Some(ft) = self.ft.as_mut() {
+            let was_replaying = ft.is_replaying();
             ft.next_step(replay_consumed)?;
+            // Replay just finished this step. Keep `restoring` set until a
+            // subsequent transaction-boundary step refreshes the ad-hoc
+            // snapshot with the replayed state (this step is typically
+            // mid-transaction and skipped `update_snapshot`).
+            if was_replaying && !ft.is_replaying() {
+                self.replay_finalize = true;
+            }
             self.finish_replaying();
         }
         self.controller.unpark_backpressure();
