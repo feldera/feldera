@@ -944,13 +944,13 @@ public class VariantTests extends SqlIoTest {
                 CREATE LOCAL VIEW DECODE(rec) AS SELECT jsonstring_as_t_steps(encoded) as steps FROM DATA;
                 -- extract and flatten the arrays from the DECODE view
                 CREATE VIEW OUT(name, "uuid") AS SELECT x.name, x."uuid" FROM DECODE, UNNEST(DECODE.rec.steps) AS x;
-                """);
+                """).withStringTrim();
         ccs.stepWeightOne("INSERT INTO DATA VALUES (" + data + ")",
                 """
                          name | uuid
                         -------------
-                         blah| uuid0
-                         boo|NULL""");
+                         blah | uuid0
+                         boo  |NULL""");
     }
 
     @Test

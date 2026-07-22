@@ -330,30 +330,30 @@ public class WindowTests extends ScottBaseTests {
         var ccs = this.getCCS("""
                 CREATE TABLE t1 (grp VARCHAR, x INT);
                 CREATE VIEW V AS SELECT grp, x, RANK() OVER (PARTITION BY grp ORDER BY x) AS r
-                FROM t1;""");
+                FROM t1;""").withStringTrim();
         ccs.stepWeightOne("INSERT INTO t1 VALUES ('A', 1), ('A', 1), ('A', 2), ('B', 5), ('B', 5), ('B', 5)", """
                  grp | x | rank
                 ----------------
-                 A| 1 | 1
-                 A| 1 | 1
-                 A| 2 | 3
-                 B| 5 | 1
-                 B| 5 | 1
-                 B| 5 | 1""");
+                 A   | 1 | 1
+                 A   | 1 | 1
+                 A   | 2 | 3
+                 B   | 5 | 1
+                 B   | 5 | 1
+                 B   | 5 | 1""");
 
         ccs = this.getCCS("""
                 CREATE TABLE t1 (grp VARCHAR, x INT);
                 CREATE VIEW V AS SELECT grp, x, DENSE_RANK() OVER (PARTITION BY grp ORDER BY x) AS r
-                FROM t1;""");
+                FROM t1;""").withStringTrim();
         ccs.stepWeightOne("INSERT INTO t1 VALUES ('A', 1), ('A', 1), ('A', 2), ('B', 5), ('B', 5), ('B', 5)", """
                  grp | x | rank
                 ----------------
-                 A| 1 | 1
-                 A| 1 | 1
-                 A| 2 | 2
-                 B| 5 | 1
-                 B| 5 | 1
-                 B| 5 | 1""");
+                 A   | 1 | 1
+                 A   | 1 | 1
+                 A   | 2 | 2
+                 B   | 5 | 1
+                 B   | 5 | 1
+                 B   | 5 | 1""");
     }
 
     @Test
@@ -473,7 +473,7 @@ public class WindowTests extends ScottBaseTests {
                     RANK()        OVER (PARTITION BY grp ORDER BY score DESC) AS r_rank,
                     DENSE_RANK()  OVER (PARTITION BY grp ORDER BY score DESC) AS r_dense
                 FROM t_multi
-                ORDER BY grp, score DESC, ts;""");
+                ORDER BY grp, score DESC, ts;""").withStringTrim();
         ccs.stepWeightOne("""
                 INSERT INTO t_multi VALUES
                     ('A', 10, 1),
@@ -489,16 +489,16 @@ public class WindowTests extends ScottBaseTests {
                     ('B', 9,  5);""", """
                  grp | score | ts | rank | dense
                 ---------------------------------
-                 A| 30 | 5 | 1 | 1
-                 A| 20 | 3 | 2 | 2
-                 A| 20 | 4 | 2 | 2
-                 A| 10 | 1 | 4 | 3
-                 A| 10 | 2 | 4 | 3
-                 B|  9 | 4 | 1 | 1
-                 B|  9 | 5 | 1 | 1
-                 B|  7 | 3 | 3 | 2
-                 B|  5 | 1 | 4 | 3
-                 B|  5 | 2 | 4 | 3""");
+                 A   | 30    | 5  | 1    | 1
+                 A   | 20    | 3  | 2    | 2
+                 A   | 20    | 4  | 2    | 2
+                 A   | 10    | 1  | 4    | 3
+                 A   | 10    | 2  | 4    | 3
+                 B   | 9     | 4  | 1    | 1
+                 B   | 9     | 5  | 1    | 1
+                 B   | 7     | 3  | 3    | 2
+                 B   | 5     | 1  | 4    | 3
+                 B   | 5     | 2  | 4    | 3""");
     }
 
     @Test
@@ -522,7 +522,7 @@ public class WindowTests extends ScottBaseTests {
                 SELECT *
                 FROM ranked
                 WHERE rnk <= 3
-                ORDER BY rnk, score DESC, ts;""");
+                ORDER BY rnk, score DESC, ts;""").withStringTrim();
         ccs.stepWeightOne("""
                 INSERT INTO t_multi VALUES
                     ('A', 10, 1),
@@ -538,9 +538,9 @@ public class WindowTests extends ScottBaseTests {
                     ('B', 9,  5);""", """
                  grp | score | ts | rank
                 --------------------------
-                 A| 30 | 5 | 1
-                 A| 20 | 3 | 2
-                 A| 20 | 4 | 2""");
+                 A   | 30    | 5  | 1
+                 A   | 20    | 3  | 2
+                 A   | 20    | 4  | 2""");
     }
 
     @Test
@@ -562,7 +562,7 @@ public class WindowTests extends ScottBaseTests {
                         RANK() OVER (ORDER BY ts    DESC) AS rnk_recent
                     FROM t
                 )
-                SELECT * FROM ranked;""");
+                SELECT * FROM ranked;""").withStringTrim();
         // no filtering first
         ccs.stepWeightOne("""
                 INSERT INTO t VALUES
@@ -576,13 +576,13 @@ public class WindowTests extends ScottBaseTests {
                 """, """
                  id | score | ts | rnk_score | rnk_recent
                 -------------------------------------------
-                 g| 100 | 60  | 1  | 1
-                 a| 100 | 10  | 1  | 7
-                 c| 95  | 30  | 3  | 5
-                 b| 95  | 20  | 3  | 6
-                 d| 80  | 40  | 5  | 4
-                 e| 70  | 50  | 6  | 3
-                 f| 60  | 60  | 7  | 1""");
+                 g  | 100   | 60 | 1         | 1
+                 a  | 100   | 10 | 1         | 7
+                 c  | 95    | 30 | 3         | 5
+                 b  | 95    | 20 | 3         | 6
+                 d  | 80    | 40 | 5         | 4
+                 e  | 70    | 50 | 6         | 3
+                 f  | 60    | 60 | 7         | 1""");
 
         ccs = this.getCCS("""
                 CREATE TABLE T (
@@ -601,7 +601,7 @@ public class WindowTests extends ScottBaseTests {
                     FROM t
                 )
                 SELECT * FROM ranked
-                WHERE (rnk_score <= 3) AND (rnk_recent <= 2);""");
+                WHERE (rnk_score <= 3) AND (rnk_recent <= 2);""").withStringTrim();
         ccs.stepWeightOne("""
                 INSERT INTO t VALUES
                     ('a', 100, 10),
@@ -614,7 +614,7 @@ public class WindowTests extends ScottBaseTests {
                 """, """
                  id | score | ts | rnk_score | rnk_recent
                 -------------------------------------------
-                 g| 100     | 60  | 1 | 1""");
+                 g  | 100   | 60 | 1         | 1""");
     }
 
     @Test
@@ -636,7 +636,7 @@ public class WindowTests extends ScottBaseTests {
                         RANK() OVER (PARTITION BY score ORDER BY ts DESC, id) AS rnk_recent
                     FROM t
                 )
-                SELECT * FROM ranked;""");
+                SELECT * FROM ranked;""").withStringTrim();
         // no filtering first
         ccs.stepWeightOne("""
                 INSERT INTO t VALUES
@@ -650,13 +650,13 @@ public class WindowTests extends ScottBaseTests {
                 """, """
                  id | score | ts | rnk_score | rnk_recent
                 -------------------------------------------
-                 g| 100 | 60  | 1  | 1
-                 a| 100 | 10  | 1  | 2
-                 c| 95  | 30  | 1  | 1
-                 b| 95  | 20  | 1  | 2
-                 d| 80  | 40  | 1  | 1
-                 e| 70  | 50  | 1  | 1
-                 f| 60  | 60  | 1  | 1""");
+                 g  | 100   | 60 | 1         | 1
+                 a  | 100   | 10 | 1         | 2
+                 c  | 95    | 30 | 1         | 1
+                 b  | 95    | 20 | 1         | 2
+                 d  | 80    | 40 | 1         | 1
+                 e  | 70    | 50 | 1         | 1
+                 f  | 60    | 60 | 1         | 1""");
         }
 
     @Test

@@ -3062,20 +3062,20 @@ public class StreamingTests extends StreamingTestBase {
                 where ( x >= NOW() + INTERVAL 30 DAYS
                     OR
                     y  >=  NOW() - INTERVAL 30 DAYS);""";
-        var ccs = this.getCCS(sql);
+        var ccs = this.getCCS(sql).withStringTrim();
         ccs.step("""
                 INSERT INTO NOW VALUES('2019-01-01 00:00:00');
                 INSERT INTO T VALUES('2020-01-11 00:00:00', '2020-01-11 00:00:00', 'z');""", """
                  site_id | weight
                 ------------------
-                 z|1""");
+                 z       | 1""");
         ccs.step("INSERT INTO NOW VALUES('2020-01-01 00:00:00')", """
                  site_id | weight
                 ------------------""");
         ccs.step("INSERT INTO NOW VALUES('2020-03-01 00:00:00')", """
                  site_id | weight
                 ------------------
-                 z| -1""");
+                 z       | -1""");
     }
 
     @Test
@@ -3089,7 +3089,7 @@ public class StreamingTests extends StreamingTestBase {
                        COUNT(CASE WHEN tt >= NOW() - INTERVAL 1 DAY THEN 1 END) AS c,
                        COUNT(*) AS total
                 FROM T GROUP BY k;""";
-        var ccs = this.getCCS(sql);
+        var ccs = this.getCCS(sql).withStringTrim();
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
             int window = 0;
             int aggregate = 0;
@@ -3120,14 +3120,14 @@ public class StreamingTests extends StreamingTestBase {
                 INSERT INTO T VALUES('b', '2019-12-30 00:00:00');""", """
                  k | s    | c | total | weight
                 --------------------------------
-                 a| 1    | 1 | 1     | 1
-                 b|NULL  | 0 | 1     | 1""");
+                 a | 1    | 1 | 1     | 1
+                 b |NULL  | 0 | 1     | 1""");
         // Two days later a's row leaves the window; b is unchanged
         ccs.step("INSERT INTO NOW VALUES('2020-01-03 00:00:00')", """
                  k | s    | c | total | weight
                 --------------------------------
-                 a| 1    | 1 | 1     | -1
-                 a|NULL  | 0 | 1     | 1""");
+                 a | 1    | 1 | 1     | -1
+                 a |NULL  | 0 | 1     | 1""");
     }
 
     @Test
@@ -3158,26 +3158,27 @@ public class StreamingTests extends StreamingTestBase {
             }
         };
         ccs.visit(visitor);
+        ccs.withStringTrim();
         ccs.step("""
                 INSERT INTO NOW VALUES('2020-01-10 00:00:00');
                 INSERT INTO T VALUES('a', '2020-01-10 00:00:00');
                 INSERT INTO T VALUES('a', '2020-01-05 00:00:00');""", """
                  k | d    | w    | total | weight
                 ----------------------------------
-                 a| 1    | 2    | 2     | 1""");
+                 a | 1    | 2    | 2     | 1""");
         // Two days later the newest row leaves the 1-day window;
         // both rows are still inside the 7-day window
         ccs.step("INSERT INTO NOW VALUES('2020-01-12 00:00:00')", """
                  k | d    | w    | total | weight
                 ----------------------------------
-                 a| 1    | 2    | 2     | -1
-                 a|NULL  | 2    | 2     | 1""");
+                 a | 1    | 2    | 2     | -1
+                 a |NULL  | 2    | 2     | 1""");
         // Ten days after the first step both rows have left both windows
         ccs.step("INSERT INTO NOW VALUES('2020-01-20 00:00:00')", """
                  k | d    | w    | total | weight
                 ----------------------------------
-                 a|NULL  | 2    | 2     | -1
-                 a|NULL  |NULL  | 2     | 1""");
+                 a |NULL  | 2    | 2     | -1
+                 a |NULL  |NULL  | 2     | 1""");
     }
 
     @Test
@@ -3292,18 +3293,18 @@ public class StreamingTests extends StreamingTestBase {
                 CREATE VIEW V AS
                 SELECT k, ARRAY_AGG(x) FILTER (WHERE tt >= NOW() - INTERVAL 1 DAY) AS agg
                 FROM T GROUP BY k;""";
-        var ccs = this.getCCS(sql);
+        var ccs = this.getCCS(sql).withStringTrim();
         ccs.step("""
                 INSERT INTO NOW VALUES('2020-01-01 00:00:00');
                 INSERT INTO T VALUES('a', '2020-01-01 00:00:00', 10);""", """
                  k | agg  | weight
                 -------------------
-                 a|{ 10 } | 1""");
+                 a |{ 10 } | 1""");
         ccs.step("INSERT INTO NOW VALUES('2020-01-03 00:00:00')", """
                  k | agg  | weight
                 -------------------
-                 a|{ 10 } | -1
-                 a|{}     | 1""");
+                 a |{ 10 } | -1
+                 a |{}     | 1""");
     }
 
     static final String issue4909data = """
@@ -3360,7 +3361,7 @@ public class StreamingTests extends StreamingTestBase {
                         lsd >= NOW() - INTERVAL 30 DAYS
                         OR op IS NOT NULL
                     );
-                """);
+                """).withStringTrim();
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             @Override
             public void postorder(DBSPJoinBaseOperator join) {
@@ -3369,12 +3370,12 @@ public class StreamingTests extends StreamingTestBase {
         });
         // Validated using Postgres on the right date
         ccs.step(issue4909data, """
-                 s | weight
-                ----------------
-                 charlie| 1
-                 india| 1
-                 kilo| 1
-                 mike| 1""");
+                 s        | weight
+                -------------------
+                 charlie  | 1
+                 india    | 1
+                 kilo     | 1
+                 mike     | 1""");
     }
 
     @Test
@@ -3408,7 +3409,7 @@ public class StreamingTests extends StreamingTestBase {
                         lsd >= NOW() - INTERVAL 30 DAYS
                         OR op IS NOT NULL
                     );
-                """);
+                """).withStringTrim();
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             @Override
             public void postorder(DBSPJoinBaseOperator join) {
@@ -3417,18 +3418,18 @@ public class StreamingTests extends StreamingTestBase {
         });
         // Validated using Postgres on the right date
         ccs.step(issue4909data, """
-                 s | weight
-                ----------------
-                 alpha| 1
-                 bravo| 1
-                 charlie| 1
-                 delta| 1
-                 echo| 1
-                 foxtrot| 1
-                 india| 1
-                 kilo| 1
-                 mike| 1
-                 sierra| 1""");
+                 s        | weight
+                -------------------
+                 alpha    | 1
+                 bravo    | 1
+                 charlie  | 1
+                 delta    | 1
+                 echo     | 1
+                 foxtrot  | 1
+                 india    | 1
+                 kilo     | 1
+                 mike     | 1
+                 sierra   | 1""");
     }
 
     @Test
@@ -3462,7 +3463,7 @@ public class StreamingTests extends StreamingTestBase {
                         lsd >= NOW() - INTERVAL 30 DAYS
                         AND op IS NOT NULL
                     );
-                """);
+                """).withStringTrim();
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             @Override
             public void postorder(DBSPJoinBaseOperator join) {
@@ -3471,27 +3472,27 @@ public class StreamingTests extends StreamingTestBase {
         });
         // Validated using Postgres on the right date
         ccs.step(issue4909data, """
-                 s | weight
-                ----------------
-                 alpha| 1
-                 bravo| 1
-                 charlie| 1
-                 delta| 1
-                 echo| 1
-                 foxtrot| 1
-                 golf| 1
-                 hotel| 1
-                 india| 1
-                 juliet| 1
-                 kilo| 1
-                 lima| 1
-                 mike| 1
-                 november| 1
-                 oscar| 1
-                 papa| 1
-                 quebec| 1
-                 romeo| 1
-                 sierra| 1""");
+                 s        | weight
+                -------------------
+                 alpha    | 1
+                 bravo    | 1
+                 charlie  | 1
+                 delta    | 1
+                 echo     | 1
+                 foxtrot  | 1
+                 golf     | 1
+                 hotel    | 1
+                 india    | 1
+                 juliet   | 1
+                 kilo     | 1
+                 lima     | 1
+                 mike     | 1
+                 november | 1
+                 oscar    | 1
+                 papa     | 1
+                 quebec   | 1
+                 romeo    | 1
+                 sierra   | 1""");
     }
 
     @Test
