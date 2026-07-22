@@ -90,6 +90,9 @@ impl OutputEndpoint for S2OutputEndpoint {
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
+        // TODO: each batch is appended and awaited synchronously (one round-trip
+        // per batch). For higher throughput, pipeline appends and drain acks at
+        // flush/disconnect. Not a correctness issue for the non-FT output path.
         let _guard = self.span();
         let s2_stream = self.s2_stream.clone();
 

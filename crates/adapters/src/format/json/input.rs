@@ -255,38 +255,25 @@ fn validate_parser_config(
     Ok(())
 }
 
-fn is_insert_delete_action_key(key: &str) -> bool {
-    matches!(key, "insert" | "delete" | "update")
-}
-
 fn looks_like_insert_delete_envelope_object(value: &JsonValue) -> bool {
     let Some(object) = value.as_object() else {
         return false;
     };
 
-    let mut action_key = None;
-    for key in object.keys() {
-        if key == "table" {
-            continue;
-        }
-        if is_insert_delete_action_key(key) {
-            if action_key.is_some() {
-                return false;
+    let mut has_action_key = false;
+    for (key, value) in object {
+        match key.as_str() {
+            "table" => (),
+            "insert" | "delete" | "update" => {
+                if has_action_key || (!value.is_object() && !value.is_array()) {
+                    return false;
+                }
+                has_action_key = true;
             }
-            action_key = Some(key);
-        } else {
-            return false;
+            _ => return false,
         }
     }
-
-    let Some(action_key) = action_key else {
-        return false;
-    };
-
-    matches!(
-        object.get(action_key),
-        Some(JsonValue::Object(_) | JsonValue::Array(_))
-    )
+    has_action_key
 }
 
 fn looks_like_insert_delete_envelope(update: &RawValue) -> bool {
@@ -311,7 +298,7 @@ impl JsonParser {
     fn raw_format_insert_delete_mismatch_error(update: &RawValue) -> Option<ParseError> {
         looks_like_insert_delete_envelope(update).then(|| {
             ParseError::text_envelope_error(
-                "raw JSON update format expects plain rows, but received an insert/delete/update envelope".to_string(),
+                "payload looks like an insert/delete envelope; the configured `raw` update format expects plain rows".to_string(),
                 update.get(),
                 Some(Cow::from(
                     "Set `format.config.update_format` to `insert_delete` for payloads like {\"insert\": {...}} or {\"delete\": {...}}.",
@@ -928,7 +915,7 @@ mod test {
                 vec![(
                     r#"{"insert": {"b": true, "i": 0}}"#.to_string(),
                     vec![ParseError::text_envelope_error(
-                        "raw JSON update format expects plain rows, but received an insert/delete/update envelope".to_string(),
+                        "payload looks like an insert/delete envelope; the configured `raw` update format expects plain rows".to_string(),
                         "{\"insert\": {\"b\": true, \"i\": 0}}",
                         Some(Cow::from(
                             "Set `format.config.update_format` to `insert_delete` for payloads like {\"insert\": {...}} or {\"delete\": {...}}.",
@@ -947,7 +934,7 @@ mod test {
                 vec![(
                     r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(),
                     vec![ParseError::text_envelope_error(
-                        "raw JSON update format expects plain rows, but received an insert/delete/update envelope".to_string(),
+                        "payload looks like an insert/delete envelope; the configured `raw` update format expects plain rows".to_string(),
                         "[{\"insert\": {\"b\": true, \"i\": 0}}]",
                         Some(Cow::from(
                             "Set `format.config.update_format` to `insert_delete` for payloads like {\"insert\": {...}} or {\"delete\": {...}}.",

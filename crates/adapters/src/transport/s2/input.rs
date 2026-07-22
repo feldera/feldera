@@ -27,7 +27,7 @@ use std::hash::Hasher;
 use std::num::NonZeroU32;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex as StdMutex, MutexGuard as StdMutexGuard};
 use std::time::Duration;
 use tokio::{
@@ -37,20 +37,30 @@ use tokio::{
     time::{Instant, sleep_until},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, error, info, info_span, trace};
+use tracing::{Instrument, debug, error, info, info_span, trace};
 use xxhash_rust::xxh3::Xxh3Default;
 
 const RECONNECT_INITIAL_BACKOFF: Duration = Duration::from_millis(100);
 const RECONNECT_MAX_BACKOFF: Duration = Duration::from_secs(10);
 
+/// Checkpoint/resume metadata persisted by the S2 input connector.
+///
+/// `seq_num_range` is the half-open `[start, end)` range of S2 sequence numbers
+/// covered by a checkpoint step; `end` is the position to resume from. For an
+/// empty (no-record) checkpoint it is `pos..pos`. `position_resolved` records
+/// whether the start position has been anchored to an absolute S2 sequence number
+/// (by consuming a record or resolving a tail) — once true, the connector always
+/// resumes from `end` as an absolute sequence rather than recomputing the
+/// configured `start_from`. It defaults to `false` so checkpoints written before
+/// this field existed still deserialize and re-anchor on resume.
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct Metadata {
+pub(crate) struct S2CheckpointMetadata {
     pub(crate) seq_num_range: std::ops::Range<u64>,
     #[serde(default)]
     pub(crate) position_resolved: bool,
 }
 
-impl Metadata {
+impl S2CheckpointMetadata {
     pub(crate) fn from_resume_info(resume_info: Option<JsonValue>) -> Result<Self, AnyError> {
         Ok(resume_info
             .map(serde_json::from_value)
@@ -88,7 +98,7 @@ impl TransportInputEndpoint for S2InputEndpoint {
         schema: Relation,
         resume_info: Option<JsonValue>,
     ) -> AnyResult<Box<dyn InputReader>> {
-        let resume_info = Metadata::from_resume_info(resume_info)?;
+        let resume_info = S2CheckpointMetadata::from_resume_info(resume_info)?;
         info!("Resume info: {:?}", resume_info);
         Ok(Box::new(S2Reader::new(
             self.config.clone(),
@@ -116,14 +126,14 @@ fn make_replay_read_input_from(start: u64, end: u64) -> ReadInput {
 }
 
 fn config_to_read_input(config: &S2InputConfig) -> ReadInput {
-    let start = match &config.start_from {
-        S2StartFrom::SeqNum(n) => ReadStart::new().with_from(ReadFrom::SeqNum(*n)),
-        S2StartFrom::Timestamp(ts) => ReadStart::new().with_from(ReadFrom::Timestamp(*ts)),
-        S2StartFrom::TailOffset(n) => ReadStart::new().with_from(ReadFrom::TailOffset(*n)),
-        S2StartFrom::Beginning => ReadStart::new().with_from(ReadFrom::SeqNum(0)),
-        S2StartFrom::Tail => ReadStart::new().with_from(ReadFrom::TailOffset(0)),
+    let from = match &config.start_from {
+        S2StartFrom::SeqNum(n) => ReadFrom::SeqNum(*n),
+        S2StartFrom::Timestamp(ts) => ReadFrom::Timestamp(*ts),
+        S2StartFrom::TailOffset(n) => ReadFrom::TailOffset(*n),
+        S2StartFrom::Beginning => ReadFrom::SeqNum(0),
+        S2StartFrom::Tail => ReadFrom::TailOffset(0),
     };
-    ReadInput::new().with_start(start)
+    ReadInput::new().with_start(ReadStart::new().with_from(from))
 }
 
 fn read_input_for_position(
@@ -172,6 +182,13 @@ fn classify_s2_server_code(code: &str) -> S2ErrorKind {
     }
 }
 
+/// Classifies a public `S2Error::Client(String)` after the SDK has exhausted its
+/// own retries. The SDK exposes client-transport errors only as a formatted
+/// string, so this matches the exact messages/prefixes that `s2-sdk` 0.31.10
+/// produces (see `ClientError` in `s2-sdk/src/api.rs`). An unknown message is
+/// treated as fatal rather than retrying blindly: if a future SDK rewords a
+/// message, the connector fails closed instead of looping forever. Update this
+/// list (and the `classifies_client_messages_exactly` test) when bumping s2-sdk.
 fn classify_s2_client_message(message: &str) -> S2ErrorKind {
     if message == "heartbeat timeout"
         || message == "timeout"
@@ -208,12 +225,39 @@ struct S2Batch {
 
 type S2ReadSession = Pin<Box<dyn Send + Stream<Item = Result<S2Batch, S2Error>>>>;
 
-#[derive(Clone)]
+/// State shared between the worker and the live reader task.
+///
+/// Wrapped in a single `Arc` and passed by shared reference, rather than a
+/// struct of individual `Arc`s. `position_resolved` is an atomic flag read
+/// lock-free by the reader; `ingest` guards the data that must stay consistent
+/// between ingestion and checkpointing (see [`IngestState`]).
 struct LiveReaderShared {
-    next_seq: Arc<AtomicU64>,
-    position_resolved: Arc<AtomicBool>,
-    queue: Arc<InputQueue<u64>>,
-    ingest_lock: Arc<StdMutex<()>>,
+    position_resolved: AtomicBool,
+    ingest: StdMutex<IngestState>,
+}
+
+/// The next S2 sequence number and the input queue, guarded together so that a
+/// checkpoint flush (`Queue`) can never observe a `next_seq` advanced past a
+/// record that has not yet been queued. This is the invariant that keeps
+/// exactly-once checkpoints honest.
+struct IngestState {
+    next_seq: u64,
+    queue: InputQueue<u64>,
+}
+
+impl LiveReaderShared {
+    fn new(position_resolved: bool, next_seq: u64, queue: InputQueue<u64>) -> Self {
+        Self {
+            position_resolved: AtomicBool::new(position_resolved),
+            ingest: StdMutex::new(IngestState { next_seq, queue }),
+        }
+    }
+
+    fn lock_ingest(&self) -> StdMutexGuard<'_, IngestState> {
+        self.ingest
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 #[async_trait]
@@ -324,7 +368,7 @@ impl ClassifiedError {
         }
     }
 
-    fn after_progress(mut self, made_progress: bool) -> Self {
+    fn with_progress(mut self, made_progress: bool) -> Self {
         self.made_progress = made_progress;
         self
     }
@@ -337,7 +381,7 @@ struct S2Reader {
 impl S2Reader {
     fn new(
         config: Arc<S2InputConfig>,
-        resume_info: Metadata,
+        resume_info: S2CheckpointMetadata,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         table_name: &str,
@@ -409,7 +453,7 @@ impl S2Reader {
 
     async fn worker_task(
         config: Arc<S2InputConfig>,
-        resume_info: Metadata,
+        resume_info: S2CheckpointMetadata,
         s2_stream: Arc<dyn S2StreamClient>,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
@@ -429,25 +473,21 @@ impl S2Reader {
 
     async fn worker_task_with_backoff(
         config: Arc<S2InputConfig>,
-        resume_info: Metadata,
+        resume_info: S2CheckpointMetadata,
         s2_stream: Arc<dyn S2StreamClient>,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         command_receiver: UnboundedReceiver<InputReaderCommand>,
         backoff_config: BackoffConfig,
     ) -> Result<(), AnyError> {
-        let queue = Arc::new(InputQueue::<u64>::new(consumer.clone()));
-        let next_seq = Arc::new(AtomicU64::new(resume_info.seq_num_range.end));
-        let position_resolved = Arc::new(AtomicBool::new(resume_info.position_resolved));
-        let ingest_lock = Arc::new(StdMutex::new(()));
-        let live_shared = LiveReaderShared {
-            next_seq: next_seq.clone(),
-            position_resolved: position_resolved.clone(),
-            queue: queue.clone(),
-            ingest_lock: ingest_lock.clone(),
-        };
+        let live_shared = Arc::new(LiveReaderShared::new(
+            resume_info.position_resolved,
+            resume_info.seq_num_range.end,
+            InputQueue::<u64>::new(consumer.clone()),
+        ));
 
-        let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
+        let mut command_receiver =
+            InputCommandReceiver::<S2CheckpointMetadata, ()>::new(command_receiver);
 
         // Handle replay commands before normal operation. Replays retry transient S2 failures
         // from the absolute sequence number that remains to be replayed, while preserving the
@@ -465,13 +505,18 @@ impl S2Reader {
             .await?
             {
                 ReplayOutcome::Completed => {
-                    next_seq.store(metadata.seq_num_range.end, Ordering::Release);
+                    {
+                        let mut ingest = live_shared.lock_ingest();
+                        ingest.next_seq = metadata.seq_num_range.end;
+                    }
                     // Preserve the checkpoint's resolved flag rather than forcing it true.
                     // An empty checkpoint taken before the start position was resolved
                     // (e.g. a Tail start that had not yet anchored) must stay unresolved so
                     // the live reader reapplies the configured start_from on resume instead
                     // of reading from absolute sequence 0.
-                    position_resolved.store(metadata.position_resolved, Ordering::Release);
+                    live_shared
+                        .position_resolved
+                        .store(metadata.position_resolved, Ordering::Release);
                 }
                 ReplayOutcome::Disconnected => return Ok(()),
             }
@@ -495,13 +540,7 @@ impl S2Reader {
                             )
                         }
                         InputReaderCommand::Queue { .. } => {
-                            flush_queue(
-                                &queue,
-                                &next_seq,
-                                &position_resolved,
-                                &ingest_lock,
-                                consumer.as_ref(),
-                            )?;
+                            flush_queue(&live_shared, consumer.as_ref())?;
                         }
                         InputReaderCommand::Pause => {}
                         InputReaderCommand::Extend => {
@@ -539,8 +578,27 @@ impl S2Reader {
                             if let Some(c) = canceller.take() {
                                 c.cancel_and_join().await;
                             }
-                            let error = maybe_error.unwrap_or_else(|| ClassifiedError::retryable("S2 reader task stopped without reporting an error"));
-                            drain_reader_errors(&mut reader_error_receiver);
+                            // Collect every queued reader error rather than acting on only the
+                            // first and discarding the rest. If any of them is fatal, treat the
+                            // batch as fatal so a terminal failure is not masked by an earlier
+                            // retryable one. S2 normally surfaces a single terminal error per
+                            // session, so this is mostly defensive.
+                            let mut errors: Vec<ClassifiedError> = maybe_error.into_iter().collect();
+                            while let Ok(e) = reader_error_receiver.try_recv() {
+                                errors.push(e);
+                            }
+                            let error = if errors.is_empty() {
+                                ClassifiedError::retryable(
+                                    "S2 reader task stopped without reporting an error",
+                                )
+                            } else if errors.iter().any(|e| e.kind == S2ErrorKind::Fatal) {
+                                errors
+                                    .into_iter()
+                                    .find(|e| e.kind == S2ErrorKind::Fatal)
+                                    .expect("a fatal error was present")
+                            } else {
+                                errors.into_iter().next().expect("non-empty")
+                            };
                             match error.kind {
                                 S2ErrorKind::Retryable => {
                                     if error.made_progress {
@@ -562,13 +620,7 @@ impl S2Reader {
                                     unreachable!("{command:?} must be at the beginning of the command stream")
                                 }
                                 InputReaderCommand::Queue { .. } => {
-                                    flush_queue(
-                                    &queue,
-                                    &next_seq,
-                                    &position_resolved,
-                                    &ingest_lock,
-                                    consumer.as_ref(),
-                                )?;
+                                    flush_queue(&live_shared, consumer.as_ref())?;
                                 }
                                 InputReaderCommand::Pause => {
                                     if let Some(c) = canceller.take() {
@@ -593,13 +645,7 @@ impl S2Reader {
                                     unreachable!("{command:?} must be at the beginning of the command stream")
                                 }
                                 InputReaderCommand::Queue { .. } => {
-                                    flush_queue(
-                                    &queue,
-                                    &next_seq,
-                                    &position_resolved,
-                                    &ingest_lock,
-                                    consumer.as_ref(),
-                                )?;
+                                    flush_queue(&live_shared, consumer.as_ref())?;
                                 }
                                 InputReaderCommand::Pause => {
                                     if let Some(c) = canceller.take() {
@@ -610,6 +656,9 @@ impl S2Reader {
                                     backoff.reset();
                                     state = ReaderLifecycleState::Paused;
                                 }
+                                // No-op: this state is only reachable from Running (on a
+                                // reader error), so a restart is already pending via the
+                                // retry timer; an Extend here would just duplicate it.
                                 InputReaderCommand::Extend => {}
                                 InputReaderCommand::Disconnect => break,
                             }
@@ -665,32 +714,24 @@ fn drain_reader_errors(reader_error_receiver: &mut UnboundedReceiver<ClassifiedE
     while reader_error_receiver.try_recv().is_ok() {}
 }
 
-fn lock_ingest(ingest_lock: &StdMutex<()>) -> StdMutexGuard<'_, ()> {
-    ingest_lock
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-fn flush_queue(
-    queue: &InputQueue<u64>,
-    next_seq: &AtomicU64,
-    position_resolved: &AtomicBool,
-    ingest_lock: &StdMutex<()>,
-    consumer: &dyn InputConsumer,
-) -> Result<(), AnyError> {
-    let _guard = lock_ingest(ingest_lock);
-    let (buffer_size, hasher, batches) = queue.flush_with_aux();
+fn flush_queue(shared: &LiveReaderShared, consumer: &dyn InputConsumer) -> Result<(), AnyError> {
+    let ingest = shared.lock_ingest();
+    let (buffer_size, hasher, batches) = ingest.queue.flush_with_aux();
     let seq_range = match (batches.first(), batches.last()) {
         (Some((_, first)), Some((_, last))) => *first..*last + 1,
+        // No records were queued; checkpoint the current resume position as a
+        // zero-length range. hash is 0 because there is nothing to verify on
+        // replay of an empty range.
         _ => {
-            let pos = next_seq.load(Ordering::Acquire);
+            let pos = ingest.next_seq;
             pos..pos
         }
     };
-    info!("Queued {:?} records ({seq_range:?})", buffer_size);
-    let metadata_json = serde_json::to_value(&Metadata {
+    drop(ingest);
+    debug!("Queued {:?} records ({seq_range:?})", buffer_size);
+    let metadata_json = serde_json::to_value(&S2CheckpointMetadata {
         seq_num_range: seq_range,
-        position_resolved: position_resolved.load(Ordering::Acquire),
+        position_resolved: shared.position_resolved.load(Ordering::Acquire),
     })?;
     let timestamp = batches.last().map(|(ts, _)| *ts).unwrap_or_else(Utc::now);
     let hash = hasher.map(|h| h.finish()).unwrap_or(0);
@@ -727,7 +768,10 @@ async fn resolve_tail(
         .check_tail()
         .await
         .map_err(|e| ClassifiedError::new("failed to resolve S2 tail position", e))?;
-    shared.next_seq.store(tail.seq_num, Ordering::Release);
+    {
+        let mut ingest = shared.lock_ingest();
+        ingest.next_seq = tail.seq_num;
+    }
     shared.position_resolved.store(true, Ordering::Release);
     Ok(())
 }
@@ -756,7 +800,7 @@ fn apply_start_error(
 fn spawn_live_reader(
     s2_stream: Arc<dyn S2StreamClient>,
     config: Arc<S2InputConfig>,
-    shared: LiveReaderShared,
+    shared: Arc<LiveReaderShared>,
     mut parser: Box<dyn Parser>,
     reader_error_sender: UnboundedSender<ClassifiedError>,
 ) -> Canceller {
@@ -764,7 +808,7 @@ fn spawn_live_reader(
     let join_handle = tokio::spawn({
         let cancel_token_copy = cancel_token.clone();
         async move {
-            let start_seq = shared.next_seq.load(Ordering::Acquire);
+            let start_seq = shared.lock_ingest().next_seq;
             let resolved = shared.position_resolved.load(Ordering::Acquire);
             let read_input = read_input_for_position(&config, start_seq, resolved);
             let mut session = select! {
@@ -794,22 +838,19 @@ fn spawn_live_reader(
                                 made_progress = true;
                                 if let Err(error) = process_live_batch(
                                     batch,
-                                    &shared.next_seq,
-                                    &shared.position_resolved,
-                                    &shared.queue,
-                                    &shared.ingest_lock,
+                                    &shared,
                                     parser.as_mut(),
                                 ) {
-                                    let _ = reader_error_sender.send(error.after_progress(made_progress));
+                                    let _ = reader_error_sender.send(error.with_progress(made_progress));
                                     break;
                                 }
                             }
                             Some(Err(error)) => {
-                                let _ = reader_error_sender.send(ClassifiedError::new("S2 stream error after SDK retries", error).after_progress(made_progress));
+                                let _ = reader_error_sender.send(ClassifiedError::new("S2 stream error after SDK retries", error).with_progress(made_progress));
                                 break;
                             }
                             None => {
-                                let _ = reader_error_sender.send(ClassifiedError::retryable("S2 read session ended; reconnecting").after_progress(made_progress));
+                                let _ = reader_error_sender.send(ClassifiedError::retryable("S2 read session ended; reconnecting").with_progress(made_progress));
                                 break;
                             }
                         }
@@ -827,15 +868,12 @@ fn spawn_live_reader(
 
 fn process_live_batch(
     batch: S2Batch,
-    next_seq: &AtomicU64,
-    position_resolved: &AtomicBool,
-    queue: &InputQueue<u64>,
-    ingest_lock: &StdMutex<()>,
+    shared: &LiveReaderShared,
     parser: &mut dyn Parser,
 ) -> Result<(), ClassifiedError> {
-    let _guard = lock_ingest(ingest_lock);
-    let mut expected_seq = next_seq.load(Ordering::Acquire);
-    let mut resolved = position_resolved.load(Ordering::Acquire);
+    let mut ingest = shared.lock_ingest();
+    let mut expected_seq = ingest.next_seq;
+    let mut resolved = shared.position_resolved.load(Ordering::Acquire);
 
     for record in &batch.records {
         trace!("Got record #{}", record.seq_num);
@@ -847,11 +885,13 @@ fn process_live_batch(
         }
         if !resolved {
             resolved = true;
-            position_resolved.store(true, Ordering::Release);
+            shared.position_resolved.store(true, Ordering::Release);
         }
         expected_seq = record.seq_num + 1;
-        next_seq.store(expected_seq, Ordering::Release);
-        queue.push_with_aux(parser.parse(&record.body, None), Utc::now(), record.seq_num);
+        ingest.next_seq = expected_seq;
+        ingest
+            .queue
+            .push_with_aux(parser.parse(&record.body, None), Utc::now(), record.seq_num);
     }
 
     if let Some(tail) = &batch.tail {
@@ -861,8 +901,8 @@ fn process_live_batch(
                 tail.seq_num
             )));
         }
-        next_seq.store(tail.seq_num, Ordering::Release);
-        position_resolved.store(true, Ordering::Release);
+        ingest.next_seq = tail.seq_num;
+        shared.position_resolved.store(true, Ordering::Release);
     }
 
     Ok(())
@@ -878,8 +918,8 @@ async fn replay_checkpoint(
     s2_stream: Arc<dyn S2StreamClient>,
     consumer: Box<dyn InputConsumer>,
     mut parser: Box<dyn Parser>,
-    command_receiver: &mut InputCommandReceiver<Metadata, ()>,
-    metadata: &Metadata,
+    command_receiver: &mut InputCommandReceiver<S2CheckpointMetadata, ()>,
+    metadata: &S2CheckpointMetadata,
     backoff_config: BackoffConfig,
 ) -> Result<ReplayOutcome, AnyError> {
     let first = metadata.seq_num_range.start;
@@ -982,32 +1022,22 @@ async fn replay_checkpoint(
 
 async fn wait_replay_backoff(
     backoff: &mut BackoffState,
-    command_receiver: &mut InputCommandReceiver<Metadata, ()>,
+    command_receiver: &mut InputCommandReceiver<S2CheckpointMetadata, ()>,
 ) -> Result<ReplayOutcome, AnyError> {
-    let retry_at = backoff.next_deadline();
-    // Hold any non-Disconnect control command locally (instead of put_back) so the
-    // backoff timer still elapses. Otherwise a buffered command would be re-received
-    // immediately on the next retry, busy-looping read_session against S2.
-    // `put_back` is single-slot, so a second pending command stays in the channel and
-    // is handled on the following backoff iteration; no command is lost.
-    let mut held: Option<InputReaderCommand> = None;
-    let outcome = loop {
-        select! {
-            _ = sleep_until(retry_at) => break ReplayOutcome::Completed,
-            command = command_receiver.recv() => match command? {
-                InputReaderCommand::Disconnect => break ReplayOutcome::Disconnected,
-                other if held.is_none() => held = Some(other),
-                other => {
-                    command_receiver.put_back(other);
-                    break ReplayOutcome::Completed;
-                }
-            },
+    // Check for control commands *before* sleeping. Disconnect stops replay
+    // immediately; any other command is buffered back for the worker to handle
+    // once this backoff elapses (it cannot be serviced mid-replay). We take at
+    // most one command per call — `put_back` is single-slot, so taking a second
+    // before draining the first would assert-fail. The sleep then always elapses,
+    // so a buffered command cannot busy-loop `read_session` against S2.
+    if let Some(command) = command_receiver.try_recv()? {
+        match command {
+            InputReaderCommand::Disconnect => return Ok(ReplayOutcome::Disconnected),
+            other => command_receiver.put_back(other),
         }
-    };
-    if let Some(command) = held {
-        command_receiver.put_back(command);
     }
-    Ok(outcome)
+    sleep_until(backoff.next_deadline()).await;
+    Ok(ReplayOutcome::Completed)
 }
 
 struct Canceller {
@@ -1037,780 +1067,4 @@ impl InputReader for S2Reader {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::format::{InputBuffer, Splitter};
-    use dbsp::operator::StagedBuffers;
-    use feldera_adapterlib::ConnectorMetadata;
-    use feldera_adapterlib::format::ParseError;
-    use feldera_types::adapter_stats::ConnectorHealth;
-    use feldera_types::config::FtModel;
-    use futures::stream;
-    use rmpv::Value as RmpValue;
-    use s2_sdk::types::{FencingToken, ValidationError};
-    use std::collections::VecDeque;
-    use std::sync::{Mutex, MutexGuard};
-    use tokio::time::{Duration, timeout};
-
-    #[test]
-    fn classifies_server_codes_exactly() {
-        for code in [
-            "request_timeout",
-            "rate_limited",
-            "other",
-            "storage",
-            "hot_server",
-            "unavailable",
-            "upstream_timeout",
-            "transaction_conflict",
-        ] {
-            assert_eq!(
-                classify_s2_server_code(code),
-                S2ErrorKind::Retryable,
-                "{code}"
-            );
-        }
-        for code in ["", "not_found", "permission_denied", "rate_limited_extra"] {
-            assert_eq!(classify_s2_server_code(code), S2ErrorKind::Fatal, "{code}");
-        }
-    }
-
-    #[test]
-    fn classifies_client_messages_exactly() {
-        for message in [
-            "heartbeat timeout",
-            "timeout",
-            "connect: dns",
-            "connection closed early: eof",
-            "request canceled: dropped",
-            "unexpected eof: body",
-            "connection reset: reset",
-            "connection aborted: aborted",
-            "connection refused: refused",
-        ] {
-            assert_eq!(
-                classify_s2_client_message(message),
-                S2ErrorKind::Retryable,
-                "{message}"
-            );
-        }
-        for message in ["", "heart beat timeout", "timeout: later", "unknown"] {
-            assert_eq!(
-                classify_s2_client_message(message),
-                S2ErrorKind::Fatal,
-                "{message}"
-            );
-        }
-    }
-
-    #[test]
-    fn classifies_constructible_s2_error_variants() {
-        assert_eq!(
-            classify_s2_error(&S2Error::Client("timeout".to_string())),
-            S2ErrorKind::Retryable
-        );
-        assert_eq!(
-            classify_s2_error(&S2Error::Client("unknown".to_string())),
-            S2ErrorKind::Fatal
-        );
-        assert_eq!(
-            classify_s2_error(&S2Error::MalformedAccessToken("bad".to_string())),
-            S2ErrorKind::Fatal
-        );
-        assert_eq!(
-            classify_s2_error(&S2Error::Validation(ValidationError("bad".to_string()))),
-            S2ErrorKind::Fatal
-        );
-        assert_eq!(
-            classify_s2_error(&S2Error::AppendConditionFailed(
-                AppendConditionFailed::SeqNumMismatch(1)
-            )),
-            S2ErrorKind::Fatal
-        );
-        assert_eq!(
-            classify_s2_error(&S2Error::AppendConditionFailed(
-                AppendConditionFailed::FencingTokenMismatch(
-                    "token".parse::<FencingToken>().unwrap()
-                )
-            )),
-            S2ErrorKind::Fatal
-        );
-    }
-
-    #[test]
-    fn resolved_zero_uses_absolute_sequence_zero() {
-        let config = basic_config(S2StartFrom::Tail);
-        let input = read_input_for_position(&config, 0, true);
-        assert!(matches!(input.start.from, ReadFrom::SeqNum(0)));
-
-        let input = read_input_for_position(&config, 0, false);
-        assert!(matches!(input.start.from, ReadFrom::TailOffset(0)));
-    }
-
-    #[tokio::test]
-    async fn empty_unresolved_checkpoint_reuses_configured_start_from() {
-        // A checkpoint taken before the start position was resolved must not force the
-        // live reader to read from absolute sequence 0; the configured start_from still
-        // applies on resume.
-        let stream = Arc::new(FakeS2Stream::new(vec![FakeAction::Session(Ok(
-            FakeSession::Pending,
-        ))]));
-        let (sender, receiver) = unbounded_channel();
-        let consumer = RecordingConsumer::new();
-        consumer.allow_errors();
-        let handle = spawn_worker(
-            stream.clone(),
-            consumer,
-            receiver,
-            Metadata {
-                seq_num_range: 0..0,
-                position_resolved: false,
-            },
-            S2StartFrom::SeqNum(5),
-        );
-
-        sender
-            .send(InputReaderCommand::Replay {
-                metadata: serde_json::to_value(Metadata {
-                    seq_num_range: 0..0,
-                    position_resolved: false,
-                })
-                .unwrap(),
-                data: RmpValue::Nil,
-            })
-            .unwrap();
-        sender.send(InputReaderCommand::Extend).unwrap();
-        wait_for(|| stream.read_inputs().len() == 1).await;
-        assert!(matches!(
-            stream.read_inputs()[0].start.from,
-            ReadFrom::SeqNum(5)
-        ));
-        sender.send(InputReaderCommand::Disconnect).unwrap();
-        handle.await.unwrap().unwrap();
-    }
-
-    #[tokio::test]
-    async fn resolved_tail_is_anchored_before_first_queue_checkpoint() {
-        // The tail must be resolved (and the position anchored) before a Queue can emit a
-        // replayable checkpoint, so an empty checkpoint carries the resolved sequence
-        // rather than an unresolved zero.
-        let stream = Arc::new(FakeS2Stream::new(vec![
-            FakeAction::Tail(Ok(S2Position { seq_num: 7 })),
-            FakeAction::Session(Ok(FakeSession::Pending)),
-        ]));
-        let (sender, receiver) = unbounded_channel();
-        let consumer = RecordingConsumer::new();
-        consumer.allow_errors();
-        let handle = spawn_worker(
-            stream.clone(),
-            consumer.clone(),
-            receiver,
-            Metadata {
-                seq_num_range: 0..0,
-                position_resolved: false,
-            },
-            S2StartFrom::Tail,
-        );
-
-        sender.send(InputReaderCommand::Extend).unwrap();
-        wait_for(|| stream.read_inputs().len() == 1).await;
-        sender
-            .send(InputReaderCommand::Queue {
-                checkpoint_requested: false,
-            })
-            .unwrap();
-        wait_for(|| !consumer.extended().is_empty()).await;
-        assert_eq!(consumer.extended()[0].seq_num_range, 7..7);
-        assert!(consumer.extended()[0].position_resolved);
-        sender.send(InputReaderCommand::Disconnect).unwrap();
-        handle.await.unwrap().unwrap();
-    }
-
-    #[tokio::test]
-    async fn tail_transient_recovers_and_starts_from_resolved_zero() {
-        let stream = Arc::new(FakeS2Stream::new(vec![
-            FakeAction::Tail(Err(retryable_error())),
-            FakeAction::Tail(Ok(S2Position { seq_num: 0 })),
-            FakeAction::Session(Ok(FakeSession::Pending)),
-        ]));
-        let (sender, receiver) = unbounded_channel();
-        let consumer = RecordingConsumer::new();
-        consumer.allow_errors();
-        let handle = spawn_worker(
-            stream.clone(),
-            consumer.clone(),
-            receiver,
-            Metadata {
-                seq_num_range: 0..0,
-                position_resolved: false,
-            },
-            S2StartFrom::Tail,
-        );
-
-        sender.send(InputReaderCommand::Extend).unwrap();
-        wait_for(|| consumer.error_count() >= 1).await;
-        wait_for(|| stream.read_inputs().len() == 1).await;
-        assert_eq!(consumer.errors()[0].0, false);
-        assert!(matches!(
-            stream.read_inputs()[0].start.from,
-            ReadFrom::SeqNum(0)
-        ));
-        sender.send(InputReaderCommand::Disconnect).unwrap();
-        handle.await.unwrap().unwrap();
-    }
-
-    #[tokio::test]
-    async fn live_setup_and_midstream_transients_recover() {
-        let stream = Arc::new(FakeS2Stream::new(vec![
-            FakeAction::Session(Err(retryable_error())),
-            FakeAction::Session(Ok(FakeSession::Events(vec![
-                Ok(batch(vec![(0, b"a")], None)),
-                Err(retryable_error()),
-            ]))),
-            FakeAction::Session(Ok(FakeSession::Events(vec![Ok(batch(
-                vec![(1, b"b")],
-                None,
-            ))]))),
-            FakeAction::Session(Ok(FakeSession::Pending)),
-        ]));
-        let (sender, receiver) = unbounded_channel();
-        let consumer = RecordingConsumer::new();
-        consumer.allow_errors();
-        let parser = RecordingParser::new();
-        let handle = spawn_worker_with_parser(
-            stream,
-            consumer.clone(),
-            parser.clone(),
-            receiver,
-            Metadata {
-                seq_num_range: 0..0,
-                position_resolved: true,
-            },
-            S2StartFrom::Beginning,
-        );
-
-        sender.send(InputReaderCommand::Extend).unwrap();
-        wait_for(|| parser.data() == b"ab".to_vec()).await;
-        assert!(consumer.errors().iter().any(|(fatal, _)| !fatal));
-        sender.send(InputReaderCommand::Disconnect).unwrap();
-        handle.await.unwrap().unwrap();
-    }
-
-    #[tokio::test]
-    async fn live_none_reconnects() {
-        let stream = Arc::new(FakeS2Stream::new(vec![
-            FakeAction::Session(Ok(FakeSession::Events(vec![Ok(batch(
-                vec![(0, b"a")],
-                None,
-            ))]))),
-            FakeAction::Session(Ok(FakeSession::Events(vec![Ok(batch(
-                vec![(1, b"b")],
-                None,
-            ))]))),
-            FakeAction::Session(Ok(FakeSession::Pending)),
-        ]));
-        let (sender, receiver) = unbounded_channel();
-        let consumer = RecordingConsumer::new();
-        consumer.allow_errors();
-        let parser = RecordingParser::new();
-        let handle = spawn_worker_with_parser(
-            stream,
-            consumer,
-            parser.clone(),
-            receiver,
-            Metadata {
-                seq_num_range: 0..0,
-                position_resolved: true,
-            },
-            S2StartFrom::Beginning,
-        );
-
-        sender.send(InputReaderCommand::Extend).unwrap();
-        wait_for(|| parser.data() == b"ab".to_vec()).await;
-        sender.send(InputReaderCommand::Disconnect).unwrap();
-        handle.await.unwrap().unwrap();
-    }
-
-    #[tokio::test]
-    async fn queue_responds_while_retrying() {
-        let stream = Arc::new(FakeS2Stream::new(vec![
-            FakeAction::Session(Ok(FakeSession::Events(vec![
-                Ok(batch(vec![(0, b"a")], None)),
-                Err(retryable_error()),
-            ]))),
-            FakeAction::Session(Ok(FakeSession::Pending)),
-        ]));
-        let (sender, receiver) = unbounded_channel();
-        let consumer = RecordingConsumer::new();
-        consumer.allow_errors();
-        let handle = spawn_worker(
-            stream,
-            consumer.clone(),
-            receiver,
-            Metadata {
-                seq_num_range: 0..0,
-                position_resolved: true,
-            },
-            S2StartFrom::Beginning,
-        );
-
-        sender.send(InputReaderCommand::Extend).unwrap();
-        wait_for(|| consumer.error_count() >= 1).await;
-        sender
-            .send(InputReaderCommand::Queue {
-                checkpoint_requested: false,
-            })
-            .unwrap();
-        wait_for(|| !consumer.extended().is_empty()).await;
-        assert_eq!(consumer.extended()[0].seq_num_range, 0..1);
-        sender.send(InputReaderCommand::Disconnect).unwrap();
-        handle.await.unwrap().unwrap();
-    }
-
-    #[tokio::test]
-    async fn pause_cancels_retry_backoff_and_extend_restarts() {
-        let stream = Arc::new(FakeS2Stream::new(vec![
-            FakeAction::Session(Err(retryable_error())),
-            FakeAction::Session(Ok(FakeSession::Pending)),
-        ]));
-        let (sender, receiver) = unbounded_channel();
-        let consumer = RecordingConsumer::new();
-        consumer.allow_errors();
-        let handle = spawn_worker(
-            stream.clone(),
-            consumer,
-            receiver,
-            Metadata {
-                seq_num_range: 0..0,
-                position_resolved: true,
-            },
-            S2StartFrom::Beginning,
-        );
-
-        sender.send(InputReaderCommand::Extend).unwrap();
-        wait_for(|| stream.session_attempts() == 1).await;
-        sender.send(InputReaderCommand::Pause).unwrap();
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        assert_eq!(stream.session_attempts(), 1);
-        sender.send(InputReaderCommand::Extend).unwrap();
-        wait_for(|| stream.session_attempts() == 2).await;
-        sender.send(InputReaderCommand::Disconnect).unwrap();
-        handle.await.unwrap().unwrap();
-    }
-
-    #[tokio::test]
-    async fn fatal_setup_error_stops() {
-        let stream = Arc::new(FakeS2Stream::new(vec![FakeAction::Session(Err(
-            fatal_error(),
-        ))]));
-        let (sender, receiver) = unbounded_channel();
-        let consumer = RecordingConsumer::new();
-        consumer.allow_errors();
-        let handle = spawn_worker(
-            stream,
-            consumer.clone(),
-            receiver,
-            Metadata {
-                seq_num_range: 0..0,
-                position_resolved: true,
-            },
-            S2StartFrom::Beginning,
-        );
-
-        sender.send(InputReaderCommand::Extend).unwrap();
-        wait_for(|| consumer.error_count() == 1).await;
-        assert!(consumer.errors()[0].0);
-        handle.await.unwrap().unwrap();
-    }
-
-    #[tokio::test]
-    async fn live_gap_duplicate_or_tail_mismatch_is_fatal() {
-        for (records, tail) in [
-            (vec![(1, b"gap" as &[u8])], None),
-            (vec![(0, b"a" as &[u8]), (0, b"dup" as &[u8])], None),
-            (vec![(0, b"a" as &[u8])], Some(0)),
-            (Vec::new(), Some(1)),
-        ] {
-            let stream = Arc::new(FakeS2Stream::new(vec![FakeAction::Session(Ok(
-                FakeSession::Events(vec![Ok(batch(records, tail))]),
-            ))]));
-            let (sender, receiver) = unbounded_channel();
-            let consumer = RecordingConsumer::new();
-            consumer.allow_errors();
-            let handle = spawn_worker(
-                stream,
-                consumer.clone(),
-                receiver,
-                Metadata {
-                    seq_num_range: 0..0,
-                    position_resolved: true,
-                },
-                S2StartFrom::Beginning,
-            );
-            sender.send(InputReaderCommand::Extend).unwrap();
-            wait_for(|| consumer.error_count() == 1).await;
-            assert!(consumer.errors()[0].0);
-            handle.await.unwrap().unwrap();
-        }
-    }
-
-    #[tokio::test]
-    async fn replay_partial_transient_resumes_without_duplicates() {
-        let stream = Arc::new(FakeS2Stream::new(vec![
-            FakeAction::Session(Ok(FakeSession::Events(vec![
-                Ok(batch(vec![(0, b"a")], None)),
-                Err(retryable_error()),
-            ]))),
-            FakeAction::Session(Ok(FakeSession::Events(vec![Ok(batch(
-                vec![(1, b"b"), (2, b"c")],
-                None,
-            ))]))),
-        ]));
-        let (sender, receiver) = unbounded_channel();
-        let consumer = RecordingConsumer::new();
-        consumer.allow_errors();
-        let parser = RecordingParser::new();
-        let handle = spawn_worker_with_parser(
-            stream.clone(),
-            consumer.clone(),
-            parser.clone(),
-            receiver,
-            Metadata {
-                seq_num_range: 0..0,
-                position_resolved: false,
-            },
-            S2StartFrom::Beginning,
-        );
-
-        sender
-            .send(InputReaderCommand::Replay {
-                metadata: serde_json::to_value(Metadata {
-                    seq_num_range: 0..3,
-                    position_resolved: true,
-                })
-                .unwrap(),
-                data: RmpValue::Nil,
-            })
-            .unwrap();
-        wait_for(|| consumer.replayed_count() == 1).await;
-        sender.send(InputReaderCommand::Disconnect).unwrap();
-        handle.await.unwrap().unwrap();
-        assert_eq!(parser.data(), b"abc".to_vec());
-        let inputs = stream.read_inputs();
-        assert!(matches!(inputs[0].start.from, ReadFrom::SeqNum(0)));
-        assert_eq!(inputs[0].stop.limits.count, Some(3));
-        assert!(matches!(inputs[1].start.from, ReadFrom::SeqNum(1)));
-        assert_eq!(inputs[1].stop.limits.count, Some(2));
-    }
-
-    #[tokio::test]
-    async fn replay_gap_short_and_read_unwritten_are_fatal() {
-        let cases = vec![
-            (
-                vec![FakeAction::Session(Ok(FakeSession::Events(vec![Ok(
-                    batch(vec![(1, b"gap")], None),
-                )])))],
-                1,
-            ),
-            (
-                vec![FakeAction::Session(Ok(FakeSession::Events(vec![])))],
-                1,
-            ),
-            (
-                vec![FakeAction::Session(Ok(FakeSession::Events(vec![Ok(
-                    batch(vec![(0, b"short")], None),
-                )])))],
-                2,
-            ),
-            (vec![FakeAction::Session(Err(fatal_error()))], 1),
-        ];
-        for (case_index, (actions, replay_end)) in cases.into_iter().enumerate() {
-            let stream = Arc::new(FakeS2Stream::new(actions));
-            let (sender, receiver) = unbounded_channel();
-            let consumer = RecordingConsumer::new();
-            consumer.allow_errors();
-            let handle = spawn_worker(
-                stream,
-                consumer.clone(),
-                receiver,
-                Metadata {
-                    seq_num_range: 0..0,
-                    position_resolved: false,
-                },
-                S2StartFrom::Beginning,
-            );
-            sender
-                .send(InputReaderCommand::Replay {
-                    metadata: serde_json::to_value(Metadata {
-                        seq_num_range: 0..replay_end,
-                        position_resolved: true,
-                    })
-                    .unwrap(),
-                    data: RmpValue::Nil,
-                })
-                .unwrap();
-            timeout(Duration::from_secs(1), handle)
-                .await
-                .unwrap_or_else(|_| panic!("replay fatal case {case_index} timed out"))
-                .unwrap()
-                .unwrap_err();
-        }
-    }
-
-    fn spawn_worker(
-        stream: Arc<FakeS2Stream>,
-        consumer: RecordingConsumer,
-        receiver: UnboundedReceiver<InputReaderCommand>,
-        metadata: Metadata,
-        start_from: S2StartFrom,
-    ) -> JoinHandle<Result<(), AnyError>> {
-        spawn_worker_with_parser(
-            stream,
-            consumer,
-            RecordingParser::new(),
-            receiver,
-            metadata,
-            start_from,
-        )
-    }
-
-    fn spawn_worker_with_parser(
-        stream: Arc<FakeS2Stream>,
-        consumer: RecordingConsumer,
-        parser: RecordingParser,
-        receiver: UnboundedReceiver<InputReaderCommand>,
-        metadata: Metadata,
-        start_from: S2StartFrom,
-    ) -> JoinHandle<Result<(), AnyError>> {
-        tokio::spawn(S2Reader::worker_task_with_backoff(
-            Arc::new(basic_config(start_from)),
-            metadata,
-            stream,
-            Box::new(consumer),
-            Box::new(parser),
-            receiver,
-            BackoffConfig {
-                initial: Duration::from_millis(1),
-                max: Duration::from_millis(2),
-            },
-        ))
-    }
-
-    fn basic_config(start_from: S2StartFrom) -> S2InputConfig {
-        S2InputConfig {
-            basin: "basin".to_string(),
-            stream: "stream".to_string(),
-            auth_token: "token".to_string(),
-            endpoint: None,
-            start_from,
-        }
-    }
-
-    fn retryable_error() -> S2Error {
-        S2Error::Client("timeout".to_string())
-    }
-
-    fn fatal_error() -> S2Error {
-        S2Error::Client("unknown".to_string())
-    }
-
-    fn batch(records: Vec<(u64, &[u8])>, tail: Option<u64>) -> S2Batch {
-        S2Batch {
-            records: records
-                .into_iter()
-                .map(|(seq_num, body)| S2Record {
-                    seq_num,
-                    body: body.to_vec(),
-                })
-                .collect(),
-            tail: tail.map(|seq_num| S2Position { seq_num }),
-        }
-    }
-
-    async fn wait_for(mut condition: impl FnMut() -> bool) {
-        timeout(Duration::from_secs(1), async move {
-            while !condition() {
-                tokio::time::sleep(Duration::from_millis(1)).await;
-            }
-        })
-        .await
-        .expect("timed out waiting for condition");
-    }
-
-    enum FakeAction {
-        Tail(Result<S2Position, S2Error>),
-        Session(Result<FakeSession, S2Error>),
-    }
-
-    enum FakeSession {
-        Events(Vec<Result<S2Batch, S2Error>>),
-        Pending,
-    }
-
-    struct FakeS2Stream {
-        actions: Mutex<VecDeque<FakeAction>>,
-        read_inputs: Mutex<Vec<ReadInput>>,
-    }
-
-    impl FakeS2Stream {
-        fn new(actions: Vec<FakeAction>) -> Self {
-            Self {
-                actions: Mutex::new(actions.into()),
-                read_inputs: Mutex::new(Vec::new()),
-            }
-        }
-
-        fn read_inputs(&self) -> Vec<ReadInput> {
-            self.read_inputs.lock().unwrap().clone()
-        }
-
-        fn session_attempts(&self) -> usize {
-            self.read_inputs.lock().unwrap().len()
-        }
-
-        fn next_action(&self) -> FakeAction {
-            self.actions
-                .lock()
-                .unwrap()
-                .pop_front()
-                .expect("missing fake S2 action")
-        }
-    }
-
-    #[async_trait]
-    impl S2StreamClient for FakeS2Stream {
-        async fn check_tail(&self) -> Result<S2Position, S2Error> {
-            match self.next_action() {
-                FakeAction::Tail(result) => result,
-                FakeAction::Session(_) => panic!("expected tail action"),
-            }
-        }
-
-        async fn read_session(&self, input: ReadInput) -> Result<S2ReadSession, S2Error> {
-            self.read_inputs.lock().unwrap().push(input);
-            match self.next_action() {
-                FakeAction::Session(Ok(FakeSession::Events(events))) => {
-                    Ok(Box::pin(stream::iter(events)))
-                }
-                FakeAction::Session(Ok(FakeSession::Pending)) => Ok(Box::pin(stream::pending())),
-                FakeAction::Session(Err(error)) => Err(error),
-                FakeAction::Tail(_) => panic!("expected session action"),
-            }
-        }
-    }
-
-    #[derive(Clone)]
-    struct RecordingConsumer(Arc<Mutex<ConsumerState>>);
-
-    #[derive(Default)]
-    struct ConsumerState {
-        errors: Vec<(bool, String)>,
-        extended: Vec<Metadata>,
-        replayed: usize,
-        allow_errors: bool,
-    }
-
-    impl RecordingConsumer {
-        fn new() -> Self {
-            Self(Arc::new(Mutex::new(ConsumerState::default())))
-        }
-
-        fn state(&self) -> MutexGuard<'_, ConsumerState> {
-            self.0.lock().unwrap()
-        }
-
-        fn allow_errors(&self) {
-            self.state().allow_errors = true;
-        }
-
-        fn errors(&self) -> Vec<(bool, String)> {
-            self.state().errors.clone()
-        }
-
-        fn error_count(&self) -> usize {
-            self.state().errors.len()
-        }
-
-        fn extended(&self) -> Vec<Metadata> {
-            self.state()
-                .extended
-                .iter()
-                .map(|m| Metadata {
-                    seq_num_range: m.seq_num_range.clone(),
-                    position_resolved: m.position_resolved,
-                })
-                .collect()
-        }
-
-        fn replayed_count(&self) -> usize {
-            self.state().replayed
-        }
-    }
-
-    impl InputConsumer for RecordingConsumer {
-        fn max_batch_size(&self) -> usize {
-            usize::MAX
-        }
-        fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
-            Some(FtModel::ExactlyOnce)
-        }
-        fn parse_errors(&self, _errors: Vec<ParseError>) {}
-        fn buffered(&self, _amt: BufferSize) {}
-        fn replayed(&self, _num_records: BufferSize, _hash: u64) {
-            self.state().replayed += 1;
-        }
-        fn request_step(&self) {}
-        fn extended(&self, _amt: BufferSize, _resume: Option<Resume>, watermarks: Vec<Watermark>) {
-            let metadata = watermarks.into_iter().find_map(|w| w.metadata).unwrap();
-            self.state()
-                .extended
-                .push(serde_json::from_value(metadata).unwrap());
-        }
-        fn eoi(&self) {}
-        fn start_transaction(&self, _label: Option<&str>) {}
-        fn commit_transaction(&self) {}
-        fn error(&self, fatal: bool, error: AnyError, _tag: Option<&'static str>) {
-            let mut state = self.state();
-            assert!(state.allow_errors, "unexpected error: {error}");
-            state.errors.push((fatal, error.to_string()));
-        }
-        fn update_connector_health(&self, _health: ConnectorHealth) {}
-        fn completion_watcher(
-            &self,
-        ) -> Option<tokio::sync::watch::Receiver<feldera_types::coordination::Completion>> {
-            None
-        }
-    }
-
-    #[derive(Clone)]
-    struct RecordingParser(Arc<Mutex<Vec<u8>>>);
-
-    impl RecordingParser {
-        fn new() -> Self {
-            Self(Arc::new(Mutex::new(Vec::new())))
-        }
-        fn data(&self) -> Vec<u8> {
-            self.0.lock().unwrap().clone()
-        }
-    }
-
-    impl Parser for RecordingParser {
-        fn parse(
-            &mut self,
-            data: &[u8],
-            _metadata: Option<ConnectorMetadata>,
-        ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
-            self.0.lock().unwrap().extend_from_slice(data);
-            (None, Vec::new())
-        }
-        fn stage(&self, _buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
-            panic!("stage not used")
-        }
-        fn splitter(&self) -> Box<dyn Splitter> {
-            panic!("splitter not used")
-        }
-        fn fork(&self) -> Box<dyn Parser> {
-            Box::new(self.clone())
-        }
-    }
-}
+mod tests;
