@@ -1,13 +1,24 @@
 import { goto } from '$app/navigation'
-import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+import {
+  usePipelineList,
+  useUpdatePipelineList
+} from '$lib/compositions/pipelines/usePipelineList.svelte'
 import { resolve } from '$lib/functions/svelte'
+import { captureEvent } from '$lib/services/analytics'
 import type { Demo } from '$lib/services/manager'
 import { usePipelineManager } from '../usePipelineManager.svelte'
 
 export const useTryPipeline = () => {
   const { updatePipelines } = useUpdatePipelineList()
+  const pipelineList = usePipelineList()
   const api = usePipelineManager()
-  return async (pipeline: Omit<Demo, 'title'>) => {
+  return async (pipeline: Omit<Demo, 'title'>, trigger_location?: string) => {
+    const already_created = (pipelineList.pipelines ?? []).some((p) => p.name === pipeline.name)
+    captureEvent('demo_opened', {
+      demo: pipeline.name,
+      already_created,
+      trigger_location
+    })
     try {
       const newPipeline = await api.postPipeline({
         name: pipeline.name,

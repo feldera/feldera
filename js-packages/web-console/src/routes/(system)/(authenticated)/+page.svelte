@@ -74,7 +74,8 @@
         <CreatePipelineButton inputClass="max-w-64" btnClass="preset-filled-surface-50-950"
         ></CreatePipelineButton>
       </div>
-      <BookADemo class="btn preset-filled-primary-500">Book a demo</BookADemo>
+      <BookADemo class="btn preset-filled-primary-500" triggerLocation="home">Book a demo</BookADemo
+      >
     {/if}
   {/snippet}
 </AppHeader>
@@ -204,7 +205,7 @@
                 class="grid grid-cols-1 gap-x-6 gap-y-5 py-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
               >
                 {#each demos.current.slice(0, maxShownDemos) as demo}
-                  <DemoTile {demo}></DemoTile>
+                  <DemoTile {demo} triggerLocation="home"></DemoTile>
                 {/each}
                 <div class="flex flex-col card p-4">
                   <div class="text-sm text-surface-500"></div>

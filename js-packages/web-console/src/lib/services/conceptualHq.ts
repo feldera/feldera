@@ -54,10 +54,7 @@ const loadConceptualAnalytics = (key: string): ConceptualAnalytics => {
 }
 
 /**
- * Initialize ConceptualHQ analytics for the signed-in user. The analytics key
- * is served by the pipeline-manager in `/config` (`config.conceptualhq`), the
- * same path the PostHog key travels, so deployments configure it without
- * rebuilding the console.
+ * Initialize ConceptualHQ analytics for the signed-in user.
  *
  * Identifies the user (keyed on email to match PostHog identity) and tracks a
  * `signin` event.
@@ -81,4 +78,21 @@ export const initConceptualHq = (config: Configuration, profile: UserProfile) =>
     })
   }
   ca('track', 'signin')
+}
+
+/**
+ * Track an event in ConceptualHQ. No-op when the loader was never installed
+ * (analytics disabled) or outside the browser, so callers fire unconditionally.
+ * Prefer the shared `captureEvent` in `analytics.ts` over calling this directly,
+ * so PostHog and ConceptualHQ stay in sync.
+ */
+export const trackConceptualHq = (event: string, properties?: Record<string, unknown>) => {
+  if (typeof window === 'undefined' || !window.ca) {
+    return
+  }
+  if (properties) {
+    window.ca('track', event, properties)
+  } else {
+    window.ca('track', event)
+  }
 }
