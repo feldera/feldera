@@ -85,3 +85,14 @@ pub struct ApproveParameters {
     #[serde(default)]
     pub concurrent_bootstrap: bool,
 }
+
+/// Query parameters to the `/stats` endpoint.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct StatsParams {
+    /// When `true`, include the most recent error messages for each endpoint
+    /// in the response (up to `MAX_CONNECTOR_ERRORS` per list). Default is
+    /// `false` so that callers polling `/stats` keep getting a lightweight
+    /// response. This selector is intended for the support-bundle collector.
+    #[serde(default)]
+    pub include_connector_errors: bool,
+}

@@ -74,7 +74,7 @@ use feldera_types::format::json::JsonEncoderConfig;
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::query_params::{
     ActivateParams, ApproveParameters, MetricsFormat, MetricsParameters, SamplyProfileGetParams,
-    SamplyProfileParams,
+    SamplyProfileParams, StatsParams,
 };
 use feldera_types::runtime_status::{
     BootstrapConfig, BootstrapPolicy, ConnectorStats, ExtendedRuntimeStatus,
@@ -1735,16 +1735,6 @@ async fn query(
     } else {
         adhoc_websocket(controller, request, stream).await
     }
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct StatsParams {
-    /// When `true`, include the most recent error messages for each endpoint
-    /// in the response (up to `MAX_CONNECTOR_ERRORS` per list). Default is
-    /// `false` so that callers polling `/stats` keep getting a lightweight
-    /// response. This selector is intended for the support-bundle collector.
-    #[serde(default)]
-    include_connector_errors: bool,
 }
 
 #[get("/stats")]
