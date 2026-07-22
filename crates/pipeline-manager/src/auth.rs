@@ -1077,6 +1077,8 @@ mod test {
             allowed_origins: None,
             demos_dir: vec![],
             telemetry: "".to_owned(),
+            conceptualhq: "".to_owned(),
+            product_fruits: "".to_owned(),
             support_data_collection_frequency: 15,
             support_data_retention: 3,
             authorized_groups: vec![],

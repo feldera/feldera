@@ -26,8 +26,10 @@ import {
   setSelectedTenant,
   triggerOidcLogin
 } from '$lib/services/auth'
+import { initConceptualHq } from '$lib/services/conceptualHq'
 import type { Configuration, SessionInfo } from '$lib/services/manager'
 import { client } from '$lib/services/manager/client.gen'
+import { initProductFruits } from '$lib/services/productFruits'
 import type { AuthDetails } from '$lib/types/auth'
 import type { LayoutLoad } from './$types'
 
@@ -83,10 +85,10 @@ export const trailingSlash = 'always'
  */
 
 const initPosthog = async (config: Configuration) => {
-  if (!config.telemetry) {
+  if (!config.posthog) {
     return
   }
-  posthog.init(config.telemetry, {
+  posthog.init(config.posthog, {
     api_host: 'https://us.i.posthog.com',
     person_profiles: 'identified_only',
     capture_pageview: false,
@@ -451,6 +453,8 @@ function initializeConfigDependencies(auth: AuthDetails, config: Configuration) 
         })
       }
     })
+    initProductFruits(config, auth.profile)
+    initConceptualHq(config, auth.profile)
   }
 
   {

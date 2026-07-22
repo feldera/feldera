@@ -68,8 +68,12 @@ impl BuildInformation {
 
 #[derive(Serialize, ToSchema)]
 pub(crate) struct Configuration {
-    /// Telemetry key.
-    pub telemetry: String,
+    /// PostHog telemetry key. Empty when disabled.
+    pub posthog: String,
+    /// ConceptualHQ analytics key. Empty when disabled.
+    pub conceptualhq: String,
+    /// Product Fruits workspace code for in-app onboarding. Empty when disabled.
+    pub product_fruits: String,
     /// Feldera edition: "Open source" or "Enterprise"
     pub edition: String,
     /// The version corresponding to the type of `edition`.
@@ -106,7 +110,9 @@ impl Configuration {
         let license_check = LicenseCheck::validate(state).await.unwrap_or_default();
 
         Configuration {
-            telemetry: state.config.telemetry.clone(),
+            posthog: state.config.telemetry.clone(),
+            conceptualhq: state.config.conceptualhq.clone(),
+            product_fruits: state.config.product_fruits.clone(),
             edition: if cfg!(feature = "feldera-enterprise") {
                 "Enterprise"
             } else {

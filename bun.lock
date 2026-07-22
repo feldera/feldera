@@ -240,6 +240,7 @@
         "prettier": "3.8.1",
         "prettier-plugin-svelte": "3.5.0",
         "prettier-plugin-tailwindcss": "0.7.2",
+        "product-fruits": "^1.1.0",
         "profiler-layout": "workspace:*",
         "profiler-lib": "workspace:*",
         "runed": "0.37.1",
@@ -1802,6 +1803,8 @@
     "prism-react-renderer": ["prism-react-renderer@2.4.1", "", { "dependencies": { "@types/prismjs": "^1.26.0", "clsx": "^2.0.0" }, "peerDependencies": { "react": ">=16.0.0" } }, "sha512-ey8Ls/+Di31eqzUxC46h8MksNuGx/n0AAC8uKpwFau4RPDYLuE3EXTp8N8G2vX2N7UC/+IXeNUnlWBGGcAG+Ig=="],
 
     "process": ["process@0.11.10", "", {}, "sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A=="],
+
+    "product-fruits": ["product-fruits@1.1.0", "", {}, "sha512-eDNdYrf4zJDbu2RSWJ10UxX1QdESqYFfrsOjwfrQG4oJvj88b540geS+lhHeKoEVLA9QEPZlWX9M+sKQois+bA=="],
 
     "profiler-app": ["profiler-app@workspace:js-packages/profiler-app"],
 

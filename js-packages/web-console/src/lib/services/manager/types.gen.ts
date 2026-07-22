@@ -641,10 +641,22 @@ export type Configuration = {
    */
   changelog_url: string
   /**
+   * ConceptualHQ analytics key. Empty when disabled.
+   */
+  conceptualhq: string
+  /**
    * Feldera edition: "Open source" or "Enterprise"
    */
   edition: string
   license_validity?: LicenseValidity | null
+  /**
+   * PostHog telemetry key. Empty when disabled.
+   */
+  posthog: string
+  /**
+   * Product Fruits workspace code for in-app onboarding. Empty when disabled.
+   */
+  product_fruits: string
   /**
    * Specific revision corresponding to the edition `version` (e.g., git commit hash).
    */
@@ -653,10 +665,6 @@ export type Configuration = {
    * Specific revision corresponding to the default runtime version of the platform (e.g., git commit hash).
    */
   runtime_revision: string
-  /**
-   * Telemetry key.
-   */
-  telemetry: string
   /**
    * List of unstable features that are enabled.
    */
