@@ -280,6 +280,26 @@ fn now_unix_secs() -> u64 {
         .as_secs()
 }
 
+/// Whether a failed table open is a transient throttling error worth retrying,
+/// as opposed to a permanent one.
+///
+/// iceberg-rust wraps the AWS SDK error as `ErrorKind::Unexpected` and exposes
+/// the rate-limit code only in the message text, so match on that text.
+fn is_retryable_open_error(message: &str) -> bool {
+    // Lower-cased rate-limit codes/messages across catalogs (Glue, REST, S3
+    // Tables). Full codes, not stems, so prose like "not throttled" won't match.
+    const SIGNALS: [&str; 6] = [
+        "throttlingexception",           // Glue / DynamoDB throttling
+        "rate exceeded",                 // Glue throttling message
+        "slowdown",                      // S3 "SlowDown"
+        "too many requests",             // HTTP 429 (REST catalog)
+        "requestlimitexceeded",          // generic AWS rate limit
+        "provisionedthroughputexceeded", // DynamoDB-backed catalog
+    ];
+    let message = message.to_lowercase();
+    SIGNALS.iter().any(|signal| message.contains(signal))
+}
+
 enum SnapshotDescr {
     /// Open the latest snapshot (default)
     Latest,
@@ -989,7 +1009,7 @@ impl IcebergInputEndpointInner {
         mut receiver: Receiver<PipelineState>,
         init_status_sender: mpsc::Sender<Result<(), ControllerError>>,
     ) {
-        let table = match self.open_table().await {
+        let table = match self.open_table_with_retries().await {
             Err(e) => {
                 let _ = init_status_sender.send(Err(e)).await;
                 return;
@@ -1091,6 +1111,38 @@ impl IcebergInputEndpointInner {
         self.metrics.set_phase(IcebergPhase::Completed);
 
         self.consumer.eoi();
+    }
+
+    /// Open the table, retrying transient catalog throttling with backoff.
+    ///
+    /// Under load the catalog control plane (notably AWS Glue `GetTable`) can
+    /// reject an open with a rate-limit error that clears on retry.
+    ///
+    /// Only rate-limit errors are retried. A permanent error (missing table, bad
+    /// credentials, wrong region) is surfaced immediately: `max_retries` defaults
+    /// to unlimited, so retrying it would loop forever.
+    async fn open_table_with_retries(&self) -> Result<IcebergTable, ControllerError> {
+        let max_retries = self.config.max_retries();
+        let mut retry_count = 0;
+        loop {
+            match self.open_table().await {
+                Ok(table) => return Ok(table),
+                Err(e)
+                    if retry_count >= max_retries || !is_retryable_open_error(&e.to_string()) =>
+                {
+                    return Err(e);
+                }
+                Err(e) => {
+                    let backoff_delay = calculate_backoff_delay(retry_count);
+                    retry_count += 1;
+                    warn!(
+                        "iceberg {}: error opening table: '{e}'; retrying in {backoff_delay:?} (attempt {retry_count})",
+                        &self.endpoint_name
+                    );
+                    sleep(backoff_delay).await;
+                }
+            }
+        }
     }
 
     /// Open existing iceberg table.  Use snapshot id or timestamp specified in the configuration, if any.
@@ -1825,6 +1877,26 @@ mod tests {
     fn storage_factory_constructs() {
         // Smoke test; scheme dispatch is covered upstream in iceberg-rust.
         let _factory = storage_factory();
+    }
+
+    #[test]
+    fn retryable_open_error_matches_only_throttling() {
+        // A real Glue throttling rejection is retried.
+        let glue_throttle = "error loading Iceberg table: Unexpected => Operation failed \
+            for hitting aws sdk error, source: aws sdk error: ServiceError { source: \
+            Unhandled { source: ErrorMetadata { code: Some(\"ThrottlingException\"), \
+            message: Some(\"Rate exceeded\") } } }";
+        assert!(is_retryable_open_error(glue_throttle));
+
+        // Permanent failures must fail fast, not retry.
+        for permanent in [
+            "error loading Iceberg table: table `db.t` not found",
+            "error creating Glue catalog client: missing credentials",
+            "request throttling is disabled for this method",
+            "the table was not throttled; it does not exist",
+        ] {
+            assert!(!is_retryable_open_error(permanent), "{permanent}");
+        }
     }
 
     fn config(value: serde_json::Value) -> IcebergReaderConfig {
