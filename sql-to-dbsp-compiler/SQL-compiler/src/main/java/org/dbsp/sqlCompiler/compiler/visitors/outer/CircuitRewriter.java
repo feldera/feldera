@@ -722,7 +722,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || Linq.different(sources, operator.inputs)
                 || function != operator.getFunction()) {
             result = new DBSPIntegrateTraceRetainKeysOperator(operator.getRelNode(), function,
-                    sources.get(0), sources.get(1))
+                    sources.get(0), sources.get(1), operator.accumulate)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -738,7 +738,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || Linq.different(sources, operator.inputs)
                 || function != operator.getFunction()) {
             result = new DBSPIntegrateTraceRetainValuesOperator(operator.getRelNode(), function,
-                    sources.get(0), sources.get(1), operator.accumulate)
+                    sources.get(0), sources.get(1))
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

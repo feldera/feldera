@@ -4,7 +4,6 @@ from feldera.enums import PipelineStatus, BootstrapPolicy
 from feldera.rest.errors import FelderaAPIError
 from tests import TEST_CLIENT
 from .helper import gen_pipeline_name
-import time
 
 
 def remove_consecutive_duplicates(v: list[dict]):

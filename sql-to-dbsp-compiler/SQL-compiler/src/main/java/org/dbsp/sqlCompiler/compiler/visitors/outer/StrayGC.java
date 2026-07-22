@@ -22,6 +22,22 @@ public class StrayGC extends CircuitWithGraphsVisitor {
         super(compiler, g);
     }
 
+    /** Check that the retain operator invokes the runtime function variant that
+     * matches its data source: input tables require the non-accumulate variant,
+     * everything else the accumulate_ one.  The wrong variant makes the
+     * operator a silent no-op. */
+    void checkAccumulate(DBSPBinaryOperator operator, boolean accumulate) {
+        boolean input = operator.left().operator.is(DBSPInputMapWithWaterlineOperator.class);
+        if (input && accumulate)
+            throw new InternalCompilerError(
+                    "Operator " + operator + " garbage-collects an input table " +
+                    "and must use the non-accumulate variant");
+        if (!input && !accumulate)
+            throw new InternalCompilerError(
+                    "Operator " + operator + " garbage-collects a trace inside the " +
+                    "accumulate framework and must use the accumulate_ variant");
+    }
+
     void check(DBSPBinaryOperator operator) {
         // At least one sibling on the left input must contain an integral
         var left = operator.left();
@@ -45,16 +61,21 @@ public class StrayGC extends CircuitWithGraphsVisitor {
 
     @Override
     public void postorder(DBSPIntegrateTraceRetainValuesOperator operator) {
+        // This operator always uses the accumulate_ variant
+        this.checkAccumulate(operator, true);
         this.check(operator);
     }
 
     @Override
     public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
+        // This operator always uses the accumulate_ variant
+        this.checkAccumulate(operator, true);
         this.check(operator);
     }
 
     @Override
     public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+        this.checkAccumulate(operator, operator.accumulate);
         DBSPOperator left = operator.left().operator;
         if (left.is(DBSPAggregateLinearPostprocessRetainKeysOperator.class) ||
             left.is(DBSPChainAggregateOperator.class) ||

@@ -14,6 +14,14 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - The SQL compiler was incorrectly garbage-collecting input
+          tables with a primary key and a column with LATENESS (#6690).  Such
+          tables can only be GC-ed if the column with LATENESS is part of
+          the primary key.  As a result some programs that used to run
+          with finite state will now have unbounded state.
+
+       ## v0.322.0
+
         - Pipeline API field `deployment_runtime_status_details` is now strongly typed,
           whereas before it was just a generic JSON value type. While `AwaitingApproval`,
           the diff is now located at `deployment_runtime_status_details.approval_diff`
@@ -22,6 +30,8 @@ import TabItem from '@theme/TabItem';
         - Pipelines from this latest version onward will have their GET selector
           `status_with_connectors` connector stats cached, which are now updated along
           with the runtime status details within roughly 1-15s.
+
+       ## v0.319.0
 
         - Cluster monitor events with information on the backing (Kubernetes) resources is
           no longer gated behind unstable feature `cluster_monitor_resources` (deprecated).

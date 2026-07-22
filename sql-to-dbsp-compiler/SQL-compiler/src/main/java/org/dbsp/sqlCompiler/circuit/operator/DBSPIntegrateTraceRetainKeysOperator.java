@@ -27,11 +27,16 @@ import java.util.Objects;
 public final class DBSPIntegrateTraceRetainKeysOperator
         extends DBSPBinaryOperator implements IGCOperator
 {
+    /** Selects the Rust function that the operator invokes.
+     * GC applied to an input table requires 'false'; everything else requires 'true'. */
+    public final boolean accumulate;
+
     public DBSPIntegrateTraceRetainKeysOperator(
             CalciteRelNode node, DBSPExpression expression,
-            OutputPort data, OutputPort control) {
-        super(node, "accumulate_integrate_trace_retain_keys", expression,
-                data.outputType(), data.isMultiset(), data, control);
+            OutputPort data, OutputPort control, boolean accumulate) {
+        super(node, accumulate ? "accumulate_integrate_trace_retain_keys" : "integrate_trace_retain_keys",
+                expression, data.outputType(), data.isMultiset(), data, control);
+        this.accumulate = accumulate;
     }
 
     @Override
@@ -43,6 +48,14 @@ public final class DBSPIntegrateTraceRetainKeysOperator
     @Nullable
     public static DBSPIntegrateTraceRetainKeysOperator create(
             CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
+        return create(node, data, dataProjection, control, true);
+    }
+
+    /** Create an operator to retain keys and returns it.  May return null if the keys contain no fields. */
+    @Nullable
+    public static DBSPIntegrateTraceRetainKeysOperator create(
+            CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control,
+            boolean accumulate) {
         DBSPType controlType = control.outputType();
         Utilities.enforce(controlType.is(DBSPTypeTupleBase.class), () -> "Control type is not a tuple: " + controlType);
         DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
@@ -83,7 +96,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
         compare = ExpressionCompiler.makeBinaryExpression(
                 node, compare.getType(), DBSPOpcode.OR, compare0, compare);
         DBSPExpression closure = compare.closure(param, controlArg.asParameter());
-        return new DBSPIntegrateTraceRetainKeysOperator(node, closure, data, control);
+        return new DBSPIntegrateTraceRetainKeysOperator(node, closure, data, control, accumulate);
     }
 
     @Override
@@ -94,7 +107,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
             Utilities.enforce(newInputs.size() == 2, () -> "Expected 2 inputs, got " + newInputs.size());
             return new DBSPIntegrateTraceRetainKeysOperator(
                     this.getRelNode(), toClosure(function),
-                    newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
+                    newInputs.get(0), newInputs.get(1), this.accumulate).copyAnnotations(this);
         }
         return this;
     }
@@ -113,8 +126,9 @@ public final class DBSPIntegrateTraceRetainKeysOperator
     @SuppressWarnings("unused")
     public static DBSPIntegrateTraceRetainKeysOperator fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPSimpleOperator.CommonInfo info = commonInfoFromJson(node, decoder);
+        boolean accumulate = Utilities.getBooleanProperty(node, "accumulate");
         return new DBSPIntegrateTraceRetainKeysOperator(CalciteEmptyRel.INSTANCE,
-                info.getFunction(), info.getInput(0), info.getInput(1))
+                info.getFunction(), info.getInput(0), info.getInput(1), accumulate)
                 .addAnnotations(info.annotations(), DBSPIntegrateTraceRetainKeysOperator.class);
     }
 }
