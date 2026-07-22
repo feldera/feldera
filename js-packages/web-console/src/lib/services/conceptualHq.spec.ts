@@ -87,3 +87,36 @@ describe('initConceptualHq', () => {
     expect(() => initConceptualHq(config('my-key'), profile)).not.toThrow()
   })
 })
+
+describe('trackConceptualHq', () => {
+  it('enqueues a track call with properties once the loader is installed', async () => {
+    stubDom()
+    const { initConceptualHq, trackConceptualHq } = await freshModule(true)
+    initConceptualHq(config('my-key'), profile)
+    const before = queued().length
+    trackConceptualHq('demo_opened', { demo: 'x', already_created: true })
+    expect(queued().slice(before)).toEqual([
+      ['track', 'demo_opened', { demo: 'x', already_created: true }]
+    ])
+  })
+
+  it('omits the properties argument when none are given', async () => {
+    stubDom()
+    const { initConceptualHq, trackConceptualHq } = await freshModule(true)
+    initConceptualHq(config('my-key'), profile)
+    const before = queued().length
+    trackConceptualHq('some_event')
+    expect(queued().slice(before)).toEqual([['track', 'some_event']])
+  })
+
+  it('is a no-op when analytics is disabled (loader never installed)', async () => {
+    const { trackConceptualHq } = await freshModule(true)
+    expect(() => trackConceptualHq('demo_opened', { demo: 'x' })).not.toThrow()
+    expect(window.ca).toBeUndefined()
+  })
+
+  it('is a no-op outside the browser', async () => {
+    const { trackConceptualHq } = await freshModule(false)
+    expect(() => trackConceptualHq('demo_opened')).not.toThrow()
+  })
+})

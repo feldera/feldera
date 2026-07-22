@@ -1,11 +1,15 @@
 <script lang="ts">
+  import { captureEvent } from '$lib/services/analytics'
   import type { Snippet } from '$lib/types/svelte'
 
   const {
     class: _class,
     children,
-    icon = defaultIcon
-  }: { class?: string; children?: Snippet; icon?: Snippet } = $props()
+    icon = defaultIcon,
+    triggerLocation
+  }: { class?: string; children?: Snippet; icon?: Snippet; triggerLocation?: string } = $props()
+
+  const calendlyUrl = 'https://calendly.com/d/cqnj-p63-mbq/feldera-demo'
 </script>
 
 {#snippet defaultIcon()}
@@ -14,9 +18,11 @@
 
 <a
   class={_class}
-  href="https://calendly.com/d/cqnj-p63-mbq/feldera-demo"
+  href={calendlyUrl}
   target="_blank"
   rel="noreferrer"
+  onclick={() =>
+    captureEvent('calendly_opened', { url: calendlyUrl, trigger_location: triggerLocation })}
 >
   {@render icon()}
   {@render children?.()}

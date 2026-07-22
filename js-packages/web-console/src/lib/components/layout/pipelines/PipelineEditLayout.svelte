@@ -299,7 +299,8 @@
           <CreatePipelineButton inputClass="max-w-64" btnClass="preset-filled-surface-50-950"
           ></CreatePipelineButton>
         </div>
-        <BookADemo class="btn-icon preset-filled-surface-50-950"></BookADemo>
+        <BookADemo class="btn-icon preset-filled-surface-50-950" triggerLocation="pipeline_editor"
+        ></BookADemo>
         <Tooltip class="">Book a demo</Tooltip>
       {/if}
     {/snippet}

@@ -75,6 +75,8 @@ const HIDDEN_TABS = [
   'Health'
 ]
 
+const ROW_MOUNT_TIMEOUT_MS = 2000
+
 let mounted: { unmount: () => Promise<void> } | undefined
 let mountTarget: HTMLDivElement | undefined
 
@@ -102,13 +104,19 @@ async function mountLogsTab() {
 
   // Wait until the first log row has been mounted by the virtualiser — proves the
   // streaming pipeline parsed → pushed → rendered the lines we enqueued.
-  await expect.poll(() => document.querySelector('[data-rowindex]')).toBeTruthy()
+  await expect
+    .poll(() => document.querySelector('[data-rowindex]'), { timeout: ROW_MOUNT_TIMEOUT_MS })
+    .toBeTruthy()
 }
 
 // data-rowindex on each line is its position in the rows array (zero-based).
 // Line "N" is at row-index N-1.
 async function expectRowMounted(rowIndex: number) {
-  await expect.poll(() => document.querySelector(`[data-rowindex="${rowIndex}"]`)).toBeTruthy()
+  await expect
+    .poll(() => document.querySelector(`[data-rowindex="${rowIndex}"]`), {
+      timeout: ROW_MOUNT_TIMEOUT_MS
+    })
+    .toBeTruthy()
 }
 
 // --- Tests -------------------------------------------------------------------
@@ -150,11 +158,15 @@ describe('MonitoringPanel — log-search wiring', () => {
     await userEvent.keyboard('{Enter}')
     await expectRowMounted(41)
     // The match is painted via the CSS Custom Highlight API under LogList's fixed name.
-    await expect.poll(() => CSS.highlights.has('feldera-log-list-search')).toBe(true)
+    await expect
+      .poll(() => CSS.highlights.has('feldera-log-list-search'), { timeout: ROW_MOUNT_TIMEOUT_MS })
+      .toBe(true)
 
     await userEvent.keyboard('{Escape}')
     expect((input.element() as HTMLInputElement).value).toBe('')
-    await expect.poll(() => CSS.highlights.has('feldera-log-list-search')).toBe(false)
+    await expect
+      .poll(() => CSS.highlights.has('feldera-log-list-search'), { timeout: ROW_MOUNT_TIMEOUT_MS })
+      .toBe(false)
   })
 
   it('Ctrl+F from the log list focuses the search input; typing + Enter searches', async () => {

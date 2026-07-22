@@ -258,7 +258,9 @@
         <CreatePipelineButton inputClass="max-w-64" btnClass="preset-filled-surface-50-950"
         ></CreatePipelineButton>
       </div>
-      <BookADemo class="btn preset-filled-primary-500">Book a demo</BookADemo>
+      <BookADemo class="btn preset-filled-primary-500" triggerLocation="health"
+        >Book a demo</BookADemo
+      >
     {/if}
   {/snippet}
 </AppHeader>

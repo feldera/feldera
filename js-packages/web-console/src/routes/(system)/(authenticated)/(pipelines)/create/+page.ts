@@ -29,5 +29,5 @@ export async function load({ url, parent }) {
     goto(resolve(`/`))
     return
   }
-  await useTryPipeline()(pipeline)
+  await useTryPipeline()(pipeline, 'url')
 }
