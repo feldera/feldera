@@ -442,7 +442,8 @@ impl Checkpointer {
     pub fn read_checkpoints(
         backend: &dyn StorageBackend,
     ) -> Result<VecDeque<CheckpointMetadata>, Error> {
-        match backend.read_json(&StoragePath::from(CHECKPOINT_FILE_NAME)) {
+        let file_name = StoragePath::from(CHECKPOINT_FILE_NAME);
+        match backend.read_json(&file_name) {
             Ok(checkpoints) => Ok(checkpoints),
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 let mut orphan_uuid_dirs: Vec<String> = Vec::new();
@@ -464,6 +465,11 @@ impl Checkpointer {
                         path: Some(CHECKPOINT_FILE_NAME.to_string()),
                     }));
                 }
+
+                // Write an empty checkpoint file to save the cost of listing
+                // all the files next time.
+                backend.write_json(&file_name, &VecDeque::<CheckpointMetadata>::new())?;
+
                 Ok(VecDeque::new())
             }
             Err(error) => Err(error)?,
@@ -730,6 +736,7 @@ impl<T: Default> Checkpoint for EmptyCheckpoint<T> {
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicIsize, Ordering};
 
     use feldera_storage::{DirEntry, StorageBackend, StoragePath};
     use feldera_types::config::{FileBackendConfig, StorageCacheConfig};
@@ -748,6 +755,7 @@ mod test {
     struct CatalogFailingBackend {
         inner: Arc<dyn StorageBackend>,
         fail_on: StoragePath,
+        count_down: AtomicIsize,
     }
 
     impl feldera_storage::StorageBackend for CatalogFailingBackend {
@@ -756,7 +764,7 @@ mod test {
             name: &StoragePath,
         ) -> Result<Box<dyn feldera_storage::FileWriter>, feldera_storage::error::StorageError>
         {
-            if name == &self.fail_on {
+            if name == &self.fail_on && self.count_down.fetch_sub(1, Ordering::Relaxed) <= 0 {
                 return Err(feldera_storage::error::StorageError::StdIo {
                     kind: std::io::ErrorKind::PermissionDenied,
                     operation: "injected catalog write failure",
@@ -812,7 +820,7 @@ mod test {
             LogCapture::new(|| Checkpointer::new(backend.clone()).unwrap()).into_parts();
         assert_eq!(
             log,
-            " INFO dbsp::circuit::checkpointer: GC kept 0/0/0 expected files/directories/other, kept 0/0/0 unexpected, and deleted 0/0/0 unused; 0 error(s) reading directory entries\n"
+            " INFO dbsp::circuit::checkpointer: GC kept 1/0/0 expected files/directories/other, kept 0/0/0 unexpected, and deleted 0/0/0 unused; 0 error(s) reading directory entries\n"
         );
 
         let uuid = uuid::Uuid::now_v7();
@@ -1126,6 +1134,12 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         let backend: Arc<dyn StorageBackend> = Arc::new(CatalogFailingBackend {
             inner: posix,
             fail_on: CHECKPOINT_FILE_NAME.into(),
+            count_down: {
+                // `Checkpointer::new` will create an empty checkpoints catalog.
+                // Let that succeed.  Then fail the second attempt, the one
+                // intended to add to it.
+                AtomicIsize::new(1)
+            },
         });
         let mut checkpointer = Checkpointer::new(backend).unwrap();
 
