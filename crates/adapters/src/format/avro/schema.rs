@@ -74,7 +74,7 @@ pub fn validate_struct_schema(
             // Allow nullable fields to be missing in the Avro schema. This is useful to, e.g.,
             // support inputs encoded using older versions of the schema missing some fields.
             if field.columntype.nullable {
-                return Ok(());
+                continue;
             } else {
                 return Err(format!(
                     "column '{}' is missing in the Avro schema",
@@ -669,8 +669,9 @@ impl AvroSchemaBuilder {
 
 #[cfg(test)]
 mod test {
-    use super::{AvroSchemaBuilder, is_valid_avro_fullname, schema_json};
+    use super::{AvroSchemaBuilder, is_valid_avro_fullname, schema_json, validate_struct_schema};
     use apache_avro::{Schema as AvroSchema, schema::Name};
+    use feldera_adapterlib::catalog::AvroSchemaRefs;
     use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
     use std::collections::BTreeMap;
 
@@ -764,5 +765,25 @@ mod test {
             .column_type_to_avro_schema_inner(&invalid)
             .unwrap_err();
         assert!(error.contains("Avro only allows string keys"));
+    }
+
+    #[test]
+    fn missing_nullable_field_does_not_stop_validation() {
+        let avro_schema =
+            AvroSchema::parse_str(r#"{"type":"record","name":"input","fields":[]}"#).unwrap();
+        let struct_schema = vec![
+            Field::new(
+                SqlIdentifier::new("optional", false),
+                ColumnType::bigint(true),
+            ),
+            Field::new(
+                SqlIdentifier::new("required", false),
+                ColumnType::bigint(false),
+            ),
+        ];
+
+        let error = validate_struct_schema(&avro_schema, &AvroSchemaRefs::new(), &struct_schema)
+            .unwrap_err();
+        assert_eq!(error, "column 'required' is missing in the Avro schema");
     }
 }
