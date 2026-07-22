@@ -22,6 +22,9 @@ import java.util.List;
 public class CompilerCircuitStream extends CompilerCircuit {
     final InputOutputChangeStream stream;
     boolean compactAfterEachStep;
+    /** When true, string cells in expected tables are trimmed before validation,
+     * so cells can be padded for alignment; see {@link TableParser#parseValue}. */
+    boolean trimStrings = false;
 
     public CompilerCircuitStream(DBSPCompiler compiler, BaseSQLTests test) {
         this(compiler, new InputOutputChangeStream(), test);
@@ -55,6 +58,14 @@ public class CompilerCircuitStream extends CompilerCircuit {
         test.addFailingRustTestCase(failureMessage, this);
     }
 
+    /** Trim string cells in expected tables before validating.
+     * Without this a string cell must end flush against the next column
+     * separator, since trailing spaces are part of the value. */
+    public CompilerCircuitStream withStringTrim() {
+        this.trimStrings = true;
+        return this;
+    }
+
     /** Compiles a SQL script composed of INSERT statements.
      * into a Change. */
     public Change toChange(String script) {
@@ -79,7 +90,7 @@ public class CompilerCircuitStream extends CompilerCircuit {
     public void step(String script, String expected) {
         Change input = this.toChange(script);
         DBSPType outputType = this.circuit.getSingleOutputType();
-        Change output = TableParser.parseChangeTable(expected, outputType);
+        Change output = TableParser.parseChangeTable(expected, outputType, this.trimStrings);
         this.stream.addPair(input, output);
         if (this.compactAfterEachStep)
             this.blockForCompaction();
