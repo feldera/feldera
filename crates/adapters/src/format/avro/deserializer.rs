@@ -501,7 +501,7 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        self.deserialize_any(visitor)
+        visitor.visit_unit()
     }
 
     fn is_human_readable(&self) -> bool {
@@ -636,4 +636,28 @@ pub fn from_avro_value<'de, D: DeserializeWithContext<'de, SqlSerdeConfig, AUX>,
     let deserializer = avro_deserializer(&deserializer);
 
     D::deserialize_with_context_aux(deserializer, avro_de_config(), metadata)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::format::avro::{coercion::Coercion, debezium::DebeziumTimeType};
+
+    #[test]
+    fn ignore_nullable_coerced_null() {
+        // Extra Avro record fields are consumed as `IgnoredAny`. A nullable
+        // Debezium timestamp retains its coercion even though the target table
+        // does not contain the field.
+        let input = Value::Union(0, Box::new(Value::Null));
+        let schema = Schema::parse_str(r#"["null", "string"]"#).unwrap();
+        let refs = AvroSchemaRefs::new();
+        let deserializer = Deserializer::with_coercion(
+            &input,
+            &schema,
+            &refs,
+            Some(Coercion::DebeziumTime(DebeziumTimeType::ZonedTimestamp)),
+        );
+
+        <de::IgnoredAny as serde::Deserialize>::deserialize(&deserializer).unwrap();
+    }
 }

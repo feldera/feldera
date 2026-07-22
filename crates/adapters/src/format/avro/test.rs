@@ -401,6 +401,97 @@ fn test_debezium_avro_parser() {
     run_parser_test(vec![test_case])
 }
 
+/// Source row containing a Debezium logical field that is not declared in the
+/// destination table.
+#[derive(Debug, Clone)]
+struct IgnoredCoercedFieldSource {
+    id: i64,
+    timestamp: Option<String>,
+}
+
+serialize_table_record!(IgnoredCoercedFieldSource[2]{
+    r#id["id"]: i64,
+    r#timestamp["timestamp"]: Option<String>
+});
+
+/// Destination row intentionally omitting `timestamp`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct IgnoredCoercedFieldRow {
+    id: i64,
+}
+
+deserialize_table_record!(IgnoredCoercedFieldRow["IgnoredCoercedField", Variant, 1] {
+    (r#id, "id", false, i64, |_| None)
+});
+
+/// Process a complete Debezium update whose omitted `ZonedTimestamp` field is
+/// NULL in `before` and populated in `after`. Neither value is relevant to the
+/// destination table, so both records must be accepted without coercion.
+#[test]
+fn test_debezium_ignored_coerced_field() {
+    let value_schema = r#"{
+        "type": "record",
+        "name": "IgnoredCoercedField",
+        "connect.name": "test_namespace.IgnoredCoercedField",
+        "fields": [
+            { "name": "id", "type": "long" },
+            {
+                "name": "timestamp",
+                "type": [
+                    "null",
+                    {
+                        "type": "string",
+                        "connect.name": "io.debezium.time.ZonedTimestamp"
+                    }
+                ],
+                "default": null
+            }
+        ]
+    }"#;
+    let envelope_str = debezium_avro_schema_str(value_schema, "IgnoredCoercedField");
+    let envelope_schema = AvroSchema::parse_str(&envelope_str).unwrap();
+    let resolved = ResolvedSchema::try_from(&envelope_schema).unwrap();
+    let serializer = AvroSchemaSerializer::new(&envelope_schema, resolved.get_names(), true);
+
+    let message = DebeziumMessage::new(
+        "u",
+        Some(IgnoredCoercedFieldSource {
+            id: 1,
+            timestamp: None,
+        }),
+        Some(IgnoredCoercedFieldSource {
+            id: 2,
+            timestamp: Some("2021-06-15T14:30:45.123+02:00".to_string()),
+        }),
+    );
+    let value = message
+        .serialize_with_context(serializer, &avro_ser_config())
+        .unwrap();
+
+    let test = TestCase {
+        relation_schema: Relation {
+            name: SqlIdentifier::new("IgnoredCoercedField", false),
+            fields: vec![Field::new("id".into(), ColumnType::bigint(false))],
+            materialized: false,
+            properties: BTreeMap::new(),
+            primary_key: None,
+        },
+        config: AvroParserConfig {
+            update_format: AvroUpdateFormat::Debezium,
+            schema: Some(envelope_str),
+            skip_schema_id: false,
+            registry_config: Default::default(),
+        },
+        input_batches: vec![(serialize_value(value, &envelope_schema), vec![])],
+        expected_output: vec![
+            MockUpdate::Delete(IgnoredCoercedFieldRow { id: 1 }),
+            MockUpdate::Insert(IgnoredCoercedFieldRow { id: 2 }),
+        ],
+    };
+
+    run_parser_test(vec![test]);
+}
+
 /// SQL table can have nullable columns that are not in the Avro schema.
 #[test]
 fn test_extra_columns() {
