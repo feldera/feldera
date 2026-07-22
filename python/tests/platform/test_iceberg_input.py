@@ -5,8 +5,11 @@ These exercise the connector against a live pipeline manager, which the
 in-crate Rust tests (that drive a `Controller` in-process) cannot cover:
 
 * ``test_iceberg_snapshot_all_types`` — the connector ingests a snapshot
-  spanning every Feldera SQL type Iceberg can represent, and the SQL
-  materialized view holds the expected rows.
+  spanning every Feldera SQL type Iceberg can represent, including nested
+  list/map/struct columns, and every column round-trips by value, NULLs
+  included.
+* ``test_iceberg_snapshot_uuid`` — Iceberg's fixed[16] UUID reads back as a
+  SQL UUID, values and NULLs intact.
 * ``test_iceberg_snapshot_resume_no_reingest`` — with at-least-once fault
   tolerance, suspending after a completed snapshot and resuming re-reads
   nothing: the data survives and the connector reports zero re-ingested
@@ -28,6 +31,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid as uuidlib
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from http import HTTPStatus
@@ -68,6 +72,18 @@ _SQL_COLUMNS = [
     "fixed BINARY(5) NOT NULL",
     "varbin VARBINARY NOT NULL",
     "tstz TIMESTAMP WITH TIME ZONE NOT NULL",
+    # Nullable columns, one per distinct Arrow layout, to exercise the
+    # connector's NULL-decoding path (primitive, string, decimal, timestamp,
+    # binary).
+    "n_i INT",
+    "n_s VARCHAR",
+    "n_dec DECIMAL(10, 3)",
+    "n_ts TIMESTAMP",
+    "n_varbin VARBINARY",
+    # Nested types: list, map, struct. (UUID has its own test.)
+    "arr INT ARRAY",
+    "m MAP<VARCHAR, INT>",
+    "st ROW(a INT NOT NULL, b VARCHAR NULL)",
 ]
 
 
@@ -82,9 +98,12 @@ def _iceberg_schema():
         FixedType,
         FloatType,
         IntegerType,
+        ListType,
         LongType,
+        MapType,
         NestedField,
         StringType,
+        StructType,
         TimestampType,
         TimestamptzType,
         TimeType,
@@ -105,6 +124,38 @@ def _iceberg_schema():
         NestedField(12, "fixed", FixedType(5), required=True),
         NestedField(13, "varbin", BinaryType(), required=True),
         NestedField(14, "tstz", TimestamptzType(), required=True),
+        NestedField(15, "n_i", IntegerType(), required=False),
+        NestedField(16, "n_s", StringType(), required=False),
+        NestedField(17, "n_dec", DecimalType(10, 3), required=False),
+        NestedField(18, "n_ts", TimestampType(), required=False),
+        NestedField(19, "n_varbin", BinaryType(), required=False),
+        NestedField(
+            20,
+            "arr",
+            ListType(element_id=30, element_type=IntegerType(), element_required=False),
+            required=False,
+        ),
+        NestedField(
+            21,
+            "m",
+            MapType(
+                key_id=31,
+                key_type=StringType(),
+                value_id=32,
+                value_type=IntegerType(),
+                value_required=False,
+            ),
+            required=False,
+        ),
+        NestedField(
+            22,
+            "st",
+            StructType(
+                NestedField(33, "a", IntegerType(), required=True),
+                NestedField(34, "b", StringType(), required=False),
+            ),
+            required=False,
+        ),
     )
 
 
@@ -127,6 +178,31 @@ def _arrow_schema():
             pa.field("fixed", pa.binary(5), nullable=False),
             pa.field("varbin", pa.binary(), nullable=False),
             pa.field("tstz", pa.timestamp("us", tz="UTC"), nullable=False),
+            pa.field("n_i", pa.int32(), nullable=True),
+            pa.field("n_s", pa.string(), nullable=True),
+            pa.field("n_dec", pa.decimal128(10, 3), nullable=True),
+            pa.field("n_ts", pa.timestamp("us"), nullable=True),
+            pa.field("n_varbin", pa.binary(), nullable=True),
+            pa.field(
+                "arr",
+                pa.list_(pa.field("element", pa.int32(), nullable=True)),
+                nullable=True,
+            ),
+            pa.field(
+                "m",
+                pa.map_(pa.string(), pa.field("value", pa.int32(), nullable=True)),
+                nullable=True,
+            ),
+            pa.field(
+                "st",
+                pa.struct(
+                    [
+                        pa.field("a", pa.int32(), nullable=False),
+                        pa.field("b", pa.string(), nullable=True),
+                    ]
+                ),
+                nullable=True,
+            ),
         ]
     )
 
@@ -136,11 +212,12 @@ def _arrow_schema():
 _BASE_TS = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
 
-def _row(row_id: int, *, ts_hours: int) -> dict:
+def _row(row_id: int, *, ts_hours: int, nulls: bool = False) -> dict:
     """One deterministic row keyed by ``row_id``.
 
     ``ts_hours`` sets both the naive ``ts`` and the tz-aware ``tstz`` so the
-    ordered-ingest test can spread rows across day-wide windows.
+    ordered-ingest test can spread rows across day-wide windows. When ``nulls``
+    is set, the optional columns are NULL, exercising the null-decoding path.
     """
     event = _BASE_TS + _hours(ts_hours)
     return {
@@ -158,6 +235,19 @@ def _row(row_id: int, *, ts_hours: int) -> dict:
         "fixed": bytes([row_id % 256]) * 5,
         "varbin": bytes([row_id % 256, (row_id + 1) % 256]),
         "tstz": event,
+        "n_i": None if nulls else row_id,
+        "n_s": None if nulls else f"n_{row_id}",
+        "n_dec": None if nulls else Decimal(f"{row_id}.500"),
+        "n_ts": None if nulls else event.replace(tzinfo=None),
+        "n_varbin": None if nulls else bytes([row_id % 256]),
+        # Nested columns: the whole column is NULL when `nulls`. The struct's
+        # `a` is NOT NULL; `b` is nullable and NULL on some rows, so the nested
+        # null-decoding path is covered even when the struct itself is present.
+        "arr": None if nulls else [row_id, row_id + 1],
+        "m": None if nulls else [(f"k{row_id}", row_id)],
+        "st": None
+        if nulls
+        else {"a": row_id, "b": None if row_id % 3 == 0 else f"s{row_id}"},
     }
 
 
@@ -259,11 +349,13 @@ def _wait_for_completed(pipeline, pipeline_name: str, timeout_s: float = 120.0) 
 
 @enterprise_only
 def test_iceberg_snapshot_all_types(pipeline_name):
-    """A snapshot spanning every Iceberg-representable SQL type ingests
-    completely, and the materialized table holds the expected rows."""
+    """A snapshot spanning every Iceberg-representable SQL type (scalars and
+    nested list/map/struct) ingests completely, and every column round-trips
+    by value, NULLs included."""
     loc = IcebergTestLocation.create(pipeline_name)
     try:
-        rows = [_row(i, ts_hours=i) for i in range(20)]
+        # Every fifth row NULLs its optional columns to cover null decoding.
+        rows = [_row(i, ts_hours=i, nulls=(i % 5 == 0)) for i in range(20)]
         loc.create_table(_iceberg_schema())
         loc.append(_arrow_table(rows))
 
@@ -273,16 +365,72 @@ def test_iceberg_snapshot_all_types(pipeline_name):
 
         assert _row_count(pipeline) == len(rows)
 
-        # Spot-check the scalar columns that round-trip cleanly through the
-        # ad-hoc query JSON. Reaching `phase == 2` with the right row count
-        # already proves every declared column parsed without error.
-        got = list(
-            pipeline.query(f"SELECT id, b, i, l, s, dec FROM {TABLE} ORDER BY id")
+        # `query_arrow_dicts` returns native Python values (bytes, datetimes,
+        # decimals, and None for SQL NULL), so a plain equality check verifies
+        # value correctness and null decoding for every declared type -- not
+        # just the scalars a JSON query round-trips cleanly.
+        got = list(pipeline.query_arrow_dicts(f"SELECT * FROM {TABLE} ORDER BY id"))
+        assert got == rows, "every column, including NULLs, must round-trip"
+
+        pipeline.stop(force=True)
+    finally:
+        loc.remove_if_local()
+
+
+@enterprise_only
+def test_iceberg_snapshot_uuid(pipeline_name):
+    """Iceberg stores UUID as a 16-byte fixed binary. The connector reads it as
+    a SQL UUID (its serde config sets ``UuidFormat::Binary``); values and NULLs
+    round-trip. Without that config the read fails, dropping every row."""
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import LongType, NestedField, UUIDType
+    import pyarrow as pa
+
+    loc = IcebergTestLocation.create(pipeline_name)
+    try:
+        ids = list(range(8))
+        uuids = {i: uuidlib.UUID(int=i * 0x1111_1111_1111_1111) for i in ids}
+        # Every fourth row is NULL to cover null decoding of a UUID column.
+        rows = [{"id": i, "u": None if i % 4 == 0 else uuids[i].bytes} for i in ids]
+
+        loc.create_table(
+            Schema(
+                NestedField(1, "id", LongType(), required=True),
+                NestedField(2, "u", UUIDType(), required=False),
+            )
         )
-        assert [r["id"] for r in got] == [r["id"] for r in rows]
-        assert [r["b"] for r in got] == [r["b"] for r in rows]
-        assert [r["s"] for r in got] == [r["s"] for r in rows]
-        assert [Decimal(str(r["dec"])) for r in got] == [r["dec"] for r in rows]
+        loc.append(
+            pa.Table.from_pylist(
+                rows,
+                schema=pa.schema(
+                    [
+                        pa.field("id", pa.int64(), nullable=False),
+                        pa.field("u", pa.binary(16), nullable=True),
+                    ]
+                ),
+            )
+        )
+
+        connector = {
+            "name": CONNECTOR,
+            "transport": {
+                "name": "iceberg_input",
+                "config": loc.connector_config(mode="snapshot"),
+            },
+        }
+        connectors = json.dumps([connector]).replace("'", "''")
+        sql = (
+            f"CREATE TABLE {TABLE} (id BIGINT NOT NULL, u UUID) "
+            f"WITH ('materialized' = 'true', 'connectors' = '{connectors}');"
+        )
+        pipeline = _build_pipeline(pipeline_name, sql)
+        pipeline.start()
+        _wait_for_completed(pipeline, pipeline_name)
+
+        # The ad-hoc query returns a UUID as its canonical string form.
+        got = list(pipeline.query_arrow_dicts(f"SELECT * FROM {TABLE} ORDER BY id"))
+        expected = [{"id": i, "u": None if i % 4 == 0 else str(uuids[i])} for i in ids]
+        assert got == expected, "UUID values and NULLs must round-trip"
 
         pipeline.stop(force=True)
     finally:
