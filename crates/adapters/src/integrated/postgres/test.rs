@@ -275,9 +275,27 @@ mod pg {
 
     impl TempPgTable {
         fn new(name: &str, uri: String, pk: bool, tls: &Option<PostgresTlsConfig>) -> Self {
+            Self::new_with_extra_columns(name, uri, pk, tls, "")
+        }
+
+        /// Same as `new`, but appends `extra_columns` to the table: column
+        /// definitions absent from the Feldera schema, e.g.
+        /// `"served_at TIMESTAMP DEFAULT now() NOT NULL"`.
+        fn new_with_extra_columns(
+            name: &str,
+            uri: String,
+            pk: bool,
+            tls: &Option<PostgresTlsConfig>,
+            extra_columns: &str,
+        ) -> Self {
             let mut client = pg_connect(&uri, tls);
 
             let pk = if pk { "PRIMARY KEY" } else { "" };
+            let extra_columns = if extra_columns.is_empty() {
+                String::new()
+            } else {
+                format!(",\n    {extra_columns}")
+            };
 
             client
                 .execute(
@@ -322,6 +340,7 @@ CREATE TABLE {name} (
     map_          JSONB,
     __feldera_op  CHAR,
     __feldera_ts  BIGINT
+    {extra_columns}
 )"#
                     ),
                     &[],
@@ -488,6 +507,18 @@ CREATE TABLE {name} (
             tls: &Option<PostgresTlsConfig>,
         ) -> TempPgTable {
             TempPgTable::new(name, uri, pk, tls)
+        }
+
+        /// Create the table with extra column definitions absent from the
+        /// Feldera schema.
+        pub fn create_table_with_extra_columns(
+            name: &str,
+            uri: String,
+            pk: bool,
+            tls: &Option<PostgresTlsConfig>,
+            extra_columns: &str,
+        ) -> TempPgTable {
+            TempPgTable::new_with_extra_columns(name, uri, pk, tls, extra_columns)
         }
 
         pub fn test_circuit(
@@ -948,6 +979,94 @@ fn pg_insert0(mode: PostgresWriteMode) {
         timeout_ms,
     )
     .expect("timeout: failed to insert data into postgres");
+}
+
+// A NOT NULL DEFAULT column (served_at) omitted from the Feldera schema must be
+// populated from its default, not NULL (#6694).
+#[test]
+#[serial]
+fn test_pg_insert_omitted_default_column() {
+    let table_name = unique_pg_name("test_pg_default");
+    let url = postgres_url();
+    let verify_url = url.clone();
+    let timeout_ms = 60_000;
+
+    let mut data: Vec<PostgresTestStruct> = (0..100).map(|_| rand::random()).collect();
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    for datum in data.iter() {
+        let mut serializer = serde_json::Serializer::new(Vec::new());
+        datum
+            .serialize_with_context(&mut serializer, &SqlSerdeConfig::default())
+            .unwrap();
+        temp_file
+            .as_file_mut()
+            .write_all(&serializer.into_inner())
+            .unwrap();
+        temp_file.write_all(b"\n").unwrap();
+    }
+
+    let config = serde_json::from_value(json!({
+      "name": "test",
+      "workers": 4,
+      "inputs": {
+        "ins": {
+          "stream": "test_input1",
+          "transport": { "name": "file_input", "config": { "path": temp_file.path() } },
+          "format": { "name": "json", "config": { "update_format": "raw", "array": false } }
+        }
+      },
+      "outputs": {
+        "test_output1": {
+          "stream": "test_output1",
+          "transport": { "name": "postgres_output", "config": { "uri": url, "table": &table_name } },
+          "index": "idx"
+        }
+      }
+    }))
+    .unwrap();
+
+    // The Feldera view (PostgresTestStruct) has no served_at column.
+    let mut table = PostgresTestStruct::create_table_with_extra_columns(
+        &table_name,
+        url,
+        true,
+        &None,
+        "served_at TIMESTAMP DEFAULT now() NOT NULL",
+    );
+
+    let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
+    controller.start();
+    data.sort();
+
+    wait(
+        || {
+            let mut got = table
+                .query()
+                .into_iter()
+                .map(PostgresTestStruct::from)
+                .collect::<Vec<_>>();
+            got.sort();
+            data == got || !err_receiver.is_empty()
+        },
+        timeout_ms,
+    )
+    .expect("timeout: failed to insert data into postgres");
+
+    assert!(err_receiver.is_empty(), "connector reported an error");
+
+    // Every row's served_at was filled by the DEFAULT rather than left NULL.
+    let mut client = pg::pg_connect(&verify_url, &None);
+    let rows = client
+        .query(&format!("SELECT served_at FROM {table_name}"), &[])
+        .expect("failed to query table");
+    assert_eq!(rows.len(), data.len());
+    assert!(
+        rows.iter().all(|r| r
+            .get::<_, Option<chrono::NaiveDateTime>>("served_at")
+            .is_some()),
+        "served_at should be populated by its DEFAULT"
+    );
 }
 
 #[test]
