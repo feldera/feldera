@@ -458,31 +458,26 @@ impl ExchangeClient {
         remote_workers: Range<usize>,
         channel: ExchangeChannel,
     ) {
+        let description = format!("{remote_address} for exchange with workers {remote_workers:?}");
         loop {
-            match TcpStream::connect(remote_address).await {
-                Ok(stream) => {
-                    if let Err(error) =
-                        Self::run_connection(stream, message_type, &remote_workers, &channel).await
-                    {
-                        warn!("connection to {remote_address} dropped ({error}), waiting to retry")
-                    }
-                }
-                Err(error) => {
-                    info!("connection to {remote_address} failed ({error}), waiting to retry")
-                }
+            let mut n_failures = 0u64;
+            let stream = loop {
+                let error = match TcpStream::connect(remote_address).await {
+                    Ok(stream) => break stream,
+                    Err(error) => error,
+                };
+                info!("connection to {description} failed ({error}), waiting to retry");
+                n_failures += 1;
+                sleep(backoff_time()).await;
+            };
+            if n_failures > 0 {
+                info!("connected to {description} after {n_failures} failures")
             }
-
-            fn sleep_time() -> Duration {
-                #[cfg(test)]
-                {
-                    use rand::Rng;
-                    return Duration::from_micros(rand::thread_rng().gen_range(0..1000));
-                }
-
-                #[cfg(not(test))]
-                Duration::from_millis(1000)
+            if let Err(error) =
+                Self::run_connection(stream, message_type, &remote_workers, &channel).await
+            {
+                warn!("connection to {description} dropped ({error}), waiting to retry")
             }
-            sleep(sleep_time()).await;
         }
     }
 
@@ -1965,6 +1960,17 @@ fn inject_fault(kind: impl Display) -> bool {
 #[cfg(not(test))]
 fn inject_fault(_kind: impl Display) -> bool {
     false
+}
+
+#[cfg(test)]
+fn backoff_time() -> Duration {
+    use rand::Rng;
+    Duration::from_micros(rand::thread_rng().gen_range(0..1000))
+}
+
+#[cfg(not(test))]
+fn backoff_time() -> Duration {
+    Duration::from_millis(1000)
 }
 
 #[cfg(test)]
