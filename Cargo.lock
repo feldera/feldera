@@ -5388,6 +5388,7 @@ dependencies = [
  "iceberg-datafusion",
  "iceberg-storage-opendal",
  "log",
+ "serde",
  "serde_json",
  "tokio",
  "url",
