@@ -532,11 +532,12 @@ public class Regression1Tests extends SqlIoTest {
     public void castBinaryToString() {
         var ccs = this.getCCS("""
                 CREATE TABLE T(x BINARY(2));
-                CREATE VIEW V AS SELECT CAST(x AS VARCHAR), CAST(x'AB01' AS VARCHAR) FROM T;""");
+                CREATE VIEW V AS SELECT CAST(x AS VARCHAR), CAST(x'AB01' AS VARCHAR) FROM T;""")
+                .withStringTrim();
         ccs.stepWeightOne("INSERT INTO T VALUES(x'AB01')", """
-                    x| y
-                ----------
-                 ab01| ab01""");
+                 x    | y
+                -----------
+                 ab01 | ab01""");
     }
 
     @Test
@@ -1203,16 +1204,17 @@ public class Regression1Tests extends SqlIoTest {
                 SELECT cast(contacts as MAP<varchar, variant>) contacts
                     FROM user_props
                 ) SELECT key, to_json(contact)
-                FROM ref_profile profile_0, UNNEST(profile_0.contacts) AS t(key, contact)""");
+                FROM ref_profile profile_0, UNNEST(profile_0.contacts) AS t(key, contact)""")
+                .withStringTrim();
         ccs.stepWeightOne("""
                 INSERT INTO j VALUES('{ "a": "1", "b": 2, "c": [1, 2, 3], "d": null, "e": { "f": 1 } }');""", """
                  key | contact
                 ---------------
-                 a| "1"
-                 b| 2
-                 c| [1,2,3]
-                 d| null
-                 e| {"f":1}""");
+                 a   | "1"
+                 b   | 2
+                 c   | [1,2,3]
+                 d   | null
+                 e   | {"f":1}""");
     }
 
     @Test
@@ -1529,13 +1531,13 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE VIEW V AS
                 WITH FT as (select 'a' as e union all select 'bc')
                 SELECT x, x in (SELECT e from FT)
-                FROM T;""");
+                FROM T;""").withStringTrim();
         ccs.stepWeightOne("INSERT INTO T VALUES('a'), ('b'), ('ab');", """
-                 x | in
-                -------
-                 a| true
-                 b|false
-                 ab|false""");
+                 x  | in
+                ---------
+                 a  | true
+                 b  | false
+                 ab | false""");
     }
 
     @Test
@@ -1609,12 +1611,12 @@ public class Regression1Tests extends SqlIoTest {
                         VALUES
                             ('a', 1, ARRAY['by'], true),
                             ('b', 1, ARRAY(), false)
-                    ) AS t (f1, f2, f3, f4);""");
+                    ) AS t (f1, f2, f3, f4);""").withStringTrim();
         ccs.stepWeightOne("", """
-                 f1 | f2 | f3 | f4
-                --------------------
-                 a| 1 | { by} | true
-                 b| 1 | {}    | false""");
+                 f1 | f2 | f3    | f4
+                ----------------------
+                 a  | 1 | { by} | true
+                 b  | 1 | {}    | false""");
     }
 
     @Test

@@ -43,20 +43,21 @@ public class InternTests extends SqlIoTest {
     public void testInterning() {
         var ccs = this.getCCS("""
                 CREATE TABLE T(x INT, s VARCHAR INTERNED, u VARCHAR);
-                CREATE VIEW V AS SELECT MAX(u), SUM(x), s FROM T GROUP BY s;""");
+                CREATE VIEW V AS SELECT MAX(u), SUM(x), s FROM T GROUP BY s;""")
+                .withStringTrim();
         ccs.stepWeightOne("INSERT INTO T VALUES(0, 'a', 'b');", """
                  max | sum | s
                 ---------------
-                 b|      0 | a""");
+                 b   | 0   | a""");
         ccs.stepWeightOne("INSERT INTO T VALUES(1, 'd', 'c');", """
                  max | sum | s
                 ---------------
-                 c|      1 | d""");
+                 c   | 1   | d""");
         ccs.step("INSERT INTO T VALUES(2, 'a', 'c');", """
-                 max| sum | s| weight
-                ----------------------
-                 b|     0 | a| -1
-                 c|     2 | a| 1""");
+                 max | sum | s | weight
+                ------------------------
+                 b   | 0   | a | -1
+                 c   | 2   | a | 1""");
         ccs.stepWeightOne("INSERT INTO T VALUES(NULL, NULL, NULL);", """
                  max | sum | s
                 ---------------
@@ -104,12 +105,12 @@ public class InternTests extends SqlIoTest {
     public void testTwoColumns() {
         var ccs = this.getCCS("""
                 CREATE TABLE T(x VARCHAR NOT NULL INTERNED, s VARCHAR INTERNED);
-                CREATE VIEW V AS SELECT * FROM T;""");
+                CREATE VIEW V AS SELECT * FROM T;""").withStringTrim();
         ccs.stepWeightOne("INSERT INTO T VALUES('x', 'y'), ('z', NULL);", """
-                  x| y
-                 ------
-                  x| y
-                  z|NULL""");
+                 x | y
+                -------
+                 x | y
+                 z |NULL""");
     }
 
     @Test
@@ -118,16 +119,17 @@ public class InternTests extends SqlIoTest {
         var ccs = this.getCCS("""
             CREATE TABLE T(x VARCHAR NOT NULL INTERNED, y VARCHAR NOT NULL INTERNED);
             CREATE TABLE S(z VARCHAR INTERNED, w VARCHAR INTERNED, a INT);
-            CREATE VIEW V AS SELECT T.x, S.a FROM T LEFT JOIN S ON T.x = S.z AND T.y = S.w;""");
+            CREATE VIEW V AS SELECT T.x, S.a FROM T LEFT JOIN S ON T.x = S.z AND T.y = S.w;""")
+                .withStringTrim();
         ccs.stepWeightOne("""
                 INSERT INTO T VALUES('a', 'b'), ('a', 'c');
                 INSERT INTO S VALUES('a', 'b', 1), ('a', 'd', 2), ('b', 'c', 3), ('a', 'b', 4);
                 """, """
                  x | a
                 -------
-                 a|  1
-                 a|  4
-                 a|NULL""");
+                 a | 1
+                 a | 4
+                 a |NULL""");
     }
 
     @Test

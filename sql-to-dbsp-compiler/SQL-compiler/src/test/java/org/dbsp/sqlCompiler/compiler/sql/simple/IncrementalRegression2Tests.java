@@ -287,18 +287,18 @@ public class IncrementalRegression2Tests extends SqlIoTest {
                     c1.name
                 FROM customers AS c1
                 JOIN customers AS c2
-                    ON c1.customer_id = c2.customer_id;""");
+                    ON c1.customer_id = c2.customer_id;""").withStringTrim();
         // Validated on Postgres
         ccs.step("""
                 INSERT INTO customers (customer_id, name, first) VALUES
                   (1, 'Johnson', 'Alice'),
                   (2, 'Smith',   'Bob'),
                   (3, 'White',   'Carol');""", """
-                 first | name1 | name    | weight
-                ---------------------------------------
-                 Alice| Johnson| Johnson|  1
-                 Bob| Smith| Smith|        1
-                 Carol| White| White|      1""");
+                 first | name1   | name    | weight
+                ------------------------------------
+                 Alice | Johnson | Johnson | 1
+                 Bob   | Smith   | Smith   | 1
+                 Carol | White   | White   | 1""");
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             int mapIndexCount = 0;
 

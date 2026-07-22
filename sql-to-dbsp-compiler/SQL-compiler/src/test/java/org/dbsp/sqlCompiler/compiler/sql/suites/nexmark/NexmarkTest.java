@@ -586,7 +586,7 @@ SELECT
         //noinspection ConstantValue
         if (debug)
             previous = Logger.INSTANCE.setLoggingLevel(module, 1);
-        CompilerCircuitStream ccs = this.getCCS(compiler);
+        CompilerCircuitStream ccs = this.getCCS(compiler).withStringTrim();
         //noinspection ConstantValue
         if (debug)
             Logger.INSTANCE.setLoggingLevel(module, previous);
@@ -672,19 +672,19 @@ INSERT INTO Auction VALUES(999, 'item-name', 'description', 5, 10, '2020-01-01 0
 INSERT INTO Auction VALUES(452, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 3, 10, '');
 """,
                 """
-                 name     | city   | state | id | weight
-                -----------------------------------------
-                 CA Seller| Phoenix| CA| 999 | 1
-                 ID Seller| Phoenix| ID| 452 | 1""",
+                 name      | city    | state | id  | weight
+                --------------------------------------------
+                 CA Seller | Phoenix | CA    | 999 | 1
+                 ID Seller | Phoenix | ID    | 452 | 1""",
                 """
 INSERT INTO Person VALUES(4, 'OR Seller', 'AAABBB@example.com', '1111 2222 3333 4444', 'Phoenix', 'PR', '2020-01-01 00:00:00', '');
 INSERT INTO Auction VALUES(999, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 4, 11, '');
 INSERT INTO Person VALUES(5, 'OR Seller', 'AAABBB@example.com', '1111 2222 3333 4444', 'Phoenix', 'OR', '2020-01-01 00:00:00', '');
 INSERT INTO Auction VALUES(333, 'item-name', 'description', 5, 10, '2020-01-01 01:00:00', '2020-01-02 00:00:00', 5, 10, '');""",
                 """
-                 name     | city   | state | id | weight
-                ------------------------------------------
-                 OR Seller| Phoenix| OR| 333 | 1"""
+                 name      | city    | state | id  | weight
+                --------------------------------------------
+                 OR Seller | Phoenix | OR    | 333 | 1"""
                 );
     }
 
