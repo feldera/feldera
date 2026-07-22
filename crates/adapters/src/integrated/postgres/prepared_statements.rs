@@ -22,13 +22,29 @@ impl RawQueries {
             .map(|f| f.name.sql_name())
             .collect();
 
+        // List supplied columns explicitly so Postgres applies DEFAULTs to any
+        // omitted column, instead of SELECT * forcing NULL into them (#6694).
+        let mut insert_columns: Vec<String> = value_schema
+            .fields
+            .iter()
+            .map(|f| f.name.sql_name())
+            .chain(config.extra_columns.iter().map(|k| format!(r#""{k}""#)))
+            .collect();
+
+        // CDC rows also carry the op/ts metadata columns.
+        if matches!(config.mode, PostgresWriteMode::Cdc) {
+            insert_columns.push(format!(r#""{}""#, config.cdc_op_column));
+            insert_columns.push(format!(r#""{}""#, config.cdc_ts_column));
+        }
+        let insert_columns = insert_columns.join(", ");
+
         let mut raw_queries = RawQueries::default();
 
         match config.mode {
             PostgresWriteMode::Cdc => {
                 // In CDC mode, everything is an INSERT into the event log
                 raw_queries.insert = format!(
-                    r#"INSERT INTO "{table}" SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)"#,
+                    r#"INSERT INTO "{table}" ({insert_columns}) SELECT {insert_columns} FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)"#,
                 );
                 // For CDC mode, upsert and delete operations also use INSERT
                 raw_queries.upsert = raw_queries.insert.clone();
@@ -59,7 +75,7 @@ impl RawQueries {
                 };
 
                 raw_queries.insert = format!(
-                    r#"INSERT INTO "{table}" SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb) ON CONFLICT {on_conflict}"#,
+                    r#"INSERT INTO "{table}" ({insert_columns}) SELECT {insert_columns} FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb) ON CONFLICT {on_conflict}"#,
                 );
             }
         }
@@ -167,5 +183,87 @@ impl PreparedStatements {
             upsert,
             delete,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use feldera_types::program_schema::{ColumnType, Field};
+    use std::collections::BTreeMap;
+
+    fn relation(name: &str, columns: &[&str]) -> Relation {
+        Relation::new(
+            name.into(),
+            columns
+                .iter()
+                .map(|c| Field::new((*c).into(), ColumnType::varchar(true)))
+                .collect(),
+            false,
+            BTreeMap::new(),
+        )
+    }
+
+    fn writer_config(mode: PostgresWriteMode, extra_columns: &[&str]) -> PostgresWriterConfig {
+        serde_json::from_value(serde_json::json!({
+            "uri": "postgres://localhost",
+            "table": "t",
+            "mode": mode.to_string(),
+            "extra_columns": extra_columns,
+        }))
+        .unwrap()
+    }
+
+    // INSERT lists supplied columns, never SELECT * (#6694).
+    #[test]
+    fn materialized_insert_lists_supplied_columns() {
+        let key = relation("k", &["id"]);
+        let value = relation("v", &["id", "name"]);
+        let queries = RawQueries::new(
+            &key,
+            &value,
+            &writer_config(PostgresWriteMode::Materialized, &["audit"]),
+        );
+
+        assert!(!queries.insert.contains("SELECT *"), "{}", queries.insert);
+        assert!(queries.insert.contains(r#"(id, name, "audit")"#));
+        assert!(queries.insert.contains(r#"SELECT id, name, "audit" FROM"#));
+    }
+
+    // Case-sensitive columns stay quoted.
+    #[test]
+    fn materialized_insert_quotes_case_sensitive_columns() {
+        let key = relation("k", &[r#""Id""#]);
+        let value = relation("v", &[r#""Id""#, r#""Name""#]);
+        let queries = RawQueries::new(
+            &key,
+            &value,
+            &writer_config(PostgresWriteMode::Materialized, &[]),
+        );
+
+        assert!(queries.insert.contains(r#"("Id", "Name")"#));
+        assert!(queries.insert.contains(r#"SELECT "Id", "Name" FROM"#));
+    }
+
+    // CDC INSERT also lists the op/ts metadata columns.
+    #[test]
+    fn cdc_insert_lists_supplied_and_metadata_columns() {
+        let key = relation("k", &["id"]);
+        let value = relation("v", &["id", "name"]);
+        let queries = RawQueries::new(&key, &value, &writer_config(PostgresWriteMode::Cdc, &[]));
+
+        assert!(!queries.insert.contains("SELECT *"));
+        assert!(
+            queries
+                .insert
+                .contains(r#"(id, name, "__feldera_op", "__feldera_ts")"#)
+        );
+        assert!(
+            queries
+                .insert
+                .contains(r#"SELECT id, name, "__feldera_op", "__feldera_ts" FROM"#)
+        );
+        assert_eq!(queries.insert, queries.upsert);
+        assert_eq!(queries.insert, queries.delete);
     }
 }
