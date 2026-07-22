@@ -1455,7 +1455,7 @@ async fn approve(
 async fn status_handler(
     state: WebData<ServerState>,
 ) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
-    get_status(&state)
+    get_status(&state, true)
 }
 
 #[allow(clippy::result_large_err)]
@@ -1500,24 +1500,24 @@ fn terminated_status(
 }
 
 #[allow(clippy::result_large_err)]
-fn get_status(state: &ServerState) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
+fn get_status(
+    state: &ServerState,
+    with_storage_status_details: bool,
+) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
     // Runtime desired status
     let runtime_desired_status = state.desired_status();
 
     // Storage status details
-    let storage_status_details = match &state.storage {
-        Some(backend) => match Checkpointer::read_checkpoints(&**backend) {
-            Ok(list_checkpoints) => Some(StorageStatusDetails {
-                checkpoints: list_checkpoints.into(),
-            }),
-            Err(e) => {
-                error!(
+    let storage_status_details = if with_storage_status_details
+        && let Some(backend) = &state.storage
+    {
+        Checkpointer::read_checkpoints(&**backend).inspect_err(|e| error!(
                     "Unable to read checkpoints; storage status details are not provided. Error: {e}"
-                );
-                None
-            }
-        },
-        None => None,
+                )).ok().map(|list_checkpoints| StorageStatusDetails {
+                checkpoints: list_checkpoints.into(),
+            })
+    } else {
+        None
     };
 
     // Current status
@@ -2774,10 +2774,10 @@ async fn coordination_activate_handler(
 async fn coordination_status(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     let stream = unfold((state, None), |(state, prev)| async move {
         let status = match prev {
-            None => get_status(&state),
+            None => get_status(&state, false),
             Some(prev) => loop {
                 let notify = state.desired_status_change.notified();
-                let status = get_status(&state);
+                let status = get_status(&state, false);
                 if status != prev {
                     break status;
                 }
