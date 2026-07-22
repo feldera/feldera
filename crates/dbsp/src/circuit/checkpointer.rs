@@ -442,7 +442,8 @@ impl Checkpointer {
     pub fn read_checkpoints(
         backend: &dyn StorageBackend,
     ) -> Result<VecDeque<CheckpointMetadata>, Error> {
-        match backend.read_json(&StoragePath::from(CHECKPOINT_FILE_NAME)) {
+        let file_name = StoragePath::from(CHECKPOINT_FILE_NAME);
+        match backend.read_json(&file_name) {
             Ok(checkpoints) => Ok(checkpoints),
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 let mut orphan_uuid_dirs: Vec<String> = Vec::new();
@@ -464,6 +465,11 @@ impl Checkpointer {
                         path: Some(CHECKPOINT_FILE_NAME.to_string()),
                     }));
                 }
+
+                // Write an empty checkpoint file to save the cost of listing
+                // all the files next time.
+                backend.write_json(&file_name, &VecDeque::<CheckpointMetadata>::new())?;
+
                 Ok(VecDeque::new())
             }
             Err(error) => Err(error)?,
