@@ -495,6 +495,126 @@ fn iceberg_localfs_input_test_skip_unused_columns() {
     iceberg_localfs_input_subset_test(true);
 }
 
+/// Build an input-only pipeline that reads a local-FS Iceberg snapshot with
+/// at-least-once fault tolerance, checkpointing to `storage_dir`. Rebuilding a
+/// pipeline with the same `storage_dir` resumes from the latest checkpoint.
+#[cfg(feature = "iceberg-tests-fs")]
+fn iceberg_ft_pipeline(
+    extra_config: serde_json::Value,
+    storage_dir: &std::path::Path,
+) -> Controller {
+    init_logging();
+
+    let mut config = json!({ "mode": "snapshot" });
+    let config_obj = config.as_object_mut().unwrap();
+    for (key, value) in extra_config
+        .as_object()
+        .expect("extra_config must be a JSON object")
+    {
+        config_obj.insert(key.clone(), value.clone());
+    }
+
+    let config: feldera_types::config::PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "fault_tolerance": { "model": "at_least_once" },
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "iceberg_input",
+                    "config": config,
+                }
+            }
+        }
+    }))
+    .unwrap();
+
+    Controller::with_test_config(
+        move |workers| {
+            // A concrete persistent output id is required for checkpointing.
+            Ok(test_circuit_with_properties::<IcebergTestStruct>(
+                workers,
+                &IcebergTestStruct::schema_with_lateness(),
+                &[],
+                &[Some("output")],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("iceberg ft pipeline: error: {e}")),
+    )
+    .unwrap()
+}
+
+/// Checkpoint-and-suspend the pipeline, then stop it.
+#[cfg(feature = "iceberg-tests-fs")]
+fn suspend_and_stop(pipeline: Controller) {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    pipeline.start_suspend(Box::new(move |result| {
+        let _ = sender.send(result.map(|_| ()).map_err(|e| e.to_string()));
+    }));
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(100))
+        .expect("suspend timed out")
+        .expect("suspend failed");
+    pipeline.stop().unwrap();
+}
+
+/// A snapshot fully ingested before a checkpoint must not be re-read after a
+/// suspend/resume: the resumed connector reaches the completed phase (2) and
+/// reads zero records. This is what lets a large Iceberg table survive a
+/// restart without re-ingesting all of its rows.
+///
+/// To confirm the assertion catches a regression, drop the terminal eoi
+/// boundary (or the `resume_info.eoi` short-circuit) in `input.rs`: the resumed
+/// run then re-reads the whole snapshot and `snapshot_records_total` is nonzero.
+#[test]
+#[cfg(feature = "iceberg-tests-fs")]
+fn iceberg_localfs_input_test_resume_completed_snapshot() {
+    let data = data(100_000);
+    let metadata_path = create_localfs_table(&data, false);
+    let storage_dir = tempfile::TempDir::new().unwrap();
+
+    // Ordered snapshot so the read is resumable per lateness range.
+    let config = json!({ "metadata_location": metadata_path, "timestamp_column": "ts" });
+
+    // First run: ingest the whole snapshot, then checkpoint and suspend.
+    let pipeline = iceberg_ft_pipeline(config.clone(), storage_dir.path());
+    pipeline.start();
+    wait(|| pipeline.pipeline_complete(), 400_000).expect("timeout waiting for snapshot");
+    let first = iceberg_connector_metrics(&pipeline);
+    assert!(
+        first
+            .get("input_connector_iceberg_snapshot_records_total")
+            .copied()
+            .unwrap_or(0.0)
+            > 0.0,
+        "the first run should ingest the snapshot"
+    );
+    suspend_and_stop(pipeline);
+
+    // Second run: resume from the checkpoint. The snapshot is complete, so the
+    // connector reaches the completed phase without reading any records.
+    let pipeline = iceberg_ft_pipeline(config, storage_dir.path());
+    pipeline.start();
+    wait(|| pipeline.pipeline_complete(), 60_000).expect("timeout waiting for resume");
+    let second = iceberg_connector_metrics(&pipeline);
+    assert_eq!(
+        second
+            .get("input_connector_iceberg_snapshot_records_total")
+            .copied(),
+        Some(0.0),
+        "a resumed, already-completed snapshot must not be re-read"
+    );
+    assert_eq!(
+        second.get("input_connector_iceberg_phase").copied(),
+        Some(2.0),
+        "the resumed connector must reach the completed phase"
+    );
+    pipeline.stop().unwrap();
+}
+
 #[test]
 #[cfg(feature = "iceberg-tests-glue")]
 fn iceberg_glue_s3_input_test() {
