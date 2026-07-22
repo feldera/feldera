@@ -21,7 +21,9 @@ The connector is compatible with REST, AWS Glue, and Amazon S3 Tables catalogs a
 supports direct table reads without a catalog, provided the location of the metadata file.
 Supported storage systems include S3, GCS, and local file systems.
 
-The Iceberg input connector does not yet support [fault tolerance](/pipelines/fault-tolerance).
+The Iceberg input connector supports [fault tolerance](/pipelines/fault-tolerance) at the
+[at-least-once](/pipelines/fault-tolerance#fault-tolerance-guarantees) level: see
+[Fault tolerance](#fault-tolerance) below.
 
 
 ## Configuration
@@ -185,6 +187,31 @@ range is ingested in a separate transaction. The number of transactions therefor
 range of values in the timestamp column and the width of `LATENESS`, not on the physical layout
 (partitioning) of the table. See `timestamp_column` documentation
 [below](#ingesting-time-series-data-from-iceberg) for more details.
+
+## Fault tolerance
+
+The connector supports [fault tolerance](/pipelines/fault-tolerance) at the
+**at-least-once** level. On a pipeline restart it resumes the snapshot read from the last
+checkpoint instead of re-ingesting the whole table, which matters for large tables where a
+full re-read is expensive. Records are not deduplicated, so a resumed read may re-emit some
+of the rows ingested just before the checkpoint.
+
+The connector pins the snapshot it reads at the first read (resolving the latest snapshot to
+a concrete snapshot id) and records that id in every checkpoint, so a resumed read sees the
+same immutable data even if the table has advanced in the meantime.
+
+How much a restart re-reads depends on `timestamp_column`:
+
+| Configuration | Checkpoint granularity | Re-read on restart |
+|---|---|---|
+| `timestamp_column` set (ordered read) | one [lateness](#ingesting-time-series-data-from-iceberg) range | at most the range in flight |
+| `timestamp_column` unset (unordered read) | the whole snapshot | the whole snapshot |
+
+An unordered read has no seekable interior boundary, so a checkpoint taken while it is in
+progress resumes by re-reading the whole snapshot. Set `timestamp_column` to get incremental,
+bounded-re-read checkpointing on large tables. Once the snapshot has been fully ingested, a
+restart resumes directly into the completed state and reads nothing further, regardless of
+`timestamp_column`.
 
 ## Ingesting time series data from Iceberg
 
