@@ -3443,6 +3443,7 @@ mod test_http_helpers {
             None,
             None,
             None,
+            None,
         ));
         let state_clone = state.clone();
 
