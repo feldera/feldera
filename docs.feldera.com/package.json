@@ -23,7 +23,7 @@
     "clsx": "^2.0.0",
     "docusaurus-plugin-hubspot": "^1.0.1",
     "docusaurus-preset-openapi": "^0.7.5",
-    "js-yaml": "4.2.0",
+    "js-yaml": "4.3.0",
     "posthog-docusaurus": "^2.0.1",
     "prism-react-renderer": "^2.3.0",
     "react": "^18.0.0",
