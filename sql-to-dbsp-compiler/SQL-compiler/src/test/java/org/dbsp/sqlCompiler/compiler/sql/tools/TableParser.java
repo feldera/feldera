@@ -490,12 +490,12 @@ public class TableParser {
 
     /** Parse a change table.  A change table is like a table, but has an extra
      * integer column that contains the weights. */
-    public static Change parseChangeTable(String table, DBSPType outputType) {
+    public static Change parseChangeTable(String table, DBSPType outputType, boolean trimTrailingSpaces) {
         List<DBSPType> extraFields =
                 Linq.list(outputType.to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class).tupFields);
         extraFields.add(new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false));
         DBSPType extraOutputType = new DBSPTypeTuple(extraFields);
-        Change change = parseTable(table, new DBSPTypeZSet(extraOutputType), -1, false);
+        Change change = parseTable(table, new DBSPTypeZSet(extraOutputType), -1, trimTrailingSpaces);
         TableData[] extracted = Linq.map(change.sets, SqlIoTest::extractWeight, TableData.class);
         return new Change(extracted);
     }
@@ -598,6 +598,6 @@ public class TableParser {
             builder.append("\t1");
         }
 
-        return parseChangeTable(builder.toString(), outputType);
+        return parseChangeTable(builder.toString(), outputType, false);
     }
 }

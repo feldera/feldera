@@ -51,12 +51,12 @@ public class StreamingTests extends StreamingTestBase {
                     x INT,
                     ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
                 );
-                
+
                 CREATE TABLE t2(
                     y INT,
                     ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
                 );
-                
+
                 CREATE VIEW v
                 WITH ('emit_final' = 'ts')
                 AS SELECT t1.ts
@@ -259,7 +259,7 @@ public class StreamingTests extends StreamingTestBase {
                 ) WITH (
                     'append_only' = 'true'
                 );
-                
+
                 create view v1 AS
                 SELECT
                     TIMESTAMP_TRUNC(ts, DAY) as d,
@@ -327,12 +327,12 @@ public class StreamingTests extends StreamingTestBase {
                     x INT,
                     ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
                 );
-                
+
                 CREATE TABLE t2(
                     y INT,
                     ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
                 );
-                
+
                 CREATE VIEW v
                 WITH ('emit_final' = 'ts')
                 AS SELECT
@@ -397,7 +397,7 @@ public class StreamingTests extends StreamingTestBase {
                     'materialized' = 'true',
                     'append_only' = 'true'
                 );
-                
+
                 CREATE VIEW V
                 WITH ('emit_final' = 'ts')
                 AS SELECT * FROM T
@@ -674,13 +674,13 @@ public class StreamingTests extends StreamingTestBase {
                     id bigint NOT NULL,
                     unix_time BIGINT LATENESS 100
                 );
-                
+
                 create table FEEDBACK (
                     id bigint,
                     status int,
                     unix_time bigint NOT NULL LATENESS 100
                 );
-                
+
                 CREATE VIEW TRANSACT AS
                     SELECT feedback.*, transaction.*
                     FROM
@@ -2044,9 +2044,9 @@ public class StreamingTests extends StreamingTestBase {
                   t0 TIMESTAMP NOT NULL LATENESS INTERVAL '2' HOURS,
                   location INT NOT NULL
                 );
-                
+
                 CREATE LOCAL VIEW IT AS SELECT (t0 - TIMESTAMP '2020-01-01 00:00:00') HOURS AS t, location FROM data;
-                
+
                 CREATE VIEW V AS
                 SELECT
                 *,
@@ -3056,7 +3056,7 @@ public class StreamingTests extends StreamingTestBase {
                   y TIMESTAMP,
                   site_id varchar
                 );
-                
+
                 create view V
                 as select site_id from T
                 where ( x >= NOW() + INTERVAL 30 DAYS
@@ -3341,7 +3341,7 @@ public class StreamingTests extends StreamingTestBase {
                    lp VARCHAR,
                    lsd TIMESTAMP
                 );
-                
+
                 create view V
                 as SELECT
                     s
@@ -3389,7 +3389,7 @@ public class StreamingTests extends StreamingTestBase {
                    lp VARCHAR,
                    lsd TIMESTAMP
                 );
-                
+
                 create view V
                 as SELECT
                     s
@@ -3443,7 +3443,7 @@ public class StreamingTests extends StreamingTestBase {
                    lp VARCHAR,
                    lsd TIMESTAMP
                 );
-                
+
                 create view V
                 as SELECT
                     s
@@ -3501,7 +3501,7 @@ public class StreamingTests extends StreamingTestBase {
                   properties variant,
                   site_id varchar
                 );
-                
+
                 create view V
                 as (select site_id from T
                     where CAST(properties['x'] AS TIMESTAMP) >= NOW() + INTERVAL 30 DAYS)
@@ -3519,16 +3519,97 @@ public class StreamingTests extends StreamingTestBase {
                 x INT,
                 ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
             );
-            
+
             CREATE TABLE t2(
                 y INT,
                 ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
             );
-            
+
             CREATE VIEW v
             WITH ('emit_final' = 'ts')
             AS SELECT t1.ts
             FROM t1 LEFT JOIN t2 on t1.ts = t2.ts;""";
         this.getCCS(sql);
+    }
+
+    @Test
+    public void changeLog() {
+        // TLOG is a log of insertions and deletions applied to a table with
+        // primary key t_key; view T reconstructs the current table contents
+        // from the log entries of the last 25 hours: the latest entry per key
+        // wins, and a key whose latest entry is a deletion is absent.  The op
+        // filter must sit outside the TOP-1, otherwise a deletion would
+        // resurrect the previous insertion.  The temporal filter makes rows
+        // age out of T once their latest entry falls behind the window.
+        String sql = """
+                CREATE TABLE TLOG (
+                    t_key INT NOT NULL,
+                    payload VARCHAR,
+                    op VARCHAR NOT NULL,
+                    ts TIMESTAMP NOT NULL
+                ) WITH ('append_only' = 'true');
+
+                CREATE LOCAL VIEW RECENT AS
+                SELECT * FROM TLOG
+                WHERE ts >= NOW() - INTERVAL 25 HOURS AND ts <= NOW();
+
+                CREATE VIEW T AS
+                SELECT t_key, payload
+                FROM (
+                    SELECT t_key, payload, op,
+                           ROW_NUMBER() OVER (PARTITION BY t_key ORDER BY ts DESC) AS rn
+                    FROM RECENT
+                ) latest
+                WHERE rn = 1 AND op = 'insert';""";
+        var ccs = this.getCCS(sql).withStringTrim();
+        ccs.step("""
+                INSERT INTO NOW VALUES('2020-01-01 01:00:00');
+                INSERT INTO TLOG VALUES(1, 'aaa', 'insert', '2020-01-01 00:00:00');
+                INSERT INTO TLOG VALUES(2, 'bbb', 'insert', '2020-01-01 00:10:00');""", """
+                 t_key | payload | weight
+                --------------------------
+                 1     | aaa     | 1
+                 2     | bbb     | 1""");
+        // An update is a newer insertion for an existing key
+        ccs.step("""
+                INSERT INTO NOW VALUES('2020-01-01 01:10:00');
+                INSERT INTO TLOG VALUES(1, 'ccc', 'insert', '2020-01-01 00:20:00');""", """
+                 t_key | payload | weight
+                --------------------------
+                 1     | aaa     | -1
+                 1     | ccc     | 1""");
+        // The latest entry for key 2 is a deletion, so the key disappears
+        ccs.step("""
+                INSERT INTO NOW VALUES('2020-01-01 01:20:00');
+                INSERT INTO TLOG VALUES(2, NULL, 'delete', '2020-01-01 00:30:00');""", """
+                 t_key | payload | weight
+                --------------------------
+                 2     | bbb     | -1""");
+        // Out-of-order entries older than the latest entry for their key
+        // leave the view unchanged
+        ccs.step("""
+                INSERT INTO NOW VALUES('2020-01-01 01:30:00');
+                INSERT INTO TLOG VALUES(1, 'xxx', 'insert', '2020-01-01 00:15:00');
+                INSERT INTO TLOG VALUES(1, NULL, 'delete', '2020-01-01 00:18:00');""", """
+                 t_key | payload | weight
+                --------------------------""");
+        // A key deleted earlier reappears with a newer insertion
+        ccs.step("""
+                INSERT INTO NOW VALUES('2020-01-01 01:40:00');
+                INSERT INTO TLOG VALUES(2, 'ddd', 'insert', '2020-01-01 00:40:00');""", """
+                 t_key | payload | weight
+                --------------------------
+                 2     | ddd     | 1""");
+        // 25 hours later all key-1 entries have left the window, so key 1
+        // disappears; key 2 keeps its 00:40 insertion
+        ccs.step("INSERT INTO NOW VALUES('2020-01-02 01:30:00');", """
+                 t_key | payload | weight
+                --------------------------
+                 1     | ccc     | -1""");
+        // ... and once the 00:40 insertion ages out too, T becomes empty
+        ccs.step("INSERT INTO NOW VALUES('2020-01-02 01:45:00');", """
+                 t_key | payload | weight
+                --------------------------
+                 2     | ddd     | -1""");
     }
 }
