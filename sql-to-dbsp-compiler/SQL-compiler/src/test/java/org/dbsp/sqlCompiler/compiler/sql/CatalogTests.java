@@ -240,7 +240,9 @@ public class CatalogTests extends BaseSQLTests {
             int imww = 0;
             int retain = 0;
 
-            // Check that InputMapWithWaterline is GC-ed
+            // Check that InputMapWithWaterline is NOT GC-ed: the LATENESS
+            // column is not part of the primary key, so every key can still be
+            // updated and the input trace must retain all rows.
             @Override
             public void postorder(DBSPIntegrateTraceRetainValuesOperator node) {
                 this.retain++;
@@ -254,7 +256,7 @@ public class CatalogTests extends BaseSQLTests {
             @Override
             public void endVisit() {
                 Assert.assertEquals(1, this.imww);
-                Assert.assertEquals(1, this.retain);
+                Assert.assertEquals(0, this.retain);
             }
         });
     }

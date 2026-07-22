@@ -186,7 +186,7 @@ public class MergeGC extends Passes {
             OutputPort apply = InsertLimiters.createApplyN(this.compiler, rights, min);
             this.addOperator(apply.node());
             return new DBSPIntegrateTraceRetainKeysOperator(
-                    first.getRelNode(), first.getClosureFunction(), left, apply);
+                    first.getRelNode(), first.getClosureFunction(), left, apply, first.accumulate);
         }
 
         public MergeRetain(DBSPCompiler compiler, FindMultipleRetainKeys fmk) {

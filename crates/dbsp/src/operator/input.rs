@@ -606,8 +606,6 @@ impl RootCircuit {
     ///
     /// Retention conditions configured at logical time `t`
     /// are applied starting from logical time `t+1`.
-    ///
-    /// FIXME: see <https://github.com/feldera/feldera/issues/2669>
     // TODO: Add a version that takes a custom hash function.
     #[track_caller]
     pub fn add_input_map<K, V, U, PF>(

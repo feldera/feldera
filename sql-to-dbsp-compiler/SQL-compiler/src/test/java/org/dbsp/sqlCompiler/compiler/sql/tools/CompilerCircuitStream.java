@@ -21,6 +21,7 @@ import java.util.List;
  * Submits the code for compilation by the Rust compiler. */
 public class CompilerCircuitStream extends CompilerCircuit {
     final InputOutputChangeStream stream;
+    boolean compactAfterEachStep;
 
     public CompilerCircuitStream(DBSPCompiler compiler, BaseSQLTests test) {
         this(compiler, new InputOutputChangeStream(), test);
@@ -39,6 +40,12 @@ public class CompilerCircuitStream extends CompilerCircuit {
         super(compiler);
         this.stream = streams;
         test.addRustTestCase(this);
+        this.compactAfterEachStep = false;
+    }
+
+    public CompilerCircuitStream compactAfterEachStep() {
+        this.compactAfterEachStep = true;
+        return this;
     }
 
     public CompilerCircuitStream(
@@ -74,6 +81,8 @@ public class CompilerCircuitStream extends CompilerCircuit {
         DBSPType outputType = this.circuit.getSingleOutputType();
         Change output = TableParser.parseChangeTable(expected, outputType);
         this.stream.addPair(input, output);
+        if (this.compactAfterEachStep)
+            this.blockForCompaction();
     }
 
     /**
@@ -103,6 +112,8 @@ public class CompilerCircuitStream extends CompilerCircuit {
 
     public void step(Change input, Change output) {
         this.stream.addPair(input, output);
+        if (this.compactAfterEachStep)
+            this.blockForCompaction();
     }
 
     /** Execute some insert/delete statements using sqlite and return the produced result.

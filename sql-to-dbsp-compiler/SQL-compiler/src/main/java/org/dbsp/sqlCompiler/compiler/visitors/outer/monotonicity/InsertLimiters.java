@@ -1741,19 +1741,58 @@ public class InsertLimiters extends CircuitCloneVisitor {
         if (operator != expansion)
             this.markBound(expansion.outputPort(), extend.outputPort());
 
-        if (INSERT_RETAIN_VALUES && replaceIndexedInput &&
+        if (INSERT_RETAIN_KEYS && replaceIndexedInput &&
                 multisetInput != null &&
+            // Do not GC materialized tables.
                 !multisetInput.getMetadata().materialized) {
-            // Do not GC materialized tables
-            IMaybeMonotoneType projection = me.getMonotoneType().to(MonotoneClosureType.class).getBodyType();
-            // The new input operator produces an indexed Zset, need to adjust the projection
-            projection = new PartiallyMonotoneTuple(
-                    List.of(NonMonotoneType.nonMonotone(indexedOutputType.keyType), projection), true, false);
-            DBSPSimpleOperator retain = DBSPIntegrateTraceRetainValuesOperator.create(
-                    operator.getRelNode(), newSource.getOutput(0),
-                    // For inputs "accumulate" is 'false'.
-                    projection, extend.outputPort(), false);
-            this.addOperator(retain);
+            // The trace of an input with a primary key resolves upserts and deletions,
+            // so it can be garbage-collected only by key, and only using LATENESS
+            // columns that belong to the key: a key pruned this way can never be
+            // legally referenced again, because any subsequent update or deletion
+            // carries the same key and is rejected as late.
+            // A LATENESS column outside the key permits no garbage collection at all:
+            // - a live row (timestamp at or above the waterline) must be retained
+            //   to produce the retraction when its key is updated or deleted;
+            // - a frozen row (timestamp below the waterline) can never be retracted,
+            //   but its presence is what lets the input operator reject writes to
+            //   its key as late; if the row is dropped, the next insert on that key
+            //   is accepted as a brand-new key without a retraction, so the output
+            //   would depend on when compaction runs.
+            List<IMaybeMonotoneType> keyFieldsMonotone = new ArrayList<>();
+            List<Integer> keyWaterlineFields = new ArrayList<>();
+            int latenessIndex = 0;
+            for (IColumnMetadata column: multisetInput.to(IHasColumnsMetadata.class).getColumnsMetadata()) {
+                boolean hasLateness = column.getLateness() != null;
+                if (column.isPrimaryKey()) {
+                    if (hasLateness) {
+                        keyFieldsMonotone.add(new MonotoneType(column.getType()));
+                        keyWaterlineFields.add(latenessIndex);
+                    } else {
+                        keyFieldsMonotone.add(NonMonotoneType.nonMonotone(column.getType()));
+                    }
+                }
+                if (hasLateness)
+                    latenessIndex++;
+            }
+            if (!keyWaterlineFields.isEmpty()) {
+                PartiallyMonotoneTuple keyProjection = new PartiallyMonotoneTuple(keyFieldsMonotone, false, false);
+                IMaybeMonotoneType projection = new PartiallyMonotoneTuple(
+                        List.of(keyProjection, NonMonotoneType.nonMonotone(indexedOutputType.elementType)),
+                        true, false);
+                // Project the waterline to the components that correspond to key columns
+                DBSPVariablePath w = timestamp.getType().ref().var();
+                DBSPExpression keyWaterline = new DBSPRawTupleExpression(
+                        new DBSPTupleExpression(
+                                Linq.map(keyWaterlineFields, f -> w.deepCopy().deref().field(f)),
+                                false));
+                OutputPort control = this.createApply(extend.outputPort(), null, keyWaterline.closure(w));
+                DBSPSimpleOperator retain = DBSPIntegrateTraceRetainKeysOperator.create(
+                        operator.getRelNode(), newSource.getOutput(0),
+                        // For inputs "accumulate" is 'false'.
+                        projection, control, false);
+                if (retain != null)
+                    this.addOperator(retain);
+            }
         }
 
         return result;

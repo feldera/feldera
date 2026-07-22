@@ -174,7 +174,9 @@ def unique_pipeline_name(base_name: str) -> str:
     of the commit SHA or 'local' if not in CI. FELDERA_TEST_TAG_SUFFIX distinguishes
     test suites of the same commit running concurrently against one instance.
     """
-    ci_tag = os.getenv("GITHUB_SHA", "local")[:5] + os.getenv("FELDERA_TEST_TAG_SUFFIX", "")
+    ci_tag = os.getenv("GITHUB_SHA", "local")[:5] + os.getenv(
+        "FELDERA_TEST_TAG_SUFFIX", ""
+    )
     name = f"{ci_tag}_{base_name}"
     # The pipeline name becomes a Kubernetes label value (max 63 chars). Fail here
     # with a clear message rather than letting provisioning hit a cryptic 422.

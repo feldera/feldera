@@ -744,16 +744,14 @@ public class IncrementalRegression2Tests extends SqlIoTest {
                         END
                     )
                 FROM T GROUP BY id, bid;
-                """);
+                """).compactAfterEachStep();
         ccs.stepWeightOne("", """
                  id | bid | sum
                 ----------------""");
-        ccs.blockForCompaction();
         ccs.stepWeightOne("INSERT INTO T VALUES(1, 1, 0, 0, 0);", """
                  id | bid | sum
                 ----------------
                  1  | 1   | 1""");
-        ccs.blockForCompaction();
     }
 
     @Test

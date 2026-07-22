@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetai
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
@@ -778,7 +779,7 @@ public class StreamingTests extends StreamingTestBase {
                 SELECT A.*, B.price, B.date_time AS bid_dateTime
                 FROM auction A, bid B
                 WHERE A.id = B.auction AND B.date_time BETWEEN A.date_time AND A.expires""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep();
         // Insert an auction. No bids => no output
         ccs.step("""
                 INSERT INTO auction VALUES('2024-01-01 00:00:00', '2024-01-01 01:00:00', 0);
@@ -838,6 +839,571 @@ public class StreamingTests extends StreamingTestBase {
                 """, """
                  date_time | expires | id | price | bid_dateTime | weight
                 ----------------------------------------------------------""");
+    }
+
+    /** Asserts that the circuit contains exactly {@code keys}
+     * integrate_trace_retain_keys operators, and no integrate_trace_retain_values
+     * operators, that garbage-collect an input table.  */
+    void checkInputGC(CompilerCircuit cc, int keys) {
+        cc.visit(new CircuitVisitor(cc.compiler) {
+            int retainKeys = 0;
+            int retainValues = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                if (operator.left().operator.is(DBSPInputMapWithWaterlineOperator.class))
+                    this.retainKeys++;
+            }
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainValuesOperator operator) {
+                if (operator.left().operator.is(DBSPInputMapWithWaterlineOperator.class))
+                    this.retainValues++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(keys, this.retainKeys);
+                Assert.assertEquals(0, this.retainValues);
+            }
+        });
+    }
+
+    @Test
+    public void gcUpsertBoundary() {
+        // The LATENESS column is not part of the primary key, so the input
+        // trace is never garbage-collected: any key can still be updated.
+        // Rows whose timestamp is exactly on the waterline are not late and
+        // can be updated and deleted.
+        // The waterline is max over all data of (ts - 100); each step is
+        // filtered with the waterline computed from the previous steps.
+        String sql = """
+                CREATE TABLE t (
+                    id INT NOT NULL PRIMARY KEY,
+                    ts BIGINT NOT NULL LATENESS 100
+                );
+                CREATE VIEW v AS SELECT * FROM t;""";
+        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep();
+        this.checkInputGC(ccs, 0);
+        // Before this step: waterline = minimum, table is empty
+        ccs.step("""
+                INSERT INTO t VALUES(1, 0), (2, 100), (3, 200);
+                """, """
+                 id | ts  | weight
+                --------------------
+                  1 |   0 | 1
+                  2 | 100 | 1
+                  3 | 200 | 1""");
+        // Before this step, table contents (rows above the ==== line are
+        // below the waterline):
+        //   id | ts  |
+        //  ----+-----+
+        //    1 |   0 | frozen
+        //  ================  waterline = 200 - 100
+        //    2 | 100 | on the waterline: still updatable
+        //    3 | 200 |
+        // Updating key 2 retracts the old row.
+        ccs.step("""
+                INSERT INTO t VALUES(2, 300);
+                """, """
+                 id | ts  | weight
+                --------------------
+                  2 | 100 | -1
+                  2 | 300 | 1""");
+        // Before this step, table contents:
+        //   id | ts  |
+        //  ----+-----+
+        //    1 |   0 | frozen
+        //  ================  waterline = 300 - 100
+        //    3 | 200 | on the waterline: still deletable
+        //    2 | 300 |
+        ccs.step("""
+                REMOVE FROM t VALUES(3, 200);
+                """, """
+                 id | ts  | weight
+                --------------------
+                  3 | 200 | -1""");
+        // Before this step, table contents:
+        //   id | ts  |
+        //  ----+-----+
+        //    1 |   0 | frozen
+        //  ================  waterline = 300 - 100
+        //    2 | 300 |
+        ccs.step("""
+                INSERT INTO t VALUES(4, 400);
+                """, """
+                 id | ts  | weight
+                --------------------
+                  4 | 400 | 1""");
+        // Before this step, table contents:
+        //   id | ts  |
+        //  ----+-----+
+        //    1 |   0 | frozen
+        //  ================  waterline = 400 - 100
+        //    2 | 300 | on the waterline
+        //    4 | 400 |
+        // A new key with a timestamp below the waterline is late and ignored.
+        ccs.step("""
+                INSERT INTO t VALUES(5, 100);
+                """, """
+                 id | ts  | weight
+                --------------------""");
+    }
+
+    @Test
+    public void gcDeleteOldRow() {
+        // Deleting a key whose row is below the waterline is ignored: the
+        // deletion itself is late.  Deleting a row at or above the waterline works.
+        String sql = """
+                CREATE TABLE t (
+                    id INT NOT NULL PRIMARY KEY,
+                    ts BIGINT NOT NULL LATENESS 100
+                );
+                CREATE VIEW v AS SELECT * FROM t;""";
+        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep();
+        this.checkInputGC(ccs, 0);
+        // Before this step: waterline = minimum, table is empty
+        ccs.step("""
+                INSERT INTO t VALUES(1, 0), (2, 200);
+                """, """
+                 id | ts  | weight
+                --------------------
+                  1 |   0 | 1
+                  2 | 200 | 1""");
+        // Before this step, table contents:
+        //   id | ts  |
+        //  ----+-----+
+        //    1 |   0 | frozen
+        //  ================  waterline = 200 - 100
+        //    2 | 200 |
+        ccs.step("""
+                INSERT INTO t VALUES(3, 250);
+                """, """
+                 id | ts  | weight
+                --------------------
+                  3 | 250 | 1""");
+        // Before this step, table contents:
+        //   id | ts  |
+        //  ----+-----+
+        //    1 |   0 | frozen
+        //  ================  waterline = 250 - 100
+        //    2 | 200 |
+        //    3 | 250 |
+        // Deleting frozen row (1, 0) is ignored.
+        ccs.step("""
+                REMOVE FROM t VALUES(1, 0);
+                """, """
+                 id | ts  | weight
+                --------------------""");
+        // Before this step: waterline = 250 - 100, table contents unchanged.
+        // Row (2, 200) is above the waterline: deleting it works.
+        ccs.step("""
+                REMOVE FROM t VALUES(2, 200);
+                """, """
+                 id | ts  | weight
+                --------------------
+                  2 | 200 | -1""");
+    }
+
+    @Test
+    public void gcUpsertOldRow() {
+        // Updating a key whose row is below the waterline must be ignored:
+        // the update would have to retract the old row, which is behind the
+        // lateness threshold.  See the warning about primary keys and LATENESS
+        // in docs.feldera.com/docs/tutorials/time-series.md: "old" records in
+        // such a table can never be updated or deleted.
+        String sql = """
+                CREATE TABLE t (
+                    id INT NOT NULL PRIMARY KEY,
+                    ts BIGINT NOT NULL LATENESS 100
+                );
+                CREATE VIEW v AS SELECT * FROM t;""";
+        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep();
+        this.checkInputGC(ccs, 0);
+        // Before this step: waterline = minimum, table is empty
+        ccs.step("""
+                INSERT INTO t VALUES(1, 0), (2, 200);
+                """, """
+                 id | ts  | weight
+                --------------------
+                  1 |   0 | 1
+                  2 | 200 | 1""");
+        // Before this step, table contents:
+        //   id | ts  |
+        //  ----+-----+
+        //    1 |   0 | frozen
+        //  ================  waterline = 200 - 100
+        //    2 | 200 |
+        ccs.step("""
+                INSERT INTO t VALUES(3, 250);
+                """, """
+                 id | ts  | weight
+                --------------------
+                  3 | 250 | 1""");
+        // Before this step, table contents:
+        //   id | ts  |
+        //  ----+-----+
+        //    1 |   0 | frozen
+        //  ================  waterline = 250 - 100
+        //    2 | 200 |
+        //    3 | 250 |
+        // The update of key 1 is ignored, even though the new timestamp 300
+        // is above the waterline: it would have to retract frozen row (1, 0).
+        ccs.step("""
+                INSERT INTO t VALUES(1, 300);
+                """, """
+                 id | ts  | weight
+                --------------------""");
+    }
+
+    @Test
+    public void gcUpsertOldRowLongLag() {
+        // Like gcUpsertOldRow, but with several steps between the moment the
+        // row falls below the waterline and the attempt to update it, giving
+        // compaction many opportunities to run.  The outcome must not depend
+        // on compaction timing.
+        String sql = """
+                CREATE TABLE t (
+                    id INT NOT NULL PRIMARY KEY,
+                    ts BIGINT NOT NULL LATENESS 100
+                );
+                CREATE VIEW v AS SELECT * FROM t;""";
+        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep();
+        this.checkInputGC(ccs, 0);
+        // Before this step: waterline = minimum, table is empty
+        ccs.step("""
+                INSERT INTO t VALUES(1, 0), (2, 200);
+                """, """
+                 id | ts  | weight
+                --------------------
+                  1 |   0 | 1
+                  2 | 200 | 1""");
+        // Before this step, table contents:
+        //   id | ts  |
+        //  ----+-----+
+        //    1 |   0 | frozen
+        //  ================  waterline = 200 - 100
+        //    2 | 200 |
+        ccs.step("""
+                INSERT INTO t VALUES(3, 250);
+                """, """
+                 id | ts  | weight
+                --------------------
+                  3 | 250 | 1""");
+        // Before this step, table contents:
+        //   id | ts  |
+        //  ----+-----+
+        //    1 |   0 | frozen
+        //  ================  waterline = 250 - 100
+        //    2 | 200 |
+        //    3 | 250 |
+        ccs.step("""
+                INSERT INTO t VALUES(4, 260);
+                """, """
+                 id | ts  | weight
+                --------------------
+                  4 | 260 | 1""");
+        // Before this step, table contents:
+        //   id | ts  |
+        //  ----+-----+
+        //    1 |   0 | frozen
+        //  ================  waterline = 260 - 100
+        //    2 | 200 |
+        //    3 | 250 |
+        //    4 | 260 |
+        ccs.step("""
+                INSERT INTO t VALUES(5, 270);
+                """, """
+                 id | ts  | weight
+                --------------------
+                  5 | 270 | 1""");
+        // Before this step, table contents:
+        //   id | ts  |
+        //  ----+-----+
+        //    1 |   0 | frozen
+        //  ================  waterline = 270 - 100
+        //    2 | 200 |
+        //    3 | 250 |
+        //    4 | 260 |
+        //    5 | 270 |
+        // The update of key 1 is ignored, even though the new timestamp 300
+        // is above the waterline: it would have to retract frozen row (1, 0).
+        ccs.step("""
+                INSERT INTO t VALUES(1, 300);
+                """, """
+                 id | ts  | weight
+                --------------------""");
+    }
+
+    @Test
+    public void gcTwoLatenessColumns() {
+        // Neither LATENESS column is part of the primary key, so the input
+        // trace is never garbage-collected.  The waterline is a pair compared
+        // pointwise; a row is frozen when it is below the waterline in ANY
+        // component.  A row fresh in both components stays updatable.
+        String sql = """
+                CREATE TABLE t (
+                    id INT NOT NULL PRIMARY KEY,
+                    ts1 BIGINT NOT NULL LATENESS 100,
+                    ts2 BIGINT NOT NULL LATENESS 100
+                );
+                CREATE VIEW v AS SELECT * FROM t;""";
+        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep();
+        this.checkInputGC(ccs, 0);
+        // Before this step: waterline = (minimum, minimum), table is empty
+        ccs.step("""
+                INSERT INTO t VALUES(1, 0, 1000), (2, 1000, 0), (3, 1000, 1000);
+                """, """
+                 id | ts1  | ts2  | weight
+                ----------------------------
+                  1 |    0 | 1000 | 1
+                  2 | 1000 |    0 | 1
+                  3 | 1000 | 1000 | 1""");
+        // Before this step: waterline = (1000 - 100, 1000 - 100).
+        // The waterline pair is compared pointwise; table contents:
+        //   id | ts1  | ts2  |
+        //  ----+------+------+-----------------------------
+        //    1 |    0 | 1000 | ts1 below waterline: frozen
+        //    2 | 1000 |    0 | ts2 below waterline: frozen
+        //    3 | 1000 | 1000 |
+        // Row 3 is at or above the waterline in both components,
+        // so updating key 3 retracts the old row.
+        ccs.step("""
+                INSERT INTO t VALUES(3, 1100, 1100);
+                """, """
+                 id | ts1  | ts2  | weight
+                ----------------------------
+                  3 | 1000 | 1000 | -1
+                  3 | 1100 | 1100 | 1""");
+        // Before this step: waterline = (1100 - 100, 1100 - 100), table contents:
+        //   id | ts1  | ts2  |
+        //  ----+------+------+-----------------------------
+        //    1 |    0 | 1000 | ts1 below waterline: frozen
+        //    2 | 1000 |    0 | ts2 below waterline: frozen
+        //    3 | 1100 | 1100 |
+        // Row 1 is frozen through ts1 alone: the update is ignored, even
+        // though the old ts2 and both new timestamps are fresh.
+        ccs.step("""
+                INSERT INTO t VALUES(1, 1150, 1150);
+                """, """
+                 id | ts1  | ts2  | weight
+                ----------------------------""");
+        // Before this step: waterline = (1100 - 100, 1100 - 100), table contents unchanged.
+        // Row 2 is frozen through ts2 alone: the deletion is ignored.
+        ccs.step("""
+                REMOVE FROM t VALUES(2, 1000, 0);
+                """, """
+                 id | ts1  | ts2  | weight
+                ----------------------------""");
+        // Before this step: waterline = (1100 - 100, 1100 - 100), table contents unchanged
+        ccs.step("""
+                INSERT INTO t VALUES(4, 1200, 1200);
+                """, """
+                 id | ts1  | ts2  | weight
+                ----------------------------
+                  4 | 1200 | 1200 | 1""");
+    }
+
+    @Test
+    public void gcKeyLateness() {
+        // The LATENESS column is the primary key, so the compiler
+        // garbage-collects the input trace by key.  
+        String sql = """
+                CREATE TABLE t (
+                    ts BIGINT NOT NULL PRIMARY KEY LATENESS 100,
+                    v INT
+                );
+                CREATE VIEW vw AS SELECT * FROM t;""";
+        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep();
+        this.checkInputGC(ccs, 1);
+        // Before this step: waterline = minimum, table is empty
+        ccs.step("""
+                INSERT INTO t VALUES(0, 1), (100, 1), (200, 1);
+                """, """
+                 ts  | v | weight
+                -------------------
+                   0 | 1 | 1
+                 100 | 1 | 1
+                 200 | 1 | 1""");
+        // Before this step, table contents (rows above the ==== line are
+        // below the waterline):
+        //   ts  | v |
+        //  -----+---+
+        //    0  | 1 | GC'd
+        //  ================  waterline = 200 - 100
+        //   100 | 1 | on the waterline: still updatable
+        //   200 | 1 |
+        // Updating key 100 retracts the old row.
+        ccs.step("""
+                INSERT INTO t VALUES(100, 2);
+                """, """
+                 ts  | v | weight
+                -------------------
+                 100 | 1 | -1
+                 100 | 2 | 1""");
+        // Before this step, table contents:
+        //   ts  | v |
+        //  -----+---+
+        //    0  | 1 | GC'd
+        //  ================  waterline = 200 - 100
+        //   100 | 2 |
+        //   200 | 1 |
+        // Updating GC'd key 0 is rejected: the record itself is late.
+        ccs.step("""
+                INSERT INTO t VALUES(0, 5);
+                """, """
+                 ts  | v | weight
+                -------------------""");
+        // Before this step, table contents:
+        //   ts  | v |
+        //  -----+---+
+        //    0  | 1 | GC'd
+        //  ================  waterline = 200 - 100
+        //   100 | 2 |
+        //   200 | 1 |
+        // Deleting GC'd key 0 is a no-op.
+        ccs.step("""
+                REMOVE FROM t VALUES(0, 1);
+                """, """
+                 ts  | v | weight
+                -------------------""");
+        // Before this step, table contents:
+        //   ts  | v |
+        //  -----+---+
+        //    0  | 1 | GC'd
+        //  ================  waterline = 200 - 100
+        //   100 | 2 |
+        //   200 | 1 |
+        ccs.step("""
+                INSERT INTO t VALUES(300, 1);
+                """, """
+                 ts  | v | weight
+                -------------------
+                 300 | 1 | 1""");
+        // Before this step, table contents:
+        //   ts  | v |
+        //  -----+---+
+        //    0  | 1 | GC'd
+        //   100 | 2 | GC'd
+        //  ================  waterline = 300 - 100
+        //   200 | 1 | on the waterline: still deletable
+        //   300 | 1 |
+        ccs.step("""
+                REMOVE FROM t VALUES(200, 1);
+                """, """
+                 ts  | v | weight
+                -------------------
+                 200 | 1 | -1""");
+        // Before this step, table contents:
+        //   ts  | v |
+        //  -----+---+
+        //    0  | 1 | GC'd
+        //   100 | 2 | GC'd
+        //  ================  waterline = 300 - 100
+        //   300 | 1 |
+        ccs.step("""
+                INSERT INTO t VALUES(300, 9);
+                """, """
+                 ts  | v | weight
+                -------------------
+                 300 | 1 | -1
+                 300 | 9 | 1""");
+    }
+
+    @Test
+    public void gcCompositeKeyLateness() {
+        // Composite primary key (id, ts) where only ts has LATENESS, plus a
+        // LATENESS column outside the key.  The input trace is
+        // garbage-collected by key, using only the ts component of the
+        // waterline.
+        String sql = """
+                CREATE TABLE t (
+                    id INT NOT NULL,
+                    ts BIGINT NOT NULL LATENESS 100,
+                    extra BIGINT NOT NULL LATENESS 100,
+                    v INT,
+                    PRIMARY KEY (id, ts)
+                );
+                CREATE VIEW vw AS SELECT * FROM t;""";
+        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep();
+        this.checkInputGC(ccs, 1);
+        // Before this step: waterline = (minimum, minimum), table is empty
+        ccs.step("""
+                INSERT INTO t VALUES(1, 0, 0, 1), (2, 200, 200, 1);
+                """, """
+                 id | ts  | extra | v | weight
+                --------------------------------
+                  1 |   0 |     0 | 1 | 1
+                  2 | 200 |   200 | 1 | 1""");
+        // Before this step, table ==== line partitions rows by
+        // the ts component of the key, the only one used for GC):
+        //   id | ts  | extra |
+        //  ----+-----+-------+
+        //    1 |   0 |     0 | GC'd
+        //  ========================  waterline = (200 - 100, 200 - 100)
+        //    2 | 200 |   200 |
+        // Updating live key (2, 200) retracts the old row.
+        ccs.step("""
+                INSERT INTO t VALUES(2, 200, 200, 9);
+                """, """
+                 id | ts  | extra | v | weight
+                --------------------------------
+                  2 | 200 |   200 | 1 | -1
+                  2 | 200 |   200 | 9 | 1""");
+        // Before this step:
+        //   id | ts  | extra |
+        //  ----+-----+-------+
+        //    1 |   0 |     0 | GC'd
+        //  ========================  waterline = (200 - 100, 200 - 100)
+        //    2 | 200 |   200 |
+        // Updating GC'd key (1, 0) is rejected: its ts component is late,
+        // even though the extra column is fresh.
+        ccs.step("""
+                INSERT INTO t VALUES(1, 0, 300, 5);
+                """, """
+                 id | ts  | extra | v | weight
+                --------------------------------""");
+        // Before this step, table contents:
+        //   id | ts  | extra |
+        //  ----+-----+-------+
+        //    1 |   0 |     0 | GC'd
+        //  ========================  waterline = (200 - 100, 200 - 100)
+        //    2 | 200 |   200 |
+        // Key (1, 300) is new; it does not collide with GC'd key (1, 0).
+        ccs.step("""
+                INSERT INTO t VALUES(1, 300, 300, 1);
+                """, """
+                 id | ts  | extra | v | weight
+                --------------------------------
+                  1 | 300 |   300 | 1 | 1""");
+        // Before this step, table contents:
+        //   id | ts  | extra |
+        //  ----+-----+-------+
+        //    1 |   0 |     0 | GC'd
+        //  ========================  waterline = (300 - 100, 300 - 100)
+        //    2 | 200 |   200 | on the waterline: deletable
+        //    1 | 300 |   300 |
+        ccs.step("""
+                REMOVE FROM t VALUES(2, 200, 200, 9);
+                """, """
+                 id | ts  | extra | v | weight
+                --------------------------------
+                  2 | 200 |   200 | 9 | -1""");
+    }
+
+    @Test
+    public void gcMaterializedNoRetain() {
+        // Materialized tables are never garbage-collected, so the compiler
+        // must not insert any retain operator for them, even when a primary
+        // key column has LATENESS.
+        String sql = """
+                CREATE TABLE t (
+                    ts BIGINT NOT NULL PRIMARY KEY LATENESS 100,
+                    v INT
+                ) WITH ('materialized' = 'true');
+                CREATE VIEW vw AS SELECT * FROM t;""";
+        CompilerCircuit cc = this.getCC(sql);
+        this.checkInputGC(cc, 0);
     }
 
     @Test

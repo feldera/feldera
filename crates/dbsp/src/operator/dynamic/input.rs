@@ -781,8 +781,6 @@ impl RootCircuit {
     ///
     /// Retention conditions configured at logical time `t`
     /// are applied starting from logical time `t+1`.
-    ///
-    /// FIXME: see <https://github.com/feldera/feldera/issues/2669>
     // TODO: Add a version that takes a custom hash function.
     #[track_caller]
     pub fn dyn_add_input_map<K, V, U>(
@@ -1970,10 +1968,8 @@ mod test {
         Ok(handle)
     }
 
-    // FIXME: the inputs to these tests are meant to exercise the logic that filters inputs based
-    // on lateness, but it does not currently work correctly (see https://github.com/feldera/feldera/issues/2669).
-    // We therefore don't use waterlines in tests and check for the standard upsert behavior
-    // without filtering.
+    // These tests check the standard upsert behavior without lateness-based filtering;
+    // filtering inputs based on lateness is implemented by `add_input_map_with_waterline`.
     #[test]
     fn map_test_st() {
         let (mut circuit, mut input_handle) = Runtime::init_circuit(1, move |circuit| {
@@ -2033,10 +2029,8 @@ mod test {
         dbsp.kill().unwrap();
     }
 
-    // FIXME: the inputs to these tests are meant to exercise the logic that filters inputs based
-    // on lateness, but it does not currently work correctly (see https://github.com/feldera/feldera/issues/2669).
-    // We therefore don't use waterlines in tests and check for the standard upsert behavior
-    // without filtering.
+    // These tests check the standard upsert behavior without lateness-based filtering;
+    // filtering inputs based on lateness is implemented by `add_input_map_with_waterline`.
     #[test]
     fn map_test_mt1() {
         map_test_mt(1, input_map_updates1, output_map_updates1);
