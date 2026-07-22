@@ -1,5 +1,6 @@
 use crate::cluster_monitor::{MONITOR_RETENTION_HOURS, MONITOR_RETENTION_NUM};
 use crate::db::types::monitor::{ClusterMonitorEventId, PipelineMonitorEventId};
+use crate::db::types::oidc::UserId;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::ProgramStatus;
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
@@ -258,6 +259,27 @@ pub enum DBError {
     NoPipelineMonitorEventsAvailable,
     LockTookTooLong,
     DeadlockDetected,
+    UnknownProvider {
+        issuer: String,
+    },
+    InvalidIssuer {
+        error: String,
+    },
+    InvalidSubjectFilter {
+        error: String,
+    },
+    InvalidClientId {
+        error: String,
+    },
+    UnknownUser {
+        id: UserId,
+    },
+    InvalidSubject {
+        error: String,
+    },
+    InvalidTenantName {
+        error: String,
+    },
 }
 
 impl DBError {
@@ -827,6 +849,27 @@ impl Display for DBError {
             DBError::DeadlockDetected => {
                 write!(f, "A deadlock was detected while performing the operation. Try this operation again later. Please also file a bug report, as this error should not happen.")
             }
+            DBError::UnknownProvider { issuer } => {
+                write!(f, "Unknown OIDC provider with issuer: {issuer}")
+            }
+            DBError::InvalidIssuer { error } => {
+                write!(f, "Invalid OIDC provider issuer: {error}")
+            }
+            DBError::InvalidSubjectFilter { error } => {
+                write!(f, "Invalid OIDC provider subject filter: {error}")
+            }
+            DBError::InvalidClientId { error } => {
+                write!(f, "Invalid OIDC provider client identifier: {error}")
+            }
+            DBError::UnknownUser { id } => {
+                write!(f, "Unknown OIDC user with identifier: {id}")
+            }
+            DBError::InvalidSubject { error } => {
+                write!(f, "Invalid OIDC subject: {error}")
+            }
+            DBError::InvalidTenantName { error } => {
+                write!(f, "Invalid tenant name: {error}")
+            }
         }
     }
 }
@@ -948,6 +991,13 @@ impl DetailedError for DBError {
             Self::NoPipelineMonitorEventsAvailable => Cow::from("NoPipelineMonitorEventsAvailable"),
             Self::LockTookTooLong => Cow::from("LockTookTooLong"),
             Self::DeadlockDetected => Cow::from("DeadlockDetected"),
+            Self::UnknownProvider { .. } => Cow::from("UnknownProvider"),
+            Self::InvalidIssuer { .. } => Cow::from("InvalidIssuer"),
+            Self::InvalidSubjectFilter { .. } => Cow::from("InvalidSubjectFilter"),
+            Self::InvalidClientId { .. } => Cow::from("InvalidClientId"),
+            Self::UnknownUser { .. } => Cow::from("UnknownUser"),
+            Self::InvalidSubject { .. } => Cow::from("InvalidSubject"),
+            Self::InvalidTenantName { .. } => Cow::from("InvalidTenantName"),
         }
     }
 }
@@ -1033,6 +1083,13 @@ impl ResponseError for DBError {
             Self::NoPipelineMonitorEventsAvailable => StatusCode::NOT_FOUND,
             Self::LockTookTooLong => StatusCode::SERVICE_UNAVAILABLE,
             Self::DeadlockDetected => StatusCode::SERVICE_UNAVAILABLE,
+            Self::UnknownProvider { .. } => StatusCode::NOT_FOUND,
+            Self::InvalidIssuer { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidSubjectFilter { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidClientId { .. } => StatusCode::BAD_REQUEST,
+            Self::UnknownUser { .. } => StatusCode::NOT_FOUND,
+            Self::InvalidSubject { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidTenantName { .. } => StatusCode::BAD_REQUEST,
         }
     }
 

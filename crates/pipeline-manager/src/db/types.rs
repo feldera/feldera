@@ -4,6 +4,7 @@
 pub mod api_key;
 pub mod combined_status;
 pub mod monitor;
+pub mod oidc;
 pub mod pipeline;
 pub mod program;
 pub mod resources_status;
