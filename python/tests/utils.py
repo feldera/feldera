@@ -303,6 +303,173 @@ class DeltaTestLocation:
             self.local_dir = None
 
 
+@dataclass
+class IcebergTestLocation:
+    """Where an Iceberg test table lives and how to read/write it.
+
+    A test writes rows with ``pyiceberg`` (the ``iceberg-rust`` connector
+    cannot write yet) and then points the connector at the table via
+    ``metadata_location`` — the catalog-free access path. Both sides reach
+    the same storage:
+
+    * Local runs put the warehouse under ``/tmp`` and use bare filesystem
+      paths (no ``file://`` scheme), matching the Rust FS harness and the
+      fork's local ``FileIO`` resolver.
+    * CI runs put the warehouse in the in-cluster MinIO bucket over S3, so
+      the pipeline pod and the test runner reach the table through the same
+      object store, exactly like :class:`DeltaTestLocation`.
+
+    The ``pyiceberg`` SQL catalog metadata (a SQLite file) always lives on
+    local disk; it is used only by the writer (the test runner), never by
+    the connector.
+    """
+
+    warehouse: str
+    table_location: str
+    catalog_db: str
+    namespace: str
+    table_name: str
+    fileio_config: dict[str, str]
+    # Local directory removed on teardown. In local runs it is the whole
+    # warehouse (data + SQLite catalog); in CI it is only the catalog dir (the
+    # warehouse lives in S3/MinIO). `None` leaves nothing to remove.
+    cleanup_dir: pathlib.Path | None = None
+
+    NAMESPACE = "iceberg_test"
+    TABLE = "test_table"
+
+    @classmethod
+    def create(cls, pipeline_name: str) -> "IcebergTestLocation":
+        """Local filesystem for local runs, MinIO-backed S3 in CI."""
+        if runs_in_ci():
+            access_key = required_env("CI_K8S_MINIO_ACCESS_KEY_ID")
+            secret_key = required_env("CI_K8S_MINIO_SECRET_ACCESS_KEY")
+            prefix = f"{pipeline_name}/{uuid.uuid4().hex}"
+            root = f"{MINIO_BUCKET}/{prefix}"
+            endpoint = MINIO_ENDPOINT.rstrip("/")
+            parsed = urlparse(endpoint)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError(
+                    "CI_MINIO_ENDPOINT must be a full URL, e.g. "
+                    "'http://minio.minio.svc.cluster.local:9000'"
+                )
+            fileio_config = {
+                "s3.endpoint": endpoint,
+                "s3.access-key-id": access_key,
+                "s3.secret-access-key": secret_key,
+                "s3.region": MINIO_REGION,
+                "s3.path-style-access": "true",
+            }
+            # The SQLite catalog is only touched by the writer, so it stays
+            # on local disk even when the warehouse is remote.
+            catalog_dir = pathlib.Path(
+                tempfile.mkdtemp(prefix=f"{pipeline_name}_iceberg_cat_", dir="/tmp")
+            )
+            return cls(
+                warehouse=f"s3://{root}",
+                table_location=f"s3://{root}/{cls.TABLE}",
+                catalog_db=str(catalog_dir / "catalog.db"),
+                namespace=cls.NAMESPACE,
+                table_name=cls.TABLE,
+                fileio_config=fileio_config,
+                cleanup_dir=catalog_dir,
+            )
+
+        local_dir = pathlib.Path(
+            tempfile.mkdtemp(prefix=f"{pipeline_name}_iceberg_", dir="/tmp")
+        )
+        # Bare (scheme-less) table path: the Rust FS harness reads tables
+        # written this way, and the connector's local resolver expects it.
+        return cls(
+            warehouse=f"file://{local_dir}",
+            table_location=f"{local_dir}/{cls.TABLE}",
+            catalog_db=str(local_dir / "catalog.db"),
+            namespace=cls.NAMESPACE,
+            table_name=cls.TABLE,
+            fileio_config={},
+            cleanup_dir=local_dir,
+        )
+
+    @property
+    def qualified_name(self) -> str:
+        return f"{self.namespace}.{self.table_name}"
+
+    def _catalog(self):
+        """Build the ``pyiceberg`` SQL catalog. Deferred import keeps module
+        collection cheap on hosts that never touch Iceberg."""
+        from pyiceberg.catalog.sql import SqlCatalog
+
+        return SqlCatalog(
+            "test",
+            **{
+                "uri": f"sqlite:///{self.catalog_db}",
+                "warehouse": self.warehouse,
+                **self.fileio_config,
+            },
+        )
+
+    def create_table(self, schema, partition_spec=None):
+        """Create (replacing any prior) the test table and return it."""
+        catalog = self._catalog()
+        try:
+            catalog.create_namespace(self.namespace)
+        except Exception:
+            pass  # Already exists.
+        try:
+            catalog.drop_table(self.qualified_name)
+        except Exception:
+            pass  # Nothing to drop.
+
+        from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC
+
+        return catalog.create_table(
+            self.qualified_name,
+            schema,
+            location=self.table_location,
+            partition_spec=partition_spec or UNPARTITIONED_PARTITION_SPEC,
+        )
+
+    def append(self, arrow_table) -> None:
+        """Append one Arrow batch as a new Iceberg snapshot."""
+        table = self._catalog().load_table(self.qualified_name)
+        table.append(arrow_table)
+
+    def metadata_location(self) -> str:
+        """Return the current table metadata file location.
+
+        This is the value handed to the connector's ``metadata_location``
+        option, so a reload picks up the latest snapshot after appends.
+        """
+        return self._catalog().load_table(self.qualified_name).metadata_location
+
+    def connector_config(self, **extra) -> dict[str, object]:
+        """Transport config pointing the connector at this table.
+
+        Merges ``metadata_location`` and any storage (``s3.*``) options with
+        caller-supplied ``extra`` fields (e.g. ``mode``, ``timestamp_column``).
+        """
+        config: dict[str, object] = {"metadata_location": self.metadata_location()}
+        config.update(self.fileio_config)
+        config.update(extra)
+        return config
+
+    def row_count(self) -> int:
+        table = self._catalog().load_table(self.qualified_name)
+        return table.scan().to_arrow().num_rows
+
+    def remove_if_local(self) -> None:
+        """Remove the local temp directory, if any.
+
+        A no-op on the S3 data itself (as with :class:`DeltaTestLocation`):
+        objects this run wrote to the shared MinIO bucket use a unique
+        prefix and are left in place. In CI only the local SQLite catalog dir
+        is removed; in local runs the whole warehouse dir is removed.
+        """
+        if self.cleanup_dir is not None:
+            shutil.rmtree(self.cleanup_dir, ignore_errors=True)
+            self.cleanup_dir = None
+
+
 def ensure_delta_spark_fixture(
     loc: DeltaTestLocation,
     builder_script: str | os.PathLike[str],
