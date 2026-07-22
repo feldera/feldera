@@ -149,15 +149,18 @@ The following table lists supported Iceberg data types and corresponding Feldera
 | `time`                      | `TIME`           |               |
 | `timestamp`                 | `TIMESTAMP`      | Timestamp values are rounded to the nearest millisecond.|
 | `timestamp_ns`              | `TIMESTAMP`      | Timestamp values are rounded to the nearest millisecond.|
+| `timestamptz`               | `TIMESTAMP WITH TIME ZONE` | Timestamp values are rounded to the nearest millisecond.|
+| `timestamptz_ns`            | `TIMESTAMP WITH TIME ZONE` | Timestamp values are rounded to the nearest millisecond.|
 | `string`                    | `STRING`         |               |
 | `fixed(L)`                  | `BINARY(L)`      |               |
 | `binary`                    | `VARBINARY`      |               |
+| `uuid`                      | `UUID`           |               |
+| `struct`                    | `ROW(...)`       | Read as a whole column; nested fields map by name.|
+| `list`                      | `<element> ARRAY`| |
+| `map`                       | `MAP<<key>, <value>>` | |
 
-<!-- | `uuid`                      | `BINARY(16)`     |               | -->
-
-
-Types that are currently not supported include Iceberg's nested data types (`struct`s,
-`list`s and `map`s), `uuid`, and timestamps with time zone.
+All Iceberg data types are supported, including the nested types (`struct`, `list`,
+and `map`), which the connector reads as whole columns.
 
 ## Column selection
 
