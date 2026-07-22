@@ -863,12 +863,26 @@ pub struct ApiServerConfig {
     #[arg(long, default_values_t = default_demos_dir())]
     pub demos_dir: Vec<String>,
 
-    /// Telemetry key.
+    /// PostHog telemetry key.
     ///
-    /// If a telemetry key is set, anonymous usage data will be collected
-    /// and sent to our telemetry service.
+    /// If a key is set, anonymous usage data will be collected
+    /// and sent to our PostHog telemetry service.
     #[arg(long, default_value = "", env = "FELDERA_TELEMETRY")]
     pub telemetry: String,
+
+    /// ConceptualHQ analytics key.
+    ///
+    /// If set, the WebConsole loads ConceptualHQ analytics to identify the
+    /// signed-in user and track sign-in events. Leave empty to disable.
+    #[arg(long, default_value = "", env = "FELDERA_CONCEPTUALHQ")]
+    pub conceptualhq: String,
+
+    /// Product Fruits workspace code.
+    ///
+    /// If set, the WebConsole loads Product Fruits for in-app onboarding
+    /// (tours, hints, surveys). Leave empty to disable.
+    #[arg(long, default_value = "", env = "FELDERA_PRODUCT_FRUITS")]
+    pub product_fruits: String,
 
     /// Support data collection frequency (in seconds).
     ///
@@ -965,6 +979,8 @@ impl ApiServerConfig {
             dev_mode: false,
             allowed_origins: None,
             telemetry: "test".to_string(),
+            conceptualhq: "".to_string(),
+            product_fruits: "".to_string(),
             demos_dir: vec!["demos".to_string()],
             dump_openapi: false,
             issuer_tenant: false,

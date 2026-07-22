@@ -54,7 +54,7 @@ const baseConfig = {
   edition: 'Open source',
   revision: 'abc123',
   runtime_revision: 'rt123',
-  telemetry: '',
+  posthog: '',
   version: '0.0.0'
 } as unknown as Configuration
 

@@ -72,6 +72,7 @@
     "prettier": "3.8.1",
     "prettier-plugin-svelte": "3.5.0",
     "prettier-plugin-tailwindcss": "0.7.2",
+    "product-fruits": "^1.1.0",
     "profiler-layout": "workspace:*",
     "profiler-lib": "workspace:*",
     "runed": "0.37.1",

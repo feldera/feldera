@@ -8162,7 +8162,9 @@
       "Configuration": {
         "type": "object",
         "required": [
-          "telemetry",
+          "posthog",
+          "conceptualhq",
+          "product_fruits",
           "edition",
           "version",
           "revision",
@@ -8183,6 +8185,10 @@
             "type": "string",
             "description": "URL that navigates to the changelog of the current version"
           },
+          "conceptualhq": {
+            "type": "string",
+            "description": "ConceptualHQ analytics key. Empty when disabled."
+          },
           "edition": {
             "type": "string",
             "description": "Feldera edition: \"Open source\" or \"Enterprise\""
@@ -8195,6 +8201,14 @@
             ],
             "nullable": true
           },
+          "posthog": {
+            "type": "string",
+            "description": "PostHog telemetry key. Empty when disabled."
+          },
+          "product_fruits": {
+            "type": "string",
+            "description": "Product Fruits workspace code for in-app onboarding. Empty when disabled."
+          },
           "revision": {
             "type": "string",
             "description": "Specific revision corresponding to the edition `version` (e.g., git commit hash)."
@@ -8202,10 +8216,6 @@
           "runtime_revision": {
             "type": "string",
             "description": "Specific revision corresponding to the default runtime version of the platform (e.g., git commit hash)."
-          },
-          "telemetry": {
-            "type": "string",
-            "description": "Telemetry key."
           },
           "unstable_features": {
             "type": "string",
