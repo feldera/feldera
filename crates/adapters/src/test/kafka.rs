@@ -242,6 +242,12 @@ impl TestProducer {
         self.producer.flush(Timeout::Never).unwrap();
     }
 
+    pub fn send_tombstone(&self, key: &[u8], topic: &str) {
+        let record = BaseRecord::<[u8], (), ()>::to(topic).key(key);
+        self.producer.send(record).unwrap();
+        self.producer.flush(Timeout::Never).unwrap();
+    }
+
     pub fn send_to_topic_partition(&self, data: &[Vec<TestStruct>], topic: &str, partition: i32) {
         for batch in data {
             let mut writer = CsvWriterBuilder::new()

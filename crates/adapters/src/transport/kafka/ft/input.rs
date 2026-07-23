@@ -1255,9 +1255,11 @@ impl PartitionReceiver {
                     }
 
                     let timestamp = message.timestamp().to_millis().unwrap_or(i64::MIN);
-                    let payload = message.payload().unwrap_or(&[]);
-                    let metadata = self.create_metadata(&message);
-                    let (buffer, errors) = parser.parse(payload, metadata);
+                    let (buffer, errors) = match message.payload() {
+                        Some(payload) => parser.parse(payload, self.create_metadata(&message)),
+                        // Skip tombstones; keep offsets.
+                        None => (None, Vec::new()),
+                    };
                     self.n_bytes
                         .fetch_add(buffer.len().bytes, Ordering::Relaxed);
                     self.messages

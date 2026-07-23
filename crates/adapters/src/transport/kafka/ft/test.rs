@@ -509,6 +509,45 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
     }
 }
 
+#[test]
+fn test_input_tombstone() {
+    init_test_logger();
+
+    let topic = "kafka_tombstone_ft";
+    let _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+
+    let (endpoint, receiver, reader) = create_reader(topic, None, false);
+    reader.extend();
+
+    let producer = TestProducer::new();
+    producer.send_message(b"m0", topic, None);
+    producer.send_tombstone(b"deleted-key", topic);
+    producer.send_message(b"", topic, None);
+    producer.send_message(b"m3", topic, None);
+
+    receiver.expect_buffering(3);
+    reader.queue(false);
+
+    let metadata = Metadata {
+        offsets: vec![0..4],
+    };
+    receiver.expect(vec![ConsumerCall::Extended {
+        num_records: 3,
+        metadata: serde_json::to_value(&metadata).unwrap(),
+    }]);
+    assert_eq!(take_flushed(&receiver), vec!["m0", "", "m3"]);
+
+    drop(endpoint);
+    drop(receiver);
+    drop(reader);
+
+    let (_endpoint, receiver, reader) = create_reader(topic, None, false);
+    receiver.inner.drop_buffered.store(true, Ordering::Release);
+    reader.replay(serde_json::to_value(&metadata).unwrap(), RmpValue::Nil);
+    receiver.expect(vec![ConsumerCall::Replayed { num_records: 3 }]);
+    assert_eq!(take_flushed(&receiver), vec!["m0", "", "m3"]);
+}
+
 /// A configured header filter drops non-matching messages before parsing, and
 /// the drop decision is deterministic across replay: a fresh reader replaying
 /// the checkpointed offset range reproduces exactly the admitted records.
