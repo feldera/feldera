@@ -134,6 +134,10 @@ pub fn create_integrated_input_endpoint(
                 consumer,
             ))
         }
+        #[cfg(feature = "with-snowflake")]
+        TransportConfig::SnowflakeInput(config) => Box::new(
+            feldera_snowflake::SnowflakeInputEndpoint::new(endpoint_name, config, consumer),
+        ),
         TransportConfig::PostgresInput(config) => {
             Box::new(PostgresInputEndpoint::new(endpoint_name, config, consumer))
         }

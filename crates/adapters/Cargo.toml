@@ -19,6 +19,7 @@ default = [
     "with-kafka",
     "with-deltalake",
     "with-iceberg",
+    "with-snowflake",
     "with-avro",
     "with-nexmark",
     "with-pubsub",
@@ -39,6 +40,7 @@ with-deltalake = [
     "parquet/object_store",
 ]
 with-iceberg = ["feldera-iceberg"]
+with-snowflake = ["feldera-snowflake"]
 with-pubsub = ["google-cloud-pubsub", "google-cloud-gax"]
 with-avro = [
     "apache-avro",
@@ -82,6 +84,7 @@ feldera-observability = { workspace = true }
 feldera-samply = { workspace = true }
 feldera-storage = { workspace = true }
 feldera-iceberg = { workspace = true, optional = true }
+feldera-snowflake = { workspace = true, optional = true }
 awc = { workspace = true, features = [
     "compress-gzip",
     "compress-brotli",

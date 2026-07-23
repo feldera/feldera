@@ -25,6 +25,7 @@ use crate::transport::postgres::{
 use crate::transport::pubsub::PubSubInputConfig;
 use crate::transport::redis::RedisOutputConfig;
 use crate::transport::s3::S3InputConfig;
+use crate::transport::snowflake::SnowflakeReaderConfig;
 use crate::transport::url::UrlInputConfig;
 use core::fmt;
 use feldera_ir::{MirNode, MirNodeId};
@@ -1942,6 +1943,7 @@ pub enum TransportConfig {
     RedisOutput(RedisOutputConfig),
     // Prevent rust from complaining about large size difference between enum variants.
     IcebergInput(Box<IcebergReaderConfig>),
+    SnowflakeInput(Box<SnowflakeReaderConfig>),
     PostgresInput(PostgresReaderConfig),
     PostgresCdcInput(PostgresCdcReaderConfig),
     PostgresOutput(PostgresWriterConfig),
@@ -1975,6 +1977,7 @@ impl TransportConfig {
             TransportConfig::DeltaTableOutput(_) => "delta_table_output".to_string(),
             TransportConfig::DynamoDBOutput(_) => "dynamodb_output".to_string(),
             TransportConfig::IcebergInput(_) => "iceberg_input".to_string(),
+            TransportConfig::SnowflakeInput(_) => "snowflake_input".to_string(),
             TransportConfig::PostgresInput(_) => "postgres_input".to_string(),
             TransportConfig::PostgresCdcInput(_) => "postgres_cdc_input".to_string(),
             TransportConfig::PostgresOutput(_) => "postgres_output".to_string(),

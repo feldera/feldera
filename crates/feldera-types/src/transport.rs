@@ -13,4 +13,5 @@ pub mod postgres;
 pub mod pubsub;
 pub mod redis;
 pub mod s3;
+pub mod snowflake;
 pub mod url;

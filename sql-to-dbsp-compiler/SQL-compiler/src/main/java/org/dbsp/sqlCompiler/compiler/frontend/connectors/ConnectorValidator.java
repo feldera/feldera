@@ -244,6 +244,10 @@ public final class ConnectorValidator {
                     validateConfig(transportConfig, outerJson, configPointer,
                             outerStart, S3InputConfig.class, reporter);
                     break;
+                case "snowflake_input":
+                    validateConfig(transportConfig, outerJson, configPointer,
+                            outerStart, SnowflakeReaderConfig.class, reporter);
+                    break;
                 case "clock":
                     validateConfig(transportConfig, outerJson, configPointer,
                             outerStart, ClockConfig.class, reporter);

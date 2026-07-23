@@ -128,6 +128,7 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::HttpOutput(_)
         | TransportConfig::RedisOutput(_)
         | TransportConfig::IcebergInput(_)
+        | TransportConfig::SnowflakeInput(_)
         | TransportConfig::NullOutput => return Ok(None),
     };
     Ok(Some(endpoint))

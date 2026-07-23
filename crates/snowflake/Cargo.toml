@@ -1,0 +1,39 @@
+[package]
+name = "feldera-snowflake"
+edition = { workspace = true }
+version = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+rust-version = { workspace = true }
+readme = { workspace = true }
+publish = false
+
+[dependencies]
+feldera-types = { workspace = true }
+feldera-adapterlib = { workspace = true }
+dbsp = { workspace = true }
+anyhow = { workspace = true, features = ["backtrace"] }
+async-compression = { workspace = true }
+async-stream = { workspace = true }
+bytes = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "macros", "rt", "sync", "time"] }
+tokio-util = { workspace = true, features = ["io"] }
+chrono = { workspace = true, features = ["clock"] }
+log = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+reqwest = { workspace = true, features = ["json", "stream", "rustls-tls-native-roots"] }
+arrow = { workspace = true, features = ["ipc"] }
+futures-util = { workspace = true }
+base64 = { workspace = true }
+jsonwebtoken = { workspace = true }
+pkcs8 = { workspace = true }
+rand = { workspace = true }
+rsa = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+
+[dev-dependencies]
+flate2 = { workspace = true }

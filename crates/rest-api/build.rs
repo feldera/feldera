@@ -133,6 +133,22 @@ fn type_replacement() -> Vec<(&'static str, &'static str)> {
             "feldera_types::transport::delta_table::DeltaTableWriterConfig",
         ),
         (
+            "SnowflakeIngestMode",
+            "feldera_types::transport::snowflake::SnowflakeIngestMode",
+        ),
+        (
+            "SnowflakeAuthenticator",
+            "feldera_types::transport::snowflake::SnowflakeAuthenticator",
+        ),
+        (
+            "SnowflakeTransactionMode",
+            "feldera_types::transport::snowflake::SnowflakeTransactionMode",
+        ),
+        (
+            "SnowflakeReaderConfig",
+            "feldera_types::transport::snowflake::SnowflakeReaderConfig",
+        ),
+        (
             "DynamoDBWriterConfig",
             "feldera_types::transport::dynamodb::DynamoDBWriterConfig",
         ),

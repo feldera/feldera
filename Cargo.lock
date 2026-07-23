@@ -4140,6 +4140,7 @@ dependencies = [
  "feldera-observability",
  "feldera-samply",
  "feldera-size-of",
+ "feldera-snowflake",
  "feldera-sqllib",
  "feldera-storage",
  "feldera-types",
@@ -4615,6 +4616,15 @@ dependencies = [
  "quote",
  "syn 2.0.117",
  "unicode-xid",
+]
+
+[[package]]
+name = "des"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffdd80ce8ce993de27e9f063a444a4d53ce8e8db4c1f00cc03af5ad5a9867a1e"
+dependencies = [
+ "cipher",
 ]
 
 [[package]]
@@ -5484,6 +5494,36 @@ dependencies = [
  "size-of-derive",
  "time",
  "xxhash-rust",
+]
+
+[[package]]
+name = "feldera-snowflake"
+version = "0.324.0"
+dependencies = [
+ "anyhow",
+ "arrow",
+ "async-compression",
+ "async-stream",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "dbsp",
+ "feldera-adapterlib",
+ "feldera-types",
+ "flate2",
+ "futures-util",
+ "jsonwebtoken",
+ "log",
+ "pkcs8 0.10.2",
+ "rand 0.8.6",
+ "reqwest 0.12.24",
+ "rsa",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "tokio-util",
+ "uuid",
 ]
 
 [[package]]
@@ -8956,6 +8996,7 @@ dependencies = [
  "aes",
  "cbc",
  "der 0.7.10",
+ "des",
  "pbkdf2",
  "scrypt",
  "sha2 0.10.9",

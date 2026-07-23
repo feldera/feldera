@@ -729,6 +729,7 @@ pub fn generate_program_info(
                 | TransportConfig::DeltaTableInput(_)
                 | TransportConfig::PostgresInput(_)
                 | TransportConfig::IcebergInput(_)
+                | TransportConfig::SnowflakeInput(_)
                 | TransportConfig::Datagen(_)
                 | TransportConfig::Nexmark(_)
                 | TransportConfig::EmptyInput => {}

@@ -987,6 +987,82 @@ public class ConnectorTests extends BaseSQLTests {
                 "field \"mode\": invalid value \"batch\"");
     }
 
+    // ---- Snowflake transport config ----
+
+    @Test
+    public void snowflakeReaderValidSnapshotConfig() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "snowflake_input",
+                  "config": {
+                    "account": "org-account",
+                    "user": "svc_user",
+                    "authenticator": "SNOWFLAKE_JWT",
+                    "role": "DEVELOPER",
+                    "warehouse": "DEVELOPER",
+                    "private_key_file": "/secrets/key.p8",
+                    "table": "DB.SCHEMA.TABLE",
+                    "column_mapping": {
+                      "x": "UUID"
+                    },
+                    "number_mode": "double",
+                    "mode": "snapshot",
+                    "transaction_mode": "snapshot",
+                    "num_parsers": 4,
+                    "max_concurrent_readers": 8
+                  }
+                }""");
+    }
+
+    @Test
+    public void snowflakeReaderMissingRequiredFields() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "snowflake_input",
+                  "config": {
+                    "mode": "snapshot"
+                  }
+                }""",
+                "required field \"account\" is missing or empty",
+                "required field \"user\" is missing or empty",
+                "required field \"private_key_file\" is missing or empty",
+                "required field \"table\" is missing or empty");
+    }
+
+    @Test
+    public void snowflakeReaderRejectsZeroParsers() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "snowflake_input",
+                  "config": {
+                    "account": "org-account",
+                    "user": "svc_user",
+                    "private_key_file": "/secrets/key.p8",
+                    "table": "DB.SCHEMA.TABLE",
+                    "num_parsers": 0
+                  }
+                }""",
+                "\"num_parsers\" must be greater than 0");
+    }
+
+    @Test
+    public void snowflakeReaderRejectsEmptyColumnMapping() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "snowflake_input",
+                  "config": {
+                    "account": "org-account",
+                    "user": "svc_user",
+                    "private_key_file": "/secrets/key.p8",
+                    "table": "DB.SCHEMA.TABLE",
+                    "column_mapping": {
+                      "uuid": ""
+                    }
+                  }
+                }""",
+                "\"column_mapping\" contains an empty Snowflake column name");
+    }
+
     // ---- File transport config ----
 
     @Test
