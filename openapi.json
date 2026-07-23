@@ -553,6 +553,17 @@
         ],
         "summary": "List OIDC trust relationships",
         "operationId": "list_oidc_trust",
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "query",
+            "description": "Operate on platform-wide owner trusts (which belong to no tenant) instead\nof the caller's tenant. Owner-only.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Trust relationships retrieved",
@@ -655,6 +666,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "description": "Operate on platform-wide owner trusts (which belong to no tenant) instead\nof the caller's tenant. Owner-only.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -699,6 +719,15 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "description": "Operate on platform-wide owner trusts (which belong to no tenant) instead\nof the caller's tenant. Owner-only.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -7487,7 +7516,7 @@
           "Platform"
         ],
         "summary": "Create a tenant",
-        "description": "Explicitly create a tenant (owner-only), rather than relying on first login.\nFails with a conflict if a tenant with the same name and provider exists.",
+        "description": "Explicitly create a tenant (owner-only), rather than relying on first login.\nThe tenant is keyed to the platform's configured OIDC issuer (statically set\nat deploy time, e.g. via Helm), so that logins from that issuer resolve into\nit; the issuer is not caller-settable. Fails with a conflict if a tenant with\nthe same name already exists for that issuer.",
         "operationId": "create_tenant",
         "requestBody": {
           "content": {
@@ -7511,7 +7540,7 @@
             }
           },
           "409": {
-            "description": "A tenant with that name and provider already exists",
+            "description": "A tenant with that name already exists",
             "content": {
               "application/json": {
                 "schema": {
@@ -7637,7 +7666,6 @@
         "type": "object",
         "description": "Request to pre-provision a tenant member by identity, before the user's\nfirst login.",
         "required": [
-          "provider",
           "subject",
           "role"
         ],
@@ -7647,17 +7675,12 @@
             "description": "Optional email for display in the member list.",
             "nullable": true
           },
-          "provider": {
-            "type": "string",
-            "description": "OIDC issuer the user authenticates through (matches the JWT `iss` claim).",
-            "example": "https://accounts.google.com"
-          },
           "role": {
             "$ref": "#/components/schemas/Role"
           },
           "subject": {
             "type": "string",
-            "description": "OIDC subject (matches the JWT `sub` claim).",
+            "description": "OIDC subject (matches the JWT `sub` claim). The issuer is not settable:\nmembers authenticate through the platform's single configured issuer, so\nthe grant is keyed to that issuer automatically.",
             "example": "user@acme.com"
           }
         }
@@ -11388,11 +11411,6 @@
           "name": {
             "type": "string",
             "example": "acme"
-          },
-          "provider": {
-            "type": "string",
-            "description": "Identity provider the tenant is keyed under. Defaults to `manual` for\ntenants created out of band by an owner.",
-            "nullable": true
           }
         }
       },

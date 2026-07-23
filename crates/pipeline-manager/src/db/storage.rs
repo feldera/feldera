@@ -190,24 +190,33 @@ pub(crate) trait Storage {
     /// against the stored value.
     async fn validate_api_key(&self, key: &str) -> Result<(TenantId, Role), DBError>;
 
-    /// Lists all OIDC trust relationships for the tenant.
-    async fn list_oidc_trust(&self, tenant_id: TenantId) -> Result<Vec<OidcTrustDescr>, DBError>;
+    /// Lists OIDC trust relationships in a scope: `Some(tenant)` for that
+    /// tenant's trusts, `None` for the platform-wide owner trusts.
+    async fn list_oidc_trust(
+        &self,
+        tenant_id: Option<TenantId>,
+    ) -> Result<Vec<OidcTrustDescr>, DBError>;
 
-    /// Retrieves a trust relationship by name.
+    /// Retrieves a trust relationship by name within a scope (see `list_oidc_trust`).
     async fn get_oidc_trust(
         &self,
-        tenant_id: TenantId,
+        tenant_id: Option<TenantId>,
         name: &str,
     ) -> Result<OidcTrustDescr, DBError>;
 
-    /// Deletes a trust relationship by name.
-    async fn delete_oidc_trust(&self, tenant_id: TenantId, name: &str) -> Result<(), DBError>;
+    /// Deletes a trust relationship by name within a scope (see `list_oidc_trust`).
+    async fn delete_oidc_trust(
+        &self,
+        tenant_id: Option<TenantId>,
+        name: &str,
+    ) -> Result<(), DBError>;
 
-    /// Persists a new trust relationship.
+    /// Persists a new trust relationship. `tenant_id` is `None` for a
+    /// platform-wide owner trust, `Some` for a tenant-scoped one.
     #[allow(clippy::too_many_arguments)]
     async fn create_oidc_trust(
         &self,
-        tenant_id: TenantId,
+        tenant_id: Option<TenantId>,
         id: Uuid,
         name: &str,
         description: Option<&str>,
@@ -231,7 +240,7 @@ pub(crate) trait Storage {
         issuer: &str,
         subject: &str,
         audiences: &[String],
-    ) -> Result<Vec<(TenantId, Role)>, DBError>;
+    ) -> Result<Vec<(Option<TenantId>, Role)>, DBError>;
 
     /// Retrieves a list of pipelines as extended descriptors.
     async fn list_pipelines(

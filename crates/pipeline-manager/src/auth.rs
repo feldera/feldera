@@ -394,22 +394,34 @@ async fn oidc_trust_auth(
     let label = format!("oidc:{}", token_data.claims.sub);
     let db_err =
         |e: DBError, req: ServiceRequest| Err((crate::error::ManagerError::from(e).into(), req));
+    let header_tenant = |req: &ServiceRequest| {
+        req.headers()
+            .get(TENANT_HEADER)
+            .and_then(|h| h.to_str().ok())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
 
-    // An owner trust is platform-wide: it wins over any tenant-scoped match, and
-    // the Feldera-Tenant header may select ANY existing tenant (default: the
-    // owner trust's own tenant).
-    if let Some((owner_home, _)) = matches.iter().find(|(_, r)| *r == Role::Owner).copied() {
-        let acting = {
-            let db = state.db.lock().await;
-            resolve_owner_acting_tenant(&db, req.headers(), owner_home).await
+    // An owner trust is platform-wide with no tenant of its own, so the acting
+    // tenant must be named explicitly. It wins over any tenant-scoped match.
+    if matches
+        .iter()
+        .any(|(t, r)| t.is_none() && *r == Role::Owner)
+    {
+        let Some(selector) = header_tenant(&req) else {
+            return db_err(DBError::OwnerTrustNeedsTenant, req);
         };
-        let acting_tenant = match acting {
+        let resolved = {
+            let db = state.db.lock().await;
+            db.resolve_tenant_selector(&selector).await
+        };
+        let acting = match resolved {
             Ok(t) => t,
-            Err(e) => return Err((e, req)),
+            Err(e) => return db_err(e, req),
         };
         AuthenticatedPrincipal {
-            acting_tenant,
-            home_tenant: owner_home,
+            acting_tenant: acting,
+            home_tenant: acting,
             role: Role::Owner,
             label,
         }
@@ -417,22 +429,21 @@ async fn oidc_trust_auth(
         return Ok(req);
     }
 
-    // Tenant-scoped trust: one match is unambiguous; several require the
-    // Feldera-Tenant header to name one of the matched tenants (fail closed).
-    let (home_tenant, role) = if matches.len() == 1 {
-        matches[0]
+    // Tenant-scoped matches (each carries a tenant). One is unambiguous; several
+    // require the Feldera-Tenant header to name one of them (fail closed).
+    let tenant_matches: Vec<(TenantId, Role)> = matches
+        .into_iter()
+        .filter_map(|(t, r)| t.map(|t| (t, r)))
+        .collect();
+    let (home_tenant, role) = if tenant_matches.len() == 1 {
+        tenant_matches[0]
     } else {
-        let selector = req
-            .headers()
-            .get(TENANT_HEADER)
-            .and_then(|h| h.to_str().ok())
-            .filter(|s| !s.is_empty());
-        let Some(selector) = selector else {
+        let Some(selector) = header_tenant(&req) else {
             return db_err(DBError::AmbiguousOidcTenant, req);
         };
         let selected = {
             let db = state.db.lock().await;
-            db.resolve_tenant_selector(selector).await
+            db.resolve_tenant_selector(&selector).await
         };
         // Unknown tenant name/UUID surfaces as 404; a known tenant the token is
         // not trusted in is 403.
@@ -440,16 +451,9 @@ async fn oidc_trust_auth(
             Ok(t) => t,
             Err(e) => return db_err(e, req),
         };
-        match matches.iter().find(|(t, _)| *t == selected).copied() {
+        match tenant_matches.iter().find(|(t, _)| *t == selected).copied() {
             Some(pair) => pair,
-            None => {
-                return db_err(
-                    DBError::OidcTenantNotTrusted {
-                        tenant: selector.to_string(),
-                    },
-                    req,
-                )
-            }
+            None => return db_err(DBError::OidcTenantNotTrusted { tenant: selector }, req),
         }
     };
     AuthenticatedPrincipal {

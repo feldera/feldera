@@ -291,7 +291,10 @@ impl Storage for StoragePostgres {
         Ok(result)
     }
 
-    async fn list_oidc_trust(&self, tenant_id: TenantId) -> Result<Vec<OidcTrustDescr>, DBError> {
+    async fn list_oidc_trust(
+        &self,
+        tenant_id: Option<TenantId>,
+    ) -> Result<Vec<OidcTrustDescr>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let result = operations::oidc_trust::list_oidc_trust(&txn, tenant_id).await?;
@@ -301,7 +304,7 @@ impl Storage for StoragePostgres {
 
     async fn get_oidc_trust(
         &self,
-        tenant_id: TenantId,
+        tenant_id: Option<TenantId>,
         name: &str,
     ) -> Result<OidcTrustDescr, DBError> {
         let mut client = self.pool.get().await?;
@@ -311,7 +314,11 @@ impl Storage for StoragePostgres {
         Ok(result)
     }
 
-    async fn delete_oidc_trust(&self, tenant_id: TenantId, name: &str) -> Result<(), DBError> {
+    async fn delete_oidc_trust(
+        &self,
+        tenant_id: Option<TenantId>,
+        name: &str,
+    ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let result = operations::oidc_trust::delete_oidc_trust(&txn, tenant_id, name).await?;
@@ -321,7 +328,7 @@ impl Storage for StoragePostgres {
 
     async fn create_oidc_trust(
         &self,
-        tenant_id: TenantId,
+        tenant_id: Option<TenantId>,
         id: Uuid,
         name: &str,
         description: Option<&str>,
@@ -361,7 +368,7 @@ impl Storage for StoragePostgres {
         issuer: &str,
         subject: &str,
         audiences: &[String],
-    ) -> Result<Vec<(TenantId, Role)>, DBError> {
+    ) -> Result<Vec<(Option<TenantId>, Role)>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let result =

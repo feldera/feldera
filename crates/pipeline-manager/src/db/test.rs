@@ -916,7 +916,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
     handle
         .db
         .create_oidc_trust(
-            tenant_a,
+            Some(tenant_a),
             Uuid::now_v7(),
             "ta",
             None,
@@ -930,7 +930,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
     handle
         .db
         .create_oidc_trust(
-            tenant_b,
+            Some(tenant_b),
             Uuid::now_v7(),
             "tb",
             None,
@@ -949,7 +949,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
             .match_oidc_trust(iss, sub, &["a".to_string()])
             .await
             .unwrap(),
-        vec![(tenant_a, Role::Write)]
+        vec![(Some(tenant_a), Role::Write)]
     );
     assert_eq!(
         handle
@@ -957,7 +957,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
             .match_oidc_trust(iss, sub, &["b".to_string()])
             .await
             .unwrap(),
-        vec![(tenant_b, Role::Write)]
+        vec![(Some(tenant_b), Role::Write)]
     );
     // A token whose audience matches neither trust does not resolve.
     assert!(handle
@@ -975,7 +975,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
     handle
         .db
         .create_oidc_trust(
-            tenant_c,
+            Some(tenant_c),
             Uuid::now_v7(),
             "tc",
             None,
@@ -991,10 +991,66 @@ async fn oidc_trust_matching_and_issuer_gate() {
         .match_oidc_trust(iss, sub, &["a".to_string()])
         .await
         .unwrap();
-    got.sort_by_key(|(t, _)| t.0);
-    let mut want = vec![(tenant_a, Role::Write), (tenant_c, Role::Read)];
-    want.sort_by_key(|(t, _)| t.0);
+    got.sort_by_key(|(t, _)| t.map(|x| x.0));
+    let mut want = vec![(Some(tenant_a), Role::Write), (Some(tenant_c), Role::Read)];
+    want.sort_by_key(|(t, _)| t.map(|x| x.0));
     assert_eq!(got, want);
+
+    // An owner trust is platform-wide: it has NULL tenant and matches with scope
+    // None. The `oidc_trust_owner_is_platform` CHECK ties the two together, so a
+    // tenant-scoped owner trust and a tenant-less non-owner trust are both
+    // rejected.
+    let owner_iss = "https://owner.example";
+    handle
+        .db
+        .create_oidc_trust(
+            None,
+            Uuid::now_v7(),
+            "plat",
+            None,
+            owner_iss,
+            "root",
+            None,
+            Role::Owner,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        handle
+            .db
+            .match_oidc_trust(owner_iss, "root", &[])
+            .await
+            .unwrap(),
+        vec![(None, Role::Owner)]
+    );
+    assert!(handle
+        .db
+        .create_oidc_trust(
+            Some(tenant_a),
+            Uuid::now_v7(),
+            "bad1",
+            None,
+            owner_iss,
+            "x",
+            None,
+            Role::Owner
+        )
+        .await
+        .is_err());
+    assert!(handle
+        .db
+        .create_oidc_trust(
+            None,
+            Uuid::now_v7(),
+            "bad2",
+            None,
+            owner_iss,
+            "y",
+            None,
+            Role::Read
+        )
+        .await
+        .is_err());
 }
 
 /// Pre-provisioning: an admin grants a role by identity before first login; the
@@ -5048,14 +5104,14 @@ impl Storage for Mutex<DbModel> {
     // OIDC trust relationships are not exercised by the proptest model.
     async fn list_oidc_trust(
         &self,
-        _tenant_id: TenantId,
+        _tenant_id: Option<TenantId>,
     ) -> DBResult<Vec<crate::db::types::oidc_trust::OidcTrustDescr>> {
         Ok(vec![])
     }
 
     async fn get_oidc_trust(
         &self,
-        _tenant_id: TenantId,
+        _tenant_id: Option<TenantId>,
         name: &str,
     ) -> DBResult<crate::db::types::oidc_trust::OidcTrustDescr> {
         Err(DBError::UnknownOidcTrust {
@@ -5063,7 +5119,7 @@ impl Storage for Mutex<DbModel> {
         })
     }
 
-    async fn delete_oidc_trust(&self, _tenant_id: TenantId, name: &str) -> DBResult<()> {
+    async fn delete_oidc_trust(&self, _tenant_id: Option<TenantId>, name: &str) -> DBResult<()> {
         Err(DBError::UnknownOidcTrust {
             name: name.to_string(),
         })
@@ -5071,7 +5127,7 @@ impl Storage for Mutex<DbModel> {
 
     async fn create_oidc_trust(
         &self,
-        _tenant_id: TenantId,
+        _tenant_id: Option<TenantId>,
         _id: Uuid,
         _name: &str,
         _description: Option<&str>,
@@ -5092,7 +5148,7 @@ impl Storage for Mutex<DbModel> {
         _issuer: &str,
         _subject: &str,
         _audiences: &[String],
-    ) -> DBResult<Vec<(TenantId, Role)>> {
+    ) -> DBResult<Vec<(Option<TenantId>, Role)>> {
         Ok(vec![])
     }
 

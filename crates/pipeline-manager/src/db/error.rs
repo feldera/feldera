@@ -159,6 +159,7 @@ pub enum DBError {
         field: String,
     },
     AmbiguousOidcTenant,
+    OwnerTrustNeedsTenant,
     OidcTenantNotTrusted {
         tenant: String,
     },
@@ -668,6 +669,13 @@ impl Display for DBError {
                      set the Feldera-Tenant header to select one"
                 )
             }
+            DBError::OwnerTrustNeedsTenant => {
+                write!(
+                    f,
+                    "Owner trust is platform-wide; set the Feldera-Tenant header \
+                     to choose the tenant to act in"
+                )
+            }
             DBError::OidcTenantNotTrusted { tenant } => {
                 write!(f, "Token is not trusted in tenant '{tenant}'")
             }
@@ -981,6 +989,7 @@ impl DetailedError for DBError {
             Self::UnknownOidcTrust { .. } => Cow::from("UnknownOidcTrust"),
             Self::EmptyOidcTrustField { .. } => Cow::from("EmptyOidcTrustField"),
             Self::AmbiguousOidcTenant => Cow::from("AmbiguousOidcTenant"),
+            Self::OwnerTrustNeedsTenant => Cow::from("OwnerTrustNeedsTenant"),
             Self::OidcTenantNotTrusted { .. } => Cow::from("OidcTenantNotTrusted"),
             Self::InvalidOidcToken { .. } => Cow::from("InvalidOidcToken"),
             Self::UnauthorizedOidcToken => Cow::from("UnauthorizedOidcToken"),
@@ -1107,6 +1116,7 @@ impl ResponseError for DBError {
             Self::UnknownOidcTrust { .. } => StatusCode::NOT_FOUND,
             Self::EmptyOidcTrustField { .. } => StatusCode::BAD_REQUEST,
             Self::AmbiguousOidcTenant => StatusCode::BAD_REQUEST,
+            Self::OwnerTrustNeedsTenant => StatusCode::BAD_REQUEST,
             Self::OidcTenantNotTrusted { .. } => StatusCode::FORBIDDEN,
             Self::InvalidOidcToken { .. } => StatusCode::UNAUTHORIZED,
             Self::UnauthorizedOidcToken => StatusCode::UNAUTHORIZED,
