@@ -6,8 +6,16 @@
   import * as va from 'valibot'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import { page } from '$app/state'
 
   const { onSubmit, onSuccess }: { onSubmit?: () => void; onSuccess?: () => void } = $props()
+
+  // A key can grant at most the caller's own role, and never above `write`
+  // (admin/owner are not mintable). So a read-only caller sees read only, and
+  // offering `write` to them (a guaranteed 403) is avoided.
+  const canGrantWrite = $derived(
+    ['write', 'admin', 'owner'].includes(page.data.feldera?.role ?? 'read')
+  )
 
   // API keys may only grant read or write; admin/owner are not valid here.
   const schema = va.object({
@@ -70,7 +78,9 @@
             />
             <Select bind:value={$formData.role} class="w-28" aria-label="API key role">
               <option value="read">read</option>
-              <option value="write">write</option>
+              {#if canGrantWrite}
+                <option value="write">write</option>
+              {/if}
             </Select>
             <div class="">
               <button class="btn preset-filled-surface-50-950">Generate</button>
