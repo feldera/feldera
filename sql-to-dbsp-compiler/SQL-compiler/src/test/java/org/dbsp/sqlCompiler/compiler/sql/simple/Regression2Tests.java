@@ -1144,7 +1144,7 @@ public class Regression2Tests extends SqlIoTest {
                         ('e', NULL);
                     """, """
                  g | max | sum
-                --------------
+                ----------------
                  a | 0   | 1
                  b | 1   | 3
                  c | 1   | 8

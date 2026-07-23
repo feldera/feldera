@@ -124,6 +124,15 @@ public class SourceFileContents {
         return result.toString();
     }
 
+    public String getFragments(SourcePositionRanges ranges) {
+        StringBuilder result = new StringBuilder();
+        for (SourcePositionRange r: ranges.positions) {
+            result.append(this.getFragment(r, true));
+            result.append("\n");
+        }
+        return result.toString();
+     }
+
     public String getFragment(SqlNode node) {
         return this.getFragment(
                 new SourcePositionRange(node.getParserPosition()), false);

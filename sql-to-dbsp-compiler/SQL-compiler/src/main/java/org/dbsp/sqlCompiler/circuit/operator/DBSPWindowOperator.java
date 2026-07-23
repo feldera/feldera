@@ -27,9 +27,13 @@ import java.util.List;
 public final class DBSPWindowOperator extends DBSPBinaryOperator implements IContainsIntegrator, IIncremental {
     public final boolean lowerInclusive;
     public final boolean upperInclusive;
+    /** True if the window's lower bound is -infinity.
+     * This property is not used for code generation, but it is difficult to infer later.
+     * The validity relies on the fact that no optimizations change window bounds once created. */
+    public final boolean lowerUnbounded;
 
     public DBSPWindowOperator(CalciteRelNode node, boolean lowerInclusive, boolean upperInclusive,
-            OutputPort data, OutputPort control) {
+            boolean lowerUnbounded, OutputPort data, OutputPort control) {
         super(node, "window", null, data.outputType(), data.isMultiset(), data, control);
         // Check that the left input and output are indexed ZSets.
         DBSPTypeIndexedZSet indexedType = this.getOutputIndexedZSetType();
@@ -41,6 +45,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements ICon
                         ", but have type " + control.outputType());
         this.lowerInclusive = lowerInclusive;
         this.upperInclusive = upperInclusive;
+        this.lowerUnbounded = lowerUnbounded;
     }
 
     @Override
@@ -52,6 +57,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements ICon
             if (force || this.inputsDiffer(newInputs))
                 return new DBSPWindowOperator(
                         this.getRelNode(), this.lowerInclusive, this.upperInclusive,
+                        this.lowerUnbounded,
                         newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         }
         return this;
@@ -71,8 +77,9 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements ICon
         DBSPSimpleOperator.CommonInfo info = commonInfoFromJson(node, decoder);
         boolean lowerInclusive = Utilities.getBooleanProperty(node, "lowerInclusive");
         boolean upperInclusive = Utilities.getBooleanProperty(node, "upperInclusive");
+        boolean lowerUnbounded = Utilities.getBooleanProperty(node, "lowerUnbounded");
         return new DBSPWindowOperator(CalciteEmptyRel.INSTANCE,
-                lowerInclusive, upperInclusive, info.getInput(0), info.getInput(1))
+                lowerInclusive, upperInclusive, lowerUnbounded, info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPWindowOperator.class);
     }
 }

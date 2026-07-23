@@ -333,6 +333,8 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         this.stream.append(operator.lowerInclusive);
         this.property("upperInclusive");
         this.stream.append(operator.upperInclusive);
+        this.property("lowerUnbounded");
+        this.stream.append(operator.lowerUnbounded);
         return VisitDecision.CONTINUE;
     }
 

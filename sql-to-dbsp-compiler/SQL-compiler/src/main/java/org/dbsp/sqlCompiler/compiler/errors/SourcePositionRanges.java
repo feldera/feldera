@@ -8,7 +8,7 @@ import java.util.List;
 
 /** A set of source positions */
 public class SourcePositionRanges implements Iterable<SourcePositionRange> {
-    final List<SourcePositionRange> positions;
+    public final List<SourcePositionRange> positions;
 
     public SourcePositionRanges(Iterable<SourcePositionRange> positions) {
         List<SourcePositionRange> pos = Linq.list(positions);

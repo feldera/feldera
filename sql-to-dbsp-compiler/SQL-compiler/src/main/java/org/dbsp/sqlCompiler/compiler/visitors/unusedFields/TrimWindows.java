@@ -44,7 +44,8 @@ public class TrimWindows extends CircuitCloneWithGraphsVisitor {
                 this.addOperator(pre);
 
                 DBSPWindowOperator newWindow = new DBSPWindowOperator(
-                        window.getRelNode(), window.lowerInclusive, window.upperInclusive, pre.outputPort(), window.right());
+                        window.getRelNode(), window.lowerInclusive, window.upperInclusive,
+                        window.lowerUnbounded, pre.outputPort(), window.right());
                 this.addOperator(newWindow);
 
                 DBSPUnaryOperator postProj = new DBSPMapIndexOperator(

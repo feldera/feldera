@@ -80,7 +80,7 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
             ToDot.dump(this.compiler, name, details, "png", circuit);
         }
         long begin = System.currentTimeMillis();
-        Logger.INSTANCE.belowLevel(this, 1)
+        Logger.INSTANCE.belowLevel(this, 2)
                 .append(this.toString())
                 .append(" starting ")
                 .append(this.passes.size())
@@ -94,7 +94,7 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
                 break;
             long endId = DBSPNode.outerId;
             long end = System.currentTimeMillis();
-            Logger.INSTANCE.belowLevel(this, 1)
+            Logger.INSTANCE.belowLevel(this, 2)
                     .append(pass.toString())
                     .append(" took ")
                     .append(end - start)
@@ -109,7 +109,7 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
             }
         }
         long finish = System.currentTimeMillis();
-        Logger.INSTANCE.belowLevel(this, 1)
+        Logger.INSTANCE.belowLevel(this, 2)
                 .decrease()
                 .append(this.toString())
                 .append(" took ")

@@ -536,7 +536,7 @@ public class Regression1Tests extends SqlIoTest {
                 .withStringTrim();
         ccs.stepWeightOne("INSERT INTO T VALUES(x'AB01')", """
                  x    | y
-                -----------
+                -------------
                  ab01 | ab01""");
     }
 
@@ -1534,7 +1534,7 @@ public class Regression1Tests extends SqlIoTest {
                 FROM T;""").withStringTrim();
         ccs.stepWeightOne("INSERT INTO T VALUES('a'), ('b'), ('ab');", """
                  x  | in
-                ---------
+                -----------
                  a  | true
                  b  | false
                  ab | false""");
@@ -1614,7 +1614,7 @@ public class Regression1Tests extends SqlIoTest {
                     ) AS t (f1, f2, f3, f4);""").withStringTrim();
         ccs.stepWeightOne("", """
                  f1 | f2 | f3    | f4
-                ----------------------
+                ------------------------
                  a  | 1 | { by} | true
                  b  | 1 | {}    | false""");
     }

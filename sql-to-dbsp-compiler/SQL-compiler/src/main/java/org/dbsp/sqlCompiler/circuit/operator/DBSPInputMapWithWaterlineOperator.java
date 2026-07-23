@@ -30,7 +30,7 @@ import java.util.List;
  * with records that missed the lateness. */
 public class DBSPInputMapWithWaterlineOperator
         extends DBSPOperator
-        implements IMultiOutput, IInputMapOperator, IInputOperator {
+        implements IMultiOutput, IInputMapOperator, IInputOperator, IStateful {
     // Fields that belong normally to SourceTableOperators (which we don't derive from)
     public final ProgramIdentifier tableName;
     public final DBSPTypeStruct originalRowType;

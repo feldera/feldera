@@ -24,6 +24,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.FindUnboundedState;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
@@ -51,12 +52,12 @@ public class StreamingTests extends StreamingTestBase {
                     x INT,
                     ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
                 );
-
+                
                 CREATE TABLE t2(
                     y INT,
                     ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
                 );
-
+                
                 CREATE VIEW v
                 WITH ('emit_final' = 'ts')
                 AS SELECT t1.ts
@@ -259,7 +260,7 @@ public class StreamingTests extends StreamingTestBase {
                 ) WITH (
                     'append_only' = 'true'
                 );
-
+                
                 create view v1 AS
                 SELECT
                     TIMESTAMP_TRUNC(ts, DAY) as d,
@@ -327,12 +328,12 @@ public class StreamingTests extends StreamingTestBase {
                     x INT,
                     ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
                 );
-
+                
                 CREATE TABLE t2(
                     y INT,
                     ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
                 );
-
+                
                 CREATE VIEW v
                 WITH ('emit_final' = 'ts')
                 AS SELECT
@@ -397,7 +398,7 @@ public class StreamingTests extends StreamingTestBase {
                     'materialized' = 'true',
                     'append_only' = 'true'
                 );
-
+                
                 CREATE VIEW V
                 WITH ('emit_final' = 'ts')
                 AS SELECT * FROM T
@@ -674,13 +675,13 @@ public class StreamingTests extends StreamingTestBase {
                     id bigint NOT NULL,
                     unix_time BIGINT LATENESS 100
                 );
-
+                
                 create table FEEDBACK (
                     id bigint,
                     status int,
                     unix_time bigint NOT NULL LATENESS 100
                 );
-
+                
                 CREATE VIEW TRANSACT AS
                     SELECT feedback.*, transaction.*
                     FROM
@@ -2044,9 +2045,9 @@ public class StreamingTests extends StreamingTestBase {
                   t0 TIMESTAMP NOT NULL LATENESS INTERVAL '2' HOURS,
                   location INT NOT NULL
                 );
-
+                
                 CREATE LOCAL VIEW IT AS SELECT (t0 - TIMESTAMP '2020-01-01 00:00:00') HOURS AS t, location FROM data;
-
+                
                 CREATE VIEW V AS
                 SELECT
                 *,
@@ -3056,7 +3057,7 @@ public class StreamingTests extends StreamingTestBase {
                   y TIMESTAMP,
                   site_id varchar
                 );
-
+                
                 create view V
                 as select site_id from T
                 where ( x >= NOW() + INTERVAL 30 DAYS
@@ -3342,7 +3343,7 @@ public class StreamingTests extends StreamingTestBase {
                    lp VARCHAR,
                    lsd TIMESTAMP
                 );
-
+                
                 create view V
                 as SELECT
                     s
@@ -3390,7 +3391,7 @@ public class StreamingTests extends StreamingTestBase {
                    lp VARCHAR,
                    lsd TIMESTAMP
                 );
-
+                
                 create view V
                 as SELECT
                     s
@@ -3444,7 +3445,7 @@ public class StreamingTests extends StreamingTestBase {
                    lp VARCHAR,
                    lsd TIMESTAMP
                 );
-
+                
                 create view V
                 as SELECT
                     s
@@ -3502,7 +3503,7 @@ public class StreamingTests extends StreamingTestBase {
                   properties variant,
                   site_id varchar
                 );
-
+                
                 create view V
                 as (select site_id from T
                     where CAST(properties['x'] AS TIMESTAMP) >= NOW() + INTERVAL 30 DAYS)
@@ -3520,12 +3521,12 @@ public class StreamingTests extends StreamingTestBase {
                 x INT,
                 ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
             );
-
+            
             CREATE TABLE t2(
                 y INT,
                 ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
             );
-
+            
             CREATE VIEW v
             WITH ('emit_final' = 'ts')
             AS SELECT t1.ts
@@ -3537,11 +3538,7 @@ public class StreamingTests extends StreamingTestBase {
     public void changeLog() {
         // TLOG is a log of insertions and deletions applied to a table with
         // primary key t_key; view T reconstructs the current table contents
-        // from the log entries of the last 25 hours: the latest entry per key
-        // wins, and a key whose latest entry is a deletion is absent.  The op
-        // filter must sit outside the TOP-1, otherwise a deletion would
-        // resurrect the previous insertion.  The temporal filter makes rows
-        // age out of T once their latest entry falls behind the window.
+        // from the log entries of the last 25 hours.
         String sql = """
                 CREATE TABLE TLOG (
                     t_key INT NOT NULL,
@@ -3563,6 +3560,13 @@ public class StreamingTests extends StreamingTestBase {
                 ) latest
                 WHERE rn = 1 AND op = 'insert';""";
         var ccs = this.getCCS(sql).withStringTrim();
+        FindUnboundedState gc = new FindUnboundedState(ccs.compiler);
+        ccs.visit(gc);
+        // The temporal filter's window operator bounds its own state; its
+        // bounded output propagates to the TOP-1 operator, and the NOW-derived
+        // window-bound computation is bounded because the NOW table holds one
+        // row.  The circuit has no unbounded state.
+        Assert.assertTrue(gc.unbounded.toString(), gc.unbounded.isEmpty());
         ccs.step("""
                 INSERT INTO NOW VALUES('2020-01-01 01:00:00');
                 INSERT INTO TLOG VALUES(1, 'aaa', 'insert', '2020-01-01 00:00:00');

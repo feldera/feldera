@@ -16,7 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Interface for a source operator that has primary keys */
-public interface IInputMapOperator extends IInputOperator {
+public interface IInputMapOperator extends IInputOperator, IStateful {
     TableMetadata getMetadata();
     List<Integer> getKeyFields();
     DBSPTypeIndexedZSet getOutputIndexedZSetType();

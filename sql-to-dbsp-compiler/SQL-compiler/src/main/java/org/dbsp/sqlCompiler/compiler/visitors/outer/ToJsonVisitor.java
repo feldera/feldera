@@ -13,25 +13,18 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRanges;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.DBSPParameter;
-import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.HashString;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /** Emit a circuit description as JSON.
  * Currently only the dataflow graph is emitted.
@@ -41,55 +34,12 @@ public class ToJsonVisitor extends CircuitVisitor {
     final int verbosity;
     final Map<RelNode, Integer> relId;
 
-    public static class FindSourcePositions extends InnerVisitor {
-        public final Set<SourcePositionRange> positions;
-        private final boolean reset;
-
-        public FindSourcePositions(DBSPCompiler compiler, boolean reset) {
-            super(compiler);
-            this.positions = new HashSet<>();
-            this.reset = reset;
-        }
-
-        @Override
-        public void postorder(DBSPExpression expression) {
-            SourcePositionRange positionRange = expression.getNode().getPositionRange();
-            if (positionRange.isValid())
-                this.positions.add(positionRange);
-        }
-
-        @Override
-        public void postorder(DBSPParameter parameter) {
-            SourcePositionRange positionRange = parameter.getNode().getPositionRange();
-            if (positionRange.isValid())
-                this.positions.add(positionRange);
-        }
-
-        @Override
-        public void startVisit(IDBSPInnerNode node) {
-            super.startVisit(node);
-            if (this.reset)
-                this.positions.clear();
-        }
-
-        public SourcePositionRanges getPositions() {
-            return new SourcePositionRanges(this.positions);
-        }
-    }
-
     public ToJsonVisitor(DBSPCompiler compiler, IIndentStream builder, int verbosity,
                          Map<RelNode, Integer> id) {
         super(compiler);
         this.builder = builder;
         this.verbosity = verbosity;
         this.relId = id;
-    }
-
-    SourcePositionRanges getPositions(DBSPOperator operator) {
-        FindSourcePositions positions = new FindSourcePositions(this.compiler, true);
-        operator.accept(positions);
-        positions.positions.addAll(operator.getSourcePositions());
-        return positions.getPositions();
     }
 
     void emitPort(OutputPort port) {
@@ -160,12 +110,14 @@ public class ToJsonVisitor extends CircuitVisitor {
         this.builder.append(",").newline();
         this.builder.appendJsonLabelAndColon("positions")
                 .append("[");
-        var list = Linq.list(this.getPositions(operator));
+        var list = Linq.list(FindSourcePositions.getPositions(this.compiler, operator));
         if (operator.is(DBSPSourceTableOperator.class) || operator.is(DBSPSinkOperator.class)) {
             if (operator.getSourcePosition().isValid())
                 list.add(operator.getSourcePosition());
         }
-        List<String> strings = Linq.map(list, p -> p.asJson().toString());
+        // Deduplicate positions
+        SourcePositionRanges ranges = new SourcePositionRanges(list);
+        List<String> strings = Linq.map(ranges.positions, p -> p.asJson().toString());
         if (!strings.isEmpty()) {
             this.builder
                     .increase()
@@ -211,7 +163,7 @@ public class ToJsonVisitor extends CircuitVisitor {
         this.builder.append(",").newline();
         this.builder.appendJsonLabelAndColon("positions")
                 .append("[");
-        var list = Linq.list(this.getPositions(operator));
+        var list = Linq.list(FindSourcePositions.getPositions(this.compiler, operator));
         List<String> strings = Linq.map(list, p -> p.asJson().toString());
         if (!strings.isEmpty()) {
             this.builder
@@ -258,7 +210,7 @@ public class ToJsonVisitor extends CircuitVisitor {
         this.builder.append(",").newline();
         this.builder.appendJsonLabelAndColon("positions")
                 .append("[");
-        var list = Linq.list(this.getPositions(operator));
+        var list = Linq.list(FindSourcePositions.getPositions(this.compiler, operator));
         List<String> strings = Linq.map(list, p -> p.asJson().toString());
         if (!strings.isEmpty()) {
             this.builder
