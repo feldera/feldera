@@ -6,18 +6,19 @@ use crate::db::types::pipeline::ExtendedPipelineDescrMonitoring;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
+use actix_web::http::header::{self, HeaderValue};
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
 use actix_ws::{CloseCode, CloseReason};
 use awc::error::{ConnectError, SendRequestError};
 use awc::{ClientRequest, ClientResponse};
 use crossbeam::sync::ShardedLock;
 use feldera_observability::AwcRequestTracingExt;
-use feldera_types::query::MAX_WS_FRAME_SIZE;
+use feldera_types::query::{MAX_WS_FRAME_SIZE, WS_SUBPROTOCOL};
 use std::fmt::Display;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::db::listen_table::PIPELINE_NOTIFY_CHANNEL_CAPACITY;
 use crate::db::types::resources_status::ResourcesStatus;
@@ -28,6 +29,54 @@ use feldera_types::runtime_status::RuntimeStatus;
 /// The awc default is 2MiB, which is not enough to, for example, retrieve
 /// a large circuit profile.
 const RESPONSE_SIZE_LIMIT: usize = 50 * 1024 * 1024;
+
+/// Pick the subprotocol to echo back on a WebSocket handshake.
+///
+/// Returns `None` when the client offered none (non-browser clients such as
+/// `fda` authenticate via headers and offer no subprotocol, so nothing is
+/// echoed). Otherwise prefers the [`WS_SUBPROTOCOL`] sentinel and falls back to
+/// the first offered protocol, so an older console that offers only the
+/// `feldera-bearer.*`/`feldera-tenant.*` auth subprotocols still gets an echo.
+///
+/// Subprotocol tokens are matched case-sensitively (RFC 6455): the console and
+/// manager share the [`WS_SUBPROTOCOL`] constant verbatim, so no normalization
+/// is needed, and the bearer/tenant tokens are case-sensitive base64url anyway.
+fn select_ws_subprotocol(request: &HttpRequest) -> Option<String> {
+    let offered: Vec<&str> = request
+        .headers()
+        .get(header::SEC_WEBSOCKET_PROTOCOL)?
+        .to_str()
+        .ok()?
+        .split(',')
+        .map(str::trim)
+        .filter(|protocol| !protocol.is_empty())
+        .collect();
+    if offered.contains(&WS_SUBPROTOCOL) {
+        return Some(WS_SUBPROTOCOL.to_string());
+    }
+    offered.first().map(|protocol| protocol.to_string())
+}
+
+/// Echo one of the client's offered subprotocols onto a WebSocket handshake
+/// response (see [`select_ws_subprotocol`] for the choice).
+fn echo_ws_subprotocol(response: &mut HttpResponse, request: &HttpRequest) {
+    let Some(selected) = select_ws_subprotocol(request) else {
+        return;
+    };
+    match HeaderValue::from_str(&selected) {
+        // `actix_ws::handle` never sets `Sec-WebSocket-Protocol`, so insert
+        // (replace) rather than append: there is no prior value.
+        Ok(value) => {
+            response
+                .headers_mut()
+                .insert(header::SEC_WEBSOCKET_PROTOCOL, value);
+        }
+        // Unreachable in practice: a subprotocol token is ASCII-visible and was
+        // already parsed once by actix on the way in. Warn (and skip the echo)
+        // so a broken invariant is discoverable rather than a silent 1006.
+        Err(e) => warn!("failed to echo websocket subprotocol {selected:?}: {e}"),
+    }
+}
 
 pub(crate) struct CachedPipelineDescr {
     pipeline: ExtendedPipelineDescrMonitoring,
@@ -369,12 +418,15 @@ impl RunnerInteraction {
         let (location, _cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
 
         // Handle client request
-        let (res, mut client_tx, client_rx) = actix_ws::handle(&client_request, client_body)
+        let (mut res, mut client_tx, client_rx) = actix_ws::handle(&client_request, client_body)
             .map_err(|e| ManagerError::ApiError {
                 api_error: ApiError::UnableToConnect {
                     reason: format!("Unable to initiate websocket connection with client: {e}"),
                 },
             })?;
+
+        echo_ws_subprotocol(&mut res, &client_request);
+
         let mut client_rx = client_rx.max_frame_size(MAX_WS_FRAME_SIZE);
 
         // Connect to the pipeline
@@ -757,5 +809,103 @@ mod tests {
         let body = read_body(resp).await;
         assert_eq!(body, plain);
         // Dropping mock_server verifies the expect(0) assertion.
+    }
+
+    fn selected_protocol(subprotocols: Option<&str>) -> Option<String> {
+        let headers: Vec<(&str, &str)> = subprotocols
+            .map(|value| vec![(header::SEC_WEBSOCKET_PROTOCOL.as_str(), value)])
+            .unwrap_or_default();
+        let (req, _payload) = test_get_request(&headers);
+        select_ws_subprotocol(&req)
+    }
+
+    /// A non-browser client (e.g. `fda`) offers no subprotocol, so the manager
+    /// echoes none: `Sec-WebSocket-Protocol` stays absent from the 101.
+    #[test]
+    fn ws_subprotocol_absent_when_none_offered() {
+        assert_eq!(selected_protocol(None), None);
+    }
+
+    /// The web console offers the sentinel first; it is echoed back so Chromium
+    /// accepts the handshake instead of closing with code 1006.
+    #[test]
+    fn ws_subprotocol_prefers_sentinel() {
+        let offered = format!("{WS_SUBPROTOCOL}, feldera-bearer.QUJD, feldera-tenant.dA");
+        // Guard against accidentally echoing the bearer token subprotocol.
+        assert_eq!(
+            selected_protocol(Some(&offered)).as_deref(),
+            Some(WS_SUBPROTOCOL)
+        );
+    }
+
+    /// The sentinel is honored regardless of the position it is offered in,
+    /// since browsers only require the echoed value to be one that was offered.
+    #[test]
+    fn ws_subprotocol_finds_sentinel_out_of_order() {
+        let offered = format!("feldera-bearer.QUJD, {WS_SUBPROTOCOL}");
+        assert_eq!(
+            selected_protocol(Some(&offered)).as_deref(),
+            Some(WS_SUBPROTOCOL)
+        );
+    }
+
+    /// An older console that offers only the auth subprotocols still gets an
+    /// echo (the first offered), so the handshake succeeds rather than 1006.
+    #[test]
+    fn ws_subprotocol_falls_back_to_first_offered() {
+        assert_eq!(
+            selected_protocol(Some("feldera-bearer.QUJD, feldera-tenant.dA")).as_deref(),
+            Some("feldera-bearer.QUJD")
+        );
+    }
+
+    /// End-to-end handshake through a real actix server: a client offering
+    /// subprotocols gets the sentinel echoed on the 101 (so Chromium keeps the
+    /// connection), while a client offering none gets no header back.
+    #[actix_web::test]
+    async fn ws_handshake_echoes_offered_subprotocol() {
+        use actix_web::{web, App};
+        setup(); // awc's TLS connector needs a rustls CryptoProvider installed.
+
+        // Mirrors the production handshake: complete the upgrade, then echo.
+        async fn handler(
+            req: HttpRequest,
+            body: web::Payload,
+        ) -> Result<HttpResponse, actix_web::Error> {
+            let (mut res, _session, _stream) = actix_ws::handle(&req, body)?;
+            echo_ws_subprotocol(&mut res, &req);
+            Ok(res)
+        }
+
+        let srv = actix_test::start(|| App::new().route("/query", web::get().to(handler)));
+
+        let (with_offer, _framed) = awc::Client::new()
+            .ws(srv.url("/query"))
+            .protocols([WS_SUBPROTOCOL, "feldera-bearer.QUJD"])
+            .connect()
+            .await
+            .expect("handshake with offered subprotocols must succeed");
+        assert_eq!(
+            with_offer
+                .headers()
+                .get(header::SEC_WEBSOCKET_PROTOCOL)
+                .expect("101 must echo a subprotocol"),
+            WS_SUBPROTOCOL,
+        );
+
+        let (without_offer, _framed) = awc::Client::new()
+            .ws(srv.url("/query"))
+            .connect()
+            .await
+            .expect("handshake without subprotocols must succeed");
+        assert!(
+            without_offer
+                .headers()
+                .get(header::SEC_WEBSOCKET_PROTOCOL)
+                .is_none(),
+            "no subprotocol offered should leave the response header absent"
+        );
+
+        srv.stop().await;
     }
 }
