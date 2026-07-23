@@ -634,36 +634,49 @@ export type Tenant = TenantInfo
 // through the generated client (same auth + 401-refresh interceptors as every
 // other call), wrapped in `mapResponse` for uniform error handling.
 
-export const getOidcTrustList = (options?: FetchOptions) =>
-  mapResponse(_listOidcTrust({ ...options }), (v) => v ?? [])
+// An optional `tenant` (name or UUID) sets a per-call `Feldera-Tenant` header,
+// letting an owner view/manage a specific tenant on the admin page without
+// changing the global acting-tenant selection. Omit it to use the current tenant.
+const tenantHdr = (tenant?: string) => (tenant ? { headers: { 'Feldera-Tenant': tenant } } : {})
 
-export const postOidcTrust = (body: NewOidcTrustRequest, options?: FetchOptions) =>
-  mapResponse(_postOidcTrust({ body, ...options }), (v) => v)
+export const getOidcTrustList = (tenant?: string, options?: FetchOptions) =>
+  mapResponse(_listOidcTrust({ ...tenantHdr(tenant), ...options }), (v) => v ?? [])
 
-export const deleteOidcTrust = (name: string, options?: FetchOptions) =>
-  mapResponse(_deleteOidcTrust({ path: { name }, ...options }), (v) => v)
+export const postOidcTrust = (body: NewOidcTrustRequest, tenant?: string, options?: FetchOptions) =>
+  mapResponse(_postOidcTrust({ body, ...tenantHdr(tenant), ...options }), (v) => v)
+
+export const deleteOidcTrust = (name: string, tenant?: string, options?: FetchOptions) =>
+  mapResponse(_deleteOidcTrust({ path: { name }, ...tenantHdr(tenant), ...options }), (v) => v)
 
 // Tenant users & roles (min role: admin).
 
-export const getTenantUsers = (options?: FetchOptions) =>
-  mapResponse(_listTenantUsers({ ...options }), (v) => v ?? [])
+export const getTenantUsers = (tenant?: string, options?: FetchOptions) =>
+  mapResponse(_listTenantUsers({ ...tenantHdr(tenant), ...options }), (v) => v ?? [])
 
 // Pre-provision a member by identity, before their first login. The grant is
 // dormant until that identity authenticates into the tenant through the IdP.
 export const addTenantUser = (
   body: { provider: string; subject: string; email?: string; role: 'read' | 'write' | 'admin' },
+  tenant?: string,
   options?: FetchOptions
-) => mapResponse(_addTenantUser({ body, ...options }), (v) => v)
+) => mapResponse(_addTenantUser({ body, ...tenantHdr(tenant), ...options }), (v) => v)
 
 export const setTenantUserRole = (
   userId: string,
   role: 'read' | 'write' | 'admin',
+  tenant?: string,
   options?: FetchOptions
 ) =>
-  mapResponse(_putTenantUser({ path: { user_id: userId }, body: { role }, ...options }), (v) => v)
+  mapResponse(
+    _putTenantUser({ path: { user_id: userId }, body: { role }, ...tenantHdr(tenant), ...options }),
+    (v) => v
+  )
 
-export const removeTenantUser = (userId: string, options?: FetchOptions) =>
-  mapResponse(_deleteTenantUser({ path: { user_id: userId }, ...options }), (v) => v)
+export const removeTenantUser = (userId: string, tenant?: string, options?: FetchOptions) =>
+  mapResponse(
+    _deleteTenantUser({ path: { user_id: userId }, ...tenantHdr(tenant), ...options }),
+    (v) => v
+  )
 
 // Tenant administration (min role: owner).
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { asyncReadable } from '@square/svelte-store'
+  import { Select } from 'common-ui'
   import { page } from '$app/state'
   import TenantList from '$lib/components/admin/TenantList.svelte'
   import UserRoleTable from '$lib/components/admin/UserRoleTable.svelte'
@@ -9,7 +10,9 @@
   import {
     deleteOidcTrust,
     getOidcTrustList,
-    type OidcTrustDescr
+    getTenants,
+    type OidcTrustDescr,
+    type Tenant
   } from '$lib/services/pipelineManager'
   import type { Snippet } from '$lib/types/svelte'
 
@@ -17,9 +20,22 @@
   const globalDialog = useGlobalDialog()
   let errorMessage = $state('')
 
+  // Owner-only per-tenant view: pick a tenant (by UUID) to inspect and manage
+  // its members and trusts in place, without changing the global acting-tenant.
+  // Empty string means the owner's own (globally selected) tenant.
+  let adminTenant = $state('')
+  const selectedTenant = $derived(adminTenant || undefined)
+  const tenants = asyncReadable<Tenant[]>([], getTenants, { reloadable: true })
+
   // OIDC trust list reused inline (admin/owner are granted to non-human
-  // principals through trust relationships).
-  const trusts = asyncReadable<OidcTrustDescr[]>([], getOidcTrustList, { reloadable: true })
+  // principals through trust relationships). Re-fetched for the selected tenant.
+  const trusts = asyncReadable<OidcTrustDescr[]>([], () => getOidcTrustList(selectedTenant), {
+    reloadable: true
+  })
+  $effect(() => {
+    selectedTenant
+    trusts.reload?.()
+  })
 </script>
 
 {#snippet section(title: string, description: string, body: Snippet)}
@@ -33,14 +49,27 @@
 {/snippet}
 
 <div class="mx-auto flex w-full max-w-4xl flex-col gap-6 px-2 pb-10 md:px-8">
-  <h1 class="h2">Administration</h1>
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h1 class="h2">Administration</h1>
+    {#if isOwner}
+      <label class="flex items-center gap-2 text-sm">
+        <span class="opacity-70">Managing tenant</span>
+        <Select class="w-56" bind:value={adminTenant}>
+          <option value="">My tenant</option>
+          {#each $tenants as t (t.id)}
+            <option value={t.id}>{t.name}</option>
+          {/each}
+        </Select>
+      </label>
+    {/if}
+  </div>
 
   {#if errorMessage}
     <div class="rounded preset-outlined-error-600-400 p-2 text-sm">{errorMessage}</div>
   {/if}
 
   {#snippet usersBody()}
-    <UserRoleTable></UserRoleTable>
+    <UserRoleTable tenant={selectedTenant}></UserRoleTable>
   {/snippet}
   {@render section('Users & roles', 'Manage tenant members and their roles.', usersBody)}
 
@@ -57,7 +86,7 @@
                 name: 'Delete',
                 callback: async () => {
                   try {
-                    await deleteOidcTrust(trust.name)
+                    await deleteOidcTrust(trust.name, selectedTenant)
                     trusts.reload?.()
                   } catch (e) {
                     errorMessage = e instanceof Error ? e.message : String(e)
@@ -99,7 +128,11 @@
         <div class="opacity-70">No OIDC trust relationships configured</div>
       {/each}
     </div>
-    <NewOidcTrustForm onSuccess={() => trusts.reload?.()}></NewOidcTrustForm>
+    <NewOidcTrustForm
+      allowOwner={isOwner}
+      tenant={selectedTenant}
+      onSuccess={() => trusts.reload?.()}
+    ></NewOidcTrustForm>
   {/snippet}
   {@render section(
     'Admin & owner access (OIDC trust)',

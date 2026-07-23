@@ -28,8 +28,10 @@ export const applyAuthToRequest = (request: Request): Request => {
     const oidcClient = OidcClient.get()
     if (oidcClient.tokens?.accessToken) {
       request.headers.set('Authorization', `Bearer ${oidcClient.tokens.accessToken}`)
+      // A per-call `Feldera-Tenant` header (e.g. the admin page's per-tenant
+      // view) takes precedence over the global tenant selection.
       const tenant = getSelectedTenant()
-      if (tenant) {
+      if (tenant && !request.headers.has('Feldera-Tenant')) {
         request.headers.set('Feldera-Tenant', tenant)
       }
     }

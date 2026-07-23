@@ -11,7 +11,16 @@
     type TenantUser
   } from '$lib/services/pipelineManager'
 
-  const users = asyncReadable<TenantUser[]>([], getTenantUsers, { reloadable: true })
+  // Optional tenant (UUID/name): an owner viewing another tenant's members via
+  // the admin page's per-tenant picker, without changing the global selection.
+  const { tenant }: { tenant?: string } = $props()
+
+  const users = asyncReadable<TenantUser[]>([], () => getTenantUsers(tenant), { reloadable: true })
+  // Reload when the selected tenant changes.
+  $effect(() => {
+    tenant
+    users.reload?.()
+  })
 
   const globalDialog = useGlobalDialog()
 
@@ -39,12 +48,15 @@
     errorMessage = ''
     adding = true
     try {
-      await addTenantUser({
-        provider: newProvider.trim(),
-        subject: newSubject.trim(),
-        email: newEmail.trim() || undefined,
-        role: newRole
-      })
+      await addTenantUser(
+        {
+          provider: newProvider.trim(),
+          subject: newSubject.trim(),
+          email: newEmail.trim() || undefined,
+          role: newRole
+        },
+        tenant
+      )
       newProvider = ''
       newSubject = ''
       newEmail = ''
@@ -65,7 +77,7 @@
     errorMessage = ''
     savingUserId = user.user_id
     try {
-      await setTenantUserRole(user.user_id, role)
+      await setTenantUserRole(user.user_id, role, tenant)
       delete pendingRole[user.user_id]
       users.reload?.()
     } catch (e) {
@@ -154,7 +166,7 @@
                 // Surface failures instead of swallowing them and leaving the
                 // dialog stuck; only close on success.
                 try {
-                  await removeTenantUser(user.user_id)
+                  await removeTenantUser(user.user_id, tenant)
                   users.reload?.()
                   globalDialog.dialog = null
                 } catch (e) {
