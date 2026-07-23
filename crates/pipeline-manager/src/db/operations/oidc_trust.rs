@@ -157,19 +157,19 @@ pub async fn is_trusted_issuer(txn: &Transaction<'_>, issuer: &str) -> Result<bo
 
 /// Resolve a federated token to the tenant and role it is authorized for.
 ///
-/// All trusts registered for `issuer` whose subject pattern matches `subject`
-/// and (if present) audience pattern matches one of `audiences` are candidates.
-/// The `aud` claim is the disambiguator: a tenant scopes its trust with a
-/// tenant-specific audience. If candidates resolve to more than one distinct
-/// tenant, the match is ambiguous and rejected (fail closed) rather than
-/// silently crossing tenants. Within a single tenant the most permissive
-/// matching role wins.
+/// All tenants that trust this token, one entry each with the most permissive
+/// matching role in that tenant. A trust is a candidate when it is registered
+/// for `issuer`, its subject pattern matches `subject`, and, if it sets an
+/// audience pattern, that pattern matches one of `audiences` (the audience is a
+/// security filter, not the tenant key). When the result spans several tenants
+/// the caller disambiguates with the `Feldera-Tenant` header. Sorted by tenant
+/// for a deterministic order.
 pub async fn match_oidc_trust(
     txn: &Transaction<'_>,
     issuer: &str,
     subject: &str,
     audiences: &[String],
-) -> Result<Option<(TenantId, Role)>, DBError> {
+) -> Result<Vec<(TenantId, Role)>, DBError> {
     let stmt = txn
         .prepare_cached(
             "SELECT tenant_id, subject, audience, role \
@@ -177,7 +177,7 @@ pub async fn match_oidc_trust(
         )
         .await?;
     let rows = txn.query(&stmt, &[&issuer]).await?;
-    let mut matched: Option<(TenantId, Role)> = None;
+    let mut matched: Vec<(TenantId, Role)> = Vec::new();
     for row in rows {
         let tenant_id = TenantId(row.get(0));
         let pattern_subject: String = row.get(1);
@@ -192,17 +192,11 @@ pub async fn match_oidc_trust(
                 continue;
             }
         }
-        match matched {
-            None => matched = Some((tenant_id, role)),
-            Some((prev_tenant, prev_role)) => {
-                if prev_tenant != tenant_id {
-                    // Ambiguous cross-tenant match: fail closed. Operators must
-                    // disambiguate with tenant-specific audiences.
-                    return Err(DBError::UnauthorizedOidcToken);
-                }
-                matched = Some((tenant_id, prev_role.max(role)));
-            }
+        match matched.iter_mut().find(|(t, _)| *t == tenant_id) {
+            Some(entry) => entry.1 = entry.1.max(role),
+            None => matched.push((tenant_id, role)),
         }
     }
+    matched.sort_by_key(|(t, _)| t.0);
     Ok(matched)
 }

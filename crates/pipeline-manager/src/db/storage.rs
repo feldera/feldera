@@ -222,15 +222,16 @@ pub(crate) trait Storage {
     /// unregistered issuer never triggers an outbound request (SSRF/DoS gate).
     async fn is_trusted_issuer(&self, issuer: &str) -> Result<bool, DBError>;
 
-    /// Resolves a federated token to the tenant and role it is authorized for.
-    /// Returns `None` if no trust matches; errors if the match is ambiguous
-    /// across tenants (see [`crate::db::operations::oidc_trust::match_oidc_trust`]).
+    /// Every tenant that trusts a federated token, with the token's role in each
+    /// (see [`crate::db::operations::oidc_trust::match_oidc_trust`]). Empty when
+    /// no trust matches; more than one entry means the caller must pick a tenant
+    /// via the `Feldera-Tenant` header.
     async fn match_oidc_trust(
         &self,
         issuer: &str,
         subject: &str,
         audiences: &[String],
-    ) -> Result<Option<(TenantId, Role)>, DBError>;
+    ) -> Result<Vec<(TenantId, Role)>, DBError>;
 
     /// Retrieves a list of pipelines as extended descriptors.
     async fn list_pipelines(

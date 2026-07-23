@@ -10,7 +10,7 @@ use crate::api::util::parse_url_parameter;
 use crate::auth::AuthenticatedPrincipal;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
-use crate::db::types::oidc_trust::{pattern_is_concrete, OidcTrustId};
+use crate::db::types::oidc_trust::OidcTrustId;
 use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
@@ -151,33 +151,10 @@ pub(crate) async fn post_oidc_trust(
         .into());
     }
 
-    // Breadth policy. `claim_matches` treats `*` anywhere in a pattern as a glob
-    // over any character run, so an unbounded pattern can authorize a wide set
-    // of tokens. `pattern_is_concrete` (defined next to the matcher) is the
-    // shared notion of "no wildcard".
-    let subject_concrete = pattern_is_concrete(&body.subject);
-    let audience_concrete = body.audience.as_deref().map(pattern_is_concrete);
-
-    // A wildcard subject with no concrete audience matches every token the
-    // issuer emits, i.e. the whole issuer acts as this tenant. Require a
-    // concrete audience to bound such a trust, at any role.
-    if !subject_concrete && audience_concrete != Some(true) {
-        return Err(DBError::OidcTrustTooBroad {
-            reason: "a wildcard 'subject' requires a concrete (non-wildcard) 'audience'"
-                .to_string(),
-        }
-        .into());
-    }
-    // Above `read`, both subject and audience must be concrete: an elevated
-    // trust must name exactly one workload identity, not a pattern.
-    if requested > Role::Read && !(subject_concrete && audience_concrete == Some(true)) {
-        return Err(DBError::OidcTrustTooBroad {
-            reason:
-                "subject and audience must be concrete (no '*' wildcard) for a role above 'read'"
-                    .to_string(),
-        }
-        .into());
-    }
+    // A trust is always scoped to a tenant (the acting tenant it is created in),
+    // and tenant selection at auth time comes from the Feldera-Tenant header when
+    // a token matches several tenants. So `subject`/`audience` carry no breadth
+    // restriction here; `audience`, if set, is only an extra match filter.
 
     state
         .db

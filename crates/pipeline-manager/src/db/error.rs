@@ -158,8 +158,9 @@ pub enum DBError {
     EmptyOidcTrustField {
         field: String,
     },
-    OidcTrustTooBroad {
-        reason: String,
+    AmbiguousOidcTenant,
+    OidcTenantNotTrusted {
+        tenant: String,
     },
     InvalidOidcToken {
         reason: String,
@@ -660,8 +661,15 @@ impl Display for DBError {
                     "OIDC trust relationship field '{field}' must not be empty"
                 )
             }
-            DBError::OidcTrustTooBroad { reason } => {
-                write!(f, "OIDC trust relationship is too broad: {reason}")
+            DBError::AmbiguousOidcTenant => {
+                write!(
+                    f,
+                    "Token matches trust relationships in multiple tenants; \
+                     set the Feldera-Tenant header to select one"
+                )
+            }
+            DBError::OidcTenantNotTrusted { tenant } => {
+                write!(f, "Token is not trusted in tenant '{tenant}'")
             }
             DBError::InvalidOidcToken { reason } => {
                 write!(f, "Invalid OIDC token: {reason}")
@@ -972,7 +980,8 @@ impl DetailedError for DBError {
             Self::UnknownUser { .. } => Cow::from("UnknownUser"),
             Self::UnknownOidcTrust { .. } => Cow::from("UnknownOidcTrust"),
             Self::EmptyOidcTrustField { .. } => Cow::from("EmptyOidcTrustField"),
-            Self::OidcTrustTooBroad { .. } => Cow::from("OidcTrustTooBroad"),
+            Self::AmbiguousOidcTenant => Cow::from("AmbiguousOidcTenant"),
+            Self::OidcTenantNotTrusted { .. } => Cow::from("OidcTenantNotTrusted"),
             Self::InvalidOidcToken { .. } => Cow::from("InvalidOidcToken"),
             Self::UnauthorizedOidcToken => Cow::from("UnauthorizedOidcToken"),
             Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
@@ -1097,7 +1106,8 @@ impl ResponseError for DBError {
             Self::UnknownUser { .. } => StatusCode::NOT_FOUND,
             Self::UnknownOidcTrust { .. } => StatusCode::NOT_FOUND,
             Self::EmptyOidcTrustField { .. } => StatusCode::BAD_REQUEST,
-            Self::OidcTrustTooBroad { .. } => StatusCode::BAD_REQUEST,
+            Self::AmbiguousOidcTenant => StatusCode::BAD_REQUEST,
+            Self::OidcTenantNotTrusted { .. } => StatusCode::FORBIDDEN,
             Self::InvalidOidcToken { .. } => StatusCode::UNAUTHORIZED,
             Self::UnauthorizedOidcToken => StatusCode::UNAUTHORIZED,
             Self::UnknownPipeline { .. } => StatusCode::NOT_FOUND,
