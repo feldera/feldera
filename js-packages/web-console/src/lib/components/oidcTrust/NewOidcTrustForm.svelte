@@ -8,16 +8,24 @@
   import { page } from '$app/state'
   import { postOidcTrust, type Role } from '$lib/services/pipelineManager'
 
-  const { onSubmit, onSuccess }: { onSubmit?: () => void; onSuccess?: () => void } = $props()
+  const {
+    onSubmit,
+    onSuccess,
+    allowOwner = false,
+    tenant
+  }: { onSubmit?: () => void; onSuccess?: () => void; allowOwner?: boolean; tenant?: string } =
+    $props()
 
   // Backend rejections (role cap, wildcard/audience breadth, duplicate name,
   // ...) can concern any field, so show them as a form-level error rather than
   // pinning every one to the Name field.
   let submitError = $state('')
 
-  // The backend caps the granted role at the caller's role; only an owner may
-  // grant `owner`, so offer it only then.
-  const isOwner = page.data.feldera?.isOwner ?? false
+  // `owner` is a platform-wide grant, so it is offered only to an owner AND only
+  // where owner trusts belong (the Admin page's owner-access section, which
+  // passes `allowOwner`). The tenant-scoped "Manage OIDC trust" menu never
+  // offers it. read/write/admin trusts are creatable by any tenant admin.
+  const canGrantOwner = allowOwner && (page.data.feldera?.isOwner ?? false)
 
   const schema = va.object({
     name: va.pipe(va.string(), va.minLength(1, 'Specify a name')),
@@ -46,14 +54,17 @@
         }
         submitError = ''
         onSubmit?.()
-        postOidcTrust({
-          name: f.data.name,
-          issuer: f.data.issuer,
-          subject: f.data.subject,
-          audience: f.data.audience || undefined,
-          description: f.data.description || undefined,
-          role: f.data.role
-        }).then(
+        postOidcTrust(
+          {
+            name: f.data.name,
+            issuer: f.data.issuer,
+            subject: f.data.subject,
+            audience: f.data.audience || undefined,
+            description: f.data.description || undefined,
+            role: f.data.role
+          },
+          tenant
+        ).then(
           () => onSuccess?.(),
           (e) => {
             submitError = e instanceof Error ? e.message : String(e)
@@ -160,7 +171,7 @@
           <option value="read">read</option>
           <option value="write">write</option>
           <option value="admin">admin</option>
-          {#if isOwner}
+          {#if canGrantOwner}
             <option value="owner">owner</option>
           {/if}
         </Select>
