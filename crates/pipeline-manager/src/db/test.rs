@@ -874,8 +874,9 @@ async fn rbac_login_resolution_and_membership() {
 }
 
 /// Federated-token resolution: the issuer gate rejects unregistered issuers
-/// before any fetch, the audience disambiguates between tenants trusting the
-/// same identity, and an ambiguous cross-tenant match fails closed.
+/// before any fetch, an optional audience narrows candidates, and a token
+/// trusted by several tenants returns all of them (the caller disambiguates via
+/// the Feldera-Tenant header, verified at the auth layer).
 #[tokio::test]
 async fn oidc_trust_matching_and_issuer_gate() {
     let handle = test_setup().await;
@@ -908,7 +909,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
         .match_oidc_trust(iss, "system:sa:app", &["a".to_string()])
         .await
         .unwrap()
-        .is_none());
+        .is_empty());
 
     // Two tenants trust the same issuer+subject, disambiguated by audience.
     let sub = "system:sa:app";
@@ -948,7 +949,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
             .match_oidc_trust(iss, sub, &["a".to_string()])
             .await
             .unwrap(),
-        Some((tenant_a, Role::Write))
+        vec![(tenant_a, Role::Write)]
     );
     assert_eq!(
         handle
@@ -956,7 +957,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
             .match_oidc_trust(iss, sub, &["b".to_string()])
             .await
             .unwrap(),
-        Some((tenant_b, Role::Write))
+        vec![(tenant_b, Role::Write)]
     );
     // A token whose audience matches neither trust does not resolve.
     assert!(handle
@@ -964,11 +965,12 @@ async fn oidc_trust_matching_and_issuer_gate() {
         .match_oidc_trust(iss, sub, &["c".to_string()])
         .await
         .unwrap()
-        .is_none());
+        .is_empty());
 
     // A third tenant trusts the same issuer+subject with NO audience, so it
-    // matches any token. A token now resolves to two distinct tenants: the
-    // match is ambiguous and fails closed rather than picking one arbitrarily.
+    // matches any token. A token with audience "a" now resolves to two tenants
+    // (a via its audience, c via the wildcard); both are returned so the auth
+    // layer can pick one from the Feldera-Tenant header.
     let tenant_c = mk_tenant("c").await;
     handle
         .db
@@ -984,14 +986,15 @@ async fn oidc_trust_matching_and_issuer_gate() {
         )
         .await
         .unwrap();
-    assert!(matches!(
-        handle
-            .db
-            .match_oidc_trust(iss, sub, &["a".to_string()])
-            .await
-            .unwrap_err(),
-        DBError::UnauthorizedOidcToken
-    ));
+    let mut got = handle
+        .db
+        .match_oidc_trust(iss, sub, &["a".to_string()])
+        .await
+        .unwrap();
+    got.sort_by_key(|(t, _)| t.0);
+    let mut want = vec![(tenant_a, Role::Write), (tenant_c, Role::Read)];
+    want.sort_by_key(|(t, _)| t.0);
+    assert_eq!(got, want);
 }
 
 /// Pre-provisioning: an admin grants a role by identity before first login; the
@@ -5089,8 +5092,8 @@ impl Storage for Mutex<DbModel> {
         _issuer: &str,
         _subject: &str,
         _audiences: &[String],
-    ) -> DBResult<Option<(TenantId, Role)>> {
-        Ok(None)
+    ) -> DBResult<Vec<(TenantId, Role)>> {
+        Ok(vec![])
     }
 
     // RBAC user/membership methods are not exercised by the proptest model.
