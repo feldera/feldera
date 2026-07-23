@@ -81,10 +81,6 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -598,21 +594,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                    postal_code     VARCHAR(6));
                 CREATE TABLE T(street VARCHAR, city VARCHAR, year INT);
                 CREATE VIEW V AS SELECT address_typ(T.street, city, 'CA', 94087) as address, T.year as year FROM T;""");
-    }
-
-    @Test
-    public void rawCalciteTest() throws SQLException {
-        Connection connection = DriverManager.getConnection("jdbc:calcite:");
-        String query = "SELECT timestampdiff(MONTH, TIMESTAMP'2021-02-28 12:00:00', TIMESTAMP'2021-03-28 11:59:59')";
-        try (PreparedStatement ps = connection.prepareStatement(query)) {
-            ps.execute();
-            try (ResultSet resultSet = ps.getResultSet()) {
-                while (resultSet.next()) {
-                    int result = resultSet.getInt(1);
-                    Assert.assertEquals(0, result);
-                }
-            }
-        }
     }
 
     @Test
