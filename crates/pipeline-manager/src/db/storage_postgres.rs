@@ -361,7 +361,7 @@ impl Storage for StoragePostgres {
         issuer: &str,
         subject: &str,
         audiences: &[String],
-    ) -> Result<Option<(TenantId, Role)>, DBError> {
+    ) -> Result<Vec<(TenantId, Role)>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let result =
