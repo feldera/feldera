@@ -32,13 +32,11 @@ export type AddMemberRequest = {
    * Optional email for display in the member list.
    */
   email?: string | null
-  /**
-   * OIDC issuer the user authenticates through (matches the JWT `iss` claim).
-   */
-  provider: string
   role: Role
   /**
-   * OIDC subject (matches the JWT `sub` claim).
+   * OIDC subject (matches the JWT `sub` claim). The issuer is not settable:
+   * members authenticate through the platform's single configured issuer, so
+   * the grant is keyed to that issuer automatically.
    */
   subject: string
 }
@@ -3237,11 +3235,6 @@ export type NewOidcTrustResponse = {
  */
 export type NewTenantRequest = {
   name: string
-  /**
-   * Identity provider the tenant is keyed under. Defaults to `manual` for
-   * tenants created out of band by an owner.
-   */
-  provider?: string | null
 }
 
 /**
@@ -6345,7 +6338,13 @@ export type GetMetricsResponse = GetMetricsResponses[keyof GetMetricsResponses]
 export type ListOidcTrustData = {
   body?: never
   path?: never
-  query?: never
+  query?: {
+    /**
+     * Operate on platform-wide owner trusts (which belong to no tenant) instead
+     * of the caller's tenant. Owner-only.
+     */
+    platform?: boolean
+  }
   url: '/v0/oidc_trust'
 }
 
@@ -6401,7 +6400,13 @@ export type DeleteOidcTrustData = {
      */
     name: string
   }
-  query?: never
+  query?: {
+    /**
+     * Operate on platform-wide owner trusts (which belong to no tenant) instead
+     * of the caller's tenant. Owner-only.
+     */
+    platform?: boolean
+  }
   url: '/v0/oidc_trust/{name}'
 }
 
@@ -6429,7 +6434,13 @@ export type GetOidcTrustData = {
      */
     name: string
   }
-  query?: never
+  query?: {
+    /**
+     * Operate on platform-wide owner trusts (which belong to no tenant) instead
+     * of the caller's tenant. Owner-only.
+     */
+    platform?: boolean
+  }
   url: '/v0/oidc_trust/{name}'
 }
 
@@ -8479,7 +8490,7 @@ export type CreateTenantData = {
 
 export type CreateTenantErrors = {
   /**
-   * A tenant with that name and provider already exists
+   * A tenant with that name already exists
    */
   409: ErrorResponse
 }

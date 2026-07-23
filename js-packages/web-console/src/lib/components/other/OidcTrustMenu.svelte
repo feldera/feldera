@@ -1,5 +1,6 @@
 <script lang="ts">
   import { asyncReadable } from '@square/svelte-store'
+  import { page } from '$app/state'
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import NewOidcTrustForm from '$lib/components/oidcTrust/NewOidcTrustForm.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
@@ -9,13 +10,18 @@
     type OidcTrustDescr
   } from '$lib/services/pipelineManager'
 
+  const tenantName = $derived(page.data.feldera?.tenantName ?? 'current tenant')
   const trusts = asyncReadable<OidcTrustDescr[]>([], getOidcTrustList, { reloadable: true })
 
   const globalDialog = useGlobalDialog()
   const thisDialog = globalDialog.dialog
 </script>
 
-<GenericDialog content={{ title: 'Manage OIDC trust relationships' }}>
+<GenericDialog content={{ title: `Manage OIDC trust — ${tenantName}` }}>
+  <p class="text-sm opacity-70">
+    Grant read/write/admin to workloads (CI, services) in tenant <b>{tenantName}</b> by trusting JWTs
+    from an issuer. Platform-wide owner trusts are managed on the Admin page.
+  </p>
   <div class="scrollbar flex max-h-[80vh] flex-col gap-2 overflow-auto">
     {#each $trusts as trust}
       {#snippet deleteDialog()}
