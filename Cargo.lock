@@ -8851,6 +8851,7 @@ dependencies = [
  "actix-cors",
  "actix-files",
  "actix-http",
+ "actix-test",
  "actix-web",
  "actix-web-httpauth",
  "actix-web-static-files",

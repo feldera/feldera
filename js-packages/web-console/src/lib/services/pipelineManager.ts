@@ -965,6 +965,10 @@ export const pipelineLogsStream = async (
 
 const httpToWs = (endpoint: string) => endpoint.replace(/^http(s?):\/\//, 'ws$1://')
 
+// Subprotocol the manager echoes back on every browser WebSocket handshake.
+// Keep in sync with `WS_SUBPROTOCOL` in crates/feldera-types.
+const WS_SUBPROTOCOL = 'feldera-ws-v1'
+
 // base64url (no padding) — the only encoding whose alphabet is a valid
 // WebSocket subprotocol token, so it can carry the bearer token/tenant.
 const base64UrlEncode = (value: string): string =>
@@ -1011,7 +1015,7 @@ export const adHocQuery = async (pipelineName: string, query: string) => {
   const url = `${httpToWs(felderaEndpoint)}/v0/pipelines/${pipelineName}/query`
 
   const authHeaders = await getAuthorizationHeaders()
-  const protocols: string[] = []
+  const protocols = [WS_SUBPROTOCOL]
   const token = authHeaders['Authorization']?.replace(/^Bearer /, '')
   if (token) {
     protocols.push(`feldera-bearer.${base64UrlEncode(token)}`)
