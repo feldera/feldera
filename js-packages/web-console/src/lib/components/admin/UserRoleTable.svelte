@@ -5,6 +5,7 @@
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import {
     addTenantUser,
+    getAuthConfig,
     getTenantUsers,
     removeTenantUser,
     setTenantUserRole,
@@ -14,6 +15,18 @@
   // Optional tenant (UUID/name): an owner viewing another tenant's members via
   // the admin page's per-tenant picker, without changing the global selection.
   const { tenant }: { tenant?: string } = $props()
+
+  // Members authenticate through the platform's single configured OIDC issuer,
+  // so a pre-provisioned grant is always keyed to that issuer (shown read-only).
+  const authConfig = asyncReadable<Record<string, { issuer?: string }> | undefined>(
+    undefined,
+    getAuthConfig
+  )
+  const configuredIssuer = $derived(
+    $authConfig?.GenericOidc?.issuer ??
+      $authConfig?.AwsCognito?.issuer ??
+      '(configured at deploy time)'
+  )
 
   const users = asyncReadable<TenantUser[]>([], () => getTenantUsers(tenant), { reloadable: true })
   // Reload when the selected tenant changes.
@@ -30,7 +43,6 @@
   let errorMessage = $state('')
 
   // Pre-provision (add-member) form state.
-  let newProvider = $state('')
   let newSubject = $state('')
   let newEmail = $state('')
   let newRole = $state<'read' | 'write' | 'admin'>('read')
@@ -50,14 +62,12 @@
     try {
       await addTenantUser(
         {
-          provider: newProvider.trim(),
           subject: newSubject.trim(),
           email: newEmail.trim() || undefined,
           role: newRole
         },
         tenant
       )
-      newProvider = ''
       newSubject = ''
       newEmail = ''
       newRole = 'read'
@@ -90,8 +100,10 @@
 
 <div class="flex flex-col gap-3">
   <p class="text-sm opacity-70">
-    Members appear here after their first login. Assign read, write, or admin; remove a member to
-    revoke access. Pre-provision a member below to grant a role before their first login.
+    Members appear here after their first login. Assign read, write, or admin. Removing a member
+    drops their role now, but if your identity provider still grants them access they are re-added
+    at the default role on their next login — revoke at the provider for a durable block.
+    Pre-provision a member below to grant a role before their first login.
   </p>
   {#if errorMessage}
     <div class="rounded preset-outlined-error-600-400 p-2 text-sm">{errorMessage}</div>
@@ -103,9 +115,9 @@
     <div class="mb-2">
       <div class="font-medium">Pre-provision a member</div>
       <p class="text-sm opacity-70">
-        Grant a role before the user's first login. <b>Provider</b> and <b>Subject</b> must exactly
-        match the <code>iss</code> and <code>sub</code> claims of the JWT the user will present (from
-        your identity provider) — otherwise the grant will not attach at login. Email is for display only.
+        Grant a role before the user's first login. <b>Subject</b> must exactly match the
+        <code>sub</code> claim of the JWT the user will present — otherwise the grant will not attach
+        at login. The issuer is the platform's configured one (shown below). Email is for display only.
       </p>
     </div>
     <form
@@ -118,9 +130,11 @@
       <label class="flex flex-col text-sm">
         <span class="opacity-70">Provider — OIDC issuer (<code>iss</code>)</span>
         <input
-          class="input w-64"
-          bind:value={newProvider}
-          placeholder="https://accounts.google.com"
+          class="input w-64 opacity-60"
+          value={configuredIssuer}
+          readonly
+          disabled
+          title="Statically configured at deploy time (Helm: FELDERA_AUTH_ISSUER). Members authenticate through this issuer; it cannot be changed here."
         />
       </label>
       <label class="flex flex-col text-sm">
@@ -146,7 +160,7 @@
       <button
         type="submit"
         class="btn preset-filled-primary-500"
-        disabled={adding || !newProvider.trim() || !newSubject.trim()}
+        disabled={adding || !newSubject.trim()}
       >
         Add member
       </button>
@@ -159,7 +173,7 @@
           content={{
             title: `Remove ${user.email ?? user.subject}?`,
             description:
-              'They lose their role in this tenant until re-added or they log in again. Continue?',
+              'Drops their role in this tenant now. If your identity provider still grants them access, they are re-added at the default role on their next login; revoke at the provider for a durable block. Continue?',
             onSuccess: {
               name: 'Remove',
               callback: async () => {

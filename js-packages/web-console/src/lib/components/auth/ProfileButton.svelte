@@ -21,6 +21,9 @@
   const auth = page.data.auth as AuthDetails | undefined
   const role = $derived(page.data.feldera?.role)
   const canAdminister = $derived(role === 'admin' || role === 'owner')
+  // Every /v0/api_keys route requires at least `write`, so a read-only caller
+  // cannot even list keys; hide the menu for them entirely.
+  const canManageApiKeys = $derived(role === 'write' || role === 'admin' || role === 'owner')
 
   const globalDialog = useGlobalDialog()
 
@@ -91,9 +94,11 @@
           {#if canAdminister}
             {@render profileItemButton('Admin', adminIcon, { href: resolve('/admin') })}
           {/if}
-          {@render profileItemButton('Manage API keys', apiKeysIcon, {
-            onclick: () => (globalDialog.dialog = apiKeyDialog)
-          })}
+          {#if canManageApiKeys}
+            {@render profileItemButton('Manage API keys', apiKeysIcon, {
+              onclick: () => (globalDialog.dialog = apiKeyDialog)
+            })}
+          {/if}
           <!-- OIDC trust management is admin-only (the endpoints require admin),
                so only surface it when the caller can actually use it. -->
           {#if canAdminister}

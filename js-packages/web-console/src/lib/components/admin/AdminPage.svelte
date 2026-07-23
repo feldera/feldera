@@ -20,27 +20,22 @@
   const globalDialog = useGlobalDialog()
   let errorMessage = $state('')
 
-  // Owner-only per-tenant view: pick a tenant (by UUID) to inspect and manage
-  // its members and trusts in place, without changing the global acting-tenant.
-  // Empty string means the owner's own (globally selected) tenant.
-  let adminTenant = $state('')
+  // Owner-only: pick a tenant (by UUID) to inspect its members in place, without
+  // changing the global acting-tenant. Empty string means the current tenant.
+  let adminTenant = $state(page.data.feldera?.tenantId ?? '')
   const selectedTenant = $derived(adminTenant || undefined)
   const tenants = asyncReadable<Tenant[]>([], getTenants, { reloadable: true })
   const tenantLabel = $derived(
-    adminTenant ? ($tenants.find((t) => t.id === adminTenant)?.name ?? adminTenant) : 'current tenant'
+    $tenants.find((t) => t.id === adminTenant)?.name ??
+      page.data.feldera?.tenantName ??
+      'current tenant'
   )
 
-  // Trusts for the selected tenant, split by grant scope: `owner` is a
-  // platform-wide grant managed in its own section; read/write/admin are
-  // tenant-scoped.
-  const trusts = asyncReadable<OidcTrustDescr[]>([], () => getOidcTrustList(selectedTenant), {
+  // Owner (platform-wide) trusts belong to no tenant, so they are fetched with
+  // the platform scope and are independent of the tenant switcher. Per-tenant
+  // trusts are managed from the "Manage OIDC trust" menu, not here.
+  const ownerTrusts = asyncReadable<OidcTrustDescr[]>([], () => getOidcTrustList(undefined, true), {
     reloadable: true
-  })
-  const ownerTrusts = $derived($trusts.filter((t) => t.role === 'owner'))
-  const tenantTrusts = $derived($trusts.filter((t) => t.role !== 'owner'))
-  $effect(() => {
-    selectedTenant
-    trusts.reload?.()
   })
 </script>
 
@@ -54,80 +49,27 @@
   </section>
 {/snippet}
 
-{#snippet trustList(list: OidcTrustDescr[])}
-  <div class="scrollbar flex max-h-[40vh] flex-col gap-2 overflow-auto">
-    {#each list as trust (trust.id)}
-      {#snippet deleteTrustDialog()}
-        <GenericDialog
-          content={{
-            title: `Delete trust '${trust.name}'?`,
-            description: 'Tokens matching this trust immediately lose access. This cannot be undone.',
-            onSuccess: {
-              name: 'Delete',
-              callback: async () => {
-                try {
-                  await deleteOidcTrust(trust.name, selectedTenant)
-                  trusts.reload?.()
-                } catch (e) {
-                  errorMessage = e instanceof Error ? e.message : String(e)
-                }
-                globalDialog.dialog = null
-              }
-            },
-            onCancel: {
-              callback: () => {
-                globalDialog.dialog = null
-              }
-            }
-          }}
-          noclose
-          danger
-        ></GenericDialog>
-      {/snippet}
-      <div class="flex flex-nowrap items-center gap-2 border-b border-surface-100-900 py-2">
-        <div class="w-full">
-          <div>
-            {trust.name}
-            <span class="text-xs opacity-70">[{trust.role}]</span>
-          </div>
-          <div class="text-sm opacity-70">
-            <code>{trust.issuer}</code> · sub=<code>{trust.subject}</code>{#if trust.audience}
-              · aud=<code>{trust.audience}</code>{/if}
-          </div>
-          {#if trust.description}
-            <div class="text-xs opacity-70">{trust.description}</div>
-          {/if}
-        </div>
-        <button
-          class="fd fd-trash-2 btn-icon text-[20px]"
-          aria-label="Delete {trust.name} trust relationship"
-          onclick={() => (globalDialog.dialog = deleteTrustDialog)}
-        ></button>
-      </div>
-    {:else}
-      <div class="opacity-70">None configured</div>
-    {/each}
-  </div>
-{/snippet}
-
 <div class="mx-auto flex w-full max-w-4xl flex-col gap-6 px-2 pb-10 md:px-8">
   <h1 class="h2">Administration</h1>
 
+  {#if errorMessage}
+    <div class="rounded preset-outlined-error-600-400 p-2 text-sm">{errorMessage}</div>
+  {/if}
+
   {#if isOwner}
-    <!-- Owner-only tenant switcher. Prominent so it is not mistaken for a minor
-         control: everything below (users, trusts) reflects the chosen tenant. -->
+    <!-- Owner-only tenant switcher for the members view below. Prominent so it
+         is not mistaken for a minor control. -->
     <div
       class="flex flex-wrap items-center gap-3 rounded-container preset-outlined-primary-500 p-3 md:p-4"
     >
-      <span class="fd fd-building text-[24px]"></span>
+      <span class="fd fd-users text-[24px]"></span>
       <div class="flex flex-col">
-        <span class="text-xs font-semibold uppercase tracking-wide opacity-70">
-          Viewing &amp; managing tenant
+        <span class="text-xs font-semibold tracking-wide uppercase opacity-70">
+          View members of tenant
         </span>
-        <span class="text-sm opacity-70">Everything below applies to this tenant.</span>
+        <span class="text-sm opacity-70">The users list below reflects this tenant.</span>
       </div>
       <Select class="ml-auto w-64" bind:value={adminTenant}>
-        <option value="">Current tenant</option>
         {#each $tenants as t (t.id)}
           <option value={t.id}>{t.name}</option>
         {/each}
@@ -135,43 +77,74 @@
     </div>
   {/if}
 
-  {#if errorMessage}
-    <div class="rounded preset-outlined-error-600-400 p-2 text-sm">{errorMessage}</div>
-  {/if}
-
   {#snippet usersBody()}
     <UserRoleTable tenant={selectedTenant}></UserRoleTable>
   {/snippet}
   {@render section(
     `Users & roles — ${tenantLabel}`,
-    'Members of this tenant and their roles.',
+    'Members of this tenant and their roles. To manage this tenant’s OIDC trust relationships, use the "Manage OIDC trust" menu.',
     usersBody
-  )}
-
-  {#snippet tenantTrustBody()}
-    {@render trustList(tenantTrusts)}
-    <NewOidcTrustForm allowOwner={false} tenant={selectedTenant} onSuccess={() => trusts.reload?.()}
-    ></NewOidcTrustForm>
-  {/snippet}
-  {@render section(
-    `Tenant OIDC trust — ${tenantLabel}`,
-    'Grant read/write/admin to workloads (CI, services) in this tenant by trusting JWTs from an issuer.',
-    tenantTrustBody
   )}
 
   {#if isOwner}
     {#snippet ownerTrustBody()}
-      {@render trustList(ownerTrusts)}
-      <NewOidcTrustForm
-        fixedRole="owner"
-        allowOwner={true}
-        tenant={selectedTenant}
-        onSuccess={() => trusts.reload?.()}
+      <div class="scrollbar flex max-h-[40vh] flex-col gap-2 overflow-auto">
+        {#each $ownerTrusts as trust (trust.id)}
+          {#snippet deleteTrustDialog()}
+            <GenericDialog
+              content={{
+                title: `Delete owner trust '${trust.name}'?`,
+                description:
+                  'Tokens matching this trust immediately lose platform-wide owner access. This cannot be undone.',
+                onSuccess: {
+                  name: 'Delete',
+                  callback: async () => {
+                    try {
+                      await deleteOidcTrust(trust.name, undefined, true)
+                      ownerTrusts.reload?.()
+                    } catch (e) {
+                      errorMessage = e instanceof Error ? e.message : String(e)
+                    }
+                    globalDialog.dialog = null
+                  }
+                },
+                onCancel: {
+                  callback: () => {
+                    globalDialog.dialog = null
+                  }
+                }
+              }}
+              noclose
+              danger
+            ></GenericDialog>
+          {/snippet}
+          <div class="flex flex-nowrap items-center gap-2 border-b border-surface-100-900 py-2">
+            <div class="w-full">
+              <div>{trust.name}</div>
+              <div class="text-sm opacity-70">
+                <code>{trust.issuer}</code> · sub=<code>{trust.subject}</code>{#if trust.audience}
+                  · aud=<code>{trust.audience}</code>{/if}
+              </div>
+              {#if trust.description}
+                <div class="text-xs opacity-70">{trust.description}</div>
+              {/if}
+            </div>
+            <button
+              class="fd fd-trash-2 btn-icon text-[20px]"
+              aria-label="Delete {trust.name} owner trust"
+              onclick={() => (globalDialog.dialog = deleteTrustDialog)}
+            ></button>
+          </div>
+        {:else}
+          <div class="opacity-70">No owner trust relationships configured</div>
+        {/each}
+      </div>
+      <NewOidcTrustForm fixedRole="owner" allowOwner={true} onSuccess={() => ownerTrusts.reload?.()}
       ></NewOidcTrustForm>
     {/snippet}
     {@render section(
-      'Owner access (platform-wide)',
-      'Owner trusts grant full platform access across all tenants. Only owners manage these, and only here.',
+      'Owner access (platform-wide OIDC trust)',
+      'Owner trusts grant full platform access across all tenants and belong to no single tenant. This is the only place to manage them; a matching workload selects the tenant it acts in with the Feldera-Tenant header.',
       ownerTrustBody
     )}
 
