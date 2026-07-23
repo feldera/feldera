@@ -23,8 +23,38 @@ use actix_web::{
 };
 use serde::{Deserialize, Serialize};
 use tracing::info;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
+
+/// Selects which trusts an operation targets.
+#[derive(Debug, Default, Deserialize, IntoParams)]
+pub(crate) struct TrustScope {
+    /// Operate on platform-wide owner trusts (which belong to no tenant) instead
+    /// of the caller's tenant. Owner-only.
+    #[serde(default)]
+    platform: bool,
+}
+
+// The scope a trust operation targets: `None` (platform-wide owner trusts, which
+// only an owner may touch) when `platform` is set, else the caller's tenant.
+fn trust_scope(
+    scope: &TrustScope,
+    tenant_id: TenantId,
+    role: Role,
+) -> Result<Option<TenantId>, ManagerError> {
+    if scope.platform {
+        if role != Role::Owner {
+            return Err(DBError::InsufficientPermissions {
+                required: Role::Owner,
+                actual: role,
+            }
+            .into());
+        }
+        Ok(None)
+    } else {
+        Ok(Some(tenant_id))
+    }
+}
 
 /// Request to create a new OIDC trust relationship.
 #[derive(Debug, Deserialize, ToSchema)]
@@ -72,6 +102,7 @@ pub(crate) struct NewOidcTrustResponse {
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
+    params(TrustScope),
     responses(
         (status = OK, description = "Trust relationships retrieved", body = [OidcTrustDescr]),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
@@ -82,8 +113,11 @@ pub(crate) struct NewOidcTrustResponse {
 pub(crate) async fn list_oidc_trust(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    principal: ReqData<AuthenticatedPrincipal>,
+    scope: web::Query<TrustScope>,
 ) -> Result<HttpResponse, ManagerError> {
-    let items = state.db.lock().await.list_oidc_trust(*tenant_id).await?;
+    let scope = trust_scope(&scope, *tenant_id, principal.role)?;
+    let items = state.db.lock().await.list_oidc_trust(scope).await?;
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&items))
@@ -93,7 +127,7 @@ pub(crate) async fn list_oidc_trust(
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
-    params(("name" = String, Path, description = "Trust relationship name")),
+    params(("name" = String, Path, description = "Trust relationship name"), TrustScope),
     responses(
         (status = OK, description = "Trust relationship retrieved", body = OidcTrustDescr),
         (status = NOT_FOUND, description = "No relationship with that name", body = ErrorResponse)
@@ -104,15 +138,13 @@ pub(crate) async fn list_oidc_trust(
 pub(crate) async fn get_oidc_trust(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    principal: ReqData<AuthenticatedPrincipal>,
+    scope: web::Query<TrustScope>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let name = parse_url_parameter(&req, "name")?;
-    let item = state
-        .db
-        .lock()
-        .await
-        .get_oidc_trust(*tenant_id, &name)
-        .await?;
+    let scope = trust_scope(&scope, *tenant_id, principal.role)?;
+    let item = state.db.lock().await.get_oidc_trust(scope, &name).await?;
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&item))
@@ -151,17 +183,22 @@ pub(crate) async fn post_oidc_trust(
         .into());
     }
 
-    // A trust is always scoped to a tenant (the acting tenant it is created in),
-    // and tenant selection at auth time comes from the Feldera-Tenant header when
-    // a token matches several tenants. So `subject`/`audience` carry no breadth
-    // restriction here; `audience`, if set, is only an extra match filter.
+    // Scope follows the role: an owner trust is platform-wide (no tenant), any
+    // other role is scoped to the acting tenant. `subject`/`audience` carry no
+    // breadth restriction; `audience`, if set, is only an extra match filter and
+    // tenant selection at auth time comes from the Feldera-Tenant header.
+    let scope = if requested == Role::Owner {
+        None
+    } else {
+        Some(*tenant_id)
+    };
 
     state
         .db
         .lock()
         .await
         .create_oidc_trust(
-            *tenant_id,
+            scope,
             new_id,
             &body.name,
             body.description.as_deref(),
@@ -172,8 +209,8 @@ pub(crate) async fn post_oidc_trust(
         )
         .await?;
     info!(
-        "Created OIDC trust '{}' (tenant: {}, issuer: {})",
-        body.name, *tenant_id, body.issuer
+        "Created OIDC trust '{}' (scope: {:?}, issuer: {})",
+        body.name, scope, body.issuer
     );
     Ok(HttpResponse::Created()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -187,7 +224,7 @@ pub(crate) async fn post_oidc_trust(
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
-    params(("name" = String, Path, description = "Trust relationship name")),
+    params(("name" = String, Path, description = "Trust relationship name"), TrustScope),
     responses(
         (status = OK, description = "Trust relationship deleted"),
         (status = NOT_FOUND, description = "No relationship with that name", body = ErrorResponse)
@@ -198,15 +235,18 @@ pub(crate) async fn post_oidc_trust(
 pub(crate) async fn delete_oidc_trust(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    principal: ReqData<AuthenticatedPrincipal>,
+    scope: web::Query<TrustScope>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let name = parse_url_parameter(&req, "name")?;
+    let scope = trust_scope(&scope, *tenant_id, principal.role)?;
     state
         .db
         .lock()
         .await
-        .delete_oidc_trust(*tenant_id, &name)
+        .delete_oidc_trust(scope, &name)
         .await?;
-    info!("Deleted OIDC trust '{name}' (tenant: {})", *tenant_id);
+    info!("Deleted OIDC trust '{name}' (scope: {scope:?})");
     Ok(HttpResponse::Ok().finish())
 }

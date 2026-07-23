@@ -38,10 +38,9 @@ pub(crate) struct SetMemberRoleRequest {
 /// first login.
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct AddMemberRequest {
-    /// OIDC issuer the user authenticates through (matches the JWT `iss` claim).
-    #[schema(example = "https://accounts.google.com")]
-    pub provider: String,
-    /// OIDC subject (matches the JWT `sub` claim).
+    /// OIDC subject (matches the JWT `sub` claim). The issuer is not settable:
+    /// members authenticate through the platform's single configured issuer, so
+    /// the grant is keyed to that issuer automatically.
     #[schema(example = "user@acme.com")]
     pub subject: String,
     /// Optional email for display in the member list.
@@ -79,10 +78,6 @@ fn check_grantable_role(requested: Role, caller: Role) -> Result<(), ManagerErro
 pub(crate) struct NewTenantRequest {
     #[schema(example = "acme")]
     pub name: String,
-    /// Identity provider the tenant is keyed under. Defaults to `manual` for
-    /// tenants created out of band by an owner.
-    #[serde(default)]
-    pub provider: Option<String>,
 }
 
 fn parse_user_id(req: &HttpRequest) -> Result<UserId, ManagerError> {
@@ -215,10 +210,18 @@ pub(crate) async fn add_tenant_user(
     tenant_id: ReqData<TenantId>,
     principal: ReqData<AuthenticatedPrincipal>,
     body: web::Json<AddMemberRequest>,
+    req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let body = body.into_inner();
     check_grantable_role(body.role, principal.role)?;
 
+    // The provider is the platform's configured issuer, not caller-set: a human
+    // login's `iss` is always that issuer, so the grant must be keyed to it to
+    // attach (mirrors tenant creation).
+    let provider = req
+        .app_data::<crate::auth::AuthConfiguration>()
+        .map(|c| c.provider.issuer().to_string())
+        .unwrap_or_else(|| "manual".to_string());
     let user_id = state
         .db
         .lock()
@@ -226,7 +229,7 @@ pub(crate) async fn add_tenant_user(
         .preprovision_member(
             Uuid::now_v7(),
             *tenant_id,
-            &body.provider,
+            &provider,
             &body.subject,
             body.email.as_deref(),
             body.role,
@@ -273,14 +276,17 @@ pub(crate) async fn list_tenants(
 /// Create a tenant
 ///
 /// Explicitly create a tenant (owner-only), rather than relying on first login.
-/// Fails with a conflict if a tenant with the same name and provider exists.
+/// The tenant is keyed to the platform's configured OIDC issuer (statically set
+/// at deploy time, e.g. via Helm), so that logins from that issuer resolve into
+/// it; the issuer is not caller-settable. Fails with a conflict if a tenant with
+/// the same name already exists for that issuer.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     request_body = NewTenantRequest,
     responses(
         (status = CREATED, description = "Tenant created", body = NewTenantResponse),
-        (status = CONFLICT, description = "A tenant with that name and provider already exists", body = ErrorResponse),
+        (status = CONFLICT, description = "A tenant with that name already exists", body = ErrorResponse),
     ),
     tag = "Platform"
 )]
@@ -288,16 +294,27 @@ pub(crate) async fn list_tenants(
 pub(crate) async fn create_tenant(
     state: WebData<ServerState>,
     body: web::Json<NewTenantRequest>,
+    req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let body = body.into_inner();
-    let provider = body.provider.unwrap_or_else(|| "manual".to_string());
+    // The provider keys the tenant to the platform's configured issuer, so a
+    // login from that issuer resolves into it. It mirrors the token `iss` used
+    // at login (see `OidcClaim::provider`) and is deliberately not caller-set;
+    // `manual` only when auth is disabled (owner routes are then unreachable).
+    let provider = req
+        .app_data::<crate::auth::AuthConfiguration>()
+        .map(|c| c.provider.issuer().to_string())
+        .unwrap_or_else(|| "manual".to_string());
     let id = state
         .db
         .lock()
         .await
         .create_tenant(Uuid::now_v7(), &body.name, &provider)
         .await?;
-    info!("Created tenant '{}' ({id})", body.name);
+    info!(
+        "Created tenant '{}' ({id}, provider: {provider})",
+        body.name
+    );
     Ok(HttpResponse::Created()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&NewTenantResponse {
