@@ -12,13 +12,20 @@
     onSubmit,
     onSuccess,
     allowOwner = false,
+    fixedRole,
     tenant
-  }: { onSubmit?: () => void; onSuccess?: () => void; allowOwner?: boolean; tenant?: string } =
-    $props()
+  }: {
+    onSubmit?: () => void
+    onSuccess?: () => void
+    allowOwner?: boolean
+    // When set, the form creates trusts at exactly this role and hides the role
+    // picker (the admin page's owner-access section passes `fixedRole="owner"`).
+    fixedRole?: Role
+    tenant?: string
+  } = $props()
 
-  // Backend rejections (role cap, wildcard/audience breadth, duplicate name,
-  // ...) can concern any field, so show them as a form-level error rather than
-  // pinning every one to the Name field.
+  // Backend rejections (role cap, duplicate name, ...) can concern any field, so
+  // show them as a form-level error rather than pinning every one to Name.
   let submitError = $state('')
 
   // `owner` is a platform-wide grant, so it is offered only to an owner AND only
@@ -43,7 +50,7 @@
       subject: '',
       audience: '',
       description: '',
-      role: 'read' as Role
+      role: (fixedRole ?? 'read') as Role
     },
     {
       SPA: true,
@@ -163,26 +170,32 @@
     </Control>
   </Field>
 
-  <Field {form} name="role">
-    <Control>
-      {#snippet children(attrs)}
-        <Label>Role</Label>
-        <Select class="w-full" {...attrs} bind:value={$formData.role}>
-          <option value="read">read</option>
-          <option value="write">write</option>
-          <option value="admin">admin</option>
-          {#if canGrantOwner}
-            <option value="owner">owner</option>
-          {/if}
-        </Select>
-      {/snippet}
-    </Control>
-  </Field>
+  {#if fixedRole}
+    <input type="hidden" bind:value={$formData.role} />
+  {:else}
+    <Field {form} name="role">
+      <Control>
+        {#snippet children(attrs)}
+          <Label>Role</Label>
+          <Select class="w-full" {...attrs} bind:value={$formData.role}>
+            <option value="read">read</option>
+            <option value="write">write</option>
+            <option value="admin">admin</option>
+            {#if canGrantOwner}
+              <option value="owner">owner</option>
+            {/if}
+          </Select>
+        {/snippet}
+      </Control>
+    </Field>
+  {/if}
 
   <p class="text-xs opacity-70">
     JWTs from <code>Issuer</code> whose <code>sub</code> matches
-    <code>Subject pattern</code> (and, if specified, whose <code>aud</code> matches
-    <code>Audience pattern</code>) authorize requests as this tenant. <code>*</code> is a wildcard.
+    <code>Subject pattern</code> authorize requests. <code>Audience pattern</code>, if set, is an
+    extra filter on the <code>aud</code> claim (not the tenant selector). <code>*</code> is a
+    wildcard. When one identity is trusted by several tenants, the
+    <code>Feldera-Tenant</code> header picks which one.
   </p>
 
   {#if submitError}
