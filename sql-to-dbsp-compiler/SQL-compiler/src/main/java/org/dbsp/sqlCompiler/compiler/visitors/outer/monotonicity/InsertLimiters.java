@@ -1899,7 +1899,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             fields.get(0).getType(), dataType), true, replacement.getOutput(0));
             this.addOperator(ix);
             DBSPWindowOperator window = new DBSPWindowOperator(
-                    operator.getRelNode(), true, true, ix.outputPort(), apply.outputPort());
+                    operator.getRelNode(), true, true,
+                    // -infinity
+                    true, ix.outputPort(), apply.outputPort());
             this.addOperator(window);
             replacement = new DBSPDeindexOperator(operator.getRelNode(), operator.getNode(), window.outputPort());
         }
@@ -2193,7 +2195,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     this.addOperator(ix);
                     // The upper bound must be exclusive
                     DBSPWindowOperator window = new DBSPWindowOperator(
-                            operator.getRelNode(), true, false, ix.outputPort(), apply.outputPort());
+                            operator.getRelNode(), true, false,
+                            // -infinity
+                            true, ix.outputPort(), apply.outputPort());
                     this.addOperator(window);
                     // GC for window: the waterline delayed
                     PartiallyMonotoneTuple projection = new PartiallyMonotoneTuple(

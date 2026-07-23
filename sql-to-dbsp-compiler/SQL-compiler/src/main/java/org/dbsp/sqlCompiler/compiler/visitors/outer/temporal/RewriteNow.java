@@ -30,7 +30,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ReferenceMap;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.ToJsonVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.FindSourcePositions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.InsertLimiters;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
@@ -377,11 +377,13 @@ public class RewriteNow extends CircuitCloneVisitor {
         boolean lowerInclusive = bounds.lower() == null || bounds.lower().inclusive();
         boolean upperInclusive = bounds.upper() == null || bounds.upper().inclusive();
         CalciteRelNode windowNode = relNode.copy();
-        ToJsonVisitor.FindSourcePositions finder = new ToJsonVisitor.FindSourcePositions(this.compiler, false);
+        FindSourcePositions finder = new FindSourcePositions(this.compiler, false);
         finder.apply(makeWindow);
         windowNode.addSourcePositions(finder.positions);
         DBSPSimpleOperator window = new DBSPWindowOperator(
-                windowNode, lowerInclusive, upperInclusive, diffIndex.outputPort(), windowBounds.outputPort());
+                windowNode, lowerInclusive, upperInclusive,
+                // -infinity if not specified
+                bounds.lower() == null, diffIndex.outputPort(), windowBounds.outputPort());
         this.addOperator(window);
         DBSPSimpleOperator winInt = new DBSPIntegrateOperator(relNode, window.outputPort());
         this.addOperator(winInt);

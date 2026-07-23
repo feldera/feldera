@@ -24,8 +24,8 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.FindSourcePositions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.ToJsonVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -153,7 +153,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
 
     String getPositions(IDBSPInnerNode node) {
         StringBuilder result = new StringBuilder();
-        ToJsonVisitor.FindSourcePositions finder = new ToJsonVisitor.FindSourcePositions(this.compiler, true);
+        FindSourcePositions finder = new FindSourcePositions(this.compiler, true);
         finder.apply(node);
         for (SourcePositionRange r : finder.getPositions()) {
             result.append(r.toShortString());

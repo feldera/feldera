@@ -33,6 +33,15 @@ public class RelAnd extends CalciteRelNode {
     }
 
     @Override
+    public List<SourcePositionRange> getSourcePositions() {
+        List<SourcePositionRange> result = new ArrayList<>();
+        for (LastRel lr: this.nodes) {
+            result.addAll(lr.getSourcePositions());
+        }
+        return result;
+    }
+
+    @Override
     public IIndentStream asJson(IIndentStream stream, Map<RelNode, Integer> idRemap) {
         if (this.nodes.size() == 1) {
             return this.nodes.iterator().next().asJson(stream, idRemap);

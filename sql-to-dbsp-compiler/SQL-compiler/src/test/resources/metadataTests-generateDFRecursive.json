@@ -454,7 +454,6 @@
         "final": 10
       },
       "positions": [
-        {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1},
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
       ],
       "persistent_id": "08b99a30ddf054bdadc7c1e3588e18db716ca20bdccad6761e24181bc61ccc63"

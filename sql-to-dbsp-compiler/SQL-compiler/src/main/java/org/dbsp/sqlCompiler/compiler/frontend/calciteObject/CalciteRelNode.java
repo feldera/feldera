@@ -70,9 +70,6 @@ public abstract class CalciteRelNode extends CalciteObject implements IHasId {
         }
     }
 
-    @Override
-    public String getMessage() { return ""; }
-
     public abstract IIndentStream asJson(IIndentStream stream, Map<RelNode, Integer> idRemap);
 
     public abstract CalciteRelNode remove(RelNode node);

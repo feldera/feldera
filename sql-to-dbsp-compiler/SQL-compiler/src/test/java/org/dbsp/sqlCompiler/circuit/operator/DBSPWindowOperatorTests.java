@@ -44,7 +44,7 @@ public class DBSPWindowOperatorTests {
 
     private static DBSPWindowOperator window(
             DBSPExpression lower, DBSPExpression upper) {
-        return new DBSPWindowOperator(CalciteEmptyRel.INSTANCE, true, true,
+        return new DBSPWindowOperator(CalciteEmptyRel.INSTANCE, true, true, false,
                 dataInput().outputPort(), controlInput(lower, upper));
     }
 

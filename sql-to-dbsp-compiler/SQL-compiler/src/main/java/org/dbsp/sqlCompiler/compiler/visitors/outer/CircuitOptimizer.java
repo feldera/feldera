@@ -180,6 +180,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new MerkleOuter(compiler, true));
         this.add(new MerkleOuter(compiler, false));
         this.add(new TagRegions(compiler));
+        this.add(new FindUnboundedState(compiler));
         this.add(new CircuitStatistics(compiler));
     }
 
