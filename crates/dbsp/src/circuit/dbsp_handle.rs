@@ -1392,9 +1392,10 @@ pub struct DBSPHandle {
     /// The phase of the in-progress concurrent bootstrap if there is one in progress.
     concurrent_bootstrap_phase: Option<ConcurrentBootstrapPhase>,
 
-    /// True while a transaction is open on the main circuit (started with
-    /// [`Self::start_transaction`] and not yet committed).
-    main_transaction_open: bool,
+    /// While a transaction is open on the main circuit (started with
+    /// [`Self::start_transaction`] and not yet committed), this is the time at
+    /// which it started.
+    main_transaction_start: Option<Instant>,
 
     /// Sticky flag set when a concurrent bootstrap is aborted (see
     /// [`Self::destroy_bootstrap_circuit`]).
@@ -1473,7 +1474,7 @@ impl DBSPHandle {
             bootstrap_circuit_state: BootstrapCircuitState::None,
             concurrent_bootstrap_info: None,
             concurrent_bootstrap_phase: None,
-            main_transaction_open: false,
+            main_transaction_start: None,
             concurrent_bootstrap_aborted: false,
         })
     }
@@ -1650,9 +1651,9 @@ impl DBSPHandle {
     /// views after cutover.
     pub fn transaction(&mut self) -> Result<(), DbspError> {
         self.check_main_circuit_available()?;
-        DBSP_STEP.fetch_add(1, Ordering::Relaxed);
         let start = Instant::now();
         let result = self.broadcast_command(Command::Transaction, |_, _| {});
+        DBSP_STEP.fetch_add(1, Ordering::Relaxed);
         DBSP_STEP_LATENCY_MICROSECONDS
             .lock()
             .unwrap()
@@ -1697,7 +1698,7 @@ impl DBSPHandle {
                 start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
         }
         if result.is_ok() {
-            self.main_transaction_open = true;
+            self.main_transaction_start = Some(start);
         }
         result
     }
@@ -1729,7 +1730,13 @@ impl DBSPHandle {
 
         if commit_complete {
             debug!("Commit complete");
-            self.main_transaction_open = false;
+            if let Some(main_transaction_start) = self.main_transaction_start.take() {
+                DBSP_STEP.fetch_add(1, Ordering::Relaxed);
+                DBSP_STEP_LATENCY_MICROSECONDS
+                    .lock()
+                    .unwrap()
+                    .record_elapsed(main_transaction_start);
+            }
             self.check_bootstrap_complete()?;
         }
 
@@ -1950,7 +1957,7 @@ impl DBSPHandle {
             &[BootstrapCircuitState::Idle],
             "start the synchronization transaction",
         )?;
-        if self.main_transaction_open {
+        if self.main_transaction_start.is_some() {
             return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
                 "cannot start the synchronization transaction while the main circuit has \
                  a transaction in progress"
