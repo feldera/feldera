@@ -35,32 +35,52 @@ fn row_to_descr(row: &tokio_postgres::Row) -> Result<OidcTrustDescr, DBError> {
     })
 }
 
+// `tenant_id` scopes the query: `Some(t)` selects that tenant's trusts;
+// `None` selects the platform-wide owner trusts (rows with NULL tenant_id).
 pub async fn list_oidc_trust(
     txn: &Transaction<'_>,
-    tenant_id: TenantId,
+    tenant_id: Option<TenantId>,
 ) -> Result<Vec<OidcTrustDescr>, DBError> {
-    let stmt = txn
-        .prepare_cached(
-            "SELECT id, name, description, issuer, subject, audience, role \
-             FROM oidc_trust_relationship WHERE tenant_id = $1",
-        )
-        .await?;
-    let rows = txn.query(&stmt, &[&tenant_id.0]).await?;
+    const COLS: &str =
+        "SELECT id, name, description, issuer, subject, audience, role FROM oidc_trust_relationship";
+    let rows = match tenant_id {
+        Some(t) => {
+            let stmt = txn
+                .prepare_cached(&format!("{COLS} WHERE tenant_id = $1"))
+                .await?;
+            txn.query(&stmt, &[&t.0]).await?
+        }
+        None => {
+            let stmt = txn
+                .prepare_cached(&format!("{COLS} WHERE tenant_id IS NULL"))
+                .await?;
+            txn.query(&stmt, &[]).await?
+        }
+    };
     rows.iter().map(row_to_descr).collect()
 }
 
 pub async fn get_oidc_trust(
     txn: &Transaction<'_>,
-    tenant_id: TenantId,
+    tenant_id: Option<TenantId>,
     name: &str,
 ) -> Result<OidcTrustDescr, DBError> {
-    let stmt = txn
-        .prepare_cached(
-            "SELECT id, name, description, issuer, subject, audience, role \
-             FROM oidc_trust_relationship WHERE tenant_id = $1 AND name = $2",
-        )
-        .await?;
-    let maybe_row = txn.query_opt(&stmt, &[&tenant_id.0, &name]).await?;
+    const COLS: &str =
+        "SELECT id, name, description, issuer, subject, audience, role FROM oidc_trust_relationship";
+    let maybe_row = match tenant_id {
+        Some(t) => {
+            let stmt = txn
+                .prepare_cached(&format!("{COLS} WHERE tenant_id = $1 AND name = $2"))
+                .await?;
+            txn.query_opt(&stmt, &[&t.0, &name]).await?
+        }
+        None => {
+            let stmt = txn
+                .prepare_cached(&format!("{COLS} WHERE tenant_id IS NULL AND name = $1"))
+                .await?;
+            txn.query_opt(&stmt, &[&name]).await?
+        }
+    };
     match maybe_row {
         Some(row) => row_to_descr(&row),
         None => Err(DBError::UnknownOidcTrust {
@@ -71,13 +91,27 @@ pub async fn get_oidc_trust(
 
 pub async fn delete_oidc_trust(
     txn: &Transaction<'_>,
-    tenant_id: TenantId,
+    tenant_id: Option<TenantId>,
     name: &str,
 ) -> Result<(), DBError> {
-    let stmt = txn
-        .prepare_cached("DELETE FROM oidc_trust_relationship WHERE tenant_id = $1 AND name = $2")
-        .await?;
-    let res = txn.execute(&stmt, &[&tenant_id.0, &name]).await?;
+    let res = match tenant_id {
+        Some(t) => {
+            let stmt = txn
+                .prepare_cached(
+                    "DELETE FROM oidc_trust_relationship WHERE tenant_id = $1 AND name = $2",
+                )
+                .await?;
+            txn.execute(&stmt, &[&t.0, &name]).await?
+        }
+        None => {
+            let stmt = txn
+                .prepare_cached(
+                    "DELETE FROM oidc_trust_relationship WHERE tenant_id IS NULL AND name = $1",
+                )
+                .await?;
+            txn.execute(&stmt, &[&name]).await?
+        }
+    };
     if res > 0 {
         Ok(())
     } else {
@@ -87,10 +121,13 @@ pub async fn delete_oidc_trust(
     }
 }
 
+// `tenant_id` is `None` for a platform-wide owner trust and `Some` for a
+// tenant-scoped one; the caller pairs it with the role (owner iff None), which
+// the `oidc_trust_owner_is_platform` CHECK also enforces.
 #[allow(clippy::too_many_arguments)]
 pub async fn create_oidc_trust(
     txn: &Transaction<'_>,
-    tenant_id: TenantId,
+    tenant_id: Option<TenantId>,
     id: Uuid,
     name: &str,
     description: Option<&str>,
@@ -122,7 +159,7 @@ pub async fn create_oidc_trust(
             &stmt,
             &[
                 &id,
-                &tenant_id.0,
+                &tenant_id.map(|t| t.0),
                 &name,
                 &description,
                 &issuer,
@@ -132,8 +169,13 @@ pub async fn create_oidc_trust(
             ],
         )
         .await
-        .map_err(maybe_unique_violation)
-        .map_err(|e| maybe_tenant_id_foreign_key_constraint_err(e, tenant_id))?;
+        .map_err(maybe_unique_violation);
+    // The FK only exists for a concrete tenant; owner trusts (NULL) cannot
+    // violate it.
+    let res = match tenant_id {
+        Some(t) => res.map_err(|e| maybe_tenant_id_foreign_key_constraint_err(e, t))?,
+        None => res?,
+    };
     if res > 0 {
         Ok(())
     } else {
@@ -157,19 +199,20 @@ pub async fn is_trusted_issuer(txn: &Transaction<'_>, issuer: &str) -> Result<bo
 
 /// Resolve a federated token to the tenant and role it is authorized for.
 ///
-/// All tenants that trust this token, one entry each with the most permissive
-/// matching role in that tenant. A trust is a candidate when it is registered
-/// for `issuer`, its subject pattern matches `subject`, and, if it sets an
-/// audience pattern, that pattern matches one of `audiences` (the audience is a
-/// security filter, not the tenant key). When the result spans several tenants
-/// the caller disambiguates with the `Feldera-Tenant` header. Sorted by tenant
-/// for a deterministic order.
+/// Every trust matching this token, one entry per scope with the most
+/// permissive matching role. A trust is a candidate when it is registered for
+/// `issuer`, its subject pattern matches `subject`, and, if it sets an audience
+/// pattern, that pattern matches one of `audiences` (the audience is a security
+/// filter, not the tenant key). The scope is the trust's `tenant_id`: `Some`
+/// for a tenant-scoped trust, `None` for a platform-wide owner trust. When the
+/// result spans several scopes the caller disambiguates with the
+/// `Feldera-Tenant` header. Sorted (owner scope first) for a deterministic order.
 pub async fn match_oidc_trust(
     txn: &Transaction<'_>,
     issuer: &str,
     subject: &str,
     audiences: &[String],
-) -> Result<Vec<(TenantId, Role)>, DBError> {
+) -> Result<Vec<(Option<TenantId>, Role)>, DBError> {
     let stmt = txn
         .prepare_cached(
             "SELECT tenant_id, subject, audience, role \
@@ -177,9 +220,9 @@ pub async fn match_oidc_trust(
         )
         .await?;
     let rows = txn.query(&stmt, &[&issuer]).await?;
-    let mut matched: Vec<(TenantId, Role)> = Vec::new();
+    let mut matched: Vec<(Option<TenantId>, Role)> = Vec::new();
     for row in rows {
-        let tenant_id = TenantId(row.get(0));
+        let tenant_id = row.get::<_, Option<Uuid>>(0).map(TenantId);
         let pattern_subject: String = row.get(1);
         let pattern_audience: Option<String> = row.get(2);
         let role = parse_role(&row.get::<_, String>(3))?;
@@ -197,6 +240,6 @@ pub async fn match_oidc_trust(
             None => matched.push((tenant_id, role)),
         }
     }
-    matched.sort_by_key(|(t, _)| t.0);
+    matched.sort_by_key(|(t, _)| t.map(|x| x.0));
     Ok(matched)
 }
