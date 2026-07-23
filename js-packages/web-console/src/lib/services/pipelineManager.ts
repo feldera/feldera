@@ -639,14 +639,34 @@ export type Tenant = TenantInfo
 // changing the global acting-tenant selection. Omit it to use the current tenant.
 const tenantHdr = (tenant?: string) => (tenant ? { headers: { 'Feldera-Tenant': tenant } } : {})
 
-export const getOidcTrustList = (tenant?: string, options?: FetchOptions) =>
-  mapResponse(_listOidcTrust({ ...tenantHdr(tenant), ...options }), (v) => v ?? [])
+// `platform: true` targets the platform-wide owner trusts (which belong to no
+// tenant, and only an owner may manage) instead of a tenant's trusts.
+const platformQuery = (platform?: boolean) => (platform ? { query: { platform: true } } : {})
+
+export const getOidcTrustList = (tenant?: string, platform?: boolean, options?: FetchOptions) =>
+  mapResponse(
+    _listOidcTrust({ ...tenantHdr(tenant), ...platformQuery(platform), ...options }),
+    (v) => v ?? []
+  )
 
 export const postOidcTrust = (body: NewOidcTrustRequest, tenant?: string, options?: FetchOptions) =>
   mapResponse(_postOidcTrust({ body, ...tenantHdr(tenant), ...options }), (v) => v)
 
-export const deleteOidcTrust = (name: string, tenant?: string, options?: FetchOptions) =>
-  mapResponse(_deleteOidcTrust({ path: { name }, ...tenantHdr(tenant), ...options }), (v) => v)
+export const deleteOidcTrust = (
+  name: string,
+  tenant?: string,
+  platform?: boolean,
+  options?: FetchOptions
+) =>
+  mapResponse(
+    _deleteOidcTrust({
+      path: { name },
+      ...tenantHdr(tenant),
+      ...platformQuery(platform),
+      ...options
+    }),
+    (v) => v
+  )
 
 // Tenant users & roles (min role: admin).
 
@@ -655,8 +675,10 @@ export const getTenantUsers = (tenant?: string, options?: FetchOptions) =>
 
 // Pre-provision a member by identity, before their first login. The grant is
 // dormant until that identity authenticates into the tenant through the IdP.
+// The member's provider (OIDC issuer) is fixed to the platform's configured
+// issuer server-side; only the subject/email/role are caller-supplied.
 export const addTenantUser = (
-  body: { provider: string; subject: string; email?: string; role: 'read' | 'write' | 'admin' },
+  body: { subject: string; email?: string; role: 'read' | 'write' | 'admin' },
   tenant?: string,
   options?: FetchOptions
 ) => mapResponse(_addTenantUser({ body, ...tenantHdr(tenant), ...options }), (v) => v)
@@ -683,11 +705,10 @@ export const removeTenantUser = (userId: string, tenant?: string, options?: Fetc
 export const getTenants = (options?: FetchOptions) =>
   mapResponse(_listTenants({ ...options }), (v) => v ?? [])
 
-export const createTenant = (name: string, provider?: string, options?: FetchOptions) =>
-  mapResponse(
-    _createTenant({ body: { name, ...(provider ? { provider } : {}) }, ...options }),
-    (v) => v
-  )
+// The tenant's provider (OIDC issuer) is fixed to the platform's configured
+// issuer server-side; it is not caller-settable.
+export const createTenant = (name: string, options?: FetchOptions) =>
+  mapResponse(_createTenant({ body: { name }, ...options }), (v) => v)
 
 export const dismissDeploymentError = (pipeline_name: string) =>
   mapResponse(postPipelineDismissError({ path: { pipeline_name } }), (v) => v)

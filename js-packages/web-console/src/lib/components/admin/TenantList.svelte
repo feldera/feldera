@@ -5,18 +5,34 @@
   import { clearConfigCaches } from '$lib/compositions/configCache'
   import { resolve } from '$lib/functions/svelte'
   import { setSelectedTenant } from '$lib/services/auth'
-  import { createTenant, getTenants, type Tenant } from '$lib/services/pipelineManager'
+  import {
+    createTenant,
+    getAuthConfig,
+    getTenants,
+    type Tenant
+  } from '$lib/services/pipelineManager'
 
   const tenants = asyncReadable<Tenant[]>([], getTenants, { reloadable: true })
 
+  // A new tenant is keyed to the platform's configured OIDC issuer (set at
+  // deploy time, e.g. via Helm), so logins from that issuer resolve into it.
+  // The issuer is not settable here; show it read-only.
+  const authConfig = asyncReadable<Record<string, { issuer?: string }> | undefined>(
+    undefined,
+    getAuthConfig
+  )
+  const configuredIssuer = $derived(
+    $authConfig?.GenericOidc?.issuer ??
+      $authConfig?.AwsCognito?.issuer ??
+      '(configured at deploy time)'
+  )
+
   // Compare/select by tenant id (UUID). Names are unique only per provider, so
-  // an owner-created ('manual') tenant and an OIDC-issuer tenant can share a
-  // name; the id is globally unique and the backend's Feldera-Tenant resolver
-  // accepts it unambiguously.
+  // the id is globally unique and the backend's Feldera-Tenant resolver accepts
+  // it unambiguously.
   const currentTenantId = $derived(page.data.feldera?.tenantId)
 
   let newName = $state('')
-  let newProvider = $state('')
   let creating = $state(false)
   let errorMessage = $state('')
 
@@ -28,9 +44,8 @@
     errorMessage = ''
     creating = true
     try {
-      await createTenant(newName.trim(), newProvider.trim() || undefined)
+      await createTenant(newName.trim())
       newName = ''
-      newProvider = ''
       tenants.reload?.()
     } catch (e) {
       errorMessage = e instanceof Error ? e.message : String(e)
@@ -92,9 +107,15 @@
       <span>New tenant name</span>
       <input class="input w-full" placeholder="acme-prod" bind:value={newName} />
     </label>
-    <label class="label w-48">
-      <span>Provider (optional)</span>
-      <input class="input w-full" placeholder="GenericOidc" bind:value={newProvider} />
+    <label class="label w-72">
+      <span>OIDC issuer</span>
+      <input
+        class="input w-full opacity-60"
+        value={configuredIssuer}
+        readonly
+        disabled
+        title="Statically configured at deploy time (Helm: FELDERA_AUTH_ISSUER). Tenants are keyed to this issuer so logins from it resolve into them; it cannot be changed here."
+      />
     </label>
     <button class="btn preset-filled-surface-50-950" disabled={creating}>Create</button>
   </form>

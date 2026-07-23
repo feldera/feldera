@@ -1847,7 +1847,10 @@ export const listTenants = <ThrowOnError extends boolean = true>(
  * Create a tenant
  *
  * Explicitly create a tenant (owner-only), rather than relying on first login.
- * Fails with a conflict if a tenant with the same name and provider exists.
+ * The tenant is keyed to the platform's configured OIDC issuer (statically set
+ * at deploy time, e.g. via Helm), so that logins from that issuer resolve into
+ * it; the issuer is not caller-settable. Fails with a conflict if a tenant with
+ * the same name already exists for that issuer.
  */
 export const createTenant = <ThrowOnError extends boolean = true>(
   options: Options<CreateTenantData, ThrowOnError>
