@@ -66,6 +66,7 @@ const installation = {
                         id: 'get-started/enterprise/authentication/index',
                     },
                     items: [
+                        'get-started/enterprise/authentication/roles',
                         'get-started/enterprise/authentication/aws-cognito',
                         'get-started/enterprise/authentication/okta-sso',
                     ]

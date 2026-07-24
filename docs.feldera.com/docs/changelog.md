@@ -20,18 +20,46 @@ import TabItem from '@theme/TabItem';
           the primary key.  As a result some programs that used to run
           with finite state will now have unbounded state.
 
-       ## v0.322.0
+        - Role-based access control (RBAC). Access is now governed by per-user,
+          per-tenant roles (`read` < `write` < `admin` < `owner`) rather than every
+          authenticated user having full access to their tenant. See
+          [Roles](/get-started/enterprise/authentication/roles) for the model.
+
+          Upgrading an existing authenticated installation: before RBAC every
+          authenticated user had read and write access; after the upgrade a returning
+          user starts with no membership and is admitted at the configured default role.
+          Set `authorization.defaultRole: write` (the binary default is `read`; the Helm
+          chart sets it to `write` in `values.yaml`) so returning users keep their read
+          and write access, and set
+          `authorization.owners` to bootstrap a platform owner, who can then grant
+          `admin` to whoever manages users and OIDC trust. The default role is applied
+          and recorded on a user's first login after the upgrade, so set it before the
+          first post-upgrade logins; changing it later does not re-grade users who have
+          already logged in (an owner or admin adjusts those individually). Tighten
+          `defaultRole` back to `read` once explicit roles are provisioned.
+
+        - Breaking change (API keys): the `scopes` array on API-key responses
+          (`GET /v0/api_keys`, `GET /v0/api_keys/{api_key_name}`) is replaced by a single
+          `role` string, one of `read` or `write` (lower-case). Clients that read the
+          `scopes` field must read `role` instead. Existing keys are migrated to `write`,
+          so their access is unchanged.
+
+        - Breaking change (API keys): `POST /v0/api_keys` without a `role` field now
+          creates a `read`-only key. Previously a new key carried read and write access.
+          Pass `{"role": "write"}` in the request body to keep the previous behavior.
+
+        ## v0.322.0
 
         - Pipeline API field `deployment_runtime_status_details` is now strongly typed,
           whereas before it was just a generic JSON value type. While `AwaitingApproval`,
           the diff is now located at `deployment_runtime_status_details.approval_diff`
           instead of being the whole details itself.
 
-        - Pipelines from this latest version onward will have their GET selector
+        - Pipelines from v0.322.0 onward will have their GET selector
           `status_with_connectors` connector stats cached, which are now updated along
           with the runtime status details within roughly 1-15s.
 
-       ## v0.319.0
+        ## v0.319.0
 
         - Cluster monitor events with information on the backing (Kubernetes) resources is
           no longer gated behind unstable feature `cluster_monitor_resources` (deprecated).
@@ -40,6 +68,8 @@ import TabItem from '@theme/TabItem';
           resources is shown in the Feldera Health page to every (authenticated) user.
           The cluster monitoring of resources can still be disabled by setting in the Helm
           chart `disableClusterMonitorResources` to `true`.
+
+        ## v0.316.0
 
         - A bug fix introduced a backward incompatible change to the replay journal format.
           This only affects pipelines configured with exactly-once fault tolerance. Such

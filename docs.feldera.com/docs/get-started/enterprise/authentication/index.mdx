@@ -24,6 +24,8 @@ We support multiple authorization use-cases through strategies to assign tenant 
 As an orthogonal feature, the authorized-groups startup parameter can be used to limit access to the users who are a member of at least one of the groups in this list. The membership is determined based on the `groups` claim of an OIDC Access token.
 Users must belong to at least one of the specified groups to access Feldera. If `authorizedGroups` is not specified or empty, no group restrictions apply.
 
+This group check applies to every principal, including platform owners: the membership check runs before owner resolution, so an identity listed in `owners` that is not in any authorized group is still denied access. Being an owner does not exempt a user from the group requirement.
+
 ## Tenant Assignment Strategies
 
 Feldera provides three different tenant assignment strategies to support different deployment patterns:
@@ -56,6 +58,28 @@ Listed below are example configurations for common authorization use-cases achie
 auth:
   enabled: false
 ```
+
+### Transitioning from no authentication to authentication
+
+A deployment that runs without authentication keeps all of its data under a
+single built-in tenant named `default`, whose id is the all-zero UUID
+`00000000-0000-0000-0000-000000000000`. When you enable authentication, each
+login resolves to its own tenant per the strategies above, not to the `default`
+tenant, so pipelines and API keys created while authentication was disabled are
+not visible to ordinary logins.
+
+To reach that data after enabling authentication, a platform
+[owner](/get-started/enterprise/authentication/roles) selects the default tenant
+explicitly with the `Feldera-Tenant` header:
+
+```bash
+curl -H "Authorization: Bearer $OWNER_TOKEN" \
+     -H "Feldera-Tenant: 00000000-0000-0000-0000-000000000000" \
+     https://<your-host>/v0/pipelines
+```
+
+Recreate the resources in a regular tenant as needed. Plan this migration before
+enabling authentication on a deployment that already holds data.
 
 ### Individual access
 
@@ -194,6 +218,14 @@ authorization:
 
   # OIDC audience claim validation (default: "feldera-api")
   authAudience: "feldera-api"           # Maps to: FELDERA_AUTH_AUDIENCE
+
+  # Platform owners: identities granted the platform-wide `owner` role (default: [])
+  owners:                               # Maps to: FELDERA_OWNERS
+    - "ops@example.com"
+
+  # Role for an authenticated user with no explicit membership yet (default: "read")
+  # Ship "write" when upgrading a pre-RBAC deployment; see the Roles page.
+  defaultRole: "write"                  # Maps to: FELDERA_AUTH_DEFAULT_ROLE
 ```
 
 ### Environment Variables Reference
@@ -216,6 +248,8 @@ FELDERA_AUTH_INDIVIDUAL_TENANT=true          # default: true
 FELDERA_AUTH_ISSUER_TENANT=false             # default: false
 FELDERA_AUTH_AUTHORIZED_GROUPS=group1,group2 # comma-separated list
 FELDERA_AUTH_AUDIENCE=feldera-api            # default: feldera-api
+FELDERA_OWNERS=ops@example.com               # comma-separated; default: (none)
+FELDERA_AUTH_DEFAULT_ROLE=read               # read or write; default: read
 
 # AWS Cognito specific
 AWS_COGNITO_LOGIN_URL=https://...
