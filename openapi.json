@@ -51,7 +51,7 @@
           "Platform"
         ],
         "summary": "List API Keys",
-        "description": "Retrieve a list of your API keys.",
+        "description": "Required role: `write` or higher.\n\nRetrieve a list of your API keys.",
         "operationId": "list_api_keys",
         "responses": {
           "200": {
@@ -89,7 +89,7 @@
           "Platform"
         ],
         "summary": "Create API Key",
-        "description": "Create a new API key with the specified name. The generated API key\nwill be returned in the response and cannot be retrieved again later.",
+        "description": "Required role: `write` or higher.\n\nCreate a new API key with the specified name. The generated API key\nwill be returned in the response and cannot be retrieved again later.",
         "operationId": "post_api_key",
         "requestBody": {
           "description": "",
@@ -142,7 +142,7 @@
           "Platform"
         ],
         "summary": "Get API Key",
-        "description": "Retrieve the metadata of a specific API key by its name.",
+        "description": "Required role: `write` or higher.\n\nRetrieve the metadata of a specific API key by its name.",
         "operationId": "get_api_key",
         "parameters": [
           {
@@ -198,7 +198,7 @@
           "Platform"
         ],
         "summary": "Delete API Key",
-        "description": "Remove an API key by its name.",
+        "description": "Required role: `write` or higher.\n\nRemove an API key by its name.",
         "operationId": "delete_api_key",
         "parameters": [
           {
@@ -246,7 +246,7 @@
           "Platform"
         ],
         "summary": "List Cluster Events",
-        "description": "Retrieve a list of retained cluster monitor events ordered from most recent to least recent.\n\nThe returned events only have limited details, the full details can be retrieved using\nthe `GET /v0/cluster/events/<event-id>` endpoint.\n\nCluster monitor events are collected at a periodic interval (every 10s), however only\nevery 10 minutes or if the overall health changes, does it get inserted into the database\n(and thus, served by this endpoint). At most 1000 events are retained (newest first),\nand events older than 72h are deleted. The latest event, if it already exists, is never\ncleaned up.",
+        "description": "Required role: `read` or higher.\n\nRetrieve a list of retained cluster monitor events ordered from most recent to least recent.\n\nThe returned events only have limited details, the full details can be retrieved using\nthe `GET /v0/cluster/events/<event-id>` endpoint.\n\nCluster monitor events are collected at a periodic interval (every 10s), however only\nevery 10 minutes or if the overall health changes, does it get inserted into the database\n(and thus, served by this endpoint). At most 1000 events are retained (newest first),\nand events older than 72h are deleted. The latest event, if it already exists, is never\ncleaned up.",
         "operationId": "list_cluster_events",
         "responses": {
           "200": {
@@ -296,7 +296,7 @@
           "Platform"
         ],
         "summary": "Get Cluster Event",
-        "description": "Get specific cluster monitor event.\n\nThe identifiers of the events can be retrieved via `GET /v0/cluster/events`.\nAt most 1000 events are retained (newest first), and events older than 72h are deleted.\nThe latest event, if it already exists, is never cleaned up.\nThis endpoint can return a 404 for an event that no longer exists due to clean-up.",
+        "description": "Required role: `read` or higher.\n\nGet specific cluster monitor event.\n\nThe identifiers of the events can be retrieved via `GET /v0/cluster/events`.\nAt most 1000 events are retained (newest first), and events older than 72h are deleted.\nThe latest event, if it already exists, is never cleaned up.\nThis endpoint can return a 404 for an event that no longer exists due to clean-up.",
         "operationId": "get_cluster_event",
         "parameters": [
           {
@@ -373,7 +373,7 @@
           "Platform"
         ],
         "summary": "Check Cluster Health",
-        "description": "Determine the latest cluster health via the latest cluster monitor event.",
+        "description": "Required role: `read` or higher.\n\nDetermine the latest cluster health via the latest cluster monitor event.",
         "operationId": "get_cluster_health",
         "responses": {
           "200": {
@@ -410,7 +410,7 @@
           "Platform"
         ],
         "summary": "Get Platform Config",
-        "description": "Retrieve configuration of the Feldera Platform.",
+        "description": "Required role: `read` or higher.\n\nRetrieve configuration of the Feldera Platform.",
         "operationId": "get_config",
         "responses": {
           "200": {
@@ -447,7 +447,7 @@
           "Platform"
         ],
         "summary": "List Demos",
-        "description": "Retrieve the list of demos available in the WebConsole.",
+        "description": "Required role: `read` or higher.\n\nRetrieve the list of demos available in the WebConsole.",
         "operationId": "get_config_demos",
         "responses": {
           "200": {
@@ -487,7 +487,7 @@
           "Platform"
         ],
         "summary": "Get Session",
-        "description": "Retrieve login session information for your current user session.",
+        "description": "Required role: `read` or higher.\n\nRetrieve login session information for your current user session.",
         "operationId": "get_config_session",
         "responses": {
           "200": {
@@ -524,7 +524,7 @@
           "Metrics & Debugging"
         ],
         "summary": "List All Metrics",
-        "description": "Retrieve the metrics of all running pipelines belonging to this tenant.\n\nThe metrics are collected by making individual HTTP requests to `/metrics`\nendpoint of each pipeline, of which only successful responses are included\nin the returned list.",
+        "description": "Required role: `read` or higher.\n\nRetrieve the metrics of all running pipelines belonging to this tenant.\n\nThe metrics are collected by making individual HTTP requests to `/metrics`\nendpoint of each pipeline, of which only successful responses are included\nin the returned list.",
         "operationId": "get_metrics",
         "responses": {
           "200": {
@@ -551,13 +551,14 @@
         "tags": [
           "Platform"
         ],
-        "summary": "List OIDC trust relationships",
+        "summary": "List OIDC Trust",
+        "description": "Required role: `admin` or higher.",
         "operationId": "list_oidc_trust",
         "parameters": [
           {
             "name": "platform",
             "in": "query",
-            "description": "Operate on platform-wide owner trusts (which belong to no tenant) instead\nof the caller's tenant. Owner-only.",
+            "description": "Select platform-wide owner trusts (which belong to no tenant) instead of\nthe caller's tenant, rather than the trusts scoped to the caller's tenant.\nOwner-only.",
             "required": false,
             "schema": {
               "type": "boolean"
@@ -599,7 +600,8 @@
         "tags": [
           "Platform"
         ],
-        "summary": "Create OIDC trust relationship",
+        "summary": "Create OIDC Trust",
+        "description": "Required role: `admin` or higher.",
         "operationId": "post_oidc_trust",
         "requestBody": {
           "content": {
@@ -655,7 +657,8 @@
         "tags": [
           "Platform"
         ],
-        "summary": "Get OIDC trust relationship",
+        "summary": "Get OIDC Trust",
+        "description": "Required role: `admin` or higher.",
         "operationId": "get_oidc_trust",
         "parameters": [
           {
@@ -670,7 +673,7 @@
           {
             "name": "platform",
             "in": "query",
-            "description": "Operate on platform-wide owner trusts (which belong to no tenant) instead\nof the caller's tenant. Owner-only.",
+            "description": "Select platform-wide owner trusts (which belong to no tenant) instead of\nthe caller's tenant, rather than the trusts scoped to the caller's tenant.\nOwner-only.",
             "required": false,
             "schema": {
               "type": "boolean"
@@ -709,7 +712,8 @@
         "tags": [
           "Platform"
         ],
-        "summary": "Delete OIDC trust relationship",
+        "summary": "Delete OIDC Trust",
+        "description": "Required role: `admin` or higher.",
         "operationId": "delete_oidc_trust",
         "parameters": [
           {
@@ -724,7 +728,7 @@
           {
             "name": "platform",
             "in": "query",
-            "description": "Operate on platform-wide owner trusts (which belong to no tenant) instead\nof the caller's tenant. Owner-only.",
+            "description": "Select platform-wide owner trusts (which belong to no tenant) instead of\nthe caller's tenant, rather than the trusts scoped to the caller's tenant.\nOwner-only.",
             "required": false,
             "schema": {
               "type": "boolean"
@@ -759,7 +763,7 @@
           "Pipeline CRUD"
         ],
         "summary": "List Pipelines",
-        "description": "Retrieve the list of pipelines.\nConfigure which fields are included using the `selector` query parameter.",
+        "description": "Required role: `read` or higher.\n\nRetrieve the list of pipelines.\nConfigure which fields are included using the `selector` query parameter.",
         "operationId": "list_pipelines",
         "parameters": [
           {
@@ -998,7 +1002,7 @@
           "Pipeline CRUD"
         ],
         "summary": "Create Pipeline",
-        "description": "Create a new pipeline with the provided configuration.",
+        "description": "Required role: `write` or higher.\n\nCreate a new pipeline with the provided configuration.",
         "operationId": "post_pipeline",
         "requestBody": {
           "content": {
@@ -1238,7 +1242,7 @@
           "Pipeline CRUD"
         ],
         "summary": "Get Pipeline",
-        "description": "Retrieve a pipeline.\nConfigure which fields are included using the `selector` query parameter.",
+        "description": "Required role: `read` or higher.\n\nRetrieve a pipeline.\nConfigure which fields are included using the `selector` query parameter.",
         "operationId": "get_pipeline",
         "parameters": [
           {
@@ -1404,7 +1408,7 @@
           "Pipeline CRUD"
         ],
         "summary": "Upsert Pipeline",
-        "description": "Fully update a pipeline if it already exists, otherwise create a new pipeline.",
+        "description": "Required role: `write` or higher.\n\nFully update a pipeline if it already exists, otherwise create a new pipeline.",
         "operationId": "put_pipeline",
         "parameters": [
           {
@@ -1764,7 +1768,7 @@
           "Pipeline CRUD"
         ],
         "summary": "Delete Pipeline",
-        "description": "Delete an existing pipeline by name.",
+        "description": "Required role: `write` or higher.\n\nDelete an existing pipeline by name.",
         "operationId": "delete_pipeline",
         "parameters": [
           {
@@ -1835,7 +1839,7 @@
           "Pipeline CRUD"
         ],
         "summary": "Patch Pipeline",
-        "description": "Partially update a pipeline.",
+        "description": "Required role: `write` or higher.\n\nPartially update a pipeline.",
         "operationId": "patch_pipeline",
         "parameters": [
           {
@@ -2058,7 +2062,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Activate Standby Pipeline",
-        "description": "Requests the pipeline to activate if it is currently in standby mode, which it will do\nasynchronously.\n\nProgress should be monitored by polling the pipeline `GET` endpoints.\n\nThis endpoint is only applicable when the pipeline is configured to start\nfrom object store and started as standby.",
+        "description": "Required role: `write` or higher.\n\nRequests the pipeline to activate if it is currently in standby mode, which it will do\nasynchronously.\n\nProgress should be monitored by polling the pipeline `GET` endpoints.\n\nThis endpoint is only applicable when the pipeline is configured to start\nfrom object store and started as standby.",
         "operationId": "post_pipeline_activate",
         "parameters": [
           {
@@ -2187,7 +2191,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Approve Bootstrap",
-        "description": "Approves the pipeline to proceed with bootstrapping.\n\nThis endpoint is used when a pipeline has been started with\n`bootstrap_policy=await_approval`, it is resuming from an existing checkpoint,\nbut the pipeline has been modified since the checkpoint was made and is\ncurrently in the `AwaitingApproval` state awaiting user approval to proceed\nwith bootstrapping.",
+        "description": "Required role: `write` or higher.\n\nApproves the pipeline to proceed with bootstrapping.\n\nThis endpoint is used when a pipeline has been started with\n`bootstrap_policy=await_approval`, it is resuming from an existing checkpoint,\nbut the pipeline has been modified since the checkpoint was made and is\ncurrently in the `AwaitingApproval` state awaiting user approval to proceed\nwith bootstrapping.",
         "operationId": "post_pipeline_approve",
         "parameters": [
           {
@@ -2336,7 +2340,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Checkpoint Now",
-        "description": "Initiates checkpoint for a running or paused pipeline.\n\nReturns a checkpoint sequence number that can be used with `/checkpoint_status` to\ndetermine when the checkpoint has completed.",
+        "description": "Required role: `write` or higher.\n\nInitiates checkpoint for a running or paused pipeline.\n\nReturns a checkpoint sequence number that can be used with `/checkpoint_status` to\ndetermine when the checkpoint has completed.",
         "operationId": "checkpoint_pipeline",
         "parameters": [
           {
@@ -2457,7 +2461,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Sync Checkpoints To S3",
-        "description": "Syncs latest checkpoints to the object store configured in pipeline config.",
+        "description": "Required role: `write` or higher.\n\nSyncs latest checkpoints to the object store configured in pipeline config.",
         "operationId": "sync_checkpoint",
         "parameters": [
           {
@@ -2578,7 +2582,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Get Checkpoint Sync Status",
-        "description": "Retrieve status of checkpoint sync activity in a pipeline.",
+        "description": "Required role: `read` or higher.\n\nRetrieve status of checkpoint sync activity in a pipeline.",
         "operationId": "get_checkpoint_sync_status",
         "parameters": [
           {
@@ -2699,7 +2703,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Get Checkpoint Status",
-        "description": "Retrieve status of checkpoint activity in a pipeline.",
+        "description": "Required role: `read` or higher.\n\nRetrieve status of checkpoint activity in a pipeline.",
         "operationId": "get_checkpoint_status",
         "parameters": [
           {
@@ -2820,7 +2824,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Get the checkpoints for a pipeline",
-        "description": "Retrieve the current checkpoints made by a pipeline.\n\n**Stability note**: for multihost pipelines, this endpoint returns the\ncombined checkpoint list from all hosts.  The shape of this response may\nchange in a future release.",
+        "description": "Required role: `read` or higher.\n\nRetrieve the current checkpoints made by a pipeline.\n\n**Stability note**: for multihost pipelines, this endpoint returns the\ncombined checkpoint list from all hosts.  The shape of this response may\nchange in a future release.",
         "operationId": "get_checkpoints",
         "parameters": [
           {
@@ -2944,7 +2948,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "List checkpoints in remote object storage",
-        "description": "Retrieve the list of checkpoints available in the configured remote object\nstorage (e.g., S3).  Requires the pipeline to be running with a sync\nstorage configuration.",
+        "description": "Required role: `read` or higher.\n\nRetrieve the list of checkpoints available in the configured remote object\nstorage (e.g., S3).  Requires the pipeline to be running with a sync\nstorage configuration.",
         "operationId": "get_remote_checkpoints",
         "parameters": [
           {
@@ -3068,7 +3072,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Performance Profile JSON",
-        "description": "Retrieve the circuit performance profile in JSON format of a running or paused pipeline.",
+        "description": "Required role: `read` or higher.\n\nRetrieve the circuit performance profile in JSON format of a running or paused pipeline.",
         "operationId": "get_pipeline_circuit_json_profile",
         "parameters": [
           {
@@ -3189,7 +3193,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Get Performance Profile",
-        "description": "Retrieve the circuit performance profile of a running or paused pipeline.",
+        "description": "Required role: `read` or higher.\n\nRetrieve the circuit performance profile of a running or paused pipeline.",
         "operationId": "get_pipeline_circuit_profile",
         "parameters": [
           {
@@ -3310,7 +3314,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Clear Storage",
-        "description": "Clears the pipeline storage asynchronously.\n\nIMPORTANT: Clearing means disassociating the storage from the pipeline.\nDepending on the storage type this can include its deletion.\n\nIt sets the storage state to `Clearing`, after which the clearing process is\nperformed asynchronously. Progress should be monitored by polling the pipeline\nusing the `GET` endpoints. An `/clear` cannot be cancelled.",
+        "description": "Required role: `write` or higher.\n\nClears the pipeline storage asynchronously.\n\nIMPORTANT: Clearing means disassociating the storage from the pipeline.\nDepending on the storage type this can include its deletion.\n\nIt sets the storage state to `Clearing`, after which the clearing process is\nperformed asynchronously. Progress should be monitored by polling the pipeline\nusing the `GET` endpoints. An `/clear` cannot be cancelled.",
         "operationId": "post_pipeline_clear",
         "parameters": [
           {
@@ -3390,7 +3394,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Advance Clock",
-        "description": "Moves `NOW()` forward by a specified amount. Returns the\ncurrent clock time of the circuit.\n\nRequires `dev_tweaks.now_http_driven = true` on the pipeline.\n\nForward-only: `delta_ms` is `u64`, so negative bodies are rejected at\nJSON parse time.  `delta_ms = null` or omitted advances by one\n`clock_resolution`.  Non-zero values round up to the next\n`clock_resolution` boundary, so a sub-resolution delta still moves\nthe clock by one full tick.\n\nThe returned `now_ms` is the value the worker will emit on its next\npipeline step; queries against materialized views may observe the\nprevious `NOW()` until that step completes.  Callers that need\nread-after-write semantics should poll the view.",
+        "description": "Required role: `write` or higher.\n\nMoves `NOW()` forward by a specified amount. Returns the\ncurrent clock time of the circuit.\n\nRequires `dev_tweaks.now_http_driven = true` on the pipeline.\n\nForward-only: `delta_ms` is `u64`, so negative bodies are rejected at\nJSON parse time.  `delta_ms = null` or omitted advances by one\n`clock_resolution`.  Non-zero values round up to the next\n`clock_resolution` boundary, so a sub-resolution delta still moves\nthe clock by one full tick.\n\nThe returned `now_ms` is the value the worker will emit on its next\npipeline step; queries against materialized views may observe the\nprevious `NOW()` until that step completes.  Callers that need\nread-after-write semantics should poll the view.",
         "operationId": "clock_advance",
         "parameters": [
           {
@@ -3459,7 +3463,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Commit Transaction",
-        "description": "Commit the current transaction.",
+        "description": "Required role: `write` or higher.\n\nCommit the current transaction.",
         "operationId": "commit_transaction",
         "parameters": [
           {
@@ -3566,7 +3570,7 @@
           "Input Connectors"
         ],
         "summary": "Check Completion Status",
-        "description": "Check the status of a completion token returned by the `/ingress` or `/completion_token`\nendpoint.",
+        "description": "Required role: `read` or higher.\n\nCheck the status of a completion token returned by the `/ingress` or `/completion_token`\nendpoint.",
         "operationId": "completion_status",
         "parameters": [
           {
@@ -3726,7 +3730,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Get Dataflow Graph",
-        "description": "Retrieve the dataflow graph of a pipeline.\nThe dataflow graph is generated during SQL compilation and shows the structure\nof the compiled SQL program including the Calcite plan and MIR nodes.",
+        "description": "Required role: `read` or higher.\n\nRetrieve the dataflow graph of a pipeline.\nThe dataflow graph is generated during SQL compilation and shows the structure\nof the compiled SQL program including the Calcite plan and MIR nodes.",
         "operationId": "get_pipeline_dataflow_graph",
         "parameters": [
           {
@@ -3791,7 +3795,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Compute Program Diff",
-        "description": "Compute the diff between the pipeline's current program and a proposed new\nversion, without modifying or restarting the pipeline.\n\nThe diff lists the tables, views, and connectors that would be added,\nremoved, or modified. It is the same diff shown when approving changes during\nbootstrapping, letting you preview the effect of a change before applying it.\n\nThe baseline is the pipeline's currently configured program compiled with its\nruntime, not necessarily the program in the latest checkpoint (which may have\nbeen produced by a different program or runtime version).",
+        "description": "Required role: `read` or higher.\n\nCompute the diff between the pipeline's current program and a proposed new\nversion, without modifying or restarting the pipeline.\n\nThe diff lists the tables, views, and connectors that would be added,\nremoved, or modified. It is the same diff shown when approving changes during\nbootstrapping, letting you preview the effect of a change before applying it.\n\nThe baseline is the pipeline's currently configured program compiled with its\nruntime, not necessarily the program in the latest checkpoint (which may have\nbeen produced by a different program or runtime version).",
         "operationId": "post_pipeline_diff",
         "parameters": [
           {
@@ -3890,7 +3894,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Dismiss Pipeline Deployment Error",
-        "description": "Clears the `deployment_error` field of the pipeline, such that a subsequent call to\n`/start?dismiss_error=false` succeeds. It will return an error if the pipeline is not fully\nstopped (i.e., both current and desired status must be `Stopped`) AND a deployment error\nis present.",
+        "description": "Required role: `write` or higher.\n\nClears the `deployment_error` field of the pipeline, such that a subsequent call to\n`/start?dismiss_error=false` succeeds. It will return an error if the pipeline is not fully\nstopped (i.e., both current and desired status must be `Stopped`) AND a deployment error\nis present.",
         "operationId": "post_pipeline_dismiss_error",
         "parameters": [
           {
@@ -3958,7 +3962,7 @@
           "Output Connectors"
         ],
         "summary": "Subscribe to View",
-        "description": "Subscribe to a stream of updates from a SQL view or table.\n\nThe pipeline responds with a continuous stream of changes to the specified\ntable or view.  The stream is configurable two ways:\n\n- Simple configuration of the format may be provided using query parameters.\nSpecify `backpressure` to specify behavior when the HTTP client cannot\nkeep up.  Use `format` to specify `csv` or `json` output.  For `json`\noutput format, `update_format` and `json_flavor` may be provided (with the\nsame possible values as in JSON format configuration for connectors).\n\n- Comprehensive configuration may be provided by providing a connector\nconfiguration as a JSON body.  In this case, no query parameters are\nallowed.\n\nUpdates are split into `Chunk`s.\n\nThe pipeline continues sending updates until the client closes the\nconnection or the pipeline is stopped.",
+        "description": "Required role: `write` or higher.\n\nSubscribe to a stream of updates from a SQL view or table.\n\nThe pipeline responds with a continuous stream of changes to the specified\ntable or view.  The stream is configurable two ways:\n\n- Simple configuration of the format may be provided using query parameters.\nSpecify `backpressure` to specify behavior when the HTTP client cannot\nkeep up.  Use `format` to specify `csv` or `json` output.  For `json`\noutput format, `update_format` and `json_flavor` may be provided (with the\nsame possible values as in JSON format configuration for connectors).\n\n- Comprehensive configuration may be provided by providing a connector\nconfiguration as a JSON body.  In this case, no query parameters are\nallowed.\n\nUpdates are split into `Chunk`s.\n\nThe pipeline continues sending updates until the client closes the\nconnection or the pipeline is stopped.",
         "operationId": "http_output",
         "parameters": [
           {
@@ -4141,7 +4145,7 @@
           "Metrics & Debugging"
         ],
         "summary": "List Pipeline Events",
-        "description": "Retrieve monitoring events in reverse chronological order.\n\nPipeline health is monitored regularly every several seconds.\nNot every monitoring action results in a pipeline monitor event being\nconstructed and inserted into the database. This happens if:\n- Any status changed\n- Only the status details changed, and it has been 10s since the last event\n- Nothing has changed for more than 10 minutes\n\nThis endpoint returns the most recent persisted events, up to by default approximately 720.",
+        "description": "Required role: `read` or higher.\n\nRetrieve monitoring events in reverse chronological order.\n\nPipeline health is monitored regularly every several seconds.\nNot every monitoring action results in a pipeline monitor event being\nconstructed and inserted into the database. This happens if:\n- Any status changed\n- Only the status details changed, and it has been 10s since the last event\n- Nothing has changed for more than 10 minutes\n\nThis endpoint returns the most recent persisted events, up to by default approximately 720.",
         "operationId": "list_pipeline_events",
         "parameters": [
           {
@@ -4211,7 +4215,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Get Pipeline Event",
-        "description": "Get a specific pipeline monitor event.\n\nThe identifiers of the events can be retrieved via `GET /v0/pipelines/<pipeline>/events`.\nThe most recent approximately 720 (default) events are retained.\nThis endpoint can return a 404 for an event that no longer exists due to a cleanup.",
+        "description": "Required role: `read` or higher.\n\nGet a specific pipeline monitor event.\n\nThe identifiers of the events can be retrieved via `GET /v0/pipelines/<pipeline>/events`.\nThe most recent approximately 720 (default) events are retained.\nThis endpoint can return a 404 for an event that no longer exists due to a cleanup.",
         "operationId": "get_pipeline_event",
         "parameters": [
           {
@@ -4297,7 +4301,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Get Heap Profile",
-        "description": "Retrieve the heap profile of a running or paused pipeline.",
+        "description": "Required role: `read` or higher.\n\nRetrieve the heap profile of a running or paused pipeline.",
         "operationId": "get_pipeline_heap_profile",
         "parameters": [
           {
@@ -4429,7 +4433,7 @@
           "Input Connectors"
         ],
         "summary": "Insert Data",
-        "description": "Push data to a SQL table.\n\nThe client sends data encoded using the format specified in the `?format=`\nparameter as a body of the request.  The contents of the data must match\nthe SQL table schema specified in `table_name`\n\nThe pipeline ingests data as it arrives without waiting for the end of\nthe request.  Successful HTTP response indicates that all data has been\ningested successfully.\n\nOn success, returns a completion token that can be passed to the\n'/completion_status' endpoint to check whether the pipeline has fully\nprocessed the data.",
+        "description": "Required role: `write` or higher.\n\nPush data to a SQL table.\n\nThe client sends data encoded using the format specified in the `?format=`\nparameter as a body of the request.  The contents of the data must match\nthe SQL table schema specified in `table_name`\n\nThe pipeline ingests data as it arrives without waiting for the end of\nthe request.  Successful HTTP response indicates that all data has been\ningested successfully.\n\nOn success, returns a completion token that can be passed to the\n'/completion_status' endpoint to check whether the pipeline has fully\nprocessed the data.",
         "operationId": "http_input",
         "parameters": [
           {
@@ -4626,7 +4630,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Stream Pipeline Logs",
-        "description": "Retrieve logs of a pipeline as a stream.\n\nThe logs stream catches up to the extent of the internally configured per-pipeline\ncircular logs buffer (limited to a certain byte size and number of lines, whichever\nis reached first). After the catch-up, new lines are pushed whenever they become\navailable.\n\nIt is possible for the logs stream to end prematurely due to the API server temporarily losing\nconnection to the runner. In this case, it is needed to issue again a new request to this\nendpoint.\n\nThe logs stream will end when the pipeline is deleted, or if the runner restarts. Note that in\nboth cases the logs will be cleared.",
+        "description": "Required role: `read` or higher.\n\nRetrieve logs of a pipeline as a stream.\n\nThe logs stream catches up to the extent of the internally configured per-pipeline\ncircular logs buffer (limited to a certain byte size and number of lines, whichever\nis reached first). After the catch-up, new lines are pushed whenever they become\navailable.\n\nIt is possible for the logs stream to end prematurely due to the API server temporarily losing\nconnection to the runner. In this case, it is needed to issue again a new request to this\nendpoint.\n\nThe logs stream will end when the pipeline is deleted, or if the runner restarts. Note that in\nboth cases the logs will be cleared.",
         "operationId": "get_pipeline_logs",
         "parameters": [
           {
@@ -4713,7 +4717,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Get Pipeline Metrics",
-        "description": "Retrieve the metrics of a running or paused pipeline.",
+        "description": "Required role: `read` or higher.\n\nRetrieve the metrics of a running or paused pipeline.",
         "operationId": "get_pipeline_metrics",
         "parameters": [
           {
@@ -4843,7 +4847,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Pause Pipeline",
-        "description": "Requests the pipeline to pause, which it will do asynchronously.\n\nProgress should be monitored by polling the pipeline `GET` endpoints.",
+        "description": "Required role: `write` or higher.\n\nRequests the pipeline to pause, which it will do asynchronously.\n\nProgress should be monitored by polling the pipeline `GET` endpoints.",
         "operationId": "post_pipeline_pause",
         "parameters": [
           {
@@ -4921,7 +4925,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Execute Ad-hoc SQL",
-        "description": "Execute ad-hoc SQL in a running or paused pipeline.\n\nThe evaluation is not incremental.",
+        "description": "Required role: `write` or higher.\n\nExecute ad-hoc SQL in a running or paused pipeline.\n\nThe evaluation is not incremental.",
         "operationId": "pipeline_adhoc_sql",
         "parameters": [
           {
@@ -5071,7 +5075,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Initiate rebalancing.",
-        "description": "Initiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically\nwhen the drift in the size of joined relations exceeds a threshold. This endpoint forces the balancer\nto reevaluate and apply an optimal partitioning policy regardless of the threshold.\n\nThis operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.",
+        "description": "Required role: `write` or higher.\n\nInitiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically\nwhen the drift in the size of joined relations exceeds a threshold. This endpoint forces the balancer\nto reevaluate and apply an optimal partitioning policy regardless of the threshold.\n\nThis operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.",
         "operationId": "post_pipeline_rebalance",
         "parameters": [
           {
@@ -5129,7 +5133,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Resume Pipeline",
-        "description": "Requests the pipeline to resume, which it will do asynchronously.\n\nProgress should be monitored by polling the pipeline `GET` endpoints.",
+        "description": "Required role: `write` or higher.\n\nRequests the pipeline to resume, which it will do asynchronously.\n\nProgress should be monitored by polling the pipeline `GET` endpoints.",
         "operationId": "post_pipeline_resume",
         "parameters": [
           {
@@ -5207,7 +5211,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Get Samply Profile",
-        "description": "Retrieve the last samply profile of a pipeline, regardless of whether profiling is currently in progress.\nIf ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 307 with Retry-After header.",
+        "description": "Required role: `read` or higher.\n\nRetrieve the last samply profile of a pipeline, regardless of whether profiling is currently in progress.\nIf ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 307 with Retry-After header.",
         "operationId": "get_pipeline_samply_profile",
         "parameters": [
           {
@@ -5356,7 +5360,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Start a Samply profile",
-        "description": "Profile the pipeline using the Samply profiler for the next `duration_secs` seconds.",
+        "description": "Required role: `read` or higher.\n\nProfile the pipeline using the Samply profiler for the next `duration_secs` seconds.",
         "operationId": "start_samply_profile",
         "parameters": [
           {
@@ -5501,7 +5505,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Start Pipeline",
-        "description": "Start the pipeline asynchronously by updating the desired status.\n\nThe endpoint returns immediately after setting the desired status.\nThe procedure to get to the desired status is performed asynchronously.\nProgress should be monitored by polling the pipeline `GET` endpoints.\n\nNote the following:\n- A stopped pipeline can be started through calling `/start?initial=running`,\n`/start?initial=paused`, or `/start?initial=standby`.\n- If the pipeline is already (being) started (provisioned), it will still return success\n- It is not possible to call `/start` when the pipeline has already had `/stop` called and is\nin the process of suspending or stopping.",
+        "description": "Required role: `write` or higher.\n\nStart the pipeline asynchronously by updating the desired status.\n\nThe endpoint returns immediately after setting the desired status.\nThe procedure to get to the desired status is performed asynchronously.\nProgress should be monitored by polling the pipeline `GET` endpoints.\n\nNote the following:\n- A stopped pipeline can be started through calling `/start?initial=running`,\n`/start?initial=paused`, or `/start?initial=standby`.\n- If the pipeline is already (being) started (provisioned), it will still return success\n- It is not possible to call `/start` when the pipeline has already had `/stop` called and is\nin the process of suspending or stopping.",
         "operationId": "post_pipeline_start",
         "parameters": [
           {
@@ -5623,7 +5627,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Initiate compaction.",
-        "description": "Initiate immediate compaction of the pipeline's state.",
+        "description": "Required role: `write` or higher.\n\nInitiate immediate compaction of the pipeline's state.",
         "operationId": "post_pipeline_start_compaction",
         "parameters": [
           {
@@ -5737,7 +5741,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Begin Transaction",
-        "description": "Start a new transaction.",
+        "description": "Required role: `write` or higher.\n\nStart a new transaction.",
         "operationId": "start_transaction",
         "parameters": [
           {
@@ -5851,7 +5855,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Get Pipeline Stats",
-        "description": "Retrieve statistics (e.g., performance counters) of a running or paused pipeline.",
+        "description": "Required role: `read` or higher.\n\nRetrieve statistics (e.g., performance counters) of a running or paused pipeline.",
         "operationId": "get_pipeline_stats",
         "parameters": [
           {
@@ -5972,7 +5976,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Stop Pipeline",
-        "description": "Stop the pipeline asynchronously by updating the desired state.\n\nThere are two variants:\n- `/stop?force=false` (default): the pipeline will first atomically checkpoint before\ndeprovisioning the compute resources. When resuming, the pipeline will start from this\n- `/stop?force=true`: the compute resources will be immediately deprovisioned. When resuming,\nit will pick up the latest checkpoint made by the periodic checkpointer or by a prior\n`/checkpoint` call.\n\nThe endpoint returns immediately after setting the desired state to `Suspended` for\n`?force=false` or `Stopped` for `?force=true`. In the former case, once the pipeline has\nsuccessfully passes the `Suspending` state, the desired state will become `Stopped` as well.\nThe procedure to get to the desired state is performed asynchronously. Progress should be\nmonitored by polling the pipeline `GET` endpoints.\n\nNote the following:\n- The suspending that is done with `/stop?force=false` is not guaranteed to succeed:\n- If an error is returned during the suspension, the pipeline will be forcefully stopped with\nthat error set\n- Otherwise, it will keep trying to suspend, in which case it is possible to cancel suspending\nby calling `/stop?force=true`\n- `/stop?force=true` cannot be cancelled: the pipeline must first reach `Stopped` before another\naction can be done\n- A pipeline which is in the process of suspending or stopping can only be forcefully stopped",
+        "description": "Required role: `write` or higher.\n\nStop the pipeline asynchronously by updating the desired state.\n\nThere are two variants:\n- `/stop?force=false` (default): the pipeline will first atomically checkpoint before\ndeprovisioning the compute resources. When resuming, the pipeline will start from this\n- `/stop?force=true`: the compute resources will be immediately deprovisioned. When resuming,\nit will pick up the latest checkpoint made by the periodic checkpointer or by a prior\n`/checkpoint` call.\n\nThe endpoint returns immediately after setting the desired state to `Suspended` for\n`?force=false` or `Stopped` for `?force=true`. In the former case, once the pipeline has\nsuccessfully passes the `Suspending` state, the desired state will become `Stopped` as well.\nThe procedure to get to the desired state is performed asynchronously. Progress should be\nmonitored by polling the pipeline `GET` endpoints.\n\nNote the following:\n- The suspending that is done with `/stop?force=false` is not guaranteed to succeed:\n- If an error is returned during the suspension, the pipeline will be forcefully stopped with\nthat error set\n- Otherwise, it will keep trying to suspend, in which case it is possible to cancel suspending\nby calling `/stop?force=true`\n- `/stop?force=true` cannot be cancelled: the pipeline must first reach `Stopped` before another\naction can be done\n- A pipeline which is in the process of suspending or stopping can only be forcefully stopped",
         "operationId": "post_pipeline_stop",
         "parameters": [
           {
@@ -6101,7 +6105,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Download Support Bundle",
-        "description": "Generate a support bundle for a pipeline.\n\nThis endpoint collects various diagnostic data from the pipeline including\ncircuit profile, heap profile, metrics, logs, stats, and connector statistics,\nand packages them into a single ZIP file for support purposes.",
+        "description": "Required role: `read` or higher.\n\nGenerate a support bundle for a pipeline.\n\nThis endpoint collects various diagnostic data from the pipeline including\ncircuit profile, heap profile, metrics, logs, stats, and connector statistics,\nand packages them into a single ZIP file for support purposes.",
         "operationId": "get_pipeline_support_bundle",
         "parameters": [
           {
@@ -6313,7 +6317,7 @@
           "Input Connectors"
         ],
         "summary": "Get Completion Token",
-        "description": "Generate a completion token for an input connector.\n\nReturns a token that can be passed to the `/completion_status` endpoint\nto check whether the pipeline has finished processing all inputs received from the\nconnector before the token was generated.",
+        "description": "Required role: `write` or higher.\n\nGenerate a completion token for an input connector.\n\nReturns a token that can be passed to the `/completion_status` endpoint\nto check whether the pipeline has finished processing all inputs received from the\nconnector before the token was generated.",
         "operationId": "completion_token",
         "parameters": [
           {
@@ -6452,7 +6456,7 @@
           "Input Connectors"
         ],
         "summary": "Get Input Status",
-        "description": "Retrieve the status of an input connector.",
+        "description": "Required role: `read` or higher.\n\nRetrieve the status of an input connector.",
         "operationId": "get_pipeline_input_connector_status",
         "parameters": [
           {
@@ -6595,7 +6599,7 @@
           "Input Connectors"
         ],
         "summary": "Control Input Connector",
-        "description": "Start (resume) or pause the input connector.\n\nThe following values of the `action` argument are accepted: `start` and `pause`.\n\nInput connectors can be in either the `Running` or `Paused` state. By default,\nconnectors are initialized in the `Running` state when a pipeline is deployed.\nIn this state, the connector actively fetches data from its configured data\nsource and forwards it to the pipeline. If needed, a connector can be created\nin the `Paused` state by setting its\n[`paused`](https://docs.feldera.com/connectors/#generic-attributes) property\nto `true`. When paused, the connector remains idle until reactivated using the\n`start` command. Conversely, a connector in the `Running` state can be paused\nat any time by issuing the `pause` command.\n\nThe current connector state can be retrieved via the\n`GET /v0/pipelines/{pipeline_name}/stats` endpoint.\n\nNote that only if both the pipeline *and* the connector state is `Running`,\nis the input connector active.\n```text\nPipeline state    Connector state    Connector is active?\n--------------    ---------------    --------------------\nPaused            Paused             No\nPaused            Running            No\nRunning           Paused             No\nRunning           Running            Yes\n```",
+        "description": "Required role: `write` or higher.\n\nStart (resume) or pause the input connector.\n\nThe following values of the `action` argument are accepted: `start` and `pause`.\n\nInput connectors can be in either the `Running` or `Paused` state. By default,\nconnectors are initialized in the `Running` state when a pipeline is deployed.\nIn this state, the connector actively fetches data from its configured data\nsource and forwards it to the pipeline. If needed, a connector can be created\nin the `Paused` state by setting its\n[`paused`](https://docs.feldera.com/connectors/#generic-attributes) property\nto `true`. When paused, the connector remains idle until reactivated using the\n`start` command. Conversely, a connector in the `Running` state can be paused\nat any time by issuing the `pause` command.\n\nThe current connector state can be retrieved via the\n`GET /v0/pipelines/{pipeline_name}/stats` endpoint.\n\nNote that only if both the pipeline *and* the connector state is `Running`,\nis the input connector active.\n```text\nPipeline state    Connector state    Connector is active?\n--------------    ---------------    --------------------\nPaused            Paused             No\nPaused            Running            No\nRunning           Paused             No\nRunning           Running            Yes\n```",
         "operationId": "post_pipeline_input_connector_action",
         "parameters": [
           {
@@ -6739,7 +6743,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Get Time Series Stats",
-        "description": "Retrieve time series for statistics of a running or paused pipeline.",
+        "description": "Required role: `read` or higher.\n\nRetrieve time series for statistics of a running or paused pipeline.",
         "operationId": "get_pipeline_time_series",
         "parameters": [
           {
@@ -6860,7 +6864,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Stream Time Series",
-        "description": "Stream time series for statistics of a running or paused pipeline.\n\nReturns a snapshot of all existing time series data followed by a continuous stream of\nnew time series data points as they become available. The response is in newline-delimited\nJSON format (NDJSON) where each line is a JSON object representing a single time series\ndata point.",
+        "description": "Required role: `read` or higher.\n\nStream time series for statistics of a running or paused pipeline.\n\nReturns a snapshot of all existing time series data followed by a continuous stream of\nnew time series data points as they become available. The response is in newline-delimited\nJSON format (NDJSON) where each line is a JSON object representing a single time series\ndata point.",
         "operationId": "get_pipeline_time_series_stream",
         "parameters": [
           {
@@ -6981,7 +6985,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Recompile Pipeline",
-        "description": "Recompile a pipeline with the Feldera runtime version included in the\ncurrently installed Feldera platform.\n\nUse this endpoint after upgrading Feldera to rebuild pipelines that were\ncompiled with older platform versions. In most cases, recompilation is not\nrequired; pipelines compiled with older versions will continue to run on the\nupgraded platform.\n\nSituations where recompilation may be necessary:\n- To benefit from the latest bug fixes and performance optimizations.\n- When backward-incompatible changes are introduced in Feldera. In this case,\nattempting to start a pipeline compiled with an unsupported version will\nresult in an error.\n\nIf the pipeline is already compiled with the current platform version,\nthis operation is a no-op.\n\nNote that recompiling the pipeline with a new platform version may change its\nquery plan. If the modified pipeline is started from an existing checkpoint,\nit may require bootstrapping parts of its state from scratch.  See Feldera\ndocumentation for details on the bootstrapping process.",
+        "description": "Required role: `write` or higher.\n\nRecompile a pipeline with the Feldera runtime version included in the\ncurrently installed Feldera platform.\n\nUse this endpoint after upgrading Feldera to rebuild pipelines that were\ncompiled with older platform versions. In most cases, recompilation is not\nrequired; pipelines compiled with older versions will continue to run on the\nupgraded platform.\n\nSituations where recompilation may be necessary:\n- To benefit from the latest bug fixes and performance optimizations.\n- When backward-incompatible changes are introduced in Feldera. In this case,\nattempting to start a pipeline compiled with an unsupported version will\nresult in an error.\n\nIf the pipeline is already compiled with the current platform version,\nthis operation is a no-op.\n\nNote that recompiling the pipeline with a new platform version may change its\nquery plan. If the modified pipeline is started from an existing checkpoint,\nit may require bootstrapping parts of its state from scratch.  See Feldera\ndocumentation for details on the bootstrapping process.",
         "operationId": "post_update_runtime",
         "parameters": [
           {
@@ -7170,7 +7174,7 @@
           "Output Connectors"
         ],
         "summary": "Get Output Status",
-        "description": "Retrieve the status of an output connector.",
+        "description": "Required role: `read` or higher.\n\nRetrieve the status of an output connector.",
         "operationId": "get_pipeline_output_connector_status",
         "parameters": [
           {
@@ -7312,8 +7316,8 @@
         "tags": [
           "Platform"
         ],
-        "summary": "List tenant members",
-        "description": "List the users that are members of the acting tenant and their roles.",
+        "summary": "List Tenant Members",
+        "description": "Required role: `admin` or higher.\n\nList the users that are members of the acting tenant and their roles.",
         "operationId": "list_tenant_users",
         "responses": {
           "200": {
@@ -7350,8 +7354,8 @@
         "tags": [
           "Platform"
         ],
-        "summary": "Pre-provision a tenant member",
-        "description": "Add a member to the acting tenant by identity, before the user's first\nlogin. The grant is dormant until that identity authenticates into the\ntenant through the IdP. The role is capped at the caller's own role and may\nnot be `owner`.",
+        "summary": "Provision Tenant Member",
+        "description": "Required role: `admin` or higher.\n\nAdd a member to the acting tenant by identity, before the user's first\nlogin. The grant is dormant until that identity authenticates into the\ntenant through the IdP. The role is capped at the caller's own role and may\nnot be `owner`.",
         "operationId": "add_tenant_user",
         "requestBody": {
           "content": {
@@ -7397,8 +7401,8 @@
         "tags": [
           "Platform"
         ],
-        "summary": "Assign a member role",
-        "description": "Assign or change a user's role in the acting tenant. The role is capped at\nthe caller's own role and may not be `owner`.",
+        "summary": "Assign Member Role",
+        "description": "Required role: `admin` or higher.\n\nAssign or change a user's role in the acting tenant. The role is capped at\nthe caller's own role and may not be `owner`.",
         "operationId": "put_tenant_user",
         "parameters": [
           {
@@ -7407,7 +7411,8 @@
             "description": "User identifier",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -7446,8 +7451,8 @@
         "tags": [
           "Platform"
         ],
-        "summary": "Remove a tenant member",
-        "description": "Remove a user from the acting tenant.",
+        "summary": "Remove Tenant Member",
+        "description": "Required role: `admin` or higher.\n\nRemove a user from the acting tenant. This drops their role now, but if the\nidentity provider still grants them access they are re-added at the default\nrole on their next login; revoke access at the provider for a durable block.",
         "operationId": "delete_tenant_user",
         "parameters": [
           {
@@ -7456,7 +7461,8 @@
             "description": "User identifier",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -7488,7 +7494,7 @@
           "Platform"
         ],
         "summary": "List tenants",
-        "description": "List all tenants in the installation. Owner-only platform view.",
+        "description": "Required role: `owner`.\n\nList all tenants in the installation.",
         "operationId": "list_tenants",
         "responses": {
           "200": {
@@ -7525,8 +7531,8 @@
         "tags": [
           "Platform"
         ],
-        "summary": "Create a tenant",
-        "description": "Explicitly create a tenant (owner-only), rather than relying on first login.\nThe tenant is keyed to the platform's configured OIDC issuer (statically set\nat deploy time, e.g. via Helm), so that logins from that issuer resolve into\nit; the issuer is not caller-settable. Fails with a conflict if a tenant with\nthe same name already exists for that issuer.",
+        "summary": "Create Tenant",
+        "description": "Required role: `owner`.\n\nExplicitly create a tenant, rather than relying on first login.\nThe tenant is keyed to the platform's configured OIDC issuer (statically set\nat deploy time, e.g. via Helm), so that logins from that issuer resolve into\nit; the issuer is not caller-settable. Fails with a conflict if a tenant with\nthe same name already exists for that issuer.",
         "operationId": "create_tenant",
         "requestBody": {
           "content": {
@@ -7573,7 +7579,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Validate Program",
-        "description": "Validate a SQL program by compiling it, without creating a pipeline or\nbuilding the pipeline binary. Reports SQL errors and warnings and the derived\nschema and connectors. Set `ir` to also return the program IR (dataflow).\n\nNote that this endpoint returns HTTP 200, regardless of whether validation\nsucceeds or fails. The validation result, including any compiler warnings and errors,\nis encoded in the `ValidateProgramResponse` response body.",
+        "description": "Required role: `read` or higher.\n\nValidate a SQL program by compiling it, without creating a pipeline or\nbuilding the pipeline binary. Reports SQL errors and warnings and the derived\nschema and connectors. Set `ir` to also return the program IR (dataflow).\n\nNote that this endpoint returns HTTP 200, regardless of whether validation\nsucceeds or fails. The validation result, including any compiler warnings and errors,\nis encoded in the `ValidateProgramResponse` response body.",
         "operationId": "post_validate_program",
         "requestBody": {
           "description": "The SQL program to validate, an optional runtime version, and whether to return the IR",
@@ -7686,7 +7692,7 @@
             "nullable": true
           },
           "role": {
-            "$ref": "#/components/schemas/Role"
+            "$ref": "#/components/schemas/MemberRole"
           },
           "subject": {
             "type": "string",
@@ -7736,7 +7742,7 @@
             "type": "string"
           },
           "role": {
-            "$ref": "#/components/schemas/Role"
+            "$ref": "#/components/schemas/MintableKeyRole"
           }
         }
       },
@@ -11155,6 +11161,15 @@
           }
         ]
       },
+      "MemberRole": {
+        "type": "string",
+        "description": "A role assignable to a tenant member: `read`, `write`, or `admin`. `owner`\nis a platform-wide role, not a tenant membership, so it is not a valid value\nhere.",
+        "enum": [
+          "read",
+          "write",
+          "admin"
+        ]
+      },
       "MemoryPressure": {
         "type": "string",
         "description": "Memory pressure level.\n\nThe current memory pressure level is computed as a function of the current process\nresident set size (RSS) and the user-configured memory limit (`max_rss`).\n\nAs the memory pressure level increases, the system will apply increasing backpressure to\npush state cached in memory to storage.\n\n- `Low`: less than 85% of the user-configured memory limit has been allocated.\n- `Moderate`: between 85% and 90% of the user-configured memory limit has been allocated.\n- `High`: between 90% and 95% of the user-configured memory limit has been allocated.\n- `Critical`: more than 95% of the user-configured memory limit has been allocated.",
@@ -11189,6 +11204,14 @@
             "$ref": "#/components/schemas/MetricsFormat"
           }
         }
+      },
+      "MintableKeyRole": {
+        "type": "string",
+        "description": "The role an API key carries: `read` or `write`. API keys cannot be granted\n`admin` or `owner`; those roles are held only by interactive logins and OIDC\ntrust relationships.",
+        "enum": [
+          "read",
+          "write"
+        ]
       },
       "MirInput": {
         "type": "object",
@@ -11331,7 +11354,7 @@
           "role": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/Role"
+                "$ref": "#/components/schemas/MintableKeyRole"
               }
             ],
             "nullable": true
@@ -14379,7 +14402,7 @@
         ],
         "properties": {
           "role": {
-            "$ref": "#/components/schemas/Role"
+            "$ref": "#/components/schemas/MemberRole"
           }
         }
       },

@@ -29,8 +29,9 @@ use uuid::Uuid;
 /// Selects which trusts an operation targets.
 #[derive(Debug, Default, Deserialize, IntoParams)]
 pub(crate) struct TrustScope {
-    /// Operate on platform-wide owner trusts (which belong to no tenant) instead
-    /// of the caller's tenant. Owner-only.
+    /// Select platform-wide owner trusts (which belong to no tenant) instead of
+    /// the caller's tenant, rather than the trusts scoped to the caller's tenant.
+    /// Owner-only.
     #[serde(default)]
     platform: bool,
 }
@@ -98,7 +99,7 @@ pub(crate) struct NewOidcTrustResponse {
     pub name: String,
 }
 
-/// List OIDC trust relationships
+/// List OIDC Trust
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -123,7 +124,7 @@ pub(crate) async fn list_oidc_trust(
         .json(&items))
 }
 
-/// Get OIDC trust relationship
+/// Get OIDC Trust
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -150,7 +151,7 @@ pub(crate) async fn get_oidc_trust(
         .json(&item))
 }
 
-/// Create OIDC trust relationship
+/// Create OIDC Trust
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -220,7 +221,7 @@ pub(crate) async fn post_oidc_trust(
         }))
 }
 
-/// Delete OIDC trust relationship
+/// Delete OIDC Trust
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),

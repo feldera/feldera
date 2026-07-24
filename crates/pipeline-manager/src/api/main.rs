@@ -52,7 +52,7 @@ macro_rules! log_with_level {
 
 #[derive(OpenApi)]
 #[openapi(
-    modifiers(&SecurityAddon),
+    modifiers(&SecurityAddon, &MinRoleAddon),
     info(
         title = "Feldera API",
         description = r#"
@@ -348,6 +348,8 @@ It contains the following fields:
 
         // RBAC
         crate::db::types::role::Role,
+        crate::db::types::role::MintableKeyRole,
+        crate::db::types::role::MemberRole,
         crate::db::types::user::UserId,
         crate::db::types::user::TenantMember,
         crate::db::types::user::TenantInfo,
@@ -793,6 +795,49 @@ impl Modify for SecurityAddon {
                         .build(),
                 ),
             )
+        }
+    }
+}
+
+/// Annotates each gated operation with its minimum RBAC role, sourced from
+/// `ROUTE_MIN_ROLE` (rbac.rs) so the API reference cannot drift from the enforced
+/// policy. The note is prepended to the operation description, which the docs
+/// site renders as markdown.
+struct MinRoleAddon;
+
+impl Modify for MinRoleAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        use utoipa::openapi::PathItemType;
+        for (path, item) in openapi.paths.paths.iter_mut() {
+            for (method, operation) in item.operations.iter_mut() {
+                let http = match method {
+                    PathItemType::Get => "GET",
+                    PathItemType::Post => "POST",
+                    PathItemType::Put => "PUT",
+                    PathItemType::Delete => "DELETE",
+                    PathItemType::Patch => "PATCH",
+                    _ => continue,
+                };
+                // Only gated routes appear in the table; leave anything else
+                // (public infra endpoints) untouched.
+                let Some(rule) = crate::api::rbac::min_role_for(http, path.as_str()) else {
+                    continue;
+                };
+                let note = match rule {
+                    // `owner` is the highest role, so "or higher" would be misleading.
+                    Some(role) if role == crate::db::types::role::Role::Owner => {
+                        "Required role: `owner`.".to_string()
+                    }
+                    Some(role) => format!("Required role: `{role}` or higher."),
+                    None => "Required role: any authenticated user.".to_string(),
+                };
+                operation.description = Some(match operation.description.take() {
+                    Some(existing) if !existing.trim().is_empty() => {
+                        format!("{note}\n\n{existing}")
+                    }
+                    _ => note,
+                });
+            }
         }
     }
 }
