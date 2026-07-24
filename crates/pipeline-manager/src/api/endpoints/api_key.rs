@@ -31,6 +31,7 @@ pub(crate) struct NewApiKeyRequest {
     /// caller's own role; `admin` and `owner` are never issuable as API keys.
     /// Defaults to `read`.
     #[serde(default)]
+    #[schema(value_type = Option<MintableKeyRole>)]
     role: Option<Role>,
 }
 

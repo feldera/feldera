@@ -76,16 +76,26 @@ impl fmt::Display for InvalidRole {
     }
 }
 
-/// The subset of roles that may be carried by a static API key. `admin` and
-/// `owner` are deliberately not representable here, so an over-privileged key
-/// cannot be constructed (a leaked static secret carrying admin/owner would be
-/// a standing liability; those roles come only from signature-verified
-/// principals: login JWTs and OIDC trust relationships).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The role an API key carries: `read` or `write`. API keys cannot be granted
+/// `admin` or `owner`; those roles are held only by interactive logins and OIDC
+/// trust relationships.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[serde(rename_all = "lowercase")]
 pub enum MintableKeyRole {
     Read,
     Write,
+}
+
+/// A role assignable to a tenant member: `read`, `write`, or `admin`. `owner`
+/// is a platform-wide role, not a tenant membership, so it is not a valid value
+/// here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum MemberRole {
+    Read,
+    Write,
+    Admin,
 }
 
 impl MintableKeyRole {

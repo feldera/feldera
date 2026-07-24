@@ -1,4 +1,4 @@
-use crate::db::types::role::Role;
+use crate::db::types::role::{MintableKeyRole, Role};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
@@ -27,5 +27,7 @@ impl Display for ApiKeyId {
 pub struct ApiKeyDescr {
     pub id: ApiKeyId,
     pub name: String,
+    /// Always `read` or `write` (a key can never carry `admin`/`owner`).
+    #[schema(value_type = MintableKeyRole)]
     pub role: Role,
 }
