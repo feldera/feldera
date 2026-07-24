@@ -19,6 +19,7 @@ use super::schema::{OptionalField, schema_unwrap_optional};
 pub fn avro_ser_config() -> SqlSerdeConfig {
     SqlSerdeConfig::default()
         .with_timestamp_format(TimestampFormat::MicrosSinceEpoch)
+        .with_timestamp_tz_format(TimestampFormat::MicrosSinceEpoch)
         .with_time_format(TimeFormat::Micros)
         .with_date_format(DateFormat::DaysSinceEpoch)
         .with_decimal_format(DecimalFormat::I128)
@@ -809,7 +810,7 @@ mod test {
         Decimal, Schema as AvroSchema, from_avro_datum, to_avro_datum, types::Value as AvroValue,
     };
     use dbsp::algebra::{F32, F64};
-    use feldera_sqllib::{Date, SqlDecimal, Timestamp};
+    use feldera_sqllib::{Date, SqlDecimal, Timestamp, TimestampTz};
     use feldera_types::{serde_with_context::SerializeWithContext, serialize_table_record};
     use num_bigint::BigInt;
     use serde::Serialize;
@@ -898,6 +899,22 @@ mod test {
       ]
     }"#;
 
+    struct TestTimestampTz {
+        ts: TimestampTz,
+    }
+
+    serialize_table_record!(TestTimestampTz[1] {
+        ts["ts"]: TimestampTz
+    });
+
+    const SCHEMA_TIMESTAMP_TZ: &str = r#"{
+      "type": "record",
+      "name": "TimestampTz",
+      "fields": [
+        { "name": "ts", "type": { "type": "long", "logicalType": "timestamp-micros" } }
+      ]
+    }"#;
+
     macro_rules! serializer_test {
         ($schema: expr_2021, $record: ident, $avro: ident) => {
             let schema = serde_json::Value::from_str($schema).unwrap();
@@ -916,6 +933,18 @@ mod test {
             let parsed_val = from_avro_datum::<&[u8]>(&schema, &mut avro.as_ref(), None).unwrap();
             assert_eq!(val, parsed_val);
         };
+    }
+
+    #[test]
+    fn test_avro_serializer_timestamp_tz() {
+        let micros = 1_713_597_703_000_123;
+        let record = TestTimestampTz {
+            ts: TimestampTz::from_microseconds(micros),
+        };
+        let expected =
+            AvroValue::Record(vec![("ts".to_string(), AvroValue::TimestampMicros(micros))]);
+
+        serializer_test!(SCHEMA_TIMESTAMP_TZ, record, expected);
     }
 
     #[test]

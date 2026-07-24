@@ -158,6 +158,11 @@ impl SqlSerdeConfig {
         self
     }
 
+    pub fn with_timestamp_tz_format(mut self, timestamp_tz_format: TimestampFormat) -> Self {
+        self.timestamp_tz_format = timestamp_tz_format;
+        self
+    }
+
     pub fn with_decimal_format(mut self, decimal_format: DecimalFormat) -> Self {
         self.decimal_format = decimal_format;
         self
