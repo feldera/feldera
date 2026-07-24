@@ -590,6 +590,7 @@ async fn bearer_auth(
                     subject,
                     email,
                     state.config.default_role,
+                    state.config.first_user_role,
                 )
                 .await
             };
@@ -1551,6 +1552,7 @@ mod test {
             auth_audience: "feldera-api".to_string(),
             owners: vec![],
             default_role: Role::Read,
+            first_user_role: Role::Admin,
         };
 
         let (conn, _temp) = crate::db::test::setup_pg().await;

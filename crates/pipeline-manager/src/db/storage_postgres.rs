@@ -156,6 +156,7 @@ impl Storage for StoragePostgres {
         subject: String,
         email: Option<String>,
         default_role: Role,
+        first_user_role: Role,
     ) -> Result<(TenantId, UserId, Role), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -168,6 +169,7 @@ impl Storage for StoragePostgres {
             subject,
             email,
             default_role,
+            first_user_role,
         )
         .await?;
         txn.commit().await?;
