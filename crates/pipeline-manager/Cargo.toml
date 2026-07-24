@@ -145,6 +145,7 @@ proptest-derive = { workspace = true }
 pg-client-config = { workspace = true }
 base64 = { workspace = true }
 actix-http = { workspace = true }
+actix-test = { workspace = true }
 serial_test = { workspace = true }
 wiremock = { workspace = true }
 feldera-types = { workspace = true, features = ["testing"] }

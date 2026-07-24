@@ -5,6 +5,13 @@ use utoipa::ToSchema;
 /// The maximum size of a WebSocket frames we're sending in bytes.
 pub const MAX_WS_FRAME_SIZE: usize = 1024 * 1024 * 2;
 
+/// WebSocket subprotocol the web console offers on every browser WebSocket
+/// handshake. Browsers require the server to echo one of the offered
+/// subprotocols, so this gives the manager a stable value to echo back. It
+/// marks the handshake, not the endpoint (the URL path already identifies
+/// that), so it is shared across all WebSocket endpoints.
+pub const WS_SUBPROTOCOL: &str = "feldera-ws-v1";
+
 /// URL-encoded `format` argument to the `/query` endpoint.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy, ToSchema)]
 #[serde(rename_all = "snake_case")]
