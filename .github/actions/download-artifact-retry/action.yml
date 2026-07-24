@@ -50,6 +50,7 @@ runs:
         api="https://api.github.com/repos/${REPOSITORY}"
 
         artifact_json=$(curl -fsSL --retry 3 --retry-connrefused --retry-delay 2 \
+          --connect-timeout 10 --speed-limit 1024 --speed-time 30 \
           -H "Authorization: Bearer ${GH_TOKEN}" \
           -H "Accept: application/vnd.github+json" \
           "${api}/actions/runs/${RUN_ID}/artifacts?name=${ARTIFACT_NAME}&per_page=100" \
@@ -78,8 +79,15 @@ runs:
           # Capture curl's status instead of letting set -e abort the step:
           # curl only auto-retries errors it deems transient, so mid-transfer
           # failures (e.g. exit 56, connection reset) must reach this loop.
+          #
+          # --speed-limit/--speed-time abort a stalled transfer (throughput
+          # below 1KB/s for 30s straight) instead of hanging indefinitely --
+          # a large artifact download that goes silent mid-transfer otherwise
+          # has no exit code at all for --retry to act on, and would hang
+          # until the job's overall timeout-minutes (default 360m) kills it.
           curl_status=0
           curl -fsSL --retry 3 --retry-connrefused --retry-delay 2 \
+            --connect-timeout 10 --speed-limit 1024 --speed-time 30 \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -o "$zip_path" \
