@@ -49,7 +49,7 @@ runs:
 
         api="https://api.github.com/repos/${REPOSITORY}"
 
-        artifact_json=$(curl -fsSL \
+        artifact_json=$(curl -fsSL --retry 3 --retry-connrefused --retry-delay 2 \
           -H "Authorization: Bearer ${GH_TOKEN}" \
           -H "Accept: application/vnd.github+json" \
           "${api}/actions/runs/${RUN_ID}/artifacts?name=${ARTIFACT_NAME}&per_page=100" \
@@ -75,25 +75,33 @@ runs:
         while true; do
           echo "==> Download attempt ${attempt}/${MAX_ATTEMPTS}: ${ARTIFACT_NAME} (expecting ${expected_size} bytes)"
 
+          # Capture curl's status instead of letting set -e abort the step:
+          # curl only auto-retries errors it deems transient, so mid-transfer
+          # failures (e.g. exit 56, connection reset) must reach this loop.
+          curl_status=0
           curl -fsSL --retry 3 --retry-connrefused --retry-delay 2 \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -o "$zip_path" \
-            "${api}/actions/artifacts/${artifact_id}/zip"
+            "${api}/actions/artifacts/${artifact_id}/zip" || curl_status=$?
 
-          actual_size=$(wc -c <"$zip_path" | tr -d ' ')
-
-          if [ "$actual_size" != "$expected_size" ]; then
-            echo "::warning::Size mismatch on attempt ${attempt} for '${ARTIFACT_NAME}' (expected ${expected_size} bytes, got ${actual_size}) — download was truncated"
+          if [ "$curl_status" -ne 0 ]; then
+            echo "::warning::Download failed on attempt ${attempt} for '${ARTIFACT_NAME}' (curl exit code ${curl_status})"
           else
-            actual_digest=$(sha256sum "$zip_path" | awk '{print $1}')
+            actual_size=$(wc -c <"$zip_path" | tr -d ' ')
 
-            if [ "$actual_digest" = "$expected_digest" ]; then
-              echo "==> Checksum verified (sha256:${actual_digest})"
-              break
+            if [ "$actual_size" != "$expected_size" ]; then
+              echo "::warning::Size mismatch on attempt ${attempt} for '${ARTIFACT_NAME}' (expected ${expected_size} bytes, got ${actual_size}) — download was truncated"
+            else
+              actual_digest=$(sha256sum "$zip_path" | awk '{print $1}')
+
+              if [ "$actual_digest" = "$expected_digest" ]; then
+                echo "==> Checksum verified (sha256:${actual_digest})"
+                break
+              fi
+
+              echo "::warning::Checksum mismatch on attempt ${attempt} for '${ARTIFACT_NAME}' (expected sha256:${expected_digest}, got sha256:${actual_digest}) — download was corrupted in transit"
             fi
-
-            echo "::warning::Checksum mismatch on attempt ${attempt} for '${ARTIFACT_NAME}' (expected sha256:${expected_digest}, got sha256:${actual_digest}) — download was corrupted in transit"
           fi
 
           if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
