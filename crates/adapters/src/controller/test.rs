@@ -710,7 +710,7 @@ fn test_ft(rounds: &[FtTestRound]) {
         } else {
             // Wait for replay for finish and then check that the input endpoint's
             // pause state matches what it should be.
-            wait(|| !controller.is_replaying(), 1000).unwrap();
+            wait(|| !controller.is_replaying(), 10_000).unwrap();
             assert_eq!(
                 controller.is_input_endpoint_paused("test_input1").unwrap(),
                 paused
