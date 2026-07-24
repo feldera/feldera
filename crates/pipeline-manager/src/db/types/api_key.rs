@@ -1,4 +1,4 @@
-use crate::db::types::role::{MintableKeyRole, Role};
+use crate::db::types::role::Role;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
