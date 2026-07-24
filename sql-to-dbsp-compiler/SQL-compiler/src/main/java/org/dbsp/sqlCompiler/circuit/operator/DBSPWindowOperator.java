@@ -9,6 +9,9 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -28,8 +31,14 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements ICon
     public DBSPWindowOperator(CalciteRelNode node, boolean lowerInclusive, boolean upperInclusive,
             OutputPort data, OutputPort control) {
         super(node, "window", null, data.outputType(), data.isMultiset(), data, control);
-        // Check that the left input and output are indexed ZSets
-        this.getOutputIndexedZSetType();
+        // Check that the left input and output are indexed ZSets.
+        DBSPTypeIndexedZSet indexedType = this.getOutputIndexedZSetType();
+        DBSPType expectedControlType = new DBSPTypeRawTuple(
+                new DBSPTypeTypedBox(indexedType.keyType, false),
+                new DBSPTypeTypedBox(indexedType.keyType, false));
+        Utilities.enforce(control.outputType().sameType(expectedControlType),
+                () -> "Window bounds must have type " + expectedControlType +
+                        ", but have type " + control.outputType());
         this.lowerInclusive = lowerInclusive;
         this.upperInclusive = upperInclusive;
     }

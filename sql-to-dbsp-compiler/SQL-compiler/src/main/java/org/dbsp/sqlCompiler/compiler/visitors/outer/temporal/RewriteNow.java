@@ -330,32 +330,34 @@ public class RewriteNow extends CircuitCloneVisitor {
         CalciteRelNode relNode = operator.getRelNode();
         DBSPSimpleOperator scalarNow = this.scalarNow();
         WindowBounds bounds = comparisons.getWindowBounds(this.compiler());
-        DBSPClosureExpression makeWindow = bounds.makeWindow();
+        DBSPExpression common = bounds.common();
+        // This exact type is shared by the indexed stream and both window bounds.
+        DBSPType windowKeyType = common.getType().withMayBeNull(false);
+        DBSPClosureExpression makeWindow = bounds.makeWindow(windowKeyType);
         DBSPSimpleOperator windowBounds = new DBSPApplyOperator(operator.getRelNode(),
                 makeWindow, scalarNow.outputPort(), null);
         this.addOperator(windowBounds);
 
-        // Filter the null timestamps away, they won't be selected anyway,
-        // but window needs non-nullable values
+        // Filter null keys away; they would not be selected anyway, and the
+        // window operator requires non-nullable keys.
         DBSPTypeTupleBase inputType = source.getOutputZSetElementType().to(DBSPTypeTupleBase.class);
-        DBSPType commonType = bounds.common().getType();
         DBSPParameter param = comparisons.getParameter();
-        if (bounds.common().getType().mayBeNull) {
+        if (common.getType().mayBeNull) {
             DBSPClosureExpression nonNull =
-                    bounds.common().is_null().not().closure(param);
+                    common.is_null().not().closure(param);
             DBSPFilterOperator filter = new DBSPFilterOperator(relNode, nonNull, source.outputPort());
             this.addOperator(filter);
             source = filter;
         }
 
-        // Index input by timestamp
+        // Index input by the temporal key.
         DBSPClosureExpression indexFunction =
                 new DBSPRawTupleExpression(
-                        bounds.common().cast(bounds.common().getNode(), commonType.withMayBeNull(false),
+                        common.cast(common.getNode(), windowKeyType,
                                 DBSPCastExpression.CastType.SqlUnsafe),
                         param.asVariable().deref().applyClone()).closure(param);
         DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(operator.getRelNode(),
-                commonType.withMayBeNull(false),
+                windowKeyType,
                 inputType);
         DBSPMapIndexOperator index = new DBSPMapIndexOperator(operator.getRelNode(),
                 indexFunction, ix, operator.isMultiset, source.outputPort());
