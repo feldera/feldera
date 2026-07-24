@@ -551,6 +551,7 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
         serialize_maybe_optional(self.schema, |schema| match schema {
             AvroSchema::Long if v < i64::MAX as u64 => Ok(AvroValue::Long(v as i64)),
             AvroSchema::Long => Err(AvroSerializerError::out_of_bounds(&v, "u64", schema)),
+            AvroSchema::String => Ok(AvroValue::String(v.to_string())),
             AvroSchema::TimeMicros => Ok(AvroValue::TimeMicros(v as i64)),
             AvroSchema::TimeMillis => Ok(AvroValue::TimeMillis((v / 1000) as i32)),
             _ => Err(AvroSerializerError::incompatible("u64", schema)),
@@ -880,6 +881,23 @@ mod test {
     ]
   }"#;
 
+    #[derive(Serialize)]
+    struct TestUBigInt {
+        value: u64,
+    }
+
+    serialize_table_record!(TestUBigInt[1] {
+        value["value"]: u64
+    });
+
+    const SCHEMA_UBIGINT: &str = r#"{
+      "type": "record",
+      "name": "UBigInt",
+      "fields": [
+        { "name": "value", "type": "string" }
+      ]
+    }"#;
+
     macro_rules! serializer_test {
         ($schema: expr_2021, $record: ident, $avro: ident) => {
             let schema = serde_json::Value::from_str($schema).unwrap();
@@ -1059,5 +1077,16 @@ mod test {
             record_numeric_1,
             avro_numeric_1_optional
         );
+    }
+
+    #[test]
+    fn test_avro_serializer_ubigint() {
+        let record = TestUBigInt { value: u64::MAX };
+        let expected = AvroValue::Record(vec![(
+            "value".to_string(),
+            AvroValue::String(u64::MAX.to_string()),
+        )]);
+
+        serializer_test!(SCHEMA_UBIGINT, record, expected);
     }
 }
