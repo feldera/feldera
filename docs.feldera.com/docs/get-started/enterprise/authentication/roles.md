@@ -33,9 +33,10 @@ can select the tenant it acts in with the `Feldera-Tenant` request header.
   are admitted at the configured default role (see [below](#default-role-and-owners))
   and a membership record is created.
 - When that first login also creates the tenant (auto-provisioning, because the
-  resolved tenant did not exist yet), the user becomes the tenant's `admin`
-  instead. A tenant an owner creates explicitly starts with no members, and the
-  first user to log into it is admitted at the default role.
+  resolved tenant did not exist yet), the user is granted the configured
+  first-user role, `admin` by default (see [below](#default-role-and-owners)). A
+  tenant an owner creates explicitly starts with no members, and the first user
+  to log into it is admitted at the default role.
 - An `admin` or `owner` can pre-provision members and change member roles from the
   Admin page in the web console, or through the
   [set-member-role API](/api/assign-member-role).
@@ -76,8 +77,8 @@ manage each tenant, from the Admin page or through the
 
 ## Default role and owners
 
-Two settings govern how much access an authenticated user has before an admin or
-owner assigns them a role.
+These settings govern how much access an authenticated user has before an admin
+or owner assigns them a role.
 
 `authorization.defaultRole` (environment: `FELDERA_AUTH_DEFAULT_ROLE`) is the role
 given to an authenticated user who has no explicit membership in the tenant they
@@ -87,6 +88,11 @@ are granted only explicitly, never handed to an unprovisioned user by default.
 The value is applied on the user's first login and recorded as their membership,
 so a later change to `defaultRole` does not re-grade a user who has already logged
 in. The Helm chart sets this to `write`.
+
+`authorization.firstUserRole` (environment: `FELDERA_AUTH_FIRST_USER_ROLE`) is the
+role granted to the user whose login first creates a tenant (auto-provisioning).
+It must be `read`, `write`, or `admin`, and defaults to `admin` so the creator can
+administer the tenant.
 
 `authorization.owners` (environment: `FELDERA_OWNERS`) lists the identities
 granted the platform-wide `owner` role, in the forms shown above. It is empty by
