@@ -130,6 +130,23 @@ fn parse_default_role(s: &str) -> Result<Role, String> {
     }
 }
 
+/// Default role granted to the login that first creates a tenant.
+fn default_first_user_role() -> Role {
+    Role::Admin
+}
+
+/// Parse the configured first-user role, restricting it to `read`, `write`, or
+/// `admin` (`owner` is platform-wide, never a tenant membership).
+fn parse_first_user_role(s: &str) -> Result<Role, String> {
+    match Role::from_str(s) {
+        Ok(role @ (Role::Read | Role::Write | Role::Admin)) => Ok(role),
+        Ok(other) => Err(format!(
+            "first user role must be 'read', 'write', or 'admin', not '{other}'"
+        )),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 /// Default number of monitor events that are retained for each pipeline.
 fn default_pipeline_monitor_events_retention() -> u32 {
     720
@@ -974,6 +991,15 @@ pub struct ApiServerConfig {
     #[serde(default = "default_default_role")]
     #[arg(long, default_value = "read", value_parser = parse_default_role, env = "FELDERA_AUTH_DEFAULT_ROLE")]
     pub default_role: Role,
+
+    /// Role granted to the user whose login first creates a tenant
+    /// (auto-provisioning). Must be `read`, `write`, or `admin`. Default:
+    /// `admin`, so the tenant's creator can manage it. Set it lower (e.g.
+    /// `write`) for a shared sandbox where users should not administer the
+    /// tenant they land in.
+    #[serde(default = "default_first_user_role")]
+    #[arg(long, default_value = "admin", value_parser = parse_first_user_role, env = "FELDERA_AUTH_FIRST_USER_ROLE")]
+    pub first_user_role: Role,
 }
 
 impl ApiServerConfig {
@@ -1022,6 +1048,7 @@ impl ApiServerConfig {
             auth_audience: "feldera-api".to_string(),
             owners: vec![],
             default_role: Role::Read,
+            first_user_role: Role::Admin,
         }
     }
 }

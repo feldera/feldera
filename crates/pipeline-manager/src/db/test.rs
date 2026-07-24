@@ -771,6 +771,37 @@ async fn api_key_store_and_validation() {
     }
 }
 
+/// `first_user_role` sets the role of the login that creates a tenant: with
+/// `write`, the creator is not made admin (e.g. a shared sandbox).
+#[tokio::test]
+async fn rbac_first_user_role_configurable() {
+    let handle = test_setup().await;
+    let provider = "https://idp.example".to_string();
+
+    // Creator of a fresh tenant, with first_user_role = write, is admitted at
+    // write rather than admin.
+    let (tenant, _founder, role) = handle
+        .db
+        .resolve_login(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            "sandbox".to_string(),
+            provider.clone(),
+            "founder".to_string(),
+            Some("founder@sandbox.test".to_string()),
+            Role::Read,
+            Role::Write,
+        )
+        .await
+        .unwrap();
+    assert_eq!(role, Role::Write);
+
+    // The freshly created tenant therefore has no admin member; only a platform
+    // owner could administer it.
+    let members = handle.db.list_tenant_members(tenant).await.unwrap();
+    assert!(members.iter().all(|m| m.role != Role::Admin));
+}
+
 /// RBAC login resolution and membership: the first principal of a fresh tenant
 /// becomes its admin, later principals default to read, roles are editable and
 /// removable, and strict tenant lookup works.
@@ -790,6 +821,7 @@ async fn rbac_login_resolution_and_membership() {
             "alice".to_string(),
             Some("alice@acme.test".to_string()),
             Role::Read,
+            Role::Admin,
         )
         .await
         .unwrap();
@@ -806,6 +838,7 @@ async fn rbac_login_resolution_and_membership() {
             "bob".to_string(),
             Some("bob@acme.test".to_string()),
             Role::Read,
+            Role::Admin,
         )
         .await
         .unwrap();
@@ -823,6 +856,7 @@ async fn rbac_login_resolution_and_membership() {
             "alice".to_string(),
             None,
             Role::Read,
+            Role::Admin,
         )
         .await
         .unwrap();
@@ -893,6 +927,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
                 format!("admin-{name}"),
                 None,
                 Role::Read,
+                Role::Admin,
             )
             .await
             .unwrap()
@@ -1069,6 +1104,7 @@ async fn preprovision_member_survives_first_login() {
             "admin".to_string(),
             None,
             Role::Read,
+            Role::Admin,
         )
         .await
         .unwrap();
@@ -1103,6 +1139,7 @@ async fn preprovision_member_survives_first_login() {
             "carol".to_string(),
             Some("carol@acme.test".to_string()),
             Role::Read,
+            Role::Admin,
         )
         .await
         .unwrap();
@@ -5185,6 +5222,7 @@ impl Storage for Mutex<DbModel> {
         _subject: String,
         _email: Option<String>,
         default_role: Role,
+        _first_user_role: Role,
     ) -> DBResult<(TenantId, UserId, Role)> {
         Ok((TenantId(Uuid::nil()), UserId(Uuid::nil()), default_role))
     }
