@@ -145,11 +145,12 @@ pub async fn list_tenant_members(
 }
 
 /// Atomic login resolution for a non-owner principal: resolve (or create) the
-/// acting tenant, ensure the user record, and determine the role. The first
-/// principal of a freshly created tenant becomes its `admin`; an existing
-/// member keeps its stored role; any other principal is admitted at
-/// `default_role` and a membership row is recorded so admins can see and adjust
-/// it. Returns the acting tenant, the user, and the effective role.
+/// acting tenant, ensure the user record, and determine the role. The login
+/// that first creates a tenant is granted `first_user_role` (`admin` by
+/// default); an existing member keeps its stored role; any other principal is
+/// admitted at `default_role` and a membership row is recorded so admins can
+/// see and adjust it. Returns the acting tenant, the user, and the effective
+/// role.
 #[allow(clippy::too_many_arguments)]
 pub async fn resolve_login(
     txn: &Transaction<'_>,
@@ -160,6 +161,7 @@ pub async fn resolve_login(
     subject: String,
     email: Option<String>,
     default_role: Role,
+    first_user_role: Role,
 ) -> Result<(TenantId, UserId, Role), DBError> {
     let (tenant_id, created) =
         get_or_create_tenant_id_created(txn, new_tenant_id, tenant_name, provider.clone()).await?;
@@ -169,7 +171,11 @@ pub async fn resolve_login(
     let role = match get_member_role(txn, tenant_id, user_id).await? {
         Some(role) => role,
         None => {
-            let role = if created { Role::Admin } else { default_role };
+            let role = if created {
+                first_user_role
+            } else {
+                default_role
+            };
             upsert_member_role(txn, tenant_id, user_id, role).await?;
             role
         }

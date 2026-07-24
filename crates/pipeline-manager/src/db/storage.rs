@@ -125,6 +125,7 @@ pub(crate) trait Storage {
         subject: String,
         email: Option<String>,
         default_role: Role,
+        first_user_role: Role,
     ) -> Result<(TenantId, UserId, Role), DBError>;
 
     /// Ensures a user record exists for an OIDC `(provider, subject)`.
