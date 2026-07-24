@@ -226,6 +226,10 @@ authorization:
   # Role for an authenticated user with no explicit membership yet (default: "read")
   # Ship "write" when upgrading a pre-RBAC deployment; see the Roles page.
   defaultRole: "write"                  # Maps to: FELDERA_AUTH_DEFAULT_ROLE
+
+  # Role for the user whose login first creates a tenant (default: "admin")
+  # Set to "write"/"read" for a shared sandbox; see the Roles page.
+  firstUserRole: "admin"                # Maps to: FELDERA_AUTH_FIRST_USER_ROLE
 ```
 
 ### Environment Variables Reference
@@ -250,6 +254,7 @@ FELDERA_AUTH_AUTHORIZED_GROUPS=group1,group2 # comma-separated list
 FELDERA_AUTH_AUDIENCE=feldera-api            # default: feldera-api
 FELDERA_OWNERS=ops@example.com               # comma-separated; default: (none)
 FELDERA_AUTH_DEFAULT_ROLE=read               # read or write; default: read
+FELDERA_AUTH_FIRST_USER_ROLE=admin           # read, write, or admin; default: admin
 
 # AWS Cognito specific
 AWS_COGNITO_LOGIN_URL=https://...
