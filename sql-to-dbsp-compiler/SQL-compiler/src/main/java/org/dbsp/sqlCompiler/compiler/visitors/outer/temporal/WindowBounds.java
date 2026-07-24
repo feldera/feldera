@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -18,25 +19,28 @@ record WindowBounds(
         @Nullable WindowBound lower,
         @Nullable WindowBound upper,
         DBSPExpression common) {
-    DBSPClosureExpression makeWindow() {
-        DBSPType type = ContainsNow.timestampType();
-        // The input has type Tup1<Timestamp>
-        DBSPVariablePath var = new DBSPTypeTuple(type).ref().var();
-        RewriteNow.RewriteNowExpression rn = new RewriteNow.RewriteNowExpression(this.compiler(), var.deref().field(0));
+    DBSPClosureExpression makeWindow(DBSPType windowKeyType) {
+        // The input has type Tup1<Timestamp>, since it is produced by scalarNow().
+        DBSPType timestampType = ContainsNow.timestampType();
+        DBSPVariablePath var = new DBSPTypeTuple(timestampType).ref().var();
+        RewriteNow.RewriteNowExpression rn = new RewriteNow.RewriteNowExpression(
+                this.compiler(), var.deref().field(0));
         final DBSPExpression lowerBound, upperBound;
         CalciteObject node = CalciteObject.EMPTY;
         if (this.lower != null) {
-            lowerBound = rn.apply(this.lower().expression()).to(DBSPExpression.class);
+            lowerBound = rn.apply(this.lower().expression()).to(DBSPExpression.class)
+                    .nullabilityCast(windowKeyType, DBSPCastExpression.CastType.SqlUnsafe);
             node = this.lower.expression().getNode();
         } else {
-            lowerBound = type.to(IsBoundedType.class).getMinValue();
+            lowerBound = windowKeyType.to(IsBoundedType.class).getMinValue();
         }
         if (this.upper != null) {
-            upperBound = rn.apply(this.upper.expression()).to(DBSPExpression.class);
+            upperBound = rn.apply(this.upper.expression()).to(DBSPExpression.class)
+                    .nullabilityCast(windowKeyType, DBSPCastExpression.CastType.SqlUnsafe);
             if (!node.getPositionRange().isValid())
                 node = this.upper.expression().getNode();
         } else {
-            upperBound = type.to(IsBoundedType.class).getMaxValue();
+            upperBound = windowKeyType.to(IsBoundedType.class).getMaxValue();
         }
         return new DBSPRawTupleExpression(node,
                 DBSPTypeTypedBox.wrapTypedBox(lowerBound, false),

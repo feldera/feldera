@@ -30,8 +30,11 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
@@ -837,6 +840,47 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         window.left().getOutputIndexedZSetType().elementType.getToplevelFieldCount());
             }
         });
+    }
+
+    private void testDateTemporalFilter(String comparison) {
+        var ccs = this.getCCS("""
+                CREATE TABLE employee (
+                    id STRING NOT NULL,
+                    entry_date DATE,
+                    PRIMARY KEY (id)
+                );
+                CREATE VIEW label_result AS
+                SELECT id AS entity_id
+                FROM employee
+                WHERE entry_date %s;
+                """.formatted(comparison));
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int windows;
+
+            @Override public void postorder(DBSPWindowOperator window) {
+                this.windows++;
+                DBSPType keyType = window.left().getOutputIndexedZSetType().keyType;
+                Assert.assertTrue(keyType.sameType(DBSPTypeDate.INSTANCE));
+                DBSPType expectedControlType = new DBSPTypeRawTuple(
+                        new DBSPTypeTypedBox(keyType, false),
+                        new DBSPTypeTypedBox(keyType, false));
+                Assert.assertTrue(window.right().outputType().sameType(expectedControlType));
+            }
+
+            @Override public void endVisit() {
+                Assert.assertEquals(1, this.windows);
+            }
+        });
+    }
+
+    @Test
+    public void dateTemporalFilterWithLowerBound() {
+        this.testDateTemporalFilter(">= CAST(NOW() AS DATE) - INTERVAL '1' YEAR");
+    }
+
+    @Test
+    public void dateTemporalFilterWithUpperBound() {
+        this.testDateTemporalFilter("<= CAST(NOW() AS DATE) + INTERVAL '1' YEAR");
     }
 
     @Test
