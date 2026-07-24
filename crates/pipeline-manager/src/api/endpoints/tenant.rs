@@ -10,7 +10,7 @@ use crate::api::util::parse_url_parameter;
 use crate::auth::AuthenticatedPrincipal;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
-use crate::db::types::role::{MemberRole, Role};
+use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::user::UserId;
 use crate::error::ManagerError;
