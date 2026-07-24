@@ -10,7 +10,7 @@ use crate::api::util::parse_url_parameter;
 use crate::auth::AuthenticatedPrincipal;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
-use crate::db::types::role::Role;
+use crate::db::types::role::{MemberRole, Role};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::user::UserId;
 use crate::error::ManagerError;
@@ -31,6 +31,7 @@ use uuid::Uuid;
 pub(crate) struct SetMemberRoleRequest {
     /// The role to assign. Must be `read`, `write`, or `admin`; capped at the
     /// caller's own role. `owner` is never assignable here.
+    #[schema(value_type = MemberRole)]
     pub role: Role,
 }
 
@@ -48,6 +49,7 @@ pub(crate) struct AddMemberRequest {
     pub email: Option<String>,
     /// Role to grant. Must be `read`, `write`, or `admin`; capped at the
     /// caller's own role. `owner` is never assignable here.
+    #[schema(value_type = MemberRole)]
     pub role: Role,
 }
 
@@ -90,7 +92,7 @@ fn parse_user_id(req: &HttpRequest) -> Result<UserId, ManagerError> {
     Ok(UserId(uuid))
 }
 
-/// List tenant members
+/// List Tenant Members
 ///
 /// List the users that are members of the acting tenant and their roles.
 #[utoipa::path(
@@ -118,14 +120,14 @@ pub(crate) async fn list_tenant_users(
         .json(&members))
 }
 
-/// Assign a member role
+/// Assign Member Role
 ///
 /// Assign or change a user's role in the acting tenant. The role is capped at
 /// the caller's own role and may not be `owner`.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
-    params(("user_id" = String, Path, description = "User identifier")),
+    params(("user_id" = Uuid, Path, description = "User identifier")),
     request_body = SetMemberRoleRequest,
     responses(
         (status = OK, description = "Role assigned"),
@@ -158,13 +160,15 @@ pub(crate) async fn put_tenant_user(
     Ok(HttpResponse::Ok().finish())
 }
 
-/// Remove a tenant member
+/// Remove Tenant Member
 ///
-/// Remove a user from the acting tenant.
+/// Remove a user from the acting tenant. This drops their role now, but if the
+/// identity provider still grants them access they are re-added at the default
+/// role on their next login; revoke access at the provider for a durable block.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
-    params(("user_id" = String, Path, description = "User identifier")),
+    params(("user_id" = Uuid, Path, description = "User identifier")),
     responses(
         (status = OK, description = "Member removed"),
         (status = NOT_FOUND, description = "User is not a member", body = ErrorResponse),
@@ -188,7 +192,7 @@ pub(crate) async fn delete_tenant_user(
     Ok(HttpResponse::Ok().finish())
 }
 
-/// Pre-provision a tenant member
+/// Provision Tenant Member
 ///
 /// Add a member to the acting tenant by identity, before the user's first
 /// login. The grant is dormant until that identity authenticates into the
@@ -253,7 +257,7 @@ pub(crate) struct NewTenantResponse {
 
 /// List tenants
 ///
-/// List all tenants in the installation. Owner-only platform view.
+/// List all tenants in the installation.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -273,9 +277,9 @@ pub(crate) async fn list_tenants(
         .json(&tenants))
 }
 
-/// Create a tenant
+/// Create Tenant
 ///
-/// Explicitly create a tenant (owner-only), rather than relying on first login.
+/// Explicitly create a tenant, rather than relying on first login.
 /// The tenant is keyed to the platform's configured OIDC issuer (statically set
 /// at deploy time, e.g. via Helm), so that logins from that issuer resolve into
 /// it; the issuer is not caller-settable. Fails with a conflict if a tenant with

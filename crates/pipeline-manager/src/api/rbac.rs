@@ -121,6 +121,14 @@ fn lookup(method: &str, pattern: &str) -> Option<Option<Role>> {
     route_table().get(&(method, pattern)).copied()
 }
 
+/// Minimum role required to reach `(method, path)`, for OpenAPI annotation.
+/// `None` => not a gated route; `Some(None)` => any authenticated principal;
+/// `Some(Some(role))` => requires at least `role`. Reads the same table the
+/// middleware enforces, so the API reference cannot drift from the policy.
+pub(crate) fn min_role_for(method: &str, path: &str) -> Option<Option<Role>> {
+    lookup(method, path)
+}
+
 /// Build the 403 body in the same shape as the rest of the API.
 fn forbidden(message: &str) -> HttpResponse<BoxBody> {
     HttpResponse::Forbidden().json(serde_json::json!({
@@ -505,6 +513,50 @@ mod test {
             stale.is_empty(),
             "these ROUTE_MIN_ROLE entries do not match any registered /v0 route (remove or fix them):\n  {}",
             stale.join("\n  ")
+        );
+    }
+
+    /// `MinRoleAddon` stamps every documented `/v0` operation with its minimum
+    /// role, so the API reference shows the policy. Removing the modifier from
+    /// `ApiDoc`'s `modifiers(...)` makes this fail.
+    #[test]
+    fn every_v0_operation_documents_its_min_role() {
+        use crate::api::main::ApiDoc;
+        use utoipa::openapi::PathItemType;
+        use utoipa::OpenApi;
+
+        let method = |t: &PathItemType| match t {
+            PathItemType::Get => "GET",
+            PathItemType::Post => "POST",
+            PathItemType::Put => "PUT",
+            PathItemType::Delete => "DELETE",
+            PathItemType::Patch => "PATCH",
+            PathItemType::Head => "HEAD",
+            PathItemType::Options => "OPTIONS",
+            PathItemType::Trace => "TRACE",
+            PathItemType::Connect => "CONNECT",
+        };
+        let doc = ApiDoc::openapi();
+        let mut missing = vec![];
+        for (path, item) in doc.paths.paths.iter() {
+            if !path.starts_with("/v0") {
+                continue;
+            }
+            for (t, operation) in item.operations.iter() {
+                let has_note = operation
+                    .description
+                    .as_deref()
+                    .is_some_and(|d| d.contains("Required role:"));
+                if !has_note {
+                    missing.push(format!("{} {path}", method(t)));
+                }
+            }
+        }
+        missing.sort();
+        assert!(
+            missing.is_empty(),
+            "these /v0 operations are missing the minimum-role annotation:\n  {}",
+            missing.join("\n  ")
         );
     }
 }
