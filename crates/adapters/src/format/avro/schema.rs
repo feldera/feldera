@@ -646,7 +646,7 @@ impl AvroSchemaBuilder {
                 return Err("not implemented: Avro encoding for user-defined SQL types".to_string());
             }
             SqlType::Map => {
-                let key_type = column_type.value.as_ref().ok_or(
+                let key_type = column_type.key.as_ref().ok_or(
                     "internal error: relation schema contains a map field, with a missing key type",
                 )?;
                 if !key_type.typ.is_string() {
@@ -751,5 +751,18 @@ mod test {
                 "'{invalid}' should be rejected"
             );
         }
+    }
+
+    #[test]
+    fn map_schema_uses_key_type() {
+        let builder = AvroSchemaBuilder::new();
+        let valid = ColumnType::map(false, ColumnType::varchar(false), ColumnType::bigint(false));
+        builder.column_type_to_avro_schema_inner(&valid).unwrap();
+
+        let invalid = ColumnType::map(false, ColumnType::int(false), ColumnType::varchar(false));
+        let error = builder
+            .column_type_to_avro_schema_inner(&invalid)
+            .unwrap_err();
+        assert!(error.contains("Avro only allows string keys"));
     }
 }
