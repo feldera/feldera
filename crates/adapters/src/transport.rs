@@ -47,6 +47,9 @@ pub(crate) mod kafka;
 #[cfg(feature = "with-nats")]
 pub(crate) mod nats;
 
+#[cfg(feature = "with-s2")]
+pub(crate) mod s2;
+
 #[cfg(feature = "with-nexmark")]
 mod nexmark;
 
@@ -71,6 +74,9 @@ use crate::transport::null::NullOutputEndpoint;
 
 #[cfg(feature = "with-nats")]
 use crate::transport::nats::NatsInputEndpoint;
+
+#[cfg(feature = "with-s2")]
+use crate::transport::s2::{S2InputEndpoint, S2OutputEndpoint};
 
 #[cfg(feature = "with-nexmark")]
 use crate::transport::nexmark::NexmarkEndpoint;
@@ -102,6 +108,10 @@ pub fn input_transport_config_to_endpoint(
         TransportConfig::NatsInput(config) => Box::new(NatsInputEndpoint::new(config)?),
         #[cfg(not(feature = "with-nats"))]
         TransportConfig::NatsInput(_) => return Ok(None),
+        #[cfg(feature = "with-s2")]
+        TransportConfig::S2Input(config) => Box::new(S2InputEndpoint::new(config)?),
+        #[cfg(not(feature = "with-s2"))]
+        TransportConfig::S2Input(_) => return Ok(None),
         #[cfg(feature = "with-pubsub")]
         TransportConfig::PubSubInput(config) => Box::new(PubSubInputEndpoint::new(config.clone())?),
         #[cfg(not(feature = "with-pubsub"))]
@@ -128,6 +138,7 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::HttpOutput(_)
         | TransportConfig::RedisOutput(_)
         | TransportConfig::IcebergInput(_)
+        | TransportConfig::S2Output(_)
         | TransportConfig::NullOutput => return Ok(None),
     };
     Ok(Some(endpoint))
@@ -164,6 +175,8 @@ pub fn output_transport_config_to_endpoint(
         TransportConfig::RedisOutput(config) => {
             Ok(Some(Box::new(RedisOutputEndpoint::new(config)?)))
         }
+        #[cfg(feature = "with-s2")]
+        TransportConfig::S2Output(config) => Ok(Some(Box::new(S2OutputEndpoint::new(config)?))),
         TransportConfig::NullOutput => Ok(Some(Box::new(NullOutputEndpoint))),
         _ => Ok(None),
     }

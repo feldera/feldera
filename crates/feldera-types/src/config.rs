@@ -24,6 +24,7 @@ use crate::transport::postgres::{
 };
 use crate::transport::pubsub::PubSubInputConfig;
 use crate::transport::redis::RedisOutputConfig;
+use crate::transport::s2::{S2InputConfig, S2OutputConfig};
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
 use core::fmt;
@@ -1954,6 +1955,8 @@ pub enum TransportConfig {
     /// Ad hoc input: cannot be instantiated through API
     AdHocInput(AdHocInputConfig),
     ClockInput(ClockConfig),
+    S2Input(S2InputConfig),
+    S2Output(S2OutputConfig),
     /// Output connector that discards all data.
     NullOutput,
     /// Input connector that produces no data.
@@ -1985,6 +1988,8 @@ impl TransportConfig {
             TransportConfig::AdHocInput(_) => "adhoc_input".to_string(),
             TransportConfig::RedisOutput(_) => "redis_output".to_string(),
             TransportConfig::ClockInput(_) => "clock".to_string(),
+            TransportConfig::S2Input(_) => "s2_input".to_string(),
+            TransportConfig::S2Output(_) => "s2_output".to_string(),
             TransportConfig::NullOutput => "null_output".to_string(),
             TransportConfig::EmptyInput => "empty_input".to_string(),
         }

@@ -729,6 +729,7 @@ pub fn generate_program_info(
                 | TransportConfig::DeltaTableInput(_)
                 | TransportConfig::PostgresInput(_)
                 | TransportConfig::IcebergInput(_)
+                | TransportConfig::S2Input(_)
                 | TransportConfig::Datagen(_)
                 | TransportConfig::Nexmark(_)
                 | TransportConfig::EmptyInput => {}
@@ -780,6 +781,7 @@ pub fn generate_program_info(
                 | TransportConfig::DeltaTableOutput(_)
                 | TransportConfig::DynamoDBOutput(_)
                 | TransportConfig::RedisOutput(_)
+                | TransportConfig::S2Output(_)
                 | TransportConfig::NullOutput => {}
                 _ => {
                     return Err(ConnectorGenerationError::ExpectedOutputConnector {
@@ -859,11 +861,14 @@ pub fn generate_pipeline_config(
 
 #[cfg(test)]
 mod tests {
-    use super::{determine_connector_endpoint_names, RuntimeSelector};
+    use super::{determine_connector_endpoint_names, generate_program_info, RuntimeSelector};
     use crate::db::types::program::ConnectorGenerationError::RelationConnectorNameCollision;
     use feldera_types::config::{ConnectorConfig, TransportConfig};
-    use feldera_types::program_schema::{PropertyValue, SourcePosition};
+    use feldera_types::program_schema::{
+        ProgramSchema, PropertyValue, Relation, SourcePosition, SqlIdentifier,
+    };
     use feldera_types::transport::datagen::DatagenInputConfig;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_runtime_version_validation() {
@@ -985,5 +990,67 @@ mod tests {
                 connector_name: "example".to_string(),
             }
         );
+    }
+
+    #[test]
+    fn test_generate_program_info_accepts_s2_input() {
+        let connectors = serde_json::json!([{
+            "transport": {
+                "name": "s2_input",
+                "config": {
+                    "basin": "my-basin",
+                    "stream": "my-stream",
+                    "auth_token": "token",
+                    "start_from": "Beginning"
+                }
+            },
+            "format": {
+                "name": "json",
+                "config": {
+                    "update_format": "raw"
+                }
+            }
+        }])
+        .to_string();
+
+        let property_value = PropertyValue {
+            value: connectors,
+            key_position: SourcePosition {
+                start_line_number: 1,
+                start_column: 1,
+                end_line_number: 1,
+                end_column: 10,
+            },
+            value_position: SourcePosition {
+                start_line_number: 1,
+                start_column: 11,
+                end_line_number: 1,
+                end_column: 100,
+            },
+        };
+
+        let mut properties = BTreeMap::new();
+        properties.insert("connectors".to_string(), property_value);
+
+        let schema = ProgramSchema {
+            inputs: vec![Relation::new(
+                SqlIdentifier::from("events"),
+                vec![],
+                false,
+                properties,
+            )],
+            outputs: vec![],
+        };
+
+        let program_info = generate_program_info(
+            serde_json::to_value(schema).unwrap(),
+            String::new(),
+            String::new(),
+            None,
+        )
+        .unwrap();
+        assert!(program_info
+            .input_connectors
+            .contains_key("events.unnamed-0"));
     }
 }
