@@ -111,8 +111,12 @@ class KeyMaterial:
         }
 
 
-def make_handler(keys: KeyMaterial, issuer: str, default_audience: str):
-    """Build a request handler bound to one keypair and issuer."""
+def make_handler(keys: KeyMaterial, issuer: str, default_audience: str, demo_tenants: list[str]):
+    """Build a request handler bound to one keypair and issuer.
+
+    `demo_tenants` is the tenants claim given to the built-in tenanted demo users
+    (reader/writer/admin) on the login page; the owner demo user stays untenanted.
+    """
 
     # In-memory, single-process stores. Codes are single-use; refresh tokens map
     # to the claims needed to re-mint a token pair.
@@ -400,7 +404,9 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
             auth_codes[code] = {
                 "sub": profile["sub"],
                 "email": profile["email"],
-                "tenants": profile.get("tenants"),
+                # Tenanted demo users get the configured demo tenants; the owner
+                # demo user (no tenants in ROLES) stays untenanted.
+                "tenants": demo_tenants if profile.get("tenants") else None,
                 "code_challenge": one("code_challenge"),
                 "code_challenge_method": one("code_challenge_method"),
                 "redirect_uri": redirect_uri,
@@ -598,11 +604,19 @@ def main() -> None:
         default="feldera-api",
         help="Audience put in the aud claim; must match FELDERA_AUTH_AUDIENCE",
     )
+    parser.add_argument(
+        "--demo-tenants",
+        default="acme",
+        help="Comma-separated tenants claim for the built-in tenanted demo users "
+        "(reader/writer/admin); default 'acme'. Use e.g. 'acme,beta' to place them "
+        "in two tenants and exercise multi-tenant selection.",
+    )
     args = parser.parse_args()
 
     issuer = args.issuer or f"http://localhost:{args.port}"
+    demo_tenants = [t.strip() for t in args.demo_tenants.split(",") if t.strip()]
     keys = KeyMaterial()
-    handler = make_handler(keys, issuer, args.audience)
+    handler = make_handler(keys, issuer, args.audience, demo_tenants)
     server = ThreadingHTTPServer(("0.0.0.0", args.port), handler)
 
     print_startup(issuer, args.audience, args.port)
