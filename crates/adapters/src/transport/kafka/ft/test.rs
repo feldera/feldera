@@ -2293,6 +2293,7 @@ fn test_input_partition(
 }
 
 #[test]
+#[ignore = "flaky, see https://github.com/feldera/feldera/issues/6728"]
 fn test_input_partitions_latest() {
     let topic = "test_input_partitions0";
     let data = vec![

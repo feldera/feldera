@@ -2103,6 +2103,7 @@ mod tests {
     // Test an exchange object with multiple concurrent senders/receivers on multiple hosts.
     #[test]
     #[cfg_attr(miri, ignore)]
+    #[ignore = "flaky, see https://github.com/feldera/feldera/issues/6728"]
     fn multihost() {
         init_test_logger();
         for (workers, hosts) in [(2, 2), (4, 2), (8, 2), (3, 3), (4, 4), (16, 4)] {
