@@ -250,7 +250,45 @@ impl KafkaFtInputReaderInner {
         Ok(offsets.iter().copied().map(Offset::Offset).collect())
     }
 
-    #[allow(clippy::borrowed_box)]
+    /// Resolves `start_from: latest` to a concrete end offset per partition.
+    ///
+    /// The caller must invoke this synchronously, before `open()` returns, so
+    /// that the start position is pinned to the log end as it stands at open
+    /// time.  Assigning the symbolic [`Offset::End`] instead defers resolution
+    /// to librdkafka's fetch thread, which runs after `open()` returns: any
+    /// records a producer appends in that window would raise the resolved
+    /// watermark above them, so the connector would start past them and never
+    /// deliver them.
+    ///
+    /// This is useful because some tests assume that partition
+    /// offsets have been resolved after the open call returns;
+    /// otherwise, it's difficult to tell when that has been done.
+    fn fetch_latest_offsets(
+        &self,
+        config: &KafkaInputConfig,
+        n_partitions: usize,
+    ) -> AnyResult<Vec<Offset>> {
+        let partitions = config
+            .partitions
+            .clone()
+            .unwrap_or((0..n_partitions as i32).collect());
+
+        partitions
+            .iter()
+            .copied()
+            .map(|partition| {
+                let (_low, high) = self
+                    .kafka_consumer
+                    .fetch_watermarks(&config.topic, partition, METADATA_TIMEOUT)
+                    .map_err(|e| {
+                        anyhow!("error fetching watermarks for partition '{partition}': {e}")
+                    })?;
+                Ok(Offset::Offset(high))
+            })
+            .collect()
+    }
+
+    #[allow(clippy::borrowed_box, clippy::too_many_arguments)]
     fn poller_thread(
         &self,
         config: Arc<KafkaInputConfig>,
@@ -259,6 +297,7 @@ impl KafkaFtInputReaderInner {
         n_partitions: usize,
         command_receiver: UnboundedReceiver<InputReaderCommand>,
         resume_info: Option<Metadata>,
+        latest_offsets: Option<Vec<Offset>>,
     ) -> AnyResult<()> {
         let topic = &config.topic;
 
@@ -292,7 +331,8 @@ impl KafkaFtInputReaderInner {
                 KafkaStartFromConfig::Earliest => {
                     iter::repeat_n(Offset::Beginning, n_partitions).collect()
                 }
-                KafkaStartFromConfig::Latest => iter::repeat_n(Offset::End, n_partitions).collect(),
+                KafkaStartFromConfig::Latest => latest_offsets
+                    .expect("latest start offsets are resolved in KafkaFtInputReader::new"),
                 KafkaStartFromConfig::Offsets(offsets) => {
                     if n_partitions != offsets.len() {
                         bail!(
@@ -857,6 +897,23 @@ impl KafkaFtInputReader {
         });
         *inner.kafka_consumer.context().endpoint.lock().unwrap() = Arc::downgrade(&inner);
 
+        let n_partitions = config
+            .partitions
+            .as_deref()
+            .map(|p| p.len())
+            .unwrap_or(partition_count);
+
+        // Pin `start_from: latest` to a concrete end offset now, on the caller's
+        // thread, so the position is fixed before the poller thread runs and
+        // before any records a producer may append once `open()` returns.  A
+        // checkpoint (`resume_info`) supersedes `start_from`, so skip it then.
+        let latest_offsets =
+            if resume_info.is_none() && matches!(config.start_from, KafkaStartFromConfig::Latest) {
+                Some(inner.fetch_latest_offsets(config, n_partitions)?)
+            } else {
+                None
+            };
+
         let (command_sender, command_receiver) = unbounded_channel();
         let poller_handle = thread::Builder::new()
             .name("kafka-input-poller".to_string())
@@ -869,13 +926,10 @@ impl KafkaFtInputReader {
                         config.clone(),
                         &consumer,
                         parser,
-                        config
-                            .partitions
-                            .as_deref()
-                            .map(|p| p.len())
-                            .unwrap_or(partition_count),
+                        n_partitions,
                         command_receiver,
                         resume_info,
+                        latest_offsets,
                     ) {
                         consumer.error(true, e, None);
                     }
