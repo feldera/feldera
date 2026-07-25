@@ -16,6 +16,9 @@ MINIO_ENDPOINT = os.environ.get(
     "CI_MINIO_ENDPOINT", "http://minio.minio.svc.cluster.local:9000"
 )
 MINIO_REGION = os.environ.get("CI_MINIO_REGION", "us-east-1")
+# rclone S3 provider name for checkpoint sync; GCS S3-interop rejects
+# requests signed with MinIO provider quirks (403 on HeadObject).
+MINIO_PROVIDER = os.environ.get("CI_MINIO_PROVIDER", "Minio")
 KAFKA_BOOTSTRAP = os.environ.get(
     "KAFKA_BOOTSTRAP_SERVERS", "ci-kafka-bootstrap.kafka:9092"
 )

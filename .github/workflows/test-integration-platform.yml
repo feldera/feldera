@@ -232,6 +232,12 @@ jobs:
           CI_K8S_MINIO_SECRET_ACCESS_KEY: ${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}
           CI_MINIO_ENDPOINT: https://storage.googleapis.com
           CI_MINIO_BUCKET: feldera-ci-test-feldera-ci
+          # rclone quirks for GCS S3-interop; MinIO provider signing gets 403.
+          CI_MINIO_PROVIDER: GCS
+          # GCS S3-interop lacks x-amz checksums; newer AWS SDKs (pyarrow's C++
+          # SDK) fail GetObject with "Response checksums mismatch" otherwise.
+          AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
+          AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
 
       - name: Download fda binary
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
