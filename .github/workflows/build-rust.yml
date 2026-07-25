@@ -51,9 +51,12 @@ jobs:
         with:
           # registry/src excluded — cargo regenerates it from registry/cache.
           path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/git/db
+            # Absolute paths: CARGO_HOME is /home/ubuntu/.cargo (feldera-dev image
+            # env), while ~ expands to the runner's HOME (/github/home in container
+            # jobs), so tilde paths would cache a directory cargo never writes.
+            /home/ubuntu/.cargo/registry/cache
+            /home/ubuntu/.cargo/registry/index
+            /home/ubuntu/.cargo/git/db
           key: build-rust-cargo-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             build-rust-cargo-${{ runner.os }}-${{ matrix.target }}-
@@ -170,9 +173,12 @@ jobs:
         with:
           # registry/src excluded — cargo regenerates it from registry/cache.
           path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/git/db
+            # Absolute paths: CARGO_HOME is /home/ubuntu/.cargo (feldera-dev image
+            # env), while ~ expands to the runner's HOME (/github/home in container
+            # jobs), so tilde paths would cache a directory cargo never writes.
+            /home/ubuntu/.cargo/registry/cache
+            /home/ubuntu/.cargo/registry/index
+            /home/ubuntu/.cargo/git/db
           key: build-rust-fda-native-cargo-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             build-rust-fda-native-cargo-${{ runner.os }}-${{ matrix.target }}-
