@@ -19,10 +19,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: [k8s-runners-amd64]
+          - runner: [gke-runners-amd64]
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-          - runner: [k8s-runners-arm64]
+          - runner: [gke-runners-arm64]
             arch: aarch64
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}

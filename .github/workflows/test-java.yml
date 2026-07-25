@@ -6,12 +6,12 @@ on:
 
 env:
   RUSTC_WRAPPER: sccache
-  SCCACHE_CACHE_SIZE: ${{ vars.SCCACHE_CACHE_SIZE }}
-  SCCACHE_BUCKET: ${{ vars.SCCACHE_BUCKET }}
-  SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
-  SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
-  AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
-  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
+  # sccache: native GCS backend, credentials come from the runner pod via
+  # Workload Identity (no secrets).
+  SCCACHE_GCS_BUCKET: ${{ vars.SCCACHE_GCS_BUCKET }}
+  SCCACHE_GCS_RW_MODE: READ_WRITE
+  AWS_ACCESS_KEY_ID: "${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}"
+  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}"
   RUST_MIN_STACK: 8388608
   # sccache cannot cache rustc invocations when incremental is on.
   CARGO_INCREMENTAL: 0
@@ -31,8 +31,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: [k8s-runners-amd64]
-          - runner: [k8s-runners-arm64]
+          - runner: [gke-runners-amd64]
+          - runner: [gke-runners-arm64]
     runs-on: ${{ matrix.runner }}
 
     container:
@@ -47,7 +47,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Cache Cargo registry
-        uses: ./.github/actions/feldera-minio-cache
+        uses: ./.github/actions/feldera-gcs-cache
         with:
           # Crate downloads only, NOT target/: caching the multi-GB target/
           # trees never paid off, and sccache already caches compiled crates.
@@ -61,7 +61,7 @@ jobs:
             test-java-cargo-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Cache JVM build dependencies
-        uses: ./.github/actions/feldera-minio-cache
+        uses: ./.github/actions/feldera-gcs-cache
         with:
           path: |
             /home/ubuntu/.gradle

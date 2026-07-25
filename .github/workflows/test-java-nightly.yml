@@ -7,12 +7,12 @@ on:
 
 env:
   RUSTC_WRAPPER: sccache
-  SCCACHE_CACHE_SIZE: ${{ vars.SCCACHE_CACHE_SIZE }}
-  SCCACHE_BUCKET: ${{ vars.SCCACHE_BUCKET }}
-  SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
-  SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
-  AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
-  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
+  # sccache: native GCS backend, credentials come from the runner pod via
+  # Workload Identity (no secrets).
+  SCCACHE_GCS_BUCKET: ${{ vars.SCCACHE_GCS_BUCKET }}
+  SCCACHE_GCS_RW_MODE: READ_WRITE
+  AWS_ACCESS_KEY_ID: "${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}"
+  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}"
   # sccache cannot cache rustc when incremental is on; required for the
   # Rust builds invoked by mvn → sql-to-dbsp to hit the sccache MinIO store.
   CARGO_INCREMENTAL: 0
@@ -26,10 +26,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: [k8s-runners-amd64]
+          - runner: [gke-runners-amd64]
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-          - runner: [k8s-runners-arm64]
+          - runner: [gke-runners-arm64]
             arch: aarch64
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
@@ -46,7 +46,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Cache Cargo registry
-        uses: ./.github/actions/feldera-minio-cache
+        uses: ./.github/actions/feldera-gcs-cache
         with:
           # Only the crate downloads, NOT target/ (see test-java.yml for why).
           # registry/src is excluded, cargo regenerates it from registry/cache.
@@ -59,7 +59,7 @@ jobs:
             test-java-nightly-cargo-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Cache JVM build dependencies
-        uses: ./.github/actions/feldera-minio-cache
+        uses: ./.github/actions/feldera-gcs-cache
         with:
           path: |
             /home/ubuntu/.gradle
