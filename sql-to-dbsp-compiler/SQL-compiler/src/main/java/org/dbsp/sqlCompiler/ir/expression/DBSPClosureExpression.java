@@ -46,7 +46,34 @@ import java.util.List;
 
 import static org.dbsp.util.Maybe.*;
 
-/** An expression of the form |param0, param1, ...| body. */
+/** An expression of the form |param0, param1, ...| body.
+ *
+ * <p>Invariants about parameters:
+ * <ul>
+ * <li>Each closure in an expression tree owns its parameter objects: the same
+ * {@link DBSPParameter} object may not appear in two closures of one tree.
+ * Analyses such as CanonicalForm and ValueNumbering key information by
+ * parameter object and rely on this.
+ *
+ * <li>{@link #deepCopy()} shares the parameter objects with the copy.  This is
+ * required when the copy REPLACES the original (see
+ * {@link DBSPExpression#ensureTree}): analyses such as ParameterFieldUse key
+ * results by the parameters of the operator's function.  A caller that instead
+ * inserts a copy into a tree that also contains the original must give the
+ * copies fresh parameters; see FreshenParameters.
+ *
+ * <li>Parameter references in the body resolve by name through lexical scopes
+ * (ResolveReferences).  A parameter of a nested closure never shadows a
+ * declaration of an enclosing scope.
+ *
+ * <li>The closures that the frontend generates for SQL lambdas are pure: 
+ * their bodies reference only their own parameters,
+ * never variables from enclosing scopes.  Before LowerCircuitVisitor these are
+ * the only nested closures, and the analyses that run earlier rely on their
+ * purity.  Lowering DBSPFlatmap generates nested
+ * closures that CAPTURE variables of the enclosing closure, so passes that run
+ * after lowering (InnerCSE, CanonicalForm) may not assume purity.
+ * </ul> */
 public final class DBSPClosureExpression extends DBSPExpression {
     public final DBSPExpression body;
     public final DBSPParameter[] parameters;
@@ -71,6 +98,7 @@ public final class DBSPClosureExpression extends DBSPExpression {
 
     @Override
     public DBSPExpression deepCopy() {
+        // NOTE: The copy shares the parameter objects with this closure.
         return new DBSPClosureExpression(this.getNode(), this.body.deepCopy(), this.parameters);
     }
 

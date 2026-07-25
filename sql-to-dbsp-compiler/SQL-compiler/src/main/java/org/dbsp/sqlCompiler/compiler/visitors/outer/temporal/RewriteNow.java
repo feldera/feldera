@@ -125,7 +125,15 @@ public class RewriteNow extends CircuitCloneVisitor {
 
         @Override
         public VisitDecision preorder(DBSPClosureExpression closure) {
-            Utilities.enforce(this.context.isEmpty());
+            if (!this.context.isEmpty()) {
+                ContainsNow cn = new ContainsNow(this.compiler, false);
+                cn.apply(closure.body);
+                if (cn.found)
+                    throw new CompilationError(
+                            "NOW() is not supported inside a lambda expression", closure.getNode());
+                this.map(closure, closure);
+                return VisitDecision.STOP;
+            }
             Utilities.enforce(closure.parameters.length == 1);
             DBSPParameter param = closure.parameters[0];
             DBSPTypeTuple paramType = param.getType().to(DBSPTypeRef.class).deref().to(DBSPTypeTuple.class);

@@ -344,7 +344,6 @@ public class TableParser {
                 }
                 case ARRAY -> {
                     DBSPTypeArray array = fieldType.to(DBSPTypeArray.class);
-                    // TODO: this does not handle nested arrays
                     if (trimmed.equals("NULL")) {
                         yield new DBSPArrayExpression(array, true);
                     } else {
@@ -352,8 +351,7 @@ public class TableParser {
                             throw new UnimplementedException("Expected array constant to be bracketed: " + trimmed);
                         trimmed = trimmed.substring(1, trimmed.length() - 1);
                         if (!trimmed.isEmpty()) {
-                            // an empty string split still returns an empty string
-                            String[] parts = trimmed.split(",");
+                            String[] parts = splitTopLevel(trimmed);
                             DBSPExpression[] fields;
                             fields = Linq.map(
                                     parts, p -> parseValue(array.getElementType(), p, trimTrailingSpaces),
@@ -442,6 +440,30 @@ public class TableParser {
             };
         }
         return result;
+    }
+
+    /** Split a comma-separated list of values at the commas that are not
+     * nested within braces; values may be brace-enclosed collections,
+     * e.g., nested arrays. */
+    static String[] splitTopLevel(String data) {
+        List<String> parts = new ArrayList<>();
+        int depth = 0;
+        StringBuilder current = new StringBuilder();
+        for (int i = 0; i < data.length(); i++) {
+            char c = data.charAt(i);
+            if (c == '{')
+                depth++;
+            else if (c == '}')
+                depth--;
+            if (c == ',' && depth == 0) {
+                parts.add(current.toString());
+                current.setLength(0);
+            } else {
+                current.append(c);
+            }
+        }
+        parts.add(current.toString());
+        return parts.toArray(new String[0]);
     }
 
     public static DBSPTupleExpression parseRow(String line, DBSPTypeTupleBase rowType,

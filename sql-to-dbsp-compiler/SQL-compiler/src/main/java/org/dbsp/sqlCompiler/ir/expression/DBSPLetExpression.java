@@ -43,12 +43,14 @@ public class DBSPLetExpression extends DBSPExpression implements IDBSPDeclaratio
             return false;
         if (!context.equivalent(this.initializer, otherExpression.initializer))
             return false;
-        context.leftDeclaration.newContext();
-        context.rightDeclaration.newContext();
-        context.leftDeclaration.substitute(this.variable.variable, this);
-        context.rightDeclaration.substitute(otherExpression.variable.variable, otherExpression);
-        context.leftToRight.substitute(this, otherExpression);
-        return context.equivalent(this.consumer, otherExpression.consumer);
+        // Clone the context: the caller's scopes may not be mutated
+        EquivalenceContext newContext = context.clone();
+        newContext.leftDeclaration.newContext();
+        newContext.rightDeclaration.newContext();
+        newContext.leftDeclaration.substitute(this.variable.variable, this);
+        newContext.rightDeclaration.substitute(otherExpression.variable.variable, otherExpression);
+        newContext.leftToRight.substitute(this, otherExpression);
+        return newContext.equivalent(this.consumer, otherExpression.consumer);
     }
 
     @Override
