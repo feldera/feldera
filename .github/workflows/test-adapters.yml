@@ -40,14 +40,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      redpanda:
-        image: ghcr.io/feldera/redpanda-ci:v24
-        options: >-
-          --health-cmd "rpk cluster health"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-          --cpuset-cpus 0-1
       redis:
         image: redis:7-alpine
         options: >-
@@ -73,6 +65,17 @@ jobs:
       - name: Make binaries executable
         run: chmod +x ./build/*
 
+      # Not a service container: the image's redpanda.yaml advertises
+      # 127.0.0.1, so clients that bootstrap via the `redpanda` hostname get
+      # redirected to their own container. Rewriting the advertised address
+      # needs a command override, which GHA services don't support.
+      - name: Start Redpanda broker
+        run: |
+          docker run -d --name redpanda --network ${{ job.container.network }} \
+            --cpuset-cpus 0-1 --entrypoint sh ghcr.io/feldera/redpanda-ci:v24 -c '
+              sed "s/127.0.0.1/redpanda/" /etc/redpanda/redpanda.yaml > /tmp/redpanda.yaml
+              exec /opt/redpanda/bin/redpanda -c 2 --redpanda-cfg /tmp/redpanda.yaml'
+
       - name: Setup uv
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
@@ -83,6 +86,16 @@ jobs:
           uv venv
           uv pip install -r ../iceberg/src/test/requirements.ci.txt
         working-directory: crates/adapters
+
+      - name: Wait for Redpanda broker
+        run: |
+          for _ in $(seq 1 30); do
+            docker exec redpanda rpk cluster health 2>/dev/null | grep -q "Healthy:.*true" && exit 0
+            sleep 2
+          done
+          echo "redpanda did not become healthy" >&2
+          docker logs redpanda >&2
+          exit 1
 
       # Pubsub tests are only supported on x86_64, see below
       - name: Run adapters tests
@@ -113,6 +126,11 @@ jobs:
           POSTGRES_SSL_URL: postgres://postgres:${{ secrets.ci_postgres_password }}@ci-postgres-internal.postgres.svc.cluster.local:5432/postgres?sslmode=require
           POSTGRES_SSL_CA_PEM: ${{ secrets.ci_postgres_tls_crt }}
           POSTGRES_SSL_VERIFY_HOSTNAME: "false"
+
+      # Detach redpanda before the runner tears down the job network.
+      - name: Stop Redpanda broker
+        if: always()
+        run: docker rm -f redpanda
 
   # We can't run the pubsub tests on aarch64 because we don't have a
   # arm image for the pubsub emulator:
