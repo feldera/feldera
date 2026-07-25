@@ -54,6 +54,7 @@ use tokio::{
         tcp::{OwnedReadHalf, OwnedWriteHalf},
     },
     sync::{Notify, OnceCell, futures::OwnedNotified},
+    task::JoinHandle,
     time::sleep,
 };
 use tokio_util::sync::{CancellationToken, DropGuard};
@@ -517,6 +518,81 @@ pub trait ExchangeDelivery: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 }
 
+/// Ensures that at most one connection at a time serves as the receiver for a
+/// given (sending host, message type) pair.
+///
+/// Multihost exchange spawns a new `serve` task per accepted connection, so a
+/// reconnection can leave the old connection's task running until it notices
+/// the socket is gone, overlapping with the new connection's task.  Since both
+/// would share the same per-host sequence number and deliver into the same
+/// single-slot mailboxes, an overlap can deliver messages out of order or
+/// concurrently.
+///
+/// Each connection identifies its sending host and message type from the
+/// first message it carries, then takes over the corresponding slot here,
+/// which cancels whatever connection previously held it and waits for that
+/// connection's task to fully exit before the new connection starts
+/// processing messages.  This guarantees at most one connection is ever
+/// actively delivering for a given (host, message type) pair.
+///
+/// Cancellation is cooperative rather than a forced [`JoinHandle::abort`]: the
+/// old connection's task only observes it while reading a message off the
+/// wire (see `ExchangeServer::read_message`), never once it has claimed a
+/// sequence number for that message.  A forced abort could land after a
+/// message's sequence number has been claimed but before it has been
+/// delivered, which would permanently drop that message (a retransmission
+/// would then be misclassified as an already-delivered duplicate) -- the same
+/// kind of out-of-order delivery this registry exists to prevent.  Reading a
+/// message is pure network I/O with no such side effect, so it can be
+/// abandoned at any point; that also matters because a connection can hang
+/// mid-read for a long time before TCP itself notices the peer is gone.
+#[derive(Clone, Default)]
+struct ConnectionRegistry {
+    /// Indexed by sending host and message type.  The index for the local
+    /// host is not used.
+    slots: Arc<
+        Vec<
+            EnumMap<
+                MessageType,
+                Mutex<Option<(CancellationToken, JoinHandle<std::io::Result<()>>)>>,
+            >,
+        >,
+    >,
+}
+
+impl ConnectionRegistry {
+    fn new(n_hosts: usize) -> Self {
+        Self {
+            slots: Arc::new(
+                (0..n_hosts)
+                    .map(|_| EnumMap::from_fn(|_| Mutex::new(None)))
+                    .collect(),
+            ),
+        }
+    }
+
+    /// Registers `cancel`/`handle` as the connection serving
+    /// `sending_host_idx` and `message_type`, cancelling any previous
+    /// connection serving the same pair and waiting for it to fully exit
+    /// first.
+    async fn take_over(
+        &self,
+        sending_host_idx: usize,
+        message_type: MessageType,
+        cancel: CancellationToken,
+        handle: JoinHandle<std::io::Result<()>>,
+    ) {
+        let previous = self.slots[sending_host_idx][message_type]
+            .lock()
+            .unwrap()
+            .replace((cancel, handle));
+        if let Some((previous_cancel, previous_handle)) = previous {
+            previous_cancel.cancel();
+            let _ = previous_handle.await;
+        }
+    }
+}
+
 // Maps from an `exchange_id` to an object for delivering to the exchange.
 #[derive(Clone, Default)]
 pub struct ExchangeDirectory {
@@ -528,6 +604,10 @@ pub struct ExchangeDirectory {
 
     /// The delivery closure for each exchange.
     entries: Arc<RwLock<HashMap<ExchangeId, ExchangeDirectoryEntry>>>,
+
+    /// Ensures that only one connection at a time delivers for a given
+    /// (sending host, message type) pair.
+    connections: ConnectionRegistry,
 }
 
 struct ExchangeDirectoryEntry {
@@ -576,6 +656,7 @@ impl ExchangeDirectory {
                         .collect(),
                 ),
                 entries: Arc::new(RwLock::new(HashMap::new())),
+                connections: ConnectionRegistry::new(runtime.layout().n_hosts()),
             })
             .clone()
     }
@@ -630,57 +711,132 @@ impl ExchangeDirectory {
             .and_modify(|_| panic!())
             .or_insert_with(|| ExchangeDirectoryEntry::new(delivery));
     }
+
+    /// Registers `cancel`/`handle` as the connection serving
+    /// `sending_host_idx` and `message_type`, cancelling any previous
+    /// connection serving the same pair and waiting for it to fully exit
+    /// first.  See [`ConnectionRegistry`].
+    async fn take_over_connection(
+        &self,
+        sending_host_idx: usize,
+        message_type: MessageType,
+        cancel: CancellationToken,
+        handle: JoinHandle<std::io::Result<()>>,
+    ) {
+        self.connections
+            .take_over(sending_host_idx, message_type, cancel, handle)
+            .await
+    }
 }
 
 struct ExchangeServer {
     layout: Layout,
     directory: ExchangeDirectory,
     stream: TcpStream,
+
+    /// Cancelled by a subsequent connection that takes over this connection's
+    /// (host, message type) slot in the [`ConnectionRegistry`].  Checked only
+    /// while reading a message off the wire (see `read_message`), never once
+    /// a sequence number has been claimed for it.
+    cancel: CancellationToken,
+
+    /// This task's own join handle, used to register it with the directory's
+    /// [`ConnectionRegistry`] once the first message identifies which (host,
+    /// message type) pair it serves.  `None` after that registration happens.
+    self_handle: Option<JoinHandle<std::io::Result<()>>>,
 }
 
 impl ExchangeServer {
+    /// Reads one message (header and payloads) from `stream`, or `None` at
+    /// EOF.
+    ///
+    /// This is pure network I/O: it doesn't touch the sequence number or
+    /// deliver anything, so unlike the rest of message processing, it's safe
+    /// to abandon at any point (see `serve`'s use of `cancel`).
+    async fn read_message(
+        stream: &mut TcpStream,
+        n: usize,
+    ) -> std::io::Result<Option<(ExchangeHeader, Vec<AlignedVec>, usize)>> {
+        let Some(header) = ExchangeHeader::read(n, stream).await? else {
+            return Ok(None);
+        };
+        if inject_fault("server failure") {
+            return Err(std::io::Error::other("simulated server failure"));
+        }
+
+        let payload_lens = header.payload_lens.iter().copied().map(|len| len as usize);
+        let bytes = ExchangeHeader::len_for_count(n) + payload_lens.clone().sum::<usize>();
+        let mut data = Vec::with_capacity(n);
+        for len in payload_lens {
+            // Read the payload into an `AlignedVec` so that we can pass it
+            // to `rkyv` later without copying.
+            //
+            // # Safety
+            //
+            // [std::slice::from_raw_parts_mut] has 4 undefined behavior
+            // conditions which we satisfy as follows:
+            //
+            // - Our pointer is nonnull and valid for reads and writes
+            //   (because of MaybeUninit) and aligned properly (no
+            //   alignment is needed).
+            //
+            // - The data is initialized (because of MaybeUninit).
+            //
+            // - There's no aliasing.
+            //
+            // - The slice has limited size.
+            let mut payload = AlignedVec::with_capacity(len);
+            let pointer = payload.as_mut_ptr() as *mut MaybeUninit<u8>;
+            let mut slice = unsafe { std::slice::from_raw_parts_mut(pointer, len) };
+            while !slice.is_empty() {
+                stream.read_buf(&mut slice).await?;
+            }
+            unsafe { payload.set_len(len) };
+            data.push(payload);
+        }
+        Ok(Some((header, data, bytes)))
+    }
+
     async fn serve(mut self) -> std::io::Result<()> {
         self.stream.set_nodelay(true)?;
         let receivers = self.layout.local_workers();
-        while let Some(header) = ExchangeHeader::read(receivers.len(), &mut self.stream).await? {
-            if inject_fault("server failure") {
-                return Err(std::io::Error::other("simulated server failure"));
-            }
-
+        while let Some((header, data, bytes)) = tokio::select! {
+            result = Self::read_message(&mut self.stream, receivers.len()) => result?,
+            // Reading a message is pure I/O with no visible side effect, so
+            // it's safe to abandon here at any point -- unlike a forced task
+            // abort, this can never leave a sequence number claimed without a
+            // matching delivery.  Checking here (rather than only between
+            // messages) also lets a takeover respond promptly even if this
+            // connection is stuck mid-read on a socket that TCP hasn't yet
+            // noticed is dead.
+            () = self.cancel.cancelled() => return Ok(()),
+        } {
             let start = Instant::now();
             let exchange_id = header.exchange_id;
             let sequence = header.sequence;
             let sender = header.sender as usize;
             let n = receivers.len();
-            let payload_lens = header.payload_lens.iter().copied().map(|len| len as usize);
-            let bytes = ExchangeHeader::len_for_count(n) + payload_lens.clone().sum::<usize>();
-            let mut data = Vec::with_capacity(n);
-            for len in payload_lens {
-                // Read the payload into an `AlignedVec` so that we can pass it
-                // to `rkyv` later without copying.
-                //
-                // # Safety
-                //
-                // [std::slice::from_raw_parts_mut] has 4 undefined behavior
-                // conditions which we satisfy as follows:
-                //
-                // - Our pointer is nonnull and valid for reads and writes
-                //   (because of MaybeUninit) and aligned properly (no
-                //   alignment is needed).
-                //
-                // - The data is initialized (because of MaybeUninit).
-                //
-                // - There's no aliasing.
-                //
-                // - The slice has limited size.
-                let mut payload = AlignedVec::with_capacity(len);
-                let pointer = payload.as_mut_ptr() as *mut MaybeUninit<u8>;
-                let mut slice = unsafe { std::slice::from_raw_parts_mut(pointer, len) };
-                while !slice.is_empty() {
-                    self.stream.read_buf(&mut slice).await?;
-                }
-                unsafe { payload.set_len(len) };
-                data.push(payload);
+
+            let sending_host_idx = self
+                .layout
+                .worker_idx_to_host_idx(sender)
+                .expect("valid sender index");
+            if let Some(handle) = self.self_handle.take() {
+                // Identify this connection by the sender and message type of
+                // its first message, then take over its (host, message type)
+                // slot: if a previous connection is still delivering for the
+                // same pair (e.g. a reconnection whose old connection hasn't
+                // yet noticed its socket is dead), cancel it and wait for it
+                // to fully exit before processing any message on this
+                // connection, so the two can never overlap.
+                self.directory
+                    .take_over_connection(
+                        sending_host_idx,
+                        header.message_type,
+                        self.cancel.clone(),
+                        handle,
+                    )
+                    .await;
             }
 
             let ExchangeGet {
@@ -688,9 +844,7 @@ impl ExchangeServer {
                 next_sequence,
             } = match self.directory.get(
                 exchange_id,
-                self.layout
-                    .worker_idx_to_host_idx(sender)
-                    .expect("valid sender index"),
+                sending_host_idx,
                 header.message_type,
                 sequence,
             ) {
@@ -1024,14 +1178,30 @@ impl ExchangeListener {
             } {
                 match stream {
                     Ok((stream, _address)) => {
-                        tokio::spawn(
+                        let layout = layout.clone();
+                        let directory = directory.clone();
+                        // `ExchangeServer` needs its own join handle to
+                        // register itself with the `ConnectionRegistry` (see
+                        // `ExchangeServer::serve`), which isn't available
+                        // until after `tokio::spawn` returns.  Send it in
+                        // through a oneshot channel; the task's first action
+                        // is to await it, so it can't race ahead of the send
+                        // below.
+                        let cancel = CancellationToken::new();
+                        let (tx, rx) = tokio::sync::oneshot::channel();
+                        let handle = tokio::spawn(async move {
+                            let self_handle = rx.await.ok();
                             ExchangeServer {
-                                layout: layout.clone(),
-                                directory: directory.clone(),
+                                layout,
+                                directory,
                                 stream,
+                                cancel,
+                                self_handle,
                             }
-                            .serve(),
-                        );
+                            .serve()
+                            .await
+                        });
+                        let _ = tx.send(handle);
                     }
                     Err(error) => warn!("Error accepting connection: {error}"),
                 }
@@ -2109,7 +2279,6 @@ mod tests {
     // Test an exchange object with multiple concurrent senders/receivers on multiple hosts.
     #[test]
     #[cfg_attr(miri, ignore)]
-    #[ignore = "flaky, see https://github.com/feldera/feldera/issues/6728"]
     fn multihost() {
         init_test_logger();
         for (workers, hosts) in [(2, 2), (4, 2), (8, 2), (3, 3), (4, 4), (16, 4)] {
