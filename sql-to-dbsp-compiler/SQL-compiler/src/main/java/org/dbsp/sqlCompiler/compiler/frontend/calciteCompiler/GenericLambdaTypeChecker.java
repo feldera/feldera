@@ -15,7 +15,15 @@ import org.apache.calcite.sql.validate.SqlValidator;
 
 import static org.apache.calcite.util.Static.RESOURCE;
 
-/** Typecheck a generic Lambda when the argument types are known */
+/** Typecheck a generic Lambda when the argument types are known.
+ *
+ * <p>Lambdas are validated in two passes: the body is first validated with all
+ * lambda parameters typed as nullable ANY ({@link SqlLambdaScope}); this checker
+ * then stores the concrete parameter types in the scope and re-validates the body.
+ * Operand checkers of functions that can appear inside a lambda body (such as
+ * TRANSFORM itself, when calls are nested) therefore run under both passes and
+ * must tolerate operands of type ANY during the first one.
+ * See {@code org.apache.calcite.sql.type.OperandTypes.LambdaOperandTypeChecker}. */
 public class GenericLambdaTypeChecker implements SqlSingleOperandTypeChecker {
     private final String signatures;
     private final RelDataType[] argumentTypes;

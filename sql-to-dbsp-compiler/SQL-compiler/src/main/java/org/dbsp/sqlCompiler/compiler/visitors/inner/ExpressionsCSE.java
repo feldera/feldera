@@ -27,6 +27,7 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -35,13 +36,29 @@ import java.util.Map;
 import java.util.Set;
 
 /** Given information computed by {@link ValueNumbering}, replace common subexpressions with variables
- * in {@link DBSPLetExpression}s */
+ * in {@link DBSPLetExpression}s. */
+// Example rewrite:
+// |t_1: &Tup3<i32?, i32?, i32?>|
+//   Tup2::new((((- *t_1.0) / *t_1.1) * ((- *t_1.0) / *t_1.1)), ((*t_1.2) + 1) + (*t_1.2 + 1))
+// is converted to
+// |t_1: &Tup3<i32?, i32?, i32?>|
+// {
+//    let t_2 = LazyCell::new(|| ((- *t_1.0) / *t_1.1));
+//    {
+//        let t_3 = LazyCell::new(|| (*t_1.2 + 1));
+//        Tup2::new((*t_2 * *t_2), (*t_3 + *t_3))
+//    }
+// }
 public class ExpressionsCSE extends ExpressionTranslator {
     final Map<DBSPExpression, ValueNumbering.CanonicalExpression> numbering;
-    final Map<DBSPExpression, DBSPVariablePath> cseVariables;
+    /** CSE variables, keyed by the innermost closure containing the expression's occurrences.
+     * The generated Rust closures capture variables by move, so a variable declared in a
+     * closure cannot be shared with (nested) sibling closures; each closure gets its own copy. */
+    final Map<DBSPClosureExpression, Map<DBSPExpression, DBSPVariablePath>> cseVariables;
     final List<Assignment> assignments;
 
-    record Assignment(DBSPVariablePath var, DBSPExpression expression, Set<IDBSPDeclaration> dependsOn) {
+    record Assignment(DBSPClosureExpression owner, DBSPVariablePath var,
+                      DBSPExpression expression, Set<IDBSPDeclaration> dependsOn) {
         Assignment {
             Utilities.enforce(var.getType().deref().sameType(expression.getType()));
         }
@@ -63,27 +80,45 @@ public class ExpressionsCSE extends ExpressionTranslator {
         this.assignments = new ArrayList<>();
     }
 
+    /** The innermost closure that the currently-visited node is nested in,
+     * or null if the node is not inside a closure. */
+    @Nullable
+    DBSPClosureExpression enclosingClosure() {
+        for (int i = this.context.size() - 1; i >= 0; i--) {
+            IDBSPInnerNode node = this.context.get(i);
+            if (node.is(DBSPClosureExpression.class))
+                return node.to(DBSPClosureExpression.class);
+        }
+        return null;
+    }
+
+    /** Set the replacement for 'expression'.  This looks up the value numbering map,
+     * and if there is no associated variable already storing this result, it maps 'expression' to 'result'.
+     * @param expression  Expression to rewrite.
+     * @param result      Suggested replacement for expression.
+     */
     @Override
     protected void map(DBSPExpression expression, DBSPExpression result) {
-        ValueNumbering.CanonicalExpression canon = this.numbering.get(expression);
-        // This may be called without an operator context, when e.g.,
-        // analyzing user-defined functions.
-        if (canon != null) {
+        ValueNumbering.CanonicalExpression canonical = this.numbering.get(expression);
+        DBSPClosureExpression owner = this.enclosingClosure();
+        if (canonical != null && owner != null) {
+            Map<DBSPExpression, DBSPVariablePath> variables =
+                    this.cseVariables.computeIfAbsent(owner, o -> new HashMap<>());
             DBSPVariablePath var = null;
-            if (this.cseVariables.containsKey(canon.expression)) {
+            if (variables.containsKey(canonical.expression)) {
                 // Variable already exists
-                var = Utilities.getExists(this.cseVariables, canon.expression);
-            } else if (canon.expression != result &&
-                    canon.expensive &&
-                    canon.manyUsers(this.numbering)) {
-                // Variable is worth creating
+                var = Utilities.getExists(variables, canonical.expression);
+            } else if (canonical.expression != result &&
+                    canonical.expensive &&
+                    canonical.manyUsers(this.numbering)) {
+                // Variable is worth creating and expression is used at least twice
                 var = new DBSPTypeLazy(expression.getType()).var();
-                Utilities.putNew(this.cseVariables, canon.expression, var);
-                this.assignments.add(new Assignment(var, result, canon.dependsOn));
+                Utilities.putNew(variables, canonical.expression, var);
+                this.assignments.add(new Assignment(owner, var, result, canonical.dependsOn));
             }
             if (var != null)
                 result = var.deref().applyCloneIfNeeded();
-            // If variable hasn't been created now, use the suggested result
+            // If variable hasn't been created now, use the 'result' received as parameter
         }
         if (!this.translationMap.containsKey(expression)) {
             super.map(expression, result);
@@ -210,7 +245,9 @@ public class ExpressionsCSE extends ExpressionTranslator {
         this.assignments.clear();
         Collections.reverse(assignments);
         for (Assignment assign : assignments) {
-            boolean insert = outer;
+            // Insert in the closure that contains the expression's occurrences;
+            // the outermost closure collects everything left over
+            boolean insert = outer || assign.owner == node;
             if (!insert) {
                 for (DBSPParameter param : node.parameters) {
                     if (assign.dependsOn.contains(param)) {

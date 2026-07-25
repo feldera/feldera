@@ -1373,7 +1373,124 @@ public class ArrayFunctionsTests extends SqlIoTest {
     }
 
     @Test
+    public void testNestedLambdas() {
+        this.qs("""
+                SELECT transform(array[array[1, 2], array[3]], a -> transform(a, b -> b + 1));
+                result
+                ------
+                 { { 2, 3}, { 4} }
+                (1 row)
+
+                SELECT transform(array[array[1, 2], array[3]], a -> array_exists(a, b -> b > 2));
+                result
+                ------
+                 { false, true }
+                (1 row)
+
+                SELECT array_exists(array[array[1, 2], array[3]], a -> array_exists(a, b -> b > 2));
+                result
+                ------
+                 true
+                (1 row)
+
+                SELECT array_exists(array[array[1, 2]], a -> cardinality(transform(a, b -> b + 1)) > 1);
+                result
+                ------
+                 true
+                (1 row)
+
+                SELECT transform(array[array[array[1]], array[array[2], array[3]]], a -> transform(a, b -> transform(b, c -> c * 2)));
+                result
+                ------
+                 { { { 2} }, { { 4}, { 6} } }
+                (1 row)
+
+                SELECT transform(cast(null as int array array), a -> transform(a, b -> b + 1));
+                result
+                ------
+                NULL
+                (1 row)
+
+                SELECT transform(array[null, array[1]], a -> transform(a, b -> b + 1));
+                result
+                ------
+                 { NULL, { 2} }
+                (1 row)
+
+                SELECT transform(null, x -> x + 1);
+                result
+                ------
+                NULL
+                (1 row)
+
+                SELECT array_exists(null, x -> x > 2);
+                result
+                ------
+                NULL
+                (1 row)""");
+    }
+
+    @Test
+    public void testLambdaCse() {
+        // Check that a subexpression shared by sibling lambdas must get one CSE variable
+        // per closure
+        this.qs("""
+                SELECT transform(array[3.0e0], e -> e + sqrt(2.5e0) > 5.0e0) AS a,
+                       transform(array[9.0e0], e -> e + sqrt(2.5e0) > 5.0e0) AS b;
+                 a | b
+                -------
+                 { false} | { true}
+                (1 row)""");
+    }
+
+    @Test
+    public void testNestedLambdaStreaming() {
+        // Verifies that the Monotonicity analysis accepts operator functions
+        // that contain nested closures
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts TIMESTAMP LATENESS INTERVAL 1 HOURS, x INT ARRAY ARRAY);
+                CREATE VIEW V AS SELECT ts, TRANSFORM(x, a -> TRANSFORM(a, b -> b + 1)) AS y
+                FROM T WHERE ts > TIMESTAMP '2020-01-01 00:00:00';""");
+        ccs.stepWeightOne("INSERT INTO T VALUES('2020-01-01 10:00:00', ARRAY[ARRAY[1, 2], ARRAY[3]])",
+                """
+                 ts | y
+                ------------------------------------------
+                 2020-01-01 10:00:00 | { { 2, 3}, { 4} }""");
+    }
+
+    @Test
+    public void testLambdaDuplication() {
+        // Inlining v1's function into v2's, which uses the value twice, deep-copies
+        // the lambda; the copies may not share DBSPParameter objects
+        var ccs = this.getCCS("""
+                CREATE TABLE t(a INT ARRAY);
+                CREATE LOCAL VIEW v1 AS SELECT TRANSFORM(a, e -> ABS(e) + ABS(e)) AS y FROM t;
+                CREATE VIEW v2 AS SELECT y AS y1, y AS y2 FROM v1;""");
+        ccs.stepWeightOne("INSERT INTO t VALUES(ARRAY[1, -2])", """
+                 y1 | y2
+                ------------------
+                 { 2, 4} | { 2, 4}""");
+    }
+
+    @Test
     public void failingLambdaCases() {
+        // Lambda parameters may not shadow parameters of enclosing lambdas
+        this.queryFailingInCompilation(
+                "SELECT transform(array[array[1]], a -> transform(a, a -> a + 1))",
+                "Duplicate lambda parameter 'a'");
+        // The now() value cannot yet be captured inside a lambda
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x BIGINT ARRAY);
+                CREATE VIEW V AS SELECT TRANSFORM(x, e -> e + EXTRACT(EPOCH FROM NOW())) FROM T;""",
+                "NOW() is not supported inside a lambda expression");
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x BIGINT ARRAY);
+                CREATE VIEW V AS SELECT * FROM T WHERE ARRAY_EXISTS(x, e -> e > EXTRACT(EPOCH FROM NOW()));""",
+                "NOW() is not supported inside a lambda expression");
+        // A lambda body may not refer to variables from enclosing scopes
+        this.queryFailingInCompilation(
+                "SELECT transform(array[array[1]], a -> transform(a, b -> b + cardinality(a)))",
+                "reference to 'a' from enclosing scope");
         this.queryFailingInCompilation("SELECT array_exists(array(), x -> true)",
                 "Could not infer a type for array elements");
         this.queryFailingInCompilation("SELECT array_exists(array[1], (x, y) -> x AND y)",

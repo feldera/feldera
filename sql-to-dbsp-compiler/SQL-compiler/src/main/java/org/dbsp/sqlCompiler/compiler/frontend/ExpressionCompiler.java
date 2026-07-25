@@ -1272,14 +1272,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
                         if (rightType.is(DBSPTypeNull.class) ||
                                 (right.is(DBSPLiteral.class) && right.to(DBSPLiteral.class).isNull())) {
-                            this.compiler.reportWarning(node.getPositionRange(),
-                                    "evaluates to NULL", node + ": always returns NULL");
-                            return type.none();
+                            return this.warnAlwaysNull(node, type);
                         }
 
                         if (!rightType.is(DBSPTypeInteger.class))
                             throw new UnimplementedException(Utilities.singleQuote(opName) +
-                                    " expects a constant second argument", node);
+                                    " with 2 arguments expects a constant integer second argument", node);
 
                         // convert to int32
                         DBSPTypeInteger rightInt = rightType.to(DBSPTypeInteger.class);
@@ -1715,10 +1713,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
                         // If array is null for certain, return null
                         if (arg0.type.is(DBSPTypeNull.class)) {
-                            String warningMessage =
-                                    node + ": always returns NULL";
-                            this.compiler.reportWarning(node.getPositionRange(), "unnecessary function call", warningMessage);
-                            return DBSPNullLiteral.none(type);
+                            return this.warnAlwaysNull(node, type);
                         }
 
                         if (!elemType.sameTypeIgnoringNullability(arg1.type)) {
@@ -1735,8 +1730,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "array_exists": {
                         validateArgCount(node, operationName, ops.size(), 2);
+                        if (ops.get(0).type.is(DBSPTypeNull.class)) {
+                            return this.warnAlwaysNull(node, type);
+                        }
                         DBSPClosureExpression closure = ops.get(1).to(DBSPClosureExpression.class);
-                        String method = "array_exists" +
+                        String method = opName + // array_exists
                                 ops.get(0).getType().nullableUnderlineSuffix() +
                                 closure.getResultType().nullableUnderlineSuffix();
                         boolean nullable = ops.get(0).getType().mayBeNull || closure.getResultType().mayBeNull;
@@ -1746,8 +1744,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "transform": {
                         validateArgCount(node, operationName, ops.size(), 2);
-                        String method = "transform" +
-                                ops.get(0).getType().nullableUnderlineSuffix();
+                        if (ops.get(0).type.is(DBSPTypeNull.class)) {
+                            return this.warnAlwaysNull(node, type);
+                        }
+                        String method = opName + ops.get(0).getType().nullableUnderlineSuffix();
                         boolean nullable = ops.get(0).getType().mayBeNull;
                         return new DBSPApplyExpression(
                                 node, method, type.withMayBeNull(nullable), ops.get(0), ops.get(1))
@@ -2128,10 +2128,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
                 // If array is null for certain, return null
                 if (arg0.type.is(DBSPTypeNull.class)) {
-                    String warningMessage =
-                            node + ": always returns NULL";
-                    this.compiler.reportWarning(node.getPositionRange(), "unnecessary function call", warningMessage);
-                    return DBSPNullLiteral.none(type);
+                    return this.warnAlwaysNull(node, type);
                 }
 
                 if (elemType.mayBeNull && !arg1.type.mayBeNull) {
@@ -2165,10 +2162,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
                 // If argument is null for certain, return null
                 if (arg1.type.is(DBSPTypeNull.class)) {
-                    String warningMessage =
-                            node + ": always returns NULL";
-                    this.compiler.reportWarning(node.getPositionRange(), "unnecessary function call", warningMessage);
-                    return DBSPNullLiteral.none(type);
+                    return this.warnAlwaysNull(node, type);
                 }
 
                 String method = getArrayOrMapCallName(call, arg0, arg1);
@@ -2356,6 +2350,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
                         + " not yet implemented", 1265, node);
         }
+    }
+
+    private DBSPExpression warnAlwaysNull(CalciteObject node, DBSPType type) {
+        String warningMessage = node + ": always returns NULL";
+        this.compiler.reportWarning(node.getPositionRange(), "unnecessary function call", warningMessage);
+        return DBSPNullLiteral.none(type);
     }
 
     @Override

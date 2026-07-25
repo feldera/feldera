@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.FreshenParameters;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.RepeatedExpressions;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
@@ -342,8 +343,14 @@ public abstract class DBSPExpression
         RepeatedExpressions repeated = new RepeatedExpressions(compiler, true, false);
         repeated.apply(this);
         DBSPExpression result = this;
-        if (repeated.hasDuplicate())
+        if (repeated.hasDuplicate()) {
             result = this.deepCopy();
+            // A duplicated subtree may contain a closure, whose copies share
+            // parameter objects; each closure in the tree must get its own.
+            // The root closure's parameters are preserved: callers key analysis
+            // results by them.
+            result = FreshenParameters.freshenNested(compiler, result);
+        }
         treeExpressions.done(result);
         return result;
     }

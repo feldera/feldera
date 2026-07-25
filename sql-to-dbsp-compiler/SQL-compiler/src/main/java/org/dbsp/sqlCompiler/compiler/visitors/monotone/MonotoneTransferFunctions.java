@@ -205,9 +205,14 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
     @Override
     public VisitDecision preorder(DBSPClosureExpression expression) {
-        if (!this.context.isEmpty())
-            // This means that we are analyzing a closure within another closure.
-            throw new InternalCompilerError("Didn't expect nested closures: " + expression);
+        if (!this.context.isEmpty()) {
+            // A lambda inside the analyzed function, e.g., the argument of TRANSFORM.
+            // Treat it as an opaque non-monotone value; do not analyze the body, whose
+            // variables are not tracked by this analysis.
+            IMaybeMonotoneType nmt = NonMonotoneType.nonMonotone(expression.getType());
+            this.set(expression, new MonotoneExpression(expression, nmt, null));
+            return VisitDecision.STOP;
+        }
 
         // Must be the outermost call of the visitor.
         DBSPType[] projectedTypes = Linq.map(

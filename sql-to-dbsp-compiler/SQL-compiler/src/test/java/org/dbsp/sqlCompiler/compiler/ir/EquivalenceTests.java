@@ -95,6 +95,20 @@ public class EquivalenceTests {
     }
 
     @Test
+    public void testLetEquivalenceContextUnchanged() {
+        // Comparing let expressions may not modify the caller's context
+        DBSPType i = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true);
+        DBSPVariablePath v0 = i.var();
+        DBSPVariablePath v1 = i.var();
+        DBSPExpression let0 = new DBSPLetExpression(v0, new DBSPI32Literal(2, true), add(v0, v0));
+        DBSPExpression let1 = new DBSPLetExpression(v1, new DBSPI32Literal(2, true), add(v1, v1));
+        EquivalenceContext context = new EquivalenceContext();
+        Assert.assertTrue(context.equivalent(let0, let1));
+        context.leftDeclaration.mustBeEmpty();
+        context.rightDeclaration.mustBeEmpty();
+    }
+
+    @Test
     public void testCSENested() {
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
         DBSPType i = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true);

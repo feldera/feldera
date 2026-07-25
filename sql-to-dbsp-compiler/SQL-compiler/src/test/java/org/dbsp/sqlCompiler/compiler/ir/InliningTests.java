@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -53,5 +54,54 @@ public class InliningTests {
         DBSPClosureExpression compose2 = project.applyAfter(compiler, inner, Maybe.MAYBE);
         EquivalenceContext context = new EquivalenceContext();
         Assert.assertTrue(context.equivalent(compose, compose2));
+    }
+
+    @Test
+    public void testLambdaInlining() {
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPType i32 = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true);
+
+        // lambda = |e: &i32| abs(e)
+        DBSPVariablePath e = i32.ref().var();
+        DBSPClosureExpression lambda = new DBSPApplyExpression("abs", i32, e.deref()).closure(e);
+
+        DBSPType tup = new DBSPTypeTuple(i32);
+        DBSPVariablePath x = tup.ref().var();
+        // inner = |x: &Tup1<i32>| Tup1::new(hof(lambda, x.0))
+        DBSPClosureExpression inner = new DBSPTupleExpression(
+                new DBSPApplyExpression("hof", i32, lambda, x.deref().field(0))).closure(x);
+
+        DBSPVariablePath v = inner.getResultType().ref().var();
+        // project = |v: &Tup1<i32>| Tup2::new(v.0, v.0): uses the inner value twice,
+        // so inlining copies the lambda into both use sites
+        DBSPClosureExpression project = new DBSPTupleExpression(
+                v.deref().field(0), v.deref().field(0)).closure(v);
+        DBSPClosureExpression compose = project.applyAfter(compiler, inner, Maybe.YES);
+
+        // This would crash if the expression is malformed
+        new CanonicalForm(compiler).apply(compose);
+    }
+
+    @Test
+    public void testEnsureTreeWithLambda() {
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPType i32 = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true);
+
+        // lambda = |e: &i32| abs(e)
+        DBSPVariablePath e = i32.ref().var();
+        DBSPClosureExpression lambda = new DBSPApplyExpression("abs", i32, e.deref()).closure(e);
+
+        DBSPType tup = new DBSPTypeTuple(i32);
+        DBSPVariablePath x = tup.ref().var();
+        // The same lambda-bearing subtree appears twice: the body is a DAG
+        DBSPExpression shared = new DBSPApplyExpression("hof", i32, lambda, x.deref().field(0));
+        DBSPClosureExpression function = new DBSPTupleExpression(shared, shared).closure(x);
+
+        DBSPClosureExpression tree = function.ensureTree(compiler).to(DBSPClosureExpression.class);
+        // The function's own parameters are preserved: analyses key results by them
+        Assert.assertSame(function.parameters[0], tree.parameters[0]);
+        // The two copies of the lambda must not share parameter objects;
+        // CanonicalForm crashes if they do
+        new CanonicalForm(compiler).apply(tree);
     }
 }

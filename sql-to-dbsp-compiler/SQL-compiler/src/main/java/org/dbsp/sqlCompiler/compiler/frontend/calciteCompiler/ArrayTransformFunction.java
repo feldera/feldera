@@ -11,10 +11,10 @@ import org.apache.calcite.sql.type.FunctionSqlType;
 import org.apache.calcite.sql.type.SqlOperandCountRanges;
 import org.apache.calcite.sql.type.SqlOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlReturnTypeInference;
+import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.dbsp.util.Utilities;
 
-import static java.util.Objects.requireNonNull;
 import static org.apache.calcite.sql.type.OperandTypes.ARRAY;
 
 /** Calcite-level implementation of the TRANSFORM array function */
@@ -46,11 +46,25 @@ class ArrayTransformFunction extends CustomFunctions.NonOptimizedFunction {
                 SqlCallBinding callBinding,
                 boolean throwOnFailure) {
             // The first operand must be an array type
-            ARRAY.checkSingleOperandType(callBinding, callBinding.operand(0), 0, throwOnFailure);
+            if (!ARRAY.checkSingleOperandType(callBinding, callBinding.operand(0), 0, throwOnFailure))
+                return false;
             final RelDataType arrayType =
                     SqlTypeUtil.deriveType(callBinding, callBinding.operand(0));
-            final RelDataType componentType =
-                    requireNonNull(arrayType.getComponentType(), "componentType");
+            RelDataType componentType = arrayType.getComponentType();
+            if (componentType == null) {
+                // The ARRAY family check above accepts operands of type ANY and
+                // untyped NULL literals, which have no component type.
+                if (arrayType.getSqlTypeName() == SqlTypeName.ANY) {
+                    // Most often a parameter of an enclosing lambda, whose type is not yet
+                    // inferred (SqlLambdaScope defaults parameters to ANY).  Accept: the
+                    // enclosing function's checker re-validates the lambda body with
+                    // concrete parameter types, which runs this checker again.
+                    return true;
+                }
+                // Untyped NULL literal: an unknown array whose elements are also NULL;
+                // the call returns NULL
+                componentType = callBinding.getTypeFactory().createSqlType(SqlTypeName.NULL);
+            }
 
             // The second operand is a function(array_element_type) -> returnType type
             GenericLambdaTypeChecker lambdaChecker =
