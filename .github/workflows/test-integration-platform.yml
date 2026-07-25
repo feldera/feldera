@@ -171,7 +171,9 @@ jobs:
       OIDC_TEST_USERNAME: ${{ secrets.OIDC_TEST_USERNAME }}
       OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
       FELDERA_TLS_INSECURE: true
-      FELDERA_HOST: https://localhost:8080
+      # Service containers live on the job's docker network under the dind
+      # runners and are addressed by service name, not localhost.
+      FELDERA_HOST: https://pipeline-manager:8080
 
     container:
       image: ghcr.io/feldera/feldera-dev:sha-a5ab793b8d261068867b9fdfad3f04157b2536fc
@@ -215,7 +217,7 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: |
           (cd crates/pipeline-manager/demos && uv run validate-preamble.py sql/*.sql)
-          uv run crates/pipeline-manager/demos/run.py --api-url https://localhost:8080
+          uv run crates/pipeline-manager/demos/run.py --api-url https://pipeline-manager:8080
         env:
           PYTHONPATH: ${{ github.workspace }}/python
 
