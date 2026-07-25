@@ -98,10 +98,12 @@ jobs:
           # share the pod with postgres/redpanda/redis sidecars; if those start
           # starving we can lower CI_RUNNER_CORES or switch this to its own var.
           RUST_TEST_THREADS: ${{ vars.CI_RUNNER_CORES || 20 }}
-          REDIS_URL: redis://localhost:6379/0
-          DYNAMODB_ENDPOINT: http://localhost:8000
-          POSTGRES_URL: postgres://postgres:password@localhost:5432
-          REDPANDA_BROKERS: 127.0.0.1
+          # Service containers live on the job's docker network under the
+          # dind runners and are addressed by service name, not localhost.
+          REDIS_URL: redis://redis:6379/0
+          DYNAMODB_ENDPOINT: http://dynamodb:8000
+          POSTGRES_URL: postgres://postgres:password@postgres:5432
+          REDPANDA_BROKERS: redpanda
           # This thing can't resolve `localhost` (?), needs to be an IP address
           PUBSUB_EMULATOR_HOST: 127.0.0.1:8681
           ICEBERG_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
