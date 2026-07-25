@@ -16,10 +16,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: [k8s-runners-amd64]
+          - runner: [gke-runners-amd64]
             feldera_host: ${{ vars.FELDERA_HOST_CI_AMD64 }}
             feldera_api_key: FELDERA_API_KEY_CI_AMD64
-          - runner: [k8s-runners-arm64]
+          - runner: [gke-runners-arm64]
             feldera_host: ${{ vars.FELDERA_HOST_CI_ARM64 }}
             feldera_api_key: FELDERA_API_KEY_CI_ARM64
     runs-on: ${{ matrix.runner }}
@@ -27,8 +27,12 @@ jobs:
       FELDERA_HOST: ${{ matrix.feldera_host }}
       FELDERA_API_KEY: ${{ secrets[matrix.feldera_api_key] }}
       FELDERA_RUNTIME_VERSION: ${{ github.sha }}
-      CI_K8S_MINIO_ACCESS_KEY_ID: ${{ secrets.CI_K8S_MINIO_TEST_BUCKET_ACCESS_KEY_ID }}
-      CI_K8S_MINIO_SECRET_ACCESS_KEY: ${{ secrets.CI_K8S_MINIO_TEST_BUCKET_SECRET_ACCESS_KEY }}
+      # GCS test bucket over the S3-interop endpoint; the env names are the
+      # standard ones the tests read (python/tests/utils.py).
+      CI_K8S_MINIO_ACCESS_KEY_ID: ${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}
+      CI_K8S_MINIO_SECRET_ACCESS_KEY: ${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}
+      CI_MINIO_ENDPOINT: https://storage.googleapis.com
+      CI_MINIO_BUCKET: feldera-ci-test-feldera-ci
     container:
       image: ghcr.io/feldera/feldera-dev:sha-a5ab793b8d261068867b9fdfad3f04157b2536fc
     steps:

@@ -8,7 +8,7 @@ jobs:
   web-console-integration-tests:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'web-console-integration-tests') }}
     name: Web Console Integration Tests
-    runs-on: [k8s-runners-amd64]
+    runs-on: [gke-runners-amd64]
 
     container:
       image: mcr.microsoft.com/playwright:v1.58.2-noble

@@ -5,13 +5,11 @@ on:
   workflow_dispatch:
 
 env:
-  # MinIO credentials and endpoint — feldera-minio-cache reads these to talk
-  # to the in-cluster gha-cache bucket. AWS_* are also unused by upload-jar
+  # GCS HMAC credentials — feldera-gcs-cache reads these to talk to the
+  # actions-cache bucket. AWS_* are also unused by upload-jar
   # (configure-aws-credentials overrides them via $GITHUB_ENV).
-  AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
-  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
-  SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
-  SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
+  AWS_ACCESS_KEY_ID: "${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}"
+  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}"
   # Pin Maven's local repo so it matches the cache path regardless of
   # whatever HOME the GHA container runner sets — JVM's user.home reads
   # /etc/passwd, not $HOME, and we don't want to rely on that match.
@@ -20,7 +18,7 @@ env:
 jobs:
   build-jar:
     name: Build Compiler
-    runs-on: [k8s-runners-amd64]
+    runs-on: [gke-runners-amd64]
     permissions:
       contents: read
     container:
@@ -35,7 +33,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Cache JVM build dependencies
-        uses: ./.github/actions/feldera-minio-cache
+        uses: ./.github/actions/feldera-gcs-cache
         with:
           path: |
             /home/ubuntu/.gradle
@@ -78,7 +76,7 @@ jobs:
   upload-jar:
     name: Upload JAR to S3
     needs: build-jar
-    runs-on: [k8s-runners-amd64]
+    runs-on: [gke-runners-amd64]
     permissions:
       id-token: write
       contents: read
