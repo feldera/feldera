@@ -100,8 +100,10 @@ class TestAggregateJoin(unittest.TestCase):
             tables,
             views,
             # Peaks above 5 GB; an honest request keeps k8s from
-            # OOM-killing the pipeline mid-test.
-            resources=Resources(memory_mb_min=6000, memory_mb_max=8000),
+            # OOM-killing the pipeline mid-test. No memory_mb_max: it
+            # would cap the DataFusion pool at 5% and the big ad-hoc
+            # validation queries exhaust that.
+            resources=Resources(memory_mb_min=6000),
         )
 
 

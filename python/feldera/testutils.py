@@ -297,7 +297,9 @@ def build_pipeline(
         sql=sql,
         compilation_profile=CompilationProfile.OPTIMIZED,
         runtime_config=RuntimeConfig(
-            provisioning_timeout_secs=60,
+            # Covers node auto-provisioning: a pipeline that needs a fresh
+            # node shape waits for node boot plus image pull.
+            provisioning_timeout_secs=180,
             resources=resources,
             workers=FELDERA_TEST_NUM_WORKERS,
             hosts=FELDERA_TEST_NUM_HOSTS,
