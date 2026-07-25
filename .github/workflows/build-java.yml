@@ -5,11 +5,6 @@ on:
   workflow_dispatch:
 
 env:
-  # GCS HMAC credentials — feldera-gcs-cache reads these to talk to the
-  # actions-cache bucket. AWS_* are also unused by upload-jar
-  # (configure-aws-credentials overrides them via $GITHUB_ENV).
-  AWS_ACCESS_KEY_ID: "${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}"
-  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}"
   # Pin Maven's local repo so it matches the cache path regardless of
   # whatever HOME the GHA container runner sets — JVM's user.home reads
   # /etc/passwd, not $HOME, and we don't want to rely on that match.
@@ -21,6 +16,13 @@ jobs:
     runs-on: [gke-runners-amd64]
     permissions:
       contents: read
+    env:
+      # GCS HMAC credentials — feldera-gcs-cache reads these to talk to the
+      # actions-cache bucket. Scoped to this job: ambient AWS_* credentials
+      # confuse configure-aws-credentials in upload-jar, which must
+      # authenticate purely via OIDC.
+      AWS_ACCESS_KEY_ID: "${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}"
+      AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}"
     container:
       image: ghcr.io/feldera/feldera-dev:sha-a5ab793b8d261068867b9fdfad3f04157b2536fc
     steps:
