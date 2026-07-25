@@ -103,9 +103,9 @@ class TestNow(unittest.TestCase):
             # This test uses >2GB of storage in the ad hoc query and >2GB
             # of memory; an honest request keeps k8s from scheduling the
             # pipeline onto a node where that overshoot gets it OOM-killed.
-            resources=Resources(
-                storage_mb_max=8192, memory_mb_min=3000, memory_mb_max=4000
-            ),
+            # No memory_mb_max: it would cap the DataFusion pool at 5% and
+            # the big ad-hoc validation queries exhaust that.
+            resources=Resources(storage_mb_max=8192, memory_mb_min=3000),
         )
 
         pipeline.start()
