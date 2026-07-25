@@ -747,25 +747,32 @@ fn test_nats_replay_stream_deleted_retries_and_recovers() -> AnyResult<()> {
             CreateStream,
             Publish(5_000),
             CreatePipeline,
+            // Delete before starting the replay: fast machines finish a
+            // started replay before a disruption can land, so disrupting
+            // mid-replay is inherently racy.
+            DeleteStream,
             Replay {
                 start: 1,
                 end: 5_001,
             },
-            WaitForReplayedRecords(100),
-            DeleteStream,
+            // Let the first replay attempt fail before pumping the command
+            // queue: a pending Queue command makes the reader abandon the
+            // replay retry loop instead of retrying.
+            Sleep(Duration::from_secs(3)),
+            CreateStream,
+            Publish(5_000),
             WaitForErrorCountAtLeast {
                 count: 1,
                 timeout: stall_timeout(),
             },
-            CreateStream,
-            Publish(5_000),
             WaitForReplayedRecordsNoFatal(200),
             DisconnectAllowNonFatal,
         ],
     )
 }
 
-/// Replay should keep retrying with non-fatal errors while the server is down.
+/// Replay should keep retrying with non-fatal errors while the server is
+/// down and complete once the server and stream come back.
 #[test]
 fn test_nats_replay_server_killed_retries_non_fatal() -> AnyResult<()> {
     use NatsMockAction::*;
@@ -776,16 +783,26 @@ fn test_nats_replay_server_killed_retries_non_fatal() -> AnyResult<()> {
             CreateStream,
             Publish(5_000),
             CreatePipeline,
+            // Kill before starting the replay: fast machines finish a
+            // started replay before a disruption can land, so disrupting
+            // mid-replay is inherently racy.
+            KillServer,
             Replay {
                 start: 1,
                 end: 5_001,
             },
-            WaitForReplayedRecords(100),
-            KillServer,
+            // Let the first replay attempt fail before pumping the command
+            // queue: a pending Queue command makes the reader abandon the
+            // replay retry loop instead of retrying.
+            Sleep(Duration::from_secs(3)),
+            RestartNatsSamePort,
+            CreateStream,
+            Publish(5_000),
             WaitForErrorCountAtLeast {
                 count: 1,
                 timeout: stall_timeout(),
             },
+            WaitForReplayedRecordsNoFatal(200),
             DisconnectAllowNonFatal,
         ],
     )
