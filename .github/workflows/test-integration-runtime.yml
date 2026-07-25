@@ -17,10 +17,10 @@ jobs:
       matrix:
         include:
           - runner: [gke-runners-amd64]
-            feldera_host: ${{ vars.FELDERA_HOST_CI_AMD64 }}
+            feldera_host: ${{ vars.FELDERA_HOST_CI_GKE_AMD64 }}
             feldera_api_key: FELDERA_API_KEY_CI_GKE_AMD64
           - runner: [gke-runners-arm64]
-            feldera_host: ${{ vars.FELDERA_HOST_CI_ARM64 }}
+            feldera_host: ${{ vars.FELDERA_HOST_CI_GKE_ARM64 }}
             feldera_api_key: FELDERA_API_KEY_CI_GKE_ARM64
     runs-on: ${{ matrix.runner }}
     env:
