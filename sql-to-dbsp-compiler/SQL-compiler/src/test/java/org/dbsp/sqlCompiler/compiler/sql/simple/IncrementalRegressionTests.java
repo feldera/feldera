@@ -29,11 +29,13 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
@@ -881,6 +883,48 @@ public class IncrementalRegressionTests extends SqlIoTest {
     @Test
     public void dateTemporalFilterWithUpperBound() {
         this.testDateTemporalFilter("<= CAST(NOW() AS DATE) + INTERVAL '1' YEAR");
+    }
+
+    private void testIntegerTemporalFilter(String comparison) {
+        var ccs = this.getCCS("""
+                CREATE TABLE events (
+                    id STRING NOT NULL,
+                    event_epoch BIGINT NOT NULL,
+                    PRIMARY KEY (id)
+                );
+                CREATE VIEW recent_events AS
+                SELECT id AS entity_id
+                FROM events
+                WHERE event_epoch %s;
+                """.formatted(comparison));
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int windows;
+
+            @Override public void postorder(DBSPWindowOperator window) {
+                this.windows++;
+                DBSPType keyType = window.left().getOutputIndexedZSetType().keyType;
+                Assert.assertTrue(keyType.sameType(
+                        DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT64, false)));
+                DBSPType expectedControlType = new DBSPTypeRawTuple(
+                        new DBSPTypeTypedBox(keyType, false),
+                        new DBSPTypeTypedBox(keyType, false));
+                Assert.assertTrue(window.right().outputType().sameType(expectedControlType));
+            }
+
+            @Override public void endVisit() {
+                Assert.assertEquals(1, this.windows);
+            }
+        });
+    }
+
+    @Test
+    public void integerTemporalFilterWithLowerBound() {
+        this.testIntegerTemporalFilter(">= CAST(NOW() AS BIGINT) - 86400");
+    }
+
+    @Test
+    public void integerTemporalFilterWithUpperBound() {
+        this.testIntegerTemporalFilter("<= CAST(NOW() AS BIGINT) + 86400");
     }
 
     @Test
