@@ -112,11 +112,6 @@ jobs:
           POSTGRES_SSL_CA_PEM: ${{ secrets.ci_postgres_tls_crt }}
           POSTGRES_SSL_VERIFY_HOSTNAME: "false"
 
-      - name: Show Kubernetes node
-        if: always()
-        run: |
-          echo "K8S node: ${K8S_NODE_NAME}"
-
   # We can't run the pubsub tests on aarch64 because we don't have a
   # arm image for the pubsub emulator:
   # https://github.com/TheKevJames/tools/issues/453
@@ -136,11 +131,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - name: Show Kubernetes node
-        if: always()
-        run: |
-          echo "K8S node: ${K8S_NODE_NAME}"
-
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 

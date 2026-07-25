@@ -36,7 +36,3 @@ jobs:
         run: bun run test-unit
         working-directory: js-packages/profiler-layout
 
-      - name: Show Kubernetes node
-        if: always()
-        run: |
-          echo "K8S node: ${K8S_NODE_NAME}"
