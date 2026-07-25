@@ -69,7 +69,7 @@ from feldera.testutils import (
 )
 from tests import TEST_CLIENT, enterprise_only
 from tests.platform.helper import gen_pipeline_name
-from tests.platform.test_checkpoint_sync import storage_cfg
+from tests.platform.test_checkpoint_sync import checkpoint_sync_bucket, storage_cfg
 from tests.utils import DeltaTestLocation
 
 # Number of rows in the Delta source table.
@@ -304,23 +304,14 @@ def _ensure_delta_source(source: DeltaTestLocation) -> None:
     )
 
 
-def _remote_checkpoint_exists(cache_name: str) -> bool:
-    """Return True when a complete checkpoint is cached in the bucket.
-
-    The bucket layout matches what ``storage_cfg`` produces:
-    ``{MINIO_BUCKET}/{cache_name}/checkpoints.feldera``.
-
-    Probing ``checkpoints.feldera`` rather than the bucket directory is
-    intentional: the manager writes the per-worker state files first
-    and ``checkpoints.feldera`` last.
-    """
+def _cache_fs():
+    """Return ``(fs, bucket_path)`` for the synced-checkpoint cache."""
 
     from urllib.parse import urlparse
 
     import pyarrow.fs as pafs
 
     from tests.utils import (
-        MINIO_BUCKET,
         MINIO_ENDPOINT,
         MINIO_REGION,
         required_env,
@@ -335,9 +326,52 @@ def _remote_checkpoint_exists(cache_name: str) -> bool:
         scheme=parsed.scheme,
         region=MINIO_REGION,
     )
-    catalog = f"{MINIO_BUCKET}/{cache_name}/checkpoints.feldera"
+    return s3
+
+
+def _remote_checkpoint_exists(cache_name: str) -> bool:
+    """Return True when a complete checkpoint is cached in the bucket.
+
+    The bucket layout matches what ``storage_cfg`` produces:
+    ``{checkpoint_sync_bucket(cache_name)}/checkpoints.feldera``.
+
+    Probing ``checkpoints.feldera`` rather than the bucket directory is
+    intentional: the manager writes the per-worker state files first
+    and ``checkpoints.feldera`` last.
+    """
+
+    import pyarrow.fs as pafs
+
+    s3 = _cache_fs()
+    catalog = f"{checkpoint_sync_bucket(cache_name)}/checkpoints.feldera"
     info = s3.get_file_info(catalog)
     return info.type == pafs.FileType.File
+
+
+def _clear_stale_checkpoint_cache(cache_name: str) -> None:
+    """Remove cache leftovers of a run that died mid-sync.
+
+    An interrupted phase 1 leaves ``owner.json`` (pinned to a pipeline
+    that no longer exists) without ``checkpoints.feldera``; the sync
+    push then refuses ownership for every later pipeline. Wiping the
+    prefix lets the next phase 1 claim it fresh.
+    """
+
+    s3 = _cache_fs()
+    prefix = checkpoint_sync_bucket(cache_name)
+    try:
+        s3.delete_dir_contents(prefix, missing_dir_ok=True)
+        print(
+            f"cleared stale checkpoint cache under '{prefix}'",
+            file=sys.stderr,
+        )
+    except Exception as e:
+        # Best effort: a failed wipe surfaces later as the ownership
+        # error this cleanup exists to prevent.
+        print(
+            f"could not clear stale checkpoint cache '{prefix}': {e}",
+            file=sys.stderr,
+        )
 
 
 def _connector_json_for(source: DeltaTestLocation) -> str:
@@ -543,6 +577,9 @@ def test_runtime_upgrade_round_trip(pipeline_name: str) -> None:
             file=sys.stderr,
         )
     else:
+        # A cancelled earlier run may have left a partial sync whose
+        # owner.json blocks this pipeline's push.
+        _clear_stale_checkpoint_cache(cache_name)
         # Phase 1: legacy runtime, ingest, checkpoint, sync to S3.
         # ``PipelineBuilder.__init__`` lets ``FELDERA_RUNTIME_VERSION``
         # win over the constructor argument, but for phase 1 we always
