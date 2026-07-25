@@ -60,7 +60,3 @@ jobs:
           PLAYWRIGHT_API_ORIGIN: http://localhost:8080
           PLAYWRIGHT_APP_ORIGIN: http://localhost:8080
 
-      - name: Show Kubernetes node
-        if: always()
-        run: |
-          echo "K8S node: ${K8S_NODE_NAME}"

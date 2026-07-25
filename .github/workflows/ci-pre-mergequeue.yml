@@ -23,11 +23,6 @@ jobs:
       image: ghcr.io/feldera/feldera-dev:sha-a5ab793b8d261068867b9fdfad3f04157b2536fc
     runs-on: [gke-runners-amd64]
     steps:
-      - name: Show Kubernetes node
-        if: always()
-        run: |
-          echo "K8S node: ${K8S_NODE_NAME}"
-
       # Compute the internal-PR boolean once so individual steps can reference
       # it; cheaper to grep and less fragile when triggers expand.
       # Must stay a ${{ }} expression: run steps on the k8s runners execute

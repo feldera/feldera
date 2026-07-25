@@ -151,7 +151,3 @@ jobs:
           done
         working-directory: crates/pipeline-manager
 
-      - name: Show Kubernetes node
-        if: always()
-        run: |
-          echo "K8S node: ${K8S_NODE_NAME}"
