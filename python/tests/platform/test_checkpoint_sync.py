@@ -22,6 +22,7 @@ from tests.shared_test_pipeline import SharedTestPipeline
 from tests.utils import (
     MINIO_BUCKET,
     MINIO_ENDPOINT,
+    MINIO_PROVIDER,
     MINIO_REGION,
     required_env,
 )
@@ -105,7 +106,7 @@ def storage_cfg(
         "bucket": checkpoint_sync_bucket(pipeline_name),
         "access_key": access_key,
         "secret_key": secret_key if not auth_err else secret_key + "extra",
-        "provider": "Minio",
+        "provider": MINIO_PROVIDER,
         "endpoint": endpoint or MINIO_ENDPOINT,
         "region": MINIO_REGION,
         "start_from_checkpoint": start_from_checkpoint,
