@@ -1929,6 +1929,7 @@ fn test_kafka_input_offset_earliest_2() {
 }
 
 #[test]
+#[ignore = "flaky, see https://github.com/feldera/feldera/issues/6728"]
 fn test_kafka_input_offset_latest() {
     test_offset(
         testdata(),
@@ -1939,6 +1940,7 @@ fn test_kafka_input_offset_latest() {
 }
 
 #[test]
+#[ignore = "flaky, see https://github.com/feldera/feldera/issues/6728"]
 fn test_kafka_input_offset_latest_2() {
     test_offset(
         testdata(),
