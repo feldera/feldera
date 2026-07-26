@@ -124,9 +124,12 @@ pub async fn list_tenant_members(
 ) -> Result<Vec<TenantMember>, DBError> {
     let stmt = txn
         .prepare_cached(
+            // `provider` breaks the tie: two identities can share a subject
+            // across providers, and both may have no email, which would
+            // otherwise leave the order for those rows unspecified.
             "SELECT u.id, u.provider, u.subject, u.email, m.role \
              FROM tenant_membership m JOIN app_user u ON u.id = m.user_id \
-             WHERE m.tenant_id = $1 ORDER BY u.email, u.subject",
+             WHERE m.tenant_id = $1 ORDER BY u.email, u.subject, u.provider",
         )
         .await?;
     let rows = txn.query(&stmt, &[&tenant_id.0]).await?;
