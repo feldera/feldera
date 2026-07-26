@@ -112,15 +112,21 @@ fn spawn_source_producer(
                 input_handle.append(&mut events);
                 num_events += batch_count as u64;
 
-                step_done_tx.send(batch_count).unwrap();
                 // If we're unable to fetch a full batch, then we're done.
+                //
+                // Announce exhaustion before the step-done message that releases
+                // the coordinator: the coordinator polls `source_exhausted_rx`
+                // with `try_recv`, so it only observes exhaustion reliably if it
+                // is published before the message the coordinator waits on.
                 if batch_count < batch_size {
+                    source_exhausted_tx.send(InputStats { num_events }).unwrap();
+                    step_done_tx.send(batch_count).unwrap();
                     break batch_count;
                 }
+                step_done_tx.send(batch_count).unwrap();
                 step_do_rx.recv().unwrap();
             };
 
-            source_exhausted_tx.send(InputStats { num_events }).unwrap();
             step_done_tx.send(last_batch_count).unwrap();
         })
         .unwrap();
