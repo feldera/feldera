@@ -40,59 +40,40 @@ pub struct OidcTrustDescr {
     pub role: Role,
 }
 
-/// Returns true if `pattern` is a concrete claim value: non-empty and free of
-/// the `*` wildcard. Used by the create path to bound how broadly a trust may
-/// match (a wildcard pattern authorizes a whole set of tokens). Lives next to
-/// [`claim_matches`] so the matcher and the breadth policy change together.
-pub fn pattern_is_concrete(pattern: &str) -> bool {
-    !pattern.is_empty() && !pattern.contains('*')
-}
-
 /// Returns true if `pattern` matches `value`, where `*` in `pattern` matches
 /// any sequence of characters and all other characters must match exactly.
+///
+/// The `*`-separated literals must occur in order, with the first anchored at
+/// the start of `value` and the last at its end. Matching each middle literal at
+/// its earliest position is optimal here because the trailing literal is
+/// anchored separately, so no backtracking is needed. A plain matcher rather
+/// than a regex: patterns come from user-registered trust relationships, and
+/// this way there is nothing to escape and no pathological input to guard.
 pub fn claim_matches(pattern: &str, value: &str) -> bool {
-    let p = pattern.as_bytes();
-    let v = value.as_bytes();
-    let mut pi = 0usize;
-    let mut vi = 0usize;
-    let mut star_pi: Option<usize> = None;
-    let mut star_vi = 0usize;
-    while vi < v.len() {
-        if pi < p.len() && p[pi] == b'*' {
-            star_pi = Some(pi);
-            star_vi = vi;
-            pi += 1;
-        } else if pi < p.len() && p[pi] == v[vi] {
-            pi += 1;
-            vi += 1;
-        } else if let Some(sp) = star_pi {
-            pi = sp + 1;
-            star_vi += 1;
-            vi = star_vi;
-        } else {
-            return false;
+    let mut literals = pattern.split('*');
+    // `split` always yields at least one item.
+    let first = literals.next().unwrap_or_default();
+    let Some(mut rest) = value.strip_prefix(first) else {
+        return false;
+    };
+    let Some(last) = literals.next_back() else {
+        // No `*` in the pattern, so the single literal must be the whole value.
+        return rest.is_empty();
+    };
+    for literal in literals {
+        match rest.find(literal) {
+            Some(at) => rest = &rest[at + literal.len()..],
+            None => return false,
         }
     }
-    while pi < p.len() && p[pi] == b'*' {
-        pi += 1;
-    }
-    pi == p.len()
+    // The tail must fit in what is left, so a trailing literal cannot reuse
+    // characters an earlier one already consumed.
+    rest.len() >= last.len() && rest.ends_with(last)
 }
 
 #[cfg(test)]
 mod test {
-    use super::{claim_matches, pattern_is_concrete};
-
-    #[test]
-    fn concrete_patterns_have_no_wildcard() {
-        assert!(pattern_is_concrete("system:sa:app"));
-        assert!(pattern_is_concrete("feldera-tenant"));
-        assert!(!pattern_is_concrete("system:sa:*"));
-        assert!(!pattern_is_concrete("*"));
-        assert!(!pattern_is_concrete("*prod"));
-        // Empty is not a usable concrete value.
-        assert!(!pattern_is_concrete(""));
-    }
+    use super::claim_matches;
 
     #[test]
     fn exact_match() {
@@ -120,5 +101,22 @@ mod test {
     fn full_wildcard() {
         assert!(claim_matches("*", ""));
         assert!(claim_matches("*", "anything-goes"));
+    }
+
+    /// Literals around a `*` may not consume the same characters twice.
+    #[test]
+    fn literals_do_not_overlap() {
+        assert!(claim_matches("a*a", "aa"));
+        assert!(!claim_matches("a*a", "a"));
+        assert!(claim_matches("*b*bb", "abbb"));
+        assert!(!claim_matches("*b*bb", "abb"));
+        assert!(claim_matches(
+            "repo:org/*:ref:*",
+            "repo:org/app:ref:refs/heads/main"
+        ));
+        assert!(!claim_matches(
+            "repo:org/*:ref:*",
+            "repo:other/app:ref:refs/heads/main"
+        ));
     }
 }

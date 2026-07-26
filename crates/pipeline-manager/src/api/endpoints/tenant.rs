@@ -29,8 +29,10 @@ use uuid::Uuid;
 /// Request to assign a role to a user within a tenant.
 #[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct SetMemberRoleRequest {
-    /// The role to assign. Must be `read`, `write`, or `admin`; capped at the
-    /// caller's own role. `owner` is never assignable here.
+    /// The role to assign: `read`, `write`, or `admin`. `owner` is platform-wide
+    /// rather than a tenant membership, so it is configured at deploy time
+    /// (Helm `authorization.owners` / `FELDERA_OWNERS`) or granted by an owner
+    /// OIDC trust relationship, never assigned through this endpoint.
     #[schema(value_type = MemberRole)]
     pub role: Role,
 }
@@ -47,8 +49,10 @@ pub(crate) struct AddMemberRequest {
     /// Optional email for display in the member list.
     #[serde(default)]
     pub email: Option<String>,
-    /// Role to grant. Must be `read`, `write`, or `admin`; capped at the
-    /// caller's own role. `owner` is never assignable here.
+    /// Role to grant: `read`, `write`, or `admin`. `owner` is platform-wide
+    /// rather than a tenant membership, so it is configured at deploy time
+    /// (Helm `authorization.owners` / `FELDERA_OWNERS`) or granted by an owner
+    /// OIDC trust relationship, never assigned through this endpoint.
     #[schema(value_type = MemberRole)]
     pub role: Role,
 }
@@ -59,8 +63,10 @@ pub(crate) struct AddMemberResponse {
     pub user_id: UserId,
 }
 
-/// Reject a requested role an admin may not grant: `owner` is platform-wide and
-/// never a tenant membership, and no one may grant above their own role.
+/// Reject a requested role the caller may not grant: `owner` is platform-wide
+/// and never a tenant membership. The second check, that no one grants above
+/// their own role, cannot fire while these routes require `admin` (the highest
+/// grantable role); it is kept so lowering the route's minimum role stays safe.
 fn check_grantable_role(requested: Role, caller: Role) -> Result<(), ManagerError> {
     if requested == Role::Owner {
         return Err(DBError::OwnerRoleNotAssignable.into());
@@ -100,6 +106,7 @@ fn parse_user_id(req: &HttpRequest) -> Result<UserId, ManagerError> {
     security(("JSON web token (JWT) or API key" = [])),
     responses(
         (status = OK, description = "Members retrieved", body = [TenantMember]),
+        (status = FORBIDDEN, description = "Caller's role is below the required role", body = ErrorResponse),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
     tag = "Platform"
@@ -131,7 +138,9 @@ pub(crate) async fn list_tenant_users(
     request_body = SetMemberRoleRequest,
     responses(
         (status = OK, description = "Role assigned"),
-        (status = FORBIDDEN, description = "Requested role exceeds caller's role or is owner", body = ErrorResponse),
+        (status = FORBIDDEN, description = "Caller's role is below the required role, or the requested role is `owner`", body = ErrorResponse),
+        (status = NOT_FOUND, description = "No user with that identifier", body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
     tag = "Platform"
 )]
@@ -171,7 +180,9 @@ pub(crate) async fn put_tenant_user(
     params(("user_id" = Uuid, Path, description = "User identifier")),
     responses(
         (status = OK, description = "Member removed"),
+        (status = FORBIDDEN, description = "Caller's role is below the required role", body = ErrorResponse),
         (status = NOT_FOUND, description = "User is not a member", body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
     tag = "Platform"
 )]
@@ -204,7 +215,8 @@ pub(crate) async fn delete_tenant_user(
     request_body = AddMemberRequest,
     responses(
         (status = OK, description = "Member added", body = AddMemberResponse),
-        (status = FORBIDDEN, description = "Requested role exceeds caller's role or is owner", body = ErrorResponse),
+        (status = FORBIDDEN, description = "Caller's role is below the required role, or the requested role is `owner`", body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
     tag = "Platform"
 )]
@@ -263,6 +275,7 @@ pub(crate) struct NewTenantResponse {
     security(("JSON web token (JWT) or API key" = [])),
     responses(
         (status = OK, description = "Tenants retrieved", body = [TenantInfo]),
+        (status = FORBIDDEN, description = "Caller is not a platform owner", body = ErrorResponse),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
     tag = "Platform"
@@ -290,7 +303,9 @@ pub(crate) async fn list_tenants(
     request_body = NewTenantRequest,
     responses(
         (status = CREATED, description = "Tenant created", body = NewTenantResponse),
+        (status = FORBIDDEN, description = "Caller is not a platform owner", body = ErrorResponse),
         (status = CONFLICT, description = "A tenant with that name already exists", body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
     tag = "Platform"
 )]

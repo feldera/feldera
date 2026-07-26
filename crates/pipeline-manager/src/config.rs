@@ -978,10 +978,15 @@ pub struct ApiServerConfig {
     #[arg(long, default_value = "feldera-api", env = "FELDERA_AUTH_AUDIENCE")]
     pub auth_audience: String,
 
-    /// Identities granted the platform-wide `owner` role. Each entry matches an
-    /// access token's email, its OIDC subject, or the provider-qualified
-    /// `"<issuer> <subject>"` form. Comma-separated.
-    /// Example: "ops@acme.com,platform-admins"
+    /// Identities granted the platform-wide `owner` role, comma-separated. Each
+    /// entry matches an access token in one of three forms:
+    ///
+    ///   - a provider-verified email:      "ops@acme.com"
+    ///   - a bare OIDC subject (`sub`):    "a1b2c3d4-5e6f-7890-abcd-ef1234567890"
+    ///   - a provider-qualified subject:   "https://accounts.google.com 1234567890"
+    ///
+    /// An email matches only when the provider marks it verified, so prefer the
+    /// subject forms, which are stable and not user-settable.
     #[serde(default)]
     #[arg(long, value_delimiter = ',', env = "FELDERA_OWNERS")]
     pub owners: Vec<String>,

@@ -825,7 +825,7 @@ impl Modify for MinRoleAddon {
                 };
                 let note = match rule {
                     // `owner` is the highest role, so "or higher" would be misleading.
-                    Some(role) if role == crate::db::types::role::Role::Owner => {
+                    Some(crate::db::types::role::Role::Owner) => {
                         "Required role: `owner`.".to_string()
                     }
                     Some(role) => format!("Required role: `{role}` or higher."),
