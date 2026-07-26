@@ -154,7 +154,7 @@ def _wait_for_connector_paused(
 
 
 def _wait_for_completed_version(
-    pipeline, target: int, timeout_s: float = 120.0
+    pipeline, target: int, timeout_s: float = 300.0
 ) -> None:
     wait_for_condition(
         f"delta waterline version {target}",

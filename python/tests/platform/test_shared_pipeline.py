@@ -468,7 +468,9 @@ class TestPipeline(SharedTestPipeline):
                 self.pipeline.status() == PipelineStatus.STOPPED
                 and len(self.pipeline.deployment_error()) > 0
             ),
-            timeout_s=20.0,
+            # Panic -> pod exit -> runner notices -> status transition takes
+            # longer on a fresh k8s install than on a warm instance.
+            timeout_s=60.0,
             poll_interval_s=1.0,
         )
         self.pipeline.stop(force=True)
