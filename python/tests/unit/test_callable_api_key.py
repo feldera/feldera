@@ -4,7 +4,7 @@ single re-resolve retry on a 401 (OIDC workload-identity token rotation)."""
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Iterable, List, Optional
+from typing import Iterable, Optional
 from unittest import mock
 
 import pytest
