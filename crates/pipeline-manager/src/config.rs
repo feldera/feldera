@@ -981,9 +981,9 @@ pub struct ApiServerConfig {
     /// Identities granted the platform-wide `owner` role, comma-separated. Each
     /// entry matches an access token in one of three forms:
     ///
-    ///   - a provider-verified email:      "ops@acme.com"
-    ///   - a bare OIDC subject (`sub`):    "a1b2c3d4-5e6f-7890-abcd-ef1234567890"
-    ///   - a provider-qualified subject:   "https://accounts.google.com 1234567890"
+    ///   - a provider-verified email:      `ops@acme.com`
+    ///   - a bare OIDC subject (`sub`):    `a1b2c3d4-5e6f-7890-abcd-ef1234567890`
+    ///   - a provider-qualified subject:   `https://accounts.google.com 1234567890`
     ///
     /// An email matches only when the provider marks it verified, so prefer the
     /// subject forms, which are stable and not user-settable.

@@ -19,10 +19,14 @@ impl Display for ApiKeyId {
     }
 }
 
+// This doc comment becomes the schema description in the OpenAPI document, and
+// is copied verbatim into the generated clients, so it is written for API
+// consumers and must not use rustdoc intra-doc links: they cannot resolve in the
+// generated crate and fail its `cargo doc -D warnings`.
 /// API key descriptor.
 ///
-/// A key carries a single [`Role`], capped at `write`: `admin` and `owner` are
-/// never issuable as static keys (see [`crate::db::types::role::MintableKeyRole`]).
+/// A key carries a single role, `read` or `write`. `admin` and `owner` are
+/// never issuable as API keys.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ApiKeyDescr {
     pub id: ApiKeyId,
