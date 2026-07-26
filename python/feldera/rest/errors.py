@@ -79,7 +79,9 @@ class FelderaAPIError(FelderaError):
         if int(request.status_code) == 401:
             parsed = urlparse(request.request.url)
 
-            auth_err = f"\nAuthorization error at '{parsed.scheme}://{parsed.hostname}': "
+            auth_err = (
+                f"\nAuthorization error at '{parsed.scheme}://{parsed.hostname}': "
+            )
             auth = request.request.headers.get("Authorization")
             if auth is None:
                 err_msg += f"{auth_err}no credential provided"

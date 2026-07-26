@@ -90,7 +90,9 @@ class KeyMaterial:
     """RSA-2048 keypair plus the JWK/PEM views the server needs."""
 
     def __init__(self) -> None:
-        self.private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        self.private_key = rsa.generate_private_key(
+            public_exponent=65537, key_size=2048
+        )
         self.private_pem = self.private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
@@ -111,7 +113,9 @@ class KeyMaterial:
         }
 
 
-def make_handler(keys: KeyMaterial, issuer: str, default_audience: str, demo_tenants: list[str]):
+def make_handler(
+    keys: KeyMaterial, issuer: str, default_audience: str, demo_tenants: list[str]
+):
     """Build a request handler bound to one keypair and issuer.
 
     `demo_tenants` is the tenants claim given to the built-in tenanted demo users
@@ -300,7 +304,7 @@ def make_handler(keys: KeyMaterial, issuer: str, default_audience: str, demo_ten
 <body><div class="card">
   <h1>Feldera dev login</h1>
   <p class="sub">Pick a role to sign in as.</p>
-  <div class="grid">{''.join(buttons)}</div>
+  <div class="grid">{"".join(buttons)}</div>
   <p class="warn">DEV ONLY, INSECURE: no password, any role is granted on click.</p>
 </div></body></html>"""
 
@@ -390,12 +394,24 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
                 self._send_html(login_page_html(query))
                 return
             if login_as not in ROLES:
-                self._send_json({"error": "invalid_request", "error_description": f"unknown role {login_as}"}, 400)
+                self._send_json(
+                    {
+                        "error": "invalid_request",
+                        "error_description": f"unknown role {login_as}",
+                    },
+                    400,
+                )
                 return
 
             redirect_uri = one("redirect_uri")
             if not redirect_uri:
-                self._send_json({"error": "invalid_request", "error_description": "missing redirect_uri"}, 400)
+                self._send_json(
+                    {
+                        "error": "invalid_request",
+                        "error_description": "missing redirect_uri",
+                    },
+                    400,
+                )
                 return
 
             profile = ROLES[login_as]
@@ -443,13 +459,31 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
                 code = params.get("code")
                 stored = auth_codes.pop(code, None) if code else None
                 if not stored or stored["expires_at"] < time.time():
-                    self._send_json({"error": "invalid_grant", "error_description": "code missing, expired, or already used"}, 400)
+                    self._send_json(
+                        {
+                            "error": "invalid_grant",
+                            "error_description": "code missing, expired, or already used",
+                        },
+                        400,
+                    )
                     return
                 if params.get("redirect_uri") != stored["redirect_uri"]:
-                    self._send_json({"error": "invalid_grant", "error_description": "redirect_uri mismatch"}, 400)
+                    self._send_json(
+                        {
+                            "error": "invalid_grant",
+                            "error_description": "redirect_uri mismatch",
+                        },
+                        400,
+                    )
                     return
                 if not verify_pkce(stored, params.get("code_verifier")):
-                    self._send_json({"error": "invalid_grant", "error_description": "PKCE verification failed"}, 400)
+                    self._send_json(
+                        {
+                            "error": "invalid_grant",
+                            "error_description": "PKCE verification failed",
+                        },
+                        400,
+                    )
                     return
                 refresh = secrets.token_urlsafe(32)
                 refresh_tokens[refresh] = stored
@@ -460,21 +494,39 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
                 refresh = params.get("refresh_token")
                 stored = refresh_tokens.get(refresh) if refresh else None
                 if not stored:
-                    self._send_json({"error": "invalid_grant", "error_description": "unknown refresh_token"}, 400)
+                    self._send_json(
+                        {
+                            "error": "invalid_grant",
+                            "error_description": "unknown refresh_token",
+                        },
+                        400,
+                    )
                     return
                 # Reuse the same refresh token (sufficient for dev).
                 self._send_json(token_pair(stored, refresh))
                 return
 
-            self._send_json({"error": "unsupported_grant_type", "error_description": f"grant_type={grant_type}"}, 400)
+            self._send_json(
+                {
+                    "error": "unsupported_grant_type",
+                    "error_description": f"grant_type={grant_type}",
+                },
+                400,
+            )
 
         # GET /userinfo
         def _handle_userinfo(self) -> None:
             auth = self.headers.get("Authorization", "")
             if not auth.startswith("Bearer "):
-                self._send_json({"error": "invalid_token", "error_description": "missing bearer token"}, 401)
+                self._send_json(
+                    {
+                        "error": "invalid_token",
+                        "error_description": "missing bearer token",
+                    },
+                    401,
+                )
                 return
-            token = auth[len("Bearer "):].strip()
+            token = auth[len("Bearer ") :].strip()
             try:
                 claims = jwt.decode(
                     token,
@@ -483,7 +535,9 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
                     options={"verify_aud": False},
                 )
             except jwt.PyJWTError as err:
-                self._send_json({"error": "invalid_token", "error_description": str(err)}, 401)
+                self._send_json(
+                    {"error": "invalid_token", "error_description": str(err)}, 401
+                )
                 return
             sub = claims.get("sub", "")
             info = {
@@ -498,7 +552,11 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
 
         # /logout
         def _handle_logout(self, query: dict[str, list[str]]) -> None:
-            target = (query.get("post_logout_redirect_uri") or query.get("redirect_uri") or [None])[0]
+            target = (
+                query.get("post_logout_redirect_uri")
+                or query.get("redirect_uri")
+                or [None]
+            )[0]
             if target:
                 self._redirect(target)
                 return
