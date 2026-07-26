@@ -44,9 +44,11 @@ import TabItem from '@theme/TabItem';
           `scopes` field must read `role` instead. Existing keys are migrated to `write`,
           so their access is unchanged.
 
-        - Breaking change (API keys): `POST /v0/api_keys` without a `role` field now
-          creates a `read`-only key. Previously a new key carried read and write access.
-          Pass `{"role": "write"}` in the request body to keep the previous behavior.
+        - Breaking change (API keys): a new key now defaults to `read` instead of
+          carrying read and write access. `POST /v0/api_keys` without a `role` field
+          creates a `read`-only key; pass `{"role": "write"}` to keep the previous
+          behavior. `fda apikey create` defaults to `--role read` for the same reason;
+          pass `--role write` where a key needs to make changes.
 
         ## v0.322.0
 
