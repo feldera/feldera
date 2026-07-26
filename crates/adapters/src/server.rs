@@ -171,6 +171,17 @@ impl PipelinePhase {
             PipelinePhase::Initializing(InitializationState::AwaitingApproval(_))
         )
     }
+
+    /// True if the pipeline never leaves this phase: it has failed or has been
+    /// suspended, and either way it never runs again.
+    fn is_terminal(&self) -> bool {
+        match self {
+            PipelinePhase::InitializationError(_)
+            | PipelinePhase::Failed(_)
+            | PipelinePhase::Suspended => true,
+            PipelinePhase::Initializing(_) | PipelinePhase::InitializationComplete => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -466,8 +477,38 @@ impl ServerState {
         self.phase.lock().unwrap().clone()
     }
 
+    /// Records `phase`, unless a terminal phase was already recorded: the first
+    /// terminal phase is final (see [`PipelinePhase::is_terminal`]).
+    ///
+    /// Several threads publish phases concurrently, so without this rule the
+    /// last writer wins even when it knows less:
+    ///
+    /// - The circuit thread reports that initialization is complete and then
+    ///   immediately starts stepping the circuit (see `CircuitThread::run`), so a
+    ///   fatal error can reach `error_handler` while `do_bootstrap` is still
+    ///   finishing.  Overwriting that failure with
+    ///   [`PipelinePhase::InitializationComplete`] strands the pipeline in a
+    ///   phase claiming initialization succeeded even though `error_handler` has
+    ///   already deallocated the controller, which `/status` then reports as
+    ///   `ControllerMissingAfterInitialization` forever.
+    ///
+    /// - The `/suspend` task treats an already-terminal phase as its cue to stop
+    ///   waiting for a controller, and it reaches its own `set_phase` with no
+    ///   suspend error to report.  Overwriting a recorded failure with
+    ///   [`PipelinePhase::Suspended`] reports a clean suspend for a pipeline that
+    ///   failed without writing a checkpoint.
     pub fn set_phase(&self, phase: PipelinePhase) {
-        *self.phase.lock().unwrap() = phase;
+        {
+            let mut current = self.phase.lock().unwrap();
+            if current.is_terminal() {
+                return;
+            }
+            *current = phase;
+        }
+        // Notify without holding the phase lock: `controller()` reports a missing
+        // controller by reading the phase, so it takes the controller lock and
+        // then the phase lock.  Nothing may hold the phase lock while acquiring
+        // another.
         self.desired_status_change.notify_waiters();
     }
 }
@@ -1113,11 +1154,19 @@ fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>, tag: Op
         error!("{error}");
     }
 
-    if is_fatal_controller_error(&error)
-        && let Ok(controller) = state.take_controller()
-    {
+    if is_fatal_controller_error(&error) {
+        // Record the failure before deallocating the controller, and record it
+        // even when there is no controller to deallocate.  `do_bootstrap`
+        // publishes the controller and the phase separately, and the circuit
+        // thread runs concurrently with both, so gating the phase update on
+        // `take_controller` either drops the error (it arrived before the
+        // controller was published) or leaves `/status` briefly reporting a
+        // controller-less `InitializationComplete` as
+        // `ControllerMissingAfterInitialization`, masking `error`.
         state.set_phase(PipelinePhase::Failed(error));
-        controller.initiate_stop();
+        if let Ok(controller) = state.take_controller() {
+            controller.initiate_stop();
+        }
     }
 }
 
@@ -3287,9 +3336,14 @@ impl StoredStatus {
 /// off.
 #[cfg(test)]
 mod test_http_helpers {
-    use super::{ServerArgs, ServerState, bootstrap, build_app, parse_config, terminated_status};
+    use super::{
+        ServerArgs, ServerState, bootstrap, build_app, error_handler, get_status, parse_config,
+        terminated_status,
+    };
     use crate::{
+        ControllerError,
         controller::ControllerBuilder,
+        ensure_default_crypto_provider,
         server::{InitializationState, PipelinePhase},
         test::{TestStruct, async_wait, http::TestHttpSender, test_circuit},
     };
@@ -3315,11 +3369,12 @@ mod test_http_helpers {
         fs::File,
         io::Write,
         path::Path,
+        sync::Arc,
         thread,
         thread::sleep,
         time::{Duration, Instant},
     };
-    use tempfile::NamedTempFile;
+    use tempfile::{NamedTempFile, TempDir};
     use uuid::Uuid;
 
     /// A successful suspend terminates the circuit before the server reports
@@ -3340,6 +3395,157 @@ mod test_http_helpers {
         let error = terminated_status(RuntimeDesiredStatus::Running, None)
             .expect_err("an unexpected termination must remain PipelineTerminated");
         assert_eq!(error.error.error_code.as_ref(), "PipelineTerminated");
+    }
+
+    /// `/status` must report a fatal controller error that arrives after the
+    /// controller is published but before the phase is.
+    ///
+    /// The circuit thread reports initialization complete and then immediately
+    /// enters its step loop (see `CircuitThread::run`), so a fatal error from its
+    /// first steps races the tail of `do_bootstrap`, which publishes the
+    /// controller and the phase in two separate steps.  An error landing between
+    /// them leaves the controller deallocated, so the phase must stay `Failed`
+    /// rather than being overwritten with `InitializationComplete`: `/status`
+    /// reports a controller-less `InitializationComplete` as the fatal
+    /// `ControllerMissingAfterInitialization`, which masks the real error and
+    /// makes the pipeline manager record that instead.
+    #[test]
+    fn fatal_error_during_bootstrap_tail_is_reported() {
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        std::fs::create_dir(&storage_dir).unwrap();
+        let config_str = format!(
+            r#"
+name: test
+workers: 2
+storage_config:
+    path: "{}"
+storage: true
+clock_resolution_usecs:
+inputs:
+outputs:
+"#,
+            storage_dir.display()
+        );
+        let mut config_file = NamedTempFile::new().unwrap();
+        config_file.write_all(config_str.as_bytes()).unwrap();
+        let config = parse_config(config_file.path().display().to_string()).unwrap();
+        let builder = ControllerBuilder::new(&config).unwrap();
+
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing(InitializationState::Starting),
+            String::default(),
+            RuntimeDesiredStatus::Paused,
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            Uuid::now_v7(),
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        {
+            let state = state.clone();
+            thread::spawn(move || {
+                bootstrap(
+                    builder,
+                    Box::new(|workers| {
+                        Ok(test_circuit::<TestStruct>(
+                            workers,
+                            &TestStruct::schema(),
+                            &[None],
+                        ))
+                    }),
+                    state,
+                )
+            })
+        }
+        .join()
+        .unwrap();
+
+        // Baseline: a healthy pipeline reports a status, not an error.
+        assert!(get_status(&state).is_ok());
+
+        // The circuit thread reports a fatal error after `set_controller` but
+        // before the bootstrap tail publishes the phase.
+        let weak = Arc::downgrade(&state.clone().into_inner());
+        error_handler(&weak, Arc::new(ControllerError::DbspPanic), None);
+        // ... and then the bootstrap tail runs its last statement.
+        state.set_phase(PipelinePhase::InitializationComplete);
+
+        let error =
+            get_status(&state).expect_err("a pipeline that hit a fatal error must report an error");
+        assert_ne!(
+            error.error.error_code.as_ref(),
+            "ControllerMissingAfterInitialization",
+            "the bootstrap tail masked the fatal error"
+        );
+        assert_eq!(error.error.error_code.as_ref(), "DbspPanic");
+    }
+
+    /// `/status` must report a fatal controller error that arrives before the
+    /// controller is published.
+    ///
+    /// The circuit thread can fail before `do_bootstrap` reaches
+    /// `set_controller`, so recording the failure cannot depend on there being a
+    /// controller to deallocate; otherwise the error is dropped and the pipeline
+    /// goes on to report itself as initialized.
+    #[test]
+    fn fatal_error_before_controller_is_published_is_reported() {
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing(InitializationState::Starting),
+            String::default(),
+            RuntimeDesiredStatus::Paused,
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            Uuid::now_v7(),
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        let weak = Arc::downgrade(&state.clone().into_inner());
+        error_handler(&weak, Arc::new(ControllerError::DbspPanic), None);
+        state.set_phase(PipelinePhase::InitializationComplete);
+
+        let error =
+            get_status(&state).expect_err("a pipeline that hit a fatal error must report an error");
+        assert_eq!(error.error.error_code.as_ref(), "DbspPanic");
+    }
+
+    /// A suspend that overlaps a fatal controller error must not report a clean
+    /// suspend.
+    ///
+    /// The `/suspend` task waits for a controller to suspend and treats a
+    /// terminal phase as its cue to stop waiting.  It then reaches its own
+    /// `set_phase` with no suspend error of its own to report, so
+    /// `PipelinePhase::Suspended` must not replace the recorded failure: the
+    /// pipeline failed and wrote no checkpoint, and the pipeline manager would
+    /// otherwise record a successful suspend and later try to resume from it.
+    #[test]
+    fn suspend_does_not_overwrite_a_fatal_error() {
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing(InitializationState::Starting),
+            String::default(),
+            RuntimeDesiredStatus::Suspended,
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            Uuid::now_v7(),
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        let weak = Arc::downgrade(&state.clone().into_inner());
+        error_handler(&weak, Arc::new(ControllerError::DbspPanic), None);
+        // What the `/suspend` task writes once it stops waiting for a controller.
+        state.set_phase(PipelinePhase::Suspended);
+
+        let error =
+            get_status(&state).expect_err("a pipeline that hit a fatal error must report an error");
+        assert_eq!(error.error.error_code.as_ref(), "DbspPanic");
     }
 
     pub(super) async fn get_stats(server: &TestServer) -> ExternalControllerStatus {
