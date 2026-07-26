@@ -188,14 +188,21 @@ class TestCheckpointSync(SharedTestPipeline):
                 )
             time.sleep(0.1)
 
-        got_before = list(self.pipeline.query("SELECT * FROM v0"))
+        # The processed counter updates before the step's output becomes
+        # visible to ad-hoc queries; retry briefly instead of comparing a
+        # single racy snapshot.
+        start = time.monotonic()
+        while True:
+            got_before = list(self.pipeline.query("SELECT * FROM v0"))
+            if len(got_before) == processed:
+                break
+            if time.monotonic() - start > 10:
+                raise RuntimeError(
+                    f"adhoc query returned {len(got_before)} but {processed} records "
+                    f"were processed: {got_before}"
+                )
+            time.sleep(0.2)
         print(f"{self.pipeline.name}: records: {total}, {got_before}", file=sys.stderr)
-
-        if len(got_before) != processed:
-            raise RuntimeError(
-                f"adhoc query returned {len(got_before)} but {processed} records were "
-                f"processed: {got_before}"
-            )
 
         return processed, got_before
 
