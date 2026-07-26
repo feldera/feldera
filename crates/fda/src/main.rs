@@ -292,7 +292,11 @@ fn handle_errors_fatal(
                 let server_msg = body.as_deref().and_then(|b| {
                     serde_json::from_str::<serde_json::Value>(b)
                         .ok()
-                        .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(str::to_string))
+                        .and_then(|v| {
+                            v.get("message")
+                                .and_then(|m| m.as_str())
+                                .map(str::to_string)
+                        })
                 });
                 match server_msg {
                     Some(m) => {
@@ -336,8 +340,8 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
         ApiKeyActions::Create { name, role } => {
             debug!("Creating API key: {}", name);
             let role = match role {
-                ApiKeyRole::Read => feldera_rest_api::types::Role::Read,
-                ApiKeyRole::Write => feldera_rest_api::types::Role::Write,
+                ApiKeyRole::Read => feldera_rest_api::types::MintableKeyRole::Read,
+                ApiKeyRole::Write => feldera_rest_api::types::MintableKeyRole::Write,
             };
             let response = client
                 .post_api_key()
