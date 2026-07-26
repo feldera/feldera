@@ -1,9 +1,9 @@
 //! Role-based access-control enforcement.
 //!
 //! A single middleware over the authenticated `/v0` scope reads the
-//! [`AuthenticatedPrincipal`] that `auth_validator` installed and compares its
+//! `AuthenticatedPrincipal` that `auth_validator` installed and compares its
 //! role against the minimum role declared for the matched route. The
-//! [`ROUTE_MIN_ROLE`] table below is the single source of truth for the
+//! `ROUTE_MIN_ROLE` table below is the single source of truth for the
 //! access-control model. Enforcement is deny-by-default: a route that is
 //! reached but absent from the table is refused, so a
 //! newly added endpoint cannot ship silently world-accessible. The
