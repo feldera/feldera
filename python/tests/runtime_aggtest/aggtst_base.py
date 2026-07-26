@@ -8,7 +8,7 @@ from typing import Dict, TypeAlias
 from feldera import Pipeline, PipelineBuilder
 from feldera.enums import CompilationProfile
 from feldera.rest.errors import FelderaAPIError
-from feldera.runtime_config import RuntimeConfig
+from feldera.runtime_config import Resources, RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 from tests import TEST_CLIENT, unique_pipeline_name
 
@@ -277,6 +277,9 @@ class TstAccumulator:
                     hosts=FELDERA_TEST_NUM_HOSTS,
                     provisioning_timeout_secs=180,
                     logging="debug",
+                    # Honest request so k8s does not pack aggtest pipelines
+                    # onto nodes without headroom and evict them mid-test.
+                    resources=Resources(memory_mb_min=3072),
                 ),
             ).create_or_replace()
 
