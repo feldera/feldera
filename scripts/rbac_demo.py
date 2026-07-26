@@ -104,12 +104,19 @@ def main() -> int:
     wid = members.get("writer@example.com")
     if wid:
         code, _ = call(
-            m, "PUT", f"/tenant/users/{wid}", tok["admin"], tenant=tenant,
+            m,
+            "PUT",
+            f"/tenant/users/{wid}",
+            tok["admin"],
+            tenant=tenant,
             body={"role": "write"},
         )
         print(f"  admin set writer@ -> write: HTTP {code}")
     else:
-        print("  !! writer@ not found among members; the write row may fail", file=sys.stderr)
+        print(
+            "  !! writer@ not found among members; the write row may fail",
+            file=sys.stderr,
+        )
 
     # 5. Print ready-to-use tokens.
     print("\n" + "=" * 72)
@@ -119,7 +126,9 @@ def main() -> int:
     for role in ("read", "write", "admin", "owner"):
         print(f"\n{role.upper()}={tok[role]}")
     if True:
-        print(f"\n(owner acts in a tenant by adding the header: -H '{TENANT_HEADER}: {tenant}')")
+        print(
+            f"\n(owner acts in a tenant by adding the header: -H '{TENANT_HEADER}: {tenant}')"
+        )
 
     # 6. Verification matrix: each row is (role, method, path, expected, note).
     #    `expected` is the status family we assert: 'ok' = not 403, 'deny' = 403.
@@ -127,18 +136,45 @@ def main() -> int:
     print("VERIFICATION MATRIX (deny = 403 by RBAC; ok = passed RBAC)")
     print("=" * 72)
     checks = [
-        ("read",  "GET",  "/pipelines",     None,                  "ok",   "monitor"),
-        ("read",  "POST", "/pipelines",     {"name": "x"},         "deny", "no mutate"),
-        ("read",  "GET",  "/tenant/users",  None,                  "deny", "not admin"),
-        ("write", "GET",  "/pipelines",     None,                  "ok",   "monitor"),
-        ("write", "POST", "/api_keys",      {"name": "w1", "role": "read"},  "ok",   "mint read key"),
-        ("write", "POST", "/api_keys",      {"name": "w2", "role": "admin"}, "deny", "cannot mint admin key"),
-        ("write", "GET",  "/tenant/users",  None,                  "deny", "not admin"),
-        ("admin", "GET",  "/tenant/users",  None,                  "ok",   "manage users"),
-        ("admin", "POST", "/oidc_trust",    {"name": "t1", "issuer": "https://x", "subject": "s", "audience": "acme", "role": "write"}, "ok", "create trust (write needs concrete audience)"),
-        ("admin", "GET",  "/tenants",       None,                  "deny", "owner only"),
-        ("owner", "GET",  "/tenants",       None,                  "ok",   "platform view"),
-        ("owner", "GET",  "/tenant/users",  None,                  "ok",   "acts in tenant"),
+        ("read", "GET", "/pipelines", None, "ok", "monitor"),
+        ("read", "POST", "/pipelines", {"name": "x"}, "deny", "no mutate"),
+        ("read", "GET", "/tenant/users", None, "deny", "not admin"),
+        ("write", "GET", "/pipelines", None, "ok", "monitor"),
+        (
+            "write",
+            "POST",
+            "/api_keys",
+            {"name": "w1", "role": "read"},
+            "ok",
+            "mint read key",
+        ),
+        (
+            "write",
+            "POST",
+            "/api_keys",
+            {"name": "w2", "role": "admin"},
+            "deny",
+            "cannot mint admin key",
+        ),
+        ("write", "GET", "/tenant/users", None, "deny", "not admin"),
+        ("admin", "GET", "/tenant/users", None, "ok", "manage users"),
+        (
+            "admin",
+            "POST",
+            "/oidc_trust",
+            {
+                "name": "t1",
+                "issuer": "https://x",
+                "subject": "s",
+                "audience": "acme",
+                "role": "write",
+            },
+            "ok",
+            "create trust (write needs concrete audience)",
+        ),
+        ("admin", "GET", "/tenants", None, "deny", "owner only"),
+        ("owner", "GET", "/tenants", None, "ok", "platform view"),
+        ("owner", "GET", "/tenant/users", None, "ok", "acts in tenant"),
     ]
     passed = failed = 0
     for role, method, path, body, expected, note in checks:
@@ -152,7 +188,9 @@ def main() -> int:
         passed += good
         failed += not good
         mark = "PASS" if good else "FAIL"
-        print(f"  [{mark}] {role:5} {method:4} {path:16} -> {code:3} (want {expected:4}; {note})")
+        print(
+            f"  [{mark}] {role:5} {method:4} {path:16} -> {code:3} (want {expected:4}; {note})"
+        )
     print(f"\n{passed} passed, {failed} failed")
     return 0 if failed == 0 else 2
 
