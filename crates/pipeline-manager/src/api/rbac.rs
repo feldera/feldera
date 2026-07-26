@@ -4,8 +4,8 @@
 //! [`AuthenticatedPrincipal`] that `auth_validator` installed and compares its
 //! role against the minimum role declared for the matched route. The
 //! [`ROUTE_MIN_ROLE`] table below is the single source of truth for the
-//! access-control model of RFC #6422. Enforcement is deny-by-default: a route
-//! that is reached but absent from the table is refused (fail closed), so a
+//! access-control model. Enforcement is deny-by-default: a route that is
+//! reached but absent from the table is refused, so a
 //! newly added endpoint cannot ship silently world-accessible. The
 //! `every_registered_v0_route_is_classified` test enforces that every route
 //! actually registered gets an entry.
@@ -20,7 +20,7 @@ use actix_web::middleware::Next;
 use actix_web::{HttpMessage, HttpResponse, ResponseError};
 use std::collections::HashMap;
 use std::sync::OnceLock;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 /// Minimum role required to reach each `/v0` route. `None` means the route is
 /// reachable by any authenticated principal (no role floor). A `(method, path)`
@@ -94,7 +94,7 @@ static ROUTE_MIN_ROLE: &[(&str, &str, Option<Role>)] = &[
     ("POST", "/v0/validate_program", Some(Role::Read)), // post_validate_program (compile-only, no data/state change)
     ("POST", "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/command", Some(Role::Write)), // post_pipeline_output_connector_command
     ("GET", "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats", Some(Role::Read)), // get_pipeline_output_connector_status
-    // --- RBAC tenant/user management (new) ---
+    // RBAC tenant/user management
     ("GET", "/v0/tenant/users", Some(Role::Admin)), // list_tenant_users
     ("POST", "/v0/tenant/users", Some(Role::Admin)), // add_tenant_user (pre-provision)
     ("PUT", "/v0/tenant/users/{user_id}", Some(Role::Admin)), // put_tenant_user
@@ -103,7 +103,9 @@ static ROUTE_MIN_ROLE: &[(&str, &str, Option<Role>)] = &[
     ("POST", "/v0/tenants", Some(Role::Owner)), // create_tenant
 ];
 
-/// Build the lookup map once (the table is static and small).
+/// [`ROUTE_MIN_ROLE`] indexed by `(method, path)`, built once on first use. The
+/// table is the authoring format; this map is the form the auth hot path needs,
+/// turning a per-request scan into a hash lookup.
 fn route_table() -> &'static HashMap<(&'static str, &'static str), Option<Role>> {
     static TABLE: OnceLock<HashMap<(&'static str, &'static str), Option<Role>>> = OnceLock::new();
     TABLE.get_or_init(|| {
@@ -114,22 +116,26 @@ fn route_table() -> &'static HashMap<(&'static str, &'static str), Option<Role>>
     })
 }
 
-/// Look up the access rule for a matched route.
-/// `None` => route unknown (deny). `Some(None)` => any authenticated principal.
-/// `Some(Some(role))` => requires at least `role`.
-fn lookup(method: &str, pattern: &str) -> Option<Option<Role>> {
+/// The access rule for a route, used both by the middleware below and by the
+/// OpenAPI annotation that documents each endpoint's minimum role, so the API
+/// reference cannot drift from the enforced policy.
+///
+/// ```text
+/// min_role_for("POST", "/v0/pipelines")            => Some(Some(Role::Write))
+/// min_role_for("GET",  "/v0/pipelines")            => Some(Some(Role::Read))
+/// min_role_for("POST", "/v0/tenants")              => Some(Some(Role::Owner))
+/// min_role_for("GET",  "/v0/not-a-route")          => None   // unknown: denied
+/// ```
+///
+/// `None` means the route is not in the table and is denied; `Some(None)` means
+/// any authenticated principal may proceed; `Some(Some(role))` requires at least
+/// `role`.
+pub(crate) fn min_role_for(method: &str, pattern: &str) -> Option<Option<Role>> {
     route_table().get(&(method, pattern)).copied()
 }
 
-/// Minimum role required to reach `(method, path)`, for OpenAPI annotation.
-/// `None` => not a gated route; `Some(None)` => any authenticated principal;
-/// `Some(Some(role))` => requires at least `role`. Reads the same table the
-/// middleware enforces, so the API reference cannot drift from the policy.
-pub(crate) fn min_role_for(method: &str, path: &str) -> Option<Option<Role>> {
-    lookup(method, path)
-}
-
-/// Build the 403 body in the same shape as the rest of the API.
+/// A 403 in the same JSON shape the rest of the API returns, so clients can
+/// parse a permission denial the same way whether it came from here or a handler.
 fn forbidden(message: &str) -> HttpResponse<BoxBody> {
     HttpResponse::Forbidden().json(serde_json::json!({
         "message": message,
@@ -138,20 +144,33 @@ fn forbidden(message: &str) -> HttpResponse<BoxBody> {
 }
 
 /// Decide whether the principal may proceed. `Ok(())` allows; `Err(resp)` is the
-/// 403 to return.
+/// 403 to return. `pattern` is the matched route template, not the request path.
+///
+/// ```text
+/// // a writer posting a pipeline
+/// authorize("POST", Some("/v0/pipelines"), Some(&writer))  => Ok(())
+/// // a reader posting a pipeline
+/// authorize("POST", Some("/v0/pipelines"), Some(&reader))  => Err(403)
+/// // an admin listing tenants, which is owner-only
+/// authorize("GET",  Some("/v0/tenants"),   Some(&admin))   => Err(403)
+/// // no route matched, so this is a 404 for actix to answer, not a denial
+/// authorize("GET",  None,                  Some(&reader))  => Ok(())
+/// ```
 fn authorize(
     method: &str,
     pattern: Option<&str>,
     principal: Option<&AuthenticatedPrincipal>,
 ) -> Result<(), HttpResponse<BoxBody>> {
-    // No matched route: let actix produce its normal 404. RBAC only guards
-    // routes that exist.
+    // No route matched, so there is nothing to guard. Passing it through lets
+    // actix answer 404; denying here would report a missing route as a
+    // permission error.
     let Some(pattern) = pattern else {
         return Ok(());
     };
-    match lookup(method, pattern) {
+    match min_role_for(method, pattern) {
         None => {
-            // Registered route with no classification: fail closed.
+            // A registered route with no table entry is a bug: deny it rather
+            // than serve it unguarded.
             error!("RBAC: route {method} {pattern} has no access-control entry; denying");
             Err(forbidden(
                 "This endpoint has no access-control classification and is denied",
@@ -173,28 +192,14 @@ fn authorize(
     }
 }
 
-/// Emit an audit line for an authorized request. Mutations and any owner action
-/// are logged at info; reads at debug, to keep the happy path quiet.
+/// Record who reached which route, in which tenant, at what role. `role=owner`
+/// identifies a platform owner acting in a tenant it may not belong to.
 fn audit(method: &Method, pattern: &str, principal: Option<&AuthenticatedPrincipal>) {
     let Some(p) = principal else { return };
-    // Make an owner acting outside its home tenant explicit in the log.
-    let tenant = if p.home_tenant != p.acting_tenant {
-        format!("{} (home={})", p.acting_tenant, p.home_tenant)
-    } else {
-        p.acting_tenant.to_string()
-    };
-    let is_owner = p.role == Role::Owner;
-    if method != Method::GET || is_owner {
-        info!(
-            "audit: user='{}' tenant={} role={} {} {}",
-            p.label, tenant, p.role, method, pattern
-        );
-    } else {
-        debug!(
-            "audit: user='{}' tenant={} role={} {} {}",
-            p.label, tenant, p.role, method, pattern
-        );
-    }
+    debug!(
+        "audit: user='{}' tenant={} role={} {} {}",
+        p.label, p.acting_tenant, p.role, method, pattern
+    );
 }
 
 /// RBAC enforcement middleware for the authenticated `/v0` scope. Runs after
@@ -287,7 +292,11 @@ mod test {
     #[test]
     fn security_critical_routes_have_expected_minimums() {
         let expect = |method, pattern, role| {
-            assert_eq!(lookup(method, pattern), Some(role), "{method} {pattern}");
+            assert_eq!(
+                min_role_for(method, pattern),
+                Some(role),
+                "{method} {pattern}"
+            );
         };
         // Data plane and mutations require write; read must never reach them.
         expect("POST", "/v0/pipelines", Some(Role::Write));
@@ -470,9 +479,7 @@ mod test {
     /// `api_scope()`, save the explicit `REGISTERED_BUT_UNDOCUMENTED` set) and
     /// fail the build if any route lacks a `ROUTE_MIN_ROLE` entry. A new endpoint
     /// added without a classification breaks this test rather than silently
-    /// shipping 403 (which is how the `diff`/`validate_program`/
-    /// `checkpoints/remote` routes slipped through a hand-maintained count).
-    /// Enforces RFC I6.
+    /// shipping 403.
     #[test]
     fn every_registered_v0_route_is_classified() {
         let table: std::collections::HashSet<(&str, &str)> =

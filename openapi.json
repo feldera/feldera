@@ -558,7 +558,7 @@
           {
             "name": "platform",
             "in": "query",
-            "description": "Select platform-wide owner trusts (which belong to no tenant) instead of\nthe caller's tenant, rather than the trusts scoped to the caller's tenant.\nOwner-only.",
+            "description": "Select the platform-wide owner trusts, which belong to no tenant,\ninstead of the trusts scoped to the caller's tenant. Owner-only.",
             "required": false,
             "schema": {
               "type": "boolean"
@@ -575,6 +575,16 @@
                   "items": {
                     "$ref": "#/components/schemas/OidcTrustDescr"
                   }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller's role is below the required role, or `platform` was set by a non-owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -625,7 +635,17 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "A required field is empty",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller's role is below the required role, or the requested role exceeds the caller's own",
             "content": {
               "application/json": {
                 "schema": {
@@ -636,6 +656,16 @@
           },
           "409": {
             "description": "Name already in use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -673,7 +703,7 @@
           {
             "name": "platform",
             "in": "query",
-            "description": "Select platform-wide owner trusts (which belong to no tenant) instead of\nthe caller's tenant, rather than the trusts scoped to the caller's tenant.\nOwner-only.",
+            "description": "Select the platform-wide owner trusts, which belong to no tenant,\ninstead of the trusts scoped to the caller's tenant. Owner-only.",
             "required": false,
             "schema": {
               "type": "boolean"
@@ -691,8 +721,28 @@
               }
             }
           },
+          "403": {
+            "description": "Caller's role is below the required role, or `platform` was set by a non-owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "No relationship with that name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -728,7 +778,7 @@
           {
             "name": "platform",
             "in": "query",
-            "description": "Select platform-wide owner trusts (which belong to no tenant) instead of\nthe caller's tenant, rather than the trusts scoped to the caller's tenant.\nOwner-only.",
+            "description": "Select the platform-wide owner trusts, which belong to no tenant,\ninstead of the trusts scoped to the caller's tenant. Owner-only.",
             "required": false,
             "schema": {
               "type": "boolean"
@@ -739,8 +789,28 @@
           "200": {
             "description": "Trust relationship deleted"
           },
+          "403": {
+            "description": "Caller's role is below the required role, or `platform` was set by a non-owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "No relationship with that name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -7333,6 +7403,16 @@
               }
             }
           },
+          "403": {
+            "description": "Caller's role is below the required role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "description": "",
             "content": {
@@ -7379,7 +7459,17 @@
             }
           },
           "403": {
-            "description": "Requested role exceeds caller's role or is owner",
+            "description": "Caller's role is below the required role, or the requested role is `owner`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -7431,7 +7521,27 @@
             "description": "Role assigned"
           },
           "403": {
-            "description": "Requested role exceeds caller's role or is owner",
+            "description": "Caller's role is below the required role, or the requested role is `owner`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No user with that identifier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -7470,8 +7580,28 @@
           "200": {
             "description": "Member removed"
           },
+          "403": {
+            "description": "Caller's role is below the required role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "User is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -7506,6 +7636,16 @@
                   "items": {
                     "$ref": "#/components/schemas/TenantInfo"
                   }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not a platform owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -7555,8 +7695,28 @@
               }
             }
           },
+          "403": {
+            "description": "Caller is not a platform owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "409": {
             "description": "A tenant with that name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -11389,7 +11549,7 @@
           "audience": {
             "type": "string",
             "description": "Optional audience claim pattern. `*` matches any sequence of characters.\nIf omitted, the audience claim is not checked.",
-            "example": "feldera",
+            "example": "https://github.com/my-org",
             "nullable": true
           },
           "description": {
@@ -14366,14 +14526,9 @@
         "required": [
           "tenant_id",
           "tenant_name",
-          "role",
-          "is_owner"
+          "role"
         ],
         "properties": {
-          "is_owner": {
-            "type": "boolean",
-            "description": "Whether the caller is a platform owner."
-          },
           "role": {
             "$ref": "#/components/schemas/Role"
           },

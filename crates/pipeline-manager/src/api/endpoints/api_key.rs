@@ -137,8 +137,7 @@ pub(crate) async fn post_api_key(
     principal: ReqData<AuthenticatedPrincipal>,
     req: web::Json<NewApiKeyRequest>,
 ) -> Result<HttpResponse, ManagerError> {
-    // Mint cap: the key's role may not exceed the caller's role, and `admin`/
-    // `owner` are never issuable as a static key.
+    // Mint cap: the key's role may not exceed the caller's role.
     let requested = req.role.unwrap_or(Role::Read);
     if requested > principal.role {
         return Err(DBError::RoleExceedsCreator {
@@ -147,7 +146,8 @@ pub(crate) async fn post_api_key(
         }
         .into());
     }
-    let role = MintableKeyRole::from_role(requested).ok_or(DBError::OwnerNotMintableAsApiKey)?;
+    let role =
+        MintableKeyRole::from_role(requested).ok_or(DBError::OwnerAdminNotMintableAsApiKey)?;
 
     let new_id = Uuid::now_v7();
     let generated_api_key = crate::auth::generate_api_key();

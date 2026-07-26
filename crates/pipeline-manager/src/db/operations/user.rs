@@ -12,12 +12,6 @@ use deadpool_postgres::Transaction;
 use std::str::FromStr;
 use uuid::Uuid;
 
-fn parse_role(s: &str) -> Result<Role, DBError> {
-    Role::from_str(s).map_err(|_| DBError::InvalidRoleString {
-        value: s.to_string(),
-    })
-}
-
 /// Get the persisted user for an OIDC `(provider, subject)`, creating it if
 /// absent and refreshing the stored email. Returns its identifier.
 pub async fn get_or_create_user(
@@ -29,6 +23,8 @@ pub async fn get_or_create_user(
 ) -> Result<UserId, DBError> {
     let stmt = txn
         .prepare_cached(
+            // `EXCLUDED` is PostgreSQL's name for the row this statement tried
+            // to insert, so `EXCLUDED.email` is the email from this login.
             // COALESCE keeps a previously stored email when a later token omits
             // the claim (some IdPs drop email on refresh-derived access tokens),
             // rather than overwriting it with NULL.
@@ -72,7 +68,7 @@ pub async fn get_member_role(
         .await?;
     let row = txn.query_opt(&stmt, &[&tenant_id.0, &user_id.0]).await?;
     match row {
-        Some(row) => Ok(Some(parse_role(&row.get::<_, String>(0))?)),
+        Some(row) => Ok(Some(Role::from_str(&row.get::<_, String>(0))?)),
         None => Ok(None),
     }
 }
@@ -87,6 +83,9 @@ pub async fn upsert_member_role(
 ) -> Result<(), DBError> {
     let stmt = txn
         .prepare_cached(
+            // On conflict the membership already exists, so overwrite its role
+            // with `EXCLUDED.role`, PostgreSQL's name for the value this
+            // statement tried to insert. Insert and update in one statement.
             "INSERT INTO tenant_membership (tenant_id, user_id, role) VALUES ($1, $2, $3) \
              ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = EXCLUDED.role",
         )
@@ -138,7 +137,7 @@ pub async fn list_tenant_members(
             provider: row.get(1),
             subject: row.get(2),
             email: row.get(3),
-            role: parse_role(&row.get::<_, String>(4))?,
+            role: Role::from_str(&row.get::<_, String>(4))?,
         });
     }
     Ok(result)

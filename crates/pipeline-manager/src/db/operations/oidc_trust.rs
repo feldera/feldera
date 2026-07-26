@@ -10,12 +10,6 @@ use deadpool_postgres::Transaction;
 use std::str::FromStr;
 use uuid::Uuid;
 
-fn parse_role(s: &str) -> Result<Role, DBError> {
-    Role::from_str(s).map_err(|_| DBError::InvalidRoleString {
-        value: s.to_string(),
-    })
-}
-
 fn row_to_descr(row: &tokio_postgres::Row) -> Result<OidcTrustDescr, DBError> {
     let id: Uuid = row.get(0);
     let name: String = row.get(1);
@@ -23,7 +17,7 @@ fn row_to_descr(row: &tokio_postgres::Row) -> Result<OidcTrustDescr, DBError> {
     let issuer: String = row.get(3);
     let subject: String = row.get(4);
     let audience: Option<String> = row.get(5);
-    let role = parse_role(&row.get::<_, String>(6))?;
+    let role = Role::from_str(&row.get::<_, String>(6))?;
     Ok(OidcTrustDescr {
         id: OidcTrustId(id),
         name,
@@ -207,6 +201,24 @@ pub async fn is_trusted_issuer(txn: &Transaction<'_>, issuer: &str) -> Result<bo
 /// for a tenant-scoped trust, `None` for a platform-wide owner trust. When the
 /// result spans several scopes the caller disambiguates with the
 /// `Feldera-Tenant` header. Sorted (owner scope first) for a deterministic order.
+///
+/// For a GitHub Actions token with
+/// `iss = https://token.actions.githubusercontent.com`,
+/// `sub = repo:acme/api:ref:refs/heads/main`, `aud = https://github.com/acme`:
+///
+/// ```text
+/// registered trusts
+///   ("acme-ci",   tenant=acme, subject="repo:acme/*",     audience=None,    role=write)
+///   ("acme-main", tenant=acme, subject="repo:acme/api:*", audience="https://github.com/acme", role=admin)
+///   ("bootstrap", tenant=None, subject="repo:acme/*",     audience=None,    role=owner)
+///   ("other",     tenant=beta, subject="repo:beta/*",     audience=None,    role=write)
+///
+/// match_oidc_trust(..) => [(None, Owner), (Some(acme), Admin)]
+/// ```
+///
+/// `beta` does not appear because its subject pattern does not match. `acme`
+/// appears once, at `admin`, the most permissive of its two matching trusts. The
+/// result spans two scopes, so the caller needs the `Feldera-Tenant` header.
 pub async fn match_oidc_trust(
     txn: &Transaction<'_>,
     issuer: &str,
@@ -225,7 +237,7 @@ pub async fn match_oidc_trust(
         let tenant_id = row.get::<_, Option<Uuid>>(0).map(TenantId);
         let pattern_subject: String = row.get(1);
         let pattern_audience: Option<String> = row.get(2);
-        let role = parse_role(&row.get::<_, String>(3))?;
+        let role = Role::from_str(&row.get::<_, String>(3))?;
 
         if !claim_matches(&pattern_subject, subject) {
             continue;

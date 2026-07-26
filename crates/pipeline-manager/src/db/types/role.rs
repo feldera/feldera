@@ -42,6 +42,12 @@ impl Role {
     pub fn satisfies(&self, required: Role) -> bool {
         *self >= required
     }
+
+    /// True for the platform-wide `owner` role, which acts across tenants and is
+    /// never stored as a tenant membership.
+    pub fn is_owner(&self) -> bool {
+        *self == Role::Owner
+    }
 }
 
 impl fmt::Display for Role {

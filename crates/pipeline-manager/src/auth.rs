@@ -90,12 +90,10 @@ use crate::db::types::tenant::TenantId;
 /// with existing `ReqData<TenantId>` extractors).
 #[derive(Clone, Debug)]
 pub(crate) struct AuthenticatedPrincipal {
-    /// The tenant the request operates in. Equals `home_tenant` for everyone
-    /// but an `owner` selecting another tenant via `Feldera-Tenant`.
+    /// The tenant the request operates in: the one the principal's claims
+    /// resolve to, or the one a `Feldera-Tenant` header selected among those it
+    /// is authorized for.
     pub acting_tenant: TenantId,
-    /// The tenant the principal belongs to. Differs from `acting_tenant` only
-    /// for an `owner` selecting another tenant; the audit log flags that case.
-    pub home_tenant: TenantId,
     /// The principal's effective role in the acting tenant.
     pub role: Role,
     /// Human-readable identity for audit logging (email, sub, or "apikey:<name>").
@@ -113,7 +111,6 @@ impl AuthenticatedPrincipal {
     pub(crate) fn for_test(role: Role) -> Self {
         Self {
             acting_tenant: DEFAULT_TENANT_ID,
-            home_tenant: DEFAULT_TENANT_ID,
             role,
             label: "test".to_string(),
         }
@@ -150,7 +147,6 @@ fn is_configured_owner(
 pub(crate) fn tag_with_default_tenant_id(req: ServiceRequest) -> ServiceRequest {
     AuthenticatedPrincipal {
         acting_tenant: DEFAULT_TENANT_ID,
-        home_tenant: DEFAULT_TENANT_ID,
         role: Role::Admin,
         label: "default".to_string(),
     }
@@ -319,13 +315,11 @@ async fn oidc_trust_auth(
     let state = req.app_data::<Data<ServerState>>().unwrap().clone();
 
     // SSRF/DoS gate: only fetch discovery/JWKS for an issuer that at least one
-    // trust relationship names. An unregistered issuer is rejected here, before
-    // any outbound request, so an unauthenticated caller cannot make the manager
-    // fetch an arbitrary URL or amplify one request into repeated fetches.
+    // trust relationship names.
     match state.db.lock().await.is_trusted_issuer(&iss).await {
         Ok(true) => {}
         Ok(false) => {
-            debug!("Federated token from unregistered issuer '{iss}' rejected before any fetch");
+            debug!("Federated token from unregistered issuer '{iss}' rejected");
             return unauthorized(
                 "No OIDC trust relationship matches this token".to_string(),
                 req,
@@ -421,7 +415,6 @@ async fn oidc_trust_auth(
         };
         AuthenticatedPrincipal {
             acting_tenant: acting,
-            home_tenant: acting,
             role: Role::Owner,
             label,
         }
@@ -430,12 +423,12 @@ async fn oidc_trust_auth(
     }
 
     // Tenant-scoped matches (each carries a tenant). One is unambiguous; several
-    // require the Feldera-Tenant header to name one of them (fail closed).
+    // require the Feldera-Tenant header to name one of them.
     let tenant_matches: Vec<(TenantId, Role)> = matches
         .into_iter()
         .filter_map(|(t, r)| t.map(|t| (t, r)))
         .collect();
-    let (home_tenant, role) = if tenant_matches.len() == 1 {
+    let (acting_tenant, role) = if tenant_matches.len() == 1 {
         tenant_matches[0]
     } else {
         let Some(selector) = header_tenant(&req) else {
@@ -457,8 +450,7 @@ async fn oidc_trust_auth(
         }
     };
     AuthenticatedPrincipal {
-        acting_tenant: home_tenant,
-        home_tenant,
+        acting_tenant,
         role,
         label,
     }
@@ -466,11 +458,16 @@ async fn oidc_trust_auth(
     Ok(req)
 }
 
-/// Resolve the tenant an `owner` acts in. The `Feldera-Tenant` header selects
-/// any existing tenant by UUID or name (strict lookup, never created); a miss is
-/// a 404, so a typo cannot silently create or cross into the wrong tenant.
-/// Without the header the owner acts in its home tenant. This widening is gated
-/// on `role == Owner` by the callers; lower roles never reach here.
+/// Resolve the tenant an `owner` acts in. Every principal type selects its
+/// acting tenant with the `Feldera-Tenant` header, but each validates the
+/// selection against its own authorization set: a human login against the
+/// `tenants` claim, a federated token against the trusts that matched it. An
+/// owner's set is every tenant, so this path resolves the selector without such
+/// a filter, which is why it is gated on `role == Owner` by the callers.
+///
+/// The selector is looked up strictly by UUID or name and never creates a
+/// tenant; a miss is a 404, so a typo cannot cross into the wrong tenant.
+/// Without the header the owner acts in the tenant its own claims resolved to.
 async fn resolve_owner_acting_tenant(
     db: &StoragePostgres,
     headers: &actix_web::http::header::HeaderMap,
@@ -560,7 +557,6 @@ async fn bearer_auth(
                 };
                 AuthenticatedPrincipal {
                     acting_tenant,
-                    home_tenant: home,
                     role: Role::Owner,
                     label,
                 }
@@ -598,7 +594,6 @@ async fn bearer_auth(
                 Ok((tenant_id, _user_id, role)) => {
                     AuthenticatedPrincipal {
                         acting_tenant: tenant_id,
-                        home_tenant: tenant_id,
                         role,
                         label,
                     }
@@ -653,7 +648,6 @@ async fn api_key_auth(
         Ok((tenant_id, role)) => {
             AuthenticatedPrincipal {
                 acting_tenant: tenant_id,
-                home_tenant: tenant_id,
                 role,
                 label: "apikey".to_string(),
             }

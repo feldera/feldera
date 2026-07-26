@@ -101,7 +101,7 @@ pub(crate) trait Storage {
     async fn resolve_tenant_selector(&self, selector: &str) -> Result<TenantId, DBError>;
 
     /// Creates a tenant, failing with a conflict (HTTP 409) if `(name, provider)`
-    /// already exists. Used by the owner-only explicit-create endpoint.
+    /// already exists.
     async fn create_tenant(
         &self,
         id: Uuid,
@@ -109,11 +109,13 @@ pub(crate) trait Storage {
         provider: &str,
     ) -> Result<TenantId, DBError>;
 
-    /// Lists all tenants in the installation (owner-only platform view).
+    /// Lists all tenants in the installation.
     async fn list_tenants(&self) -> Result<Vec<TenantInfo>, DBError>;
 
-    /// Resolves a non-owner login to its acting tenant and effective role,
-    /// ensuring the user and membership records exist. See
+    /// Resolves a login to its acting tenant and effective role, ensuring the
+    /// user and membership records exist. Owners skip this: their role comes
+    /// from configuration rather than a membership, so `auth` resolves them
+    /// before reaching here. See
     /// [`crate::db::operations::user::resolve_login`].
     #[allow(clippy::too_many_arguments)]
     async fn resolve_login(
@@ -175,7 +177,7 @@ pub(crate) trait Storage {
     /// Deletes an API key by name.
     async fn delete_api_key(&self, tenant_id: TenantId, name: &str) -> Result<(), DBError>;
 
-    /// Persists an SHA-256 hash of an API key in the database. The role is a
+    /// Persists a SHA-256 hash of an API key in the database. The role is a
     /// [`MintableKeyRole`] (read/write only), so `admin`/`owner` cannot be
     /// persisted as a static key by construction.
     async fn store_api_key_hash(

@@ -29,9 +29,8 @@ use uuid::Uuid;
 /// Selects which trusts an operation targets.
 #[derive(Debug, Default, Deserialize, IntoParams)]
 pub(crate) struct TrustScope {
-    /// Select platform-wide owner trusts (which belong to no tenant) instead of
-    /// the caller's tenant, rather than the trusts scoped to the caller's tenant.
-    /// Owner-only.
+    /// Select the platform-wide owner trusts, which belong to no tenant,
+    /// instead of the trusts scoped to the caller's tenant. Owner-only.
     #[serde(default)]
     platform: bool,
 }
@@ -80,7 +79,7 @@ pub(crate) struct NewOidcTrustRequest {
 
     /// Optional audience claim pattern. `*` matches any sequence of characters.
     /// If omitted, the audience claim is not checked.
-    #[schema(example = "feldera")]
+    #[schema(example = "https://github.com/my-org")]
     #[serde(default)]
     pub audience: Option<String>,
 
@@ -106,6 +105,7 @@ pub(crate) struct NewOidcTrustResponse {
     params(TrustScope),
     responses(
         (status = OK, description = "Trust relationships retrieved", body = [OidcTrustDescr]),
+        (status = FORBIDDEN, description = "Caller's role is below the required role, or `platform` was set by a non-owner", body = ErrorResponse),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
     tag = "Platform"
@@ -131,7 +131,9 @@ pub(crate) async fn list_oidc_trust(
     params(("name" = String, Path, description = "Trust relationship name"), TrustScope),
     responses(
         (status = OK, description = "Trust relationship retrieved", body = OidcTrustDescr),
-        (status = NOT_FOUND, description = "No relationship with that name", body = ErrorResponse)
+        (status = FORBIDDEN, description = "Caller's role is below the required role, or `platform` was set by a non-owner", body = ErrorResponse),
+        (status = NOT_FOUND, description = "No relationship with that name", body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
     tag = "Platform"
 )]
@@ -158,8 +160,10 @@ pub(crate) async fn get_oidc_trust(
     request_body = NewOidcTrustRequest,
     responses(
         (status = CREATED, description = "Trust relationship created", body = NewOidcTrustResponse),
+        (status = BAD_REQUEST, description = "A required field is empty", body = ErrorResponse),
+        (status = FORBIDDEN, description = "Caller's role is below the required role, or the requested role exceeds the caller's own", body = ErrorResponse),
         (status = CONFLICT, description = "Name already in use", body = ErrorResponse),
-        (status = BAD_REQUEST, description = "Invalid request", body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
     tag = "Platform"
 )]
@@ -185,9 +189,8 @@ pub(crate) async fn post_oidc_trust(
     }
 
     // Scope follows the role: an owner trust is platform-wide (no tenant), any
-    // other role is scoped to the acting tenant. `subject`/`audience` carry no
-    // breadth restriction; `audience`, if set, is only an extra match filter and
-    // tenant selection at auth time comes from the Feldera-Tenant header.
+    // other role is scoped to the acting tenant. Tenant selection at auth time
+    // comes from the Feldera-Tenant header.
     let scope = if requested == Role::Owner {
         None
     } else {
@@ -228,7 +231,9 @@ pub(crate) async fn post_oidc_trust(
     params(("name" = String, Path, description = "Trust relationship name"), TrustScope),
     responses(
         (status = OK, description = "Trust relationship deleted"),
-        (status = NOT_FOUND, description = "No relationship with that name", body = ErrorResponse)
+        (status = FORBIDDEN, description = "Caller's role is below the required role, or `platform` was set by a non-owner", body = ErrorResponse),
+        (status = NOT_FOUND, description = "No relationship with that name", body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
     tag = "Platform"
 )]

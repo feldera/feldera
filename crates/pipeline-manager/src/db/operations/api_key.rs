@@ -11,14 +11,6 @@ use openssl::sha;
 use std::str::FromStr;
 use uuid::Uuid;
 
-/// Parse a role string read from the DB, turning an unexpected value into a
-/// request error rather than a panic (this runs on the auth path).
-fn parse_role(s: &str) -> Result<Role, DBError> {
-    Role::from_str(s).map_err(|_| DBError::InvalidRoleString {
-        value: s.to_string(),
-    })
-}
-
 pub async fn list_api_keys(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
@@ -31,7 +23,7 @@ pub async fn list_api_keys(
     for row in rows {
         let id: ApiKeyId = ApiKeyId(row.get(0));
         let name: String = row.get(1);
-        let role = parse_role(&row.get::<_, String>(2))?;
+        let role = Role::from_str(&row.get::<_, String>(2))?;
         result.push(ApiKeyDescr { id, name, role });
     }
     Ok(result)
@@ -49,7 +41,7 @@ pub async fn get_api_key(
     if let Some(row) = maybe_row {
         let id: ApiKeyId = ApiKeyId(row.get(0));
         let name: String = row.get(1);
-        let role = parse_role(&row.get::<_, String>(2))?;
+        let role = Role::from_str(&row.get::<_, String>(2))?;
         Ok(ApiKeyDescr { id, name, role })
     } else {
         Err(DBError::UnknownApiKey {
@@ -123,6 +115,6 @@ pub async fn validate_api_key(
     let res = txn.query(&stmt, &[&hash]).await?;
     let res = res.first().ok_or(DBError::InvalidApiKey)?;
     let tenant_id = TenantId(res.get(0));
-    let role = parse_role(&res.get::<_, String>(1))?;
+    let role = Role::from_str(&res.get::<_, String>(1))?;
     Ok((tenant_id, role))
 }
