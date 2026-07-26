@@ -32,7 +32,7 @@ export type AddMemberRequest = {
    * Optional email for display in the member list.
    */
   email?: string | null
-  role: Role
+  role: MemberRole
   /**
    * OIDC subject (matches the JWT `sub` claim). The issuer is not settable:
    * members authenticate through the platform's single configured issuer, so
@@ -77,7 +77,7 @@ export type AdhocQueryArgs = {
 export type ApiKeyDescr = {
   id: ApiKeyId
   name: string
-  role: Role
+  role: MintableKeyRole
 }
 
 /**
@@ -3080,6 +3080,13 @@ export type LicenseValidity =
     }
 
 /**
+ * A role assignable to a tenant member: `read`, `write`, or `admin`. `owner`
+ * is a platform-wide role, not a tenant membership, so it is not a valid value
+ * here.
+ */
+export type MemberRole = 'read' | 'write' | 'admin'
+
+/**
  * Memory pressure level.
  *
  * The current memory pressure level is computed as a function of the current process
@@ -3113,6 +3120,13 @@ export type MetricsFormat = 'prometheus' | 'json'
 export type MetricsParameters = {
   format?: MetricsFormat
 }
+
+/**
+ * The role an API key carries: `read` or `write`. API keys cannot be granted
+ * `admin` or `owner`; those roles are held only by interactive logins and OIDC
+ * trust relationships.
+ */
+export type MintableKeyRole = 'read' | 'write'
 
 export type MirInput = {
   node: string
@@ -3174,7 +3188,7 @@ export type NewApiKeyRequest = {
    * Key name.
    */
   name: string
-  role?: Role | null
+  role?: MintableKeyRole | null
 }
 
 /**
@@ -5300,10 +5314,6 @@ export type ServiceStatus = {
 }
 
 export type SessionInfo = {
-  /**
-   * Whether the caller is a platform owner.
-   */
-  is_owner: boolean
   role: Role
   tenant_id: TenantId
   /**
@@ -5316,7 +5326,7 @@ export type SessionInfo = {
  * Request to assign a role to a user within a tenant.
  */
 export type SetMemberRoleRequest = {
-  role: Role
+  role: MemberRole
 }
 
 /**
@@ -6340,8 +6350,8 @@ export type ListOidcTrustData = {
   path?: never
   query?: {
     /**
-     * Operate on platform-wide owner trusts (which belong to no tenant) instead
-     * of the caller's tenant. Owner-only.
+     * Select the platform-wide owner trusts, which belong to no tenant,
+     * instead of the trusts scoped to the caller's tenant. Owner-only.
      */
     platform?: boolean
   }
@@ -6349,6 +6359,10 @@ export type ListOidcTrustData = {
 }
 
 export type ListOidcTrustErrors = {
+  /**
+   * Caller's role is below the required role, or `platform` was set by a non-owner
+   */
+  403: ErrorResponse
   500: ErrorResponse
 }
 
@@ -6372,13 +6386,18 @@ export type PostOidcTrustData = {
 
 export type PostOidcTrustErrors = {
   /**
-   * Invalid request
+   * A required field is empty
    */
   400: ErrorResponse
+  /**
+   * Caller's role is below the required role, or the requested role exceeds the caller's own
+   */
+  403: ErrorResponse
   /**
    * Name already in use
    */
   409: ErrorResponse
+  500: ErrorResponse
 }
 
 export type PostOidcTrustError = PostOidcTrustErrors[keyof PostOidcTrustErrors]
@@ -6402,8 +6421,8 @@ export type DeleteOidcTrustData = {
   }
   query?: {
     /**
-     * Operate on platform-wide owner trusts (which belong to no tenant) instead
-     * of the caller's tenant. Owner-only.
+     * Select the platform-wide owner trusts, which belong to no tenant,
+     * instead of the trusts scoped to the caller's tenant. Owner-only.
      */
     platform?: boolean
   }
@@ -6412,9 +6431,14 @@ export type DeleteOidcTrustData = {
 
 export type DeleteOidcTrustErrors = {
   /**
+   * Caller's role is below the required role, or `platform` was set by a non-owner
+   */
+  403: ErrorResponse
+  /**
    * No relationship with that name
    */
   404: ErrorResponse
+  500: ErrorResponse
 }
 
 export type DeleteOidcTrustError = DeleteOidcTrustErrors[keyof DeleteOidcTrustErrors]
@@ -6436,8 +6460,8 @@ export type GetOidcTrustData = {
   }
   query?: {
     /**
-     * Operate on platform-wide owner trusts (which belong to no tenant) instead
-     * of the caller's tenant. Owner-only.
+     * Select the platform-wide owner trusts, which belong to no tenant,
+     * instead of the trusts scoped to the caller's tenant. Owner-only.
      */
     platform?: boolean
   }
@@ -6446,9 +6470,14 @@ export type GetOidcTrustData = {
 
 export type GetOidcTrustErrors = {
   /**
+   * Caller's role is below the required role, or `platform` was set by a non-owner
+   */
+  403: ErrorResponse
+  /**
    * No relationship with that name
    */
   404: ErrorResponse
+  500: ErrorResponse
 }
 
 export type GetOidcTrustError = GetOidcTrustErrors[keyof GetOidcTrustErrors]
@@ -8364,6 +8393,10 @@ export type ListTenantUsersData = {
 }
 
 export type ListTenantUsersErrors = {
+  /**
+   * Caller's role is below the required role
+   */
+  403: ErrorResponse
   500: ErrorResponse
 }
 
@@ -8387,9 +8420,10 @@ export type AddTenantUserData = {
 
 export type AddTenantUserErrors = {
   /**
-   * Requested role exceeds caller's role or is owner
+   * Caller's role is below the required role, or the requested role is `owner`
    */
   403: ErrorResponse
+  500: ErrorResponse
 }
 
 export type AddTenantUserError = AddTenantUserErrors[keyof AddTenantUserErrors]
@@ -8417,9 +8451,14 @@ export type DeleteTenantUserData = {
 
 export type DeleteTenantUserErrors = {
   /**
+   * Caller's role is below the required role
+   */
+  403: ErrorResponse
+  /**
    * User is not a member
    */
   404: ErrorResponse
+  500: ErrorResponse
 }
 
 export type DeleteTenantUserError = DeleteTenantUserErrors[keyof DeleteTenantUserErrors]
@@ -8445,9 +8484,14 @@ export type PutTenantUserData = {
 
 export type PutTenantUserErrors = {
   /**
-   * Requested role exceeds caller's role or is owner
+   * Caller's role is below the required role, or the requested role is `owner`
    */
   403: ErrorResponse
+  /**
+   * No user with that identifier
+   */
+  404: ErrorResponse
+  500: ErrorResponse
 }
 
 export type PutTenantUserError = PutTenantUserErrors[keyof PutTenantUserErrors]
@@ -8467,6 +8511,10 @@ export type ListTenantsData = {
 }
 
 export type ListTenantsErrors = {
+  /**
+   * Caller is not a platform owner
+   */
+  403: ErrorResponse
   500: ErrorResponse
 }
 
@@ -8490,9 +8538,14 @@ export type CreateTenantData = {
 
 export type CreateTenantErrors = {
   /**
+   * Caller is not a platform owner
+   */
+  403: ErrorResponse
+  /**
    * A tenant with that name already exists
    */
   409: ErrorResponse
+  500: ErrorResponse
 }
 
 export type CreateTenantError = CreateTenantErrors[keyof CreateTenantErrors]
