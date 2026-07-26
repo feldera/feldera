@@ -379,8 +379,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
             self.send_header("Content-Length", "0")
             self.end_headers()
 
-        # ---- /authorize: login page + code issuance --------------------------
-
+        # /authorize: login page + code issuance
         def _handle_authorize(self, query: dict[str, list[str]]) -> None:
             def one(name: str) -> str | None:
                 values = query.get(name)
@@ -421,8 +420,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
                 params["state"] = state
             self._redirect(append_query(redirect_uri, params))
 
-        # ---- POST /token: code / refresh exchange ----------------------------
-
+        # POST /token: code / refresh exchange
         def _read_body_params(self) -> dict[str, str]:
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length else b""
@@ -470,8 +468,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
 
             self._send_json({"error": "unsupported_grant_type", "error_description": f"grant_type={grant_type}"}, 400)
 
-        # ---- GET /userinfo ---------------------------------------------------
-
+        # GET /userinfo
         def _handle_userinfo(self) -> None:
             auth = self.headers.get("Authorization", "")
             if not auth.startswith("Bearer "):
@@ -499,8 +496,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
                 info["tenants"] = claims["tenants"]
             self._send_json(info)
 
-        # ---- /logout ---------------------------------------------------------
-
+        # /logout
         def _handle_logout(self, query: dict[str, list[str]]) -> None:
             target = (query.get("post_logout_redirect_uri") or query.get("redirect_uri") or [None])[0]
             if target:
@@ -512,8 +508,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
                 "<h1>Logged out</h1><p>You may close this window.</p></body></html>"
             )
 
-        # ---- dispatch --------------------------------------------------------
-
+        # dispatch
         def do_OPTIONS(self) -> None:  # noqa: N802 (http.server API)
             self.send_response(204)
             self._cors()
