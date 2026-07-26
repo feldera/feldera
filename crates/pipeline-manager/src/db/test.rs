@@ -11,6 +11,7 @@ use crate::db::types::monitor::{
     ExtendedPipelineMonitorEvent, MonitorStatus, NewClusterMonitorEvent, PipelineMonitorEvent,
     PipelineMonitorEventId,
 };
+use crate::db::types::oidc_trust::{claim_matches, OidcTrustDescr, OidcTrustId};
 use crate::db::types::pipeline::{
     ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PatchClientMetadata,
     PipelineDescr, PipelineId,
@@ -24,14 +25,14 @@ use crate::db::types::resources_status::{
     validate_resources_desired_status_transition, validate_resources_status_transition,
     ResourcesDesiredStatus, ResourcesStatus,
 };
-use crate::db::types::role::{MintableKeyRole, Role};
+use crate::db::types::role::{MemberRole, MintableKeyRole, Role};
 use crate::db::types::storage::{validate_storage_status_transition, StorageStatus};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::user::{TenantInfo, TenantMember, UserId};
 use crate::db::types::utils::{
-    validate_api_key_name, validate_deployment_config, validate_pipeline_name,
-    validate_program_config, validate_program_info, validate_runtime_config,
-    validate_storage_status_details, MAXIMUM_TAG_LENGTH,
+    validate_api_key_name, validate_deployment_config, validate_oidc_trust_name,
+    validate_pipeline_name, validate_program_config, validate_program_info,
+    validate_runtime_config, validate_storage_status_details, MAXIMUM_TAG_LENGTH,
 };
 use crate::db::types::version::Version;
 use async_trait::async_trait;
@@ -297,6 +298,100 @@ fn map_val_to_limited_pipeline_name(val: PipelineNamePropVal) -> String {
     } else {
         format!("pipeline-{limited_val}")
     }
+}
+
+/// Generates a limited OIDC trust name (1/4 is invalid).
+fn limited_oidc_trust_name() -> impl Strategy<Value = String> {
+    any::<u8>().prop_map(|val| match val % 4 {
+        0 => "".to_string(), // An invalid trust name
+        n => format!("trust-{n}"),
+    })
+}
+
+/// Generates one of a few issuers, so that trusts collide on issuer often
+/// enough to exercise matching and the trusted-issuer gate.
+fn limited_issuer() -> impl Strategy<Value = String> {
+    any::<u8>().prop_map(|val| match val % 3 {
+        0 => "".to_string(), // An invalid (empty) issuer
+        n => format!("https://idp{n}.example"),
+    })
+}
+
+/// Generates a claim pattern, mixing concrete values with `*` wildcards so that
+/// matching is exercised in both directions.
+fn limited_claim_pattern() -> impl Strategy<Value = String> {
+    any::<u8>().prop_map(|val| {
+        match val % 6 {
+            0 => "".to_string(), // An invalid (empty) subject pattern
+            1 => "*".to_string(),
+            2 => "repo:acme/*".to_string(),
+            3 => "repo:acme/api".to_string(),
+            4 => "*:prod".to_string(),
+            _ => "system:sa:*:default".to_string(),
+        }
+    })
+}
+
+/// Generates a concrete claim value to match patterns against.
+fn limited_claim_value() -> impl Strategy<Value = String> {
+    any::<u8>().prop_map(|val| match val % 5 {
+        0 => "".to_string(),
+        1 => "repo:acme/api".to_string(),
+        2 => "repo:acme/api:prod".to_string(),
+        3 => "system:sa:kube:default".to_string(),
+        _ => "other".to_string(),
+    })
+}
+
+/// Generates a limited OIDC identity `(provider, subject)`, small enough that
+/// the same identity recurs and exercises the get-or-create path.
+fn limited_identity() -> impl Strategy<Value = (String, String)> {
+    (any::<u8>(), any::<u8>()).prop_map(|(p, s)| {
+        (
+            format!("https://idp{}.example", p % 2),
+            format!("user-{}", s % 3),
+        )
+    })
+}
+
+/// The user id a caller would mint for an identity. Callers pass a fresh
+/// `Uuid::now_v7()`, so two identities never share one; deriving the id from the
+/// identity keeps that true here, where `limited_uuid` would collide and hit a
+/// primary-key violation instead of the get-or-create path under test.
+fn user_id_for_identity(provider: &str, subject: &str) -> Uuid {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    provider.hash(&mut hasher);
+    subject.hash(&mut hasher);
+    let half = hasher.finish().to_be_bytes();
+    let mut bytes = [0u8; 16];
+    bytes[..8].copy_from_slice(&half);
+    bytes[8..].copy_from_slice(&half);
+    Uuid::from_bytes(bytes)
+}
+
+/// The id a caller would mint for a trust. Distinct trusts get distinct ids, as
+/// `Uuid::now_v7()` would give them, so that several can coexist; re-creating
+/// the same trust reuses the id and collides on the name, as intended.
+fn trust_id_for(platform: bool, name: &str) -> Uuid {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    platform.hash(&mut hasher);
+    name.hash(&mut hasher);
+    let half = hasher.finish().to_be_bytes();
+    let mut bytes = [0u8; 16];
+    bytes[..8].copy_from_slice(&half);
+    bytes[8..].copy_from_slice(&half);
+    Uuid::from_bytes(bytes)
+}
+
+/// Generates an optional email, including the absent case that exercises the
+/// COALESCE on update and the NULL ordering in the member listing.
+fn limited_email() -> impl Strategy<Value = Option<String>> {
+    any::<u8>().prop_map(|val| match val % 3 {
+        0 => None,
+        n => Some(format!("user{n}@example.com")),
+    })
 }
 
 /// Generates a limited runtime configuration (1/8 is invalid).
@@ -3522,6 +3617,243 @@ async fn pipeline_concurrent_access_deadlock() {
 //////////////////////////////////////////////////////////////////////////////
 /////                           PROP TESTS                               /////
 
+/// Compare the model and the implementation for one OIDC trust or membership
+/// action. Kept out of the main dispatch loop so its locals do not add to that
+/// already very large future.
+async fn check_rbac_action(
+    i: usize,
+    model: &Mutex<DbModel>,
+    handle: &DbHandle,
+    action: RbacAction,
+) {
+    match action {
+        RbacAction::ListOidcTrust(tenant_id, platform) => {
+            create_tenants_if_not_exists(model, handle, tenant_id)
+                .await
+                .unwrap();
+            let scope = if platform { None } else { Some(tenant_id) };
+            let mut model_response = model.list_oidc_trust(scope).await.unwrap();
+            let mut impl_response = handle.db.list_oidc_trust(scope).await.unwrap();
+            model_response.sort_by(|a, b| a.name.cmp(&b.name));
+            impl_response.sort_by(|a, b| a.name.cmp(&b.name));
+            assert_eq!(model_response, impl_response);
+        }
+        RbacAction::GetOidcTrust(tenant_id, platform, name) => {
+            create_tenants_if_not_exists(model, handle, tenant_id)
+                .await
+                .unwrap();
+            let scope = if platform { None } else { Some(tenant_id) };
+            let model_response = model.get_oidc_trust(scope, &name).await;
+            let impl_response = handle.db.get_oidc_trust(scope, &name).await;
+            check_responses(i, model_response, impl_response);
+        }
+        RbacAction::DeleteOidcTrust(tenant_id, platform, name) => {
+            create_tenants_if_not_exists(model, handle, tenant_id)
+                .await
+                .unwrap();
+            let scope = if platform { None } else { Some(tenant_id) };
+            let model_response = model.delete_oidc_trust(scope, &name).await;
+            let impl_response = handle.db.delete_oidc_trust(scope, &name).await;
+            check_responses(i, model_response, impl_response);
+        }
+        RbacAction::CreateOidcTrust(
+            tenant_id,
+            platform,
+            name,
+            description,
+            issuer,
+            subject,
+            audience,
+            role,
+        ) => {
+            create_tenants_if_not_exists(model, handle, tenant_id)
+                .await
+                .unwrap();
+            let id = trust_id_for(platform, &name);
+            // The schema ties the platform scope to `owner`.
+            let (scope, role) = if platform {
+                (None, Role::Owner)
+            } else {
+                (Some(tenant_id), role.role())
+            };
+            let model_response = model
+                .create_oidc_trust(
+                    scope,
+                    id,
+                    &name,
+                    description.as_deref(),
+                    &issuer,
+                    &subject,
+                    audience.as_deref(),
+                    role,
+                )
+                .await;
+            let impl_response = handle
+                .db
+                .create_oidc_trust(
+                    scope,
+                    id,
+                    &name,
+                    description.as_deref(),
+                    &issuer,
+                    &subject,
+                    audience.as_deref(),
+                    role,
+                )
+                .await;
+            check_responses(i, model_response, impl_response);
+        }
+        RbacAction::IsTrustedIssuer(issuer) => {
+            let model_response = model.is_trusted_issuer(&issuer).await;
+            let impl_response = handle.db.is_trusted_issuer(&issuer).await;
+            check_responses(i, model_response, impl_response);
+        }
+        RbacAction::MatchOidcTrust(issuer, subject, audiences) => {
+            let model_response = model.match_oidc_trust(&issuer, &subject, &audiences).await;
+            let impl_response = handle
+                .db
+                .match_oidc_trust(&issuer, &subject, &audiences)
+                .await;
+            check_responses(i, model_response, impl_response);
+        }
+        RbacAction::ListTenants => {
+            let mut model_response = model.list_tenants().await.unwrap();
+            let mut impl_response = handle.db.list_tenants().await.unwrap();
+            model_response.sort_by(|a, b| a.id.cmp(&b.id));
+            impl_response.sort_by(|a, b| a.id.cmp(&b.id));
+            assert_eq!(model_response, impl_response);
+        }
+        RbacAction::GetOrCreateUser((provider, subject), email) => {
+            let id = user_id_for_identity(&provider, &subject);
+            let model_response = model
+                .get_or_create_user(id, &provider, &subject, email.as_deref())
+                .await;
+            let impl_response = handle
+                .db
+                .get_or_create_user(id, &provider, &subject, email.as_deref())
+                .await;
+            check_responses(i, model_response, impl_response);
+        }
+        RbacAction::ListTenantMembers(tenant_id) => {
+            create_tenants_if_not_exists(model, handle, tenant_id)
+                .await
+                .unwrap();
+            let model_response = model.list_tenant_members(tenant_id).await;
+            let impl_response = handle.db.list_tenant_members(tenant_id).await;
+            check_responses(i, model_response, impl_response);
+        }
+        RbacAction::UpsertMemberRole(tenant_id, (provider, subject), role) => {
+            let user_id = user_id_for_identity(&provider, &subject);
+            create_tenants_if_not_exists(model, handle, tenant_id)
+                .await
+                .unwrap();
+            let model_response = model
+                .upsert_member_role(tenant_id, UserId(user_id), role.role())
+                .await;
+            let impl_response = handle
+                .db
+                .upsert_member_role(tenant_id, UserId(user_id), role.role())
+                .await;
+            check_responses(i, model_response, impl_response);
+        }
+        RbacAction::RemoveMember(tenant_id, (provider, subject)) => {
+            let user_id = user_id_for_identity(&provider, &subject);
+            create_tenants_if_not_exists(model, handle, tenant_id)
+                .await
+                .unwrap();
+            let model_response = model.remove_member(tenant_id, UserId(user_id)).await;
+            let impl_response = handle.db.remove_member(tenant_id, UserId(user_id)).await;
+            check_responses(i, model_response, impl_response);
+        }
+        RbacAction::PreprovisionMember(tenant_id, (provider, subject), email, role) => {
+            let new_user_id = user_id_for_identity(&provider, &subject);
+            create_tenants_if_not_exists(model, handle, tenant_id)
+                .await
+                .unwrap();
+            let model_response = model
+                .preprovision_member(
+                    new_user_id,
+                    tenant_id,
+                    &provider,
+                    &subject,
+                    email.as_deref(),
+                    role.role(),
+                )
+                .await;
+            let impl_response = handle
+                .db
+                .preprovision_member(
+                    new_user_id,
+                    tenant_id,
+                    &provider,
+                    &subject,
+                    email.as_deref(),
+                    role.role(),
+                )
+                .await;
+            check_responses(i, model_response, impl_response);
+        }
+    }
+}
+
+/// Actions covering OIDC trust relationships and tenant membership.
+#[derive(Debug, Clone, Arbitrary)]
+enum RbacAction {
+    // OIDC trust relationships. `platform` selects the platform-wide owner
+    // scope, which the schema ties to the `owner` role; the tenant scope takes
+    // any assignable role. Generating the pair together keeps every action
+    // inside the `oidc_trust_owner_is_platform` check.
+    ListOidcTrust(TenantId, bool),
+    GetOidcTrust(
+        TenantId,
+        bool,
+        #[proptest(strategy = "limited_oidc_trust_name()")] String,
+    ),
+    DeleteOidcTrust(
+        TenantId,
+        bool,
+        #[proptest(strategy = "limited_oidc_trust_name()")] String,
+    ),
+    CreateOidcTrust(
+        TenantId,
+        bool,
+        #[proptest(strategy = "limited_oidc_trust_name()")] String,
+        Option<String>,
+        #[proptest(strategy = "limited_issuer()")] String,
+        #[proptest(strategy = "limited_claim_pattern()")] String,
+        #[proptest(strategy = "proptest::option::of(limited_claim_pattern())")] Option<String>,
+        MemberRole,
+    ),
+    IsTrustedIssuer(#[proptest(strategy = "limited_issuer()")] String),
+    MatchOidcTrust(
+        #[proptest(strategy = "limited_issuer()")] String,
+        #[proptest(strategy = "limited_claim_value()")] String,
+        #[proptest(strategy = "prop::collection::vec(limited_claim_value(), 0..3)")] Vec<String>,
+    ),
+    // Users and tenant memberships
+    ListTenants,
+    GetOrCreateUser(
+        #[proptest(strategy = "limited_identity()")] (String, String),
+        #[proptest(strategy = "limited_email()")] Option<String>,
+    ),
+    ListTenantMembers(TenantId),
+    UpsertMemberRole(
+        TenantId,
+        #[proptest(strategy = "limited_identity()")] (String, String),
+        MemberRole,
+    ),
+    RemoveMember(
+        TenantId,
+        #[proptest(strategy = "limited_identity()")] (String, String),
+    ),
+    PreprovisionMember(
+        TenantId,
+        #[proptest(strategy = "limited_identity()")] (String, String),
+        #[proptest(strategy = "limited_email()")] Option<String>,
+        MemberRole,
+    ),
+}
+
 /// Actions we can do on the Storage trait.
 #[derive(Debug, Clone, Arbitrary)]
 enum StorageAction {
@@ -4206,6 +4538,9 @@ fn db_impl_behaves_like_model() {
                     pipelines: BTreeMap::new(),
                     pipeline_events: BTreeMap::new(),
                     cluster_events: BTreeMap::new(),
+                    oidc_trusts: BTreeMap::new(),
+                    users: BTreeMap::new(),
+                    memberships: BTreeMap::new(),
                 });
                 runtime.block_on(async {
                     // We empty all tables in the database before each test
@@ -4582,6 +4917,65 @@ fn db_impl_behaves_like_model() {
     }
 }
 
+/// Compares the OIDC trust and tenant-membership operations against the model.
+///
+/// Kept separate from `db_impl_behaves_like_model` rather than folded into
+/// `StorageAction`: that enum and the future its dispatch builds are already
+/// near the test thread's stack limit, and adding these actions overflowed it.
+#[test]
+#[allow(clippy::field_reassign_with_default)]
+fn rbac_db_impl_behaves_like_model() {
+    let _ = tracing_subscriber::fmt::try_init();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let handle = runtime.block_on(async { test_setup().await });
+
+    let mut config = Config::default();
+    config.max_shrink_iters = u32::MAX;
+    config.source_file = Some("src/db/test.rs");
+    let mut runner = TestRunner::new(config);
+    let res = runner.run(
+        &prop::collection::vec(any::<RbacAction>(), 0..64),
+        |actions: Vec<RbacAction>| {
+            let model = Mutex::new(DbModel {
+                tenants: BTreeMap::new(),
+                api_keys: BTreeMap::new(),
+                pipelines: BTreeMap::new(),
+                pipeline_events: BTreeMap::new(),
+                cluster_events: BTreeMap::new(),
+                oidc_trusts: BTreeMap::new(),
+                users: BTreeMap::new(),
+                memberships: BTreeMap::new(),
+            });
+            runtime.block_on(async {
+                handle
+                    .db
+                    .pool
+                    .get()
+                    .await
+                    .unwrap()
+                    .execute(
+                        "DO $$ DECLARE r RECORD;
+                            BEGIN
+                                FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = current_schema()) LOOP
+                                EXECUTE 'TRUNCATE TABLE ' || quote_ident(r.tablename) || ' RESTART IDENTITY CASCADE';
+                                END LOOP;
+                            END $$;",
+                        &[],
+                    )
+                    .await
+                    .unwrap();
+                for (i, action) in actions.into_iter().enumerate() {
+                    check_rbac_action(i, &model, &handle, action).await;
+                }
+            });
+            Ok(())
+        },
+    );
+    if let Err(e) = res {
+        panic!("{e:#}");
+    }
+}
+
 /// Model of the database to which its operations are compared.
 #[derive(Debug)]
 struct DbModel {
@@ -4590,6 +4984,13 @@ struct DbModel {
     pub pipelines: BTreeMap<(TenantId, PipelineId), ExtendedPipelineDescr>,
     pub pipeline_events: BTreeMap<(TenantId, PipelineId), Vec<ExtendedPipelineMonitorEvent>>,
     pub cluster_events: BTreeMap<ClusterMonitorEventId, ExtendedClusterMonitorEvent>,
+    /// Keyed by scope and name, mirroring the table's uniqueness: `None` is the
+    /// platform-wide owner scope, `Some(t)` a tenant's own trusts.
+    pub oidc_trusts: BTreeMap<(Option<TenantId>, String), OidcTrustDescr>,
+    /// Keyed by the `(provider, subject)` identity, holding the user's id and
+    /// the email last seen for it.
+    pub users: BTreeMap<(String, String), (UserId, Option<String>)>,
+    pub memberships: BTreeMap<(TenantId, UserId), Role>,
 }
 
 #[async_trait]
@@ -5157,58 +5558,129 @@ impl Storage for Mutex<DbModel> {
         }
     }
 
-    // OIDC trust relationships are not exercised by the proptest model.
     async fn list_oidc_trust(
         &self,
-        _tenant_id: Option<TenantId>,
+        tenant_id: Option<TenantId>,
     ) -> DBResult<Vec<crate::db::types::oidc_trust::OidcTrustDescr>> {
-        Ok(vec![])
+        let s = self.lock().await;
+        Ok(s.oidc_trusts
+            .iter()
+            .filter(
+                |((scope, _), _): &(&(Option<TenantId>, String), &OidcTrustDescr)| {
+                    *scope == tenant_id
+                },
+            )
+            .map(|(_, descr)| descr.clone())
+            .collect())
     }
 
     async fn get_oidc_trust(
         &self,
-        _tenant_id: Option<TenantId>,
+        tenant_id: Option<TenantId>,
         name: &str,
     ) -> DBResult<crate::db::types::oidc_trust::OidcTrustDescr> {
-        Err(DBError::UnknownOidcTrust {
-            name: name.to_string(),
-        })
+        let s = self.lock().await;
+        s.oidc_trusts
+            .get(&(tenant_id, name.to_string()))
+            .cloned()
+            .ok_or(DBError::UnknownOidcTrust {
+                name: name.to_string(),
+            })
     }
 
-    async fn delete_oidc_trust(&self, _tenant_id: Option<TenantId>, name: &str) -> DBResult<()> {
-        Err(DBError::UnknownOidcTrust {
-            name: name.to_string(),
-        })
+    async fn delete_oidc_trust(&self, tenant_id: Option<TenantId>, name: &str) -> DBResult<()> {
+        let mut s = self.lock().await;
+        s.oidc_trusts
+            .remove(&(tenant_id, name.to_string()))
+            .map(|_| ())
+            .ok_or(DBError::UnknownOidcTrust {
+                name: name.to_string(),
+            })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn create_oidc_trust(
         &self,
-        _tenant_id: Option<TenantId>,
-        _id: Uuid,
-        _name: &str,
-        _description: Option<&str>,
-        _issuer: &str,
-        _subject: &str,
-        _audience: Option<&str>,
-        _role: Role,
+        tenant_id: Option<TenantId>,
+        id: Uuid,
+        name: &str,
+        description: Option<&str>,
+        issuer: &str,
+        subject: &str,
+        audience: Option<&str>,
+        role: Role,
     ) -> DBResult<()> {
+        validate_oidc_trust_name(name)?;
+        if issuer.is_empty() {
+            return Err(DBError::EmptyOidcTrustField {
+                field: "issuer".to_string(),
+            });
+        }
+        if subject.is_empty() {
+            return Err(DBError::EmptyOidcTrustField {
+                field: "subject".to_string(),
+            });
+        }
+        let mut s = self.lock().await;
+        // Postgres checks the unique indexes (primary key and the name indexes)
+        // during the insert and the foreign key only at the end of the
+        // statement, so uniqueness is reported first. Both index violations map
+        // to the same error, so their relative order does not matter.
+        let duplicate_id = s.oidc_trusts.values().any(|d| d.id.0 == id);
+        if duplicate_id || s.oidc_trusts.contains_key(&(tenant_id, name.to_string())) {
+            return Err(DBError::DuplicateName);
+        }
+        if let Some(t) = tenant_id {
+            if !s.tenants.contains_key(&t) {
+                return Err(DBError::UnknownTenant { tenant_id: t });
+            }
+        }
+        s.oidc_trusts.insert(
+            (tenant_id, name.to_string()),
+            OidcTrustDescr {
+                id: OidcTrustId(id),
+                name: name.to_string(),
+                description: description.map(str::to_string),
+                issuer: issuer.to_string(),
+                subject: subject.to_string(),
+                audience: audience.map(str::to_string),
+                role,
+            },
+        );
         Ok(())
     }
 
-    async fn is_trusted_issuer(&self, _issuer: &str) -> DBResult<bool> {
-        Ok(false)
+    async fn is_trusted_issuer(&self, issuer: &str) -> DBResult<bool> {
+        let s = self.lock().await;
+        Ok(s.oidc_trusts.values().any(|d| d.issuer == issuer))
     }
 
     async fn match_oidc_trust(
         &self,
-        _issuer: &str,
-        _subject: &str,
-        _audiences: &[String],
+        issuer: &str,
+        subject: &str,
+        audiences: &[String],
     ) -> DBResult<Vec<(Option<TenantId>, Role)>> {
-        Ok(vec![])
+        let s = self.lock().await;
+        let mut matched: Vec<(Option<TenantId>, Role)> = Vec::new();
+        for ((scope, _), descr) in s.oidc_trusts.iter() {
+            if descr.issuer != issuer || !claim_matches(&descr.subject, subject) {
+                continue;
+            }
+            if let Some(pattern) = &descr.audience {
+                if !audiences.iter().any(|a| claim_matches(pattern, a)) {
+                    continue;
+                }
+            }
+            match matched.iter_mut().find(|(t, _)| t == scope) {
+                Some(entry) => entry.1 = entry.1.max(descr.role),
+                None => matched.push((*scope, descr.role)),
+            }
+        }
+        matched.sort_by_key(|(t, _)| t.map(|x| x.0));
+        Ok(matched)
     }
 
-    // RBAC user/membership methods are not exercised by the proptest model.
     async fn resolve_tenant_selector(&self, selector: &str) -> DBResult<TenantId> {
         let s = self.lock().await;
         if let Ok(uuid) = Uuid::parse_str(selector) {
@@ -5228,9 +5700,24 @@ impl Storage for Mutex<DbModel> {
     }
 
     async fn list_tenants(&self) -> DBResult<Vec<TenantInfo>> {
-        Ok(vec![])
+        let s = self.lock().await;
+        Ok(s.tenants
+            .iter()
+            .map(|(id, t)| TenantInfo {
+                id: *id,
+                name: t.tenant.clone(),
+                provider: t.provider.clone(),
+            })
+            .collect())
     }
 
+    /// `resolve_login` is left out of the model: it resolves a tenant by
+    /// `(name, provider)` and creates it when absent, whereas the model takes
+    /// tenant ids straight from proptest and so does not model tenant creation
+    /// by name (see `get_or_create_tenant_id`). It is covered instead by the
+    /// targeted tests `rbac_login_resolution_and_membership`,
+    /// `rbac_first_user_role_configurable` and
+    /// `preprovision_member_survives_first_login`.
     #[allow(clippy::too_many_arguments)]
     async fn resolve_login(
         &self,
@@ -5249,42 +5736,103 @@ impl Storage for Mutex<DbModel> {
     async fn get_or_create_user(
         &self,
         new_id: Uuid,
-        _provider: &str,
-        _subject: &str,
-        _email: Option<&str>,
+        provider: &str,
+        subject: &str,
+        email: Option<&str>,
     ) -> DBResult<UserId> {
-        Ok(UserId(new_id))
+        let mut s = self.lock().await;
+        let key = (provider.to_string(), subject.to_string());
+        match s.users.get_mut(&key) {
+            Some((id, stored_email)) => {
+                // COALESCE: a token without an email leaves the stored one be.
+                if let Some(email) = email {
+                    *stored_email = Some(email.to_string());
+                }
+                Ok(*id)
+            }
+            None => {
+                let id = UserId(new_id);
+                s.users.insert(key, (id, email.map(str::to_string)));
+                Ok(id)
+            }
+        }
     }
 
-    async fn list_tenant_members(&self, _tenant_id: TenantId) -> DBResult<Vec<TenantMember>> {
-        Ok(vec![])
+    async fn list_tenant_members(&self, tenant_id: TenantId) -> DBResult<Vec<TenantMember>> {
+        let s = self.lock().await;
+        let mut members: Vec<TenantMember> = s
+            .memberships
+            .iter()
+            .filter(|((t, _), _)| *t == tenant_id)
+            .filter_map(|((_, user_id), role)| {
+                s.users.iter().find(|(_, (id, _))| id == user_id).map(
+                    |((provider, subject), (id, email))| TenantMember {
+                        user_id: *id,
+                        provider: provider.clone(),
+                        subject: subject.clone(),
+                        email: email.clone(),
+                        role: *role,
+                    },
+                )
+            })
+            .collect();
+        // ORDER BY u.email, u.subject, u.provider. Postgres sorts NULLs last
+        // ascending, whereas `Option::None` sorts first in Rust, so lead the
+        // key with `email.is_none()` to match.
+        members.sort_by(|a, b| {
+            (a.email.is_none(), &a.email, &a.subject, &a.provider).cmp(&(
+                b.email.is_none(),
+                &b.email,
+                &b.subject,
+                &b.provider,
+            ))
+        });
+        Ok(members)
     }
 
     async fn upsert_member_role(
         &self,
-        _tenant_id: TenantId,
-        _user_id: UserId,
-        _role: Role,
+        tenant_id: TenantId,
+        user_id: UserId,
+        role: Role,
     ) -> DBResult<()> {
+        let mut s = self.lock().await;
+        if !s.tenants.contains_key(&tenant_id) {
+            return Err(DBError::UnknownTenant { tenant_id });
+        }
+        if !s.users.values().any(|(id, _)| *id == user_id) {
+            return Err(DBError::UnknownUser {
+                user_id: user_id.to_string(),
+            });
+        }
+        s.memberships.insert((tenant_id, user_id), role);
         Ok(())
     }
 
-    async fn remove_member(&self, _tenant_id: TenantId, user_id: UserId) -> DBResult<()> {
-        Err(DBError::UnknownUser {
-            user_id: user_id.to_string(),
-        })
+    async fn remove_member(&self, tenant_id: TenantId, user_id: UserId) -> DBResult<()> {
+        let mut s = self.lock().await;
+        s.memberships
+            .remove(&(tenant_id, user_id))
+            .map(|_| ())
+            .ok_or(DBError::UnknownUser {
+                user_id: user_id.to_string(),
+            })
     }
 
     async fn preprovision_member(
         &self,
         new_user_id: Uuid,
-        _tenant_id: TenantId,
-        _provider: &str,
-        _subject: &str,
-        _email: Option<&str>,
-        _role: Role,
+        tenant_id: TenantId,
+        provider: &str,
+        subject: &str,
+        email: Option<&str>,
+        role: Role,
     ) -> DBResult<UserId> {
-        Ok(UserId(new_user_id))
+        let user_id = self
+            .get_or_create_user(new_user_id, provider, subject, email)
+            .await?;
+        self.upsert_member_role(tenant_id, user_id, role).await?;
+        Ok(user_id)
     }
 
     async fn list_pipelines(

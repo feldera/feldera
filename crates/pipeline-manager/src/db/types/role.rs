@@ -97,11 +97,22 @@ pub enum MintableKeyRole {
 /// is a platform-wide role, not a tenant membership, so it is not a valid value
 /// here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[serde(rename_all = "lowercase")]
 pub enum MemberRole {
     Read,
     Write,
     Admin,
+}
+
+impl MemberRole {
+    pub fn role(self) -> Role {
+        match self {
+            MemberRole::Read => Role::Read,
+            MemberRole::Write => Role::Write,
+            MemberRole::Admin => Role::Admin,
+        }
+    }
 }
 
 impl MintableKeyRole {
