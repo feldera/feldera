@@ -7888,7 +7888,7 @@
       },
       "ApiKeyDescr": {
         "type": "object",
-        "description": "API key descriptor.\n\nA key carries a single [`Role`], capped at `write`: `admin` and `owner` are\nnever issuable as static keys (see [`crate::db::types::role::MintableKeyRole`]).",
+        "description": "API key descriptor.\n\nA key carries a single role, `read` or `write`. `admin` and `owner` are\nnever issuable as API keys.",
         "required": [
           "id",
           "name",
