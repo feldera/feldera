@@ -42,6 +42,14 @@ can select the tenant it acts in with the `Feldera-Tenant` request header.
   [set-member-role API](/api/assign-member-role).
 - `owner` comes from the `owners` setting or an owner OIDC trust; it is never
   assigned as a tenant membership.
+- A federated token is matched against every trust registered for its issuer, and
+  the most permissive matching role wins. An owner trust outranks any
+  tenant-scoped trust the same token also matches, so a workload that a tenant
+  trust admits at `write` acts as `owner` once a matching owner trust exists.
+  Keep the subject and audience patterns on an owner trust narrow: only a
+  platform owner can create one, but a broad pattern promotes every workload it
+  matches. An owner trust always requires the `Feldera-Tenant` header to name the
+  tenant to act in.
 - An API key carries a role capped at its creator's role, limited to `read` or
   `write`.
 
