@@ -227,10 +227,9 @@ pub(crate) struct SessionInfo {
     /// Current user's tenant name
     pub tenant_name: String,
     /// The caller's effective role in the acting tenant. The web console uses
-    /// this to gate the admin UI (no role claim lives in the JWT).
+    /// this to gate the admin UI (no role claim lives in the JWT). A platform
+    /// owner reports `owner` here.
     pub role: Role,
-    /// Whether the caller is a platform owner.
-    pub is_owner: bool,
 }
 
 impl SessionInfo {
@@ -244,7 +243,6 @@ impl SessionInfo {
             tenant_id,
             tenant_name,
             role,
-            is_owner: role == Role::Owner,
         })
     }
 }

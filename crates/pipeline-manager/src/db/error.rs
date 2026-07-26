@@ -3,7 +3,7 @@ use crate::db::types::monitor::{ClusterMonitorEventId, PipelineMonitorEventId};
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::ProgramStatus;
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
-use crate::db::types::role::Role;
+use crate::db::types::role::{InvalidRole, Role};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::ValidationError;
@@ -176,7 +176,7 @@ pub enum DBError {
         requested: Role,
         creator: Role,
     },
-    OwnerNotMintableAsApiKey,
+    OwnerAdminNotMintableAsApiKey,
     OwnerRoleNotAssignable,
     InvalidRoleString {
         value: String,
@@ -456,6 +456,14 @@ impl From<PoolError> for DBError {
     }
 }
 
+/// Lets a read path parse a stored role with `Role::from_str(..)?` instead of
+/// hand-mapping the error at every call site.
+impl From<InvalidRole> for DBError {
+    fn from(error: InvalidRole) -> Self {
+        Self::InvalidRoleString { value: error.0 }
+    }
+}
+
 impl From<RefineryError> for DBError {
     fn from(error: RefineryError) -> Self {
         Self::PostgresMigrationError {
@@ -635,7 +643,7 @@ impl Display for DBError {
                     "Cannot grant the '{requested}' role: it exceeds the creator's own '{creator}' role"
                 )
             }
-            DBError::OwnerNotMintableAsApiKey => {
+            DBError::OwnerAdminNotMintableAsApiKey => {
                 write!(
                     f,
                     "The 'owner' and 'admin' roles cannot be issued as an API key; use an OIDC trust relationship or interactive login"
@@ -982,7 +990,7 @@ impl DetailedError for DBError {
             Self::InvalidApiKey => Cow::from("InvalidApiKey"),
             Self::InsufficientPermissions { .. } => Cow::from("InsufficientPermissions"),
             Self::RoleExceedsCreator { .. } => Cow::from("RoleExceedsCreator"),
-            Self::OwnerNotMintableAsApiKey => Cow::from("OwnerNotMintableAsApiKey"),
+            Self::OwnerAdminNotMintableAsApiKey => Cow::from("OwnerAdminNotMintableAsApiKey"),
             Self::OwnerRoleNotAssignable => Cow::from("OwnerRoleNotAssignable"),
             Self::InvalidRoleString { .. } => Cow::from("InvalidRoleString"),
             Self::UnknownUser { .. } => Cow::from("UnknownUser"),
@@ -1109,7 +1117,7 @@ impl ResponseError for DBError {
             Self::InvalidApiKey => StatusCode::UNAUTHORIZED,
             Self::InsufficientPermissions { .. } => StatusCode::FORBIDDEN,
             Self::RoleExceedsCreator { .. } => StatusCode::FORBIDDEN,
-            Self::OwnerNotMintableAsApiKey => StatusCode::FORBIDDEN,
+            Self::OwnerAdminNotMintableAsApiKey => StatusCode::FORBIDDEN,
             Self::OwnerRoleNotAssignable => StatusCode::FORBIDDEN,
             Self::InvalidRoleString { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UnknownUser { .. } => StatusCode::NOT_FOUND,

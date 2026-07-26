@@ -3,6 +3,7 @@ use crate::db::operations::utils::maybe_unique_violation;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::user::TenantInfo;
 use deadpool_postgres::Transaction;
+use tracing::error;
 use uuid::Uuid;
 
 /// Retrieves tenant, which is uniquely identified by the tuple (name, provider).
@@ -20,7 +21,8 @@ pub async fn get_or_create_tenant_id(
 
 /// As [`get_or_create_tenant_id`], but also reports whether the tenant was
 /// newly created by this call. The boolean lets the login path grant the very
-/// first principal of a fresh tenant the `admin` role.
+/// first principal of a fresh tenant the role configured by
+/// `--first-user-role` / `FELDERA_AUTH_FIRST_USER_ROLE` (`admin` by default).
 pub async fn get_or_create_tenant_id_created(
     txn: &Transaction<'_>,
     new_id: Uuid,
@@ -49,9 +51,9 @@ pub async fn get_or_create_tenant_id_created(
     Ok((TenantId(row.get(0)), inserted == 1))
 }
 
-/// Strict lookup of a tenant by name only, used for owner cross-tenant
-/// resolution from the `Feldera-Tenant` header. Never creates a tenant; errors
-/// on miss or ambiguity (a name shared across providers cannot be resolved).
+/// Strict lookup of a tenant by name only, used to resolve a `Feldera-Tenant`
+/// header. Never creates a tenant; errors on miss, and on the ambiguity that a
+/// name shared across providers would create.
 pub async fn get_tenant_id_by_name(txn: &Transaction<'_>, name: &str) -> Result<TenantId, DBError> {
     let stmt = txn
         .prepare_cached("SELECT id FROM tenant WHERE tenant = $1")
@@ -59,18 +61,30 @@ pub async fn get_tenant_id_by_name(txn: &Transaction<'_>, name: &str) -> Result<
     let rows = txn.query(&stmt, &[&name]).await?;
     match rows.len() {
         1 => Ok(TenantId(rows[0].get(0))),
-        _ => Err(DBError::UnknownTenantName {
+        0 => Err(DBError::UnknownTenantName {
             name: name.to_string(),
         }),
+        n => {
+            // Tenants are unique per (name, provider), so this needs a second
+            // configured provider to happen at all. Refuse to guess which one.
+            error!(
+                "Tenant name '{name}' resolves to {n} tenants across providers; \
+                 select the tenant by its UUID instead"
+            );
+            Err(DBError::UnknownTenantName {
+                name: name.to_string(),
+            })
+        }
     }
 }
 
-/// Strict resolution of a `Feldera-Tenant` selector for an owner acting
-/// cross-tenant. A selector that parses as a UUID is resolved by tenant id
-/// (unambiguous); otherwise it is resolved by name. Never creates a tenant;
-/// errors with `UnknownTenantName` (HTTP 404) on miss, so a typo cannot silently
-/// create or cross into the wrong tenant. Tenant names are unique only per
-/// provider, so the UUID form is the robust selector.
+/// Strict resolution of a `Feldera-Tenant` selector, used wherever a principal
+/// picks one of the tenants it is authorized for. A selector that parses as a
+/// UUID is resolved by tenant id; otherwise it is resolved by name. Never
+/// creates a tenant; errors with `UnknownTenantName` (HTTP 404) on miss, so a
+/// typo cannot silently create or cross into the wrong tenant. The caller is
+/// responsible for checking that the resolved tenant is one the principal may
+/// act in.
 pub async fn resolve_tenant_selector(
     txn: &Transaction<'_>,
     selector: &str,
