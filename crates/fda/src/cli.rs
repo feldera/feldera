@@ -126,9 +126,19 @@ pub struct Cli {
     /// Run once per `fda` invocation; the trimmed stdout becomes the
     /// `Authorization: Bearer <token>` header for every request that
     /// invocation makes. Use for OIDC workload-identity flows with short-lived
-    /// tokens — pair with `tsidp-token`, `gcloud auth print-access-token`, etc.
-    /// The kubelet-rotated token file works because each `fda` run re-reads it.
-    /// Conflicts with `--auth`.
+    /// tokens: because the command runs on every invocation, a rotated token is
+    /// picked up automatically. Conflicts with `--auth`.
+    ///
+    /// Examples:
+    ///
+    ///   # Kubernetes projected service-account token
+    ///   --auth-token-command 'cat /var/run/secrets/kubernetes.io/serviceaccount/token'
+    ///
+    ///   # AWS EKS, IAM roles for service accounts
+    ///   --auth-token-command 'cat $AWS_WEB_IDENTITY_TOKEN_FILE'
+    ///
+    ///   # Google Cloud (an ID token is a JWT; an access token is not)
+    ///   --auth-token-command 'gcloud auth print-identity-token'
     #[arg(
         long,
         env = "FELDERA_AUTH_TOKEN_COMMAND",
@@ -258,10 +268,9 @@ pub enum ApiKeyActions {
     Create {
         /// The name of the API key to create
         name: String,
-        /// Role the key carries: `read` or `write` (default). `admin` and
-        /// `owner` are never issuable as API keys. The role may not exceed the
-        /// caller's own role.
-        #[arg(long, default_value = "write")]
+        /// Role the key carries: `read` (default) or `write`. The role may not
+        /// exceed the caller's own role.
+        #[arg(long, default_value = "read")]
         role: ApiKeyRole,
     },
     /// Delete an existing API key
@@ -272,7 +281,7 @@ pub enum ApiKeyActions {
     },
 }
 
-/// The roles an API key may carry (`admin`/`owner` are never key-mintable).
+/// The roles an API key may carry.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum ApiKeyRole {
     Read,
@@ -300,14 +309,14 @@ pub enum OidcTrustActions {
         /// Pattern for the `aud` claim. `*` matches any sequence. Optional.
         #[arg(long)]
         audience: Option<String>,
-        /// Free-text description.
+        /// What this trust is for, e.g. the workload or CI job it authorizes.
+        /// Shown when listing trust relationships.
         #[arg(long)]
         description: Option<String>,
         /// Role granted to a matching token: `read` (default), `write`,
-        /// `admin`, or `owner`. Capped at the caller's role; `owner` requires a
-        /// platform owner. Breadth rules the server enforces: a wildcard
-        /// `subject` always requires a concrete (non-wildcard) `audience`; and
-        /// above `read`, neither subject nor audience may contain a wildcard.
+        /// `admin`, or `owner`. Capped at the caller's role. `owner` requires a
+        /// platform owner and registers a platform-wide trust that belongs to no
+        /// tenant; the acting tenant then comes from the `Feldera-Tenant` header.
         #[arg(long)]
         role: Option<TrustRole>,
     },
