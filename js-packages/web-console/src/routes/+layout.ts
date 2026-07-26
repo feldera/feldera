@@ -416,10 +416,11 @@ function buildFelderaData(
     revision: config.revision,
     tenantId: sessionConfig?.tenant_id || '',
     tenantName: sessionConfig?.tenant_name || '',
-    // `role`/`is_owner` are added by the RBAC backend; the SDK type lags, so read
-    // them off the session payload and default to the least-privileged role.
+    // `role` is added by the RBAC backend; the SDK type lags, so read it off the
+    // session payload and default to the least-privileged role. `owner` is the
+    // top role, so ownership is just that value.
     role: sessionConfig?.role || 'read',
-    isOwner: Boolean(sessionConfig?.is_owner),
+    isOwner: sessionConfig?.role === 'owner',
     authorizedTenants: computeAuthorizedTenants(auth),
     unstableFeatures: config.unstable_features?.split(',').map((f: string) => f.trim()) || [],
     config

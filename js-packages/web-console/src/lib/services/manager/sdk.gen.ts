@@ -260,6 +260,8 @@ export const getConfigAuthentication = <ThrowOnError extends boolean = true>(
 /**
  * List API Keys
  *
+ * Required role: `write` or higher.
+ *
  * Retrieve a list of your API keys.
  */
 export const listApiKeys = <ThrowOnError extends boolean = true>(
@@ -274,6 +276,8 @@ export const listApiKeys = <ThrowOnError extends boolean = true>(
 
 /**
  * Create API Key
+ *
+ * Required role: `write` or higher.
  *
  * Create a new API key with the specified name. The generated API key
  * will be returned in the response and cannot be retrieved again later.
@@ -295,6 +299,8 @@ export const postApiKey = <ThrowOnError extends boolean = true>(
 /**
  * Delete API Key
  *
+ * Required role: `write` or higher.
+ *
  * Remove an API key by its name.
  */
 export const deleteApiKey = <ThrowOnError extends boolean = true>(
@@ -315,6 +321,8 @@ export const deleteApiKey = <ThrowOnError extends boolean = true>(
 /**
  * Get API Key
  *
+ * Required role: `write` or higher.
+ *
  * Retrieve the metadata of a specific API key by its name.
  */
 export const getApiKey = <ThrowOnError extends boolean = true>(
@@ -329,6 +337,8 @@ export const getApiKey = <ThrowOnError extends boolean = true>(
 
 /**
  * List Cluster Events
+ *
+ * Required role: `read` or higher.
  *
  * Retrieve a list of retained cluster monitor events ordered from most recent to least recent.
  *
@@ -359,6 +369,8 @@ export const listClusterEvents = <ThrowOnError extends boolean = true>(
 /**
  * Get Cluster Event
  *
+ * Required role: `read` or higher.
+ *
  * Get specific cluster monitor event.
  *
  * The identifiers of the events can be retrieved via `GET /v0/cluster/events`.
@@ -384,6 +396,8 @@ export const getClusterEvent = <ThrowOnError extends boolean = true>(
 /**
  * Check Cluster Health
  *
+ * Required role: `read` or higher.
+ *
  * Determine the latest cluster health via the latest cluster monitor event.
  */
 export const getClusterHealth = <ThrowOnError extends boolean = true>(
@@ -404,6 +418,8 @@ export const getClusterHealth = <ThrowOnError extends boolean = true>(
 /**
  * Get Platform Config
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve configuration of the Feldera Platform.
  */
 export const getConfig = <ThrowOnError extends boolean = true>(
@@ -418,6 +434,8 @@ export const getConfig = <ThrowOnError extends boolean = true>(
 
 /**
  * List Demos
+ *
+ * Required role: `read` or higher.
  *
  * Retrieve the list of demos available in the WebConsole.
  */
@@ -439,6 +457,8 @@ export const getConfigDemos = <ThrowOnError extends boolean = true>(
 /**
  * Get Session
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve login session information for your current user session.
  */
 export const getConfigSession = <ThrowOnError extends boolean = true>(
@@ -459,6 +479,8 @@ export const getConfigSession = <ThrowOnError extends boolean = true>(
 /**
  * List All Metrics
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve the metrics of all running pipelines belonging to this tenant.
  *
  * The metrics are collected by making individual HTTP requests to `/metrics`
@@ -476,7 +498,9 @@ export const getMetrics = <ThrowOnError extends boolean = true>(
   })
 
 /**
- * List OIDC trust relationships
+ * List OIDC Trust
+ *
+ * Required role: `admin` or higher.
  */
 export const listOidcTrust = <ThrowOnError extends boolean = true>(
   options?: Options<ListOidcTrustData, ThrowOnError>
@@ -494,7 +518,9 @@ export const listOidcTrust = <ThrowOnError extends boolean = true>(
   })
 
 /**
- * Create OIDC trust relationship
+ * Create OIDC Trust
+ *
+ * Required role: `admin` or higher.
  */
 export const postOidcTrust = <ThrowOnError extends boolean = true>(
   options: Options<PostOidcTrustData, ThrowOnError>
@@ -516,7 +542,9 @@ export const postOidcTrust = <ThrowOnError extends boolean = true>(
   })
 
 /**
- * Delete OIDC trust relationship
+ * Delete OIDC Trust
+ *
+ * Required role: `admin` or higher.
  */
 export const deleteOidcTrust = <ThrowOnError extends boolean = true>(
   options: Options<DeleteOidcTrustData, ThrowOnError>
@@ -534,7 +562,9 @@ export const deleteOidcTrust = <ThrowOnError extends boolean = true>(
   })
 
 /**
- * Get OIDC trust relationship
+ * Get OIDC Trust
+ *
+ * Required role: `admin` or higher.
  */
 export const getOidcTrust = <ThrowOnError extends boolean = true>(
   options: Options<GetOidcTrustData, ThrowOnError>
@@ -548,6 +578,8 @@ export const getOidcTrust = <ThrowOnError extends boolean = true>(
 
 /**
  * List Pipelines
+ *
+ * Required role: `read` or higher.
  *
  * Retrieve the list of pipelines.
  * Configure which fields are included using the `selector` query parameter.
@@ -570,6 +602,8 @@ export const listPipelines = <ThrowOnError extends boolean = true>(
 /**
  * Create Pipeline
  *
+ * Required role: `write` or higher.
+ *
  * Create a new pipeline with the provided configuration.
  */
 export const postPipeline = <ThrowOnError extends boolean = true>(
@@ -588,6 +622,8 @@ export const postPipeline = <ThrowOnError extends boolean = true>(
 
 /**
  * Delete Pipeline
+ *
+ * Required role: `write` or higher.
  *
  * Delete an existing pipeline by name.
  */
@@ -609,6 +645,8 @@ export const deletePipeline = <ThrowOnError extends boolean = true>(
 /**
  * Get Pipeline
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve a pipeline.
  * Configure which fields are included using the `selector` query parameter.
  */
@@ -624,6 +662,8 @@ export const getPipeline = <ThrowOnError extends boolean = true>(
 
 /**
  * Patch Pipeline
+ *
+ * Required role: `write` or higher.
  *
  * Partially update a pipeline.
  */
@@ -649,6 +689,8 @@ export const patchPipeline = <ThrowOnError extends boolean = true>(
 /**
  * Upsert Pipeline
  *
+ * Required role: `write` or higher.
+ *
  * Fully update a pipeline if it already exists, otherwise create a new pipeline.
  */
 export const putPipeline = <ThrowOnError extends boolean = true>(
@@ -667,6 +709,8 @@ export const putPipeline = <ThrowOnError extends boolean = true>(
 
 /**
  * Activate Standby Pipeline
+ *
+ * Required role: `write` or higher.
  *
  * Requests the pipeline to activate if it is currently in standby mode, which it will do
  * asynchronously.
@@ -694,6 +738,8 @@ export const postPipelineActivate = <ThrowOnError extends boolean = true>(
 /**
  * Approve Bootstrap
  *
+ * Required role: `write` or higher.
+ *
  * Approves the pipeline to proceed with bootstrapping.
  *
  * This endpoint is used when a pipeline has been started with
@@ -720,6 +766,8 @@ export const postPipelineApprove = <ThrowOnError extends boolean = true>(
 /**
  * Checkpoint Now
  *
+ * Required role: `write` or higher.
+ *
  * Initiates checkpoint for a running or paused pipeline.
  *
  * Returns a checkpoint sequence number that can be used with `/checkpoint_status` to
@@ -743,6 +791,8 @@ export const checkpointPipeline = <ThrowOnError extends boolean = true>(
 /**
  * Sync Checkpoints To S3
  *
+ * Required role: `write` or higher.
+ *
  * Syncs latest checkpoints to the object store configured in pipeline config.
  */
 export const syncCheckpoint = <ThrowOnError extends boolean = true>(
@@ -762,6 +812,8 @@ export const syncCheckpoint = <ThrowOnError extends boolean = true>(
 
 /**
  * Get Checkpoint Sync Status
+ *
+ * Required role: `read` or higher.
  *
  * Retrieve status of checkpoint sync activity in a pipeline.
  */
@@ -783,6 +835,8 @@ export const getCheckpointSyncStatus = <ThrowOnError extends boolean = true>(
 /**
  * Get Checkpoint Status
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve status of checkpoint activity in a pipeline.
  */
 export const getCheckpointStatus = <ThrowOnError extends boolean = true>(
@@ -802,6 +856,8 @@ export const getCheckpointStatus = <ThrowOnError extends boolean = true>(
 
 /**
  * Get the checkpoints for a pipeline
+ *
+ * Required role: `read` or higher.
  *
  * Retrieve the current checkpoints made by a pipeline.
  *
@@ -827,6 +883,8 @@ export const getCheckpoints = <ThrowOnError extends boolean = true>(
 /**
  * List checkpoints in remote object storage
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve the list of checkpoints available in the configured remote object
  * storage (e.g., S3).  Requires the pipeline to be running with a sync
  * storage configuration.
@@ -849,6 +907,8 @@ export const getRemoteCheckpoints = <ThrowOnError extends boolean = true>(
 /**
  * Performance Profile JSON
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve the circuit performance profile in JSON format of a running or paused pipeline.
  */
 export const getPipelineCircuitJsonProfile = <ThrowOnError extends boolean = true>(
@@ -869,6 +929,8 @@ export const getPipelineCircuitJsonProfile = <ThrowOnError extends boolean = tru
 /**
  * Get Performance Profile
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve the circuit performance profile of a running or paused pipeline.
  */
 export const getPipelineCircuitProfile = <ThrowOnError extends boolean = true>(
@@ -888,6 +950,8 @@ export const getPipelineCircuitProfile = <ThrowOnError extends boolean = true>(
 
 /**
  * Clear Storage
+ *
+ * Required role: `write` or higher.
  *
  * Clears the pipeline storage asynchronously.
  *
@@ -915,6 +979,8 @@ export const postPipelineClear = <ThrowOnError extends boolean = true>(
 
 /**
  * Advance Clock
+ *
+ * Required role: `write` or higher.
  *
  * Moves `NOW()` forward by a specified amount. Returns the
  * current clock time of the circuit.
@@ -949,6 +1015,8 @@ export const clockAdvance = <ThrowOnError extends boolean = true>(
 /**
  * Commit Transaction
  *
+ * Required role: `write` or higher.
+ *
  * Commit the current transaction.
  */
 export const commitTransaction = <ThrowOnError extends boolean = true>(
@@ -968,6 +1036,8 @@ export const commitTransaction = <ThrowOnError extends boolean = true>(
 
 /**
  * Check Completion Status
+ *
+ * Required role: `read` or higher.
  *
  * Check the status of a completion token returned by the `/ingress` or `/completion_token`
  * endpoint.
@@ -990,6 +1060,8 @@ export const completionStatus = <ThrowOnError extends boolean = true>(
 /**
  * Get Dataflow Graph
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve the dataflow graph of a pipeline.
  * The dataflow graph is generated during SQL compilation and shows the structure
  * of the compiled SQL program including the Calcite plan and MIR nodes.
@@ -1011,6 +1083,8 @@ export const getPipelineDataflowGraph = <ThrowOnError extends boolean = true>(
 
 /**
  * Compute Program Diff
+ *
+ * Required role: `read` or higher.
  *
  * Compute the diff between the pipeline's current program and a proposed new
  * version, without modifying or restarting the pipeline.
@@ -1045,6 +1119,8 @@ export const postPipelineDiff = <ThrowOnError extends boolean = true>(
 /**
  * Dismiss Pipeline Deployment Error
  *
+ * Required role: `write` or higher.
+ *
  * Clears the `deployment_error` field of the pipeline, such that a subsequent call to
  * `/start?dismiss_error=false` succeeds. It will return an error if the pipeline is not fully
  * stopped (i.e., both current and desired status must be `Stopped`) AND a deployment error
@@ -1067,6 +1143,8 @@ export const postPipelineDismissError = <ThrowOnError extends boolean = true>(
 
 /**
  * Subscribe to View
+ *
+ * Required role: `write` or higher.
  *
  * Subscribe to a stream of updates from a SQL view or table.
  *
@@ -1101,6 +1179,8 @@ export const httpOutput = <ThrowOnError extends boolean = true>(
 /**
  * List Pipeline Events
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve monitoring events in reverse chronological order.
  *
  * Pipeline health is monitored regularly every several seconds.
@@ -1130,6 +1210,8 @@ export const listPipelineEvents = <ThrowOnError extends boolean = true>(
 /**
  * Get Pipeline Event
  *
+ * Required role: `read` or higher.
+ *
  * Get a specific pipeline monitor event.
  *
  * The identifiers of the events can be retrieved via `GET /v0/pipelines/<pipeline>/events`.
@@ -1154,6 +1236,8 @@ export const getPipelineEvent = <ThrowOnError extends boolean = true>(
 /**
  * Get Heap Profile
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve the heap profile of a running or paused pipeline.
  */
 export const getPipelineHeapProfile = <ThrowOnError extends boolean = true>(
@@ -1173,6 +1257,8 @@ export const getPipelineHeapProfile = <ThrowOnError extends boolean = true>(
 
 /**
  * Insert Data
+ *
+ * Required role: `write` or higher.
  *
  * Push data to a SQL table.
  *
@@ -1206,6 +1292,8 @@ export const httpInput = <ThrowOnError extends boolean = true>(
 /**
  * Stream Pipeline Logs
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve logs of a pipeline as a stream.
  *
  * The logs stream catches up to the extent of the internally configured per-pipeline
@@ -1238,6 +1326,8 @@ export const getPipelineLogs = <ThrowOnError extends boolean = true>(
 /**
  * Get Pipeline Metrics
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve the metrics of a running or paused pipeline.
  */
 export const getPipelineMetrics = <ThrowOnError extends boolean = true>(
@@ -1257,6 +1347,8 @@ export const getPipelineMetrics = <ThrowOnError extends boolean = true>(
 
 /**
  * Pause Pipeline
+ *
+ * Required role: `write` or higher.
  *
  * Requests the pipeline to pause, which it will do asynchronously.
  *
@@ -1280,6 +1372,8 @@ export const postPipelinePause = <ThrowOnError extends boolean = true>(
 /**
  * Execute Ad-hoc SQL
  *
+ * Required role: `write` or higher.
+ *
  * Execute ad-hoc SQL in a running or paused pipeline.
  *
  * The evaluation is not incremental.
@@ -1301,6 +1395,8 @@ export const pipelineAdhocSql = <ThrowOnError extends boolean = true>(
 
 /**
  * Initiate rebalancing.
+ *
+ * Required role: `write` or higher.
  *
  * Initiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically
  * when the drift in the size of joined relations exceeds a threshold. This endpoint forces the balancer
@@ -1326,6 +1422,8 @@ export const postPipelineRebalance = <ThrowOnError extends boolean = true>(
 /**
  * Resume Pipeline
  *
+ * Required role: `write` or higher.
+ *
  * Requests the pipeline to resume, which it will do asynchronously.
  *
  * Progress should be monitored by polling the pipeline `GET` endpoints.
@@ -1348,6 +1446,8 @@ export const postPipelineResume = <ThrowOnError extends boolean = true>(
 /**
  * Get Samply Profile
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve the last samply profile of a pipeline, regardless of whether profiling is currently in progress.
  * If ?latest parameter is specified and Samply profile collection is in progress, returns HTTP 307 with Retry-After header.
  */
@@ -1369,6 +1469,8 @@ export const getPipelineSamplyProfile = <ThrowOnError extends boolean = true>(
 /**
  * Start a Samply profile
  *
+ * Required role: `read` or higher.
+ *
  * Profile the pipeline using the Samply profiler for the next `duration_secs` seconds.
  */
 export const startSamplyProfile = <ThrowOnError extends boolean = true>(
@@ -1388,6 +1490,8 @@ export const startSamplyProfile = <ThrowOnError extends boolean = true>(
 
 /**
  * Start Pipeline
+ *
+ * Required role: `write` or higher.
  *
  * Start the pipeline asynchronously by updating the desired status.
  *
@@ -1420,6 +1524,8 @@ export const postPipelineStart = <ThrowOnError extends boolean = true>(
 /**
  * Initiate compaction.
  *
+ * Required role: `write` or higher.
+ *
  * Initiate immediate compaction of the pipeline's state.
  */
 export const postPipelineStartCompaction = <ThrowOnError extends boolean = true>(
@@ -1439,6 +1545,8 @@ export const postPipelineStartCompaction = <ThrowOnError extends boolean = true>
 
 /**
  * Begin Transaction
+ *
+ * Required role: `write` or higher.
  *
  * Start a new transaction.
  */
@@ -1460,6 +1568,8 @@ export const startTransaction = <ThrowOnError extends boolean = true>(
 /**
  * Get Pipeline Stats
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve statistics (e.g., performance counters) of a running or paused pipeline.
  */
 export const getPipelineStats = <ThrowOnError extends boolean = true>(
@@ -1479,6 +1589,8 @@ export const getPipelineStats = <ThrowOnError extends boolean = true>(
 
 /**
  * Stop Pipeline
+ *
+ * Required role: `write` or higher.
  *
  * Stop the pipeline asynchronously by updating the desired state.
  *
@@ -1523,6 +1635,8 @@ export const postPipelineStop = <ThrowOnError extends boolean = true>(
 /**
  * Download Support Bundle
  *
+ * Required role: `read` or higher.
+ *
  * Generate a support bundle for a pipeline.
  *
  * This endpoint collects various diagnostic data from the pipeline including
@@ -1546,6 +1660,8 @@ export const getPipelineSupportBundle = <ThrowOnError extends boolean = true>(
 
 /**
  * Get Completion Token
+ *
+ * Required role: `write` or higher.
  *
  * Generate a completion token for an input connector.
  *
@@ -1571,6 +1687,8 @@ export const completionToken = <ThrowOnError extends boolean = true>(
 /**
  * Get Input Status
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve the status of an input connector.
  */
 export const getPipelineInputConnectorStatus = <ThrowOnError extends boolean = true>(
@@ -1590,6 +1708,8 @@ export const getPipelineInputConnectorStatus = <ThrowOnError extends boolean = t
 
 /**
  * Control Input Connector
+ *
+ * Required role: `write` or higher.
  *
  * Start (resume) or pause the input connector.
  *
@@ -1637,6 +1757,8 @@ export const postPipelineInputConnectorAction = <ThrowOnError extends boolean = 
 /**
  * Get Time Series Stats
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve time series for statistics of a running or paused pipeline.
  */
 export const getPipelineTimeSeries = <ThrowOnError extends boolean = true>(
@@ -1656,6 +1778,8 @@ export const getPipelineTimeSeries = <ThrowOnError extends boolean = true>(
 
 /**
  * Stream Time Series
+ *
+ * Required role: `read` or higher.
  *
  * Stream time series for statistics of a running or paused pipeline.
  *
@@ -1681,6 +1805,8 @@ export const getPipelineTimeSeriesStream = <ThrowOnError extends boolean = true>
 
 /**
  * Recompile Pipeline
+ *
+ * Required role: `write` or higher.
  *
  * Recompile a pipeline with the Feldera runtime version included in the
  * currently installed Feldera platform.
@@ -1722,6 +1848,8 @@ export const postUpdateRuntime = <ThrowOnError extends boolean = true>(
 /**
  * Get Output Status
  *
+ * Required role: `read` or higher.
+ *
  * Retrieve the status of an output connector.
  */
 export const getPipelineOutputConnectorStatus = <ThrowOnError extends boolean = true>(
@@ -1740,7 +1868,9 @@ export const getPipelineOutputConnectorStatus = <ThrowOnError extends boolean = 
   })
 
 /**
- * List tenant members
+ * List Tenant Members
+ *
+ * Required role: `admin` or higher.
  *
  * List the users that are members of the acting tenant and their roles.
  */
@@ -1760,7 +1890,9 @@ export const listTenantUsers = <ThrowOnError extends boolean = true>(
   })
 
 /**
- * Pre-provision a tenant member
+ * Provision Tenant Member
+ *
+ * Required role: `admin` or higher.
  *
  * Add a member to the acting tenant by identity, before the user's first
  * login. The grant is dormant until that identity authenticates into the
@@ -1787,9 +1919,13 @@ export const addTenantUser = <ThrowOnError extends boolean = true>(
   })
 
 /**
- * Remove a tenant member
+ * Remove Tenant Member
  *
- * Remove a user from the acting tenant.
+ * Required role: `admin` or higher.
+ *
+ * Remove a user from the acting tenant. This drops their role now, but if the
+ * identity provider still grants them access they are re-added at the default
+ * role on their next login; revoke access at the provider for a durable block.
  */
 export const deleteTenantUser = <ThrowOnError extends boolean = true>(
   options: Options<DeleteTenantUserData, ThrowOnError>
@@ -1807,7 +1943,9 @@ export const deleteTenantUser = <ThrowOnError extends boolean = true>(
   })
 
 /**
- * Assign a member role
+ * Assign Member Role
+ *
+ * Required role: `admin` or higher.
  *
  * Assign or change a user's role in the acting tenant. The role is capped at
  * the caller's own role and may not be `owner`.
@@ -1831,7 +1969,9 @@ export const putTenantUser = <ThrowOnError extends boolean = true>(
 /**
  * List tenants
  *
- * List all tenants in the installation. Owner-only platform view.
+ * Required role: `owner`.
+ *
+ * List all tenants in the installation.
  */
 export const listTenants = <ThrowOnError extends boolean = true>(
   options?: Options<ListTenantsData, ThrowOnError>
@@ -1844,9 +1984,11 @@ export const listTenants = <ThrowOnError extends boolean = true>(
   })
 
 /**
- * Create a tenant
+ * Create Tenant
  *
- * Explicitly create a tenant (owner-only), rather than relying on first login.
+ * Required role: `owner`.
+ *
+ * Explicitly create a tenant, rather than relying on first login.
  * The tenant is keyed to the platform's configured OIDC issuer (statically set
  * at deploy time, e.g. via Helm), so that logins from that issuer resolve into
  * it; the issuer is not caller-settable. Fails with a conflict if a tenant with
@@ -1868,6 +2010,8 @@ export const createTenant = <ThrowOnError extends boolean = true>(
 
 /**
  * Validate Program
+ *
+ * Required role: `read` or higher.
  *
  * Validate a SQL program by compiling it, without creating a pipeline or
  * building the pipeline binary. Reports SQL errors and warnings and the derived
