@@ -1,4 +1,5 @@
 import unittest
+from feldera.runtime_config import Resources
 from feldera.testutils import ViewSpec, run_workload, unique_pipeline_name
 
 # The compiler compiles `where t.company_id in <long list of constant values>` queries
@@ -51,7 +52,13 @@ views = [
 class TestConstantTable(unittest.TestCase):
     def test_constant_table(self):
         run_workload(
-            unique_pipeline_name("constant-table"), tables, views, transaction=True
+            unique_pipeline_name("constant-table"),
+            tables,
+            views,
+            transaction=True,
+            # Peaks close to 4 GB; an honest request keeps k8s from
+            # OOM-killing the pipeline mid-test.
+            resources=Resources(memory_mb_min=6000),
         )
 
 
