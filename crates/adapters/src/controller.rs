@@ -550,12 +550,22 @@ impl OutputEndpointControl {
     ///   checkpoint was taken. Ignored for newly added or modified connectors,
     ///   which should receive a fresh snapshot when `send_snapshot` is set.
     fn new(send_snapshot: bool, snapshot_already_sent: bool) -> Self {
-        // Treat the snapshot as already delivered when no initial snapshot
-        // is desired; also carry the checkpointed value through on restart.
-        let delivered = !send_snapshot || snapshot_already_sent;
         Self {
-            initial_snapshot_sent: AtomicBool::new(delivered),
+            initial_snapshot_sent: AtomicBool::new(!Self::snapshot_pending_at_startup(
+                send_snapshot,
+                snapshot_already_sent,
+            )),
         }
+    }
+
+    /// Whether an endpoint constructed from these settings starts out owing an
+    /// initial snapshot.
+    ///
+    /// Callers that must know this before the endpoint exists (the progress
+    /// counter seeding in `add_output_endpoint`) use this rather than
+    /// duplicating the rule.
+    fn snapshot_pending_at_startup(send_snapshot: bool, snapshot_already_sent: bool) -> bool {
+        send_snapshot && !snapshot_already_sent
     }
 
     /// Returns true if the next `push_output` should emit a snapshot for
@@ -578,6 +588,32 @@ impl OutputEndpointControl {
     fn initial_snapshot_sent(&self) -> bool {
         self.initial_snapshot_sent.load(Ordering::Acquire)
     }
+}
+
+/// Names the output endpoints whose relation the bootstrap re-emits.
+///
+/// The pipeline hands these endpoints output derived from records it processed
+/// before the restart, so they do not start out caught up with the pipeline's
+/// output. `add_output_endpoint` consults the result to seed
+/// `total_processed_input_records`.
+///
+/// The test is on the relation, not the connector. A connector whose own
+/// definition changed while its relation did not receives no re-emission and
+/// stays caught up with every input processed so far, which makes this set
+/// narrower than `ControllerInner::modified_output_endpoints`.
+fn bootstrapped_output_endpoints(
+    outputs: &BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+    pipeline_diff: Option<&PipelineDiff>,
+) -> HashSet<String> {
+    let Some(diff) = pipeline_diff else {
+        return HashSet::new();
+    };
+
+    outputs
+        .iter()
+        .filter(|(_, output_config)| diff.is_affected_relation(&output_config.stream))
+        .map(|(endpoint_name, _)| endpoint_name.to_string())
+        .collect()
 }
 
 impl Command {
@@ -3059,6 +3095,10 @@ impl CircuitThread {
         let (step_sender, step_receiver) =
             tokio::sync::watch::channel(StepStatus::new(step, StepAction::Idle, None));
         let (checkpoint_sender, checkpoint_receiver) = tokio::sync::watch::channel(None);
+
+        let bootstrapped_output_endpoints =
+            bootstrapped_output_endpoints(&pipeline_config.outputs, pipeline_diff.as_ref());
+
         let (parker, backpressure_thread, command_receiver, controller) = ControllerInner::new(
             pipeline_config,
             circuit.runtime(),
@@ -3071,6 +3111,7 @@ impl CircuitThread {
             &resume_info,
             &output_statistics,
             modified_output_endpoints,
+            bootstrapped_output_endpoints,
             step_receiver,
             checkpoint_receiver,
             incarnation_uuid,
@@ -6827,6 +6868,12 @@ pub struct ControllerInner {
     /// without discarding the carried-over counters in
     /// `initial_statistics`.
     modified_output_endpoints: HashSet<String>,
+
+    /// Output endpoint names whose relation the bootstrap re-emits.
+    /// `add_output_endpoint` uses this to decide whether the endpoint starts
+    /// out caught up with the pipeline's output, which seeds its
+    /// `total_processed_input_records` counter.
+    bootstrapped_output_endpoints: HashSet<String>,
 }
 
 impl Drop for ControllerInner {
@@ -6849,6 +6896,7 @@ impl ControllerInner {
         resume_info: &HashMap<String, (JsonValue, CheckpointInputEndpointMetrics)>,
         output_statistics: &HashMap<String, CheckpointOutputEndpointMetrics>,
         modified_output_endpoints: HashSet<String>,
+        bootstrapped_output_endpoints: HashSet<String>,
         step_receiver: tokio::sync::watch::Receiver<StepStatus>,
         checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
         incarnation_uuid: Uuid,
@@ -6906,6 +6954,7 @@ impl ControllerInner {
                 checkpoint_delay_started: Mutex::new(None),
                 checkpoint_started: Mutex::new(None),
                 modified_output_endpoints,
+                bootstrapped_output_endpoints,
             }
         });
 
@@ -7496,6 +7545,36 @@ impl ControllerInner {
 
         let self_weak = Arc::downgrade(self);
 
+        // `connector_definition_changed` is true when the endpoint's config or
+        // associated relation changed across this checkpoint restart. It feeds
+        // the integrated-sink lifecycle decision (re-truncate vs reopen), the
+        // `send_snapshot` re-fire decision, and the progress counter seeding
+        // below.
+        let connector_definition_changed = self.modified_output_endpoints.contains(endpoint_name);
+
+        // Recover "snapshot already delivered" state from the checkpoint so a
+        // `send_snapshot: true` connector does not re-send its snapshot on a
+        // checkpoint restart. When the connector or its relation has changed
+        // across the restart, clear the flag so the fresh snapshot fires;
+        // cumulative counters in `initial_statistics` are preserved
+        // independently.
+        let snapshot_already_sent = !connector_definition_changed
+            && initial_statistics
+                .map(|stats| stats.snapshot_sent)
+                .unwrap_or(false);
+
+        // The endpoint starts out caught up with the pipeline's output unless it is
+        // still owed output derived from records the pipeline has already processed.
+        // Two cases owe such output: the bootstrap re-emits the endpoint's relation,
+        // and an initial snapshot is still pending. A changed connector definition
+        // owes nothing by itself, since an unchanged relation produces no new output
+        // for inputs already processed.
+        let caught_up = !self.bootstrapped_output_endpoints.contains(endpoint_name)
+            && !OutputEndpointControl::snapshot_pending_at_startup(
+                endpoint_config.connector_config.send_snapshot,
+                snapshot_already_sent,
+            );
+
         // Initialize endpoint stats early so that connectors can register
         // batch-progress counters (or other metrics) during construction.
         self.status.add_output(
@@ -7503,6 +7582,7 @@ impl ControllerInner {
             endpoint_name,
             endpoint_config,
             initial_statistics,
+            caught_up,
         );
 
         /// A guard to remove `endpoint` from `status` unless canceled.
@@ -7533,12 +7613,6 @@ impl ControllerInner {
             }
         }
         let guard = RemoveEndpointGuard::new(&self.status, endpoint_id);
-
-        // `connector_definition_changed` is true when the endpoint's config or
-        // associated relation changed across this checkpoint restart. It feeds
-        // both the integrated-sink lifecycle decision (re-truncate vs reopen)
-        // and the `send_snapshot` re-fire decision.
-        let connector_definition_changed = self.modified_output_endpoints.contains(endpoint_name);
 
         let (encoder, command_handler) = if let Some(mut endpoint) = endpoint {
             endpoint
@@ -7683,16 +7757,6 @@ impl ControllerInner {
         };
 
         let parker = Parker::new();
-        // Recover "snapshot already delivered" state from the checkpoint so a
-        // `send_snapshot: true` connector does not re-send its snapshot on a
-        // checkpoint restart. When the connector or its relation has changed
-        // across the restart, clear the flag so the fresh snapshot fires;
-        // cumulative counters in `initial_statistics` are preserved
-        // independently.
-        let snapshot_already_sent = !connector_definition_changed
-            && initial_statistics
-                .map(|stats| stats.snapshot_sent)
-                .unwrap_or(false);
         let endpoint_descr = OutputEndpointDescr::new(
             endpoint_name,
             &stream_name,

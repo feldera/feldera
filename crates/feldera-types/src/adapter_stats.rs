@@ -274,6 +274,11 @@ pub struct ExternalOutputEndpointMetrics {
     /// of this endpoint is equal to the output of the circuit after
     /// processing `total_processed_input_records` records.
     ///
+    /// The counter never runs ahead of the endpoint's output. It advances only
+    /// once the endpoint has processed every batch derived from those records,
+    /// which means transmitting them, or discarding them while silent
+    /// bootstrapping suppresses the endpoint's output.
+    ///
     /// In a multihost pipeline, this count reflects only the input records
     /// processed on the same host as the output endpoint, which is not usually
     /// meaningful.
