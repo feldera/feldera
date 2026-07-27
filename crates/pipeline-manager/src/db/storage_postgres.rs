@@ -1872,6 +1872,22 @@ impl StoragePostgres {
     pub async fn run_migrations(&self) -> Result<(), DBError> {
         debug!("Applying database migrations if needed...");
         let mut client = self.pool.get().await?;
+
+        // Expose the configured OIDC issuer to migrations that need it, as a
+        // session setting on the connection refinery is about to use. Passing it
+        // this way rather than generating the SQL keeps each migration's text
+        // fixed: refinery checksums that text and refuses to start on a mismatch,
+        // so a migration whose text varied with the environment would abort
+        // startup the day someone changed the issuer. Empty when auth is off,
+        // which reads back as NULL through `current_setting(.., true)`.
+        let configured_issuer = std::env::var("FELDERA_AUTH_ISSUER").unwrap_or_default();
+        client
+            .execute(
+                "SELECT set_config('feldera.auth_issuer', $1, false)",
+                &[&configured_issuer],
+            )
+            .await?;
+
         let report = embedded::migrations::runner()
             .run_async(&mut **client)
             .await?;

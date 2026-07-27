@@ -787,7 +787,8 @@ fn limited_retention_num() -> impl Strategy<Value = u32> {
 //////////////////////////////////////////////////////////////////////////////
 /////                          MANUAL TESTS                              /////
 
-/// Creation and retrieval of tenants.
+/// Creation and retrieval of tenants: the name identifies the tenant, and the
+/// provider recorded alongside it does not.
 #[tokio::test]
 async fn tenant_creation() {
     let handle = test_setup().await;
@@ -816,11 +817,15 @@ async fn tenant_creation() {
         .get_or_create_tenant_id(Uuid::now_v7(), "x".to_string(), "z".to_string())
         .await
         .unwrap();
+    // Repeating a name resolves to the same tenant.
     assert_eq!(tenant_id_1, tenant_id_2);
     assert_eq!(tenant_id_2, tenant_id_3);
+    // A different name is a different tenant.
     assert_ne!(tenant_id_3, tenant_id_4);
     assert_ne!(tenant_id_4, tenant_id_5);
-    assert_ne!(tenant_id_3, tenant_id_5);
+    // The same name under another provider is still that tenant, so changing
+    // the configured issuer does not fork it.
+    assert_eq!(tenant_id_3, tenant_id_5);
 }
 
 /// Creation, deletion and validation of API keys.
@@ -871,6 +876,156 @@ async fn api_key_store_and_validation() {
         let err = handle.db.validate_api_key(&api_key_2).await.unwrap_err();
         assert!(matches!(err, DBError::InvalidApiKey));
     }
+}
+
+/// The tenant-identity section of `V35__rbac.sql`, delimited in the file by
+/// `BEGIN tenant identity` / `END tenant identity`.
+fn tenant_identity_migration() -> &'static str {
+    let migration = include_str!("../../migrations/V35__rbac.sql");
+    let (_, after_begin) = migration
+        .split_once("-- BEGIN tenant identity")
+        .expect("V35__rbac.sql lost its `BEGIN tenant identity` marker");
+    let (section, _) = after_begin
+        .split_once("-- END tenant identity")
+        .expect("V35__rbac.sql lost its `END tenant identity` marker");
+    section
+}
+
+/// Upgrading a deployment that already has two tenants of one name renames
+/// rather than fails, and the name stays with the tenant users already reach.
+#[tokio::test]
+async fn duplicate_tenant_names_are_renamed_not_rejected() {
+    let handle = test_setup().await;
+    let client = handle.db.pool.get().await.unwrap();
+
+    let live = Uuid::parse_str("00000000-0000-0000-0000-0000000000a1").unwrap();
+    let orphan = Uuid::parse_str("00000000-0000-0000-0000-0000000000a2").unwrap();
+    let untouched = Uuid::parse_str("00000000-0000-0000-0000-0000000000a3").unwrap();
+    let name_of = |id: Uuid| {
+        let client = &client;
+        async move {
+            client
+                .query_one("SELECT tenant FROM tenant WHERE id = $1", &[&id])
+                .await
+                .unwrap()
+                .get::<_, String>(0)
+        }
+    };
+    // Reproduce the shape from before this migration: a `tenant` table whose
+    // name is not unique, and enough of `pipeline` to count. Temp tables shadow
+    // the real ones, so the migration below can run against them unmodified.
+    // `live` is registered under the currently configured issuer but holds
+    // nothing, while the `orphan` left behind by an earlier issuer holds the
+    // pipelines, so the two ranking criteria disagree.
+    let build = "CREATE TEMP TABLE tenant (id uuid PRIMARY KEY, tenant varchar NOT NULL, provider varchar NOT NULL);
+         CREATE TEMP TABLE pipeline (id uuid PRIMARY KEY, tenant_id uuid NOT NULL);
+         INSERT INTO tenant VALUES
+           ('00000000-0000-0000-0000-0000000000a1', 'acme', 'https://new-idp.example'),
+           ('00000000-0000-0000-0000-0000000000a2', 'acme', 'https://old-idp.example'),
+           ('00000000-0000-0000-0000-0000000000a3', 'beta', 'https://new-idp.example');
+         INSERT INTO pipeline VALUES
+           ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a2'),
+           ('00000000-0000-0000-0000-0000000000b2', '00000000-0000-0000-0000-0000000000a2');";
+    // Run the migration itself, not a copy, so the two cannot drift. Only the
+    // tenant-identity section applies to these tables; the rest of V35 creates
+    // the RBAC tables, which the test database already has. The ADD CONSTRAINT
+    // that closes the section is part of the assertion: it only succeeds if the
+    // rename left the names unique.
+    let migration = tenant_identity_migration();
+    // Qualified with pg_temp so a reset can never reach the real tables.
+    let reset = "DROP TABLE pg_temp.tenant; DROP TABLE pg_temp.pipeline;";
+
+    client.batch_execute(build).await.unwrap();
+    client
+        .execute(
+            "SELECT set_config('feldera.auth_issuer', $1, false)",
+            &[&"https://new-idp.example"],
+        )
+        .await
+        .unwrap();
+    client.batch_execute(migration).await.unwrap();
+
+    // The tenant on the configured issuer keeps the name even though the other
+    // holds the pipelines, so the upgrade does not move anyone.
+    assert_eq!(name_of(live).await, "acme");
+    // The orphan keeps its own pipelines under a name an owner can still reach.
+    assert_eq!(name_of(orphan).await, format!("acme ({orphan})"));
+    // A name that was never shared is untouched.
+    assert_eq!(name_of(untouched).await, "beta");
+
+    // With no issuer configured, as when authentication is off, the name falls
+    // back to following the pipelines.
+    client.batch_execute(reset).await.unwrap();
+    client.batch_execute(build).await.unwrap();
+    client
+        .execute(
+            "SELECT set_config('feldera.auth_issuer', $1, false)",
+            &[&""],
+        )
+        .await
+        .unwrap();
+    client.batch_execute(migration).await.unwrap();
+    assert_eq!(name_of(orphan).await, "acme");
+    assert_eq!(name_of(live).await, format!("acme ({live})"));
+}
+
+/// A tenant is identified by its name alone, so changing the configured issuer
+/// reuses the existing tenant instead of creating a second one of the same name.
+#[tokio::test]
+async fn tenant_survives_a_changed_issuer() {
+    let handle = test_setup().await;
+
+    let before = handle
+        .db
+        .get_or_create_tenant_id(
+            Uuid::now_v7(),
+            "acme".to_string(),
+            "https://old-idp.example".to_string(),
+        )
+        .await
+        .unwrap();
+
+    // The same tenant name under a new issuer resolves to the same tenant, so
+    // an IdP migration does not strand the pipelines on an unreachable one.
+    let after = handle
+        .db
+        .get_or_create_tenant_id(
+            Uuid::now_v7(),
+            "acme".to_string(),
+            "https://new-idp.example".to_string(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(before, after);
+
+    let named = handle.db.resolve_tenant_selector("acme").await.unwrap();
+    assert_eq!(named, before);
+    let tenants = handle.db.list_tenants().await.unwrap();
+    assert_eq!(
+        tenants.iter().filter(|t| t.name == "acme").count(),
+        1,
+        "the issuer change must not have created a second 'acme'"
+    );
+
+    // The old composite constraint is dropped, not just shadowed by the new one.
+    let leftover = handle
+        .db
+        .pool
+        .get()
+        .await
+        .unwrap()
+        .query(
+            "SELECT conname FROM pg_constraint \
+             WHERE conrelid = 'tenant'::regclass AND contype = 'u' \
+               AND pg_get_constraintdef(oid) LIKE 'UNIQUE (tenant, provider)%'",
+            &[],
+        )
+        .await
+        .unwrap();
+    assert!(
+        leftover.is_empty(),
+        "the (tenant, provider) constraint should have been dropped"
+    );
 }
 
 /// `first_user_role` sets the role of the login that creates a tenant: with
