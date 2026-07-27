@@ -598,6 +598,33 @@ impl Command {
     }
 }
 
+/// Returns a command's reply, or [ControllerError::ControllerExit] if the reply
+/// channel closed without one.
+///
+/// [Command::flush] answers every command the circuit thread can still see, but
+/// it cannot answer one it never sees:
+///
+/// - A command that arrives after `flush_commands_and_requests` has run sits in
+///   the channel until [CircuitThread] is dropped, which drops the command and
+///   with it the callback holding the reply channel.
+///
+/// - A circuit thread that unwinds on a panic drops its queued commands and
+///   pending checkpoint requests without flushing them at all.
+///
+/// Either way the caller is left holding a channel that will never produce an
+/// answer, so it must report that the controller is gone. Treating it as
+/// unreachable panics the waiter instead, and for `/suspend` that panic is
+/// swallowed by the task it runs in, leaving the pipeline with no outcome
+/// recorded at all.
+fn reply_or_controller_exit<T, E>(
+    reply: Result<Result<T, E>, oneshot::error::RecvError>,
+) -> Result<T, E>
+where
+    E: From<ControllerError>,
+{
+    reply.unwrap_or_else(|_| Err(E::from(ControllerError::ControllerExit)))
+}
+
 impl Controller {
     #[cfg(test)]
     pub(crate) fn with_test_config<F>(
@@ -1098,7 +1125,7 @@ impl Controller {
                 error!("checkpoint result could not be sent");
             }
         }));
-        receiver.await.unwrap()
+        reply_or_controller_exit(receiver.await)
     }
 
     pub async fn async_graph_profile(&self) -> Result<GraphProfile, ControllerError> {
@@ -1108,7 +1135,7 @@ impl Controller {
                 error!("`/dump_profile` result could not be sent");
             }
         }));
-        receiver.await.unwrap()
+        reply_or_controller_exit(receiver.await)
     }
 
     pub async fn async_json_profile(&self) -> Result<DbspProfile, ControllerError> {
@@ -1118,7 +1145,7 @@ impl Controller {
                 error!("`/dump_json_profile` result could not be sent");
             }
         }));
-        receiver.await.unwrap()
+        reply_or_controller_exit(receiver.await)
     }
 
     pub async fn async_samply_profile(
@@ -1298,7 +1325,7 @@ impl Controller {
                 }
             }),
         );
-        receiver.await.unwrap()
+        reply_or_controller_exit(receiver.await)
     }
 
     /// Checkpoints the pipeline.
@@ -1306,8 +1333,10 @@ impl Controller {
     /// This is a blocking wrapper around [Self::start_checkpoint].
     pub fn checkpoint(&self) -> Result<Checkpoint, Arc<ControllerError>> {
         let (sender, receiver) = oneshot::channel();
-        self.start_checkpoint(Box::new(move |result| sender.send(result).unwrap()));
-        receiver.blocking_recv().unwrap()
+        self.start_checkpoint(Box::new(move |result| {
+            let _ = sender.send(result);
+        }));
+        reply_or_controller_exit(receiver.blocking_recv())
     }
 
     /// Triggers a suspend operation. `cb` will be called when it completes.
@@ -1323,8 +1352,10 @@ impl Controller {
     /// This is a blocking wrapper around [Self::start_suspend].
     pub fn suspend(&self) -> Result<(), Arc<ControllerError>> {
         let (sender, receiver) = oneshot::channel();
-        self.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
-        receiver.blocking_recv().unwrap()
+        self.start_suspend(Box::new(move |result| {
+            let _ = sender.send(result);
+        }));
+        reply_or_controller_exit(receiver.blocking_recv())
     }
 
     pub async fn async_suspend(&self) -> Result<(), Arc<ControllerError>> {
@@ -1334,7 +1365,7 @@ impl Controller {
                 error!("suspend result could not be sent");
             }
         }));
-        receiver.await.unwrap()
+        reply_or_controller_exit(receiver.await)
     }
 
     /// Returns whether this pipeline supports suspend-and-resume.  The result
@@ -2107,7 +2138,7 @@ impl Controller {
                     error!("`/rebalance` result could not be sent");
                 }
             })));
-        receiver.await.unwrap()?;
+        reply_or_controller_exit(receiver.await)?;
         self.inner.request_step();
         Ok(())
     }
@@ -2121,7 +2152,7 @@ impl Controller {
                 }
             })));
         self.inner.circuit_thread_unparker.unpark();
-        receiver.await.unwrap()?;
+        reply_or_controller_exit(receiver.await)?;
         Ok(())
     }
 
