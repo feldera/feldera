@@ -4360,7 +4360,7 @@ checksum = "26bf8fc351c5ed29b5c2f0cbbac1b209b74f60ecd62e675a998df72c49af5204"
 [[package]]
 name = "deltalake"
 version = "0.32.3"
-source = "git+https://github.com/feldera/delta-rs.git?rev=297f2dd146f9947795f8b77f25db8da9daff2ade#297f2dd146f9947795f8b77f25db8da9daff2ade"
+source = "git+https://github.com/feldera/delta-rs.git?rev=4913d02fabc643bd898fcb72d5d2afb73c77ac29#4913d02fabc643bd898fcb72d5d2afb73c77ac29"
 dependencies = [
  "buoyant_kernel",
  "ctor 0.10.1",
@@ -4374,7 +4374,7 @@ dependencies = [
 [[package]]
 name = "deltalake-aws"
 version = "0.15.0"
-source = "git+https://github.com/feldera/delta-rs.git?rev=297f2dd146f9947795f8b77f25db8da9daff2ade#297f2dd146f9947795f8b77f25db8da9daff2ade"
+source = "git+https://github.com/feldera/delta-rs.git?rev=4913d02fabc643bd898fcb72d5d2afb73c77ac29#4913d02fabc643bd898fcb72d5d2afb73c77ac29"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -4400,7 +4400,7 @@ dependencies = [
 [[package]]
 name = "deltalake-azure"
 version = "0.15.0"
-source = "git+https://github.com/feldera/delta-rs.git?rev=297f2dd146f9947795f8b77f25db8da9daff2ade#297f2dd146f9947795f8b77f25db8da9daff2ade"
+source = "git+https://github.com/feldera/delta-rs.git?rev=4913d02fabc643bd898fcb72d5d2afb73c77ac29#4913d02fabc643bd898fcb72d5d2afb73c77ac29"
 dependencies = [
  "bytes",
  "deltalake-core",
@@ -4413,7 +4413,7 @@ dependencies = [
 [[package]]
 name = "deltalake-catalog-unity"
 version = "0.16.0"
-source = "git+https://github.com/feldera/delta-rs.git?rev=297f2dd146f9947795f8b77f25db8da9daff2ade#297f2dd146f9947795f8b77f25db8da9daff2ade"
+source = "git+https://github.com/feldera/delta-rs.git?rev=4913d02fabc643bd898fcb72d5d2afb73c77ac29#4913d02fabc643bd898fcb72d5d2afb73c77ac29"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4440,7 +4440,7 @@ dependencies = [
 [[package]]
 name = "deltalake-core"
 version = "0.32.3"
-source = "git+https://github.com/feldera/delta-rs.git?rev=297f2dd146f9947795f8b77f25db8da9daff2ade#297f2dd146f9947795f8b77f25db8da9daff2ade"
+source = "git+https://github.com/feldera/delta-rs.git?rev=4913d02fabc643bd898fcb72d5d2afb73c77ac29#4913d02fabc643bd898fcb72d5d2afb73c77ac29"
 dependencies = [
  "arrow",
  "arrow-arith",
@@ -4494,7 +4494,7 @@ dependencies = [
 [[package]]
 name = "deltalake-derive"
 version = "1.0.0"
-source = "git+https://github.com/feldera/delta-rs.git?rev=297f2dd146f9947795f8b77f25db8da9daff2ade#297f2dd146f9947795f8b77f25db8da9daff2ade"
+source = "git+https://github.com/feldera/delta-rs.git?rev=4913d02fabc643bd898fcb72d5d2afb73c77ac29#4913d02fabc643bd898fcb72d5d2afb73c77ac29"
 dependencies = [
  "convert_case 0.9.0",
  "itertools 0.14.0",
@@ -4506,7 +4506,7 @@ dependencies = [
 [[package]]
 name = "deltalake-gcp"
 version = "0.16.0"
-source = "git+https://github.com/feldera/delta-rs.git?rev=297f2dd146f9947795f8b77f25db8da9daff2ade#297f2dd146f9947795f8b77f25db8da9daff2ade"
+source = "git+https://github.com/feldera/delta-rs.git?rev=4913d02fabc643bd898fcb72d5d2afb73c77ac29#4913d02fabc643bd898fcb72d5d2afb73c77ac29"
 dependencies = [
  "async-trait",
  "bytes",

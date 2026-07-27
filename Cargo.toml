@@ -113,20 +113,24 @@ dbsp = { path = "crates/dbsp", version = "0.326.0" }
 datafusion-functions-json = "0.53.1"
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.14.1"
-# Feldera fork of delta-rs: upstream tag `rust-v0.32.3` + 3 patches, on branch
-# `v0.32.3-feldera-fix`. When bumping the pinned revision, preserve these patches:
+# Feldera fork of delta-rs: upstream tag `rust-v0.32.3` + 4 patches, on branch
+# `v0.32.3-feldera-unity-fix`. When bumping the pinned revision, preserve these
+# patches:
 #   - 7f8bb445 "Disable unsupported feature check." — relax the writer-side
 #     protocol-feature gate so we can write tables produced by newer clients.
 #   - 5b35c098 "delta-rs: round-robin pre-split unpartitioned scans into
 #     target_partitions FileGroups" — improves snapshot read parallelism for
 #     unpartitioned tables; pairs with the DataFusion knobs we tune in adapters.
-#   - 9a58fbef "delta-rs: resolve column-mapped Uniform/Iceberg columns by
-#     Parquet field-id" — fixes `col-<id> is missing from the physical schema`
+#   - 297f2dd1 "delta-rs: resolve column-mapped Uniform/Iceberg columns by
+#     Parquet field id." — fixes `col-<id> is missing from the physical schema`
 #     when reading UC-Uniform-over-Iceberg tables (columnMapping.mode=id). #6557.
+#   - 4913d02f "catalog-unity: refresh Unity Catalog S3 credentials before they
+#     expire" — the vended temporary credentials last an hour, so a long-running
+#     `uc://` pipeline failed with `ExpiredToken` without this.
 # Diff vs. upstream:
-#   https://github.com/delta-io/delta-rs/compare/rust-v0.32.3...feldera:delta-rs:v0.32.3-feldera-fix
-deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "297f2dd146f9947795f8b77f25db8da9daff2ade" }
-deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "297f2dd146f9947795f8b77f25db8da9daff2ade" }
+#   https://github.com/delta-io/delta-rs/compare/rust-v0.32.3...feldera:delta-rs:v0.32.3-feldera-unity-fix
+deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "4913d02fabc643bd898fcb72d5d2afb73c77ac29" }
+deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "4913d02fabc643bd898fcb72d5d2afb73c77ac29" }
 
 delta_kernel = { package = "buoyant_kernel", version = "0.22" }
 derive_more = { version = "1.0.0" }
