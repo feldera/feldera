@@ -269,7 +269,9 @@ It contains the following fields:
         endpoints::tenant::put_tenant_user,
         endpoints::tenant::delete_tenant_user,
         endpoints::tenant::list_tenants,
-        endpoints::tenant::create_tenant
+        endpoints::tenant::create_tenant,
+        endpoints::tenant::patch_tenant,
+        endpoints::tenant::delete_tenant
     ),
     components(schemas(
         // Authentication
@@ -357,6 +359,8 @@ It contains the following fields:
         crate::api::endpoints::tenant::AddMemberRequest,
         crate::api::endpoints::tenant::AddMemberResponse,
         crate::api::endpoints::tenant::NewTenantRequest,
+        crate::api::endpoints::tenant::RenameTenantRequest,
+        crate::api::endpoints::tenant::RenameTenantResponse,
         crate::api::endpoints::tenant::NewTenantResponse,
 
         // API key
@@ -774,6 +778,8 @@ fn api_scope() -> Scope {
         .service(endpoints::tenant::delete_tenant_user)
         .service(endpoints::tenant::list_tenants)
         .service(endpoints::tenant::create_tenant)
+        .service(endpoints::tenant::patch_tenant)
+        .service(endpoints::tenant::delete_tenant)
 }
 
 struct SecurityAddon;

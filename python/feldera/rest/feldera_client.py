@@ -1650,6 +1650,57 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             body={"name": name, "role": role},
         )
 
+    def list_tenants(self) -> List[dict]:
+        """
+        List every tenant in the installation. Platform owners only.
+
+        :returns: A list of dicts each describing a tenant (`id`, `name`,
+                  `initial_provider`).
+        """
+        return self.http.get(path="/tenants")
+
+    def rename_tenant(
+        self, tenant_id: str, name: str, displace_existing: bool = False
+    ) -> dict:
+        """
+        Rename a tenant. Platform owners only.
+
+        A login resolves its tenant by name, so the new name decides which users
+        arrive in this tenant. Renaming a tenant to a name its provider no longer
+        asserts sends those users to a new, empty tenant on their next request.
+
+        :param tenant_id: Identifier of the tenant to rename.
+        :param name: The new name.
+        :param displace_existing: Take the name from the tenant that currently
+                                  holds it, which is renamed to `<name> (<id>)`
+                                  and keeps everything it had. Needed to recover
+                                  a tenant no login reaches, because every
+                                  request re-creates the name its token
+                                  resolves.
+        :returns: A dict whose `displaced` key describes the tenant that gave up
+                  the name, or is `None` when the name was free.
+        :raises FelderaAPIError: If the name is taken and `displace_existing` is
+                                 not set.
+        """
+        if not name:
+            raise ValueError("Tenant name must be a non-empty string")
+        return self.http.patch(
+            path=f"/tenants/{quote(tenant_id, safe='')}",
+            body={"name": name, "displace_existing": displace_existing},
+        )
+
+    def delete_tenant(self, tenant_id: str) -> None:
+        """
+        Delete a tenant. Platform owners only.
+
+        The tenant must hold no pipelines, API keys or OIDC trust
+        relationships; delete those first.
+
+        :param tenant_id: Identifier of the tenant to delete.
+        :raises FelderaAPIError: If the tenant still holds any of the above.
+        """
+        self.http.delete(path=f"/tenants/{quote(tenant_id, safe='')}")
+
     def list_oidc_trust(self) -> List[dict]:
         """
         List the OIDC trust relationships configured for the current tenant.

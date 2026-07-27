@@ -12,12 +12,12 @@ use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
-use crate::db::types::user::UserId;
+use crate::db::types::user::{TenantInfo, UserId};
 use crate::error::ManagerError;
 use actix_web::{
     delete, get,
     http::header::{CacheControl, CacheDirective},
-    post, put,
+    patch, post, put,
     web::{self, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
@@ -86,6 +86,34 @@ fn check_grantable_role(requested: Role, caller: Role) -> Result<(), ManagerErro
 pub(crate) struct NewTenantRequest {
     #[schema(example = "acme")]
     pub name: String,
+}
+
+/// Request to rename a tenant.
+#[derive(Debug, Deserialize, ToSchema)]
+pub(crate) struct RenameTenantRequest {
+    /// The tenant's new name.
+    #[schema(example = "acme")]
+    pub name: String,
+    /// Take the name from the tenant that currently holds it, instead of
+    /// failing with a conflict. That tenant is renamed to `<name> (<id>)` and
+    /// keeps everything it had; nothing is merged or deleted.
+    #[serde(default)]
+    pub displace_existing: bool,
+}
+
+/// Response to a successful tenant rename.
+#[derive(Debug, Serialize, ToSchema)]
+pub(crate) struct RenameTenantResponse {
+    /// The tenant that gave up the name, when `displace_existing` was set and
+    /// another tenant held it. `null` when the name was free.
+    pub displaced: Option<TenantInfo>,
+}
+
+fn parse_tenant_id(req: &HttpRequest) -> Result<TenantId, ManagerError> {
+    let raw = parse_url_parameter(req, "tenant_id")?;
+    let uuid = Uuid::parse_str(&raw)
+        .map_err(|_| ManagerError::from(DBError::UnknownTenantName { name: raw.clone() }))?;
+    Ok(TenantId(uuid))
 }
 
 fn parse_user_id(req: &HttpRequest) -> Result<UserId, ManagerError> {
@@ -267,7 +295,99 @@ pub(crate) struct NewTenantResponse {
     pub name: String,
 }
 
-/// List tenants
+/// Rename Tenant
+///
+/// Change a tenant's name. Only the name changes: pipelines, API keys, members
+/// and OIDC trust relationships all reference the tenant by its identifier and
+/// are unaffected.
+///
+/// A login resolves its tenant by name, so renaming decides which tenant those
+/// users reach. Two consequences follow. Renaming a tenant away from a name the
+/// identity provider still asserts sends its users to a new, empty tenant on
+/// their next request, which re-creates the name. And a tenant that no login
+/// reaches, such as `default` after authentication is switched on, is recovered
+/// by giving it the name logins do resolve.
+///
+/// Recovery normally wants a name that is already taken, by the tenant the
+/// first login created. Set `displace_existing` to take it: that tenant is
+/// renamed to `<name> (<id>)` in the same transaction and keeps everything it
+/// had. One step is what makes recovery possible at all, since freeing the name
+/// and claiming it as two calls loses to the next request re-creating it.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(("tenant_id" = Uuid, Path, description = "Tenant identifier")),
+    request_body = RenameTenantRequest,
+    responses(
+        (status = OK, description = "Tenant renamed", body = RenameTenantResponse),
+        (status = FORBIDDEN, description = "Caller is not a platform owner", body = ErrorResponse),
+        (status = NOT_FOUND, description = "No tenant with that identifier", body = ErrorResponse),
+        (status = CONFLICT, description = "A tenant with that name already exists, and `displace_existing` was not set", body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
+    ),
+    tag = "Platform"
+)]
+#[patch("/tenants/{tenant_id}")]
+pub(crate) async fn patch_tenant(
+    state: WebData<ServerState>,
+    req: HttpRequest,
+    body: web::Json<RenameTenantRequest>,
+) -> Result<HttpResponse, ManagerError> {
+    let tenant_id = parse_tenant_id(&req)?;
+    let body = body.into_inner();
+    let displaced = state
+        .db
+        .lock()
+        .await
+        .rename_tenant(tenant_id, &body.name, body.displace_existing)
+        .await?;
+    match &displaced {
+        Some(t) => info!(
+            "Renamed tenant {tenant_id} to '{}', displacing tenant {} to '{}'",
+            body.name, t.id, t.name
+        ),
+        None => info!("Renamed tenant {tenant_id} to '{}'", body.name),
+    }
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&RenameTenantResponse { displaced }))
+}
+
+/// Delete Tenant
+///
+/// Delete a tenant that holds nothing. Its members lose the membership, and a
+/// login that still resolves this tenant's name simply re-creates it, empty.
+///
+/// The tenant must hold no pipelines, API keys or OIDC trust relationships;
+/// otherwise the request fails with a conflict. Everything tenant-scoped
+/// cascades on this delete, so the emptiness rule is what keeps a mistyped
+/// identifier from taking a live tenant's pipelines with it. Delete those
+/// resources first if you mean to.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(("tenant_id" = Uuid, Path, description = "Tenant identifier")),
+    responses(
+        (status = OK, description = "Tenant deleted"),
+        (status = FORBIDDEN, description = "Caller is not a platform owner", body = ErrorResponse),
+        (status = NOT_FOUND, description = "No tenant with that identifier", body = ErrorResponse),
+        (status = CONFLICT, description = "The tenant still holds pipelines, API keys or OIDC trust relationships", body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
+    ),
+    tag = "Platform"
+)]
+#[delete("/tenants/{tenant_id}")]
+pub(crate) async fn delete_tenant(
+    state: WebData<ServerState>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let tenant_id = parse_tenant_id(&req)?;
+    state.db.lock().await.delete_tenant(tenant_id).await?;
+    info!("Deleted tenant {tenant_id}");
+    Ok(HttpResponse::Ok().finish())
+}
+
+/// List Tenants
 ///
 /// List all tenants in the installation.
 #[utoipa::path(
@@ -293,10 +413,9 @@ pub(crate) async fn list_tenants(
 /// Create Tenant
 ///
 /// Explicitly create a tenant, rather than relying on first login.
-/// The tenant is keyed to the platform's configured OIDC issuer (statically set
-/// at deploy time, e.g. via Helm), so that logins from that issuer resolve into
-/// it; the issuer is not caller-settable. Fails with a conflict if a tenant with
-/// the same name already exists for that issuer.
+/// A login resolves its tenant by name, so a user whose identity provider
+/// asserts this name lands in the tenant created here. Fails with a conflict if
+/// the name is already taken.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),

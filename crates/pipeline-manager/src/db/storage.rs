@@ -100,14 +100,30 @@ pub(crate) trait Storage {
     /// [`crate::db::operations::tenant::resolve_tenant_selector`].
     async fn resolve_tenant_selector(&self, selector: &str) -> Result<TenantId, DBError>;
 
-    /// Creates a tenant, failing with a conflict (HTTP 409) if `(name, provider)`
-    /// already exists.
+    /// Creates a tenant, failing with a conflict (HTTP 409) if the name is
+    /// already taken.
     async fn create_tenant(
         &self,
         id: Uuid,
         name: &str,
         provider: &str,
     ) -> Result<TenantId, DBError>;
+
+    /// Renames a tenant, failing with a conflict (HTTP 409) if the name is
+    /// already taken, unless `displace_existing` lets it take the name from the
+    /// tenant holding it. Returns the displaced tenant, if any.
+    /// See [`crate::db::operations::tenant::rename_tenant`].
+    async fn rename_tenant(
+        &self,
+        tenant_id: TenantId,
+        new_name: &str,
+        displace_existing: bool,
+    ) -> Result<Option<TenantInfo>, DBError>;
+
+    /// Deletes a tenant, failing with a conflict (HTTP 409) unless it holds no
+    /// pipelines, API keys or OIDC trust relationships.
+    /// See [`crate::db::operations::tenant::delete_tenant`].
+    async fn delete_tenant(&self, tenant_id: TenantId) -> Result<(), DBError>;
 
     /// Lists all tenants in the installation.
     async fn list_tenants(&self) -> Result<Vec<TenantInfo>, DBError>;

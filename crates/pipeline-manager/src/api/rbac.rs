@@ -101,6 +101,8 @@ static ROUTE_MIN_ROLE: &[(&str, &str, Option<Role>)] = &[
     ("DELETE", "/v0/tenant/users/{user_id}", Some(Role::Admin)), // delete_tenant_user
     ("GET", "/v0/tenants", Some(Role::Owner)), // list_tenants
     ("POST", "/v0/tenants", Some(Role::Owner)), // create_tenant
+    ("PATCH", "/v0/tenants/{tenant_id}", Some(Role::Owner)), // patch_tenant
+    ("DELETE", "/v0/tenants/{tenant_id}", Some(Role::Owner)), // delete_tenant
 ];
 
 /// [`ROUTE_MIN_ROLE`] indexed by `(method, path)`, built once on first use. The

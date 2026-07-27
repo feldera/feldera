@@ -71,8 +71,8 @@ export type AdhocQueryArgs = {
 /**
  * API key descriptor.
  *
- * A key carries a single [`Role`], capped at `write`: `admin` and `owner` are
- * never issuable as static keys (see [`crate::db::types::role::MintableKeyRole`]).
+ * A key carries a single role, `read` or `write`. `admin` and `owner` are
+ * never issuable as API keys.
  */
 export type ApiKeyDescr = {
   id: ApiKeyId
@@ -2486,6 +2486,17 @@ export type IcebergReaderConfig = GlueCatalogConfig &
      */
     datetime?: string | null
     /**
+     * Maximum number of retries for reading the table snapshot.
+     *
+     * When reading the snapshot fails partway through, for example because an
+     * object-store read times out or is throttled, the connector retries the
+     * entire read with exponential backoff. This is in addition to the
+     * lower-level retries performed by the object-store client.
+     *
+     * Defaults to unlimited retries. Set to 0 to disable retries.
+     */
+    max_retries?: number | null
+    /**
      * Location of the table metadata JSON file.
      *
      * This propery is used to access an Iceberg table without a catalog. It is mutually
@@ -2493,6 +2504,12 @@ export type IcebergReaderConfig = GlueCatalogConfig &
      */
     metadata_location?: string | null
     mode: IcebergIngestMode
+    /**
+     * The number of parallel parsing tasks the connector uses to process data read from the
+     * table. Increasing this value can enhance performance by allowing more concurrent processing.
+     * Recommended range: 1-10. The default is 4.
+     */
+    num_parsers?: number
     /**
      * Optional row filter.
      *
@@ -2552,15 +2569,19 @@ export type IcebergReaderConfig = GlueCatalogConfig &
      * queries using partitioning, Z-ordering, or liquid clustering.
      */
     timestamp_column?: string | null
+    transaction_mode?: IcebergTransactionMode
     [key: string]:
       | string
       | IcebergCatalogType
       | null
       | string
       | null
+      | number
+      | null
       | string
       | null
       | IcebergIngestMode
+      | number
       | string
       | null
       | number
@@ -2569,8 +2590,27 @@ export type IcebergReaderConfig = GlueCatalogConfig &
       | null
       | string
       | null
+      | IcebergTransactionMode
       | undefined
   }
+
+/**
+ * Iceberg table transaction mode.
+ *
+ * Determines how the connector breaks up its input into Feldera transactions.
+ *
+ * * `none` - the connector does not break up its input into transactions.
+ * * `snapshot` - ingest the initial snapshot of the table in one or several transactions.
+ *
+ * # How the table snapshot is ingested using transactions
+ *
+ * When `transaction_mode` is set to `snapshot`, the connector ingests the snapshot in one
+ * or several transactions, depending on `timestamp_column`. If `timestamp_column` is not set,
+ * the whole snapshot is ingested in a single Feldera transaction. If `timestamp_column` is set,
+ * the connector ingests the snapshot in a series of timestamp ranges of width equal to the
+ * `LATENESS` attribute of the column, each range in a separate transaction.
+ */
+export type IcebergTransactionMode = 'none' | 'snapshot'
 
 /**
  * Describes an input connector configuration
@@ -4691,6 +4731,29 @@ export type RemoteCheckpoint = {
    * UUID of the checkpoint.
    */
   uuid: string
+}
+
+/**
+ * Request to rename a tenant.
+ */
+export type RenameTenantRequest = {
+  /**
+   * Take the name from the tenant that currently holds it, instead of
+   * failing with a conflict. That tenant is renamed to `<name> (<id>)` and
+   * keeps everything it had; nothing is merged or deleted.
+   */
+  displace_existing?: boolean
+  /**
+   * The tenant's new name.
+   */
+  name: string
+}
+
+/**
+ * Response to a successful tenant rename.
+ */
+export type RenameTenantResponse = {
+  displaced?: TenantInfo | null
 }
 
 export type ReplayPolicy = 'Instant' | 'Original'
@@ -8563,6 +8626,82 @@ export type CreateTenantResponses = {
 }
 
 export type CreateTenantResponse = CreateTenantResponses[keyof CreateTenantResponses]
+
+export type DeleteTenantData = {
+  body?: never
+  path: {
+    /**
+     * Tenant identifier
+     */
+    tenant_id: string
+  }
+  query?: never
+  url: '/v0/tenants/{tenant_id}'
+}
+
+export type DeleteTenantErrors = {
+  /**
+   * Caller is not a platform owner
+   */
+  403: ErrorResponse
+  /**
+   * No tenant with that identifier
+   */
+  404: ErrorResponse
+  /**
+   * The tenant still holds pipelines, API keys or OIDC trust relationships
+   */
+  409: ErrorResponse
+  500: ErrorResponse
+}
+
+export type DeleteTenantError = DeleteTenantErrors[keyof DeleteTenantErrors]
+
+export type DeleteTenantResponses = {
+  /**
+   * Tenant deleted
+   */
+  200: unknown
+}
+
+export type PatchTenantData = {
+  body: RenameTenantRequest
+  path: {
+    /**
+     * Tenant identifier
+     */
+    tenant_id: string
+  }
+  query?: never
+  url: '/v0/tenants/{tenant_id}'
+}
+
+export type PatchTenantErrors = {
+  /**
+   * Caller is not a platform owner
+   */
+  403: ErrorResponse
+  /**
+   * No tenant with that identifier
+   */
+  404: ErrorResponse
+  /**
+   * A tenant with that name already exists, and `displace_existing` was not set
+   */
+  409: ErrorResponse
+  500: ErrorResponse
+}
+
+export type PatchTenantError = PatchTenantErrors[keyof PatchTenantErrors]
+
+export type PatchTenantResponses = {
+  /**
+   * Tenant renamed
+   */
+  200: RenameTenantResponse
+}
+
+export type PatchTenantResponse = PatchTenantResponses[keyof PatchTenantResponses]
 
 export type PostValidateProgramData = {
   /**
