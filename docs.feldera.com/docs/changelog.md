@@ -38,6 +38,24 @@ import TabItem from '@theme/TabItem';
           already logged in (an owner or admin adjusts those individually). Tighten
           `defaultRole` back to `read` once explicit roles are provisioned.
 
+        - A tenant is now identified by its name alone. Before, a tenant was keyed by
+          `(name, OIDC issuer)`, so changing `auth.issuer` created a second, empty
+          tenant of the same name and stranded the pipelines on the first one, which
+          no login could reach. Logins now resolve the existing tenant across an
+          issuer change. A deployment whose issuer already changed holds two tenants
+          of the same name: the upgrade keeps the name on the one its users reach
+          today and appends the id to the other's name, merging and deleting nothing.
+          `GET /v0/tenants` lists both.
+
+        - Owners can rename a tenant, through `PATCH /v0/tenants/{tenant_id}` or the
+          web console's admin page. A rename changes only the name, which is what a
+          login resolves, so it is how an owner reunites users with a tenant they can
+          no longer reach: the `default` tenant after authentication is switched on,
+          or a tenant left behind by an identity-provider change. Pass
+          `displace_existing` to take a name the first login already created a tenant
+          under; that tenant becomes `<name> (<id>)` and keeps everything it had. See
+          [Changing your authentication setup](/get-started/enterprise/authentication#changing-your-authentication-setup).
+
         - Breaking change (API keys): the `scopes` array on API-key responses
           (`GET /v0/api_keys`, `GET /v0/api_keys/{api_key_name}`) is replaced by a single
           `role` string, one of `read` or `write` (lower-case). Clients that read the

@@ -146,6 +146,12 @@ pub enum DBError {
     UnknownTenantName {
         name: String,
     },
+    TenantNotEmpty {
+        tenant_id: TenantId,
+        pipelines: i64,
+        api_keys: i64,
+        oidc_trusts: i64,
+    },
     // API key-related errors
     UnknownApiKey {
         name: String,
@@ -625,6 +631,18 @@ impl Display for DBError {
             DBError::UnknownTenantName { name } => {
                 write!(f, "Unknown tenant '{name}'")
             }
+            DBError::TenantNotEmpty {
+                tenant_id,
+                pipelines,
+                api_keys,
+                oidc_trusts,
+            } => {
+                write!(
+                    f,
+                    "Tenant '{tenant_id}' still holds {pipelines} pipeline(s), {api_keys} API key(s) \
+                     and {oidc_trusts} OIDC trust relationship(s); delete those first"
+                )
+            }
             DBError::UnknownApiKey { name } => {
                 write!(f, "Unknown API key '{name}'")
             }
@@ -986,6 +1004,7 @@ impl DetailedError for DBError {
             Self::TooLongDescription { .. } => Cow::from("TooLongDescription"),
             Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
             Self::UnknownTenantName { .. } => Cow::from("UnknownTenantName"),
+            Self::TenantNotEmpty { .. } => Cow::from("TenantNotEmpty"),
             Self::UnknownApiKey { .. } => Cow::from("UnknownApiKey"),
             Self::InvalidApiKey => Cow::from("InvalidApiKey"),
             Self::InsufficientPermissions { .. } => Cow::from("InsufficientPermissions"),
@@ -1111,8 +1130,9 @@ impl ResponseError for DBError {
             Self::InvalidTag { .. } => StatusCode::BAD_REQUEST,
             Self::TooManyTags { .. } => StatusCode::BAD_REQUEST,
             Self::TooLongDescription { .. } => StatusCode::BAD_REQUEST,
-            Self::UnknownTenant { .. } => StatusCode::UNAUTHORIZED, // TODO: should we report not found instead?
+            Self::UnknownTenant { .. } => StatusCode::NOT_FOUND,
             Self::UnknownTenantName { .. } => StatusCode::NOT_FOUND,
+            Self::TenantNotEmpty { .. } => StatusCode::CONFLICT,
             Self::UnknownApiKey { .. } => StatusCode::NOT_FOUND,
             Self::InvalidApiKey => StatusCode::UNAUTHORIZED,
             Self::InsufficientPermissions { .. } => StatusCode::FORBIDDEN,

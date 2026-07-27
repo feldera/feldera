@@ -2,6 +2,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::engine::{ArgValueCompleter, CompletionCandidate};
 use std::fmt::Display;
 use std::path::PathBuf;
+use uuid::Uuid;
 
 use crate::make_client;
 use feldera_rest_api::types::{
@@ -248,6 +249,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: OidcTrustActions,
     },
+    /// Manage tenants across the installation (platform owner only).
+    Tenant {
+        #[command(subcommand)]
+        action: TenantActions,
+    },
     /// Cluster information and status.
     Cluster {
         #[command(subcommand)]
@@ -335,6 +341,35 @@ pub enum TrustRole {
     Write,
     Admin,
     Owner,
+}
+
+#[derive(Subcommand)]
+pub enum TenantActions {
+    /// List every tenant in the installation.
+    List,
+    /// Rename a tenant.
+    ///
+    /// A login resolves its tenant by name, so the new name decides which users
+    /// arrive in this tenant. Renaming a tenant to a name its provider no longer
+    /// asserts sends those users to a new, empty tenant on their next request.
+    Rename {
+        /// Identifier of the tenant to rename, as shown by `fda tenant list`.
+        tenant_id: Uuid,
+        /// The new name.
+        name: String,
+        /// Take the name from the tenant that currently holds it, which is
+        /// renamed to `<name> (<id>)` and keeps everything it had. Needed to
+        /// recover a tenant no login reaches, because every request re-creates
+        /// the name its token resolves.
+        #[arg(long)]
+        displace_existing: bool,
+    },
+    /// Delete a tenant that holds no pipelines, API keys or OIDC trusts.
+    #[clap(aliases = &["del"])]
+    Delete {
+        /// Identifier of the tenant to delete, as shown by `fda tenant list`.
+        tenant_id: Uuid,
+    },
 }
 
 #[derive(Subcommand)]

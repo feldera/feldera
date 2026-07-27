@@ -7613,7 +7613,7 @@
         "tags": [
           "Platform"
         ],
-        "summary": "List tenants",
+        "summary": "List Tenants",
         "description": "Required role: `owner`.\n\nList all tenants in the installation.",
         "operationId": "list_tenants",
         "responses": {
@@ -7662,7 +7662,7 @@
           "Platform"
         ],
         "summary": "Create Tenant",
-        "description": "Required role: `owner`.\n\nExplicitly create a tenant, rather than relying on first login.\nThe tenant is keyed to the platform's configured OIDC issuer (statically set\nat deploy time, e.g. via Helm), so that logins from that issuer resolve into\nit; the issuer is not caller-settable. Fails with a conflict if a tenant with\nthe same name already exists for that issuer.",
+        "description": "Required role: `owner`.\n\nExplicitly create a tenant, rather than relying on first login.\nA login resolves its tenant by name, so a user whose identity provider\nasserts this name lands in the tenant created here. Fails with a conflict if\nthe name is already taken.",
         "operationId": "create_tenant",
         "requestBody": {
           "content": {
@@ -7697,6 +7697,165 @@
           },
           "409": {
             "description": "A tenant with that name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/tenants/{tenant_id}": {
+      "delete": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "Delete Tenant",
+        "description": "Required role: `owner`.\n\nDelete a tenant that holds nothing. Its members lose the membership, and a\nlogin that still resolves this tenant's name simply re-creates it, empty.\n\nThe tenant must hold no pipelines, API keys or OIDC trust relationships;\notherwise the request fails with a conflict. Everything tenant-scoped\ncascades on this delete, so the emptiness rule is what keeps a mistyped\nidentifier from taking a live tenant's pipelines with it. Delete those\nresources first if you mean to.",
+        "operationId": "delete_tenant",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "description": "Tenant identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenant deleted"
+          },
+          "403": {
+            "description": "Caller is not a platform owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No tenant with that identifier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The tenant still holds pipelines, API keys or OIDC trust relationships",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "Rename Tenant",
+        "description": "Required role: `owner`.\n\nChange a tenant's name. Only the name changes: pipelines, API keys, members\nand OIDC trust relationships all reference the tenant by its identifier and\nare unaffected.\n\nA login resolves its tenant by name, so renaming decides which tenant those\nusers reach. Two consequences follow. Renaming a tenant away from a name the\nidentity provider still asserts sends its users to a new, empty tenant on\ntheir next request, which re-creates the name. And a tenant that no login\nreaches, such as `default` after authentication is switched on, is recovered\nby giving it the name logins do resolve.\n\nRecovery normally wants a name that is already taken, by the tenant the\nfirst login created. Set `displace_existing` to take it: that tenant is\nrenamed to `<name> (<id>)` in the same transaction and keeps everything it\nhad. One step is what makes recovery possible at all, since freeing the name\nand claiming it as two calls loses to the next request re-creating it.",
+        "operationId": "patch_tenant",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "description": "Tenant identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameTenantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Tenant renamed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenameTenantResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not a platform owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No tenant with that identifier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A tenant with that name already exists, and `displace_existing` was not set",
             "content": {
               "application/json": {
                 "schema": {
@@ -13818,6 +13977,38 @@
             "type": "string",
             "format": "uuid",
             "description": "UUID of the checkpoint."
+          }
+        }
+      },
+      "RenameTenantRequest": {
+        "type": "object",
+        "description": "Request to rename a tenant.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "displace_existing": {
+            "type": "boolean",
+            "description": "Take the name from the tenant that currently holds it, instead of\nfailing with a conflict. That tenant is renamed to `<name> (<id>)` and\nkeeps everything it had; nothing is merged or deleted."
+          },
+          "name": {
+            "type": "string",
+            "description": "The tenant's new name.",
+            "example": "acme"
+          }
+        }
+      },
+      "RenameTenantResponse": {
+        "type": "object",
+        "description": "Response to a successful tenant rename.",
+        "properties": {
+          "displaced": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TenantInfo"
+              }
+            ],
+            "nullable": true
           }
         }
       },

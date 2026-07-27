@@ -138,6 +138,28 @@ impl Storage for StoragePostgres {
         Ok(result)
     }
 
+    async fn delete_tenant(&self, tenant_id: TenantId) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::tenant::delete_tenant(&txn, tenant_id).await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
+    async fn rename_tenant(
+        &self,
+        tenant_id: TenantId,
+        new_name: &str,
+        displace_existing: bool,
+    ) -> Result<Option<TenantInfo>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let displaced =
+            operations::tenant::rename_tenant(&txn, tenant_id, new_name, displace_existing).await?;
+        txn.commit().await?;
+        Ok(displaced)
+    }
+
     async fn list_tenants(&self) -> Result<Vec<TenantInfo>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;

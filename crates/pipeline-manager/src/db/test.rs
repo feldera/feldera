@@ -308,6 +308,12 @@ fn limited_oidc_trust_name() -> impl Strategy<Value = String> {
     })
 }
 
+/// Generates one of a few tenant names, so that renames collide often enough
+/// to exercise the unique-name conflict.
+fn limited_tenant_name() -> impl Strategy<Value = String> {
+    any::<u8>().prop_map(|val| format!("tenant-{}", val % 3))
+}
+
 /// Generates one of a few issuers, so that trusts collide on issuer often
 /// enough to exercise matching and the trusted-issuer gate.
 fn limited_issuer() -> impl Strategy<Value = String> {
@@ -1019,6 +1025,118 @@ async fn tenant_survives_a_changed_issuer() {
         leftover.is_empty(),
         "the (tenant, provider) constraint should have been dropped"
     );
+}
+
+/// A tenant no login reaches is recovered by taking the name logins do resolve,
+/// even though every request re-creates that name.
+#[tokio::test]
+async fn renaming_takes_a_name_that_logins_keep_recreating() {
+    let handle = test_setup().await;
+    let provider = "https://acme.idp.example".to_string();
+    let asserted = "acme.idp.example".to_string();
+
+    // Authentication goes on: the first login creates a tenant of its own, and
+    // everything from before is left behind in `default`.
+    let stranded = TenantRecord::default().id;
+    let fresh = handle
+        .db
+        .get_or_create_tenant_id(Uuid::now_v7(), asserted.clone(), provider.clone())
+        .await
+        .unwrap();
+    assert_ne!(stranded, fresh);
+
+    // Freeing the name first cannot work: the next request re-creates it. So
+    // the plain rename conflicts, and only taking the name succeeds.
+    assert!(matches!(
+        handle
+            .db
+            .rename_tenant(stranded, &asserted, false)
+            .await
+            .unwrap_err(),
+        DBError::DuplicateName
+    ));
+    let displaced = handle
+        .db
+        .rename_tenant(stranded, &asserted, true)
+        .await
+        .unwrap()
+        .expect("the tenant holding the name should have been displaced");
+    assert_eq!(displaced.id, fresh);
+    assert_eq!(displaced.name, format!("{asserted} ({fresh})"));
+
+    // The next login lands on the recovered tenant, with its pipelines.
+    let after = handle
+        .db
+        .get_or_create_tenant_id(Uuid::now_v7(), asserted.clone(), provider)
+        .await
+        .unwrap();
+    assert_eq!(after, stranded);
+}
+
+/// A tenant is deleted only once it holds nothing, so a mistyped identifier
+/// cannot cascade away a live tenant's resources.
+#[tokio::test]
+async fn deleting_a_tenant_requires_it_to_be_empty() {
+    let handle = test_setup().await;
+    let tenant = handle
+        .db
+        .get_or_create_tenant_id(
+            Uuid::now_v7(),
+            "leftover".to_string(),
+            "https://idp.example".to_string(),
+        )
+        .await
+        .unwrap();
+
+    // A member alone does not block: a login re-creates its own membership.
+    let user = handle
+        .db
+        .get_or_create_user(
+            Uuid::now_v7(),
+            "https://idp.example",
+            "someone",
+            Some("someone@idp.example"),
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .upsert_member_role(tenant, user, Role::Write)
+        .await
+        .unwrap();
+
+    // An API key does.
+    handle
+        .db
+        .store_api_key_hash(
+            tenant,
+            Uuid::now_v7(),
+            "key",
+            &generate_api_key(),
+            MintableKeyRole::Write,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        handle.db.delete_tenant(tenant).await.unwrap_err(),
+        DBError::TenantNotEmpty { api_keys: 1, .. }
+    ));
+
+    handle.db.delete_api_key(tenant, "key").await.unwrap();
+    handle.db.delete_tenant(tenant).await.unwrap();
+    assert!(!handle
+        .db
+        .list_tenants()
+        .await
+        .unwrap()
+        .iter()
+        .any(|t| t.id == tenant));
+
+    // Deleting it again reports the tenant as unknown.
+    assert!(matches!(
+        handle.db.delete_tenant(tenant).await.unwrap_err(),
+        DBError::UnknownTenant { .. }
+    ));
 }
 
 /// `first_user_role` sets the role of the login that creates a tenant: with
@@ -3862,6 +3980,21 @@ async fn check_rbac_action(
                 .await;
             check_responses(i, model_response, impl_response);
         }
+        RbacAction::RenameTenant(tenant_id, new_name, displace_existing) => {
+            let model_response = model
+                .rename_tenant(tenant_id, &new_name, displace_existing)
+                .await;
+            let impl_response = handle
+                .db
+                .rename_tenant(tenant_id, &new_name, displace_existing)
+                .await;
+            check_responses(i, model_response, impl_response);
+        }
+        RbacAction::DeleteTenant(tenant_id) => {
+            let model_response = model.delete_tenant(tenant_id).await;
+            let impl_response = handle.db.delete_tenant(tenant_id).await;
+            check_responses(i, model_response, impl_response);
+        }
         RbacAction::ListTenants => {
             let mut model_response = model.list_tenants().await.unwrap();
             let mut impl_response = handle.db.list_tenants().await.unwrap();
@@ -3976,6 +4109,12 @@ enum RbacAction {
         #[proptest(strategy = "limited_claim_value()")] String,
         #[proptest(strategy = "prop::collection::vec(limited_claim_value(), 0..3)")] Vec<String>,
     ),
+    RenameTenant(
+        TenantId,
+        #[proptest(strategy = "limited_tenant_name()")] String,
+        bool,
+    ),
+    DeleteTenant(TenantId),
     // Users and tenant memberships
     ListTenants,
     GetOrCreateUser(
@@ -5833,6 +5972,64 @@ impl Storage for Mutex<DbModel> {
             .ok_or(DBError::UnknownTenantName {
                 name: selector.to_string(),
             })
+    }
+
+    async fn delete_tenant(&self, tenant_id: TenantId) -> DBResult<()> {
+        let mut s = self.lock().await;
+        if !s.tenants.contains_key(&tenant_id) {
+            return Err(DBError::UnknownTenant { tenant_id });
+        }
+        let pipelines = s.pipelines.keys().filter(|(t, _)| *t == tenant_id).count() as i64;
+        let api_keys = s.api_keys.keys().filter(|(t, _)| *t == tenant_id).count() as i64;
+        let oidc_trusts = s
+            .oidc_trusts
+            .keys()
+            .filter(|(scope, _)| *scope == Some(tenant_id))
+            .count() as i64;
+        if pipelines > 0 || api_keys > 0 || oidc_trusts > 0 {
+            return Err(DBError::TenantNotEmpty {
+                tenant_id,
+                pipelines,
+                api_keys,
+                oidc_trusts,
+            });
+        }
+        s.tenants.remove(&tenant_id);
+        s.memberships.retain(|(t, _), _| *t != tenant_id);
+        s.pipeline_events.retain(|(t, _), _| *t != tenant_id);
+        Ok(())
+    }
+
+    async fn rename_tenant(
+        &self,
+        tenant_id: TenantId,
+        new_name: &str,
+        displace_existing: bool,
+    ) -> DBResult<Option<TenantInfo>> {
+        let mut s = self.lock().await;
+        if !s.tenants.contains_key(&tenant_id) {
+            return Err(DBError::UnknownTenant { tenant_id });
+        }
+        let holder = s
+            .tenants
+            .iter()
+            .find(|(id, t)| **id != tenant_id && t.tenant == new_name)
+            .map(|(id, _)| *id);
+        let displaced = match holder {
+            Some(_) if !displace_existing => return Err(DBError::DuplicateName),
+            Some(id) => {
+                let holder = s.tenants.get_mut(&id).unwrap();
+                holder.tenant = format!("{} ({})", holder.tenant, id);
+                Some(TenantInfo {
+                    id,
+                    name: holder.tenant.clone(),
+                    initial_provider: holder.initial_provider.clone(),
+                })
+            }
+            None => None,
+        };
+        s.tenants.get_mut(&tenant_id).unwrap().tenant = new_name.to_string();
+        Ok(displaced)
     }
 
     async fn list_tenants(&self) -> DBResult<Vec<TenantInfo>> {

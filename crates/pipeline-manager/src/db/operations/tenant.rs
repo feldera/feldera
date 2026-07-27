@@ -113,10 +113,111 @@ pub async fn create_tenant(
     Ok(TenantId(id))
 }
 
+/// Renames a tenant, failing with a conflict if the name is already taken.
+///
+/// Only the name changes: every other table references a tenant by its id, so
+/// no membership, key, pipeline or trust is affected. The name is what a login
+/// resolves, though, so renaming changes which tenant those users land in.
+///
+/// With `displace_existing`, the tenant that currently holds `new_name` gives it
+/// up and takes `<name> (<id>)` instead, as the V35 migration does for names
+/// shared by two tenants; the displaced tenant is returned. This has to happen
+/// in one transaction: a login re-creates the name it resolves on its very next
+/// request, so freeing the name and claiming it as two calls can never win the
+/// race. Nothing is merged or deleted, and the displaced tenant keeps
+/// everything it had.
+pub async fn rename_tenant(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    new_name: &str,
+    displace_existing: bool,
+) -> Result<Option<TenantInfo>, DBError> {
+    let displaced = if displace_existing {
+        displace_name_holder(txn, tenant_id, new_name).await?
+    } else {
+        None
+    };
+    let stmt = txn
+        .prepare_cached("UPDATE tenant SET tenant = $2 WHERE id = $1")
+        .await?;
+    let updated = txn
+        .execute(&stmt, &[&tenant_id.0, &new_name])
+        .await
+        .map_err(maybe_unique_violation)?;
+    if updated > 0 {
+        Ok(displaced)
+    } else {
+        Err(DBError::UnknownTenant { tenant_id })
+    }
+}
+
+/// Renames whichever tenant holds `name` to `<name> (<id>)`, so that the caller
+/// can take the name. Returns the displaced tenant, or `None` when the name is
+/// free or already belongs to `keep`.
+async fn displace_name_holder(
+    txn: &Transaction<'_>,
+    keep: TenantId,
+    name: &str,
+) -> Result<Option<TenantInfo>, DBError> {
+    let stmt = txn
+        .prepare_cached(
+            "UPDATE tenant SET tenant = tenant || ' (' || id || ')' \
+             WHERE tenant = $1 AND id <> $2 \
+             RETURNING id, tenant, initial_provider",
+        )
+        .await?;
+    let row = txn
+        .query_opt(&stmt, &[&name, &keep.0])
+        .await
+        .map_err(maybe_unique_violation)?;
+    Ok(row.map(|row| TenantInfo {
+        id: TenantId(row.get(0)),
+        name: row.get(1),
+        initial_provider: row.get(2),
+    }))
+}
+
+/// Deletes a tenant that holds nothing, failing otherwise.
+///
+/// Every tenant-scoped table cascades on this delete, so an unguarded delete
+/// would take pipelines with it, silently and with no undo. The guard is
+/// emptiness: no pipelines, API keys or OIDC trust relationships. Memberships
+/// are not counted, since a login re-creates its own on the next request, and
+/// they are the only thing a leftover tenant usually holds.
+pub async fn delete_tenant(txn: &Transaction<'_>, tenant_id: TenantId) -> Result<(), DBError> {
+    let stmt = txn
+        .prepare_cached(
+            "SELECT (SELECT count(*) FROM pipeline WHERE tenant_id = $1), \
+                    (SELECT count(*) FROM api_key WHERE tenant_id = $1), \
+                    (SELECT count(*) FROM oidc_trust_relationship WHERE tenant_id = $1)",
+        )
+        .await?;
+    let row = txn.query_one(&stmt, &[&tenant_id.0]).await?;
+    let (pipelines, api_keys, oidc_trusts): (i64, i64, i64) = (row.get(0), row.get(1), row.get(2));
+    if pipelines > 0 || api_keys > 0 || oidc_trusts > 0 {
+        return Err(DBError::TenantNotEmpty {
+            tenant_id,
+            pipelines,
+            api_keys,
+            oidc_trusts,
+        });
+    }
+
+    let stmt = txn
+        .prepare_cached("DELETE FROM tenant WHERE id = $1")
+        .await?;
+    let deleted = txn.execute(&stmt, &[&tenant_id.0]).await?;
+    if deleted > 0 {
+        Ok(())
+    } else {
+        Err(DBError::UnknownTenant { tenant_id })
+    }
+}
+
 /// Lists all tenants in the installation (platform-wide, owner-only).
 pub async fn list_tenants(txn: &Transaction<'_>) -> Result<Vec<TenantInfo>, DBError> {
     let stmt = txn
-        .prepare_cached("SELECT id, tenant, provider FROM tenant ORDER BY tenant")
+        .prepare_cached("SELECT id, tenant, initial_provider FROM tenant ORDER BY tenant")
         .await?;
     let rows = txn.query(&stmt, &[]).await?;
     Ok(rows

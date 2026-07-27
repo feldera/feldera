@@ -556,6 +556,96 @@ async fn oidc_trust_commands(format: OutputFormat, action: OidcTrustActions, cli
     }
 }
 
+async fn tenant_commands(format: OutputFormat, action: TenantActions, client: Client) {
+    match action {
+        TenantActions::List => {
+            debug!("Listing tenants");
+            let response = client
+                .list_tenants()
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to list tenants",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    let mut rows = vec![[
+                        "name".to_string(),
+                        "id".to_string(),
+                        "initial provider".to_string(),
+                    ]];
+                    for tenant in response.iter() {
+                        rows.push([
+                            tenant.name.clone(),
+                            tenant.id.0.to_string(),
+                            tenant.initial_provider.clone(),
+                        ]);
+                    }
+                    println!(
+                        "{}",
+                        Builder::from_iter(rows).build().with(Style::rounded())
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize tenant list")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+        TenantActions::Rename {
+            tenant_id,
+            name,
+            displace_existing,
+        } => {
+            debug!("Renaming tenant {tenant_id} to {name}");
+            let response = client
+                .patch_tenant()
+                .tenant_id(tenant_id)
+                .body_map(|body| body.name(name.clone()).displace_existing(displace_existing))
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to rename tenant",
+                    1,
+                ))
+                .unwrap();
+            match &response.displaced {
+                Some(displaced) => println!(
+                    "Renamed tenant {tenant_id} to '{name}'. The tenant that held the name is now '{}' ({}).",
+                    displaced.name, displaced.id.0
+                ),
+                None => println!("Renamed tenant {tenant_id} to '{name}'."),
+            }
+        }
+        TenantActions::Delete { tenant_id } => {
+            debug!("Deleting tenant {tenant_id}");
+            client
+                .delete_tenant()
+                .tenant_id(tenant_id)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to delete tenant",
+                    1,
+                ))
+                .unwrap();
+            println!("Tenant {tenant_id} deleted.");
+        }
+    }
+}
+
 async fn pipelines(format: OutputFormat, client: Client) {
     debug!("Listing pipelines");
     let response = client
@@ -3404,6 +3494,7 @@ fn main() {
                 Commands::OidcTrust { action } => {
                     oidc_trust_commands(cli.format, action, client()).await
                 }
+                Commands::Tenant { action } => tenant_commands(cli.format, action, client()).await,
                 Commands::Pipelines => pipelines(cli.format, client()).await,
                 Commands::Pipeline(action) => pipeline(cli.format, action, client()).await,
                 Commands::ValidateProgram {
