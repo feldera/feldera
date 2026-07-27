@@ -1,4 +1,4 @@
--- Role-based access control and OIDC workload-identity trust.
+-- Role-based access control, OIDC workload-identity trust, and tenant identity.
 --
 -- Adds the user concept and the per-(user, tenant) role link that the platform
 -- previously lacked (the only principal was the tenant). The released `api_key`
@@ -6,6 +6,8 @@
 -- Roles: 'read' < 'write' < 'admin' (and 'owner', which is platform-wide and
 -- never stored in a membership; it is sourced from configuration or an owner
 -- OIDC trust relationship).
+--
+-- The second half makes a tenant's name, on its own, its identity.
 
 CREATE TABLE IF NOT EXISTS app_user (
     id       uuid PRIMARY KEY,
@@ -67,3 +69,87 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_oidc_owner_trust_name
 
 -- The auth hot path resolves a federated token by its issuer, so index it.
 CREATE INDEX IF NOT EXISTS idx_oidc_trust_issuer ON oidc_trust_relationship (issuer);
+
+-- BEGIN tenant identity
+--
+-- db/test.rs runs the section between these markers on its own, against temp
+-- tables, so keep both markers and keep the section free of the tables above.
+--
+-- Make the tenant name, on its own, the tenant's identity.
+--
+-- V0 keyed a tenant by (tenant, provider), where `provider` is the OIDC issuer
+-- its users authenticate through. Only one issuer is ever configured, so the
+-- pair never distinguished two tenants. What it did do was tie a tenant's
+-- identity to the issuer string: changing FELDERA_AUTH_ISSUER (an IdP migration,
+-- a custom domain, a recreated Cognito pool) made the next login miss the
+-- conflict target and create a second tenant of the same name, leaving every
+-- pipeline on the unreachable first one.
+--
+-- Keying on the name alone makes that case reuse the existing tenant. The issuer
+-- stays as provenance, under a name that says so: `initial_provider`.
+
+-- A deployment whose issuer changed before this migration already has two
+-- tenants sharing a name, and we cannot tell from here which deployments those
+-- are. Rename rather than refuse: a failed migration would stop the manager from
+-- starting and leave no in-product way out, whereas renaming keeps every tenant
+-- present, reachable and unchanged.
+--
+-- Nothing is merged, moved or deleted. The name stays with the tenant users
+-- already reach today, which is the one registered under the issuer that is
+-- configured now: only that one was reachable before this migration, since a
+-- login resolved (name, issuer). Keeping the name there means the upgrade does
+-- not change what anyone sees. `feldera.auth_issuer` is set on this connection
+-- by `run_migrations`; when it is absent, as with authentication disabled, fall
+-- back to the tenant holding the most pipelines so the name still follows the
+-- work. Ties break on the id for determinism.
+--
+-- The others keep all of their own pipelines under a name qualified by their id,
+-- which is unique. An owner finds them through `GET /v0/tenants`, acts in them
+-- with the `Feldera-Tenant` header, and can rename them.
+DO $$
+DECLARE renamed int;
+BEGIN
+    WITH ranked AS (
+        SELECT t.id,
+               row_number() OVER (
+                   PARTITION BY t.tenant
+                   ORDER BY (t.provider IS NOT DISTINCT FROM
+                             current_setting('feldera.auth_issuer', true)) DESC,
+                            (SELECT count(*) FROM pipeline p WHERE p.tenant_id = t.id) DESC,
+                            t.id
+               ) AS rank_in_name
+        FROM tenant t
+    )
+    UPDATE tenant
+    SET tenant = tenant.tenant || ' (' || tenant.id || ')'
+    FROM ranked
+    WHERE tenant.id = ranked.id AND ranked.rank_in_name > 1;
+
+    GET DIAGNOSTICS renamed = ROW_COUNT;
+    IF renamed > 0 THEN
+        RAISE NOTICE
+            'Renamed % tenant(s) whose name was shared with another tenant, '
+            'which happens when the configured OIDC issuer changed. Their '
+            'pipelines are untouched; list them with GET /v0/tenants.',
+            renamed;
+    END IF;
+END $$;
+
+-- The old constraint was declared inline, so its name is whatever PostgreSQL
+-- generated; look it up rather than assume.
+DO $$
+DECLARE old_constraint text;
+BEGIN
+    SELECT conname INTO old_constraint
+    FROM pg_constraint
+    WHERE conrelid = 'tenant'::regclass
+      AND contype = 'u'
+      AND pg_get_constraintdef(oid) LIKE 'UNIQUE (tenant, provider)%';
+
+    IF old_constraint IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE tenant DROP CONSTRAINT %I', old_constraint);
+    END IF;
+END $$;
+
+ALTER TABLE tenant ADD CONSTRAINT unique_tenant_name UNIQUE (tenant);
+-- END tenant identity
