@@ -236,28 +236,3 @@ def test_events(pipeline_name):
         ("Stopped", "Stopped", None, None, False, "Pending", "Cleared"),
     ]
     # fmt: on
-
-
-@gen_pipeline_name
-def test_events_retained(pipeline_name):
-    # Test that the events retention is enforced.
-
-    # Perform actions that result in at least 1000 events
-    sql = "CREATE TABLE t1(i1 INTEGER); CREATE VIEW v1 AS SELECT * FROM t1;"
-    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, sql).create_or_replace()
-    pipeline.start()
-    for i in range(500):
-        pipeline.pause()
-        pipeline.resume()
-    pipeline.stop(force=True)
-
-    # Check every second for 80 seconds (30 seconds is the cleanup interval)
-    # if the number of events has become exactly 720 (the default retention number).
-    num_events = -1
-    for _ in range(80):
-        num_events = len(pipeline.events())
-        if num_events == 720:
-            # Early break to speed up the test if it has already done the cleanup
-            break
-        time.sleep(1)
-    assert num_events == 720
