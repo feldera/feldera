@@ -59,28 +59,6 @@ auth:
   enabled: false
 ```
 
-### Transitioning from no authentication to authentication
-
-A deployment that runs without authentication keeps all of its data under a
-single built-in tenant named `default`, whose id is the all-zero UUID
-`00000000-0000-0000-0000-000000000000`. When you enable authentication, each
-login resolves to its own tenant per the strategies above, not to the `default`
-tenant, so pipelines and API keys created while authentication was disabled are
-not visible to ordinary logins.
-
-To reach that data after enabling authentication, a platform
-[owner](/get-started/enterprise/authentication/roles) selects the default tenant
-explicitly with the `Feldera-Tenant` header:
-
-```bash
-curl -H "Authorization: Bearer $OWNER_TOKEN" \
-     -H "Feldera-Tenant: 00000000-0000-0000-0000-000000000000" \
-     https://<your-host>/v0/pipelines
-```
-
-Recreate the resources in a regular tenant as needed. Plan this migration before
-enabling authentication on a deployment that already holds data.
-
 ### Individual access
 
 Every user gets their individual tenant based on their `sub` claim.
@@ -179,6 +157,80 @@ authorization:
     - "feldera-qa"
   authAudience: "feldera-api"
 ```
+
+## Changing your authentication setup
+
+Feldera supports a single identity provider at a time, so the two changes that
+move users between tenants are enabling authentication on a deployment that ran
+without it, and pointing an authenticated deployment at a different provider.
+Both need planning, because a tenant is where pipelines live.
+
+### How a tenant is identified
+
+A tenant is identified by its **name** alone. The name is derived from the token
+on each login, by whichever [tenant assignment strategy](#tenant-assignment-strategies)
+you configured. A tenant also records the issuer it was first seen under, but
+that is provenance only: it does not take part in identifying the tenant, so
+changing the issuer never creates a second tenant of the same name.
+
+A user is identified by the pair `(issuer, subject)`. That pair is what
+memberships and roles hang off, and unlike the tenant name it **does** include
+the issuer, because OIDC only guarantees `sub` to be unique within one issuer.
+
+The practical consequence is worth stating plainly: a tenant can survive a
+provider change, but the users in it cannot. They arrive as new identities and
+must be granted their roles again.
+
+### Enabling authentication on an existing deployment
+
+Without authentication, everything lives in one built-in tenant named `default`,
+whose id is the all-zero UUID `00000000-0000-0000-0000-000000000000`. Once
+authentication is on, each login resolves to a tenant named by your chosen
+strategy, never to `default`, so pipelines and API keys created beforehand are
+not visible to ordinary logins. The data is intact, just in a tenant nobody
+resolves to any more.
+
+A platform [owner](/get-started/enterprise/authentication/roles) can still reach
+it by naming that tenant explicitly:
+
+```bash
+curl -H "Authorization: Bearer $OWNER_TOKEN" \
+     -H "Feldera-Tenant: 00000000-0000-0000-0000-000000000000" \
+     https://<your-host>/v0/pipelines
+```
+
+Recreate the resources in a regular tenant from there. Plan this before enabling
+authentication on a deployment that already holds pipelines.
+
+### Changing the identity provider
+
+Whether a tenant survives depends on whether its **name** still comes out the
+same from the new provider's tokens:
+
+| Strategy | Tenant name comes from | Survives a provider change? |
+|---|---|---|
+| Managed tenancy | the `tenants` claim | Yes, if you configure the new provider to emit the same values |
+| Organization-wide | the issuer hostname | Only if the hostname is unchanged, e.g. a new authorization server on the same domain |
+| Individual tenancy | the `sub` claim | No, in practice: a new provider issues different subjects |
+
+So the mode that migrates cleanly is managed tenancy, because the tenant name is
+a value you control at the provider rather than something derived from it. If you
+expect to change providers, prefer it.
+
+Where the name does change, the old tenant keeps every pipeline and is no longer
+reachable by ordinary logins. Recover it the same way as above: an owner selects
+it with `Feldera-Tenant` (by name or UUID, and `GET /v0/tenants` lists both) and
+moves what is needed.
+
+:::warning Roles are not carried across a provider change
+Even when the tenant survives, its members do not. A membership is keyed to
+`(issuer, subject)`, so after the switch every user is a new identity with no
+membership, and each is admitted at `authorization.defaultRole`. Administrators
+and pre-provisioned members must be granted their roles again, and at least one
+identity from the new provider must be listed in `authorization.owners` so that
+someone can do the granting. See
+[Roles](/get-started/enterprise/authentication/roles).
+:::
 
 ## Configuration options
 
