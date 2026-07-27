@@ -136,6 +136,77 @@ pub(crate) fn min_role_for(method: &str, pattern: &str) -> Option<Option<Role>> 
     route_table().get(&(method, pattern)).copied()
 }
 
+/// Resolve a request path to its table entry, returning the pattern it matched
+/// and that pattern's rule.
+///
+/// The middleware cannot use actix's `match_pattern()` for this. That resolves
+/// by path alone, ignoring the method, so a request whose path also matches an
+/// earlier-registered pattern of a different method reports the wrong template:
+/// `GET .../connectors/{connector_name}/completion_token` came back as
+/// `POST .../connectors/{connector_name}/{action}`, which is not a GET entry, and
+/// a classified route was denied as unclassified. Matching the table directly,
+/// method first, keeps the enforced rule and the authored rule the same thing.
+///
+/// A literal segment beats a placeholder, as in any router, so `.../start`
+/// resolves to `.../{action}` only when no literal pattern claims it.
+fn classify(method: &str, path: &str) -> Option<(&'static str, Option<Role>)> {
+    let segments: Vec<&str> = path.split('/').collect();
+    let candidates = candidates_by_shape().get(&(method, segments.len()))?;
+    let mut best: Option<(usize, &'static str, Option<Role>)> = None;
+    for (pattern, role) in candidates {
+        let Some(literals) = literal_segments_if_match(pattern, &segments) else {
+            continue;
+        };
+        if best.is_none_or(|(best_literals, _, _)| literals > best_literals) {
+            best = Some((literals, pattern, *role));
+        }
+    }
+    best.map(|(_, pattern, role)| (pattern, role))
+}
+
+/// [`ROUTE_MIN_ROLE`] bucketed by `(method, segment count)`, built once on first
+/// use. A path can only match a pattern of the same shape, so this leaves the
+/// per-request scan a handful of candidates rather than the whole table.
+#[allow(clippy::type_complexity)]
+fn candidates_by_shape(
+) -> &'static HashMap<(&'static str, usize), Vec<(&'static str, Option<Role>)>> {
+    static SHAPES: OnceLock<HashMap<(&'static str, usize), Vec<(&'static str, Option<Role>)>>> =
+        OnceLock::new();
+    SHAPES.get_or_init(|| {
+        let mut shapes: HashMap<(&'static str, usize), Vec<(&'static str, Option<Role>)>> =
+            HashMap::new();
+        for (method, pattern, role) in ROUTE_MIN_ROLE {
+            shapes
+                .entry((method, pattern.split('/').count()))
+                .or_default()
+                .push((pattern, *role));
+        }
+        shapes
+    })
+}
+
+/// How many literal segments `pattern` matches `segments` with, or `None` when
+/// it does not match. A `{name}` segment matches any one non-empty segment.
+fn literal_segments_if_match(pattern: &str, segments: &[&str]) -> Option<usize> {
+    let parts: Vec<&str> = pattern.split('/').collect();
+    if parts.len() != segments.len() {
+        return None;
+    }
+    let mut literals = 0;
+    for (part, segment) in parts.iter().zip(segments) {
+        if part.starts_with('{') && part.ends_with('}') {
+            if segment.is_empty() {
+                return None;
+            }
+        } else if part != segment {
+            return None;
+        } else {
+            literals += 1;
+        }
+    }
+    Some(literals)
+}
+
 /// A 403 in the same JSON shape the rest of the API returns, so clients can
 /// parse a permission denial the same way whether it came from here or a handler.
 fn forbidden(message: &str) -> HttpResponse<BoxBody> {
@@ -145,42 +216,46 @@ fn forbidden(message: &str) -> HttpResponse<BoxBody> {
     }))
 }
 
-/// Decide whether the principal may proceed. `Ok(())` allows; `Err(resp)` is the
-/// 403 to return. `pattern` is the matched route template, not the request path.
+/// Decide whether the principal may proceed, returning the pattern the request
+/// resolved to for the audit line. `Ok` allows; `Err(resp)` is the 403 to return.
+///
+/// `routed` says whether actix has a route for this path at all; the rule itself
+/// comes from [`classify`], which matches the request path against the table.
 ///
 /// ```text
 /// // a writer posting a pipeline
-/// authorize("POST", Some("/v0/pipelines"), Some(&writer))  => Ok(())
+/// authorize("POST", true,  "/v0/pipelines", Some(&writer))  => Ok(..)
 /// // a reader posting a pipeline
-/// authorize("POST", Some("/v0/pipelines"), Some(&reader))  => Err(403)
+/// authorize("POST", true,  "/v0/pipelines", Some(&reader))  => Err(403)
 /// // an admin listing tenants, which is owner-only
-/// authorize("GET",  Some("/v0/tenants"),   Some(&admin))   => Err(403)
+/// authorize("GET",  true,  "/v0/tenants",   Some(&admin))   => Err(403)
 /// // no route matched, so this is a 404 for actix to answer, not a denial
-/// authorize("GET",  None,                  Some(&reader))  => Ok(())
+/// authorize("GET",  false, "/v0/nonesuch",  Some(&reader))  => Ok(..)
 /// ```
 fn authorize(
     method: &str,
-    pattern: Option<&str>,
+    routed: bool,
+    path: &str,
     principal: Option<&AuthenticatedPrincipal>,
-) -> Result<(), HttpResponse<BoxBody>> {
+) -> Result<Option<&'static str>, HttpResponse<BoxBody>> {
     // No route matched, so there is nothing to guard. Passing it through lets
     // actix answer 404; denying here would report a missing route as a
     // permission error.
-    let Some(pattern) = pattern else {
-        return Ok(());
+    if !routed {
+        return Ok(None);
+    }
+    let Some((pattern, rule)) = classify(method, path) else {
+        // A registered route with no table entry is a bug: deny it rather
+        // than serve it unguarded.
+        error!("RBAC: route {method} {path} has no access-control entry; denying");
+        return Err(forbidden(
+            "This endpoint has no access-control classification and is denied",
+        ));
     };
-    match min_role_for(method, pattern) {
-        None => {
-            // A registered route with no table entry is a bug: deny it rather
-            // than serve it unguarded.
-            error!("RBAC: route {method} {pattern} has no access-control entry; denying");
-            Err(forbidden(
-                "This endpoint has no access-control classification and is denied",
-            ))
-        }
-        Some(None) => Ok(()),
-        Some(Some(required)) => match principal {
-            Some(p) if p.role.satisfies(required) => Ok(()),
+    match rule {
+        None => Ok(Some(pattern)),
+        Some(required) => match principal {
+            Some(p) if p.role.satisfies(required) => Ok(Some(pattern)),
             Some(p) => Err(DBError::InsufficientPermissions {
                 required,
                 actual: p.role,
@@ -212,11 +287,12 @@ pub(crate) async fn rbac_middleware(
 ) -> Result<ServiceResponse<BoxBody>, actix_web::Error> {
     let principal = req.extensions().get::<AuthenticatedPrincipal>().cloned();
     let method = req.method().clone();
-    let pattern = req.match_pattern();
+    let routed = req.match_pattern().is_some();
+    let path = req.path().to_string();
 
-    match authorize(method.as_str(), pattern.as_deref(), principal.as_ref()) {
-        Ok(()) => {
-            if let Some(pattern) = pattern.as_deref() {
+    match authorize(method.as_str(), routed, &path, principal.as_ref()) {
+        Ok(pattern) => {
+            if let Some(pattern) = pattern {
                 audit(&method, pattern, principal.as_ref());
             }
             Ok(next.call(req).await?.map_into_boxed_body())
@@ -240,7 +316,7 @@ mod test {
     #[test]
     fn unknown_route_is_denied() {
         let p = AuthenticatedPrincipal::for_test(Role::Owner);
-        assert!(authorize("GET", Some("/v0/does/not/exist"), Some(&p)).is_err());
+        assert!(authorize("GET", true, "/v0/does/not/exist", Some(&p)).is_err());
     }
 
     #[test]
@@ -248,13 +324,78 @@ mod test {
         let reader = AuthenticatedPrincipal::for_test(Role::Read);
         let writer = AuthenticatedPrincipal::for_test(Role::Write);
         // A write route rejects a reader and admits a writer.
-        assert!(authorize("POST", Some("/v0/pipelines"), Some(&reader)).is_err());
-        assert!(authorize("POST", Some("/v0/pipelines"), Some(&writer)).is_ok());
+        assert!(authorize("POST", true, "/v0/pipelines", Some(&reader)).is_err());
+        assert!(authorize("POST", true, "/v0/pipelines", Some(&writer)).is_ok());
         // A read route admits a reader.
-        assert!(authorize("GET", Some("/v0/pipelines"), Some(&reader)).is_ok());
+        assert!(authorize("GET", true, "/v0/pipelines", Some(&reader)).is_ok());
         // An owner-only route rejects an admin.
         let admin = AuthenticatedPrincipal::for_test(Role::Admin);
-        assert!(authorize("GET", Some("/v0/tenants"), Some(&admin)).is_err());
+        assert!(authorize("GET", true, "/v0/tenants", Some(&admin)).is_err());
+    }
+
+    /// A concrete request path for a route template, with each `{name}`
+    /// placeholder filled by a value that cannot be mistaken for a literal
+    /// segment of some other pattern.
+    fn concrete_path(pattern: &str) -> String {
+        pattern
+            .split('/')
+            .map(|part| {
+                if part.starts_with('{') && part.ends_with('}') {
+                    format!("sample-{}", part.trim_matches(|c| c == '{' || c == '}'))
+                } else {
+                    part.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("/")
+    }
+
+    /// Every entry must be reachable from a real request path, under its own
+    /// method. A pattern that another entry shadows would be enforced with the
+    /// wrong rule, or denied as unclassified, which is how
+    /// `GET .../connectors/{connector_name}/completion_token` came to be refused:
+    /// it shares a path shape with `POST .../connectors/{connector_name}/{action}`.
+    #[test]
+    fn every_table_entry_resolves_from_a_concrete_path() {
+        for (method, pattern, role) in ROUTE_MIN_ROLE {
+            let path = concrete_path(pattern);
+            let resolved = classify(method, &path);
+            assert_eq!(
+                resolved,
+                Some((*pattern, *role)),
+                "{method} {path} resolved to {resolved:?}, expected {pattern}"
+            );
+        }
+    }
+
+    /// A literal segment wins over a placeholder, and a placeholder still
+    /// catches everything else, so both siblings keep their own rule.
+    #[test]
+    fn a_literal_route_wins_over_a_placeholder_sibling() {
+        let base = "/v0/pipelines/p/tables/t/connectors/c";
+        assert_eq!(
+            classify("GET", &format!("{base}/completion_token")),
+            Some((
+                "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token",
+                Some(Role::Write)
+            ))
+        );
+        assert_eq!(
+            classify("GET", &format!("{base}/stats")),
+            Some((
+                "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/stats",
+                Some(Role::Read)
+            ))
+        );
+        assert_eq!(
+            classify("POST", &format!("{base}/start")),
+            Some((
+                "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}",
+                Some(Role::Write)
+            ))
+        );
+        // The method is part of the match: no GET entry has that shape.
+        assert_eq!(classify("GET", &format!("{base}/start")), None);
     }
 
     /// Systematic matrix: for every classified route and every role, a request
@@ -268,7 +409,8 @@ mod test {
         for (method, pattern, min) in ROUTE_MIN_ROLE {
             for role in all_roles {
                 let principal = AuthenticatedPrincipal::for_test(role);
-                let allowed = authorize(method, Some(pattern), Some(&principal)).is_ok();
+                let allowed =
+                    authorize(method, true, &concrete_path(pattern), Some(&principal)).is_ok();
                 let expected = match min {
                     None => true, // any authenticated principal
                     Some(required) => role >= *required,
@@ -281,7 +423,7 @@ mod test {
             // A request with no principal at all is always refused on a
             // classified route (fail closed).
             assert!(
-                authorize(method, Some(pattern), None).is_err(),
+                authorize(method, true, &concrete_path(pattern), None).is_err(),
                 "{method} {pattern}: missing principal must be denied"
             );
         }
@@ -403,6 +545,16 @@ mod test {
                     .route(
                         "/tenants",
                         web::get().to(|| async { HttpResponse::Ok().finish() }),
+                    )
+                    // Registered in the same order as the real app: the
+                    // placeholder route first, the literal one behind it.
+                    .route(
+                        "/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}",
+                        web::post().to(|| async { HttpResponse::Ok().finish() }),
+                    )
+                    .route(
+                        "/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token",
+                        web::get().to(|| async { HttpResponse::Ok().finish() }),
                     ),
             ),
         )
@@ -426,6 +578,23 @@ mod test {
         // owner-only tenant list: admin refused, owner admitted.
         assert_eq!(call("GET", "/v0/tenants", "admin").await.status(), 403);
         assert_eq!(call("GET", "/v0/tenants", "owner").await.status(), 200);
+
+        // A route whose path is also claimed by an earlier placeholder route of
+        // another method keeps its own rule, rather than resolving to that
+        // route and being denied as unclassified.
+        let token = "/v0/pipelines/p/tables/t/connectors/c/completion_token";
+        assert_eq!(call("GET", token, "write").await.status(), 200);
+        assert_eq!(call("GET", token, "read").await.status(), 403);
+        assert_eq!(
+            call(
+                "POST",
+                "/v0/pipelines/p/tables/t/connectors/c/start",
+                "write"
+            )
+            .await
+            .status(),
+            200
+        );
     }
 
     /// The authenticated `/v0` surface, enumerated from the generated OpenAPI
