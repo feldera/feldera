@@ -358,14 +358,6 @@ AS SELECT {view_expr} AS x FROM t1;
             timeout_s=120.0,
             poll_interval_s=1.0,
         )
-        # Transmission lags processing; wait for the count instead of
-        # asserting a single racy read, then check it does not overshoot.
-        wait_for_condition(
-            f"output connector transmits {expected_transmitted_records} records",
-            lambda: transmitted_records() >= expected_transmitted_records,
-            timeout_s=120.0,
-            poll_interval_s=1.0,
-        )
         assert transmitted_records() == expected_transmitted_records
 
     pipeline = PipelineBuilder(
@@ -514,14 +506,6 @@ AS SELECT {view_expr} AS x FROM t1;
         wait_for_condition(
             f"output connector reaches {min_processed_records} processed records",
             lambda: processed_records() >= min_processed_records,
-            timeout_s=120.0,
-            poll_interval_s=1.0,
-        )
-        # Transmission lags processing; wait for the count instead of
-        # asserting a single racy read, then check it does not overshoot.
-        wait_for_condition(
-            f"output connector transmits {expected_transmitted_records} records",
-            lambda: transmitted_records() >= expected_transmitted_records,
             timeout_s=120.0,
             poll_interval_s=1.0,
         )
