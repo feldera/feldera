@@ -134,6 +134,19 @@ fn is_active_dv(dv: &DeletionVectorDescriptor) -> bool {
     dv.cardinality > 0
 }
 
+/// The table root as a base URL guaranteed to end in `/`, so string-joining a
+/// relative `Add.path` yields a well-formed URL. delta-rs normalizes the location
+/// to a trailing slash only when it has a path, so a root with none (`uc://cat.db.tbl`,
+/// or a table at a bucket root) would otherwise collapse into the joined file name.
+fn table_root_base(table: &DeltaTable) -> String {
+    let root = table.log_store().root_url().to_string();
+    if root.ends_with('/') {
+        root
+    } else {
+        format!("{root}/")
+    }
+}
+
 /// Build the `DataFrame` that streams a CDC transaction to the circuit.
 ///
 /// Equivalent (in SQL) to:
@@ -3201,11 +3214,11 @@ impl DeltaTableInputEndpointInner {
     /// [`Self::project_cdc_columns`] keeps), so they line up by position for the
     /// `EXCEPT ALL` in `build_cdc_dataframe` and never decode unused columns.
     ///
-    /// Plain files use the table's `root_url()`, not the synthetic
-    /// `delta-rs://` URL from `object_store_url()`. The latter folds the table
-    /// path into the URL host (slashes become dashes), which routes DataFusion's
-    /// object store but is malformed once joined with `Add.path`.
-    /// `start_input_endpoint` registers the store under `root_url()`.
+    /// Plain files are addressed under the table root (see [`table_root_base`]),
+    /// not the synthetic `delta-rs://` URL from `object_store_url()`. The latter
+    /// folds the table path into the URL host (slashes become dashes), which
+    /// routes DataFusion's object store but is malformed once joined with
+    /// `Add.path`. `start_input_endpoint` registers the store under `root_url()`.
     async fn cdc_side_dataframe(
         &self,
         table: &DeltaTable,
@@ -3226,12 +3239,8 @@ impl DeltaTableInputEndpointInner {
         let mut dfs: Vec<DataFrame> = Vec::new();
 
         if !plain.is_empty() {
-            let log_store = table.log_store();
-            let root_url = log_store.root_url();
-            let files = plain
-                .iter()
-                .map(|p| format!("{}{}", root_url.as_str(), p))
-                .collect();
+            let base = table_root_base(table);
+            let files = plain.iter().map(|p| format!("{base}{p}")).collect();
             let listing_table = Arc::new(self.create_parquet_table(files, description).await?);
             let df = self.datafusion.read_table(listing_table).map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading Parquet files: {e}")
@@ -3348,10 +3357,11 @@ impl DeltaTableInputEndpointInner {
                 })
                 .await?
             } else {
-                // Address files via the table's real `root_url()` (e.g. `file:///...`
-                // or `s3://bucket/prefix/`). See `cdc_side_dataframe` for why we
-                // don't use `object_store_url()` here.
-                let full_path = format!("{}{}", table.log_store().root_url().as_str(), path);
+                // Address files under the table root (e.g. `file:///...`,
+                // `s3://bucket/prefix/`, or `uc://cat.db.tbl/`). See
+                // `cdc_side_dataframe` for why we don't use `object_store_url()`,
+                // and `table_root_base` for why the root is slash-normalized.
+                let full_path = format!("{}{}", table_root_base(table), path);
                 Arc::new(
                     self.create_parquet_table(vec![full_path], &description)
                         .await?,
