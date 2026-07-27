@@ -4910,3 +4910,41 @@ fn test_postprocessor_on_delta_output_fails() {
         "error should name the unsupported transport, got: {error}"
     );
 }
+
+/// A command whose reply channel closes without a reply must report that the
+/// controller is gone, not panic.
+///
+/// [`Command::flush`] answers every command the circuit thread can still see when
+/// it exits, but a command that arrives while the thread is already tearing down
+/// is never seen, and neither is anything queued when the thread unwinds on a
+/// panic: those commands are dropped unanswered. `/suspend` awaits its reply
+/// inside a spawned task whose `JoinHandle` is discarded, so panicking there is
+/// silent and leaves the pipeline with no outcome recorded at all.
+#[test]
+fn a_dropped_reply_or_controller_exit_reports_controller_exit() {
+    use crate::controller::{Command, ControllerError, reply_or_controller_exit};
+    use std::sync::Arc;
+
+    type SuspendReply = oneshot::Receiver<Result<(), Arc<ControllerError>>>;
+    fn suspend_command() -> (Command, SuspendReply) {
+        let (sender, receiver) = oneshot::channel();
+        let command = Command::Suspend(Box::new(move |result| {
+            let _ = sender.send(result);
+        }));
+        (command, receiver)
+    }
+
+    // Flushed: the caller is told the controller exited.
+    let (command, receiver) = suspend_command();
+    command.flush();
+    let error =
+        reply_or_controller_exit(receiver.blocking_recv()).expect_err("a flush reports an error");
+    assert!(matches!(*error, ControllerError::ControllerExit));
+
+    // Dropped unanswered: the caller must be told the same thing.
+    let (command, receiver) = suspend_command();
+    drop(command);
+    let error = reply_or_controller_exit(receiver.blocking_recv())
+        .expect_err("a dropped reply reports an error");
+    assert!(matches!(*error, ControllerError::ControllerExit));
+}
