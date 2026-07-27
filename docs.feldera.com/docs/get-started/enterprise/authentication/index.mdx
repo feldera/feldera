@@ -169,26 +169,23 @@ Both need planning, because a tenant is where pipelines live.
 
 A tenant is identified by its **name** alone. The name is derived from the token
 on each login, by whichever [tenant assignment strategy](#tenant-assignment-strategies)
-you configured. A tenant also records the issuer it was first seen under, but
-that is provenance only: it does not take part in identifying the tenant, so
-changing the issuer never creates a second tenant of the same name.
+you configured.
 
 A user is identified by the pair `(issuer, subject)`. That pair is what
 memberships and roles hang off, and unlike the tenant name it **does** include
 the issuer, because OIDC only guarantees `sub` to be unique within one issuer.
 
-The practical consequence is worth stating plainly: a tenant can survive a
-provider change, but the users in it cannot. They arrive as new identities and
-must be granted their roles again.
+The consequence is that a tenant can survive a provider change, but the users in
+it cannot. They arrive as new identities and must be granted their roles again.
 
 ### Enabling authentication on an existing deployment
 
 Without authentication, everything lives in one built-in tenant named `default`,
 whose id is the all-zero UUID `00000000-0000-0000-0000-000000000000`. Once
 authentication is on, each login resolves to a tenant named by your chosen
-strategy, never to `default`, so pipelines and API keys created beforehand are
-not visible to ordinary logins. The data is intact, just in a tenant nobody
-resolves to any more.
+strategy, which is no longer `default`, so pipelines and API keys created while
+authentication was disabled are no longer visible to ordinary logins. The data
+is intact, just in a tenant nobody resolves to any more.
 
 A platform [owner](/get-started/enterprise/authentication/roles) can still reach
 it by naming that tenant explicitly:
@@ -199,8 +196,45 @@ curl -H "Authorization: Bearer $OWNER_TOKEN" \
      https://<your-host>/v0/pipelines
 ```
 
-Recreate the resources in a regular tenant from there. Plan this before enabling
-authentication on a deployment that already holds pipelines.
+You have two ways to go on from there:
+
+- Recreate the resources in the tenant your logins now reach, then stop and
+  delete the pipelines left behind in `default`. Deleting them matters: a
+  pipeline nobody can see still holds its Kubernetes pods and volumes, running
+  and unaccounted for.
+- Put `default` in that tenant's place, by giving it the new tenant name your
+  logins resolve.
+
+To rename the `default` tenant, `00000000-0000-0000-0000-000000000000`, to
+`acme.us-west1.idp.com`:
+
+```bash
+curl -X PATCH -H "Authorization: Bearer $OWNER_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"name": "acme.us-west1.idp.com", "displace_existing": true}' \
+     https://<your-host>/v0/tenants/00000000-0000-0000-0000-000000000000
+```
+
+`displace_existing` is what makes this work. The first login after the switch
+created a tenant under `acme.us-west1.idp.com` already, and every request
+re-creates that name, so a plain rename, with `displace_existing: false`,
+conflicts. With `displace_existing`, the freshly created `acme.us-west1.idp.com`
+is renamed to `acme.us-west1.idp.com (<its id>)`, reported in the response under
+`displaced`, and `default` takes the name. From the next request on,
+`acme.us-west1.idp.com` resolves to the original `default` tenant, with your
+pipelines. The displaced tenant is empty, having been created after the switch,
+so delete it:
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $OWNER_TOKEN" \
+     https://<your-host>/v0/tenants/<displaced id>
+```
+
+The web console does the same: rename `default`, and when the name collides it
+offers to take it, then delete the tenant it displaced.
+
+Plan this before enabling authentication on a deployment that already holds
+pipelines.
 
 ### Changing the identity provider
 
@@ -215,12 +249,24 @@ same from the new provider's tokens:
 
 So the mode that migrates cleanly is managed tenancy, because the tenant name is
 a value you control at the provider rather than something derived from it. If you
-expect to change providers, prefer it.
+expect to change providers regularly, prefer it.
 
 Where the name does change, the old tenant keeps every pipeline and is no longer
 reachable by ordinary logins. Recover it the same way as above: an owner selects
 it with `Feldera-Tenant` (by name or UUID, and `GET /v0/tenants` lists both) and
-moves what is needed.
+moves what is needed, or gives it the name the new provider produces, with
+`displace_existing`, so the logins land back on it.
+
+Whichever way you go, do not leave pipelines behind in a tenant nobody reaches.
+They keep their Kubernetes pods and volumes running, and nobody is watching
+them. Stop and delete the pipelines, then delete the empty tenant with
+`DELETE /v0/tenants/{tenant_id}`.
+
+The destructive rename is the opposite one: taking a name away from the tenant
+whose users still arrive under it. Rename `acme.us-west1.idp.com` to `tmp` while
+the provider keeps asserting `acme.us-west1.idp.com`, and the next request from
+those users re-creates that name as an empty tenant, which is where they then
+work. Rename a tenant only to a name you want its users to arrive under.
 
 :::warning Roles are not carried across a provider change
 Even when the tenant survives, its members do not. A membership is keyed to

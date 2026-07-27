@@ -4,6 +4,7 @@ import {
   type CombinedStatus as _CombinedStatus,
   checkpointPipeline as _checkpointPipeline,
   createTenant as _createTenant,
+  deleteTenant as _deleteTenant,
   deleteApiKey as _deleteApiKey,
   deleteOidcTrust as _deleteOidcTrust,
   deletePipeline as _deletePipeline,
@@ -26,6 +27,7 @@ import {
   listTenantUsers as _listTenantUsers,
   type ProgramStatus as _ProgramStatus,
   patchPipeline as _patchPipeline,
+  patchTenant as _patchTenant,
   postApiKey as _postApiKey,
   postOidcTrust as _postOidcTrust,
   postPipeline as _postPipeline,
@@ -709,6 +711,31 @@ export const getTenants = (options?: FetchOptions) =>
 // issuer server-side; it is not caller-settable.
 export const createTenant = (name: string, options?: FetchOptions) =>
   mapResponse(_createTenant({ body: { name }, ...options }), (v) => v)
+
+// Renaming changes only the name. A login resolves its tenant by name, so the
+// new name is what the identity provider must assert for those users to land here.
+// `displaceExisting` takes the name from the tenant that holds it, which is how a
+// tenant no login reaches is recovered: the name it needs is the one the first
+// login already created a tenant under.
+export const renameTenant = (
+  tenantId: string,
+  name: string,
+  displaceExisting = false,
+  options?: FetchOptions
+) =>
+  mapResponse(
+    _patchTenant({
+      path: { tenant_id: tenantId },
+      body: { name, displace_existing: displaceExisting },
+      ...options
+    }),
+    (v) => v
+  )
+
+// Refused unless the tenant holds no pipelines, API keys or OIDC trusts, since
+// everything tenant-scoped cascades on the delete.
+export const deleteTenant = (tenantId: string, options?: FetchOptions) =>
+  mapResponse(_deleteTenant({ path: { tenant_id: tenantId }, ...options }), (v) => v)
 
 export const dismissDeploymentError = (pipeline_name: string) =>
   mapResponse(postPipelineDismissError({ path: { pipeline_name } }), (v) => v)

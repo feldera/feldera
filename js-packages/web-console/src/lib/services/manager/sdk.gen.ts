@@ -33,6 +33,9 @@ import type {
   DeletePipelineData,
   DeletePipelineErrors,
   DeletePipelineResponses,
+  DeleteTenantData,
+  DeleteTenantErrors,
+  DeleteTenantResponses,
   DeleteTenantUserData,
   DeleteTenantUserErrors,
   DeleteTenantUserResponses,
@@ -149,6 +152,9 @@ import type {
   PatchPipelineData,
   PatchPipelineErrors,
   PatchPipelineResponses,
+  PatchTenantData,
+  PatchTenantErrors,
+  PatchTenantResponses,
   PipelineAdhocSqlData,
   PipelineAdhocSqlErrors,
   PipelineAdhocSqlResponses,
@@ -1967,7 +1973,7 @@ export const putTenantUser = <ThrowOnError extends boolean = true>(
   )
 
 /**
- * List tenants
+ * List Tenants
  *
  * Required role: `owner`.
  *
@@ -1989,10 +1995,9 @@ export const listTenants = <ThrowOnError extends boolean = true>(
  * Required role: `owner`.
  *
  * Explicitly create a tenant, rather than relying on first login.
- * The tenant is keyed to the platform's configured OIDC issuer (statically set
- * at deploy time, e.g. via Helm), so that logins from that issuer resolve into
- * it; the issuer is not caller-settable. Fails with a conflict if a tenant with
- * the same name already exists for that issuer.
+ * A login resolves its tenant by name, so a user whose identity provider
+ * asserts this name lands in the tenant created here. Fails with a conflict if
+ * the name is already taken.
  */
 export const createTenant = <ThrowOnError extends boolean = true>(
   options: Options<CreateTenantData, ThrowOnError>
@@ -2001,6 +2006,71 @@ export const createTenant = <ThrowOnError extends boolean = true>(
     responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/tenants',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    }
+  })
+
+/**
+ * Delete Tenant
+ *
+ * Required role: `owner`.
+ *
+ * Delete a tenant that holds nothing. Its members lose the membership, and a
+ * login that still resolves this tenant's name simply re-creates it, empty.
+ *
+ * The tenant must hold no pipelines, API keys or OIDC trust relationships;
+ * otherwise the request fails with a conflict. Everything tenant-scoped
+ * cascades on this delete, so the emptiness rule is what keeps a mistyped
+ * identifier from taking a live tenant's pipelines with it. Delete those
+ * resources first if you mean to.
+ */
+export const deleteTenant = <ThrowOnError extends boolean = true>(
+  options: Options<DeleteTenantData, ThrowOnError>
+) =>
+  (options.client ?? client).delete<
+    DeleteTenantResponses,
+    DeleteTenantErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/tenants/{tenant_id}',
+    ...options
+  })
+
+/**
+ * Rename Tenant
+ *
+ * Required role: `owner`.
+ *
+ * Change a tenant's name. Only the name changes: pipelines, API keys, members
+ * and OIDC trust relationships all reference the tenant by its identifier and
+ * are unaffected.
+ *
+ * A login resolves its tenant by name, so renaming decides which tenant those
+ * users reach. Two consequences follow. Renaming a tenant away from a name the
+ * identity provider still asserts sends its users to a new, empty tenant on
+ * their next request, which re-creates the name. And a tenant that no login
+ * reaches, such as `default` after authentication is switched on, is recovered
+ * by giving it the name logins do resolve.
+ *
+ * Recovery normally wants a name that is already taken, by the tenant the
+ * first login created. Set `displace_existing` to take it: that tenant is
+ * renamed to `<name> (<id>)` in the same transaction and keeps everything it
+ * had. One step is what makes recovery possible at all, since freeing the name
+ * and claiming it as two calls loses to the next request re-creating it.
+ */
+export const patchTenant = <ThrowOnError extends boolean = true>(
+  options: Options<PatchTenantData, ThrowOnError>
+) =>
+  (options.client ?? client).patch<PatchTenantResponses, PatchTenantErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/tenants/{tenant_id}',
     ...options,
     headers: {
       'Content-Type': 'application/json',
