@@ -15134,16 +15134,17 @@
         "required": [
           "id",
           "name",
-          "provider"
+          "initial_provider"
         ],
         "properties": {
           "id": {
             "$ref": "#/components/schemas/TenantId"
           },
-          "name": {
-            "type": "string"
+          "initial_provider": {
+            "type": "string",
+            "description": "The OIDC issuer this tenant was first provisioned under. Provenance\nonly: a tenant is resolved by name, so this does not affect which tenant\na login reaches."
           },
-          "provider": {
+          "name": {
             "type": "string"
           }
         }

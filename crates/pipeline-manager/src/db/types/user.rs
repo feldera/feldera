@@ -44,5 +44,8 @@ pub struct TenantMember {
 pub struct TenantInfo {
     pub id: TenantId,
     pub name: String,
-    pub provider: String,
+    /// The OIDC issuer this tenant was first provisioned under. Provenance
+    /// only: a tenant is resolved by name, so this does not affect which tenant
+    /// a login reaches.
+    pub initial_provider: String,
 }

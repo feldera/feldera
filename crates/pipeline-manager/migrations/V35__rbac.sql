@@ -152,4 +152,13 @@ BEGIN
 END $$;
 
 ALTER TABLE tenant ADD CONSTRAINT unique_tenant_name UNIQUE (tenant);
+
+-- Now that the column keys nothing, name it for what it holds: the OIDC issuer
+-- the tenant was first provisioned under, kept for provenance. `provider` read
+-- like a live property of the tenant, which invited exactly the coupling this
+-- section removes.
+--
+-- `app_user.provider` keeps its name: there the issuer is part of the identity,
+-- because OIDC only guarantees `sub` to be unique within one issuer.
+ALTER TABLE tenant RENAME COLUMN provider TO initial_provider;
 -- END tenant identity

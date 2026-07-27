@@ -687,8 +687,8 @@ pub(crate) struct TenantRecord {
     /// Corresponds to the sub or subscriber from a claim
     pub tenant: String,
 
-    /// Corresponds to the identity provider from a claim
-    pub provider: String,
+    /// The OIDC issuer this tenant was first provisioned under.
+    pub initial_provider: String,
 }
 
 const DEFAULT_TENANT_ID: TenantId = TenantId(Uuid::nil());
@@ -698,7 +698,7 @@ impl TenantRecord {
         Self {
             id: DEFAULT_TENANT_ID,
             tenant: "default".to_string(),
-            provider: "default".to_string(),
+            initial_provider: "default".to_string(),
         }
     }
 }
