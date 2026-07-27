@@ -105,7 +105,6 @@ use std::ffi::OsStr;
 use std::hash::{BuildHasherDefault, DefaultHasher, Hash, Hasher};
 use std::io::ErrorKind;
 use std::mem::take;
-use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -271,19 +270,13 @@ pub(crate) struct ServerState {
     /// Notified when `desired_status` or `phase` changes.
     desired_status_change: Arc<Notify>,
 
-    /// `phase` nests inside `controller`.
-    ///
-    /// Use `controller()`, `take_controller()`, `set_controller()` to access.
-    ///
-    /// This lock is only held momentarily.
-    controller: Mutex<Option<Controller>>,
-
     /// Leaf lock (no more locks may be taken while holding it).
     ///
-    /// Use `phase()` and `set_phase()` to access.
+    /// Use `controller()`, `phase()` and the [Lifecycle] transitions to
+    /// access.
     ///
     /// This lock is only held momentarily.
-    phase: Mutex<PipelinePhase>,
+    lifecycle: Mutex<Lifecycle>,
 
     /// Leaf lock.
     checkpoint_state: Mutex<CheckpointState>,
@@ -342,6 +335,41 @@ pub(crate) struct ServerState {
     leases: Mutex<HashMap<Step, Lease>>,
 }
 
+/// Pipeline phase + controller.
+///
+/// `controller` and `phase` answer one question between them, so they are
+/// guarded together: several threads publish them concurrently, and updating
+/// them separately lets an observer see a pair that never legitimately occurs.
+///
+/// Every transition that changes both fields does so in one critical section
+/// (see [`ServerState::complete_initialization`], [`ServerState::fail`] and
+/// [`ServerState::suspended`]), so the pair is always consistent and
+/// [`ServerState::lifecycle`] can read it without coordinating with the writers.
+#[derive(Clone)]
+struct Lifecycle {
+    /// Tracks the health of the pipeline.
+    phase: PipelinePhase,
+
+    /// The controller, once initialization has produced one and before a
+    /// failure or a suspend has deallocated it.
+    controller: Option<Controller>,
+}
+
+impl Lifecycle {
+    /// Records `phase`, unless a terminal phase was already recorded: the first
+    /// terminal phase is final (see [`PipelinePhase::is_terminal`]), because a
+    /// thread that reports a later phase is not necessarily better informed.
+    ///
+    /// Returns whether the phase was recorded.
+    fn set_phase(&mut self, phase: PipelinePhase) -> bool {
+        if self.phase.is_terminal() {
+            return false;
+        }
+        self.phase = phase;
+        true
+    }
+}
+
 /// Leases on snapshots of particular steps.
 ///
 /// A lease gives the coordinator the ability to read tables within a step with
@@ -370,10 +398,12 @@ impl ServerState {
         // Max 10 errors per minute
         let rate_limiter = TokenBucketRateLimiter::new(10, Duration::from_secs(60));
         Self {
-            phase: Mutex::new(phase),
+            lifecycle: Mutex::new(Lifecycle {
+                phase,
+                controller: None,
+            }),
             desired_status_change: Arc::default(),
             metadata: md,
-            controller: Mutex::new(None),
             checkpoint_state: Default::default(),
             sync_checkpoint_state: Default::default(),
             desired_status: Mutex::new(desired_status),
@@ -406,11 +436,14 @@ impl ServerState {
         )
     }
 
-    /// Generate an appropriate error when `state.controller` is set to
-    /// `None`, which can mean that the pipeline is initializing, failed to
-    /// initialize, has been shut down or failed.
-    fn missing_controller_error(&self) -> PipelineError {
-        match self.phase() {
+    /// Generate an appropriate error when the controller is `None`, which can
+    /// mean that the pipeline is initializing, failed to initialize, has been
+    /// shut down or failed.
+    ///
+    /// Takes `phase` rather than reading it, because the callers hold the
+    /// `runtime` lock and it is not reentrant.
+    fn missing_controller_error(phase: &PipelinePhase) -> PipelineError {
+        match phase {
             PipelinePhase::Initializing(_) => PipelineError::Initializing,
             PipelinePhase::InitializationError(e) => {
                 PipelineError::InitializationError { error: e.clone() }
@@ -435,30 +468,95 @@ impl ServerState {
 
     /// Grabs a clone of the controller, or an error if there isn't one.
     fn controller(&self) -> Result<Controller, PipelineError> {
-        self.controller
-            .lock()
-            .unwrap()
-            .deref()
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| self.missing_controller_error())
+        let lifecycle = self.lifecycle.lock().unwrap();
+        lifecycle
+            .controller
+            .clone()
+            .ok_or_else(|| Self::missing_controller_error(&lifecycle.phase))
     }
 
-    /// Removes the controller and returns it, or an error if there wasn't one.
+    /// Reads the phase and the controller together, so the caller sees a
+    /// consistent pair.
+    fn lifecycle(&self) -> Lifecycle {
+        self.lifecycle.lock().unwrap().clone()
+    }
+
+    /// Publishes `controller` as the result of a successful initialization.
     ///
-    /// This only makes sense when we're terminating.
-    fn take_controller(&self) -> Result<Controller, PipelineError> {
-        self.controller
-            .lock()
-            .unwrap()
-            .deref_mut()
-            .take()
-            .ok_or_else(|| self.missing_controller_error())
+    /// Returns false without publishing anything if the pipeline has already
+    /// reached a terminal phase, which happens when the circuit thread reports a
+    /// fatal error while `do_bootstrap` is still finishing: the circuit thread
+    /// reports that initialization is complete and then starts stepping the
+    /// circuit right away (see `CircuitThread::run`).  Publishing a controller
+    /// that a failure has already invalidated would claim the pipeline is
+    /// runnable when it is not.
+    fn complete_initialization(&self, controller: Controller) -> bool {
+        let published = {
+            let mut lifecycle = self.lifecycle.lock().unwrap();
+            if lifecycle.set_phase(PipelinePhase::InitializationComplete) {
+                lifecycle.controller = Some(controller);
+                true
+            } else {
+                false
+            }
+        };
+        if published {
+            self.desired_status_change.notify_waiters();
+        }
+        published
     }
 
-    /// Sets the controller.  This should only be done once.
-    fn set_controller(&self, controller: Controller) {
-        *self.controller.lock().unwrap() = Some(controller);
+    /// Records that the pipeline failed with `error`, and returns the controller
+    /// to stop if one was still allocated.
+    ///
+    /// Recording the failure and deallocating the controller in one step keeps
+    /// `/status` from ever seeing a failed pipeline that still advertises a
+    /// controller, or a controller-less pipeline that still advertises
+    /// [`PipelinePhase::InitializationComplete`].
+    fn fail(&self, error: Arc<ControllerError>) -> Option<Controller> {
+        let (recorded, controller) = {
+            let mut lifecycle = self.lifecycle.lock().unwrap();
+            let recorded = lifecycle.set_phase(PipelinePhase::Failed(error));
+            (recorded, lifecycle.controller.take())
+        };
+        if recorded {
+            self.desired_status_change.notify_waiters();
+        }
+        controller
+    }
+
+    /// Records the outcome of a suspend, and returns the controller to stop if
+    /// one was still allocated.
+    ///
+    /// `error` is the suspend's own failure, if it had one.  A pipeline that
+    /// already failed keeps that failure: a suspend gives up waiting for a
+    /// controller as soon as the phase turns terminal, so it arrives here with
+    /// nothing of its own to report even though no checkpoint was written.
+    fn suspended(&self, error: Option<Arc<ControllerError>>) -> Option<Controller> {
+        let phase = match error {
+            Some(error) => PipelinePhase::Failed(error),
+            None => PipelinePhase::Suspended,
+        };
+        let (recorded, controller) = {
+            let mut lifecycle = self.lifecycle.lock().unwrap();
+            let recorded = lifecycle.set_phase(phase);
+            (recorded, lifecycle.controller.take())
+        };
+        if recorded {
+            self.desired_status_change.notify_waiters();
+        }
+        controller
+    }
+
+    /// Deallocates the controller without recording why, so that a test can
+    /// simulate a pipeline process dying without reporting anything.
+    ///
+    /// Production code deallocates the controller only as part of recording a
+    /// terminal phase, which is what keeps the two consistent; see
+    /// [`Lifecycle`].
+    #[cfg(test)]
+    fn abandon_controller(&self) -> Option<Controller> {
+        self.lifecycle.lock().unwrap().controller.take()
     }
 
     fn desired_status(&self) -> RuntimeDesiredStatus {
@@ -474,42 +572,27 @@ impl ServerState {
     }
 
     fn phase(&self) -> PipelinePhase {
-        self.phase.lock().unwrap().clone()
+        self.lifecycle.lock().unwrap().phase.clone()
     }
 
-    /// Records `phase`, unless a terminal phase was already recorded: the first
-    /// terminal phase is final (see [`PipelinePhase::is_terminal`]).
+    /// Records `phase` and leaves the controller as it is.
     ///
-    /// Several threads publish phases concurrently, so without this rule the
-    /// last writer wins even when it knows less:
+    /// Use this for the phases that report progress through initialization, and
+    /// for an initialization failure: none of them allocate or deallocate the
+    /// controller.  The transitions that do are
+    /// [`Self::complete_initialization`], [`Self::fail`] and
+    /// [`Self::suspended`], which update the phase and the controller together.
     ///
-    /// - The circuit thread reports that initialization is complete and then
-    ///   immediately starts stepping the circuit (see `CircuitThread::run`), so a
-    ///   fatal error can reach `error_handler` while `do_bootstrap` is still
-    ///   finishing.  Overwriting that failure with
-    ///   [`PipelinePhase::InitializationComplete`] strands the pipeline in a
-    ///   phase claiming initialization succeeded even though `error_handler` has
-    ///   already deallocated the controller, which `/status` then reports as
-    ///   `ControllerMissingAfterInitialization` forever.
-    ///
-    /// - The `/suspend` task treats an already-terminal phase as its cue to stop
-    ///   waiting for a controller, and it reaches its own `set_phase` with no
-    ///   suspend error to report.  Overwriting a recorded failure with
-    ///   [`PipelinePhase::Suspended`] reports a clean suspend for a pipeline that
-    ///   failed without writing a checkpoint.
+    /// See [`Lifecycle::set_phase`] for what happens if a terminal phase was
+    /// already recorded.
     pub fn set_phase(&self, phase: PipelinePhase) {
-        {
-            let mut current = self.phase.lock().unwrap();
-            if current.is_terminal() {
-                return;
-            }
-            *current = phase;
+        // Bind the result rather than testing it inline: a temporary lock guard in
+        // an `if` condition lives until the end of the `if`, and `lifecycle` is a
+        // leaf lock, so the notification below must not run while it is held.
+        let recorded = self.lifecycle.lock().unwrap().set_phase(phase);
+        if recorded {
+            self.desired_status_change.notify_waiters();
         }
-        // Notify without holding the phase lock: `controller()` reports a missing
-        // controller by reading the phase, so it takes the controller lock and
-        // then the phase lock.  Nothing may hold the phase lock while acquiring
-        // another.
-        self.desired_status_change.notify_waiters();
     }
 }
 
@@ -1154,19 +1237,10 @@ fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>, tag: Op
         error!("{error}");
     }
 
-    if is_fatal_controller_error(&error) {
-        // Record the failure before deallocating the controller, and record it
-        // even when there is no controller to deallocate.  `do_bootstrap`
-        // publishes the controller and the phase separately, and the circuit
-        // thread runs concurrently with both, so gating the phase update on
-        // `take_controller` either drops the error (it arrived before the
-        // controller was published) or leaves `/status` briefly reporting a
-        // controller-less `InitializationComplete` as
-        // `ControllerMissingAfterInitialization`, masking `error`.
-        state.set_phase(PipelinePhase::Failed(error));
-        if let Ok(controller) = state.take_controller() {
-            controller.initiate_stop();
-        }
+    if is_fatal_controller_error(&error)
+        && let Some(controller) = state.fail(error)
+    {
+        controller.initiate_stop();
     }
 }
 
@@ -1312,11 +1386,17 @@ fn do_bootstrap(
         RuntimeDesiredStatus::Paused | RuntimeDesiredStatus::Suspended => controller.pause(),
         RuntimeDesiredStatus::Running => controller.start(),
     };
-    state.set_controller(controller);
+    // Publish under `desired_status` so that `/start` and `/pause` either run
+    // before this and are picked up by the `match` above, or run after and find
+    // the controller.
+    let initialized = state.complete_initialization(controller);
     drop(desired_status);
 
-    info!("Pipeline initialization complete");
-    state.set_phase(PipelinePhase::InitializationComplete);
+    if initialized {
+        info!("Pipeline initialization complete");
+    } else {
+        warn!("Pipeline failed while initialization was being completed");
+    }
 
     Ok(())
 }
@@ -1569,9 +1649,12 @@ fn get_status(
         None
     };
 
-    // Current status
-    match state.controller() {
-        Ok(controller) => {
+    // Current status.  Read the phase and the controller as one consistent pair:
+    // a controller is present only while the pipeline has not reached a terminal
+    // phase, so the controller's own view is authoritative whenever it is set.
+    let Lifecycle { phase, controller } = state.lifecycle();
+    match controller {
+        Some(controller) => {
             fn inner_status(
                 runtime_desired_status: RuntimeDesiredStatus,
                 controller: &Controller,
@@ -1642,13 +1725,13 @@ fn get_status(
                 }
             };
         }
-        Err(_) => {
+        None => {
             // Controller isn't set.
         }
     };
 
-    // The controller is not set: acquire the phase read lock
-    match state.phase() {
+    // The controller is not set, so the phase says why.
+    match phase {
         PipelinePhase::Initializing(inner) => match inner {
             InitializationState::Starting => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Initializing,
@@ -2315,18 +2398,14 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
                     };
                     tokio::time::sleep(Duration::from_millis(50)).await;
                 }
-                // A failed suspend leaves the pipeline unsuspended: report it as
-                // a fatal error so the pipeline manager records the failure
-                // rather than a clean suspend. The circuit is deliberately left
-                // running on failure (see the `SuspendCommand` handler in
+                // A failed suspend leaves the pipeline unsuspended: `suspended`
+                // reports it as a fatal error so the pipeline manager records the
+                // failure rather than a clean suspend. The circuit is deliberately
+                // left running on failure (see the `SuspendCommand` handler in
                 // `controller.rs`), so `/status` never observed a `Terminated`
-                // circuit to mask as `Suspended`; this phase is what the poll
-                // sees once the controller is deallocated below.
-                state.set_phase(match suspend_error {
-                    Some(error) => PipelinePhase::Failed(error),
-                    None => PipelinePhase::Suspended,
-                });
-                if let Ok(controller) = state.take_controller()
+                // circuit to mask as `Suspended`; this phase is what the poll sees
+                // once the controller is deallocated.
+                if let Some(controller) = state.suspended(suspend_error)
                     && let Err(error) = controller.async_stop().await
                 {
                     error!("stopping controller failed ({error})");
@@ -3468,12 +3547,19 @@ outputs:
         // Baseline: a healthy pipeline reports a status, not an error.
         assert!(get_status(&state).is_ok());
 
-        // The circuit thread reports a fatal error after `set_controller` but
-        // before the bootstrap tail publishes the phase.
+        // Rewind to just before the bootstrap tail publishes its result.
+        let controller = state.abandon_controller().expect("controller present");
+
+        // The circuit thread reports a fatal error, which must be recorded even
+        // though there is no controller to deallocate yet.
         let weak = Arc::downgrade(&state.clone().into_inner());
         error_handler(&weak, Arc::new(ControllerError::DbspPanic), None);
-        // ... and then the bootstrap tail runs its last statement.
-        state.set_phase(PipelinePhase::InitializationComplete);
+
+        // The bootstrap tail then finishes, and must not claim success.
+        assert!(
+            !state.complete_initialization(controller),
+            "the bootstrap tail published a controller that a failure invalidated"
+        );
 
         let error =
             get_status(&state).expect_err("a pipeline that hit a fatal error must report an error");
@@ -3508,7 +3594,6 @@ outputs:
 
         let weak = Arc::downgrade(&state.clone().into_inner());
         error_handler(&weak, Arc::new(ControllerError::DbspPanic), None);
-        state.set_phase(PipelinePhase::InitializationComplete);
 
         let error =
             get_status(&state).expect_err("a pipeline that hit a fatal error must report an error");
@@ -3519,8 +3604,8 @@ outputs:
     /// suspend.
     ///
     /// The `/suspend` task waits for a controller to suspend and treats a
-    /// terminal phase as its cue to stop waiting.  It then reaches its own
-    /// `set_phase` with no suspend error of its own to report, so
+    /// terminal phase as its cue to stop waiting.  It then reaches `suspended`
+    /// with no suspend error of its own to report, so
     /// `PipelinePhase::Suspended` must not replace the recorded failure: the
     /// pipeline failed and wrote no checkpoint, and the pipeline manager would
     /// otherwise record a successful suspend and later try to resume from it.
@@ -3540,8 +3625,9 @@ outputs:
 
         let weak = Arc::downgrade(&state.clone().into_inner());
         error_handler(&weak, Arc::new(ControllerError::DbspPanic), None);
-        // What the `/suspend` task writes once it stops waiting for a controller.
-        state.set_phase(PipelinePhase::Suspended);
+        // What the `/suspend` task records once it stops waiting for a controller,
+        // having no suspend error of its own to report.
+        assert!(state.suspended(None).is_none());
 
         let error =
             get_status(&state).expect_err("a pipeline that hit a fatal error must report an error");
@@ -3701,7 +3787,7 @@ outputs:
     /// tail must be replayed on the next restart, and wait for the storage lock
     /// to be released so a new server can reopen the same storage directory.
     pub(super) async fn crash_pipeline(state: &WebData<ServerState>, storage_dir: &Path) {
-        let controller = state.take_controller().expect("controller present");
+        let controller = state.abandon_controller().expect("controller present");
         tokio::task::spawn_blocking(move || controller.stop())
             .await
             .unwrap()
