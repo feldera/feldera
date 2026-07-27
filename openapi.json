@@ -11054,7 +11054,7 @@
           "total_processed_input_records": {
             "type": "integer",
             "format": "int64",
-            "description": "The number of input records processed by the circuit.\n\nThis metric tracks the end-to-end progress of the pipeline: the output\nof this endpoint is equal to the output of the circuit after\nprocessing `total_processed_input_records` records.\n\nIn a multihost pipeline, this count reflects only the input records\nprocessed on the same host as the output endpoint, which is not usually\nmeaningful.",
+            "description": "The number of input records processed by the circuit.\n\nThis metric tracks the end-to-end progress of the pipeline: the output\nof this endpoint is equal to the output of the circuit after\nprocessing `total_processed_input_records` records.\n\nThe counter never runs ahead of the endpoint's output. It advances only\nonce the endpoint has processed every batch derived from those records,\nwhich means transmitting them, or discarding them while silent\nbootstrapping suppresses the endpoint's output.\n\nIn a multihost pipeline, this count reflects only the input records\nprocessed on the same host as the output endpoint, which is not usually\nmeaningful.",
             "minimum": 0
           },
           "total_processed_steps": {
