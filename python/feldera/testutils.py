@@ -171,9 +171,10 @@ def unique_pipeline_name(base_name: str) -> str:
     """
     In CI, multiple tests of different runs can run against the same Feldera instance, we
     make sure the pipeline names they use are unique by appending the first 5 characters
-    of the commit SHA or 'local' if not in CI.
+    of the commit SHA or 'local' if not in CI. FELDERA_TEST_TAG_SUFFIX distinguishes
+    test suites of the same commit running concurrently against one instance.
     """
-    ci_tag = os.getenv("GITHUB_SHA", "local")[:5]
+    ci_tag = os.getenv("GITHUB_SHA", "local")[:5] + os.getenv("FELDERA_TEST_TAG_SUFFIX", "")
     name = f"{ci_tag}_{base_name}"
     # The pipeline name becomes a Kubernetes label value (max 63 chars). Fail here
     # with a clear message rather than letting provisioning hit a cryptic 422.
