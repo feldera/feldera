@@ -3,7 +3,6 @@ use crate::db::operations::utils::maybe_unique_violation;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::user::TenantInfo;
 use deadpool_postgres::Transaction;
-use tracing::error;
 use uuid::Uuid;
 
 /// Retrieves tenant, which is uniquely identified by the tuple (name, provider).
@@ -31,51 +30,43 @@ pub async fn get_or_create_tenant_id_created(
 ) -> Result<(TenantId, bool), DBError> {
     // Atomic get-or-create: a single INSERT ... ON CONFLICT DO NOTHING avoids
     // the SELECT-then-INSERT race where two concurrent first-logins to a fresh
-    // (name, provider) both miss the SELECT, then one INSERT wins and the other
-    // fails with a unique violation. `inserted` (1 vs 0 rows affected) tells us
-    // whether THIS call created the tenant, which decides the first-member-admin
-    // grant in `resolve_login`. A subsequent SELECT always finds the row.
+    // name both miss the SELECT, then one INSERT wins and the other fails with a
+    // unique violation. `inserted` (1 vs 0 rows affected) tells us whether THIS
+    // call created the tenant, which decides the first-member grant in
+    // `resolve_login`. A subsequent SELECT always finds the row.
+    //
+    // The name alone identifies the tenant. `provider` is recorded as the issuer
+    // it was first seen under, and deliberately not matched on: were it part of
+    // the key, changing the configured issuer would miss here and fork a second
+    // tenant of the same name, stranding the pipelines on the first.
     let stmt_insert = txn
         .prepare_cached(
             "INSERT INTO tenant (id, tenant, provider) VALUES ($1, $2, $3) \
-             ON CONFLICT (tenant, provider) DO NOTHING",
+             ON CONFLICT (tenant) DO NOTHING",
         )
         .await?;
     let inserted = txn
         .execute(&stmt_insert, &[&new_id, &name, &provider])
         .await?;
     let stmt_select = txn
-        .prepare_cached("SELECT id FROM tenant WHERE tenant = $1 AND provider = $2")
+        .prepare_cached("SELECT id FROM tenant WHERE tenant = $1")
         .await?;
-    let row = txn.query_one(&stmt_select, &[&name, &provider]).await?;
+    let row = txn.query_one(&stmt_select, &[&name]).await?;
     Ok((TenantId(row.get(0)), inserted == 1))
 }
 
-/// Strict lookup of a tenant by name only, used to resolve a `Feldera-Tenant`
-/// header. Never creates a tenant; errors on miss, and on the ambiguity that a
-/// name shared across providers would create.
+/// Strict lookup of a tenant by name, used to resolve a `Feldera-Tenant` header.
+/// Never creates a tenant; a miss is an error. The name is unique, so at most
+/// one tenant can match.
 pub async fn get_tenant_id_by_name(txn: &Transaction<'_>, name: &str) -> Result<TenantId, DBError> {
     let stmt = txn
         .prepare_cached("SELECT id FROM tenant WHERE tenant = $1")
         .await?;
-    let rows = txn.query(&stmt, &[&name]).await?;
-    match rows.len() {
-        1 => Ok(TenantId(rows[0].get(0))),
-        0 => Err(DBError::UnknownTenantName {
+    let row = txn.query_opt(&stmt, &[&name]).await?;
+    row.map(|row| TenantId(row.get(0)))
+        .ok_or(DBError::UnknownTenantName {
             name: name.to_string(),
-        }),
-        n => {
-            // Tenants are unique per (name, provider), so this needs a second
-            // configured provider to happen at all. Refuse to guess which one.
-            error!(
-                "Tenant name '{name}' resolves to {n} tenants across providers; \
-                 select the tenant by its UUID instead"
-            );
-            Err(DBError::UnknownTenantName {
-                name: name.to_string(),
-            })
-        }
-    }
+        })
 }
 
 /// Strict resolution of a `Feldera-Tenant` selector, used wherever a principal
