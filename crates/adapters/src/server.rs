@@ -1594,22 +1594,22 @@ async fn status_handler(
 /// A successful suspend terminates the circuit before the server installs
 /// [`PipelinePhase::Suspended`] and deallocates the controller (see `/suspend`),
 /// so a status poll landing in that window observes the still-registered
-/// controller in `Terminated`. When a suspend was requested the pipeline is
-/// converging to `Suspended`, so report that clean status rather than a
-/// spurious `PipelineTerminated` error that the pipeline manager would record
-/// as a failed execution.
+/// controller in `Terminated`. Report the clean `Suspended` status the user asked
+/// for rather than a spurious `PipelineTerminated` error that the pipeline
+/// manager would record as a failed execution.
 ///
-/// This branch is reached only for a *successful* suspend: a failed suspend
-/// deliberately leaves the circuit running (see the `SuspendCommand` handler in
-/// `controller.rs`) so that it never masquerades here as a clean `Suspended`;
-/// the `/suspend` handler reports it as [`PipelinePhase::Failed`] instead. Any
-/// termination without a suspend request is an unexpected, fatal termination
-/// and stays an error.
+/// `suspended` must say that a suspend is what terminated the circuit (see
+/// `GlobalControllerMetrics::suspended`), not merely that one was requested. A
+/// circuit that dies while a suspend is pending also lands here, and reporting
+/// that as a clean `Suspended` would have the pipeline manager record a
+/// successful suspend for a pipeline that wrote no checkpoint, and later resume
+/// from a checkpoint that does not exist.
 fn terminated_status(
+    suspended: bool,
     runtime_desired_status: RuntimeDesiredStatus,
     storage_status_details: Option<StorageStatusDetails>,
 ) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
-    if matches!(runtime_desired_status, RuntimeDesiredStatus::Suspended) {
+    if suspended {
         Ok(ExtendedRuntimeStatus {
             runtime_status: RuntimeStatus::Suspended,
             runtime_status_details: json!(""),
@@ -1720,9 +1720,11 @@ fn get_status(
                     RuntimeStatus::Running,
                     storage_status_details,
                 )),
-                PipelineState::Terminated => {
-                    terminated_status(runtime_desired_status, storage_status_details)
-                }
+                PipelineState::Terminated => terminated_status(
+                    controller.status().global_metrics.suspended(),
+                    runtime_desired_status,
+                    storage_status_details,
+                ),
             };
         }
         None => {
@@ -3460,19 +3462,93 @@ mod test_http_helpers {
     /// `PipelinePhase::Suspended`, so `terminated_status` must report a clean
     /// `Suspended` while a suspend is in progress instead of the spurious
     /// `PipelineTerminated` error that flaked `suspend_and_resume_demos`.
-    ///
-    /// A *failed* suspend never reaches `terminated_status`: the `SuspendCommand`
-    /// handler leaves the circuit running instead of terminating it, and the
-    /// `/suspend` handler reports the failure as `PipelinePhase::Failed`.
     #[test]
     fn terminated_status_reports_suspended_while_suspending() {
-        let status = terminated_status(RuntimeDesiredStatus::Suspended, None)
+        let status = terminated_status(true, RuntimeDesiredStatus::Suspended, None)
             .expect("a suspending pipeline must not surface PipelineTerminated");
         assert!(matches!(status.runtime_status, RuntimeStatus::Suspended));
 
-        // An unexpected termination (no suspend requested) stays a fatal error.
-        let error = terminated_status(RuntimeDesiredStatus::Running, None)
+        // An unexpected termination stays a fatal error.
+        let error = terminated_status(false, RuntimeDesiredStatus::Running, None)
             .expect_err("an unexpected termination must remain PipelineTerminated");
+        assert_eq!(error.error.error_code.as_ref(), "PipelineTerminated");
+    }
+
+    /// A completed suspend must read back as `Suspended` while the controller is
+    /// still registered.
+    ///
+    /// The `/suspend` task records [`PipelinePhase::Suspended`] only after
+    /// `async_suspend` returns, so a poll in between sees a live controller whose
+    /// circuit is already `Terminated`. Reporting that as a fatal
+    /// `PipelineTerminated` is what flaked `suspend_and_resume_demos`.
+    /// Suspending the controller directly, without going through `/suspend`,
+    /// leaves the state in exactly that window.
+    #[actix_web::test]
+    async fn completed_suspend_is_reported_before_the_phase_is_recorded() {
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        std::fs::create_dir(&storage_dir).unwrap();
+        let config_str = format!(
+            r#"
+name: test
+workers: 2
+storage_config:
+    path: "{}"
+storage: true
+clock_resolution_usecs:
+inputs:
+outputs:
+"#,
+            storage_dir.display()
+        );
+        let (_server, state) = start_test_server_with_state(
+            &config_str,
+            Uuid::now_v7(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[Some("v0")],
+            false,
+        )
+        .await;
+
+        state
+            .controller()
+            .expect("controller present")
+            .async_suspend()
+            .await
+            .expect("suspend succeeds");
+
+        // The window: the controller is still registered and the phase still says
+        // the pipeline is initialized.
+        assert!(matches!(
+            state.phase(),
+            PipelinePhase::InitializationComplete
+        ));
+        assert!(state.controller().is_ok());
+
+        let status = get_status(&state, false).expect("a completed suspend is not an error");
+        assert!(
+            matches!(status.runtime_status, RuntimeStatus::Suspended),
+            "a completed suspend read back as {:?}",
+            status.runtime_status
+        );
+    }
+
+    /// A circuit that dies while a suspend is pending must not be reported as a
+    /// clean suspend.
+    ///
+    /// Requesting a suspend does not make the termination a suspend: the circuit
+    /// thread also terminates the pipeline when it exits with an error that
+    /// `is_fatal_controller_error` does not classify as fatal, and then nothing
+    /// has written a checkpoint. Reporting `Suspended` would have the pipeline
+    /// manager record a successful suspend and later resume from a checkpoint
+    /// that does not exist, so only the reason recorded by the `SuspendCommand`
+    /// handler may produce it.
+    #[test]
+    fn terminated_status_reports_a_death_during_suspend_as_an_error() {
+        let error = terminated_status(false, RuntimeDesiredStatus::Suspended, None)
+            .expect_err("a pipeline that died while suspending must not report a clean suspend");
         assert_eq!(error.error.error_code.as_ref(), "PipelineTerminated");
     }
 
@@ -3545,7 +3621,7 @@ outputs:
         .unwrap();
 
         // Baseline: a healthy pipeline reports a status, not an error.
-        assert!(get_status(&state).is_ok());
+        assert!(get_status(&state, false).is_ok());
 
         // Rewind to just before the bootstrap tail publishes its result.
         let controller = state.abandon_controller().expect("controller present");
@@ -3561,8 +3637,8 @@ outputs:
             "the bootstrap tail published a controller that a failure invalidated"
         );
 
-        let error =
-            get_status(&state).expect_err("a pipeline that hit a fatal error must report an error");
+        let error = get_status(&state, false)
+            .expect_err("a pipeline that hit a fatal error must report an error");
         assert_ne!(
             error.error.error_code.as_ref(),
             "ControllerMissingAfterInitialization",
@@ -3595,8 +3671,8 @@ outputs:
         let weak = Arc::downgrade(&state.clone().into_inner());
         error_handler(&weak, Arc::new(ControllerError::DbspPanic), None);
 
-        let error =
-            get_status(&state).expect_err("a pipeline that hit a fatal error must report an error");
+        let error = get_status(&state, false)
+            .expect_err("a pipeline that hit a fatal error must report an error");
         assert_eq!(error.error.error_code.as_ref(), "DbspPanic");
     }
 
@@ -3629,8 +3705,8 @@ outputs:
         // having no suspend error of its own to report.
         assert!(state.suspended(None).is_none());
 
-        let error =
-            get_status(&state).expect_err("a pipeline that hit a fatal error must report an error");
+        let error = get_status(&state, false)
+            .expect_err("a pipeline that hit a fatal error must report an error");
         assert_eq!(error.error.error_code.as_ref(), "DbspPanic");
     }
 
