@@ -483,24 +483,25 @@ impl ServerState {
 
     /// Publishes `controller` as the result of a successful initialization.
     ///
-    /// Returns false without publishing anything if the pipeline has already
+    /// Hands `controller` back without publishing it if the pipeline has already
     /// reached a terminal phase, which happens when the circuit thread reports a
     /// fatal error while `do_bootstrap` is still finishing: the circuit thread
     /// reports that initialization is complete and then starts stepping the
     /// circuit right away (see `CircuitThread::run`).  Publishing a controller
     /// that a failure has already invalidated would claim the pipeline is
-    /// runnable when it is not.
-    fn complete_initialization(&self, controller: Controller) -> bool {
+    /// runnable when it is not, and the caller owns stopping the circuit that
+    /// controller belongs to, because nothing else can reach it any more.
+    fn complete_initialization(&self, controller: Controller) -> Result<(), Controller> {
         let published = {
             let mut lifecycle = self.lifecycle.lock().unwrap();
             if lifecycle.set_phase(PipelinePhase::InitializationComplete) {
                 lifecycle.controller = Some(controller);
-                true
+                Ok(())
             } else {
-                false
+                Err(controller)
             }
         };
-        if published {
+        if published.is_ok() {
             self.desired_status_change.notify_waiters();
         }
         published
@@ -1389,13 +1390,21 @@ fn do_bootstrap(
     // Publish under `desired_status` so that `/start` and `/pause` either run
     // before this and are picked up by the `match` above, or run after and find
     // the controller.
-    let initialized = state.complete_initialization(controller);
+    let published = state.complete_initialization(controller);
     drop(desired_status);
 
-    if initialized {
-        info!("Pipeline initialization complete");
-    } else {
-        warn!("Pipeline failed while initialization was being completed");
+    match published {
+        Ok(()) => info!("Pipeline initialization complete"),
+        Err(controller) => {
+            // The failure that refused publication was recorded before the
+            // controller existed, so `fail` had no controller to stop. A circuit
+            // whose step fails keeps stepping (see `CircuitThread::step_circuit`),
+            // so stop it here: this is the last reference to it, and without this
+            // it runs on, holding the storage lock, after the pipeline has been
+            // reported dead.
+            warn!("Pipeline failed while initialization was being completed");
+            controller.initiate_stop();
+        }
     }
 
     Ok(())
@@ -3633,7 +3642,7 @@ outputs:
 
         // The bootstrap tail then finishes, and must not claim success.
         assert!(
-            !state.complete_initialization(controller),
+            state.complete_initialization(controller).is_err(),
             "the bootstrap tail published a controller that a failure invalidated"
         );
 
@@ -3645,6 +3654,81 @@ outputs:
             "the bootstrap tail masked the fatal error"
         );
         assert_eq!(error.error.error_code.as_ref(), "DbspPanic");
+    }
+
+    /// Initialization whose result is refused must stop the circuit it built.
+    ///
+    /// The failure that refuses publication was recorded before the controller
+    /// existed, so `fail` had no controller to stop, and a circuit whose step
+    /// fails keeps stepping (see `CircuitThread::step_circuit`). The bootstrap() tail
+    /// holds the only remaining reference to that circuit, so dropping it instead
+    /// of stopping it leaves the circuit running with nobody able to reach it,
+    /// still holding the storage lock that the next pipeline process needs.
+    #[actix_web::test]
+    async fn a_refused_bootstrap_result_stops_the_circuit() {
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        std::fs::create_dir(&storage_dir).unwrap();
+        let config_str = format!(
+            r#"
+name: test
+workers: 2
+storage_config:
+    path: "{}"
+storage: true
+clock_resolution_usecs:
+inputs:
+outputs:
+"#,
+            storage_dir.display()
+        );
+        let mut config_file = NamedTempFile::new().unwrap();
+        config_file.write_all(config_str.as_bytes()).unwrap();
+        let config = parse_config(config_file.path().display().to_string()).unwrap();
+        let builder = ControllerBuilder::new(&config).unwrap();
+
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing(InitializationState::Starting),
+            String::default(),
+            RuntimeDesiredStatus::Paused,
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            Uuid::now_v7(),
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        // Record the failure before initialization starts, so the tail is
+        // certain to refuse the controller it builds.
+        let weak = Arc::downgrade(&state.clone().into_inner());
+        error_handler(&weak, Arc::new(ControllerError::DbspPanic), None);
+
+        let bootstrap_state = state.clone();
+        tokio::task::spawn_blocking(move || {
+            bootstrap(
+                builder,
+                Box::new(|workers| {
+                    Ok(test_circuit::<TestStruct>(
+                        workers,
+                        &TestStruct::schema(),
+                        &[None],
+                    ))
+                }),
+                bootstrap_state,
+            )
+        })
+        .await
+        .unwrap();
+
+        // Nothing was published and the failure stands.
+        assert!(state.controller().is_err());
+        assert!(matches!(state.phase(), PipelinePhase::Failed(_)));
+
+        // The circuit was stopped, so it has let go of the storage lock.
+        wait_for_storage_unlock(&storage_dir).await;
     }
 
     /// `/status` must report a fatal controller error that arrives before the
