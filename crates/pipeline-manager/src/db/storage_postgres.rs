@@ -1910,7 +1910,7 @@ impl StoragePostgres {
         self.get_or_create_tenant_id(
             default_tenant.id.0,
             default_tenant.tenant,
-            default_tenant.provider,
+            default_tenant.initial_provider,
         )
         .await?;
         Ok(())

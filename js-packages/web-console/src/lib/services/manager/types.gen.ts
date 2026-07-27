@@ -5772,8 +5772,13 @@ export type TenantId = string
  */
 export type TenantInfo = {
   id: TenantId
+  /**
+   * The OIDC issuer this tenant was first provisioned under. Provenance
+   * only: a tenant is resolved by name, so this does not affect which tenant
+   * a login reaches.
+   */
+  initial_provider: string
   name: string
-  provider: string
 }
 
 /**

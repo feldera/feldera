@@ -14,9 +14,9 @@
 
   const tenants = asyncReadable<Tenant[]>([], getTenants, { reloadable: true })
 
-  // A new tenant is keyed to the platform's configured OIDC issuer (set at
-  // deploy time, e.g. via Helm), so logins from that issuer resolve into it.
-  // The issuer is not settable here; show it read-only.
+  // A login resolves its tenant by name, so the name a new tenant is given is
+  // the one the identity provider must assert for its users to land in it. The
+  // issuer is configured at deploy time, not here; show it read-only.
   const authConfig = asyncReadable<Record<string, { issuer?: string }> | undefined>(
     undefined,
     getAuthConfig
@@ -27,9 +27,8 @@
       '(configured at deploy time)'
   )
 
-  // Compare/select by tenant id (UUID). Names are unique only per provider, so
-  // the id is globally unique and the backend's Feldera-Tenant resolver accepts
-  // it unambiguously.
+  // Compare/select by tenant id (UUID): the id never changes, and the backend's
+  // Feldera-Tenant resolver accepts it unambiguously.
   const currentTenantId = $derived(page.data.feldera?.tenantId)
 
   let newName = $state('')
@@ -81,7 +80,7 @@
               <span class="text-xs opacity-70">(current)</span>
             {/if}
           </div>
-          <div class="text-sm opacity-70"><code>{tenant.provider}</code> · {tenant.id}</div>
+          <div class="text-sm opacity-70"><code>{tenant.initial_provider}</code> · {tenant.id}</div>
         </div>
         <button
           class="btn preset-filled-surface-50-950"
@@ -114,7 +113,7 @@
         value={configuredIssuer}
         readonly
         disabled
-        title="Statically configured at deploy time (Helm: FELDERA_AUTH_ISSUER). Tenants are keyed to this issuer so logins from it resolve into them; it cannot be changed here."
+        title="Statically configured at deploy time (Helm: FELDERA_AUTH_ISSUER). Recorded on a new tenant as the issuer it was provisioned under; it cannot be changed here."
       />
     </label>
     <button class="btn preset-filled-surface-50-950" disabled={creating}>Create</button>
