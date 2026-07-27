@@ -3985,17 +3985,15 @@ impl CircuitThread {
                 CheckpointRequest::Scheduled => (),
                 CheckpointRequest::CheckpointCommand(callback) => callback(result.clone()),
                 CheckpointRequest::SuspendCommand(callback) => {
-                    // Terminate the circuit only on a *successful* suspend. A
-                    // failed suspend leaves the circuit intact and running; the
-                    // `/suspend` handler reports it as `PipelinePhase::Failed`
-                    // and stops the pipeline. Not marking `Terminated` here is
-                    // what keeps `/status` from masking the failure as a clean
-                    // `Suspended` during teardown: `get_status` reads the live
-                    // controller state before the phase, so a terminated
-                    // controller with desired status `Suspended` always reads
-                    // back as `Suspended` (see `terminated_status`).
+                    // Terminate the circuit only on a *successful* suspend, and
+                    // record that the suspend is the reason: that is what lets
+                    // `/status` tell a completed suspend apart from a pipeline
+                    // that died (see `terminated_status`). A failed suspend
+                    // leaves the circuit intact and running; the `/suspend`
+                    // handler reports it as `PipelinePhase::Failed` and stops the
+                    // pipeline.
                     match &result {
-                        Ok(_) => self.controller.status.set_state(PipelineState::Terminated),
+                        Ok(_) => self.controller.status.set_suspended(),
                         Err(e) => self.controller.error(e.clone(), None),
                     }
                     callback(result.clone().map(|_| ()))

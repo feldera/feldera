@@ -173,6 +173,14 @@ pub struct GlobalControllerMetrics {
     /// State of the pipeline: running, paused, or terminating.
     state: Atomic<PipelineState>,
 
+    /// Whether [PipelineState::Terminated] means "a suspend completed
+    /// successfully" rather than "the pipeline died".
+    ///
+    /// The state alone does not say why the circuit stopped, and the two cases
+    /// need opposite reports: a completed suspend is the outcome the user asked
+    /// for, while any other termination is a failure.
+    suspended: AtomicBool,
+
     /// The pipeline has been resumed from a checkpoint and is currently bootstrapping
     /// new and modified views.
     bootstrap_in_progress: AtomicBool,
@@ -310,6 +318,7 @@ impl GlobalControllerMetrics {
         let initial_start_time = initial_start_time.unwrap_or(start_time);
         Self {
             state: Atomic::new(PipelineState::Paused),
+            suspended: AtomicBool::new(false),
             bootstrap_in_progress: AtomicBool::new(false),
             concurrent_bootstrap_phase: Atomic::new(ConcurrentBootstrapPhase::Inactive),
             commit_progress: Mutex::new(None),
@@ -339,6 +348,22 @@ impl GlobalControllerMetrics {
 
     pub fn get_state(&self) -> PipelineState {
         self.state.load(Ordering::Acquire)
+    }
+
+    /// Whether the pipeline reached [PipelineState::Terminated] because a
+    /// suspend completed successfully.
+    pub fn suspended(&self) -> bool {
+        self.suspended.load(Ordering::Acquire)
+    }
+
+    /// Terminates the pipeline because a suspend completed successfully.
+    ///
+    /// Records the reason before the state, so that an observer that sees
+    /// [PipelineState::Terminated] also sees why.
+    fn set_suspended(&self) {
+        self.suspended.store(true, Ordering::Release);
+        self.state
+            .store(PipelineState::Terminated, Ordering::Release);
     }
 
     fn input_batch(&self, amt: BufferSize) -> u64 {
@@ -758,6 +783,12 @@ impl ControllerStatus {
 
     pub fn unset_step_requested(&self) -> bool {
         self.global_metrics.unset_step_requested()
+    }
+
+    /// Terminates the pipeline because a suspend completed successfully; see
+    /// `GlobalControllerMetrics::suspended()`.
+    pub fn set_suspended(&self) {
+        self.global_metrics.set_suspended();
     }
 
     pub fn bootstrap_in_progress(&self) -> bool {
