@@ -2755,7 +2755,7 @@ fn test_external_controller_status_serialization() {
             }
         }))
         .unwrap();
-        status.add_output(&0, "http_output", &output_config, None);
+        status.add_output(&0, "http_output", &output_config, None, true);
 
         // Set output metrics
         if let Some(output) = status.output_status().get(&0) {
@@ -3050,7 +3050,7 @@ fn test_custom_output_connector_metrics_prometheus_output() {
         "format": { "name": "json", "config": {} }
     }))
     .unwrap();
-    status.add_output(&0, "mock_output", &output_config, None);
+    status.add_output(&0, "mock_output", &output_config, None, true);
     status.set_output_custom_metrics(0, Arc::new(MockMetrics));
 
     let mut writer = MetricsWriter::<PrometheusFormatter>::new();
@@ -4947,4 +4947,118 @@ fn a_dropped_reply_or_controller_exit_reports_controller_exit() {
     let error = reply_or_controller_exit(receiver.blocking_recv())
         .expect_err("a dropped reply reports an error");
     assert!(matches!(*error, ControllerError::ControllerExit));
+}
+
+/// An output endpoint that is still owed output must not report the pipeline's
+/// progress before it has delivered that output.
+///
+/// `total_processed_input_records` promises that the endpoint's output equals the
+/// circuit's output after that many input records. Seeding it from the restored
+/// global counter breaks the promise for an endpoint whose relation the bootstrap
+/// re-emits: the counter reaches its target while the re-emitted batch is still
+/// queued, so a reader concludes the sink is up to date before anything reaches it.
+#[test]
+fn test_output_progress_counter_waits_for_owed_output() {
+    use super::stats::ProcessedRecords;
+    use crate::{ControllerStatus, OutputEndpointConfig};
+    use uuid::Uuid;
+
+    // Records the pipeline had processed when the checkpoint was taken.
+    const RESTORED_RECORDS: u64 = 3;
+
+    let config = serde_json::from_value(json!({
+        "name": "test_output_progress_counter",
+        "workers": 1,
+    }))
+    .unwrap();
+    let status = ControllerStatus::new(config, RESTORED_RECORDS, None, Uuid::nil());
+
+    let output_config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": "v1",
+        "transport": { "name": "http_output", "config": {} },
+        "format": { "name": "json", "config": {} }
+    }))
+    .unwrap();
+
+    let processed = |endpoint_id| {
+        status
+            .output_status()
+            .get(&endpoint_id)
+            .unwrap()
+            .metrics
+            .total_processed_input_records
+            .load(Ordering::Acquire)
+    };
+
+    // A caught-up endpoint handles only future output, so it adopts the pipeline's
+    // progress right away.
+    status.add_output(&0, "caught_up", &output_config, None, true);
+    assert_eq!(processed(0), RESTORED_RECORDS);
+
+    // An endpoint still owed output starts from zero.
+    status.add_output(&1, "owed_output", &output_config, None, false);
+    assert_eq!(processed(1), 0);
+
+    // Starting behind must not drag `total_completed_records` backwards. The
+    // checkpoint path blocks until that counter reaches the records processed when
+    // the checkpoint started, so a regression here would stall checkpoints rather
+    // than merely misreport progress.
+    status.update_total_completed_records(None);
+    assert_eq!(status.num_total_completed_records(), RESTORED_RECORDS);
+
+    // Queueing the owed output does not count as delivering it.
+    let parker = Parker::new();
+    let unparker = parker.unparker().clone();
+    status.enqueue_batch(1, 2);
+    assert_eq!(processed(1), 0);
+
+    // Processing the batch that carries the owed output brings the endpoint up to
+    // the pipeline's progress.
+    status.output_batch(
+        1,
+        Some(ProcessedRecords {
+            total_processed_input_records: RESTORED_RECORDS,
+            total_processed_steps: 1,
+        }),
+        2,
+        &unparker,
+    );
+    assert_eq!(processed(1), RESTORED_RECORDS);
+}
+
+/// Only a changed relation makes an output endpoint fall behind. A connector whose
+/// own definition changed still emits nothing for inputs already processed, so it
+/// stays caught up and keeps its seeded progress counter.
+#[test]
+fn test_bootstrapped_output_endpoints_ignores_connector_changes() {
+    use super::bootstrapped_output_endpoints;
+    use feldera_types::pipeline_diff::{PipelineDiff, ProgramDiff};
+
+    let output_config = |stream: &str| -> OutputEndpointConfig {
+        serde_json::from_value(json!({
+            "stream": stream,
+            "transport": { "name": "http_output", "config": {} },
+            "format": { "name": "json", "config": {} }
+        }))
+        .unwrap()
+    };
+
+    let outputs = BTreeMap::from([
+        (Cow::from("changed_view"), output_config("v_changed")),
+        (Cow::from("changed_connector"), output_config("v_stable")),
+        (Cow::from("untouched"), output_config("v_stable")),
+    ]);
+
+    let diff = PipelineDiff::new_with_program_diff(
+        ProgramDiff::new().with_modified_views(vec!["v_changed".to_string()]),
+    )
+    .with_modified_output_connectors(vec!["changed_connector".to_string()]);
+
+    assert_eq!(
+        bootstrapped_output_endpoints(&outputs, Some(&diff)),
+        std::collections::HashSet::from(["changed_view".to_string()])
+    );
+
+    // Without a diff nothing is re-emitted, so every endpoint starts caught up.
+    assert!(bootstrapped_output_endpoints(&outputs, None).is_empty());
 }

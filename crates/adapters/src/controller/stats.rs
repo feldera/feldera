@@ -713,20 +713,32 @@ impl ControllerStatus {
     }
 
     /// Initialize stats for a new output endpoint.
+    ///
+    /// `caught_up` is true when the endpoint's output already agrees with the
+    /// output the pipeline has produced so far, so the endpoint only has to
+    /// handle future output. It is false when the endpoint is still owed output
+    /// derived from records the pipeline has already processed, such as a
+    /// bootstrap re-emission or a pending initial snapshot.
     pub fn add_output(
         &self,
         endpoint_id: &EndpointId,
         endpoint_name: &str,
         config: &OutputEndpointConfig,
         initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
+        caught_up: bool,
     ) {
-        // Initialize the `total_processed_input_records` counter on the new endpoint to `total_processed_records`:
-        // logically the new endpoint is up to speed with the outputs produced by the pipeline so far and only needs to
-        // process any future outputs.
-        let total_processed_records = self
-            .global_metrics
-            .total_processed_records
-            .load(Ordering::Acquire);
+        // Seeding `total_processed_input_records` to `total_processed_records` claims the
+        // endpoint has already delivered the output derived from those records. That holds
+        // only for an endpoint that is caught up. An endpoint still owed output starts at
+        // zero and reaches `total_processed_records` once it has processed the batch
+        // carrying that output, keeping the counter from running ahead of the sink.
+        let total_processed_records = if caught_up {
+            self.global_metrics
+                .total_processed_records
+                .load(Ordering::Acquire)
+        } else {
+            0
+        };
         self.outputs.write().insert(
             *endpoint_id,
             OutputEndpointStatus::new(
@@ -2445,6 +2457,11 @@ pub struct OutputEndpointMetrics {
     /// This metric tracks the end-to-end progress of the pipeline: the output
     /// of this endpoint is equal to the output of the circuit after
     /// processing `total_processed_input_records` records.
+    ///
+    /// The counter never runs ahead of the endpoint's output. It advances only
+    /// once the endpoint has processed every batch derived from those records,
+    /// which means transmitting them, or discarding them while silent
+    /// bootstrapping suppresses the endpoint's output.
     ///
     /// In a multihost pipeline, this count reflects only the input records
     /// processed on the same host as the output endpoint, which is not usually
