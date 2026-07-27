@@ -5,8 +5,8 @@ use crate::db::types::user::TenantInfo;
 use deadpool_postgres::Transaction;
 use uuid::Uuid;
 
-/// Retrieves tenant, which is uniquely identified by the tuple (name, provider).
-/// If the (name, provider) does not yet exist, creates it with the provided new identifier.
+/// Retrieves the tenant with this name, creating it with the provided new
+/// identifier if it does not exist yet.
 pub async fn get_or_create_tenant_id(
     txn: &Transaction<'_>,
     new_id: Uuid, // Used only if the tenant does not yet exist
@@ -41,7 +41,7 @@ pub async fn get_or_create_tenant_id_created(
     // tenant of the same name, stranding the pipelines on the first.
     let stmt_insert = txn
         .prepare_cached(
-            "INSERT INTO tenant (id, tenant, provider) VALUES ($1, $2, $3) \
+            "INSERT INTO tenant (id, tenant, initial_provider) VALUES ($1, $2, $3) \
              ON CONFLICT (tenant) DO NOTHING",
         )
         .await?;
@@ -94,8 +94,8 @@ pub async fn resolve_tenant_selector(
     get_tenant_id_by_name(txn, selector).await
 }
 
-/// Create a tenant, failing with a conflict if `(name, provider)` already
-/// exists. Distinct from the get-or-create login path: the owner-only explicit
+/// Create a tenant, failing with a conflict if the name is already taken.
+/// Distinct from the get-or-create login path: the owner-only explicit
 /// create endpoint should report a duplicate rather than silently returning the
 /// existing tenant.
 pub async fn create_tenant(
@@ -105,7 +105,7 @@ pub async fn create_tenant(
     provider: &str,
 ) -> Result<TenantId, DBError> {
     let stmt = txn
-        .prepare_cached("INSERT INTO tenant (id, tenant, provider) VALUES ($1, $2, $3)")
+        .prepare_cached("INSERT INTO tenant (id, tenant, initial_provider) VALUES ($1, $2, $3)")
         .await?;
     txn.execute(&stmt, &[&id, &name, &provider])
         .await
@@ -124,7 +124,7 @@ pub async fn list_tenants(txn: &Transaction<'_>) -> Result<Vec<TenantInfo>, DBEr
         .map(|row| TenantInfo {
             id: TenantId(row.get(0)),
             name: row.get(1),
-            provider: row.get(2),
+            initial_provider: row.get(2),
         })
         .collect())
 }

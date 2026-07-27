@@ -4635,7 +4635,7 @@ async fn create_tenants_if_not_exists(
         let rec = TenantRecord {
             id: tenant_id,
             tenant: Uuid::now_v7().to_string(),
-            provider: Uuid::now_v7().to_string(),
+            initial_provider: Uuid::now_v7().to_string(),
         };
         e.insert(rec.clone());
         handle
@@ -4646,7 +4646,7 @@ async fn create_tenants_if_not_exists(
             .unwrap()
             .execute(
                 "INSERT INTO tenant VALUES ($1, $2, $3)",
-                &[&rec.id.0, &rec.tenant, &rec.provider],
+                &[&rec.id.0, &rec.tenant, &rec.initial_provider],
             )
             .await?;
     }
@@ -5842,7 +5842,7 @@ impl Storage for Mutex<DbModel> {
             .map(|(id, t)| TenantInfo {
                 id: *id,
                 name: t.tenant.clone(),
-                provider: t.provider.clone(),
+                initial_provider: t.initial_provider.clone(),
             })
             .collect())
     }
