@@ -544,7 +544,7 @@ def test_pipeline_double_start(pipeline_name):
 
 
 @gen_pipeline_name
-def test_pipeline_storage_status_details_without_checkpoints(pipeline_name):
+def test_pipeline_storage_details_no_checkpoints(pipeline_name):
     """
     Validate storage_status_details transitions and clear behavior using the Python API
     without checkpoints.
@@ -593,7 +593,7 @@ def test_pipeline_storage_status_details_without_checkpoints(pipeline_name):
 
 @gen_pipeline_name
 @enterprise_only
-def test_pipeline_storage_status_details_with_checkpoints(pipeline_name):
+def test_pipeline_storage_details_checkpoints(pipeline_name):
     """
     Validate storage_status_details transitions and clear behavior using the Python API
     with checkpoints.

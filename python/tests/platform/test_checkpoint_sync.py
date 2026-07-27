@@ -579,7 +579,7 @@ class TestCheckpointSync(SharedTestPipeline):
         owner.clear_storage()
 
     @enterprise_only
-    def test_bucket_owner_lock_allows_renamed_pipeline(self):
+    def test_owner_lock_allows_renamed_pipeline(self):
         # Renaming a pipeline changes the user-visible name, but keeps the
         # system-generated pipeline name used for bucket ownership.
         old_name = self.pipeline.name
@@ -1101,7 +1101,7 @@ class TestCheckpointSync(SharedTestPipeline):
         source.clear_storage()
 
     @enterprise_only
-    def test_standby_bucket_takes_over_from_read_bucket(self):
+    def test_standby_takes_over_from_read_bucket(self):
         # In standby mode, when bucket is initially empty the pipeline falls back
         # to read_bucket. Once the main pipeline pushes a newer checkpoint to
         # bucket, standby picks it up on the next poll.
@@ -1369,7 +1369,7 @@ class TestCheckpointSync(SharedTestPipeline):
 
     @enterprise_only
     @single_host_only
-    def test_local_priority_over_read_bucket_from_uuid(self):
+    def test_local_priority_over_read_bucket_uuid(self):
         # UUID variant of test_local_priority_over_read_bucket.
         # When a specific UUID exists only in local storage (bucket empty,
         # read_bucket has a different checkpoint), local must win.
@@ -1532,7 +1532,7 @@ class TestCheckpointSync(SharedTestPipeline):
 
     @enterprise_only
     @single_host_only
-    def test_bucket_preferred_over_read_bucket_from_uuid(self):
+    def test_bucket_preferred_over_read_bucket_uuid(self):
         # When start_from_checkpoint is a specific UUID, the primary bucket is
         # still preferred over read_bucket.
         ft = FaultToleranceModel.AtLeastOnce

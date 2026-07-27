@@ -614,7 +614,7 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
           id INT NOT NULL PRIMARY KEY
         ) WITH ('materialized' = 'true');"""
     )
-    def test_multi_statement_query_during_open_transaction_pk(self):
+    def test_multi_statement_query_open_transaction_pk(self):
         """An ad-hoc request running inside a user transaction must observe the state before the transaction started."""
         self.pipeline.start()
 
@@ -648,8 +648,8 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
           id INT
         ) WITH ('materialized' = 'true');"""
     )
-    def test_multi_statement_query_during_open_transaction_no_pk(self):
-        """Same as test_multi_statement_query_during_open_transaction_pk, but for a table without a primary key."""
+    def test_multi_statement_query_open_transaction_no_pk(self):
+        """Same as test_multi_statement_query_open_transaction_pk, but for a table without a primary key."""
         self.pipeline.start()
 
         # Seed one row outside the transaction as the baseline.

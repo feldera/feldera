@@ -347,7 +347,7 @@ _FOLLOW_FROM_VERSION_EXPECTED_ROWS = [
 ]
 
 
-def test_delta_input_column_mapping_follow_from_version(pipeline_name):
+def test_delta_input_col_map_follow_from_version(pipeline_name):
     """Pure follow from a non-zero version: replay only the commits after it."""
     loc = DeltaTestLocation.create(
         pipeline_name,

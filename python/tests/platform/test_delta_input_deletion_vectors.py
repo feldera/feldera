@@ -250,7 +250,7 @@ def test_delta_input_follow_with_deletion_vectors(pipeline_name):
     )
 
 
-def test_delta_input_follow_restore_with_deletion_vectors(pipeline_name):
+def test_delta_input_follow_restore_with_dv(pipeline_name):
     """Follow mode must apply a deletion vector carried by a `remove` action.
 
     Reuses the CDC fixture and replays its restore commit (v2) in follow mode,
@@ -293,7 +293,7 @@ def test_delta_input_follow_restore_with_deletion_vectors(pipeline_name):
     )
 
 
-def test_delta_input_cdc_overwrite_masks_removed_dv_rows(pipeline_name):
+def test_delta_input_cdc_overwrite_masks_dv_rows(pipeline_name):
     """CDC must mask a `remove` action's deletion vector before subtracting it.
 
     The fixture's v2 overwrites the table by re-inserting exactly the even

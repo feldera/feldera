@@ -17,7 +17,7 @@ in-crate Rust tests (that drive a `Controller` in-process) cannot cover:
 * ``test_iceberg_ordered_snapshot_ingests_all_rows`` — a ``timestamp_column``
   with ``LATENESS`` ingests the snapshot as several timestamp-ordered
   transactions, and every row lands exactly once.
-* ``test_iceberg_ordered_snapshot_resume_skips_ingested`` — suspending an
+* ``test_iceberg_ordered_resume_skips_ingested`` — suspending an
   ordered read once it has committed a range, then resuming, re-reads fewer
   than all rows: the seek point skips already-ingested ranges.
 
@@ -517,7 +517,7 @@ _RECORDS_METRIC = "input_connector_iceberg_snapshot_records_total"
 
 
 @enterprise_only
-def test_iceberg_ordered_snapshot_resume_skips_ingested(pipeline_name):
+def test_iceberg_ordered_resume_skips_ingested(pipeline_name):
     """Resuming an ordered read skips ranges it already ingested.
 
     Suspend the read once it has committed at least one range, resume, and
