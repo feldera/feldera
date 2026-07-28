@@ -63,14 +63,14 @@ pub(crate) struct AddMemberResponse {
     pub user_id: UserId,
 }
 
-/// Reject a requested role the caller may not grant: `owner` is platform-wide
-/// and never a tenant membership. The second check, that no one grants above
-/// their own role, cannot fire while these routes require `admin` (the highest
-/// grantable role); it is kept so lowering the route's minimum role stays safe.
+/// Reject a requested role the caller may not grant.
 fn check_grantable_role(requested: Role, caller: Role) -> Result<(), ManagerError> {
+    // `owner` is platform-wide, never a tenant membership.
     if requested == Role::Owner {
         return Err(DBError::OwnerRoleNotAssignable.into());
     }
+    // Cannot fire while these routes require `admin`, the highest grantable
+    // role; kept so that lowering the route's minimum role stays safe.
     if requested > caller {
         return Err(DBError::RoleExceedsCreator {
             requested,
@@ -105,10 +105,13 @@ pub(crate) struct RenameTenantRequest {
 #[derive(Debug, Serialize, ToSchema)]
 pub(crate) struct RenameTenantResponse {
     /// The tenant that gave up the name, when `displace_existing` was set and
-    /// another tenant held it. `null` when the name was free.
+    /// another tenant held it. `null` when no other tenant had that name.
     pub displaced: Option<TenantInfo>,
 }
 
+/// Parse the `tenant_id` path parameter. A value that is not a UUID names no
+/// tenant, so it is reported as an unknown tenant (404) rather than as a
+/// separate parse error.
 fn parse_tenant_id(req: &HttpRequest) -> Result<TenantId, ManagerError> {
     let raw = parse_url_parameter(req, "tenant_id")?;
     let uuid = Uuid::parse_str(&raw)
@@ -116,6 +119,8 @@ fn parse_tenant_id(req: &HttpRequest) -> Result<TenantId, ManagerError> {
     Ok(TenantId(uuid))
 }
 
+/// Parse the `user_id` path parameter. As with [`parse_tenant_id`], a value
+/// that is not a UUID names no user and is reported as an unknown user.
 fn parse_user_id(req: &HttpRequest) -> Result<UserId, ManagerError> {
     let raw = parse_url_parameter(req, "user_id")?;
     let uuid = Uuid::parse_str(&raw).map_err(|_| {
@@ -301,18 +306,10 @@ pub(crate) struct NewTenantResponse {
 /// and OIDC trust relationships all reference the tenant by its identifier and
 /// are unaffected.
 ///
-/// A login resolves its tenant by name, so renaming decides which tenant those
-/// users reach. Two consequences follow. Renaming a tenant away from a name the
-/// identity provider still asserts sends its users to a new, empty tenant on
-/// their next request, which re-creates the name. And a tenant that no login
-/// reaches, such as `default` after authentication is switched on, is recovered
-/// by giving it the name logins do resolve.
-///
-/// Recovery normally wants a name that is already taken, by the tenant the
-/// first login created. Set `displace_existing` to take it: that tenant is
-/// renamed to `<name> (<id>)` in the same transaction and keeps everything it
-/// had. One step is what makes recovery possible at all, since freeing the name
-/// and claiming it as two calls loses to the next request re-creating it.
+/// Set `displace_existing` to replace a tenant atomically with one that's
+/// currently in use. This renames the conflicting tenant to `<name> (<id>)` in
+/// the same transaction, with everything it had. Two calls potentially lose to
+/// another user request, which could re-create the name in between.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),

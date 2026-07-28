@@ -5,10 +5,8 @@
 //! role against the minimum role declared for the matched route. The
 //! `ROUTE_MIN_ROLE` table below is the single source of truth for the
 //! access-control model. Enforcement is deny-by-default: a route that is
-//! reached but absent from the table is refused, so a
-//! newly added endpoint cannot ship silently world-accessible. The
-//! `every_registered_v0_route_is_classified` test enforces that every route
-//! actually registered gets an entry.
+//! reached but absent from the table is refused, so a newly added endpoint
+//! cannot ship silently world-accessible.
 
 use crate::auth::AuthenticatedPrincipal;
 use crate::db::error::DBError;
@@ -20,96 +18,94 @@ use actix_web::middleware::Next;
 use actix_web::{HttpMessage, HttpResponse, ResponseError};
 use std::collections::HashMap;
 use std::sync::OnceLock;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
-/// Minimum role required to reach each `/v0` route. `None` means the route is
-/// reachable by any authenticated principal (no role floor). A `(method, path)`
-/// absent from this table is denied by the middleware.
+/// Minimum role required to reach each `/v0` route. A `(method, path)` absent
+/// from this table is denied by the middleware.
 #[rustfmt::skip]
-static ROUTE_MIN_ROLE: &[(&str, &str, Option<Role>)] = &[
-    ("GET", "/v0/api_keys", Some(Role::Write)), // list_api_keys
-    ("POST", "/v0/api_keys", Some(Role::Write)), // post_api_key
-    ("DELETE", "/v0/api_keys/{api_key_name}", Some(Role::Write)), // delete_api_key
-    ("GET", "/v0/api_keys/{api_key_name}", Some(Role::Write)), // get_api_key
-    ("GET", "/v0/cluster/events", Some(Role::Read)), // list_cluster_events
-    ("GET", "/v0/cluster/events/{event_id}", Some(Role::Read)), // get_cluster_event
-    ("GET", "/v0/cluster_healthz", Some(Role::Read)), // get_cluster_health
-    ("GET", "/v0/config", Some(Role::Read)), // get_config
-    ("GET", "/v0/config/demos", Some(Role::Read)), // get_config_demos
-    ("GET", "/v0/config/session", Some(Role::Read)), // get_config_session
-    ("GET", "/v0/metrics", Some(Role::Read)), // get_metrics
-    ("GET", "/v0/oidc_trust", Some(Role::Admin)), // list_oidc_trust
-    ("POST", "/v0/oidc_trust", Some(Role::Admin)), // post_oidc_trust
-    ("DELETE", "/v0/oidc_trust/{name}", Some(Role::Admin)), // delete_oidc_trust
-    ("GET", "/v0/oidc_trust/{name}", Some(Role::Admin)), // get_oidc_trust
-    ("GET", "/v0/pipelines", Some(Role::Read)), // list_pipelines
-    ("POST", "/v0/pipelines", Some(Role::Write)), // post_pipeline
-    ("DELETE", "/v0/pipelines/{pipeline_name}", Some(Role::Write)), // delete_pipeline
-    ("GET", "/v0/pipelines/{pipeline_name}", Some(Role::Read)), // get_pipeline
-    ("PATCH", "/v0/pipelines/{pipeline_name}", Some(Role::Write)), // patch_pipeline
-    ("PUT", "/v0/pipelines/{pipeline_name}", Some(Role::Write)), // put_pipeline
-    ("POST", "/v0/pipelines/{pipeline_name}/activate", Some(Role::Write)), // post_pipeline_activate
-    ("POST", "/v0/pipelines/{pipeline_name}/approve", Some(Role::Write)), // post_pipeline_approve
-    ("POST", "/v0/pipelines/{pipeline_name}/checkpoint", Some(Role::Write)), // checkpoint_pipeline
-    ("POST", "/v0/pipelines/{pipeline_name}/checkpoint/sync", Some(Role::Write)), // sync_checkpoint
-    ("GET", "/v0/pipelines/{pipeline_name}/checkpoint/sync_status", Some(Role::Read)), // get_checkpoint_sync_status
-    ("GET", "/v0/pipelines/{pipeline_name}/checkpoint_status", Some(Role::Read)), // get_checkpoint_status
-    ("GET", "/v0/pipelines/{pipeline_name}/checkpoints", Some(Role::Read)), // get_checkpoints
-    ("GET", "/v0/pipelines/{pipeline_name}/checkpoints/remote", Some(Role::Read)), // get_remote_checkpoints
-    ("GET", "/v0/pipelines/{pipeline_name}/circuit_json_profile", Some(Role::Read)), // get_pipeline_circuit_json_profile
-    ("GET", "/v0/pipelines/{pipeline_name}/circuit_profile", Some(Role::Read)), // get_pipeline_circuit_profile
-    ("POST", "/v0/pipelines/{pipeline_name}/clear", Some(Role::Write)), // post_pipeline_clear
-    ("POST", "/v0/pipelines/{pipeline_name}/clock/advance", Some(Role::Write)), // clock_advance
-    ("POST", "/v0/pipelines/{pipeline_name}/commit_transaction", Some(Role::Write)), // commit_transaction
-    ("GET", "/v0/pipelines/{pipeline_name}/completion_status", Some(Role::Read)), // completion_status
-    ("GET", "/v0/pipelines/{pipeline_name}/dataflow_graph", Some(Role::Read)), // get_pipeline_dataflow_graph
-    ("POST", "/v0/pipelines/{pipeline_name}/diff", Some(Role::Read)), // post_pipeline_diff (compile-only, no data/state change)
-    ("POST", "/v0/pipelines/{pipeline_name}/dismiss_error", Some(Role::Write)), // post_pipeline_dismiss_error
-    ("POST", "/v0/pipelines/{pipeline_name}/egress/{table_name}", Some(Role::Write)), // http_output
-    ("GET", "/v0/pipelines/{pipeline_name}/events", Some(Role::Read)), // list_pipeline_events
-    ("GET", "/v0/pipelines/{pipeline_name}/events/{event_id}", Some(Role::Read)), // get_pipeline_event
-    ("GET", "/v0/pipelines/{pipeline_name}/heap_profile", Some(Role::Read)), // get_pipeline_heap_profile
-    ("POST", "/v0/pipelines/{pipeline_name}/ingress/{table_name}", Some(Role::Write)), // http_input
-    ("GET", "/v0/pipelines/{pipeline_name}/logs", Some(Role::Read)), // get_pipeline_logs
-    ("GET", "/v0/pipelines/{pipeline_name}/metrics", Some(Role::Read)), // get_pipeline_metrics
-    ("POST", "/v0/pipelines/{pipeline_name}/pause", Some(Role::Write)), // post_pipeline_pause
-    ("GET", "/v0/pipelines/{pipeline_name}/query", Some(Role::Write)), // pipeline_adhoc_sql
-    ("POST", "/v0/pipelines/{pipeline_name}/rebalance", Some(Role::Write)), // post_pipeline_rebalance
-    ("POST", "/v0/pipelines/{pipeline_name}/resume", Some(Role::Write)), // post_pipeline_resume
-    ("GET", "/v0/pipelines/{pipeline_name}/samply_profile", Some(Role::Read)), // get_pipeline_samply_profile
-    ("POST", "/v0/pipelines/{pipeline_name}/samply_profile", Some(Role::Read)), // start_samply_profile
-    ("POST", "/v0/pipelines/{pipeline_name}/start", Some(Role::Write)), // post_pipeline_start
-    ("POST", "/v0/pipelines/{pipeline_name}/start_compaction", Some(Role::Write)), // post_pipeline_start_compaction
-    ("POST", "/v0/pipelines/{pipeline_name}/start_transaction", Some(Role::Write)), // start_transaction
-    ("GET", "/v0/pipelines/{pipeline_name}/stats", Some(Role::Read)), // get_pipeline_stats
-    ("POST", "/v0/pipelines/{pipeline_name}/stop", Some(Role::Write)), // post_pipeline_stop
-    ("GET", "/v0/pipelines/{pipeline_name}/support_bundle", Some(Role::Read)), // get_pipeline_support_bundle
-    ("GET", "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token", Some(Role::Write)), // completion_token
-    ("GET", "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/stats", Some(Role::Read)), // get_pipeline_input_connector_status
-    ("POST", "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}", Some(Role::Write)), // post_pipeline_input_connector_action
-    ("POST", "/v0/pipelines/{pipeline_name}/testing", Some(Role::Write)), // post_pipeline_testing
-    ("GET", "/v0/pipelines/{pipeline_name}/time_series", Some(Role::Read)), // get_pipeline_time_series
-    ("GET", "/v0/pipelines/{pipeline_name}/time_series_stream", Some(Role::Read)), // get_pipeline_time_series_stream
-    ("POST", "/v0/pipelines/{pipeline_name}/update_runtime", Some(Role::Write)), // post_update_runtime
-    ("POST", "/v0/validate_program", Some(Role::Read)), // post_validate_program (compile-only, no data/state change)
-    ("POST", "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/command", Some(Role::Write)), // post_pipeline_output_connector_command
-    ("GET", "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats", Some(Role::Read)), // get_pipeline_output_connector_status
+static ROUTE_MIN_ROLE: &[(&str, &str, Role)] = &[
+    ("GET", "/v0/api_keys", Role::Write), // list_api_keys
+    ("POST", "/v0/api_keys", Role::Write), // post_api_key
+    ("DELETE", "/v0/api_keys/{api_key_name}", Role::Write), // delete_api_key
+    ("GET", "/v0/api_keys/{api_key_name}", Role::Write), // get_api_key
+    ("GET", "/v0/cluster/events", Role::Read), // list_cluster_events
+    ("GET", "/v0/cluster/events/{event_id}", Role::Read), // get_cluster_event
+    ("GET", "/v0/cluster_healthz", Role::Read), // get_cluster_health
+    ("GET", "/v0/config", Role::Read), // get_config
+    ("GET", "/v0/config/demos", Role::Read), // get_config_demos
+    ("GET", "/v0/config/session", Role::Read), // get_config_session
+    ("GET", "/v0/metrics", Role::Read), // get_metrics
+    ("GET", "/v0/oidc_trust", Role::Admin), // list_oidc_trust
+    ("POST", "/v0/oidc_trust", Role::Admin), // post_oidc_trust
+    ("DELETE", "/v0/oidc_trust/{name}", Role::Admin), // delete_oidc_trust
+    ("GET", "/v0/oidc_trust/{name}", Role::Admin), // get_oidc_trust
+    ("GET", "/v0/pipelines", Role::Read), // list_pipelines
+    ("POST", "/v0/pipelines", Role::Write), // post_pipeline
+    ("DELETE", "/v0/pipelines/{pipeline_name}", Role::Write), // delete_pipeline
+    ("GET", "/v0/pipelines/{pipeline_name}", Role::Read), // get_pipeline
+    ("PATCH", "/v0/pipelines/{pipeline_name}", Role::Write), // patch_pipeline
+    ("PUT", "/v0/pipelines/{pipeline_name}", Role::Write), // put_pipeline
+    ("POST", "/v0/pipelines/{pipeline_name}/activate", Role::Write), // post_pipeline_activate
+    ("POST", "/v0/pipelines/{pipeline_name}/approve", Role::Write), // post_pipeline_approve
+    ("POST", "/v0/pipelines/{pipeline_name}/checkpoint", Role::Write), // checkpoint_pipeline
+    ("POST", "/v0/pipelines/{pipeline_name}/checkpoint/sync", Role::Write), // sync_checkpoint
+    ("GET", "/v0/pipelines/{pipeline_name}/checkpoint/sync_status", Role::Read), // get_checkpoint_sync_status
+    ("GET", "/v0/pipelines/{pipeline_name}/checkpoint_status", Role::Read), // get_checkpoint_status
+    ("GET", "/v0/pipelines/{pipeline_name}/checkpoints", Role::Read), // get_checkpoints
+    ("GET", "/v0/pipelines/{pipeline_name}/checkpoints/remote", Role::Read), // get_remote_checkpoints
+    ("GET", "/v0/pipelines/{pipeline_name}/circuit_json_profile", Role::Read), // get_pipeline_circuit_json_profile
+    ("GET", "/v0/pipelines/{pipeline_name}/circuit_profile", Role::Read), // get_pipeline_circuit_profile
+    ("POST", "/v0/pipelines/{pipeline_name}/clear", Role::Write), // post_pipeline_clear
+    ("POST", "/v0/pipelines/{pipeline_name}/clock/advance", Role::Write), // clock_advance
+    ("POST", "/v0/pipelines/{pipeline_name}/commit_transaction", Role::Write), // commit_transaction
+    ("GET", "/v0/pipelines/{pipeline_name}/completion_status", Role::Read), // completion_status
+    ("GET", "/v0/pipelines/{pipeline_name}/dataflow_graph", Role::Read), // get_pipeline_dataflow_graph
+    ("POST", "/v0/pipelines/{pipeline_name}/diff", Role::Read), // post_pipeline_diff (compile-only, no data/state change)
+    ("POST", "/v0/pipelines/{pipeline_name}/dismiss_error", Role::Write), // post_pipeline_dismiss_error
+    ("POST", "/v0/pipelines/{pipeline_name}/egress/{table_name}", Role::Write), // http_output
+    ("GET", "/v0/pipelines/{pipeline_name}/events", Role::Read), // list_pipeline_events
+    ("GET", "/v0/pipelines/{pipeline_name}/events/{event_id}", Role::Read), // get_pipeline_event
+    ("GET", "/v0/pipelines/{pipeline_name}/heap_profile", Role::Read), // get_pipeline_heap_profile
+    ("POST", "/v0/pipelines/{pipeline_name}/ingress/{table_name}", Role::Write), // http_input
+    ("GET", "/v0/pipelines/{pipeline_name}/logs", Role::Read), // get_pipeline_logs
+    ("GET", "/v0/pipelines/{pipeline_name}/metrics", Role::Read), // get_pipeline_metrics
+    ("POST", "/v0/pipelines/{pipeline_name}/pause", Role::Write), // post_pipeline_pause
+    ("GET", "/v0/pipelines/{pipeline_name}/query", Role::Write), // pipeline_adhoc_sql
+    ("POST", "/v0/pipelines/{pipeline_name}/rebalance", Role::Write), // post_pipeline_rebalance
+    ("POST", "/v0/pipelines/{pipeline_name}/resume", Role::Write), // post_pipeline_resume
+    ("GET", "/v0/pipelines/{pipeline_name}/samply_profile", Role::Read), // get_pipeline_samply_profile
+    ("POST", "/v0/pipelines/{pipeline_name}/samply_profile", Role::Read), // start_samply_profile
+    ("POST", "/v0/pipelines/{pipeline_name}/start", Role::Write), // post_pipeline_start
+    ("POST", "/v0/pipelines/{pipeline_name}/start_compaction", Role::Write), // post_pipeline_start_compaction
+    ("POST", "/v0/pipelines/{pipeline_name}/start_transaction", Role::Write), // start_transaction
+    ("GET", "/v0/pipelines/{pipeline_name}/stats", Role::Read), // get_pipeline_stats
+    ("POST", "/v0/pipelines/{pipeline_name}/stop", Role::Write), // post_pipeline_stop
+    ("GET", "/v0/pipelines/{pipeline_name}/support_bundle", Role::Read), // get_pipeline_support_bundle
+    ("GET", "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token", Role::Write), // completion_token
+    ("GET", "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/stats", Role::Read), // get_pipeline_input_connector_status
+    ("POST", "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}", Role::Write), // post_pipeline_input_connector_action
+    ("POST", "/v0/pipelines/{pipeline_name}/testing", Role::Write), // post_pipeline_testing
+    ("GET", "/v0/pipelines/{pipeline_name}/time_series", Role::Read), // get_pipeline_time_series
+    ("GET", "/v0/pipelines/{pipeline_name}/time_series_stream", Role::Read), // get_pipeline_time_series_stream
+    ("POST", "/v0/pipelines/{pipeline_name}/update_runtime", Role::Write), // post_update_runtime
+    ("POST", "/v0/validate_program", Role::Read), // post_validate_program (compile-only, no data/state change)
+    ("POST", "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/command", Role::Write), // post_pipeline_output_connector_command
+    ("GET", "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats", Role::Read), // get_pipeline_output_connector_status
     // RBAC tenant/user management
-    ("GET", "/v0/tenant/users", Some(Role::Admin)), // list_tenant_users
-    ("POST", "/v0/tenant/users", Some(Role::Admin)), // add_tenant_user (pre-provision)
-    ("PUT", "/v0/tenant/users/{user_id}", Some(Role::Admin)), // put_tenant_user
-    ("DELETE", "/v0/tenant/users/{user_id}", Some(Role::Admin)), // delete_tenant_user
-    ("GET", "/v0/tenants", Some(Role::Owner)), // list_tenants
-    ("POST", "/v0/tenants", Some(Role::Owner)), // create_tenant
-    ("PATCH", "/v0/tenants/{tenant_id}", Some(Role::Owner)), // patch_tenant
-    ("DELETE", "/v0/tenants/{tenant_id}", Some(Role::Owner)), // delete_tenant
+    ("GET", "/v0/tenant/users", Role::Admin), // list_tenant_users
+    ("POST", "/v0/tenant/users", Role::Admin), // add_tenant_user (pre-provision)
+    ("PUT", "/v0/tenant/users/{user_id}", Role::Admin), // put_tenant_user
+    ("DELETE", "/v0/tenant/users/{user_id}", Role::Admin), // delete_tenant_user
+    ("GET", "/v0/tenants", Role::Owner), // list_tenants
+    ("POST", "/v0/tenants", Role::Owner), // create_tenant
+    ("PATCH", "/v0/tenants/{tenant_id}", Role::Owner), // patch_tenant
+    ("DELETE", "/v0/tenants/{tenant_id}", Role::Owner), // delete_tenant
 ];
 
-/// [`ROUTE_MIN_ROLE`] indexed by `(method, path)`, built once on first use. The
-/// table is the authoring format; this map is the form the auth hot path needs,
-/// turning a per-request scan into a hash lookup.
-fn route_table() -> &'static HashMap<(&'static str, &'static str), Option<Role>> {
-    static TABLE: OnceLock<HashMap<(&'static str, &'static str), Option<Role>>> = OnceLock::new();
+/// [`ROUTE_MIN_ROLE`] indexed by `(method, pattern)`, built once on first use,
+/// for callers that already hold a route template rather than a request path.
+fn route_table() -> &'static HashMap<(&'static str, &'static str), Role> {
+    static TABLE: OnceLock<HashMap<(&'static str, &'static str), Role>> = OnceLock::new();
     TABLE.get_or_init(|| {
         ROUTE_MIN_ROLE
             .iter()
@@ -118,41 +114,40 @@ fn route_table() -> &'static HashMap<(&'static str, &'static str), Option<Role>>
     })
 }
 
-/// The access rule for a route, used both by the middleware below and by the
-/// OpenAPI annotation that documents each endpoint's minimum role, so the API
-/// reference cannot drift from the enforced policy.
+/// The minimum role for a route template, or `None` when the table does not
+/// classify it, which the middleware treats as a denial.
 ///
 /// ```text
-/// min_role_for("POST", "/v0/pipelines")            => Some(Some(Role::Write))
-/// min_role_for("GET",  "/v0/pipelines")            => Some(Some(Role::Read))
-/// min_role_for("POST", "/v0/tenants")              => Some(Some(Role::Owner))
-/// min_role_for("GET",  "/v0/not-a-route")          => None   // unknown: denied
+/// min_role_for("POST", "/v0/tenants")     => Some(Role::Owner)
+/// min_role_for("GET",  "/v0/not-a-route") => None
 /// ```
 ///
-/// `None` means the route is not in the table and is denied; `Some(None)` means
-/// any authenticated principal may proceed; `Some(Some(role))` requires at least
-/// `role`.
-pub(crate) fn min_role_for(method: &str, pattern: &str) -> Option<Option<Role>> {
+/// The OpenAPI annotation reads the same table as the middleware, so the API
+/// reference cannot drift from the enforced policy.
+pub(crate) fn min_role_for(method: &str, pattern: &str) -> Option<Role> {
     route_table().get(&(method, pattern)).copied()
 }
 
 /// Resolve a request path to its table entry, returning the pattern it matched
 /// and that pattern's rule.
 ///
-/// The middleware cannot use actix's `match_pattern()` for this. That resolves
-/// by path alone, ignoring the method, so a request whose path also matches an
-/// earlier-registered pattern of a different method reports the wrong template:
-/// `GET .../connectors/{connector_name}/completion_token` came back as
-/// `POST .../connectors/{connector_name}/{action}`, which is not a GET entry, and
-/// a classified route was denied as unclassified. Matching the table directly,
-/// method first, keeps the enforced rule and the authored rule the same thing.
+/// Actix's `match_pattern()` cannot serve here: it resolves by path alone,
+/// ignoring the method, so it reports whichever registered pattern claims the
+/// path first. Matching the table directly, method first, keeps the enforced
+/// rule and the authored rule the same thing.
 ///
-/// A literal segment beats a placeholder, as in any router, so `.../start`
-/// resolves to `.../{action}` only when no literal pattern claims it.
-fn classify(method: &str, path: &str) -> Option<(&'static str, Option<Role>)> {
+/// A literal segment beats a placeholder, as in any router:
+///
+/// ```text
+/// GET  /v0/pipelines/p/tables/t/connectors/c/completion_token
+///   => .../connectors/{connector_name}/completion_token   (literal wins)
+/// POST /v0/pipelines/p/tables/t/connectors/c/start
+///   => .../connectors/{connector_name}/{action}           (no literal claims it)
+/// ```
+fn classify(method: &str, path: &str) -> Option<(&'static str, Role)> {
     let segments: Vec<&str> = path.split('/').collect();
     let candidates = candidates_by_shape().get(&(method, segments.len()))?;
-    let mut best: Option<(usize, &'static str, Option<Role>)> = None;
+    let mut best: Option<(usize, &'static str, Role)> = None;
     for (pattern, role) in candidates {
         let Some(literals) = literal_segments_if_match(pattern, &segments) else {
             continue;
@@ -165,16 +160,14 @@ fn classify(method: &str, path: &str) -> Option<(&'static str, Option<Role>)> {
 }
 
 /// [`ROUTE_MIN_ROLE`] bucketed by `(method, segment count)`, built once on first
-/// use. A path can only match a pattern of the same shape, so this leaves the
-/// per-request scan a handful of candidates rather than the whole table.
+/// use. A path can only match a pattern of the same shape, so a request compares
+/// itself against a handful of candidates rather than the whole table.
 #[allow(clippy::type_complexity)]
-fn candidates_by_shape(
-) -> &'static HashMap<(&'static str, usize), Vec<(&'static str, Option<Role>)>> {
-    static SHAPES: OnceLock<HashMap<(&'static str, usize), Vec<(&'static str, Option<Role>)>>> =
+fn candidates_by_shape() -> &'static HashMap<(&'static str, usize), Vec<(&'static str, Role)>> {
+    static SHAPES: OnceLock<HashMap<(&'static str, usize), Vec<(&'static str, Role)>>> =
         OnceLock::new();
     SHAPES.get_or_init(|| {
-        let mut shapes: HashMap<(&'static str, usize), Vec<(&'static str, Option<Role>)>> =
-            HashMap::new();
+        let mut shapes: HashMap<(&'static str, usize), Vec<(&'static str, Role)>> = HashMap::new();
         for (method, pattern, role) in ROUTE_MIN_ROLE {
             shapes
                 .entry((method, pattern.split('/').count()))
@@ -244,7 +237,7 @@ fn authorize(
     if !routed {
         return Ok(None);
     }
-    let Some((pattern, rule)) = classify(method, path) else {
+    let Some((pattern, required)) = classify(method, path) else {
         // A registered route with no table entry is a bug: deny it rather
         // than serve it unguarded.
         error!("RBAC: route {method} {path} has no access-control entry; denying");
@@ -252,35 +245,45 @@ fn authorize(
             "This endpoint has no access-control classification and is denied",
         ));
     };
-    match rule {
-        None => Ok(Some(pattern)),
-        Some(required) => match principal {
-            Some(p) if p.role.satisfies(required) => Ok(Some(pattern)),
-            Some(p) => Err(DBError::InsufficientPermissions {
-                required,
-                actual: p.role,
-            }
-            .error_response()),
-            None => {
-                error!("RBAC: no authenticated principal for {method} {pattern}; denying");
-                Err(forbidden("No authenticated principal"))
-            }
-        },
+    match principal {
+        Some(p) if p.role.satisfies(required) => Ok(Some(pattern)),
+        Some(p) => Err(DBError::InsufficientPermissions {
+            required,
+            actual: p.role,
+        }
+        .error_response()),
+        None => {
+            error!("RBAC: no authenticated principal for {method} {pattern}; denying");
+            Err(forbidden("No authenticated principal"))
+        }
     }
 }
 
-/// Record who reached which route, in which tenant, at what role. `role=owner`
-/// identifies a platform owner acting in a tenant it may not belong to.
+/// Record who reached which route, in which tenant, at what role.
+///
+/// Privileged access is logged unconditionally: `admin` manages a tenant's
+/// members and trusts, and `owner` acts across tenants, including in tenants it
+/// is not a member of, so those are the requests an operator has to be able to
+/// account for after the fact. Read and write traffic is the data plane, one
+/// line per request, and stays at debug.
 fn audit(method: &Method, pattern: &str, principal: Option<&AuthenticatedPrincipal>) {
     let Some(p) = principal else { return };
-    debug!(
-        "audit: user='{}' tenant={} role={} {} {}",
-        p.label, p.acting_tenant, p.role, method, pattern
-    );
+    if p.role >= Role::Admin {
+        info!(
+            "audit: user='{}' tenant={} role={} {} {}",
+            p.label, p.acting_tenant, p.role, method, pattern
+        );
+    } else {
+        debug!(
+            "audit: user='{}' tenant={} role={} {} {}",
+            p.label, p.acting_tenant, p.role, method, pattern
+        );
+    }
 }
 
-/// RBAC enforcement middleware for the authenticated `/v0` scope. Runs after
-/// `auth_validator` has installed the principal.
+/// Refuse any `/v0` request whose principal is below the role its route
+/// requires, and record the ones that pass. Runs after `auth_validator` has
+/// installed the principal, so the role is already resolved here.
 pub(crate) async fn rbac_middleware(
     req: ServiceRequest,
     next: Next<impl MessageBody + 'static>,
@@ -351,10 +354,10 @@ mod test {
     }
 
     /// Every entry must be reachable from a real request path, under its own
-    /// method. A pattern that another entry shadows would be enforced with the
-    /// wrong rule, or denied as unclassified, which is how
-    /// `GET .../connectors/{connector_name}/completion_token` came to be refused:
-    /// it shares a path shape with `POST .../connectors/{connector_name}/{action}`.
+    /// method: an entry that another pattern shadows is enforced with the wrong
+    /// rule, or denied as unclassified. For example, `GET
+    /// .../connectors/{connector_name}/completion_token` shares a path shape
+    /// with `POST .../connectors/{connector_name}/{action}`.
     #[test]
     fn every_table_entry_resolves_from_a_concrete_path() {
         for (method, pattern, role) in ROUTE_MIN_ROLE {
@@ -377,21 +380,21 @@ mod test {
             classify("GET", &format!("{base}/completion_token")),
             Some((
                 "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token",
-                Some(Role::Write)
+                Role::Write
             ))
         );
         assert_eq!(
             classify("GET", &format!("{base}/stats")),
             Some((
                 "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/stats",
-                Some(Role::Read)
+                Role::Read
             ))
         );
         assert_eq!(
             classify("POST", &format!("{base}/start")),
             Some((
                 "/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}",
-                Some(Role::Write)
+                Role::Write
             ))
         );
         // The method is part of the match: no GET entry has that shape.
@@ -406,18 +409,15 @@ mod test {
     #[test]
     fn every_route_admits_exactly_its_minimum_role() {
         let all_roles = [Role::Read, Role::Write, Role::Admin, Role::Owner];
-        for (method, pattern, min) in ROUTE_MIN_ROLE {
+        for (method, pattern, required) in ROUTE_MIN_ROLE {
             for role in all_roles {
                 let principal = AuthenticatedPrincipal::for_test(role);
                 let allowed =
                     authorize(method, true, &concrete_path(pattern), Some(&principal)).is_ok();
-                let expected = match min {
-                    None => true, // any authenticated principal
-                    Some(required) => role >= *required,
-                };
+                let expected = role >= *required;
                 assert_eq!(
                     allowed, expected,
-                    "{method} {pattern}: role {role} allowed={allowed}, expected={expected} (min={min:?})"
+                    "{method} {pattern}: role {role} allowed={allowed}, expected={expected} (min={required})"
                 );
             }
             // A request with no principal at all is always refused on a
@@ -425,6 +425,27 @@ mod test {
             assert!(
                 authorize(method, true, &concrete_path(pattern), None).is_err(),
                 "{method} {pattern}: missing principal must be denied"
+            );
+        }
+    }
+
+    /// A route that can change something never admits `read`. The exceptions
+    /// are the POSTs that compile or profile: they take a body but leave no
+    /// data or state behind.
+    #[test]
+    fn a_mutating_route_never_admits_read() {
+        let posts_that_change_nothing = [
+            "/v0/pipelines/{pipeline_name}/diff",
+            "/v0/pipelines/{pipeline_name}/samply_profile",
+            "/v0/validate_program",
+        ];
+        for (method, pattern, required) in ROUTE_MIN_ROLE {
+            if *method == "GET" || posts_that_change_nothing.contains(pattern) {
+                continue;
+            }
+            assert!(
+                *required >= Role::Write,
+                "{method} {pattern} admits {required}; a mutating route needs at least write"
             );
         }
     }
@@ -443,61 +464,37 @@ mod test {
             );
         };
         // Data plane and mutations require write; read must never reach them.
-        expect("POST", "/v0/pipelines", Some(Role::Write));
-        expect("DELETE", "/v0/pipelines/{pipeline_name}", Some(Role::Write));
-        expect(
-            "POST",
-            "/v0/pipelines/{pipeline_name}/start",
-            Some(Role::Write),
-        );
-        expect(
-            "POST",
-            "/v0/pipelines/{pipeline_name}/stop",
-            Some(Role::Write),
-        );
-        expect(
-            "POST",
-            "/v0/pipelines/{pipeline_name}/clear",
-            Some(Role::Write),
-        );
+        expect("POST", "/v0/pipelines", Role::Write);
+        expect("DELETE", "/v0/pipelines/{pipeline_name}", Role::Write);
+        expect("POST", "/v0/pipelines/{pipeline_name}/start", Role::Write);
+        expect("POST", "/v0/pipelines/{pipeline_name}/stop", Role::Write);
+        expect("POST", "/v0/pipelines/{pipeline_name}/clear", Role::Write);
         expect(
             "POST",
             "/v0/pipelines/{pipeline_name}/ingress/{table_name}",
-            Some(Role::Write),
+            Role::Write,
         );
         expect(
             "POST",
             "/v0/pipelines/{pipeline_name}/egress/{table_name}",
-            Some(Role::Write),
+            Role::Write,
         );
-        expect(
-            "GET",
-            "/v0/pipelines/{pipeline_name}/query",
-            Some(Role::Write),
-        );
+        expect("GET", "/v0/pipelines/{pipeline_name}/query", Role::Write);
         expect(
             "POST",
             "/v0/pipelines/{pipeline_name}/start_transaction",
-            Some(Role::Write),
+            Role::Write,
         );
         // Monitoring is read.
-        expect("GET", "/v0/pipelines", Some(Role::Read));
-        expect(
-            "GET",
-            "/v0/pipelines/{pipeline_name}/stats",
-            Some(Role::Read),
-        );
-        expect(
-            "GET",
-            "/v0/pipelines/{pipeline_name}/logs",
-            Some(Role::Read),
-        );
+        expect("GET", "/v0/pipelines", Role::Read);
+        expect("GET", "/v0/pipelines/{pipeline_name}/stats", Role::Read);
+        expect("GET", "/v0/pipelines/{pipeline_name}/logs", Role::Read);
         // Identity administration is admin.
-        expect("POST", "/v0/oidc_trust", Some(Role::Admin));
-        expect("GET", "/v0/tenant/users", Some(Role::Admin));
+        expect("POST", "/v0/oidc_trust", Role::Admin);
+        expect("GET", "/v0/tenant/users", Role::Admin);
         // Platform administration is owner.
-        expect("GET", "/v0/tenants", Some(Role::Owner));
-        expect("POST", "/v0/tenants", Some(Role::Owner));
+        expect("GET", "/v0/tenants", Role::Owner);
+        expect("POST", "/v0/tenants", Role::Owner);
     }
 
     /// End-to-end through a real actix pipeline: the middleware short-circuits
@@ -579,9 +576,8 @@ mod test {
         assert_eq!(call("GET", "/v0/tenants", "admin").await.status(), 403);
         assert_eq!(call("GET", "/v0/tenants", "owner").await.status(), 200);
 
-        // A route whose path is also claimed by an earlier placeholder route of
-        // another method keeps its own rule, rather than resolving to that
-        // route and being denied as unclassified.
+        // Shadowed route: `GET .../completion_token` shares its path shape with
+        // `POST .../{action}`, registered first, and keeps its own rule anyway.
         let token = "/v0/pipelines/p/tables/t/connectors/c/completion_token";
         assert_eq!(call("GET", token, "write").await.status(), 200);
         assert_eq!(call("GET", token, "read").await.status(), 403);

@@ -18,10 +18,8 @@ pub async fn get_or_create_tenant_id(
         .0)
 }
 
-/// As [`get_or_create_tenant_id`], but also reports whether the tenant was
-/// newly created by this call. The boolean lets the login path grant the very
-/// first principal of a fresh tenant the role configured by
-/// `--first-user-role` / `FELDERA_AUTH_FIRST_USER_ROLE` (`admin` by default).
+/// As [`get_or_create_tenant_id`]. The second component of the returned value
+/// is `true` if this call created the tenant, and `false` if it already existed.
 pub async fn get_or_create_tenant_id_created(
     txn: &Transaction<'_>,
     new_id: Uuid,
@@ -72,8 +70,8 @@ pub async fn get_tenant_id_by_name(txn: &Transaction<'_>, name: &str) -> Result<
 /// Strict resolution of a `Feldera-Tenant` selector, used wherever a principal
 /// picks one of the tenants it is authorized for. A selector that parses as a
 /// UUID is resolved by tenant id; otherwise it is resolved by name. Never
-/// creates a tenant; errors with `UnknownTenantName` (HTTP 404) on miss, so a
-/// typo cannot silently create or cross into the wrong tenant. The caller is
+/// creates a tenant; errors with `UnknownTenantName` on miss, so a typo cannot
+/// silently create or cross into the wrong tenant. The caller is
 /// responsible for checking that the resolved tenant is one the principal may
 /// act in.
 pub async fn resolve_tenant_selector(
@@ -119,19 +117,19 @@ pub async fn create_tenant(
 /// no membership, key, pipeline or trust is affected. The name is what a login
 /// resolves, though, so renaming changes which tenant those users land in.
 ///
-/// With `displace_existing`, the tenant that currently holds `new_name` gives it
-/// up and takes `<name> (<id>)` instead, as the V35 migration does for names
-/// shared by two tenants; the displaced tenant is returned. This has to happen
-/// in one transaction: a login re-creates the name it resolves on its very next
-/// request, so freeing the name and claiming it as two calls can never win the
-/// race. Nothing is merged or deleted, and the displaced tenant keeps
-/// everything it had.
+/// With `displace_existing`, the tenant that currently holds `new_name` is
+/// renamed to `<name> (<id>)` so that this one can have the name, and is
+/// returned. It keeps its pipelines, keys, members and trusts; nothing is
+/// merged or deleted.
 pub async fn rename_tenant(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     new_name: &str,
     displace_existing: bool,
 ) -> Result<Option<TenantInfo>, DBError> {
+    // Both renames run in this one transaction. A login re-creates the name it
+    // resolves on its very next request, so freeing the name and claiming it as
+    // two calls loses the race every time.
     let displaced = if displace_existing {
         displace_name_holder(txn, tenant_id, new_name).await?
     } else {
@@ -151,9 +149,9 @@ pub async fn rename_tenant(
     }
 }
 
-/// Renames whichever tenant holds `name` to `<name> (<id>)`, so that the caller
-/// can take the name. Returns the displaced tenant, or `None` when the name is
-/// free or already belongs to `keep`.
+/// Renames whichever tenant holds `name` to `<name> (<id>)`, leaving `name`
+/// for the caller to claim. Returns that tenant, or `None` when no tenant held
+/// the name or it is `keep`'s own name already.
 async fn displace_name_holder(
     txn: &Transaction<'_>,
     keep: TenantId,
