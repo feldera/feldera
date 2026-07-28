@@ -522,8 +522,17 @@ async fn bearer_auth(
             } else {
                 None
             };
+            // Either configured way of being an owner counts here. A trust is
+            // usually written for a foreign issuer, but one naming the login
+            // provider is a reasonable thing to write, and silently ignoring it
+            // would be a trap.
             let is_owner =
-                is_configured_owner(&state.config.owners, &provider, &subject, verified_email);
+                is_configured_owner(&state.config.owners, &provider, &subject, verified_email)
+                    || state.config.owner_trusts.admits(
+                        &provider,
+                        &subject,
+                        &audiences_from_claim(token_data.claims.aud.as_ref()),
+                    );
 
             if is_owner {
                 // The owner's home tenant comes from its claims, ignoring the
