@@ -4034,7 +4034,7 @@ outputs:
     }
 
     pub(super) async fn wait_for_completion(server: &TestServer, token: &str) {
-        async_wait(
+        let completed = async_wait(
             || async {
                 let CompletionStatusResponse { status, .. } =
                     get_completion_status(server, token).await;
@@ -4043,7 +4043,16 @@ outputs:
             20_000,
         )
         .await
-        .unwrap();
+        .is_ok();
+
+        if !completed {
+            // The step the token waits for, next to each connector's
+            // `total_processed_steps`, names the endpoint that is holding
+            // `total_completed_steps` back.
+            let status = get_completion_status(server, token).await;
+            print_stats(server).await;
+            panic!("completion token '{token}' is still {status:?} after 20 seconds");
+        }
     }
 
     pub(super) fn test_batches(start: u32, len: u32) -> Vec<Vec<TestStruct>> {
