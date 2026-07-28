@@ -34,7 +34,12 @@ def _build_sql(loc: DeltaTestLocation) -> str:
     # Replay v1 + v2 (v0 is the empty CREATE) through the follow path.
     config.update({"version": 0, "end_version": 2})
     connectors = json.dumps(
-        [{"name": CONNECTOR, "transport": {"name": "delta_table_input", "config": config}}]
+        [
+            {
+                "name": CONNECTOR,
+                "transport": {"name": "delta_table_input", "config": config},
+            }
+        ]
     ).replace("'", "''")
     return (
         f"CREATE TABLE {TABLE} ("
