@@ -47,11 +47,15 @@ for _ in $(seq 1 30); do
 done
 
 echo "== starting pipeline-manager (:8080, auth on, owner=owner@example.com) =="
+# Two ways to be an owner, both configured here and neither grantable at
+# runtime: a user (FELDERA_OWNERS) and a workload (FELDERA_OWNER_TRUSTS), the
+# latter standing in for CI that holds no login.
 AUTH_PROVIDER=generic-oidc \
 FELDERA_AUTH_CLIENT_ID=feldera \
 FELDERA_AUTH_ISSUER=http://localhost:9876 \
 FELDERA_AUTH_AUDIENCE=feldera-api \
 FELDERA_OWNERS=owner@example.com \
+FELDERA_OWNER_TRUSTS='[{"issuer": "http://localhost:9876", "subject": "ci-bot", "audience": "feldera-api"}]' \
 FELDERA_UNSTABLE_FEATURES='runtime_version,testing' \
   "$BIN" \
     --pg-embed-working-directory="$DEMO/pg" \
