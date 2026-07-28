@@ -173,7 +173,9 @@ WITH (
 ```
 
 For the available metadata properties that can be extracted, see the
-documentation for each connector.
+documentation for each connector.  One property, `is_delete`, is reported by any
+input connector configured with
+[soft deletes](/connectors#soft-deletes).
 
 #### Materialized tables
 
