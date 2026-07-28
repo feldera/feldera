@@ -440,6 +440,26 @@ mod test {
         }
     }
 
+    /// Waits for the circuit to process `expected` ticks, then returns the
+    /// tick count once it has settled.
+    ///
+    /// Waiting beats a fixed sleep for the lower bound: a loaded machine can
+    /// take longer to replay than any sleep the test would pick.  The settle
+    /// period then gives a tick beyond `expected` time to arrive, so the
+    /// caller checks its upper bound against the final count rather than a
+    /// snapshot taken mid-replay.
+    fn settled_ticks(stats: &ClockStats, expected: usize) -> usize {
+        const TIMEOUT: Duration = Duration::from_secs(30);
+        const SETTLE: Duration = Duration::from_secs(2);
+
+        let deadline = std::time::Instant::now() + TIMEOUT;
+        while stats.ticks() < expected && std::time::Instant::now() < deadline {
+            sleep(Duration::from_millis(10));
+        }
+        sleep(SETTLE);
+        stats.ticks()
+    }
+
     /// Create a simple test circuit that passes each of a number of streams right
     /// through to the corresponding output.  The number of streams is the length of
     /// `persistent_output_ids`, which also specifies optional persistent output ids.
@@ -573,26 +593,41 @@ mod test {
 
         sleep(Duration::from_secs(5));
 
-        // Pause the controller first to prevent more ticks from being generated
-        // before we count them and stop the pipeline
+        // Stop the tick stream, so that Run 1 ends with a bounded number of
+        // post-checkpoint ticks.
         controller.pause();
 
-        let old_ticks = ticks;
-        let ticks_after_checkpoint = test_stats.ticks() - old_ticks;
+        println!("Stopping the pipeline");
+        controller.stop().unwrap();
+
+        // Count Run 1's post-checkpoint ticks only once the pipeline has
+        // stopped, which `stop` guarantees by joining the circuit thread.
+        // `pause` is asynchronous, and a step that races it is still journaled
+        // and hence still replayed, so a count taken before the stop can be
+        // one short of what Run 2 replays.
+        let ticks_after_checkpoint = test_stats.ticks() - ticks;
 
         println!("{ticks_after_checkpoint} additional ticks after the checkpoint");
 
-        // Capture the last `NOW()` emitted in Run 1.  Used below to verify
-        // the no-catchup contract across the restart.
+        // The replay assertion below tolerates one live tick, so a baseline of
+        // one is indistinguishable from a replay that emits nothing, and a
+        // baseline of zero asserts nothing at all.  Two journaled ticks is the
+        // smallest baseline that makes the assertion detect a broken replay.
+        assert!(
+            ticks_after_checkpoint >= 2,
+            "only {ticks_after_checkpoint} ticks were journaled between the \
+             checkpoint and the stop; the replay assertion needs at least two \
+             to tell a real replay from the live tick that follows it"
+        );
+
+        // The last `NOW()` emitted in Run 1.  Used below to verify the
+        // no-catchup contract across the restart.
         let last_v_run1 = test_stats.last_value();
         println!("Run 1 last emitted NOW(): {last_v_run1} ms (anchor {anchor_ms})");
         assert!(
             last_v_run1 > anchor_ms,
             "Run 1 should have emitted at least one tick past the anchor"
         );
-
-        println!("Stopping the pipeline");
-        controller.stop().unwrap();
 
         test_stats.clear();
 
@@ -608,12 +643,19 @@ mod test {
         )
         .unwrap();
 
-        sleep(Duration::from_secs(5));
-
-        let ticks = test_stats.ticks();
+        // Replay runs without `start`, and the pipeline stays paused once it
+        // completes, so the tick count settles as soon as replay is done.
+        let ticks = settled_ticks(&test_stats, ticks_after_checkpoint);
         println!("{ticks} ticks replayed after restart");
-        // Allow at most one extra tick after pause.
-        assert!(ticks >= ticks_after_checkpoint && ticks <= ticks_after_checkpoint + 1);
+        // One extra tick is allowed: the first step after replay commits the
+        // last replayed transaction, and the controller queries every
+        // connector for input on that step, so the clock connector answers it
+        // with a live tick even though the pipeline is paused.
+        assert!(
+            ticks >= ticks_after_checkpoint && ticks <= ticks_after_checkpoint + 1,
+            "replayed {ticks} ticks, expected the {ticks_after_checkpoint} \
+             journaled after the checkpoint, plus at most one live tick"
+        );
 
         // No-catchup contract: post-replay emissions continue from
         // `last_v_run1` rather than jumping back to the anchor.
