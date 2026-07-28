@@ -6,13 +6,13 @@ The following are legal time units:
 
 | Time unit         | Meaning                                                                                                                                                                                                                                                                                                    |
 |-------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| <a id="millenium"></a>`MILLENNIUM`      | A thousand years                                                                                                                                                                                                                                                                                           |
-| <a id="century"></a>`CENTURY`         | A hundred years; a number between 1 and 10                                                                                                                                                                                                                                                                 |
-| <a id="decade"></a>`DECADE`          | Ten years; a number between 1 and 10                                                                                                                                                                                                                                                                       |
+| <a id="millennium"></a>`MILLENNIUM`      | A thousand years                                                                                                                                                                                                                                                                                           |
+| <a id="century"></a>`CENTURY`         | A hundred years; when extracted, the century number, e.g., 20 for the year 2000 and 21 for the year 2001                                                                                                                                                                                                   |
+| <a id="decade"></a>`DECADE`          | Ten years; when extracted, the year divided by 10, e.g., 199 for the year 1994                                                                                                                                                                                                                             |
 | <a id="year"></a>`YEAR`            | One year; can be positive or negative                                                                                                                                                                                                                                                                      |
 | <a id="quarter"></a>`QUARTER`         | 1/4 of a year; a number between 1 and 4                                                                                                                                                                                                                                                                    |
 | <a id="month"></a>`MONTH`           | One month; a number between 1 and 12                                                                                                                                                                                                                                                                       |
-| <a id="week"></a>`WEEK`            | Seven days. The definition of "week" is quite involved: The year's first week is the week containing the first Thursday of the year or either the week containing the 4th of January or either the week that begins between 29th of Dec. and 4th of Jan. The week number is thus a value between 0 and 53. |
+| <a id="week"></a>`WEEK`            | Seven days. The definition of "week" follows ISO 8601: the year's first week is the week containing the first Thursday of the year; equivalently, the week containing the 4th of January, which is also the week that begins between the 29th of December and the 4th of January. The week number is thus a value between 1 and 53. |
 | <a id="doy"></a>`DOY`             | Day of year, a number between 1 and 366                                                                                                                                                                                                                                                                    |
 | <a id="dow"></a>`DOW`             | Day of week, with Sunday being 1 and Saturday being 7                                                                                                                                                                                                                                                      |
 | <a id="isodow"></a>`ISODOW`          | ISO day of the week, with Monday 1 and Sunday 7                                                                                                                                                                                                                                                            |
@@ -22,7 +22,7 @@ The following are legal time units:
 | <a id="second"></a>`SECOND`          | A second within a minute, a number between 0 and 59                                                                                                                                                                                                                                                        |
 | <a id="millisecond"></a>`MILLISECOND`     | A millisecond within a *minute*, including the number of seconds multiplied by 1000, a number between 0 and 59,999                                                                                                                                                                                         |
 | <a id="microsecond"></a>`MICROSECOND`     | A microsecond within a *minute*, including the number of seconds multiplied by 1,000,000, a number between 0 and 59,999,999                                                                                                                                                                                |
-| <a id="nanosecond"></a>`NANOSECOND`       | A nanosecond within a *minute*, including the number of seconds multiplied by 1,000,000,000, a number between 0 and 59,999,999,9999                                                                                                                                                                        |
+| <a id="nanosecond"></a>`NANOSECOND`       | A nanosecond within a *minute*, including the number of seconds multiplied by 1,000,000,000, a number between 0 and 59,999,999,999                                                                                                                                                                         |
 | <a id="epoch"></a>`EPOCH`           | Number of seconds from Unix epoch, i.e., 1970/01/01.                                                                                                                                                                                                                                                       |
 | <a id="sql_tsi_year"></a>`SQL_TSI_YEAR`    | Same as `YEAR`                                                                                                                                                                                                                                                                                             |
 | <a id="sql_tsi_quarter"></a>`SQL_TSI_QUARTER` | Same as `QUARTER`                                                                                                                                                                                                                                                                                          |
@@ -31,7 +31,7 @@ The following are legal time units:
 | <a id="sql_tsi_hour"></a>`SQL_TSI_HOUR`    | Same as `HOUR`                                                                                                                                                                                                                                                                                             |
 | <a id="sql_tsi_day"></a>`SQL_TSI_DAY`     | Same as `DAY`                                                                                                                                                                                                                                                                                              |
 | <a id="sql_tsi_minute"></a>`SQL_TSI_MINUTE`  | Same as `MINUTE`                                                                                                                                                                                                                                                                                           |
-| <a id="sql_tsi_second`"></a>`SQL_TSI_SECOND`  | Same as `SECOND`                                                                                                                                                                                                                                                                                           |
+| <a id="sql_tsi_second"></a>`SQL_TSI_SECOND`  | Same as `SECOND`                                                                                                                                                                                                                                                                                           |
 
 ## Dates
 
@@ -53,12 +53,12 @@ The following operations are available on dates:
 
 | Function | Arguments | Result | Description                                                                                                           | Example |
 |----------|-----------|--------|-----------------------------------------------------------------------------------------------------------------------|---------|
-| <a id="date_ceil"></a>`CEIL(date TO *unit*)`, | `*unit*` is a time unit | `DATE` | Round date up to the specified unit                                                                                   | `CEIL('2020-01-10' TO MONTH)` => `2020-02-01` |
+| <a id="date_ceil"></a>`CEIL(date TO *unit*)` | `*unit*` is a time unit | `DATE` | Round date up to the specified unit                                                                                   | `CEIL('2020-01-10' TO MONTH)` => `2020-02-01` |
 | <a id="date_trunc"></a> `DATE_TRUNC(date, *unit*)` | `*unit*` is a time unit, as described above, between `MILLENNIUM` and `DAY` | `DATE` | Rounds down the date to the specified time unit.                                                                      | `DATE_TRUNC('2020-01-10', MONTH)` => `2020-01-01`. |
-| <a id="date_extract"></a>`EXTRACT(*unit* FROM date)` | `*unit*` is a time unit, as described above | `BIGINT` | `DATE_PART` is a synonym for `EXTRACT`                                                                                | |
-| <a id="date_floor"></a>`FLOOR(date TO *unit*)`, | `*unit*` is a time unit | `DATE` | Round date down to the specified unit                                                                                 | `FLOOR('2020-01-10' TO MONTH)` => `2020-01-01` |
+| <a id="date_extract"></a>`EXTRACT(*unit* FROM date)` | `*unit*` is a time unit, as described above | `BIGINT` | Extracts the specified time unit from the date.  `DATE_PART` is a synonym for `EXTRACT`.                              | `EXTRACT(DECADE FROM DATE '1994-12-25')` => `199` |
+| <a id="date_floor"></a>`FLOOR(date TO *unit*)` | `*unit*` is a time unit | `DATE` | Round date down to the specified unit                                                                                 | `FLOOR('2020-01-10' TO MONTH)` => `2020-01-01` |
 | <a id="make_date"></a>`MAKE_DATE(year, month, day)` | Three integer arguments | `DATE` | Creates a `DATE` from a year, month, and day; returns `NULL` if the result is not a valid date. | `MAKE_DATE(2020, 2, 1)` => `2020-02-01` |
-| <a id="date_timestampdiff"></a>`TIMESTAMPDIFF(*unit*, left, right)` | *unit*, `DATE`, `DATE` | `INTEGER` | Computes the difference (right - left) between two dates values and expresses the result in the specified time units. | `TIMESTAMPDIFF(HOUR, '2020-01-01', '2020-02-01')` => `24` |
+| <a id="date_timestampdiff"></a>`TIMESTAMPDIFF(*unit*, left, right)` | *unit*, `DATE`, `DATE` | `INTEGER` | Computes the difference (right - left) between two dates values and expresses the result in the specified time units. | `TIMESTAMPDIFF(HOUR, '2020-01-01', '2020-01-02')` => `24` |
 
 The following abbreviations can be used as well:
 
@@ -97,7 +97,7 @@ not allowed between quotes.
 | Function | Arguments | Result | Description | Example |
 |----------|-----------|--------|-------------|---------|
 |<a id="time_ceil"></a> `CEIL(time TO *unit*)` | `*unit*` is a time unit between `HOUR` and `MICROSECOND` | `TIME` | It rounds a time upward to the start of the next unit boundary unless the value is already exactly on that boundary. | `CEIL('17:01:00' TO HOUR)` => `18:00:00` |
-|<a id="time_floor"></a>`FLOOR(time TO *unit*)` | `*unit*` is a time unit between `HOUR` and `MICROSECOND` | `TIME` | It rounds a time downward to the start of the next unit boundary unless the value is already exactly on that boundary. | `FLOOR('17:23:59' TO MINUTE)` => `17:23:00` |
+|<a id="time_floor"></a>`FLOOR(time TO *unit*)` | `*unit*` is a time unit between `HOUR` and `MICROSECOND` | `TIME` | It rounds a time downward to the start of the specified unit boundary unless the value is already exactly on that boundary. | `FLOOR('17:23:59' TO MINUTE)` => `17:23:00` |
 |<a id="time_extract"></a>`EXTRACT(*unit* FROM time)` | `*unit*` is a time unit from `HOUR`, `MINUTE`, `SECOND`, `MILLISECOND` | `BIGINT` | Extracts the specified part | `EXTRACT(HOUR FROM '17:23:59')` => `17` |
 | <a id="make_time"></a>`MAKE_TIME(hour, minute, second)` | Any numeric type; last argument can be fractional | `TIME` | Creates a `TIME` from a hour, minute, second; returns `NULL` if the `TIME` is invalid. | `MAKE_TIME(20, 1, 1)` => `20:01:01` |
 |<a id="time_trunc"></a>`TIME_TRUNC(time, *unit*)` | `*unit*` is a time unit, as described above, between `HOUR` and `SECOND` | `TIME` |  Rounds down the time to the specified time unit | `TIME_TRUNC('12:34:56.78', MINUTE)` => `12:34:00` |
@@ -142,8 +142,8 @@ Values BC or values greater than 10,000 years are not supported.
 The `TIMESTAMP` data type represents values composed of a `DATE` (as
 described above) and a `TIME`.  `TIMESTAMP`s are represented with a
 precision of microseconds (6 digits for fractions of second).  The
-specified scale for the `TIMESTAMP` data time is ignored, and it is
-always asssumed to be `TIMESTAMP(6)`.
+specified scale for the `TIMESTAMP` data type is ignored, and it is
+always assumed to be `TIMESTAMP(6)`.
 
 ### Timestamp literals
 
@@ -197,7 +197,7 @@ number of milliseconds since the Unix epoch from the timestamp.
     <td><a id="timestamp_floor"></a><code>FLOOR</code>(timestamp TO <em>unit</em>)</td>
     <td><em>unit</em> is a time unit</td>
     <td><code>TIMESTAMP</code></td>
-    <td>Rounds a timestamp upward to the start of the specified unit boundary unless the value is already exactly on that boundary.</td>
+    <td>Rounds a timestamp downward to the start of the specified unit boundary unless the value is already exactly on that boundary.</td>
     <td><code>FLOOR('2024-05-04 17:23:59' TO MONTH)</code> => <code>2024-05-01 00:00:00</code></td>
   </tr>
   <tr>
@@ -280,7 +280,7 @@ verbose syntax:
 INTERVAL 'string' timeUnit [ TO timeUnit]
 ```
 
-`tiemUnit` is one of `second`, `minute`, `hour`, `day`, `month`,
+`timeUnit` is one of `second`, `minute`, `hour`, `day`, `month`,
 `year`, or plurals of these units.  Only the following combinations
 are supported:
 
@@ -310,7 +310,7 @@ an increased precision for the corresponding type, e.g.:
 
 `EXTRACT(unit FROM interval)` extracts the specified value from an `INTERVAL`.
 Short intervals support EXTRACT of values between DAYS and MILLISECONDS.
-Long intervals support EXTRACT of values between MILLENIUM and MONTHS.
+Long intervals support EXTRACT of values between MILLENNIUM and MONTHS.
 
 ## Other date/time/timestamp/time interval operations
 
@@ -321,7 +321,7 @@ The following arithmetic operations are supported:
 | _date_ `+` _interval_             | `DATE`             | Add an interval to a date                                        |
 | (_date_ `-` _date_) UNIT          | `INTERVAL`         | Compute the difference between two dates as a short interval. E.g. `(d1 - d2) SECONDS` |
 | (_date_ `-` _date_) UNIT          | `INTERVAL`         | Compute the difference between two dates as a long interval. E.g. `(d1 - d2) MONTHS`   |
-| (_time_ `-` _time_) UNIT          | `INTERVAL`         | Compute the difference between two times as a short interval. E.g. (t1 - t2) HOURS`    |
+| (_time_ `-` _time_) UNIT          | `INTERVAL`         | Compute the difference between two times as a short interval. E.g. `(t1 - t2) HOURS`    |
 | _interval_ `+` _interval_         | `INTERVAL`         | Add two intervals; both must have the same type                  |
 | _timestamp_ `+` _interval_        | `TIMESTAMP`        | Add an interval to a timestamp                                   |
 | _time_ `+` _interval_             | `TIME`             | Add an interval to a time. Performs wrapping addition.           |
@@ -348,8 +348,8 @@ Arithmetic between a `DATE` and an `INTERVAL` first converts the
 interval to a whole number days (rounding down) and then performs the
 computation on whole days.
 
-<a id="date_sub"></a> `DATE_SUB` is a synonim for `DATE` - `INTERVAL`.
-<a id="date_add"></a> `DATE_ADD` is a synonim for `DATE` + `INTERVAL`.
+<a id="date_sub"></a> `DATE_SUB` is a synonym for `DATE` - `INTERVAL`.
+<a id="date_add"></a> `DATE_ADD` is a synonym for `DATE` + `INTERVAL`.
 <a id="abs"></a>`ABS`(interval) computes the absolute value of an
 interval.
 
@@ -368,8 +368,8 @@ The `Start` and `End` values may be provided in any order. If `Start` > `End`, t
 We support the following time period predicate operators:
 
 | Operation                | Semantics                           | Example                                                                                                     |
-| ------------------------ | ---------------------------------------------------- |-------------------------------------| ----------------------------------------------------------------------------------------------------------- |
-| <a id="contains"></a>(start, end) `CONTAINS` (value)   | value &le; start1 AND end1 &ge; value   | `(DATE '2020-06-24', DATE '2020-06-22') CONTAINS DATE '2020-06-21'` => `FALSE`                              |
+| ------------------------ | ----------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| <a id="contains"></a>(start1, end1) `CONTAINS` (value)   | start1 &le; value AND value &le; end1   | `(DATE '2020-06-24', DATE '2020-06-22') CONTAINS DATE '2020-06-21'` => `FALSE`                              |
 | (start1, end1) `CONTAINS` (start2, end2)               | start1 &le; start2 AND end1 &ge; end2   | `(DATE '2020-06-21', DATE '2020-06-25') CONTAINS (DATE '2020-06-22', DATE '2020-06-23')` => `TRUE`          |
 | <a id="overlaps"></a> (start1, end1) `OVERLAPS` (start2, end2) | start1 &le; end2 AND end1 &ge; start2 | `(DATE '2020-06-21', DATE '2020-06-23') OVERLAPS (DATE '2020-06-22', DATE '2020-06-24')` => TRUE          |
 | <a id="equals"></a>  (start1, end1) `EQUALS` (start2, end2)    | start1 = start2 AND end1 = end2   | `(DATE '2020-06-21', DATE '2020-06-23') EQUALS (DATE '2020-06-21', DATE '2020-06-23')` => TRUE            |
