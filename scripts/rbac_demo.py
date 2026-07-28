@@ -31,6 +31,7 @@ The four identities (all via the dummy IdP):
   | role  | email             | how the role is granted                         |
   |-------|-------------------|-------------------------------------------------|
   | owner | owner@example.com | FELDERA_OWNERS (config); acts in any tenant     |
+  | owner | ci-bot (no login) | FELDERA_OWNER_TRUSTS (config); a workload token  |
   | admin | admin@example.com | owner assigns 'admin' in tenant acme            |
   | write | writer@example.com| owner assigns 'write' in tenant acme            |
   | read  | reader@example.com| default role on first login to acme             |
@@ -38,6 +39,7 @@ The four identities (all via the dummy IdP):
 
 import argparse
 import sys
+import time
 import requests
 
 TENANT_HEADER = "Feldera-Tenant"
@@ -75,6 +77,8 @@ def main() -> int:
     print(f"Minting tokens from {args.oidc} ...")
     tok = {
         "owner": mint(args.oidc, "owner", "owner@example.com", None),
+        # A workload the deployment trusts as owner, with no login behind it.
+        "ownertrust": mint(args.oidc, "ci-bot", None, None),
         "admin": mint(args.oidc, "admin", "admin@example.com", [tenant]),
         "write": mint(args.oidc, "writer", "writer@example.com", [tenant]),
         "read": mint(args.oidc, "reader", "reader@example.com", [tenant]),
@@ -133,7 +137,7 @@ def main() -> int:
     # 6. Verification matrix: each row is (role, method, path, expected, note).
     #    `expected` is the status family we assert: 'ok' = not 403, 'deny' = 403.
     print("\n" + "=" * 72)
-    print("VERIFICATION MATRIX (deny = 403 by RBAC; ok = passed RBAC)")
+    print("VERIFICATION MATRIX (ok = 2xx; deny = 403 by RBAC; invalid = 400)")
     print("=" * 72)
     checks = [
         ("read", "GET", "/pipelines", None, "ok", "monitor"),
@@ -172,18 +176,48 @@ def main() -> int:
             "ok",
             "create trust (write needs concrete audience)",
         ),
+        (
+            "admin",
+            "POST",
+            "/oidc_trust",
+            {"name": "t2", "issuer": "https://x", "subject": "s", "role": "owner"},
+            "invalid",
+            "owner is configuration only",
+        ),
         ("admin", "GET", "/tenants", None, "deny", "owner only"),
         ("owner", "GET", "/tenants", None, "ok", "platform view"),
         ("owner", "GET", "/tenant/users", None, "ok", "acts in tenant"),
+        ("admin", "GET", "/config/owners", None, "deny", "owner only"),
+        ("owner", "GET", "/config/owners", None, "ok", "who holds owner"),
+        # The configured owner trust, with no Feldera-Tenant header at all: this
+        # is how automation reaches the tenant routes on a fresh deployment,
+        # where there is no tenant to name yet.
+        ("ownertrust", "GET", "/tenants", None, "ok", "no header needed", None),
+        (
+            "ownertrust",
+            "POST",
+            "/tenants",
+            {"name": f"bootstrap-{int(time.time())}"},
+            "ok",
+            "creates a tenant with no header",
+            None,
+        ),
     ]
     passed = failed = 0
-    for role, method, path, body, expected, note in checks:
-        tn = tenant if role in ("read", "write", "admin", "owner") else None
+    # A row carries (role, method, path, body, expected, note) and acts in
+    # `tenant`; a seventh element overrides the Feldera-Tenant header, where
+    # None means the request sends none.
+    for check in checks:
+        role, method, path, body, expected, note = check[:6]
+        tn = check[6] if len(check) > 6 else tenant
         code, _ = call(m, method, path, tok[role], tenant=tn, body=body)
-        # ok = passed RBAC and the action succeeded (2xx); deny = blocked by RBAC (403).
-        # Anything else (401, 5xx) is an unexpected failure, not a pass.
-        good = (expected == "deny" and code == 403) or (
-            expected == "ok" and 200 <= code < 300
+        # ok = passed RBAC and the action succeeded (2xx); deny = blocked by RBAC
+        # (403); invalid = the request itself is not expressible (400). Anything
+        # else (401, 5xx) is an unexpected failure, not a pass.
+        good = (
+            (expected == "deny" and code == 403)
+            or (expected == "invalid" and code == 400)
+            or (expected == "ok" and 200 <= code < 300)
         )
         passed += good
         failed += not good
