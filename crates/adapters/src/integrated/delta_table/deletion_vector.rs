@@ -11,9 +11,11 @@
 //! to one batch.
 
 use anyhow::{Result as AnyResult, anyhow};
-use arrow::array::{ArrayRef, new_null_array};
+use arrow::array::{
+    Array, ArrayRef, LargeListArray, ListArray, MapArray, StructArray, new_null_array,
+};
 use arrow::compute::cast;
-use arrow::datatypes::SchemaRef;
+use arrow::datatypes::{DataType, Field, Fields, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use async_stream::try_stream;
 use datafusion::catalog::TableProvider;
@@ -34,6 +36,7 @@ use parquet::arrow::ProjectionMask;
 use parquet::arrow::arrow_reader::{RowSelection, RowSelector};
 use parquet::arrow::async_reader::{ParquetObjectReader, ParquetRecordBatchStreamBuilder};
 use roaring::RoaringTreemap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
 
@@ -179,44 +182,138 @@ impl fmt::Debug for MaskedParquetPartition {
     }
 }
 
-/// Project `batch` onto `logical_schema`: match columns by name, cast when the
-/// file and logical Arrow types differ, and null-fill columns the file lacks.
-/// The cast reconciles nested-field metadata/names (e.g. `List<Utf8>` vs
-/// `List<Utf8, field: 'element'>`) and safe widening (e.g. `Int32` to `Int64`);
-/// a genuinely incompatible pair makes `cast` fail and this returns an error.
-/// This mirrors DataFusion's default `SchemaAdapter`, which we cannot use
-/// here: DataFusion 53 deprecates it for an adapter that only works inside
-/// its own scan operators.
+/// A field's Parquet field id. The data file stamps `PARQUET:field_id`; the Delta
+/// read schema carries `delta.columnMapping.id`. Either identifies the same column.
+fn field_id(field: &Field) -> Option<&str> {
+    field
+        .metadata()
+        .get("PARQUET:field_id")
+        .or_else(|| field.metadata().get("delta.columnMapping.id"))
+        .map(String::as_str)
+}
+
+/// Index a field list by field id, skipping fields without one.
+fn field_index_by_id(fields: &Fields) -> HashMap<&str, usize> {
+    fields
+        .iter()
+        .enumerate()
+        .filter_map(|(i, f)| field_id(f).map(|id| (id, i)))
+        .collect()
+}
+
+/// Rebuild `array` to `target`, pairing nested struct/list/map children by field
+/// id (falling back to position) and casting leaves whose type differs. Leaf
+/// arrays are reused. This bridges a file that names columns logically (Iceberg,
+/// `columnMapping.mode=id`) to the read schema's physical (`col-<id>`) names.
+fn realign_array(array: &ArrayRef, target: &DataType) -> Result<ArrayRef, DataFusionError> {
+    match target {
+        DataType::Struct(target_fields) => {
+            let source = array
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .ok_or_else(|| realign_type_error("struct", array))?;
+            let src_idx_by_id = field_index_by_id(source.fields());
+            let children = target_fields
+                .iter()
+                .enumerate()
+                .map(|(pos, tf)| {
+                    let idx = field_id(tf)
+                        .and_then(|id| src_idx_by_id.get(id).copied())
+                        .unwrap_or(pos);
+                    let child = source.columns().get(idx).ok_or_else(|| {
+                        DataFusionError::Internal(format!(
+                            "field-id realign found no source child for '{}'",
+                            tf.name()
+                        ))
+                    })?;
+                    realign_array(child, tf.data_type())
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Arc::new(StructArray::try_new(
+                target_fields.clone(),
+                children,
+                source.nulls().cloned(),
+            )?))
+        }
+        DataType::List(inner) => {
+            let source = array
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .ok_or_else(|| realign_type_error("list", array))?;
+            let values = realign_array(source.values(), inner.data_type())?;
+            Ok(Arc::new(ListArray::try_new(
+                inner.clone(),
+                source.offsets().clone(),
+                values,
+                source.nulls().cloned(),
+            )?))
+        }
+        DataType::LargeList(inner) => {
+            let source = array
+                .as_any()
+                .downcast_ref::<LargeListArray>()
+                .ok_or_else(|| realign_type_error("large list", array))?;
+            let values = realign_array(source.values(), inner.data_type())?;
+            Ok(Arc::new(LargeListArray::try_new(
+                inner.clone(),
+                source.offsets().clone(),
+                values,
+                source.nulls().cloned(),
+            )?))
+        }
+        DataType::Map(entries, sorted) => {
+            let source = array
+                .as_any()
+                .downcast_ref::<MapArray>()
+                .ok_or_else(|| realign_type_error("map", array))?;
+            let rebuilt =
+                realign_array(&(Arc::new(source.entries().clone()) as ArrayRef), entries.data_type())?;
+            let entries_arr = rebuilt
+                .as_any()
+                .downcast_ref::<StructArray>()
+                .expect("map entries realign to a struct")
+                .clone();
+            Ok(Arc::new(MapArray::try_new(
+                entries.clone(),
+                source.offsets().clone(),
+                entries_arr,
+                source.nulls().cloned(),
+                *sorted,
+            )?))
+        }
+        _ if array.data_type() == target => Ok(Arc::clone(array)),
+        _ => Ok(cast(array, target)?),
+    }
+}
+
+fn realign_type_error(expected: &str, array: &ArrayRef) -> DataFusionError {
+    DataFusionError::Internal(format!(
+        "field-id realign expected a {expected} array, got {}",
+        array.data_type()
+    ))
+}
+
+/// Project `batch` onto `logical_schema`, matching columns by field id (falling
+/// back to name), rebuilding nested shapes and casting leaves, and null-filling
+/// columns the file lacks. Field-id matching handles `columnMapping.mode=id`
+/// tables, whose files name columns logically rather than by physical `col-<id>`.
 ///
-/// Partition columns also come out NULL (Delta stores them in
-/// `partitionValues`, not in the file). This is the same pre-existing
-/// limitation as the connector's `ListingTable` path.
+/// Partition columns come out NULL (Delta stores them in `partitionValues`, not
+/// in the file), a pre-existing limitation of the connector's Parquet reader.
 fn project_to_logical(
     batch: &RecordBatch,
     logical_schema: &SchemaRef,
 ) -> Result<RecordBatch, DataFusionError> {
     let num_rows = batch.num_rows();
+    let file_schema = batch.schema();
+    let file_idx_by_id = field_index_by_id(file_schema.fields());
     let mut columns: Vec<ArrayRef> = Vec::with_capacity(logical_schema.fields().len());
     for field in logical_schema.fields().iter() {
-        let col = match batch.schema().column_with_name(field.name()) {
-            Some((idx, file_field)) => {
-                if file_field.data_type() == field.data_type() {
-                    Arc::clone(batch.column(idx))
-                } else {
-                    cast(batch.column(idx), field.data_type()).map_err(|e| {
-                        DataFusionError::External(
-                            format!(
-                                "deletion-vector reader: cannot adapt file column '{}' \
-                                 ({:?}) to Delta logical type {:?}: {e}",
-                                field.name(),
-                                file_field.data_type(),
-                                field.data_type(),
-                            )
-                            .into(),
-                        )
-                    })?
-                }
-            }
+        let source = field_id(field)
+            .and_then(|id| file_idx_by_id.get(id).copied())
+            .or_else(|| file_schema.index_of(field.name()).ok());
+        let col = match source {
+            Some(idx) => realign_array(batch.column(idx), field.data_type())?,
             None => new_null_array(field.data_type(), num_rows),
         };
         columns.push(col);
@@ -229,22 +326,26 @@ fn project_to_logical(
     })
 }
 
-/// Build the [`ProjectionMask`] selecting the root file columns that
-/// `logical_schema` names; the rest are never decoded.
+/// Build the [`ProjectionMask`] selecting the root file columns `logical_schema`
+/// wants, matched by field id (falling back to name); the rest are never decoded.
 fn logical_projection_mask(
     builder: &ParquetRecordBatchStreamBuilder<ParquetObjectReader>,
     logical_schema: &SchemaRef,
 ) -> ProjectionMask {
-    // Root Arrow fields map one-to-one, in order, to root Parquet columns, so
-    // this index mapping is infallible. A file column the logical schema does
-    // not name is pruned on purpose (not an error worth logging); a logical
-    // column the file lacks is null-filled later in `project_to_logical`.
+    let want_ids: HashSet<&str> = logical_schema
+        .fields()
+        .iter()
+        .filter_map(|f| field_id(f))
+        .collect();
     let roots = builder
         .schema()
         .fields()
         .iter()
         .enumerate()
-        .filter(|(_, field)| logical_schema.column_with_name(field.name()).is_some())
+        .filter(|(_, field)| {
+            field_id(field).is_some_and(|id| want_ids.contains(id))
+                || logical_schema.column_with_name(field.name()).is_some()
+        })
         .map(|(idx, _)| idx);
     ProjectionMask::roots(builder.parquet_schema(), roots)
 }
@@ -343,12 +444,72 @@ impl PartitionStream for MaskedParquetPartition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::{Array, Int32Array, Int64Array, StringArray};
-    use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
+    use arrow::array::{Array, Int32Array, Int64Array, StringArray, StructArray};
+    use arrow::datatypes::{
+        DataType as ArrowDataType, Field as ArrowField, Fields as ArrowFields, Schema as ArrowSchema,
+    };
     use datafusion::prelude::SessionContext;
     use deltalake::{DeltaTableBuilder, ensure_table_uri};
     use proptest::prelude::*;
     use tempfile::TempDir;
+
+    fn with_id(field: ArrowField, key: &str, id: &str) -> ArrowField {
+        field.with_metadata(HashMap::from([(key.to_string(), id.to_string())]))
+    }
+
+    // A columnMapping.mode=id file names columns logically (`op`, `after`) and
+    // carries `PARQUET:field_id`; the Delta read schema uses physical `col-<id>`
+    // names and `delta.columnMapping.id`. project_to_logical must pair them by
+    // field id, not name, else it null-fills and drops the data.
+    #[test]
+    fn project_to_logical_matches_by_field_id() {
+        let file_after: ArrayRef = Arc::new(StructArray::from(vec![(
+            Arc::new(with_id(
+                ArrowField::new("transaction__id", ArrowDataType::Utf8, true),
+                "PARQUET:field_id",
+                "2",
+            )),
+            Arc::new(StringArray::from(vec!["t1"])) as ArrayRef,
+        )]));
+        let file_op: ArrayRef = Arc::new(StringArray::from(vec!["INSERT"]));
+        let file_schema = Arc::new(ArrowSchema::new(vec![
+            with_id(
+                ArrowField::new("after", file_after.data_type().clone(), true),
+                "PARQUET:field_id",
+                "1",
+            ),
+            with_id(ArrowField::new("op", ArrowDataType::Utf8, false), "PARQUET:field_id", "8"),
+        ]));
+        let batch = RecordBatch::try_new(file_schema, vec![file_after, file_op]).unwrap();
+
+        let read_schema = Arc::new(ArrowSchema::new(vec![
+            with_id(
+                ArrowField::new(
+                    "col-1",
+                    ArrowDataType::Struct(ArrowFields::from(vec![with_id(
+                        ArrowField::new("col-2", ArrowDataType::Utf8, true),
+                        "delta.columnMapping.id",
+                        "2",
+                    )])),
+                    true,
+                ),
+                "delta.columnMapping.id",
+                "1",
+            ),
+            with_id(
+                ArrowField::new("col-8", ArrowDataType::Utf8, false),
+                "delta.columnMapping.id",
+                "8",
+            ),
+        ]));
+
+        let out = project_to_logical(&batch, &read_schema).unwrap();
+        assert_eq!(out.schema().field(1).name(), "col-8");
+        let op = out.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(op.value(0), "INSERT", "op resolved by field id, not null-filled");
+        let after = out.column(0).as_any().downcast_ref::<StructArray>().unwrap();
+        assert_eq!(after.column(0).as_any().downcast_ref::<StringArray>().unwrap().value(0), "t1");
+    }
 
     /// Expand a [`RowSelection`] into the row positions it selects.
     fn selected_rows(selection: &RowSelection) -> Vec<u64> {
