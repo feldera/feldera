@@ -118,9 +118,8 @@ pub(crate) fn make_client(
         }
     }
 
-    // Resolve the token only for https, where it is actually sent. Running the
-    // auth-token-command for an http host would spawn a subprocess whose output
-    // is then discarded.
+    // Only execute the auth-token command if we are actually going to send the
+    // credentials, which is https alone.
     if host.starts_with("https://") {
         let resolved_auth = match auth_token_command {
             Some(cmd) => Some(run_auth_token_command(&cmd)?),
@@ -137,11 +136,17 @@ pub(crate) fn make_client(
     Ok(Client::new_with_client(host.as_str(), client))
 }
 
-/// Execute the user-supplied auth-token command via `sh -c` and return
-/// trimmed stdout. Errors if the command fails or prints nothing.
+/// Execute the user-supplied auth-token command through the platform's shell and
+/// return trimmed stdout. Errors if the command fails or prints nothing.
 fn run_auth_token_command(cmd: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let output = std::process::Command::new("sh")
-        .arg("-c")
+    // Windows has no `sh`; `cmd /C` is what runs a command line there.
+    let (shell, shell_flag) = if cfg!(windows) {
+        ("cmd", "/C")
+    } else {
+        ("sh", "-c")
+    };
+    let output = std::process::Command::new(shell)
+        .arg(shell_flag)
         .arg(cmd)
         .output()
         .map_err(|e| format!("failed to spawn auth-token-command `{cmd}`: {e}"))?;
@@ -620,6 +625,8 @@ async fn tenant_commands(format: OutputFormat, action: TenantActions, client: Cl
                     1,
                 ))
                 .unwrap();
+            // `displaced` is set when --displace-existing took the name from
+            // another tenant; that tenant was renamed and keeps its contents.
             match &response.displaced {
                 Some(displaced) => println!(
                     "Renamed tenant {tenant_id} to '{name}'. The tenant that held the name is now '{}' ({}).",
@@ -3625,18 +3632,21 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn auth_token_command_trims_stdout() {
         let token = run_auth_token_command("printf '  tok-123\\n'").expect("command succeeds");
         assert_eq!(token, "tok-123");
     }
 
+    #[cfg(unix)]
     #[test]
     fn auth_token_command_empty_output_is_error() {
         let err = run_auth_token_command("true").expect_err("empty output must error");
         assert!(err.to_string().contains("empty output"), "{err}");
     }
 
+    #[cfg(unix)]
     #[test]
     fn auth_token_command_nonzero_exit_is_error() {
         let err = run_auth_token_command("echo boom >&2; exit 3").expect_err("failure must error");
