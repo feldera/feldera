@@ -41,13 +41,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
 <script lang="ts">
   import { Popover, Tooltip } from 'common-ui'
   import { slide } from 'svelte/transition'
-  import JSONbig from 'true-json-bigint'
   import { match, P } from 'ts-pattern'
   import { goto } from '$app/navigation'
   import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
   import Popup from '$lib/components/common/Popup.svelte'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
-  import JSONDialog from '$lib/components/dialogs/JSONDialog.svelte'
   import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
   import { duplicatePipeline, duplicatePipelineTooltip } from '$lib/compositions/duplicatePipeline'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
@@ -57,6 +55,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     usePipelineList,
     useUpdatePipelineList
   } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
@@ -142,8 +141,6 @@ groups related actions into multi-action dropdowns when multiple options are ava
     _spinner,
     _status_spinner,
     _configurations,
-    _configureProgram,
-    _configureResources,
     _saveFile,
     _unschedule,
     _storage_indicator
@@ -151,140 +148,179 @@ groups related actions into multi-action dropdowns when multiple options are ava
 
   const isPremium = usePremiumFeatures()
 
+  const canExec = usePermission('exec:pipeline')
+  const canWrite = usePermission('write:pipeline')
+  const canWriteCode = usePermission('write:pipeline_code')
+  // Gates the settings tooltip: a read-only caller sees a view-only hint instead
+  // of "stop the pipeline to edit", which they could never act on.
+  const canWriteConfig = usePermission('write:pipeline_config')
+
+  // Action-menu entries hidden without the matching permission. Lifecycle
+  // controls need `exec:pipeline`; the "More" menu holds only delete/duplicate,
+  // both `write:pipeline`; saving the file writes pipeline code, so it needs
+  // `write:pipeline_code`. Status, configuration and storage-state entries stay
+  // visible for read-only callers; the storage clear button inside
+  // `_storage_indicator` is gated on its own below.
+  const EXEC_ACTIONS = new Set<keyof typeof actions>([
+    '_start',
+    '_start_paused',
+    '_resume',
+    '_standby',
+    '_activate',
+    '_pause',
+    '_kill',
+    '_kill_short',
+    '_stop',
+    '_start_pending',
+    '_start_error',
+    '_unschedule'
+  ])
+  const WRITE_ACTIONS = new Set<keyof typeof actions>(['_more'])
+  const CODE_ACTIONS = new Set<keyof typeof actions>(['_saveFile'])
+  const filterByPermission = (list: (keyof typeof actions)[]) =>
+    list.filter(
+      (action) =>
+        (EXEC_ACTIONS.has(action) ? canExec.allowed : true) &&
+        (WRITE_ACTIONS.has(action) ? canWrite.allowed : true) &&
+        (CODE_ACTIONS.has(action) ? canWriteCode.allowed : true)
+    )
+
   const stopButtons = isPremium.value
     ? (['_stop', '_kill'] as const)
     : (['_kill', '_stop'] as const)
 
   // Helper function to get raw actions for current pipeline status
   const getRawActions = (status: typeof pipeline.current.status) => {
-    return match(status)
-      .returnType<(keyof typeof actions)[]>()
-      .with('Stopped', () => [
-        '_start',
-        '_start_paused',
-        '_standby',
-        '_saveFile',
-        '_configurations',
-        '_storage_indicator',
-        '_more'
-      ])
-      .with('Preparing', 'Provisioning', 'Initializing', () => [
-        '_kill',
-        '_spinner',
-        '_saveFile',
-        '_configurations',
-        '_storage_indicator',
-        '_more'
-      ])
-      .with('Pausing', 'Resuming', () => [
-        ...stopButtons,
-        '_spinner',
-        '_saveFile',
-        '_configurations',
-        '_storage_indicator',
-        '_more'
-      ])
-      .with('Unavailable', () => [
-        ...stopButtons,
-        '_spacer_long',
-        '_saveFile',
-        '_configurations',
-        '_storage_indicator',
-        '_more'
-      ])
-      .with('Running', 'ConcurrentBootstrapping', () => [
-        ...stopButtons,
-        '_pause',
-        '_saveFile',
-        '_configurations',
-        '_storage_indicator',
-        '_more'
-      ])
-      .with('Paused', () => [
-        ...stopButtons,
-        '_resume',
-        '_saveFile',
-        '_configurations',
-        '_storage_indicator',
-        '_more'
-      ])
-      .with('Suspending', () => [
-        '_kill',
-        '_spinner',
-        '_saveFile',
-        '_configurations',
-        '_storage_indicator',
-        '_more'
-      ])
-      .with('Suspended', () => [
-        '_spinner',
-        '_kill',
-        '_saveFile',
-        '_configurations',
-        '_storage_indicator',
-        '_more'
-      ])
-      .with('Standby', () => [
-        '_kill',
-        '_activate',
-        '_saveFile',
-        '_configurations',
-        '_storage_indicator',
-        '_more'
-      ])
-      .with('Bootstrapping', () => [
-        '_kill',
-        '_spinner',
-        '_saveFile',
-        '_configurations',
-        '_storage_indicator',
-        '_more'
-      ])
-      .with('Replaying', 'Synchronizing', () => [
-        '_kill',
-        '_spinner',
-        '_saveFile',
-        '_configurations',
-        '_storage_indicator',
-        '_more'
-      ])
-      .with('AwaitingApproval', () => [
-        '_kill',
-        '_saveFile',
-        '_configurations',
-        '_storage_indicator',
-        '_more'
-      ])
-      .with('Stopping', () => [
-        '_kill',
-        '_spinner',
-        '_saveFile',
-        '_configurations',
-        '_storage_indicator',
-        '_more'
-      ])
-      .with(
-        { Queued: P.any },
-        { CompilingSql: P.any },
-        { SqlCompiled: P.any },
-        { CompilingRust: P.any },
-        (cause) => [
-          ...(Object.values(cause)[0].cause === 'upgrade' ? ['_unschedule' as const] : []),
-          '_start_pending',
+    return filterByPermission(
+      match(status)
+        .returnType<(keyof typeof actions)[]>()
+        .with('Stopped', () => [
+          '_start',
+          '_start_paused',
+          '_standby',
           '_saveFile',
           '_configurations',
           '_storage_indicator',
           '_more'
-        ]
-      )
-      .with('SqlError', 'RustError', 'SystemError', () => [
-        '_start_error',
-        '_saveFile',
-        '_configurations',
-        '_storage_indicator',
-        '_more'
-      ])
-      .exhaustive()
+        ])
+        .with('Preparing', 'Provisioning', 'Initializing', () => [
+          '_kill',
+          '_spinner',
+          '_saveFile',
+          '_configurations',
+          '_storage_indicator',
+          '_more'
+        ])
+        .with('Pausing', 'Resuming', () => [
+          ...stopButtons,
+          '_spinner',
+          '_saveFile',
+          '_configurations',
+          '_storage_indicator',
+          '_more'
+        ])
+        .with('Unavailable', () => [
+          ...stopButtons,
+          '_spacer_long',
+          '_saveFile',
+          '_configurations',
+          '_storage_indicator',
+          '_more'
+        ])
+        .with('Running', 'ConcurrentBootstrapping', () => [
+          ...stopButtons,
+          '_pause',
+          '_saveFile',
+          '_configurations',
+          '_storage_indicator',
+          '_more'
+        ])
+        .with('Paused', () => [
+          ...stopButtons,
+          '_resume',
+          '_saveFile',
+          '_configurations',
+          '_storage_indicator',
+          '_more'
+        ])
+        .with('Suspending', () => [
+          '_kill',
+          '_spinner',
+          '_saveFile',
+          '_configurations',
+          '_storage_indicator',
+          '_more'
+        ])
+        .with('Suspended', () => [
+          '_spinner',
+          '_kill',
+          '_saveFile',
+          '_configurations',
+          '_storage_indicator',
+          '_more'
+        ])
+        .with('Standby', () => [
+          '_kill',
+          '_activate',
+          '_saveFile',
+          '_configurations',
+          '_storage_indicator',
+          '_more'
+        ])
+        .with('Bootstrapping', () => [
+          '_kill',
+          '_spinner',
+          '_saveFile',
+          '_configurations',
+          '_storage_indicator',
+          '_more'
+        ])
+        .with('Replaying', 'Synchronizing', () => [
+          '_kill',
+          '_spinner',
+          '_saveFile',
+          '_configurations',
+          '_storage_indicator',
+          '_more'
+        ])
+        .with('AwaitingApproval', () => [
+          '_kill',
+          '_saveFile',
+          '_configurations',
+          '_storage_indicator',
+          '_more'
+        ])
+        .with('Stopping', () => [
+          '_kill',
+          '_spinner',
+          '_saveFile',
+          '_configurations',
+          '_storage_indicator',
+          '_more'
+        ])
+        .with(
+          { Queued: P.any },
+          { CompilingSql: P.any },
+          { SqlCompiled: P.any },
+          { CompilingRust: P.any },
+          (cause) => [
+            ...(Object.values(cause)[0].cause === 'upgrade' ? ['_unschedule' as const] : []),
+            '_start_pending',
+            '_saveFile',
+            '_configurations',
+            '_storage_indicator',
+            '_more'
+          ]
+        )
+        .with('SqlError', 'RustError', 'SystemError', () => [
+          '_start_error',
+          '_saveFile',
+          '_configurations',
+          '_storage_indicator',
+          '_more'
+        ])
+        .exhaustive()
+    )
   }
 
   // Define groupable actions
@@ -920,55 +956,12 @@ groups related actions into multi-action dropdowns when multiple options are ava
   </Tooltip>
 {/snippet}
 
-{#snippet pipelineResourcesDialog(dialogTitle: string, field: keyof typeof pipeline.current)}
-  <JSONDialog
-    disabled={editConfigDisabled}
-    title={dialogTitle}
-    value={JSONbig.stringify(pipeline.current[field], undefined, '  ')}
-    filePath="file://feldera/pipelines/{pipeline.current.name}/{field}.json"
-    onApply={async (json) => {
-      await pipeline.patch({
-        [field]: JSONbig.parse(json)
-      })
-    }}
-  ></JSONDialog>
-{/snippet}
-{#snippet resourcesDialog()}
-  {@render pipelineResourcesDialog(
-    `Configure ${pipeline.current.name} runtime resources`,
-    'runtimeConfig'
-  )}
-{/snippet}
-{#snippet compilationDialog()}
-  {@render pipelineResourcesDialog(
-    `Configure ${pipeline.current.name} compilation profile`,
-    'programConfig'
-  )}
-{/snippet}
-{#snippet _configureResources()}
-  <button
-    onclick={() => (globalDialog.dialog = resourcesDialog)}
-    class="{buttonClass} {shortClass} {shortColor} fd fd-sliders-horizontal {basicBtnColor} {iconClass}"
-  >
-  </button>
-  {#if editConfigDisabled}
-    <Tooltip placement="top">Stop the pipeline to edit settings</Tooltip>
-  {/if}
-{/snippet}
-{#snippet _configureProgram()}
-  <button
-    onclick={() => (globalDialog.dialog = compilationDialog)}
-    class="{buttonClass} {shortClass} {shortColor} fd fd-settings {basicBtnColor} {iconClass}"
-  >
-  </button>
-  {#if editConfigDisabled}
-    <Tooltip placement="top">Stop the pipeline to edit settings</Tooltip>
-  {/if}
-{/snippet}
 {#snippet _configurations()}
   <PipelineConfigurationsPopup {pipeline} pipelineBusy={editConfigDisabled}
   ></PipelineConfigurationsPopup>
-  {#if editConfigDisabled}
+  {#if !canWriteConfig.allowed}
+    <Tooltip placement="top">You have read-only access to the configuration</Tooltip>
+  {:else if editConfigDisabled}
     <Tooltip placement="top">Stop the pipeline to edit settings</Tooltip>
   {:else}
     <Tooltip placement="top">Compilation and runtime configuration</Tooltip>
@@ -1030,7 +1023,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
           Cleared
         {/if}
       </div>
-      {#if storageStatus === 'InUse'}
+      {#if storageStatus === 'InUse' && canExec.allowed}
         <button
           class="fd fd-eraser btn-icon rounded p-2 text-[20px] {isShutdown &&
           storageStatus === 'InUse'
@@ -1049,6 +1042,8 @@ groups related actions into multi-action dropdowns when multiple options are ava
     >
       {#if storageStatus === 'Cleared'}
         There are no checkpoints available.
+      {:else if !canExec.allowed}
+        Pipeline storage is in use.
       {:else if isShutdown}
         Pipeline storage is in use. Click to clear it.
       {:else}

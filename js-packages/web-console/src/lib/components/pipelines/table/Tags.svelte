@@ -7,6 +7,7 @@
     usePipelineList,
     useUpdatePipelineList
   } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { usePermission } from '$lib/compositions/usePermission.svelte'
   import type { PipelineManagerApi } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { partition } from '$lib/functions/common/array'
@@ -50,6 +51,8 @@
   const { updatePipeline, discardPendingListRefresh } = useUpdatePipelineList()
   const pipelineList = usePipelineList()
   const { toastError } = useToast()
+
+  const canEditTags = usePermission('write:pipeline_meta')
 
   // Sort the edited tags to store them in the backend,
   // cache that same order optimistically, and return it as the patch body.
@@ -280,145 +283,177 @@
   }
 </script>
 
-<Popup>
-  {#snippet trigger(toggle)}
-    {@const open = () => {
-      closeForm()
-      if (knownTags.size === 0) {
-        openCreate('')
-      }
-      toggle()
-    }}
-    <div class="flex flex-nowrap items-center gap-1">
-      {#each inlineTags as tag (tag)}
-        {@render chip(tag, open)}
-      {/each}
-      {#if overflowCount > 0}
+{#if canEditTags.allowed}
+  <Popup>
+    {#snippet trigger(toggle)}
+      {@const open = () => {
+        closeForm()
+        if (knownTags.size === 0) {
+          openCreate('')
+        }
+        toggle()
+      }}
+      {@render inlineTagRow(open)}
+    {/snippet}
+    {#snippet content()}
+      <div
+        transition:slide={{ duration: 100 }}
+        class="bg-white-dark absolute top-8 left-0 z-30 flex w-[304px] flex-col overflow-hidden rounded shadow-md"
+      >
+        <SlidingPanels
+          current={page}
+          width={280}
+          pages={[
+            { key: 'list', content: listPage },
+            { key: 'create', content: createPage },
+            { key: 'edit', content: editPage },
+            { key: 'delete', content: deletePage }
+          ]}
+        />
+      </div>
+
+      {#snippet listPage()}
+        {#if knownTags.size > 0}
+          <div class="p-2">
+            <input
+              class="input h-9 w-full"
+              type="search"
+              placeholder="Search"
+              bind:value={search}
+            />
+          </div>
+        {/if}
+        <div class="scrollbar flex max-h-[280px] flex-col overflow-y-auto pb-1">
+          {#each selectedTags as tag (tag)}
+            {@render tagRow(tag, true)}
+          {/each}
+          {#each unselectedTags as tag (tag)}
+            {@render tagRow(tag, false)}
+          {/each}
+        </div>
         <button
-          class="px-1 text-sm text-surface-600-400 hover:text-surface-950-50"
-          onclick={open}
-          aria-label="Show all tags"
-        >
-          +{overflowCount}
-        </button>
-        <Tooltip placement="top" class="max-w-[240px] text-wrap"
-          >{tags.map(tagDisplayName).join(', ')}</Tooltip
-        >
-      {/if}
-      {#if tags.length === 0}
-        <button
-          class="flex h-5 items-center gap-1 rounded border border-dashed border-surface-500 px-2 text-sm text-surface-800-200 hover:border-surface-950-50 hover:text-surface-950-50"
-          onclick={open}
+          class="flex items-center gap-2 border-t border-surface-100-900 px-3 py-2 text-left text-sm hover:bg-surface-50-950"
+          onclick={() => openCreate(search)}
         >
           <span class="fd fd-plus text-[16px]"></span>
-          Tag
+          Create a new tag
         </button>
-      {/if}
-    </div>
-  {/snippet}
-  {#snippet content()}
-    <div
-      transition:slide={{ duration: 100 }}
-      class="bg-white-dark absolute top-8 left-0 z-30 flex w-[304px] flex-col overflow-hidden rounded shadow-md"
-    >
-      <SlidingPanels
-        current={page}
-        width={280}
-        pages={[
-          { key: 'list', content: listPage },
-          { key: 'create', content: createPage },
-          { key: 'edit', content: editPage },
-          { key: 'delete', content: deletePage }
-        ]}
-      />
-    </div>
+      {/snippet}
 
-    {#snippet listPage()}
-      {#if knownTags.size > 0}
-        <div class="p-2">
-          <input class="input h-9 w-full" type="search" placeholder="Search" bind:value={search} />
+      {#snippet createPage()}
+        {@render tagForm({
+          title: 'Create a new tag',
+          submitLabel: candidateExists ? 'Assign' : 'Create',
+          submitDisabled: !newTagName.trim() || candidateError !== null,
+          lockedColor: createLockedColor,
+          validationError: candidateError,
+          onSubmit: submitCreate
+        })}
+      {/snippet}
+
+      {#snippet editPage()}
+        {@render tagForm({
+          title: 'Edit tag',
+          submitLabel: 'Save',
+          submitDisabled: !newTagName.trim() || candidateError !== null,
+          validationError: candidateError,
+          onSubmit: submitEdit,
+          onDelete: () => (page = 'delete')
+        })}
+      {/snippet}
+
+      {#snippet deletePage()}
+        <div class="flex items-center gap-2 px-2 py-2">
+          <button
+            class="btn-icon h-7 w-7"
+            onclick={() => (page = 'edit')}
+            aria-label="Back"
+            title="Back"
+          >
+            <span class="fd fd-chevron-left text-[20px]"></span>
+          </button>
+          <span class="text-sm font-medium">Delete tag</span>
         </div>
+        <div class="flex flex-col gap-3 px-3 pb-3">
+          <p class="">
+            The tag “{tagDisplayName(editingTag ?? '')}” will be removed from
+            {editingTagUsageCount}
+            {editingTagUsageCount === 1 ? 'pipeline' : 'pipelines'} it's currently assigned to.
+            <br />
+            This cannot be undone.
+          </p>
+          <div class="flex gap-2">
+            <button class="btn flex-1 preset-tonal-surface" onclick={() => (page = 'edit')}>
+              Cancel
+            </button>
+            <button class="btn flex-1 preset-filled-error-500" onclick={submitDelete}>
+              Delete
+            </button>
+          </div>
+        </div>
+      {/snippet}
+    {/snippet}
+  </Popup>
+{:else}
+  <!-- Read-only: tags stay visible as static chips, no editing affordances. -->
+  {@render inlineTagRow()}
+{/if}
+
+<!-- The inline tag row shared by the editable and read-only views. `open` wires
+  the editing affordances (chips, the "+N" overflow, and the empty-state add
+  button all open the popup); without it the row is static display only. -->
+{#snippet inlineTagRow(open?: () => void)}
+  <div class="flex flex-nowrap items-center gap-1">
+    {#each inlineTags as tag (tag)}
+      {@render chip(tag, open)}
+    {/each}
+    {#if overflowCount > 0}
+      {@const allTags = tags.map(tagDisplayName).join(', ')}
+      {@const base = 'px-1 text-sm text-surface-600-400'}
+      <!-- Editable: a button that opens the popup, with a hover tooltip. Read-only:
+        the same "+N" as a static span whose native title shows the full list. -->
+      {#if open}
+        <button class="{base} hover:text-surface-950-50" onclick={open} aria-label="Show all tags">
+          +{overflowCount}
+        </button>
+        <Tooltip placement="top" class="max-w-[240px] text-wrap">{allTags}</Tooltip>
+      {:else}
+        <span class={base} title={allTags}>
+          +{overflowCount}
+        </span>
       {/if}
-      <div class="scrollbar flex max-h-[280px] flex-col overflow-y-auto pb-1">
-        {#each selectedTags as tag (tag)}
-          {@render tagRow(tag, true)}
-        {/each}
-        {#each unselectedTags as tag (tag)}
-          {@render tagRow(tag, false)}
-        {/each}
-      </div>
+    {/if}
+    {#if open && tags.length === 0}
       <button
-        class="flex items-center gap-2 border-t border-surface-100-900 px-3 py-2 text-left text-sm hover:bg-surface-50-950"
-        onclick={() => openCreate(search)}
+        class="flex h-5 items-center gap-1 rounded border border-dashed border-surface-500 px-2 text-sm text-surface-800-200 hover:border-surface-950-50 hover:text-surface-950-50"
+        onclick={open}
       >
         <span class="fd fd-plus text-[16px]"></span>
-        Create a new tag
+        Tag
       </button>
-    {/snippet}
+    {/if}
+  </div>
+{/snippet}
 
-    {#snippet createPage()}
-      {@render tagForm({
-        title: 'Create a new tag',
-        submitLabel: candidateExists ? 'Assign' : 'Create',
-        submitDisabled: !newTagName.trim() || candidateError !== null,
-        lockedColor: createLockedColor,
-        validationError: candidateError,
-        onSubmit: submitCreate
-      })}
-    {/snippet}
+<!-- A chip is a button that opens the popup when editable and a static label when
+  read-only; both share the same body and base class. -->
+{#snippet chip(tag: string, open?: () => void)}
+  {@const base =
+    'flex h-5 items-center gap-1.5 rounded border border-surface-200-800 px-2 text-sm whitespace-nowrap'}
+  {#if open}
+    <button class="{base} hover:bg-surface-50-950" onclick={open}>
+      {@render chipContent(tag)}
+    </button>
+  {:else}
+    <span class={base}>
+      {@render chipContent(tag)}
+    </span>
+  {/if}
+{/snippet}
 
-    {#snippet editPage()}
-      {@render tagForm({
-        title: 'Edit tag',
-        submitLabel: 'Save',
-        submitDisabled: !newTagName.trim() || candidateError !== null,
-        validationError: candidateError,
-        onSubmit: submitEdit,
-        onDelete: () => (page = 'delete')
-      })}
-    {/snippet}
-
-    {#snippet deletePage()}
-      <div class="flex items-center gap-2 px-2 py-2">
-        <button
-          class="btn-icon h-7 w-7"
-          onclick={() => (page = 'edit')}
-          aria-label="Back"
-          title="Back"
-        >
-          <span class="fd fd-chevron-left text-[20px]"></span>
-        </button>
-        <span class="text-sm font-medium">Delete tag</span>
-      </div>
-      <div class="flex flex-col gap-3 px-3 pb-3">
-        <p class="">
-          The tag “{tagDisplayName(editingTag ?? '')}” will be removed from
-          {editingTagUsageCount}
-          {editingTagUsageCount === 1 ? 'pipeline' : 'pipelines'} it's currently assigned to.
-          <br />
-          This cannot be undone.
-        </p>
-        <div class="flex gap-2">
-          <button class="btn flex-1 preset-tonal-surface" onclick={() => (page = 'edit')}>
-            Cancel
-          </button>
-          <button class="btn flex-1 preset-filled-error-500" onclick={submitDelete}>
-            Delete
-          </button>
-        </div>
-      </div>
-    {/snippet}
-  {/snippet}
-</Popup>
-
-{#snippet chip(tag: string, open: () => void)}
-  <button
-    class="flex h-5 items-center gap-1.5 rounded border border-surface-200-800 px-2 text-sm whitespace-nowrap hover:bg-surface-50-950"
-    onclick={open}
-  >
-    <span class="h-2 w-2 rounded-full" style="background-color: {tagColorOf(tag)}"></span>
-    {tagDisplayName(tag)}
-  </button>
+{#snippet chipContent(tag: string)}
+  <span class="h-2 w-2 rounded-full" style="background-color: {tagColorOf(tag)}"></span>
+  {tagDisplayName(tag)}
 {/snippet}
 
 {#snippet tagRow(tag: string, selected: boolean)}

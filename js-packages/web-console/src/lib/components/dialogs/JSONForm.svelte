@@ -17,7 +17,8 @@
     refreshOnChange = true
   }: {
     filePath: string
-    onSubmit: (json: string) => Promise<void>
+    // Absent for a read-only viewer; the Ctrl+S save shortcut then does nothing.
+    onSubmit?: (json: string) => Promise<void>
     value?: string
     readOnlyMessage?: { value: string }
     disabled?: boolean
@@ -72,7 +73,7 @@
       if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
         const currentValue = currentModel.getValue()
         updateUpstream()
-        onSubmit(currentValue)
+        onSubmit?.(currentValue)
         e.preventDefault()
       }
     })

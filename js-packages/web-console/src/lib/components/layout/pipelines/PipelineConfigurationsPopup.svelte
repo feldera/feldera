@@ -5,6 +5,7 @@
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import MultiJSONDialog from '$lib/components/dialogs/MultiJSONDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+  import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
@@ -21,6 +22,15 @@
   const globalDialog = useGlobalDialog()
   const { toastError } = useToast()
   const { postPipelineAction } = getPipelineAction()
+
+  // Read-only callers may still open the dialog to view the config, but the
+  // editors stay read-only and Apply is hidden (no `onApply`). Editing needs
+  // write:pipeline_config. When the caller can edit but the pipeline is busy,
+  // Apply shows disabled with the stop-the-pipeline hint.
+  const canEditConfig = usePermission('write:pipeline_config')
+  const configDisabledMessage = $derived(
+    canEditConfig.allowed ? 'Stop the pipeline to edit settings' : 'You have read-only access'
+  )
 
   const isStorageNotClearedError = (e: unknown): boolean =>
     e instanceof Error && e.message.includes('not allowed while storage is not cleared')
@@ -127,7 +137,7 @@
 {#snippet pipelineConfigurationsDialog()}
   <MultiJSONDialog
     disabled={pipelineBusy}
-    disabledMessage="Stop the pipeline to edit settings"
+    disabledMessage={configDisabledMessage}
     title={`Configure ${pipeline.current.name} pipeline`}
     refreshOnChange={!pendingJsonValues}
     values={pendingJsonValues ?? {
@@ -139,16 +149,16 @@
         title: `Runtime configuration`,
         editorClass: 'h-[40vh]',
         filePath: `file://pipelines/${pipeline.current.name}/RuntimeConfig.json`,
-        readOnlyMessage: 'Cannot edit config while pipeline is running'
+        readOnlyMessage: configDisabledMessage
       },
       programConfig: {
         title: `Compilation configuration`,
         editorClass: 'h-24',
         filePath: `file://pipelines/${pipeline.current.name}/ProgramConfig.json`,
-        readOnlyMessage: 'Cannot edit config while pipeline is running'
+        readOnlyMessage: configDisabledMessage
       }
     }}
-    onApply={applyConfig}
+    onApply={canEditConfig.allowed ? applyConfig : undefined}
   ></MultiJSONDialog>
 {/snippet}
 

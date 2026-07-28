@@ -4,10 +4,13 @@
   import { page } from '$app/state'
   import TenantList from '$lib/components/admin/TenantList.svelte'
   import UserRoleTable from '$lib/components/admin/UserRoleTable.svelte'
+  import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { getConfiguredOwners, getTenants, type Tenant } from '$lib/services/pipelineManager'
   import type { Snippet } from '$lib/types/svelte'
 
-  const isOwner = $derived(page.data.feldera?.isOwner ?? false)
+  // Tenant management (switch/list/create) is owner-only; gate on the permission
+  // rather than the role directly, in line with the rest of the RBAC surface.
+  const manageTenants = usePermission('write:tenant')
   let errorMessage = $state('')
 
   // Owner-only: pick a tenant (by UUID) to inspect its members in place, without
@@ -50,7 +53,7 @@
     <div class="rounded preset-outlined-error-600-400 p-2 text-sm">{errorMessage}</div>
   {/if}
 
-  {#if isOwner}
+  {#if manageTenants.allowed}
     <!-- Owner-only tenant switcher for the members view below. Prominent so it
          is not mistaken for a minor control. -->
     <div
@@ -80,7 +83,7 @@
     usersBody
   )}
 
-  {#if isOwner}
+  {#if manageTenants.allowed}
     {#snippet ownersBody()}
       <div class="flex flex-col gap-3">
         <div class="flex flex-col gap-1">

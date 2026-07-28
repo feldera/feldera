@@ -67,6 +67,7 @@
     files,
     currentFileName = $bindable(),
     editDisabled,
+    readOnlyMessage,
     codeEditor,
     statusBarCenter,
     statusBarEnd,
@@ -88,6 +89,9 @@
     }[]
     currentFileName: string
     editDisabled?: boolean
+    // Overrides the generic read-only hint for a writable file, e.g. to explain
+    // a permission-driven read-only state. Ignored for compiler-generated files.
+    readOnlyMessage?: string
     codeEditor: Snippet<[textEditor: Snippet, statusBar: Snippet, isReadOnly: boolean]>
     statusBarCenter?: Snippet
     statusBarEnd?: Snippet<[downstreamChanged: boolean]>
@@ -383,7 +387,8 @@
             readOnlyMessage: {
               value: isReadOnlyFile
                 ? 'Cannot edit a compiler-generated file'
-                : 'Cannot edit code while the pipeline is running or its storage is in use'
+                : (readOnlyMessage ??
+                  'Cannot edit code while the pipeline is running or its storage is in use')
             },
             fontFamily: theme.config.monospaceFontFamily,
             fontSize: editorFontSize.value,

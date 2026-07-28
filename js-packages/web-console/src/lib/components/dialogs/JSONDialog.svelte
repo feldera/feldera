@@ -14,7 +14,7 @@
   }: {
     value: string
     filePath: string
-    onApply: (json: string) => Promise<void>
+    onApply?: (json: string) => Promise<void>
     title: string
     readOnlyMessage?: { value: string }
     disabled?: boolean
@@ -43,16 +43,25 @@
   })
 
   const submitHandler = async () => {
-    onApply(current)
+    onApply?.(current)
   }
 </script>
 
 <GenericDialog
-  content={{ title, onSuccess: { name: 'Apply', callback: submitHandler, disabledMessage } }}
+  content={{
+    title,
+    onSuccess: onApply ? { name: 'Apply', callback: submitHandler, disabledMessage } : undefined,
+    onCancel: onApply ? undefined : { name: 'Close' }
+  }}
   {disabled}
 >
   <div class="h-96">
-    <JsonForm {filePath} onSubmit={onApply} bind:value={current} {disabled} {readOnlyMessage}
+    <JsonForm
+      {filePath}
+      onSubmit={onApply}
+      bind:value={current}
+      disabled={disabled || !onApply}
+      {readOnlyMessage}
     ></JsonForm>
   </div>
 </GenericDialog>

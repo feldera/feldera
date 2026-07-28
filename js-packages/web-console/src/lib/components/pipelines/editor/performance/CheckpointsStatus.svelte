@@ -4,6 +4,7 @@
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+  import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { uuidV7Timestamp } from '$lib/functions/common/date'
   import { humanSize } from '$lib/functions/common/string'
   import { formatDateTime } from '$lib/functions/format'
@@ -23,6 +24,7 @@
   } = $props()
 
   const globalDialog = useGlobalDialog()
+  const canCheckpoint = usePermission('exec:checkpoint')
   const elapsed = useElapsedTime()
 
   let clickFeedback = $state<() => void>()
@@ -92,7 +94,7 @@
       {/each}
     {/if}
   </div>
-  {#if onCheckpoint}
+  {#if onCheckpoint && canCheckpoint.allowed}
     <ClickFeedback active={checkpointInProgress} bind:clickFeedback>
       {#snippet children({ active })}
         <button

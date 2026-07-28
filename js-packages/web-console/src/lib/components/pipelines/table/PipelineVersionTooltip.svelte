@@ -10,6 +10,7 @@
   } = $props()
 
   import { Popover, Tooltip } from 'common-ui'
+  import RBAC from '$lib/components/auth/RBAC.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { normalizeRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
 
@@ -19,10 +20,12 @@
 {#if status === 'update_available'}
   <Popover placement="bottom-end" strategy="fixed">
     <div>A new runtime version {normalizeRuntimeVersion(baseRuntimeVersion)} is available.</div>
-    <button
-      class="mt-2 btn h-6 preset-filled-primary-500"
-      onclick={() => api.postUpdateRuntime(pipelineName)}>Update</button
-    >
+    <RBAC require="exec:runtime_upgrade">
+      <button
+        class="mt-2 btn h-6 preset-filled-primary-500"
+        onclick={() => api.postUpdateRuntime(pipelineName)}>Update</button
+      >
+    </RBAC>
   </Popover>
 {:else if status === 'custom'}
   <Tooltip placement="bottom-end" strategy="fixed">

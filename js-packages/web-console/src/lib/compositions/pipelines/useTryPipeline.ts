@@ -13,6 +13,9 @@ export const useTryPipeline = () => {
   const pipelineList = usePipelineList()
   const api = usePipelineManager()
   return async (pipeline: Omit<Demo, 'title'>, trigger_location?: string) => {
+    // When the demo's pipeline already exists, just open it. This lets a
+    // read-only caller follow a demo tile without a create call (a 403), and
+    // spares a write caller from clobbering an existing pipeline.
     const already_created = (pipelineList.pipelines ?? []).some((p) => p.name === pipeline.name)
     captureEvent('demo_opened', {
       demo: pipeline.name,

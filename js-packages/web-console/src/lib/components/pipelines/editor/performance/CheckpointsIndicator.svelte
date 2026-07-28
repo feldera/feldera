@@ -3,6 +3,7 @@
   import ClickFeedback from '$lib/components/common/ClickFeedback.svelte'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+  import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
   import { uuidV7Timestamp } from '$lib/functions/common/date'
@@ -33,6 +34,7 @@
 
   const api = usePipelineManager()
   const isEnterprise = usePremiumFeatures()
+  const canCheckpoint = usePermission('exec:checkpoint')
   const { formatElapsedTime } = useElapsedTime()
   const globalDialog = useGlobalDialog()
 
@@ -88,7 +90,10 @@
   <div class="hr"></div>
 {/snippet}
 
-{#if activityVisible || last || isEnterprise.value}
+<!-- The "create first checkpoint" branch is the only affordance gated on
+     `exec:checkpoint`. Fold the permission into the outer condition too, so a
+     read-only caller with no activity or prior checkpoint sees no empty bar. -->
+{#if activityVisible || last || (isEnterprise.value && canCheckpoint.allowed)}
   <div class="flex min-h-16 w-full flex-wrap items-center gap-x-8 gap-y-2" transition:slide>
     {#if activityVisible}
       <div class="hr"></div>
@@ -146,7 +151,7 @@
         </div>
       </div>
       {@render allCheckpoints()}
-    {:else if isEnterprise.value}
+    {:else if isEnterprise.value && canCheckpoint.allowed}
       <div class="hr"></div>
       <ClickFeedback
         active={metrics.current.checkpoint_activity.status !== 'idle'}
