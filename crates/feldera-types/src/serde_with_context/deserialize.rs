@@ -158,7 +158,30 @@ where
     }
 }
 
-impl<'de, C, AUX, T> DeserializeWithContext<'de, C, AUX> for Vec<T>
+/// Like [`DeserializationContext`], but also passes record metadata to the
+/// deserialized value.
+struct DeserializationContextAux<'de, C, AUX, T> {
+    context: &'de C,
+    aux: &'de Option<AUX>,
+    phantom: PhantomData<T>,
+}
+
+impl<'de, C, AUX, T> DeserializeSeed<'de> for DeserializationContextAux<'de, C, AUX, T>
+where
+    T: DeserializeWithContext<'de, C, AUX>,
+{
+    type Value = T;
+
+    #[inline(never)]
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        T::deserialize_with_context_aux(deserializer, self.context, self.aux)
+    }
+}
+
+impl<'de, C, AUX: 'de, T> DeserializeWithContext<'de, C, AUX> for Vec<T>
 where
     T: DeserializeWithContext<'de, C, AUX>,
 {
@@ -167,47 +190,81 @@ where
     where
         D: Deserializer<'de>,
     {
-        struct VecVisitor<'de, C, AUX, T> {
-            context: &'de C,
-            phantom: PhantomData<(T, AUX)>,
-        }
+        deserializer.deserialize_seq(VecVisitor::<C, AUX, T>::new(context, None))
+    }
 
-        impl<'de, C, AUX, T> VecVisitor<'de, C, AUX, T> {
-            fn new(context: &'de C) -> Self {
-                Self {
-                    context,
+    /// Deserialize an array of records, passing `aux` to each of them.
+    ///
+    /// Formats that encode a batch of records in one payload, e.g., Arrow,
+    /// deserialize the batch as a `Vec`, so each record in the batch must
+    /// receive the metadata attached to the batch.
+    #[inline(never)]
+    fn deserialize_with_context_aux<D>(
+        deserializer: D,
+        context: &'de C,
+        aux: &'de Option<AUX>,
+    ) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(VecVisitor::<C, AUX, T>::new(context, Some(aux)))
+    }
+}
+
+struct VecVisitor<'de, C, AUX, T> {
+    context: &'de C,
+    aux: Option<&'de Option<AUX>>,
+    phantom: PhantomData<T>,
+}
+
+impl<'de, C, AUX, T> VecVisitor<'de, C, AUX, T> {
+    fn new(context: &'de C, aux: Option<&'de Option<AUX>>) -> Self {
+        Self {
+            context,
+            aux,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<'de, C, AUX: 'de, T> Visitor<'de> for VecVisitor<'de, C, AUX, T>
+where
+    T: DeserializeWithContext<'de, C, AUX>,
+{
+    type Value = Vec<T>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "an array")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut result = Vec::new();
+
+        // Both arms deserialize the same element type; they differ only in
+        // whether each element also receives the batch metadata.
+        match self.aux {
+            Some(aux) => {
+                while let Some(val) = seq.next_element_seed(DeserializationContextAux {
+                    context: self.context,
+                    aux,
                     phantom: PhantomData,
+                })? {
+                    result.push(val)
                 }
             }
-        }
-
-        impl<'de, C, AUX, T> Visitor<'de> for VecVisitor<'de, C, AUX, T>
-        where
-            T: DeserializeWithContext<'de, C, AUX>,
-        {
-            type Value = Vec<T>;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                write!(formatter, "an array")
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: SeqAccess<'de>,
-            {
-                let mut result = Vec::new();
-
+            None => {
                 while let Some(val) =
                     seq.next_element_seed(DeserializationContext::new(self.context))?
                 {
                     result.push(val)
                 }
-
-                Ok(result)
             }
         }
 
-        deserializer.deserialize_seq(VecVisitor::new(context))
+        Ok(result)
     }
 }
 
@@ -928,6 +985,49 @@ mod test {
                 r#"[true, 10, 100]"#
             ).map_err(|e| e.to_string()),
             Err(r#"{"field":"українська","description":"invalid type: integer `10`, expected a string at line 1 column 9"} at line 1 column 11"#.to_string())
+        );
+    }
+
+    /// Record whose `origin` column defaults to a metadata attribute, the way
+    /// the SQL compiler compiles `DEFAULT CONNECTOR_METADATA()['origin']`.
+    #[derive(Debug, Eq, PartialEq)]
+    struct RecordWithMetadata {
+        id: u8,
+        origin: Option<String>,
+    }
+
+    deserialize_table_record!(RecordWithMetadata["RecordWithMetadata", String, 2] {
+        (id, "id", false, u8, |_| None),
+        (origin, "origin", false, Option<String>, |metadata: &Option<String>| Some(metadata.clone()))
+    });
+
+    /// A batch of records deserialized as a `Vec` must pass the batch metadata
+    /// to every record in it.  Columnar formats, e.g., Arrow, deserialize a
+    /// whole batch at a time, so dropping the metadata here leaves metadata
+    /// columns NULL for all of them.
+    #[test]
+    fn vec_passes_metadata_to_each_record() {
+        let metadata = Some("kafka".to_string());
+        let records = Vec::<RecordWithMetadata>::deserialize_with_context_aux(
+            &mut serde_json::Deserializer::from_str(r#"[{"id": 1}, {"id": 2, "origin": "file"}]"#),
+            &DEFAULT_CONFIG,
+            &metadata,
+        )
+        .unwrap();
+
+        assert_eq!(
+            records,
+            vec![
+                RecordWithMetadata {
+                    id: 1,
+                    origin: Some("kafka".to_string())
+                },
+                // A value in the record takes precedence over metadata.
+                RecordWithMetadata {
+                    id: 2,
+                    origin: Some("file".to_string())
+                },
+            ]
         );
     }
 }
