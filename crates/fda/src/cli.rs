@@ -132,14 +132,14 @@ pub struct Cli {
     ///
     /// Examples:
     ///
-    ///   # Kubernetes projected service-account token
-    ///   --auth-token-command 'cat /var/run/secrets/kubernetes.io/serviceaccount/token'
+    /// Kubernetes projected service-account token:
+    /// `--auth-token-command 'cat /var/run/secrets/kubernetes.io/serviceaccount/token'`
     ///
-    ///   # AWS EKS, IAM roles for service accounts
-    ///   --auth-token-command 'cat $AWS_WEB_IDENTITY_TOKEN_FILE'
+    /// AWS EKS, IAM roles for service accounts:
+    /// `--auth-token-command 'cat $AWS_WEB_IDENTITY_TOKEN_FILE'`
     ///
-    ///   # Google Cloud (an ID token is a JWT; an access token is not)
-    ///   --auth-token-command 'gcloud auth print-identity-token'
+    /// Google Cloud, where an ID token is a JWT and an access token is not:
+    /// `--auth-token-command 'gcloud auth print-identity-token'`
     #[arg(
         long,
         env = "FELDERA_AUTH_TOKEN_COMMAND",
@@ -350,17 +350,16 @@ pub enum TenantActions {
     /// Rename a tenant.
     ///
     /// A login resolves its tenant by name, so the new name decides which users
-    /// arrive in this tenant. Renaming a tenant to a name its provider no longer
-    /// asserts sends those users to a new, empty tenant on their next request.
+    /// arrive in this tenant.
     Rename {
         /// Identifier of the tenant to rename, as shown by `fda tenant list`.
         tenant_id: Uuid,
         /// The new name.
         name: String,
         /// Take the name from the tenant that currently holds it, which is
-        /// renamed to `<name> (<id>)` and keeps everything it had. Needed to
-        /// recover a tenant no login reaches, because every request re-creates
-        /// the name its token resolves.
+        /// renamed to `<name> (<id>)` and keeps everything it had. Makes the
+        /// rename atomic, so no request handled in between can re-create the
+        /// name as a new tenant.
         #[arg(long)]
         displace_existing: bool,
     },
