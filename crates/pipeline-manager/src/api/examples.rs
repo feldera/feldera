@@ -123,6 +123,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
                 namespace: None,
             },
             clock_resolution_usecs: Some(100_000),
+            clock_timezone_offset: None,
             pin_cpus: Vec::new(),
             provisioning_timeout_secs: Some(1200),
             max_parallel_connector_init: Some(10),

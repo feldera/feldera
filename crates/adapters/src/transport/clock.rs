@@ -12,6 +12,11 @@
 //! from recomputing queries that depend on time more often than requested by the user via
 //! the clock resolution pipeline property.
 //!
+//! The `clock_timezone_offset` pipeline property adds a constant offset to every
+//! emitted value, so `NOW()` returns local time in a fixed timezone instead of UTC.
+//! The offset is pinned at the first start of the pipeline; it cannot be changed
+//! when the pipeline resumes from a checkpoint.
+//!
 //! The connector supports exactly-once FT.
 
 use anyhow::{Result as AnyResult, anyhow};
@@ -72,6 +77,11 @@ pub fn now_endpoint_config(config: &PipelineConfig) -> InputEndpointConfig {
                     .global
                     .clock_resolution_usecs
                     .unwrap_or(DEFAULT_CLOCK_RESOLUTION_USECS),
+                timezone_offset_ms: config
+                    .global
+                    .clock_timezone_offset
+                    .map(|offset| offset.offset_ms())
+                    .unwrap_or(0),
                 now_offset_ms: config.global.dev_tweaks.now_offset_ms(),
                 http_driven: config.global.dev_tweaks.now_http_driven(),
             }),
@@ -180,6 +190,18 @@ impl ClockReader {
             .map_err(|_| anyhow!("clock connector dropped the advance reply"))?
     }
 
+    /// Delta between emitted `NOW()` and wall clock at worker start: the
+    /// shift to the `now_offset_ms` anchor (if set) plus the constant
+    /// timezone offset.  The timezone offset thereby applies to every
+    /// emitted value, including anchored and http-driven ones.
+    fn initial_delta_ms(config: &ClockConfig, wall_at_start_ms: i64) -> i64 {
+        config
+            .now_offset_ms
+            .map(|target| target.saturating_sub(wall_at_start_ms))
+            .unwrap_or(0)
+            .saturating_add(config.timezone_offset_ms)
+    }
+
     /// Wall clock + `delta_ms`, rounded down to `clock_resolution_ms`.
     fn current_time(config: &ClockConfig, delta_ms: i64) -> i64 {
         Self::current_time_at(config, SystemTime::now(), delta_ms)
@@ -245,10 +267,7 @@ impl ClockReader {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as i64;
-        let mut effective_delta_ms: i64 = config
-            .now_offset_ms
-            .map(|target| target.saturating_sub(wall_at_start_ms))
-            .unwrap_or(0);
+        let mut effective_delta_ms: i64 = Self::initial_delta_ms(&config, wall_at_start_ms);
         let mut current_now_ms: i64 =
             Self::current_time_at(&config, wall_at_start, effective_delta_ms);
 
@@ -440,6 +459,8 @@ mod test {
         }
     }
 
+    const WAIT_TIMEOUT_MS: u128 = 30_000;
+
     /// Waits for the circuit to process `expected` ticks, then returns the
     /// tick count once it has settled.
     ///
@@ -449,15 +470,27 @@ mod test {
     /// caller checks its upper bound against the final count rather than a
     /// snapshot taken mid-replay.
     fn settled_ticks(stats: &ClockStats, expected: usize) -> usize {
-        const TIMEOUT: Duration = Duration::from_secs(30);
         const SETTLE: Duration = Duration::from_secs(2);
 
-        let deadline = std::time::Instant::now() + TIMEOUT;
-        while stats.ticks() < expected && std::time::Instant::now() < deadline {
-            sleep(Duration::from_millis(10));
-        }
+        // A timeout is not an error here: the caller's assertion reports
+        // the shortfall with context.
+        let _ = crate::test::wait(|| stats.ticks() >= expected, WAIT_TIMEOUT_MS);
         sleep(SETTLE);
         stats.ticks()
+    }
+
+    /// Blocks until the test circuit has processed a clock record whose
+    /// `NOW()` timestamp equals `expected_ts` (milliseconds since the Unix
+    /// epoch), as recorded in `stats.last_value`.  Panics on timeout.
+    fn wait_for_clock_timestamp(stats: &ClockStats, expected_ts: i64) {
+        // 0 is `ClockStats`'s initial/cleared sentinel; waiting for it
+        // would succeed before the circuit processed anything.
+        assert_ne!(expected_ts, 0, "cannot wait for the sentinel value 0");
+        assert!(
+            crate::test::wait(|| stats.last_value() == expected_ts, WAIT_TIMEOUT_MS).is_ok(),
+            "clock record with NOW() == {expected_ts} never processed (last seen: {})",
+            stats.last_value()
+        );
     }
 
     /// Create a simple test circuit that passes each of a number of streams right
@@ -693,6 +726,7 @@ mod test {
             let target_ms = target.timestamp_millis();
             let cfg = ClockConfig {
                 clock_resolution_usecs: 1_000_000,
+                timezone_offset_ms: 0,
                 now_offset_ms: Some(target_ms),
                 http_driven: false,
             };
@@ -733,6 +767,7 @@ mod test {
             let target_ms = target.timestamp_millis();
             let config = ClockConfig {
                 clock_resolution_usecs: 1_000_000,
+                timezone_offset_ms: 0,
                 now_offset_ms: Some(target_ms),
                 http_driven: false,
             };
@@ -746,6 +781,7 @@ mod test {
         // Exactly epoch round-trips as 0.
         let epoch_config = ClockConfig {
             clock_resolution_usecs: 1_000_000,
+            timezone_offset_ms: 0,
             now_offset_ms: Some(0),
             http_driven: false,
         };
@@ -798,6 +834,252 @@ mod test {
             }))
             .is_none(),
         );
+    }
+
+    /// `now_endpoint_config` converts the `clock_timezone_offset` pipeline
+    /// property to `ClockConfig::timezone_offset_ms`.
+    #[test]
+    fn test_now_endpoint_config_with_timezone_offset() {
+        use feldera_types::config::{PipelineConfig, TransportConfig};
+
+        let tz_ms_of = |body: serde_json::Value| -> i64 {
+            let config: PipelineConfig = serde_json::from_value(body).unwrap();
+            let endpoint = super::now_endpoint_config(&config);
+            let TransportConfig::ClockInput(clock_config) = &endpoint.connector_config.transport
+            else {
+                panic!("expected ClockInput transport");
+            };
+            clock_config.timezone_offset_ms
+        };
+
+        const MINUTE_MS: i64 = 60_000;
+        assert_eq!(
+            tz_ms_of(json!({
+                "name": "test", "workers": 1, "fault_tolerance": {}, "inputs": {},
+                "clock_timezone_offset": "+05:30",
+            })),
+            (5 * 60 + 30) * MINUTE_MS,
+        );
+        assert_eq!(
+            tz_ms_of(json!({
+                "name": "test", "workers": 1, "fault_tolerance": {}, "inputs": {},
+                "clock_timezone_offset": "-08:00",
+            })),
+            -8 * 60 * MINUTE_MS,
+        );
+        // Old configurations without the property default to UTC.
+        assert_eq!(
+            tz_ms_of(json!({
+                "name": "test", "workers": 1, "fault_tolerance": {}, "inputs": {},
+            })),
+            0,
+        );
+        // Invalid offsets are rejected when the config is deserialized.
+        assert!(
+            serde_json::from_value::<PipelineConfig>(json!({
+                "name": "test", "workers": 1, "fault_tolerance": {}, "inputs": {},
+                "clock_timezone_offset": "pancake",
+            }))
+            .is_err(),
+        );
+    }
+
+    /// `initial_delta_ms` composes the `now_offset` anchor shift with the
+    /// constant timezone offset.
+    #[test]
+    fn test_initial_delta_ms() {
+        use feldera_types::transport::clock::ClockConfig;
+
+        const MINUTE_MS: i64 = 60_000;
+        let wall_ms: i64 = 1_700_000_000_000;
+        let tz_ms: i64 = (5 * 60 + 30) * MINUTE_MS; // +05:30
+        let anchor_ms: i64 = wall_ms - 24 * 60 * MINUTE_MS; // one day in the past
+
+        let base = ClockConfig {
+            clock_resolution_usecs: 1_000_000,
+            timezone_offset_ms: 0,
+            now_offset_ms: None,
+            http_driven: false,
+        };
+
+        // No offsets: emitted NOW() tracks wall clock.
+        assert_eq!(super::ClockReader::initial_delta_ms(&base, wall_ms), 0);
+
+        // Timezone offset alone shifts every value by the offset.
+        let tz = ClockConfig {
+            timezone_offset_ms: tz_ms,
+            ..base.clone()
+        };
+        assert_eq!(super::ClockReader::initial_delta_ms(&tz, wall_ms), tz_ms);
+
+        // Anchor alone shifts to the anchor.
+        let anchored = ClockConfig {
+            now_offset_ms: Some(anchor_ms),
+            ..base.clone()
+        };
+        assert_eq!(
+            super::ClockReader::initial_delta_ms(&anchored, wall_ms),
+            anchor_ms - wall_ms
+        );
+
+        // Anchor and timezone offset compose.
+        let both = ClockConfig {
+            now_offset_ms: Some(anchor_ms),
+            timezone_offset_ms: tz_ms,
+            ..base
+        };
+        assert_eq!(
+            super::ClockReader::initial_delta_ms(&both, wall_ms),
+            anchor_ms - wall_ms + tz_ms
+        );
+    }
+
+    /// The timezone offset applies on top of the `now_offset` anchor and to
+    /// http-driven advances.
+    #[test]
+    fn test_clock_timezone_offset_http_driven() {
+        use dbsp::circuit::tokio::TOKIO;
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        create_dir(&storage_dir).unwrap();
+
+        let anchor_rfc = "2023-11-14T22:13:20Z";
+        let anchor_ms = chrono::DateTime::parse_from_rfc3339(anchor_rfc)
+            .unwrap()
+            .timestamp_millis();
+        let tz_ms: i64 = (5 * 60 + 30) * 60_000; // +05:30
+
+        let config = serde_json::from_value(json!({
+            "name": "test",
+            "workers": 1,
+            "storage_config": { "path": storage_dir },
+            "fault_tolerance": {},
+            "inputs": {},
+            "clock_resolution_usecs": 1_000_000,
+            "clock_timezone_offset": "+05:30",
+            "dev_tweaks": {
+                "now_offset": anchor_rfc,
+                "now_http_driven": true,
+            },
+        }))
+        .unwrap();
+
+        let test_stats = Arc::new(ClockStats::new());
+        let test_stats_clone = test_stats.clone();
+
+        let controller = Controller::with_test_config(
+            move |workers| Ok(clock_test_circuit(workers, test_stats_clone)),
+            &config,
+            Box::new(move |e, _| panic!("tz offset http-driven test: error: {e}")),
+        )
+        .unwrap();
+
+        controller.start();
+        // Wait for the initial tick; this also guarantees the endpoint is
+        // registered before we look it up.
+        wait_for_clock_timestamp(&test_stats, anchor_ms + tz_ms);
+
+        let reader = controller.get_input_endpoint("now").unwrap();
+        let clock_reader = reader.as_any().downcast::<super::ClockReader>().unwrap();
+
+        // Initial NOW() is the anchor shifted by the timezone offset.
+        let now0 = TOKIO.block_on(clock_reader.advance(Some(0))).unwrap();
+        assert_eq!(now0, anchor_ms + tz_ms);
+
+        // Advances build on the shifted value.
+        let now1 = TOKIO.block_on(clock_reader.advance(Some(60_000))).unwrap();
+        assert_eq!(now1, anchor_ms + tz_ms + 60_000);
+
+        controller.stop().unwrap();
+    }
+
+    /// `clock_timezone_offset` is pinned at first start: resuming from a
+    /// checkpoint with a different offset keeps the original.
+    ///
+    /// Deterministic: http-driven mode with a `now_offset` anchor, so every
+    /// asserted value is an exact constant and no wall clock is consulted.
+    #[test]
+    fn test_clock_timezone_offset_pinned_across_restart() {
+        use dbsp::circuit::tokio::TOKIO;
+        use feldera_types::transport::clock::ClockTimezoneOffset;
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        create_dir(&storage_dir).unwrap();
+
+        let anchor_rfc = "2023-11-14T22:13:20Z";
+        let anchor_ms = chrono::DateTime::parse_from_rfc3339(anchor_rfc)
+            .unwrap()
+            .timestamp_millis();
+        let tz1_ms: i64 = (5 * 60 + 30) * 60_000; // +05:30, the pinned offset
+
+        let config_of = |tz: &str| -> feldera_types::config::PipelineConfig {
+            serde_json::from_value(json!({
+                "name": "test",
+                "workers": 1,
+                "storage_config": { "path": storage_dir },
+                "fault_tolerance": {},
+                "inputs": {},
+                "clock_resolution_usecs": 1_000_000,
+                "clock_timezone_offset": tz,
+                "dev_tweaks": {
+                    "now_offset": anchor_rfc,
+                    "now_http_driven": true,
+                },
+            }))
+            .unwrap()
+        };
+
+        // Run 1: emit the initial tick (anchor + tz1), checkpoint, stop.
+        let test_stats = Arc::new(ClockStats::new());
+        {
+            let test_stats_clone = test_stats.clone();
+            let controller = Controller::with_test_config(
+                move |workers| Ok(clock_test_circuit(workers, test_stats_clone)),
+                &config_of("+05:30"),
+                Box::new(move |e, _| panic!("tz offset pinning run 1: error: {e}")),
+            )
+            .unwrap();
+            controller.start();
+            wait_for_clock_timestamp(&test_stats, anchor_ms + tz1_ms);
+            controller.checkpoint().unwrap();
+            controller.stop().unwrap();
+        }
+
+        // Run 2: resume with a different offset in the config.
+        let test_stats_clone = test_stats.clone();
+        let controller = Controller::with_test_config(
+            move |workers| Ok(clock_test_circuit(workers, test_stats_clone)),
+            &config_of("-08:00"),
+            Box::new(move |e, _| panic!("tz offset pinning run 2: error: {e}")),
+        )
+        .unwrap();
+
+        // The merged config must keep the checkpointed offset.
+        assert_eq!(
+            controller
+                .status()
+                .pipeline_config
+                .global
+                .clock_timezone_offset,
+            Some("+05:30".parse::<ClockTimezoneOffset>().unwrap()),
+            "resume must pin the checkpointed `clock_timezone_offset`"
+        );
+
+        // End to end: after replay, NOW() carries the pinned offset.  Both
+        // possible sources of the value (a replayed journal entry or a fresh
+        // worker anchored by the merged config) yield anchor + tz1.
+        assert!(
+            crate::test::wait(|| !controller.is_replaying(), WAIT_TIMEOUT_MS).is_ok(),
+            "replay did not complete within 30s"
+        );
+        let reader = controller.get_input_endpoint("now").unwrap();
+        let clock_reader = reader.as_any().downcast::<super::ClockReader>().unwrap();
+        let now = TOKIO.block_on(clock_reader.advance(Some(0))).unwrap();
+        assert_eq!(now, anchor_ms + tz1_ms);
+
+        controller.stop().unwrap();
     }
 
     /// `ClockReader::advance` contract: read, explicit forward, and tick-by-resolution.
@@ -991,25 +1273,12 @@ mod test {
             // emission to be observed by the test circuit before doing
             // the next thing — gives us a deterministic signal rather
             // than relying on sleep.
-            let wait_for_emit = |expected: i64| {
-                let deadline = std::time::Instant::now() + Duration::from_secs(30);
-                while std::time::Instant::now() < deadline {
-                    if test_stats.last_value() == expected {
-                        return;
-                    }
-                    sleep(Duration::from_millis(10));
-                }
-                panic!(
-                    "emit of {expected} never observed (last: {})",
-                    test_stats.last_value()
-                );
-            };
 
             // First advance, lands before the checkpoint.
             TOKIO
                 .block_on(clock_reader.advance(Some(one_day_ms as u64)))
                 .unwrap();
-            wait_for_emit(anchor_ms + one_day_ms);
+            wait_for_clock_timestamp(&test_stats, anchor_ms + one_day_ms);
             controller.checkpoint().unwrap();
 
             // Second advance, lands after the checkpoint marker.  This
@@ -1018,7 +1287,7 @@ mod test {
                 .block_on(clock_reader.advance(Some(one_day_ms as u64)))
                 .unwrap();
             assert_eq!(post, anchor_ms + 2 * one_day_ms);
-            wait_for_emit(anchor_ms + 2 * one_day_ms);
+            wait_for_clock_timestamp(&test_stats, anchor_ms + 2 * one_day_ms);
             controller.stop().unwrap();
             post
         };
@@ -1039,14 +1308,10 @@ mod test {
         // Replay runs asynchronously on the circuit thread, feeding the journaled
         // steps one at a time. Wait for it to finish before reading `NOW()`, or we
         // could observe an intermediate value from before the last replayed step.
-        let deadline = std::time::Instant::now() + Duration::from_secs(30);
-        while controller.is_replaying() {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "replay did not complete within 30s"
-            );
-            sleep(Duration::from_millis(10));
-        }
+        assert!(
+            crate::test::wait(|| !controller.is_replaying(), WAIT_TIMEOUT_MS).is_ok(),
+            "replay did not complete within 30s"
+        );
 
         let post_replay = TOKIO.block_on(clock_reader.advance(Some(0))).unwrap();
         assert_eq!(

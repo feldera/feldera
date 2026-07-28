@@ -619,6 +619,7 @@
                         "namespace": null
                       },
                       "clock_resolution_usecs": 1000000,
+                      "clock_timezone_offset": null,
                       "pin_cpus": [],
                       "provisioning_timeout_secs": null,
                       "max_parallel_connector_init": null,
@@ -712,6 +713,7 @@
                         "namespace": null
                       },
                       "clock_resolution_usecs": 100000,
+                      "clock_timezone_offset": null,
                       "pin_cpus": [],
                       "provisioning_timeout_secs": 1200,
                       "max_parallel_connector_init": 10,
@@ -835,6 +837,7 @@
                     "namespace": null
                   },
                   "clock_resolution_usecs": 1000000,
+                  "clock_timezone_offset": null,
                   "pin_cpus": [],
                   "provisioning_timeout_secs": null,
                   "max_parallel_connector_init": null,
@@ -911,6 +914,7 @@
                       "namespace": null
                     },
                     "clock_resolution_usecs": 1000000,
+                    "clock_timezone_offset": null,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
@@ -1099,6 +1103,7 @@
                       "namespace": null
                     },
                     "clock_resolution_usecs": 1000000,
+                    "clock_timezone_offset": null,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
@@ -1249,6 +1254,7 @@
                     "namespace": null
                   },
                   "clock_resolution_usecs": 1000000,
+                  "clock_timezone_offset": null,
                   "pin_cpus": [],
                   "provisioning_timeout_secs": null,
                   "max_parallel_connector_init": null,
@@ -1325,6 +1331,7 @@
                       "namespace": null
                     },
                     "clock_resolution_usecs": 1000000,
+                    "clock_timezone_offset": null,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
@@ -1428,6 +1435,7 @@
                       "namespace": null
                     },
                     "clock_resolution_usecs": 1000000,
+                    "clock_timezone_offset": null,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
@@ -1702,6 +1710,7 @@
                       "namespace": null
                     },
                     "clock_resolution_usecs": 1000000,
+                    "clock_timezone_offset": null,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
@@ -6828,6 +6837,7 @@
                       "namespace": null
                     },
                     "clock_resolution_usecs": 1000000,
+                    "clock_timezone_offset": null,
                     "pin_cpus": [],
                     "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
@@ -7796,6 +7806,11 @@
             "format": "int64",
             "description": "Target value for `NOW()` at the worker's first emitted tick, in\nmilliseconds since the Unix epoch.\n\nPopulated verbatim from `DevTweaks::now_offset` at endpoint\nconstruction; the wall-clock delta is computed inside the\nconnector's worker task from a single `SystemTime::now()`\nreading, so there is no drift between config construction and\nthe first emitted tick.  `None` means no shift is applied.",
             "nullable": true
+          },
+          "timezone_offset_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Constant offset added to every emitted `NOW()` value, in milliseconds\neast of UTC.  Populated from the `clock_timezone_offset` pipeline\nproperty; 0 means UTC."
           }
         }
       },
@@ -11281,6 +11296,13 @@
                 "nullable": true,
                 "minimum": 0
               },
+              "clock_timezone_offset": {
+                "type": "string",
+                "description": "Fixed timezone offset for the SQL `NOW()` clock.\n\nAn ISO-8601 UTC offset, for example `\"+05:30\"` or `\"-08:00\"`, that the\nclock connector adds to every `NOW()` value it emits, so `NOW()`\nreturns local time in that fixed timezone instead of UTC.\n\nThe offset is baked into the pipeline's checkpointed state and cannot\nbe changed when the pipeline resumes from a checkpoint: the value from\nthe checkpoint stays in effect, and a differing new value is ignored\nwith a warning in the pipeline log.",
+                "default": null,
+                "example": "+05:30",
+                "nullable": true
+              },
               "cpu_profiler": {
                 "type": "boolean",
                 "description": "Enable CPU profiler.\n\nThe default value is `true`.",
@@ -13250,6 +13272,13 @@
             "default": 1000000,
             "nullable": true,
             "minimum": 0
+          },
+          "clock_timezone_offset": {
+            "type": "string",
+            "description": "Fixed timezone offset for the SQL `NOW()` clock.\n\nAn ISO-8601 UTC offset, for example `\"+05:30\"` or `\"-08:00\"`, that the\nclock connector adds to every `NOW()` value it emits, so `NOW()`\nreturns local time in that fixed timezone instead of UTC.\n\nThe offset is baked into the pipeline's checkpointed state and cannot\nbe changed when the pipeline resumes from a checkpoint: the value from\nthe checkpoint stays in effect, and a differing new value is ignored\nwith a warning in the pipeline log.",
+            "default": null,
+            "example": "+05:30",
+            "nullable": true
           },
           "cpu_profiler": {
             "type": "boolean",

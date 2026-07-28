@@ -9,7 +9,7 @@ use crate::postprocess::PostprocessorConfig;
 use crate::preprocess::PreprocessorConfig;
 use crate::secret_resolver::default_secrets_directory;
 use crate::transport::adhoc::AdHocInputConfig;
-use crate::transport::clock::ClockConfig;
+use crate::transport::clock::{ClockConfig, ClockTimezoneOffset};
 use crate::transport::datagen::DatagenInputConfig;
 use crate::transport::delta_table::{DeltaTableReaderConfig, DeltaTableWriterConfig};
 use crate::transport::dynamodb::DynamoDBWriterConfig;
@@ -942,6 +942,19 @@ pub struct RuntimeConfig {
     /// It is set to 1 second (1,000,000 microseconds) by default.
     pub clock_resolution_usecs: Option<u64>,
 
+    /// Fixed timezone offset for the SQL `NOW()` clock.
+    ///
+    /// An ISO-8601 UTC offset, for example `"+05:30"` or `"-08:00"`, that the
+    /// clock connector adds to every `NOW()` value it emits, so `NOW()`
+    /// returns local time in that fixed timezone instead of UTC.
+    ///
+    /// The offset is baked into the pipeline's checkpointed state and cannot
+    /// be changed when the pipeline resumes from a checkpoint: the value from
+    /// the checkpoint stays in effect, and a differing new value is ignored
+    /// with a warning in the pipeline log.
+    #[schema(value_type = Option<String>, example = "+05:30")]
+    pub clock_timezone_offset: Option<ClockTimezoneOffset>,
+
     /// Optionally, a list of CPU numbers for CPUs to which the pipeline may pin
     /// its worker threads.  Specify at least twice as many CPU numbers as
     /// workers.  CPUs are generally numbered starting from 0.  The pipeline
@@ -1154,6 +1167,7 @@ impl Default for RuntimeConfig {
             max_buffering_delay_usecs: 0,
             resources: ResourceConfig::default(),
             clock_resolution_usecs: { Some(DEFAULT_CLOCK_RESOLUTION_USECS) },
+            clock_timezone_offset: None,
             pin_cpus: Vec::new(),
             provisioning_timeout_secs: None,
             max_parallel_connector_init: None,

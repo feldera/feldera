@@ -5552,6 +5552,14 @@ impl ControllerInit {
             )
         }
 
+        if config.global.clock_timezone_offset != checkpoint_config.global.clock_timezone_offset {
+            warn!(
+                "`clock_timezone_offset` cannot be changed when resuming from a checkpoint; \
+                 keeping the checkpointed value {:?} and ignoring the new value {:?}",
+                checkpoint_config.global.clock_timezone_offset, config.global.clock_timezone_offset,
+            );
+        }
+
         // Merge `config` (the configuration provided by the pipeline manager)
         // with `checkpoint_config` (the configuration read from the
         // checkpoint).
@@ -5591,6 +5599,10 @@ impl ControllerInit {
                 max_buffering_delay_usecs: config.global.max_buffering_delay_usecs,
                 resources: config.global.resources,
                 clock_resolution_usecs: config.global.clock_resolution_usecs,
+                // `NOW()` values shifted by the offset are baked into
+                // journaled steps and materialized state; adopting a new
+                // offset on resume would make `NOW()` jump.
+                clock_timezone_offset: checkpoint_config.global.clock_timezone_offset,
                 pin_cpus: config.global.pin_cpus,
                 provisioning_timeout_secs: config.global.provisioning_timeout_secs,
                 max_parallel_connector_init: config.global.max_parallel_connector_init,

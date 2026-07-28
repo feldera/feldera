@@ -325,6 +325,13 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
                 namespace: val.val14,
             },
             clock_resolution_usecs: val.val15,
+            // Varies so the proptest exercises the "cannot edit unless
+            // storage is cleared" restriction on this field.
+            clock_timezone_offset: match val.val0 % 3 {
+                0 => None,
+                1 => Some("+05:30".parse().unwrap()),
+                _ => Some("-08:00".parse().unwrap()),
+            },
             pin_cpus: Vec::new(),
             provisioning_timeout_secs: val.val16,
             max_parallel_connector_init: None,
@@ -1285,6 +1292,7 @@ async fn pipeline_versioning() {
             namespace: None,
         },
         clock_resolution_usecs: None,
+        clock_timezone_offset: None,
         pin_cpus: Vec::new(),
         provisioning_timeout_secs: None,
         max_parallel_connector_init: None,
@@ -2650,6 +2658,7 @@ async fn pipeline_provision_version_guard() {
                     max_buffering_delay_usecs: 0,
                     resources: Default::default(),
                     clock_resolution_usecs: None,
+                    clock_timezone_offset: None,
                     pin_cpus: Vec::new(),
                     provisioning_timeout_secs: None,
                     max_parallel_connector_init: None,
@@ -4417,6 +4426,16 @@ impl ModelHelpers for Mutex<DbModel> {
                         .map(|v| v.get("storage_class"))
                 {
                     not_allowed.push("`runtime_config.resources.storage_class`");
+                }
+                if runtime_config
+                    .get("clock_timezone_offset")
+                    .filter(|v| !v.is_null())
+                    != pipeline
+                        .runtime_config
+                        .get("clock_timezone_offset")
+                        .filter(|v| !v.is_null())
+                {
+                    not_allowed.push("`runtime_config.clock_timezone_offset`");
                 }
             }
             if !not_allowed.is_empty() {

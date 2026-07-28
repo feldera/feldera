@@ -400,6 +400,29 @@ By default, in the absence of new inputs, a step is triggered every
 100 milliseconds.  This behavior is controlled by the
 `clock_resolution_usecs` pipeline configuration setting.
 
+### Clock timezone offset
+
+To make `NOW()` return local time in a fixed timezone instead of UTC,
+set the `clock_timezone_offset` pipeline configuration setting to an
+ISO-8601 UTC offset, for example:
+
+```json
+{
+  "clock_timezone_offset": "+05:30"
+}
+```
+
+The pipeline adds the offset to every value that `NOW()` returns.  The
+offset is constant: it does not track daylight-saving-time changes of
+any geographic timezone.  The `NOW()` clock is required to always be monotone.
+
+The offset becomes part of the pipeline's checkpointed state, so it
+cannot be changed once the pipeline has run: editing
+`clock_timezone_offset` is rejected while the pipeline's storage is in
+use, and a pipeline that resumes from a checkpoint keeps the offset it
+was first started with.  To change the offset, clear the pipeline's
+storage and start from scratch.
+
 | Operation     | Description         | Example                        |
 |---------------|---------------------|--------------------------------|
 | `NOW`         | Returns a timestamp | `NOW()` => 2024-07-10 00:00:00 |
