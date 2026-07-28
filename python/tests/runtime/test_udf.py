@@ -1,7 +1,8 @@
+from datetime import date, datetime, time
 from decimal import Decimal
+import json
 import unittest
 
-from pandas import Timedelta, Timestamp
 from feldera import PipelineBuilder
 from tests import TEST_CLIENT
 from tests.platform.helper import PipelineTestCase
@@ -254,10 +255,11 @@ pub fn nstruct2nstruct(i: Tup2<Option<i32>, Option<SqlString>>) -> Result<Tup2<O
             ),
         ).create_or_replace()
 
-        # TODO: use .query() instead
-        pipeline.start_paused()
-        out = pipeline.listen("v")
-        pipeline.resume()
+        pipeline.start()
+
+        # A VARIANT holding a JSON string, as opposed to a JSON object. The
+        # distinction decides how the ad-hoc layer renders it below.
+        variant = '{"foo": "bar"}'
 
         pipeline.input_json(
             "t",
@@ -275,7 +277,7 @@ pub fn nstruct2nstruct(i: Tup2<Option<i32>, Option<SqlString>>) -> Result<Tup2<O
                     "ts": "2024-09-25 13:05:00",
                     "a": [1, 2, 3, 4, 5],
                     "m": {"foo": "bar"},
-                    "v": '{"foo": "bar"}',
+                    "v": variant,
                     "b": True,
                     "dc": "123.45",
                     "s": "foobar",
@@ -284,42 +286,66 @@ pub fn nstruct2nstruct(i: Tup2<Option<i32>, Option<SqlString>>) -> Result<Tup2<O
             wait=True,
         )
 
-        output = out.to_dict()
-        assert output == [
+        # `wait=True` above establishes that the circuit processed the input.
+        # Arrow IPC rather than JSON, because JSON cannot carry VARBINARY or DECIMAL
+        # faithfully (https://github.com/feldera/feldera/issues/4219).
+        #
+        # Columns are unnamed in the view, so they arrive as EXPR$0..EXPR$31 in
+        # SELECT-list order. Every UDF is the identity, hence each pair of
+        # columns repeats one input value.
+        rows = list(pipeline.query_arrow_dicts("SELECT * FROM v"))
+        assert rows == [
             {
+                # bool2bool, nbool2nbool
                 "EXPR$0": True,
                 "EXPR$1": True,
-                "EXPR$10": 0.5,
-                "EXPR$11": 0.5,
-                "EXPR$12": 1e-05,
-                "EXPR$13": 1e-05,
-                "EXPR$14": [],
-                "EXPR$15": [],
-                "EXPR$16": Timestamp("2024-09-25 00:00:00"),
-                "EXPR$17": Timestamp("2024-09-25 00:00:00"),
-                "EXPR$18": Timestamp("2024-09-25 13:05:00"),
-                "EXPR$19": Timestamp("2024-09-25 13:05:00"),
+                # i2i, ni2ni
                 "EXPR$2": 1,
-                "EXPR$20": Timedelta("0 days 13:05:00"),
-                "EXPR$21": Timedelta("0 days 13:05:00"),
-                "EXPR$22": [1, 2, 3, 4, 5],
-                "EXPR$23": [1, 2, 3, 4, 5],
-                "EXPR$24": {"foo": "bar"},
-                "EXPR$25": {"foo": "bar"},
-                "EXPR$26": '{"foo": "bar"}',
-                "EXPR$27": '{"foo": "bar"}',
-                "EXPR$28": Decimal("123.45"),
-                "EXPR$29": Decimal("123.45"),
                 "EXPR$3": 1,
-                "EXPR$30": "foobar",
-                "EXPR$31": "foobar",
+                # ti2ti, nti2nti
                 "EXPR$4": -2,
                 "EXPR$5": -2,
+                # si2si, nsi2nsi
                 "EXPR$6": 3,
                 "EXPR$7": 3,
+                # bi2bi, nbi2nbi
                 "EXPR$8": -4,
                 "EXPR$9": -4,
-                "insert_delete": 1,
+                # r2r, nr2nr
+                "EXPR$10": 0.5,
+                "EXPR$11": 0.5,
+                # d2d, nd2nd
+                "EXPR$12": 1e-05,
+                "EXPR$13": 1e-05,
+                # bin2bin, nbin2nbin
+                "EXPR$14": b"",
+                "EXPR$15": b"",
+                # date2date, ndate2ndate
+                "EXPR$16": date(2024, 9, 25),
+                "EXPR$17": date(2024, 9, 25),
+                # ts2ts, nts2nts
+                "EXPR$18": datetime(2024, 9, 25, 13, 5),
+                "EXPR$19": datetime(2024, 9, 25, 13, 5),
+                # t2t, nt2nt
+                "EXPR$20": time(13, 5),
+                "EXPR$21": time(13, 5),
+                # arr2arr, narr2narr
+                "EXPR$22": [1, 2, 3, 4, 5],
+                "EXPR$23": [1, 2, 3, 4, 5],
+                # map2map, nmap2nmap. Arrow preserves MAP order, so a map
+                # arrives as a list of key-value tuples.
+                "EXPR$24": [("foo", "bar")],
+                "EXPR$25": [("foo", "bar")],
+                # var2var, nvar2nvar. The ad-hoc layer renders a VARIANT as its
+                # JSON text; the text of a JSON string is that string quoted.
+                "EXPR$26": json.dumps(variant),
+                "EXPR$27": json.dumps(variant),
+                # dec2dec, ndec2ndec
+                "EXPR$28": Decimal("123.45"),
+                "EXPR$29": Decimal("123.45"),
+                # str2str, nstr2nstr
+                "EXPR$30": "foobar",
+                "EXPR$31": "foobar",
             }
         ]
 
