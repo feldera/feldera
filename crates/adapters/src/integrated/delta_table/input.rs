@@ -136,6 +136,12 @@ fn is_active_dv(dv: &DeletionVectorDescriptor) -> bool {
     dv.cardinality > 0
 }
 
+/// A `uc://` location is path-less, so a `ListingTable` built from `root_url() +
+/// Add.path` reads empty. Such tables must read through the object store directly.
+fn requires_direct_object_store_read(table: &DeltaTable) -> bool {
+    table.log_store().root_url().scheme() == "uc"
+}
+
 /// The table root as a base URL guaranteed to end in `/`, so string-joining a
 /// relative `Add.path` yields a well-formed URL. delta-rs normalizes the location
 /// to a trailing slash only when it has a path, so a root with none (`uc://cat.db.tbl`,
@@ -3508,28 +3514,27 @@ impl DeltaTableInputEndpointInner {
     ) -> AnyResult<()> {
         let description = format!("file '{path}'");
 
-        // An active deletion vector routes the file through a streaming provider
-        // that masks the deleted rows, restricted to `used_columns` so unread
-        // columns are never decoded; otherwise the regular `ListingTable` path
-        // applies.
-        let provider: Arc<dyn TableProvider> =
-            if let Some(dv) = deletion_vector.filter(|d| is_active_dv(d)) {
-                let bitmap = self.decode_dv(table, Some(dv), &description).await?;
-                self.file_provider(table, path, bitmap, ReadMode::NotInBitmap, |name| {
-                    used_columns.contains(&name)
-                })
-                .await?
-            } else {
-                // Address files under the table root (e.g. `file:///...`,
-                // `s3://bucket/prefix/`, or `uc://cat.db.tbl/`). See
-                // `cdc_side_dataframe` for why we don't use `object_store_url()`,
-                // and `table_root_base` for why the root is slash-normalized.
-                let full_path = format!("{}{}", table_root_base(table), path);
-                Arc::new(
-                    self.create_parquet_table(vec![full_path], &description)
-                        .await?,
-                )
+        // DV files, and uc:// tables (whose path-less location a ListingTable
+        // can't resolve), read through the object store directly. An empty bitmap
+        // reads every row. Other schemes use the ListingTable path.
+        let provider: Arc<dyn TableProvider> = if requires_direct_object_store_read(table)
+            || deletion_vector.is_some_and(is_active_dv)
+        {
+            let bitmap = match deletion_vector.filter(|d| is_active_dv(d)) {
+                Some(dv) => self.decode_dv(table, Some(dv), &description).await?,
+                None => RoaringTreemap::new(),
             };
+            self.file_provider(table, path, bitmap, ReadMode::NotInBitmap, |name| {
+                used_columns.contains(&name)
+            })
+            .await?
+        } else {
+            let full_path = format!("{}{}", table_root_base(table), path);
+            Arc::new(
+                self.create_parquet_table(vec![full_path], &description)
+                    .await?,
+            )
+        };
 
         self.emit_provider(
             provider,
