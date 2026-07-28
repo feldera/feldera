@@ -607,6 +607,18 @@ pub(crate) async fn update_pipeline(
             {
                 not_allowed.push("`runtime_config.resources.storage_class`");
             }
+            // The clock timezone offset is baked into checkpointed state;
+            // absent and `null` both mean "no offset".
+            if runtime_config
+                .get("clock_timezone_offset")
+                .filter(|v| !v.is_null())
+                != current
+                    .runtime_config
+                    .get("clock_timezone_offset")
+                    .filter(|v| !v.is_null())
+            {
+                not_allowed.push("`runtime_config.clock_timezone_offset`");
+            }
         }
 
         if !not_allowed.is_empty() {
