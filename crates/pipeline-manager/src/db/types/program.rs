@@ -895,6 +895,7 @@ mod tests {
         // Reuse the configuration as it is not used in the function
         let config = ConnectorConfig {
             send_snapshot: false,
+            soft_delete: false,
             transport: TransportConfig::Datagen(DatagenInputConfig::default()),
             format: None,
             preprocessor: None,

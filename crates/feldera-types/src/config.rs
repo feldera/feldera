@@ -1263,10 +1263,50 @@ impl Default for FtConfig {
 mod test {
     use super::deserialize_fault_tolerance;
     use crate::config::{
-        DEFAULT_DATAFUSION_MEMORY_MB_CEILING, FtConfig, FtModel, PipelineConfig, ResourceConfig,
-        RuntimeConfig,
+        ConnectorConfig, DEFAULT_DATAFUSION_MEMORY_MB_CEILING, FtConfig, FtModel, PipelineConfig,
+        ResourceConfig, RuntimeConfig, TransportConfig,
     };
     use serde::{Deserialize, Serialize};
+    use serde_json::json;
+
+    /// A configuration written by an older version of Feldera carries no
+    /// `soft_delete` field, and a connector that does not use soft deletes
+    /// serializes exactly as it did before the field existed.  This keeps
+    /// configurations readable and writable across versions.
+    #[test]
+    fn soft_delete_is_backward_compatible() {
+        let config: ConnectorConfig = serde_json::from_value(json!({
+            "transport": {"name": "empty_input"}
+        }))
+        .unwrap();
+        assert!(!config.soft_delete);
+
+        let serialized = serde_json::to_value(&config).unwrap();
+        assert_eq!(serialized.get("soft_delete"), None);
+
+        let config: ConnectorConfig = serde_json::from_value(json!({
+            "transport": {"name": "empty_input"},
+            "soft_delete": true
+        }))
+        .unwrap();
+        assert!(config.soft_delete);
+        assert_eq!(
+            serde_json::to_value(&config).unwrap().get("soft_delete"),
+            Some(&json!(true))
+        );
+    }
+
+    /// Soft deletes change how input is interpreted, so flipping the flag must
+    /// count as a connector change even where flow-control settings do not.
+    #[test]
+    fn soft_delete_invalidates_checkpointed_connector_state() {
+        let config = ConnectorConfig::new(TransportConfig::EmptyInput, None);
+        let mut soft_delete = config.clone();
+        soft_delete.soft_delete = true;
+
+        assert!(config.equal_for_input_checkpoint_replay(&config));
+        assert!(!config.equal_for_input_checkpoint_replay(&soft_delete));
+    }
 
     fn config_with_name(name: Option<&str>) -> PipelineConfig {
         PipelineConfig {
@@ -1641,6 +1681,25 @@ pub struct ConnectorConfig {
     #[serde(default)]
     pub send_snapshot: bool,
 
+    /// Ingest deletions as insertions, recording the original polarity in the
+    /// `is_delete` metadata attribute. Valid for input connectors only.
+    ///
+    /// When `true`, a delete received by the connector is pushed to the table
+    /// as an insertion of the same record, and the connector attaches the
+    /// `is_delete` metadata attribute set to `true` to it. Insertions carry no
+    /// `is_delete` attribute, so a column declared as
+    /// `DEFAULT CAST(CONNECTOR_METADATA()['is_delete'] AS BOOLEAN)` is `NULL`
+    /// for them. The table then accumulates the entire history of the input
+    /// stream instead of tracking its current contents.
+    ///
+    /// Only tables without a primary key support this mode, since deletions in
+    /// a table with a primary key delete a key rather than a record.
+    ///
+    /// Versions of Feldera that predate this option ignore it and apply
+    /// deletions as regular deletions.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub soft_delete: bool,
+
     /// Transport endpoint configuration.
     pub transport: TransportConfig,
 
@@ -1773,6 +1832,7 @@ impl ConnectorConfig {
     pub fn new(transport: TransportConfig, format: Option<FormatConfig>) -> Self {
         Self {
             send_snapshot: false,
+            soft_delete: false,
             transport,
             preprocessor: None,
             format,

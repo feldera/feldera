@@ -9239,6 +9239,10 @@
                 "type": "boolean",
                 "description": "Send a full snapshot of a materialized view when the connector first\nstarts. Valid for output connectors only.\n\nWhen `true`, the pipeline emits the current contents of the view as the\ninitial batch the first time the connector runs. The view must be\nmaterialized (declared with `CREATE MATERIALIZED VIEW`).\n\nThe snapshot is sent exactly once per connector lifetime: it does not\nfire again when the pipeline resumes from a checkpoint. Modifying the\nconnector configuration or invoking the reset API triggers a fresh\nsnapshot when the connector supports reset (e.g., Delta Lake in\n`truncate` mode and Postgres)."
               },
+              "soft_delete": {
+                "type": "boolean",
+                "description": "Ingest deletions as insertions, recording the original polarity in the\n`is_delete` metadata attribute. Valid for input connectors only.\n\nWhen `true`, a delete received by the connector is pushed to the table\nas an insertion of the same record, and the connector attaches the\n`is_delete` metadata attribute set to `true` to it. Insertions carry no\n`is_delete` attribute, so a column declared as\n`DEFAULT CAST(CONNECTOR_METADATA()['is_delete'] AS BOOLEAN)` is `NULL`\nfor them. The table then contains the entire history of the input\nstream instead of tracking its current contents.\n\nOnly tables without a primary key support this mode, since deletions in\na table with a primary key delete a key rather than a record.\n\nVersions of Feldera that predate this option ignore it and apply\ndeletions as regular deletions."
+              },
               "start_after": {
                 "type": "array",
                 "items": {

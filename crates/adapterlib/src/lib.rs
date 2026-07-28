@@ -10,6 +10,7 @@ pub mod format;
 pub mod metrics;
 pub mod postprocess;
 pub mod preprocess;
+pub mod soft_delete;
 pub mod transport;
 pub mod utils;
 

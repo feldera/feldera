@@ -17,7 +17,7 @@
 //! the controller expects transports to report the number of bytes and records
 //! buffered via `InputConsumer::buffered`.
 
-use crate::catalog::OutputCollectionHandles;
+use crate::catalog::{InputCollectionHandle, OutputCollectionHandles};
 use crate::controller::checkpoint::{
     CheckpointInputEndpointMetrics, CheckpointOffsets, CheckpointOutputEndpointMetrics,
 };
@@ -71,6 +71,7 @@ use dbsp::{
 use dbsp::{Runtime, WeakRuntime};
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
+use feldera_adapterlib::soft_delete::SoftDeleteHandle;
 use feldera_adapterlib::transport::{
     CommandHandler, InputReader, OutputBatchType, Resume, Watermark,
 };
@@ -614,6 +615,37 @@ fn bootstrapped_output_endpoints(
         .filter(|(_, output_config)| diff.is_affected_relation(&output_config.stream))
         .map(|(endpoint_name, _)| endpoint_name.to_string())
         .collect()
+}
+
+/// Returns a copy of `input_handle` that ingests deletions as insertions.
+///
+/// Fails if the table has a primary key: a deletion in such a table identifies
+/// a key rather than a record, so there is nothing to insert in its place.
+fn soft_delete_input_handle(
+    endpoint_name: &str,
+    stream: &str,
+    input_handle: &InputCollectionHandle,
+) -> Result<InputCollectionHandle, ControllerError> {
+    if let Some(primary_key) = &input_handle.schema.primary_key {
+        return Err(ControllerError::invalid_soft_delete_configuration(
+            endpoint_name,
+            &format!(
+                "table '{stream}' has a primary key ({}); soft deletes are only supported for tables without a primary key",
+                primary_key.join(", ")
+            ),
+        ));
+    }
+
+    // A version of Feldera that predates this property drops it silently, so
+    // record that it took effect: the absence of this line in the log is how an
+    // operator recognizes that case.
+    info!("endpoint '{endpoint_name}': ingesting deletions into table '{stream}' as insertions");
+
+    Ok(InputCollectionHandle::new(
+        input_handle.schema.clone(),
+        SoftDeleteHandle::new(input_handle.handle.fork()),
+        input_handle.node_id,
+    ))
 }
 
 impl Command {
@@ -7285,6 +7317,21 @@ impl ControllerInner {
                 ControllerError::unknown_input_stream(endpoint_name, &endpoint_config.stream)
             })?;
 
+        // With soft deletes enabled, the endpoint pushes records through a
+        // wrapper that turns deletions into insertions.  Wrapping the table
+        // handle covers every data format as well as integrated connectors,
+        // which bypass the parser.
+        let soft_delete_handle = if resolved_connector_config.soft_delete {
+            Some(soft_delete_input_handle(
+                endpoint_name,
+                &endpoint_config.stream,
+                input_handle,
+            )?)
+        } else {
+            None
+        };
+        let input_handle = soft_delete_handle.as_ref().unwrap_or(input_handle);
+
         let endpoint_id = self.next_input_id.fetch_add(1, Ordering::AcqRel);
 
         let probe = Box::new(InputProbe::new(
@@ -7530,6 +7577,13 @@ impl ControllerInner {
             &endpoint_config.connector_config,
         )
         .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
+
+        if resolved_connector_config.soft_delete {
+            return Err(ControllerError::invalid_soft_delete_configuration(
+                endpoint_name,
+                "soft deletes apply to the records a connector ingests, so the property is only valid for input connectors",
+            ));
+        }
 
         // Create output pipeline, consisting of an encoder, output probe and
         // transport endpoint; run the pipeline in a separate thread.
