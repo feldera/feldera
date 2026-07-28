@@ -90,7 +90,9 @@
   // When metrics are temporarily unavailable ('missing'), freeze graphs and stats until the pipeline is reachable again.
   const metricsDesired = $derived(metricsStatus === 'yes' || metricsStatus === 'missing')
   // Show the reconnect banner only after a live stream has dropped, never during the first connect.
-  const metricsStreamInterrupted = $derived(metricsAvailable && metricsStreamState === 'interrupted')
+  const metricsStreamInterrupted = $derived(
+    metricsAvailable && metricsStreamState === 'interrupted'
+  )
 
   // Keep reconnecting to time_series_stream for as long as the tab is mounted and metrics are desired
   // Reconnect on end-of-stream immediately, or with 1s backoff on mid-stream or stream-open errors

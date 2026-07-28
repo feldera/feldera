@@ -4,20 +4,13 @@
   import { setError, superForm } from 'sveltekit-superforms'
   import { valibot } from 'sveltekit-superforms/adapters'
   import * as va from 'valibot'
-  import { page } from '$app/state'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
   const { onSubmit, onSuccess }: { onSubmit?: () => void; onSuccess?: () => void } = $props()
 
-  // A key can grant at most the caller's own role, and never above `write`
-  // (admin/owner are not mintable). So a read-only caller sees read only, and
-  // offering `write` to them (a guaranteed 403) is avoided.
-  const canGrantWrite = $derived(
-    ['write', 'admin', 'owner'].includes(page.data.feldera?.role ?? 'read')
-  )
-
-  // API keys may only grant read or write; admin/owner are not valid here.
+  // Reaching this form requires `write:api_key`, so the caller can always mint a
+  // `write` key. Keys may grant read or write only; admin/owner are not mintable.
   const schema = va.object({
     name: va.pipe(va.string(), va.minLength(1, 'Specify API key name')),
     role: va.picklist(['read', 'write'] as const)
@@ -78,9 +71,7 @@
             />
             <Select bind:value={$formData.role} class="w-28" aria-label="API key role">
               <option value="read">read</option>
-              {#if canGrantWrite}
-                <option value="write">write</option>
-              {/if}
+              <option value="write">write</option>
             </Select>
             <div class="">
               <button class="btn preset-filled-surface-50-950">Generate</button>

@@ -25,6 +25,7 @@
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import { count } from '$lib/functions/common/array'
   import { untrack } from 'svelte'
+  import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { Tooltip } from 'common-ui'
@@ -51,6 +52,12 @@
 
   const pipelineName = $derived(pipeline.current.name)
   const layoutSettings = useLayoutSettings()
+
+  // Ad-Hoc Queries and Changes Stream read/stream live pipeline data; both are
+  // hidden without exec:pipeline_data. `$effect.pre` below then drops a saved
+  // selection that points at a now-hidden tab back to the first visible tab.
+  const canQueryData = usePermission('exec:pipeline_data')
+  const dataTabs: MonitoringTabs[] = ['Ad-Hoc Queries', 'Changes Stream']
 
   let tabs = $derived(
     [
@@ -103,7 +110,9 @@
         keepAlive: true,
         tabBarEnd: TabBarEndLogs
       }
-    ].filter((tab) => !hiddenTabs.includes(tab.id))
+    ].filter(
+      (tab) => !hiddenTabs.includes(tab.id) && (canQueryData.allowed || !dataTabs.includes(tab.id))
+    )
   )
   const currentTabStorage = $derived(
     useLocalStorage<MonitoringTabs>('pipelines/' + pipelineName + '/currentMonitoringTab', 'Errors')

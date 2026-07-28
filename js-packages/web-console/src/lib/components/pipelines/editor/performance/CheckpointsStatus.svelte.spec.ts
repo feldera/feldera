@@ -2,8 +2,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 import type { CheckpointMetadata } from '$lib/services/manager'
+import { permissionsOf } from '$lib/services/rbac'
 
 const setDialogMock = vi.fn()
+
+// The create-checkpoint button is gated on `exec:checkpoint`. Default the mocked
+// role to `write` so the existing button assertions hold; the read-only cases
+// set it to `read`. The `feldera` getter is read at render time, so setting
+// `roleState.current` before each render selects the role under test.
+const roleState = vi.hoisted(() => ({ current: 'write' as 'read' | 'write' | 'admin' | 'owner' }))
+vi.mock('$app/state', () => ({
+  page: {
+    data: {
+      get feldera() {
+        return { role: roleState.current, permissions: permissionsOf(roleState.current) }
+      }
+    }
+  }
+}))
 
 vi.mock('$lib/compositions/layout/useGlobalDialog.svelte', () => ({
   useGlobalDialog: () => ({
@@ -31,7 +47,34 @@ function makeCheckpoint(overrides?: Partial<CheckpointMetadata>): CheckpointMeta
   }
 }
 
+afterEach(() => {
+  roleState.current = 'write'
+})
+
 describe('CheckpointsStatus.svelte', () => {
+  describe('exec:checkpoint gating', () => {
+    it('hides the create button for a read-only caller even when onCheckpoint is provided', async () => {
+      roleState.current = 'read'
+      await render(CheckpointsStatus, {
+        checkpoints: [],
+        onClose: vi.fn(),
+        onCheckpoint: vi.fn()
+      })
+      // Reverting the gate (rendering the button for `read`) makes this fail.
+      await expect.element(page.getByTestId('btn-make-checkpoint')).not.toBeInTheDocument()
+    })
+
+    it('shows the create button for a write caller', async () => {
+      roleState.current = 'write'
+      await render(CheckpointsStatus, {
+        checkpoints: [],
+        onClose: vi.fn(),
+        onCheckpoint: vi.fn()
+      })
+      await expect.element(page.getByTestId('btn-make-checkpoint')).toBeInTheDocument()
+    })
+  })
+
   describe('A. Empty state', () => {
     it('shows "No checkpoints" when list is empty', async () => {
       await render(CheckpointsStatus, { checkpoints: [], onClose: vi.fn() })

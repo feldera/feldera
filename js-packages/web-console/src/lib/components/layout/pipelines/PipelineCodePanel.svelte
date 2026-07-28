@@ -14,6 +14,7 @@
   import { type PipelineAction } from '$lib/services/pipelineManager'
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import { usePermission } from '$lib/compositions/usePermission.svelte'
   import CodeEditor, {
     disposeFile as disposeCodeEditorFile
   } from '$lib/components/pipelines/editor/CodeEditor.svelte'
@@ -53,6 +54,9 @@
     )
   )
 
+  // Status/upgrade reasons the code (and, downstream, the config) cannot be
+  // edited right now. Feeds `editConfigDisabled` for PipelineActions, which
+  // applies its own `write:pipeline_config` gate on top.
   let editCodeDisabled = $derived(
     !pipeline.current ||
       deleted ||
@@ -60,6 +64,11 @@
         (!isPipelineCodeEditable(pipeline.current.status) ||
           isUpgradeRequired(pipeline.current, runtimeVersion)))
   )
+
+  // Editing pipeline code additionally needs write:pipeline_code. Kept separate
+  // from editCodeDisabled so the permission does not leak into config gating.
+  const codeEdit = usePermission('write:pipeline_code')
+  let codeReadOnly = $derived(editCodeDisabled || !codeEdit.allowed)
 
   const { updatePipelines } = useUpdatePipelineList()
 
@@ -333,7 +342,8 @@ example = "1.0"`
   bind:this={codeEditorRef}
   path={pipelineName}
   {files}
-  editDisabled={editCodeDisabled}
+  editDisabled={codeReadOnly}
+  readOnlyMessage={!codeEdit.allowed ? 'You have read-only access' : undefined}
   bind:currentFileName={currentPipelineFile[pipelineName]}
   bind:downstreamChanged
   bind:saveFile

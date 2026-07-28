@@ -51,6 +51,13 @@ vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
   usePipelineManager: () => ({ adHocQuery: adHocQueryMock })
 }))
 
+// The editor components TabAdHocQuery pulls in read `$app/state`; provide a
+// minimal page so they mount. Tab-level gating (exec:pipeline_data) lives in the
+// panels that host this tab, not here, so no role is needed.
+vi.mock('$app/state', () => ({
+  page: { data: { feldera: {} } }
+}))
+
 // Imported AFTER vi.mock so the mock takes effect.
 import TabAdHocQuery from './TabAdHocQuery.svelte'
 

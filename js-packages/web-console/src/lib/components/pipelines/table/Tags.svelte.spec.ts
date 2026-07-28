@@ -1,7 +1,23 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 import type { PipelineManagerApi } from '$lib/compositions/usePipelineManager.svelte'
+import { permissionsOf } from '$lib/services/rbac'
+
+// Tag mutation (assign/unassign/create/edit/delete) is gated on
+// write:pipeline_meta. Default the mocked role to `write` so the existing
+// interactive assertions hold; the read-only case sets it to `read`.
+const roleState = vi.hoisted(() => ({ current: 'write' as 'read' | 'write' | 'admin' | 'owner' }))
+vi.mock('$app/state', () => ({
+  page: {
+    data: {
+      get feldera() {
+        return { role: roleState.current, permissions: permissionsOf(roleState.current) }
+      }
+    }
+  }
+}))
+
 import Tags from './Tags.svelte'
 
 // A stub Pipeline Manager client: only `patchPipeline` is exercised by the
@@ -23,7 +39,30 @@ const renderTags = (props: { tags: string[]; knownTags?: string[] }) => {
   return { ...result, patchPipeline }
 }
 
+afterEach(() => {
+  roleState.current = 'write'
+})
+
 describe('Tags.svelte', () => {
+  describe('write:pipeline_meta gating', () => {
+    it('shows tags but no editing affordance for a read-only caller', async () => {
+      roleState.current = 'read'
+      renderTags({ tags: ['dev', 'prod|ef4444'] })
+      // Tags stay visible as static chips.
+      await expect.element(page.getByText('dev')).toBeVisible()
+      await expect.element(page.getByText('prod')).toBeVisible()
+      // No mutation affordances. Reverting the gate renders these for read.
+      expect(page.getByRole('button', { name: 'dev' }).elements()).toHaveLength(0)
+      expect(page.getByRole('button', { name: 'Show all tags' }).elements()).toHaveLength(0)
+    })
+
+    it('shows no add-tag affordance for a read-only caller with no tags', async () => {
+      roleState.current = 'read'
+      renderTags({ tags: [] })
+      expect(page.getByRole('button', { name: 'Tag' }).elements()).toHaveLength(0)
+    })
+  })
+
   describe('chips', () => {
     it('renders each assigned tag as a chip by display name, stripping the color', async () => {
       renderTags({ tags: ['dev', 'prod|ef4444'] })

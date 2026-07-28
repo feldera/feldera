@@ -16,7 +16,7 @@
       string,
       { title?: string; editorClass?: string; filePath?: string; readOnlyMessage?: string }
     >
-    onApply: (values: Record<string, string>) => Promise<void>
+    onApply?: (values: Record<string, string>) => Promise<void>
     title: string
     disabled?: boolean
     disabledMessage?: string
@@ -42,12 +42,16 @@
   }
 
   const submitResults = async () => {
-    onApply(current)
+    onApply?.(current)
   }
 </script>
 
 <GenericDialog
-  content={{ title, onSuccess: { name: 'Apply', callback: submitResults, disabledMessage } }}
+  content={{
+    title,
+    onSuccess: onApply ? { name: 'Apply', callback: submitResults, disabledMessage } : undefined,
+    onCancel: onApply ? undefined : { name: 'Close' }
+  }}
   {disabled}
 >
   {#each Object.keys(current) as key}
@@ -55,12 +59,12 @@
     <div class={metadata?.[key].editorClass}>
       <JsonForm
         filePath={metadata?.[key].filePath ?? key}
-        onSubmit={submitResults}
+        onSubmit={onApply ? submitResults : undefined}
         bind:value={current[key]}
         readOnlyMessage={metadata?.[key]?.readOnlyMessage
           ? { value: metadata[key].readOnlyMessage }
           : undefined}
-        {disabled}
+        disabled={disabled || !onApply}
       ></JsonForm>
     </div>
   {/each}

@@ -14,6 +14,7 @@
     swapActions,
     children
   }: {
+    /** If neither content.onSuccess nor content.onError are provided the footer is not rendered.  */
     content: GlobalDialogContent
     danger?: boolean
     disabled?: boolean
@@ -61,7 +62,7 @@
     {/if}
     {@render children?.()}
   </div>
-  {#if content.onSuccess}
+  {#if content.onSuccess || content.onCancel}
     <div
       class="flex w-full flex-col-reverse gap-4 sm:flex-row sm:justify-end"
       data-testid="box-dialog-actions"
@@ -74,20 +75,22 @@
       >
         {content.onCancel?.name ?? 'Cancel'}
       </button>
-      <div class:order-first={swapActions}>
-        <button
-          {disabled}
-          onclick={content.onSuccess.callback}
-          class="btn px-4 {danger
-            ? 'preset-filled-error-500 font-semibold'
-            : 'preset-filled-primary-500'}"
-          data-testid={content.onSuccess['data-testid']}
-        >
-          {content.onSuccess.name}
-        </button>
-      </div>
-      {#if disabled && content.onSuccess.disabledMessage}
-        <Tooltip class="z-20 w-64" placement="top">{content.onSuccess.disabledMessage}</Tooltip>
+      {#if content.onSuccess}
+        <div class:order-first={swapActions}>
+          <button
+            {disabled}
+            onclick={content.onSuccess.callback}
+            class="btn px-4 {danger
+              ? 'preset-filled-error-500 font-semibold'
+              : 'preset-filled-primary-500'}"
+            data-testid={content.onSuccess['data-testid']}
+          >
+            {content.onSuccess.name}
+          </button>
+        </div>
+        {#if disabled && content.onSuccess.disabledMessage}
+          <Tooltip class="z-20 w-64" placement="top">{content.onSuccess.disabledMessage}</Tooltip>
+        {/if}
       {/if}
     </div>
   {/if}
