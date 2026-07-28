@@ -34,6 +34,7 @@ static ROUTE_MIN_ROLE: &[(&str, &str, Role)] = &[
     ("GET", "/v0/config", Role::Read), // get_config
     ("GET", "/v0/config/demos", Role::Read), // get_config_demos
     ("GET", "/v0/config/session", Role::Read), // get_config_session
+    ("GET", "/v0/config/owners", Role::Owner), // get_config_owners
     ("GET", "/v0/metrics", Role::Read), // get_metrics
     ("GET", "/v0/oidc_trust", Role::Admin), // list_oidc_trust
     ("POST", "/v0/oidc_trust", Role::Admin), // post_oidc_trust

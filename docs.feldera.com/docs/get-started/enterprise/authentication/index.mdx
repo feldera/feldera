@@ -321,6 +321,12 @@ authorization:
   owners:                               # Maps to: FELDERA_OWNERS
     - "ops@example.com"
 
+  # Workloads granted `owner`, matched on their OIDC token (default: [])
+  ownerTrusts:                          # Maps to: FELDERA_OWNER_TRUSTS
+    - issuer: "https://token.actions.githubusercontent.com"
+      subject: "repo:acme/infra:ref:refs/heads/main"
+      audience: "https://github.com/acme"
+
   # Role for an authenticated user with no explicit membership yet (default: "read")
   # Ship "write" when upgrading a pre-RBAC deployment; see the Roles page.
   defaultRole: "write"                  # Maps to: FELDERA_AUTH_DEFAULT_ROLE
@@ -351,6 +357,8 @@ FELDERA_AUTH_ISSUER_TENANT=false             # default: false
 FELDERA_AUTH_AUTHORIZED_GROUPS=group1,group2 # comma-separated list
 FELDERA_AUTH_AUDIENCE=feldera-api            # default: feldera-api
 FELDERA_OWNERS=ops@example.com               # comma-separated; default: (none)
+FELDERA_OWNER_TRUSTS='[{"issuer":"https://token.actions.githubusercontent.com","subject":"repo:acme/infra:*"}]'
+                                             # JSON array; default: []
 FELDERA_AUTH_DEFAULT_ROLE=read               # read or write; default: read
 FELDERA_AUTH_FIRST_USER_ROLE=admin           # read, write, or admin; default: admin
 

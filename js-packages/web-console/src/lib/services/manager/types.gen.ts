@@ -701,6 +701,33 @@ export type Configuration = {
 }
 
 /**
+ * A workload identity granted `owner` by configuration.
+ */
+export type ConfiguredOwnerTrust = {
+  audience?: string | null
+  issuer: string
+  subject: string
+}
+
+/**
+ * The platform owners configured at deploy time.
+ */
+export type ConfiguredOwners = {
+  /**
+   * Workload identities granted `owner`, as configured through
+   * `authorization.ownerTrusts` / `FELDERA_OWNER_TRUSTS`.
+   */
+  owner_trusts: Array<ConfiguredOwnerTrust>
+  /**
+   * Identities granted `owner`, as configured through
+   * `authorization.owners` / `FELDERA_OWNERS`. Each entry is a
+   * provider-verified email, a bare OIDC subject, or an issuer and subject
+   * separated by a space.
+   */
+  owners: Array<string>
+}
+
+/**
  * Options for connecting to a NATS server.
  */
 export type ConnectOptions = {
@@ -3269,7 +3296,7 @@ export type NewOidcTrustRequest = {
    * Trust relationship name. Unique within the tenant.
    */
   name: string
-  role?: Role | null
+  role?: MemberRole | null
   /**
    * Subject claim pattern. `*` matches any sequence of characters.
    */
@@ -6372,6 +6399,32 @@ export type GetConfigDemosResponses = {
 
 export type GetConfigDemosResponse = GetConfigDemosResponses[keyof GetConfigDemosResponses]
 
+export type GetConfigOwnersData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/v0/config/owners'
+}
+
+export type GetConfigOwnersErrors = {
+  /**
+   * Caller's role is below the required role
+   */
+  403: ErrorResponse
+  500: ErrorResponse
+}
+
+export type GetConfigOwnersError = GetConfigOwnersErrors[keyof GetConfigOwnersErrors]
+
+export type GetConfigOwnersResponses = {
+  /**
+   * Configured owners retrieved
+   */
+  200: ConfiguredOwners
+}
+
+export type GetConfigOwnersResponse = GetConfigOwnersResponses[keyof GetConfigOwnersResponses]
+
 export type GetConfigSessionData = {
   body?: never
   path?: never
@@ -6416,19 +6469,13 @@ export type GetMetricsResponse = GetMetricsResponses[keyof GetMetricsResponses]
 export type ListOidcTrustData = {
   body?: never
   path?: never
-  query?: {
-    /**
-     * Select the platform-wide owner trusts, which belong to no tenant,
-     * instead of the trusts scoped to the caller's tenant. Owner-only.
-     */
-    platform?: boolean
-  }
+  query?: never
   url: '/v0/oidc_trust'
 }
 
 export type ListOidcTrustErrors = {
   /**
-   * Caller's role is below the required role, or `platform` was set by a non-owner
+   * Caller's role is below the required role
    */
   403: ErrorResponse
   500: ErrorResponse
@@ -6487,19 +6534,13 @@ export type DeleteOidcTrustData = {
      */
     name: string
   }
-  query?: {
-    /**
-     * Select the platform-wide owner trusts, which belong to no tenant,
-     * instead of the trusts scoped to the caller's tenant. Owner-only.
-     */
-    platform?: boolean
-  }
+  query?: never
   url: '/v0/oidc_trust/{name}'
 }
 
 export type DeleteOidcTrustErrors = {
   /**
-   * Caller's role is below the required role, or `platform` was set by a non-owner
+   * Caller's role is below the required role
    */
   403: ErrorResponse
   /**
@@ -6526,19 +6567,13 @@ export type GetOidcTrustData = {
      */
     name: string
   }
-  query?: {
-    /**
-     * Select the platform-wide owner trusts, which belong to no tenant,
-     * instead of the trusts scoped to the caller's tenant. Owner-only.
-     */
-    platform?: boolean
-  }
+  query?: never
   url: '/v0/oidc_trust/{name}'
 }
 
 export type GetOidcTrustErrors = {
   /**
-   * Caller's role is below the required role, or `platform` was set by a non-owner
+   * Caller's role is below the required role
    */
   403: ErrorResponse
   /**

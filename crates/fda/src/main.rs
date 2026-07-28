@@ -450,10 +450,9 @@ async fn oidc_trust_commands(format: OutputFormat, action: OidcTrustActions, cli
         } => {
             debug!("Creating OIDC trust relationship: {name}");
             let role = role.map(|r| match r {
-                TrustRole::Read => feldera_rest_api::types::Role::Read,
-                TrustRole::Write => feldera_rest_api::types::Role::Write,
-                TrustRole::Admin => feldera_rest_api::types::Role::Admin,
-                TrustRole::Owner => feldera_rest_api::types::Role::Owner,
+                TrustRole::Read => feldera_rest_api::types::MemberRole::Read,
+                TrustRole::Write => feldera_rest_api::types::MemberRole::Write,
+                TrustRole::Admin => feldera_rest_api::types::MemberRole::Admin,
             });
             let body = NewOidcTrustRequest::builder()
                 .name(name.clone())

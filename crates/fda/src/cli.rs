@@ -319,10 +319,8 @@ pub enum OidcTrustActions {
         /// Shown when listing trust relationships.
         #[arg(long)]
         description: Option<String>,
-        /// Role granted to a matching token: `read` (default), `write`,
-        /// `admin`, or `owner`. Capped at the caller's role. `owner` requires a
-        /// platform owner and registers a platform-wide trust that belongs to no
-        /// tenant; the acting tenant then comes from the `Feldera-Tenant` header.
+        /// Role granted to a matching token: `read` (default), `write` or
+        /// `admin`, capped at the caller's role.
         #[arg(long)]
         role: Option<TrustRole>,
     },
@@ -340,7 +338,6 @@ pub enum TrustRole {
     Read,
     Write,
     Admin,
-    Owner,
 }
 
 #[derive(Subcommand)]

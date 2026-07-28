@@ -65,6 +65,9 @@ import type {
   GetConfigDemosErrors,
   GetConfigDemosResponses,
   GetConfigErrors,
+  GetConfigOwnersData,
+  GetConfigOwnersErrors,
+  GetConfigOwnersResponses,
   GetConfigResponses,
   GetConfigSessionData,
   GetConfigSessionErrors,
@@ -457,6 +460,31 @@ export const getConfigDemos = <ThrowOnError extends boolean = true>(
     responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/config/demos',
+    ...options
+  })
+
+/**
+ * Get Configured Owners
+ *
+ * Required role: `owner`.
+ *
+ * List the identities that hold the platform-wide `owner` role.
+ *
+ * Owner comes from deploy-time configuration and cannot be granted through the
+ * API, so this list is read-only: changing it means changing the deployment.
+ */
+export const getConfigOwners = <ThrowOnError extends boolean = true>(
+  options?: Options<GetConfigOwnersData, ThrowOnError>
+) =>
+  (options?.client ?? client).get<
+    GetConfigOwnersResponses,
+    GetConfigOwnersErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/config/owners',
     ...options
   })
 

@@ -5,22 +5,15 @@
   import { valibot } from 'sveltekit-superforms/adapters'
 
   import * as va from 'valibot'
-  import { page } from '$app/state'
-  import { postOidcTrust, type Role } from '$lib/services/pipelineManager'
+  import { postOidcTrust, type MemberRole } from '$lib/services/pipelineManager'
 
   const {
     onSubmit,
     onSuccess,
-    allowOwner = false,
-    fixedRole,
     tenant
   }: {
     onSubmit?: () => void
     onSuccess?: () => void
-    allowOwner?: boolean
-    // When set, the form creates trusts at exactly this role and hides the role
-    // picker (the admin page's owner-access section passes `fixedRole="owner"`).
-    fixedRole?: Role
     tenant?: string
   } = $props()
 
@@ -28,19 +21,13 @@
   // show them as a form-level error rather than pinning every one to Name.
   let submitError = $state('')
 
-  // `owner` is a platform-wide grant, so it is offered only to an owner AND only
-  // where owner trusts belong (the Admin page's owner-access section, which
-  // passes `allowOwner`). The tenant-scoped "Manage OIDC trust" menu never
-  // offers it. read/write/admin trusts are creatable by any tenant admin.
-  const canGrantOwner = allowOwner && (page.data.feldera?.isOwner ?? false)
-
   const schema = va.object({
     name: va.pipe(va.string(), va.minLength(1, 'Specify a name')),
     issuer: va.pipe(va.string(), va.minLength(1, 'Specify the issuer URL')),
     subject: va.pipe(va.string(), va.minLength(1, 'Specify a subject pattern')),
     audience: va.string(),
     description: va.string(),
-    role: va.picklist(['read', 'write', 'admin', 'owner'] as const)
+    role: va.picklist(['read', 'write', 'admin'] as const)
   })
 
   const form = superForm(
@@ -50,7 +37,7 @@
       subject: '',
       audience: '',
       description: '',
-      role: (fixedRole ?? 'read') as Role
+      role: 'read' as MemberRole
     },
     {
       SPA: true,
@@ -170,25 +157,18 @@
     </Control>
   </Field>
 
-  {#if fixedRole}
-    <input type="hidden" bind:value={$formData.role} />
-  {:else}
-    <Field {form} name="role">
-      <Control>
-        {#snippet children(attrs)}
-          <Label>Role</Label>
-          <Select class="w-full" {...attrs} bind:value={$formData.role}>
-            <option value="read">read</option>
-            <option value="write">write</option>
-            <option value="admin">admin</option>
-            {#if canGrantOwner}
-              <option value="owner">owner</option>
-            {/if}
-          </Select>
-        {/snippet}
-      </Control>
-    </Field>
-  {/if}
+  <Field {form} name="role">
+    <Control>
+      {#snippet children(attrs)}
+        <Label>Role</Label>
+        <Select class="w-full" {...attrs} bind:value={$formData.role}>
+          <option value="read">read</option>
+          <option value="write">write</option>
+          <option value="admin">admin</option>
+        </Select>
+      {/snippet}
+    </Control>
+  </Field>
 
   <p class="text-xs opacity-70">
     JWTs from <code>Issuer</code> whose <code>sub</code> matches
