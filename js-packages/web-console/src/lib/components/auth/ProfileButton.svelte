@@ -2,6 +2,7 @@
   import { fade } from 'svelte/transition'
   import { page } from '$app/state'
   import CurrentTenant from '$lib/components/auth/CurrentTenant.svelte'
+  import RBAC from '$lib/components/auth/RBAC.svelte'
   import Popup from '$lib/components/common/Popup.svelte'
   import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
   import ApiKeyMenu from '$lib/components/other/ApiKeyMenu.svelte'
@@ -19,11 +20,6 @@
     healthStatus
   }: { compactBreakpoint?: string; healthStatus: ClusterHealthStatus } = $props()
   const auth = page.data.auth as AuthDetails | undefined
-  const role = $derived(page.data.feldera?.role)
-  const canAdminister = $derived(role === 'admin' || role === 'owner')
-  // Every /v0/api_keys route requires at least `write`, so a read-only caller
-  // cannot even list keys; hide the menu for them entirely.
-  const canManageApiKeys = $derived(role === 'write' || role === 'admin' || role === 'owner')
 
   const globalDialog = useGlobalDialog()
 
@@ -91,21 +87,19 @@
         {/snippet}
 
         {#if typeof auth === 'object' && 'logout' in auth}
-          {#if canAdminister}
+          <RBAC require="write:tenant_member">
             {@render profileItemButton('Admin', adminIcon, { href: resolve('/admin') })}
-          {/if}
-          {#if canManageApiKeys}
+          </RBAC>
+          <RBAC require="write:api_key">
             {@render profileItemButton('Manage API keys', apiKeysIcon, {
               onclick: () => (globalDialog.dialog = apiKeyDialog)
             })}
-          {/if}
-          <!-- OIDC trust management is admin-only (the endpoints require admin),
-               so only surface it when the caller can actually use it. -->
-          {#if canAdminister}
+          </RBAC>
+          <RBAC require="write:oidc_trust">
             {@render profileItemButton('Manage OIDC trust', oidcTrustIcon, {
               onclick: () => (globalDialog.dialog = oidcTrustDialog)
             })}
-          {/if}
+          </RBAC>
 
           <div class="hr"></div>
         {/if}

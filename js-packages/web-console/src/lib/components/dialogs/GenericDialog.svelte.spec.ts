@@ -109,6 +109,16 @@ describe('GenericDialog.svelte', () => {
       )
       await expect.element(page.getByTestId('button-confirm-apply')).toBeInTheDocument()
     })
+
+    it('renders a dismiss button without a success button when only onCancel is set', async () => {
+      // How a read-only editor dialog drops Apply: supply onCancel, omit
+      // onSuccess. Reverting the `onSuccess || onCancel` footer gate drops the
+      // whole footer (no dismiss button) and fails this.
+      await renderDialog(makeContent({ onCancel: { name: 'Close' } }))
+      await expect.element(page.getByTestId('box-dialog-actions')).toBeInTheDocument()
+      await expect.element(page.getByTestId('btn-dialog-cancel')).toHaveTextContent('Close')
+      await expect.element(page.getByTestId('btn-dialog-success')).not.toBeInTheDocument()
+    })
   })
 
   describe('C. Close button and noclose', () => {

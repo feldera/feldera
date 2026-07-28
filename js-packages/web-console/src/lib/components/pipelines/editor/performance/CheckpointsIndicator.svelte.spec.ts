@@ -1,8 +1,25 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
 import type { CheckpointMetadata } from '$lib/services/manager'
+import { permissionsOf } from '$lib/services/rbac'
+
+// The "create first checkpoint" affordance requires enterprise AND the
+// `exec:checkpoint` permission. Both are driven by hoisted vars so a test can
+// select them before rendering.
+const roleState = vi.hoisted(() => ({ current: 'write' as 'read' | 'write' | 'admin' | 'owner' }))
+const premiumState = vi.hoisted(() => ({ enabled: false }))
+
+vi.mock('$app/state', () => ({
+  page: {
+    data: {
+      get feldera() {
+        return { role: roleState.current, permissions: permissionsOf(roleState.current) }
+      }
+    }
+  }
+}))
 
 vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
   usePipelineManager: () => ({ checkpointPipeline: vi.fn() })
@@ -11,7 +28,7 @@ vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
 vi.mock('$lib/compositions/usePremiumFeatures.svelte', () => ({
   usePremiumFeatures: () => ({
     get value() {
-      return false
+      return premiumState.enabled
     }
   })
 }))
@@ -46,6 +63,11 @@ function makeCheckpoint(): CheckpointMetadata {
   return { uuid: '01900000-0000-7000-8000-000000000000', fingerprint: 0 }
 }
 
+afterEach(() => {
+  roleState.current = 'write'
+  premiumState.enabled = false
+})
+
 describe('CheckpointsIndicator.svelte', () => {
   it('shows elapsed time derived from the checkpoint UUID timestamp', async () => {
     await render(CheckpointsIndicator, {
@@ -56,5 +78,31 @@ describe('CheckpointsIndicator.svelte', () => {
       onShowCheckpoints: vi.fn()
     })
     await expect.element(page.getByText(/Last checkpoint:.*ago/)).toBeInTheDocument()
+  })
+
+  describe('exec:checkpoint gating of "create first checkpoint"', () => {
+    const renderEnterpriseNoCheckpoints = () =>
+      render(CheckpointsIndicator, {
+        pipelineName: 'test',
+        checkpoints: [],
+        metrics: makeMetrics(),
+        checkpointStatus: null,
+        onShowCheckpoints: vi.fn()
+      })
+
+    it('shows the button for a write caller on enterprise', async () => {
+      premiumState.enabled = true
+      roleState.current = 'write'
+      await renderEnterpriseNoCheckpoints()
+      await expect.element(page.getByText('Create first checkpoint')).toBeInTheDocument()
+    })
+
+    it('hides the button for a read-only caller on enterprise', async () => {
+      premiumState.enabled = true
+      roleState.current = 'read'
+      await renderEnterpriseNoCheckpoints()
+      // Reverting the gate renders the button for `read`, failing this.
+      await expect.element(page.getByText('Create first checkpoint')).not.toBeInTheDocument()
+    })
   })
 })

@@ -31,6 +31,7 @@ import type { Configuration, SessionInfo } from '$lib/services/manager'
 import { client } from '$lib/services/manager/client.gen'
 import { initPosthog } from '$lib/services/posthog'
 import { initProductFruits } from '$lib/services/productFruits'
+import { type Permission, permissionsOf, type Role, roleOf } from '$lib/services/rbac'
 import type { AuthDetails } from '$lib/types/auth'
 import type { LayoutLoad } from './$types'
 
@@ -102,11 +103,12 @@ export type LayoutData = {
         /**
          * Caller's RBAC role in the current tenant: read < write < admin < owner.
          */
-        role: 'read' | 'write' | 'admin' | 'owner'
+        role: Role
         /**
-         * True when the caller owns the tenant (gates owner-only admin UI).
+         * Permissions the role grants, materialized from the client role→permission
+         * map at init.
          */
-        isOwner: boolean
+        permissions: Permission[]
         /**
          * Only available if authenticated and using multi-tenant authorization
          */
@@ -402,6 +404,7 @@ function buildFelderaData(
   config: Configuration,
   sessionConfig: SessionInfo | undefined
 ) {
+  const role = roleOf(sessionConfig?.role)
   return {
     version: config.version,
     edition: config.edition,
@@ -417,10 +420,11 @@ function buildFelderaData(
     tenantId: sessionConfig?.tenant_id || '',
     tenantName: sessionConfig?.tenant_name || '',
     // `role` is added by the RBAC backend; the SDK type lags, so read it off the
-    // session payload and default to the least-privileged role. `owner` is the
-    // top role, so ownership is just that value.
-    role: sessionConfig?.role || 'read',
-    isOwner: sessionConfig?.role === 'owner',
+    // session payload and normalize any unexpected value to the least-privileged
+    // role. Permissions are materialized here once from the client
+    // role→permission map; owner-only UI gates on `write:tenant` (owner-only).
+    role,
+    permissions: permissionsOf(role),
     authorizedTenants: computeAuthorizedTenants(auth),
     unstableFeatures: config.unstable_features?.split(',').map((f: string) => f.trim()) || [],
     config

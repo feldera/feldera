@@ -29,6 +29,7 @@
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { useAggregatePipelineStats } from '$lib/compositions/useAggregatePipelineStats.svelte'
+  import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
@@ -61,8 +62,15 @@
     deleted?: boolean
   } = $props()
 
+  // Renaming needs write:pipeline_meta; without it the name stays visible but
+  // the double-click-to-edit affordance is inert.
+  const canRename = usePermission('write:pipeline_meta')
+  // Dismissing a deployment error acts on the pipeline, so it needs exec:pipeline.
+  const canDismissError = usePermission('exec:pipeline')
+
   let editNameDisabled = $derived(
-    !pipelineThumb ||
+    !canRename.allowed ||
+      !pipelineThumb ||
       deleted ||
       (nonNull(pipelineThumb.status) && !isPipelineCodeEditable(pipelineThumb.status))
   )
@@ -125,7 +133,9 @@
         header: `The last execution of the pipeline failed with the error code: ${pipelineThumb.deploymentError.error_code}`,
         message: pipelineThumb.deploymentError.message,
         style: 'error' as const,
-        onClose: () => pipelineThumb && api.dismissDeploymentError(pipelineThumb.name)
+        onClose: canDismissError.allowed
+          ? () => pipelineThumb && api.dismissDeploymentError(pipelineThumb.name)
+          : undefined
       }
     } else if (pipelineThumb.status === 'AwaitingApproval') {
       return {
@@ -260,6 +270,8 @@
               <Tooltip class="">
                 {#if deleted}
                   Cannot edit the deleted pipeline's name
+                {:else if !canRename.allowed}
+                  You have read-only access
                 {:else}
                   Cannot edit the pipeline's name while it's running
                 {/if}

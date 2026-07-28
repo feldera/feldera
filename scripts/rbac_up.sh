@@ -7,9 +7,11 @@
 # Everything lives under an isolated demo directory, so it never touches your
 # real ~/.feldera data. Stop with Ctrl-C.
 #
-# Usage:  scripts/rbac_up.sh [--rebuild] [--keep-db]
-#   --rebuild   cargo build the manager first (otherwise uses target/debug)
-#   --keep-db   keep the demo database between runs (default: wipe for a clean slate)
+# Usage:  scripts/rbac_up.sh [--rebuild] [--enterprise] [--keep-db] [--dev]
+#   --rebuild     cargo build the manager first (otherwise uses target/debug)
+#   --enterprise  build with the feldera-enterprise feature (only meaningful with --rebuild)
+#   --keep-db     keep the demo database between runs (default: wipe for a clean slate)
+#   --dev         start the manager with --dev-mode (permissive CORS, cross-origin access)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -17,17 +19,27 @@ DEMO="${FELDERA_RBAC_DEMO_DIR:-/tmp/feldera-rbac-demo}"
 BIN="target/debug/pipeline-manager"
 KEEP_DB=0
 REBUILD=0
+ENTERPRISE=0
+DEV=0
 for a in "$@"; do
   case "$a" in
     --keep-db) KEEP_DB=1 ;;
     --rebuild) REBUILD=1 ;;
+    --enterprise) ENTERPRISE=1 ;;
+    --dev) DEV=1 ;;
     *) echo "unknown arg: $a"; exit 1 ;;
   esac
 done
 
+# Extra manager args toggled by flags above.
+MGR_ARGS=()
+[ "$DEV" = 1 ] && MGR_ARGS+=(--dev-mode)
+
 if [ "$REBUILD" = 1 ] || [ ! -x "$BIN" ]; then
   echo "== building pipeline-manager (debug, with web console) =="
-  PATH="$HOME/.bun/bin:$PATH" cargo build -p pipeline-manager --features feldera-enterprise
+  FEATURES=()
+  [ "$ENTERPRISE" = 1 ] && FEATURES=(--features feldera-enterprise)
+  PATH="$HOME/.bun/bin:$PATH" cargo build -p pipeline-manager "${FEATURES[@]}"
 fi
 
 [ "$KEEP_DB" = 1 ] || rm -rf "$DEMO/pg"
@@ -61,6 +73,7 @@ FELDERA_UNSTABLE_FEATURES='runtime_version,testing' \
     --pg-embed-working-directory="$DEMO/pg" \
     --runner-working-directory="$DEMO/runner" \
     --compiler-working-directory="$DEMO/compiler" \
+    "${MGR_ARGS[@]}" \
     >"$DEMO/manager.log" 2>&1 &
 MGR_PID=$!
 

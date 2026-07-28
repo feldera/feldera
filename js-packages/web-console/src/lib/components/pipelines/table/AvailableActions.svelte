@@ -5,6 +5,7 @@
   import { duplicatePipeline, duplicatePipelineTooltip } from '$lib/compositions/duplicatePipeline'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
@@ -30,6 +31,17 @@
   ]
   type AvailableAction = (typeof availableActions)[number]
   type StatusAction = Exclude<AvailableAction, 'duplicate'>
+
+  // Bulk lifecycle actions need `exec:pipeline`; duplicate/delete need
+  // `write:pipeline`. A caller lacking a permission never sees the button.
+  const canExec = usePermission('exec:pipeline')
+  const canWrite = usePermission('write:pipeline')
+  const EXEC_BULK = new Set<AvailableAction>(['start', 'resume', 'pause', 'stop', 'kill', 'clear'])
+  const WRITE_BULK = new Set<AvailableAction>(['duplicate', 'delete'])
+  const permittedAction = (action: AvailableAction) =>
+    (EXEC_BULK.has(action) ? canExec.allowed : true) &&
+    (WRITE_BULK.has(action) ? canWrite.allowed : true)
+
   const isPremium = usePremiumFeatures()
   const stop = isPremium.value ? ['stop' as const] : []
   const statusActions = ({ status, storageStatus }: (typeof selected)[number]) => {
@@ -87,7 +99,7 @@
       supportedByAny.add('duplicate')
     }
     return availableActions
-      .filter((action) => supportedByAny.has(action))
+      .filter((action) => supportedByAny.has(action) && permittedAction(action))
       .map((action) =>
         match(action)
           .with('duplicate', () => btnDuplicate)

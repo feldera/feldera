@@ -1,6 +1,7 @@
 <script lang="ts">
   import { slide } from 'svelte/transition'
   import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
+  import RBAC from '$lib/components/auth/RBAC.svelte'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   // import type { PipelineDiff } from '$lib/services/manager'
   import type { PipelineDiff } from '$lib/types/pipelineManager'
@@ -324,21 +325,25 @@
 {/if}
 <div class="bg-white-dark sticky bottom-0">
   <div class="flex justify-start gap-4 py-4 md:gap-6 md:py-4">
-    {#await approvingPromise}
-      <button class="pointer-events-none btn preset-filled-primary-500 pr-8">
-        <IconLoader class="mr-4 h-5 flex-none animate-spin fill-surface-50"></IconLoader>
-        Approving...
-      </button>
-    {:then _}
-      <button
-        class="btn preset-filled-primary-500"
-        onclick={() => {
-          approvingPromise = onApprove().then(() => onCancel())
-        }}
-      >
-        Approve and Continue
-      </button>
-    {/await}
+    <!-- Approving resumes a running pipeline, so gate it on exec:pipeline.
+         The change review itself stays visible; only the apply action is gated. -->
+    <RBAC require="exec:pipeline">
+      {#await approvingPromise}
+        <button class="pointer-events-none btn preset-filled-primary-500 pr-8">
+          <IconLoader class="mr-4 h-5 flex-none animate-spin fill-surface-50"></IconLoader>
+          Approving...
+        </button>
+      {:then _}
+        <button
+          class="btn preset-filled-primary-500"
+          onclick={() => {
+            approvingPromise = onApprove().then(() => onCancel())
+          }}
+        >
+          Approve and Continue
+        </button>
+      {/await}
+    </RBAC>
     <button
       class="btn preset-tonal-surface"
       onclick={() => {

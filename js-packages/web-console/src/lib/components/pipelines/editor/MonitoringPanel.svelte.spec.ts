@@ -15,6 +15,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
+import { permissionsOf } from '$lib/services/rbac'
+
+// The Ad-Hoc Queries and Changes Stream tabs are gated on `exec:pipeline_data`.
+// Default the mocked role to `write` so the log-search tests (which already hide
+// those tabs) are unaffected; the gating tests below flip it to `read`. The
+// `feldera` getter is read at render time, so setting `roleState.current` before
+// each render selects the role under test.
+const roleState = vi.hoisted(() => ({ current: 'write' as 'read' | 'write' | 'admin' | 'owner' }))
+vi.mock('$app/state', () => ({
+  page: {
+    data: {
+      get feldera() {
+        return { role: roleState.current, permissions: permissionsOf(roleState.current) }
+      }
+    }
+  }
+}))
 
 // --- Mock the pipeline manager's log-stream fetch ----------------------------
 // Each call returns a fresh ReadableStream that emits all 1 000 lines as a single
@@ -208,5 +225,97 @@ describe('MonitoringPanel — log-search wiring', () => {
 
     // First substring match for "500" is line "500" → rows[499].
     await expectRowMounted(499)
+  })
+})
+
+// --- exec:pipeline_data tab gating ------------------------------------------
+//
+// Ad-Hoc Queries and Changes Stream read/stream live pipeline data and must not
+// be reachable without `exec:pipeline_data`. Their tab triggers are hidden, and
+// a saved selection pointing at one of them is dropped to the first visible tab
+// on init (so a `read` caller never lands on a blank panel).
+
+// Mount MonitoringPanel with an explicit role and, optionally, a pre-seeded
+// saved-tab in localStorage. Returns once the Logs tab has rendered a row, which
+// proves a visible tab is active.
+async function mountGatingPanel(opts: {
+  role: 'read' | 'write'
+  hiddenTabs: string[]
+  currentTab: 'Logs' | null
+  seedTab?: string
+}) {
+  roleState.current = opts.role
+  pipelineLogsStreamMock.mockImplementation(async () => buildFakeLogsStream())
+
+  const name = nextPipelineName()
+  if (opts.seedTab) {
+    localStorage.setItem(`pipelines/${name}/currentMonitoringTab`, JSON.stringify(opts.seedTab))
+  }
+
+  mountTarget = document.createElement('div')
+  mountTarget.style.cssText = 'height: 800px; width: 1200px; display: flex; flex-direction: column;'
+  document.body.appendChild(mountTarget)
+
+  mounted = render(MonitoringPanel, {
+    target: mountTarget,
+    props: {
+      pipeline: pipelineProp(name),
+      // The Performance tab label counts connector problems, so `inputs`/`outputs`
+      // must be iterable even when empty.
+      metrics: { current: { inputs: [], outputs: [] } } as any,
+      deleted: false,
+      hiddenTabs: opts.hiddenTabs,
+      currentTab: opts.currentTab
+    }
+  } as any)
+}
+
+const tabTexts = () =>
+  Array.from(document.querySelectorAll('[role="tab"]')).map((t) => t.textContent ?? '')
+
+describe('MonitoringPanel — exec:pipeline_data tab gating', () => {
+  afterEach(async () => {
+    await mounted?.unmount()
+    mounted = undefined
+    mountTarget?.remove()
+    mountTarget = undefined
+    localStorage.clear()
+    roleState.current = 'write'
+    vi.clearAllMocks()
+  })
+
+  it('shows the Ad-Hoc Queries and Changes Stream tabs for a write caller', async () => {
+    await mountGatingPanel({ role: 'write', hiddenTabs: [], currentTab: 'Logs' })
+    await expectRowMounted(0)
+
+    const labels = tabTexts()
+    expect(labels.some((t) => t.includes('Ad-Hoc'))).toBe(true)
+    expect(labels.some((t) => t.includes('Change'))).toBe(true)
+  })
+
+  it('hides both tabs for a read-only caller', async () => {
+    await mountGatingPanel({ role: 'read', hiddenTabs: [], currentTab: 'Logs' })
+    await expectRowMounted(0)
+
+    // Reverting the gate (dropping the exec:pipeline_data check in the tabs
+    // filter) renders these triggers and fails this test.
+    const labels = tabTexts()
+    expect(labels.some((t) => t.includes('Ad-Hoc'))).toBe(false)
+    expect(labels.some((t) => t.includes('Change'))).toBe(false)
+  })
+
+  it('switches away from a saved forbidden tab to the first visible tab', async () => {
+    // A caller who once had access saved 'Ad-Hoc Queries'; on init as `read`, all
+    // other tabs but Logs are hidden, so the panel must land on Logs, not blank.
+    await mountGatingPanel({
+      role: 'read',
+      hiddenTabs: ['Errors', 'Performance', 'Samply', 'Health'],
+      currentTab: null,
+      seedTab: 'Ad-Hoc Queries'
+    })
+
+    // Logs rows render → the saved 'Ad-Hoc Queries' was replaced by a visible tab.
+    await expectRowMounted(0)
+    expect(tabTexts().some((t) => t.includes('Ad-Hoc'))).toBe(false)
   })
 })

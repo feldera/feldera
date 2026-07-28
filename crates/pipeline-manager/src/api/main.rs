@@ -1376,6 +1376,35 @@ mod tests {
         );
     }
 
+    /// A JSON write (create/patch pipeline) carries `Content-Type:
+    /// application/json`, whose non-safelisted value forces the browser to
+    /// preflight and request the `content-type` header. If the server's CORS
+    /// allowlist drops `content-type`, actix-cors 400s the preflight and every
+    /// cross-origin write breaks while reads keep working.
+    #[actix_web::test]
+    async fn v0_preflight_allows_json_write_headers() {
+        let cfg = ApiServerConfig::test_config();
+        let app = test::init_service(build_app(&cfg, &None)).await;
+
+        let req = test::TestRequest::default()
+            .method(Method::OPTIONS)
+            .uri("/v0/pipelines")
+            .insert_header((header::ORIGIN, "http://example.com"))
+            .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+            .insert_header((
+                header::ACCESS_CONTROL_REQUEST_HEADERS,
+                "authorization, content-type",
+            ))
+            .to_request();
+        let res = test::call_service(&app, req).await;
+
+        assert!(
+            res.status().is_success(),
+            "JSON-write preflight returned {} — cross-origin create/patch will be blocked",
+            res.status(),
+        );
+    }
+
     /// Guards the static-asset middleware's blast radius: GET responses on
     /// the credentialed-CORS routes (`/v0/*`, `/config/authentication`) must
     /// never carry the static-only `ACAO: *` or `Cache-Control: immutable`.

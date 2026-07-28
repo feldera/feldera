@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state'
+  import RBAC from '$lib/components/auth/RBAC.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
   const {
@@ -24,9 +25,14 @@
       A new runtime version {page.data.feldera!.version} is available. Update the runtime to edit the
       pipeline.
     </span>
-    <button class="btn h-7 border-0 preset-filled-primary-500 py-0 text-sm" onclick={handleUpgrade}>
-      Update
-    </button>
+    <RBAC require="exec:runtime_upgrade">
+      <button
+        class="btn h-7 border-0 preset-filled-primary-500 py-0 text-sm"
+        onclick={handleUpgrade}
+      >
+        Update
+      </button>
+    </RBAC>
   {:else}
     <span>
       Editing a pipeline with existing state in storage — changes will take effect when the pipeline
