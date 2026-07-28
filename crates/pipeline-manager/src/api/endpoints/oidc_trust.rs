@@ -1,17 +1,21 @@
-// OIDC workload identity trust relationships.
-//
-// A trust relationship lets a tenant authorize JWT-bearing requests from an
-// external OIDC issuer (e.g. GitHub Actions, AWS, GCP, Auth0) without
-// provisioning a long-lived Feldera API key. The issuer is verified via OIDC
-// discovery + JWKS; the `subject` and (optional) `audience` claims are matched
-// against patterns recorded on the trust relationship (`*` is a wildcard).
+//! OIDC workload identity trust relationships.
+//!
+//! A trust relationship lets a tenant authorize JWT-bearing requests from an
+//! external OIDC issuer (e.g. GitHub Actions, AWS, GCP, Auth0) without
+//! provisioning a long-lived Feldera API key. The issuer is verified via OIDC
+//! discovery + JWKS; the `subject` and (optional) `audience` claims are matched
+//! against patterns recorded on the trust relationship (`*` is a wildcard).
+//!
+//! Every trust here belongs to the acting tenant and grants at most `admin`. The
+//! platform-wide `owner` role is configuration only (`--owner-trusts`), so no
+//! request can mint an owner.
 use crate::api::main::ServerState;
 use crate::api::util::parse_url_parameter;
 use crate::auth::AuthenticatedPrincipal;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::types::oidc_trust::OidcTrustId;
-use crate::db::types::role::Role;
+use crate::db::types::role::{MemberRole, Role};
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use actix_web::{
@@ -23,40 +27,8 @@ use actix_web::{
 };
 use serde::{Deserialize, Serialize};
 use tracing::info;
-use utoipa::{IntoParams, ToSchema};
+use utoipa::ToSchema;
 use uuid::Uuid;
-
-/// Selects which trusts an operation targets.
-#[derive(Debug, Default, Deserialize, IntoParams)]
-pub(crate) struct TrustScope {
-    /// Select the platform-wide owner trusts, which belong to no tenant,
-    /// instead of the trusts scoped to the caller's tenant. Owner-only.
-    #[serde(default)]
-    platform: bool,
-}
-
-/// The tenant a trust operation targets, mirroring the `tenant_id` column the
-/// trust is stored in: `Some(tenant)` for a tenant-scoped trust, and `None` for
-/// the platform-wide owner trusts, which belong to no tenant and which the
-/// schema stores with `tenant_id IS NULL`. Only an owner may target those.
-fn trust_scope(
-    scope: &TrustScope,
-    tenant_id: TenantId,
-    role: Role,
-) -> Result<Option<TenantId>, ManagerError> {
-    if scope.platform {
-        if role != Role::Owner {
-            return Err(DBError::InsufficientPermissions {
-                required: Role::Owner,
-                actual: role,
-            }
-            .into());
-        }
-        Ok(None)
-    } else {
-        Ok(Some(tenant_id))
-    }
-}
 
 /// Request to create a new OIDC trust relationship.
 #[derive(Debug, Deserialize, ToSchema)]
@@ -85,11 +57,10 @@ pub(crate) struct NewOidcTrustRequest {
     #[serde(default)]
     pub audience: Option<String>,
 
-    /// Role granted to a token that satisfies this trust. Capped at the
-    /// caller's own role. `owner` may be set only by an owner. Defaults to
-    /// `read`.
+    /// Role granted to a token that satisfies this trust: `read`, `write`, or
+    /// `admin`, capped at the caller's own role. Defaults to `read`.
     #[serde(default)]
-    pub role: Option<Role>,
+    pub role: Option<MemberRole>,
 }
 
 /// Response to a successful create.
@@ -104,10 +75,9 @@ pub(crate) struct NewOidcTrustResponse {
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
-    params(TrustScope),
     responses(
         (status = OK, description = "Trust relationships retrieved", body = [OidcTrustDescr]),
-        (status = FORBIDDEN, description = "Caller's role is below the required role, or `platform` was set by a non-owner", body = ErrorResponse),
+        (status = FORBIDDEN, description = "Caller's role is below the required role", body = ErrorResponse),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
     tag = "Platform"
@@ -116,11 +86,8 @@ pub(crate) struct NewOidcTrustResponse {
 pub(crate) async fn list_oidc_trust(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    principal: ReqData<AuthenticatedPrincipal>,
-    scope: web::Query<TrustScope>,
 ) -> Result<HttpResponse, ManagerError> {
-    let scope = trust_scope(&scope, *tenant_id, principal.role)?;
-    let items = state.db.lock().await.list_oidc_trust(scope).await?;
+    let items = state.db.lock().await.list_oidc_trust(*tenant_id).await?;
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&items))
@@ -134,10 +101,10 @@ pub(crate) async fn list_oidc_trust(
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
-    params(("name" = String, Path, description = "Trust relationship name"), TrustScope),
+    params(("name" = String, Path, description = "Trust relationship name")),
     responses(
         (status = OK, description = "Trust relationship retrieved", body = OidcTrustDescr),
-        (status = FORBIDDEN, description = "Caller's role is below the required role, or `platform` was set by a non-owner", body = ErrorResponse),
+        (status = FORBIDDEN, description = "Caller's role is below the required role", body = ErrorResponse),
         (status = NOT_FOUND, description = "No relationship with that name", body = ErrorResponse),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
@@ -147,13 +114,15 @@ pub(crate) async fn list_oidc_trust(
 pub(crate) async fn get_oidc_trust(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    principal: ReqData<AuthenticatedPrincipal>,
-    scope: web::Query<TrustScope>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let name = parse_url_parameter(&req, "name")?;
-    let scope = trust_scope(&scope, *tenant_id, principal.role)?;
-    let item = state.db.lock().await.get_oidc_trust(scope, &name).await?;
+    let item = state
+        .db
+        .lock()
+        .await
+        .get_oidc_trust(*tenant_id, &name)
+        .await?;
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(&item))
@@ -183,9 +152,8 @@ pub(crate) async fn post_oidc_trust(
     let new_id = Uuid::now_v7();
     let body = body.into_inner();
 
-    // Mint cap: the granted role may not exceed the caller's role. An owner
-    // trust may be created only by an owner.
-    let requested = body.role.unwrap_or(Role::Read);
+    // The type admits no `owner`, so only the cap against the caller is left.
+    let requested = body.role.map_or(Role::Read, MemberRole::role);
     if requested > principal.role {
         return Err(DBError::RoleExceedsCreator {
             requested,
@@ -193,15 +161,6 @@ pub(crate) async fn post_oidc_trust(
         }
         .into());
     }
-
-    // Scope follows the role: an owner trust is platform-wide (no tenant), any
-    // other role is scoped to the acting tenant. Tenant selection at auth time
-    // comes from the Feldera-Tenant header.
-    let scope = if requested == Role::Owner {
-        None
-    } else {
-        Some(*tenant_id)
-    };
 
     // The remaining fields are validated in the database operation, which is
     // the one place every caller passes through: the name against the
@@ -211,7 +170,7 @@ pub(crate) async fn post_oidc_trust(
         .lock()
         .await
         .create_oidc_trust(
-            scope,
+            *tenant_id,
             new_id,
             &body.name,
             body.description.as_deref(),
@@ -222,8 +181,8 @@ pub(crate) async fn post_oidc_trust(
         )
         .await?;
     info!(
-        "Created OIDC trust '{}' (scope: {:?}, issuer: {})",
-        body.name, scope, body.issuer
+        "Created OIDC trust '{}' (tenant: {}, issuer: {})",
+        body.name, *tenant_id, body.issuer
     );
     Ok(HttpResponse::Created()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -237,10 +196,10 @@ pub(crate) async fn post_oidc_trust(
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
-    params(("name" = String, Path, description = "Trust relationship name"), TrustScope),
+    params(("name" = String, Path, description = "Trust relationship name")),
     responses(
         (status = OK, description = "Trust relationship deleted"),
-        (status = FORBIDDEN, description = "Caller's role is below the required role, or `platform` was set by a non-owner", body = ErrorResponse),
+        (status = FORBIDDEN, description = "Caller's role is below the required role", body = ErrorResponse),
         (status = NOT_FOUND, description = "No relationship with that name", body = ErrorResponse),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
@@ -250,18 +209,15 @@ pub(crate) async fn post_oidc_trust(
 pub(crate) async fn delete_oidc_trust(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    principal: ReqData<AuthenticatedPrincipal>,
-    scope: web::Query<TrustScope>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let name = parse_url_parameter(&req, "name")?;
-    let scope = trust_scope(&scope, *tenant_id, principal.role)?;
     state
         .db
         .lock()
         .await
-        .delete_oidc_trust(scope, &name)
+        .delete_oidc_trust(*tenant_id, &name)
         .await?;
-    info!("Deleted OIDC trust '{name}' (scope: {scope:?})");
+    info!("Deleted OIDC trust '{name}' (tenant: {})", *tenant_id);
     Ok(HttpResponse::Ok().finish())
 }

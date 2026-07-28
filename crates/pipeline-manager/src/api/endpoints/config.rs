@@ -274,5 +274,62 @@ pub(crate) async fn get_config_session(
     Ok(HttpResponse::Ok().json(session_info))
 }
 
+/// The platform owners configured at deploy time.
+#[derive(Serialize, ToSchema)]
+pub(crate) struct ConfiguredOwners {
+    /// Identities granted `owner`, as configured through
+    /// `authorization.owners` / `FELDERA_OWNERS`. Each entry is a
+    /// provider-verified email, a bare OIDC subject, or an issuer and subject
+    /// separated by a space.
+    pub owners: Vec<String>,
+    /// Workload identities granted `owner`, as configured through
+    /// `authorization.ownerTrusts` / `FELDERA_OWNER_TRUSTS`.
+    pub owner_trusts: Vec<ConfiguredOwnerTrust>,
+}
+
+/// A workload identity granted `owner` by configuration.
+#[derive(Serialize, ToSchema)]
+pub(crate) struct ConfiguredOwnerTrust {
+    pub issuer: String,
+    pub subject: String,
+    pub audience: Option<String>,
+}
+
+/// Get Configured Owners
+///
+/// List the identities that hold the platform-wide `owner` role.
+///
+/// Owner comes from deploy-time configuration and cannot be granted through the
+/// API, so this list is read-only: changing it means changing the deployment.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    responses(
+        (status = OK, description = "Configured owners retrieved", body = ConfiguredOwners),
+        (status = FORBIDDEN, description = "Caller's role is below the required role", body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
+    ),
+    tag = "Platform"
+)]
+#[get("/config/owners")]
+pub(crate) async fn get_config_owners(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, ManagerError> {
+    let config = &state.config;
+    Ok(HttpResponse::Ok().json(&ConfiguredOwners {
+        owners: config.owners.clone(),
+        owner_trusts: config
+            .owner_trusts
+            .0
+            .iter()
+            .map(|trust| ConfiguredOwnerTrust {
+                issuer: trust.issuer.clone(),
+                subject: trust.subject.clone(),
+                audience: trust.audience.clone(),
+            })
+            .collect(),
+    }))
+}
+
 #[derive(Serialize, ToSchema)]
 pub(crate) struct EmptyResponse {}

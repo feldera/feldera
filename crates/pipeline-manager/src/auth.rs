@@ -315,8 +315,13 @@ async fn oidc_trust_auth(
     let state = req.app_data::<Data<ServerState>>().unwrap().clone();
 
     // SSRF/DoS gate: only fetch discovery/JWKS for an issuer that at least one
-    // trust relationship names.
-    match state.db.lock().await.is_trusted_issuer(&iss).await {
+    // trust names, whether configured at launch or registered in a tenant.
+    let trusted_issuer = if state.config.owner_trusts.names_issuer(&iss) {
+        Ok(true)
+    } else {
+        state.db.lock().await.is_trusted_issuer(&iss).await
+    };
+    match trusted_issuer {
         Ok(true) => {}
         Ok(false) => {
             debug!("Federated token from unregistered issuer '{iss}' rejected");
@@ -358,6 +363,10 @@ async fn oidc_trust_auth(
     }
 
     let audiences = audiences_from_claim(token_data.claims.aud.as_ref());
+    let owner_trust = state
+        .config
+        .owner_trusts
+        .admits(&iss, &token_data.claims.sub, &audiences);
     let matches = {
         let db = state.db.lock().await;
         db.match_oidc_trust(&iss, &token_data.claims.sub, &audiences)
@@ -370,7 +379,7 @@ async fn oidc_trust_auth(
             return unauthorized(format!("Database error: {e}"), req);
         }
     };
-    if matches.is_empty() {
+    if matches.is_empty() && !owner_trust {
         let ip = req
             .peer_addr()
             .map(|a| a.ip().to_string())
@@ -396,22 +405,19 @@ async fn oidc_trust_auth(
             .map(str::to_string)
     };
 
-    // An owner trust is platform-wide with no tenant of its own, so the acting
-    // tenant must be named explicitly. It wins over any tenant-scoped match.
-    if matches
-        .iter()
-        .any(|(t, r)| t.is_none() && *r == Role::Owner)
-    {
-        let Some(selector) = header_tenant(&req) else {
-            return db_err(DBError::OwnerTrustNeedsTenant, req);
-        };
-        let resolved = {
+    // An owner belongs to no tenant of its own, so it acts wherever the
+    // Feldera-Tenant header points, and in the default tenant without one, as a
+    // configured owner does. That is what lets an owner call the platform-wide
+    // tenant routes on a deployment that has no tenants yet. Owner wins over any
+    // tenant-scoped match.
+    if owner_trust {
+        let acting = {
             let db = state.db.lock().await;
-            db.resolve_tenant_selector(&selector).await
+            resolve_owner_acting_tenant(&db, req.headers(), DEFAULT_TENANT_ID).await
         };
-        let acting = match resolved {
+        let acting = match acting {
             Ok(t) => t,
-            Err(e) => return db_err(e, req),
+            Err(e) => return Err((e, req)),
         };
         AuthenticatedPrincipal {
             acting_tenant: acting,
@@ -422,12 +428,9 @@ async fn oidc_trust_auth(
         return Ok(req);
     }
 
-    // Tenant-scoped matches (each carries a tenant). One is unambiguous; several
-    // require the Feldera-Tenant header to name one of them.
-    let tenant_matches: Vec<(TenantId, Role)> = matches
-        .into_iter()
-        .filter_map(|(t, r)| t.map(|t| (t, r)))
-        .collect();
+    // Tenant-scoped matches. One is unambiguous; several require the
+    // Feldera-Tenant header to name one of them.
+    let tenant_matches: Vec<(TenantId, Role)> = matches;
     let (acting_tenant, role) = if tenant_matches.len() == 1 {
         tenant_matches[0]
     } else {
@@ -1545,6 +1548,7 @@ mod test {
             issuer_tenant: false,
             auth_audience: "feldera-api".to_string(),
             owners: vec![],
+            owner_trusts: crate::config::OwnerTrusts::default(),
             default_role: Role::Read,
             first_user_role: Role::Admin,
         };
