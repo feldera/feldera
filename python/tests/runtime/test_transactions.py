@@ -2,7 +2,7 @@ import unittest
 
 from feldera import PipelineBuilder
 from tests import TEST_CLIENT
-from tests.platform.helper import PipelineTestCase
+from tests.platform.helper import PipelineTestCase, wait_for_records
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
@@ -46,6 +46,7 @@ class TestTransactions(PipelineTestCase):
         pipeline.commit_transaction()
         pipeline.wait_for_completion()
 
+        wait_for_records(out, 3)
         output = out.to_dict()
         assert output == [
             {
@@ -88,6 +89,7 @@ class TestTransactions(PipelineTestCase):
         pipeline.commit_transaction()
         pipeline.wait_for_completion()
 
+        wait_for_records(out1, 15)
         output = out1.to_dict()
         assert output == [
             {
@@ -152,6 +154,7 @@ class TestTransactions(PipelineTestCase):
             },
         ]
 
+        wait_for_records(out2, 6)
         output = out2.to_dict()
         assert output == [
             {
@@ -180,6 +183,8 @@ class TestTransactions(PipelineTestCase):
             },
         ]
 
+        # No wait here: out3 is asserted to stay empty, and the waits above give
+        # it every chance to receive the records its siblings already saw.
         output = out3.to_dict()
         assert output == []
 

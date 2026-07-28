@@ -8,7 +8,11 @@ import time
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from feldera.output_handler import OutputHandler
 
 
 MINIO_BUCKET = os.environ.get("CI_MINIO_BUCKET", "ci-tests")
@@ -605,3 +609,38 @@ def wait_for_condition(
             )
             return
         time.sleep(poll_interval_s)
+
+
+def wait_for_records(
+    handler: "OutputHandler",
+    count: int,
+    timeout_s: float | None = 60.0,
+    poll_interval_s: float = 0.1,
+) -> None:
+    """Poll a listener until it has buffered at least ``count`` records.
+
+    A listener receives its records over an HTTP stream that a background
+    thread reads, so nothing the pipeline reports implies those records have
+    reached this process. A completion token promises only that the chunk was
+    handed to the output connector, and pipeline-side idleness says nothing at
+    all about the client. Reading the handler does not wait either, so call
+    this first.
+
+    :param handler: The :class:`feldera.output_handler.OutputHandler` returned
+        by ``Pipeline.listen``.
+    :param count: Number of records to wait for. Must be positive; waiting for
+        zero records would return without observing anything.
+    :param timeout_s: Maximum wait time in seconds. ``None`` means wait forever.
+    :param poll_interval_s: Poll interval in seconds.
+
+    :raises TimeoutError: If fewer than ``count`` records arrive in time.
+    """
+    if count < 1:
+        raise ValueError(f"record count must be positive, got {count}")
+
+    wait_for_condition(
+        f"{count} record(s) on the '{handler.view_name}' listener",
+        lambda: len(handler.to_pandas(clear_buffer=False)) >= count,
+        timeout_s,
+        poll_interval_s,
+    )

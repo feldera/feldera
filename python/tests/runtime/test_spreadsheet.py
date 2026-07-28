@@ -2,10 +2,9 @@
 
 import unittest
 
-import time
 from feldera import PipelineBuilder
 from tests import TEST_CLIENT
-from tests.platform.helper import PipelineTestCase
+from tests.platform.helper import PipelineTestCase, wait_for_records
 
 
 def make_value(id: int, raw: str, computed: str) -> dict:
@@ -41,11 +40,6 @@ class TestUDF(PipelineTestCase):
         out = pipeline.listen("spreadsheet_view")
         pipeline.resume()
 
-        # What is the right way to wait for ingestion to complete?
-        time.sleep(2)
-        pipeline.stop(force=True)
-
-        output = sorted(out.to_dict(), key=lambda x: x["id"])
         expected = [
             make_value(0, "=A39999999", "42"),
             make_value(1, "=A0", "42"),
@@ -71,6 +65,11 @@ class TestUDF(PipelineTestCase):
             make_value(222, '=LEFT("apple", 3)', "app"),
             make_value(1039999974, "42", "42"),
         ]
+
+        wait_for_records(out, len(expected))
+        pipeline.stop(force=True)
+
+        output = sorted(out.to_dict(), key=lambda x: x["id"])
         assert output == expected
 
 

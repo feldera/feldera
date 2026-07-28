@@ -31,7 +31,7 @@ from tests import (
     TEST_CLIENT,
     unique_pipeline_name,
 )
-from tests.utils import wait_for_condition
+from tests.utils import wait_for_condition, wait_for_records
 
 API_PREFIX = "/v0"
 
@@ -301,6 +301,7 @@ __all__ = [
     "delete",
     "wait_for_program_success",
     "wait_for_condition",
+    "wait_for_records",
     "unique_pipeline_name",
     "extract_object_by_name",
     "gen_pipeline_name",

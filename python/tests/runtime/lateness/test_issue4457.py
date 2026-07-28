@@ -3,7 +3,7 @@ import unittest
 from pandas import Timestamp
 from feldera import PipelineBuilder
 from tests import TEST_CLIENT
-from tests.platform.helper import PipelineTestCase
+from tests.platform.helper import PipelineTestCase, wait_for_records
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
@@ -40,8 +40,8 @@ class TestIssue_4457(PipelineTestCase):
             "test_events",
             [{"id": "a", "a": "test4", "t": "2025-05-20 21:00:17.920"}],
         )
-        pipeline.wait_for_idle()
 
+        wait_for_records(out, 1)
         output = out.to_dict()
         assert output == [
             {
@@ -56,6 +56,9 @@ class TestIssue_4457(PipelineTestCase):
             "test_events",
             [{"id": "a", "a": "test5", "t": "2025-03-20 21:00:17.920"}],
         )
+        # The late record is expected to be dropped, so there is no record to
+        # wait for. Idleness is the only signal that the pipeline is done with
+        # the input and nothing is going to arrive.
         pipeline.wait_for_idle()
 
         output = out.to_dict()

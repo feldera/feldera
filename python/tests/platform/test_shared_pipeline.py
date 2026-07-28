@@ -21,7 +21,7 @@ from feldera.testutils import (
     FELDERA_TEST_NUM_WORKERS,
     FELDERA_TEST_NUM_HOSTS,
 )
-from .helper import wait_for_condition
+from .helper import wait_for_condition, wait_for_records
 
 
 class TestPipeline(SharedTestPipeline):
@@ -112,15 +112,18 @@ class TestPipeline(SharedTestPipeline):
 
         self.pipeline.resume()
         self.pipeline.input_json("tbl", [{"id": i} for i in range(10)])
-        self.pipeline.wait_for_idle()
-
-        all = all_stream.to_dict()
-        odd = odd_stream.to_dict()
-        even = even_stream.to_dict()
 
         expected_all = list(self.pipeline.query("select * from v0"))
         expected_odd = list(self.pipeline.query('select * from "V0"'))
         expected_even = list(self.pipeline.query('select * from "DATE"'))
+
+        wait_for_records(all_stream, len(expected_all))
+        wait_for_records(odd_stream, len(expected_odd))
+        wait_for_records(even_stream, len(expected_even))
+
+        all = all_stream.to_dict()
+        odd = odd_stream.to_dict()
+        even = even_stream.to_dict()
 
         def extract_ids(x):
             return sorted(i["id"] for i in x)
@@ -307,7 +310,7 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, 100)
         df = out.to_pandas()
         assert df.shape[0] == 100
         self.pipeline.stop(force=True)
@@ -320,7 +323,7 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, 100)
         df = out.to_pandas()
         assert df.shape[0] == 100
         self.pipeline.stop(force=True)
@@ -332,7 +335,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("average_scores")
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, 100)
         df = out.to_pandas()
         assert df.shape[0] == 100
         self.pipeline.stop(force=True)
@@ -426,7 +429,9 @@ class TestPipeline(SharedTestPipeline):
         # Feed JSON as strings, receive output from `average_view` and `json_view`
         self.pipeline.input_json("json_table", input_strings)
 
-        self.pipeline.wait_for_idle()
+        wait_for_records(average_out, len(expected_average))
+        wait_for_records(variant_out, len(expected_variant))
+        wait_for_records(json_out, len(expected_strings))
         # Outputs may arrive in any order, so compare ignoring order.
         self.assertCountEqual(expected_average, average_out.to_dict())
         self.assertCountEqual(expected_variant, variant_out.to_dict())
@@ -435,6 +440,7 @@ class TestPipeline(SharedTestPipeline):
         # Feed VARIANT, read strongly typed columns. Since output columns have the same
         # shape as inputs, output and input should be identical.
         self.pipeline.input_json("variant_table", input_json)
+        wait_for_records(typed_out, len(expected_typed))
         self.assertCountEqual(expected_typed, typed_out.to_dict())
         self.pipeline.stop(True)
 
@@ -444,7 +450,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v0")
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data=data)
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, len(data))
         out_data = out.to_dict()
         expected = []
         for d in data:
@@ -490,7 +496,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v0")
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data, update_format="insert_delete")
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, 1)
         out_data = out.to_dict()
         expected = [dict(data["insert"], insert_delete=1)]
         assert out_data == expected
@@ -502,7 +508,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v0")
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data)
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, len(data))
         out_data = out.to_dict()
         expected = [dict(row, insert_delete=1) for row in data]
         assert out_data == expected
@@ -515,7 +521,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v0")
         self.pipeline.resume()
         self.pipeline.input_json("tbl", data, update_format="insert_delete")
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, 1)
         out_data = out.to_dict()
         expected = [dict(data["insert"], insert_delete=1)]
         assert out_data == expected
@@ -545,7 +551,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v_timestamp")
         self.pipeline.resume()
         self.pipeline.input_pandas("tbl_timestamp", df)
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, 3)
         df_out = out.to_pandas()
         assert df_out.shape[0] == 3
         self.pipeline.stop(force=True)
@@ -561,7 +567,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v_binary")
         self.pipeline.resume()
         self.pipeline.input_json("tbl_binary", data=data)
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, len(expected_data))
         got = out.to_dict()
         assert expected_data == got
         self.pipeline.stop(force=True)
@@ -579,7 +585,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v_decimal")
         self.pipeline.resume()
         self.pipeline.input_json("tbl_decimal", data=data)
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, len(expected))
         got = out.to_dict()
         assert expected == got
         self.pipeline.stop(force=True)
@@ -594,7 +600,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v_array")
         self.pipeline.resume()
         self.pipeline.input_json("tbl_array", data=data)
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, len(data))
         got = out.to_dict()
         expected = [{"c1": [1, 2, 3], "insert_delete": 1}]
         assert got == expected
@@ -614,7 +620,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v_struct")
         self.pipeline.resume()
         self.pipeline.input_json("tbl_struct", data)
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, len(data))
         got = out.to_dict()
         expected = [{"c1": {"f1": 1, "f2": "a"}, "insert_delete": 1}]
         assert got == expected
@@ -640,7 +646,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v_datetime")
         self.pipeline.resume()
         self.pipeline.input_json("tbl_datetime", data)
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, len(expected))
         got = out.to_dict()
         assert expected == got
         self.pipeline.stop(force=True)
@@ -669,7 +675,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v_simple")
         self.pipeline.resume()
         self.pipeline.input_json("tbl_simple", data)
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, len(data))
         got = out.to_dict()
         expected = []
         for d in data:
@@ -690,7 +696,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v_map")
         self.pipeline.resume()
         self.pipeline.input_json("tbl_map", data)
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, len(expected))
         got = out.to_dict()
         assert expected == got
         self.pipeline.stop(force=True)
@@ -700,7 +706,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v_map")
         self.pipeline.resume()
         self.pipeline.input_json("tbl_map", {"c1": {"a": 1, "b": 2}})
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, len(expected))
         got = out.to_dict()
         assert expected == got
         self.pipeline.stop(force=True)
@@ -717,7 +723,7 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("v_uuid")
         self.pipeline.resume()
         self.pipeline.input_json("tbl_uuid", data)
-        self.pipeline.wait_for_idle()
+        wait_for_records(out, len(data))
         got = out.to_dict()
         # Compare only the UUID values
         got_uuids = sorted([row["c0"] for row in got])
@@ -918,12 +924,12 @@ class TestPipeline(SharedTestPipeline):
         )
 
         # Verify egress data includes both values with insert_delete markers
-        self.pipeline.wait_for_idle()
-        egress_result = out.to_dict()
         expected_egress = [
             {"c1": "test_value", "insert_delete": 1},
             {"c1": "test_value_2", "insert_delete": 1},
         ]
+        wait_for_records(out, len(expected_egress))
+        egress_result = out.to_dict()
         self.assertCountEqual(egress_result, expected_egress)
 
     def test_listen_non_existent_view_paused(self):
