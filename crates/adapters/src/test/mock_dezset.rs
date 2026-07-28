@@ -9,7 +9,7 @@ use crate::{
 };
 #[cfg(feature = "with-avro")]
 use crate::{catalog::AvroStream, format::avro::from_avro_value};
-use anyhow::Result as AnyResult;
+use anyhow::{Result as AnyResult, bail};
 #[cfg(feature = "with-avro")]
 use apache_avro::{Schema as AvroSchema, types::Value as AvroValue};
 use arrow::array::RecordBatch;
@@ -453,6 +453,34 @@ where
     }
 }
 
+impl<T, U> MockZSetArrowStream<T, U, SqlSerdeConfig>
+where
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync,
+    U: Send + Sync,
+{
+    /// Deserialize the records in `data` and buffer the update that `update`
+    /// builds for each of them.
+    fn buffer_records<F>(
+        &mut self,
+        data: &RecordBatch,
+        metadata: &Option<Variant>,
+        update: F,
+    ) -> AnyResult<()>
+    where
+        F: FnMut(T) -> MockUpdate<T, U>,
+    {
+        let deserializer = ArrowDeserializer::from_record_batch(data)?;
+        let deserializer =
+            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
+
+        let records = Vec::<T>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
+        self.buffer.updates.extend(records.into_iter().map(update));
+        self.buffer.n_bytes += data.get_array_memory_size();
+
+        Ok(())
+    }
+}
+
 impl<T, U> ArrowStream for MockZSetArrowStream<T, U, SqlSerdeConfig>
 where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
@@ -470,33 +498,36 @@ where
         + Clone
         + 'static,
 {
-    fn insert(&mut self, data: &RecordBatch, _metadata: &Option<Variant>) -> AnyResult<()> {
-        let deserializer = ArrowDeserializer::from_record_batch(data)?;
-        let deserializer =
-            &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
-
-        let records = Vec::<T>::deserialize_with_context(deserializer, &self.config)?;
-        self.buffer.updates.extend(
-            records
-                .into_iter()
-                .map(|r| MockUpdate::<T, U>::with_polarity(r, true)),
-        );
-        self.buffer.n_bytes += data.get_array_memory_size();
-
-        Ok(())
+    fn insert(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
+        self.buffer_records(data, metadata, |record| {
+            MockUpdate::<T, U>::with_polarity(record, true)
+        })
     }
 
-    fn delete(&mut self, _data: &RecordBatch, _metadata: &Option<Variant>) -> AnyResult<()> {
-        todo!()
+    fn delete(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
+        self.buffer_records(data, metadata, |record| {
+            MockUpdate::<T, U>::with_polarity(record, false)
+        })
     }
 
     fn insert_with_polarities(
         &mut self,
-        _data: &arrow::array::RecordBatch,
-        _polarities: &[bool],
-        _metadata: &Option<Variant>,
+        data: &arrow::array::RecordBatch,
+        polarities: &[bool],
+        metadata: &Option<Variant>,
     ) -> AnyResult<()> {
-        todo!()
+        if polarities.len() != data.num_rows() {
+            bail!(
+                "insert_with_polarities: RecordBatch contains {} records, but 'polarities' array has length {}",
+                data.num_rows(),
+                polarities.len()
+            );
+        }
+
+        let mut polarities = polarities.iter();
+        self.buffer_records(data, metadata, move |record| {
+            MockUpdate::<T, U>::with_polarity(record, *polarities.next().unwrap())
+        })
     }
 
     fn fork(&self) -> Box<dyn ArrowStream> {

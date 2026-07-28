@@ -43,6 +43,7 @@ mod mock_input_consumer;
 mod mock_output_consumer;
 
 mod datagen;
+mod soft_delete;
 
 #[cfg(all(
     feature = "with-iceberg",
@@ -61,11 +62,12 @@ use crate::format::get_input_format;
 use crate::transport::input_transport_config_to_endpoint;
 pub use data::{
     DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergSubsetTestStruct, IcebergTestStruct,
-    KeyStruct, S3TablesTestStruct, TestStruct, TestStruct2, generate_test_batch,
-    generate_test_batches, generate_test_batches_with_weights,
+    KeyStruct, S3TablesTestStruct, TestStruct, TestStruct2, TestStructSoftDelete,
+    generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
 };
 use dbsp::circuit::{CircuitConfig, NodeId};
 use dbsp::utils::Tup2;
+use feldera_adapterlib::soft_delete::SoftDeleteHandle;
 use feldera_types::format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{
     Field, PropertyValue, Relation, SourcePosition, SqlIdentifier,
@@ -152,6 +154,47 @@ where
     let consumer = MockInputConsumer::new();
     let parser = MockInputParser::from_handle(
         &InputCollectionHandle::new(schema.clone(), input_handle.clone(), NodeId::new(0)),
+        config,
+    );
+    Ok((consumer, parser, input_handle))
+}
+
+/// Like [`mock_parser_pipeline`], but with soft deletes enabled, the way the
+/// controller configures an endpoint whose `soft_delete` property is set:
+///
+/// ```text
+/// ┌─────────────────┐   ┌──────┐   ┌────────────────┐   ┌──────────┐
+/// │MockInputConsumer├──►│parser├──►│SoftDeleteStream├──►│MockDeZSet│
+/// └─────────────────┘   └──────┘   └────────────────┘   └──────────┘
+/// ```
+pub fn mock_soft_delete_parser_pipeline<T, U>(
+    schema: &Relation,
+    config: &FormatConfig,
+) -> AnyResult<(MockInputConsumer, MockInputParser, MockDeZSet<T, U>)>
+where
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
+{
+    let input_handle = <MockDeZSet<T, U>>::new();
+    let consumer = MockInputConsumer::new();
+    let parser = MockInputParser::from_handle(
+        &InputCollectionHandle::new(
+            schema.clone(),
+            SoftDeleteHandle::new(Box::new(input_handle.clone())),
+            NodeId::new(0),
+        ),
         config,
     );
     Ok((consumer, parser, input_handle))

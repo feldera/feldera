@@ -318,6 +318,95 @@ impl TestStructMetadata {
     }
 }
 
+/// Row of a table fed by a connector with soft deletes enabled.
+///
+/// The `is_delete` column takes its value from record metadata, the way the SQL
+/// compiler generates it for a column declared as
+/// `is_delete BOOLEAN DEFAULT CAST(CONNECTOR_METADATA()['is_delete'] AS BOOLEAN)`.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+pub struct TestStructSoftDelete {
+    pub id: i64,
+    pub s: String,
+    pub is_delete: Option<bool>,
+}
+
+deserialize_table_record!(TestStructSoftDelete["TestStructSoftDelete", Variant, 3] {
+    (id, "id", false, i64, |_| None),
+    (s, "s", false, String, |_| None),
+    (is_delete, "is_delete", false, Option<bool>, |__feldera_metadata: &Option<Variant>| Some(__feldera_metadata.as_ref().and_then(|metadata| bool::try_from(metadata.index_string("is_delete")).ok())))
+});
+
+serialize_table_record!(TestStructSoftDelete[3]{
+    id["id"]: i64,
+    s["s"]: String,
+    is_delete["is_delete"]: Option<bool>
+});
+
+impl TestStructSoftDelete {
+    pub fn inserted(id: i64, s: &str) -> Self {
+        Self {
+            id,
+            s: s.to_string(),
+            is_delete: None,
+        }
+    }
+
+    pub fn deleted(id: i64, s: &str) -> Self {
+        Self {
+            id,
+            s: s.to_string(),
+            is_delete: Some(true),
+        }
+    }
+
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field::new("id".into(), ColumnType::bigint(false)),
+            Field::new("s".into(), ColumnType::varchar(false)),
+            Field::new("is_delete".into(), ColumnType::boolean(true)),
+        ]
+    }
+
+    /// Arrow schema of the records ingested by a connector, which does not
+    /// include the metadata-populated `is_delete` column.
+    pub fn arrow_schema() -> Arc<Schema> {
+        Arc::new(Schema::new(vec![
+            arrow::datatypes::Field::new("id", DataType::Int64, false),
+            arrow::datatypes::Field::new("s", DataType::Utf8, false),
+        ]))
+    }
+
+    /// Avro schema of the records ingested by a connector, which does not
+    /// include the metadata-populated `is_delete` column.
+    pub fn avro_schema() -> &'static str {
+        r#"{
+            "type": "record",
+            "name": "TestStructSoftDelete",
+            "fields": [
+                { "name": "id", "type": "long" },
+                { "name": "s", "type": "string" }
+            ]
+        }"#
+    }
+}
+
 /// This struct mimics the field naming schema of the compiler.
 #[derive(
     Debug,

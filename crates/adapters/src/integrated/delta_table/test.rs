@@ -2348,6 +2348,123 @@ async fn delta_table_cdc_file_test() {
     .await;
 }
 
+/// A connector configured with `soft_delete` ingests every CDC event as a row,
+/// reporting the polarity of the event in the `is_delete` column.
+///
+/// The Delta Lake connector evaluates the delete filter per row, so one batch
+/// can mix insertions and deletions; this covers that path end to end.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_soft_delete_test() {
+    use crate::test::TestStructSoftDelete;
+    use arrow::array::{Array, Int64Array, RecordBatch, StringArray};
+    use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
+    use deltalake::kernel::{DataType as KernelDataType, PrimitiveType, StructField};
+
+    init_logging();
+
+    // The Delta table carries the CDC bookkeeping columns.  The SQL table
+    // declares `is_delete` instead, which the connector fills in from metadata.
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("id", ArrowDataType::Int64, false),
+        ArrowField::new("s", ArrowDataType::Utf8, false),
+        ArrowField::new("__feldera_op", ArrowDataType::Utf8, false),
+        ArrowField::new("__feldera_ts", ArrowDataType::Int64, false),
+    ]));
+    let struct_fields = vec![
+        StructField::new("id", KernelDataType::Primitive(PrimitiveType::Long), false),
+        StructField::new("s", KernelDataType::Primitive(PrimitiveType::String), false),
+        StructField::new(
+            "__feldera_op",
+            KernelDataType::Primitive(PrimitiveType::String),
+            false,
+        ),
+        StructField::new(
+            "__feldera_ts",
+            KernelDataType::Primitive(PrimitiveType::Long),
+            false,
+        ),
+    ];
+
+    // One batch with both polarities: rows 1 and 3 inserted, row 2 deleted.
+    let batch = RecordBatch::try_new(
+        arrow_schema.clone(),
+        vec![
+            Arc::new(Int64Array::from(vec![1, 2, 3])) as Arc<dyn Array>,
+            Arc::new(StringArray::from(vec!["one", "two", "three"])),
+            Arc::new(StringArray::from(vec!["i", "d", "i"])),
+            Arc::new(Int64Array::from(vec![1, 2, 3])),
+        ],
+    )
+    .unwrap();
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let delta = create_table(&table_uri, &HashMap::new(), &struct_fields).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let pipeline = {
+        let table_uri = table_uri.clone();
+        let storage_dir = storage_dir.path().to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let pipeline_config: PipelineConfig = serde_json::from_value(json!({
+                "name": "test",
+                "workers": 4,
+                "storage_config": { "path": storage_dir },
+                "inputs": {
+                    "test_input1": {
+                        "stream": "test_input1",
+                        "soft_delete": true,
+                        "transport": {
+                            "name": "delta_table_input",
+                            "config": {
+                                "uri": table_uri,
+                                "mode": "cdc",
+                                "cdc_delete_filter": "__feldera_op = 'd'",
+                                "cdc_order_by": "__feldera_ts",
+                            }
+                        }
+                    }
+                }
+            }))
+            .unwrap();
+            Controller::with_test_config(
+                move |workers| {
+                    Ok(test_circuit::<TestStructSoftDelete>(
+                        workers,
+                        &TestStructSoftDelete::schema(),
+                        &[Some("output")],
+                    ))
+                },
+                &pipeline_config,
+                Box::new(move |e, _| panic!("cdc soft delete test: {e}")),
+            )
+            .unwrap()
+        })
+        .await
+        .unwrap()
+    };
+    pipeline.start();
+
+    delta
+        .write(vec![batch])
+        .with_save_mode(SaveMode::Append)
+        .await
+        .unwrap();
+
+    wait_for_records_materialized(
+        &pipeline,
+        &SqlIdentifier::from("test_output1"),
+        &[
+            TestStructSoftDelete::inserted(1, "one"),
+            TestStructSoftDelete::deleted(2, "two"),
+            TestStructSoftDelete::inserted(3, "three"),
+        ],
+    )
+    .await;
+
+    pipeline.stop().unwrap();
+}
+
 /// CDC mode must honor `skip_unused_columns`: the connector should not read the
 /// `unused` column (nullable, marked unused in the SQL schema), even though the
 /// Delta table stores a non-null value for it. Regression test for issue #6113.

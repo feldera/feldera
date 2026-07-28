@@ -8,8 +8,9 @@ use crate::{
     format::{InputBuffer, Parser, avro::from_avro_value},
     static_compile::seroutput::SerBatchImpl,
     test::{
-        KeyStruct, MockOutputConsumer, MockUpdate, TestStruct, TestStruct2, generate_test_batches,
-        generate_test_batches_with_weights, mock_parser_pipeline,
+        KeyStruct, MockOutputConsumer, MockUpdate, TestStruct, TestStruct2, TestStructSoftDelete,
+        generate_test_batches, generate_test_batches_with_weights, mock_parser_pipeline,
+        mock_soft_delete_parser_pipeline,
     },
 };
 use crate::{catalog::SerBatchReader, util::run_in_posix_runtime};
@@ -387,6 +388,84 @@ fn test_raw_avro_parser() {
     );
 
     run_parser_test(vec![test_case])
+}
+
+/// Record encoded by a soft-delete connector's Avro schema, which has no
+/// column for the metadata-populated `is_delete`.
+#[derive(Debug, Clone)]
+struct SoftDeleteSource {
+    id: i64,
+    s: String,
+}
+
+serialize_table_record!(SoftDeleteSource[2]{
+    r#id["id"]: i64,
+    r#s["s"]: String
+});
+
+/// A Debezium delete event ingested by a soft-delete connector becomes an
+/// insertion that reports the original polarity in `is_delete`.
+#[test]
+fn test_soft_delete_debezium_avro_parser() {
+    let debezium_schema =
+        debezium_avro_schema(TestStructSoftDelete::avro_schema(), "TestStructSoftDelete");
+    let resolved = ResolvedSchema::try_from(&debezium_schema).unwrap();
+
+    let config = AvroParserConfig {
+        update_format: AvroUpdateFormat::Debezium,
+        schema: Some(schema_json(&debezium_schema)),
+        skip_schema_id: false,
+        registry_config: Default::default(),
+    };
+
+    let record = SoftDeleteSource {
+        id: 1,
+        s: "one".to_string(),
+    };
+    let message = |op: &str, before: Option<SoftDeleteSource>, after: Option<SoftDeleteSource>| {
+        // 5-byte Confluent wire-format header, then the Avro datum.
+        let mut buffer = vec![0; 5];
+        let serializer = AvroSchemaSerializer::new(&debezium_schema, resolved.get_names(), true);
+        let value = DebeziumMessage::new(op, before, after)
+            .serialize_with_context(serializer, &avro_ser_config())
+            .unwrap();
+        buffer.append(&mut to_avro_datum(&debezium_schema, value).unwrap());
+        buffer
+    };
+
+    let format_config = FormatConfig {
+        name: Cow::from("avro"),
+        config: serde_json::to_value(config).unwrap(),
+    };
+    let relation = Relation::new(
+        "test_input".into(),
+        TestStructSoftDelete::schema(),
+        false,
+        BTreeMap::new(),
+    );
+    let (consumer, mut parser, table) = mock_soft_delete_parser_pipeline::<
+        TestStructSoftDelete,
+        TestStructSoftDelete,
+    >(&relation, &format_config)
+    .unwrap();
+    consumer.on_error(Some(Box::new(|_, _| {})));
+
+    for message in [
+        message("c", None, Some(record.clone())),
+        message("d", Some(record.clone()), None),
+    ] {
+        let (mut buffer, errors) = parser.parse(&message, None);
+        assert_eq!(&errors, &[]);
+        buffer.flush();
+    }
+
+    assert_eq!(
+        table.state().flushed,
+        vec![
+            MockUpdate::Insert(TestStructSoftDelete::inserted(1, "one")),
+            MockUpdate::Insert(TestStructSoftDelete::deleted(1, "one")),
+        ]
+    );
 }
 
 #[test]
