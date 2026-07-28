@@ -203,10 +203,12 @@ fn field_index_by_id(fields: &Fields) -> HashMap<&str, usize> {
 ///
 /// Under column mapping a struct's field names differ between the file and the
 /// schema (a file may use logical names, the schema uses `col-<id>`), so a struct
-/// is rebuilt: each target child takes the source child with the same field id
-/// (by position if none matches). Non-struct types (scalars, lists, maps) have no
-/// such names to match, so `cast` handles them, including type and container
-/// differences like `List` vs `LargeList`.
+/// is rebuilt: each target child takes the source child with the same field id, or
+/// the child at the same position when neither side carries an id (unmapped). A
+/// target child the file lacks is null-filled, matching how [`project_to_logical`]
+/// handles a missing top-level column. Non-struct types (scalars, lists, maps)
+/// have no such names to match, so `cast` handles them, including type and
+/// container differences like `List` vs `LargeList`.
 fn realign_array(array: &ArrayRef, target: &DataType) -> Result<ArrayRef, DataFusionError> {
     let DataType::Struct(target_fields) = target else {
         return if array.data_type() == target {
@@ -223,16 +225,16 @@ fn realign_array(array: &ArrayRef, target: &DataType) -> Result<ArrayRef, DataFu
         .iter()
         .enumerate()
         .map(|(pos, tf)| {
-            let idx = field_id(tf)
-                .and_then(|id| src_idx_by_id.get(id).copied())
-                .unwrap_or(pos);
-            let child = source.columns().get(idx).ok_or_else(|| {
-                DataFusionError::Internal(format!(
-                    "field-id realign found no source child for '{}'",
-                    tf.name()
-                ))
-            })?;
-            realign_array(child, tf.data_type())
+            // With an id, match by id only: falling back to position would risk
+            // grabbing an unrelated column. Without one (unmapped), use position.
+            let idx = match field_id(tf) {
+                Some(id) => src_idx_by_id.get(id).copied(),
+                None => Some(pos),
+            };
+            match idx.and_then(|i| source.columns().get(i)) {
+                Some(child) => realign_array(child, tf.data_type()),
+                None => Ok(new_null_array(tf.data_type(), source.len())),
+            }
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Arc::new(StructArray::try_new(
@@ -503,6 +505,50 @@ mod tests {
                 .value(0),
             "t1"
         );
+    }
+
+    // A struct child the file lacks (e.g. a field added to the struct after the
+    // file was written) must null-fill, not error or grab a wrong-id sibling.
+    #[test]
+    fn realign_array_null_fills_missing_struct_child() {
+        let source: ArrayRef = Arc::new(StructArray::from(vec![(
+            Arc::new(with_id(
+                ArrowField::new("id", ArrowDataType::Utf8, true),
+                "PARQUET:field_id",
+                "2",
+            )),
+            Arc::new(StringArray::from(vec!["t1", "t2"])) as ArrayRef,
+        )]));
+
+        // Target wants both id 2 (present) and id 3 (absent from the file).
+        let target = ArrowDataType::Struct(ArrowFields::from(vec![
+            with_id(
+                ArrowField::new("col-2", ArrowDataType::Utf8, true),
+                "delta.columnMapping.id",
+                "2",
+            ),
+            with_id(
+                ArrowField::new("col-3", ArrowDataType::Utf8, true),
+                "delta.columnMapping.id",
+                "3",
+            ),
+        ]));
+
+        let out = realign_array(&source, &target).unwrap();
+        let out = out.as_any().downcast_ref::<StructArray>().unwrap();
+        let present = out
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        assert_eq!(present.value(0), "t1");
+        let missing = out
+            .column(1)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        assert_eq!(missing.len(), 2);
+        assert!(missing.is_null(0) && missing.is_null(1));
     }
 
     /// Expand a [`RowSelection`] into the row positions it selects.
