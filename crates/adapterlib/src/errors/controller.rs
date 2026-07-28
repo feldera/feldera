@@ -157,6 +157,11 @@ pub enum ConfigError {
         error: String,
     },
 
+    InvalidSoftDeleteConfig {
+        endpoint_name: String,
+        error: String,
+    },
+
     CyclicDependency {
         cycle: Vec<(String, String)>,
     },
@@ -207,6 +212,7 @@ impl DbspDetailedError for ConfigError {
             Self::InvalidParserConfig { .. } => Cow::from("InvalidParserConfig"),
             Self::InvalidTransportConfig { .. } => Cow::from("InvalidTransportConfig"),
             Self::InvalidOutputBufferConfig { .. } => Cow::from("InvalidOutputBufferConfig"),
+            Self::InvalidSoftDeleteConfig { .. } => Cow::from("InvalidSoftDeleteConfig"),
             Self::FtRequiresStorage => Cow::from("FtRequiresStorage"),
             Self::FtRequiresFtInput => Cow::from("FtWithNonFtInput"),
             Self::CyclicDependency { .. } => Cow::from("CyclicDependency"),
@@ -395,6 +401,15 @@ impl Display for ConfigError {
                 write!(
                     f,
                     "invalid output buffer configuration for endpoint '{endpoint_name}': {error}"
+                )
+            }
+            Self::InvalidSoftDeleteConfig {
+                endpoint_name,
+                error,
+            } => {
+                write!(
+                    f,
+                    "endpoint '{endpoint_name}' cannot use the 'soft_delete' property: {error}"
                 )
             }
             Self::CyclicDependency { cycle } => {
@@ -601,6 +616,13 @@ impl ConfigError {
 
     pub fn invalid_output_buffer_configuration(endpoint_name: &str, error: &str) -> Self {
         Self::InvalidOutputBufferConfig {
+            endpoint_name: endpoint_name.to_string(),
+            error: error.to_string(),
+        }
+    }
+
+    pub fn invalid_soft_delete_configuration(endpoint_name: &str, error: &str) -> Self {
+        Self::InvalidSoftDeleteConfig {
             endpoint_name: endpoint_name.to_string(),
             error: error.to_string(),
         }
@@ -1509,6 +1531,15 @@ impl ControllerError {
     pub fn invalid_output_buffer_configuration(endpoint_name: &str, error: &str) -> Self {
         Self::Config {
             config_error: Box::new(ConfigError::invalid_output_buffer_configuration(
+                endpoint_name,
+                error,
+            )),
+        }
+    }
+
+    pub fn invalid_soft_delete_configuration(endpoint_name: &str, error: &str) -> Self {
+        Self::Config {
+            config_error: Box::new(ConfigError::invalid_soft_delete_configuration(
                 endpoint_name,
                 error,
             )),
