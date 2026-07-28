@@ -57,8 +57,9 @@ pub(crate) fn maybe_tenant_id_foreign_key_constraint_err(
 }
 
 /// Maps a foreign-key violation on a `*user_id_fkey` constraint to a clear
-/// `UnknownUser`, so assigning a role to a nonexistent user id yields 404
-/// rather than a raw 500. Other errors pass through unchanged.
+/// `UnknownUser`, so assigning a role to a nonexistent user id names the cause
+/// instead of surfacing a raw Postgres error. Other errors pass through
+/// unchanged.
 pub(crate) fn maybe_user_id_foreign_key_constraint_err(err: DBError, user_id: UserId) -> DBError {
     if let DBError::PostgresError { error, .. } = &err {
         if let Some(db_err) = error.as_db_error() {

@@ -95,13 +95,13 @@ pub(crate) trait Storage {
     async fn get_tenant_name(&self, tenant_id: TenantId) -> Result<String, DBError>;
 
     /// Strict resolution of a `Feldera-Tenant` selector (a tenant UUID or name)
-    /// for an owner acting cross-tenant. Never creates a tenant; errors (HTTP
-    /// 404) on miss. See
+    /// for an owner acting cross-tenant. Never creates a tenant; errors on
+    /// miss. See
     /// [`crate::db::operations::tenant::resolve_tenant_selector`].
     async fn resolve_tenant_selector(&self, selector: &str) -> Result<TenantId, DBError>;
 
-    /// Creates a tenant, failing with a conflict (HTTP 409) if the name is
-    /// already taken.
+    /// Creates a tenant, failing with `DuplicateName` if the name is already
+    /// taken.
     async fn create_tenant(
         &self,
         id: Uuid,
@@ -109,9 +109,9 @@ pub(crate) trait Storage {
         provider: &str,
     ) -> Result<TenantId, DBError>;
 
-    /// Renames a tenant, failing with a conflict (HTTP 409) if the name is
-    /// already taken, unless `displace_existing` lets it take the name from the
-    /// tenant holding it. Returns the displaced tenant, if any.
+    /// Renames a tenant, failing with `DuplicateName` if the name is already
+    /// taken, unless `displace_existing` lets it take the name from the tenant
+    /// holding it. Returns the displaced tenant, if any.
     /// See [`crate::db::operations::tenant::rename_tenant`].
     async fn rename_tenant(
         &self,
@@ -120,7 +120,7 @@ pub(crate) trait Storage {
         displace_existing: bool,
     ) -> Result<Option<TenantInfo>, DBError>;
 
-    /// Deletes a tenant, failing with a conflict (HTTP 409) unless it holds no
+    /// Deletes a tenant, failing with `TenantNotEmpty` unless it holds no
     /// pipelines, API keys or OIDC trust relationships.
     /// See [`crate::db::operations::tenant::delete_tenant`].
     async fn delete_tenant(&self, tenant_id: TenantId) -> Result<(), DBError>;
@@ -245,9 +245,9 @@ pub(crate) trait Storage {
         role: Role,
     ) -> Result<(), DBError>;
 
-    /// Cheap indexed check that an issuer is named by at least one trust
-    /// relationship. Called before any OIDC discovery/JWKS fetch so an
-    /// unregistered issuer never triggers an outbound request (SSRF/DoS gate).
+    /// Whether at least one trust relationship names this issuer. Called before
+    /// any OIDC discovery/JWKS fetch so an unregistered issuer never triggers an
+    /// outbound request (SSRF/DoS gate).
     async fn is_trusted_issuer(&self, issuer: &str) -> Result<bool, DBError>;
 
     /// Every tenant that trusts a federated token, with the token's role in each

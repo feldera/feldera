@@ -44,12 +44,13 @@ pub struct OidcTrustDescr {
 /// any sequence of characters and all other characters must match exactly.
 ///
 /// The `*`-separated literals must occur in order, with the first anchored at
-/// the start of `value` and the last at its end. Matching each middle literal at
-/// its earliest position is optimal here because the trailing literal is
-/// anchored separately, so no backtracking is needed. A plain matcher rather
-/// than a regex: patterns come from user-registered trust relationships, and
-/// this way there is nothing to escape and no pathological input to guard.
+/// the start of `value` and the last at its end.
 pub fn claim_matches(pattern: &str, value: &str) -> bool {
+    // A plain matcher rather than a regex: patterns come from user-registered
+    // trust relationships, so this way there is nothing to escape and no
+    // pathological input to guard against. Taking each middle literal at its
+    // earliest position needs no backtracking, because the trailing literal is
+    // anchored separately.
     let mut literals = pattern.split('*');
     // `split` always yields at least one item.
     let first = literals.next().unwrap_or_default();

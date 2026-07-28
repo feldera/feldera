@@ -571,6 +571,10 @@ export const deleteOidcTrust = <ThrowOnError extends boolean = true>(
  * Get OIDC Trust
  *
  * Required role: `admin` or higher.
+ *
+ * Retrieve one trust relationship by `name`, the name it was created under,
+ * which is unique within the tenant (or, with `platform`, across the
+ * platform-wide owner trusts).
  */
 export const getOidcTrust = <ThrowOnError extends boolean = true>(
   options: Options<GetOidcTrustData, ThrowOnError>
@@ -2051,18 +2055,10 @@ export const deleteTenant = <ThrowOnError extends boolean = true>(
  * and OIDC trust relationships all reference the tenant by its identifier and
  * are unaffected.
  *
- * A login resolves its tenant by name, so renaming decides which tenant those
- * users reach. Two consequences follow. Renaming a tenant away from a name the
- * identity provider still asserts sends its users to a new, empty tenant on
- * their next request, which re-creates the name. And a tenant that no login
- * reaches, such as `default` after authentication is switched on, is recovered
- * by giving it the name logins do resolve.
- *
- * Recovery normally wants a name that is already taken, by the tenant the
- * first login created. Set `displace_existing` to take it: that tenant is
- * renamed to `<name> (<id>)` in the same transaction and keeps everything it
- * had. One step is what makes recovery possible at all, since freeing the name
- * and claiming it as two calls loses to the next request re-creating it.
+ * Set `displace_existing` to replace a tenant atomically with one that's
+ * currently in use. This renames the conflicting tenant to `<name> (<id>)` in
+ * the same transaction, with everything it had. Two calls potentially lose to
+ * another user request, which could re-create the name in between.
  */
 export const patchTenant = <ThrowOnError extends boolean = true>(
   options: Options<PatchTenantData, ThrowOnError>

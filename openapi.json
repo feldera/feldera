@@ -688,7 +688,7 @@
           "Platform"
         ],
         "summary": "Get OIDC Trust",
-        "description": "Required role: `admin` or higher.",
+        "description": "Required role: `admin` or higher.\n\nRetrieve one trust relationship by `name`, the name it was created under,\nwhich is unique within the tenant (or, with `platform`, across the\nplatform-wide owner trusts).",
         "operationId": "get_oidc_trust",
         "parameters": [
           {
@@ -7799,7 +7799,7 @@
           "Platform"
         ],
         "summary": "Rename Tenant",
-        "description": "Required role: `owner`.\n\nChange a tenant's name. Only the name changes: pipelines, API keys, members\nand OIDC trust relationships all reference the tenant by its identifier and\nare unaffected.\n\nA login resolves its tenant by name, so renaming decides which tenant those\nusers reach. Two consequences follow. Renaming a tenant away from a name the\nidentity provider still asserts sends its users to a new, empty tenant on\ntheir next request, which re-creates the name. And a tenant that no login\nreaches, such as `default` after authentication is switched on, is recovered\nby giving it the name logins do resolve.\n\nRecovery normally wants a name that is already taken, by the tenant the\nfirst login created. Set `displace_existing` to take it: that tenant is\nrenamed to `<name> (<id>)` in the same transaction and keeps everything it\nhad. One step is what makes recovery possible at all, since freeing the name\nand claiming it as two calls loses to the next request re-creating it.",
+        "description": "Required role: `owner`.\n\nChange a tenant's name. Only the name changes: pipelines, API keys, members\nand OIDC trust relationships all reference the tenant by its identifier and\nare unaffected.\n\nSet `displace_existing` to replace a tenant atomically with one that's\ncurrently in use. This renames the conflicting tenant to `<name> (<id>)` in\nthe same transaction, with everything it had. Two calls potentially lose to\nanother user request, which could re-create the name in between.",
         "operationId": "patch_tenant",
         "parameters": [
           {

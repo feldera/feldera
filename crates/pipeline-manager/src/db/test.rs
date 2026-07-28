@@ -300,10 +300,11 @@ fn map_val_to_limited_pipeline_name(val: PipelineNamePropVal) -> String {
     }
 }
 
-/// Generates a limited OIDC trust name (1/4 is invalid).
+/// Generates `trust-1`, `trust-2`, `trust-3`, or the empty string, which no
+/// trust may be named, so a quarter of the generated names are rejected.
 fn limited_oidc_trust_name() -> impl Strategy<Value = String> {
     any::<u8>().prop_map(|val| match val % 4 {
-        0 => "".to_string(), // An invalid trust name
+        0 => "".to_string(),
         n => format!("trust-{n}"),
     })
 }
@@ -1027,8 +1028,8 @@ async fn tenant_survives_a_changed_issuer() {
     );
 }
 
-/// A tenant no login reaches is recovered by taking the name logins do resolve,
-/// even though every request re-creates that name.
+/// A tenant that no login resolves to is recovered by giving it the name that
+/// logins do resolve, even though every request re-creates that name.
 #[tokio::test]
 async fn renaming_takes_a_name_that_logins_keep_recreating() {
     let handle = test_setup().await;
@@ -5205,8 +5206,9 @@ fn db_impl_behaves_like_model() {
 /// Compares the OIDC trust and tenant-membership operations against the model.
 ///
 /// Kept separate from `db_impl_behaves_like_model` rather than folded into
-/// `StorageAction`: that enum and the future its dispatch builds are already
-/// near the test thread's stack limit, and adding these actions overflowed it.
+/// `StorageAction`. Adding these actions to that enum overflows the test
+/// thread's stack: its dispatch builds one future holding every arm, which is
+/// already close to the limit, and boxing the arms did not bring it back down.
 #[test]
 #[allow(clippy::field_reassign_with_default)]
 fn rbac_db_impl_behaves_like_model() {

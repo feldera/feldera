@@ -35,8 +35,10 @@ pub(crate) struct TrustScope {
     platform: bool,
 }
 
-// The scope a trust operation targets: `None` (platform-wide owner trusts, which
-// only an owner may touch) when `platform` is set, else the caller's tenant.
+/// The tenant a trust operation targets, mirroring the `tenant_id` column the
+/// trust is stored in: `Some(tenant)` for a tenant-scoped trust, and `None` for
+/// the platform-wide owner trusts, which belong to no tenant and which the
+/// schema stores with `tenant_id IS NULL`. Only an owner may target those.
 fn trust_scope(
     scope: &TrustScope,
     tenant_id: TenantId,
@@ -125,6 +127,10 @@ pub(crate) async fn list_oidc_trust(
 }
 
 /// Get OIDC Trust
+///
+/// Retrieve one trust relationship by `name`, the name it was created under,
+/// which is unique within the tenant (or, with `platform`, across the
+/// platform-wide owner trusts).
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -197,6 +203,9 @@ pub(crate) async fn post_oidc_trust(
         Some(*tenant_id)
     };
 
+    // The remaining fields are validated in the database operation, which is
+    // the one place every caller passes through: the name against the
+    // permitted character set, and the issuer and subject against being empty.
     state
         .db
         .lock()
