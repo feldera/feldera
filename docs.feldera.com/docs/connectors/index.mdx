@@ -169,6 +169,117 @@ The following attributes are common to all connectors:
   re-send it. Modifying the connector configuration causes a fresh
   snapshot to be replayed on the next start.
 
+* <a name="soft_delete">`soft_delete`</a> – *(Input connectors only)* When `true`, the connector
+  ingests deletions as insertions and reports the original polarity of each
+  record in the `is_delete` metadata attribute. The default is `false`.
+  See [Soft deletes](#soft-deletes).
+
+### Soft deletes
+
+An input connector normally applies the changes it reads to the table it is
+attached to: an insertion adds a record, a deletion removes it. The table
+therefore holds the current contents of the input stream, and the records the
+stream deleted are gone.
+
+Setting `soft_delete` to `true` keeps them. The connector pushes every record it
+reads to the table as an insertion, including the records the stream deletes, and
+attaches the `is_delete` metadata attribute to the deleted ones. The table then
+accumulates the entire history of the input stream, and a query can select the
+part of it that it needs.
+
+Read the polarity of a record with the
+[`CONNECTOR_METADATA()`](/sql/grammar#connector_metadata) function:
+
+| Metadata attribute | SQL type  | `CONNECTOR_METADATA()` field |
+|--------------------|-----------|------------------------------|
+| Record polarity    | `BOOLEAN` | `is_delete`                  |
+
+The attribute is `true` for a deleted record and absent for an inserted one, so
+the column is `NULL` for insertions.
+
+A table fed this way is an append-only log of changes. A SQL query can be used
+to recover the current contents of the stream by ranking the changes of each key
+by time, keeping the most recent one, and returning it only when it is an insertion.
+Order the changes by a timestamp that the source attaches to each change rather
+than by a column of the record. The example below use the timestamp the Kafka connector
+reports for each message as the `kafka_timestamp` metadata attribute:
+
+```sql
+CREATE TABLE changes (
+    id BIGINT,
+    s VARCHAR,
+    -- Both columns come from connector metadata: the timestamp of the change,
+    -- and whether it was a deletion.
+    ts TIMESTAMP DEFAULT CAST(CONNECTOR_METADATA()['kafka_timestamp'] AS TIMESTAMP),
+    is_delete BOOLEAN DEFAULT CAST(CONNECTOR_METADATA()['is_delete'] AS BOOLEAN)
+) WITH (
+    'connectors' = '[{
+        "soft_delete": true,
+        "transport": {
+            "name": "kafka_input",
+            "config": {
+                "topic": "changes",
+                "start_from": "earliest",
+                "bootstrap.servers": "example.com:9092",
+                "include_timestamp": true
+            }
+        },
+        "format": {
+            "name": "json",
+            "config": { "update_format": "insert_delete" }
+        }
+    }]'
+);
+
+-- Every change the stream reported, deletions included.
+CREATE MATERIALIZED VIEW history AS SELECT * FROM changes;
+
+-- The current contents of the stream: the latest change of each key, kept only
+-- when that change was an insertion.
+CREATE MATERIALIZED VIEW live AS
+SELECT id, s, ts
+FROM (
+    SELECT *, ROW_NUMBER() OVER (
+        PARTITION BY id ORDER BY ts DESC, is_delete NULLS FIRST
+    ) AS rn
+    FROM changes
+)
+WHERE rn = 1 AND is_delete IS NOT TRUE;
+```
+
+Ranking one key at a time and keeping a single row is the
+[TopK pattern](/sql/aggregates#window-aggregates), which Feldera evaluates
+incrementally.
+
+Changes of the same key that share a timestamp rank in an arbitrary order,
+which is why the query breaks the tie on `is_delete`. A CDC stream reports an
+update as a single message that deletes the old value of a record and inserts
+the new one, so those two changes carry one timestamp; ranking the insertion
+first keeps the updated record, where ranking the deletion first would drop it.
+
+Notes and restrictions:
+
+* The table must not have a primary key.
+
+* Soft deletes are a property of the connector, not of the data format, so they
+  apply to every format that expresses deletions, e.g., the
+  [JSON](/formats/json#encoding-data-change-events) and
+  [Avro](/formats/avro) change event formats and
+  [Debezium](/connectors/sources/debezium) streams, as well as to integrated
+  connectors such as [Delta Lake](/connectors/sources/delta) in `cdc` mode. A
+  format that only expresses insertions, e.g., [CSV](/formats/csv) or
+  [Parquet](/formats/parquet), is unaffected.
+
+* Like any column default, the `is_delete` column takes its value from the
+  metadata only when the record itself does not contain the column. A record
+  that carries an `is_delete` value overrides the polarity reported by the
+  connector. Use a column name that doesn't occur in the table to avoid such
+  conflicts.
+
+* Deletions that a soft-delete connector reads do not cancel out earlier
+  insertions of the same record, so the table can hold several copies of a
+  record that the input stream inserted and deleted repeatedly.
+
 ### Configuring the output buffer
 
 By default a Feldera pipeline sends a batch of changes to the output transport
