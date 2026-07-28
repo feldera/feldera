@@ -5026,6 +5026,90 @@ fn test_output_progress_counter_waits_for_owed_output() {
     assert_eq!(processed(1), RESTORED_RECORDS);
 }
 
+/// Dropping an output endpoint that is behind must republish the pipeline's
+/// completion counters.
+///
+/// `total_completed_records` and `total_completed_steps` are the minimum over the
+/// registered output endpoints, so an endpoint that has not delivered a step holds
+/// both back. An abandoned `/egress` stream is disconnected with its queue still
+/// unread, which means the endpoint disappears without ever reaching that step. If
+/// removal does not recompute the minimum, nothing else does until the next step,
+/// and an idle pipeline runs no further step: `/completion_status` then reports
+/// `inprogress` forever and a checkpoint waiting on `total_completed_records`
+/// never unblocks.
+#[test]
+fn test_removing_a_lagging_output_endpoint_republishes_completion() {
+    use super::stats::ProcessedRecords;
+    use crate::{ControllerStatus, OutputEndpointConfig};
+    use uuid::Uuid;
+
+    // Records the circuit processes in the one step of this test.
+    const STEP_RECORDS: u64 = 10;
+
+    let config = serde_json::from_value(json!({
+        "name": "test_remove_lagging_output",
+        "workers": 1,
+    }))
+    .unwrap();
+    let status = ControllerStatus::new(config, 0, None, Uuid::nil());
+
+    let output_config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": "v1",
+        "transport": { "name": "http_output", "config": {} },
+        "format": { "name": "json", "config": {} }
+    }))
+    .unwrap();
+
+    // Two `/egress` streams of the same view: one client reads, the other walks
+    // away.
+    status.add_output(&0, "reader", &output_config, None, true);
+    status.add_output(&1, "abandoned", &output_config, None, true);
+
+    // The circuit initiates and evaluates one step, and its output is queued for
+    // both endpoints.
+    status
+        .global_metrics
+        .total_initiated_steps
+        .store(1, Ordering::Release);
+    status.processed_data(BufferSize {
+        records: STEP_RECORDS as usize,
+        bytes: 0,
+    });
+    status.enqueue_batch(0, STEP_RECORDS as usize);
+    status.enqueue_batch(1, STEP_RECORDS as usize);
+
+    // Only `reader` transmits the batch.
+    let parker = Parker::new();
+    let unparker = parker.unparker().clone();
+    let step_processed = ProcessedRecords {
+        total_processed_input_records: STEP_RECORDS,
+        total_processed_steps: 1,
+    };
+    status.output_batch(0, Some(step_processed), STEP_RECORDS as usize, &unparker);
+
+    assert_eq!(
+        status.global_metrics.total_completed_steps(),
+        0,
+        "the step is not complete while `abandoned` still owes its output"
+    );
+    assert_eq!(status.num_total_completed_records(), 0);
+
+    // The abandoned client disconnects, so the endpoint goes away with the batch
+    // still queued. The step is now complete as far as any endpoint is concerned.
+    status.remove_output(&1);
+
+    assert_eq!(
+        status.global_metrics.total_completed_steps(),
+        1,
+        "removing the endpoint that owed the output must complete the step"
+    );
+    assert_eq!(
+        status.num_total_completed_records(),
+        STEP_RECORDS,
+        "removing the endpoint that owed the output must complete its records"
+    );
+}
+
 /// Only a changed relation makes an output endpoint fall behind. A connector whose
 /// own definition changed still emits nothing for inputs already processed, so it
 /// stays caught up and keeps its seeded progress counter.

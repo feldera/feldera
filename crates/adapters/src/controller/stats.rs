@@ -710,6 +710,15 @@ impl ControllerStatus {
 
     pub fn remove_output(&self, endpoint_id: &EndpointId) {
         self.outputs.write().remove(endpoint_id);
+
+        // `total_completed_records` and `total_completed_steps` are the minimum
+        // over the registered output endpoints, and this endpoint may have been
+        // the one holding them back: it is dropped along with everything still
+        // queued for it, so it will never report the progress the others
+        // already have. Republish the counters now, since the only other
+        // refresh happens on a step or an output batch, and an idle pipeline
+        // produces neither.
+        self.update_total_completed_records(None);
     }
 
     /// Initialize stats for a new output endpoint.
