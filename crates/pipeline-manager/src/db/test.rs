@@ -380,10 +380,9 @@ fn user_id_for_identity(provider: &str, subject: &str) -> Uuid {
 /// The id a caller would mint for a trust. Distinct trusts get distinct ids, as
 /// `Uuid::now_v7()` would give them, so that several can coexist; re-creating
 /// the same trust reuses the id and collides on the name, as intended.
-fn trust_id_for(platform: bool, name: &str) -> Uuid {
+fn trust_id_for(name: &str) -> Uuid {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    platform.hash(&mut hasher);
     name.hash(&mut hasher);
     let half = hasher.finish().to_be_bytes();
     let mut bytes = [0u8; 16];
@@ -1320,7 +1319,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
     handle
         .db
         .create_oidc_trust(
-            Some(tenant_a),
+            tenant_a,
             Uuid::now_v7(),
             "ta",
             None,
@@ -1334,7 +1333,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
     handle
         .db
         .create_oidc_trust(
-            Some(tenant_b),
+            tenant_b,
             Uuid::now_v7(),
             "tb",
             None,
@@ -1353,7 +1352,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
             .match_oidc_trust(iss, sub, &["a".to_string()])
             .await
             .unwrap(),
-        vec![(Some(tenant_a), Role::Write)]
+        vec![(tenant_a, Role::Write)]
     );
     assert_eq!(
         handle
@@ -1361,7 +1360,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
             .match_oidc_trust(iss, sub, &["b".to_string()])
             .await
             .unwrap(),
-        vec![(Some(tenant_b), Role::Write)]
+        vec![(tenant_b, Role::Write)]
     );
     // A token whose audience matches neither trust does not resolve.
     assert!(handle
@@ -1379,7 +1378,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
     handle
         .db
         .create_oidc_trust(
-            Some(tenant_c),
+            tenant_c,
             Uuid::now_v7(),
             "tc",
             None,
@@ -1395,63 +1394,23 @@ async fn oidc_trust_matching_and_issuer_gate() {
         .match_oidc_trust(iss, sub, &["a".to_string()])
         .await
         .unwrap();
-    got.sort_by_key(|(t, _)| t.map(|x| x.0));
-    let mut want = vec![(Some(tenant_a), Role::Write), (Some(tenant_c), Role::Read)];
-    want.sort_by_key(|(t, _)| t.map(|x| x.0));
+    got.sort_by_key(|(t, _)| t.0);
+    let mut want = vec![(tenant_a, Role::Write), (tenant_c, Role::Read)];
+    want.sort_by_key(|(t, _)| t.0);
     assert_eq!(got, want);
 
-    // An owner trust is platform-wide: it has NULL tenant and matches with scope
-    // None. The `oidc_trust_owner_is_platform` CHECK ties the two together, so a
-    // tenant-scoped owner trust and a tenant-less non-owner trust are both
-    // rejected.
-    let owner_iss = "https://owner.example";
-    handle
+    // `owner` is configuration only, so the schema refuses a row carrying it.
+    assert!(handle
         .db
         .create_oidc_trust(
-            None,
+            tenant_a,
             Uuid::now_v7(),
-            "plat",
+            "bad-owner",
             None,
-            owner_iss,
+            "https://owner.example",
             "root",
             None,
-            Role::Owner,
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        handle
-            .db
-            .match_oidc_trust(owner_iss, "root", &[])
-            .await
-            .unwrap(),
-        vec![(None, Role::Owner)]
-    );
-    assert!(handle
-        .db
-        .create_oidc_trust(
-            Some(tenant_a),
-            Uuid::now_v7(),
-            "bad1",
-            None,
-            owner_iss,
-            "x",
-            None,
             Role::Owner
-        )
-        .await
-        .is_err());
-    assert!(handle
-        .db
-        .create_oidc_trust(
-            None,
-            Uuid::now_v7(),
-            "bad2",
-            None,
-            owner_iss,
-            "y",
-            None,
-            Role::Read
         )
         .await
         .is_err());
@@ -3892,38 +3851,34 @@ async fn check_rbac_action(
     action: RbacAction,
 ) {
     match action {
-        RbacAction::ListOidcTrust(tenant_id, platform) => {
+        RbacAction::ListOidcTrust(tenant_id) => {
             create_tenants_if_not_exists(model, handle, tenant_id)
                 .await
                 .unwrap();
-            let scope = if platform { None } else { Some(tenant_id) };
-            let mut model_response = model.list_oidc_trust(scope).await.unwrap();
-            let mut impl_response = handle.db.list_oidc_trust(scope).await.unwrap();
+            let mut model_response = model.list_oidc_trust(tenant_id).await.unwrap();
+            let mut impl_response = handle.db.list_oidc_trust(tenant_id).await.unwrap();
             model_response.sort_by(|a, b| a.name.cmp(&b.name));
             impl_response.sort_by(|a, b| a.name.cmp(&b.name));
             assert_eq!(model_response, impl_response);
         }
-        RbacAction::GetOidcTrust(tenant_id, platform, name) => {
+        RbacAction::GetOidcTrust(tenant_id, name) => {
             create_tenants_if_not_exists(model, handle, tenant_id)
                 .await
                 .unwrap();
-            let scope = if platform { None } else { Some(tenant_id) };
-            let model_response = model.get_oidc_trust(scope, &name).await;
-            let impl_response = handle.db.get_oidc_trust(scope, &name).await;
+            let model_response = model.get_oidc_trust(tenant_id, &name).await;
+            let impl_response = handle.db.get_oidc_trust(tenant_id, &name).await;
             check_responses(i, model_response, impl_response);
         }
-        RbacAction::DeleteOidcTrust(tenant_id, platform, name) => {
+        RbacAction::DeleteOidcTrust(tenant_id, name) => {
             create_tenants_if_not_exists(model, handle, tenant_id)
                 .await
                 .unwrap();
-            let scope = if platform { None } else { Some(tenant_id) };
-            let model_response = model.delete_oidc_trust(scope, &name).await;
-            let impl_response = handle.db.delete_oidc_trust(scope, &name).await;
+            let model_response = model.delete_oidc_trust(tenant_id, &name).await;
+            let impl_response = handle.db.delete_oidc_trust(tenant_id, &name).await;
             check_responses(i, model_response, impl_response);
         }
         RbacAction::CreateOidcTrust(
             tenant_id,
-            platform,
             name,
             description,
             issuer,
@@ -3934,16 +3889,11 @@ async fn check_rbac_action(
             create_tenants_if_not_exists(model, handle, tenant_id)
                 .await
                 .unwrap();
-            let id = trust_id_for(platform, &name);
-            // The schema ties the platform scope to `owner`.
-            let (scope, role) = if platform {
-                (None, Role::Owner)
-            } else {
-                (Some(tenant_id), role.role())
-            };
+            let id = trust_id_for(&name);
+            let role = role.role();
             let model_response = model
                 .create_oidc_trust(
-                    scope,
+                    tenant_id,
                     id,
                     &name,
                     description.as_deref(),
@@ -3956,7 +3906,7 @@ async fn check_rbac_action(
             let impl_response = handle
                 .db
                 .create_oidc_trust(
-                    scope,
+                    tenant_id,
                     id,
                     &name,
                     description.as_deref(),
@@ -4079,24 +4029,19 @@ async fn check_rbac_action(
 /// Actions covering OIDC trust relationships and tenant membership.
 #[derive(Debug, Clone, Arbitrary)]
 enum RbacAction {
-    // OIDC trust relationships. `platform` selects the platform-wide owner
-    // scope, which the schema ties to the `owner` role; the tenant scope takes
-    // any assignable role. Generating the pair together keeps every action
-    // inside the `oidc_trust_owner_is_platform` check.
-    ListOidcTrust(TenantId, bool),
+    // OIDC trust relationships, which always belong to one tenant and carry an
+    // assignable role: `owner` comes from configuration, never from a row.
+    ListOidcTrust(TenantId),
     GetOidcTrust(
         TenantId,
-        bool,
         #[proptest(strategy = "limited_oidc_trust_name()")] String,
     ),
     DeleteOidcTrust(
         TenantId,
-        bool,
         #[proptest(strategy = "limited_oidc_trust_name()")] String,
     ),
     CreateOidcTrust(
         TenantId,
-        bool,
         #[proptest(strategy = "limited_oidc_trust_name()")] String,
         Option<String>,
         #[proptest(strategy = "limited_issuer()")] String,
@@ -5271,9 +5216,8 @@ struct DbModel {
     pub pipelines: BTreeMap<(TenantId, PipelineId), ExtendedPipelineDescr>,
     pub pipeline_events: BTreeMap<(TenantId, PipelineId), Vec<ExtendedPipelineMonitorEvent>>,
     pub cluster_events: BTreeMap<ClusterMonitorEventId, ExtendedClusterMonitorEvent>,
-    /// Keyed by scope and name, mirroring the table's uniqueness: `None` is the
-    /// platform-wide owner scope, `Some(t)` a tenant's own trusts.
-    pub oidc_trusts: BTreeMap<(Option<TenantId>, String), OidcTrustDescr>,
+    /// Keyed by tenant and name, mirroring the table's uniqueness.
+    pub oidc_trusts: BTreeMap<(TenantId, String), OidcTrustDescr>,
     /// Keyed by the `(provider, subject)` identity, holding the user's id and
     /// the email last seen for it.
     pub users: BTreeMap<(String, String), (UserId, Option<String>)>,
@@ -5837,23 +5781,19 @@ impl Storage for Mutex<DbModel> {
 
     async fn list_oidc_trust(
         &self,
-        tenant_id: Option<TenantId>,
+        tenant_id: TenantId,
     ) -> DBResult<Vec<crate::db::types::oidc_trust::OidcTrustDescr>> {
         let s = self.lock().await;
         Ok(s.oidc_trusts
             .iter()
-            .filter(
-                |((scope, _), _): &(&(Option<TenantId>, String), &OidcTrustDescr)| {
-                    *scope == tenant_id
-                },
-            )
+            .filter(|((scope, _), _)| *scope == tenant_id)
             .map(|(_, descr)| descr.clone())
             .collect())
     }
 
     async fn get_oidc_trust(
         &self,
-        tenant_id: Option<TenantId>,
+        tenant_id: TenantId,
         name: &str,
     ) -> DBResult<crate::db::types::oidc_trust::OidcTrustDescr> {
         let s = self.lock().await;
@@ -5865,7 +5805,7 @@ impl Storage for Mutex<DbModel> {
             })
     }
 
-    async fn delete_oidc_trust(&self, tenant_id: Option<TenantId>, name: &str) -> DBResult<()> {
+    async fn delete_oidc_trust(&self, tenant_id: TenantId, name: &str) -> DBResult<()> {
         let mut s = self.lock().await;
         s.oidc_trusts
             .remove(&(tenant_id, name.to_string()))
@@ -5878,7 +5818,7 @@ impl Storage for Mutex<DbModel> {
     #[allow(clippy::too_many_arguments)]
     async fn create_oidc_trust(
         &self,
-        tenant_id: Option<TenantId>,
+        tenant_id: TenantId,
         id: Uuid,
         name: &str,
         description: Option<&str>,
@@ -5907,10 +5847,8 @@ impl Storage for Mutex<DbModel> {
         if duplicate_id || s.oidc_trusts.contains_key(&(tenant_id, name.to_string())) {
             return Err(DBError::DuplicateName);
         }
-        if let Some(t) = tenant_id {
-            if !s.tenants.contains_key(&t) {
-                return Err(DBError::UnknownTenant { tenant_id: t });
-            }
+        if !s.tenants.contains_key(&tenant_id) {
+            return Err(DBError::UnknownTenant { tenant_id });
         }
         s.oidc_trusts.insert(
             (tenant_id, name.to_string()),
@@ -5937,9 +5875,9 @@ impl Storage for Mutex<DbModel> {
         issuer: &str,
         subject: &str,
         audiences: &[String],
-    ) -> DBResult<Vec<(Option<TenantId>, Role)>> {
+    ) -> DBResult<Vec<(TenantId, Role)>> {
         let s = self.lock().await;
-        let mut matched: Vec<(Option<TenantId>, Role)> = Vec::new();
+        let mut matched: Vec<(TenantId, Role)> = Vec::new();
         for ((scope, _), descr) in s.oidc_trusts.iter() {
             if descr.issuer != issuer || !claim_matches(&descr.subject, subject) {
                 continue;
@@ -5954,7 +5892,7 @@ impl Storage for Mutex<DbModel> {
                 None => matched.push((*scope, descr.role)),
             }
         }
-        matched.sort_by_key(|(t, _)| t.map(|x| x.0));
+        matched.sort_by_key(|(t, _)| t.0);
         Ok(matched)
     }
 
@@ -5986,7 +5924,7 @@ impl Storage for Mutex<DbModel> {
         let oidc_trusts = s
             .oidc_trusts
             .keys()
-            .filter(|(scope, _)| *scope == Some(tenant_id))
+            .filter(|(scope, _)| *scope == tenant_id)
             .count() as i64;
         if pipelines > 0 || api_keys > 0 || oidc_trusts > 0 {
             return Err(DBError::TenantNotEmpty {

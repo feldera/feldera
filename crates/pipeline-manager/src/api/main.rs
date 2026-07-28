@@ -253,6 +253,7 @@ It contains the following fields:
         endpoints::config::get_config_authentication,
         endpoints::config::get_config_demos,
         endpoints::config::get_config_session,
+        endpoints::config::get_config_owners,
         endpoints::config::get_config,
 
         // Metrics
@@ -287,6 +288,8 @@ It contains the following fields:
         crate::api::endpoints::config::Configuration,
         crate::api::endpoints::config::BuildInformation,
         crate::api::endpoints::config::SessionInfo,
+        crate::api::endpoints::config::ConfiguredOwners,
+        crate::api::endpoints::config::ConfiguredOwnerTrust,
 
         // Pipeline
         crate::db::types::pipeline::PipelineId,
@@ -765,6 +768,7 @@ fn api_scope() -> Scope {
         .service(endpoints::config::get_config)
         .service(endpoints::config::get_config_demos)
         .service(endpoints::config::get_config_session)
+        .service(endpoints::config::get_config_owners)
         // Metrics of all pipelines belonging to this tenant
         .service(endpoints::metrics::get_metrics)
         // Cluster health check

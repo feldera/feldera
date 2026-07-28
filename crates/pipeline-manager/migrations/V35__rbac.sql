@@ -39,33 +39,21 @@ ALTER TABLE api_key DROP COLUMN scopes;
 -- A trust registers an issuer plus subject/audience match patterns; an incoming
 -- JWT from that issuer whose claims satisfy the patterns is authorized with the
 -- recorded role, like a signature-verified API key. `role` is capped at the
--- creator's role at write time.
---
--- Scope follows the role. read/write/admin trusts are tenant-scoped: `tenant_id`
--- names the tenant they authorize into. An `owner` trust is platform-wide and
--- belongs to no tenant, so `tenant_id` is NULL; the acting tenant then comes
--- from the Feldera-Tenant header at request time.
+-- creator's role at write time, and at 'admin' by the CHECK: 'owner' is
+-- platform-wide and comes from configuration (`--owner-trusts`), never from a
+-- row here, so no request can mint an owner.
 CREATE TABLE IF NOT EXISTS oidc_trust_relationship (
     id uuid PRIMARY KEY,
-    tenant_id uuid,
+    tenant_id uuid NOT NULL,
     name varchar NOT NULL,
     description varchar,
     issuer varchar NOT NULL,
     subject varchar NOT NULL,
     audience varchar,
-    role varchar NOT NULL DEFAULT 'read' CHECK (role IN ('read', 'write', 'admin', 'owner')),
-    -- Scope and role are inseparable: tenant_id is NULL if and only if the
-    -- role is owner.
-    CONSTRAINT oidc_trust_owner_is_platform CHECK ((tenant_id IS NULL) = (role = 'owner')),
+    role varchar NOT NULL DEFAULT 'read' CHECK (role IN ('read', 'write', 'admin')),
     CONSTRAINT unique_oidc_trust_name UNIQUE (tenant_id, name),
     FOREIGN KEY (tenant_id) REFERENCES tenant(id) ON DELETE CASCADE
 );
-
--- unique_oidc_trust_name bounds tenant-scoped names per tenant, but a UNIQUE
--- constraint treats NULL tenant_ids as distinct and so does not bound owner
--- trusts. Name owner trusts uniquely across the platform with a partial index.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_oidc_owner_trust_name
-    ON oidc_trust_relationship (name) WHERE tenant_id IS NULL;
 
 -- The auth hot path resolves a federated token by its issuer, so index it.
 CREATE INDEX IF NOT EXISTS idx_oidc_trust_issuer ON oidc_trust_relationship (issuer);

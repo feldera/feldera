@@ -481,6 +481,53 @@
         ]
       }
     },
+    "/v0/config/owners": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "Get Configured Owners",
+        "description": "Required role: `owner`.\n\nList the identities that hold the platform-wide `owner` role.\n\nOwner comes from deploy-time configuration and cannot be granted through the\nAPI, so this list is read-only: changing it means changing the deployment.",
+        "operationId": "get_config_owners",
+        "responses": {
+          "200": {
+            "description": "Configured owners retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfiguredOwners"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller's role is below the required role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/config/session": {
       "get": {
         "tags": [
@@ -554,17 +601,6 @@
         "summary": "List OIDC Trust",
         "description": "Required role: `admin` or higher.",
         "operationId": "list_oidc_trust",
-        "parameters": [
-          {
-            "name": "platform",
-            "in": "query",
-            "description": "Select the platform-wide owner trusts, which belong to no tenant,\ninstead of the trusts scoped to the caller's tenant. Owner-only.",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Trust relationships retrieved",
@@ -580,7 +616,7 @@
             }
           },
           "403": {
-            "description": "Caller's role is below the required role, or `platform` was set by a non-owner",
+            "description": "Caller's role is below the required role",
             "content": {
               "application/json": {
                 "schema": {
@@ -699,15 +735,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "platform",
-            "in": "query",
-            "description": "Select the platform-wide owner trusts, which belong to no tenant,\ninstead of the trusts scoped to the caller's tenant. Owner-only.",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
           }
         ],
         "responses": {
@@ -722,7 +749,7 @@
             }
           },
           "403": {
-            "description": "Caller's role is below the required role, or `platform` was set by a non-owner",
+            "description": "Caller's role is below the required role",
             "content": {
               "application/json": {
                 "schema": {
@@ -774,15 +801,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "platform",
-            "in": "query",
-            "description": "Select the platform-wide owner trusts, which belong to no tenant,\ninstead of the trusts scoped to the caller's tenant. Owner-only.",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
           }
         ],
         "responses": {
@@ -790,7 +808,7 @@
             "description": "Trust relationship deleted"
           },
           "403": {
-            "description": "Caller's role is below the required role, or `platform` was set by a non-owner",
+            "description": "Caller's role is below the required role",
             "content": {
               "application/json": {
                 "schema": {
@@ -9052,6 +9070,50 @@
           }
         }
       },
+      "ConfiguredOwnerTrust": {
+        "type": "object",
+        "description": "A workload identity granted `owner` by configuration.",
+        "required": [
+          "issuer",
+          "subject"
+        ],
+        "properties": {
+          "audience": {
+            "type": "string",
+            "nullable": true
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        }
+      },
+      "ConfiguredOwners": {
+        "type": "object",
+        "description": "The platform owners configured at deploy time.",
+        "required": [
+          "owners",
+          "owner_trusts"
+        ],
+        "properties": {
+          "owner_trusts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfiguredOwnerTrust"
+            },
+            "description": "Workload identities granted `owner`, as configured through\n`authorization.ownerTrusts` / `FELDERA_OWNER_TRUSTS`."
+          },
+          "owners": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Identities granted `owner`, as configured through\n`authorization.owners` / `FELDERA_OWNERS`. Each entry is a\nprovider-verified email, a bare OIDC subject, or an issuer and subject\nseparated by a space."
+          }
+        }
+      },
       "ConnectOptions": {
         "type": "object",
         "description": "Options for connecting to a NATS server.",
@@ -11715,7 +11777,7 @@
           "role": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/Role"
+                "$ref": "#/components/schemas/MemberRole"
               }
             ],
             "nullable": true

@@ -14,6 +14,7 @@ import {
   getCheckpoints as _getCheckpoints,
   getClusterEvent as _getClusterEvent,
   getConfig as _getConfig,
+  getConfigOwners as _getConfigOwners,
   getConfigSession as _getConfigSession,
   getOidcTrust as _getOidcTrust,
   getPipeline as _getPipeline,
@@ -74,6 +75,7 @@ export type {
   CheckpointStatus,
   InputEndpointConfig,
   InputEndpointStatus,
+  MemberRole,
   NewOidcTrustRequest,
   // RBAC/OIDC-trust/tenant admin types (generated from the manager's OpenAPI).
   OidcTrustDescr,
@@ -641,34 +643,18 @@ export type Tenant = TenantInfo
 // changing the global acting-tenant selection. Omit it to use the current tenant.
 const tenantHdr = (tenant?: string) => (tenant ? { headers: { 'Feldera-Tenant': tenant } } : {})
 
-// `platform: true` targets the platform-wide owner trusts (which belong to no
-// tenant, and only an owner may manage) instead of a tenant's trusts.
-const platformQuery = (platform?: boolean) => (platform ? { query: { platform: true } } : {})
-
-export const getOidcTrustList = (tenant?: string, platform?: boolean, options?: FetchOptions) =>
-  mapResponse(
-    _listOidcTrust({ ...tenantHdr(tenant), ...platformQuery(platform), ...options }),
-    (v) => v ?? []
-  )
+export const getOidcTrustList = (tenant?: string, options?: FetchOptions) =>
+  mapResponse(_listOidcTrust({ ...tenantHdr(tenant), ...options }), (v) => v ?? [])
 
 export const postOidcTrust = (body: NewOidcTrustRequest, tenant?: string, options?: FetchOptions) =>
   mapResponse(_postOidcTrust({ body, ...tenantHdr(tenant), ...options }), (v) => v)
 
-export const deleteOidcTrust = (
-  name: string,
-  tenant?: string,
-  platform?: boolean,
-  options?: FetchOptions
-) =>
-  mapResponse(
-    _deleteOidcTrust({
-      path: { name },
-      ...tenantHdr(tenant),
-      ...platformQuery(platform),
-      ...options
-    }),
-    (v) => v
-  )
+export const deleteOidcTrust = (name: string, tenant?: string, options?: FetchOptions) =>
+  mapResponse(_deleteOidcTrust({ path: { name }, ...tenantHdr(tenant), ...options }), (v) => v)
+
+// The platform owners, from deploy-time configuration and read-only here.
+export const getConfiguredOwners = (options?: FetchOptions) =>
+  mapResponse(_getConfigOwners({ ...options }), (v) => v)
 
 // Tenant users & roles (min role: admin).
 

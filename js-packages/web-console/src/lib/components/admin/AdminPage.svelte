@@ -4,20 +4,10 @@
   import { page } from '$app/state'
   import TenantList from '$lib/components/admin/TenantList.svelte'
   import UserRoleTable from '$lib/components/admin/UserRoleTable.svelte'
-  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
-  import NewOidcTrustForm from '$lib/components/oidcTrust/NewOidcTrustForm.svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import {
-    deleteOidcTrust,
-    getOidcTrustList,
-    getTenants,
-    type OidcTrustDescr,
-    type Tenant
-  } from '$lib/services/pipelineManager'
+  import { getConfiguredOwners, getTenants, type Tenant } from '$lib/services/pipelineManager'
   import type { Snippet } from '$lib/types/svelte'
 
   const isOwner = $derived(page.data.feldera?.isOwner ?? false)
-  const globalDialog = useGlobalDialog()
   let errorMessage = $state('')
 
   // Owner-only: pick a tenant (by UUID) to inspect its members in place, without
@@ -31,12 +21,16 @@
       'current tenant'
   )
 
-  // Owner (platform-wide) trusts belong to no tenant, so they are fetched with
-  // the platform scope and are independent of the tenant switcher. Per-tenant
-  // trusts are managed from the "Manage OIDC trust" menu, not here.
-  const ownerTrusts = asyncReadable<OidcTrustDescr[]>([], () => getOidcTrustList(undefined, true), {
-    reloadable: true
-  })
+  // Owner comes from deploy-time configuration, so this list is read-only: the
+  // way to change it is to change the deployment. Owner-only, like the endpoint
+  // behind it.
+  const configuredOwners = asyncReadable<
+    | {
+        owners: string[]
+        owner_trusts: { issuer: string; subject: string; audience?: string | null }[]
+      }
+    | undefined
+  >(undefined, getConfiguredOwners)
 </script>
 
 {#snippet section(title: string, description: string, body: Snippet)}
@@ -87,65 +81,33 @@
   )}
 
   {#if isOwner}
-    {#snippet ownerTrustBody()}
-      <div class="scrollbar flex max-h-[40vh] flex-col gap-2 overflow-auto">
-        {#each $ownerTrusts as trust (trust.id)}
-          {#snippet deleteTrustDialog()}
-            <GenericDialog
-              content={{
-                title: `Delete owner trust '${trust.name}'?`,
-                description:
-                  'Tokens matching this trust immediately lose platform-wide owner access. This cannot be undone.',
-                onSuccess: {
-                  name: 'Delete',
-                  callback: async () => {
-                    try {
-                      await deleteOidcTrust(trust.name, undefined, true)
-                      ownerTrusts.reload?.()
-                    } catch (e) {
-                      errorMessage = e instanceof Error ? e.message : String(e)
-                    }
-                    globalDialog.dialog = null
-                  }
-                },
-                onCancel: {
-                  callback: () => {
-                    globalDialog.dialog = null
-                  }
-                }
-              }}
-              noclose
-              danger
-            ></GenericDialog>
-          {/snippet}
-          <div class="flex flex-nowrap items-center gap-2 border-b border-surface-100-900 py-2">
-            <div class="w-full">
-              <div>{trust.name}</div>
-              <div class="text-sm opacity-70">
-                <code>{trust.issuer}</code> · sub=<code>{trust.subject}</code>{#if trust.audience}
-                  · aud=<code>{trust.audience}</code>{/if}
-              </div>
-              {#if trust.description}
-                <div class="text-xs opacity-70">{trust.description}</div>
-              {/if}
+    {#snippet ownersBody()}
+      <div class="flex flex-col gap-3">
+        <div class="flex flex-col gap-1">
+          <div class="text-sm font-medium">Users</div>
+          {#each $configuredOwners?.owners ?? [] as owner (owner)}
+            <div class="text-sm"><code>{owner}</code></div>
+          {:else}
+            <div class="text-sm opacity-70">None configured</div>
+          {/each}
+        </div>
+        <div class="flex flex-col gap-1">
+          <div class="text-sm font-medium">Workloads (OIDC trust)</div>
+          {#each $configuredOwners?.owner_trusts ?? [] as trust (trust.issuer + trust.subject)}
+            <div class="text-sm">
+              <code>{trust.issuer}</code> · sub=<code>{trust.subject}</code>{#if trust.audience}
+                · aud=<code>{trust.audience}</code>{/if}
             </div>
-            <button
-              class="fd fd-trash-2 btn-icon text-[20px]"
-              aria-label="Delete {trust.name} owner trust"
-              onclick={() => (globalDialog.dialog = deleteTrustDialog)}
-            ></button>
-          </div>
-        {:else}
-          <div class="opacity-70">No owner trust relationships configured</div>
-        {/each}
+          {:else}
+            <div class="text-sm opacity-70">None configured</div>
+          {/each}
+        </div>
       </div>
-      <NewOidcTrustForm fixedRole="owner" allowOwner={true} onSuccess={() => ownerTrusts.reload?.()}
-      ></NewOidcTrustForm>
     {/snippet}
     {@render section(
-      'Owner access (platform-wide OIDC trust)',
-      'Owner trusts grant full platform access across all tenants and belong to no single tenant. This is the only place to manage them; a matching workload selects the tenant it acts in with the Feldera-Tenant header.',
-      ownerTrustBody
+      'Platform owners',
+      'Owner is configured at deploy time (authorization.owners and authorization.ownerTrusts) and cannot be granted through the API, so this list is read-only.',
+      ownersBody
     )}
 
     {#snippet tenantsBody()}

@@ -1708,7 +1708,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         Any JWT signed by `issuer` whose `sub` claim matches `subject`
         (and, if specified, `aud` claim matches `audience`) is authorized
-        to act as the current tenant with the granted `role`. `*` is a
+        to act in the current tenant with the granted `role`. `*` is a
         wildcard in `subject` and `audience`.
 
         :param name: Unique name within the tenant.
@@ -1717,9 +1717,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param audience: Pattern matched against the JWT `aud` claim. Omit
                          to skip audience matching.
         :param description: Free-text description.
-        :param role: Role granted to a matching token (`read`, `write`, or
-                     `admin`; `owner` only for a platform owner). Capped at the
-                     caller's role. Defaults to `read` server-side when omitted.
+        :param role: Role granted to a matching token: `read`, `write` or
+                     `admin`, capped at the caller's role. Defaults to `read`
+                     server-side when omitted.
         :returns: A dict with keys `id` and `name`.
         :raises FelderaAPIError: If `name` is already in use or fields are
                                  invalid.

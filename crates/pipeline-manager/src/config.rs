@@ -1,3 +1,4 @@
+use crate::db::types::oidc_trust::claim_matches;
 use crate::db::types::program::CompilationProfile;
 use crate::db::types::role::Role;
 use crate::db::types::version::Version;
@@ -20,7 +21,7 @@ use reqwest::Certificate;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{ClientConfig, RootCertStore};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::{
@@ -991,6 +992,21 @@ pub struct ApiServerConfig {
     #[arg(long, value_delimiter = ',', env = "FELDERA_OWNERS")]
     pub owners: Vec<String>,
 
+    /// OIDC trust relationships granting the platform-wide `owner` role, as a
+    /// JSON array. A token from `issuer` whose `sub` matches `subject`, and
+    /// whose `aud` matches `audience` when one is given, acts as an owner. `*`
+    /// is a wildcard in `subject` and `audience`.
+    ///
+    /// `FELDERA_OWNER_TRUSTS='[{"issuer": "https://accounts.google.com",
+    /// "subject": "1234567890", "audience": "my-client-id"}]'`
+    ///
+    /// Owner is configuration only, like `--owners`: it is never granted at
+    /// runtime, so no request can mint an owner. Trusts registered through the
+    /// API grant `read`, `write` or `admin` within one tenant.
+    #[serde(default)]
+    #[arg(long, default_value = "[]", env = "FELDERA_OWNER_TRUSTS")]
+    pub owner_trusts: OwnerTrusts,
+
     /// Role assigned to an authenticated user who has no explicit tenant
     /// membership yet. Must be `read` or `write`. Default: `read`.
     #[serde(default = "default_default_role")]
@@ -1005,6 +1021,78 @@ pub struct ApiServerConfig {
     #[serde(default = "default_first_user_role")]
     #[arg(long, default_value = "admin", value_parser = parse_first_user_role, env = "FELDERA_AUTH_FIRST_USER_ROLE")]
     pub first_user_role: Role,
+}
+
+/// A trust relationship granting the platform-wide `owner` role, declared at
+/// launch through `--owner-trusts` / `FELDERA_OWNER_TRUSTS`.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct OwnerTrust {
+    /// Issuer URL, matched against the token's `iss` claim exactly.
+    pub issuer: String,
+    /// Pattern matched against the token's `sub` claim. `*` matches any
+    /// sequence of characters.
+    pub subject: String,
+    /// Pattern matched against the token's `aud` claim. Omit to accept any
+    /// audience.
+    #[serde(default)]
+    pub audience: Option<String>,
+}
+
+impl OwnerTrust {
+    /// Whether this trust admits the token described by these claims. The
+    /// issuer must match exactly; the subject and, when the trust sets one, the
+    /// audience match as claim patterns, where `*` stands for any sequence. A
+    /// trust that sets no audience accepts any, since some issuers put nothing
+    /// useful in the audience of a workload token.
+    pub fn admits(&self, issuer: &str, subject: &str, audiences: &[String]) -> bool {
+        self.issuer == issuer
+            && claim_matches(&self.subject, subject)
+            && match &self.audience {
+                None => true,
+                Some(pattern) => audiences.iter().any(|aud| claim_matches(pattern, aud)),
+            }
+    }
+}
+
+/// The configured owner trusts. A newtype so that the command line and the
+/// environment can carry the whole list as one JSON value, while a config file
+/// can spell it as an ordinary list.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct OwnerTrusts(pub Vec<OwnerTrust>);
+
+impl OwnerTrusts {
+    /// Whether any configured trust admits this token as a platform owner.
+    pub fn admits(&self, issuer: &str, subject: &str, audiences: &[String]) -> bool {
+        self.0
+            .iter()
+            .any(|trust| trust.admits(issuer, subject, audiences))
+    }
+
+    /// Whether any configured trust names this issuer. The auth path checks
+    /// this before fetching an issuer's discovery document, so that an issuer
+    /// nobody trusts never causes an outbound request.
+    pub fn names_issuer(&self, issuer: &str) -> bool {
+        self.0.iter().any(|trust| trust.issuer == issuer)
+    }
+}
+
+impl FromStr for OwnerTrusts {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let trusts: Vec<OwnerTrust> = serde_json::from_str(value)
+            .map_err(|e| format!("owner trusts must be a JSON array: {e}"))?;
+        for trust in &trusts {
+            if trust.issuer.is_empty() {
+                return Err("owner trust issuer must not be empty".to_string());
+            }
+            if trust.subject.is_empty() {
+                return Err("owner trust subject must not be empty".to_string());
+            }
+        }
+        Ok(OwnerTrusts(trusts))
+    }
 }
 
 impl ApiServerConfig {
@@ -1052,6 +1140,7 @@ impl ApiServerConfig {
             authorized_groups: vec![],
             auth_audience: "feldera-api".to_string(),
             owners: vec![],
+            owner_trusts: OwnerTrusts::default(),
             default_role: Role::Read,
             first_user_role: Role::Admin,
         }
@@ -1254,6 +1343,81 @@ impl LocalRunnerConfig {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn owner_trusts_parse_from_json() {
+        let trusts: OwnerTrusts = r#"[
+            {"issuer": "https://accounts.google.com", "subject": "1234567890", "audience": "my-client"},
+            {"issuer": "https://token.actions.githubusercontent.com", "subject": "repo:acme/*"}
+        ]"#
+        .parse()
+        .expect("valid owner trusts");
+        assert_eq!(trusts.0.len(), 2);
+        assert_eq!(trusts.0[0].audience.as_deref(), Some("my-client"));
+        // An omitted audience accepts any audience.
+        assert_eq!(trusts.0[1].audience, None);
+
+        // The default, and the value the argument carries when unset.
+        assert_eq!("[]".parse::<OwnerTrusts>().unwrap(), OwnerTrusts::default());
+
+        // A trust that names no issuer or no subject would match on the wrong
+        // half of the pair, so it is refused at startup rather than at auth time.
+        assert!(r#"[{"issuer": "", "subject": "x"}]"#.parse::<OwnerTrusts>().is_err());
+        assert!(r#"[{"issuer": "https://idp.example", "subject": ""}]"#
+            .parse::<OwnerTrusts>()
+            .is_err());
+        assert!("not json".parse::<OwnerTrusts>().is_err());
+    }
+
+    #[test]
+    fn owner_trusts_admit_the_right_tokens() {
+        let trust = |issuer: &str, subject: &str, audience: Option<&str>| OwnerTrust {
+            issuer: issuer.to_string(),
+            subject: subject.to_string(),
+            audience: audience.map(str::to_string),
+        };
+        let aud = |a: &str| vec![a.to_string()];
+
+        let trusts = OwnerTrusts(vec![
+            trust(
+                "https://accounts.google.com",
+                "1234567890",
+                Some("client-a"),
+            ),
+            trust("https://ci.example", "repo:acme/*", None),
+        ]);
+
+        // Issuer, subject and audience all agree.
+        assert!(trusts.admits(
+            "https://accounts.google.com",
+            "1234567890",
+            &aud("client-a")
+        ));
+        // Right subject, wrong audience.
+        assert!(!trusts.admits(
+            "https://accounts.google.com",
+            "1234567890",
+            &aud("client-b")
+        ));
+        // The issuer is matched exactly, never as a pattern.
+        assert!(!trusts.admits(
+            "https://accounts.google.com.evil.test",
+            "1234567890",
+            &aud("client-a")
+        ));
+        // A trust with no audience accepts any, including none at all.
+        assert!(trusts.admits("https://ci.example", "repo:acme/api", &aud("any")));
+        assert!(trusts.admits("https://ci.example", "repo:acme/api", &[]));
+        // The subject pattern still has to match.
+        assert!(!trusts.admits("https://ci.example", "repo:other/api", &[]));
+        // No configured trusts admits nobody.
+        assert!(!OwnerTrusts::default().admits("https://ci.example", "x", &[]));
+
+        // The issuer gate is separate: it asks only whether fetching that
+        // issuer's keys is worth doing.
+        assert!(trusts.names_issuer("https://ci.example"));
+        assert!(!trusts.names_issuer("https://elsewhere.example"));
+    }
 
     #[test]
     fn test_cpu_quantity() {
