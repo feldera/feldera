@@ -98,7 +98,10 @@ pub async fn upsert_member_role(
     Ok(())
 }
 
-/// Removes a user from a tenant.
+/// Removes a user from a tenant. The membership is keyed by both ids, so a
+/// caller holding one tenant can never delete a membership in another: the
+/// tenant here is the caller's acting tenant, fixed when the request was
+/// authenticated, not something the request body carries.
 pub async fn remove_member(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
@@ -117,7 +120,7 @@ pub async fn remove_member(
     }
 }
 
-/// Lists the members of a tenant joined with their identity, for the admin UI.
+/// Lists the members of a tenant, each joined with the identity it belongs to.
 pub async fn list_tenant_members(
     txn: &Transaction<'_>,
     tenant_id: TenantId,

@@ -806,9 +806,8 @@ impl Modify for SecurityAddon {
 }
 
 /// Annotates each gated operation with its minimum RBAC role, sourced from
-/// `ROUTE_MIN_ROLE` (rbac.rs) so the API reference cannot drift from the enforced
-/// policy. The note is prepended to the operation description, which the docs
-/// site renders as markdown.
+/// `ROUTE_MIN_ROLE` (rbac.rs) so the API reference cannot drift from the
+/// enforced policy.
 struct MinRoleAddon;
 
 impl Modify for MinRoleAddon {
@@ -826,16 +825,16 @@ impl Modify for MinRoleAddon {
                 };
                 // Only gated routes appear in the table; leave anything else
                 // (public infra endpoints) untouched.
-                let Some(rule) = crate::api::rbac::min_role_for(http, path.as_str()) else {
+                let Some(required) = crate::api::rbac::min_role_for(http, path.as_str()) else {
                     continue;
                 };
-                let note = match rule {
+                // Prepended to the operation description, which the docs site
+                // renders as markdown.
+                let note = if required == crate::db::types::role::Role::Owner {
                     // `owner` is the highest role, so "or higher" would be misleading.
-                    Some(crate::db::types::role::Role::Owner) => {
-                        "Required role: `owner`.".to_string()
-                    }
-                    Some(role) => format!("Required role: `{role}` or higher."),
-                    None => "Required role: any authenticated user.".to_string(),
+                    "Required role: `owner`.".to_string()
+                } else {
+                    format!("Required role: `{required}` or higher.")
                 };
                 operation.description = Some(match operation.description.take() {
                     Some(existing) if !existing.trim().is_empty() => {

@@ -10,6 +10,10 @@ use deadpool_postgres::Transaction;
 use std::str::FromStr;
 use uuid::Uuid;
 
+/// Build a trust from a row of the `SELECT` list used throughout this module.
+/// `row.get` panics if a column's type or position does not match, which is a
+/// bug in that `SELECT`, not a runtime condition; only the role, stored as text,
+/// can fail on data and returns an error.
 fn row_to_descr(row: &tokio_postgres::Row) -> Result<OidcTrustDescr, DBError> {
     let id: Uuid = row.get(0);
     let name: String = row.get(1);
@@ -117,7 +121,9 @@ pub async fn delete_oidc_trust(
 
 // `tenant_id` is `None` for a platform-wide owner trust and `Some` for a
 // tenant-scoped one; the caller pairs it with the role (owner iff None), which
-// the `oidc_trust_owner_is_platform` CHECK also enforces.
+// the `oidc_trust_owner_is_platform` CHECK also enforces. A tenant that does
+// not exist is refused by the foreign key and reported as `UnknownTenant`;
+// callers take the id from the authenticated principal, not from the request.
 #[allow(clippy::too_many_arguments)]
 pub async fn create_oidc_trust(
     txn: &Transaction<'_>,

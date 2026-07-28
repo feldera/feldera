@@ -1,13 +1,12 @@
 -- Role-based access control, OIDC workload-identity trust, and tenant identity.
 --
--- Adds the user concept and the per-(user, tenant) role link that the platform
--- previously lacked (the only principal was the tenant). The released `api_key`
--- table carried a `scopes text[]`; it is replaced with a single `role`.
--- Roles: 'read' < 'write' < 'admin' (and 'owner', which is platform-wide and
--- never stored in a membership; it is sourced from configuration or an owner
--- OIDC trust relationship).
+-- Adds a user, and a role per (user, tenant). Replaces `api_key.scopes text[]`
+-- with a single `role`. Roles are ordered 'read' < 'write' < 'admin'; 'owner'
+-- is platform-wide, never stored in a membership, and comes from configuration
+-- or from an owner OIDC trust relationship.
 --
--- The second half makes a tenant's name, on its own, its identity.
+-- The `tenant identity` section at the end of this file makes a tenant's name,
+-- on its own, its identity.
 
 CREATE TABLE IF NOT EXISTS app_user (
     id       uuid PRIMARY KEY,
@@ -45,8 +44,7 @@ ALTER TABLE api_key DROP COLUMN scopes;
 -- Scope follows the role. read/write/admin trusts are tenant-scoped: `tenant_id`
 -- names the tenant they authorize into. An `owner` trust is platform-wide and
 -- belongs to no tenant, so `tenant_id` is NULL; the acting tenant then comes
--- from the Feldera-Tenant header at request time. The CHECK makes the two
--- inseparable: tenant_id is NULL if and only if the role is owner.
+-- from the Feldera-Tenant header at request time.
 CREATE TABLE IF NOT EXISTS oidc_trust_relationship (
     id uuid PRIMARY KEY,
     tenant_id uuid,
@@ -56,6 +54,8 @@ CREATE TABLE IF NOT EXISTS oidc_trust_relationship (
     subject varchar NOT NULL,
     audience varchar,
     role varchar NOT NULL DEFAULT 'read' CHECK (role IN ('read', 'write', 'admin', 'owner')),
+    -- Scope and role are inseparable: tenant_id is NULL if and only if the
+    -- role is owner.
     CONSTRAINT oidc_trust_owner_is_platform CHECK ((tenant_id IS NULL) = (role = 'owner')),
     CONSTRAINT unique_oidc_trust_name UNIQUE (tenant_id, name),
     FOREIGN KEY (tenant_id) REFERENCES tenant(id) ON DELETE CASCADE
@@ -77,35 +77,24 @@ CREATE INDEX IF NOT EXISTS idx_oidc_trust_issuer ON oidc_trust_relationship (iss
 --
 -- Make the tenant name, on its own, the tenant's identity.
 --
--- V0 keyed a tenant by (tenant, provider), where `provider` is the OIDC issuer
--- its users authenticate through. Only one issuer is ever configured, so the
--- pair never distinguished two tenants. What it did do was tie a tenant's
--- identity to the issuer string: changing FELDERA_AUTH_ISSUER (an IdP migration,
--- a custom domain, a recreated Cognito pool) made the next login miss the
--- conflict target and create a second tenant of the same name, leaving every
--- pipeline on the unreachable first one.
---
--- Keying on the name alone makes that case reuse the existing tenant. The issuer
--- stays as provenance, under a name that says so: `initial_provider`.
+-- V0 keyed a tenant by (tenant, provider), where `provider` is the OIDC issuer.
+-- Only one issuer is ever configured, so the pair never distinguished two
+-- tenants; all it did was tie a tenant's identity to the issuer string. Change
+-- FELDERA_AUTH_ISSUER and the next login forked a second tenant of the same
+-- name, leaving the pipelines on the first one, which nothing could reach. The
+-- issuer stays on as provenance, renamed `initial_provider` at the end.
 
--- A deployment whose issuer changed before this migration already has two
--- tenants sharing a name, and we cannot tell from here which deployments those
--- are. Rename rather than refuse: a failed migration would stop the manager from
--- starting and leave no in-product way out, whereas renaming keeps every tenant
--- present, reachable and unchanged.
+-- Two tenants may already share a name here, from an issuer change made before
+-- this migration, and nothing in the database says which deployments those are.
+-- Rename rather than refuse: a migration that fails stops the manager from
+-- starting, with no way out from inside the product.
 --
--- Nothing is merged, moved or deleted. The name stays with the tenant users
--- already reach today, which is the one registered under the issuer that is
--- configured now: only that one was reachable before this migration, since a
--- login resolved (name, issuer). Keeping the name there means the upgrade does
--- not change what anyone sees. `feldera.auth_issuer` is set on this connection
--- by `run_migrations`; when it is absent, as with authentication disabled, fall
--- back to the tenant holding the most pipelines so the name still follows the
--- work. Ties break on the id for determinism.
---
--- The others keep all of their own pipelines under a name qualified by their id,
--- which is unique. An owner finds them through `GET /v0/tenants`, acts in them
--- with the `Feldera-Tenant` header, and can rename them.
+-- The name stays with the tenant its users reach today, which is the one
+-- registered under the issuer configured now, so the upgrade changes nothing
+-- anyone sees. `run_migrations` puts that issuer in `feldera.auth_issuer`; with
+-- authentication off it is absent and the name follows the pipelines instead.
+-- Ties break on the id. Every other tenant keeps its own pipelines under
+-- `<name> (<id>)`, which an owner can list and rename.
 DO $$
 DECLARE renamed int;
 BEGIN
