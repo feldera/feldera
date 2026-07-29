@@ -5,9 +5,12 @@ from feldera.enums import PipelineStatus
 from feldera.pipeline import Pipeline
 from feldera.runtime_config import Resources
 from feldera.testutils import (
+    FELDERA_TEST_NUM_HOSTS,
+    FELDERA_TEST_NUM_WORKERS,
     ViewSpec,
     build_pipeline,
     log,
+    min_datafusion_memory_mb,
     validate_outputs,
     unique_pipeline_name,
 )
@@ -96,21 +99,27 @@ class TestNow(unittest.TestCase):
             ),
         ]
 
+        # 12288 MB covers this test's data volume (>2GB ad-hoc query storage,
+        # peaks above 5GB memory on arm64); take the max with the per-worker
+        # sort-reservation floor (see min_datafusion_memory_mb) so a future
+        # bump to FELDERA_TEST_NUM_WORKERS can't undersize it.
+        datafusion_memory_mb = max(
+            min_datafusion_memory_mb(FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS),
+            12288,
+        )
         pipeline = build_pipeline(
             unique_pipeline_name("now-test"),
             tables,
             views,
-            # This test uses >2GB of storage in the ad hoc query and peaks
-            # above 5 GB of memory on arm64; an honest request keeps k8s
-            # from scheduling the pipeline onto a node where that overshoot
-            # gets it OOM-killed. No memory_mb_max: it would cap the
-            # DataFusion pool at 5% and the big ad-hoc validation queries
-            # exhaust that.
+            # An honest memory request keeps k8s from scheduling the pipeline
+            # onto a node where that overshoot gets it OOM-killed. No
+            # memory_mb_max: it would cap the DataFusion pool at 5% and the
+            # big ad-hoc validation queries exhaust that.
             resources=Resources(
                 storage_mb_max=16384,
                 memory_mb_min=16384,
-                config={"datafusion_memory_mb": 12288},
             ),
+            datafusion_memory_mb=datafusion_memory_mb,
         )
 
         pipeline.start()

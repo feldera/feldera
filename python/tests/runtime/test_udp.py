@@ -4,7 +4,11 @@ from feldera import PipelineBuilder
 from tests import TEST_CLIENT
 from tests.platform.helper import PipelineTestCase
 from feldera.runtime_config import Resources, RuntimeConfig
-from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
+from feldera.testutils import (
+    FELDERA_TEST_NUM_WORKERS,
+    FELDERA_TEST_NUM_HOSTS,
+    min_datafusion_memory_mb,
+)
 
 
 # Test user-defined preprocessor
@@ -97,6 +101,13 @@ impl PreprocessorFactory for LoggerPreprocessorFactory {
 tracing = { version = "0.1.40" }
 """
 
+        # Scales with FELDERA_TEST_NUM_WORKERS/_HOSTS so the ad-hoc ORDER BY
+        # query below doesn't fail with "Resources exhausted" if either
+        # changes. See min_datafusion_memory_mb.
+        datafusion_memory_mb = min_datafusion_memory_mb(
+            FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
+        )
+
         pipeline = PipelineBuilder(
             TEST_CLIENT,
             name=self.register_for_cleanup("test_udps"),
@@ -104,10 +115,8 @@ tracing = { version = "0.1.40" }
             udf_rust=udfs,
             udf_toml=toml,
             runtime_config=RuntimeConfig(
-                resources=Resources(
-                    memory_mb_min=1024,
-                    config={"datafusion_memory_mb": 512},
-                ),
+                datafusion_memory_mb=datafusion_memory_mb,
+                resources=Resources(memory_mb_min=datafusion_memory_mb + 512),
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
             ),
