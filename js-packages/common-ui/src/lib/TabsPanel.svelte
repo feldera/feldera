@@ -77,7 +77,7 @@
        (without `min-h-0` flex children refuse to shrink below their content size, so
        any inner overflow would push the panel taller than the Pane). -->
   <div class="relative min-h-0 flex-1">
-    {#each tabs as { id, panel: TabComponent, keepAlive }}
+    {#each tabs as { id, panel: TabComponent, keepAlive } (id)}
       {#snippet tab()}
         <TabComponent {...tabProps}></TabComponent>
       {/snippet}
