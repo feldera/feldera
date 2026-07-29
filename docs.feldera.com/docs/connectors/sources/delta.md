@@ -28,7 +28,7 @@ exactly once fault tolerance.
 | `mode`*                     | enum   |            | Table read mode. Four options are available: <ul> <li>`snapshot` - read a snapshot of the table and stop.</li> <li>`follow` - follow the changelog of the table, only ingesting changes (new and deleted rows)</li> <li>`snapshot_and_follow` - Read a snapshot of the table before switching to the `follow` mode.  This mode implements the backfill pattern where we load historical data for the table before ingesting the stream of real-time updates.</li><li>`cdc` - Change-Data-Capture (CDC) mode. The connector treats the table as an append-only log where every row represents an insert or delete action. The order of actions is determined by the `cdc_order_by` property, and the type of each action is determined by the `cdc_delete_filter` property. Removed rows are ignored, so users can clean up old log entries without affecting the contents of the ingested stream. In this mode, the connector does not read the initial snapshot of the table and follows the transaction log starting from the version of the table specified by the `version` or `datetime` property.</li> </ul>|
 | `transaction_mode`          | enum   | `none`     | Determines how the connector breaks up its input into transactions. Supported values are `none`, `snapshot`, `catchup`, and `always`. See [below](#transactions) for details. |
 | `timestamp_column`          | string |            | Table column that serves as an event timestamp. When this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`, table rows are ingested in the timestamp order, respecting the [`LATENESS`](/sql/streaming#lateness-expressions) property of the column: each ingested row has a timestamp no more than `LATENESS` time units earlier than the most recent timestamp of any previously ingested row.  See details [below](#ingesting-time-series-data-from-a-delta-lake). |
-| `filter`                    | string |            | <p>Optional row filter.</p> <p>When specified, only rows that satisfy the filter condition are read from the delta table. The condition must be a valid SQL Boolean expression that can be used in the `where` clause of the `select * from my_table where ...` query.</p> |
+| <a name="filter">`filter`</a> | string |            | <p>Optional row filter.</p> <p>When specified, only rows that satisfy the filter condition are read from the delta table. The condition must be a valid SQL Boolean expression that can be used in the `where` clause of the `select * from my_table where ...` query.</p> |
 | `snapshot_filter`           | string |            | <p>Optional snapshot filter.</p><p>This option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`. When specified, only rows that satisfy the filter condition are included in the snapshot.</p> <p>The condition must be a valid SQL Boolean expression that can be used in  the `where` clause of the `select * from snapshot where ...` query.</p><p>Unlike the `filter` option, which applies to all records retrieved from the table, this filter only applies to rows in the initial snapshot of the table. For instance, it can be used to specify the range of event times to include in the snapshot, e.g.: `ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'`. This option can be used together with the `filter` option. During the initial snapshot, only rows that satisfy both `filter` and `snapshot_filter` are retrieved from the Delta table. When subsequently following changes in the the transaction log (`mode = snapshot_and_follow`), all rows that meet the `filter` condition are ingested, regardless of `snapshot_filter`. </p> |
 | `version`, `start_version`  | integer|            | <p>Optional table version.  When this option is set, the connector finds and opens the specified version of the table. In `snapshot` and `snapshot_and_follow` modes, it retrieves the snapshot of this version of the table.  In `follow`, `snapshot_and_follow`, and `cdc` modes, it follows transaction log records **after** this version.</p><p>Note: at most one of `version` and `datetime` options can be specified.  When neither of the two options is specified, the latest committed version of the table is used.</p> |
 | `datetime`                  | string |            | <p>Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g., "2024-12-09T16:09:53+00:00". When this option is set, the connector finds and opens the version of the table as of the specified point in time (based on the server time recorded in the transaction log, not the event time encoded in the data).  In `snapshot` and `snapshot_and_follow` modes, it retrieves the snapshot of this version of the table.  In `follow`, `snapshot_and_follow`, and `cdc` modes, it follows transaction log records **after** this version.</p><p> Note: at most one of `version` and `datetime` options can be specified.  When neither of the two options is specified, the latest committed version of the table is used.</p>|
@@ -358,6 +358,40 @@ it is marked **UNHEALTHY** while retrying failed operations.
 
 If the pipeline is stopped and restarted during a retry, the connector resumes from the last successfully
 ingested table version. This guarantees that no data loss occurs due to object store read errors.
+
+## Optimizing multihost performance for unbalanced large data
+
+In a multihost pipeline, Feldera currently assigns each input
+connector to one host.  All of the work related to reading data from
+that input connector then takes place on that host.  When a pipeline
+has several input connectors that read comparable amounts of data,
+this spreads the network and CPU load related to them across the
+hosts.
+
+On the other hand, if a pipeline that has one input connector that
+reads most of the pipeline's data, only a single host does all the
+work.  In such a case, it makes sense to divide the connector into
+multiple connectors, one per host.  Feldera places input connectors on
+hosts "round robin" in alphabetical order, which means that using the
+default connector names or names with the same prefix and a sequential
+suffix will ensure that they are spread as evenly as possible across
+the hosts.
+
+When a Delta Lake source is divided into
+[partitions](https://docs.delta.io/best-practices/), its input
+connector can be divided into multiple connectors by specifying a
+different [`filter`](#filter) for each one.  For example, if the
+source is partitioned by an integer column `partition` that takes one
+of the six values 0 through 5, and there are 3 hosts, one might use 3
+copies of the input connector, one with `"filter": "partition = 0 OR
+partition = 1"`, one with `"filter": "partition = 2 OR partition =
+3"`, and one with `"filter": "partition = 4 OR partition = 5`.
+
+> ⚠️ [Tables with LATENESS] cannot correctly be divided into multiple
+> connectors this way, because the different connectors can read data
+> "out of sync" from one another.
+
+[Tables with LATENESS]: /sql/streaming/#lateness-expressions
 
 ## Additional examples
 

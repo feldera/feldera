@@ -13,7 +13,7 @@ tolerance](/pipelines/fault-tolerance).
 | `topic` (required)             | string           |         | The Kafka topic to subscribe to. |
 | `bootstrap.servers` (required) | string           |         | A comma separated list of Kafka brokers to connect to.
 | `start_from`                   | variant          | latest  | The starting point for reading from the topic, one of `"earliest"`, `"latest"`, `{"offsets": [1, 2, 3, ...]}`, where `[1, 2, 3, ...]` are particular offsets within each partition in the topic, or `{"timestamp": <timestamp>}` where `<timestamp>` is a Kafka timestamp as an integer number of milliseconds since the epoch. |
-| `partitions`                   | integer list     |         | <p> The list of Kafka partitions to read from. </p> <p> Only the specified partitions will be consumed. If this field is not set, the connector will consume from all available partitions. </p><p> If `start_from` is set to `offsets` and this field is provided, the number of partitions must exactly match the number of offsets, and the order of partitions must correspond to the order of offsets. </p><p> If offsets are provided for all partitions, this field can be omitted. </p> |
+| <a name="partitions">`partitions`</a> | integer list     |         | <p> The list of Kafka partitions to read from. </p> <p> Only the specified partitions will be consumed. If this field is not set, the connector will consume from all available partitions. </p><p> If `start_from` is set to `offsets` and this field is provided, the number of partitions must exactly match the number of offsets, and the order of partitions must correspond to the order of offsets. </p><p> If offsets are provided for all partitions, this field can be omitted. </p> |
 | `log_level`                    | string           |         | The log level for the Kafka client. |
 | `group_join_timeout_secs`      | seconds          | 10      | Maximum timeout (in seconds) for the endpoint to join the Kafka consumer group during initialization. |
 | `poller_threads`               | positive integer | 3       | Number of threads used to poll Kafka messages. Setting it to multiple threads can improve performance with small messages. Default is 3. Each partition being read is assigned to one of the threads, so the connector automatically caps the thread count at the partition count. |
@@ -23,7 +23,7 @@ tolerance](/pipelines/fault-tolerance).
 | `include_partition`            | boolean          | false   | Whether to include Kafka partition in connector metadata (see [Accessing Kafka metadata](#metadata)). |
 | `include_offset`               | boolean          | false   | Whether to include Kafka offset name in connector metadata (see [Accessing Kafka metadata](#metadata)). |
 | `include_timestamp`            | boolean          | false   | Whether to include Kafka timestamp in connector metadata (see [Accessing Kafka metadata](#metadata)). |
-| `synchronize_partitions`       | boolean          | false   | Whether to read records in order of Kafka timestamp across partitions (see [Synchronizing partitions](#synchronizing-partitions)) |
+| <a name="synchronize_partitions">`synchronize_partitions`</a> | boolean          | false   | Whether to read records in order of Kafka timestamp across partitions (see [Synchronizing partitions](#synchronizing-partitions)) |
 | `header_filter`                | filter           |         | Drop messages whose Kafka headers do not match a boolean expression of regular expressions (see [Filtering messages by header](#header-filter)). |
 
 The connector passes additional options directly to [**librdkafka**](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).  Some of the relevant options:
@@ -507,6 +507,40 @@ Pitfalls of this solution include:
   because there is no way to know the timestamp for the next event to
   be added to the partition whose events have been completely
   processed.
+
+## Optimizing multihost performance for unbalanced large data
+
+In a multihost pipeline, Feldera currently assigns each input
+connector to one host.  All of the work related to reading data from
+that input connector then takes place on that host.  When a pipeline
+has several input connectors that read comparable amounts of data,
+this spreads the network and CPU load related to them across the
+hosts.
+
+On the other hand, if a pipeline that has one input connector that
+reads most of the pipeline's data, only a single host does all the
+work.  In such a case, it makes sense to divide the connector into
+multiple connectors, one per host.  Feldera places input connectors on
+hosts "round robin" in alphabetical order, which means that using the
+default connector names or names with the same prefix and a sequential
+suffix will ensure that they are spread as evenly as possible across
+the hosts.
+
+A Kafka input connector can be divided into multiple connectors by
+specifying different [`partitions`](#partitions) for each one.  For
+example, if the Kafka topic has 6 partitions, and there are 3 hosts,
+one might use 3 copies of the input connector, one with `"partitions":
+[0, 1]`, one with `"partitions": [2, 3]`, and one with `"partitions":
+[4, 5]`.
+
+> ⚠️ The [synchronize_partitions] feature does not work across
+> connectors, only within a single connector.  Therefore, [tables with
+> LATENESS] cannot correctly be divided into multiple connectors this
+> way, because the different connectors can read data "out of sync"
+> from one another.
+
+[tables with LATENESS]: /sql/streaming/#lateness-expressions
+[synchronize_partitions]: #synchronize_partitions
 
 ## Additional resources
 
