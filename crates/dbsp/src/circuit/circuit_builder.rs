@@ -396,9 +396,8 @@ dyn_clone::clone_trait_object!(StreamMetadata);
 ///
 /// Use [`RootCircuit::add_input_indexed_zset`] or
 /// [`RootCircuit::add_input_zset`] to create an (indexed) Z-set input
-/// stream. There's also [`RootCircuit::add_input_set`] and
-/// [`RootCircuit::add_input_map`] to simplify cases where a regular set or
-/// map is easier to use than a Z-set.  The latter functions maintain an extra
+/// stream. There's also [`RootCircuit::add_input_map`] to simplify cases
+/// where a map is easier to use than a Z-set.  The latter function maintains an extra
 /// internal table tracking the contents of the set or map, so they're a second
 /// choice.
 ///

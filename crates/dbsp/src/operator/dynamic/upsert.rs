@@ -1,57 +1,25 @@
 use crate::{
     Circuit, DBData, Stream, Timestamp, ZWeight,
-    algebra::{AddAssignByRef, HasOne, HasZero, IndexedZSet, PartialOrder, ZSet, ZTrace},
+    algebra::{AddAssignByRef, HasOne, HasZero, IndexedZSet, PartialOrder, ZTrace},
     circuit::{
         OwnershipPreference, Scope, WithClock,
         circuit_builder::register_replay_stream,
         metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::{BinaryOperator, Operator},
     },
-    dynamic::{ClonableTrait, DataTrait, DynOpt, DynPairs, DynUnit, Erase},
+    dynamic::{ClonableTrait, DataTrait, DynOpt, DynPairs, Erase},
     operator::dynamic::{
         accumulate_trace::{
             AccumulateBoundsId, AccumulateTraceAppend, AccumulateTraceId, AccumulateZ1Trace,
             TimedSpine,
         },
-        trace::{DelayedTraceId, TraceAppend, TraceBounds, TraceId, Z1Trace},
+        trace::{DelayedTraceId, TraceBounds},
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, TupleBuilder,
     },
 };
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
-
-use super::trace::BoundsId;
-
-pub struct UpdateSetFactories<T: Timestamp, B: ZSet> {
-    pub batch_factories: B::Factories,
-    pub trace_factories: <T::TimedBatch<B> as BatchReader>::Factories,
-}
-
-impl<T: Timestamp, B: ZSet> Clone for UpdateSetFactories<T, B> {
-    fn clone(&self) -> Self {
-        Self {
-            batch_factories: self.batch_factories.clone(),
-            trace_factories: self.trace_factories.clone(),
-        }
-    }
-}
-
-impl<T, B> UpdateSetFactories<T, B>
-where
-    T: Timestamp,
-    B: ZSet,
-{
-    pub fn new<KType>() -> Self
-    where
-        KType: DBData + Erase<B::Key>,
-    {
-        Self {
-            batch_factories: BatchReaderFactories::new::<KType, (), ZWeight>(),
-            trace_factories: BatchReaderFactories::new::<KType, (), ZWeight>(),
-        }
-    }
-}
 
 pub struct UpsertFactories<T: Timestamp, B: IndexedZSet> {
     pub batch_factories: B::Factories,
@@ -81,110 +49,6 @@ where
             batch_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             trace_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
         }
-    }
-}
-
-impl<C, K> Stream<C, Box<DynPairs<K, DynOpt<DynUnit>>>>
-where
-    K: DataTrait + ?Sized,
-    C: Circuit,
-{
-    /// Convert a stream of inserts and deletes into a stream of Z-set updates.
-    ///
-    /// The input stream carries changes to a set in the form of
-    /// insert and delete commands.  The set semantics implies that inserting an
-    /// element that already exists in the set is a no-op.  Likewise, deleting
-    /// an element that is not in the set is a no-op.  This operator converts
-    /// these commands into batches of updates to a Z-set, which is the input
-    /// format of most DBSP operators.
-    ///
-    /// The operator assumes that the input vector is sorted by key.
-    ///
-    /// This is a stateful operator that internally maintains the trace of the
-    /// collection.
-    pub fn update_set<B>(
-        &self,
-        persistent_id: Option<&str>,
-        factories: &UpdateSetFactories<<C as WithClock>::Time, B>,
-    ) -> Stream<C, B>
-    where
-        B: ZSet<Key = K>,
-    {
-        let circuit = self.circuit();
-
-        assert!(
-            self.is_sharded(),
-            "update_set operator applied to a non-sharded collection"
-        );
-
-        // We build the following circuit to implement the set update semantics.
-        // The collection is accumulated into a trace using integrator
-        // (TraceAppend + Z1Trace = integrator).  The `Upsert` operator
-        // evaluates each command in the input stream against the trace
-        // and computes a batch of updates to be added to the trace.
-        //
-        // ```text
-        //                          ┌────────────────────────────►
-        //                          │
-        //                          │
-        //  self        ┌──────┐    │        ┌───────────┐  trace
-        // ────────────►│Upsert├────┴───────►│TraceAppend├────┐
-        //              └──────┘   delta     └───────────┘    │
-        //                 ▲                  ▲               │
-        //                 │                  │               │
-        //                 │                  │   ┌───────┐   │
-        //                 └──────────────────┴───┤Z1Trace│◄──┘
-        //                    z1trace             └───────┘
-        // ```
-        circuit.region("update_set", || {
-            let bounds = <TraceBounds<K, DynUnit>>::unbounded();
-
-            let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
-                persistent_id
-                    .map(|name| format!("{name}.integral"))
-                    .as_deref(),
-                Z1Trace::new(
-                    &factories.trace_factories,
-                    &factories.batch_factories,
-                    false,
-                    circuit.root_scope(),
-                    bounds.clone(),
-                ),
-            );
-            delayed_trace.mark_sharded();
-
-            let delta = circuit
-                .add_binary_operator(
-                    <Upsert<TimedSpine<B, C>, B, _>>::new(
-                        &factories.batch_factories,
-                        bounds.clone(),
-                        circuit.clone(),
-                    ),
-                    &delayed_trace,
-                    self,
-                )
-                .mark_distinct();
-            delta.mark_sharded();
-            let replay_stream = z1feedback.operator_mut().prepare_replay_stream(&delta);
-
-            let trace = circuit.add_binary_operator_with_preference(
-                <TraceAppend<TimedSpine<B, C>, B, C>>::new(
-                    &factories.trace_factories,
-                    circuit.clone(),
-                ),
-                (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
-                (&delta, OwnershipPreference::PREFER_OWNED),
-            );
-            trace.mark_sharded();
-
-            z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
-            register_replay_stream(circuit, &delta, &replay_stream, &factories.batch_factories);
-
-            circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
-            circuit.cache_insert(TraceId::new(delta.stream_id()), trace);
-            circuit.cache_insert(BoundsId::<B>::new(delta.stream_id()), bounds);
-            delta
-        })
     }
 }
 

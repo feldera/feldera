@@ -1,12 +1,10 @@
 use crate::{
     Circuit, DBData, DynZWeight, NumEntries, Runtime, Stream, ZWeight,
-    algebra::{
-        IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet, OrdZSetFactories, ZSet,
-    },
+    algebra::{IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet, OrdZSetFactories},
     circuit::{RootCircuit, checkpointer::Checkpoint},
     dynamic::{
-        ClonableTrait, DataTrait, DynBool, DynData, DynOpt, DynPair, DynPairs, DynUnit,
-        DynWeightedPairs, Erase, Factory, LeanVec, WithFactory,
+        ClonableTrait, DataTrait, DynData, DynOpt, DynPair, DynPairs, DynUnit, DynWeightedPairs,
+        Erase, Factory, LeanVec, WithFactory,
     },
     operator::{
         Input, InputHandle, Update,
@@ -16,7 +14,6 @@ use crate::{
                 DynUpdate, InputUpsertFactories, InputUpsertWithWaterlineFactories, PatchFunc,
             },
             time_series::LeastUpperBoundFunc,
-            upsert::UpdateSetFactories,
         },
     },
     trace::{Batch, BatchFactories, BatchReaderFactories, Batcher, FallbackWSet, Rkyv},
@@ -24,7 +21,6 @@ use crate::{
 };
 use std::{
     mem::{replace, swap},
-    ops::Not,
     panic::Location,
     sync::{
         Arc,
@@ -111,50 +107,6 @@ where
             indexed_zset_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             pairs_factory: WithFactory::<LeanVec<Tup2<KType, Tup2<VType, ZWeight>>>>::FACTORY,
             pair_factory: WithFactory::<Tup2<KType, Tup2<VType, ZWeight>>>::FACTORY,
-        }
-    }
-}
-
-pub struct AddInputSetFactories<B>
-where
-    B: ZSet,
-{
-    update_set_factories: UpdateSetFactories<(), B>,
-    input_pair_factory: &'static dyn Factory<DynPair<B::Key, DynBool>>,
-    input_pairs_factory: &'static dyn Factory<DynPairs<B::Key, DynBool>>,
-    upsert_pair_factory: &'static dyn Factory<DynPair<B::Key, DynOpt<DynUnit>>>,
-    upsert_pairs_factory: &'static dyn Factory<DynPairs<B::Key, DynOpt<DynUnit>>>,
-}
-
-impl<B> Clone for AddInputSetFactories<B>
-where
-    B: ZSet,
-{
-    fn clone(&self) -> Self {
-        Self {
-            update_set_factories: self.update_set_factories.clone(),
-            input_pair_factory: self.input_pair_factory,
-            input_pairs_factory: self.input_pairs_factory,
-            upsert_pair_factory: self.upsert_pair_factory,
-            upsert_pairs_factory: self.upsert_pairs_factory,
-        }
-    }
-}
-
-impl<B> AddInputSetFactories<B>
-where
-    B: ZSet,
-{
-    pub fn new<KType>() -> Self
-    where
-        KType: DBData + Erase<B::Key>,
-    {
-        Self {
-            update_set_factories: UpdateSetFactories::new::<KType>(),
-            input_pair_factory: WithFactory::<Tup2<KType, bool>>::FACTORY,
-            input_pairs_factory: WithFactory::<LeanVec<Tup2<KType, bool>>>::FACTORY,
-            upsert_pair_factory: WithFactory::<Tup2<KType, Option<()>>>::FACTORY,
-            upsert_pairs_factory: WithFactory::<LeanVec<Tup2<KType, Option<()>>>>::FACTORY,
         }
     }
 }
@@ -276,14 +228,6 @@ impl RootCircuit {
         CollectionHandle<DynData, DynPair<DynData, DynZWeight>>,
     ) {
         self.dyn_add_input_indexed_zset(factories)
-    }
-
-    pub fn dyn_add_input_set_mono(
-        &self,
-        persistent_id: Option<&str>,
-        factories: &AddInputSetFactories<OrdZSet<DynData>>,
-    ) -> (ZSetStream<DynData>, UpsertHandle<DynData, DynBool>) {
-        self.dyn_add_input_set(persistent_id, factories)
     }
 
     pub fn dyn_add_input_map_mono(
@@ -493,88 +437,6 @@ impl RootCircuit {
     }
 
     #[track_caller]
-    fn add_set_update<K, B>(
-        &self,
-        persistent_id: Option<&str>,
-        factories: &AddInputSetFactories<B>,
-        input_stream: Stream<Self, Vec<Box<DynPairs<K, DynBool>>>>,
-    ) -> Stream<Self, B>
-    where
-        K: DataTrait + ?Sized,
-        B: ZSet<Key = K>,
-    {
-        let factories_clone = factories.clone();
-
-        let sorted = input_stream.apply_owned(|mut upserts| {
-            // Sort the vectors by key, preserving the history of updates for each key.
-            // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
-            upserts.retain_mut(|pairs| {
-                pairs.sort_by_key();
-
-                // Find the last upsert for each key, that's the only one that matters.
-                pairs.dedup_by_key_keep_last();
-
-                !pairs.is_empty()
-            });
-
-            upserts
-        });
-
-        if let Some(rt) = Runtime::runtime() {
-            sorted.mark_sharded_workers(rt.layout().local_workers());
-        }
-        let sharded = sorted.dyn_shard_pairs(factories.input_pairs_factory);
-
-        let merged = sharded
-            .apply_owned(move |upserts| {
-                struct UpsertPosition<T> {
-                    upserts: T,
-                    position: usize,
-                }
-                let mut upserts = upserts
-                    .into_iter()
-                    .filter_map(|upserts| {
-                        upserts.is_empty().not().then(|| UpsertPosition {
-                            upserts,
-                            position: 0,
-                        })
-                    })
-                    .collect::<Vec<_>>();
-
-                let mut result = factories_clone.upsert_pairs_factory.default_box();
-                let mut tuple = factories_clone.upsert_pair_factory.default_box();
-
-                while !upserts.is_empty() {
-                    let min_index = (0..upserts.len())
-                        .min_by(|a, b| {
-                            let a = upserts[*a].upserts.index(upserts[*a].position);
-                            let b = upserts[*b].upserts.index(upserts[*b].position);
-                            a.cmp(b)
-                        })
-                        .unwrap();
-                    let min = &mut upserts[min_index];
-                    let upsert = min.upserts.index_mut(min.position);
-
-                    let (k, v) = upsert.split_mut();
-                    let mut v = if **v { Some(()) } else { None };
-                    tuple.from_vals(k, v.erase_mut());
-                    result.push_val(&mut *tuple);
-
-                    min.position += 1;
-                    if min.position >= min.upserts.len() {
-                        upserts.remove(min_index);
-                    }
-                }
-
-                result
-            })
-            // Key-preserving merge of the sharded pairs.
-            .mark_sharded();
-
-        merged.update_set::<B>(persistent_id, &factories.update_set_factories)
-    }
-
-    #[track_caller]
     fn add_upsert_indexed<K, V, U, B>(
         &self,
         persistent_id: Option<&str>,
@@ -659,81 +521,6 @@ impl RootCircuit {
             filter_func,
             report_func,
         )
-    }
-
-    /// Create an input table with set semantics.
-    ///
-    /// The `dyn_add_input_set` operator creates an input table that internally
-    /// appears as a Z-set with unit weights, but that ingests input data
-    /// using set semantics. It returns a stream that carries values of type
-    /// `OrdZSet<K>` and an input handle of type
-    /// [`UpsertHandle<K,bool>`](`UpsertHandle`).  The client uses
-    /// [`UpsertHandle::dyn_push`] and [`UpsertHandle::dyn_append`] to submit
-    /// commands of the form `(val, true)` to insert an element to the set
-    /// and `(val, false) ` to delete `val` from the set.  These commands
-    /// are buffered until the start of the next clock cycle.
-    ///
-    /// At the start of a clock cycle (triggered by
-    /// [`DBSPHandle::step`](`crate::DBSPHandle::step`) or
-    /// [`CircuitHandle::step`](`crate::CircuitHandle::step`)), DBSP applies
-    /// buffered commands in order and computes an update to the input set as
-    /// an `OrdZSet` with weights `+1` and `-1` representing set insertions and
-    /// deletions respectively. The following table illustrates the
-    /// relationship between input commands, the contents of the set and the
-    /// contents of the stream produced by this operator:
-    ///
-    /// ```text
-    /// time │      input commands          │content of the   │ stream returned by     │  comment
-    ///      │                              │input set        │ `add_input_set`        │
-    /// ─────┼──────────────────────────────┼─────────────────┼────────────────────────┼───────────────────────────────────────────────────────
-    ///    1 │{("foo",true),("bar",true)}   │  {"foo","bar"}  │ {("foo",+1),("bar",+1)}│
-    ///    2 │{("foo",true),("bar",false)}  │  {"foo"}        │ {("bar",-1)}           │ignore duplicate insert of "foo"
-    ///    3 │{("foo",false),("foo",true)}  │  {"foo"}        │ {}                     │deleting and re-inserting "foo" is a no-op
-    ///    4 │{("foo",false),("bar",false)} │  {}             │ {("foo",-1)}           │deleting value "bar" that is not in the set is a no-op
-    /// ─────┴──────────────────────────────┴─────────────────┴────────────────────────┴────────────────────────────────────────────────────────
-    /// ```
-    ///
-    /// Internally, this operator maintains the contents of the input set
-    /// partitioned across all worker threads based on the hash of the
-    /// value.  Insert/delete commands are routed to the worker in charge of
-    /// the given value.
-    ///
-    /// # Data retention
-    ///
-    /// Applying [`Stream::dyn_integrate_trace_retain_keys`], and
-    /// [`Stream::dyn_integrate_trace_with_bound`] methods to the stream has the
-    /// additional effect of filtering out all values that don't satisfy the
-    /// retention policy configured by these methods from the stream.
-    /// Specifically, retention conditions configured at logical time `t`
-    /// are applied starting from logical time `t+1`.
-    // TODO: Add a version that takes a custom hash function.
-    #[track_caller]
-    pub fn dyn_add_input_set<K>(
-        &self,
-        persistent_id: Option<&str>,
-        factories: &AddInputSetFactories<OrdZSet<K>>,
-    ) -> (ZSetStream<K>, UpsertHandle<K, DynBool>)
-    where
-        K: DataTrait + ?Sized,
-    {
-        self.region("input_set", || {
-            let (input, input_handle) = Input::new(
-                Location::caller(),
-                |tuples: Vec<Box<DynPairs<K, DynBool>>>| tuples,
-                Arc::new(|| vec![factories.input_pairs_factory.default_box()]),
-            );
-            let input_stream = self.add_source(input);
-            let upsert_handle = <UpsertHandle<K, DynBool>>::new(
-                factories.input_pair_factory,
-                factories.input_pairs_factory,
-                input_handle,
-            );
-
-            let upsert: Stream<RootCircuit, OrdZSet<K>> =
-                self.add_set_update(persistent_id, factories, input_stream);
-
-            (upsert, upsert_handle)
-        })
     }
 
     /// Create an input table as a key-value map with upsert update semantics.
@@ -1124,20 +911,13 @@ pub trait HashFunc<K: ?Sized>: Fn(&K) -> u64 + Send + Sync {}
 impl<K: ?Sized, F> HashFunc<K> for F where F: Fn(&K) -> u64 + Send + Sync {}
 
 /// A handle used to write data to an input stream created by
-/// [`add_input_set`](`RootCircuit::add_input_set`) and
-/// [`add_input_map`](`RootCircuit::add_input_map`)
-/// methods.
+/// the [`add_input_map`](`RootCircuit::add_input_map`) method.
 ///
 /// The handle provides an API to push updates to the stream in
-/// the form of `(key, value)` tuples:
+/// the form of `(Key, Option<Value>)` tuples.
 ///
-///    * For `add_input_set`, the tuples have the form `(Key, bool)`.
-///
-///    * For `add_input_map`, the tuples have the form `(Key, Option<Value>)`.
-///
-/// See [`add_input_set`](`RootCircuit::add_input_set`) and
-/// [`add_input_map`](`RootCircuit::add_input_map`) documentation for the exact
-/// semantics of these updates.
+/// See the [`add_input_map`](`RootCircuit::add_input_map`) documentation for
+/// the exact semantics of these updates.
 ///
 /// Internally, the handle manages an array of mailboxes, one for
 /// each worker thread. It automatically partitions updates across
@@ -1343,12 +1123,11 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> UpsertHandle<K, V> {
 #[cfg(test)]
 mod test {
     use crate::{
-        OutputHandle, RootCircuit, Runtime, Stream, ZWeight,
+        OutputHandle, RootCircuit, Runtime, ZWeight,
         dynamic::{DowncastTrait, DynData, Erase},
         indexed_zset,
         operator::{
-            IndexedZSetHandle, MapHandle, SetHandle, StagedBuffers, Update, ZSetHandle,
-            input::InputHandle,
+            IndexedZSetHandle, MapHandle, StagedBuffers, Update, ZSetHandle, input::InputHandle,
         },
         trace::{BatchReaderFactories, Builder, Cursor},
         typed_batch::{
@@ -1662,103 +1441,6 @@ mod test {
     #[test]
     fn indexed_zset_test_mt4() {
         indexed_zset_test_mt(4);
-    }
-
-    fn input_set_updates() -> Vec<Vec<Tup2<u64, bool>>> {
-        vec![
-            vec![Tup2(1, true), Tup2(2, true), Tup2(3, false)],
-            vec![Tup2(1, false), Tup2(2, true), Tup2(3, true), Tup2(4, true)],
-            vec![Tup2(2, false), Tup2(2, true), Tup2(3, true), Tup2(4, false)],
-            vec![Tup2(2, true), Tup2(2, false)],
-            vec![Tup2(100, true)],
-            vec![Tup2(95, true)],
-            // below watermark
-            vec![Tup2(80, true)],
-        ]
-    }
-
-    fn output_set_updates() -> Vec<OrdZSet<u64>> {
-        vec![
-            zset! { 1u64 => 1,  2 => 1},
-            zset! { 1 => -1, 3 => 1,  4 => 1 },
-            zset! { 4 => -1 },
-            zset! { 2 => -1 },
-            zset! { 100 => 1 },
-            zset! { 95 => 1 },
-            zset! {},
-        ]
-    }
-
-    fn set_test_circuit(circuit: &RootCircuit) -> AnyResult<SetHandle<u64>> {
-        let (stream, handle) = circuit.add_input_set::<u64>();
-        let watermark: Stream<_, TypedBox<u64, DynData>> =
-            stream.waterline(|| 0, |k, ()| *k, |k1, k2| max(*k1, *k2));
-        stream.integrate_trace_retain_keys(&watermark, |k, ts: &u64| *k >= ts.saturating_sub(10));
-
-        let mut expected_batches = output_set_updates().into_iter();
-
-        stream.gather(0).inspect(move |batch| {
-            if Runtime::worker_index() == 0 {
-                assert_eq!(batch, &expected_batches.next().unwrap())
-            }
-        });
-
-        Ok(handle)
-    }
-
-    #[test]
-    fn set_test_st() {
-        let (mut circuit, mut input_handle) =
-            Runtime::init_circuit(1, move |circuit| set_test_circuit(circuit)).unwrap();
-
-        for mut vec in input_set_updates().into_iter() {
-            input_handle.append(&mut vec);
-            circuit.transaction().unwrap();
-        }
-
-        let (mut circuit, input_handle) =
-            Runtime::init_circuit(1, move |circuit| set_test_circuit(circuit)).unwrap();
-
-        for vec in input_set_updates().into_iter() {
-            for Tup2(k, b) in vec.into_iter() {
-                input_handle.push(k, b);
-            }
-            circuit.transaction().unwrap();
-        }
-    }
-
-    fn set_test_mt(workers: usize) {
-        let (mut dbsp, mut input_handle) =
-            Runtime::init_circuit(workers, |circuit| set_test_circuit(circuit)).unwrap();
-
-        for mut vec in input_set_updates().into_iter() {
-            input_handle.append(&mut vec);
-            dbsp.transaction().unwrap();
-        }
-
-        dbsp.kill().unwrap();
-
-        let (mut dbsp, input_handle) =
-            Runtime::init_circuit(workers, |circuit| set_test_circuit(circuit)).unwrap();
-
-        for vec in input_set_updates().into_iter() {
-            for Tup2(k, b) in vec.into_iter() {
-                input_handle.push(k, b);
-            }
-            dbsp.transaction().unwrap();
-        }
-
-        dbsp.kill().unwrap();
-    }
-
-    #[test]
-    fn set_test_mt1() {
-        set_test_mt(1);
-    }
-
-    #[test]
-    fn set_test_mt4() {
-        set_test_mt(4);
     }
 
     fn input_map_updates1() -> Vec<Vec<Tup2<u64, Update<u64, i64>>>> {
@@ -2541,71 +2223,5 @@ mod test {
     #[test]
     fn map_join_test_mt4() {
         map_join_test(4);
-    }
-
-    // Set-input variant of `map_join_test`: `add_input_set` streams are also
-    // marked sharded, and `plus` propagates the mark, so `distinct` trusts
-    // the handle's placement.  A key placed differently from the re-sharded
-    // zset side lives on two workers and `distinct` emits it twice.
-    // The sum must run on the inner dynamic streams: sharded marks are cached
-    // per stream value type, and the typed streams don't carry them.
-    fn set_join_test_circuit(
-        circuit: &RootCircuit,
-    ) -> AnyResult<(
-        SetHandle<i64>,
-        ZSetHandle<i64>,
-        OutputHandle<SpineSnapshot<OrdZSet<i64>>>,
-    )> {
-        let (set_stream, set_handle) = circuit.add_input_set::<i64>();
-        let (zset_stream, zset_handle) = circuit.add_input_zset::<i64>();
-        let factories = BatchReaderFactories::new::<i64, (), ZWeight>();
-        let summed: Stream<_, OrdZSet<i64>> = set_stream
-            .inner()
-            .plus(&zset_stream.inner().dyn_shard(&factories))
-            .typed();
-        let distinct = summed.distinct();
-        Ok((set_handle, zset_handle, distinct.accumulate_output()))
-    }
-
-    fn set_join_test(workers: usize) {
-        const KEYS: i64 = 1000;
-
-        let (mut dbsp, (set_handle, zset_handle, output_handle)) =
-            Runtime::init_circuit(workers, |circuit| set_join_test_circuit(circuit)).unwrap();
-
-        for key in 0..KEYS {
-            set_handle.push(key, true);
-            zset_handle.push(key, 1);
-        }
-        dbsp.transaction().unwrap();
-
-        let output = output_handle.concat().consolidate();
-        let mut duplicates = 0;
-        let mut keys = 0;
-        let mut cursor = output.inner().cursor();
-        while cursor.key_valid() {
-            if *cursor.weight().downcast_checked::<ZWeight>() != 1 {
-                duplicates += 1;
-            }
-            keys += 1;
-            cursor.step_key();
-        }
-        assert_eq!(
-            (keys, duplicates),
-            (KEYS as usize, 0),
-            "distinct with {workers} workers emitted {duplicates} keys twice",
-        );
-
-        dbsp.kill().unwrap();
-    }
-
-    #[test]
-    fn set_join_test_mt3() {
-        set_join_test(3);
-    }
-
-    #[test]
-    fn set_join_test_mt4() {
-        set_join_test(4);
     }
 }

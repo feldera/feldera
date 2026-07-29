@@ -5,11 +5,11 @@ use crate::{
         metadata::OperatorLocation,
         operator_traits::{Operator, SourceOperator},
     },
-    dynamic::{DowncastTrait, DynBool, DynData, DynPair, DynPairs, DynUnit, Erase, LeanVec},
+    dynamic::{DowncastTrait, DynData, DynPair, DynPairs, DynUnit, Erase, LeanVec},
     operator::dynamic::{
         input::{
             AddInputIndexedZSetFactories, AddInputMapFactories, AddInputMapWithWaterlineFactories,
-            AddInputSetFactories, AddInputZSetFactories, CollectionHandle, UpsertHandle,
+            AddInputZSetFactories, CollectionHandle, UpsertHandle,
         },
         input_upsert::DynUpdate,
     },
@@ -36,7 +36,7 @@ pub type ZSetStream<K> = Stream<RootCircuit, OrdZSet<K>>;
 
 /// Input prepared for flushing into an input handle.
 ///
-/// [ZSetHandle], [IndexedZSetHandle], [SetHandle], and [MapHandle] all support
+/// [ZSetHandle], [IndexedZSetHandle], and [MapHandle] all support
 /// similar ways to push data into a circuit.  The following discussion just
 /// talks about `ZSetHandle`, for clarity.
 ///
@@ -191,75 +191,6 @@ where
     pub fn append(&self, vals: &mut Vec<Tup2<K, Tup2<V, ZWeight>>>) {
         let vals = Box::new(LeanVec::from(take(vals)));
         self.handle.dyn_append(&mut vals.erase_box())
-    }
-}
-
-pub struct SetStagedBuffers {
-    input_handle: InputHandle<Vec<Box<DynPairs<DynData, DynBool>>>>,
-    vals: Vec<Box<DynPairs<DynData, DynBool>>>,
-}
-
-impl StagedBuffers for SetStagedBuffers {
-    fn flush(&mut self) {
-        for (worker, vals) in self.vals.drain(..).enumerate() {
-            self.input_handle.update_for_worker(worker, |tuples| {
-                tuples.push(vals);
-            });
-        }
-    }
-}
-
-#[repr(transparent)]
-pub struct SetHandle<K> {
-    handle: UpsertHandle<DynData, DynBool>,
-    phantom: PhantomData<fn(&K)>,
-}
-
-impl<K> Clone for SetHandle<K> {
-    fn clone(&self) -> Self {
-        Self {
-            handle: self.handle.clone(),
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<K> SetHandle<K>
-where
-    K: DBData,
-{
-    fn new(handle: UpsertHandle<DynData, DynBool>) -> Self {
-        Self {
-            handle,
-            phantom: PhantomData,
-        }
-    }
-
-    pub fn push(&self, mut k: K, mut v: bool) {
-        self.handle.dyn_push(k.erase_mut(), v.erase_mut())
-    }
-
-    pub fn append(&mut self, vals: &mut Vec<Tup2<K, bool>>) {
-        let vals = Box::new(LeanVec::from(take(vals)));
-        self.handle.dyn_append(&mut vals.erase_box())
-    }
-
-    pub fn stage(
-        &self,
-        buffers: impl IntoIterator<Item = VecDeque<Tup2<K, bool>>>,
-    ) -> SetStagedBuffers {
-        let num_partitions = self.handle.num_partitions();
-        let mut partitions = vec![self.handle.pairs_factory.default_box(); num_partitions];
-        for vals in buffers {
-            let vec = Vec::from(vals);
-            let vals = Box::new(LeanVec::from(vec));
-            self.handle
-                .dyn_stage(&mut vals.erase_box(), &mut partitions);
-        }
-        SetStagedBuffers {
-            input_handle: self.handle.input_handle.clone(),
-            vals: partitions,
-        }
     }
 }
 
@@ -429,100 +360,6 @@ impl RootCircuit {
         let (stream, handle) = self.dyn_add_input_indexed_zset_mono(&factories);
 
         (stream.typed(), IndexedZSetHandle::new(handle))
-    }
-
-    /// Create an input table with set semantics.
-    ///
-    /// # Motivation
-    ///
-    /// DBSP represents relational data using Z-sets, i.e., tables where each
-    /// record has a weight, which denotes the number of times the record occurs
-    /// in the table.  Updates to Z-sets are also Z-sets, with
-    /// positive weights representing insertions and negative weights
-    /// representing deletions.  The contents of the Z-set after an update
-    /// is computed by summing up the weights associated with each record.
-    /// Z-set updates are commutative, e.g., insert->insert->delete and
-    /// insert->delete->insert sequences are both equivalent to a single
-    /// insert.  This internal representation enables efficient incremental
-    /// computation, but it does not always match the data model used by the
-    /// outside world, and may require a translation layer to eliminate this
-    /// mismatch when ingesting data into DBSP.
-    ///
-    /// In particular, input tables often behave as sets.  A set is a special
-    /// case of a Z-set where all weights are equal to 1.  Duplicate
-    /// insertions and deletions to sets are ignored, i.e., inserting an
-    /// existing element or deleting an element not in the set are both
-    /// no-ops.  Set updates are not commutative, e.g., the
-    /// insert->delete->insert sequence is equivalent to a single insert,
-    /// while insert->insert->delete is equivalent to a delete.
-    ///
-    /// # Details
-    ///
-    /// The `add_input_set` operator creates an input table that internally
-    /// appears as a Z-set with unit weights, but that ingests input data
-    /// using set semantics. It returns a stream that carries values of type
-    /// `OrdZSet<K, R>` and an input handle of type
-    /// [`SetHandle<K>`](`SetHandle`).  The client uses
-    /// [`SetHandle::push`] and [`SetHandle::append`] to submit
-    /// commands of the form `(val, true)` to insert an element to the set
-    /// and `(val, false) ` to delete `val` from the set.  These commands
-    /// are buffered until the start of the next clock cycle.
-    ///
-    /// At the start of a clock cycle (triggered by
-    /// [`DBSPHandle::step`](`crate::DBSPHandle::step`) or
-    /// [`CircuitHandle::step`](`crate::CircuitHandle::step`)), DBSP applies
-    /// buffered commands in order and computes an update to the input set as
-    /// an `OrdZSet` with weights `+1` and `-1` representing set insertions and
-    /// deletions respectively. The following table illustrates the
-    /// relationship between input commands, the contents of the set and the
-    /// contents of the stream produced by this operator:
-    ///
-    /// ```text
-    /// time │      input commands          │content of the   │ stream returned by     │  comment
-    ///      │                              │input set        │ `add_input_set`        │
-    /// ─────┼──────────────────────────────┼─────────────────┼────────────────────────┼───────────────────────────────────────────────────────
-    ///    1 │{("foo",true),("bar",true)}   │  {"foo","bar"}  │ {("foo",+1),("bar",+1)}│
-    ///    2 │{("foo",true),("bar",false)}  │  {"foo"}        │ {("bar",-1)}           │ignore duplicate insert of "foo"
-    ///    3 │{("foo",false),("foo",true)}  │  {"foo"}        │ {}                     │deleting and re-inserting "foo" is a no-op
-    ///    4 │{("foo",false),("bar",false)} │  {}             │ {("foo",-1)}           │deleting value "bar" that is not in the set is a no-op
-    /// ─────┴──────────────────────────────┴─────────────────┴────────────────────────┴────────────────────────────────────────────────────────
-    /// ```
-    ///
-    /// Internally, this operator maintains the contents of the input set
-    /// partitioned across all worker threads based on the hash of the
-    /// value.  Insert/delete commands are routed to the worker in charge of
-    /// the given value.
-    ///
-    /// # Data retention
-    ///
-    /// Applying [`Stream::integrate_trace_retain_keys`], and
-    /// [`Stream::integrate_trace_with_bound`] methods to the stream has the
-    /// additional effect of filtering out all values that don't satisfy the
-    /// retention policy configured by these methods from the stream.
-    /// Specifically, retention conditions configured at logical time `t`
-    /// are applied starting from logical time `t+1`.
-    // TODO: Add a version that takes a custom hash function.
-    #[track_caller]
-    pub fn add_input_set<K>(&self) -> (Stream<RootCircuit, OrdZSet<K>>, SetHandle<K>)
-    where
-        K: DBData,
-    {
-        self.add_input_set_persistent(None)
-    }
-
-    /// Like [`Self::add_input_set`], but with a persistent id, so that the
-    /// input's integral can be checkpointed and restored.
-    pub fn add_input_set_persistent<K>(
-        &self,
-        persistent_id: Option<&str>,
-    ) -> (Stream<RootCircuit, OrdZSet<K>>, SetHandle<K>)
-    where
-        K: DBData,
-    {
-        let factories = AddInputSetFactories::new::<K>();
-        let (stream, handle) = self.dyn_add_input_set_mono(persistent_id, &factories);
-
-        (stream.typed(), SetHandle::new(handle))
     }
 
     /// Create an input table as a key-value map with upsert update semantics.

@@ -159,7 +159,7 @@ where
     ///   general, computing a correct retainment policy requires keep track of
     ///   * Streams that are sharded by construction and hence the `shard`
     ///     operator is a no-op for such streams.  For instance, the
-    ///     `add_input_set` and `aggregate` operators produce sharded streams.
+    ///     `add_input_map` and `aggregate` operators produce sharded streams.
     ///   * Operators that `shard` their input streams, e.g., `join`.
     ///
     /// * This method should be invoked at most once for a stream.

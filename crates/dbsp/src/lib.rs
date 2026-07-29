@@ -107,7 +107,7 @@ pub use circuit::{
 pub use operator::FilterMap;
 pub use operator::{
     CmpFunc, OrdPartitionedIndexedZSet, OutputHandle,
-    input::{IndexedZSetHandle, InputHandle, MapHandle, SetHandle, ZSetHandle},
+    input::{IndexedZSetHandle, InputHandle, MapHandle, ZSetHandle},
 };
 pub use trace::{DBData, DBWeight, cursor::Position};
 pub use typed_batch::{
