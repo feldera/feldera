@@ -99,7 +99,7 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  <p class="text-sm opacity-70">
+  <p class="text-sm text-surface-800-200">
     Members appear here after their first login. Assign read, write, or admin. Removing a member
     drops their role now, but if your identity provider still grants them access they are re-added
     at the default role on their next login — revoke at the provider for a durable block.
@@ -111,10 +111,10 @@
 
   <!-- Pre-provision by identity: create the membership before the user's first
        login. The grant is dormant until that identity signs in to the tenant. -->
-  <div class="rounded border border-surface-100-900 p-3">
+  <div class="rounded border border-surface-200-800 p-3">
     <div class="mb-2">
       <div class="font-medium">Pre-provision a member</div>
-      <p class="text-sm opacity-70">
+      <p class="text-sm text-surface-800-200">
         Grant a role before the user's first login. <b>Subject</b> must exactly match the
         <code>sub</code> claim of the JWT the user will present — otherwise the grant will not attach
         at login. The issuer is the platform's configured one (shown below). Email is for display only.
@@ -128,9 +128,9 @@
       }}
     >
       <label class="flex flex-col text-sm">
-        <span class="opacity-70">Provider — OIDC issuer (<code>iss</code>)</span>
+        <span class="text-surface-800-200">Provider — OIDC issuer (<code>iss</code>)</span>
         <input
-          class="input w-64 opacity-60"
+          class="input h-9 w-64 opacity-60"
           value={configuredIssuer}
           readonly
           disabled
@@ -138,20 +138,20 @@
         />
       </label>
       <label class="flex flex-col text-sm">
-        <span class="opacity-70">Subject — OIDC <code>sub</code></span>
+        <span class="text-surface-800-200">Subject — OIDC <code>sub</code></span>
         <input
-          class="input w-56"
+          class="input h-9 w-56"
           bind:value={newSubject}
           placeholder="10769150350006150715113082367"
         />
       </label>
       <label class="flex flex-col text-sm">
-        <span class="opacity-70">Email (display only)</span>
-        <input class="input w-56" bind:value={newEmail} placeholder="user@acme.com" />
+        <span class="text-surface-800-200">Email (display only)</span>
+        <input class="input h-9 w-56" bind:value={newEmail} placeholder="user@acme.com" />
       </label>
       <label class="flex flex-col text-sm">
-        <span class="opacity-70">Role</span>
-        <Select bind:value={newRole} class="w-28">
+        <span class="text-surface-800-200">Role</span>
+        <Select bind:value={newRole} class="h-9 w-28">
           <option value="read">read</option>
           <option value="write">write</option>
           <option value="admin">admin</option>
@@ -203,7 +203,7 @@
       <div class="flex flex-nowrap items-center gap-2 border-b border-surface-100-900 py-2">
         <div class="w-full">
           <div class="font-medium">{user.email ?? user.subject}</div>
-          <div class="text-sm opacity-70">
+          <div class="text-sm text-surface-800-200">
             <code>{user.provider}</code> · sub=<code>{user.subject}</code>
           </div>
         </div>
@@ -216,7 +216,7 @@
                 | 'write'
                 | 'admin'
             }}
-            class="w-28"
+            class="h-9 w-28"
             aria-label="Role for {user.email ?? user.subject}"
           >
             <option value="read">read</option>
@@ -233,7 +233,7 @@
         {:else}
           <!-- owner is platform-wide, not a tenant membership, so it is shown
                read-only here. -->
-          <span class="w-28 text-center opacity-70">{user.role}</span>
+          <span class="w-28 text-center text-surface-800-200">{user.role}</span>
         {/if}
         <button
           class="fd fd-trash-2 btn-icon text-[20px]"
@@ -242,7 +242,7 @@
         ></button>
       </div>
     {:else}
-      <div class="opacity-70">No members yet. Users appear after their first login.</div>
+      <div class="text-surface-800-200">No members yet. Users appear after their first login.</div>
     {/each}
   </div>
 </div>

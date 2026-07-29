@@ -42,7 +42,7 @@
         <div class=" w-full">
           <div>
             {key.name}
-            <span class="text-xs opacity-70">[{key.role}]</span>
+            <span class="text-sm text-surface-800-200">[{key.role}]</span>
           </div>
 
           <div class="text-sm">{key.id}</div>
