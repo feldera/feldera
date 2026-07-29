@@ -259,6 +259,7 @@
                 })
               }}
               disabled={editNameDisabled}
+              editLabel="Edit pipeline name"
               class="inline overflow-hidden overflow-ellipsis"
               inputClass="input flex -ml-1 mr-2 py-0 pl-1 text-base mt-1"
             >

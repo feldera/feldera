@@ -1,3 +1,15 @@
+<script lang="ts" module>
+  // Fields to prefill the form with, e.g. to duplicate an existing trust.
+  export type TrustFormData = {
+    name: string
+    issuer: string
+    subject: string
+    audience: string
+    description: string
+    role: 'read' | 'write' | 'admin'
+  }
+</script>
+
 <script lang="ts">
   import { Select } from 'common-ui'
   import { Control, Field, FieldErrors, Label } from 'formsnap'
@@ -5,7 +17,7 @@
   import { valibot } from 'sveltekit-superforms/adapters'
 
   import * as va from 'valibot'
-  import { postOidcTrust, type MemberRole } from '$lib/services/pipelineManager'
+  import { type MemberRole, postOidcTrust } from '$lib/services/pipelineManager'
 
   const {
     onSubmit,
@@ -68,10 +80,26 @@
     }
   )
   const { form: formData, enhance, submit } = form
+
+  // Prefill the form to duplicate an existing trust; the user reviews and
+  // presses Create. The caller reveals and scrolls the form into view.
+  export function fill(values: TrustFormData) {
+    $formData = { ...$formData, ...values }
+  }
 </script>
 
+{#snippet fieldErrors()}
+  <FieldErrors>
+    {#snippet children({ errors, errorProps })}
+      {#each errors as error}
+        <span class="text-error-500" {...errorProps}>{error}</span>
+      {/each}
+    {/snippet}
+  </FieldErrors>
+{/snippet}
+
 <form
-  class="flex flex-col gap-3"
+  class="flex flex-col gap-2"
   use:enhance
   onkeydown={(event) => {
     if (event.key === 'Enter') {
@@ -80,25 +108,20 @@
     }
   }}
 >
+  <span class="text-xl font-semibold">Create new trust</span>
   <Field {form} name="name">
     <Control>
       {#snippet children(attrs)}
         <Label>Name</Label>
         <input
           placeholder="github-actions-prod"
-          class="input w-full"
+          class="input h-9"
           {...attrs}
           bind:value={$formData.name}
         />
       {/snippet}
     </Control>
-    <FieldErrors>
-      {#snippet children({ errors, errorProps })}
-        {#each errors as error}
-          <span class="text-error-500" {...errorProps}>{error}</span>
-        {/each}
-      {/snippet}
-    </FieldErrors>
+    {@render fieldErrors()}
   </Field>
 
   <Field {form} name="issuer">
@@ -107,12 +130,13 @@
         <Label>Issuer URL</Label>
         <input
           placeholder="https://token.actions.githubusercontent.com"
-          class="input w-full"
+          class="input h-9"
           {...attrs}
           bind:value={$formData.issuer}
         />
       {/snippet}
     </Control>
+    {@render fieldErrors()}
   </Field>
 
   <Field {form} name="subject">
@@ -121,26 +145,23 @@
         <Label>Subject pattern</Label>
         <input
           placeholder="repo:my-org/my-repo:ref:refs/heads/main"
-          class="input w-full"
+          class="input h-9"
           {...attrs}
           bind:value={$formData.subject}
         />
       {/snippet}
     </Control>
+    {@render fieldErrors()}
   </Field>
 
   <Field {form} name="audience">
     <Control>
       {#snippet children(attrs)}
         <Label>Audience pattern (optional)</Label>
-        <input
-          placeholder="feldera"
-          class="input w-full"
-          {...attrs}
-          bind:value={$formData.audience}
-        />
+        <input placeholder="feldera" class="input h-9" {...attrs} bind:value={$formData.audience} />
       {/snippet}
     </Control>
+    {@render fieldErrors()}
   </Field>
 
   <Field {form} name="description">
@@ -149,28 +170,30 @@
         <Label>Description (optional)</Label>
         <input
           placeholder="What does this trust grant?"
-          class="input w-full"
+          class="input h-9"
           {...attrs}
           bind:value={$formData.description}
         />
       {/snippet}
     </Control>
+    {@render fieldErrors()}
   </Field>
 
   <Field {form} name="role">
     <Control>
       {#snippet children(attrs)}
         <Label>Role</Label>
-        <Select class="w-full" {...attrs} bind:value={$formData.role}>
+        <Select class="h-9 text-base!" {...attrs} bind:value={$formData.role}>
           <option value="read">read</option>
           <option value="write">write</option>
           <option value="admin">admin</option>
         </Select>
       {/snippet}
     </Control>
+    {@render fieldErrors()}
   </Field>
 
-  <p class="text-xs opacity-70">
+  <p class="text-sm text-surface-800-200">
     JWTs from <code>Issuer</code> whose <code>sub</code> matches
     <code>Subject pattern</code> authorize requests. <code>Audience pattern</code>, if set, is an
     extra filter on the <code>aud</code> claim (not the tenant selector). <code>*</code> is a
@@ -183,6 +206,6 @@
   {/if}
 
   <div class="flex justify-end">
-    <button class="btn preset-filled-surface-50-950">Create</button>
+    <button class="btn preset-filled-primary-500">Create</button>
   </div>
 </form>

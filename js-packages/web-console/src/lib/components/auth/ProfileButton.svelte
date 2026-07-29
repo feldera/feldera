@@ -88,7 +88,7 @@
 
         {#if typeof auth === 'object' && 'logout' in auth}
           <RBAC require="write:tenant_member">
-            {@render profileItemButton('Admin', adminIcon, { href: resolve('/admin') })}
+            {@render profileItemButton('Admin Dashboard', adminIcon, { href: resolve('/admin') })}
           </RBAC>
           <RBAC require="write:api_key">
             {@render profileItemButton('Manage API keys', apiKeysIcon, {
