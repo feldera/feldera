@@ -2,7 +2,10 @@
   import { asyncReadable } from '@square/svelte-store'
   import { goto, invalidateAll } from '$app/navigation'
   import { page } from '$app/state'
+  import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
+  import DoubleClickInput from '$lib/components/input/DoubleClickInput.svelte'
   import { clearConfigCaches } from '$lib/compositions/configCache'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { resolve } from '$lib/functions/svelte'
   import { setSelectedTenant } from '$lib/services/auth'
   import {
@@ -57,42 +60,25 @@
     }
   }
 
-  let renamingId = $state('')
-  let renamedName = $state('')
   let renaming = $state(false)
-
-  const startRename = (tenant: Tenant) => {
-    errorMessage = ''
-    noticeMessage = ''
-    nameToTakeOver = ''
-    renamingId = tenant.id
-    renamedName = tenant.name
-  }
-
-  const cancelRename = () => {
-    renamingId = ''
-    renamedName = ''
-    nameToTakeOver = ''
-  }
 
   // Set when a rename conflicts, to offer taking the name from the tenant that
   // holds it. Every request re-creates the name its token resolves, so a
   // conflict is the normal case when recovering a tenant no login reaches.
-  let nameToTakeOver = $state('')
+  let conflict = $state<{ tenantId: string; name: string } | null>(null)
 
-  const submitRename = async (displaceExisting = false) => {
-    const name = renamedName.trim()
+  const rename = async (tenantId: string, rawName: string, displaceExisting = false) => {
+    const name = rawName.trim()
     if (!name) {
       errorMessage = 'Specify a tenant name'
       return
     }
     errorMessage = ''
     noticeMessage = ''
-    nameToTakeOver = ''
+    conflict = null
     renaming = true
     try {
-      const { displaced } = await renameTenant(renamingId, name, displaceExisting)
-      cancelRename()
+      const { displaced } = await renameTenant(tenantId, name, displaceExisting)
       if (displaced) {
         noticeMessage = `Took the name '${name}'. The tenant that held it is now '${displaced.name}' and keeps everything it had.`
       }
@@ -104,7 +90,7 @@
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       if (/already exists|DuplicateName/i.test(message) && !displaceExisting) {
-        nameToTakeOver = name
+        conflict = { tenantId, name }
       } else {
         errorMessage = message
       }
@@ -113,29 +99,19 @@
     }
   }
 
+  const globalDialog = useGlobalDialog()
+
   // Deletion is refused unless the tenant is empty, so the confirmation is
   // about intent, not about losing data.
-  let tenantToDelete = $state('')
-  let deleting = $state(false)
-
-  const confirmDelete = async (tenant: Tenant) => {
+  const remove = async (tenant: Tenant) => {
     errorMessage = ''
     noticeMessage = ''
-    if (tenantToDelete !== tenant.id) {
-      tenantToDelete = tenant.id
-      return
-    }
-    deleting = true
     try {
       await deleteTenant(tenant.id)
-      tenantToDelete = ''
       noticeMessage = `Deleted tenant '${tenant.name}'.`
       tenants.reload?.()
     } catch (e) {
-      tenantToDelete = ''
       errorMessage = e instanceof Error ? e.message : String(e)
-    } finally {
-      deleting = false
     }
   }
 
@@ -159,86 +135,77 @@
   {#if noticeMessage}
     <div class="rounded preset-outlined-success-600-400 p-2 text-sm">{noticeMessage}</div>
   {/if}
-  <div class="scrollbar flex flex-col gap-2 overflow-auto">
+  <div class="scrollbar flex flex-col gap-2 overflow-visible">
     {#each $tenants as tenant (tenant.id)}
-      <div class="flex flex-nowrap items-center gap-2 border-b border-surface-100-900 py-2">
-        <div class="w-full">
-          {#if renamingId === tenant.id}
-            <form
-              class="flex items-center gap-2"
-              onsubmit={(e) => {
-                e.preventDefault()
-                submitRename()
-              }}
-            >
-              <!-- svelte-ignore a11y_autofocus -->
-              <input class="input w-72" bind:value={renamedName} autofocus />
-              <button class="btn preset-filled-surface-50-950" disabled={renaming}>Save</button>
-              <button
-                type="button"
-                class="btn preset-tonal-surface"
-                disabled={renaming}
-                onclick={cancelRename}
-              >
-                Cancel
-              </button>
-            </form>
-            {#if nameToTakeOver}
-              <div class="mt-2 rounded preset-outlined-warning-600-400 p-2 text-sm">
-                Another tenant is named <code>{nameToTakeOver}</code>. Taking the name renames that
-                tenant to <code>{nameToTakeOver} (its id)</code>; it keeps its pipelines, keys and
-                members. Logins that resolve <code>{nameToTakeOver}</code> then land here.
-                <button
-                  class="ml-2 btn preset-filled-surface-50-950"
-                  disabled={renaming}
-                  onclick={() => submitRename(true)}
-                >
-                  Take the name
-                </button>
-              </div>
+      <div class="flex flex-wrap items-center gap-2 border-b border-surface-200-800 py-2">
+        <div class="">
+          <!-- Rename in place: the input sits where the name was, so editing
+               reads as editing the name rather than filling a form. -->
+          <DoubleClickInput
+            value={tenant.name}
+            onvalue={(name) => rename(tenant.id, name)}
+            editLabel="Edit tenant name"
+            class="flex h-5 flex-nowrap gap-1"
+            inputClass="input font-medium -ml-1 w-72 h-5 pl-1"
+          >
+            <div class="font-medium">{tenant.name}</div>
+            {#if tenant.id === currentTenantId}
+              <span class="text-sm text-surface-800-200">(current)</span>
             {/if}
-          {:else}
-            <div class="font-medium">
-              {tenant.name}
-              {#if tenant.id === currentTenantId}
-                <span class="text-xs opacity-70">(current)</span>
-              {/if}
+          </DoubleClickInput>
+          {#if conflict?.tenantId === tenant.id}
+            {@const pending = conflict!}
+            <div class="mt-2 rounded preset-outlined-warning-600-400 p-2 text-sm">
+              Another tenant is named <code>{pending.name}</code>. Taking the name renames that
+              tenant to <code>{pending.name} (its id)</code>; it keeps its pipelines, keys and
+              members. Logins that resolve <code>{pending.name}</code> then land here.
+              <button
+                class="ml-2 btn preset-filled-surface-50-950"
+                disabled={renaming}
+                onclick={() => rename(tenant.id, pending.name, true)}
+              >
+                Take the name
+              </button>
             </div>
           {/if}
           <!-- The issuer is provenance, not something a login resolves, so it
                stays out of the row and is available on hover. -->
-          <div class="text-sm opacity-70" title="First provisioned under {tenant.initial_provider}">
+          <div
+            class="text-sm text-surface-800-200"
+            title="First provisioned under {tenant.initial_provider}"
+          >
             {tenant.id}
           </div>
         </div>
-        <button
-          class="btn preset-tonal-surface"
-          disabled={renamingId === tenant.id}
-          onclick={() => startRename(tenant)}
-          title="A login resolves its tenant by name: renaming changes which users land in this tenant."
-        >
-          Rename
-        </button>
-        <button
-          class="btn preset-filled-surface-50-950"
-          disabled={tenant.id === currentTenantId}
-          onclick={() => actAs(tenant)}
-        >
-          Act as this tenant
-        </button>
-        <button
-          class="btn {tenantToDelete === tenant.id
-            ? 'preset-filled-error-500'
-            : 'preset-tonal-surface'}"
-          disabled={deleting || tenant.id === currentTenantId}
-          onclick={() => confirmDelete(tenant)}
-          title="Only an empty tenant can be deleted: no pipelines, API keys or OIDC trust relationships."
-        >
-          {tenantToDelete === tenant.id ? 'Confirm delete' : 'Delete'}
-        </button>
+        {#snippet deleteDialog()}
+          <DeleteDialog
+            {...deleteDialogProps(
+              'Delete',
+              `Delete tenant '${tenant.name}'?`,
+              () => remove(tenant),
+              'Only an empty tenant can be deleted: no pipelines, API keys or OIDC trust relationships.'
+            )()}
+          ></DeleteDialog>
+        {/snippet}
+        <div class="ml-auto flex flex-nowrap gap-2">
+          <button
+            class="btn preset-filled-surface-50-950"
+            disabled={tenant.id === currentTenantId}
+            onclick={() => actAs(tenant)}
+          >
+            Act as this tenant
+          </button>
+          <button
+            class="fd fd-trash-2 btn-icon text-[20px] hover:bg-surface-50-950"
+            disabled={tenant.id === currentTenantId}
+            onclick={() => (globalDialog.dialog = deleteDialog)}
+            aria-label="Delete tenant {tenant.name}"
+            title="Only an empty tenant can be deleted: no pipelines, API keys or OIDC trust relationships."
+          ></button>
+        </div>
       </div>
     {:else}
-      <div class="opacity-70">No tenants found</div>
+      <div class="text-surface-800-200">No tenants found</div>
     {/each}
   </div>
 
@@ -251,7 +218,7 @@
   >
     <label class="label w-full">
       <span>New tenant name</span>
-      <input class="input w-full" placeholder="acme-prod" bind:value={newName} />
+      <input class="input h-9 w-full" placeholder="acme-prod" bind:value={newName} />
     </label>
     <button
       class="btn preset-filled-surface-50-950"

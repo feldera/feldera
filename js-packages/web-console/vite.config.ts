@@ -31,6 +31,9 @@ const testOptimizeDepsInclude = [
   '@axa-fr/oidc-client',
   '@monaco-editor/loader',
   '@skeletonlabs/skeleton-svelte',
+  // Skeleton's Listbox (zag-js) chain reaches this CJS module; without
+  // pre-bundling it, its default import fails ESM interop under vitest.
+  'fast-deep-equal',
   '@streamparser/json',
   'apache-arrow',
   '@svelte-bin/clipboard',

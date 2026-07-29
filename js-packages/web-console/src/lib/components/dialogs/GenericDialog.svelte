@@ -45,7 +45,7 @@
     {/if}
   </div>
   <div
-    class="-mr-4 scrollbar flex max-h-[calc(90vh-96px)] flex-col gap-4 overflow-visible pr-4 sm:-mr-8"
+    class="-mr-4 scrollbar flex max-h-[calc(90vh-116px)] flex-col gap-4 overflow-visible pr-4 sm:-mr-8 sm:pr-8"
   >
     {#if content.description}
       <span class="whitespace-pre-wrap" data-testid="box-dialog-description">
@@ -63,10 +63,7 @@
     {@render children?.()}
   </div>
   {#if content.onSuccess || content.onCancel}
-    <div
-      class="flex w-full flex-col-reverse gap-4 sm:flex-row sm:justify-end"
-      data-testid="box-dialog-actions"
-    >
+    <div class="flex w-full flex-nowrap justify-end gap-4" data-testid="box-dialog-actions">
       <button
         onclick={() => cancel()}
         class="btn preset-filled-surface-50-950 px-4"

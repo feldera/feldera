@@ -122,12 +122,12 @@ This is the one gate that is not a plain permission check: `enabled = pipelineEx
 
 ### 4.5 API keys and admin (mostly shipped)
 
-| File                                                                                  | Permission            | Min role | Status                                                               |
-| ------------------------------------------------------------------------------------- | --------------------- | -------- | -------------------------------------------------------------------- |
-| `auth/ProfileButton.svelte`, `other/ApiKeyMenu.svelte`, `apiKey/NewApiKeyForm.svelte` | `write:api_key`       | write    | menu already gated; migrate its ad-hoc role check to `write:api_key` |
-| `routes/(system)/(authenticated)/admin/+page.ts`                                      | `write:tenant_member` | admin    | already redirects; express via permission                            |
-| `admin/UserRoleTable.svelte`                                                          | `write:tenant_member` | admin    | in admin area                                                        |
-| `other/OidcTrustMenu.svelte`, `oidcTrust/NewOidcTrustForm.svelte`                     | `write:oidc_trust`    | admin    | in gated menu                                                        |
+| File                                                                                            | Permission            | Min role | Status                                                                                           |
+| ----------------------------------------------------------------------------------------------- | --------------------- | -------- | ------------------------------------------------------------------------------------------------ |
+| `auth/ProfileButton.svelte`, `other/ApiKeyMenu.svelte`, `apiKey/NewApiKeyForm.svelte`           | `write:api_key`       | write    | menu already gated; migrate its ad-hoc role check to `write:api_key`                             |
+| `routes/(system)/(authenticated)/admin/+page.ts`                                                | `write:tenant_member` | admin    | already redirects; express via permission                                                        |
+| `admin/UserRoleTable.svelte`                                                                    | `write:tenant_member` | admin    | in admin area                                                                                    |
+| `other/OidcTrustMenu.svelte`, `oidcTrust/NewOidcTrustForm.svelte`                               | `write:oidc_trust`    | admin    | in gated menu                                                                                    |
 | `admin/TenantList.svelte`, `admin/AdminPage.svelte` (tenant switcher, Platform owners, Tenants) | `write:tenant`        | owner    | gated on `write:tenant`; owner-trust CRUD removed (owner is deploy-time config, shown read-only) |
 
 Within `NewApiKeyForm.svelte`, both `read` and `write` key options stay offered:

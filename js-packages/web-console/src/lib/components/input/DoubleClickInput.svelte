@@ -8,7 +8,8 @@
     onvalue,
     class: _class = '',
     inputClass,
-    disabled
+    disabled,
+    editLabel = 'Edit name'
   }: {
     value: string
     children?: Snippet
@@ -16,6 +17,7 @@
     class?: string
     inputClass?: string
     disabled?: boolean
+    editLabel?: string
   } = $props()
   let showInput = $state(false)
 
@@ -78,7 +80,7 @@
       class="fd fd-pencil-line text-[20px] text-surface-400-600 {disabled
         ? ''
         : 'group-hover:text-surface-950-50'}"
-      aria-label="Edit pipeline name"
+      aria-label={editLabel}
     >
     </button>
   </span>
