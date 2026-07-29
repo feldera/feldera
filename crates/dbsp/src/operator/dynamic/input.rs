@@ -505,22 +505,35 @@ impl RootCircuit {
     {
         let factories_clone = factories.clone();
 
-        let sorted = input_stream
+        let sorted = input_stream.apply_owned(|mut upserts| {
+            // Sort the vectors by key, preserving the history of updates for each key.
+            // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
+            upserts.retain_mut(|pairs| {
+                pairs.sort_by_key();
+
+                // Find the last upsert for each key, that's the only one that matters.
+                pairs.dedup_by_key_keep_last();
+
+                !pairs.is_empty()
+            });
+
+            upserts
+        });
+
+        if let Some(rt) = Runtime::runtime() {
+            sorted.mark_sharded_workers(rt.layout().local_workers());
+        }
+        let sharded = sorted.dyn_shard_pairs(factories.input_pairs_factory);
+
+        let merged = sharded
             .apply_owned(move |upserts| {
                 struct UpsertPosition<T> {
                     upserts: T,
                     position: usize,
                 }
-                // Sort the vectors by key, preserving the history of updates for each key.
-                // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
                 let mut upserts = upserts
                     .into_iter()
-                    .filter_map(|mut upserts| {
-                        upserts.sort_by_key();
-
-                        // Find the last upsert for each key, that's the only one that matters.
-                        upserts.dedup_by_key_keep_last();
-
+                    .filter_map(|upserts| {
                         upserts.is_empty().not().then(|| UpsertPosition {
                             upserts,
                             position: 0,
@@ -555,10 +568,10 @@ impl RootCircuit {
 
                 result
             })
-            // UpsertHandle shards its inputs.
+            // Key-preserving merge of the sharded pairs.
             .mark_sharded();
 
-        sorted.update_set::<B>(persistent_id, &factories.update_set_factories)
+        merged.update_set::<B>(persistent_id, &factories.update_set_factories)
     }
 
     #[track_caller]
@@ -870,57 +883,6 @@ impl RootCircuit {
     }
 }
 
-/*
-// We may want to uncomment and use the following operator based on
-// profiling data.  At the moment the `Input` operator assembles input
-// tuples into batches as they are received from `CollectionHandle`s.
-// Since `CollectionHandle` doesn't consistently map keys to workers,
-// resulting batches may need to be re-sharded by the next operator.
-// It may be more efficient to shard update vectors received from
-// `CollectionHandle` directly without paying the cost of assembling
-// them into batches first.  This is what this operator does.
-impl<K, V> Stream<Circuit<()>, Vec<(K, V)>>
-where
-    K: Send + Hash + Clone + 'static,
-    V: Send + Clone + 'static,
-{
-    fn shard_vec(&self) -> Stream<Circuit<()>, Vec<(K, V)>> {
-        Runtime::runtime()
-            .map(|runtime| {
-                let num_workers = runtime.num_workers();
-
-                if num_workers == 1 {
-                    self.clone()
-                } else {
-                    let (sender, receiver) = self.circuit().new_exchange_operators(
-                        &runtime,
-                        Runtime::worker_index(),
-                        move |batch: Vec<(K, V)>, batches: &mut Vec<Vec<(K, V)>>| {
-                            for _ in 0..num_workers {
-                                batches.push(Vec::with_capacity(batch.len() / num_workers));
-                            }
-
-                            for (key, val) in batch.into_iter() {
-                                let batch_index = fxhash::hash(&key) % num_workers;
-                                batches[batch_index].push((key, val))
-                            }
-                        },
-                        move |output: &mut Vec<(K, V)>, batch: Vec<(K, V)>| {
-                            if output.is_empty() {
-                                output.reserve(batch.len() * num_workers);
-                            }
-                            output.extend(batch);
-                        },
-                    );
-
-                    self.circuit().add_exchange(sender, receiver, self)
-                }
-            })
-            .unwrap_or_else(|| self.clone())
-    }
-}
-*/
-
 /// A handle used to write data to an input stream created by
 /// [`add_input_zset`](`RootCircuit::add_input_zset`),
 /// and [`add_input_indexed_zset`](`RootCircuit::add_input_indexed_zset`)
@@ -1157,9 +1119,9 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
     }
 }
 
-pub trait HashFunc<K: ?Sized>: Fn(&K) -> u32 + Send + Sync {}
+pub trait HashFunc<K: ?Sized>: Fn(&K) -> u64 + Send + Sync {}
 
-impl<K: ?Sized, F> HashFunc<K> for F where F: Fn(&K) -> u32 + Send + Sync {}
+impl<K: ?Sized, F> HashFunc<K> for F where F: Fn(&K) -> u64 + Send + Sync {}
 
 /// A handle used to write data to an input stream created by
 /// [`add_input_set`](`RootCircuit::add_input_set`) and
@@ -1219,7 +1181,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> UpsertHandle<K, V> {
             pair_factory,
             pairs_factory,
             input_handle,
-            Arc::new(|k: &K| k.default_hash() as u32) as Arc<dyn HashFunc<K>>,
+            Arc::new(|k: &K| k.default_hash()) as Arc<dyn HashFunc<K>>,
         )
     }
 
@@ -1390,8 +1352,8 @@ mod test {
         },
         trace::{BatchReaderFactories, Builder, Cursor},
         typed_batch::{
-            BatchReader, DynBatch, DynBatchReader, DynOrdZSet, OrdIndexedZSet, OrdZSet, TypedBatch,
-            TypedBox,
+            BatchReader, DynBatch, DynBatchReader, DynOrdZSet, OrdIndexedZSet, OrdZSet,
+            SpineSnapshot, TypedBatch, TypedBox,
         },
         utils::Tup2,
         zset,
@@ -2523,5 +2485,127 @@ mod test {
             input_map_with_waterline_gc_updates1,
             output_map_with_waterline_gc_updates1,
         );
+    }
+
+    // Streams built from an `UpsertHandle` are marked sharded, so this join
+    // trusts the handle's record placement instead of re-sharding its map
+    // side.  The test verifies that the placement matches the shard
+    // operator's `default_hash() % workers`: any disagreement (e.g. a
+    // truncated hash) sends a key's two sides to different workers and drops
+    // it from the join output.  Worker count 3 is essential; placement
+    // functions that differ only in high hash bits still agree modulo a
+    // power of two.
+    fn map_join_test_circuit(
+        circuit: &RootCircuit,
+    ) -> AnyResult<(
+        MapHandle<i64, i64, i64>,
+        ZSetHandle<i64>,
+        OutputHandle<SpineSnapshot<OrdZSet<Tup2<i64, i64>>>>,
+    )> {
+        let (map_stream, map_handle) = circuit.add_input_map::<i64, i64, i64, _>(|v, u| *v = *u);
+        let (zset_stream, zset_handle) = circuit.add_input_zset::<i64>();
+        let joined = map_stream.join(&zset_stream.map_index(|&k| (k, ())), |&k, &v, &()| {
+            Tup2(k, v)
+        });
+        Ok((map_handle, zset_handle, joined.accumulate_output()))
+    }
+
+    fn map_join_test(workers: usize) {
+        const KEYS: i64 = 1000;
+
+        let (mut dbsp, (map_handle, zset_handle, output_handle)) =
+            Runtime::init_circuit(workers, |circuit| map_join_test_circuit(circuit)).unwrap();
+
+        for key in 0..KEYS {
+            map_handle.push(key, Update::Insert(key));
+            zset_handle.push(key, 1);
+        }
+        dbsp.transaction().unwrap();
+
+        let output = output_handle.concat().consolidate();
+        assert_eq!(
+            output.len(),
+            KEYS as usize,
+            "join with {workers} workers lost {} of {KEYS} keys",
+            KEYS as usize - output.len(),
+        );
+
+        dbsp.kill().unwrap();
+    }
+
+    #[test]
+    fn map_join_test_mt3() {
+        map_join_test(3);
+    }
+
+    #[test]
+    fn map_join_test_mt4() {
+        map_join_test(4);
+    }
+
+    // Set-input variant of `map_join_test`: `add_input_set` streams are also
+    // marked sharded, and `plus` propagates the mark, so `distinct` trusts
+    // the handle's placement.  A key placed differently from the re-sharded
+    // zset side lives on two workers and `distinct` emits it twice.
+    // The sum must run on the inner dynamic streams: sharded marks are cached
+    // per stream value type, and the typed streams don't carry them.
+    fn set_join_test_circuit(
+        circuit: &RootCircuit,
+    ) -> AnyResult<(
+        SetHandle<i64>,
+        ZSetHandle<i64>,
+        OutputHandle<SpineSnapshot<OrdZSet<i64>>>,
+    )> {
+        let (set_stream, set_handle) = circuit.add_input_set::<i64>();
+        let (zset_stream, zset_handle) = circuit.add_input_zset::<i64>();
+        let factories = BatchReaderFactories::new::<i64, (), ZWeight>();
+        let summed: Stream<_, OrdZSet<i64>> = set_stream
+            .inner()
+            .plus(&zset_stream.inner().dyn_shard(&factories))
+            .typed();
+        let distinct = summed.distinct();
+        Ok((set_handle, zset_handle, distinct.accumulate_output()))
+    }
+
+    fn set_join_test(workers: usize) {
+        const KEYS: i64 = 1000;
+
+        let (mut dbsp, (set_handle, zset_handle, output_handle)) =
+            Runtime::init_circuit(workers, |circuit| set_join_test_circuit(circuit)).unwrap();
+
+        for key in 0..KEYS {
+            set_handle.push(key, true);
+            zset_handle.push(key, 1);
+        }
+        dbsp.transaction().unwrap();
+
+        let output = output_handle.concat().consolidate();
+        let mut duplicates = 0;
+        let mut keys = 0;
+        let mut cursor = output.inner().cursor();
+        while cursor.key_valid() {
+            if *cursor.weight().downcast_checked::<ZWeight>() != 1 {
+                duplicates += 1;
+            }
+            keys += 1;
+            cursor.step_key();
+        }
+        assert_eq!(
+            (keys, duplicates),
+            (KEYS as usize, 0),
+            "distinct with {workers} workers emitted {duplicates} keys twice",
+        );
+
+        dbsp.kill().unwrap();
+    }
+
+    #[test]
+    fn set_join_test_mt3() {
+        set_join_test(3);
+    }
+
+    #[test]
+    fn set_join_test_mt4() {
+        set_join_test(4);
     }
 }

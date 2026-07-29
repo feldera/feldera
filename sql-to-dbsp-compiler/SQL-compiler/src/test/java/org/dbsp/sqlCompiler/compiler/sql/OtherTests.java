@@ -414,7 +414,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String rustHandlesTest = """
                 #[test]
                 pub fn test() {
-                    let (mut circuit, (person, errors, adult) ) = circuit(CircuitConfig::with_workers(2)).unwrap();
+                    let (mut circuit, (person, errors, adult) ) = circuit(CircuitConfig::with_workers(3)).unwrap();
                     // Feed two input records to the circuit.
                     // First input has a count of "1"
                     person.push( (SqlString::from_ref("Bob"), Some(12), Some(true)).into(), 1 );
@@ -434,7 +434,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     use dbsp_adapters::{CircuitCatalog, RecordFormat};
                     use feldera_types::format::csv::CsvFormatConfig;
 
-                    let (mut circuit, catalog) = circuit(CircuitConfig::with_workers(2))
+                    let (mut circuit, catalog) = circuit(CircuitConfig::with_workers(3))
                         .expect("Failed to build circuit");
                     let persons = catalog
                         .input_collection_handle(&SqlIdentifier::from("PERSON"))
@@ -513,7 +513,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     use dbsp_adapters::{CircuitCatalog, RecordFormat};
                     use feldera_types::format::json::JsonFlavor;
                 
-                    let mut circuitAndStreams = circuit(CircuitConfig::with_workers(2usize)).unwrap();
+                    let mut circuitAndStreams = circuit(CircuitConfig::with_workers(3usize)).unwrap();
                     let streams: Catalog = circuitAndStreams.1;
                     let t = &SqlIdentifier::new("t", false);
                     let input = streams.input_collection_handle(t).unwrap();

@@ -92,7 +92,7 @@ public class ProfilingTests extends StreamingTestBase {
                 // a file called "mem.txt".
                 pub fn test() {
                     let (mut circuit, streams) = circuit(
-                        CircuitConfig::with_workers(2)).expect("could not build circuit");
+                        CircuitConfig::with_workers(3)).expect("could not build circuit");
                     // uncomment if you want a CPU profile
                     // let _ = circuit.enable_cpu_profiler();
                     let start = SystemTime::now();
@@ -158,7 +158,7 @@ public class ProfilingTests extends StreamingTestBase {
                 #[test]
                 pub fn test() {
                     let (mut circuit, streams) = circuit(
-                        CircuitConfig::with_workers(2)).expect("could not build circuit");
+                        CircuitConfig::with_workers(3)).expect("could not build circuit");
                     let _ = circuit.enable_cpu_profiler();
                     for i in 0..10000 {
                         let data = zset!(Tup1::new(Some(i)) => 1);

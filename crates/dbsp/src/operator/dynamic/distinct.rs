@@ -328,6 +328,11 @@ where
                                     new_v.from_refs(k, v);
                                 }),
                             )
+                            // Records the co-location that distinct needs:
+                            // all values of key `h` sit on one worker.  The
+                            // placement is `h % workers`, not the canonical
+                            // `h.default_hash() % workers`, so `by_hash` must
+                            // not feed any operator outside this region.
                             .mark_sharded();
                     let distinct =
                         Stream::dyn_distinct_inner(&by_hash, &factories.distinct_factories);
