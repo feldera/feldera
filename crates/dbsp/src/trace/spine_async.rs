@@ -112,6 +112,13 @@ static LEVEL_NAMES: [&str; MAX_LEVELS] = [
 /// Configurable via `dev_tweaks.max_level0_batch_size_records`.
 pub(crate) const MAX_LEVEL0_BATCH_SIZE_RECORDS: u16 = 14_999;
 
+/// Number of loose level-0 batches at which the spine starts a background
+/// merge, i.e., `MERGE_COUNTS[0].start()`.
+///
+/// A spine holding fewer level-0 batches than this merges nothing until
+/// something else asks it to, such as a compaction request or memory pressure.
+pub(crate) const MIN_LEVEL0_MERGE_BATCHES: usize = 8;
+
 fn scope_tokio_merger_locals<F>(
     worker_index: usize,
     buffer_cache: Arc<BufferCache>,
@@ -264,7 +271,7 @@ where
         /// The minimum number of batches to merge is key to performance.  The
         /// maximum number seems much less important.
         const MERGE_COUNTS: [RangeInclusive<usize>; MAX_LEVELS] = [
-            8..=128,
+            MIN_LEVEL0_MERGE_BATCHES..=128,
             8..=64,
             3..=64,
             3..=64,
