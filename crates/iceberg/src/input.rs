@@ -33,13 +33,18 @@ use feldera_types::{
     program_schema::{Field, Relation},
     transport::iceberg::{IcebergCatalogType, IcebergReaderConfig, IcebergTransactionMode},
 };
-use futures_util::StreamExt;
+use futures_util::{stream, StreamExt};
 use iceberg::CatalogBuilder;
 use iceberg::{
+    arrow::ArrowReaderBuilder,
     io::{FileIO, FileIOBuilder, StorageFactory},
-    spec::SnapshotRef,
+    scan::{FileScanTask, FileScanTaskStream},
+    spec::{
+        DataContentType, DataFile, ManifestStatus, NameMapping, Operation,
+        SchemaRef as IcebergSchemaRef, SnapshotRef, TableMetadata, DEFAULT_SCHEMA_NAME_MAPPING,
+    },
     table::{StaticTable, Table as IcebergTable},
-    Catalog, TableIdent,
+    Catalog, Runtime, TableIdent,
 };
 use iceberg_catalog_glue::{
     GlueCatalogBuilder, AWS_ACCESS_KEY_ID, AWS_PROFILE_NAME, AWS_REGION_NAME,
@@ -186,7 +191,6 @@ enum IcebergPhase {
 }
 
 /// Prometheus-style metrics exported by the Iceberg input connector.
-// TODO(#6165): follow-mode metrics land with follow mode.
 struct IcebergMetrics {
     /// Current phase of the connector (see [`IcebergPhase`]).
     phase: Atomic<IcebergPhase>,
@@ -199,6 +203,10 @@ struct IcebergMetrics {
     /// Sequence number of the ingested Iceberg snapshot;
     /// [`SEQUENCE_METRIC_UNSET`] until the snapshot has been read.
     last_ingested_sequence_number: AtomicU64,
+    /// Number of Iceberg snapshots ingested in follow mode.
+    follow_snapshots_total: AtomicU64,
+    /// Total records ingested in follow mode (inserts plus deletes).
+    follow_records_total: AtomicU64,
 }
 
 /// Sentinel stored in the sequence-number gauge before a value is available.
@@ -212,6 +220,8 @@ impl IcebergMetrics {
             snapshot_records_total: AtomicU64::new(0),
             snapshot_transaction_starts: AtomicU64::new(0),
             last_ingested_sequence_number: AtomicU64::new(SEQUENCE_METRIC_UNSET),
+            follow_snapshots_total: AtomicU64::new(0),
+            follow_records_total: AtomicU64::new(0),
         }
     }
 
@@ -268,6 +278,18 @@ impl ConnectorMetrics for IcebergMetrics {
                 "Sequence number of the Iceberg snapshot ingested by this connector (-1 if none yet).",
                 ValueType::Gauge,
                 self.last_ingested_sequence_number_metric(),
+            ),
+            (
+                "input_connector_iceberg_follow_snapshots_total",
+                "Number of Iceberg snapshots ingested in follow mode.",
+                ValueType::Counter,
+                self.follow_snapshots_total.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "input_connector_iceberg_follow_records_total",
+                "Total records ingested in follow mode (inserts plus deletes).",
+                ValueType::Counter,
+                self.follow_records_total.load(Ordering::Relaxed) as f64,
             ),
         ]
     }
@@ -365,6 +387,16 @@ impl IcebergResumeInfo {
         }
     }
 
+    /// Resume point after fully ingesting follow snapshot `snapshot_id`: resume
+    /// by following the table after it. `eoi` is false; follow mode never ends.
+    fn follow(snapshot_id: i64) -> Self {
+        Self {
+            snapshot_id: Some(snapshot_id),
+            snapshot_timestamp: None,
+            eoi: false,
+        }
+    }
+
     fn to_resume(&self) -> Resume {
         Resume::Seek {
             seek: serde_json::to_value(self).unwrap(),
@@ -386,6 +418,85 @@ enum QueueEntry {
     /// transaction is committed (not rolled back), so a retry may re-emit rows
     /// (at-least-once).
     Rollback,
+}
+
+/// How often follow mode polls the catalog for new snapshots.
+const FOLLOW_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// A data file a snapshot added or removed. `DataFile` omits its partition-spec
+/// id, so carry it from the manifest: the Arrow reader needs it to fill in
+/// identity-partition columns kept in partition metadata, not in the data file.
+struct ChangedFile {
+    data_file: DataFile,
+    partition_spec_id: i32,
+}
+
+/// One snapshot's changelog versus its predecessor: files it added (rows to
+/// insert) and files it removed (rows to delete).
+struct SnapshotDelta {
+    added: Vec<ChangedFile>,
+    removed: Vec<ChangedFile>,
+}
+
+impl SnapshotDelta {
+    fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.removed.is_empty()
+    }
+}
+
+/// Snapshots committed after `after_id`, oldest first, found by walking the
+/// parent chain back from the current snapshot. `None` returns the whole
+/// ancestry. Errors if `after_id` is not an ancestor (it was expired or the
+/// table was rolled back), since the connector can no longer follow it.
+fn snapshots_after(
+    metadata: &TableMetadata,
+    after_id: Option<i64>,
+) -> Result<Vec<SnapshotRef>, AnyError> {
+    let mut chain = Vec::new();
+    let mut current = metadata.current_snapshot().cloned();
+    while let Some(snapshot) = current {
+        if Some(snapshot.snapshot_id()) == after_id {
+            chain.reverse();
+            return Ok(chain);
+        }
+        let parent = snapshot.parent_snapshot_id();
+        chain.push(snapshot);
+        current = parent.and_then(|id| metadata.snapshot_by_id(id).cloned());
+    }
+
+    match after_id {
+        // No pinned snapshot: the whole ancestry is new.
+        None => {
+            chain.reverse();
+            Ok(chain)
+        }
+        Some(after_id) => bail!(
+            "pinned Iceberg snapshot {after_id} is no longer part of the table's current history; it may have been expired or the table may have been rolled back. Restart the connector to re-read from the current snapshot."
+        ),
+    }
+}
+
+/// Whether a snapshot only rewrites files without changing table contents
+/// (compaction / manifest rewrite, `operation = replace`). Follow mode skips
+/// such snapshots: diffing them would produce insert/delete churn that cancels.
+fn is_noop_operation(snapshot: &SnapshotRef) -> bool {
+    snapshot.summary().operation == Operation::Replace
+}
+
+/// Parse the table's default name mapping (property
+/// `schema.name-mapping.default`), used by the reader to resolve field ids for
+/// Parquet files that store column names but not field ids.
+fn table_name_mapping(table: &IcebergTable) -> Result<Option<Arc<NameMapping>>, AnyError> {
+    table
+        .metadata()
+        .properties()
+        .get(DEFAULT_SCHEMA_NAME_MAPPING)
+        .map(|json| serde_json::from_str::<NameMapping>(json))
+        .transpose()
+        .map(|mapping| mapping.map(Arc::new))
+        .map_err(|e| {
+            anyhow!("error parsing the table's '{DEFAULT_SCHEMA_NAME_MAPPING}' property: {e}")
+        })
 }
 
 /// Integrated input connector that reads from an Iceberg table.
@@ -458,8 +569,11 @@ impl IcebergInputReader {
             bail!("invalid Iceberg connector configuration: 'num_parsers' must be greater than 0");
         }
 
-        if endpoint.config.follow() {
-            bail!("'{}' mode is not yet supported", endpoint.config.mode);
+        if endpoint.config.follow() && endpoint.config.catalog_type.is_none() {
+            bail!(
+                "'{}' mode requires an Iceberg catalog: set the 'catalog_type' property. The 'metadata_location' property points at a fixed table snapshot and cannot observe new commits.",
+                endpoint.config.mode
+            );
         }
 
         // Register metrics here rather than at endpoint construction: the
@@ -1002,6 +1116,375 @@ impl IcebergInputEndpointInner {
         );
     }
 
+    /// Allocate a transaction for the next follow snapshot, or `None` when
+    /// `transaction_mode` is `none`. Each followed snapshot is one transaction.
+    fn allocate_follow_transaction(&self) -> Option<Option<String>> {
+        match self.config.transaction_mode {
+            IcebergTransactionMode::None => None,
+            IcebergTransactionMode::Snapshot => {
+                let index = self.transaction_index.fetch_add(1, Ordering::AcqRel);
+                Some(Some(format!("follow-{index}")))
+            }
+        }
+    }
+
+    /// Commit the current follow transaction (if any) and record a
+    /// checkpointable resume point after fully ingesting follow snapshot
+    /// `snapshot_id`. A restart resumes by following the table after it.
+    fn push_follow_boundary(&self, snapshot_id: i64) {
+        self.queue.push_entry(
+            InputQueueEntry::new_with_aux(
+                Utc::now(),
+                QueueEntry::ResumeInfo(Some(IcebergResumeInfo::follow(snapshot_id))),
+            )
+            .with_commit_transaction(true),
+            Vec::new(),
+        );
+    }
+
+    /// Iceberg field ids for `used_columns`, in the same order, for projecting
+    /// the Arrow reader. Columns absent from `schema` are skipped.
+    fn project_field_ids(schema: &IcebergSchemaRef, used_columns: &[String]) -> Vec<i32> {
+        let name_to_id: std::collections::HashMap<&str, i32> = schema
+            .as_struct()
+            .fields()
+            .iter()
+            .map(|field| (field.name.as_str(), field.id))
+            .collect();
+        used_columns
+            .iter()
+            .filter_map(|name| name_to_id.get(name.as_str()).copied())
+            .collect()
+    }
+
+    /// Compute the data-file changelog of `snapshot` relative to its parent by
+    /// diffing manifests. Reads only the manifests this snapshot added, so the
+    /// cost is proportional to the change, not the table size.
+    ///
+    /// Rejects merge-on-read delete files (position or equality deletes) with a
+    /// clear error: v1 follow mode handles copy-on-write changes only.
+    async fn snapshot_delta(
+        &self,
+        table: &IcebergTable,
+        snapshot: &SnapshotRef,
+    ) -> Result<SnapshotDelta, AnyError> {
+        let file_io = table.file_io();
+        let metadata = table.metadata();
+        let snapshot_id = snapshot.snapshot_id();
+
+        let manifest_list = snapshot
+            .load_manifest_list(file_io, metadata)
+            .await
+            .map_err(|e| anyhow!("error reading manifest list of snapshot {snapshot_id}: {e}"))?;
+
+        let mut added = Vec::new();
+        let mut removed = Vec::new();
+
+        for manifest_file in manifest_list.entries() {
+            // Only manifests this snapshot wrote carry its ADDED/DELETED
+            // entries; the rest are inherited unchanged. Skipping them keeps the
+            // diff proportional to the change.
+            if manifest_file.added_snapshot_id != snapshot_id {
+                continue;
+            }
+
+            let manifest = manifest_file.load_manifest(file_io).await.map_err(|e| {
+                anyhow!(
+                    "error reading manifest '{}': {e}",
+                    manifest_file.manifest_path
+                )
+            })?;
+
+            for entry in manifest.entries() {
+                // Skip entries carried into this manifest from earlier snapshots
+                // (status EXISTING, attributed to a different snapshot id).
+                if entry.snapshot_id() != Some(snapshot_id) {
+                    continue;
+                }
+
+                if entry.content_type() != DataContentType::Data {
+                    bail!(
+                        "snapshot {snapshot_id} of the Iceberg table adds a merge-on-read delete file ('{}'); follow mode does not yet support merge-on-read deletes (position or equality delete files). Configure the writer to use copy-on-write, or track merge-on-read support in issue #6165.",
+                        entry.file_path()
+                    );
+                }
+
+                let changed = ChangedFile {
+                    data_file: entry.data_file().clone(),
+                    partition_spec_id: manifest_file.partition_spec_id,
+                };
+                match entry.status() {
+                    ManifestStatus::Added => added.push(changed),
+                    ManifestStatus::Deleted => removed.push(changed),
+                    ManifestStatus::Existing => {}
+                }
+            }
+        }
+
+        Ok(SnapshotDelta { added, removed })
+    }
+
+    /// Build an Arrow record-batch stream over `files`, projecting `field_ids`.
+    ///
+    /// Uses the iceberg core reader so field-id projection, name mapping, and
+    /// identity-partition constants are handled correctly. `deletes` is empty:
+    /// merge-on-read is rejected earlier in [`snapshot_delta`].
+    fn read_changed_files_stream(
+        &self,
+        table: &IcebergTable,
+        schema: &IcebergSchemaRef,
+        field_ids: &[i32],
+        name_mapping: &Option<Arc<NameMapping>>,
+        files: &[ChangedFile],
+    ) -> Result<stream::BoxStream<'static, Result<RecordBatch, String>>, AnyError> {
+        let metadata = table.metadata();
+        let tasks: Vec<Result<FileScanTask, iceberg::Error>> = files
+            .iter()
+            .map(|file| {
+                let data_file = &file.data_file;
+                Ok(FileScanTask {
+                    file_size_in_bytes: data_file.file_size_in_bytes(),
+                    start: 0,
+                    length: data_file.file_size_in_bytes(),
+                    record_count: Some(data_file.record_count()),
+                    data_file_path: data_file.file_path().to_string(),
+                    data_file_format: data_file.file_format(),
+                    schema: schema.clone(),
+                    project_field_ids: field_ids.to_vec(),
+                    predicate: None,
+                    deletes: vec![],
+                    // Both `partition` and `partition_spec` must be set for the
+                    // reader to materialize identity-partition column constants.
+                    partition: Some(data_file.partition().clone()),
+                    partition_spec: metadata
+                        .partition_spec_by_id(file.partition_spec_id)
+                        .cloned(),
+                    name_mapping: name_mapping.clone(),
+                    case_sensitive: false,
+                })
+            })
+            .collect();
+
+        let task_stream: FileScanTaskStream = stream::iter(tasks).boxed();
+
+        let runtime = Runtime::try_current()
+            .map_err(|e| anyhow!("no tokio runtime available for the Iceberg reader: {e}"))?;
+        let reader = ArrowReaderBuilder::new(table.file_io().clone(), runtime)
+            .with_data_file_concurrency_limit(self.config.num_parsers as usize)
+            .build();
+
+        let batch_stream = reader
+            .read(task_stream)
+            .map_err(|e| anyhow!("error starting Iceberg data-file read: {e}"))?
+            .stream()
+            .map(|batch| batch.map_err(|e| format!("error reading Iceberg data file: {e}")))
+            .boxed();
+
+        Ok(batch_stream)
+    }
+
+    /// Read `files` and push their rows to the circuit with `polarity`, wrapped
+    /// in `transaction`. Retries the whole read on transient failure, mirroring
+    /// [`execute_df`].
+    #[allow(clippy::too_many_arguments)]
+    async fn push_changed_files(
+        &self,
+        table: &IcebergTable,
+        schema: &IcebergSchemaRef,
+        field_ids: &[i32],
+        name_mapping: &Option<Arc<NameMapping>>,
+        files: &[ChangedFile],
+        polarity: bool,
+        transaction: Option<Option<String>>,
+        descr: &str,
+        input_stream: &mut dyn ArrowStream,
+        receiver: &mut Receiver<PipelineState>,
+    ) -> Result<usize, AnyError> {
+        if files.is_empty() {
+            return Ok(0);
+        }
+
+        let max_retries = self.config.max_retries();
+        let mut retry_count = 0;
+        loop {
+            let result =
+                match self.read_changed_files_stream(table, schema, field_ids, name_mapping, files)
+                {
+                    Ok(stream) => self
+                        .drain_batch_stream(
+                            stream,
+                            polarity,
+                            transaction.clone(),
+                            input_stream,
+                            receiver,
+                        )
+                        .await
+                        .map_err(|e| anyhow!(e)),
+                    Err(e) => Err(e),
+                };
+
+            match result {
+                Ok(total) => {
+                    self.metrics
+                        .follow_records_total
+                        .fetch_add(total as u64, Ordering::Relaxed);
+                    self.consumer
+                        .update_connector_health(ConnectorHealth::healthy());
+                    return Ok(total);
+                }
+                Err(e) => {
+                    // Commit any open transaction and mark a checkpointable
+                    // boundary between retries; rows already queued are not
+                    // rolled back, so a retry may re-emit them (at-least-once).
+                    self.queue.push_entry(
+                        InputQueueEntry::new_with_aux(Utc::now(), QueueEntry::Rollback)
+                            .with_commit_transaction(true),
+                        Vec::new(),
+                    );
+
+                    retry_count += 1;
+                    if retry_count > max_retries {
+                        let message =
+                            format!("error reading {descr} after {retry_count} attempt(s): {e}");
+                        self.consumer
+                            .update_connector_health(ConnectorHealth::unhealthy(&message));
+                        return Err(anyhow!(message));
+                    }
+                    let backoff_delay = calculate_backoff_delay(retry_count - 1);
+                    warn!(
+                        "iceberg {}: error reading {descr}: {e}; retrying in {backoff_delay:?} (attempt {retry_count})",
+                        &self.endpoint_name
+                    );
+                    sleep(backoff_delay).await;
+                }
+            }
+        }
+    }
+
+    /// Follow the table: poll for new snapshots after `start_snapshot_id` and
+    /// ingest each one's changes, until the worker task is canceled.
+    async fn follow_loop(
+        &self,
+        table: Arc<IcebergTable>,
+        used_columns: &[String],
+        start_snapshot_id: Option<i64>,
+        input_stream: &mut dyn ArrowStream,
+        receiver: &mut Receiver<PipelineState>,
+    ) {
+        self.metrics.set_phase(IcebergPhase::Follow);
+        if let Err(e) = self
+            .follow_loop_inner(
+                table,
+                used_columns,
+                start_snapshot_id,
+                input_stream,
+                receiver,
+            )
+            .await
+        {
+            self.consumer.error(true, e, Some("iceberg-follow"));
+        }
+    }
+
+    async fn follow_loop_inner(
+        &self,
+        table: Arc<IcebergTable>,
+        used_columns: &[String],
+        start_snapshot_id: Option<i64>,
+        input_stream: &mut dyn ArrowStream,
+        receiver: &mut Receiver<PipelineState>,
+    ) -> Result<(), AnyError> {
+        // Projection and name mapping are fixed by the table schema; compute
+        // them once. Schema evolution across followed snapshots is a v2 concern.
+        let schema = table.metadata().current_schema().clone();
+        let field_ids = Self::project_field_ids(&schema, used_columns);
+        let name_mapping = table_name_mapping(&table)?;
+
+        let mut last_snapshot_id = start_snapshot_id;
+
+        loop {
+            wait_running(receiver).await;
+
+            // Refresh the table to observe snapshots committed since the last
+            // poll. Retries transient catalog throttling.
+            let table = self
+                .open_table_with_retries()
+                .await
+                .map_err(|e| anyhow!("error refreshing the Iceberg table: {e}"))?;
+
+            let new_snapshots = snapshots_after(table.metadata(), last_snapshot_id)?;
+
+            if new_snapshots.is_empty() {
+                sleep(FOLLOW_POLL_INTERVAL).await;
+                continue;
+            }
+
+            for snapshot in new_snapshots {
+                wait_running(receiver).await;
+                let snapshot_id = snapshot.snapshot_id();
+
+                // Compaction and other metadata-only rewrites carry no logical
+                // change; advance past them without reading.
+                if is_noop_operation(&snapshot) {
+                    self.push_follow_boundary(snapshot_id);
+                    last_snapshot_id = Some(snapshot_id);
+                    continue;
+                }
+
+                let delta = self.snapshot_delta(&table, &snapshot).await?;
+
+                if !delta.is_empty() {
+                    let transaction = self.allocate_follow_transaction();
+
+                    // Inserts before deletes: a followed snapshot's added and
+                    // removed files are disjoint, so ordering only affects
+                    // intermediate state, not the final Z-set.
+                    self.push_changed_files(
+                        &table,
+                        &schema,
+                        &field_ids,
+                        &name_mapping,
+                        &delta.added,
+                        true,
+                        transaction.clone(),
+                        &format!("snapshot {snapshot_id} inserts"),
+                        input_stream,
+                        receiver,
+                    )
+                    .await?;
+                    self.push_changed_files(
+                        &table,
+                        &schema,
+                        &field_ids,
+                        &name_mapping,
+                        &delta.removed,
+                        false,
+                        transaction,
+                        &format!("snapshot {snapshot_id} deletes"),
+                        input_stream,
+                        receiver,
+                    )
+                    .await?;
+                }
+
+                // Commit the snapshot's transaction and record the resume point.
+                self.push_follow_boundary(snapshot_id);
+                last_snapshot_id = Some(snapshot_id);
+
+                self.metrics
+                    .follow_snapshots_total
+                    .fetch_add(1, Ordering::Relaxed);
+                self.metrics
+                    .set_last_ingested_sequence_number(snapshot.sequence_number());
+                info!(
+                    "iceberg {}: ingested follow snapshot {snapshot_id} (sequence number {})",
+                    &self.endpoint_name,
+                    snapshot.sequence_number()
+                );
+            }
+        }
+    }
+
     async fn worker_task_inner(
         self: Arc<Self>,
         mut input_stream: Box<dyn ArrowStream>,
@@ -1092,25 +1575,43 @@ impl IcebergInputEndpointInner {
                 );
             }
 
-            // Terminal checkpoint boundary: the snapshot is fully ingested.
-            // Committing any in-progress transaction and recording the
-            // end-of-input state means a checkpoint taken after completion
-            // resumes straight into the eoi state, never re-reading the snapshot.
-            self.queue.push_entry(
-                InputQueueEntry::new_with_aux(
-                    Utc::now(),
-                    QueueEntry::ResumeInfo(Some(IcebergResumeInfo::eoi(snapshot_id))),
-                )
-                .with_commit_transaction(true),
-                Vec::new(),
-            );
+            if !self.config.follow() {
+                // Snapshot fully ingested. Commit any open transaction and
+                // record end-of-input, so a checkpoint here resumes into the eoi
+                // state without re-reading the snapshot.
+                self.queue.push_entry(
+                    InputQueueEntry::new_with_aux(
+                        Utc::now(),
+                        QueueEntry::ResumeInfo(Some(IcebergResumeInfo::eoi(snapshot_id))),
+                    )
+                    .with_commit_transaction(true),
+                    Vec::new(),
+                );
+            } else if let Some(snapshot_id) = snapshot_id {
+                // snapshot_and_follow: pin a follow resume point at the ingested
+                // snapshot, so a restart follows from it instead of re-reading.
+                self.push_follow_boundary(snapshot_id);
+            }
         }
 
-        // Snapshot-only connector: nothing follows the snapshot, so the
-        // connector is done once the snapshot has been read.
-        self.metrics.set_phase(IcebergPhase::Completed);
-
-        self.consumer.eoi();
+        if self.config.follow() {
+            // Follow until the worker task is canceled. `snapshot_id` is the
+            // start: the snapshot just ingested (snapshot_and_follow) or the
+            // resolved starting snapshot (follow-only).
+            self.follow_loop(
+                table.clone(),
+                &used_columns,
+                snapshot_id,
+                input_stream.as_mut(),
+                &mut receiver,
+            )
+            .await;
+        } else {
+            // Snapshot-only connector: nothing follows the snapshot, so the
+            // connector is done once the snapshot has been read.
+            self.metrics.set_phase(IcebergPhase::Completed);
+            self.consumer.eoi();
+        }
     }
 
     /// Open the table, retrying transient catalog throttling with backoff.
@@ -1490,9 +1991,9 @@ impl IcebergInputEndpointInner {
         snapshot_id: Option<i64>,
         schema: &Relation,
     ) -> Result<Vec<String>, ControllerError> {
-        if !self.config.snapshot() {
-            return Ok(Vec::new());
-        }
+        // Compute `used_columns` for both modes: follow reads no initial
+        // snapshot but still projects changed files by it. The datafusion table
+        // and timestamp validation below run only when a snapshot is read.
 
         // Validate the filter before `config_referenced_columns` extracts
         // column names from it, so an invalid filter fails with a parse error
@@ -1526,26 +2027,30 @@ impl IcebergInputEndpointInner {
             ));
         }
 
-        self.datafusion
-            .register_table("snapshot", Arc::new(provider))
-            .map_err(|e| {
-                ControllerError::input_transport_error(
-                    &self.endpoint_name,
-                    true,
-                    anyhow!("failed to register table snapshot with datafusion: {e}"),
-                )
-            })?;
+        // Follow-only mode skips this: it reads changed files through the Arrow
+        // reader, not the datafusion `snapshot` table.
+        if self.config.snapshot() {
+            self.datafusion
+                .register_table("snapshot", Arc::new(provider))
+                .map_err(|e| {
+                    ControllerError::input_transport_error(
+                        &self.endpoint_name,
+                        true,
+                        anyhow!("failed to register table snapshot with datafusion: {e}"),
+                    )
+                })?;
 
-        if let Some(timestamp_column) = &self.config.timestamp_column {
-            validate_timestamp_column(
-                &self.endpoint_name,
-                timestamp_column,
-                &self.datafusion,
-                schema,
-                "see Iceberg connector documentation for more details: https://docs.feldera.com/connectors/sources/iceberg"
-            )
-            .await?;
-        };
+            if let Some(timestamp_column) = &self.config.timestamp_column {
+                validate_timestamp_column(
+                    &self.endpoint_name,
+                    timestamp_column,
+                    &self.datafusion,
+                    schema,
+                    "see Iceberg connector documentation for more details: https://docs.feldera.com/connectors/sources/iceberg"
+                )
+                .await?;
+            };
+        }
 
         Ok(used_columns)
     }
@@ -1746,15 +2251,34 @@ impl IcebergInputEndpointInner {
                 .fetch_add(1, Ordering::Relaxed);
         }
 
-        let mut stream = dataframe
+        let stream = dataframe
             .execute_stream()
             .await
-            .map_err(|e| format!("{e:?}"))?;
+            .map_err(|e| format!("{e:?}"))?
+            .map(|batch| batch.map_err(|e| format!("{e:?}")))
+            .boxed();
 
         // The dataframe compiled and started streaming: the connector is healthy.
         self.consumer
             .update_connector_health(ConnectorHealth::healthy());
 
+        self.drain_batch_stream(stream, polarity, transaction, input_stream, receiver)
+            .await
+    }
+
+    /// Parse a record-batch stream on a pool of `num_parsers` tasks and push the
+    /// resulting buffers to the input queue in enqueue order.
+    ///
+    /// Shared by the snapshot read path ([`execute_df_inner`]) and the follow
+    /// read path ([`push_changed_files`]). Blocks while the pipeline is paused.
+    async fn drain_batch_stream(
+        &self,
+        mut stream: stream::BoxStream<'static, Result<RecordBatch, String>>,
+        polarity: bool,
+        transaction: Option<Option<String>>,
+        input_stream: &mut dyn ArrowStream,
+        receiver: &mut Receiver<PipelineState>,
+    ) -> Result<usize, String> {
         let mut num_batches = 0;
         let mut total_records = 0usize;
 
@@ -1817,8 +2341,7 @@ impl IcebergInputEndpointInner {
 
         while let Some(batch) = stream.next().await {
             wait_running(receiver).await;
-            let batch =
-                batch.map_err(|e| format!("error retrieving batch {num_batches}: {e:?}"))?;
+            let batch = batch.map_err(|e| format!("error retrieving batch {num_batches}: {e}"))?;
             num_batches += 1;
             total_records += batch.num_rows();
             job_queue.push_job((batch, timestamp)).await;
