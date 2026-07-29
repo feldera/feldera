@@ -89,7 +89,9 @@ def catalog():
                 "FELDERA_ICEBERG_S3_ENDPOINT", "http://localhost:9000"
             ),
             "s3.access-key-id": os.getenv("FELDERA_ICEBERG_S3_KEY", "minio"),
-            "s3.secret-access-key": os.getenv("FELDERA_ICEBERG_S3_SECRET", "miniopasswd"),
+            "s3.secret-access-key": os.getenv(
+                "FELDERA_ICEBERG_S3_SECRET", "miniopasswd"
+            ),
             "s3.region": os.getenv("FELDERA_ICEBERG_S3_REGION", "us-east-1"),
         },
     )
@@ -128,9 +130,7 @@ def main():
             cat.drop_table(args.table)
         except Exception:
             pass
-        table = cat.create_table(
-            args.table, SCHEMA, partition_spec=PARTITION_SPEC
-        )
+        table = cat.create_table(args.table, SCHEMA, partition_spec=PARTITION_SPEC)
     else:
         table = cat.load_table(args.table)
 
