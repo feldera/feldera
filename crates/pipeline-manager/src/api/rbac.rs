@@ -61,7 +61,7 @@ static ROUTE_MIN_ROLE: &[(&str, &str, Role)] = &[
     ("POST", "/v0/pipelines/{pipeline_name}/commit_transaction", Role::Write), // commit_transaction
     ("GET", "/v0/pipelines/{pipeline_name}/completion_status", Role::Read), // completion_status
     ("GET", "/v0/pipelines/{pipeline_name}/dataflow_graph", Role::Read), // get_pipeline_dataflow_graph
-    ("POST", "/v0/pipelines/{pipeline_name}/diff", Role::Read), // post_pipeline_diff (compile-only, no data/state change)
+    ("POST", "/v0/pipelines/{pipeline_name}/diff", Role::Write), // post_pipeline_diff (submits a candidate program to the shared compiler)
     ("POST", "/v0/pipelines/{pipeline_name}/dismiss_error", Role::Write), // post_pipeline_dismiss_error
     ("POST", "/v0/pipelines/{pipeline_name}/egress/{table_name}", Role::Write), // http_output
     ("GET", "/v0/pipelines/{pipeline_name}/events", Role::Read), // list_pipeline_events
@@ -89,7 +89,7 @@ static ROUTE_MIN_ROLE: &[(&str, &str, Role)] = &[
     ("GET", "/v0/pipelines/{pipeline_name}/time_series", Role::Read), // get_pipeline_time_series
     ("GET", "/v0/pipelines/{pipeline_name}/time_series_stream", Role::Read), // get_pipeline_time_series_stream
     ("POST", "/v0/pipelines/{pipeline_name}/update_runtime", Role::Write), // post_update_runtime
-    ("POST", "/v0/validate_program", Role::Read), // post_validate_program (compile-only, no data/state change)
+    ("POST", "/v0/validate_program", Role::Write), // post_validate_program (submits a program to the shared compiler)
     ("POST", "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/command", Role::Write), // post_pipeline_output_connector_command
     ("GET", "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats", Role::Read), // get_pipeline_output_connector_status
     // RBAC tenant/user management
@@ -433,15 +433,15 @@ mod test {
     /// A route that can change something never admits `read`. The exceptions
     /// are the POSTs that compile or profile: they take a body but leave no
     /// data or state behind.
+    /// Profiling is the one POST a reader may reach: it acts on a pipeline the
+    /// reader can already observe, and a bounded duration, not the role, is
+    /// what limits its cost. The compile routes are not exempt, because they
+    /// hand a caller-supplied program to the shared compiler.
     #[test]
     fn a_mutating_route_never_admits_read() {
-        let posts_that_change_nothing = [
-            "/v0/pipelines/{pipeline_name}/diff",
-            "/v0/pipelines/{pipeline_name}/samply_profile",
-            "/v0/validate_program",
-        ];
+        let posts_a_reader_may_make = ["/v0/pipelines/{pipeline_name}/samply_profile"];
         for (method, pattern, required) in ROUTE_MIN_ROLE {
-            if *method == "GET" || posts_that_change_nothing.contains(pattern) {
+            if *method == "GET" || posts_a_reader_may_make.contains(pattern) {
                 continue;
             }
             assert!(
@@ -481,6 +481,10 @@ mod test {
             Role::Write,
         );
         expect("GET", "/v0/pipelines/{pipeline_name}/query", Role::Write);
+        // Compiling a caller-supplied program is write authority, even though
+        // neither route persists anything.
+        expect("POST", "/v0/validate_program", Role::Write);
+        expect("POST", "/v0/pipelines/{pipeline_name}/diff", Role::Write);
         expect(
             "POST",
             "/v0/pipelines/{pipeline_name}/start_transaction",
