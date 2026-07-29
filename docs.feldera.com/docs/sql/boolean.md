@@ -111,11 +111,11 @@ The following table defines the `IS NOT FALSE` operator:
 <table>
   <tr>
     <th>TRUE</th>
-    <td>FALSE</td>
+    <td>TRUE</td>
   </tr>
   <tr>
     <th>FALSE</th>
-    <td>TRUE</td>
+    <td>FALSE</td>
   </tr>
   <tr>
     <th>NULL</th>
@@ -172,3 +172,5 @@ Casting a string to a Boolean applies the following algorithm:
 
 Notice that not all Boolean operations produce `NULL` results when an operand is
 `NULL`.
+
+:::

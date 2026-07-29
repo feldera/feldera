@@ -11,14 +11,14 @@ resolved in future releases.
 The following aggregate functions are not supported:
 `PERCENTILE_DISC`, `PERCENTILE_CONT`, `MODE`, `CORR`, `COVAR_POP`,
 `COVAR_SAMP`, `REGR_SLOPE`, `REGR_INTERCEPT`, `REGR_R2`, `JSON_AGG`,
-`JSON_OBJECT_AGG`, `VAR_POP`, `VAR_SAMP`, `LISTAGG`.
+`JSON_OBJECT_AGG`, `LISTAGG`.
 
 ## Window functions (`OVER` clause)
 
 ### Statistics window functions
 
-`NTILE`, `NTH_VALUE`, `PERCENT_RANK`, `CUME_DIST`, `VAR_POP`,
-`VAR_SAMP` window functions are not yet implemented.
+`NTILE`, `NTH_VALUE`, `PERCENT_RANK`, and `CUME_DIST` window
+functions are not yet implemented.
 
 ### `FIRST_VALUE` and `LAST_VALUE` limited to unbounded range
 
@@ -32,8 +32,11 @@ See [#3918](https://github.com/feldera/feldera/issues/3918).
 
 ### No `STRING` or `DOUBLE` types in `OVER` ordering
 
-Window functions using `ORDER BY` on `VARCHAR`/`STRING`,
-`DOUBLE`/`FLOAT` or `VARBINARY` columns are not yet supported.
+Windowed aggregate functions with frames (e.g., `SUM(x) OVER (...
+RANGE BETWEEN ...)`) do not yet support `ORDER BY` on
+`VARCHAR`/`STRING`, `DOUBLE`/`FLOAT`, or `VARBINARY` columns.  Plain
+window functions such as `ROW_NUMBER`, `RANK`, and `DENSE_RANK`
+support these types.
 See [#457](https://github.com/feldera/feldera/issues/457).
 
 
@@ -44,8 +47,9 @@ See [#457](https://github.com/feldera/feldera/issues/457).
 
 ### Multi-column `ORDER BY` in windows not supported
 
-Window functions with `ORDER BY` on multiple columns are not yet
-supported.
+Windowed aggregate functions with frames require `ORDER BY` on
+exactly one column.  Plain window functions such as `RANK` and
+`DENSE_RANK` support `ORDER BY` on multiple columns.
 See [#457](https://github.com/feldera/feldera/issues/457).
 
 ### Constant Window Boundaries
@@ -53,7 +57,7 @@ See [#457](https://github.com/feldera/feldera/issues/457).
 Window boundaries must be constant expressions. For example, `RANGE
 BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW` is valid. But `RANGE
 BETWEEN INTERVAL 1 MONTH PRECEDING AND CURRENT ROW` is not, because a
-month is a not a constant time interval.
+month is not a constant time interval.
 
 ## Correlated subqueries
 
@@ -101,6 +105,7 @@ Several `MAP` functions are not yet implemented:
 
 A list of supported MAP operations is available [here](./map.md).
 See [#1907](https://github.com/feldera/feldera/issues/1907).
+
 ## `MATCH_RECOGNIZE`
 
 The `MATCH_RECOGNIZE` clause for pattern matching over rows is not yet
@@ -138,7 +143,8 @@ details.
 ### Use `NOW()` with caution
 
 The `NOW()` function returns the current timestamp and is updated at
-every processing step (every 100ms by default).
+every processing step (every 1 second by default, configurable via
+`clock_resolution_usecs`).
 
 - **In filters**: `NOW()` in `WHERE` clauses for temporal filtering
   (e.g., `WHERE ts >= NOW() - INTERVAL 1 DAY`) is efficient and

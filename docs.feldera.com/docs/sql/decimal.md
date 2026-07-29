@@ -3,7 +3,7 @@
 A synonym for the ``decimal`` type is ``numeric``.
 
 A decimal number is characterized by two magnitudes: the *precision*,
-which his the total number of decimal digits represented, and the
+which is the total number of decimal digits represented, and the
 *scale*, which is the count of digits in the fractional part, to the
 right of the decimal point.  For example, the number 3.1415 has a
 precision of 5 and a scale of 4.
@@ -16,8 +16,10 @@ The type ``NUMERIC(precision)`` is the same as ``NUMERIC(precision, 0)``.
 The type ``NUMERIC`` is the same as ``NUMERIC(MAX_PRECISION, 0)``.
 
 > [!WARNING]
-> This means that casting to ``DECIMAL`` or ``NUMERIC`` will round the value to a decimal with no fractional part.
-> Example: ``SELECT CAST('0.5' AS DECIMAL)`` will return ``1`` as the scale is 0.
+> This means that casting to ``DECIMAL`` or ``NUMERIC`` produces a value with no fractional part.
+> Parsing a string as a decimal rounds to the nearest representable value, with ties rounded to even.
+> Example: ``SELECT CAST('0.5' AS DECIMAL)`` returns ``0``, since the scale is 0 and 0.5 is
+> halfway between 0 and 1.
 
 The maximum precision supported is 38 decimal digits.  The maximum
 scale supported is 38 decimal digits.
@@ -42,7 +44,9 @@ parsing fails.
 
 ## Rounding while casting between Decimal types
 
-Rounding is performed using [to nearest, ties away from zero](https://en.wikipedia.org/wiki/Rounding#Rounding_half_away_from_zero) strategy.
+Casting a decimal value to another decimal type with a smaller scale
+truncates the extra fractional digits toward zero.  No rounding is
+performed.
 
 Example while casting from ``DECIMAL(8, 4)`` to ``DECIMAL(6, 2)``:
 
@@ -53,15 +57,15 @@ Example while casting from ``DECIMAL(8, 4)`` to ``DECIMAL(6, 2)``:
     </tr>
     <tr>
         <td>1234.1250</td>
-        <td>1234.13</td>
+        <td>1234.12</td>
     </tr>
     <tr>
         <td> -1234.1250</td>
-        <td> -1234.13</td>
+        <td> -1234.12</td>
     </tr>
     <tr>
         <td>1234.1264</td>
-        <td>1234.13</td>
+        <td>1234.12</td>
     </tr>
     <tr>
         <td>1234.1234</td>
@@ -69,7 +73,7 @@ Example while casting from ``DECIMAL(8, 4)`` to ``DECIMAL(6, 2)``:
     </tr>
     <tr>
         <td> -1234.1264</td>
-        <td> -1234.13</td>
+        <td> -1234.12</td>
     </tr>
     <tr>
         <td> -1234.1234</td>

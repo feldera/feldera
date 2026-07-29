@@ -9,12 +9,12 @@ We support standard IEEE 754 floating point types.
 `float4`, and `float32`.
 
 Floating point values include special values, such as `NaN` (not a
-number), `-Infinity`, and `-Infinity`.  An alternative spelling for
+number), `Infinity`, and `-Infinity`.  An alternative spelling for
 `-Infinity` is `-inf`, and an alternative spelling for `Infinity` is
 `inf`, and an alternative spelling for 'NaN' is 'nan'.  When written
 as SQL literals, these values have to be surrounded by simple quotes:
-`'inf'`.  Please note that these strings are case-sensitive and spaces
-are ignored.
+`'inf'`.  Please note that these strings are case-insensitive; spaces
+surrounding the value are ignored, but spaces inside it are not.
 
 Infinity plus any finite value equals Infinity, as does Infinity plus
 Infinity.  Infinity minus `Infinity` yields `NaN`.
@@ -35,19 +35,20 @@ For: ``mod = x % y``
 - if ``x >= 0`` and ``y > 0`` then: ``x - (floor(x / y) * y)``
 - if ``x >= 0`` and ``y < 0`` then: ``x % abs(y)``
 - if ``x < 0`` and ``y > 0`` then: ``- abs(x) % y``
-- if ``x < 0`` and ``y > 0`` then: ``- abs(x) % abs(y)``
+- if ``x < 0`` and ``y < 0`` then: ``- abs(x) % abs(y)``
 
-Division by zero returns Infinity, (or `NaN` in case of `0e0 / 0e0`).
-Modulus by zero return `NaN`.
+Division by zero returns Infinity (or `NaN` in case of `0e0 / 0e0`).
+Modulus by zero returns `NaN`.
 
-Casting a string to a floating-point value will produce the value
-`0` when parsing fails.
+Casting a string to a floating-point value produces a runtime error
+when parsing fails.  `SAFE_CAST` returns `NULL` instead.
 
 Casting a value that is out of the supported range to a floating
 point type will produce a value that is `inf` or `-inf`.
 
-Casting a floating-point value to string, `float` is rounded off
-to 6 decimal places and `double` is rounded off to 15 decimal places.
+Casting a floating-point value to a string produces the shortest
+string that parses back to the exact same value.  Such a string uses
+up to 9 significant digits for `REAL` and up to 17 for `DOUBLE`.
 
 Please note that numeric values with a decimal point have the
 `decimal` type by default.  To write a floating-point literal you have
@@ -68,9 +69,9 @@ REAL '1.23'  -- string style
 
 <table>
   <tr>
-    <td>Function</td>
-    <td>Types</td>
-    <td>Description</td>
+    <th>Function</th>
+    <th>Types</th>
+    <th>Description</th>
   </tr>
   <tr>
     <td><a id="abs"></a><code>ABS(value)</code></td>
@@ -100,7 +101,7 @@ REAL '1.23'  -- string style
   <tr>
     <td><a id="atan"></a><code>ATAN(value)</code></td>
     <td><code>DOUBLE</code></td>
-    <td>The arctangent of the value, returned as radians. The returned value is in the range <code>[-pi/2, pi/2]</code>.<code>atan</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
+    <td>The arctangent of the value, returned as radians. The returned value is in the range <code>[-pi/2, pi/2]</code>. <code>atan</code> only supports arguments of type double, so all other types are cast to double. Returns a double.</td>
   </tr>
   <tr>
     <td><a id="atan2"></a><code>ATAN2(y, x)</code></td>
@@ -193,9 +194,9 @@ REAL '1.23'  -- string style
     <td>The natural logarithm of value. Returns `-inf` for 0. Produces a runtime error for negative numbers.</td>
   </tr>
   <tr>
-    <td><a id="log"></a><code>LOG(value, [, base])</code></td>
+    <td><a id="log"></a><code>LOG(value [, base])</code></td>
     <td><code>DOUBLE</code></td>
-    <td>The logarithm of value to base, or base e if it is not present.  Produces a runtime error for negative values for either value or base. Returns `-inf` for base 0.</td>
+    <td>The logarithm of value to base, or base e if it is not present.  Produces a runtime error for negative values of either value or base. Returns `-inf` when value is 0, and 0 when base is 0.</td>
   </tr>
   <tr>
     <td><a id="log10"></a><code>LOG10(value)</code></td>
@@ -220,7 +221,7 @@ REAL '1.23'  -- string style
   <tr>
     <td><a id="round"></a><code>ROUND(value)</code></td>
     <td><code>REAL</code>, <code>DOUBLE</code></td>
-    <td>Rounds to the nearest integer; the result has the same type as the input. Rounding follows "Bankers Rounding" (rounds 0.5 to the nearest even number) strategy.</td>
+    <td>Rounds to the nearest integer; the result has the same type as the input. Ties (values ending in .5) round away from zero.</td>
   </tr>
   <tr>
     <td><a id="round2"></a><code>ROUND(value, digits)</code></td>

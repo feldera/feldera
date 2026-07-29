@@ -15,9 +15,9 @@ AS (str LIKE ('%' || CAST(value AS VARCHAR) || '%'));
 CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5' AS VARCHAR), 5)
 ```
 
-:::danger
-
 ## User-defined functions written in Rust
+
+:::danger
 
 * Feldera's incremental query engine assumes that all computations are deterministic. Using
   a non-deterministic UDF is likely to result in incorrect outputs. The SQL compiler cannot verify
@@ -85,7 +85,7 @@ same name and signature exported from the `udf.rs` module:
 /* stubs.rs */
 ...
 
-pub fn base64(s: Option<ByteArray>) -> Result<Option<String>, Box<dyn std::error::Error>> {
+pub fn base64(s: Option<ByteArray>) -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
     udf::base64(
         s)
 }
@@ -111,7 +111,7 @@ use feldera_sqllib::*;
 use base64::prelude::*;
 
 pub fn base64(s: Option<ByteArray>) -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
-    Ok(s.map(|v| SqlString::from_ref(BASE64_STANDARD.encode(v.as_slice()))))
+    Ok(s.map(|v| SqlString::from(BASE64_STANDARD.encode(v.as_slice()))))
 }
 ```
 
@@ -120,7 +120,7 @@ Rust types that the compiler uses to implement some of the SQL
 datatypes.  The next section explains what these types are.
 
 If your UDF uses external crates, list these external dependencies in `udf.toml`.
-The contents of this file is appended to the `[dependencies]` section in the generated
+The contents of this file are appended to the `[dependencies]` section in the generated
 `Cargo.toml` file.
 
 ```toml
@@ -164,8 +164,8 @@ udf_rust = """
 use feldera_sqllib::*;
 use base64::prelude::*;
 
-pub fn base64(s: Option<ByteArray>) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    Ok(s.map(|v| BASE64_STANDARD.encode(v.as_slice())))
+pub fn base64(s: Option<ByteArray>) -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
+    Ok(s.map(|v| SqlString::from(BASE64_STANDARD.encode(v.as_slice()))))
 }"""
 
 # External Rust dependencies.
@@ -185,7 +185,7 @@ output = pipeline.query("select * from base64_v")
 
 assert list(output) == [{'text': 'ASNFZ4mrze8='}]
 
-pipeline.shutdown()
+pipeline.stop(force=True)
 pipeline.delete()
 ```
 </details>
@@ -217,8 +217,8 @@ echo "
 use feldera_sqllib::*;
 use base64::prelude::*;
 
-pub fn base64(s: Option<ByteArray>) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    Ok(s.map(|v| BASE64_STANDARD.encode(v.as_slice())))
+pub fn base64(s: Option<ByteArray>) -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
+    Ok(s.map(|v| SqlString::from(BASE64_STANDARD.encode(v.as_slice()))))
 }" > udf.rs
 
 echo "
@@ -251,7 +251,7 @@ The following table shows the Rust representation of standard SQL data
 types.  A nullable SQL type is represented by the corresponding rust
 `Option<>` type.  Notice that some of these types are not standard
 Rust types, but are defined in the
-[feldera-sqllib](https://docs.rs/feldera-sqllib/0.27.0/feldera_sqllib/)
+[feldera-sqllib](https://docs.rs/feldera-sqllib/latest/feldera_sqllib/)
 crate, which is part of the Feldera SQL runtime.
 
 | SQL                      | Rust                                    |
@@ -294,12 +294,12 @@ and `LongInterval` (representing intervals from years to months).
 (Our dialect of SQL does not allow mixing the two kinds of intervals
 in a single expression.)
 
-Currently `feldera_sqlllib::Map` is defined as `type Map =
-Arc<BTreeMap>`, and `feldera_sqlllib::Array` is defined as `type Array
-= Arc<Vec>`.  Currently `feldera_sqlllib::SqlString` is a thin wrapper
+Currently `feldera_sqllib::Map` is defined as `type Map =
+Arc<BTreeMap>`, and `feldera_sqllib::Array` is defined as `type Array
+= Arc<Vec>`.  Currently `feldera_sqllib::SqlString` is a thin wrapper
 type around the `ArcStr` type from the `arcstr` crate.
 
-A `ROW` type with N fields represented by a Rust `Tup`N datatype.  A
+A `ROW` type with N fields is represented by a Rust `Tup`N datatype.  A
 user-defined structure type is also represented by a tuple `Tup`N
 type.  These tuple types can be imported from the current crate.
 
@@ -312,7 +312,7 @@ CREATE FUNCTION g(x int NOT NULL) RETURNS ROW(a INT, b INT) NOT NULL;
 CREATE VIEW V AS SELECT f(X(1)), g(2).a;
 ```
 
-And here is a possible implementation of the used-defined functions
+And here is a possible implementation of the user-defined functions
 `f` and `g` in Rust:
 
 ```rust
@@ -372,7 +372,7 @@ including only wrapper functions that call the API of this crate in
   function arguments and function result in the SQL program.  For
   example, a call such as `CONTAINS_NUMBER('2010-10-20', '5')` will
   fail at SQL compilation time because the first argument has type
-  `CHAR(8)` instead of `VARCHAR`, and the second argument has type
+  `CHAR(10)` instead of `VARCHAR`, and the second argument has type
   `CHAR(1)` instead of `INTEGER`.  This can be avoided by calling the
   function using an explicit cast: `CONTAINS_NUMBER(CAST('2010-10-20'
   AS VARCHAR), CAST('5' AS INTEGER))`.
@@ -446,7 +446,7 @@ define 3 Rust objects:
     and
     [`MonoidValue`](https://docs.rs/dbsp/latest/dbsp/algebra/trait.MonoidValue.html).
     `DBData` allows accumulators to be stored in relations which may be
-    spilled to disk; amond other traits, it requires `Ord` and
+    spilled to disk; among other traits, it requires `Ord` and
     `ArchivedDBData`.  `MonoidValue` essentially requires the traits
     `Zero`, `HasZero`, `Add` (and variants such as `AddByRef`).
 
@@ -473,7 +473,7 @@ produces the actual result by computing sum/count.
 If the `Add` operation for the accumulator type is not linear, the
 results produced by the program are undefined.  This requirement can
 be subtle; for example, floating point addition is not associative,
-and thus an computing an aggregate like `SUM` on floating-point values
+and thus computing an aggregate like `SUM` on floating-point values
 using standard floating point arithmetic will produce incorrect
 results or runtime crashes.
 
@@ -514,7 +514,7 @@ num-traits = "0.2.19"
 We will use the [I256](https://docs.rs/i256/latest/i256/index.html)
 Rust crate for 256-bit arithmetic.  In our implementation we wrap this
 type into the type `I256Wrapper`, for which we implement the required
-traits.  Most of the code is devoted for this task, and is relatively
+traits.  Most of the code is devoted to this task, and is relatively
 straightforward.
 
 For our example the accumulator type that the user has to define is
@@ -526,7 +526,7 @@ The user would add the following implementation to the `udf.rs` file:
 ```rust
 use i256::I256;
 use feldera_sqllib::*;
-use crate::{AddAssignByRef, AddByRef, HasZero, MulByRef, SizeOf, Tup3};
+use crate::{AddAssignByRef, AddByRef, HasZero, MulByRef, SizeOf};
 use derive_more::Add;
 use num_traits::Zero;
 use rkyv::Fallible;
@@ -705,7 +705,7 @@ To add a custom preprocessor, implement three Rust traits:
 Preprocessors can only be used with certain classes of input
 connectors, which accept raw data as byte arrays and perform their own parsing.
 Preprocessors cannot be combined with input connectors such as
-Delta, Iceberg, Postgres, which read directly structured data.
+Delta, Iceberg, Postgres, which read structured data directly.
 An attempt to use a preprocessor with such a connector will lead to a
 runtime error.
 
@@ -888,7 +888,7 @@ at "object" boundaries.
 /// [Parser::parse] or [Preprocessor::process] can only parse complete records.
 /// For a byte stream source, a format-specific [Splitter] allows a transport
 /// to find boundaries.
-pub trait Splitter: Send {
+pub trait Splitter: Send + Sync {
     /// Looks for a record boundary in `data`. Returns:
     ///
     /// - `None`, if `data` does not necessarily complete a record.
@@ -912,8 +912,11 @@ the user indicates that a user-defined preprocessor will
 be used for that specific connector.  When declaring a preprocessor with name "example", the user has to provide two
 trait implementations in the udf.rs file:
 
-- `ExamplePreprocessor` that implements the `Preprocessor` trait
-- `ExamplePreprocessorFactory` that implements the `PreprocessorFactory` trait
+- a struct named `ExamplePreprocessorFactory` that implements the `PreprocessorFactory`
+  trait.  This name is prescribed: the preprocessor name with its first letter
+  capitalized, followed by `PreprocessorFactory`.
+- a struct that implements the `Preprocessor` trait and is returned by the factory's
+  `create` method.  This struct may have any name.
 
 ### Example: logging preprocessor
 
@@ -1046,7 +1049,7 @@ To add a custom postprocessor, implement two Rust traits:
 Postprocessors can be used with output connectors that deliver raw
 byte buffers, such as file and Kafka output connectors.  Postprocessors
 are not supported for output connectors that work with fixed data formats,
-such as the Delta Lake and PostgresSQL connectors.
+such as the Delta Lake and PostgreSQL connectors.
 
 #### `Postprocessor` trait
 
@@ -1067,7 +1070,7 @@ use anyhow::Result;
 
 pub trait Postprocessor: Send + Sync {
     /// Called once for every output batch produced by the pipeline before any
-    /// records are pushed to the preprocessor.
+    /// records are pushed to the postprocessor.
     ///
     /// # Arguments
     ///
@@ -1082,7 +1085,7 @@ pub trait Postprocessor: Send + Sync {
     ///     view at this point in time.
     ///
     /// The default implementation is a no-op.
-    fn batch_start(&mut self, step: Step, batch_type: OutputBatchType);
+    fn batch_start(&mut self, _step: Step, _batch_type: OutputBatchType) {}
 
     /// Transform a serialized buffer (buffer mode).
     ///
@@ -1100,7 +1103,9 @@ pub trait Postprocessor: Send + Sync {
     /// subsequent records continues normally.
     ///
     /// The default implementation returns the data unchanged.
-    fn push_buffer(&mut self, buffer: &[u8]) -> Result<Vec<u8>>;
+    fn push_buffer(&mut self, buffer: &[u8]) -> Result<Vec<u8>> {
+        Ok(buffer.to_vec())
+    }
 
     /// Transform a key/value/headers record (keyed mode).
     ///
@@ -1128,12 +1133,21 @@ pub trait Postprocessor: Send + Sync {
         key: Option<&[u8]>,
         val: Option<&[u8]>,
         headers: &[(&str, Option<&[u8]>)],
-    ) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>, Vec<(String, Option<Vec<u8>>)>)>;
+    ) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>, Vec<(String, Option<Vec<u8>>)>)> {
+        Ok((
+            key.map(<[u8]>::to_vec),
+            val.map(<[u8]>::to_vec),
+            headers
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.map(<[u8]>::to_vec)))
+                .collect(),
+        ))
+    }
 
     /// Called once after all records for the current batch have been pushed.
     ///
     /// The default implementation is a no-op.
-    fn batch_end(&mut self);
+    fn batch_end(&mut self) {}
 
     /// Returns the approximate number of bytes of heap memory owned by this
     /// postprocessor.
@@ -1141,7 +1155,9 @@ pub trait Postprocessor: Send + Sync {
     /// Override this when the implementation holds a significant internal
     /// buffer.  The controller uses the returned value for memory accounting.
     /// The default returns `0`.
-    fn memory(&self) -> usize;
+    fn memory(&self) -> usize {
+        0
+    }
 
     /// Create an independent copy of this postprocessor with the same configuration.
     ///
@@ -1187,8 +1203,11 @@ the user indicates that a user-defined postprocessor will
 be used for that specific connector.  When declaring a postprocessor with name "example", the user has to provide two
 trait implementations in the `udf.rs` file:
 
-- `ExamplePostprocessor` that implements the `Postprocessor` trait
-- `ExamplePostprocessorFactory` that implements the `PostprocessorFactory` trait
+- a struct named `ExamplePostprocessorFactory` that implements the `PostprocessorFactory`
+  trait.  This name is prescribed: the postprocessor name with its first letter
+  capitalized, followed by `PostprocessorFactory`.
+- a struct that implements the `Postprocessor` trait and is returned by the factory's
+  `create` method.  This struct may have any name.
 
 ### Example: logging postprocessor
 
@@ -1238,6 +1257,12 @@ impl PostprocessorFactory for LoggerPostprocessorFactory {
         Ok(Box::new(LoggerPostprocessor { count: Arc::new(Mutex::new(0)) }))
     }
 }
+```
+
+This is the content of the `udf.toml` file:
+
+```
+tracing = { version = "0.1.40" }
 ```
 
 ### Configuring a postprocessor in a connector

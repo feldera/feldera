@@ -1,6 +1,6 @@
 # Operators
 
-This table shows the operators associativity, starting from highest to lowest:
+This table shows operator precedence, from highest to lowest, and each operator's associativity:
 
 <table>
   <tr>
@@ -72,4 +72,4 @@ This table shows the operators associativity, starting from highest to lowest:
 
 Arithmetic operations combining signed and unsigned values will
 produce a result with the wider type; if both types have the same
-width, the result is unsigned;
+width, the result is unsigned.

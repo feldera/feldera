@@ -1,8 +1,9 @@
 # Integer Operations
 
-There are four supported integer datatypes, `TINYINT` (8 bits),
+There are four supported signed integer datatypes, `TINYINT` (8 bits),
 `SMALLINT` (16 bits), `INTEGER` (32 bits), and `BIGINT` (64
-bits).
+bits).  Each has an unsigned counterpart: `TINYINT UNSIGNED`,
+`SMALLINT UNSIGNED`, `INTEGER UNSIGNED`, and `BIGINT UNSIGNED`.
 
 The legal operations are `+` (plus, unary and binary), `-` (minus,
 unary and binary), `*` (multiplication), `/` (division), `%`
@@ -15,7 +16,7 @@ For: ``mod = x % y``
 - if ``x >= 0`` and ``y > 0`` then: ``x - (floor(x / y) * y)``
 - if ``x >= 0`` and ``y < 0`` then: ``x % abs(y)``
 - if ``x < 0`` and ``y > 0`` then: ``- abs(x) % y``
-- if ``x < 0`` and ``y > 0`` then: ``- abs(x) % abs(y)``
+- if ``x < 0`` and ``y < 0`` then: ``- abs(x) % abs(y)``
 
 Example:
 
@@ -70,7 +71,8 @@ of minimum integer value by -1) produce run time errors.
   </tr>
   <tr>
     <td><a id="div_null"></a><code>DIV_NULL(numerator, denominator)</code></td>
-    <td>Like division, but returns `NULL` when denominator is zero.</td>
+    <td>Like division, but returns `NULL` when the denominator is zero, or when the division
+        overflows (example: dividing the minimum <code>TINYINT</code> value -128 by -1).</td>
   </tr>
   <tr>
     <td><a id="mod"></a><code>MOD(left, right)</code></td>

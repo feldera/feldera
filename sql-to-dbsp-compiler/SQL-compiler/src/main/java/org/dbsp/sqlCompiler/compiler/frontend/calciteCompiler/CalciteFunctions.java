@@ -60,11 +60,16 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
             new Func(SqlStdOperatorTable.GROUPING_SETS, "GROUPING SETS", SqlLibrary.STANDARD, "grammar#grouping-functions",
                     "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
-            new Func(SqlStdOperatorTable.GROUPING, "GROUPING", SqlLibrary.STANDARD, "grammar#grouping",
+            new Func(SqlStdOperatorTable.GROUPING, "GROUPING", SqlLibrary.STANDARD, "grammar#grouping-functions",
                     "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
             // new Func(SqlStdOperatorTable.GROUP_ID, "GROUP ID", SqlLibrary.STANDARD, "grammar", FunctionDocumentation.NO_FILE, false),
-            // new Func(SqlStdOperatorTable.GROUPING_ID, "GROUPING ID", SqlLibrary.STANDARD, "grammar", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.CONCAT, "||", SqlLibrary.STANDARD, "string#concat,binary#concat",
+            new Func(SqlStdOperatorTable.GROUPING_ID, "GROUPING_ID", SqlLibrary.STANDARD, "grammar#grouping-functions",
+                    FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.TYPEOF, "TYPEOF", SqlLibrary.STANDARD,
+                    "json#functions-that-operate-on-variant-values", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.VARIANTNULL, "VARIANTNULL", SqlLibrary.STANDARD,
+                    "json#functions-that-operate-on-variant-values", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.CONCAT, "||", SqlLibrary.STANDARD, "string#concat-operator,binary#concat",
                     """
                     runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py|
                     runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py""", false),
@@ -111,7 +116,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.OR, "OR", SqlLibrary.STANDARD, "boolean#or", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.PLUS, "+", SqlLibrary.STANDARD, "operators#plusminus",
                     "runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py", false),
-            new Func(SqlStdOperatorTable.DATETIME_PLUS, "+", SqlLibrary.STANDARD, "datetime#Other-datetimetimestamptime-interval-operations", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.DATETIME_PLUS, "+", SqlLibrary.STANDARD, "datetime#other-datetimetimestamptime-interval-operations", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.INTERVAL, "INTERVAL", SqlLibrary.STANDARD, "datetime#time-intervals", FunctionDocumentation.NO_FILE, false),
 
             new Func(SqlStdOperatorTable.DESC, "DESC", SqlLibrary.STANDARD, "grammar#order",
@@ -242,6 +247,10 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                 "runtime_aggtest/illarg_tests2/test_window_agg.py", true),
             new Func(SqlStdOperatorTable.LEAD, "LEAD", SqlLibrary.STANDARD, "aggregates#lead",
                 "runtime_aggtest/illarg_tests2/test_window_agg.py", true),
+            new Func(SqlStdOperatorTable.FIRST_VALUE, "FIRST_VALUE", SqlLibrary.STANDARD, "aggregates#first_value",
+                FunctionDocumentation.NO_FILE, true),
+            new Func(SqlStdOperatorTable.LAST_VALUE, "LAST_VALUE", SqlLibrary.STANDARD, "aggregates#last_value",
+                FunctionDocumentation.NO_FILE, true),
             new Func(SqlStdOperatorTable.RANK, "RANK", SqlLibrary.STANDARD, "aggregates#rank",
                 "runtime_aggtest/illarg_tests2/test_window_agg.py", true),
             new Func(SqlStdOperatorTable.ROW_NUMBER, "ROW_NUMBER", SqlLibrary.STANDARD, "aggregates#row_number",
@@ -260,7 +269,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
 
             new Func(SqlStdOperatorTable.IGNORE_NULLS, "IGNORE NULLS", SqlLibrary.STANDARD, "grammar#window-aggregates", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.RESPECT_NULLS, "RESPECT NULLS", SqlLibrary.STANDARD, "grammar#window-aggregates", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlStdOperatorTable.MINUS_DATE, "-", SqlLibrary.STANDARD, "datetime", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.MINUS_DATE, "-", SqlLibrary.STANDARD, "datetime#date-operations", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.UNNEST, "UNNEST", SqlLibrary.STANDARD, "array#the-unnest-sql-operator,map#the-unnest-operator", """
                  runtime_aggtest/complex_type_tests/test_{arr,arr_unnest,arr_arr_unnest,arr_row_unnest,row_arr_unnest,arr_map_unnest,arr_udt_unnest,arr_of_arr,arr_of_row,arr_of_map,arr_of_udt,row_of_arr,udt_of_arr,map_var_cmpx}.py|
                  runtime_aggtest/variant_tests/{row_of_cmpx_type,cpmx_variant,arr_cmpx_varnt_unnest,arr_of_cmpx_type,udt_of_cmpx_type,arr_unnest_varnt}.py""", false),
@@ -268,7 +277,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.UNNEST_WITH_ORDINALITY, "UNNEST WITH ORDINALITY", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
             new Func(SqlStdOperatorTable.LATERAL, "LATERAL", SqlLibrary.STANDARD, "grammar#lateral",
                 "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
-            new Func(SqlStdOperatorTable.COLLECTION_TABLE, "TABLE", SqlLibrary.STANDARD, "grammar", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlStdOperatorTable.COLLECTION_TABLE, "TABLE", SqlLibrary.STANDARD, "grammar#table-functions", FunctionDocumentation.NO_FILE, false),
 
             new Func(SqlStdOperatorTable.OVERLAPS, "OVERLAPS", SqlLibrary.STANDARD, "datetime#overlaps",
                 "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
@@ -308,7 +317,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.REINTERPRET, "", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
 
             // Functions
-            new Func(SqlStdOperatorTable.SUBSTRING, "SUBSTRING", SqlLibrary.STANDARD, "string#substring",
+            new Func(SqlStdOperatorTable.SUBSTRING, "SUBSTRING", SqlLibrary.STANDARD, "string#substring,binary#substring",
                     "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
             new Func(SqlStdOperatorTable.REPLACE, "REPLACE", SqlLibrary.STANDARD, "string#replace",
                     "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
@@ -319,7 +328,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
             new Func(SqlStdOperatorTable.TRIM, "TRIM", SqlLibrary.STANDARD, "string#trim",
                     "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
-            new Func(SqlStdOperatorTable.POSITION, "POSITION", SqlLibrary.STANDARD, "string#position",
+            new Func(SqlStdOperatorTable.POSITION, "POSITION", SqlLibrary.STANDARD, "string#position,binary#position",
                     "runtime_aggtest/illarg_tests/test_{arr_map_type_fn,str_bin_type_fn,str_unicode_fn}.py", false),
             new Func(SqlStdOperatorTable.CHAR_LENGTH, "CHAR_LENGTH", SqlLibrary.STANDARD, "string#char_length",
                     "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
@@ -578,8 +587,8 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     """, false),
             new Func(SqlLibraryOperators.CONCAT_WS, "CONCAT_WS", SqlLibrary.MYSQL, "string#concat_ws",
                     "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
-            new Func(SqlLibraryOperators.ARRAY, "ARRAY", SqlLibrary.SPARK, "array#array", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.MAP, "MAP", SqlLibrary.SPARK, "map", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlLibraryOperators.ARRAY, "ARRAY", SqlLibrary.SPARK, "array#constructor", FunctionDocumentation.NO_FILE, false),
+            new Func(SqlLibraryOperators.MAP, "MAP", SqlLibrary.SPARK, "map#map-literals", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.ARRAY_APPEND, "ARRAY_APPEND", SqlLibrary.SPARK, "array#append",
                     "runtime_aggtest/illarg_tests/test_arr_map_type_fn.py", false),
             new Func(SqlLibraryOperators.ARRAY_COMPACT, "ARRAY_COMPACT", SqlLibrary.SPARK, "array#compact",
@@ -675,7 +684,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
                     """, false),
             new Func(SqlLibraryOperators.INFIX_CAST, "::", SqlLibrary.POSTGRESQL, "casts#coloncolon", FunctionDocumentation.NO_FILE, false),
-            new Func(SqlLibraryOperators.NULL_SAFE_EQUAL, "<=>", SqlLibrary.MYSQL, "operators#comparisons",
+            new Func(SqlLibraryOperators.NULL_SAFE_EQUAL, "<=>", SqlLibrary.MYSQL, "operators#comparisons,comparisons#nne",
                     "runtime_aggtest/illarg_tests/test_cmp_operators.py", false),
             // new Func(SqlLibraryOperators.OFFSET, "OFFSET", SqlLibrary.BIG_QUERY, "", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.SAFE_OFFSET, "SAFE_OFFSET", SqlLibrary.BIG_QUERY, "",

@@ -78,14 +78,15 @@ example.
     <th>Examples</th>
   </tr>
   <tr>
-    <td><a id="concat"></a><code>||</code></td>
+    <td><a id="concat-operator"></a><code>||</code></td>
     <td>String concatenation (infix).  Note that concatenation does *not* strip trailing spaces
         from CHAR(N) values, unlike other SQL dialects.  If such behavior is desired, an explicit
         cast to `varchar` can be added.</td>
     <td><code>'Post' || 'greSQL'</code> => <code>PostgreSQL</code></td>
   </tr>
   <tr>
-    <td><a id="like"></a><code>string LIKE pattern [ESCAPE escape-character]</code> and
+    <!-- no anchor; the section title below is the anchor -->
+    <td><code>string LIKE pattern [ESCAPE escape-character]</code> and
         <code>string NOT LIKE pattern [ESCAPE escape-character]</code></td>
     <td>The LIKE expression returns true if <code>string</code> matches <code>pattern</code>.
      (As expected, the <code>NOT LIKE</code> expression returns false if <code>LIKE</code> returns true.)</td>
@@ -93,7 +94,7 @@ example.
   </tr>
   <tr>
     <td>
-        <a id="ilike"></a>
+        <!-- no anchor; the section title below is the anchor -->
         <code>string ILIKE pattern </code> and
         <code>string NOT ILIKE pattern</code>
     </td>
@@ -147,7 +148,7 @@ example.
   <tr>
     <td><a id="initcap_spaces"></a><code>INITCAP_SPACES ( string )</code></td>
     <td>Converts the first letter of each word in <code>string</code> to upper case and the rest to lower case. Words are sequences of characters separated by spaces.</td>
-    <td><code>initcap('hi THOMAS-SON')</code> => <code>Hi Thomas-son</code></td>
+    <td><code>initcap_spaces('hi THOMAS-SON')</code> => <code>Hi Thomas-son</code></td>
   </tr>
   <tr>
     <td><a id="left"></a><code>LEFT ( string, count )</code></td>
@@ -169,7 +170,7 @@ example.
   </tr>
   <tr>
     <td><a id="overlay"></a><code>OVERLAY ( string PLACING newsubstring FROM start [ FOR remove ] )</code></td>
-    <td>Replaces the substring of <code>string</code> that starts at the <code>start</code>'th character and extends for <code>remove</code> characters with <code>newsubstring</code>. If <code>count</code> is omitted, it defaults to the length of <code>newsubstring</code>.  If <code>start</code> is not positive, the original string is unchanged.  If <code>start</code> is bigger than the length of <code>string</code>, the result is the concatenation of the two strings.  If <code>remove</code> is negative it is considered 0.</td>
+    <td>Replaces the substring of <code>string</code> that starts at the <code>start</code>'th character and extends for <code>remove</code> characters with <code>newsubstring</code>. If <code>remove</code> is omitted, it defaults to the length of <code>newsubstring</code>.  If <code>start</code> is not positive, the original string is unchanged.  If <code>start</code> is bigger than the length of <code>string</code>, the result is the concatenation of the two strings.  If <code>remove</code> is negative it is considered 0.</td>
     <td><code>overlay('Txxxxas' placing 'hom' from 2 for 4)</code> => <code>Thomas</code></td>
   </tr>
   <tr>
@@ -239,8 +240,8 @@ example.
     </td>
   </tr>
   <tr>
-    <td><a id="substr"></a><code>SUBSTR (</code> string, start, <code> [ ,</code> length <code>]</code></td>
-    <td>Extracts the substring of <code>string</code> starting at the <code>start</code>'th character, and stopping after <code>length</code> characters if the value is specified. If <code>start</code> is negative, the first character is chosen counting backwards from the end of <code>string</code>.  If <code>count</code> is negative the empty string is returned.  The index of the first character is 1.</td>
+    <td><a id="substr"></a><code>SUBSTR (</code> string, start <code> [ ,</code> length <code>] )</code></td>
+    <td>Extracts the substring of <code>string</code> starting at the <code>start</code>'th character, and stopping after <code>length</code> characters if the value is specified. If <code>start</code> is negative, the first character is chosen counting backwards from the end of <code>string</code>.  If <code>length</code> is negative the empty string is returned.  The index of the first character is 1.</td>
     <td><code>SUBSTR('Thomas', 2, 3)</code> => <code>hom</code><br></br>
         <code>SUBSTR('Thomas', 3)</code> => <code>omas</code><br></br></td>
   </tr>
@@ -263,7 +264,7 @@ example.
   <tr>
     <td><a id="xxhash"></a><code>XXHASH ( string, seed )</code></td>
     <td>Computes the hash of the specified string with the specified seed.</td>
-    <td><code>xxhash('abc', 10)</code> => <code>6026019377950218999</code></td>
+    <td><code>xxhash('abc', 2)</code> => <code>6026019377950218999</code></td>
   </tr>
 </table>
 
@@ -294,11 +295,12 @@ must start and end with a percent sign.
 
 To match a literal underscore or percent sign without matching other
 characters, the respective character in pattern must be preceded by
-the escape character. The default escape character is the backslash
-but a different one can be selected by using the <code>ESCAPE</code> clause. To
-match the escape character itself, write two escape characters.  The
-escape character cannot be one of the special pattern characters `_`
-or `%`.
+an escape character. Plain `LIKE` has no escape character: without an
+<code>ESCAPE</code> clause, every character except `_` and `%` matches itself,
+including the backslash. To use escapes, select an escape character with
+the <code>ESCAPE</code> clause. To match the escape character itself, write two
+escape characters.  The escape character cannot be one of the special
+pattern characters `_` or `%`.
 
 Some examples where the escape character is changed to `#`:
 
@@ -314,7 +316,7 @@ SELECT 'h%wkeye' NOT LIKE 'h#%%' ESCAPE '#'    false
 SELECT 'h%awkeye' LIKE 'h#%a%k%e' ESCAPE '#'   true
 ```
 
-When either argument or `LIKE`, `NOT LIKE` is `NULL`, the result is `NULL`.
+When either argument of `LIKE`, `NOT LIKE` is `NULL`, the result is `NULL`.
 
 ## `ILIKE`
 
@@ -343,7 +345,7 @@ SELECT 'Hawkeye' NOT ILIKE 'h%'    false
 SELECT 'ABC'     ILIKE '_b_'       true
 SELECT 'ABC'     NOT ILIKE '_b_'   false
 ```
-When either argument or `ILIKE`, `NOT ILIKE` is `NULL`, the result is `NULL`.
+When either argument of `ILIKE`, `NOT ILIKE` is `NULL`, the result is `NULL`.
 
 ## Regular expressions
 
@@ -416,9 +418,10 @@ below.
       <td>where <code>c</code> is alphanumeric (possibly followed by other characters): is an escape, see below</td>
    </tr>
    <tr>
-      <td><code>&#123;</code></td>
-      <td>when followed by a character other than a digit, matches the left-brace character <code>&#123;</code>;
-          when followed by a digit, it is the beginning of a bound (see below)</td>
+      <td><code>\&#123;</code></td>
+      <td>matches the left-brace character <code>&#123;</code>.  An unescaped <code>&#123;</code> is
+          the beginning of a bound (see below); a <code>&#123;</code> not followed by a valid bound
+          is rejected with a runtime error</td>
    </tr>
    <tr>
       <td>x</td>
@@ -461,19 +464,16 @@ normally matches any single character from the list (but see
 below). If the list begins with `^`, it matches any single character
 not from the rest of the list. If two characters in the list are
 separated by `-`, this is shorthand for the full range of characters
-between those two (inclusive) in the collating sequence, e.g., `[0-9]`
-in ASCII matches any decimal digit. It is illegal for two ranges to
-share an endpoint, e.g., `a-c-e`.  Ranges are very
-collating-sequence-dependent, so portable programs should avoid
-relying on them.
+between those two (inclusive) in Unicode code-point order, e.g., `[0-9]`
+matches any decimal digit. A `-` that immediately follows a range is
+treated as a literal, e.g., `[a-c-e]` matches `a`, `b`, `c`, `-`, or `e`.
 
 To include a literal `]` in the list, make it the first character
-(after `^`, if that is used). To include a literal `-`, make it the
-first or last character, or the second endpoint of a range. To use a
-literal `-` as the first endpoint of a range, enclose it in `[.` and
-`.]`.  With the exception of these characters, some combinations using
-`[`, all other special characters lose their special significance
-within a bracket expression. In particular, `\` is not special.
+(after `^`, if that is used) or escape it as `\]`. To include a literal
+`-`, make it the first or last character, or escape it as `\-`.
+Unlike in POSIX bracket expressions, `\` keeps its special meaning
+within a bracket expression: escapes such as `\]`, `\\`, and the class
+shorthands such as `\d` work inside the brackets.
 
 Within a bracket expression, the name of a character class enclosed in
 `[:` and `:]` stands for the list of all characters belonging to that
@@ -531,8 +531,7 @@ in the Table below.
 | `\r`     | carriage return, as in C                                                                        |
 | `\t`     | horizontal tab, as in C                                                                         |
 | `\u`wxyz | (where wxyz is exactly four hexadecimal digits) the character whose hexadecimal value is 0xwxyz |
-| `\x`hh   | (where hh is a pair of hexadecimal digits) the character whose hexadecimal value is 0xhh        |
-| `\0`     | the character whose value is 0 (the null byte)                                                  |
+| `\x`hh   | (where hh is a pair of hexadecimal digits) the character whose hexadecimal value is 0xhh; the null byte is `\x00` |
 
 A constraint escape is a constraint, matching the empty string if
 specific conditions are met, written as an escape. They are shown in
@@ -554,15 +553,17 @@ For example, consider a string with multiple lines, and each line has
 three whitespace delimited fields where the second field is expected
 to be a number and the third field a boolean.  This can be expressed
 with the following regular expression, where the capture groups have
-been labeled `$0` to `$4`.
+been labeled `$0` to `$3`.
 
 ```
 (?m)^\s*(\S+)\s+([0-9]+)\s+(true|false)\s*$
-^^^^    ^^^^^   ^^^^^^^^   ^^^^^^^^^^^^
- $1      $2       $3           $4
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-               $0
+        ^^^^^   ^^^^^^^^   ^^^^^^^^^^^^
+         $1        $2           $3
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    $0
 ```
+
+The `(?m)` flag group is non-capturing, so it receives no label.
 
 Capture group 0 always corresponds to an implicit unnamed group that
 includes the entire match.  If a match is found, this group is always

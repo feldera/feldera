@@ -55,7 +55,7 @@ public class SqlSafeCastFunction extends CustomFunctions.NonOptimizedFunction {
 
     private SqlSafeCastFunction() {
         super("SAFE_CAST", SqlKind.SAFE_CAST, returnTypeInference(),
-                null, SqlFunctionCategory.SYSTEM, "casts#safe_cast",
+                null, SqlFunctionCategory.SYSTEM, "casts#safe-casts",
                 "runtime_aggtest/illarg_tests/test_cast.py");
     }
 

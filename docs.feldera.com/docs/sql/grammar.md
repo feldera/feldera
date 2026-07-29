@@ -11,9 +11,10 @@ form.
 - The vertical bar `|` indicates choice between two constructs.
 
 SQL reserved keywords cannot be used as table and view names.  In
-addition, the following keywords are reserved: `USER`, `NOW`.  All
-identifiers starting with "Feldera" are also reserved (in all case
-combinations).
+addition, the following keywords are reserved: `USER`, `NOW`.
+Identifiers starting with "Feldera" (in any case combination) are used
+for system objects, such as the error view, and should not be used for
+user-defined objects.
 
 ```
 statementList:
@@ -46,11 +47,11 @@ generalType
   :   type [NOT NULL]
 
 createTypeStatement
-  :   CREATE TYPE name AS '(' typedef ')'
+  :   CREATE TYPE name AS typedef
 
 typedef
   : generalType
-  | name generalType [, name type ]*
+  | '(' name generalType [, name generalType ]* ')'
 ```
 
 See [user-defined types](types.md#user-defined-types)
@@ -76,11 +77,7 @@ columnConstraint
   |   DEFAULT expression
 
 tableConstraint
-  :   [ CONSTRAINT name ]
-      {
-          CHECK '(' expression ')'
-      |   PRIMARY KEY parensColumnList
-      }
+  :   PRIMARY KEY parensColumnList
   |   FOREIGN KEY parensColumnList REFERENCES identifier parensColumnList
 
 parensColumnList
@@ -101,7 +98,7 @@ keyValue
 Columns that are part of a `PRIMARY KEY` cannot have nullable types.
 
 Columns that are part of a `FOREIGN KEY` must refer to `PRIMARY KEY`
-columns in some table.  Their types must must match (but `FOREIGN KEY`
+columns in some table.  Their types must match (but `FOREIGN KEY`
 columns may be nullable).
 
 `CREATE TABLE` is used to declare tables.  Tables correspond to input
@@ -129,8 +126,7 @@ CREATE TABLE empsalary (
     salary int,
     enroll_date date
 ) WITH (
-    'source' = 'kafka',
-    'url' = '127.0.0.1:8080'
+    'materialized' = 'true'
 );
 ```
 
@@ -151,11 +147,11 @@ kafka topic name as a column default value:
 
 ```sql
 CREATE TABLE T(
-  kafka_partition VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['kafka_topic'] AS VARCHAR),
+  kafka_topic VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['kafka_topic'] AS VARCHAR),
   ...
 )
 WITH (
-   'connectors': '[{
+   'connectors' = '[{
       "transport": {
           "name": "kafka_input",
           "config": {
@@ -222,7 +218,7 @@ operation.  The value of this property should be an integer value.
 <a id="skip-unused-columns"></a>
 #### Ignoring unused columns
 
-The `skip_unused_columns` is an optional Boolean property that can be
+`skip_unused_columns` is an optional Boolean property that can be
 applied to tables.  Pipelines can ingest data from external persistent
 sources, such as databases or data lakes, where the Feldera pipeline
 is not the only consumer of the data.  In some circumstances, the
@@ -335,8 +331,8 @@ query
       |   selectWithExclude
       |   selectWithReplace
       |   query UNION [ ALL | DISTINCT ] query
-      |   query EXCEPT [ DISTINCT ] query
-      |   query MINUS [ DISTINCT ] query
+      |   query EXCEPT [ ALL | DISTINCT ] query
+      |   query MINUS [ ALL | DISTINCT ] query
       |   query INTERSECT [ ALL | DISTINCT ] query
       }
       [ ORDER BY { ALL [ ASC | DESC ] [ NULLS FIRST | NULLS LAST ] | orderItem [, orderItem]* } ]
@@ -359,7 +355,7 @@ values
   :   { VALUES | VALUE } expression [, expression ]*
 
 select
-  :   SELECT [ hintComment ] [ ALL | DISTINCT [ ON '(' expression [ ',' expression ]* ')' ] ] { projectItem [, projectItem ]* }
+  :   SELECT [ hintComment ] [ ALL | DISTINCT [ ON '(' expression [ ',' expression ]* ')' ] ] { * | projectItem [, projectItem ]* }
       FROM tableExpression
       [ WHERE booleanExpression ]
       [ GROUP BY { ALL | [ ALL | DISTINCT ] { groupItem [, groupItem ]* } } ]
@@ -381,7 +377,8 @@ equivalent to `SELECT deptno, SUM(sal) FROM emp GROUP BY deptno`.
 <a id="lateral"></a>
 ```
 tablePrimary
-  :   tableName '(' TABLE tableName ')'
+  :   tableName
+  |   '(' TABLE tableName ')'
   |   tablePrimary [ hintComment ] '(' columnDecl [, columnDecl ]* ')'
   |   [ LATERAL ] '(' query ')'
   |   UNNEST '(' expression ')' [ WITH ORDINALITY ]
@@ -402,7 +399,7 @@ selectWithoutFrom
           { * | projectItem [, projectItem ]* }
 
 selectWithExclude
-  :   SELECT [ tableName '.' ] '*' [ [ 'EXCLUDE' | 'EXCEPT' ] parensColumnList ]
+  :   SELECT [ tableName '.' ] '*' [ ( 'EXCLUDE' | 'EXCEPT' ) parensColumnList ]
 
 selectWithReplace
   :   SELECT  '*' 'REPLACE' '(' expression 'AS' column [ ',' expression 'AS' column ]* ')'
@@ -425,7 +422,7 @@ expressions.
 ```
 projectItem
   :   expression [ [ AS ] columnAlias ]
-  |   ROW(rowStarItem [, projectItem ]* [ [ AS columnAlias ] ]
+  |   ROW '(' rowStarItem [, projectItem ]* ')' [ [ AS ] columnAlias ]
   |   tableAlias . '*'
 
 rowStarItem
@@ -438,11 +435,11 @@ rowStarItem
 The following forms of `SELECT` are supported:
 
 - `SELECT expr`: No `FROM` clause; implicitly assumes that the `SELECT` selects from a fixed table with 1 row
-- `SELECT * EXCLUDE a, b FROM T`: select all columns of table `T` except the ones named `a` and `b`
-- `SELECT * EXCEPT a, b FROM T`: `EXCEPT` is a synonym for `EXCLUDE`; this statement is equivalent to the previous statement
+- `SELECT * EXCLUDE(a, b) FROM T`: select all columns of table `T` except the ones named `a` and `b`
+- `SELECT * EXCEPT(a, b) FROM T`: `EXCEPT` is a synonym for `EXCLUDE`; this statement is equivalent to the previous statement
 - `SELECT * REPLACE (a+b AS a) FROM T`: Select all columns of table `T` and replace column `a` with the expression `a+b`
 - `SELECT ROW(T.*) FROM T`: Create a `ROW`-typed column with all columns of table `T`
-- `SELECT ROW(T.* EXCLUDE(a, b)) FROM T: Create a `ROW`-typed column with all columns of table `T` except columns `a` and `b`
+- `SELECT ROW(T.* EXCLUDE(a, b)) FROM T`: Create a `ROW`-typed column with all columns of table `T` except columns `a` and `b`
 - `SELECT` supports [lateral column aliasing](identifiers.md#lateral-column-aliasing), where
   an identifier defined in a `SELECT` statement can be immediately used in the same statement
   or in the associated `GROUP BY` and `HAVING` statements.
@@ -451,7 +448,8 @@ The following forms of `SELECT` are supported:
 ```
 tableExpression
   :   tableReference [, tableReference ]*
-  |   tableExpression [ NATURAL ] [ { LEFT | RIGHT | FULL } [ OUTER | ASOF ] ] JOIN tableExpression [ joinCondition ]
+  |   tableExpression [ NATURAL ] [ { LEFT | RIGHT | FULL } [ OUTER ] ] JOIN tableExpression [ joinCondition ]
+  |   tableExpression [ LEFT ] ASOF JOIN tableExpression MATCH_CONDITION '(' booleanExpression ')' joinCondition
   |   tableExpression CROSS JOIN tableExpression
   |   tableExpression [ CROSS | OUTER ] APPLY tableExpression
 
@@ -568,7 +566,7 @@ These hints are considered experimental, and they may change
 - `shard(`*table*`)`: Indicates that the following `JOIN` should be implemented using
   a hash-join strategy by sharding the input with alias *table*
 - `balance(`*table*`)`: Indicates that the following `JOIN` should be implemented using
-  a balanced strategy by hashing on all fields the input with alias *table*
+  a balanced strategy by hashing on all fields of the input with alias *table*
 
 Note: specifying hints may inhibit some compiler optimizations.
 
@@ -579,7 +577,7 @@ syntax:
 
 ```
 createIndexStatement
-   : CREATE INDEX identifier ON identifier(columnOrList);
+   : CREATE INDEX identifier ON identifier parensColumnList ';'
 ```
 
 For the purpose of incremental view maintenance Feldera automatically
@@ -643,11 +641,11 @@ to `GROUP BY`.
     <th>Description</th>
   </tr>
   <tr>
-     <td><code>GROUPING(</code>expression, [ expression ]<code>)</code></td>
+     <td><code>GROUPING(</code>expression [, expression ]*<code>)</code></td>
      <td>Returns a bit vector of the grouping expressions</td>
   </tr>
   <tr>
-     <td><code>GROUPING_ID(</code>expression, [ expression ]<code>)</code></td>
+     <td><code>GROUPING_ID(</code>expression [, expression ]*<code>)</code></td>
      <td>Synonym for <code>GROUPING</code></td>
   </tr>
 </table>
@@ -699,15 +697,15 @@ windowedAggregateCall
 windowSpec
   :   '('
       [ windowName ]
-      PARTITION BY expression [, expression ]*
+      [ PARTITION BY expression [, expression ]* ]
       [ ORDER BY orderItem [, orderItem ]* ]
       [
-          RANGE BETWEEN windowRange AND windowRange
+          ( RANGE | ROWS ) BETWEEN windowRange AND windowRange
       ]
       ')'
 
 windowRange
-  :   CURRENT
+  :   CURRENT ROW
   |   ( UNBOUNDED | expression ) ( PRECEDING | FOLLOWING )
 ```
 
@@ -760,22 +758,22 @@ lambdaExpression:
       parameters '->' expression
 
 parameters:
-      '(' [ identifier [, identifier ] ] ')'
+      '(' [ identifier [, identifier ]* ] ')'
   |   identifier
 ```
 
-Lambda expressions can be used as arguments for higher-order function.
+Lambda expressions can be used as arguments for higher-order functions.
 Here is an example:
 
 ```sql
-SELECT EXISTS(ARRAY[1, -12, 3], x -> x > 0)
+SELECT ARRAY_EXISTS(ARRAY[1, -12, 3], x -> x > 0)
 ```
 
 ## Setting options
 
 ```
 setOptionStatement:
-   'SET' identifier = 'ON' | 'OFF' | literal
+   SET identifier '=' ( ON | OFF | literal )
 ```
 
 The SQL statement `SET VARIABLE = value;` can be used to control

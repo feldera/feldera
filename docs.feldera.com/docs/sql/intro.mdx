@@ -57,8 +57,8 @@ Differences between DBSP and a database:
   continuously.
 
 - A traditional database offers durable storage of data.  In general,
-  DBSP does store the contents of the data, either for the tables or
-  the defined views.  DBSP will only store sufficient data to compute
+  DBSP does not store the contents of the data, for either the tables
+  or the defined views.  DBSP will only store sufficient data to compute
   the changes.  DBSP *can* be configured to store the data for tables
   and views.
 
@@ -66,9 +66,8 @@ Differences between DBSP and a database:
   or transactions.  DBSP is simply a stream processing engine, where
   each input change produces a corresponding output change.
 
-- Other traditional database constructs, such as triggers, or
-  multi-version concurrency control, do not make sense for a system
-  like DBSP.
+- Other traditional database constructs, such as triggers, do not
+  make sense for a system like DBSP.
 
 ## Supported SQL Constructs
 

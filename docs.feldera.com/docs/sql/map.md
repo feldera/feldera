@@ -7,7 +7,7 @@ For example `MAP<VARCHAR, INT>` is a map from strings to integers.
 
 In `CREATE TABLE` and `CREATE TYPE` declarations there is no way to
 specify the nullability of the values of a `MAP`.  The compiler will
-always assume that map keys are *not* nullable, while values elements
+always assume that map keys are *not* nullable, while values
 *are* nullable:
 
 ```sql
@@ -16,7 +16,7 @@ CREATE TABLE T(m MAP<VARCHAR, INT>);
 
 Table `T` will have a single column `m` whose values are nullable
 maps, the map's keys are non-nullable `VARCHAR` values, while the
-maps's values are nullable `INT` values.
+map's values are nullable `INT` values.
 
 ## Map literals
 
@@ -34,12 +34,12 @@ Comparison operations (`=`, `<>`, `!=`, `>`, `<`, `>=`, `<=`) can be applied to 
 
 #### Examples:
 
-1. Given a table `T` with columns `c1 = MAP['v', 11, 'q', 66]` and `c2 = MAP['v': 22]`:
+1. Given a table `T` with columns `c1 = MAP['v', 11, 'q', 66]` and `c2 = MAP['v', 22]`:
    - `SELECT c1 FROM T WHERE c1 < c2;` returns:
      -  `MAP['q', 66, 'v', 11]`
 
 2. Given two maps where previously compared key-value pairs are equal, such as:
-   - `MAP['f', 1, 'v', 0]` and `MAP['f': 1]`
+   - `MAP['f', 1, 'v', 0]` and `MAP['f', 1]`
    - The map with more elements, `MAP['f', 1, 'v', 0]`, is considered larger.
 
 
@@ -61,7 +61,7 @@ each key-value pair in the `MAP`.  If the input is a
 map with 5 key-value pairs, the output is a table with 5 rows, each
 row holding one key-value pair of the map.
 
-When `UNNEST` operator is used in self-joins as follows, an alias needs
+When the `UNNEST` operator is used in self-joins as follows, an alias needs
 to be used to name the key and value fields (`zips(city, zip)` in the example):
 
 ```sql

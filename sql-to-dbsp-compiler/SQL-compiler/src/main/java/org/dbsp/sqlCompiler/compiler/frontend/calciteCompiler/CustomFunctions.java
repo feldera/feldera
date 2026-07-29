@@ -411,7 +411,7 @@ public class CustomFunctions {
                                     .or(typeName(SqlTypeName.SMALLINT)
                                     .or(typeName(SqlTypeName.TINYINT)))),
                     SqlFunctionCategory.NUMERIC,
-                    "decimal#round", FunctionDocumentation.NO_FILE);
+                    "decimal#bround", FunctionDocumentation.NO_FILE);
         }
 
         private static RelDataType broundReturnType(SqlOperatorBinding opBinding) {

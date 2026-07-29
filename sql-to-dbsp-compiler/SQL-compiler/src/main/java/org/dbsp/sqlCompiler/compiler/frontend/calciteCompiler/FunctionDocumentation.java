@@ -68,7 +68,7 @@ public class FunctionDocumentation {
         FunctionDescription func = funcs.get(0);
         List<String> files = new ArrayList<>();
         for (FunctionDescription f: funcs) {
-            String[] fs = func.documentation().split(",");
+            String[] fs = f.documentation().split(",");
             files.addAll(Arrays.asList(fs));
         }
         writer.print("* `" + func.functionName().toUpperCase(Locale.ENGLISH) + "`");
@@ -100,13 +100,9 @@ public class FunctionDocumentation {
                     throw new RuntimeException("Function `" + func.functionName() + "` does not appear in file " + docFile);
             }
             if (!anchor.isEmpty()) {
-                if (!contents.contains("<a id=\"" + anchor + "\"></a>")) {
-                    // Check that the file contains an anchor.
-                    // It can be either <a id="anchor"> or # anchor
-                    if (!contents.toLowerCase().replace("`", "")
-                            .contains("# " + anchor.replace("-", " ")))
-                        throw new RuntimeException("Anchor `" + anchor + "` does not appear in file " + docFile);
-                }
+                if (!contents.contains("<a id=\"" + anchor + "\"></a>")
+                        && !headingSlugs(contents).contains(anchor))
+                    throw new RuntimeException("Anchor `" + anchor + "` does not appear in file " + docFile);
                 anchor = "#" + anchor;
             } else {
                 throw new RuntimeException("No anchor for function " +
@@ -124,8 +120,32 @@ public class FunctionDocumentation {
         writer.println();
     }
 
+    /** Slugify a Markdown heading the way Docusaurus (github-slugger) does:
+     * lowercase, drop punctuation, replace spaces with hyphens.
+     * Underscores and hyphens are preserved. */
+    static String slugify(String heading) {
+        String slug = heading.trim().toLowerCase(Locale.ENGLISH);
+        slug = slug.replaceAll("[^a-z0-9 _-]", "");
+        return slug.trim().replaceAll("\\s+", "-");
+    }
+
+    /** The slugs of all Markdown headings in the file contents.
+     * A `#anchor` link resolves only against the FULL heading slug;
+     * substring matches produce links that break in the rendered docs. */
+    static Set<String> headingSlugs(String contents) {
+        Set<String> slugs = new HashSet<>();
+        for (String line: contents.split("\n")) {
+            if (!line.startsWith("#"))
+                continue;
+            slugs.add(slugify(line.replaceFirst("^#+", "")));
+        }
+        return slugs;
+    }
+
     static boolean sameFunction(FunctionDescription left, FunctionDescription right) {
-        return left.aggregate() == right.aggregate() && left.functionName().equals(right.functionName());
+        // Case-insensitive: registries disagree on name casing (e.g., RLIKE vs rlike)
+        return left.aggregate() == right.aggregate() &&
+                left.functionName().equalsIgnoreCase(right.functionName());
     }
 
     static final String PYTHON_TESTS = "../../python/tests";
@@ -153,6 +173,13 @@ public class FunctionDocumentation {
         }
     }
 
+    /** A SQL construct that has no operator-table entry but deserves an index entry. */
+    record SyntaxConstruct(String functionName, String documentation, boolean aggregate, String testedBy)
+            implements FunctionDescription { }
+
+    static final List<FunctionDescription> SYNTAX_CONSTRUCTS = List.of(
+            new SyntaxConstruct("PIVOT", "aggregates#pivots", false, NO_FILE));
+
     /** Generate documentation with an index of all functions supported */
     public static void generateIndex(String file) throws IOException {
         File f = new File(file);
@@ -165,6 +192,7 @@ public class FunctionDocumentation {
         List<FunctionDescription> sorted = new ArrayList<>();
         sorted.addAll(CalciteFunctions.INSTANCE.getDescriptions());
         sorted.addAll(new CustomFunctions().getDescriptions());
+        sorted.addAll(SYNTAX_CONSTRUCTS);
         sorted.sort(Comparator.comparing(FunctionDescription::functionName, String.CASE_INSENSITIVE_ORDER));
         TextFileCache fileContents = new TextFileCache();
 

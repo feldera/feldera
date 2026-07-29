@@ -1,7 +1,7 @@
 # System Views
 
-The Feldera runtime comes with some built-in views.  These views are
-built-in.  Their contents is pre-populated by the runtime.
+The Feldera runtime comes with some built-in views.  Their contents
+are pre-populated by the runtime.
 
 ## `ERROR_VIEW`
 
@@ -23,7 +23,7 @@ The second column contains an error string.
 
 The third column contains additional metadata describing the error.
 
-Currently this view contains all late records that are filered away by
+Currently this view contains all late records that are filtered away by
 [`LATENESS` annotations](streaming.md).
 
 (Currently the error view will *not* contain errors that are produced
