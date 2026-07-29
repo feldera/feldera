@@ -86,10 +86,9 @@ pub trait DeCollectionStream: Send + Sync + InputBuffer {
     /// Buffer a new delete update.
     ///
     /// The `data` argument contains a serialized record whose
-    /// type depends on the underlying input stream: streams created by
+    /// type depends on the underlying input stream: streams created by the
     /// [`RootCircuit::add_input_zset`](`dbsp::RootCircuit::add_input_zset`)
-    /// and [`RootCircuit::add_input_set`](`dbsp::RootCircuit::add_input_set`)
-    /// methods support deletion by value, hence the serialized record must
+    /// method support deletion by value, hence the serialized record must
     /// match the value type of the stream.  Streams created with
     /// [`RootCircuit::add_input_map`](`dbsp::RootCircuit::add_input_map`)
     /// support deletion by key, so the serialized record must match the key

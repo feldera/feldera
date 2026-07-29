@@ -26,6 +26,17 @@ import TabItem from '@theme/TabItem';
           `CONNECTOR_METADATA()`. Previously such a column was always `NULL`
           for these connectors.
 
+        - Backward-incompatible change in the `dbsp` crate Rust API: the
+          `add_input_set` operator was removed, together with the `SetHandle`
+          type and the dynamic variants `dyn_add_input_set` and
+          `dyn_add_input_set_mono`. To keep set semantics (duplicate inserts
+          and deletes of absent elements are no-ops), use `add_input_map` with
+          the element as both key and value; its upsert semantics subsumes set
+          semantics. If the input contains no duplicates, `add_input_zset` is
+          a cheaper alternative, but the caller must guarantee that weights
+          stay 0 or 1. SQL pipelines are not affected: the SQL compiler never
+          generated input sets.
+
         - The SQL compiler was incorrectly garbage-collecting input
           tables with a primary key and a column with LATENESS (#6690).  Such
           tables can only be GC-ed if the column with LATENESS is part of
