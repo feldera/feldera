@@ -85,9 +85,13 @@ class RuntimeConfig:
         dev_tweaks: Optional[dict] = None,
         env: Optional[dict[str, str]] = None,
         logging: Optional[str] = None,
+        datafusion_memory_mb: Optional[int] = None,
+        max_rss_mb: Optional[int] = None,
     ):
         self.workers = workers
         self.hosts = hosts
+        self.datafusion_memory_mb = datafusion_memory_mb
+        self.max_rss_mb = max_rss_mb
         self.tracing = tracing
         self.tracing_endpoint_jaeger = tracing_endpoint_jaeger
         self.cpu_profiler = cpu_profiler
