@@ -3587,10 +3587,19 @@ pub(crate) mod tests {
     fn test_is_compaction_complete() {
         use crate::circuit::GlobalNodeId;
         use crate::circuit::metadata::{MetaItem, SPINE_BATCHES_COUNT};
+        use crate::trace::spine_async::MIN_LEVEL0_MERGE_BATCHES;
         use crate::utils::Tup2;
         use std::time::Duration;
 
-        const BATCHES: usize = 30;
+        // Stay below the number of batches that makes a spine merge on its own,
+        // so that every batch is still waiting when compaction is requested.
+        // Feeding more than that races the background merger, which is free to
+        // reduce a spine to a single batch and leave compaction nothing to do.
+        const BATCHES: i32 = MIN_LEVEL0_MERGE_BATCHES as i32 - 1;
+
+        // Small batches keep every batch in level 0, where
+        // `MIN_LEVEL0_MERGE_BATCHES` applies.  500 records also spread over
+        // both workers, so both spines hold `BATCHES` batches.
         const RECORDS_PER_BATCH: i32 = 500;
 
         let (mut dbsp, input_handle) =
@@ -3602,7 +3611,7 @@ pub(crate) mod tests {
             .unwrap();
 
         // Feed enough batches to give each spine more than one batch to merge.
-        for batch in 0..BATCHES as i32 {
+        for batch in 0..BATCHES {
             let mut tuples: Vec<_> = (0..RECORDS_PER_BATCH)
                 .map(|r| Tup2(batch * RECORDS_PER_BATCH + r, Tup2(r, 1)))
                 .collect();
