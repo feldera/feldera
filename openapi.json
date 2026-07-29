@@ -3883,7 +3883,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Compute Program Diff",
-        "description": "Required role: `read` or higher.\n\nCompute the diff between the pipeline's current program and a proposed new\nversion, without modifying or restarting the pipeline.\n\nThe diff lists the tables, views, and connectors that would be added,\nremoved, or modified. It is the same diff shown when approving changes during\nbootstrapping, letting you preview the effect of a change before applying it.\n\nThe baseline is the pipeline's currently configured program compiled with its\nruntime, not necessarily the program in the latest checkpoint (which may have\nbeen produced by a different program or runtime version).",
+        "description": "Required role: `write` or higher.\n\nCompute the diff between the pipeline's current program and a proposed new\nversion, without modifying or restarting the pipeline.\n\nThe diff lists the tables, views, and connectors that would be added,\nremoved, or modified. It is the same diff shown when approving changes during\nbootstrapping, letting you preview the effect of a change before applying it.\n\nThe baseline is the pipeline's currently configured program compiled with its\nruntime, not necessarily the program in the latest checkpoint (which may have\nbeen produced by a different program or runtime version).",
         "operationId": "post_pipeline_diff",
         "parameters": [
           {
@@ -7916,7 +7916,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Validate Program",
-        "description": "Required role: `read` or higher.\n\nValidate a SQL program by compiling it, without creating a pipeline or\nbuilding the pipeline binary. Reports SQL errors and warnings and the derived\nschema and connectors. Set `ir` to also return the program IR (dataflow).\n\nNote that this endpoint returns HTTP 200, regardless of whether validation\nsucceeds or fails. The validation result, including any compiler warnings and errors,\nis encoded in the `ValidateProgramResponse` response body.",
+        "description": "Required role: `write` or higher.\n\nValidate a SQL program by compiling it, without creating a pipeline or\nbuilding the pipeline binary. Reports SQL errors and warnings and the derived\nschema and connectors. Set `ir` to also return the program IR (dataflow).\n\nNote that this endpoint returns HTTP 200, regardless of whether validation\nsucceeds or fails. The validation result, including any compiler warnings and errors,\nis encoded in the `ValidateProgramResponse` response body.",
         "operationId": "post_validate_program",
         "requestBody": {
           "description": "The SQL program to validate, an optional runtime version, and whether to return the IR",
