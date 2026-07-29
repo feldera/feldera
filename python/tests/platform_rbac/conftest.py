@@ -131,6 +131,10 @@ def single_tenant_auth(
     env = {
         "AUTH_PROVIDER": "generic-oidc",
         "FELDERA_AUTH_CLIENT_ID": "feldera",
+        # The suite's issuers run on localhost, so a trust registered against
+        # one names a loopback address. That is the installation this flag
+        # exists for, and without it the manager refuses to fetch their keys.
+        "FELDERA_ALLOW_INTERNAL_TENANT_TRUST_ISSUERS": "true",
         "FELDERA_AUTH_ISSUER": idp.url,
         "FELDERA_AUTH_AUDIENCE": DEFAULT_AUDIENCE,
         "FELDERA_OWNERS": owners,
