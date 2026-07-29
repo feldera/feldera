@@ -46,7 +46,7 @@
 //! pipeline manager side, we store a hash of the API key in the database along
 //! with the permissions.
 
-use std::{collections::HashMap, env};
+use std::{collections::HashMap, env, sync::Arc};
 
 use actix_web::body::MessageBody;
 use actix_web::http::header::{self, HeaderMap, HeaderName, HeaderValue};
@@ -889,6 +889,12 @@ pub(crate) struct ProviderGenericOidc {
 /// Resolve the RSA decoding key for `(issuer, kid)` from the federated JWKS
 /// cache, fetching on a miss. The network fetch runs without holding the cache
 /// lock, so a slow issuer endpoint cannot serialize all federated auth.
+///
+/// An unverified token chooses the `kid`, so a miss must not cost a fetch per
+/// request. Refreshes for one issuer serialize on a gate, and a refresh that
+/// did not produce the requested `kid` blocks further fetches for
+/// [`ISSUER_REFRESH_COOLDOWN_SECONDS`]. A genuine key rollover still resolves on
+/// its first miss, because the cooldown only starts once a refresh has run.
 async fn resolve_issuer_jwk(
     state: &ServerState,
     issuer: &str,
@@ -898,6 +904,26 @@ async fn resolve_issuer_jwk(
     if let Some(key) = state.issuer_jwk_cache.lock().await.cached(issuer, kid) {
         return Ok(key);
     }
+
+    let gate = state.issuer_jwk_cache.lock().await.refresh_gate(issuer);
+    let _refreshing = gate.lock().await;
+
+    {
+        let mut cache = state.issuer_jwk_cache.lock().await;
+        // A refresh may have completed while this request waited on the gate.
+        if let Some(key) = cache.cached(issuer, kid) {
+            return Ok(key);
+        }
+        if cache.refreshed_recently(issuer) {
+            return Err(AuthError::JwkShape(
+                "kid not present in issuer JWKS".to_string(),
+            ));
+        }
+        // Marked before the fetch, so that a failing issuer is retried on the
+        // cooldown rather than on every request.
+        cache.mark_refreshed(issuer);
+    }
+
     let keys = fetch_issuer_jwks(issuer, destination).await?;
     let mut cache = state.issuer_jwk_cache.lock().await;
     cache.insert(issuer, keys);
@@ -1205,18 +1231,43 @@ pub struct JwkCache {
 
 /// JWKS cache keyed by (issuer, kid) for federated tokens whose issuer is
 /// dynamically discovered from a registered trust relationship.
+///
+/// Lock order is always gate before cache. Take an issuer's gate first, then
+/// the lock around this struct, and release that lock before awaiting anything.
+/// Holding this struct's lock while awaiting a gate is the reverse order and
+/// deadlocks against any request already in [`resolve_issuer_jwk`], which is
+/// why that function reads the gate out of a temporary rather than holding the
+/// cache across the two.
 pub struct IssuerJwkCache {
     cache: TimedCache<(String, String), DecodingKey>,
+    /// Issuers refreshed within the cooldown. Membership is the whole value:
+    /// entries expire after [`ISSUER_REFRESH_COOLDOWN_SECONDS`].
+    recent_refresh: TimedCache<String, ()>,
+    /// One gate per issuer, so concurrent misses cost a single fetch.
+    refresh_gates: TimedCache<String, Arc<tokio::sync::Mutex<()>>>,
 }
 
 const DEFAULT_JWK_CACHE_LIFETIME_SECONDS: u64 = 120;
 const DEFAULT_JWK_CACHE_CAPACITY: usize = 10;
 const ISSUER_JWK_CACHE_CAPACITY: usize = 64;
 
+/// Minimum gap between JWKS refreshes for one issuer. An unverified token
+/// chooses the `kid`, so without this gap every unknown `kid` would cost a
+/// discovery fetch and a JWKS fetch.
+const ISSUER_REFRESH_COOLDOWN_SECONDS: u64 = 30;
+
 impl IssuerJwkCache {
     pub(crate) fn new() -> Self {
         Self {
             cache: TimedCache::with_lifespan_and_capacity(
+                DEFAULT_JWK_CACHE_LIFETIME_SECONDS,
+                ISSUER_JWK_CACHE_CAPACITY,
+            ),
+            recent_refresh: TimedCache::with_lifespan_and_capacity(
+                ISSUER_REFRESH_COOLDOWN_SECONDS,
+                ISSUER_JWK_CACHE_CAPACITY,
+            ),
+            refresh_gates: TimedCache::with_lifespan_and_capacity(
                 DEFAULT_JWK_CACHE_LIFETIME_SECONDS,
                 ISSUER_JWK_CACHE_CAPACITY,
             ),
@@ -1237,6 +1288,27 @@ impl IssuerJwkCache {
             self.cache
                 .cache_set((issuer.to_string(), kid), decoding_key);
         }
+    }
+
+    /// Whether `issuer` was refreshed within the cooldown.
+    fn refreshed_recently(&mut self, issuer: &str) -> bool {
+        self.recent_refresh.cache_get(&issuer.to_string()).is_some()
+    }
+
+    /// Start `issuer`'s cooldown.
+    fn mark_refreshed(&mut self, issuer: &str) {
+        self.recent_refresh.cache_set(issuer.to_string(), ());
+    }
+
+    /// The gate that serializes refreshes for `issuer`.
+    fn refresh_gate(&mut self, issuer: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let key = issuer.to_string();
+        if let Some(gate) = self.refresh_gates.cache_get(&key) {
+            return gate.clone();
+        }
+        let gate = Arc::new(tokio::sync::Mutex::new(()));
+        self.refresh_gates.cache_set(key, gate.clone());
+        gate
     }
 }
 
@@ -1902,5 +1974,30 @@ mod test {
                 "a public hostname must keep at least one address"
             );
         }
+    }
+
+    /// An unverified token picks the `kid`, so a refresh that did not produce it
+    /// must not let the next request fetch again.
+    #[tokio::test]
+    async fn an_issuer_refresh_starts_a_cooldown() {
+        let mut cache = super::IssuerJwkCache::new();
+        assert!(!cache.refreshed_recently("https://idp.example.com"));
+
+        cache.mark_refreshed("https://idp.example.com");
+        assert!(cache.refreshed_recently("https://idp.example.com"));
+        // The cooldown is per issuer, so one slow provider cannot block others.
+        assert!(!cache.refreshed_recently("https://other.example.com"));
+    }
+
+    /// Concurrent misses for one issuer share a gate, so they cost one fetch.
+    #[tokio::test]
+    async fn a_refresh_gate_is_shared_per_issuer() {
+        let mut cache = super::IssuerJwkCache::new();
+        let first = cache.refresh_gate("https://idp.example.com");
+        let second = cache.refresh_gate("https://idp.example.com");
+        let other = cache.refresh_gate("https://other.example.com");
+
+        assert!(Arc::ptr_eq(&first, &second));
+        assert!(!Arc::ptr_eq(&first, &other));
     }
 }
