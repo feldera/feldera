@@ -67,6 +67,9 @@ iceberg-tests-fs = []
 iceberg-tests-glue = []
 iceberg-tests-rest = []
 iceberg-tests-s3tables = []
+# Follow-mode tests. Need a REST catalog and an S3 store both the writer
+# (pyiceberg) and the connector can reach. See crates/iceberg/src/test/README.md.
+iceberg-tests-follow = []
 fips = ["rustls/fips"]
 bench-mode = []
 with-postgres-cdc = ["etl", "etl-config", "etl-postgres"]

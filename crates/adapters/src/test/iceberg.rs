@@ -7,7 +7,7 @@ use crate::{
 use crossbeam::channel::Receiver;
 use dbsp::DBData;
 use feldera_sqllib::Variant;
-#[cfg(feature = "iceberg-tests-fs")]
+#[cfg(any(feature = "iceberg-tests-fs", feature = "iceberg-tests-follow"))]
 use feldera_sqllib::{ByteArray, F32, F64, Timestamp, TimestampTz};
 use feldera_types::{
     program_schema::Field,
@@ -15,12 +15,25 @@ use feldera_types::{
 };
 use serde_json::json;
 
-use std::{collections::HashMap, time::Instant};
+use std::collections::HashMap;
+#[cfg(any(
+    feature = "iceberg-tests-fs",
+    feature = "iceberg-tests-glue",
+    feature = "iceberg-tests-rest",
+    feature = "iceberg-tests-s3tables"
+))]
+use std::time::Instant;
 use tempfile::NamedTempFile;
+#[cfg(any(
+    feature = "iceberg-tests-fs",
+    feature = "iceberg-tests-glue",
+    feature = "iceberg-tests-rest",
+    feature = "iceberg-tests-s3tables"
+))]
 use tracing::info;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
-#[cfg(feature = "iceberg-tests-fs")]
+#[cfg(any(feature = "iceberg-tests-fs", feature = "iceberg-tests-follow"))]
 use std::io::Write;
 
 #[cfg(feature = "iceberg-tests-fs")]
@@ -28,7 +41,8 @@ use super::IcebergSubsetTestStruct;
 #[cfg(any(
     feature = "iceberg-tests-fs",
     feature = "iceberg-tests-glue",
-    feature = "iceberg-tests-rest"
+    feature = "iceberg-tests-rest",
+    feature = "iceberg-tests-follow"
 ))]
 use super::IcebergTestStruct;
 #[cfg(feature = "iceberg-tests-s3tables")]
@@ -46,7 +60,7 @@ fn init_logging() {
         .try_init();
 }
 
-#[cfg(feature = "iceberg-tests-fs")]
+#[cfg(any(feature = "iceberg-tests-fs", feature = "iceberg-tests-follow"))]
 /// Store test dataset in an ndjson file
 fn data_to_ndjson(data: Vec<IcebergTestStruct>) -> NamedTempFile {
     println!("delta_table_output_test: preparing input file");
@@ -93,6 +107,12 @@ fn iceberg_connector_metrics(pipeline: &Controller) -> HashMap<String, f64> {
 /// `config` is the connector's transport config as a JSON object. This function
 /// forces `mode = snapshot`. Returns the output file and the connector's custom
 /// metrics captured just before the pipeline is stopped.
+#[cfg(any(
+    feature = "iceberg-tests-fs",
+    feature = "iceberg-tests-glue",
+    feature = "iceberg-tests-rest",
+    feature = "iceberg-tests-s3tables"
+))]
 fn iceberg_snapshot_to_json<T>(
     schema: &[Field],
     table_properties: &[(&str, &str)],
@@ -224,7 +244,7 @@ where
 }
 
 /// Generate up to `max_records` _unique_ records.
-#[cfg(feature = "iceberg-tests-fs")]
+#[cfg(any(feature = "iceberg-tests-fs", feature = "iceberg-tests-follow"))]
 fn data(n_records: usize) -> Vec<IcebergTestStruct> {
     let mut result = Vec::with_capacity(n_records);
 
@@ -699,4 +719,247 @@ fn iceberg_rest_s3_input_test() {
 
     assert_eq!(zset.len(), 2000000);
     //assert_eq!(zset, expected_zset);
+}
+
+// ---------------------------------------------------------------------------
+// Follow-mode tests (feature `iceberg-tests-follow`).
+//
+// These need a REST catalog and an S3 store that both the writer (pyiceberg)
+// and the connector (iceberg-rust) can reach. Defaults target the local docker
+// setup in crates/iceberg/src/test/README.md; override via FELDERA_ICEBERG_*.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "iceberg-tests-follow")]
+fn env_or(key: &str, default: &str) -> String {
+    std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+/// Connector transport config for a REST-catalog table `mode` on the test store.
+#[cfg(feature = "iceberg-tests-follow")]
+fn rest_follow_config(table: &str, mode: &str) -> serde_json::Value {
+    json!({
+        "mode": mode,
+        "catalog_type": "rest",
+        "rest.uri": env_or("FELDERA_ICEBERG_REST_URI", "http://localhost:8181"),
+        "rest.warehouse": env_or("FELDERA_ICEBERG_WAREHOUSE", "s3://test/iceberg-follow"),
+        "table_name": table,
+        "s3.endpoint": env_or("FELDERA_ICEBERG_S3_ENDPOINT", "http://localhost:9000"),
+        "s3.access-key-id": env_or("FELDERA_ICEBERG_S3_KEY", "minio"),
+        "s3.secret-access-key": env_or("FELDERA_ICEBERG_S3_SECRET", "miniopasswd"),
+        "s3.region": env_or("FELDERA_ICEBERG_S3_REGION", "us-east-1"),
+        // MinIO (and most non-AWS S3) serve path-style URLs; the opendal S3
+        // backend defaults to virtual-host style, so opt out explicitly.
+        "s3.path-style-access": env_or("FELDERA_ICEBERG_S3_PATH_STYLE", "true"),
+    })
+}
+
+/// The follow connector config for `table` with an extra `key = value` option
+/// merged in (e.g. a `snapshot_id` follow start point).
+#[cfg(feature = "iceberg-tests-follow")]
+fn rest_follow_config_with(
+    table: &str,
+    mode: &str,
+    key: &str,
+    value: serde_json::Value,
+) -> serde_json::Value {
+    let mut config = rest_follow_config(table, mode);
+    config
+        .as_object_mut()
+        .expect("iceberg connector config must be a JSON object")
+        .insert(key.to_string(), value);
+    config
+}
+
+/// Create (`op = "create"`) or append to (`op = "append"`) the REST-catalog test
+/// table with `chunk`, producing a new snapshot. Returns the new snapshot's id so
+/// a test can pin it as a follow start point. Shells out to the pyiceberg helper,
+/// since iceberg-rust cannot write tables.
+#[cfg(feature = "iceberg-tests-follow")]
+fn follow_table_op(op: &str, table: &str, chunk: &[IcebergTestStruct]) -> i64 {
+    let ndjson = data_to_ndjson(chunk.to_vec());
+    let script = "../iceberg/src/test/follow_table.py";
+    let python = env_or("FELDERA_ICEBERG_PYTHON", "python3");
+    let output = std::process::Command::new(python)
+        .arg(script)
+        .arg(format!("--op={op}"))
+        .arg(format!("--table={table}"))
+        .arg(format!("--json-file={}", ndjson.path().display()))
+        .output()
+        .unwrap_or_else(|e| panic!("failed to run '{script}': {e}"));
+    if !output.status.success() {
+        panic!(
+            "'{script} --op={op}' failed (status {}):\nstdout: {}\nstderr: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
+    // The writer prints the new snapshot id on its last stdout line.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let last = stdout.trim().lines().last().unwrap_or_default();
+    last.parse::<i64>()
+        .unwrap_or_else(|_| panic!("'{script} --op={op}' printed unexpected output: {last:?}"))
+}
+
+/// Sum of the records the connector has ingested so far (snapshot phase plus
+/// follow phase), read from its custom metrics.
+#[cfg(feature = "iceberg-tests-follow")]
+fn ingested_records(pipeline: &Controller) -> u64 {
+    let metrics = iceberg_connector_metrics(pipeline);
+    let get = |name: &str| metrics.get(name).copied().unwrap_or(0.0) as u64;
+    get("input_connector_iceberg_snapshot_records_total")
+        + get("input_connector_iceberg_follow_records_total")
+}
+
+/// Run `body` against a running follow-mode pipeline, then stop it. The output
+/// file receives `insert_delete` JSON.
+#[cfg(feature = "iceberg-tests-follow")]
+fn with_follow_pipeline<F>(table: &str, mode: &str, body: F)
+where
+    F: FnOnce(&Controller, &std::path::Path),
+{
+    with_follow_pipeline_cfg(rest_follow_config(table, mode), body)
+}
+
+/// Like [`with_follow_pipeline`], but takes a fully built connector config so a
+/// test can add options such as a `snapshot_id` follow start point.
+#[cfg(feature = "iceberg-tests-follow")]
+fn with_follow_pipeline_cfg<F>(config: serde_json::Value, body: F)
+where
+    F: FnOnce(&Controller, &std::path::Path),
+{
+    let json_file = NamedTempFile::new().unwrap();
+    let (pipeline, err_receiver) = iceberg_input_pipeline::<IcebergTestStruct>(
+        &IcebergTestStruct::schema_with_lateness(),
+        &[],
+        config,
+        &json_file.path().display().to_string(),
+    );
+    pipeline.start();
+
+    // Surface connector errors promptly instead of hanging until a timeout.
+    let watch = err_receiver.clone();
+    let guard = std::thread::spawn(move || {
+        if let Ok(msg) = watch.recv() {
+            panic!("follow pipeline reported an error: {msg}");
+        }
+    });
+
+    body(&pipeline, json_file.path());
+
+    assert!(err_receiver.is_empty(), "follow pipeline reported errors");
+    pipeline.stop().unwrap();
+    drop(guard);
+}
+
+/// `snapshot_and_follow`: the initial snapshot is read, then a second snapshot
+/// committed before startup is caught up via follow. Every row lands once.
+#[test]
+#[cfg(feature = "iceberg-tests-follow")]
+fn iceberg_rest_follow_snapshot_and_follow() {
+    use dbsp::trace::BatchReader;
+
+    let all = data(10);
+    let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    let table = &format!("{ns}.snapshot_and_follow");
+
+    // Two snapshots exist before the connector starts.
+    follow_table_op("create", table, &all[..5]);
+    follow_table_op("append", table, &all[5..]);
+
+    with_follow_pipeline(table, "snapshot_and_follow", |pipeline, out_path| {
+        wait(|| ingested_records(pipeline) >= 10, 120_000)
+            .expect("timed out ingesting snapshot + follow");
+        // Let the output connector flush the ingested rows.
+        wait(|| output_record_count(out_path) >= 10, 60_000).expect("timed out writing output");
+
+        let zset = output_zset(out_path);
+        assert_eq!(zset.len(), 10);
+        assert_eq!(zset, expected_zset(&all));
+    });
+}
+
+/// `follow`: no initial snapshot; a snapshot committed after startup is tailed.
+/// Rows present before the start snapshot are not ingested.
+#[test]
+#[cfg(feature = "iceberg-tests-follow")]
+fn iceberg_rest_follow_live_append() {
+    use dbsp::trace::BatchReader;
+
+    let all = data(10);
+    let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    let table = &format!("{ns}.live_append");
+
+    // The connector starts following after this snapshot, so these rows are
+    // not ingested.
+    follow_table_op("create", table, &all[..5]);
+
+    with_follow_pipeline(table, "follow", |pipeline, out_path| {
+        // Nothing to ingest until a new snapshot appears.
+        follow_table_op("append", table, &all[5..]);
+
+        wait(|| ingested_records(pipeline) >= 5, 120_000)
+            .expect("timed out tailing the appended snapshot");
+        wait(|| output_record_count(out_path) >= 5, 60_000).expect("timed out writing output");
+
+        let zset = output_zset(out_path);
+        assert_eq!(zset.len(), 5);
+        assert_eq!(zset, expected_zset(&all[5..]));
+    });
+}
+
+/// `follow` with an explicit `snapshot_id` start point. Three snapshots (A, B,
+/// C) exist before the connector starts; following from B must ingest only C's
+/// rows, never A's or B's, since `snapshots_after` walks the ancestry back to B.
+#[test]
+#[cfg(feature = "iceberg-tests-follow")]
+fn iceberg_rest_follow_start_from_snapshot_id() {
+    use dbsp::trace::BatchReader;
+
+    let all = data(15);
+    let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    let table = &format!("{ns}.start_from_id");
+
+    follow_table_op("create", table, &all[..5]); // snapshot A
+    let snapshot_b = follow_table_op("append", table, &all[5..10]); // snapshot B
+    follow_table_op("append", table, &all[10..]); // snapshot C
+
+    let config = rest_follow_config_with(table, "follow", "snapshot_id", json!(snapshot_b));
+    with_follow_pipeline_cfg(config, |pipeline, out_path| {
+        wait(|| ingested_records(pipeline) >= 5, 120_000)
+            .expect("timed out following from the pinned snapshot");
+        wait(|| output_record_count(out_path) >= 5, 60_000).expect("timed out writing output");
+
+        let zset = output_zset(out_path);
+        assert_eq!(zset.len(), 5);
+        assert_eq!(zset, expected_zset(&all[10..]));
+    });
+}
+
+/// Number of complete `insert_delete` records written to the output file so
+/// far (one JSON value per line).
+#[cfg(feature = "iceberg-tests-follow")]
+fn output_record_count(path: &std::path::Path) -> usize {
+    std::fs::read(path)
+        .map(|bytes| bytes.iter().filter(|&&b| b == b'\n').count())
+        .unwrap_or(0)
+}
+
+/// The zset of `insert_delete` records currently in the output file.
+#[cfg(feature = "iceberg-tests-follow")]
+fn output_zset(path: &std::path::Path) -> dbsp::OrdZSet<IcebergTestStruct> {
+    let mut file = std::fs::File::open(path).unwrap();
+    file_to_zset::<IcebergTestStruct>(&mut file)
+}
+
+/// The all-`+1` zset the connector should produce for `data`.
+#[cfg(feature = "iceberg-tests-follow")]
+fn expected_zset(data: &[IcebergTestStruct]) -> dbsp::OrdZSet<IcebergTestStruct> {
+    dbsp::OrdZSet::from_tuples(
+        (),
+        data.iter()
+            .cloned()
+            .map(|x| dbsp::utils::Tup2(dbsp::utils::Tup2(x, ()), 1))
+            .collect(),
+    )
 }

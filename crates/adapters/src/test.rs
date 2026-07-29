@@ -50,7 +50,8 @@ mod datagen;
         feature = "iceberg-tests-fs",
         feature = "iceberg-tests-glue",
         feature = "iceberg-tests-rest",
-        feature = "iceberg-tests-s3tables"
+        feature = "iceberg-tests-s3tables",
+        feature = "iceberg-tests-follow"
     )
 ))]
 mod iceberg;

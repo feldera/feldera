@@ -63,6 +63,39 @@ table (talk to leonid@feldera.com), for example via an SSO profile or exported a
   `export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_SESSION_TOKEN=...`
 * Run the following command in the `adapters` crate: `cargo test --features="iceberg-tests-s3tables" iceberg_s3tables_input_test`
 
+## Follow-mode tests
+
+Follow mode needs a catalog both the writer (`pyiceberg`) and the connector
+(`iceberg-rust`) can reach, so these tests use a REST catalog over an S3 store.
+Unlike the snapshot tests, the writer commits several snapshots (the `create`
+and `append` operations of `follow_table.py`) that the connector must tail.
+
+The default connection targets a local setup; override any of the
+`FELDERA_ICEBERG_*` variables to point elsewhere.
+
+* Start an S3 store. The repo's `deploy/docker-compose.yml` already runs MinIO on
+  `localhost:9000` (`minio` / `miniopasswd`), with a `test` bucket.
+* Start a REST catalog backed by that store:
+
+  ```
+  docker run -d --name iceberg-rest-follow --network deploy_default -p 8181:8181 \
+    -e AWS_ACCESS_KEY_ID=minio -e AWS_SECRET_ACCESS_KEY=miniopasswd -e AWS_REGION=us-east-1 \
+    -e CATALOG_WAREHOUSE=s3://test/iceberg-follow \
+    -e CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO \
+    -e CATALOG_S3_ENDPOINT=http://deploy-minio-1:9000 \
+    -e CATALOG_S3_PATH__STYLE__ACCESS=true \
+    tabulario/iceberg-rest:1.6.0
+  ```
+
+* Run the tests in the `adapters` crate:
+  `cargo test --features="iceberg-tests-follow" iceberg_rest_follow`
+
+Overridable settings (defaults in parentheses): `FELDERA_ICEBERG_REST_URI`
+(`http://localhost:8181`), `FELDERA_ICEBERG_WAREHOUSE` (`s3://test/iceberg-follow`),
+`FELDERA_ICEBERG_S3_ENDPOINT` (`http://localhost:9000`), `FELDERA_ICEBERG_S3_KEY`
+(`minio`), `FELDERA_ICEBERG_S3_SECRET` (`miniopasswd`), `FELDERA_ICEBERG_S3_REGION`
+(`us-east-1`), `FELDERA_ICEBERG_S3_PATH_STYLE` (`true`).
+
 # Running tests in CI
 
 Currently only Glue and FS-based tests run in CI.

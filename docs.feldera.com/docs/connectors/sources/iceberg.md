@@ -30,7 +30,7 @@ The Iceberg input connector supports [fault tolerance](/pipelines/fault-toleranc
 
 | Property                    | Type   | Description   |
 |-----------------------------|--------|---------------|
-| `mode`*                     | enum   | Table read mode. Currently, the only supported mode is `snapshot`, in which the connector reads a snapshot of the table and stops.|
+| `mode`*                     | enum   | <p>Table read mode. Supported values:</p><ul><li>`snapshot` - read a snapshot of the table and stop.</li><li>`follow` - after the starting snapshot, continuously ingest new and deleted rows as the table commits new snapshots.</li><li>`snapshot_and_follow` - read a snapshot of the table, then switch to `follow` mode.</li></ul><p>`follow` and `snapshot_and_follow` require an Iceberg catalog (set `catalog_type`); they cannot be used with `metadata_location`, which points at a fixed snapshot. See [Follow mode](#follow-mode) below.</p>|
 | `transaction_mode`          | enum   | Determines how the connector breaks up its input into transactions. Supported values are `none` (default) and `snapshot`. See [below](#transactions) for details. |
 | `timestamp_column`          | string | Table column that serves as an event timestamp. When this option is specified, table rows are ingested in the timestamp order, respecting the [`LATENESS`](/sql/streaming#lateness-expressions) property of the column: each ingested row has a timestamp no more than `LATENESS` time units earlier than the most recent timestamp of any previously ingested row. See details [below](#ingesting-time-series-data-from-iceberg). |
 | `snapshot_filter`           | string | <p>Optional row filter.  When specified, only rows that satisfy the filter condition are included in the snapshot.  The condition must be a valid SQL Boolean expression that can be used in the `where` clause of the `select * from snapshot where ..` query.</p><p> This option can be used to specify the range of event times to include in the snapshot, e.g.: `ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'`.</p>
@@ -168,6 +168,33 @@ The connector reads only the columns that appear in the Feldera SQL table
 declaration. Other columns of the Iceberg table are never read. In addition,
 when the table declaration sets the [`skip_unused_columns` property](/sql/grammar#ignoring-unused-columns), the connector skips declared columns that no view uses, provided they are
 nullable or have default values.
+
+## Follow mode
+
+In `follow` and `snapshot_and_follow` modes the connector continuously ingests
+changes committed to the table after its starting snapshot. It polls the catalog
+for new snapshots and, for each one, diffs the snapshot against its predecessor
+to find the data files it added and removed, ingesting added rows as inserts and
+removed rows as deletes. Only the manifests a snapshot added are read, so the
+cost of each step is proportional to the size of the change, not to the size of
+the table.
+
+The starting snapshot is chosen the same way as in `snapshot` mode: by
+`snapshot_id`, by `datetime`, or, when neither is set, the latest snapshot at the
+time the connector starts. In `follow` mode the connector ingests only changes
+committed after the starting snapshot; in `snapshot_and_follow` mode it first
+reads the starting snapshot in full, then follows.
+
+Requirements and limitations:
+
+* **A catalog is required.** Set `catalog_type`; follow mode cannot be used with
+  `metadata_location`, which points at a fixed snapshot and cannot observe new
+  commits.
+* **Copy-on-write only.** Follow mode reads copy-on-write changes. If a followed
+  snapshot adds a merge-on-read delete file (position or equality deletes), the
+  connector stops with an error. Configure the writer to use copy-on-write.
+* **Compaction is skipped.** Snapshots that only rewrite files without changing
+  table contents (`operation = replace`) are recognized and skipped.
 
 ## Transactions
 
