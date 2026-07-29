@@ -46,7 +46,6 @@
 //! pipeline manager side, we store a hash of the API key in the database along
 //! with the permissions.
 
-use std::time::Duration;
 use std::{collections::HashMap, env};
 
 use actix_web::body::MessageBody;
@@ -83,6 +82,7 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
+use crate::oidc::fetch::{fetch_issuer_jwks, fetch_jwks_uri_from_discovery, OidcDestination};
 
 /// The authenticated principal behind a request, resolved by `auth_validator`
 /// and stored in request extensions. The RBAC middleware reads `role`; handlers
@@ -295,6 +295,12 @@ async fn oidc_trust_auth(
         ))
     };
 
+    // A database that cannot answer says nothing about the caller's
+    // credentials. Reporting it as 401 sends users to re-authenticate during an
+    // outage, and hides the outage from whoever is looking at status codes, so
+    // the error keeps the status it already carries.
+    let unavailable = |e: DBError, req: ServiceRequest| Err((e.into(), req));
+
     let header = match decode_header(token) {
         Ok(h) => h,
         Err(e) => {
@@ -315,32 +321,39 @@ async fn oidc_trust_auth(
     let state = req.app_data::<Data<ServerState>>().unwrap().clone();
 
     // SSRF/DoS gate: only fetch discovery/JWKS for an issuer that at least one
-    // trust names, whether configured at launch or registered in a tenant.
-    let trusted_issuer = if state.config.owner_trusts.names_issuer(&iss) {
-        Ok(true)
+    // trust names, whether configured at launch or registered in a tenant. The
+    // two sources earn different destination policies, because the operator
+    // picked one and a tenant administrator picked the other.
+    let destination = if state.config.owner_trusts.names_issuer(&iss) {
+        Some(OidcDestination::OperatorConfigured)
     } else {
-        state.db.lock().await.is_trusted_issuer(&iss).await
+        match state.db.lock().await.is_trusted_issuer(&iss).await {
+            Ok(true) => Some(OidcDestination::TenantRegistered(
+                state.config.tenant_issuer_policy(),
+            )),
+            Ok(false) => None,
+            Err(e) => {
+                error!("Trusted-issuer check failed for '{iss}': {e}");
+                return unavailable(e, req);
+            }
+        }
     };
-    match trusted_issuer {
-        Ok(true) => {}
-        Ok(false) => {
-            debug!("Federated token from unregistered issuer '{iss}' rejected");
-            return unauthorized(
-                "No OIDC trust relationship matches this token".to_string(),
-                req,
-            );
-        }
-        Err(e) => {
-            error!("Trusted-issuer check failed for '{iss}': {e}");
-            return unauthorized(format!("Database error: {e}"), req);
-        }
-    }
+    let Some(destination) = destination else {
+        debug!("Federated token from unregistered issuer '{iss}' rejected");
+        return unauthorized(
+            "No OIDC trust relationship matches this token".to_string(),
+            req,
+        );
+    };
 
-    let jwk = match resolve_issuer_jwk(&state, &iss, &kid).await {
+    let jwk = match resolve_issuer_jwk(&state, &iss, &kid, destination).await {
         Ok(k) => k,
         Err(e) => {
+            // The detail stays in the log. The caller chose this fetch's
+            // destination, so echoing the outcome would report whether an
+            // internal address answered.
             error!("Federated JWKS fetch for issuer '{iss}' failed: {e}");
-            return unauthorized(format!("JWKS lookup failed: {e}"), req);
+            return unauthorized("Could not verify the token's signing key".to_string(), req);
         }
     };
 
@@ -376,7 +389,7 @@ async fn oidc_trust_auth(
         Ok(m) => m,
         Err(e) => {
             error!("Federated trust lookup failed: {e}");
-            return unauthorized(format!("Database error: {e}"), req);
+            return unavailable(e, req);
         }
     };
     if matches.is_empty() && !owner_trust {
@@ -873,64 +886,6 @@ pub(crate) struct ProviderGenericOidc {
     pub(crate) jwk_uri: String,
 }
 
-#[derive(Deserialize)]
-struct OidcDiscoveryDocument {
-    jwks_uri: String,
-}
-
-/// Timeout for OIDC discovery / JWKS HTTP requests.
-const OIDC_FETCH_TIMEOUT_SECONDS: u64 = 10;
-
-/// HTTP client for OIDC discovery / JWKS fetches: a short timeout and no
-/// redirect following, to bound the blast radius of a slow or redirecting
-/// issuer endpoint (defense in depth behind the trusted-issuer gate).
-fn oidc_http_client() -> Result<reqwest::Client, reqwest::Error> {
-    reqwest::Client::builder()
-        // rustls with the platform's roots, so which certificates an issuer may
-        // present is decided the same way on every platform. The default
-        // backend is whatever the target ships, and on macOS that store cannot
-        // be pointed elsewhere.
-        .use_rustls_tls()
-        .timeout(Duration::from_secs(OIDC_FETCH_TIMEOUT_SECONDS))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-}
-
-/// Fetch OIDC discovery document and extract `jwks_uri`.
-async fn fetch_jwks_uri_from_discovery(issuer: &str) -> Result<String, reqwest::Error> {
-    let discovery_url = format!(
-        "{}/.well-known/openid-configuration",
-        issuer.trim_end_matches('/')
-    );
-    let discovery: OidcDiscoveryDocument = oidc_http_client()?
-        .get(&discovery_url)
-        .send()
-        .await?
-        .json()
-        .await?;
-    Ok(discovery.jwks_uri)
-}
-
-/// Fetch and parse the RSA JWKS for a federated `issuer` (discovery then keys),
-/// using the hardened OIDC client. Called on the auth path only after the
-/// issuer is confirmed trusted.
-async fn fetch_issuer_jwks(issuer: &str) -> Result<HashMap<String, DecodingKey>, AuthError> {
-    let jwks_uri = fetch_jwks_uri_from_discovery(issuer)
-        .await
-        .map_err(|e| AuthError::JwkShape(format!("OIDC discovery failed: {e}")))?;
-    let client =
-        oidc_http_client().map_err(|e| AuthError::JwkShape(format!("OIDC client build: {e}")))?;
-    let keys_json: Value = client
-        .get(&jwks_uri)
-        .send()
-        .await
-        .map_err(|e| AuthError::JwkShape(format!("JWKS request failed: {e}")))?
-        .json()
-        .await
-        .map_err(|e| AuthError::JwkShape(format!("JWKS parse failed: {e}")))?;
-    parse_rsa_jwks(&keys_json)
-}
-
 /// Resolve the RSA decoding key for `(issuer, kid)` from the federated JWKS
 /// cache, fetching on a miss. The network fetch runs without holding the cache
 /// lock, so a slow issuer endpoint cannot serialize all federated auth.
@@ -938,11 +893,12 @@ async fn resolve_issuer_jwk(
     state: &ServerState,
     issuer: &str,
     kid: &str,
+    destination: OidcDestination,
 ) -> Result<DecodingKey, AuthError> {
     if let Some(key) = state.issuer_jwk_cache.lock().await.cached(issuer, kid) {
         return Ok(key);
     }
-    let keys = fetch_issuer_jwks(issuer).await?;
+    let keys = fetch_issuer_jwks(issuer, destination).await?;
     let mut cache = state.issuer_jwk_cache.lock().await;
     cache.insert(issuer, keys);
     cache
@@ -1001,8 +957,9 @@ pub(crate) async fn generic_oidc_auth_config(
     let iss =
         env::var("FELDERA_AUTH_ISSUER").expect("Missing environment variable FELDERA_AUTH_ISSUER");
 
-    // Use OIDC discovery to fetch jwks_uri
-    let jwk_uri = fetch_jwks_uri_from_discovery(&iss).await?;
+    // Use OIDC discovery to fetch jwks_uri. The operator set this issuer, so it
+    // may name a provider on the deployment's own network.
+    let jwk_uri = fetch_jwks_uri_from_discovery(&iss, OidcDestination::OperatorConfigured).await?;
 
     validation.set_issuer(&[&iss]);
     // Use configurable audience claim from API server configuration
@@ -1122,7 +1079,7 @@ where
 }
 
 #[derive(Debug)]
-enum AuthError {
+pub(crate) enum AuthError {
     JwtDecoding(jsonwebtoken::errors::Error),
     JwkFetch(awc::error::SendRequestError),
     JwkPayload(awc::error::PayloadError),
@@ -1364,7 +1321,7 @@ async fn fetch_jwk_oidc_keys(url: &String) -> Result<HashMap<String, DecodingKey
 /// Parse a JWK set into RSA decoding keys, keyed by `kid`. Keeps only keys
 /// declared for RS256 signature verification (`alg=RS256`, `use=sig`). Shared by
 /// the login-provider (awc) and federated (reqwest) fetch paths.
-fn parse_rsa_jwks(value: &Value) -> Result<HashMap<String, DecodingKey>, AuthError> {
+pub(crate) fn parse_rsa_jwks(value: &Value) -> Result<HashMap<String, DecodingKey>, AuthError> {
     let filtered = value
         .get("keys")
         .ok_or_else(|| {
@@ -1916,6 +1873,33 @@ mod test {
                 expected.map(|s| s.to_string()),
                 "Failed for input: {}",
                 input
+            );
+        }
+    }
+
+    /// A tenant-registered issuer may not reach an internal service, even when
+    /// its hostname resolves to one.
+    #[tokio::test]
+    async fn public_only_resolver_refuses_a_loopback_hostname() {
+        use reqwest::dns::Resolve;
+        use std::str::FromStr;
+
+        let refused = crate::oidc::fetch::PublicAddrsOnly
+            .resolve(reqwest::dns::Name::from_str("localhost").unwrap())
+            .await;
+        assert!(
+            refused.is_err(),
+            "'localhost' resolves to loopback and must be refused"
+        );
+
+        let permitted = crate::oidc::fetch::PublicAddrsOnly
+            .resolve(reqwest::dns::Name::from_str("one.one.one.one").unwrap())
+            .await;
+        // Skipped rather than failed when the test host has no DNS.
+        if let Ok(addrs) = permitted {
+            assert!(
+                addrs.count() > 0,
+                "a public hostname must keep at least one address"
             );
         }
     }

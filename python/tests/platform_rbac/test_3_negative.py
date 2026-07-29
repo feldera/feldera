@@ -153,20 +153,6 @@ def test_tenant_the_token_does_not_name_is_refused(api: Api, primary_idp: Issuer
             "issuer is not https",
             id="issuer-not-https",
         ),
-        pytest.param(
-            {"name": "loopback", "issuer": "https://127.0.0.1:9999", "subject": "s"},
-            "issuer on a loopback address",
-            id="issuer-loopback",
-        ),
-        pytest.param(
-            {
-                "name": "metadata-service",
-                "issuer": "https://169.254.169.254/latest",
-                "subject": "s",
-            },
-            "issuer at the cloud metadata service",
-            id="issuer-link-local",
-        ),
     ],
 )
 def test_trust_registration_rejects_bad_input(
