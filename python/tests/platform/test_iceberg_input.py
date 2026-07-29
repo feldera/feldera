@@ -335,10 +335,41 @@ def _row_count(pipeline) -> int:
     return int(rows[0]["c"])
 
 
+def _all_records_completed(pipeline) -> bool:
+    """Has every record the connector handed over been processed to completion?
+
+    Both counters come from one ``/stats`` response, so they are a consistent
+    pair. ``total_input_records`` counts a record when the connector buffers it,
+    which the connector does before it reports the completed phase, so the
+    target is already final by the time this is polled.
+    """
+    metrics = pipeline.stats().global_metrics
+    return metrics.total_completed_records >= metrics.total_input_records
+
+
 def _wait_for_completed(pipeline, pipeline_name: str, timeout_s: float = 120.0) -> None:
+    """Wait until the snapshot has been read *and* is queryable.
+
+    The phase gauge is a reader-side signal: the connector sets it right after
+    queueing its last records, so it can read 2 while the circuit has published
+    nothing. Under ``transaction_mode = snapshot`` the queued records stay
+    invisible to queries until the transaction commits, so a query issued on the
+    gauge alone can see zero rows.
+
+    ``total_completed_records`` supplies the missing half of the barrier. It
+    advances only at a transaction boundary, the same point at which the circuit
+    republishes the ad-hoc snapshot, so once it catches up with the records the
+    connector handed over, a query sees all of them.
+    """
     wait_for_condition(
         "iceberg snapshot completed (phase == 2)",
         lambda: _phase_from_metrics(pipeline_name) == 2,
+        timeout_s=timeout_s,
+        poll_interval_s=0.2,
+    )
+    wait_for_condition(
+        "every ingested record processed to completion",
+        lambda: _all_records_completed(pipeline),
         timeout_s=timeout_s,
         poll_interval_s=0.2,
     )
