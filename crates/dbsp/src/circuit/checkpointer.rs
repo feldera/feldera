@@ -51,7 +51,7 @@ impl Checkpointer {
     /// Creates a new checkpointer for directory `storage_path`.  Deletes any
     /// unreferenced files in the directory.
     pub fn new(backend: Arc<dyn StorageBackend>) -> Result<Self, Error> {
-        let checkpoint_list = Self::read_checkpoints(&*backend)?;
+        let checkpoint_list = Self::read_checkpoints_at_startup(&*backend)?;
 
         let this = Checkpointer {
             backend,
@@ -432,18 +432,17 @@ impl Checkpointer {
         Ok(self.checkpoint_list.clone().into())
     }
 
-    /// Reads the list of checkpoints available through `backend`.
-    ///
-    /// A missing `checkpoints.feldera` is treated as "no checkpoints yet"
-    /// only when the storage directory holds no UUID-shaped subdirectories.
-    /// If UUID directories exist, the catalog has been lost while the
-    /// checkpoints themselves are likely still on disk; proceeding would
-    /// let `gc_startup` recursively delete them. Refuse to start instead.
-    pub fn read_checkpoints(
+    /// Reads the list of checkpoints available through `backend`.  This is like
+    /// [Self::read_checkpoints] except that, if `checkpoints.feldera` is
+    /// missing, we check whether the storage directory hold any UUID-shaped
+    /// subdirectories.  If UUID directories do exist, the catalog has been lost
+    /// while the checkpoints themselves are likely still on disk, and
+    /// proceeding would let `gc_startup` recursively delete them, so we refuse
+    /// to start instead.
+    fn read_checkpoints_at_startup(
         backend: &dyn StorageBackend,
     ) -> Result<VecDeque<CheckpointMetadata>, Error> {
-        let file_name = StoragePath::from(CHECKPOINT_FILE_NAME);
-        match backend.read_json(&file_name) {
+        match backend.read_json(&StoragePath::from(CHECKPOINT_FILE_NAME)) {
             Ok(checkpoints) => Ok(checkpoints),
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 let mut orphan_uuid_dirs: Vec<String> = Vec::new();
@@ -466,14 +465,22 @@ impl Checkpointer {
                     }));
                 }
 
-                // Write an empty checkpoint file to save the cost of listing
-                // all the files next time.
-                backend.write_json(&file_name, &VecDeque::<CheckpointMetadata>::new())?;
-
                 Ok(VecDeque::new())
             }
             Err(error) => Err(error)?,
         }
+    }
+
+    /// Reads the list of checkpoints available through `backend`.
+    pub fn read_checkpoints(
+        backend: &dyn StorageBackend,
+    ) -> Result<VecDeque<CheckpointMetadata>, Error> {
+        backend
+            .read_json(&StoragePath::from(CHECKPOINT_FILE_NAME))
+            .or_else(|error| match error.kind() {
+                ErrorKind::NotFound => Ok(VecDeque::new()),
+                _ => Err(error.into()),
+            })
     }
 
     fn update_checkpoint_file(&self) -> Result<(), Error> {
