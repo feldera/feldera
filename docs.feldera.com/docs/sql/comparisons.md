@@ -20,7 +20,7 @@ but always return a Boolean value (sometimes nullable):
     <td></td>
   </tr>
   <tr>
-    <td><a id="ne"></a><code>!=</code></td>
+    <td><a id="neq"></a><code>!=</code></td>
     <td>inequality test, same as above</td>
     <td></td>
   </tr>
@@ -77,11 +77,11 @@ but always return a Boolean value (sometimes nullable):
   <tr>
     <td><a id="notbetween"></a><code>NOT BETWEEN [ASYMMETRIC] ... AND ...</code></td>
     <td>The <code>NOT</code> of the previous operator</td>
-    <td>not inclusive at either endpoints</td>
+    <td>not inclusive at either endpoint</td>
   </tr>
   <tr>
     <td><a id="symmetric-between"></a><code>BETWEEN SYMMETRIC ... AND ...</code></td>
-    <td><code>x BETWEEN a AND b</code> is the same as <code>(a &lt;= x AND x &lt;= b) OR (b &lt;= x AND x &lt;= a)</code></td>
+    <td><code>x BETWEEN SYMMETRIC a AND b</code> is the same as <code>(a &lt;= x AND x &lt;= b) OR (b &lt;= x AND x &lt;= a)</code></td>
     <td>inclusive at both endpoints; order of endpoints does not matter</td>
   </tr>
   <tr>
@@ -113,7 +113,7 @@ user-defined types).  For complex types, comparisons are performed
 lexicographically on the type structure.  In such comparisons fields
 with `NULL` values are compared smaller than any other value.
 
-# Other conditional operators
+## Other conditional operators
 
 <table>
   <tr>
@@ -154,6 +154,6 @@ with `NULL` values are compared smaller than any other value.
   </tr>
   <tr>
     <td><a id="nullif"></a><code>NULLIF(value0, value1)</code></td>
-    <td>Returns `NULL` if the value0 and value1 are the same. For example, <code>NULLIF(5, 5)</code> returns NULL; <code>NULLIF(5, 0)</code> returns 5.</td>
+    <td>Returns `NULL` if value0 and value1 are the same. For example, <code>NULLIF(5, 5)</code> returns NULL; <code>NULLIF(5, 0)</code> returns 5.</td>
   </tr>
 </table>

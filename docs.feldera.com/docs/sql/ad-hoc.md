@@ -19,7 +19,7 @@ As of now, there are differences between the SQL dialects of Feldera SQL program
 This is because they use different engines (Apache Calcite for Feldera SQL vs. Apache Datafusion for ad-hoc queries).
 See below for some examples.
 
-Currently, only `SELECT` and `INSERT` statements are supported. You cannot create or alter tables and views using ad-hoc SQL.
+Currently, only `SELECT`, `INSERT`, and `PREPARE`/`EXECUTE` statements are supported. You cannot create or alter tables and views using ad-hoc SQL.
 
 ### Differences between Feldera SQL and Ad-hoc Queries
 
@@ -33,7 +33,7 @@ ad-hoc queries that need to be taken into account:
 - Feldera SQL ignores the outermost order by clause.
 - Feldera SQL's `TIMESTAMP_TRUNC(x, MINUTE)` is `DATE_TRUNC('MINUTE', x)` in ad-hoc queries.
 - Feldera SQL's `SORT_ARRAY()` is `ARRAY_SORT()` in ad-hoc queries.
-- Casting integers to timestamp conversion is interpreted as seconds in ad-hoc SQL and as milliseconds
+- Casting an integer to a timestamp interprets the integer as seconds in ad-hoc SQL and as milliseconds
   in Feldera SQL.
   (`SELECT 1729595568::TIMESTAMP;` will yield `2024-10-22T11:12:48` in ad-hoc queries and
   `1970-01-21 00:26:35` in Feldera SQL).

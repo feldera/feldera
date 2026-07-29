@@ -4,9 +4,12 @@ The names of tables, columns, functions, user-defined types, field
 names, and other metadata elements used in a SQL query are represented
 by identifiers.
 
-Unquoted identifiers, such as `emp`, must start with a letter and can
-only contain letters, digits, and underscores. They are automatically
-converted to all-lower case.  So `emp`, `EMP`, and `eMp` are all
+Unquoted identifiers, such as `emp`, are typically composed of
+letters, digits, and underscores, starting with a letter; this is the
+form we recommend.  For compatibility with other SQL dialects, the
+lexer also accepts unquoted identifiers that start with a digit or
+contain characters such as `$` and non-Latin letters.  Unquoted
+identifiers are automatically converted to all-lower case.  So `emp`, `EMP`, and `eMp` are all
 converted to the same lowercase identifier `emp`, and they all
 represent the same identifier.
 
@@ -136,11 +139,11 @@ extending to the end of the line, e.g.:
 Alternatively, C-style block comments can be used:
 
 ```
-/* multiline comment
- * with nesting: /* nested block comment */
+/* multiline
+ * comment
  */
 ```
 
-where the comment begins with `/*` and extends to the matching
-occurrence of `*/`.  Note that block comments cannot be nested unlike
+where the comment begins with `/*` and extends to the first
+occurrence of `*/`.  Note that block comments cannot be nested, unlike
 the requirements of the SQL standard.

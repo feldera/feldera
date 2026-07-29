@@ -17,13 +17,18 @@ described above.
 
 `CHAR` or `VARCHAR` values can be cast to `UUID` values.  The cast
 will succeed if the string is a legal UUID literal; otherwise a runtime
-error will occur.
+error will occur.  The cast also accepts the standard alternative UUID
+string formats: non-hyphenated hex digits
+(`123e4567e89b12d3a456426655440000`), the braced form
+(`{123e4567-e89b-12d3-a456-426655440000}`), and the URN form
+(`urn:uuid:123e4567-e89b-12d3-a456-426655440000`).
 
 `UUID` values can be cast to `BINARY` or `VARBINARY` values, and will
 produce a 16 byte result.
 
-Conversely, `BINARY` and `VARBINARY` values that have exactly 16 bytes
-can be cast to `UUID` values.
+Conversely, `BINARY` and `VARBINARY` values that have at least 16
+bytes can be cast to `UUID` values; the cast uses the first 16 bytes.
+Casting a value with fewer than 16 bytes causes a runtime error.
 
 `UUID` values can be cast to `VARIANT`; `VARIANT` values can be cast
 to `UUID`.

@@ -1,6 +1,6 @@
 # Binary (Byte Array) Operations
 
-The `BINARY` and `VARBINARY` data types allows storage of binary strings.
+The `BINARY` and `VARBINARY` data types allow storage of binary strings.
 
 A binary string is a sequence of octets (or bytes).  Binary strings
 are distinguished from character strings in two ways.  First, binary
@@ -15,7 +15,7 @@ binary strings are appropriate for storing data that the programmer
 thinks of as “raw bytes”, whereas character strings are appropriate
 for storing text.
 
-Beware that `BINARY` without a scale specified is the same as
+Beware that `BINARY` without a length specified is the same as
 `BINARY(1)`.
 
 ## Binary literals
@@ -115,13 +115,13 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     <td><code>TO_HEX(x'0abc')</code> => <code>'0abc'</code></td>
   </tr>
   <tr>
-    <td><a id="to_int"></a><a id="to_int"></a><code>TO_INT</code>(binary)</td>
+    <td><a id="to_int"></a><code>TO_INT</code>(binary)</td>
     <td>Generate an `INT` value from the first 4 bytes of the `binary`, where the 0-th byte is the MSB</td>
     <td><code>TO_INT(x'0abc')</code> => <code>2748</code></td>
   </tr>
   <tr>
     <td><a id="xxhash"></a><code>XXHASH ( binary, seed )</code></td>
     <td>Computes the hash of the specified binary with the specified seed.</td>
-    <td><code>xxhash(x'010203', 2397937360598948438)</code> => <code>10</code></td>
+    <td><code>xxhash(x'010203', 2)</code> => <code>2397937360598948438</code></td>
   </tr>
 </table>

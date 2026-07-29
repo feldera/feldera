@@ -9,7 +9,7 @@ The compiler supports the following SQL data types:
 | `SMALLINT`                  | 16-bit signed integer using two's complement.                                                                                                                      | `INT2`                     |
 | `INTEGER`                   | 32-bit signed integer using two's complement.                                                                                                                      | `INT`, `SIGNED`, `INT4`    |
 | `BIGINT`                    | 64-bit signed integer using two's complement.                                                                                                                      | `INT8`, `INT64`            |
-| `TINYINT UNSIGNED`          | 8-bit unsigned integer                     .                                                                                                                       |                            |
+| `TINYINT UNSIGNED`          | 8-bit unsigned integer.                                                                                                                                            |                            |
 | `SMALLINT UNSIGNED`         | 16-bit unsigned integer.                                                                                                                                           |                            |
 | `INTEGER UNSIGNED`          | 32-bit unsigned integer.                                                                                                                                           | `INT UNSIGNED`, `UNSIGNED` |
 | `BIGINT UNSIGNED`           | 64-bit unsigned integer.                                                                                                                                           |                            |
@@ -31,24 +31,28 @@ The compiler supports the following SQL data types:
 | `ROW`                       | A tuple (anonymous struct with named fields) with 1 or more elements.  Example `ROW(left int null, right varchar)`                                                 |                            |
 | `ARRAY`                     | An array with element of the specified type. Used as a suffix for another type (e.g., `INT ARRAY`)                                                                 |                            |
 | `MAP`                       | A map with keys and values of specified types. The syntax is `MAP<KEYTYPE, VALUETYPE>`                                                                             |                            |
-| `UUID`                      | An 128 bit unique identifier                                                                                                                                       |                            |
+| `UUID`                      | A 128-bit unique identifier                                                                                                                                        |                            |
 | `VARIANT`                   | A dynamically-typed value that can wrap any other SQL type                                                                                                         |                            |
 
 - For `DECIMAL` types: 23.456 has a precision of 5 and a scale of 3.
   If scale is missing it is assumed to be 0.
 
 - A suffix of `NULL` or `NOT NULL` can be appended to a type name to
-  indicate the nullability. A type with no suffix is not nullable by
-  default.  These suffixes do not work for types of elements of ARRAYs
+  indicate the nullability. A type with no suffix is nullable by
+  default; this applies to table columns and to the parameters of
+  `CREATE FUNCTION` and `CREATE AGGREGATE`.  The exception is the
+  field types of a `ROW` type, which are not nullable by default.
+  These suffixes do not work for types of elements of ARRAYs
   or MAPs.  ARRAY elements and MAP values are always nullable, while
-  MAP keys are never nullable.
+  MAP key types are never nullable.  (However, MAP values constructed at
+  runtime have nullable keys).
 
 - The `FLOAT` type is not supported. Please use `REAL` or
   `DOUBLE` instead. Various SQL dialects do not agree on the size of
   the `FLOAT` type, so we have decided to prohibit its use to avoid
   subtle bugs.
 
-- `INTERVAL`, `NULL` and types are currently not supported in table
+- `INTERVAL` and `NULL` types are currently not supported in table
   schemas or as types for the columns of output views (non-`LOCAL`
   views).
 
@@ -73,7 +77,7 @@ nullability of each column using type inference rules.
 
 Most SQL operations are defined for nullable types. Our compiler
 follows the SQL standard in this respect. Most operations (e.g.,
-`+`), when applied a `NULL` operand will produce a `NULL`
+`+`), when applied to a `NULL` operand will produce a `NULL`
 value.
 
 ## String types
@@ -188,14 +192,16 @@ sqlTypeName:
   |   GEOMETRY
   |   decimal [ precision [, scale] ]
   |   BOOLEAN
-  |   integer
+  |   integer [ UNSIGNED ]
+  |   UNSIGNED
   |   BINARY [ precision ]
   |   varbinary [ precision ]
-  |   TINYINT
-  |   SMALLINT
-  |   BIGINT
+  |   TINYINT [ UNSIGNED ]
+  |   SMALLINT [ UNSIGNED ]
+  |   BIGINT [ UNSIGNED ]
   |   REAL
   |   double
+  |   UUID
   |   VARIANT
 
 collectionsTypeName:
@@ -223,10 +229,11 @@ time:
       TIME
 
 timestamp:
-      TIMESTAMP
+      TIMESTAMP [ timeZone ]
 
 timeZone:
-      WITHOUT TIME ZONE
+      WITH TIME ZONE
+  |   WITHOUT TIME ZONE
 ```
 
 A `compoundIdentifier` is a sequence of identifiers separated by dots.

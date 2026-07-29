@@ -35,7 +35,7 @@ These declarations instruct Feldera to maintain a complete snapshot of the table
 ## Inspecting materialized tables and views
 
 You can explore the contents of materialized tables and views by issuing `SELECT ...` [ad-hoc SQL queries](/sql/ad-hoc).
-Ad-hoc queries are evaluated non-incrementally against the current snapshot of pipeline's tables and views.
+Ad-hoc queries are evaluated non-incrementally against the current snapshot of the pipeline's tables and views.
 
 You can run ad-hoc queries in [Web Console](/sql/ad-hoc#feldera-web-console), [CLI](/sql/ad-hoc#feldera-cli) or via the [Python SDK](/sql/ad-hoc#feldera-python-sdk).
 

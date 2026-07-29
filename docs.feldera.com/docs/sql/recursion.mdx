@@ -80,7 +80,7 @@ match the type of the declared view, including the column names.
   languages but differs from recursion in standard SQL.
 
 - All mutually recursive views are automatically treated as `DISTINCT` (e.g., as if they have a `SELECT DISTINCT` in their
-  definition) to avoid infinite growth due to duplicate rows. Without these restrictions, (and if we replace `UNION`
+  definition) to avoid infinite growth due to duplicate rows. Without these restrictions (and if we replace `UNION`
   with `UNION ALL` in the view definition), the program that computes `CLOSURE` above would never terminate and the
   `CLOSURE` table would keep growing, accumulating duplicate edges.
 
@@ -101,7 +101,22 @@ SELECT * FROM CLOSURE;
  1 | 2
  0 | 2
 (3 rows)
-DELETE * FROM EDGES WHERE x = 0;
+```
+
+Deletions are recomputed incrementally as well. Ad-hoc queries do not support
+`DELETE`; deletions reach the pipeline through [input connectors](/connectors/)
+or the [REST API](/api/insert-data), encoded in the
+[`insert_delete` JSON format](/formats/json). The following request deletes the
+edge (0, 1) from `EDGES`:
+
+```bash
+curl -X POST 'http://127.0.0.1:8080/v0/pipelines/{pipeline_name}/ingress/EDGES?format=json' \
+  -d '{"delete": {"x": 0, "y": 1}}'
+```
+
+`CLOSURE` now contains only the edges reachable without the deleted edge:
+
+```sql
 SELECT * FROM CLOSURE;
  x | y
 -------
@@ -142,7 +157,7 @@ create view fib_outputs as select * from fibonacci;
 Recursive computations are evaluated in a single [circuit step](https://www.feldera.com/blog/synchronous-streaming),
 so there’s no intermediate output in the change stream. This can make debugging recursive queries challenging.
 
-To debug, you can use a [a UDF](/sql/udf). For example, modify the previous example to use a Rust function that
+To debug, you can use a [UDF](/sql/udf). For example, modify the previous example to use a Rust function that
 prints each invocation of the fibonacci view during recursion:
 
 <Tabs>

@@ -62,17 +62,17 @@ SELECT * FROM TABLE(
     SIZE => INTERVAL '1' MINUTE));
 ```
 
-The result is a table that has all the columns of the `order` table,
+The result is a table that has all the columns of the `orders` table,
 and in addition the following columns, defined by the `TUMBLE`
 function:
-- `window_start`, of the same type as the column `order.rowtime`
-- `window_end`, of the same type as the column `order.rowtime`
+- `window_start`, of the same type as the column `orders.rowtime`
+- `window_end`, of the same type as the column `orders.rowtime`
 
 ### `HOP`
 
 `HOP` assigns windows that cover rows within the interval of size and
 shifting every slide based on a timestamp column.  Windows assigned
-could overlap, so hopping sometime is also named “sliding window”.
+could overlap, so hopping sometimes is also named “sliding window”.
 
 #### Syntax:
 
@@ -111,10 +111,10 @@ SELECT * FROM TABLE(
 applies hopping with 5-minute interval size on rows from table
 `orders` and shifting every 2 minutes.
 
-The result is a table that has all the columns of the `order` table,
+The result is a table that has all the columns of the `orders` table,
 and in addition the following columns, defined by the `HOP`
 function:
-- `window_start`, of the same type as the column `order.rowtime`
-- `window_end`, of the same type as the column `order.rowtime`
+- `window_start`, of the same type as the column `orders.rowtime`
+- `window_end`, of the same type as the column `orders.rowtime`
 
 A `NULL` timestamp produces no rows in the result.

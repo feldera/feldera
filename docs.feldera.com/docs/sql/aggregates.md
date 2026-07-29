@@ -33,7 +33,7 @@ types; aggregation of `UNSIGNED` values uses signed types for
 intermediate results.  If you expect the result to require a higher
 precision than the aggregated data type, we recommend converting the
 data to a wider data type, e.g.: instead of `SELECT SUM(col)`, you
-should write `SELECT SUM(CAST col AS BIGINT)`.
+should write `SELECT SUM(CAST(col AS BIGINT))`.
 
 <table>
   <tr>
@@ -42,7 +42,7 @@ should write `SELECT SUM(CAST col AS BIGINT)`.
   </tr>
   <tr>
      <td><a id="array_agg"></a><code>ARRAY_AGG([ ALL | DISTINCT ] value [ RESPECT NULLS | IGNORE NULLS ] [ORDER BY orderItem [, orderItem]*] )</code></td>
-     <td>Gathers all values in an array.  If `ORDER BY` is not present, the order of the values in the array is unspecified (but it is deterministic).</td>
+     <td>Gathers all values in an array.  If <code>ORDER BY</code> is not present, the order of the values in the array is unspecified (but it is deterministic).</td>
   </tr>
   <tr>
      <td><a id="avg"></a><code>AVG( [ ALL | DISTINCT ] numeric)</code></td>
@@ -55,8 +55,8 @@ should write `SELECT SUM(CAST col AS BIGINT)`.
   </tr>
   <tr>
      <td><a id="arg_min"></a><code>ARG_MIN(value, compared)</code></td>
-     <td>Returns a  <code>value</code> for one of the rows containing the minimum value of <code>compared</code> in the group.
-         This rule for selecting the value is not specified if there are multiple rows with the same minimum value.</td>
+     <td>Returns a <code>value</code> for one of the rows containing the minimum value of <code>compared</code> in the group.
+         The rule for selecting the value is not specified if there are multiple rows with the same minimum value.</td>
   </tr>
   <tr>
      <td><a id="bit_and"></a><code>BIT_AND( [ ALL | DISTINCT ] value)</code></td>
@@ -76,7 +76,7 @@ should write `SELECT SUM(CAST col AS BIGINT)`.
   </tr>
   <tr>
      <td><a id="count"></a><code>COUNT( [ ALL | DISTINCT ] value [, value ]*)</code></td>
-     <td>Returns the number of input rows for which value is not null.  If the argument contains multiple expressions, it counts only expressions where *all* fields are non-null.</td>
+     <td>Returns the number of input rows for which value is not null.  If the argument contains multiple expressions, it counts only expressions where <em>all</em> fields are non-null.</td>
   </tr>
   <tr>
      <td><a id="countif"></a><code>COUNTIF( boolean )</code></td>
@@ -87,11 +87,11 @@ should write `SELECT SUM(CAST col AS BIGINT)`.
      <td>Returns <code>TRUE</code> if all of the values of condition are <code>TRUE</code></td>
   </tr>
   <tr>
-     <td><a id="logical_and"></a><code>LOGICAL_AND</code> or <code>BOOL_AND</code></td>
+     <td><a id="logical_and"></a><code>LOGICAL_AND(condition)</code> or <code>BOOL_AND(condition)</code></td>
      <td>Same as <code>EVERY</code></td>
   </tr>
   <tr>
-     <td><a id="logical_or"></a><code>LOGICAL_OR</code> or <code>BOOL_OR</code></td>
+     <td><a id="logical_or"></a><code>LOGICAL_OR(condition)</code> or <code>BOOL_OR(condition)</code></td>
      <td>Same as <code>SOME</code></td>
   </tr>
   <tr>
@@ -141,14 +141,14 @@ for all data types, and they use the standard [comparison
 operations](comparisons.md).
 
 If `FILTER` is specified, then only the input rows for which the
-filter_clause evaluates to true are fed to the aggregate function;
+`condition` evaluates to `TRUE` are fed to the aggregate function;
 other rows are discarded. For example:
 
 ```sql
 SELECT
     count(*) AS unfiltered,
     count(*) FILTER (WHERE i < 5) AS filtered
-FROM TABLE
+FROM my_table
 ```
 
 In addition, the following two constructors act as aggregates:
@@ -190,10 +190,12 @@ The following window aggregate functions are supported:
   <tr>
     <td><a id="first_value"></a><code>FIRST_VALUE(expression)</code></td>
     <td>Returns the value of <code>expression</code> at the first row of the window frame.
-    Currently only supported for windows with <code>UNLIMITED RANGE</code>.</td>
+    Currently supported only for frames (<code>RANGE</code> or <code>ROWS</code>) whose lower bound is
+    <code>UNBOUNDED PRECEDING</code> and whose upper bound is <code>CURRENT ROW</code> or
+    <code>UNBOUNDED FOLLOWING</code>; this includes the default frame.</td>
   </tr>
   <tr>
-    <td><a id="lag"></a><code>LAG(</code><em>expression</em>, [<em>offset</em>, [ <em>default</em> ] ]<code>)</code></td>
+    <td><a id="lag"></a><code>LAG(</code><em>expression</em> [, <em>offset</em> [, <em>default</em> ] ]<code>)</code></td>
     <td>Returns <em>expression</em> evaluated at the row that is <em>offset</em> rows before the current row
         within the partition; if there is no such row, instead returns <em>default</em>.
         Both <em>offset</em> and <em>default</em> are evaluated with respect to the current row.
@@ -202,10 +204,12 @@ The following window aggregate functions are supported:
   <tr>
     <td><a id="last_value"></a><code>LAST_VALUE(expression)</code></td>
     <td>Returns the value of <code>expression</code> at the last row of the window frame.
-    Currently only supported for windows with <code>UNLIMITED RANGE</code></td>
+    Currently supported only for frames (<code>RANGE</code> or <code>ROWS</code>) whose upper bound is
+    <code>UNBOUNDED FOLLOWING</code> and whose lower bound is <code>UNBOUNDED PRECEDING</code> or
+    <code>CURRENT ROW</code>.</td>
   </tr>
   <tr>
-    <td><a id="lead"></a><code>LEAD(</code><em>expression</em>, [<em>offset</em>, [ <em>default</em> ] ]<code>)</code></td>
+    <td><a id="lead"></a><code>LEAD(</code><em>expression</em> [, <em>offset</em> [, <em>default</em> ] ]<code>)</code></td>
     <td>Returns <em>expression</em> evaluated at the row that is <em>offset</em> rows after the current row
         within the partition; if there is no such row, instead returns <em>default</em>.
         Both <em>offset</em> and <em>default</em> are evaluated with respect to the current row.
@@ -236,7 +240,7 @@ The following window aggregate functions are supported:
 ## Pivots
 
 The SQL `PIVOT` operation can be used to turn rows into columns.  It
-usually replaces a `GROUP-BY` operation when the group keys are known
+usually replaces a `GROUP BY` operation when the group keys are known
 in advance.  Instead of producing one row for each group, `PIVOT` can
 produce one *column* for each group.
 
@@ -250,7 +254,7 @@ PIVOT ( { aggregate_expression [ AS aggregate_expression_alias ] } [ , ... ]
 ### Parameters
 
 - aggregate_expression
-  Specifies an aggregate expression (`SUM`, `COUNT(DISTINCT )`, etc.).
+  Specifies an aggregate expression (`SUM`, `COUNT(DISTINCT)`, etc.).
 
 - aggregate_expression_alias
   Specifies a column name for the aggregate expression.
@@ -260,7 +264,8 @@ PIVOT ( { aggregate_expression [ AS aggregate_expression_alias ] } [ , ... ]
   column names.
 
 - column_list
-  Columns that show the pivoted data.
+  The values of column_with_data, each with an optional alias, that
+  become the new columns.
 
 ### Example
 
@@ -342,8 +347,8 @@ in this section pertain to the current state of the implementation,
 and may change in the future as the implementation improves.  Let us
 assume that the size of the collection aggregated is N, the size of
 the current change is D, the total number of groups is G, and the
-*total number of elements* in the modified groups is M.  Always N > D,
-and N > M > G.
+*total number of elements* in the modified groups is M.  Always N >= D,
+and N >= M >= G.
 
 All aggregation functions need to store the result of the aggregation
 internally -- one value per group, so their space overhead is at least
@@ -373,7 +378,7 @@ reasonable cost in three circumstances:
   end of the order produced by the `ORDER BY` clause
 
 - they are used in a TopK pattern with a small limit.
-  The topK is expressed in SQL with the following structure:
+  The TopK is expressed in SQL with the following structure:
 
 ```sql
 SELECT * FROM (
@@ -403,6 +408,8 @@ value of the aggregate.  Linear aggregation functions comprise:
 - `SUM` for all integer, unsigned, and `DECIMAL` data types
 - `AVG` for all integer, unsigned, and `DECIMAL` data types
 - `STDDEV`, `STDDEV_SAMP`, `STDDEV_POP` for all integer, unsigned, and
+   `DECIMAL` data types
+- `VARIANCE`, `VAR_SAMP`, `VAR_POP` for all integer, unsigned, and
    `DECIMAL` data types
 
 The space overhead for linear functions is O(G).  The work performed
@@ -437,7 +444,7 @@ only O(D log M) work.
 
 Some aggregates can have more efficient implementations when applied
 to append-only collections.  A table property can be used to indicate
-whether a table is [append-only](streaming.md#append-only-tables).
+whether a table is [append-only](streaming.md#append_only-tables).
 Operations such as SELECT, WHERE, JOIN, UNNEST applied to append-only
 collections produce append-only results.  Note the results of
 aggregation are essentially never append-only.
@@ -448,7 +455,7 @@ aggregation are essentially never append-only.
 ### Expensive aggregation functions
 
 - `ARRAY_AGG` is very expensive, both in terms of space and time.
-  Space cost is O(N), while work performed is proportional O(M).
+  Space cost is O(N), while work performed is O(M).
 
 - The two constructors `ARRAY` and `MAP` with subqueries as arguments
   have similar costs.
