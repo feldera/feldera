@@ -199,7 +199,25 @@ fn field_index_by_id(fields: &Fields) -> HashMap<&str, usize> {
         .collect()
 }
 
+fn conversion_error(
+    file: &str,
+    column: &str,
+    from: &DataType,
+    to: &DataType,
+    cause: impl fmt::Display,
+) -> DataFusionError {
+    DataFusionError::External(
+        format!(
+            "Delta file reader: cannot read column '{column}' of file '{file}': the file stores \
+             it as {from:?}, which is not convertible to the {to:?} that the Delta table's \
+             schema declares: {cause}"
+        )
+        .into(),
+    )
+}
+
 /// Convert a file column `array` to the `target` type the read schema expects.
+/// `file` and `column` (dotted for a nested child) locate it in errors.
 ///
 /// Under column mapping a struct's field names differ between the file and the
 /// schema (a file may use logical names, the schema uses `col-<id>`), so a struct
@@ -209,16 +227,25 @@ fn field_index_by_id(fields: &Fields) -> HashMap<&str, usize> {
 /// handles a missing top-level column. Non-struct types (scalars, lists, maps)
 /// have no such names to match, so `cast` handles them, including type and
 /// container differences like `List` vs `LargeList`.
-fn realign_array(array: &ArrayRef, target: &DataType) -> Result<ArrayRef, DataFusionError> {
+fn realign_array(
+    array: &ArrayRef,
+    target: &DataType,
+    file: &str,
+    column: &str,
+) -> Result<ArrayRef, DataFusionError> {
+    let cast_to_target = || {
+        cast(array, target)
+            .map_err(|e| conversion_error(file, column, array.data_type(), target, e))
+    };
     let DataType::Struct(target_fields) = target else {
         return if array.data_type() == target {
             Ok(Arc::clone(array))
         } else {
-            Ok(cast(array, target)?)
+            cast_to_target()
         };
     };
     let Some(source) = array.as_any().downcast_ref::<StructArray>() else {
-        return Ok(cast(array, target)?);
+        return cast_to_target();
     };
     let src_idx_by_id = field_index_by_id(source.fields());
     let children = target_fields
@@ -232,16 +259,22 @@ fn realign_array(array: &ArrayRef, target: &DataType) -> Result<ArrayRef, DataFu
                 None => Some(pos),
             };
             match idx.and_then(|i| source.columns().get(i)) {
-                Some(child) => realign_array(child, tf.data_type()),
+                Some(child) => realign_array(
+                    child,
+                    tf.data_type(),
+                    file,
+                    &format!("{column}.{}", tf.name()),
+                ),
                 None => Ok(new_null_array(tf.data_type(), source.len())),
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(Arc::new(StructArray::try_new(
-        target_fields.clone(),
-        children,
-        source.nulls().cloned(),
-    )?))
+    // The children match `target_fields` by construction, so this rejects only a
+    // null-filled child of a NOT NULL target field, i.e. a column the file lacks
+    // that the table requires.
+    StructArray::try_new(target_fields.clone(), children, source.nulls().cloned())
+        .map(|s| Arc::new(s) as ArrayRef)
+        .map_err(|e| conversion_error(file, column, array.data_type(), target, e))
 }
 
 /// Project `batch` onto `logical_schema`, matching columns by field id (falling
@@ -254,6 +287,7 @@ fn realign_array(array: &ArrayRef, target: &DataType) -> Result<ArrayRef, DataFu
 fn project_to_logical(
     batch: &RecordBatch,
     logical_schema: &SchemaRef,
+    file: &str,
 ) -> Result<RecordBatch, DataFusionError> {
     let num_rows = batch.num_rows();
     let file_schema = batch.schema();
@@ -264,15 +298,19 @@ fn project_to_logical(
             .and_then(|id| file_idx_by_id.get(id).copied())
             .or_else(|| file_schema.index_of(field.name()).ok());
         let col = match source {
-            Some(idx) => realign_array(batch.column(idx), field.data_type())?,
+            Some(idx) => realign_array(batch.column(idx), field.data_type(), file, field.name())?,
             None => new_null_array(field.data_type(), num_rows),
         };
         columns.push(col);
     }
     RecordBatch::try_new(Arc::clone(logical_schema), columns).map_err(|e| {
         DataFusionError::External(
-            format!("deletion-vector reader: projected batch rejected by logical schema: {e}")
-                .into(),
+            format!(
+                "Delta file reader: file '{file}' does not satisfy the Delta table's schema: {e}. \
+                 A column the file lacks is read as NULL, which the table rejects when it \
+                 declares the column NOT NULL."
+            )
+            .into(),
         )
     })
 }
@@ -380,7 +418,7 @@ impl PartitionStream for MaskedParquetPartition {
                 let batch = batch.map_err(|e| DataFusionError::External(
                     format!("error reading Parquet file '{path}': {e}").into()))?;
                 if batch.num_rows() > 0 {
-                    yield project_to_logical(&batch, &logical_schema)?;
+                    yield project_to_logical(&batch, &logical_schema, path.as_ref())?;
                 }
             }
         };
@@ -405,6 +443,9 @@ mod tests {
     use proptest::prelude::*;
     use tempfile::TempDir;
 
+    /// Stands in for the data file the reader is decoding; it appears in errors.
+    const TEST_FILE: &str = "part-00000.parquet";
+
     fn with_id(field: ArrowField, key: &str, id: &str) -> ArrowField {
         field.with_metadata(HashMap::from([(key.to_string(), id.to_string())]))
     }
@@ -424,7 +465,7 @@ mod tests {
 
         let target =
             ArrowDataType::List(Arc::new(ArrowField::new("item", ArrowDataType::Utf8, true)));
-        let out = realign_array(&source, &target).unwrap();
+        let out = realign_array(&source, &target, TEST_FILE, "items").unwrap();
         assert_eq!(out.data_type(), &target);
         assert_eq!(out.len(), 2);
     }
@@ -479,7 +520,7 @@ mod tests {
             ),
         ]));
 
-        let out = project_to_logical(&batch, &read_schema).unwrap();
+        let out = project_to_logical(&batch, &read_schema, TEST_FILE).unwrap();
         assert_eq!(out.schema().field(1).name(), "col-8");
         let op = out
             .column(1)
@@ -534,7 +575,7 @@ mod tests {
             ),
         ]));
 
-        let out = realign_array(&source, &target).unwrap();
+        let out = realign_array(&source, &target, TEST_FILE, "after").unwrap();
         let out = out.as_any().downcast_ref::<StructArray>().unwrap();
         let present = out
             .column(0)
@@ -549,6 +590,38 @@ mod tests {
             .unwrap();
         assert_eq!(missing.len(), 2);
         assert!(missing.is_null(0) && missing.is_null(1));
+    }
+
+    // A user hitting a type mismatch sees only the physical `col-<uuid>` name on
+    // disk, so the error has to name the column, the file, and both types. Arrow's
+    // bare cast error carries none of that.
+    #[test]
+    fn conversion_error_names_column_file_and_types() {
+        let file_child: ArrayRef = Arc::new(StringArray::from(vec!["not-a-timestamp"]));
+        let source: ArrayRef = Arc::new(StructArray::from(vec![(
+            Arc::new(with_id(
+                ArrowField::new("amount", ArrowDataType::Utf8, true),
+                "PARQUET:field_id",
+                "2",
+            )),
+            file_child,
+        )]));
+        // Utf8 to a fixed-size binary is not a cast Arrow supports.
+        let target = ArrowDataType::Struct(ArrowFields::from(vec![with_id(
+            ArrowField::new("col-2", ArrowDataType::FixedSizeBinary(16), true),
+            "delta.columnMapping.id",
+            "2",
+        )]));
+
+        let err = realign_array(&source, &target, TEST_FILE, "after")
+            .expect_err("Utf8 does not cast to FixedSizeBinary")
+            .to_string();
+
+        // The nested child, not just the top-level column.
+        assert!(err.contains("'after.col-2'"), "{err}");
+        assert!(err.contains(TEST_FILE), "{err}");
+        assert!(err.contains("Utf8"), "{err}");
+        assert!(err.contains("FixedSizeBinary(16)"), "{err}");
     }
 
     /// Expand a [`RowSelection`] into the row positions it selects.
