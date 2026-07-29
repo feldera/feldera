@@ -457,6 +457,8 @@ where
                 }),
             );
 
+            // Valid only because the join function above copies the input key
+            // unchanged, so `join_stream` inherits `stream1`'s placement.
             stream1.minus(&join_stream).mark_sharded()
         })
     }
@@ -814,6 +816,9 @@ where
                             .val_factory()
                             .default_box();
 
+                        // Valid only because the join function copies the
+                        // input key unchanged, so the output keeps the
+                        // sharded inputs' placement.
                         let join_stream = self
                             .dyn_join_generic(
                                 &factories.join_factories,

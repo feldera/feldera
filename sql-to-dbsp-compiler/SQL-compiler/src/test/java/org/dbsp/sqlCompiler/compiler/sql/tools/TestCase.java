@@ -88,7 +88,9 @@ public class TestCase {
             list.add(new DBSPComment(this.name));
         boolean useHandles = this.ccs.compiler.options.ioOptions.emitHandles;
         DBSPExpression[] circuitArguments = new DBSPExpression[1];
-        circuitArguments[0] = new DBSPApplyExpression("CircuitConfig::with_workers", DBSPTypeAny.getDefault(), new DBSPUSizeLiteral(2));
+        // 3 workers: a non-power-of-two count catches worker placement functions
+        // that agree with the shard operator only modulo a power of two.
+        circuitArguments[0] = new DBSPApplyExpression("CircuitConfig::with_workers", DBSPTypeAny.getDefault(), new DBSPUSizeLiteral(3));
         DBSPLetStatement cas = new DBSPLetStatement("circuitAndStreams",
                 new DBSPApplyExpression(this.ccs.circuit.getName(), DBSPTypeAny.getDefault(), circuitArguments).resultUnwrap(),
                 true);
