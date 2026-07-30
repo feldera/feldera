@@ -4,6 +4,7 @@
     type Dataflow,
     type JsonProfiles,
     type ProfilerCallbacks,
+    type SvgExportOptions,
     Visualizer,
     type VisualizerConfig
   } from 'profiler-lib'
@@ -107,6 +108,11 @@
 
   export function showTopNodes(isSticky?: boolean) {
     return instance?.visualizer.showTopNodes(isSticky)
+  }
+
+  /** Serialize the rendered diagram to an SVG document string, or null if not yet rendered. */
+  export async function exportSvg(options?: SvgExportOptions): Promise<string | null> {
+    return (await instance?.visualizer.exportSvg(options)) ?? null
   }
 
   // Cleanup on component destruction

@@ -4,7 +4,9 @@
         "rootDir": "./src",
         "outDir": "./dist",
         // Environment Settings
-        "module": "es6",
+        // es2020 (over es6) enables dynamic import(), used to lazily load the browser-only
+        // cytoscape-svg extension so Node consumers (e.g. unit tests) never evaluate it.
+        "module": "es2020",
         "target": "esnext",
         "moduleResolution": "node",
         "types": [],

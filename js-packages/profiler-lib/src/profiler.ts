@@ -3,11 +3,13 @@
 
 import { CircuitProfile, NodeAndMetric, PropertyValue } from "./profile.js";
 import { Cytograph, CytographRendering } from "./cytograph.js";
+import { type SvgExportOptions } from "./svgExport.js";
 import { CircuitSelector } from "./selection.js";
 import { MetadataSelector } from './metadataSelection.js';
 import { Option, shadeOfRed } from "./util.js";
 
 export { NodeAndMetric, shadeOfRed };
+export type { SvgExportOptions };
 
 /** Represents a selectable metric option */
 export interface MetricOption {
@@ -346,6 +348,17 @@ export class Visualizer {
                 }
             }
         }
+    }
+
+    /**
+     * Export the currently rendered diagram as a standalone SVG document string.
+     * Returns null when no profile has been rendered yet.
+     */
+    async exportSvg(options?: SvgExportOptions): Promise<string | null> {
+        if (!this.rendering) {
+            return null;
+        }
+        return this.rendering.exportSvg(options);
     }
 
     /**

@@ -296,6 +296,7 @@
         {globalMetrics}
         {runtimeConfig}
         {triageResults}
+        pipelineName={displayPipelineName}
         profileFiles={getProfileFiles()}
         selectedTimestamp={selectedProfile}
         onSelectTimestamp={handleSelectTimestamp}
