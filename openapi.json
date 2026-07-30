@@ -10065,6 +10065,12 @@
                 "description": "Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,\n\"2024-12-09T16:09:53+00:00\".\n\nWhen this option is set, the connector finds and opens the snapshot of the table as of the\nspecified point in time (based on the server time recorded in the transaction\nlog, not the event time encoded in the data).  In `snapshot` and `snapshot_and_follow`\nmodes, it retrieves this snapshot.  In `follow` and `snapshot_and_follow` modes, it\nfollows transaction log records **after** this snapshot.\n\nNote: at most one of `snapshot_id` and `datetime` options can be specified.\nWhen neither of the two options is specified, the latest committed version of the table\nis used.",
                 "nullable": true
               },
+              "end_snapshot_id": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Optional final snapshot id.\n\nValid only in `follow` and `snapshot_and_follow` modes.\n\nWhen set, the connector stops after fully ingesting the snapshot with\nthis id, signaling end-of-input. Unlike a Delta table version, an Iceberg\nsnapshot id is not ordered, so the bound is an exact match: the id must\nname a snapshot committed after the starting snapshot and already present\nin the table's current history. The connector rejects any other value at\nstartup, including a not-yet-committed id, rather than follow forever.",
+                "nullable": true
+              },
               "max_retries": {
                 "type": "integer",
                 "format": "int32",
@@ -10121,10 +10127,12 @@
       },
       "IcebergTransactionMode": {
         "type": "string",
-        "description": "Iceberg table transaction mode.\n\nDetermines how the connector breaks up its input into Feldera transactions.\n\n* `none` - the connector does not break up its input into transactions.\n* `snapshot` - ingest the initial snapshot of the table in one or several transactions.\n\n# How the table snapshot is ingested using transactions\n\nWhen `transaction_mode` is set to `snapshot`, the connector ingests the snapshot in one\nor several transactions, depending on `timestamp_column`. If `timestamp_column` is not set,\nthe whole snapshot is ingested in a single Feldera transaction. If `timestamp_column` is set,\nthe connector ingests the snapshot in a series of timestamp ranges of width equal to the\n`LATENESS` attribute of the column, each range in a separate transaction.",
+        "description": "Iceberg table transaction mode.\n\nDetermines how the connector breaks up its input into Feldera transactions.\n\n* `none` - the connector does not group its input into transactions.\n* `snapshot` - ingest the initial snapshot in one or more transactions (see below). Changes\ningested afterward, in the follow phase, are not grouped into transactions.\n* `catchup` - ingest the initial snapshot like `snapshot`. In the follow phase, the connector\ngroups all table commits that are already available into a single transaction: while catching\nup on a backlog it ingests many commits per transaction, and once caught up it ingests about\none commit per transaction. Most efficient for backfill and steady-state following.\n* `always` - ingest the initial snapshot like `snapshot`. In the follow phase, each table commit\nis ingested in its own transaction.\n\n# How the table snapshot is ingested using transactions\n\nFor the initial snapshot (`snapshot`, `catchup`, and `always` all behave the same), the\nconnector ingests the snapshot in one or several transactions, depending on `timestamp_column`.\nIf `timestamp_column` is not set, the whole snapshot is ingested in a single Feldera\ntransaction. If `timestamp_column` is set, the connector ingests the snapshot in a series of\ntimestamp ranges of width equal to the `LATENESS` attribute of the column, each range in a\nseparate transaction.",
         "enum": [
           "none",
-          "snapshot"
+          "snapshot",
+          "catchup",
+          "always"
         ]
       },
       "InputEndpointConfig": {
