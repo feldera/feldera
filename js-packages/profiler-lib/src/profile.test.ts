@@ -3,13 +3,16 @@ import {
     BooleanValue,
     BytesValue,
     CircuitProfile,
+    ComplexNode,
     CountValue,
     MissingValue,
     PercentValue,
     PropertyValue,
+    SimpleNode,
     StringValue,
     TimeValue
 } from './profile.js'
+import type { Dataflow } from './dataflow.js'
 import { NumericRange } from './util.js'
 
 describe('CircuitProfile.isTop', () => {
@@ -340,5 +343,73 @@ describe('NumericRange cross-node normalization', () => {
         expect(empty.union(nodeA)).toEqual(nodeA)
         const point = NumericRange.getRange([42, 42])
         expect(point.isPoint()).toBe(true)
+    })
+})
+
+describe('CircuitProfile.byName', () => {
+    const mirNode = (persistent_id: string, table: string | null, view: string | null) => ({
+        operation: 'op', table, view, inputs: [], calcite: {}, positions: [], persistent_id
+    })
+
+    const makeProfile = () => {
+        const profile = new CircuitProfile(1, 'n')
+        const source = new SimpleNode('n1', 'source', 1)
+        const sink = new SimpleNode('n2', 'sink', 1)
+        const port = new SimpleNode('n3', 'source', 1)
+        for (const [pid, node] of [['abc123', source], ['def456', sink], ['789fed', port]] as const) {
+            profile.simpleNodes.set(node.id, node)
+            profile.byPersistentId.set(pid, node)
+        }
+        const dataflow: Dataflow = {
+            calcite_plan: {},
+            mir: {
+                s1: mirNode('abc123', 'CUSTOMERS', null),
+                s2: mirNode('def456', null, 'report'),
+                s3: mirNode('789fed', 'port', null)
+            }
+        }
+        profile.setDataflow(dataflow)
+        return { profile, source, sink, port }
+    }
+
+    it('indexes input tables and output views by lowercase name', () => {
+        const { profile, source, sink } = makeProfile()
+        // Quoted uppercase table names are found by their lowercase key
+        expect(profile.byName.get('customers').unwrap()).toBe(source)
+        expect(profile.byName.get('report').unwrap()).toBe(sink)
+        expect(profile.byName.get('missing').isNone()).toBe(true)
+    })
+
+    it('findByName falls back to a substring match', () => {
+        const { profile, source, sink } = makeProfile()
+        expect(profile.findByName('CUSTOM').unwrap()).toBe(source)
+        expect(profile.findByName('epor').unwrap()).toBe(sink)
+        expect(profile.findByName('missing').isNone()).toBe(true)
+    })
+
+    it('findByName prefers an exact match over a substring match', () => {
+        const { profile, port } = makeProfile()
+        // 'port' is a substring of 'report', but the exact match wins
+        expect(profile.findByName('port').unwrap()).toBe(port)
+    })
+
+    it('propagates the name to ancestors for collapsed display', () => {
+        const profile = new CircuitProfile(1, 'n')
+        const outer = new ComplexNode('c1', 'region', 1)
+        const inner = new ComplexNode('c2', 'subregion', 1)
+        const source = new SimpleNode('n1', 'source', 1)
+        profile.complexNodes.set(outer.id, outer)
+        profile.complexNodes.set(inner.id, inner)
+        profile.simpleNodes.set(source.id, source)
+        profile.parents.set(inner.id, outer.id)
+        profile.parents.set(source.id, inner.id)
+        profile.byPersistentId.set('abc123', source)
+
+        profile.setDataflow({ calcite_plan: {}, mir: { s1: mirNode('abc123', 'customers', null) } })
+
+        expect(outer.collapsedOperation()).toBe('region customers')
+        expect(inner.collapsedOperation()).toBe('subregion customers')
+        // The expanded label stays unchanged
+        expect(outer.operation).toBe('region')
     })
 })

@@ -221,11 +221,14 @@ selection.
 
 ![Choosing the workers to display](workers.png)
 
-### Searching a node by name
+### Searching for a node
 
-The search box allows searching a node by name.  The display will be
-centered around the node.  (In the future we may allow searching by
-attributes as well.)
+The search box finds a node by its ID, by the name of an input table
+or an output view (an exact name match wins over a substring match),
+or by a substring of its persistent ID.  The
+display is centered around the node found; if the node is hidden
+inside collapsed regions, these regions are expanded first.  (In the
+future we may allow searching by attributes as well.)
 
 ![Searching for nodes](search.png)
 

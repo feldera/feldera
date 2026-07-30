@@ -232,8 +232,8 @@
       <input
         bind:value={searchQuery}
         type="text"
-        placeholder="ID or persistent ID"
-        title="Search for node by ID or a substring of a persistent ID"
+        placeholder="ID, name, or persistent ID"
+        title="Search for node by ID, by table or view name, or by a substring of a persistent ID"
         onkeydown={(e) => e.key === 'Enter' && handleSearch()}
         class="input w-32 text-sm"
       />
