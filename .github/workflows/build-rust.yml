@@ -26,6 +26,12 @@ env:
 jobs:
   build-rust:
     name: Build Rust Binaries
+    # Backstop for the whole job (all steps): a stalled network call (e.g.
+    # sccache's GCS backend, which exposes no client-side timeout) can hang
+    # silently for the GHA default of 360 minutes before the merge queue's
+    # check_response_timeout_minutes force-cancels it. See incident on
+    # gke-runners-arm64, 2026-07-28: 5h13m of dead air, no compiler output.
+    timeout-minutes: 60
 
     # We run this on two different architectures (x86_64 and aarch64)
     strategy:
@@ -71,12 +77,20 @@ jobs:
           touch $WEBCONSOLE_BUILD_DIR/index.html
           cargo test --locked --doc --workspace -- --test-threads ${{ vars.CI_RUNNER_CORES || 20 }}
 
+      # sccache's GCS backend has no configurable timeout, so a stalled
+      # request (token refresh, upload, download) hangs the build with no
+      # error and no output. Bound the step directly so it fails fast rather
+      # than riding the job timeout to its limit.
       - name: Build Rust binaries
+        timeout-minutes: 45
         run: |
           FEATURES="${{ env.CARGO_FEATURES_BASE }}"
           cargo build ${{ env.CARGO_FLAGS }} --features "$FEATURES" --target=${{ matrix.target }}
 
+      # Runs even after a timeout above, so cache hit/miss stats survive to
+      # help diagnose whether sccache was the cause of a stall.
       - name: Print sccache stats
+        if: always()
         run: |
           sccache --show-stats
 
