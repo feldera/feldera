@@ -1,6 +1,13 @@
+<script lang="ts" module>
+  // biome-ignore lint/correctness/noUnusedVariables: <explanation></explanation>
+  let showForm = $state(false)
+  // biome-ignore lint/correctness/noUnusedVariables: <explanation></explanation>
+  let scrollTop = 0
+</script>
+
 <script lang="ts">
   import { asyncReadable } from '@square/svelte-store'
-  import { tick } from 'svelte'
+  import { onDestroy, onMount, tick } from 'svelte'
   import { page } from '$app/state'
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import NewOidcTrustForm from '$lib/components/oidcTrust/NewOidcTrustForm.svelte'
@@ -17,9 +24,25 @@
   const globalDialog = useGlobalDialog()
   const thisDialog = globalDialog.dialog
 
-  let showForm = $state(false)
   let trustForm: NewOidcTrustForm | undefined = $state()
   let scrollEl: HTMLDivElement | undefined = $state()
+
+  onMount(async () => {
+    await trusts.load()
+    await tick()
+    scrollEl?.scrollTo({ top: scrollTop })
+  })
+
+  // Hide the form and forget the scroll offset when this menu closes, but not
+  // when it is only swapped out for the delete confirmation (a non-null dialog).
+  onDestroy(() => {
+    queueMicrotask(() => {
+      if (!globalDialog.dialog) {
+        showForm = false
+        scrollTop = 0
+      }
+    })
+  })
 
   // Reveal the form and scroll the dialog to it (the form sits below the list,
   // which can be long). Returns once the form is mounted.
@@ -45,7 +68,11 @@
 </script>
 
 <GenericDialog content={{ title: `Manage OIDC trusts — ${tenantName}` }}>
-  <div bind:this={scrollEl} class="-mr-4 scrollbar h-full overflow-auto pr-4 sm:-mr-8 sm:pr-8">
+  <div
+    bind:this={scrollEl}
+    onscroll={() => (scrollTop = scrollEl?.scrollTop ?? 0)}
+    class="-mr-4 scrollbar h-full overflow-auto pr-4 sm:-mr-8 sm:pr-8"
+  >
     <p class="text-sm text-surface-800-200">
       Grant read/write/admin to workloads (CI, services) in tenant <b>{tenantName}</b> by trusting JWTs
       from an issuer. Platform-wide owner trusts are managed on the Admin page.
@@ -81,9 +108,11 @@
               {trust.name}
               <span class="text-sm text-surface-800-200">[{trust.role}]</span>
             </div>
-            <div class="text-sm">
-              <code>{trust.issuer}</code> · sub=<code>{trust.subject}</code>{#if trust.audience}
-                · aud=<code>{trust.audience}</code>{/if}
+            <div class="font-dm-mono text-sm">
+              {trust.issuer} · sub={trust.subject}
+              {#if trust.audience}
+                <span> · aud={trust.audience}</span>
+              {/if}
             </div>
             {#if trust.description}
               <div class="text-sm text-surface-800-200">{trust.description}</div>
@@ -113,6 +142,7 @@
         onSuccess={() => {
           trusts.reload?.()
         }}
+        tenant={tenantName}
       ></NewOidcTrustForm>
     {:else}
       <div class="flex">
