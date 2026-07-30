@@ -1,4 +1,6 @@
 <script lang="ts" module>
+  import * as va from 'valibot'
+
   // Fields to prefill the form with, e.g. to duplicate an existing trust.
   export type TrustFormData = {
     name: string
@@ -8,6 +10,20 @@
     description: string
     role: 'read' | 'write' | 'admin'
   }
+
+  export const oidcTrustSchema = va.object({
+    name: va.pipe(va.string(), va.minLength(1, 'Specify a name')),
+    issuer: va.pipe(
+      va.string(),
+      va.minLength(1, 'Specify the issuer URL'),
+      va.url('The issuer must be a valid URL'),
+      va.regex(/^[Hh][Tt][Tt][Pp][Ss]?:\/\/.+/, 'The issuer must be an http(s) URL')
+    ),
+    subject: va.pipe(va.string(), va.minLength(1, 'Specify a subject pattern')),
+    audience: va.string(),
+    description: va.string(),
+    role: va.picklist(['read', 'write', 'admin'] as const)
+  })
 </script>
 
 <script lang="ts">
@@ -16,7 +32,6 @@
   import { superForm } from 'sveltekit-superforms'
   import { valibot } from 'sveltekit-superforms/adapters'
 
-  import * as va from 'valibot'
   import { type MemberRole, postOidcTrust } from '$lib/services/pipelineManager'
 
   const {
@@ -26,21 +41,12 @@
   }: {
     onSubmit?: () => void
     onSuccess?: () => void
-    tenant?: string
+    tenant: string | undefined
   } = $props()
 
   // Backend rejections (role cap, duplicate name, ...) can concern any field, so
   // show them as a form-level error rather than pinning every one to Name.
   let submitError = $state('')
-
-  const schema = va.object({
-    name: va.pipe(va.string(), va.minLength(1, 'Specify a name')),
-    issuer: va.pipe(va.string(), va.minLength(1, 'Specify the issuer URL')),
-    subject: va.pipe(va.string(), va.minLength(1, 'Specify a subject pattern')),
-    audience: va.string(),
-    description: va.string(),
-    role: va.picklist(['read', 'write', 'admin'] as const)
-  })
 
   const form = superForm(
     {
@@ -53,7 +59,7 @@
     },
     {
       SPA: true,
-      validators: valibot(schema),
+      validators: valibot(oidcTrustSchema, { config: { abortPipeEarly: true } }),
       onUpdate({ form: f }) {
         if (!f.valid) {
           return
@@ -158,7 +164,12 @@
     <Control>
       {#snippet children(attrs)}
         <Label>Audience pattern (optional)</Label>
-        <input placeholder="feldera" class="input h-9" {...attrs} bind:value={$formData.audience} />
+        <input
+          placeholder="feldera-{tenant}"
+          class="input h-9"
+          {...attrs}
+          bind:value={$formData.audience}
+        />
       {/snippet}
     </Control>
     {@render fieldErrors()}
