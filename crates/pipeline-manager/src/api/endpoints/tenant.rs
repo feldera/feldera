@@ -206,7 +206,8 @@ pub(crate) async fn put_tenant_user(
 ///
 /// Remove a user from the acting tenant. This drops their role now, but if the
 /// identity provider still grants them access they are re-added at the default
-/// role on their next login; revoke access at the provider for a durable block.
+/// role on their next login. Revoke access at the provider to disable access
+/// completely.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),

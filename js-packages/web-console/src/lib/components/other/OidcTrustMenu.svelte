@@ -67,15 +67,16 @@
   }
 </script>
 
-<GenericDialog content={{ title: `Manage OIDC trusts — ${tenantName}` }}>
+<GenericDialog content={{ title: `Manage OIDC trust for ${tenantName}` }}>
   <div
     bind:this={scrollEl}
     onscroll={() => (scrollTop = scrollEl?.scrollTop ?? 0)}
     class="-mr-4 scrollbar h-full overflow-auto pr-4 sm:-mr-8 sm:pr-8"
   >
+
     <p class="text-sm text-surface-800-200">
       Grant read/write/admin to workloads (CI, services) in tenant <b>{tenantName}</b> by trusting JWTs
-      from an issuer. Platform-wide owner trusts are managed on the Admin page.
+      from an issuer.
     </p>
     <div class="my-2 flex flex-col gap-2">
       {#each $trusts as trust}
