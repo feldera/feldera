@@ -320,6 +320,15 @@ impl Checkpointer {
     }
 }
 
+/// Builds the error reported when a checkpoint file fails validation.
+pub(crate) fn checkpoint_invalid_data_error(operation: &'static str, detail: String) -> Error {
+    Error::Storage(StorageError::StdIo {
+        kind: ErrorKind::InvalidData,
+        operation,
+        path: Some(detail),
+    })
+}
+
 /// Trait for types that can be check-pointed and restored.
 ///
 /// This is to be used for any additional state within circuit operators

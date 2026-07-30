@@ -59,8 +59,8 @@ pub mod time_series;
 mod trace;
 
 use crate::Error;
-use crate::circuit::GlobalNodeId;
 use crate::storage::backend::StorageError;
+use std::fmt::Display;
 
 pub use self::csv::CsvSource;
 pub use apply::Apply;
@@ -96,9 +96,9 @@ pub use transaction_z1::TransactionZ1;
 pub use z1::{DelayedFeedback, DelayedNestedFeedback, Z1, Z1Nested};
 
 /// Returns a `NoPersistentId` error if `persistent_id` is `None`.
-fn require_persistent_id<'a>(
-    persistent_id: Option<&'a str>,
-    global_id: &GlobalNodeId,
-) -> Result<&'a str, Error> {
-    persistent_id.ok_or_else(|| Error::Storage(StorageError::NoPersistentId(global_id.to_string())))
+pub(crate) fn require_persistent_id(
+    persistent_id: Option<&str>,
+    id: impl Display,
+) -> Result<&str, Error> {
+    persistent_id.ok_or_else(|| Error::Storage(StorageError::NoPersistentId(id.to_string())))
 }

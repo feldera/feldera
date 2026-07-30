@@ -1101,7 +1101,7 @@ where
     ) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
         self.trace
-            .get_or_insert_with(|| T::new(&self.trace_factories, self.name.get()))
+            .get_or_insert_with(|| T::new(&self.trace_factories))
             .save(base, pid, files)
     }
 
@@ -1109,7 +1109,7 @@ where
         let pid = require_persistent_id(pid, &self.global_id)?;
 
         self.trace
-            .get_or_insert_with(|| T::new(&self.trace_factories, self.name.get()))
+            .get_or_insert_with(|| T::new(&self.trace_factories))
             .restore(base, pid)
     }
 
