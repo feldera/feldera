@@ -1065,7 +1065,7 @@ pub trait Node: Any {
     /// Invoke closure on all children of `self`, terminate on the first
     /// error.
     fn map_nodes_recursive_mut(
-        &self,
+        &mut self,
         _f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
     ) -> Result<(), DbspError> {
         Ok(())
@@ -6807,6 +6807,13 @@ where
         f: &mut dyn FnMut(&dyn Node) -> Result<(), DbspError>,
     ) -> Result<(), DbspError> {
         self.circuit.map_nodes_recursive(f)
+    }
+
+    fn map_nodes_recursive_mut(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn Node) -> Result<(), DbspError>,
+    ) -> Result<(), DbspError> {
+        self.circuit.map_nodes_recursive_mut(f)
     }
 
     fn checkpoint(
