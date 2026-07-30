@@ -128,6 +128,15 @@
   // Bring the match into view ONCE per submission. Tracked only on the SearchState fields,
   // and the lookup runs `untrack`ed so streaming updates can't re-trigger the scroll — the
   // user retains scroll control after the initial jump.
+  //
+  // Jumping to a row outside the currently-rendered window makes virtua scroll to an
+  // *estimated* offset, measure the newly-mounted row, then correct the scroll position —
+  // that can take several frames, not just one, especially under CI load. A single
+  // `requestAnimationFrame(paintHighlight)` would race that: if the row isn't mounted yet on
+  // that frame, `paintHighlight` deletes the highlight and nothing repaints it afterward
+  // unless a stray `onscroll` happens to fire. Retry every frame until the row lands (or give
+  // up after MAX_PAINT_RETRY_FRAMES, so a match that never mounts can't spin forever).
+  const MAX_PAINT_RETRY_FRAMES = 60
   $effect(() => {
     const pattern = search.pattern
     const occ = search.occurrenceIndex
@@ -139,9 +148,13 @@
       // jumped to. They regain auto-scroll by scrolling back to the bottom themselves.
       reverseScroll.stickToBottom = false
       virtualizer?.scrollToIndex(idx, { align: 'center' })
-      // virtua mounts the freshly-visible row on the next frame; paint then so the Range is
-      // created against the new DOM node rather than the previously-cleared one.
-      requestAnimationFrame(paintHighlight)
+      let attempts = 0
+      const tryPaint = () => {
+        paintHighlight()
+        const mounted = scrollContainer?.querySelector(`[data-rowindex="${idx}"]`)
+        if (!mounted && attempts++ < MAX_PAINT_RETRY_FRAMES) requestAnimationFrame(tryPaint)
+      }
+      requestAnimationFrame(tryPaint)
     })
   })
 
