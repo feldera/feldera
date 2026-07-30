@@ -207,9 +207,14 @@ struct IcebergMetrics {
     follow_snapshots_total: AtomicU64,
     /// Total records ingested in follow mode (inserts plus deletes).
     follow_records_total: AtomicU64,
+    /// Number of Feldera follow transactions started by this connector.
+    follow_transaction_starts: AtomicU64,
+    /// Sequence number the in-flight `catchup` transaction is catching up to;
+    /// [`SEQUENCE_METRIC_UNSET`] when no catchup window is open.
+    catchup_target_sequence_number: AtomicU64,
 }
 
-/// Sentinel stored in the sequence-number gauge before a value is available.
+/// Sentinel stored in the sequence-number gauges before a value is available.
 const SEQUENCE_METRIC_UNSET: u64 = u64::MAX;
 
 impl IcebergMetrics {
@@ -222,6 +227,29 @@ impl IcebergMetrics {
             last_ingested_sequence_number: AtomicU64::new(SEQUENCE_METRIC_UNSET),
             follow_snapshots_total: AtomicU64::new(0),
             follow_records_total: AtomicU64::new(0),
+            follow_transaction_starts: AtomicU64::new(0),
+            catchup_target_sequence_number: AtomicU64::new(SEQUENCE_METRIC_UNSET),
+        }
+    }
+
+    fn set_catchup_target_sequence_number(&self, sequence_number: i64) {
+        debug_assert!(
+            sequence_number >= 0,
+            "Iceberg sequence number must be non-negative"
+        );
+        self.catchup_target_sequence_number
+            .store(sequence_number as u64, Ordering::Relaxed);
+    }
+
+    fn clear_catchup_target_sequence_number(&self) {
+        self.catchup_target_sequence_number
+            .store(SEQUENCE_METRIC_UNSET, Ordering::Relaxed);
+    }
+
+    fn catchup_target_sequence_number_metric(&self) -> f64 {
+        match self.catchup_target_sequence_number.load(Ordering::Relaxed) {
+            SEQUENCE_METRIC_UNSET => -1.0,
+            sequence_number => sequence_number as f64,
         }
     }
 
@@ -290,6 +318,18 @@ impl ConnectorMetrics for IcebergMetrics {
                 "Total records ingested in follow mode (inserts plus deletes).",
                 ValueType::Counter,
                 self.follow_records_total.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "input_connector_iceberg_follow_transaction_starts",
+                "Number of Feldera follow transactions started by this connector.",
+                ValueType::Counter,
+                self.follow_transaction_starts.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "input_connector_iceberg_catchup_target_sequence_number",
+                "Sequence number the in-flight catchup transaction is catching up to (-1 if no catchup window is open).",
+                ValueType::Gauge,
+                self.catchup_target_sequence_number_metric(),
             ),
         ]
     }
@@ -576,6 +616,13 @@ impl IcebergInputReader {
             );
         }
 
+        if endpoint.config.end_snapshot_id.is_some() && !endpoint.config.follow() {
+            bail!(
+                "the 'end_snapshot_id' property is only valid in 'follow' or 'snapshot_and_follow' mode, not '{}' mode",
+                endpoint.config.mode
+            );
+        }
+
         // Register metrics here rather than at endpoint construction: the
         // controller inserts this endpoint's status entry after constructing the
         // endpoint but before calling `open` (which builds this reader), and
@@ -797,6 +844,19 @@ struct IcebergInputEndpointInner {
     /// Most recent resume point that is safe to check point at. Used to answer a
     /// checkpoint that stopped on a [`QueueEntry::Rollback`] boundary.
     last_checkpointable_status: Mutex<IcebergResumeInfo>,
+
+    /// In-flight `catchup` transaction, shared so a mid-window `Rollback` in the
+    /// retry path can abandon it and continue under a fresh label.
+    catchup_state: Mutex<CatchupFollowState>,
+}
+
+#[derive(Default)]
+struct CatchupFollowState {
+    /// Snapshot id the window commits at: the last snapshot in the poll batch.
+    target_snapshot_id: Option<i64>,
+    /// Window transaction (queue's `start_transaction` type). `None` until the
+    /// window's first rows, or after a `Rollback` committed the previous one.
+    transaction: Option<Option<String>>,
 }
 
 impl IcebergInputEndpointInner {
@@ -830,6 +890,7 @@ impl IcebergInputEndpointInner {
             metrics,
             last_resume_status: Mutex::new(Some(IcebergResumeInfo::initial())),
             last_checkpointable_status: Mutex::new(IcebergResumeInfo::initial()),
+            catchup_state: Mutex::new(CatchupFollowState::default()),
         }
     }
 
@@ -838,10 +899,14 @@ impl IcebergInputEndpointInner {
     /// Returns `None` when `transaction_mode` is `none`, meaning the chunk is not
     /// wrapped in a Feldera transaction. Otherwise returns `Some(Some(label))`,
     /// where the label identifies the transaction in logs and metrics.
+    /// `snapshot`, `catchup`, and `always` all transact the initial snapshot the
+    /// same way; they differ only in the follow phase.
     fn allocate_snapshot_transaction(&self) -> Option<Option<String>> {
         match self.config.transaction_mode {
             IcebergTransactionMode::None => None,
-            IcebergTransactionMode::Snapshot => {
+            IcebergTransactionMode::Snapshot
+            | IcebergTransactionMode::Catchup
+            | IcebergTransactionMode::Always => {
                 let index = self.transaction_index.fetch_add(1, Ordering::AcqRel);
                 Some(Some(format!("snapshot-{index}")))
             }
@@ -1116,16 +1181,94 @@ impl IcebergInputEndpointInner {
         );
     }
 
-    /// Allocate a transaction for the next follow snapshot, or `None` when
-    /// `transaction_mode` is `none`. Each followed snapshot is one transaction.
-    fn allocate_follow_transaction(&self) -> Option<Option<String>> {
-        match self.config.transaction_mode {
-            IcebergTransactionMode::None => None,
-            IcebergTransactionMode::Snapshot => {
-                let index = self.transaction_index.fetch_add(1, Ordering::AcqRel);
-                Some(Some(format!("follow-{index}")))
-            }
+    /// Allocate and count a follow transaction, or `None` when the mode does not
+    /// transact the follow phase. Typed as the queue's `start_transaction` param.
+    fn new_follow_transaction_label(&self) -> Option<Option<String>> {
+        if matches!(
+            self.config.transaction_mode,
+            IcebergTransactionMode::Always | IcebergTransactionMode::Catchup
+        ) {
+            self.metrics
+                .follow_transaction_starts
+                .fetch_add(1, Ordering::Relaxed);
+            let index = self.transaction_index.fetch_add(1, Ordering::AcqRel);
+            Some(Some(format!("follow-{index}")))
+        } else {
+            None
         }
+    }
+
+    /// Transaction for a followed snapshot's rows: `always` gets a fresh one per
+    /// snapshot, `catchup` shares the window's, `none`/`snapshot` get none.
+    fn follow_data_transaction(&self) -> Option<Option<String>> {
+        if self.config.transaction_mode == IcebergTransactionMode::Catchup {
+            self.catchup_transaction()
+        } else {
+            self.new_follow_transaction_label()
+        }
+    }
+
+    /// Open a catchup window that commits at snapshot `target_snapshot_id`, the
+    /// last snapshot in the poll batch. Keyed on id, not sequence number: V1
+    /// tables number every snapshot 0, so `>= target` would commit immediately.
+    fn begin_catchup_window(&self, target_snapshot_id: i64, target_sequence_number: i64) {
+        let mut state = self.catchup_state.lock().unwrap();
+        state.target_snapshot_id = Some(target_snapshot_id);
+        state.transaction = None;
+        self.metrics
+            .set_catchup_target_sequence_number(target_sequence_number);
+    }
+
+    /// Snapshot id the current catchup window commits at, if a window is open.
+    fn catchup_target_snapshot_id(&self) -> Option<i64> {
+        self.catchup_state.lock().unwrap().target_snapshot_id
+    }
+
+    /// Transaction of the current catchup window, allocating (and counting) a
+    /// new one when the window has none yet or its previous transaction was
+    /// committed by a `Rollback`.
+    fn catchup_transaction(&self) -> Option<Option<String>> {
+        let mut state = self.catchup_state.lock().unwrap();
+        if state.transaction.is_none() {
+            state.transaction = self.new_follow_transaction_label();
+        }
+        state.transaction.clone()
+    }
+
+    /// Drop the current catchup transaction label after a `Rollback` committed
+    /// it, so the window continues under a fresh label.
+    fn abandon_catchup_transaction(&self) {
+        self.catchup_state.lock().unwrap().transaction = None;
+    }
+
+    /// Close the catchup window and clear the target metric.
+    fn reset_catchup_window(&self) {
+        *self.catchup_state.lock().unwrap() = CatchupFollowState::default();
+        self.metrics.clear_catchup_target_sequence_number();
+    }
+
+    /// If `snapshot_id` is the configured `end_snapshot_id`, commit, record
+    /// end-of-input, and signal the controller. Returns whether the connector
+    /// has reached its end bound and should stop following.
+    fn finish_at_end_snapshot(&self, snapshot_id: i64) -> bool {
+        if self.config.end_snapshot_id != Some(snapshot_id) {
+            return false;
+        }
+        self.queue.push_entry(
+            InputQueueEntry::new_with_aux(
+                Utc::now(),
+                QueueEntry::ResumeInfo(Some(IcebergResumeInfo::eoi(Some(snapshot_id)))),
+            )
+            .with_commit_transaction(true),
+            Vec::new(),
+        );
+        self.metrics.set_phase(IcebergPhase::Completed);
+        self.consumer.eoi();
+        info!(
+            "iceberg {}: reached snapshot {snapshot_id} configured as 'end_snapshot_id'; stopping the connector",
+            &self.endpoint_name
+        );
+        true
     }
 
     /// Commit the current follow transaction (if any) and record a
@@ -1295,7 +1438,7 @@ impl IcebergInputEndpointInner {
         name_mapping: &Option<Arc<NameMapping>>,
         files: &[ChangedFile],
         polarity: bool,
-        transaction: Option<Option<String>>,
+        mut transaction: Option<Option<String>>,
         descr: &str,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
@@ -1342,6 +1485,14 @@ impl IcebergInputEndpointInner {
                         Vec::new(),
                     );
 
+                    // The Rollback committed the open catchup transaction, so
+                    // continue the window under a fresh label; the retry's rows
+                    // are then not attributed to the committed transaction.
+                    if self.config.transaction_mode == IcebergTransactionMode::Catchup {
+                        self.abandon_catchup_transaction();
+                        transaction = self.follow_data_transaction();
+                    }
+
                     retry_count += 1;
                     if retry_count > max_retries {
                         let message =
@@ -1365,7 +1516,6 @@ impl IcebergInputEndpointInner {
     /// ingest each one's changes, until the worker task is canceled.
     async fn follow_loop(
         &self,
-        table: Arc<IcebergTable>,
         used_columns: &[String],
         start_snapshot_id: Option<i64>,
         input_stream: &mut dyn ArrowStream,
@@ -1373,13 +1523,7 @@ impl IcebergInputEndpointInner {
     ) {
         self.metrics.set_phase(IcebergPhase::Follow);
         if let Err(e) = self
-            .follow_loop_inner(
-                table,
-                used_columns,
-                start_snapshot_id,
-                input_stream,
-                receiver,
-            )
+            .follow_loop_inner(used_columns, start_snapshot_id, input_stream, receiver)
             .await
         {
             self.consumer.error(true, e, Some("iceberg-follow"));
@@ -1388,18 +1532,11 @@ impl IcebergInputEndpointInner {
 
     async fn follow_loop_inner(
         &self,
-        table: Arc<IcebergTable>,
         used_columns: &[String],
         start_snapshot_id: Option<i64>,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) -> Result<(), AnyError> {
-        // Projection and name mapping are fixed by the table schema; compute
-        // them once. Schema evolution across followed snapshots is a v2 concern.
-        let schema = table.metadata().current_schema().clone();
-        let field_ids = Self::project_field_ids(&schema, used_columns);
-        let name_mapping = table_name_mapping(&table)?;
-
         let mut last_snapshot_id = start_snapshot_id;
 
         loop {
@@ -1419,68 +1556,97 @@ impl IcebergInputEndpointInner {
                 continue;
             }
 
+            // Recompute projection and name mapping from the refreshed metadata
+            // so schema changes across snapshots are read with the current field
+            // ids (Iceberg resolves columns by field id, so old files still read
+            // correctly). The Feldera relation is fixed at pipeline creation, so
+            // a non-additive change still requires a restart to take effect.
+            let schema = table.metadata().current_schema().clone();
+            let field_ids = Self::project_field_ids(&schema, used_columns);
+            let name_mapping = table_name_mapping(&table)?;
+
+            // `catchup` ingests the whole poll batch in one transaction that
+            // commits when the loop reaches the batch's last snapshot.
+            let catchup = self.config.transaction_mode == IcebergTransactionMode::Catchup;
+            if catchup {
+                if let Some(target) = new_snapshots.last() {
+                    self.begin_catchup_window(target.snapshot_id(), target.sequence_number());
+                }
+            }
+
             for snapshot in new_snapshots {
                 wait_running(receiver).await;
                 let snapshot_id = snapshot.snapshot_id();
 
                 // Compaction and other metadata-only rewrites carry no logical
-                // change; advance past them without reading.
-                if is_noop_operation(&snapshot) {
+                // change; skip reading but still treat the snapshot as a
+                // boundary below.
+                if !is_noop_operation(&snapshot) {
+                    let delta = self.snapshot_delta(&table, &snapshot).await?;
+
+                    if !delta.is_empty() {
+                        let transaction = self.follow_data_transaction();
+
+                        // Inserts before deletes: a followed snapshot's added and
+                        // removed files are disjoint, so ordering only affects
+                        // intermediate state, not the final Z-set.
+                        self.push_changed_files(
+                            &table,
+                            &schema,
+                            &field_ids,
+                            &name_mapping,
+                            &delta.added,
+                            true,
+                            transaction.clone(),
+                            &format!("snapshot {snapshot_id} inserts"),
+                            input_stream,
+                            receiver,
+                        )
+                        .await?;
+                        self.push_changed_files(
+                            &table,
+                            &schema,
+                            &field_ids,
+                            &name_mapping,
+                            &delta.removed,
+                            false,
+                            transaction,
+                            &format!("snapshot {snapshot_id} deletes"),
+                            input_stream,
+                            receiver,
+                        )
+                        .await?;
+                    }
+
+                    self.metrics
+                        .follow_snapshots_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    self.metrics
+                        .set_last_ingested_sequence_number(snapshot.sequence_number());
+                    debug!(
+                        "iceberg {}: ingested follow snapshot {snapshot_id} (sequence number {})",
+                        &self.endpoint_name,
+                        snapshot.sequence_number()
+                    );
+                }
+
+                if self.finish_at_end_snapshot(snapshot_id) {
+                    self.reset_catchup_window();
+                    return Ok(());
+                }
+
+                // `catchup` holds one transaction open until the loop reaches the
+                // window's target snapshot; other modes commit after every
+                // snapshot.
+                let commit_boundary =
+                    !catchup || self.catchup_target_snapshot_id() == Some(snapshot_id);
+                if commit_boundary {
                     self.push_follow_boundary(snapshot_id);
-                    last_snapshot_id = Some(snapshot_id);
-                    continue;
+                    if catchup {
+                        self.reset_catchup_window();
+                    }
                 }
-
-                let delta = self.snapshot_delta(&table, &snapshot).await?;
-
-                if !delta.is_empty() {
-                    let transaction = self.allocate_follow_transaction();
-
-                    // Inserts before deletes: a followed snapshot's added and
-                    // removed files are disjoint, so ordering only affects
-                    // intermediate state, not the final Z-set.
-                    self.push_changed_files(
-                        &table,
-                        &schema,
-                        &field_ids,
-                        &name_mapping,
-                        &delta.added,
-                        true,
-                        transaction.clone(),
-                        &format!("snapshot {snapshot_id} inserts"),
-                        input_stream,
-                        receiver,
-                    )
-                    .await?;
-                    self.push_changed_files(
-                        &table,
-                        &schema,
-                        &field_ids,
-                        &name_mapping,
-                        &delta.removed,
-                        false,
-                        transaction,
-                        &format!("snapshot {snapshot_id} deletes"),
-                        input_stream,
-                        receiver,
-                    )
-                    .await?;
-                }
-
-                // Commit the snapshot's transaction and record the resume point.
-                self.push_follow_boundary(snapshot_id);
                 last_snapshot_id = Some(snapshot_id);
-
-                self.metrics
-                    .follow_snapshots_total
-                    .fetch_add(1, Ordering::Relaxed);
-                self.metrics
-                    .set_last_ingested_sequence_number(snapshot.sequence_number());
-                info!(
-                    "iceberg {}: ingested follow snapshot {snapshot_id} (sequence number {})",
-                    &self.endpoint_name,
-                    snapshot.sequence_number()
-                );
             }
         }
     }
@@ -1522,6 +1688,11 @@ impl IcebergInputEndpointInner {
                 snapshot_timestamp,
                 eoi: false,
             });
+        }
+
+        if let Err(e) = self.validate_end_snapshot(&table, snapshot_id) {
+            let _ = init_status_sender.send(Err(e)).await;
+            return;
         }
 
         let used_columns = match self
@@ -1599,7 +1770,6 @@ impl IcebergInputEndpointInner {
             // start: the snapshot just ingested (snapshot_and_follow) or the
             // resolved starting snapshot (follow-only).
             self.follow_loop(
-                table.clone(),
                 &used_columns,
                 snapshot_id,
                 input_stream.as_mut(),
@@ -2094,6 +2264,39 @@ impl IcebergInputEndpointInner {
             }
             SnapshotDescr::Latest => Ok(metadata.current_snapshot().map(|s| s.snapshot_id())),
         }
+    }
+
+    /// Require `end_snapshot_id` to name a committed snapshot after the start.
+    /// Snapshot ids are unordered, so a bound not in the followed history would
+    /// make the connector follow forever; reject it up front instead.
+    fn validate_end_snapshot(
+        &self,
+        table: &IcebergTable,
+        start_snapshot_id: Option<i64>,
+    ) -> Result<(), ControllerError> {
+        let Some(end) = self.config.end_snapshot_id else {
+            return Ok(());
+        };
+        if Some(end) == start_snapshot_id {
+            return Err(ControllerError::invalid_transport_configuration(
+                &self.endpoint_name,
+                &format!(
+                    "'end_snapshot_id' {end} is the starting snapshot; set it to a later snapshot so the connector ingests at least one change before stopping"
+                ),
+            ));
+        }
+        let after = snapshots_after(table.metadata(), start_snapshot_id).map_err(|e| {
+            ControllerError::invalid_transport_configuration(&self.endpoint_name, &e.to_string())
+        })?;
+        if !after.iter().any(|s| s.snapshot_id() == end) {
+            return Err(ControllerError::invalid_transport_configuration(
+                &self.endpoint_name,
+                &format!(
+                    "'end_snapshot_id' {end} is not a snapshot committed after the starting snapshot in the table's current history. Set it to an existing snapshot that follows the start; an id that has not been committed yet cannot be used as an end bound because Iceberg snapshot ids are not ordered."
+                ),
+            ));
+        }
+        Ok(())
     }
 
     /// The Iceberg snapshot the connector reads, `None` if the table has no matching snapshot.

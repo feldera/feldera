@@ -52,16 +52,24 @@ pub enum IcebergCatalogType {
 ///
 /// Determines how the connector breaks up its input into Feldera transactions.
 ///
-/// * `none` - the connector does not break up its input into transactions.
-/// * `snapshot` - ingest the initial snapshot of the table in one or several transactions.
+/// * `none` - the connector does not group its input into transactions.
+/// * `snapshot` - ingest the initial snapshot in one or more transactions (see below). Changes
+///   ingested afterward, in the follow phase, are not grouped into transactions.
+/// * `catchup` - ingest the initial snapshot like `snapshot`. In the follow phase, the connector
+///   groups all table commits that are already available into a single transaction: while catching
+///   up on a backlog it ingests many commits per transaction, and once caught up it ingests about
+///   one commit per transaction. Most efficient for backfill and steady-state following.
+/// * `always` - ingest the initial snapshot like `snapshot`. In the follow phase, each table commit
+///   is ingested in its own transaction.
 ///
 /// # How the table snapshot is ingested using transactions
 ///
-/// When `transaction_mode` is set to `snapshot`, the connector ingests the snapshot in one
-/// or several transactions, depending on `timestamp_column`. If `timestamp_column` is not set,
-/// the whole snapshot is ingested in a single Feldera transaction. If `timestamp_column` is set,
-/// the connector ingests the snapshot in a series of timestamp ranges of width equal to the
-/// `LATENESS` attribute of the column, each range in a separate transaction.
+/// For the initial snapshot (`snapshot`, `catchup`, and `always` all behave the same), the
+/// connector ingests the snapshot in one or several transactions, depending on `timestamp_column`.
+/// If `timestamp_column` is not set, the whole snapshot is ingested in a single Feldera
+/// transaction. If `timestamp_column` is set, the connector ingests the snapshot in a series of
+/// timestamp ranges of width equal to the `LATENESS` attribute of the column, each range in a
+/// separate transaction.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema, Default)]
 pub enum IcebergTransactionMode {
     #[default]
@@ -69,6 +77,10 @@ pub enum IcebergTransactionMode {
     None,
     #[serde(rename = "snapshot")]
     Snapshot,
+    #[serde(rename = "catchup")]
+    Catchup,
+    #[serde(rename = "always")]
+    Always,
 }
 
 /// AWS Glue catalog config.
@@ -279,6 +291,18 @@ pub struct IcebergReaderConfig {
     /// When neither of the two options is specified, the latest committed version of the table
     /// is used.
     pub datetime: Option<String>,
+
+    /// Optional final snapshot id.
+    ///
+    /// Valid only in `follow` and `snapshot_and_follow` modes.
+    ///
+    /// When set, the connector stops after fully ingesting the snapshot with
+    /// this id, signaling end-of-input. Unlike a Delta table version, an Iceberg
+    /// snapshot id is not ordered, so the bound is an exact match: the id must
+    /// name a snapshot committed after the starting snapshot and already present
+    /// in the table's current history. The connector rejects any other value at
+    /// startup, including a not-yet-committed id, rather than follow forever.
+    pub end_snapshot_id: Option<i64>,
 
     /// Location of the table metadata JSON file.
     ///
