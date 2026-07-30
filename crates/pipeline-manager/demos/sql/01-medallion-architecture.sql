@@ -87,6 +87,7 @@ CREATE TABLE bronze_clickstream_events (
 ) WITH (
     'skip_unused_columns' = 'true',
     'connectors' = '[{
+        "name": "bronze_clickstream_events",
         "transport": {
             "name": "delta_table_input",
             "config": {
@@ -115,6 +116,7 @@ CREATE TABLE bronze_orders (
 ) WITH (
     'skip_unused_columns' = 'true',
     'connectors' = '[{
+        "name": "bronze_orders",
         "transport": {
             "name": "delta_table_input",
             "config": {
@@ -139,6 +141,7 @@ CREATE TABLE bronze_order_items (
 ) WITH (
     'skip_unused_columns' = 'true',
     'connectors' = '[{
+        "name": "bronze_order_items",
         "transport": {
             "name": "delta_table_input",
             "config": {
@@ -167,6 +170,7 @@ CREATE TABLE bronze_products (
     'skip_unused_columns' = 'true',
     'connectors' = '
     [{
+        "name": "bronze_products",
         "transport": {
             "name": "delta_table_input",
             "config": {
@@ -191,6 +195,7 @@ CREATE TABLE bronze_inventory_events (
 ) WITH (
     'skip_unused_columns' = 'true',
     'connectors' = '[{
+        "name": "bronze_inventory_events",
         "transport": {
             "name": "delta_table_input",
             "config": {
@@ -215,6 +220,7 @@ CREATE TABLE bronze_customers (
 ) WITH (
     'skip_unused_columns' = 'true',
     'connectors' = '[{
+        "name": "bronze_customers",
         "transport": {
             "name": "delta_table_input",
             "config": {
@@ -237,6 +243,7 @@ CREATE TABLE bronze_suppliers (
 ) WITH (
     'skip_unused_columns' = 'true',
     'connectors' = '[{
+        "name": "bronze_suppliers",
         "transport": {
             "name": "delta_table_input",
             "config": {

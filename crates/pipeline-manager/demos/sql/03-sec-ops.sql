@@ -84,7 +84,7 @@ CREATE TABLE pipeline_sources (
     pipeline_id BIGINT NOT NULL FOREIGN KEY REFERENCES pipeline(pipeline_id)
 ) WITH (
     'connectors' = '[{
-        "name": "pipelie_sources",
+        "name": "pipeline_sources",
         "transport": {
             "name": "datagen",
             "config": {
