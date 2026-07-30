@@ -47,8 +47,10 @@ use crate::{
         balance::{Balancer, BalancerError, BalancerHint, PartitioningPolicy},
         recorder::{Recorder, RecorderControl, RecorderControlId, RecorderId},
     },
+    operator::require_persistent_id,
+    storage::file::to_bytes,
     time::{Timestamp, UnitTimestamp},
-    trace::Batch,
+    trace::{Batch, unaligned_deserialize},
 };
 #[cfg(doc)]
 use crate::{
@@ -67,6 +69,7 @@ use nix::{
     time::{ClockId, clock_gettime},
 };
 use pin_project_lite::pin_project;
+use rkyv::bytecheck;
 use serde::{Deserialize, Serialize, Serializer, de::DeserializeOwned};
 use size_of::SizeOf;
 use std::{
@@ -7299,6 +7302,16 @@ where
     }
 }
 
+/// A subcircuit's clock, as stored in a checkpoint.
+///
+/// The clock is wrapped in a validated envelope, like `CommittedZ1`, because
+/// a `Timestamp` is generic and cannot carry a `CheckBytes` derive of its own.
+#[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
+#[archive_attr(derive(rkyv::CheckBytes))]
+struct CommittedClock {
+    time: Vec<u8>,
+}
+
 impl<C> ChildNode<C>
 where
     C: Circuit,
@@ -7307,13 +7320,58 @@ where
     where
         E: Executor<C>,
     {
+        let mut labels = BTreeMap::new();
+        if let Some(persistent_id) = Self::derive_persistent_id(&circuit) {
+            labels.insert(LABEL_PERSISTENT_OPERATOR_ID.to_string(), persistent_id);
+        }
+
         Self {
             id: circuit.global_node_id(),
             circuit,
             executor: Box::new(executor) as Box<dyn Executor<C>>,
-            labels: BTreeMap::new(),
+            labels,
             nesting_depth,
         }
+    }
+
+    /// Persistent id of a subcircuit, derived from the persistent ids of the
+    /// operators it contains.
+    ///
+    /// A subcircuit has no output stream, so there is nothing for the caller to
+    /// label; its contents, however, are already named, since a stateful
+    /// operator without a persistent id cannot be checkpointed at all.  The
+    /// derived name is stable while the scope's contents are, and changes when
+    /// they are not, which is exactly when the state inside has to be rebuilt.
+    /// A node id would not do: it shifts when an unrelated operator is added
+    /// upstream, silently binding one scope's clock to another scope's state.
+    ///
+    /// Called once, when the subcircuit node is created: the constructor that
+    /// populated the child circuit has returned, so its operators and their ids
+    /// are final.  A nested subcircuit was labeled the same way when it was
+    /// created, so it contributes its own id here, and a change deep inside
+    /// therefore reaches every scope that encloses it.
+    fn derive_persistent_id(circuit: &C) -> Option<String> {
+        let mut fingerprint = Fingerprinter::default();
+        let mut named = 0usize;
+
+        // `map_local_nodes` walks nodes in node id order, and every worker
+        // builds the same graph, so all workers derive the same name.
+        let _ = circuit.map_local_nodes(&mut |node| {
+            if let Some(label) = node.get_label(LABEL_PERSISTENT_OPERATOR_ID) {
+                fingerprint.hash(label);
+                // Separator, so that ("ab", "c") and ("a", "bc") differ.
+                fingerprint.hash("\u{1}");
+                named += 1;
+            }
+            Ok(())
+        });
+
+        (named > 0).then(|| format!("scope-{:016x}", fingerprint.finish()))
+    }
+
+    /// Absolute path of the file holding this subcircuit's clock.
+    fn clock_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
+        base.child(format!("clock-{persistent_id}.dat"))
     }
 }
 
@@ -7403,15 +7461,56 @@ where
         self.circuit.map_nodes_recursive_mut(f)
     }
 
+    /// Stores the subcircuit's clock.
+    ///
+    /// The state of the operators inside the subcircuit is timestamped with this
+    /// clock; restoring the state without it would leave the state in the
+    /// future, where the operators never emit it.
     fn checkpoint(
         &mut self,
-        _base: &StoragePath,
-        _files: &mut Vec<Arc<dyn FileCommitter>>,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError> {
+        let persistent_id = self.persistent_id();
+        let persistent_id = require_persistent_id(persistent_id.as_deref(), &self.id)?;
+
+        let time = self.circuit.time();
+        debug!(
+            "subcircuit {} clock {time:?} stored as {persistent_id}",
+            self.id
+        );
+
+        let committed = CommittedClock {
+            time: to_bytes(&time)
+                .expect("serializing a subcircuit clock should work")
+                .to_vec(),
+        };
+        let as_bytes = to_bytes(&committed).expect("serializing CommittedClock should work");
+        files.push(
+            Runtime::storage_backend()?.write(&Self::clock_file(base, persistent_id), as_bytes)?,
+        );
         Ok(())
     }
 
-    fn restore(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
+    fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        let persistent_id = self.persistent_id();
+        let persistent_id = require_persistent_id(persistent_id.as_deref(), &self.id)?;
+
+        // A missing file propagates as `NotFound`, which puts the subcircuit in
+        // `need_backfill`: the scope is cleared and replayed, which is what a
+        // checkpoint taken before its contents changed calls for.
+        let path = Self::clock_file(base, persistent_id);
+        let content = Runtime::storage_backend()?.read(&path)?;
+        let committed = rkyv::check_archived_root::<CommittedClock>(&content).map_err(|e| {
+            crate::circuit::checkpointer::checkpoint_invalid_data_error(
+                "subcircuit clock checkpoint validation failed",
+                format!("{path}: {e}"),
+            )
+        })?;
+
+        let time: <C as WithClock>::Time = unaligned_deserialize(committed.time.as_slice());
+        debug!("subcircuit {} clock restored to {time:?}", self.id);
+        self.circuit.set_time(time);
         Ok(())
     }
 
@@ -7424,6 +7523,8 @@ where
     }
 
     fn clear_state(&mut self) -> Result<(), DbspError> {
+        self.circuit
+            .set_time(<<C as WithClock>::Time as Timestamp>::clock_start());
         self.circuit
             .map_local_nodes_mut(&mut |node| node.clear_state())
     }
