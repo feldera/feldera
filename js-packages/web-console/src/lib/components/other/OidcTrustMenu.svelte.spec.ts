@@ -26,6 +26,7 @@ vi.mock('$lib/services/pipelineManager', () => ({
 }))
 
 // Imported AFTER vi.mock so the mocks take effect.
+import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
 import OidcTrustMenu from './OidcTrustMenu.svelte'
 
 let mounted: { unmount: () => Promise<void> } | undefined
@@ -43,6 +44,9 @@ const roleSelect = () => document.querySelector<HTMLSelectElement>('select')
 
 describe('OidcTrustMenu — duplicate a trust', () => {
   afterEach(async () => {
+    // Clear the dialog first so the menu's onDestroy sees a closed dialog and
+    // resets the module-level showForm, isolating the next test.
+    useGlobalDialog().dialog = null
     await mounted?.unmount()
     mounted = undefined
     mountTarget?.remove()
@@ -77,6 +81,63 @@ describe('OidcTrustMenu — duplicate a trust', () => {
     }
   })
 
+  it('keeps a revealed form across the delete confirmation', async () => {
+    mountMenu()
+    await expect.poll(() => document.body.textContent).toContain('ci')
+    await page.getByRole('button', { name: 'Create new trust' }).click()
+    await expect.poll(() => inputByPlaceholder('github-actions-prod')).toBeTruthy()
+    // Opening the delete confirmation swaps the global dialog, which unmounts
+    // then remounts this menu. Icon-font button has no box, so click via the DOM.
+    document
+      .querySelector<HTMLButtonElement>('[aria-label="Delete ci trust relationship"]')!
+      .click()
+    // Reproduce that swap: unmount and remount the menu, as GlobalModal does.
+    await mounted!.unmount()
+    mountMenu()
+    // The form stays revealed (dropping the keepForm handling hides it here).
+    await expect.poll(() => inputByPlaceholder('github-actions-prod')).toBeTruthy()
+  })
+
+  it('restores the scroll offset across the delete confirmation', async () => {
+    const scrollTo = vi.spyOn(Element.prototype, 'scrollTo').mockImplementation(() => {})
+    try {
+      mountMenu()
+      await expect.poll(() => document.body.textContent).toContain('ci')
+      // The headless dialog body is not tall enough to actually scroll, so force
+      // an offset and fire the handler the way a real scroll would.
+      const body = document.querySelector<HTMLDivElement>('.overflow-auto')!
+      Object.defineProperty(body, 'scrollTop', { configurable: true, value: 120 })
+      body.dispatchEvent(new Event('scroll'))
+      // Swap to the delete confirmation, then reproduce the remount GlobalModal does.
+      document
+        .querySelector<HTMLButtonElement>('[aria-label="Delete ci trust relationship"]')!
+        .click()
+      await mounted!.unmount()
+      mountMenu()
+      // On remount the saved offset is reapplied (dropping the onscroll tracking
+      // or the onMount restore leaves no scrollTo call with top: 120).
+      await expect
+        .poll(() => scrollTo.mock.calls.some((c) => (c[0] as any)?.top === 120))
+        .toBe(true)
+    } finally {
+      scrollTo.mockRestore()
+    }
+  })
+
+  it('hides a revealed form once the menu is closed', async () => {
+    mountMenu()
+    await expect.poll(() => document.body.textContent).toContain('ci')
+    await page.getByRole('button', { name: 'Create new trust' }).click()
+    await expect.poll(() => inputByPlaceholder('github-actions-prod')).toBeTruthy()
+    // Closing the menu clears the global dialog; its onDestroy then resets the
+    // module showForm (dropping that guard leaves the form revealed on reopen).
+    useGlobalDialog().dialog = null
+    await mounted!.unmount()
+    mountMenu()
+    await expect.poll(() => document.body.textContent).toContain('ci')
+    expect(inputByPlaceholder('github-actions-prod')).toBeNull()
+  })
+
   it('prefills the create form from an existing trust', async () => {
     mountMenu()
     await expect.poll(() => document.body.textContent).toContain('ci')
@@ -94,7 +155,7 @@ describe('OidcTrustMenu — duplicate a trust', () => {
     expect(inputByPlaceholder('repo:my-org/my-repo:ref:refs/heads/main')?.value).toBe(
       'repo:org/repo'
     )
-    expect(inputByPlaceholder('feldera')?.value).toBe('aud')
+    expect(inputByPlaceholder('feldera-acme')?.value).toBe('aud')
     expect(inputByPlaceholder('What does this trust grant?')?.value).toBe('desc')
     expect(roleSelect()?.value).toBe('write')
   })
