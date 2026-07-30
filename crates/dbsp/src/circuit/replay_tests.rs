@@ -1,7 +1,7 @@
 use feldera_types::config::StorageConfig;
 
 use crate::{
-    Circuit, CmpFunc, DBData, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle,
+    Circuit, CmpFunc, DBData, DBSPHandle, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle,
     RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
     algebra::AddByRef,
     circuit::dbsp_handle::CircuitStorageConfig,
@@ -1188,12 +1188,21 @@ fn recursive_circuit1(
 
     let paths = circuit
         .recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
+            paths.set_persistent_id(Some("paths_recursive"));
+
             let edges = input_stream1.delta0(child);
 
-            let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
-            let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
+            let paths_indexed = paths
+                .map_index(|&Tup2(x, y)| (y, x))
+                .set_persistent_id(Some("paths_indexed"));
+            let edges_indexed = edges
+                .map_index(|Tup2(x, y)| (*x, *y))
+                .set_persistent_id(Some("edges_indexed"));
 
-            Ok(edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
+            let step =
+                edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to)));
+            step.set_persistent_id(Some("paths_step"));
+            Ok(step)
         })
         .unwrap();
 
@@ -1217,12 +1226,21 @@ fn recursive_circuit2(
 
     let paths = circuit
         .recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
+            paths.set_persistent_id(Some("paths_recursive"));
+
             let edges = input_stream1.delta0(child);
 
-            let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
-            let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
+            let paths_indexed = paths
+                .map_index(|&Tup2(x, y)| (y, x))
+                .set_persistent_id(Some("paths_indexed"));
+            let edges_indexed = edges
+                .map_index(|Tup2(x, y)| (*x, *y))
+                .set_persistent_id(Some("edges_indexed"));
 
-            Ok(edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
+            let step =
+                edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to)));
+            step.set_persistent_id(Some("paths_step"));
+            Ok(step)
         })
         .unwrap();
 
@@ -5756,10 +5774,19 @@ fn recursive_view_new(
     // New view: transitive closure (paths) of the edge relation.
     let paths = circuit
         .recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
+            paths.set_persistent_id(Some("paths_recursive"));
+
             let edges = edges.delta0(child);
-            let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
-            let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
-            Ok(edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to))))
+            let paths_indexed = paths
+                .map_index(|&Tup2(x, y)| (y, x))
+                .set_persistent_id(Some("paths_indexed"));
+            let edges_indexed = edges
+                .map_index(|Tup2(x, y)| (*x, *y))
+                .set_persistent_id(Some("edges_indexed"));
+            let step =
+                edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to)));
+            step.set_persistent_id(Some("paths_step"));
+            Ok(step)
         })
         .unwrap();
     let out_new = paths.accumulate_output_persistent(Some("out_new"));

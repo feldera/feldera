@@ -146,6 +146,30 @@ where
     /// operator must be instantiated manually by the closure `f` for each
     /// input stream.
     ///
+    /// # Persistent ids
+    ///
+    /// In [persistent mode](crate::circuit::Mode::Persistent) every operator
+    /// that holds state must carry a persistent id, and operators inside the
+    /// recursive scope are no exception: without one, taking a checkpoint fails
+    /// with `NoPersistentId`.  The closure `f` is responsible for assigning
+    /// them, by calling
+    /// [`set_persistent_id`](`crate::circuit::Stream::set_persistent_id`) on
+    /// * each recursive stream it receives, which names the `z^-1` operator
+    ///   that closes the loop, and
+    /// * every stream it creates, including the one it returns, from which the
+    ///   implicit `distinct` and the integral that exports the result derive
+    ///   their own ids.
+    ///
+    /// Name each recursive stream before the closure builds anything from it:
+    /// the operators that maintain state over a stream derive their own ids from
+    /// it as they are constructed, so a name assigned later leaves them
+    /// unnamed.  In practice, call `set_persistent_id` on the recursive streams
+    /// first thing in `f`.
+    ///
+    /// The names must identify the same computation across restarts, so derive
+    /// them from the program (a view name, a hash of the subgraph) rather than
+    /// from anything positional.
+    ///
     /// # Examples
     ///
     /// ```
@@ -197,18 +221,27 @@ where
     ///         .into_iter();
     ///
     ///     let labels = root_circuit.recursive(|child_circuit, labels: Stream<_, OrdZSet<Tup2<u64, String>>>| {
+    ///         // Name the recursive stream and every stream built from it, so that
+    ///         // the operators inside the scope can be checkpointed.
+    ///         labels.set_persistent_id(Some("labels"));
+    ///
     ///         // Import `edges` and `init_labels` relations from the parent circuit.
     ///         let edges = edges.delta0(child_circuit);
     ///         let init_labels = init_labels.delta0(child_circuit);
     ///
     ///         // Given an edge `from -> to` where the `from` node is labeled with `l`,
     ///         // propagate `l` to node `to`.
-    ///         let result = labels.map_index(|Tup2(x,y)| (x.clone(), y.clone()))
+    ///         let labels_indexed = labels.map_index(|Tup2(x,y)| (x.clone(), y.clone()))
+    ///               .set_persistent_id(Some("labels_indexed"));
+    ///         let edges_indexed = edges.map_index(|Tup2(x,y)| (x.clone(), y.clone()))
+    ///               .set_persistent_id(Some("edges_indexed"));
+    ///         let result = labels_indexed
     ///               .join(
-    ///                   &edges.map_index(|Tup2(x,y)| (x.clone(), y.clone())),
+    ///                   &edges_indexed,
     ///                   |_from, l, to| Tup2(*to, l.clone()),
     ///               )
     ///               .plus(&init_labels);
+    ///         result.set_persistent_id(Some("labels_next"));
     ///         Ok(result)
     ///     })?;
     ///
@@ -254,7 +287,9 @@ where
     ///
     /// Similar to [`recursive`](ChildCircuit::recursive), the underlying
     /// circuit also applies an implicit distinct to the output of each
-    /// recursive step.
+    /// recursive step, and the closure must assign a persistent id to each
+    /// recursive stream and to each stream it creates; see the persistent ids
+    /// section of [`recursive`](ChildCircuit::recursive).
     ///
     /// # Panics
     ///
@@ -357,18 +392,32 @@ where
     ///                 let red = &recursive_streams[0];
     ///                 let blue = &recursive_streams[1];
     ///
+    ///                 // Name the recursive streams and every stream built from them, so
+    ///                 // that the operators inside the scope can be checkpointed.
+    ///                 red.set_persistent_id(Some("red"));
+    ///                 blue.set_persistent_id(Some("blue"));
+    ///
+    ///                 let edges_indexed = edges.map_index(|Tup2(from, to)| (*from, *to))
+    ///                     .set_persistent_id(Some("edges_indexed"));
+    ///
     ///                 let new_red = blue
     ///                     .map_index(|blue_node| (*blue_node, *blue_node))
+    ///                     .set_persistent_id(Some("blue_indexed"))
     ///                     .join(
-    ///                         &edges.map_index(|Tup2(from, to)| (*from, *to)),
+    ///                         &edges_indexed,
     ///                         |_blue_node, _, new_red_node| *new_red_node,
     ///                     )
     ///                     .plus(&init);
+    ///                 new_red.set_persistent_id(Some("red_next"));
     ///
-    ///                 let new_blue = red.map_index(|red_node| (*red_node, *red_node)).join(
-    ///                     &edges.map_index(|Tup2(from, to)| (*from, *to)),
-    ///                     |_red_node, _, new_blue_node| *new_blue_node,
-    ///                 );
+    ///                 let new_blue = red
+    ///                     .map_index(|red_node| (*red_node, *red_node))
+    ///                     .set_persistent_id(Some("red_indexed"))
+    ///                     .join(
+    ///                         &edges_indexed,
+    ///                         |_red_node, _, new_blue_node| *new_blue_node,
+    ///                     );
+    ///                 new_blue.set_persistent_id(Some("blue_next"));
     ///
     ///                 recursive_streams[0] = new_red;
     ///                 recursive_streams[1] = new_blue;
