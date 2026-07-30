@@ -869,18 +869,16 @@ where
     ) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
         self.trace
-            .as_mut()
-            .map(|trace| trace.save(base, pid, files))
-            .unwrap_or(Ok(()))
+            .get_or_insert_with(|| T::new(&self.trace_factories, self.name.get()))
+            .save(base, pid, files)
     }
 
     fn restore(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
 
         self.trace
-            .as_mut()
-            .map(|trace| trace.restore(base, pid))
-            .unwrap_or(Ok(()))
+            .get_or_insert_with(|| T::new(&self.trace_factories, self.name.get()))
+            .restore(base, pid)
     }
 
     fn clear_state(&mut self) -> Result<(), Error> {
