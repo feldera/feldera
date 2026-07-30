@@ -113,6 +113,24 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         return "i" + inputNo;
     }
 
+    /** Emit the code that gives the stream named {@code name} the persistent id of
+     * {@code operator}. */
+    private void setPersistentId(DBSPOperator operator, String name) {
+        this.builder().append("let hash = ");
+        HashString hash = OperatorHash.getHash(operator, true);
+        if (hash == null) {
+            this.builder().append("None;").newline();
+        } else {
+            this.builder().append("Some(")
+                    .append(Utilities.doubleQuote(hash.toString(), false))
+                    .append(");")
+                    .newline();
+        }
+        this.builder().append(name)
+                .append(".set_persistent_id(hash);")
+                .newline();
+    }
+
     @Override
     public void write(DBSPCompiler compiler) {
         boolean useHandles = compiler.options.ioOptions.emitHandles;
@@ -193,6 +211,18 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         }
         this.builder().append(")| {").increase();
 
+        // Name the recursive streams before the operators of the scope are created.
+        // An operator that maintains state over a stream copies that stream's
+        // persistent id when it is constructed, so a name assigned later would leave
+        // the integrals over the recursive streams without an id, and checkpointing
+        // the circuit would fail.
+        for (int i = 0; i < operator.outputCount(); i++) {
+            ProgramIdentifier view = operator.outputViews.get(i);
+            DBSPViewDeclarationOperator decl = operator.declarationByName.get(view);
+            if (decl != null)
+                this.setPersistentId(decl, decl.getNodeName(false));
+        }
+
         for (DBSPOperator node : this.operator.getAllOperators())
             if (!node.is(DBSPViewDeclarationOperator.class))
                 this.processChild(node);
@@ -211,21 +241,8 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
 
         for (int i = 0; i < operator.outputCount(); i++) {
             OutputPort port = operator.internalOutputs.get(i);
-            if (port != null) {
-                this.builder().append("let hash = ");
-                HashString hash1 = OperatorHash.getHash(port.operator, true);
-                if (hash1 == null) {
-                    this.builder().append("None;").newline();
-                } else {
-                    this.builder().append("Some(")
-                            .append(Utilities.doubleQuote(hash1.toString(), false))
-                            .append(");")
-                            .newline();
-                }
-                this.builder().append(port.getName(false))
-                        .append(".set_persistent_id(hash);")
-                        .newline();
-            }
+            if (port != null)
+                this.setPersistentId(port.operator, port.getName(false));
         }
 
         this.builder().append("if let Some(region) = region { circuit.close_region(region.clone()) };").newline();

@@ -462,6 +462,22 @@ public class ToRustVisitor extends CircuitVisitor {
         }
         this.innerVisitor.setOperatorContext(null);
         this.builder.append(")| {").increase();
+
+        // Name the recursive streams before the operators of the scope are created.
+        // An operator that maintains state over a stream copies that stream's
+        // persistent id when it is constructed, so a name assigned later would leave
+        // the integrals over the recursive streams without an id, and checkpointing
+        // the circuit would fail.
+        for (int i = 0; i < operator.outputCount(); i++) {
+            ProgramIdentifier view = operator.outputViews.get(i);
+            DBSPViewDeclarationOperator decl = operator.declarationByName.get(view);
+            if (decl != null) {
+                this.computeHash(decl);
+                this.tagStream(decl);
+                this.builder.newline();
+            }
+        }
+
         for (IDBSPNode node : operator.getAllOperators())
             this.processNode(node);
 
