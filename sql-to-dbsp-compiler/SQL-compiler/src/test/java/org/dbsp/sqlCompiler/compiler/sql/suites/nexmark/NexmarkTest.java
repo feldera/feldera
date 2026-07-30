@@ -32,7 +32,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.Logger;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.HashSet;
@@ -221,7 +220,7 @@ SELECT
     AVG(Q.final) OVER
         (PARTITION BY Q.seller ORDER BY Q.date_time ROWS BETWEEN 10 PRECEDING AND CURRENT ROW)
 FROM (
-    SELECT MAX(B.price) AS final, A.seller, ARG_MAX(B.price, B.date_time) as date_time
+    SELECT MAX(B.price) AS final, A.seller, ARG_MAX(B.date_time, B.price) as date_time
     FROM auction AS A, bid AS B
     WHERE A.id = B.auction and B.date_time between A.date_time and A.expires
     GROUP BY A.id, A.seller
@@ -236,13 +235,16 @@ FROM (
 --
 -- The original Nexmark Query7 calculate the highest bids in the last minute.
 -- We will use a shorter window (10 seconds) to help make testing easier.
+--
+-- The original query uses TUMBLE_ROWTIME, which is the window end; TUMBLE_END is the
+-- closest translation.
 -- -------------------------------------------------------------------------------------------------
 
 CREATE VIEW Q7 AS
 SELECT B.auction, B.price, B.bidder, B.date_time, B.extra
 from bid B
 JOIN (
-  SELECT MAX(B1.price) AS maxprice, TUMBLE_START(B1.date_time, INTERVAL '10' SECOND) as date_time
+  SELECT MAX(B1.price) AS maxprice, TUMBLE_END(B1.date_time, INTERVAL '10' SECOND) as date_time
   FROM bid B1
   GROUP BY TUMBLE(B1.date_time, INTERVAL '10' SECOND)
 ) B1
@@ -307,7 +309,7 @@ WHERE rownum <= 1;""",
 -- -------------------------------------------------------------------------------------------------
 
 CREATE VIEW Q10 AS -- PARTITIONED BY (dt, hm) AS
-SELECT auction, bidder, price, date_time, extra, FORMAT_DATE('yyyy-MM-dd', date_time), FORMAT_DATE('HH:mm', date_time)
+SELECT auction, bidder, price, date_time, extra, FORMAT_TIMESTAMP('%Y-%m-%d', date_time), FORMAT_TIMESTAMP('%H:%M', date_time)
 FROM bid;""",
 
             """
@@ -434,7 +436,7 @@ CREATE VIEW Q16 AS
 SELECT
     channel,
     CAST(date_time AS DATE) as 'day',
-    format_date('HH:mm', max(date_time)) as 'minute',
+    format_timestamp('%H:%M', max(date_time)) as 'minute',
     count(*) AS total_bids,
     count(*) filter (where price < 10000) AS rank1_bids,
     count(*) filter (where price >= 10000 and price < 1000000) AS rank2_bids,
@@ -734,41 +736,281 @@ INSERT INTO Bid VALUES(4, 1, 60, 'my-channel', 'https://example.com', '2020-01-0
 
     @Test
     public void q5Test() {
+        // Test data from crates/nexmark/src/queries/q5.rs.
+        // The Rust query emits hot auctions only for the last 10 second window before the
+        // watermark, rounded to 2 seconds; the SQL query emits one row per hop window,
+        // so a single (auction, num) pair can be produced by several windows (larger weights).
+
+        // latest_bid_determines_window: auction 1 bids at 2.001, 4 and 11; auction 2 bid at 20.
         this.createTest(5,
                 """
-                """,
+                INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:02.001', '');
+                INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:04', '');
+                INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:11', '');
+                INSERT INTO bid VALUES(2, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:20', '');""",
                 """
-                 auction | num
-                ---------------""");
+                 auction | num | weight
+                ------------------------
+                 1       | 1   | 4
+                 1       | 2   | 4
+                 1       | 3   | 1
+                 2       | 1   | 5""");
+
+        // windows_rounded_to_2s_boundary: auction 1 bids at 2.001, 4, 11 and 15; auction 2 bid at 19.
+        this.createTest(5,
+                """
+                INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:02.001', '');
+                INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:04', '');
+                INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:11', '');
+                INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:15', '');
+                INSERT INTO bid VALUES(2, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:19', '');""",
+                """
+                 auction | num | weight
+                ------------------------
+                 1       | 1   | 3
+                 1       | 2   | 7
+                 1       | 3   | 1
+                 2       | 1   | 4""");
+
+        // multiple_auctions_have_same_hotness: both auctions have two bids in the earliest windows.
+        this.createTest(5,
+                """
+                INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:02', '');
+                INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:03.999', '');
+                INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:08', '');
+                INSERT INTO bid VALUES(2, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:02', '');
+                INSERT INTO bid VALUES(2, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:03.999', '');""",
+                """
+                 auction | num | weight
+                ------------------------
+                 1       | 1   | 3
+                 1       | 2   | 3
+                 1       | 3   | 2
+                 2       | 2   | 3""");
+
+        // batch_2_updates_hotness_to_new_window: the second batch only creates new windows
+        // that contain the single new bid of auction 1.
+        this.createTest(5,
+                """
+                INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:02', '');
+                INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:04', '');
+                INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:06', '');
+                INSERT INTO bid VALUES(2, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:02', '');
+                INSERT INTO bid VALUES(2, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:04', '');
+                INSERT INTO bid VALUES(2, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:08', '');
+                INSERT INTO bid VALUES(2, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:12', '');""",
+                """
+                 auction | num | weight
+                ------------------------
+                 1       | 1   | 1
+                 1       | 2   | 1
+                 1       | 3   | 3
+                 2       | 1   | 3
+                 2       | 2   | 3
+                 2       | 3   | 3""",
+                "INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:20', '');",
+                """
+                 auction | num | weight
+                ------------------------
+                 1       | 1   | 5""");
     }
 
     @Test
     public void q6test() {
+        // Test data from crates/nexmark/src/queries/q6.rs.
+        // One running average per auction, over a window of 11 rows (10 PRECEDING +
+        // CURRENT ROW) ordered by the date of the winning bid.
+
+        // single_seller_single_auction
         this.createTest(6,
                 """
-                """,
+                INSERT INTO auction VALUES(1, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:10', 99, 1, '');
+                INSERT INTO bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '1970-01-01 00:00:01', '');
+                INSERT INTO bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:02', '');""",
                 """
-                 auction | price | bidder | date_time           | extra | weight
-                -----------------------------------------------------------------""");
+                 seller | avg | weight
+                -----------------------
+                 99     | 100 | 1""",
+                // A new highest bid updates the average.
+                "INSERT INTO bid VALUES(1, 1, 200, 'my-channel', 'https://example.com', '1970-01-01 00:00:09', '');",
+                """
+                 seller | avg | weight
+                -----------------------
+                 99     | 100 | -1
+                 99     | 200 | 1""",
+                // A later bid that is not higher does not change the average.
+                "INSERT INTO bid VALUES(1, 1, 150, 'my-channel', 'https://example.com', '1970-01-01 00:00:09.5', '');",
+                """
+                 seller | avg | weight
+                -----------------------""");
+
+        // single_seller_multiple_auctions: the second auction adds a running average row
+        // of 150; the row of the first auction stays.
+        this.createTest(6,
+                """
+                INSERT INTO auction VALUES(1, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:10', 99, 1, '');
+                INSERT INTO bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:02', '');""",
+                """
+                 seller | avg | weight
+                -----------------------
+                 99     | 100 | 1""",
+                """
+                INSERT INTO auction VALUES(2, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 99, 1, '');
+                INSERT INTO bid VALUES(2, 1, 200, 'my-channel', 'https://example.com', '1970-01-01 00:00:15', '');""",
+                """
+                 seller | avg | weight
+                -----------------------
+                 99     | 150 | 1""");
+
+        // single_seller_more_than_10_auctions: 11 auctions, the first with a winning bid
+        // of 200, the others with 100.  The winning bids get distinct timestamps
+        // (auction i's bid is at second i), so the ORDER BY has no ties.
+        this.createTest(6,
+                """
+                INSERT INTO auction VALUES(1, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 99, 1, '');
+                INSERT INTO bid VALUES(1, 1, 200, 'my-channel', 'https://example.com', '1970-01-01 00:00:01', '');
+                INSERT INTO auction VALUES(2, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 99, 1, '');
+                INSERT INTO bid VALUES(2, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:02', '');
+                INSERT INTO auction VALUES(3, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 99, 1, '');
+                INSERT INTO bid VALUES(3, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:03', '');
+                INSERT INTO auction VALUES(4, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 99, 1, '');
+                INSERT INTO bid VALUES(4, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:04', '');
+                INSERT INTO auction VALUES(5, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 99, 1, '');
+                INSERT INTO bid VALUES(5, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:05', '');""",
+                // Running averages of 200, 100, 100, 100, 100.
+                """
+                 seller | avg | weight
+                -----------------------
+                 99     | 200 | 1
+                 99     | 150 | 1
+                 99     | 133 | 1
+                 99     | 125 | 1
+                 99     | 120 | 1""",
+                """
+                INSERT INTO auction VALUES(6, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 99, 1, '');
+                INSERT INTO bid VALUES(6, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:06', '');
+                INSERT INTO auction VALUES(7, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 99, 1, '');
+                INSERT INTO bid VALUES(7, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:07', '');
+                INSERT INTO auction VALUES(8, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 99, 1, '');
+                INSERT INTO bid VALUES(8, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:08', '');
+                INSERT INTO auction VALUES(9, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 99, 1, '');
+                INSERT INTO bid VALUES(9, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:09', '');
+                INSERT INTO auction VALUES(10, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 99, 1, '');
+                INSERT INTO bid VALUES(10, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:10', '');""",
+                // Five new rows extend the running averages; the previous rows are unchanged.
+                """
+                 seller | avg | weight
+                -----------------------
+                 99     | 116 | 1
+                 99     | 114 | 1
+                 99     | 112 | 1
+                 99     | 111 | 1
+                 99     | 110 | 1""",
+                """
+                INSERT INTO auction VALUES(11, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 99, 1, '');
+                INSERT INTO bid VALUES(11, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:11', '');""",
+                // The new row averages 11 rows: (200 + 10 * 100) / 11 = 109; the bid of 200
+                // is still inside the 11 row window.
+                """
+                 seller | avg | weight
+                -----------------------
+                 99     | 109 | 1""");
+
+        // multiple_sellers_multiple_auctions
+        this.createTest(6,
+                """
+                INSERT INTO auction VALUES(1, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:10', 99, 1, '');
+                INSERT INTO bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:02', '');""",
+                """
+                 seller | avg | weight
+                -----------------------
+                 99     | 100 | 1""",
+                """
+                INSERT INTO auction VALUES(2, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 33, 1, '');
+                INSERT INTO bid VALUES(2, 1, 200, 'my-channel', 'https://example.com', '1970-01-01 00:00:15', '');""",
+                """
+                 seller | avg | weight
+                -----------------------
+                 33     | 200 | 1""",
+                """
+                INSERT INTO auction VALUES(3, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 99, 1, '');
+                INSERT INTO bid VALUES(3, 1, 200, 'my-channel', 'https://example.com', '1970-01-01 00:00:15', '');
+                INSERT INTO auction VALUES(4, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:20', 33, 1, '');
+                INSERT INTO bid VALUES(4, 1, 200, 'my-channel', 'https://example.com', '1970-01-01 00:00:15', '');""",
+                """
+                 seller | avg | weight
+                -----------------------
+                 33     | 200 | 1
+                 99     | 150 | 1""");
     }
 
-    @Test @Ignore("The results are wrong, must investigate")
+    @Test
     public void q7test() {
+        // Test data from crates/nexmark/src/queries/q7.rs.
+        // The Rust query emits max bids only for the last complete 10 second window before
+        // the watermark; the SQL query emits the max bids of every tumbled window.
+        // The Rust output column order is (auction, bidder, price); the SQL view
+        // uses (auction, price, bidder).
+
+        // latest_bid_determines_window: in the Rust test only the row at 14 survives,
+        // because the watermark selects the window 10-20.
         this.createTest(7,
-        // The rust code has transposed columns 'price' and 'bidder' in the output
-        """
--- The latest bid is at t=32_000, so the watermark as at t=28_000
--- and the tumbled window is from 10_000 - 20_000.
-INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '2020-01-01 00:00:09', '');
-INSERT INTO bid VALUES(1, 1, 50, 'my-channel', 'https://example.com', '2020-01-01 00:00:11', '');
-INSERT INTO bid VALUES(1, 1, 90, 'my-channel', 'https://example.com', '2020-01-01 00:00:14', '');
-INSERT INTO bid VALUES(1, 1, 70, 'my-channel', 'https://example.com', '2020-01-01 00:00:16', '');
-INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '2020-01-01 00:00:21', '');
-INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '2020-01-01 00:00:32', '');""",
                 """
-                 auction | price | bidder | date_time           | extra | weight
-                -----------------------------------------------------------------
-                 1       | 90     | 1     | 2020-01-01 00:00:14 | | 1""");
+                INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '1970-01-01 00:00:09', '');
+                INSERT INTO bid VALUES(1, 1, 50, 'my-channel', 'https://example.com', '1970-01-01 00:00:11', '');
+                INSERT INTO bid VALUES(1, 1, 90, 'my-channel', 'https://example.com', '1970-01-01 00:00:14', '');
+                INSERT INTO bid VALUES(1, 1, 70, 'my-channel', 'https://example.com', '1970-01-01 00:00:16', '');
+                INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '1970-01-01 00:00:21', '');
+                INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '1970-01-01 00:00:32', '');""",
+                """
+                 auction | price   | bidder | date_time           | extra | weight
+                -------------------------------------------------------------------
+                 1       | 1000000 | 1      | 1970-01-01 00:00:09 | | 1
+                 1       | 90      | 1      | 1970-01-01 00:00:14 | | 1
+                 1       | 1000000 | 1      | 1970-01-01 00:00:21 | | 1
+                 1       | 1000000 | 1      | 1970-01-01 00:00:32 | | 1""");
+
+        // tumble_into_new_window: each batch adds a bid in a new window.
+        this.createTest(7,
+                """
+                INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '1970-01-01 00:00:09', '');
+                INSERT INTO bid VALUES(1, 1, 50, 'my-channel', 'https://example.com', '1970-01-01 00:00:11', '');
+                INSERT INTO bid VALUES(1, 1, 90, 'my-channel', 'https://example.com', '1970-01-01 00:00:14', '');
+                INSERT INTO bid VALUES(1, 1, 70, 'my-channel', 'https://example.com', '1970-01-01 00:00:16', '');
+                INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '1970-01-01 00:00:21', '');""",
+                """
+                 auction | price   | bidder | date_time           | extra | weight
+                -------------------------------------------------------------------
+                 1       | 1000000 | 1      | 1970-01-01 00:00:09 | | 1
+                 1       | 90      | 1      | 1970-01-01 00:00:14 | | 1
+                 1       | 1000000 | 1      | 1970-01-01 00:00:21 | | 1""",
+                "INSERT INTO bid VALUES(1, 1, 10, 'my-channel', 'https://example.com', '1970-01-01 00:00:32', '');",
+                """
+                 auction | price   | bidder | date_time           | extra | weight
+                -------------------------------------------------------------------
+                 1       | 10      | 1      | 1970-01-01 00:00:32 | | 1""",
+                "INSERT INTO bid VALUES(1, 1, 10, 'my-channel', 'https://example.com', '1970-01-01 00:00:42', '');",
+                """
+                 auction | price   | bidder | date_time           | extra | weight
+                -------------------------------------------------------------------
+                 1       | 10      | 1      | 1970-01-01 00:00:42 | | 1""");
+
+        // multiple_max_bids: all bids that tie for the window maximum are output.
+        this.createTest(7,
+                """
+                INSERT INTO bid VALUES(1, 1, 90, 'my-channel', 'https://example.com', '1970-01-01 00:00:11', '');
+                INSERT INTO bid VALUES(1, 1, 90, 'my-channel', 'https://example.com', '1970-01-01 00:00:14', '');
+                INSERT INTO bid VALUES(1, 1, 90, 'my-channel', 'https://example.com', '1970-01-01 00:00:16', '');
+                INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '1970-01-01 00:00:21', '');
+                INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '1970-01-01 00:00:32', '');""",
+                """
+                 auction | price   | bidder | date_time           | extra | weight
+                -------------------------------------------------------------------
+                 1       | 90      | 1      | 1970-01-01 00:00:11 | | 1
+                 1       | 90      | 1      | 1970-01-01 00:00:14 | | 1
+                 1       | 90      | 1      | 1970-01-01 00:00:16 | | 1
+                 1       | 1000000 | 1      | 1970-01-01 00:00:21 | | 1
+                 1       | 1000000 | 1      | 1970-01-01 00:00:32 | | 1""");
     }
 
     @Test
@@ -878,10 +1120,70 @@ id | item | description | initialBid | reserve | date_time | expires | seller | 
 
     @Test
     public void q12test() {
-        this.createTest(12, "",
+        // Test data from crates/nexmark/src/queries/q12.rs.
+        // The Rust test drives a mock processing-time clock; the SQL query uses the event
+        // time date_time instead, so the mock clock values become the bid timestamps.
+
+        // one_bidder_single_window
+        this.createTest(12,
                 """
- bidder | bid_count | starttime | endtime
-------------------------------------------""");
+                INSERT INTO bid VALUES(1, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:03', '');
+                INSERT INTO bid VALUES(2, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:04', '');
+                INSERT INTO bid VALUES(99, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:05', '');
+                INSERT INTO bid VALUES(25, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:06', '');""",
+                """
+                 bidder | bid_count | starttime           | endtime             | weight
+                -------------------------------------------------------------------------
+                 1      | 4         | 1970-01-01 00:00:00 | 1970-01-01 00:00:10 | 1""",
+                """
+                INSERT INTO bid VALUES(16, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:07', '');
+                INSERT INTO bid VALUES(2, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:08', '');""",
+                """
+                 bidder | bid_count | starttime           | endtime             | weight
+                -------------------------------------------------------------------------
+                 1      | 4         | 1970-01-01 00:00:00 | 1970-01-01 00:00:10 | -1
+                 1      | 6         | 1970-01-01 00:00:00 | 1970-01-01 00:00:10 | 1""");
+
+        // one_bidder_multiple_windows
+        this.createTest(12,
+                """
+                INSERT INTO bid VALUES(99, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:03', '');
+                INSERT INTO bid VALUES(63, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:04', '');
+                INSERT INTO bid VALUES(2, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:05', '');
+                INSERT INTO bid VALUES(45, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:06', '');""",
+                """
+                 bidder | bid_count | starttime           | endtime             | weight
+                -------------------------------------------------------------------------
+                 1      | 4         | 1970-01-01 00:00:00 | 1970-01-01 00:00:10 | 1""",
+                """
+                INSERT INTO bid VALUES(29, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:11', '');
+                INSERT INTO bid VALUES(21, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:12', '');""",
+                """
+                 bidder | bid_count | starttime           | endtime             | weight
+                -------------------------------------------------------------------------
+                 1      | 2         | 1970-01-01 00:00:10 | 1970-01-01 00:00:20 | 1""");
+
+        // multiple_bidders_multiple_windows
+        this.createTest(12,
+                """
+                INSERT INTO bid VALUES(12, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:03', '');
+                INSERT INTO bid VALUES(102, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:04', '');
+                INSERT INTO bid VALUES(22, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:05', '');
+                INSERT INTO bid VALUES(79, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:06', '');
+                INSERT INTO bid VALUES(16, 2, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:07', '');
+                INSERT INTO bid VALUES(81, 2, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:08', '');""",
+                """
+                 bidder | bid_count | starttime           | endtime             | weight
+                -------------------------------------------------------------------------
+                 1      | 4         | 1970-01-01 00:00:00 | 1970-01-01 00:00:10 | 1
+                 2      | 2         | 1970-01-01 00:00:00 | 1970-01-01 00:00:10 | 1""",
+                """
+                INSERT INTO bid VALUES(49, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:11', '');
+                INSERT INTO bid VALUES(77, 1, 99, 'my-channel', 'https://example.com', '1970-01-01 00:00:12', '');""",
+                """
+                 bidder | bid_count | starttime           | endtime             | weight
+                -------------------------------------------------------------------------
+                 1      | 2         | 1970-01-01 00:00:10 | 1970-01-01 00:00:20 | 1""");
     }
 
     @Test
@@ -897,6 +1199,46 @@ INSERT INTO BID VALUES(10005, 1, 99, 'my-channel', 'https://example.com', '2020-
 ------------------------------------------------------------------
     1005 |      1 |    99 | 2020-01-01 00:00:00 | 1005| 1
    10005 |      1 |    99 | 2020-01-01 00:00:00 | 5| 1""");
+    }
+
+    @Test
+    public void q14test() {
+        // Test data from crates/nexmark/src/queries/q14.rs.
+        // The Rust date_time_is_daytime_2022 case uses an approximate 2022 timestamp
+        // computed with 366-day years; here a plain 2022 date is used instead.
+        this.createTest(14,
+                """
+                -- 0.908 * 2000000 = 1816000 is inside the price range; date_time 0 is night time.
+                INSERT INTO bid VALUES(1, 1, 2000000, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                -- 0.908 * 1000000 = 908000 is not larger than 1000000, so this bid is dropped.
+                INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                -- extra contains four 'c' characters.
+                INSERT INTO bid VALUES(1, 1, 2000000, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', 'cause I can''t calculate has four of them.');""",
+                """
+                 auction | bidder | price   | bidTimeType | date_time           | extra | c_counts | weight
+                --------------------------------------------------------------------------------------------
+                 1       | 1      | 1816000 | nightTime| 1970-01-01 00:00:00 | | 0 | 1
+                 1       | 1      | 1816000 | nightTime| 1970-01-01 00:00:00 | cause I can't calculate has four of them.| 4 | 1""",
+                "INSERT INTO bid VALUES(1, 1, 2000000, 'my-channel', 'https://example.com', '1970-01-01 07:59:59.999', '');",
+                """
+                 auction | bidder | price   | bidTimeType | date_time           | extra | c_counts | weight
+                --------------------------------------------------------------------------------------------
+                 1       | 1      | 1816000 | otherTime| 1970-01-01 07:59:59.999 | | 0 | 1""",
+                "INSERT INTO bid VALUES(1, 1, 2000000, 'my-channel', 'https://example.com', '1970-01-01 08:00:00.001', '');",
+                """
+                 auction | bidder | price   | bidTimeType | date_time           | extra | c_counts | weight
+                --------------------------------------------------------------------------------------------
+                 1       | 1      | 1816000 | dayTime| 1970-01-01 08:00:00.001 | | 0 | 1""",
+                "INSERT INTO bid VALUES(1, 1, 2000000, 'my-channel', 'https://example.com', '1970-01-01 20:00:00.001', '');",
+                """
+                 auction | bidder | price   | bidTimeType | date_time           | extra | c_counts | weight
+                --------------------------------------------------------------------------------------------
+                 1       | 1      | 1816000 | nightTime| 1970-01-01 20:00:00.001 | | 0 | 1""",
+                "INSERT INTO bid VALUES(1, 1, 2000000, 'my-channel', 'https://example.com', '2022-01-01 08:00:00.001', '');",
+                """
+                 auction | bidder | price   | bidTimeType | date_time           | extra | c_counts | weight
+                --------------------------------------------------------------------------------------------
+                 1       | 1      | 1816000 | dayTime| 2022-01-01 08:00:00.001 | | 0 | 1""");
     }
 
     @Test
@@ -940,50 +1282,357 @@ day | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_
 
     @Test
     public void q16test() {
-        this.createTest(16, "",
+        // Test data from crates/nexmark/src/queries/q16.rs.
+        this.createTest(16,
+                "INSERT INTO bid VALUES(1, 1, 99, 'channel-1', 'https://example.com', '1970-01-01 00:00:00', '');",
                 """
- channel | day | minute | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_bidders | rank2_bidders | rank3_bidders | total_auctions | rank1_auctions | rank2_auctions | rank3_auctions
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------""");
+ channel | day | minute | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_bidders | rank2_bidders | rank3_bidders | total_auctions | rank1_auctions | rank2_auctions | rank3_auctions | weight
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ channel-1| 1970-01-01 | 00:00| 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 1""",
+                """
+                -- A rank 2 bid six minutes after the epoch, and rank 3 and rank 1 bids
+                -- close to the midnight boundaries of the following days.
+                INSERT INTO bid VALUES(2, 1, 10001, 'channel-1', 'https://example.com', '1970-01-01 00:06:00', '');
+                INSERT INTO bid VALUES(3, 2, 1000001, 'channel-1', 'https://example.com', '1970-01-01 23:59:59.999', '');
+                INSERT INTO bid VALUES(3, 3, 99, 'channel-1', 'https://example.com', '1970-01-02 00:00:00.001', '');
+                INSERT INTO bid VALUES(3, 4, 99, 'channel-1', 'https://example.com', '1970-01-03 00:00:00.001', '');
+                INSERT INTO bid VALUES(3, 5, 99, 'channel-1', 'https://example.com', '1970-01-04 00:00:00.001', '');
+                INSERT INTO bid VALUES(3, 2, 99, 'channel-1', 'https://example.com', '1970-01-05 00:00:00.001', '');""",
+                """
+ channel | day | minute | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_bidders | rank2_bidders | rank3_bidders | total_auctions | rank1_auctions | rank2_auctions | rank3_auctions | weight
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ channel-1| 1970-01-01 | 00:00| 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | -1
+ channel-1| 1970-01-01 | 23:59| 3 | 1 | 1 | 1 | 2 | 1 | 1 | 1 | 3 | 1 | 1 | 1 | 1
+ channel-1| 1970-01-02 | 00:00| 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 1
+ channel-1| 1970-01-03 | 00:00| 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 1
+ channel-1| 1970-01-04 | 00:00| 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 1
+ channel-1| 1970-01-05 | 00:00| 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 1""",
+                "INSERT INTO bid VALUES(4, 1, 99, 'channel-1', 'https://example.com', '2022-01-01 00:00:00', '');",
+                """
+ channel | day | minute | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_bidders | rank2_bidders | rank3_bidders | total_auctions | rank1_auctions | rank2_auctions | rank3_auctions | weight
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ channel-1| 2022-01-01 | 00:00| 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 1""");
     }
 
     @Test
     public void q17test() {
-        this.createTest(17, "",
+        // Test data from crates/nexmark/src/queries/q17.rs.
+
+        // multiple_auctions_single_batch: the average of auction 2 truncates 5000 / 3 to 1666.
+        this.createTest(17,
                 """
- auction | date | total_bids | rank1_bids | rank2_bids | rank3_bids | min_price | max_price | avg_price | sum_price | weight
------------------------------------------------------------------------------------------------------------------------------""");
+                INSERT INTO bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(2, 1, 500, 'my-channel', 'https://example.com', '1970-01-01 00:00:05', '');
+                INSERT INTO bid VALUES(1, 1, 700, 'my-channel', 'https://example.com', '1970-01-01 00:00:10', '');
+                INSERT INTO bid VALUES(2, 1, 1500, 'my-channel', 'https://example.com', '1970-01-01 00:00:15', '');
+                INSERT INTO bid VALUES(1, 1, 400, 'my-channel', 'https://example.com', '1970-01-01 00:00:20', '');
+                INSERT INTO bid VALUES(2, 1, 3000, 'my-channel', 'https://example.com', '1970-01-01 00:00:25', '');""",
+                """
+ auction | day | total_bids | rank1_bids | rank2_bids | rank3_bids | min_price | max_price | avg_price | sum_price | weight
+-----------------------------------------------------------------------------------------------------------------------------
+ 1       | 1970-01-01 | 3 | 3 | 0 | 0 | 100 | 700  | 400  | 1200 | 1
+ 2       | 1970-01-01 | 3 | 3 | 0 | 0 | 500 | 3000 | 1666 | 5000 | 1""");
+
+        // multiple_auctions_multiple_batches: the second batch updates the aggregate of the
+        // first day and adds an aggregate for a new day.
+        this.createTest(17,
+                "INSERT INTO bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');",
+                """
+ auction | day | total_bids | rank1_bids | rank2_bids | rank3_bids | min_price | max_price | avg_price | sum_price | weight
+-----------------------------------------------------------------------------------------------------------------------------
+ 1       | 1970-01-01 | 1 | 1 | 0 | 0 | 100 | 100 | 100 | 100 | 1""",
+                """
+                INSERT INTO bid VALUES(1, 1, 10100, 'my-channel', 'https://example.com', '1970-01-01 23:59:59.999', '');
+                INSERT INTO bid VALUES(2, 1, 1000000, 'my-channel', 'https://example.com', '1970-01-03 00:00:00', '');
+                INSERT INTO bid VALUES(2, 1, 2000000, 'my-channel', 'https://example.com', '1970-01-03 00:00:01', '');""",
+                """
+ auction | day | total_bids | rank1_bids | rank2_bids | rank3_bids | min_price | max_price | avg_price | sum_price | weight
+-----------------------------------------------------------------------------------------------------------------------------
+ 1       | 1970-01-01 | 1 | 1 | 0 | 0 | 100     | 100     | 100     | 100     | -1
+ 1       | 1970-01-01 | 2 | 1 | 1 | 0 | 100     | 10100   | 5100    | 10200   | 1
+ 2       | 1970-01-03 | 2 | 0 | 0 | 2 | 1000000 | 2000000 | 1500000 | 3000000 | 1""");
     }
 
     @Test
     public void q18test() {
-        this.createTest(18, "",
+        // Test data from crates/nexmark/src/queries/q18.rs.
+
+        // last_bid_for_single_bidder_single_auction
+        this.createTest(18,
                 """
- auction | bidder | price | channel | url | date_time | extra | weight
------------------------------------------------------------------------""");
+                INSERT INTO bid VALUES(1, 1, 10, 'my-channel', 'https://example.com', '1970-01-01 00:00:01', '');
+                INSERT INTO bid VALUES(1, 1, 20, 'my-channel', 'https://example.com', '1970-01-01 00:00:03', '');
+                INSERT INTO bid VALUES(1, 1, 30, 'my-channel', 'https://example.com', '1970-01-01 00:00:02', '');""",
+                """
+                 auction | bidder | price | channel | url | date_time | extra | weight
+                -----------------------------------------------------------------------
+                 1       | 1      | 20    | my-channel| https://example.com| 1970-01-01 00:00:03 | | 1""",
+                "INSERT INTO bid VALUES(1, 1, 50, 'my-channel', 'https://example.com', '1970-01-01 00:00:04', '');",
+                """
+                 auction | bidder | price | channel | url | date_time | extra | weight
+                -----------------------------------------------------------------------
+                 1       | 1      | 20    | my-channel| https://example.com| 1970-01-01 00:00:03 | | -1
+                 1       | 1      | 50    | my-channel| https://example.com| 1970-01-01 00:00:04 | | 1""");
+
+        // last_bid_for_multi_bidders_single_auction
+        this.createTest(18,
+                """
+                INSERT INTO bid VALUES(1, 1, 10, 'my-channel', 'https://example.com', '1970-01-01 00:00:01', '');
+                INSERT INTO bid VALUES(1, 2, 20, 'my-channel', 'https://example.com', '1970-01-01 00:00:03', '');
+                INSERT INTO bid VALUES(1, 1, 30, 'my-channel', 'https://example.com', '1970-01-01 00:00:02', '');
+                INSERT INTO bid VALUES(1, 2, 40, 'my-channel', 'https://example.com', '1970-01-01 00:00:04', '');""",
+                """
+                 auction | bidder | price | channel | url | date_time | extra | weight
+                -----------------------------------------------------------------------
+                 1       | 1      | 30    | my-channel| https://example.com| 1970-01-01 00:00:02 | | 1
+                 1       | 2      | 40    | my-channel| https://example.com| 1970-01-01 00:00:04 | | 1""",
+                """
+                INSERT INTO bid VALUES(1, 1, 40, 'my-channel', 'https://example.com', '1970-01-01 00:00:05', '');
+                INSERT INTO bid VALUES(1, 2, 50, 'my-channel', 'https://example.com', '1970-01-01 00:00:06', '');
+                INSERT INTO bid VALUES(1, 1, 70, 'my-channel', 'https://example.com', '1970-01-01 00:00:07', '');
+                INSERT INTO bid VALUES(1, 2, 80, 'my-channel', 'https://example.com', '1970-01-01 00:00:08', '');""",
+                """
+                 auction | bidder | price | channel | url | date_time | extra | weight
+                -----------------------------------------------------------------------
+                 1       | 1      | 30    | my-channel| https://example.com| 1970-01-01 00:00:02 | | -1
+                 1       | 2      | 40    | my-channel| https://example.com| 1970-01-01 00:00:04 | | -1
+                 1       | 1      | 70    | my-channel| https://example.com| 1970-01-01 00:00:07 | | 1
+                 1       | 2      | 80    | my-channel| https://example.com| 1970-01-01 00:00:08 | | 1""");
+
+        // last_bid_for_multi_bidders_multi_auctions
+        this.createTest(18,
+                """
+                INSERT INTO bid VALUES(1, 1, 10, 'my-channel', 'https://example.com', '1970-01-01 00:00:01', '');
+                INSERT INTO bid VALUES(1, 2, 20, 'my-channel', 'https://example.com', '1970-01-01 00:00:02', '');
+                INSERT INTO bid VALUES(2, 1, 30, 'my-channel', 'https://example.com', '1970-01-01 00:00:03', '');
+                INSERT INTO bid VALUES(2, 2, 40, 'my-channel', 'https://example.com', '1970-01-01 00:00:04', '');""",
+                """
+                 auction | bidder | price | channel | url | date_time | extra | weight
+                -----------------------------------------------------------------------
+                 1       | 1      | 10    | my-channel| https://example.com| 1970-01-01 00:00:01 | | 1
+                 1       | 2      | 20    | my-channel| https://example.com| 1970-01-01 00:00:02 | | 1
+                 2       | 1      | 30    | my-channel| https://example.com| 1970-01-01 00:00:03 | | 1
+                 2       | 2      | 40    | my-channel| https://example.com| 1970-01-01 00:00:04 | | 1""",
+                """
+                INSERT INTO bid VALUES(1, 1, 50, 'my-channel', 'https://example.com', '1970-01-01 00:00:05', '');
+                INSERT INTO bid VALUES(1, 2, 60, 'my-channel', 'https://example.com', '1970-01-01 00:00:06', '');
+                INSERT INTO bid VALUES(2, 1, 70, 'my-channel', 'https://example.com', '1970-01-01 00:00:07', '');
+                INSERT INTO bid VALUES(2, 2, 80, 'my-channel', 'https://example.com', '1970-01-01 00:00:08', '');""",
+                """
+                 auction | bidder | price | channel | url | date_time | extra | weight
+                -----------------------------------------------------------------------
+                 1       | 1      | 10    | my-channel| https://example.com| 1970-01-01 00:00:01 | | -1
+                 1       | 2      | 20    | my-channel| https://example.com| 1970-01-01 00:00:02 | | -1
+                 2       | 1      | 30    | my-channel| https://example.com| 1970-01-01 00:00:03 | | -1
+                 2       | 2      | 40    | my-channel| https://example.com| 1970-01-01 00:00:04 | | -1
+                 1       | 1      | 50    | my-channel| https://example.com| 1970-01-01 00:00:05 | | 1
+                 1       | 2      | 60    | my-channel| https://example.com| 1970-01-01 00:00:06 | | 1
+                 2       | 1      | 70    | my-channel| https://example.com| 1970-01-01 00:00:07 | | 1
+                 2       | 2      | 80    | my-channel| https://example.com| 1970-01-01 00:00:08 | | 1""");
     }
 
     @Test
     public void q19test() {
-        this.createTest(19, "",
+        // Test data from crates/nexmark/src/queries/q19.rs.
+        // The view outputs rank_number, so a new top bid shifts the rank of every lower
+        // bid and retracts all shifted rows.
+
+        // top_bids_for_single_auction
+        this.createTest(19,
                 """
- auction | bidder | price | channel | url | date_time | extra | row_number | weight
-------------------------------------------------------------------------------------""");
+                INSERT INTO bid VALUES(1, 12, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 1, 1200, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 3, 1100, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 4, 1000, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 5, 200, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 6, 300, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 7, 400, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 8, 500, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 9, 600, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 10, 700, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 11, 800, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 12, 900, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');""",
+                """
+                 auction | bidder | price | channel | url | date_time | extra | rank_number | weight
+                -------------------------------------------------------------------------------------
+                 1       | 1      | 1200  | my-channel| https://example.com| 1970-01-01 00:00:00 | | 1  | 1
+                 1       | 3      | 1100  | my-channel| https://example.com| 1970-01-01 00:00:00 | | 2  | 1
+                 1       | 4      | 1000  | my-channel| https://example.com| 1970-01-01 00:00:00 | | 3  | 1
+                 1       | 12     | 900   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 4  | 1
+                 1       | 11     | 800   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 5  | 1
+                 1       | 10     | 700   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 6  | 1
+                 1       | 9      | 600   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 7  | 1
+                 1       | 8      | 500   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 8  | 1
+                 1       | 7      | 400   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 9  | 1
+                 1       | 6      | 300   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 10 | 1""",
+                // A new top bid of 1300 shifts every rank down by one; the bid of 50 ranks last.
+                """
+                INSERT INTO bid VALUES(1, 1, 1300, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 1, 50, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');""",
+                """
+                 auction | bidder | price | channel | url | date_time | extra | rank_number | weight
+                -------------------------------------------------------------------------------------
+                 1       | 1      | 1200  | my-channel| https://example.com| 1970-01-01 00:00:00 | | 1  | -1
+                 1       | 3      | 1100  | my-channel| https://example.com| 1970-01-01 00:00:00 | | 2  | -1
+                 1       | 4      | 1000  | my-channel| https://example.com| 1970-01-01 00:00:00 | | 3  | -1
+                 1       | 12     | 900   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 4  | -1
+                 1       | 11     | 800   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 5  | -1
+                 1       | 10     | 700   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 6  | -1
+                 1       | 9      | 600   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 7  | -1
+                 1       | 8      | 500   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 8  | -1
+                 1       | 7      | 400   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 9  | -1
+                 1       | 6      | 300   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 10 | -1
+                 1       | 1      | 1300  | my-channel| https://example.com| 1970-01-01 00:00:00 | | 1  | 1
+                 1       | 1      | 1200  | my-channel| https://example.com| 1970-01-01 00:00:00 | | 2  | 1
+                 1       | 3      | 1100  | my-channel| https://example.com| 1970-01-01 00:00:00 | | 3  | 1
+                 1       | 4      | 1000  | my-channel| https://example.com| 1970-01-01 00:00:00 | | 4  | 1
+                 1       | 12     | 900   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 5  | 1
+                 1       | 11     | 800   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 6  | 1
+                 1       | 10     | 700   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 7  | 1
+                 1       | 9      | 600   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 8  | 1
+                 1       | 8      | 500   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 9  | 1
+                 1       | 7      | 400   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 10 | 1""");
+
+        // top_bids_for_multiple_auctions
+        this.createTest(19,
+                """
+                INSERT INTO bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 1, 200, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(7, 1, 100, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(7, 1, 1200, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(7, 1, 1100, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(7, 1, 1000, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(7, 1, 200, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(7, 1, 300, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(7, 1, 400, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(7, 1, 500, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(7, 1, 600, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(7, 1, 700, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(7, 1, 800, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(7, 1, 900, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');""",
+                """
+                 auction | bidder | price | channel | url | date_time | extra | rank_number | weight
+                -------------------------------------------------------------------------------------
+                 1       | 1      | 200   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 1  | 1
+                 1       | 1      | 100   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 2  | 1
+                 7       | 1      | 1200  | my-channel| https://example.com| 1970-01-01 00:00:00 | | 1  | 1
+                 7       | 1      | 1100  | my-channel| https://example.com| 1970-01-01 00:00:00 | | 2  | 1
+                 7       | 1      | 1000  | my-channel| https://example.com| 1970-01-01 00:00:00 | | 3  | 1
+                 7       | 1      | 900   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 4  | 1
+                 7       | 1      | 800   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 5  | 1
+                 7       | 1      | 700   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 6  | 1
+                 7       | 1      | 600   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 7  | 1
+                 7       | 1      | 500   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 8  | 1
+                 7       | 1      | 400   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 9  | 1
+                 7       | 1      | 300   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 10 | 1""",
+                """
+                INSERT INTO bid VALUES(1, 1, 1300, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 1, 50, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');""",
+                """
+                 auction | bidder | price | channel | url | date_time | extra | rank_number | weight
+                -------------------------------------------------------------------------------------
+                 1       | 1      | 200   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 1 | -1
+                 1       | 1      | 100   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 2 | -1
+                 1       | 1      | 1300  | my-channel| https://example.com| 1970-01-01 00:00:00 | | 1 | 1
+                 1       | 1      | 200   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 2 | 1
+                 1       | 1      | 100   | my-channel| https://example.com| 1970-01-01 00:00:00 | | 3 | 1
+                 1       | 1      | 50    | my-channel| https://example.com| 1970-01-01 00:00:00 | | 4 | 1""");
     }
 
     @Test
     public void q20test() {
-        this.createTest(19, "",
+        // Test data from crates/nexmark/src/queries/q20.rs.
+
+        // auction_bids_single_auction: the bid on auction 2 has no matching auction.
+        this.createTest(20,
+                """
+                INSERT INTO auction VALUES(1, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:02', 1, 10, '');
+                INSERT INTO bid VALUES(1, 10, 10, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 20, 20, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(2, 50, 50, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 30, 30, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');""",
+                """
+ auction | bidder | price | channel | url | date_time | extra | itemName | description | initialBid | reserve | ADateTime | expires | seller | category | Aextra | weight
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 1 | 10 | 10 | my-channel| https://example.com| 1970-01-01 00:00:00 | | item-name| description| 5 | 10 | 1970-01-01 00:00:00 | 1970-01-01 00:00:02 | 1 | 10 | | 1
+ 1 | 20 | 20 | my-channel| https://example.com| 1970-01-01 00:00:00 | | item-name| description| 5 | 10 | 1970-01-01 00:00:00 | 1970-01-01 00:00:02 | 1 | 10 | | 1
+ 1 | 30 | 30 | my-channel| https://example.com| 1970-01-01 00:00:00 | | item-name| description| 5 | 10 | 1970-01-01 00:00:00 | 1970-01-01 00:00:02 | 1 | 10 | | 1""",
+                "INSERT INTO bid VALUES(1, 40, 40, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');",
+                """
+ auction | bidder | price | channel | url | date_time | extra | itemName | description | initialBid | reserve | ADateTime | expires | seller | category | Aextra | weight
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 1 | 40 | 40 | my-channel| https://example.com| 1970-01-01 00:00:00 | | item-name| description| 5 | 10 | 1970-01-01 00:00:00 | 1970-01-01 00:00:02 | 1 | 10 | | 1""");
+
+        // auction_bids_wrong_category
+        this.createTest(20,
+                """
+                INSERT INTO auction VALUES(1, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:02', 1, 9, '');
+                INSERT INTO bid VALUES(1, 10, 10, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 20, 20, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 30, 30, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');""",
+                """
+ auction | bidder | price | channel | url | date_time | extra | itemName | description | initialBid | reserve | ADateTime | expires | seller | category | Aextra | weight
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------""",
+                "INSERT INTO bid VALUES(1, 40, 40, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');",
                 """
  auction | bidder | price | channel | url | date_time | extra | itemName | description | initialBid | reserve | ADateTime | expires | seller | category | Aextra | weight
 --------------------------------------------------------------------------------------------------------------------------------------------------------------------------""");
+
+        // auction_bids_multiple_auctions
+        this.createTest(20,
+                """
+                INSERT INTO auction VALUES(1, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:02', 1, 10, '');
+                INSERT INTO bid VALUES(1, 10, 10, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 20, 20, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO auction VALUES(2, 'item-name', 'description', 5, 10, '1970-01-01 00:00:00', '1970-01-01 00:00:02', 1, 10, '');
+                INSERT INTO bid VALUES(2, 50, 50, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 30, 30, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');""",
+                """
+ auction | bidder | price | channel | url | date_time | extra | itemName | description | initialBid | reserve | ADateTime | expires | seller | category | Aextra | weight
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 1 | 10 | 10 | my-channel| https://example.com| 1970-01-01 00:00:00 | | item-name| description| 5 | 10 | 1970-01-01 00:00:00 | 1970-01-01 00:00:02 | 1 | 10 | | 1
+ 1 | 20 | 20 | my-channel| https://example.com| 1970-01-01 00:00:00 | | item-name| description| 5 | 10 | 1970-01-01 00:00:00 | 1970-01-01 00:00:02 | 1 | 10 | | 1
+ 1 | 30 | 30 | my-channel| https://example.com| 1970-01-01 00:00:00 | | item-name| description| 5 | 10 | 1970-01-01 00:00:00 | 1970-01-01 00:00:02 | 1 | 10 | | 1
+ 2 | 50 | 50 | my-channel| https://example.com| 1970-01-01 00:00:00 | | item-name| description| 5 | 10 | 1970-01-01 00:00:00 | 1970-01-01 00:00:02 | 1 | 10 | | 1""",
+                """
+                INSERT INTO bid VALUES(1, 40, 40, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(2, 60, 60, 'my-channel', 'https://example.com', '1970-01-01 00:00:00', '');""",
+                """
+ auction | bidder | price | channel | url | date_time | extra | itemName | description | initialBid | reserve | ADateTime | expires | seller | category | Aextra | weight
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 1 | 40 | 40 | my-channel| https://example.com| 1970-01-01 00:00:00 | | item-name| description| 5 | 10 | 1970-01-01 00:00:00 | 1970-01-01 00:00:02 | 1 | 10 | | 1
+ 2 | 60 | 60 | my-channel| https://example.com| 1970-01-01 00:00:00 | | item-name| description| 5 | 10 | 1970-01-01 00:00:00 | 1970-01-01 00:00:02 | 1 | 10 | | 1""");
     }
 
     @Test
     public void q22test() {
-        this.createTest(22, "",
+        // Test data from crates/nexmark/src/queries/q22.rs.
+        // channel and url carry the same value, so the channel column echoes the split
+        // URL.  SPLIT_INDEX produces NULL for a missing directory.
+
+        // bids_with_well_formed_urls
+        this.createTest(22,
                 """
- auction | bidder | price | channel | dir1 | dir2 | dir3
----------------------------------------------------------""");
+                INSERT INTO bid VALUES(1, 1, 99, 'https://example.com/foo/bar/zed', 'https://example.com/foo/bar/zed', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 1, 99, 'https://example.com/dir1/dir2/dir3/dir4/dir5', 'https://example.com/dir1/dir2/dir3/dir4/dir5', '1970-01-01 00:00:00', '');""",
+                """
+                 auction | bidder | price | channel | dir1 | dir2 | dir3 | weight
+                ------------------------------------------------------------------
+                 1       | 1      | 99    | https://example.com/foo/bar/zed| foo| bar| zed| 1
+                 1       | 1      | 99    | https://example.com/dir1/dir2/dir3/dir4/dir5| dir1| dir2| dir3| 1""");
+
+        // bids_mixed_with_non_urls
+        this.createTest(22,
+                """
+                INSERT INTO bid VALUES(1, 1, 99, 'https://example.com/foo/bar/zed', 'https://example.com/foo/bar/zed', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 1, 99, 'Google', 'Google', '1970-01-01 00:00:00', '');
+                INSERT INTO bid VALUES(1, 1, 99, 'https:badly.formed/dir1/dir2/dir3', 'https:badly.formed/dir1/dir2/dir3', '1970-01-01 00:00:00', '');""",
+                """
+                 auction | bidder | price | channel | dir1 | dir2 | dir3 | weight
+                ------------------------------------------------------------------
+                 1       | 1      | 99    | https://example.com/foo/bar/zed| foo| bar| zed| 1
+                 1       | 1      | 99    | Google|NULL|NULL|NULL| 1
+                 1       | 1      | 99    | https:badly.formed/dir1/dir2/dir3| dir3|NULL|NULL| 1""");
     }
 
     @Test
@@ -992,7 +1641,6 @@ day | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_
         this.prepareInputs(compiler);
 
         Set<Integer> unsupported = new HashSet<>() {{
-            add(6);  // over with rows
             add(11); // session
             add(21); // regexp_extract, needs to be done as a UDF
         }};
