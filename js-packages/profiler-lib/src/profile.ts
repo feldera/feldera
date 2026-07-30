@@ -1286,10 +1286,21 @@ export class SimpleNode implements JsonSimpleCircuitNode {
 export class ComplexNode extends SimpleNode {
     children: Array<NodeId>;
     depth: number = 0;
+    // Names of tables and views of descendant nodes.
+    readonly containedNames: Array<string> = [];
 
     constructor(id: NodeId, label: string, worker_count: number) {
         super(id, label, worker_count);
         this.children = [];
+    }
+
+    /** Label to display when the node is drawn collapsed:
+     * the operation plus the names of the tables and views hidden inside. */
+    collapsedOperation(): string {
+        if (this.containedNames.length === 0) {
+            return this.operation;
+        }
+        return this.operation + " " + this.containedNames.join(", ");
     }
 
     addChild(node: SimpleNode) {
@@ -1332,6 +1343,8 @@ export class CircuitProfile {
     readonly dataRange: OMap<string, NumericRange> = new OMap();
     // Index nodes by their persistent IDs
     readonly byPersistentId: OMap<string, SimpleNode> = new OMap();
+    // Index nodes by table or view name (lowercase); filled from the dataflow graph.
+    readonly byName: OMap<string, SimpleNode> = new OMap();
     // Source information; only available if the dataflow information is provided.
     sources: Option<Sources> = Option.none();
 
@@ -1379,14 +1392,39 @@ export class CircuitProfile {
         // This can happen for some Z nodes in recursive components
         if (profileNode.isNone()) return;
         let n = profileNode.unwrap();
-        if (mir.table !== null) {
-            n.operation += " " + mir.table;
-        } else if (mir.view !== null) {
-            n.operation += " " + mir.view;
+        const name = mir.table !== null ? mir.table : mir.view;
+        if (name !== null) {
+            n.operation += " " + name;
+            this.byName.set(name.toLowerCase(), n);
+            // Ancestors display the contained names when collapsed
+            let parent = this.parents.get(n.id);
+            while (parent.isSome()) {
+                const complex = this.complexNodes.get(parent.unwrap()).unwrap();
+                if (!complex.containedNames.includes(name)) {
+                    complex.containedNames.push(name);
+                }
+                parent = this.parents.get(parent.unwrap());
+            }
         }
 
         n.setSourcePositions(new SourcePositionRanges(
             mir.positions.map(p => new SourcePositionRange(p))));
+    }
+
+    /** Find the node of an input table or output view by name.
+     * The match is case-insensitive; an exact match wins over a substring match. */
+    findByName(name: string): Option<SimpleNode> {
+        const key = name.toLowerCase();
+        const exact = this.byName.get(key);
+        if (exact.isSome()) {
+            return exact;
+        }
+        for (const [n, node] of this.byName.entries()) {
+            if (n.includes(key)) {
+                return Option.some(node);
+            }
+        }
+        return Option.none();
     }
 
     // Get the topmost parent of a node which is not the toplevel graph node.

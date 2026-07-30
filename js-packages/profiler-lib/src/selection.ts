@@ -39,6 +39,25 @@ export class CircuitSelector {
         this.onChange();
     }
 
+    /** Expand all collapsed ancestors of a node so that it becomes visible.
+     * Return 'true' if anything changed. */
+    expandAncestors(node: NodeId): boolean {
+        let changed = false;
+        let parent = this.circuit.parents.get(node);
+        while (parent.isSome()) {
+            const id = parent.unwrap();
+            if (!this.regionsExpanded.has(id)) {
+                this.regionsExpanded.add(id);
+                changed = true;
+            }
+            parent = this.circuit.parents.get(id);
+        }
+        if (changed) {
+            this.onChange();
+        }
+        return changed;
+    }
+
     getFullSelection(): CircuitSelection {
         return new CircuitSelection(new CompleteSet(this.allNodeIds))
     }

@@ -3,7 +3,7 @@
 import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeDefinition, type NodeSingular, type StylesheetJson } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
 import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
-import { CircuitProfile, NodeAndMetric, PropertyValue, type NodeId } from './profile.js';
+import { CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, type NodeId } from './profile.js';
 import { CircuitSelection } from './selection.js';
 import elk from 'cytoscape-elk';
 import { Sources } from './dataflow.js';
@@ -320,7 +320,10 @@ export class Cytograph {
                 visibleParents.add(p);
             }
             let src = sources.toString(node.sourcePositions);
-            let operation = node.operation;
+            let operation = node instanceof ComplexNode
+                // node is complex only when drawn collapsed; show the tables and views hidden inside
+                ? node.collapsedOperation()
+                : node.operation;
             if (operation === CircuitProfile.Z1_TRACE_OUTPUT)
                 // These nodes were modified in the profile.fixZ1Nodes() function.
                 operation = CircuitProfile.Z1_TRACE;
@@ -563,6 +566,11 @@ export class CytographRendering {
     /** Metric chosen by the user to drive the color of the nodes. */
     getCurrentMetric(): string {
         return this.metadataSelection.metric;
+    }
+
+    /** Center the view on this node after the next layout completes. */
+    centerOnNextLayout(node: Option<NodeId>) {
+        this.lastNode = node;
     }
 
     /** Search a node by ID, return 'true' if found. */

@@ -297,46 +297,54 @@ export class Visualizer {
     }
 
     /**
-     * Search for a node by ID or a substring of the persistent ID.
+     * Center the view on the node with the given ID.
+     * If the node is hidden inside collapsed clusters, expand them;
+     * the layout is recomputed asynchronously, and the rendering
+     * centers on the node when the layout completes.
+     * Return 'true' if the node was found.
+     */
+    private reveal(id: string): boolean {
+        if (this.rendering?.search(id)) {
+            return true;
+        }
+        if (!this.rendering || !this.circuitSelector) {
+            return false;
+        }
+        this.rendering.centerOnNextLayout(Option.some(id));
+        if (this.circuitSelector.expandAncestors(id)) {
+            return true;
+        }
+        // Nothing was expanded; do not center on the next unrelated layout.
+        this.rendering.centerOnNextLayout(Option.none());
+        return false;
+    }
+
+    /**
+     * Search for a node by ID, by input table or output view name,
+     * or by a substring of the persistent ID.
      */
     search(query: string): void {
-        // First search by ID
-        let success = this.rendering?.search(query);
-        if (success) {
+        // First search by node ID
+        if (this.reveal(query)) {
             return;
         }
         if (!this.profile) {
             return;
         }
 
-        // Find ID of node with given persistent ID
+        // Find node of an input table or output view with the given name
+        let named = this.profile.findByName(query);
+        if (named.isSome() && this.reveal(named.unwrap().id)) {
+            return;
+        }
+
+        // Find node with given persistent ID
         for (const [pid, node] of this.profile.byPersistentId) {
             if (pid.includes(query)) {
-                let success = this.rendering?.search(node.id);
-                if (success) {
+                if (this.reveal(node.id)) {
                     return;
                 }
             }
-        }
-
-        // Neither succeeded, check if we are searching for an unexpanded node
-        let nodeN = this.profile.simpleNodes.get(query);
-        if (nodeN.isSome()) {
-            let node = nodeN.unwrap();
-            let current = node.id;
-            // Find the outermost parent
-            while (true) {
-                let parent = this.profile.parents.get(current);
-                if (parent.isNone()) {
-                    break;
-                }
-                current = parent.unwrap();
-            }
-            // Current is the outermost parent
-            // Expansion will happen asynchronously,
-            // so we are not searching again, hopefully that is good
-            // enough to locate the node.
-            this.circuitSelector?.toggleExpand(current);
         }
     }
 
