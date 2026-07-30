@@ -1963,7 +1963,8 @@ export const addTenantUser = <ThrowOnError extends boolean = true>(
  *
  * Remove a user from the acting tenant. This drops their role now, but if the
  * identity provider still grants them access they are re-added at the default
- * role on their next login; revoke access at the provider for a durable block.
+ * role on their next login. Revoke access at the provider to disable access
+ * completely.
  */
 export const deleteTenantUser = <ThrowOnError extends boolean = true>(
   options: Options<DeleteTenantUserData, ThrowOnError>
