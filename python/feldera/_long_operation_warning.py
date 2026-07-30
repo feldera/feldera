@@ -15,7 +15,11 @@ class LongOperationWarning:
     `done()` logs that the operation finished, so a warning about a stuck
     operation does not go unresolved in the log.
 
-    Mirrors `LongOperationWarning` in crates/adapters/src/util.rs.
+    Mirrors `LongOperationWarning` in crates/adapters/src/util.rs. Defaults to
+    WARNING, not DEBUG: these messages only fire rarely (thanks to the
+    backoff), so there's no spam to hide, and a DEBUG default would make them
+    invisible under most logging configurations -- including this project's
+    own test suite, which defaults to INFO.
     """
 
     def __init__(
@@ -24,7 +28,7 @@ class LongOperationWarning:
         message: Callable[[float], str],
         done_message: Optional[Callable[[float], str]] = None,
         warn_threshold_s: float = 5.0,
-        level: int = logging.DEBUG,
+        level: int = logging.WARNING,
     ):
         self._logger = logger
         self._message = message

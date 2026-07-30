@@ -89,3 +89,15 @@ class TestLongOperationWarning:
             _check_at(long_op, 1.0)
         assert len(caplog.records) == 1
         assert caplog.records[0].levelno == logging.DEBUG
+
+    def test_default_level_is_visible_at_info(self, caplog):
+        # tests/__init__.py configures this project's test suite at INFO by
+        # default. A DEBUG default here would silently drop every warning
+        # under that configuration -- which is exactly what happened in CI
+        # (https://github.com/feldera/feldera/actions/runs/30584868028): a
+        # pipeline stuck provisioning for 180s never logged a single "still
+        # waiting" line because the messages were below the configured level.
+        long_op = _make([0.0], warn_threshold_s=5.0)  # no explicit level
+        with caplog.at_level(logging.INFO):
+            _check_at(long_op, 5.0)
+        assert len(caplog.records) == 1
