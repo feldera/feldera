@@ -146,6 +146,30 @@ where
     /// operator must be instantiated manually by the closure `f` for each
     /// input stream.
     ///
+    /// # Persistent ids
+    ///
+    /// In [persistent mode](crate::circuit::Mode::Persistent) every operator
+    /// that holds state must carry a persistent id, and operators inside the
+    /// recursive scope are no exception: without one, taking a checkpoint fails
+    /// with `NoPersistentId`.  The closure `f` is responsible for assigning
+    /// them, by calling
+    /// [`set_persistent_id`](`crate::circuit::Stream::set_persistent_id`) on
+    /// * each recursive stream it receives, which names the `z^-1` operator
+    ///   that closes the loop, and
+    /// * every stream it creates, including the one it returns, from which the
+    ///   implicit `distinct` and the integral that exports the result derive
+    ///   their own ids.
+    ///
+    /// Name each recursive stream before the closure builds anything from it:
+    /// the operators that maintain state over a stream derive their own ids from
+    /// it as they are constructed, so a name assigned later leaves them
+    /// unnamed.  In practice, call `set_persistent_id` on the recursive streams
+    /// first thing in `f`.
+    ///
+    /// The names must identify the same computation across restarts, so derive
+    /// them from the program (a view name, a hash of the subgraph) rather than
+    /// from anything positional.
+    ///
     /// # Examples
     ///
     /// ```
@@ -197,18 +221,27 @@ where
     ///         .into_iter();
     ///
     ///     let labels = root_circuit.recursive(|child_circuit, labels: Stream<_, OrdZSet<Tup2<u64, String>>>| {
+    ///         // Name the recursive stream and every stream built from it, so that
+    ///         // the operators inside the scope can be checkpointed.
+    ///         labels.set_persistent_id(Some("labels"));
+    ///
     ///         // Import `edges` and `init_labels` relations from the parent circuit.
     ///         let edges = edges.delta0(child_circuit);
     ///         let init_labels = init_labels.delta0(child_circuit);
     ///
     ///         // Given an edge `from -> to` where the `from` node is labeled with `l`,
     ///         // propagate `l` to node `to`.
-    ///         let result = labels.map_index(|Tup2(x,y)| (x.clone(), y.clone()))
+    ///         let labels_indexed = labels.map_index(|Tup2(x,y)| (x.clone(), y.clone()))
+    ///               .set_persistent_id(Some("labels_indexed"));
+    ///         let edges_indexed = edges.map_index(|Tup2(x,y)| (x.clone(), y.clone()))
+    ///               .set_persistent_id(Some("edges_indexed"));
+    ///         let result = labels_indexed
     ///               .join(
-    ///                   &edges.map_index(|Tup2(x,y)| (x.clone(), y.clone())),
+    ///                   &edges_indexed,
     ///                   |_from, l, to| Tup2(*to, l.clone()),
     ///               )
     ///               .plus(&init_labels);
+    ///         result.set_persistent_id(Some("labels_next"));
     ///         Ok(result)
     ///     })?;
     ///
