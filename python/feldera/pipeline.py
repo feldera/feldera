@@ -20,6 +20,7 @@ import pyarrow as pa
 
 from feldera._callback_runner import CallbackRunner
 from feldera._helpers import chunk_dataframe, ensure_dataframe_has_columns
+from feldera._long_operation_warning import LongOperationWarning
 from feldera.enums import (
     BootstrapPolicy,
     CheckpointStatus,
@@ -44,6 +45,8 @@ from feldera.rest.sql_view import SQLView
 from feldera.runtime_config import RuntimeConfig
 from feldera.stats import InputEndpointStatus, OutputEndpointStatus, PipelineStatistics
 from feldera.types import CheckpointMetadata
+
+logger = logging.getLogger(__name__)
 
 
 class Pipeline:
@@ -384,6 +387,12 @@ class Pipeline:
             raise RuntimeError("Pipeline must be running to wait for completion")
 
         start_time = time.monotonic()
+        long_op = LongOperationWarning(
+            logger,
+            lambda elapsed: f"still waiting for pipeline {self.name} to complete, "
+            f"waited {elapsed:.1f} seconds",
+            lambda elapsed: f"pipeline {self.name} completed after {elapsed:.1f} seconds",
+        )
 
         while True:
             if timeout_s is not None:
@@ -393,10 +402,6 @@ class Pipeline:
                         f"timeout ({timeout_s}s) reached while waiting for"
                         f" pipeline '{self.name}' to complete"
                     )
-                logging.debug(
-                    f"waiting for pipeline {self.name} to complete: elapsed"
-                    f" time {elapsed}s, timeout: {timeout_s}s"
-                )
 
             pipeline_complete: bool = self.is_complete()
             if pipeline_complete is None:
@@ -404,8 +409,10 @@ class Pipeline:
                     "received unknown metrics from the pipeline, pipeline_complete is None"
                 )
             elif pipeline_complete:
+                long_op.done()
                 break
 
+            long_op.check()
             time.sleep(1)
 
         if force_stop:

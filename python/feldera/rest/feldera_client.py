@@ -11,6 +11,7 @@ import pyarrow as pa
 import pyarrow.ipc
 import requests
 
+from feldera._long_operation_warning import LongOperationWarning
 from feldera.enums import BootstrapPolicy, PipelineFieldSelector, PipelineStatus
 from feldera.rest._helpers import determine_client_version
 from feldera.rest._httprequests import HttpRequests
@@ -175,6 +176,11 @@ class FelderaClient:
         """Wait for pipeline compilation -- internal use only."""
         wait = ["Pending", "CompilingSql", "SqlCompiled", "CompilingRust"]
         start_time = time.monotonic()
+        long_op = LongOperationWarning(
+            logger,
+            lambda elapsed: f"still compiling {name}, waited {elapsed:.1f} seconds",
+            lambda elapsed: f"{name} finished compiling after {elapsed:.1f} seconds",
+        )
         while True:
             elapsed = time.monotonic() - start_time
             if timeout_s is not None and elapsed > timeout_s:
@@ -187,6 +193,7 @@ class FelderaClient:
             status = p.program_status
 
             if status == "Success":
+                long_op.done()
                 if expected_program_version is None:
                     return self.get_pipeline(name, PipelineFieldSelector.ALL)
 
@@ -224,11 +231,7 @@ class FelderaClient:
 
                 raise RuntimeError(error_message)
 
-            logger.debug(
-                "still compiling %s, waiting for %.1f more seconds",
-                name,
-                poll_interval_s,
-            )
+            long_op.check()
             time.sleep(poll_interval_s)
 
     def __wait_for_pipeline_state(
@@ -240,6 +243,13 @@ class FelderaClient:
         poll_interval_s: float = 0.5,
     ):
         start_time = time.monotonic()
+        long_op = LongOperationWarning(
+            logger,
+            lambda elapsed: f"still waiting for {pipeline_name} to transition to "
+            f"'{state}', waited {elapsed:.1f} seconds",
+            lambda elapsed: f"{pipeline_name} transitioned to '{state}' after "
+            f"{elapsed:.1f} seconds",
+        )
 
         while True:
             if timeout_s is not None:
@@ -254,6 +264,7 @@ class FelderaClient:
             status = resp.deployment_status
 
             if status.lower() == state.lower():
+                long_op.done()
                 break
             elif (
                 status == "Stopped"
@@ -267,11 +278,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 {resp.deployment_error.get("message", "")}"""
                 )
 
-            logger.debug(
-                "still starting %s, waiting for %.1f more seconds",
-                pipeline_name,
-                poll_interval_s,
-            )
+            long_op.check()
             time.sleep(poll_interval_s)
 
     def __wait_for_pipeline_state_one_of(
@@ -284,6 +291,12 @@ Reason: The pipeline is in a STOPPED state due to the following error:
     ) -> PipelineStatus:
         start_time = time.monotonic()
         states = [state.lower() for state in states]
+        long_op = LongOperationWarning(
+            logger,
+            lambda elapsed: f"still waiting for {pipeline_name} to transition to "
+            f"one of {states}, waited {elapsed:.1f} seconds",
+            lambda elapsed: f"{pipeline_name} transitioned after {elapsed:.1f} seconds",
+        )
 
         while True:
             if timeout_s is not None:
@@ -298,6 +311,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             status = resp.deployment_status
 
             if status.lower() in states:
+                long_op.done()
                 return PipelineStatus.from_str(status)
             elif (
                 status == "Stopped"
@@ -310,11 +324,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 Reason: The pipeline is in a STOPPED state due to the following error:
 {resp.deployment_error.get("message", "")}"""
                 )
-            logger.debug(
-                "still starting %s, waiting for %.1f more seconds",
-                pipeline_name,
-                poll_interval_s,
-            )
+            long_op.check()
             time.sleep(poll_interval_s)
 
     def create_pipeline(self, pipeline: Pipeline, wait: bool = True) -> Pipeline:
@@ -752,6 +762,11 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             return
 
         start = time.monotonic()
+        long_op = LongOperationWarning(
+            logger,
+            lambda elapsed: f"still stopping {pipeline_name}, waited {elapsed:.1f} seconds",
+            lambda elapsed: f"{pipeline_name} stopped after {elapsed:.1f} seconds",
+        )
 
         while True:
             if timeout_s is not None and time.monotonic() - start > timeout_s:
@@ -764,12 +779,10 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             ).deployment_status
 
             if status == "Stopped":
+                long_op.done()
                 return
 
-            logger.debug(
-                "still stopping %s, waiting for 100 more milliseconds",
-                pipeline_name,
-            )
+            long_op.check()
             time.sleep(0.1)
 
     def dismiss_error_pipeline(
@@ -810,6 +823,11 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             return
 
         start = time.monotonic()
+        long_op = LongOperationWarning(
+            logger,
+            lambda elapsed: f"still clearing {pipeline_name}, waited {elapsed:.1f} seconds",
+            lambda elapsed: f"{pipeline_name} storage cleared after {elapsed:.1f} seconds",
+        )
         while True:
             if timeout_s is not None and time.monotonic() - start > timeout_s:
                 raise FelderaTimeoutError(
@@ -820,13 +838,10 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             ).storage_status
 
             if status == "Cleared":
+                long_op.done()
                 return
 
-            logger.debug(
-                "still clearing %s, waiting for %.1f more seconds",
-                pipeline_name,
-                poll_interval_s,
-            )
+            long_op.check()
             time.sleep(poll_interval_s)
 
     def start_transaction(self, pipeline_name: str) -> int:
@@ -1022,6 +1037,13 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if not wait:
             return
 
+        long_op = LongOperationWarning(
+            logger,
+            lambda elapsed: f"transaction {transaction_id} on {pipeline_name} "
+            f"hasn't committed, waited {elapsed:.1f} seconds",
+            lambda elapsed: f"transaction {transaction_id} on {pipeline_name} "
+            f"committed after {elapsed:.1f} seconds",
+        )
         while True:
             if timeout_s is not None:
                 elapsed = time.monotonic() - start_time
@@ -1030,12 +1052,10 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
             stats = self.get_pipeline_stats(pipeline_name)
             if stats["global_metrics"]["transaction_id"] != transaction_id:
+                long_op.done()
                 return
 
-            logging.debug(
-                "commit hasn't completed, waiting for %.1f more seconds",
-                poll_interval_s,
-            )
+            long_op.check()
             time.sleep(poll_interval_s)
 
     def checkpoint_pipeline(self, pipeline_name: str) -> int:
@@ -1248,6 +1268,13 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         max_backoff = 5
         exponent = 1.2
         retries = 0
+        long_op = LongOperationWarning(
+            logger,
+            lambda elapsed: f"still waiting for inputs represented by {token} "
+            f"to be processed, waited {elapsed:.1f} seconds",
+            lambda elapsed: f"inputs represented by {token} processed after "
+            f"{elapsed:.1f} seconds",
+        )
 
         while True:
             if end:
@@ -1259,12 +1286,10 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                     )
 
             if self.completion_token_processed(pipeline_name, token):
+                long_op.done()
                 break
 
-            elapsed = time.monotonic() - start
-            logger.debug(
-                f"still waiting for inputs represented by {token} to be processed; elapsed: {elapsed}s"
-            )
+            long_op.check()
 
             retries += 1
             backoff = min(max_backoff, initial_backoff * (exponent**retries))
