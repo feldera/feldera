@@ -106,3 +106,4 @@ js-packages/support-bundle-triage/
 # Local dev configs
 .envrc
 .direnv
+.env
