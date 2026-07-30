@@ -39,7 +39,8 @@ if [ "$REBUILD" = 1 ] || [ ! -x "$BIN" ]; then
   echo "== building pipeline-manager (debug, with web console) =="
   FEATURES=()
   [ "$ENTERPRISE" = 1 ] && FEATURES=(--features feldera-enterprise)
-  PATH="$HOME/.bun/bin:$PATH" cargo build -p pipeline-manager "${FEATURES[@]}"
+  # macOS ships bash 3.2, where "${arr[@]}" on an empty array trips `set -u`.
+  PATH="$HOME/.bun/bin:$PATH" cargo build -p pipeline-manager ${FEATURES[@]+"${FEATURES[@]}"}
 fi
 
 [ "$KEEP_DB" = 1 ] || rm -rf "$DEMO/pg"
@@ -73,7 +74,7 @@ FELDERA_UNSTABLE_FEATURES='runtime_version,testing' \
     --pg-embed-working-directory="$DEMO/pg" \
     --runner-working-directory="$DEMO/runner" \
     --compiler-working-directory="$DEMO/compiler" \
-    "${MGR_ARGS[@]}" \
+    ${MGR_ARGS[@]+"${MGR_ARGS[@]}"} \
     >"$DEMO/manager.log" 2>&1 &
 MGR_PID=$!
 
