@@ -102,8 +102,8 @@
   <p class="text-sm text-surface-800-200">
     Members appear here after their first login. Assign read, write, or admin. Removing a member
     drops their role now, but if your identity provider still grants them access they are re-added
-    at the default role on their next login — revoke at the provider for a durable block.
-    Pre-provision a member below to grant a role before their first login.
+    at the default role on their next login. Revoke access at the provider to disable access
+    completely. Pre-provision a member below to grant a role before their first login.
   </p>
   {#if errorMessage}
     <div class="rounded preset-outlined-error-600-400 p-2 text-sm">{errorMessage}</div>
@@ -173,7 +173,7 @@
           content={{
             title: `Remove ${user.email ?? user.subject}?`,
             description:
-              'Drops their role in this tenant now. If your identity provider still grants them access, they are re-added at the default role on their next login; revoke at the provider for a durable block. Continue?',
+              'Drops their role in this tenant now. If your identity provider still grants them access, they are re-added at the default role on their next login. Revoke access at the provider to disable access completely. Continue?',
             onSuccess: {
               name: 'Remove',
               callback: async () => {

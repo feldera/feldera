@@ -7570,7 +7570,7 @@
           "Platform"
         ],
         "summary": "Remove Tenant Member",
-        "description": "Required role: `admin` or higher.\n\nRemove a user from the acting tenant. This drops their role now, but if the\nidentity provider still grants them access they are re-added at the default\nrole on their next login; revoke access at the provider for a durable block.",
+        "description": "Required role: `admin` or higher.\n\nRemove a user from the acting tenant. This drops their role now, but if the\nidentity provider still grants them access they are re-added at the default\nrole on their next login. Revoke access at the provider to disable access\ncompletely.",
         "operationId": "delete_tenant_user",
         "parameters": [
           {

@@ -3556,6 +3556,12 @@ export type OutputEndpointMetrics = {
    * of this endpoint is equal to the output of the circuit after
    * processing `total_processed_input_records` records.
    *
+   * The counter never runs ahead of the endpoint's output. It advances to a
+   * value `N` only once the endpoint has processed every batch derived from
+   * the first `N` records received by the pipeline, which means transmitting
+   * the batch, or discarding it while silent bootstrapping suppresses the
+   * endpoint's output.
+   *
    * In a multihost pipeline, this count reflects only the input records
    * processed on the same host as the output endpoint, which is not usually
    * meaningful.

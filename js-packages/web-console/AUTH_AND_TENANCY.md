@@ -85,7 +85,8 @@ Role caps enforced server-side:
 
 - A member/key role is capped at the caller's own role and may never be `owner`.
 - Removing a member drops the role now, but if the IdP still grants access the
-  member is re-added at the default role on next login. Revoke at the provider for a durable block.
+  member is re-added at the default role on their next login. Revoke access at
+  the provider to disable access completely.
 
 ### Service wrappers
 
