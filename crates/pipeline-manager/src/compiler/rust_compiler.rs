@@ -1590,6 +1590,12 @@ async fn call_compiler(
         // Set compiler stack size to 20MB (10x the default) to prevent
         // SIGSEGV when the compiler runs out of stack on large programs.
         .env("RUST_MIN_STACK", "20971520")
+        // aws-lc-sys's CPU Jitter Entropy source can fail its startup health
+        // check on freshly-started VMs/containers and aborts the whole
+        // process with no stderr output (see feldera/cloud#1845). This env
+        // var must be set for this build too, since it links the pipeline
+        // binary that hits the abort, not just the pipeline-manager binary.
+        .env("AWS_LC_SYS_NO_JITTER_ENTROPY", "1")
         .current_dir(&workspace_dir)
         .arg("build")
         .arg("--workspace")
