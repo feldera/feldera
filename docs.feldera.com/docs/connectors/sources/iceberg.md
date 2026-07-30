@@ -30,12 +30,13 @@ The Iceberg input connector supports [fault tolerance](/pipelines/fault-toleranc
 
 | Property                    | Type   | Description   |
 |-----------------------------|--------|---------------|
-| `mode`*                     | enum   | <p>Table read mode. Supported values:</p><ul><li>`snapshot` - read a snapshot of the table and stop.</li><li>`follow` - after the starting snapshot, continuously ingest new and deleted rows as the table commits new snapshots.</li><li>`snapshot_and_follow` - read a snapshot of the table, then switch to `follow` mode.</li></ul><p>`follow` and `snapshot_and_follow` require an Iceberg catalog (set `catalog_type`); they cannot be used with `metadata_location`, which points at a fixed snapshot. See [Follow mode](#follow-mode) below.</p>|
-| `transaction_mode`          | enum   | Determines how the connector breaks up its input into transactions. Supported values are `none` (default) and `snapshot`. See [below](#transactions) for details. |
+| `mode`*                     | enum   | <p>Table read mode. Supported values:</p><ul><li>`snapshot` - read a snapshot of the table and stop.</li><li>`follow` - skip the initial snapshot and only ingest subsequent changes to the table (new and deleted rows) by following its transaction log.</li><li>`snapshot_and_follow` - read a snapshot of the table, then switch to `follow` mode.</li></ul><p>`follow` and `snapshot_and_follow` require an Iceberg catalog (set `catalog_type`); they cannot be used with `metadata_location`, which points at a fixed snapshot. See [Follow mode](#follow-mode) below.</p>|
+| `transaction_mode`          | enum   | Determines how the connector breaks up its input into transactions. Supported values are `none` (default), `snapshot`, `catchup`, and `always`. See [below](#transactions) for details. |
 | `timestamp_column`          | string | Table column that serves as an event timestamp. When this option is specified, table rows are ingested in the timestamp order, respecting the [`LATENESS`](/sql/streaming#lateness-expressions) property of the column: each ingested row has a timestamp no more than `LATENESS` time units earlier than the most recent timestamp of any previously ingested row. See details [below](#ingesting-time-series-data-from-iceberg). |
 | `snapshot_filter`           | string | <p>Optional row filter.  When specified, only rows that satisfy the filter condition are included in the snapshot.  The condition must be a valid SQL Boolean expression that can be used in the `where` clause of the `select * from snapshot where ..` query.</p><p> This option can be used to specify the range of event times to include in the snapshot, e.g.: `ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'`.</p>
 | `snapshot_id`               | integer| <p>Optional table snapshot id.  When this option is set, the connector reads the specified snapshot of the table.</p><p>Note: at most one of `version` and `datetime` options can be specified.  When neither of the two options is specified, the latest snapshot of the table is used.</p>
 | `datetime`                  | string | <p>Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g., "2024-12-09T16:09:53+00:00". When this option is set, the connector reads the version of the table as of the specified point in time (based on the server time recorded in the transaction log, not the event time encoded in the data). </p><p> Note: at most one of `version` and `datetime` options can be specified.  When neither of the two options is specified, the latest committed version of the table is used.</p>|
+| `end_snapshot_id`           | integer| <p>Optional final snapshot id. Valid only in `follow` and `snapshot_and_follow` modes. When set, the connector stops after fully ingesting the snapshot with this id, then signals end-of-input.</p><p>Unlike a Delta table version, an Iceberg snapshot id is not ordered, so this bound is an exact match: the id must name a snapshot committed after the starting snapshot and already present in the table's current history. The connector rejects any other value at startup (including a not-yet-committed id) rather than follow forever.</p>|
 | `metadata_location`         | string | Location of the table metadata JSON file. This property is used to access an Iceberg table directly, without a catalog. It is mutually exclusive with the `catalog_type` property.|
 | `table_name`                | string | Specifies the Iceberg table name within the catalog in the `namespace.table` format. This option is applicable when an Iceberg catalog is configured using the `catalog_type` property.|
 | `catalog_type`              | enum   | Type of the Iceberg catalog used to access the table. Supported options include `rest`, `glue`, and `s3tables`. This property is mutually exclusive with `metadata_location`.|
@@ -173,11 +174,8 @@ nullable or have default values.
 
 In `follow` and `snapshot_and_follow` modes the connector continuously ingests
 changes committed to the table after its starting snapshot. It polls the catalog
-for new snapshots and, for each one, diffs the snapshot against its predecessor
-to find the data files it added and removed, ingesting added rows as inserts and
-removed rows as deletes. Only the manifests a snapshot added are read, so the
-cost of each step is proportional to the size of the change, not to the size of
-the table.
+for new snapshots and, for each one, ingests added rows as inserts and
+removed rows as deletes.
 
 The starting snapshot is chosen the same way as in `snapshot` mode: by
 `snapshot_id`, by `datetime`, or, when neither is set, the latest snapshot at the
@@ -193,18 +191,23 @@ Requirements and limitations:
 * **Copy-on-write only.** Follow mode reads copy-on-write changes. If a followed
   snapshot adds a merge-on-read delete file (position or equality deletes), the
   connector stops with an error. Configure the writer to use copy-on-write.
-* **Compaction is skipped.** Snapshots that only rewrite files without changing
-  table contents (`operation = replace`) are recognized and skipped.
 
 ## Transactions
 
 The Iceberg connector can be configured to automatically initiate [transactions](/pipelines/transactions)
-when ingesting the table snapshot. The `transaction_mode` property configures this feature:
+when ingesting the table. The `transaction_mode` property configures this feature:
 
 * `none` - the connector does not group inputs into transactions. This is the default.
-* `snapshot` - ingest the initial snapshot of the table in one or several transactions.
+* `snapshot` - ingest the initial snapshot of the table in one or several transactions. Changes
+  ingested afterward, in the follow phase, are not grouped into transactions.
+* `catchup` - ingest the initial snapshot like `snapshot`. In the follow phase, the connector
+  groups all table commits that are already available into a single transaction: while catching up
+  on a backlog it ingests many commits per transaction, and once caught up it ingests about one
+  commit per transaction. This is the most efficient mode for backfill and steady-state following.
+* `always` - ingest the initial snapshot like `snapshot`. In the follow phase, each table commit is
+  ingested in its own transaction.
 
-### Ingesting table snapshot using transactions
+### Ingesting the table snapshot using transactions
 
 When `transaction_mode` is set to `snapshot`, the connector ingests the snapshot of the table
 in one or several transactions. The exact behavior depends on the value of the `timestamp_column`

@@ -801,14 +801,21 @@ fn follow_table_op(op: &str, table: &str, chunk: &[IcebergTestStruct]) -> i64 {
         .unwrap_or_else(|_| panic!("'{script} --op={op}' printed unexpected output: {last:?}"))
 }
 
+/// Read a single custom metric of the Iceberg connector, or `0.0` if absent.
+#[cfg(feature = "iceberg-tests-follow")]
+fn iceberg_metric(pipeline: &Controller, name: &str) -> f64 {
+    iceberg_connector_metrics(pipeline)
+        .get(name)
+        .copied()
+        .unwrap_or(0.0)
+}
+
 /// Sum of the records the connector has ingested so far (snapshot phase plus
 /// follow phase), read from its custom metrics.
 #[cfg(feature = "iceberg-tests-follow")]
 fn ingested_records(pipeline: &Controller) -> u64 {
-    let metrics = iceberg_connector_metrics(pipeline);
-    let get = |name: &str| metrics.get(name).copied().unwrap_or(0.0) as u64;
-    get("input_connector_iceberg_snapshot_records_total")
-        + get("input_connector_iceberg_follow_records_total")
+    (iceberg_metric(pipeline, "input_connector_iceberg_snapshot_records_total")
+        + iceberg_metric(pipeline, "input_connector_iceberg_follow_records_total")) as u64
 }
 
 /// Run `body` against a running follow-mode pipeline, then stop it. The output
@@ -933,6 +940,207 @@ fn iceberg_rest_follow_start_from_snapshot_id() {
         let zset = output_zset(out_path);
         assert_eq!(zset.len(), 5);
         assert_eq!(zset, expected_zset(&all[10..]));
+    });
+}
+
+/// `follow`: `end_snapshot_id` stops the connector after fully ingesting the
+/// named snapshot. Three snapshots (A, B, C) exist before startup; following
+/// from A with `end_snapshot_id = B` must ingest only B's rows, reach the
+/// completed phase, and never ingest C, even though C is in the same catch-up
+/// batch as B.
+#[test]
+#[cfg(feature = "iceberg-tests-follow")]
+fn iceberg_rest_follow_end_snapshot_id() {
+    use dbsp::trace::BatchReader;
+
+    let all = data(15);
+    let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    let table = &format!("{ns}.end_snapshot");
+
+    let snapshot_a = follow_table_op("create", table, &all[..5]); // snapshot A
+    let snapshot_b = follow_table_op("append", table, &all[5..10]); // snapshot B
+    follow_table_op("append", table, &all[10..]); // snapshot C
+
+    let mut config = rest_follow_config_with(table, "follow", "snapshot_id", json!(snapshot_a));
+    config
+        .as_object_mut()
+        .unwrap()
+        .insert("end_snapshot_id".to_string(), json!(snapshot_b));
+
+    with_follow_pipeline_cfg(config, |pipeline, out_path| {
+        // Phase 2 = completed: only set once the end snapshot is reached.
+        wait(
+            || iceberg_metric(pipeline, "input_connector_iceberg_phase") == 2.0,
+            120_000,
+        )
+        .expect("timed out reaching the end snapshot");
+        wait(|| output_record_count(out_path) >= 5, 60_000).expect("timed out writing output");
+
+        // Stopped at B: C's rows are never ingested and exactly one follow
+        // snapshot was processed.
+        assert_eq!(ingested_records(pipeline), 5);
+        assert_eq!(
+            iceberg_metric(pipeline, "input_connector_iceberg_follow_snapshots_total"),
+            1.0
+        );
+        let zset = output_zset(out_path);
+        assert_eq!(zset.len(), 5);
+        assert_eq!(zset, expected_zset(&all[5..10]));
+    });
+}
+
+/// `transaction_mode = always`: each followed snapshot forms its own Feldera
+/// transaction. Following from A over two pre-committed snapshots (B, C) starts
+/// two follow transactions.
+#[test]
+#[cfg(feature = "iceberg-tests-follow")]
+fn iceberg_rest_follow_transaction_always() {
+    use dbsp::trace::BatchReader;
+
+    let all = data(15);
+    let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    let table = &format!("{ns}.txn_always");
+
+    let snapshot_a = follow_table_op("create", table, &all[..5]); // A
+    follow_table_op("append", table, &all[5..10]); // B
+    follow_table_op("append", table, &all[10..]); // C
+
+    let mut config = rest_follow_config_with(table, "follow", "snapshot_id", json!(snapshot_a));
+    config
+        .as_object_mut()
+        .unwrap()
+        .insert("transaction_mode".to_string(), json!("always"));
+
+    with_follow_pipeline_cfg(config, |pipeline, out_path| {
+        wait(|| ingested_records(pipeline) >= 10, 120_000).expect("timed out following B and C");
+        wait(|| output_record_count(out_path) >= 10, 60_000).expect("timed out writing output");
+
+        // One transaction per followed snapshot: B and C. (Reverting the
+        // per-snapshot allocation drops this below 2.)
+        assert_eq!(
+            iceberg_metric(
+                pipeline,
+                "input_connector_iceberg_follow_transaction_starts"
+            ),
+            2.0
+        );
+        let zset = output_zset(out_path);
+        assert_eq!(zset.len(), 10);
+        assert_eq!(zset, expected_zset(&all[5..]));
+    });
+}
+
+/// `transaction_mode = catchup`: all snapshots caught up in one poll form a
+/// single Feldera transaction. Following from A over two pre-committed snapshots
+/// (B, C), both seen in the first poll, starts exactly one follow transaction.
+#[test]
+#[cfg(feature = "iceberg-tests-follow")]
+fn iceberg_rest_follow_transaction_catchup() {
+    use dbsp::trace::BatchReader;
+
+    let all = data(15);
+    let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    let table = &format!("{ns}.txn_catchup");
+
+    let snapshot_a = follow_table_op("create", table, &all[..5]); // A
+    follow_table_op("append", table, &all[5..10]); // B
+    follow_table_op("append", table, &all[10..]); // C
+
+    let mut config = rest_follow_config_with(table, "follow", "snapshot_id", json!(snapshot_a));
+    config
+        .as_object_mut()
+        .unwrap()
+        .insert("transaction_mode".to_string(), json!("catchup"));
+
+    with_follow_pipeline_cfg(config, |pipeline, out_path| {
+        wait(|| ingested_records(pipeline) >= 10, 120_000).expect("timed out following B and C");
+        wait(|| output_record_count(out_path) >= 10, 60_000).expect("timed out writing output");
+
+        // B and C are committed before startup, so the first catch-up poll sees
+        // both and groups them into one transaction. (In `always` this is 2;
+        // that difference is the point of the mode.)
+        assert_eq!(
+            iceberg_metric(
+                pipeline,
+                "input_connector_iceberg_follow_transaction_starts"
+            ),
+            1.0
+        );
+        // The catchup window closed once the batch committed, so the target
+        // gauge is back to its unset sentinel.
+        assert_eq!(
+            iceberg_metric(
+                pipeline,
+                "input_connector_iceberg_catchup_target_sequence_number"
+            ),
+            -1.0
+        );
+        let zset = output_zset(out_path);
+        assert_eq!(zset.len(), 10);
+        assert_eq!(zset, expected_zset(&all[5..]));
+    });
+}
+
+/// `transaction_mode = catchup` with `end_snapshot_id` landing mid-batch: the
+/// catchup window opens targeting the batch's last snapshot (C), but the end
+/// bound B is reached first. The open catchup transaction (holding B's rows)
+/// must be committed at the end bound, C must never be read, and the target
+/// gauge must reset. This is the one interaction the plain `end_snapshot_id`
+/// test (transaction_mode `none`) does not exercise.
+#[test]
+#[cfg(feature = "iceberg-tests-follow")]
+fn iceberg_rest_follow_transaction_catchup_end_snapshot_id() {
+    use dbsp::trace::BatchReader;
+
+    let all = data(15);
+    let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    let table = &format!("{ns}.txn_catchup_end");
+
+    let snapshot_a = follow_table_op("create", table, &all[..5]); // A
+    let snapshot_b = follow_table_op("append", table, &all[5..10]); // B
+    follow_table_op("append", table, &all[10..]); // C
+
+    let mut config = rest_follow_config_with(table, "follow", "snapshot_id", json!(snapshot_a));
+    {
+        let object = config.as_object_mut().unwrap();
+        object.insert("transaction_mode".to_string(), json!("catchup"));
+        object.insert("end_snapshot_id".to_string(), json!(snapshot_b));
+    }
+
+    with_follow_pipeline_cfg(config, |pipeline, out_path| {
+        // Phase 2 = completed: only set once the end snapshot is reached.
+        wait(
+            || iceberg_metric(pipeline, "input_connector_iceberg_phase") == 2.0,
+            120_000,
+        )
+        .expect("timed out reaching the end snapshot");
+        wait(|| output_record_count(out_path) >= 5, 60_000).expect("timed out writing output");
+
+        // Only B ingested; C never read even though it shared the catch-up batch.
+        assert_eq!(ingested_records(pipeline), 5);
+        assert_eq!(
+            iceberg_metric(pipeline, "input_connector_iceberg_follow_snapshots_total"),
+            1.0
+        );
+        // The end bound committed the open catchup transaction: exactly one
+        // follow transaction started, and the target gauge reset on close.
+        assert_eq!(
+            iceberg_metric(
+                pipeline,
+                "input_connector_iceberg_follow_transaction_starts"
+            ),
+            1.0
+        );
+        assert_eq!(
+            iceberg_metric(
+                pipeline,
+                "input_connector_iceberg_catchup_target_sequence_number"
+            ),
+            -1.0
+        );
+        let zset = output_zset(out_path);
+        assert_eq!(zset.len(), 5);
+        assert_eq!(zset, expected_zset(&all[5..10]));
     });
 }
 
