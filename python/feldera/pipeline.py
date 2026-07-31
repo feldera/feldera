@@ -387,11 +387,19 @@ class Pipeline:
             raise RuntimeError("Pipeline must be running to wait for completion")
 
         start_time = time.monotonic()
+        # Reused by the warning message below; is_complete() would fetch and
+        # discard the same stats, hiding whether the wait is stalled or just
+        # slow (e.g. mid-transaction-commit).
+        latest_stats: Optional[PipelineStatistics] = None
         long_op = LongOperationWarning(
             logger,
-            lambda elapsed: f"still waiting for pipeline {self.name} to complete, "
-            f"waited {elapsed:.1f} seconds",
-            lambda elapsed: f"pipeline {self.name} completed after {elapsed:.1f} seconds",
+            lambda elapsed: (
+                f"still waiting for pipeline {self.name} to complete, "
+                f"waited {elapsed:.1f} seconds ({latest_stats.global_metrics.progress_summary()})"
+            ),
+            lambda elapsed: (
+                f"pipeline {self.name} completed after {elapsed:.1f} seconds"
+            ),
         )
 
         while True:
@@ -403,7 +411,10 @@ class Pipeline:
                         f" pipeline '{self.name}' to complete"
                     )
 
-            pipeline_complete: bool = self.is_complete()
+            latest_stats = self.stats()
+            pipeline_complete: Optional[bool] = (
+                latest_stats.global_metrics.pipeline_complete
+            )
             if pipeline_complete is None:
                 raise RuntimeError(
                     "received unknown metrics from the pipeline, pipeline_complete is None"
