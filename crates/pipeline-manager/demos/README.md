@@ -22,6 +22,17 @@ All the SQL files in `sql/` are packaged demos with every Feldera release.
   uv run run.py --api-url http://localhost:8080
   ```
 
+## Demo data
+
+`00-accelerating-batch-analytics.sql` reads TPC-H Delta tables from
+`s3://feldera-demo-datasets/tpch/sf0.1` (`us-west-1`). The bucket allows anonymous
+reads, so the demo needs no credentials.
+
+To regenerate the data with the official TPC-H `dbgen`, run
+[`scripts/tpch_demo_data.py`](../../../scripts/tpch_demo_data.py) with write
+credentials for the bucket. Pass `--scale-factor 0.1` to republish the set the
+demo reads.
+
 ## Specification
 
 The format is as follows:

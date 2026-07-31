@@ -69,9 +69,9 @@ CREATE TABLE LINEITEM (
     "transport": {
       "name": "delta_table_input",
       "config": {
-        "uri": "s3://batchtofeldera/lineitem",
+        "uri": "s3://feldera-demo-datasets/tpch/sf0.1/lineitem",
         "aws_skip_signature": "true",
-        "aws_region": "ap-southeast-2",
+        "aws_region": "us-west-1",
         "mode": "snapshot"
       }
     }
