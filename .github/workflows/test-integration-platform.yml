@@ -3,11 +3,22 @@ name: Platform Integration Tests
 
 on:
   workflow_call:
+    inputs:
+      image_tag:
+        description: "Image tag to test. Empty means this ref's own sha- tag."
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
-      run_id:
-        description: "ID of the workflow run that uploaded the artifact"
-        required: true
+      image_tag:
+        description: >-
+          Tag of an already-built image to test, e.g. sha-<40-char-sha> from an
+          earlier run. Leave empty to use this ref's own sha- tag, which only
+          exists if the image was built for exactly this commit. Pointing at a
+          previous run's image is what makes this workflow dispatchable on its
+          own, without waiting for a full rebuild.
+        required: false
+        type: string
 
 env:
   FELDERA_SENTRY_ENABLED: 1
@@ -34,7 +45,7 @@ jobs:
             --health-interval=10s \
             --health-timeout=5s \
             --health-retries=5 \
-            ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
+            ${{ vars.FELDERA_IMAGE_NAME }}:${{ inputs.image_tag || format('sha-{0}', github.sha) }}
       - name: Wait for container to become healthy (max 50s)
         run: |
           for i in {1..50}; do
@@ -59,12 +70,11 @@ jobs:
           docker rm -f pipeline-manager-no-internet || true
           docker network rm no-internet-net || true
 
-  manager-https:
-    if: ${{ !contains(vars.CI_SKIP_JOBS, 'manager-https') }}
-    name: Make sure manager runs with HTTPS
+  manager-https-rbac:
+    if: ${{ !contains(vars.CI_SKIP_JOBS, 'manager-https-rbac') }}
+    name: HTTPS, RBAC and OIDC trust
     runs-on: ubuntu-latest-amd64
 
-    # Environment variables for OIDC authentication (if available)
     env:
       OIDC_TEST_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
       OIDC_TEST_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
@@ -81,7 +91,10 @@ jobs:
       - name: Login to GHCR with GITHUB_TOKEN
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Start pipeline-manager in background
+      # Phase 1: the HTTPS listener, against the external provider when one is
+      # configured. This manager is torn down before phase 2, which binds the
+      # same port.
+      - name: Start pipeline-manager with HTTPS
         run: |
           mkdir test-tls
           echo -e "[x509_v3]\nsubjectAltName = @alt_names\n\n[alt_names]\nDNS.1 = localhost\nIP.1 = 127.0.0.1\n" > test-tls/x509_v3_test.ext
@@ -103,7 +116,7 @@ jobs:
             -e RUST_LOG=info \
             -e RUST_BACKTRACE=1 \
             -e CARGO_BUILD_JOBS=${{ vars.CI_RUNNER_CORES || 20 }} \
-            ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }} \
+            ${{ vars.FELDERA_IMAGE_NAME }}:${{ inputs.image_tag || format('sha-{0}', github.sha) }} \
             --enable-https \
             --https-tls-cert-path /home/ubuntu/test-tls/tls_test.crt \
             --https-tls-key-path /home/ubuntu/test-tls/tls_test.key
@@ -123,7 +136,7 @@ jobs:
           done
           echo "Timed out waiting for pipeline-manager to become healthy"
           exit 1
-      - name: Run platform tests
+      - name: Pipeline CRUD over HTTPS
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform/test_pipeline_crud.py --timeout=3600 -vv
         working-directory: python
@@ -131,100 +144,45 @@ jobs:
           FELDERA_HTTPS_TLS_CERT: ../test-tls/tls_test.crt
           FELDERA_HOST: https://localhost:8080
           PYTHONPATH: ${{ github.workspace }}/python
-          # OIDC environment variables for authentication
           OIDC_TEST_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
           OIDC_TEST_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
           OIDC_TEST_CLIENT_SECRET: ${{ secrets.OIDC_TEST_CLIENT_SECRET }}
           OIDC_TEST_USERNAME: ${{ secrets.OIDC_TEST_USERNAME }}
           OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
+
+      - name: Stop the HTTPS manager
+        run: docker rm -f pipeline-manager-https || true
+
+      # Phase 2: RBAC and OIDC trust. The suite owns the manager, restarting it
+      # through no-auth, single-tenant and multi-tenant configurations, and runs
+      # its own issuers: a login provider, a workload issuer that trusts are
+      # registered against, and a rogue issuer signing with an unknown key. It
+      # is stateful and ordered, so it runs serially rather than under -n.
+      - name: RBAC, OIDC trust and the route/role matrix
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: uv run --locked pytest tests/platform_rbac --timeout=2400 --maxfail=1 -vv
+        working-directory: python
+        env:
+          FELDERA_TEST_IMAGE: ${{ vars.FELDERA_IMAGE_NAME }}:${{ inputs.image_tag || format('sha-{0}', github.sha) }}
+          PYTHONPATH: ${{ github.workspace }}/python
+
       - name: Logs & Cleanup
         if: always()
         run: |
           rm -rf test-tls
-          docker logs pipeline-manager-https || true
-          docker inspect pipeline-manager-https || true
-          docker rm -f pipeline-manager-https || true
-
-  # Exercises the RBAC + OIDC-trust auth surface end to end against a
-  # self-contained dummy OIDC issuer, so it always runs (unlike the OIDC paths
-  # gated on an external provider). The manager runs with `--network host` so it
-  # reaches the issuer on localhost for discovery/JWKS; `rbac_demo.py` mints one
-  # token per role and asserts the RBAC matrix (reader denied mutations, write
-  # cannot mint an admin key, admin creates an OIDC trust, owner sees the tenant
-  # list). Its non-zero exit fails the job.
-  rbac-oidc-trust:
-    if: ${{ !contains(vars.CI_SKIP_JOBS, 'rbac-oidc-trust') }}
-    name: RBAC + OIDC trust (self-contained dummy IdP)
-    runs-on: ubuntu-latest-amd64
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
-
-      - name: Login to GHCR with GITHUB_TOKEN
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Start dummy OIDC issuer in background
-        run: |
-          uv run scripts/dummy_oidc.py --issuer http://localhost:9876 >dummy-oidc.log 2>&1 &
-          echo "OIDC_PID=$!" >> "$GITHUB_ENV"
-          for i in {1..30}; do
-            if curl -sf http://localhost:9876/.well-known/openid-configuration >/dev/null; then
-              echo "dummy OIDC issuer is up"; exit 0
-            fi
-            sleep 1
+          # Only if it outlived the phase that normally removes it, which is
+          # what happens when that phase failed and its log is worth having.
+          if docker inspect pipeline-manager-https >/dev/null 2>&1; then
+            docker logs pipeline-manager-https || true
+            docker rm -f pipeline-manager-https || true
+          fi
+          for c in $(docker ps -aq --filter "name=feldera-rbac-"); do
+            echo "=== $c ==="; docker logs "$c" 2>&1 | tail -100 || true
+            docker rm -f "$c" || true
           done
-          echo "dummy OIDC issuer did not come up"; cat dummy-oidc.log; exit 1
-
-      - name: Start pipeline-manager with auth enabled (owner=owner@example.com)
-        run: |
-          docker run -d \
-            --pull missing \
-            --name pipeline-manager-rbac \
-            --network host \
-            --health-cmd='curl --fail --silent --max-time 2 http://localhost:8080/healthz || exit 1' \
-            --health-interval=10s \
-            --health-timeout=5s \
-            --health-retries=5 \
-            -e AUTH_PROVIDER=generic-oidc \
-            -e FELDERA_AUTH_CLIENT_ID=feldera \
-            -e FELDERA_AUTH_ISSUER=http://localhost:9876 \
-            -e FELDERA_AUTH_AUDIENCE=feldera-api \
-            -e FELDERA_OWNERS=owner@example.com \
-            -e RUST_LOG=info \
-            -e RUST_BACKTRACE=1 \
-            ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
-
-      - name: Wait for container to become healthy (max 50s)
-        run: |
-          for i in {1..50}; do
-            status=$(docker inspect --format '{{json .State.Health}}' pipeline-manager-rbac | jq -r .Status 2>/dev/null || echo "starting")
-            echo "Health status: $status"
-            if [ "$status" == "healthy" ]; then
-              echo "pipeline-manager is healthy"
-              exit 0
-            elif [ "$status" == "unhealthy" ]; then
-              echo "pipeline-manager not healthy"
-              exit 1
-            fi
-            sleep 1
+          for v in $(docker volume ls -q --filter "name=feldera-rbac-state-"); do
+            docker volume rm -f "$v" || true
           done
-          echo "Timed out waiting for pipeline-manager to become healthy"
-          exit 1
-
-      - name: RBAC + OIDC-trust assertion matrix
-        if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run scripts/rbac_demo.py --manager http://localhost:8080 --oidc http://localhost:9876
-
-      - name: Logs & Cleanup
-        if: always()
-        run: |
-          docker logs pipeline-manager-rbac || true
-          docker rm -f pipeline-manager-rbac || true
-          if [ -n "$OIDC_PID" ]; then kill "$OIDC_PID" || true; fi
-          cat dummy-oidc.log || true
 
   oss-platform-tests:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'oss-platform-tests') }}
@@ -260,7 +218,7 @@ jobs:
       image: ghcr.io/feldera/feldera-dev:sha-a5ab793b8d261068867b9fdfad3f04157b2536fc
     services:
       pipeline-manager:
-        image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
+        image: ${{ vars.FELDERA_IMAGE_NAME }}:${{ inputs.image_tag || format('sha-{0}', github.sha) }}
         env:
           # Configure OIDC authentication if available, otherwise use no auth
           AUTH_PROVIDER: ${{ vars.OIDC_TEST_ISSUER && 'generic-oidc' || 'none' }}
