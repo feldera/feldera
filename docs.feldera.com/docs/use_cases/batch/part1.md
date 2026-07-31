@@ -16,7 +16,8 @@ large volumes of data, execute queries with a high degree of complexity, and
 give answers to critical business questions.
 
 The raw data, stored in Delta Lake format, is publicly available in a S3 bucket
-at `s3://batchtofeldera`.
+at `s3://feldera-demo-datasets/tpch/sf0.1` in region `us-west-1`, readable without
+credentials.
 
 ## TPC-H Schema
 
@@ -38,14 +39,14 @@ Create a new SQL notebook with the following table definitions:
 
 ```sql
 -- Spark SQL
-CREATE TABLE IF NOT EXISTS lineitem LOCATION 's3://batchtofeldera/lineitem';
-CREATE TABLE IF NOT EXISTS orders LOCATION 's3://batchtofeldera/orders';
-CREATE TABLE IF NOT EXISTS part LOCATION 's3://batchtofeldera/part';
-CREATE TABLE IF NOT EXISTS customer LOCATION 's3://batchtofeldera/customer';
-CREATE TABLE IF NOT EXISTS supplier LOCATION 's3://batchtofeldera/supplier';
-CREATE TABLE IF NOT EXISTS nation LOCATION 's3://batchtofeldera/nation';
-CREATE TABLE IF NOT EXISTS region LOCATION 's3://batchtofeldera/region';
-CREATE TABLE IF NOT EXISTS partsupp LOCATION 's3://batchtofeldera/partsupp';
+CREATE TABLE IF NOT EXISTS lineitem LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/lineitem';
+CREATE TABLE IF NOT EXISTS orders LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/orders';
+CREATE TABLE IF NOT EXISTS part LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/part';
+CREATE TABLE IF NOT EXISTS customer LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/customer';
+CREATE TABLE IF NOT EXISTS supplier LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/supplier';
+CREATE TABLE IF NOT EXISTS nation LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/nation';
+CREATE TABLE IF NOT EXISTS region LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/region';
+CREATE TABLE IF NOT EXISTS partsupp LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/partsupp';
 ```
 
 The tables in our S3 bucket have the following sizes:
@@ -99,14 +100,14 @@ Similarly, we define the remaining queries up to TPC-H Q10.
 
 ```sql
 -- Spark SQL
-CREATE TABLE IF NOT EXISTS lineitem LOCATION 's3://batchtofeldera/lineitem';
-CREATE TABLE IF NOT EXISTS orders LOCATION 's3://batchtofeldera/orders';
-CREATE TABLE IF NOT EXISTS part LOCATION 's3://batchtofeldera/part';
-CREATE TABLE IF NOT EXISTS customer LOCATION 's3://batchtofeldera/customer';
-CREATE TABLE IF NOT EXISTS supplier LOCATION 's3://batchtofeldera/supplier';
-CREATE TABLE IF NOT EXISTS nation LOCATION 's3://batchtofeldera/nation';
-CREATE TABLE IF NOT EXISTS region LOCATION 's3://batchtofeldera/region';
-CREATE TABLE IF NOT EXISTS partsupp LOCATION 's3://batchtofeldera/partsupp';
+CREATE TABLE IF NOT EXISTS lineitem LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/lineitem';
+CREATE TABLE IF NOT EXISTS orders LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/orders';
+CREATE TABLE IF NOT EXISTS part LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/part';
+CREATE TABLE IF NOT EXISTS customer LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/customer';
+CREATE TABLE IF NOT EXISTS supplier LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/supplier';
+CREATE TABLE IF NOT EXISTS nation LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/nation';
+CREATE TABLE IF NOT EXISTS region LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/region';
+CREATE TABLE IF NOT EXISTS partsupp LOCATION 's3://feldera-demo-datasets/tpch/sf0.1/partsupp';
 
 create view q1
 as select
