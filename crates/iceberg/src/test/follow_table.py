@@ -113,7 +113,9 @@ def arrow_chunk(json_file):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--op", choices=["create", "append"], required=True)
+    parser.add_argument(
+        "--op", choices=["create", "append", "overwrite"], required=True
+    )
     parser.add_argument("--table", required=True, help="table as 'namespace.name'")
     parser.add_argument("--json-file", required=True, help="ndjson chunk to append")
     args = parser.parse_args()
@@ -134,7 +136,12 @@ def main():
     else:
         table = cat.load_table(args.table)
 
-    table.append(arrow_chunk(args.json_file))
+    chunk = arrow_chunk(args.json_file)
+    if args.op == "overwrite":
+        # Copy-on-write rewrite: removes the old data files, adds `chunk`.
+        table.overwrite(chunk)
+    else:
+        table.append(chunk)
     # Print the current snapshot id so the caller can log progress.
     print(table.metadata.current_snapshot_id)
 

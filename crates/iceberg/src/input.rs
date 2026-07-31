@@ -1587,18 +1587,17 @@ impl IcebergInputEndpointInner {
                     if !delta.is_empty() {
                         let transaction = self.follow_data_transaction();
 
-                        // Inserts before deletes: a followed snapshot's added and
-                        // removed files are disjoint, so ordering only affects
-                        // intermediate state, not the final Z-set.
+                        // Deletes before inserts so a same-key rewrite keeps the new
+                        // row on a keyed relation (matches the Delta connector).
                         self.push_changed_files(
                             &table,
                             &schema,
                             &field_ids,
                             &name_mapping,
-                            &delta.added,
-                            true,
+                            &delta.removed,
+                            false,
                             transaction.clone(),
-                            &format!("snapshot {snapshot_id} inserts"),
+                            &format!("snapshot {snapshot_id} deletes"),
                             input_stream,
                             receiver,
                         )
@@ -1608,10 +1607,10 @@ impl IcebergInputEndpointInner {
                             &schema,
                             &field_ids,
                             &name_mapping,
-                            &delta.removed,
-                            false,
+                            &delta.added,
+                            true,
                             transaction,
-                            &format!("snapshot {snapshot_id} deletes"),
+                            &format!("snapshot {snapshot_id} inserts"),
                             input_stream,
                             receiver,
                         )
