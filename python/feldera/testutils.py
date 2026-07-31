@@ -1,5 +1,6 @@
 "Utility functions for writing tests against a Feldera instance."
 
+import logging
 import math
 import os
 import platform
@@ -10,12 +11,15 @@ import unittest
 from typing import List, Optional, cast
 from datetime import datetime
 
+from feldera._long_operation_warning import LongOperationWarning
 from feldera.enums import CompilationProfile
 from feldera.pipeline import Pipeline
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import Resources, RuntimeConfig
 from feldera.rest import FelderaClient
 from feldera.rest._helpers import requests_verify_from_env
+
+logger = logging.getLogger(__name__)
 
 API_KEY = os.environ.get("FELDERA_API_KEY")
 
@@ -359,9 +363,34 @@ def check_end_of_input(pipeline: Pipeline) -> bool:
 
 def wait_end_of_input(pipeline: Pipeline, timeout_s: Optional[int] = None):
     start_time = time.monotonic()
-    while not check_end_of_input(pipeline):
+    # Reused by the warning message below so a stalled ingest can be told
+    # apart from a slow one; check_end_of_input() would fetch and discard it.
+    latest_stats = None
+    long_op = LongOperationWarning(
+        logger,
+        lambda elapsed: (
+            f"still waiting for end of input on pipeline {pipeline.name}, "
+            f"waited {elapsed:.1f} seconds ({latest_stats.global_metrics.progress_summary()})"
+        ),
+        lambda elapsed: (
+            f"end of input reached on pipeline {pipeline.name} "
+            f"after {elapsed:.1f} seconds"
+        ),
+    )
+
+    while True:
+        latest_stats = pipeline.stats()
+        if all(
+            input_endpoint.metrics.end_of_input
+            for input_endpoint in latest_stats.inputs
+        ):
+            long_op.done()
+            return
+
         if timeout_s is not None and time.monotonic() - start_time > timeout_s:
             raise TimeoutError("Timeout waiting for end of input")
+
+        long_op.check()
         time.sleep(3)
 
 

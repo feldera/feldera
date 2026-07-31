@@ -86,7 +86,21 @@ class GlobalPipelineMetrics:
         metrics.start_time = datetime.fromtimestamp(d["start_time"])
         metrics.initial_start_time = datetime.fromtimestamp(d["start_time"])
         metrics.transaction_status = TransactionStatus.from_str(d["transaction_status"])
+        commit_progress = d.get("commit_progress")
+        metrics.commit_progress = (
+            CommitProgressSummary.from_dict(commit_progress)
+            if commit_progress is not None
+            else None
+        )
         return metrics
+
+    def progress_summary(self) -> str:
+        """Human-readable progress indicator for long-running wait loops:
+        commit progress while a transaction is committing, otherwise the
+        overall record count processed so far."""
+        if self.commit_progress is not None:
+            return str(self.commit_progress)
+        return f"{self.total_processed_records}/{self.total_input_records} records processed"
 
 
 class ConnectorError:
@@ -333,6 +347,16 @@ class CommitProgressSummary:
         status = cls()
         status.__dict__.update(d)
         return status
+
+    def __str__(self) -> str:
+        # Mirrors CommitProgressSummary's Display impl in
+        # crates/feldera-types/src/transaction.rs.
+        return (
+            f"completed: {self.completed} operators, "
+            f"evaluating: {self.in_progress} operators "
+            f"[{self.in_progress_processed_records}/{self.in_progress_total_records} "
+            f"changes processed], remaining: {self.remaining} operators"
+        )
 
 
 class TransactionInitiators:
