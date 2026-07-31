@@ -351,6 +351,37 @@ class Test502HealthHandling:
         assert health.call_count == 1
         sleeper.assert_called_once_with(0.0)
 
+    def test_persistent_healthy_502_backs_off_exponentially(self):
+        """
+        With a healthy cluster, only the first 502 retries immediately.
+        Persistent 502s (e.g., a brief outage while gateway routes
+        propagate) fall back to the exponential schedule, so the remaining
+        retries spread across the outage instead of all firing inside it.
+        """
+        cfg = RetryConfig(
+            max_retries=3,
+            initial_backoff=1.0,
+            max_backoff=8.0,
+            multiplier=2.0,
+            jitter=0.0,
+        )
+        client = _make_client(cfg)
+        with patch_requests("get", [_make_response(502)] * 4) as m:
+            with mock.patch.object(
+                client, "_check_cluster_health", return_value=True
+            ) as health:
+                with mock.patch("tenacity.nap.time.sleep") as sleeper:
+                    with pytest.raises(FelderaAPIError) as exc_info:
+                        client.get("/foo")
+        assert exc_info.value.status_code == 502
+        assert m.call_count == 4
+        # One probe per computed wait. Tenacity computes the wait once more
+        # after the final attempt before stopping, hence >= rather than ==.
+        assert health.call_count >= 3
+        slept = [call.args[0] for call in sleeper.call_args_list]
+        # Immediate first retry, then the documented exponential schedule.
+        assert slept == [0.0, 2.0, 4.0]
+
     def test_unhealthy_502_uses_unhealthy_backoff(self):
         """Unhealthy cluster + 502 → wait function returns unhealthy_backoff."""
         cfg = RetryConfig(

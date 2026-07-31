@@ -20,10 +20,13 @@ class RetryConfig:
         plus a uniform random `[0, jitter)` term, where `n` is the
         zero-based retry index.
       - 502 uses cluster-aware backoff: the client probes
-        `/cluster_healthz`; if the cluster is healthy, the 502 is treated as
-        spurious and the next retry runs immediately (wait = 0). If the
-        cluster reports unhealthy (e.g. an upgrade is in progress), the next
-        retry waits `unhealthy_backoff` seconds.
+        `/cluster_healthz`. If the cluster reports unhealthy (e.g. an
+        upgrade is in progress), the next retry waits `unhealthy_backoff`
+        seconds. If the cluster is healthy, the first 502 is treated as
+        spurious and retried immediately (wait = 0); if 502s persist
+        (e.g. a brief outage while gateway routes propagate), subsequent
+        retries use the exponential backoff above, so they spread across
+        the outage instead of all firing inside it.
       - A server-supplied `Retry-After` header always overrides the computed
         wait (capped at `max_backoff`).
 
