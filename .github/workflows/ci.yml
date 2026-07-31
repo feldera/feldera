@@ -14,6 +14,12 @@ jobs:
   # watches a single upstream job and immediately cancels the entire run on
   # failure.
   #
+  # A sentinel here watches an `invoke-*` job, which stands for a whole called
+  # workflow and reports failure only once every job in it has finished. A
+  # called workflow that runs several jobs therefore needs its own sentinel per
+  # job, next to those jobs, or one failing job leaves its siblings running.
+  # See build-rust.yml and test-integration-platform.yml.
+  #
   # IMPORTANT: The sentinel cancel is asynchronous. Any job that must not run
   # when a prior job fails MUST also list that job in its `needs:` field and
   # check its result in its `if:` condition — do not rely on the cancel alone.
