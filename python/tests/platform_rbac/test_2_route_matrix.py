@@ -82,7 +82,10 @@ def test_a_path_no_route_serves_is_not_mistaken_for_one(api: Api, primary_idp: I
     # And the module's own call path composes a URL that reaches a route, which
     # a `{parameter}` route cannot show: those answer 404 whether the route is
     # missing or only the resource is.
-    assert api.request("GET", "/v0/pipelines", token=reader, tenant=TENANT).status_code == 200
+    assert (
+        api.request("GET", "/v0/pipelines", token=reader, tenant=TENANT).status_code
+        == 200
+    )
 
 
 @pytest.mark.parametrize("role", ROLE_ORDER)
