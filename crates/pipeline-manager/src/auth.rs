@@ -428,29 +428,34 @@ async fn oidc_trust_auth(
         return Ok(req);
     }
 
-    // Tenant-scoped matches. One is unambiguous; several require the
-    // Feldera-Tenant header to name one of them.
+    // Tenant-scoped matches. A `Feldera-Tenant` header is always honoured or
+    // refused, never ignored: a caller that names a tenant its token is not
+    // trusted in has to be told so. Serving it another tenant's data because
+    // that happened to be its only match would let it act on a tenant it never
+    // asked for, believing it acted on the one it did.
     let tenant_matches: Vec<(TenantId, Role)> = matches;
-    let (acting_tenant, role) = if tenant_matches.len() == 1 {
-        tenant_matches[0]
-    } else {
-        let Some(selector) = header_tenant(&req) else {
-            return db_err(DBError::AmbiguousOidcTenant, req);
-        };
-        let selected = {
-            let db = state.db.lock().await;
-            db.resolve_tenant_selector(&selector).await
-        };
-        // Unknown tenant name/UUID surfaces as 404; a known tenant the token is
-        // not trusted in is 403.
-        let selected = match selected {
-            Ok(t) => t,
-            Err(e) => return db_err(e, req),
-        };
-        match tenant_matches.iter().find(|(t, _)| *t == selected).copied() {
-            Some(pair) => pair,
-            None => return db_err(DBError::OidcTenantNotTrusted { tenant: selector }, req),
+    let (acting_tenant, role) = match header_tenant(&req) {
+        Some(selector) => {
+            let selected = {
+                let db = state.db.lock().await;
+                db.resolve_tenant_selector(&selector).await
+            };
+            // Unknown tenant name/UUID surfaces as 404; a known tenant the token
+            // is not trusted in is 403.
+            let selected = match selected {
+                Ok(t) => t,
+                Err(e) => return db_err(e, req),
+            };
+            match tenant_matches.iter().find(|(t, _)| *t == selected).copied() {
+                Some(pair) => pair,
+                None => {
+                    return db_err(DBError::OidcTenantNotTrusted { tenant: selector }, req)
+                }
+            }
         }
+        // Without a selector a single match is unambiguous; several are not.
+        None if tenant_matches.len() == 1 => tenant_matches[0],
+        None => return db_err(DBError::AmbiguousOidcTenant, req),
     };
     AuthenticatedPrincipal {
         acting_tenant,
@@ -755,42 +760,57 @@ impl OidcClaimExt for TokenData<OidcClaim> {
 
         // Check if we have explicit tenant authorization in the claim
         if let Some(authorized) = self.authorized_tenants() {
-            if authorized.len() > 1 {
-                // Multi-tenant: require header selection
+            if !authorized.is_empty() {
                 let selected = headers
                     .get(TENANT_HEADER)
                     .and_then(|h| h.to_str().ok())
-                    .ok_or(AuthError::MissingTenantHeader)?;
-
-                // Validate selected tenant is authorized
-                if authorized.contains(&selected.to_string()) {
-                    return Ok(selected.to_string());
-                } else {
-                    return Err(AuthError::UnauthorizedTenant(selected.to_string()));
-                }
-            } else if authorized.len() == 1 {
-                // Single tenant in array or single tenant claim
-                return Ok(authorized[0].clone());
+                    .filter(|s| !s.is_empty());
+                // A selector is always checked against the claim, never ignored.
+                // Honouring it only when the claim lists several tenants would
+                // silently place a caller in its one authorized tenant while it
+                // believes it named another.
+                return match selected {
+                    Some(selected) if authorized.iter().any(|t| t == selected) => {
+                        Ok(selected.to_string())
+                    }
+                    Some(selected) => Err(AuthError::UnauthorizedTenant(selected.to_string())),
+                    None if authorized.len() == 1 => Ok(authorized[0].clone()),
+                    None => Err(AuthError::MissingTenantHeader),
+                };
             }
             // Empty array falls through to fallback logic
         }
 
-        // Fallback logic when no explicit tenant/tenants claims
+        // Fallback when the token claims no tenant at all: derive one.
         // Priority: issuer-domain > sub (if enabled)
+        let derived = config
+            .issuer_tenant
+            .then(|| extract_tenant_from_issuer(issuer))
+            .flatten()
+            .or_else(|| {
+                config.individual_tenant.then(|| {
+                    debug!("Using sub claim for tenant resolution: {}", sub);
+                    sub.clone()
+                })
+            });
 
-        if config.issuer_tenant {
-            if let Some(issuer_tenant) = extract_tenant_from_issuer(issuer) {
-                return Ok(issuer_tenant);
-            }
+        let Some(derived) = derived else {
+            return Err(AuthError::NoTenantFound);
+        };
+
+        // A derived tenant is the single tenant this token is authorized for, so
+        // a selector naming a different one is refused. Ignoring it here would
+        // reintroduce, for tokens that claim no tenant, exactly the silent
+        // substitution the claimed-tenant path above rejects.
+        match headers
+            .get(TENANT_HEADER)
+            .and_then(|h| h.to_str().ok())
+            .filter(|s| !s.is_empty())
+        {
+            Some(selected) if selected == derived => Ok(derived),
+            Some(selected) => Err(AuthError::UnauthorizedTenant(selected.to_string())),
+            None => Ok(derived),
         }
-
-        if config.individual_tenant {
-            debug!("Using sub claim for tenant resolution: {}", sub);
-            return Ok(sub.clone());
-        }
-
-        // No valid tenant found
-        Err(AuthError::NoTenantFound)
     }
 
     fn provider(&self) -> String {
