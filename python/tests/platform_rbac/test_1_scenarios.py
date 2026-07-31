@@ -5,9 +5,6 @@ runs in order and serially. The order is the point: what these tests assert is
 that turning authentication on, adding a trust, renaming a tenant and switching
 to multi-tenant tokens all preserve the tenant's pipelines and memberships,
 which no single-configuration test can show.
-
-Naming keeps the order visible (`test_01_...`), because pytest preserves
-definition order but a reader skimming the file should not have to know that.
 """
 
 from __future__ import annotations
@@ -56,9 +53,7 @@ def pipeline_program(api: Api, name: str, *, token=None, tenant=None) -> str | N
     return r.json().get("program_code") if r.status_code == 200 else None
 
 
-# --- 1. No authentication ---------------------------------------------------
-
-
+# No authentication
 def test_01_pipeline_created_without_auth(manager: Manager, api: Api):
     """A fresh installation with authentication off accepts a pipeline."""
     manager.start(no_auth())
@@ -72,9 +67,7 @@ def test_01_pipeline_created_without_auth(manager: Manager, api: Api):
     assert pipeline_program(api, PIPELINE) == PROGRAM
 
 
-# --- 2. Authentication on, identities keyed by subject ----------------------
-
-
+# Authentication on, identities keyed by subject
 def test_02_pipeline_survives_enabling_auth(
     manager: Manager, api: Api, primary_idp: Issuer
 ):
@@ -146,9 +139,7 @@ def test_03_roles_are_provisioned(manager: Manager, api: Api, primary_idp: Issue
     assert create_pipeline(api, TENANT_PIPELINE, token=admin, tenant=TENANT) == 201
 
 
-# --- 3. Platform-wide owner trust -------------------------------------------
-
-
+# Platform-wide owner trust
 def test_04_owner_trust_is_deploy_time_only(
     manager: Manager, api: Api, primary_idp: Issuer, workload_idp: Issuer
 ):
@@ -199,9 +190,7 @@ def test_05_owner_holds_only_owner_authority(api: Api, primary_idp: Issuer):
     )
 
 
-# --- 4. Tenant rename -------------------------------------------------------
-
-
+# Tenant rename
 def test_06_rename_keeps_the_tenant_intact(api: Api, primary_idp: Issuer):
     """Renaming a tenant moves the name, not the contents.
 
@@ -237,7 +226,8 @@ def test_06_rename_keeps_the_tenant_intact(api: Api, primary_idp: Issuer):
         404,
     )
 
-    # Put it back, so later scenarios can talk about `acme`.
+    # Put it back, so later scenarios can talk about `acme`. No displacement
+    # needed: the rename above freed the name, so nothing else holds it.
     assert (
         api.status(
             "PATCH", f"/tenants/{target['id']}", token=owner, body={"name": TENANT}
@@ -246,9 +236,7 @@ def test_06_rename_keeps_the_tenant_intact(api: Api, primary_idp: Issuer):
     )
 
 
-# --- 5. Tenant deletion -----------------------------------------------------
-
-
+# Tenant deletion
 def test_07_tenant_deletion_requires_emptiness(api: Api, primary_idp: Issuer):
     """A tenant holding pipelines cannot be deleted out from under them."""
     owner = primary_idp.token("owner", email=OWNER_EMAIL)
@@ -268,9 +256,7 @@ def test_07_tenant_deletion_requires_emptiness(api: Api, primary_idp: Issuer):
     assert TENANT in remaining
 
 
-# --- 6. Multi-tenant tokens -------------------------------------------------
-
-
+# Multi-tenant tokens
 def test_08_one_subject_holds_a_role_per_tenant(
     manager: Manager, api: Api, primary_idp: Issuer, workload_idp: Issuer
 ):
@@ -281,7 +267,8 @@ def test_08_one_subject_holds_a_role_per_tenant(
     second = api.v0("POST", "/tenants", token=owner, body={"name": "beta"})
     assert second.status_code == 201, second.text
 
-    # One subject, two tenants: admin in `acme`, plain member in `beta`.
+    # One subject, two tenants. It is already an admin of `acme`; in `beta`
+    # this is a first login, so it joins at the default role, `read`.
     both = primary_idp.token(
         "admin", email="admin@example.com", tenants=[TENANT, "beta"]
     )
@@ -297,9 +284,7 @@ def test_08_one_subject_holds_a_role_per_tenant(
     assert api.status("GET", "/tenant/users", token=both) in (400, 401, 403)
 
 
-# --- 7. Per-tenant OIDC trust -----------------------------------------------
-
-
+# Per-tenant OIDC trust
 def test_09_tenant_trust_grants_only_its_tenant(
     api: Api, primary_idp: Issuer, workload_idp: Issuer
 ):

@@ -70,16 +70,7 @@ def primary_idp(workdir: Path) -> Issuer:
 
 @pytest.fixture(scope="session")
 def workload_idp(workdir: Path) -> Issuer:
-    """A trusted issuer that is *not* the login provider.
-
-    This distinction is load-bearing. The manager routes a token by its `iss`:
-    one matching the configured login provider is verified as a human login,
-    anything else goes down the federated trust path. A trust registered for the
-    login provider's own issuer is therefore never consulted, and a test that
-    uses one issuer for both proves nothing about trusts. Real deployments look
-    like this too -- the workload issuer is GitHub Actions or a cloud provider,
-    not the SSO the humans log in through.
-    """
+    """A trusted issuer that is not the login provider."""
     issuer = start_issuer(free_port(), workdir / "logs", name="workload-idp")
     yield issuer
     issuer.stop()
@@ -89,9 +80,8 @@ def workload_idp(workdir: Path) -> Issuer:
 def rogue_idp(workdir: Path) -> Issuer:
     """A second issuer the manager trusts for nothing.
 
-    It signs with its own key and asserts its own `iss`, which is what lets the
-    negative tests tell "wrong issuer" apart from "wrong signature" instead of
-    conflating the two.
+    It signs with its own key, so a token from it fails verification even when
+    it claims the trusted issuer's `iss`.
     """
     issuer = start_issuer(free_port(), workdir / "logs", name="rogue-idp")
     yield issuer
@@ -107,9 +97,7 @@ def manager(workdir: Path) -> Manager:
     mgr.remove_volume()
 
 
-# --- Authentication configurations the scenarios boot under -----------------
-
-
+# Authentication configurations the scenarios boot under
 def no_auth() -> AuthConfig:
     return AuthConfig(name="no-auth", env={"AUTH_PROVIDER": "none"})
 
@@ -118,9 +106,7 @@ def single_tenant_auth(idp: Issuer, workload_idp: Issuer | None = None) -> AuthC
     """Authenticated against `idp`, identities keyed by subject.
 
     Passing `workload_idp` also configures a platform-wide owner trust for a
-    workload on that issuer. Owner trusts are deploy-time configuration and are
-    never grantable through the API, which is the whole reason they live here
-    rather than in a test body.
+    workload on that issuer.
     """
     env = {
         "AUTH_PROVIDER": "generic-oidc",
@@ -154,9 +140,7 @@ def multi_tenant_auth(idp: Issuer, workload_idp: Issuer | None = None) -> AuthCo
     return AuthConfig(name="multi-tenant", env=config.env)
 
 
-# --- Talking to the manager -------------------------------------------------
-
-
+# Talking to the manager
 class Api:
     """Raw REST against the manager.
 

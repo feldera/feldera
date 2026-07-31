@@ -19,7 +19,7 @@ pytestmark = pytest.mark.rbac
 
 
 def test_11_operator_migrates_the_pre_auth_tenant(api: Api, primary_idp: Issuer):
-    """The upgrade path an operator actually takes.
+    """The upgrade path an operator takes.
 
     Turning authentication on strands the pre-auth work in the tenant that
     existed before it, while everyone's tokens name a tenant the first login
@@ -27,9 +27,9 @@ def test_11_operator_migrates_the_pre_auth_tenant(api: Api, primary_idp: Issuer)
     `displace_existing` is what lets it take a name already in use. Nothing is
     merged or deleted: the tenant that gives up the name keeps everything it had.
 
-    This runs last. Displacing a name moves it off the tenant that holds the
-    memberships every earlier scenario provisioned, so doing it sooner would
-    strip the admin of the tenant it administers.
+    Displacing a name moves it off the tenant that holds the memberships every
+    earlier scenario provisioned, so doing it sooner would strip the admin of
+    the tenant it administers.
     """
     owner = primary_idp.token("owner", email=OWNER_EMAIL)
     tenants = api.v0("GET", "/tenants", token=owner).json()

@@ -61,7 +61,8 @@ def test_route_admits_exactly_its_minimum_role(
     api: Api, primary_idp: Issuer, route: Route, role: str
 ):
     token = token_for(primary_idp, role)
-    # An owner holds no membership, so it names the tenant it acts in. Everyone
+    # `owner` is platform-wide rather than a tenant membership, so an owner
+    # belongs to no tenant of its own and names the one it acts in. Everyone
     # else is scoped by their own token, but sending the header keeps the two
     # paths identical from the route's point of view.
     # `probe_path` already carries the `/v0` prefix from the spec, so this goes
@@ -75,9 +76,7 @@ def test_route_admits_exactly_its_minimum_role(
     ).status_code
 
     # A denied caller is refused in middleware, ahead of routing and the
-    # handler, so 403 is the only status it can see. That exactness is what
-    # keeps a mistyped probe from passing: a path that matches nothing answers
-    # 404, and 404 would satisfy a weaker "was not allowed" check.
+    # handler, so 403 is the only status it can see.
     if route.allows(role):
         assert status != 403, (
             f"{role} should reach {route.id} (needs {route.required_role}) "

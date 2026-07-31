@@ -75,14 +75,6 @@ jobs:
     name: HTTPS, RBAC and OIDC trust
     runs-on: ubuntu-latest-amd64
 
-    # Two things that used to be separate jobs. Authentication only means
-    # anything over TLS, and the RBAC suite drives the manager through several
-    # authentication configurations, so proving the HTTPS listener works and
-    # proving authorization works are the same exercise.
-    #
-    # The external provider is optional. When `OIDC_TEST_ISSUER` is configured
-    # the first phase authenticates against it; the RBAC suite always runs,
-    # because it brings its own issuers.
     env:
       OIDC_TEST_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
       OIDC_TEST_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}

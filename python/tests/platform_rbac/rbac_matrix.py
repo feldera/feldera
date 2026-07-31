@@ -1,15 +1,11 @@
 """Every gated route, and the role it demands, read from the OpenAPI spec.
 
 The manager annotates each operation with "Required role: `x`" while building
-its spec, from the same table the middleware enforces. Deriving the matrix from
-that annotation means a new endpoint joins this test the moment it ships, and a
-route whose role changes fails here rather than going unnoticed.
+its spec, from the same table the middleware enforces.
 
-Probes are built to be inert. Path parameters name resources that do not exist
-and mutating methods carry a body the manager cannot deserialize, so a caller
-that clears RBAC lands on 400 or 404 instead of changing anything. Authorization
-runs in middleware ahead of both, so a caller that does not clear RBAC still
-gets 403, which is the only distinction the matrix asserts.
+Path parameters name resources that do not exist and mutating methods carry a
+body the manager cannot deserialize, so a caller that clears RBAC lands on 400
+or 404 instead of changing anything.
 """
 
 from __future__ import annotations
@@ -84,13 +80,7 @@ def load_routes(spec_path: Path = OPENAPI_PATH) -> list[Route]:
 
 
 def probe_body(route: Route) -> dict | None:
-    """A body the manager rejects at deserialization.
-
-    Mutating routes need a body to reach their handler at all, but this test has
-    no business asking them to succeed: it only needs to know whether the call
-    got past authorization. An unparseable body guarantees the handler cannot act
-    on it, and 400 is as good a "not denied" as 200.
-    """
+    """Inject a dummy payload."""
     if route.method in {"POST", "PUT", "PATCH"}:
         return {"__rbac_probe__": True}
     return None

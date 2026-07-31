@@ -50,11 +50,9 @@ def test_token_from_an_untrusted_issuer_is_rejected(api: Api, rogue_idp: Issuer)
 def test_token_signed_by_the_wrong_key_is_rejected(
     api: Api, primary_idp: Issuer, rogue_idp: Issuer
 ):
-    """The decisive case: the rogue issuer claims the trusted issuer's identity.
+    """The rogue issuer claims the trusted issuer's identity.
 
-    Both issuers exist, so this is not "unknown issuer" being caught by name. The
-    only thing separating this token from a valid one is the signature, which is
-    what the JWKS fetch is for.
+    The only thing separating this token from a valid one is the signature.
     """
     forged = rogue_idp.token("admin", email="admin@example.com", tenants=[TENANT])
     _, payload, signature = forged.split(".")
@@ -106,9 +104,7 @@ def test_tenant_the_token_does_not_name_is_refused(api: Api, primary_idp: Issuer
     )
 
 
-# --- Trust registration validation ------------------------------------------
-
-
+# Trust registration validation
 @pytest.mark.parametrize(
     "body,reason",
     [
@@ -228,3 +224,124 @@ def test_trust_audience_must_match_when_set(
     # even though the subject and issuer both match.
     wrong = workload_idp.token("aud-bot", audience=DEFAULT_AUDIENCE)
     assert api.status("GET", "/pipelines", token=wrong, tenant=TENANT) in (401, 403)
+
+
+# `*` matches any run of characters, including an empty one; every other
+# character is literal. These pin both directions of that rule, because a
+# pattern looser than its author intended silently widens who a trust admits.
+#
+# Each case namespaces its pattern and subject. Earlier tests leave trusts in
+# this tenant -- one of them matches `repo:acme/*` -- and a token is admitted if
+# any trust matches it, so an un-namespaced subject would be let in by a
+# different trust than the one under test. The prefix is literal and identical
+# on both sides, so it cannot change what is being measured.
+CLAIM_PATTERNS = [
+    # A star may match nothing, so the literals around it can sit together.
+    ("empty-run", "repo:acme/*", "repo:acme/", True),
+    ("empty-middle", "a*b", "ab", True),
+    # Adjacent stars demand no extra characters.
+    ("adjacent-stars", "repo:**", "repo:x", True),
+    # The tail is anchored separately, so a trailing literal cannot reuse
+    # characters an earlier one already consumed.
+    ("no-reuse", "a*a", "a", False),
+    # Nothing but `*` is special: these are not regex.
+    ("dot-is-literal", "repo:acme/a.c", "repo:acme/abc", False),
+    ("plus-is-literal", "repo:acme/a+", "repo:acme/aa", False),
+    ("bracket-is-literal", "repo:acme/[a]", "repo:acme/a", False),
+    # Matching is case-sensitive.
+    ("case-sensitive", "Repo:Acme/*", "repo:acme/api", False),
+    # A trailing star is a prefix match, so it admits anything that merely
+    # begins with the pattern. Pinned because it is the shape that surprises.
+    ("prefix-is-open-ended", "svc-a*", "svc-april-fools", True),
+]
+
+
+def register_pattern_trust(
+    api: Api, admin: str, workload_idp: Issuer, name: str, subject: str, audience: str
+) -> None:
+    created = api.v0(
+        "POST",
+        "/oidc_trust",
+        token=admin,
+        tenant=TENANT,
+        body={
+            "name": name,
+            "issuer": workload_idp.url,
+            "subject": subject,
+            "audience": audience,
+            "role": "read",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+
+@pytest.mark.parametrize(
+    "name,pattern,subject,should_match",
+    CLAIM_PATTERNS,
+    ids=[c[0] for c in CLAIM_PATTERNS],
+)
+def test_subject_pattern_semantics(
+    api: Api,
+    primary_idp: Issuer,
+    workload_idp: Issuer,
+    name: str,
+    pattern: str,
+    subject: str,
+    should_match: bool,
+):
+    admin = primary_idp.token("admin", email="admin@example.com", tenants=[TENANT])
+    ns = f"sub-{name}:"
+    register_pattern_trust(
+        api, admin, workload_idp, f"sub-{name}", ns + pattern, DEFAULT_AUDIENCE
+    )
+
+    status = api.status(
+        "GET", "/pipelines", token=workload_idp.token(ns + subject), tenant=TENANT
+    )
+    if should_match:
+        assert status == 200, f"{ns + subject!r} should match {ns + pattern!r}"
+    else:
+        assert status in (401, 403), f"{ns + subject!r} must not match {ns + pattern!r}"
+
+
+@pytest.mark.parametrize(
+    "name,pattern,audience,should_match",
+    CLAIM_PATTERNS,
+    ids=[c[0] for c in CLAIM_PATTERNS],
+)
+def test_audience_pattern_semantics(
+    api: Api,
+    primary_idp: Issuer,
+    workload_idp: Issuer,
+    name: str,
+    pattern: str,
+    audience: str,
+    should_match: bool,
+):
+    """The audience pattern is matched by the same rule as the subject.
+
+    Asserted separately because the audience is what keeps a trust from
+    admitting tokens minted for another service, so a loose pattern here has the
+    same consequence and the same corners.
+    """
+    admin = primary_idp.token("admin", email="admin@example.com", tenants=[TENANT])
+    ns = f"aud-{name}:"
+    subject = f"aud-bot-{name}"
+    register_pattern_trust(
+        api, admin, workload_idp, f"aud-{name}", subject, ns + pattern
+    )
+
+    status = api.status(
+        "GET",
+        "/pipelines",
+        token=workload_idp.token(subject, audience=ns + audience),
+        tenant=TENANT,
+    )
+    if should_match:
+        assert status == 200, (
+            f"audience {ns + audience!r} should match {ns + pattern!r}"
+        )
+    else:
+        assert status in (401, 403), (
+            f"audience {ns + audience!r} must not match {ns + pattern!r}"
+        )

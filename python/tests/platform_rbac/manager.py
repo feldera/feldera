@@ -33,7 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # The suite serves HTTPS with a certificate it generates for `localhost`, and
 # points `verify=` at that certificate. urllib3 still warns about the self-signed
-# chain on some platforms; the warning is noise, not a finding.
+# chain on some platforms.
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 MANAGER_PORT = 8080
