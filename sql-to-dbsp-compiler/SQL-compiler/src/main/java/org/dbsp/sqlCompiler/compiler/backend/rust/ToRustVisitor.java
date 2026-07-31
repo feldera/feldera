@@ -465,9 +465,9 @@ public class ToRustVisitor extends CircuitVisitor {
 
         // Name the recursive streams before the operators of the scope are created.
         // An operator that maintains state over a stream copies that stream's
-        // persistent id when it is constructed, so a name assigned later would leave
-        // the integrals over the recursive streams without an id, and checkpointing
-        // the circuit would fail.
+        // persistent id when it is constructed, so a name assigned later (after the
+        // subcircuit is constructed) would leave the integrals over the recursive
+        // streams without an id, and checkpointing the circuit would fail.
         for (int i = 0; i < operator.outputCount(); i++) {
             ProgramIdentifier view = operator.outputViews.get(i);
             DBSPViewDeclarationOperator decl = operator.declarationByName.get(view);

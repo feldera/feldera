@@ -4,22 +4,6 @@ A recursive view maintains its relation inside a nested circuit, and that state
 used to be missing from checkpoints: the restart reported neither an error nor a
 bootstrap, and the view then produced wrong results
 (https://github.com/feldera/feldera/issues/6765).
-
-Two properties of this test are what make it catch that:
-
-* **The program does not change across the restart.**  When it changes, the
-  bootstrap replay rebuilds the recursive view from replayed input and hides the
-  loss.  That is why the runtime-upgrade tests never caught this: they restart
-  into a program the bootstrap diff marks as modified, and so always bootstrap.
-* **``edges`` is not materialized**, so there is no replay source for it.
-  Nothing can reconstruct the relation from input history; the state either
-  comes from the checkpoint or it is gone.
-
-The decisive assertion is the one that feeds another edge after the restart.
-The view's own contents live outside the recursive scope and come back either
-way; deriving new paths through the older edges is what needs the state inside
-the scope.  Verified by reverting the fix: the closure then grows by the new
-edge alone, missing every path that runs through it.
 """
 
 from feldera import PipelineBuilder
