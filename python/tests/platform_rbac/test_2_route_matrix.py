@@ -55,6 +55,36 @@ def test_the_matrix_is_not_empty():
     )
 
 
+def test_a_path_no_route_serves_is_not_mistaken_for_one(api: Api, primary_idp: Issuer):
+    """What makes the rest of this module mean anything.
+
+    Every assertion here reads one bit off a status code, and "not denied" is
+    also what a path that reaches nothing returns. A mistyped probe path would
+    pass the whole matrix while testing nothing, which this suite has already
+    done once.
+
+    Where authentication and authorization sit relative to routing decides which
+    statuses carry evidence, so it is pinned here rather than assumed.
+    """
+    reader = token_for(primary_idp, "read")
+    absent = "/v0/pipelines-no-such-route"
+
+    # Authentication runs ahead of routing, so a missing token answers 401 even
+    # here. `test_no_route_is_reachable_without_a_token` therefore says nothing
+    # about whether a probe path reached a route.
+    assert api.request("GET", absent).status_code == 401
+
+    # Authorization does not: an authenticated caller on a path no route serves
+    # reaches routing and gets 404. That is what makes `== 403` below evidence
+    # that a probe path resolved to a real gated route.
+    assert api.request("GET", absent, token=reader, tenant=TENANT).status_code == 404
+
+    # And the module's own call path composes a URL that reaches a route, which
+    # a `{parameter}` route cannot show: those answer 404 whether the route is
+    # missing or only the resource is.
+    assert api.request("GET", "/v0/pipelines", token=reader, tenant=TENANT).status_code == 200
+
+
 @pytest.mark.parametrize("role", ROLE_ORDER)
 @pytest.mark.parametrize("route", ROUTES, ids=lambda r: r.id)
 def test_route_admits_exactly_its_minimum_role(
@@ -75,8 +105,9 @@ def test_route_admits_exactly_its_minimum_role(
         body=probe_body(route),
     ).status_code
 
-    # A denied caller is refused in middleware, ahead of routing and the
-    # handler, so 403 is the only status it can see.
+    # A denied caller is refused before the handler runs, so 403 is the only
+    # status it can see. Routing precedes that check, so 403 also means the
+    # path resolved to a real route.
     if route.allows(role):
         assert status != 403, (
             f"{role} should reach {route.id} (needs {route.required_role}) "
