@@ -1,7 +1,7 @@
 use feldera_types::config::StorageConfig;
 
 use crate::{
-    Circuit, CmpFunc, DBData, DBSPHandle, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle,
+    Circuit, CmpFunc, DBData, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle,
     RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
     algebra::AddByRef,
     circuit::dbsp_handle::CircuitStorageConfig,
