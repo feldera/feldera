@@ -391,7 +391,7 @@ class Pipeline:
         # discard the same stats, hiding whether the wait is stalled or just
         # slow (e.g. mid-transaction-commit).
         latest_stats: Optional[PipelineStatistics] = None
-        long_op = LongOperationWarning(
+        wait_for_completion = LongOperationWarning(
             logger,
             lambda elapsed: (
                 f"still waiting for pipeline {self.name} to complete, "
@@ -420,10 +420,10 @@ class Pipeline:
                     "received unknown metrics from the pipeline, pipeline_complete is None"
                 )
             elif pipeline_complete:
-                long_op.done()
+                wait_for_completion.done()
                 break
 
-            long_op.check()
+            wait_for_completion.check()
             time.sleep(1)
 
         if force_stop:

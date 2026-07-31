@@ -366,7 +366,7 @@ def wait_end_of_input(pipeline: Pipeline, timeout_s: Optional[int] = None):
     # Reused by the warning message below so a stalled ingest can be told
     # apart from a slow one; check_end_of_input() would fetch and discard it.
     latest_stats = None
-    long_op = LongOperationWarning(
+    wait_for_input_end = LongOperationWarning(
         logger,
         lambda elapsed: (
             f"still waiting for end of input on pipeline {pipeline.name}, "
@@ -384,13 +384,13 @@ def wait_end_of_input(pipeline: Pipeline, timeout_s: Optional[int] = None):
             input_endpoint.metrics.end_of_input
             for input_endpoint in latest_stats.inputs
         ):
-            long_op.done()
+            wait_for_input_end.done()
             return
 
         if timeout_s is not None and time.monotonic() - start_time > timeout_s:
             raise TimeoutError("Timeout waiting for end of input")
 
-        long_op.check()
+        wait_for_input_end.check()
         time.sleep(3)
 
 
