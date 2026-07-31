@@ -6,7 +6,7 @@ use crate::db::{error::DBError, types::pipeline::PipelineId};
 use crate::has_unstable_feature;
 use crate::oidc::destination::TenantIssuerPolicy;
 use actix_web::http::header;
-use anyhow::{Error as AnyError, Result as AnyResult};
+use anyhow::{Context, Error as AnyError, Result as AnyResult};
 use clap::Parser;
 use openssl::asn1::Asn1Time;
 use openssl::bn::{BigNum, MsbOption};
@@ -528,6 +528,27 @@ impl CommonConfig {
             paths.push(private_ca_cert_path);
         }
         paths
+    }
+
+    /// The roots this deployment configured, for a client that must keep
+    /// trusting the public web PKI as well.
+    ///
+    /// [`Self::reqwest_client`] replaces the root store outright, which suits a
+    /// call that only ever reaches this deployment. An OIDC fetch is different:
+    /// it may reach a public provider or one sitting behind these certificates,
+    /// so it adds them to the platform's roots rather than replacing them.
+    pub async fn configured_root_certificates(&self) -> AnyResult<Vec<Certificate>> {
+        let mut roots = Vec::new();
+        for path in self.ca_cert_paths() {
+            let pem = tokio::fs::read(path)
+                .await
+                .with_context(|| format!("reading CA certificate '{path}'"))?;
+            roots.extend(
+                Certificate::from_pem_bundle(&pem)
+                    .with_context(|| format!("parsing CA certificate '{path}'"))?,
+            );
+        }
+        Ok(roots)
     }
 
     /// Creates `awc` client.

@@ -61,7 +61,6 @@ use actix_web_httpauth::extractors::{
     bearer::{BearerAuth, Config},
     AuthenticationError,
 };
-use awc::error::JsonPayloadError;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use cached::{Cached, TimedCache};
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, TokenData, Validation};
@@ -82,7 +81,10 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
-use crate::oidc::fetch::{fetch_issuer_jwks, fetch_jwks_uri_from_discovery, OidcDestination};
+use crate::oidc::fetch::{
+    fetch_issuer_jwks, fetch_jwks_uri_from_discovery, oidc_http_client, OidcDestination,
+};
+use reqwest::Certificate;
 
 /// The authenticated principal behind a request, resolved by `auth_validator`
 /// and stored in request extensions. The RBAC middleware reads `role`; handlers
@@ -924,7 +926,7 @@ async fn resolve_issuer_jwk(
         cache.mark_refreshed(issuer);
     }
 
-    let keys = fetch_issuer_jwks(issuer, destination).await?;
+    let keys = fetch_issuer_jwks(issuer, destination, &state.oidc_root_certs).await?;
     let mut cache = state.issuer_jwk_cache.lock().await;
     cache.insert(issuer, keys);
     cache
@@ -976,6 +978,7 @@ pub(crate) fn aws_auth_config() -> AuthConfiguration {
 
 pub(crate) async fn generic_oidc_auth_config(
     api_config: &crate::config::ApiServerConfig,
+    extra_roots: &[Certificate],
 ) -> Result<AuthConfiguration, Box<dyn std::error::Error>> {
     let mut validation = Validation::new(Algorithm::RS256);
     let client_id = env::var("FELDERA_AUTH_CLIENT_ID")
@@ -985,7 +988,9 @@ pub(crate) async fn generic_oidc_auth_config(
 
     // Use OIDC discovery to fetch jwks_uri. The operator set this issuer, so it
     // may name a provider on the deployment's own network.
-    let jwk_uri = fetch_jwks_uri_from_discovery(&iss, OidcDestination::OperatorConfigured).await?;
+    let jwk_uri =
+        fetch_jwks_uri_from_discovery(&iss, OidcDestination::OperatorConfigured, extra_roots)
+            .await?;
 
     validation.set_issuer(&[&iss]);
     // Use configurable audience claim from API server configuration
@@ -1107,9 +1112,7 @@ where
 #[derive(Debug)]
 pub(crate) enum AuthError {
     JwtDecoding(jsonwebtoken::errors::Error),
-    JwkFetch(awc::error::SendRequestError),
-    JwkPayload(awc::error::PayloadError),
-    JwkContentType,
+    JwkFetch(reqwest::Error),
     JwkShape(String),
     NoTenantFound,
     InsufficientGroups,
@@ -1122,9 +1125,7 @@ impl std::fmt::Display for AuthError {
         match self {
             AuthError::JwtDecoding(err) => err.fmt(f),
             AuthError::JwkFetch(err) => err.fmt(f),
-            AuthError::JwkPayload(err) => err.fmt(f),
             AuthError::JwkShape(err) => err.fmt(f),
-            AuthError::JwkContentType => f.write_str("Content type error"),
             AuthError::NoTenantFound => f.write_str("You are not authorized to access any Feldera tenant. Contact your administrator if you need access to Feldera."),
             AuthError::InsufficientGroups => f.write_str("User does not belong to required groups for access."),
             AuthError::MissingTenantHeader => f.write_str("Feldera-Tenant header is required when access token contains multiple tenants."),
@@ -1133,8 +1134,8 @@ impl std::fmt::Display for AuthError {
     }
 }
 
-impl From<awc::error::SendRequestError> for AuthError {
-    fn from(value: awc::error::SendRequestError) -> Self {
+impl From<reqwest::Error> for AuthError {
+    fn from(value: reqwest::Error) -> Self {
         Self::JwkFetch(value)
     }
 }
@@ -1174,7 +1175,9 @@ async fn decode_oidc_token(
 
                     let state = req.app_data::<Data<ServerState>>().unwrap();
                     let cache = &mut state.jwk_cache.lock().await;
-                    let jwk = cache.get(&kid, &configuration.provider).await?;
+                    let jwk = cache
+                        .get(&kid, &configuration.provider, &state.oidc_root_certs)
+                        .await?;
 
                     let token_data = decode::<OidcClaim>(token, &jwk, &configuration.validation);
                     match token_data {
@@ -1326,6 +1329,7 @@ impl JwkCache {
         &mut self,
         key: &String,
         provider: &AuthProvider,
+        extra_roots: &[Certificate],
     ) -> Result<DecodingKey, AuthError> {
         let cache = &mut self.cache;
         let val = &cache.cache_get(key);
@@ -1333,7 +1337,7 @@ impl JwkCache {
             Some(dk) => Ok((*dk).clone()),
             None => {
                 // TODO: Introduce a minimum delay between refreshes
-                let fetched = fetch_jwk_keys(provider).await;
+                let fetched = fetch_jwk_keys(provider, extra_roots).await;
                 match fetched {
                     Ok(map) => {
                         for (key_id, decoding_key) in map {
@@ -1354,40 +1358,45 @@ impl JwkCache {
 
 async fn fetch_jwk_keys(
     provider: &AuthProvider,
+    extra_roots: &[Certificate],
 ) -> Result<HashMap<String, DecodingKey>, AuthError> {
     match &provider {
-        AuthProvider::AwsCognito(provider) => fetch_jwk_oidc_keys(&provider.jwk_uri).await,
-        AuthProvider::GenericOidc(provider) => fetch_jwk_oidc_keys(&provider.jwk_uri).await,
+        AuthProvider::AwsCognito(provider) => {
+            fetch_jwk_oidc_keys(&provider.jwk_uri, extra_roots).await
+        }
+        AuthProvider::GenericOidc(provider) => {
+            fetch_jwk_oidc_keys(&provider.jwk_uri, extra_roots).await
+        }
     }
 }
 
 // We don't want to fetch keys on every authentication attempt, so cache the
 // results. TODO: implement periodic refresh
-async fn fetch_jwk_oidc_keys(url: &String) -> Result<HashMap<String, DecodingKey>, AuthError> {
-    let client = awc::Client::new();
+//
+// This shares the federated path's client so both reach an issuer the same way.
+// A default `awc` client cannot: it picks one root source at compile time, and
+// `rustls-0_23-webpki-roots` wins over `rustls-0_23-native-roots` whenever both
+// are enabled, which happens as soon as the manager is built alongside a crate
+// that asks for the former. The login provider then silently loses every root
+// outside the public web PKI, including this deployment's own CA.
+async fn fetch_jwk_oidc_keys(
+    url: &str,
+    extra_roots: &[Certificate],
+) -> Result<HashMap<String, DecodingKey>, AuthError> {
+    let client = oidc_http_client(OidcDestination::OperatorConfigured, extra_roots)
+        .map_err(|e| AuthError::JwkShape(format!("OIDC client build: {e}")))?;
 
-    let res = client.get(url).send().await;
-    if let Err(e) = &res {
+    let response = client.get(url).send().await.map_err(|e| {
         debug!("JWK fetch request failed: {:?}", e);
-    }
+        AuthError::JwkFetch(e)
+    })?;
 
-    let keys_as_json = res?.json::<Value>().await;
+    let keys_as_json = response.json::<Value>().await.map_err(|e| {
+        debug!("Failed to read JWK response: {}", e);
+        AuthError::JwkShape(e.to_string())
+    })?;
 
-    match keys_as_json {
-        Ok(value) => parse_rsa_jwks(&value),
-        Err(JsonPayloadError::Deserialize(json_error)) => {
-            debug!("Failed to deserialize JWK response: {}", json_error);
-            Err(AuthError::JwkShape(json_error.to_string()))
-        }
-        Err(JsonPayloadError::Payload(payload)) => {
-            debug!("JWK payload error: {:?}", payload);
-            Err(AuthError::JwkPayload(payload))
-        }
-        Err(JsonPayloadError::ContentType) => {
-            debug!("JWK response has invalid content type");
-            Err(AuthError::JwkContentType)
-        }
-    }
+    parse_rsa_jwks(&keys_as_json)
 }
 
 /// Parse a JWK set into RSA decoding keys, keyed by `kid`. Keeps only keys
@@ -1681,7 +1690,7 @@ mod test {
     async fn invalid_url() {
         ensure_default_crypto_provider();
         let url = "http://localhost/doesnotexist".to_owned();
-        let res = fetch_jwk_oidc_keys(&url).await;
+        let res = fetch_jwk_oidc_keys(&url, &[]).await;
         assert!(matches!(res.err().unwrap(), AuthError::JwkFetch(_)));
     }
 
