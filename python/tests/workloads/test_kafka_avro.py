@@ -176,11 +176,12 @@ def sql_source_table(v: Variant) -> str:
 create table {v.source} (
     id int,
     str varchar,
-    dec decimal,
+    dec decimal(10, 2),
     reall real,
     dbl double,
     booll boolean,
     tmestmp timestamp,
+    tmestmptz timestamp with time zone,
     datee date,
     tme time
 ) with (
@@ -260,11 +261,12 @@ def sql_loopback_table(v: Variant) -> str:
 create table {v.loopback} (
     id int,
     str varchar,
-    dec decimal,
+    dec decimal(10, 2),
     reall real,
     dbl double,
     booll boolean,
     tmestmp timestamp,
+    tmestmptz timestamp with time zone,
     datee date,
     tme time
 ) with (
