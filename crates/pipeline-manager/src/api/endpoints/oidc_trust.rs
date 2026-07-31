@@ -178,6 +178,7 @@ pub(crate) async fn post_oidc_trust(
             &body.subject,
             body.audience.as_deref(),
             requested,
+            state.config.tenant_issuer_policy(),
         )
         .await?;
     info!(

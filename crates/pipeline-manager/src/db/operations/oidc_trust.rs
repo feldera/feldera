@@ -5,7 +5,8 @@ use crate::db::operations::utils::{
 use crate::db::types::oidc_trust::{claim_matches, OidcTrustDescr, OidcTrustId};
 use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
-use crate::db::types::utils::validate_oidc_trust_name;
+use crate::oidc::destination::{validate_tenant_oidc_url, TenantIssuerPolicy};
+use crate::oidc::trust_name::validate_oidc_trust_name;
 use deadpool_postgres::Transaction;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -97,6 +98,7 @@ pub async fn create_oidc_trust(
     subject: &str,
     audience: Option<&str>,
     role: Role,
+    issuer_policy: TenantIssuerPolicy,
 ) -> Result<(), DBError> {
     validate_oidc_trust_name(name)?;
     if issuer.is_empty() {
@@ -104,6 +106,14 @@ pub async fn create_oidc_trust(
             field: "issuer".to_string(),
         });
     }
+    // The manager fetches this issuer from its own network position before it
+    // verifies any signature, so a registration may not name an internal
+    // service unless the operator permits it. A hostname is checked again when
+    // the connection is made.
+    validate_tenant_oidc_url(issuer, issuer_policy).map_err(|e| DBError::InvalidOidcIssuerUrl {
+        issuer: issuer.to_string(),
+        reason: e.to_string(),
+    })?;
     if subject.is_empty() {
         return Err(DBError::EmptyOidcTrustField {
             field: "subject".to_string(),

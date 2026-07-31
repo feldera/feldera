@@ -30,11 +30,13 @@ use crate::db::types::storage::{validate_storage_status_transition, StorageStatu
 use crate::db::types::tenant::TenantId;
 use crate::db::types::user::{TenantInfo, TenantMember, UserId};
 use crate::db::types::utils::{
-    validate_api_key_name, validate_deployment_config, validate_oidc_trust_name,
-    validate_pipeline_name, validate_program_config, validate_program_info,
-    validate_runtime_config, validate_storage_status_details, MAXIMUM_TAG_LENGTH,
+    validate_api_key_name, validate_deployment_config, validate_pipeline_name,
+    validate_program_config, validate_program_info, validate_runtime_config,
+    validate_storage_status_details, MAXIMUM_TAG_LENGTH,
 };
 use crate::db::types::version::Version;
+use crate::oidc::destination::{validate_tenant_oidc_url, TenantIssuerPolicy};
+use crate::oidc::trust_name::validate_oidc_trust_name;
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use feldera_types::checkpoint::CheckpointMetadata;
@@ -1286,6 +1288,91 @@ async fn rbac_login_resolution_and_membership() {
 /// before any fetch, an optional audience narrows candidates, and a token
 /// trusted by several tenants returns all of them (the caller disambiguates via
 /// the Feldera-Tenant header, verified at the auth layer).
+/// A registered issuer becomes a fetch destination before any signature is
+/// verified, so registration refuses one that names an internal service unless
+/// the operator permits it.
+#[tokio::test]
+async fn oidc_trust_rejects_an_unreachable_issuer() {
+    let handle = test_setup().await;
+    let tenant_id = handle
+        .db
+        .resolve_login(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            "acme".to_string(),
+            "prov".to_string(),
+            "admin".to_string(),
+            None,
+            Role::Read,
+            Role::Admin,
+        )
+        .await
+        .unwrap()
+        .0;
+
+    let register = |name: &'static str, issuer: &'static str, policy: TenantIssuerPolicy| {
+        let db = &handle.db;
+        async move {
+            db.create_oidc_trust(
+                tenant_id,
+                Uuid::now_v7(),
+                name,
+                None,
+                issuer,
+                "sub",
+                None,
+                Role::Read,
+                policy,
+            )
+            .await
+        }
+    };
+
+    for issuer in [
+        "http://idp.example",             // not https
+        "https://169.254.169.254/latest", // cloud metadata service
+        "https://127.0.0.1:9876",         // loopback
+        "https://10.0.0.5",               // private network
+        "https://user:pw@idp.example",    // embedded credentials
+        "idp.example",                    // not a URL
+    ] {
+        let created = register("refused", issuer, TenantIssuerPolicy::PublicHttpsOnly).await;
+        assert!(
+            matches!(created, Err(DBError::InvalidOidcIssuerUrl { .. })),
+            "issuer '{issuer}' must be refused, got {created:?}"
+        );
+    }
+
+    // The escape hatch admits an internal address and nothing else: the same
+    // registration over http still fails.
+    register(
+        "internal",
+        "https://10.0.0.5",
+        TenantIssuerPolicy::AllowInternal,
+    )
+    .await
+    .unwrap();
+    let plaintext = register(
+        "plaintext",
+        "http://idp.example",
+        TenantIssuerPolicy::AllowInternal,
+    )
+    .await;
+    assert!(matches!(
+        plaintext,
+        Err(DBError::InvalidOidcIssuerUrl { .. })
+    ));
+
+    // A public https issuer is accepted either way.
+    register(
+        "public",
+        "https://token.actions.githubusercontent.com",
+        TenantIssuerPolicy::PublicHttpsOnly,
+    )
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 async fn oidc_trust_matching_and_issuer_gate() {
     let handle = test_setup().await;
@@ -1334,6 +1421,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
             sub,
             Some("a"),
             Role::Write,
+            TenantIssuerPolicy::PublicHttpsOnly,
         )
         .await
         .unwrap();
@@ -1348,6 +1436,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
             sub,
             Some("b"),
             Role::Write,
+            TenantIssuerPolicy::PublicHttpsOnly,
         )
         .await
         .unwrap();
@@ -1393,6 +1482,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
             sub,
             None,
             Role::Read,
+            TenantIssuerPolicy::PublicHttpsOnly,
         )
         .await
         .unwrap();
@@ -1417,7 +1507,8 @@ async fn oidc_trust_matching_and_issuer_gate() {
             "https://owner.example",
             "root",
             None,
-            Role::Owner
+            Role::Owner,
+            TenantIssuerPolicy::PublicHttpsOnly,
         )
         .await
         .is_err());
@@ -3910,6 +4001,7 @@ async fn check_rbac_action(
                     &subject,
                     audience.as_deref(),
                     role,
+                    TenantIssuerPolicy::PublicHttpsOnly,
                 )
                 .await;
             let impl_response = handle
@@ -3923,6 +4015,7 @@ async fn check_rbac_action(
                     &subject,
                     audience.as_deref(),
                     role,
+                    TenantIssuerPolicy::PublicHttpsOnly,
                 )
                 .await;
             check_responses(i, model_response, impl_response);
@@ -5845,6 +5938,7 @@ impl Storage for Mutex<DbModel> {
         subject: &str,
         audience: Option<&str>,
         role: Role,
+        issuer_policy: TenantIssuerPolicy,
     ) -> DBResult<()> {
         validate_oidc_trust_name(name)?;
         if issuer.is_empty() {
@@ -5852,6 +5946,12 @@ impl Storage for Mutex<DbModel> {
                 field: "issuer".to_string(),
             });
         }
+        validate_tenant_oidc_url(issuer, issuer_policy).map_err(|e| {
+            DBError::InvalidOidcIssuerUrl {
+                issuer: issuer.to_string(),
+                reason: e.to_string(),
+            }
+        })?;
         if subject.is_empty() {
             return Err(DBError::EmptyOidcTrustField {
                 field: "subject".to_string(),

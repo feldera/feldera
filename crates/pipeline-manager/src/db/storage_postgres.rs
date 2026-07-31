@@ -27,6 +27,7 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::user::{TenantInfo, TenantMember, UserId};
 use crate::db::types::version::Version;
 use crate::is_supported_runtime;
+use crate::oidc::destination::TenantIssuerPolicy;
 use crate::{auth::TenantRecord, config::DatabaseConfig};
 use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
@@ -353,6 +354,7 @@ impl Storage for StoragePostgres {
         subject: &str,
         audience: Option<&str>,
         role: Role,
+        issuer_policy: TenantIssuerPolicy,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -366,6 +368,7 @@ impl Storage for StoragePostgres {
             subject,
             audience,
             role,
+            issuer_policy,
         )
         .await?;
         txn.commit().await?;

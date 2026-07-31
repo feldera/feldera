@@ -16,6 +16,7 @@ use crate::db::types::role::{MintableKeyRole, Role};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::user::{TenantInfo, TenantMember, UserId};
 use crate::db::types::version::Version;
+use crate::oidc::destination::TenantIssuerPolicy;
 use async_trait::async_trait;
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus, RuntimeStatus};
@@ -225,6 +226,10 @@ pub(crate) trait Storage {
 
     /// Persists a new trust relationship. `tenant_id` is `None` for a
     /// platform-wide owner trust, `Some` for a tenant-scoped one.
+    ///
+    /// `issuer_policy` is deploy-time configuration, like the roles
+    /// `resolve_login` takes: it decides whether this issuer may name an
+    /// address inside the manager's network.
     #[allow(clippy::too_many_arguments)]
     async fn create_oidc_trust(
         &self,
@@ -236,6 +241,7 @@ pub(crate) trait Storage {
         subject: &str,
         audience: Option<&str>,
         role: Role,
+        issuer_policy: TenantIssuerPolicy,
     ) -> Result<(), DBError>;
 
     /// Whether at least one trust relationship names this issuer. Called before
