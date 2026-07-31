@@ -32,3 +32,31 @@ export const formatQty = (v: number | null | undefined, rounded?: 'rounded') =>
   typeof v === 'number' && Number.isFinite(v)
     ? format(v >= 1000 && rounded ? '.3s' : ',.0f')(v)
     : '—'
+
+const trimZeros = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
+
+/**
+ * Format a duration given in microseconds using an adaptive unit (µs / ms / s)
+ * with roughly three significant figures. Zero is rendered bare, without a unit.
+ *
+ *   formatDuration(0)         -> "0"
+ *   formatDuration(340)       -> "340 µs"
+ *   formatDuration(1_200)     -> "1.2 ms"
+ *   formatDuration(2_100_000) -> "2.1 s"
+ */
+export const formatDuration = (micros: number | null | undefined): string => {
+  if (typeof micros !== 'number' || !Number.isFinite(micros)) {
+    return '—'
+  }
+  if (micros === 0) {
+    return '0'
+  }
+  const [value, unit] =
+    micros < 1_000
+      ? [micros, 'µs']
+      : micros < 1_000_000
+        ? [micros / 1_000, 'ms']
+        : [micros / 1_000_000, 's']
+  const digits = value >= 100 ? 0 : value >= 10 ? 1 : 2
+  return `${trimZeros(value.toFixed(digits))} ${unit}`
+}

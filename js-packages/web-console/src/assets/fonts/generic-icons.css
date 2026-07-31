@@ -2,8 +2,8 @@
   font-family: "generic-icons";
   font-display: block;
   src:
-    url("generic-icons.woff2?93adf303867ea39c2b4e5835c473116a") format("woff2"),
-    url("generic-icons.woff?93adf303867ea39c2b4e5835c473116a") format("woff");
+    url("generic-icons.woff2?033f330cef2f06323d21562ae6e6b4d9") format("woff2"),
+    url("generic-icons.woff?033f330cef2f06323d21562ae6e6b4d9") format("woff");
 }
 
 .gc {
@@ -17,18 +17,18 @@
   vertical-align: top;
 }
 
-.gc-layout-panel-right:before {
+.gc-http-get:before {
   content: "\f101";
 }
 .gc-circle-solid:before {
   content: "\f102";
 }
-.gc-loader-alt:before {
+.gc-layout-panel-right:before {
   content: "\f103";
 }
 .gc-boiling-flask:before {
   content: "\f104";
 }
-.gc-http-get:before {
+.gc-loader-alt:before {
   content: "\f105";
 }

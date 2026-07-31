@@ -845,6 +845,47 @@ impl ControllerStatus {
         self.inputs.read_recursive()
     }
 
+    /// Latency percentiles (microseconds) across input connectors, for the
+    /// time-series graph. Each connector contributes its own median latency,
+    /// we then take p50 and p99 across connectors, for both
+    /// processing (ingest to processed) and completion (ingest to all outputs).
+    /// `None` when no connector has samples.
+    pub fn latency_percentiles(&self) -> LatencyPercentiles {
+        let inputs = self.input_status();
+        let mut processing = Vec::with_capacity(inputs.len());
+        let mut completion = Vec::with_capacity(inputs.len());
+        for ep in inputs.values() {
+            if let Some(median) = ep
+                .metrics
+                .processing_latency_micros_histogram
+                .lock()
+                .unwrap()
+                .snapshot()
+                .quantile(0.5)
+            {
+                processing.push(median);
+            }
+            if let Some(median) = ep
+                .metrics
+                .completion_latency_micros_histogram
+                .lock()
+                .unwrap()
+                .snapshot()
+                .quantile(0.5)
+            {
+                completion.push(median);
+            }
+        }
+        processing.sort_unstable();
+        completion.sort_unstable();
+        LatencyPercentiles {
+            processing_p50: percentile_of_sorted(&processing, 0.5),
+            processing_p99: percentile_of_sorted(&processing, 0.99),
+            completion_p50: percentile_of_sorted(&completion, 0.5),
+            completion_p99: percentile_of_sorted(&completion, 0.99),
+        }
+    }
+
     /// Register connector-specific metrics for an input endpoint.
     pub fn set_input_custom_metrics(
         &self,
@@ -1624,6 +1665,25 @@ impl InputEndpointMetrics {
     pub fn completion_latency_histogram() -> SlidingHistogram {
         SlidingHistogram::new(10_000, Duration::from_secs(600))
     }
+}
+
+/// Latency percentiles for the time series, in microseconds. See
+/// [`ControllerStatus::latency_percentiles`].
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LatencyPercentiles {
+    pub processing_p50: Option<u64>,
+    pub processing_p99: Option<u64>,
+    pub completion_p50: Option<u64>,
+    pub completion_p99: Option<u64>,
+}
+
+/// Returns `q`-quantile of an ascending-sorted slice (ceil-rank). `None` if empty.
+fn percentile_of_sorted(sorted: &[u64], q: f64) -> Option<u64> {
+    if sorted.is_empty() {
+        return None;
+    }
+    let rank = ((q.clamp(0.0, 1.0) * sorted.len() as f64).ceil() as usize).clamp(1, sorted.len());
+    Some(sorted[rank - 1])
 }
 
 #[derive(Debug)]
@@ -2905,5 +2965,65 @@ impl OutputEndpointStatus {
 
     fn num_total_processed_steps(&self) -> u64 {
         self.metrics.total_processed_steps.load(Ordering::Acquire)
+    }
+}
+
+#[cfg(test)]
+mod latency_tests {
+    use super::percentile_of_sorted;
+
+    #[test]
+    fn percentile_empty() {
+        assert_eq!(percentile_of_sorted(&[], 0.5), None);
+        assert_eq!(percentile_of_sorted(&[], 0.99), None);
+    }
+
+    #[test]
+    fn percentile_single() {
+        assert_eq!(percentile_of_sorted(&[42], 0.5), Some(42));
+        assert_eq!(percentile_of_sorted(&[42], 0.99), Some(42));
+    }
+
+    #[test]
+    fn percentile_uniform() {
+        let v: Vec<u64> = (1..=100).collect();
+        // ceil(0.5*100)=50 -> 1-based rank 50 -> value 50.
+        assert_eq!(percentile_of_sorted(&v, 0.5), Some(50));
+        // ceil(0.99*100)=99 -> value 99.
+        assert_eq!(percentile_of_sorted(&v, 0.99), Some(99));
+    }
+
+    #[test]
+    fn percentile_few_slow_connectors() {
+        // 97 fast connectors at 1ms, 3 slow at 500ms (values in micros).
+        let mut v = vec![1_000u64; 97];
+        v.extend([500_000, 500_000, 500_000]);
+        v.sort_unstable();
+        // p50 stays with the fast majority.
+        assert_eq!(percentile_of_sorted(&v, 0.5), Some(1_000));
+        // p99 (rank 99) reaches the slow tail: surfaces the laggards.
+        assert_eq!(percentile_of_sorted(&v, 0.99), Some(500_000));
+    }
+
+    #[test]
+    fn percentile_broad_degradation() {
+        // 80 fast at 1ms, 20 slow at 100ms: ~20% degraded.
+        let mut v = vec![1_000u64; 80];
+        v.extend(std::iter::repeat(100_000).take(20));
+        v.sort_unstable();
+        // Both p50 (typical) stays fast and p99 catches the slow band.
+        assert_eq!(percentile_of_sorted(&v, 0.5), Some(1_000));
+        assert_eq!(percentile_of_sorted(&v, 0.99), Some(100_000));
+    }
+
+    #[test]
+    fn percentile_single_lone_outlier_escapes_p99() {
+        // Documents the known limit: one slow connector of 100 sits above p99.
+        let mut v = vec![1_000u64; 99];
+        v.push(900_000);
+        v.sort_unstable();
+        // p99 (rank 99) is still the fast majority; only max would catch it.
+        assert_eq!(percentile_of_sorted(&v, 0.99), Some(1_000));
+        assert_eq!(percentile_of_sorted(&v, 1.0), Some(900_000));
     }
 }

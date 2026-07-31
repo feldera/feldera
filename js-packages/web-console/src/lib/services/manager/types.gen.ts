@@ -5123,9 +5123,27 @@ export type S3TablesCatalogConfig = {
  */
 export type SampleStatistics = {
   /**
+   * Completion latency (ingest to all outputs pushed), microseconds:
+   * p50 across connectors.
+   */
+  cp50?: number | null
+  /**
+   * Completion latency, microseconds: p99 across connectors.
+   */
+  cp99?: number | null
+  /**
    * Memory usage in bytes.
    */
   m: number
+  /**
+   * Processing latency (ingest to circuit-processed), microseconds:
+   * p50 across connectors of each connector's median. Absent without samples.
+   */
+  pp50?: number | null
+  /**
+   * Processing latency, microseconds: p99 across connectors.
+   */
+  pp99?: number | null
   /**
    * Records processed.
    */
