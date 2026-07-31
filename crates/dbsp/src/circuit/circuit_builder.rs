@@ -6730,7 +6730,7 @@ where
 
 /// A subcircuit's clock, as stored in a checkpoint.
 ///
-/// The clock is wrapped in a validated envelope, like `CommittedZ1`, because
+/// The clock is wrapped in a validated envelope, because
 /// a `Timestamp` is generic and cannot carry a `CheckBytes` derive of its own.
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
 #[archive_attr(derive(rkyv::CheckBytes))]
@@ -6768,8 +6768,6 @@ where
     /// operator without a persistent id cannot be checkpointed at all.  The
     /// derived name is stable while the scope's contents are, and changes when
     /// they are not, which is exactly when the state inside has to be rebuilt.
-    /// A node id would not do: it shifts when an unrelated operator is added
-    /// upstream, silently binding one scope's clock to another scope's state.
     ///
     /// Called once, when the subcircuit node is created: the constructor that
     /// populated the child circuit has returned, so its operators and their ids
@@ -6887,11 +6885,11 @@ where
         self.circuit.map_nodes_recursive_mut(f)
     }
 
-    /// Stores the subcircuit's clock.
+    /// Checkpoints the subcircuit's clock.
     ///
-    /// The state of the operators inside the subcircuit is timestamped with this
-    /// clock; restoring the state without it would leave the state in the
-    /// future, where the operators never emit it.
+    /// This clock is used to assign timestamps to Z-sets stored by operators inside
+    /// the circuit. If the clock is restored to 0 instead of its previous value, this would
+    /// leave the state of the operators in the future.
     fn checkpoint(
         &mut self,
         base: &StoragePath,
@@ -6901,10 +6899,6 @@ where
         let persistent_id = require_persistent_id(persistent_id.as_deref(), &self.id)?;
 
         let time = self.circuit.time();
-        debug!(
-            "subcircuit {} clock {time:?} stored as {persistent_id}",
-            self.id
-        );
 
         let committed = CommittedClock {
             time: to_bytes(&time)
@@ -6912,8 +6906,12 @@ where
                 .to_vec(),
         };
         let as_bytes = to_bytes(&committed).expect("serializing CommittedClock should work");
-        files.push(
-            Runtime::storage_backend()?.write(&Self::clock_file(base, persistent_id), as_bytes)?,
+        let filename = Self::clock_file(base, persistent_id);
+        files.push(Runtime::storage_backend()?.write(&filename, as_bytes)?);
+
+        debug!(
+            "subcircuit {} clock {time:?} stored as {persistent_id} in {filename}",
+            self.id
         );
         Ok(())
     }
