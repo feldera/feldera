@@ -1924,13 +1924,23 @@ impl StoragePostgres {
         // YAML -> JSON migration
         self.perform_yaml_to_json_migration().await?;
 
+        self.ensure_default_tenant().await?;
+        Ok(())
+    }
+
+    /// Creates the default tenant if this installation does not have it yet.
+    pub(crate) async fn ensure_default_tenant(&self) -> Result<(), DBError> {
         let default_tenant = TenantRecord::default();
-        self.get_or_create_tenant_id(
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::tenant::ensure_default_tenant(
+            &txn,
             default_tenant.id.0,
-            default_tenant.tenant,
-            default_tenant.initial_provider,
+            &default_tenant.tenant,
+            &default_tenant.initial_provider,
         )
         .await?;
+        txn.commit().await?;
         Ok(())
     }
 

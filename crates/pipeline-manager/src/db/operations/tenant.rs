@@ -18,6 +18,29 @@ pub async fn get_or_create_tenant_id(
         .0)
 }
 
+/// Ensures the default tenant exists, which every start does.
+///
+/// Keyed by id rather than by name: the default tenant may have been renamed
+/// since, and the row is still the same tenant. `ON CONFLICT DO NOTHING`
+/// without a target covers the primary key as well as the unique name, so
+/// neither a rename nor a second tenant taking the name `default` stops the
+/// manager from starting.
+pub async fn ensure_default_tenant(
+    txn: &Transaction<'_>,
+    id: Uuid,
+    name: &str,
+    provider: &str,
+) -> Result<(), DBError> {
+    let stmt = txn
+        .prepare_cached(
+            "INSERT INTO tenant (id, tenant, initial_provider) VALUES ($1, $2, $3) \
+             ON CONFLICT DO NOTHING",
+        )
+        .await?;
+    txn.execute(&stmt, &[&id, &name, &provider]).await?;
+    Ok(())
+}
+
 /// As [`get_or_create_tenant_id`]. The second component of the returned value
 /// is `true` if this call created the tenant, and `false` if it already existed.
 pub async fn get_or_create_tenant_id_created(
