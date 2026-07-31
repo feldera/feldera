@@ -56,9 +56,9 @@ pub enum IcebergCatalogType {
 /// * `snapshot` - ingest the initial snapshot in one or more transactions (see below). Changes
 ///   ingested afterward, in the follow phase, are not grouped into transactions.
 /// * `catchup` - ingest the initial snapshot like `snapshot`. In the follow phase, the connector
-///   groups all table commits that are already available into a single transaction: while catching
-///   up on a backlog it ingests many commits per transaction, and once caught up it ingests about
-///   one commit per transaction. Most efficient for backfill and steady-state following.
+///   batches all currently available table commits into a single transaction. Once that transaction
+///   completes, it checks for commits added since the transaction began, ingests them in the next
+///   transaction, and repeats continuously. Most efficient for backfill and steady-state following.
 /// * `always` - ingest the initial snapshot like `snapshot`. In the follow phase, each table commit
 ///   is ingested in its own transaction.
 ///
@@ -297,11 +297,11 @@ pub struct IcebergReaderConfig {
     /// Valid only in `follow` and `snapshot_and_follow` modes.
     ///
     /// When set, the connector stops after fully ingesting the snapshot with
-    /// this id, signaling end-of-input. Unlike a Delta table version, an Iceberg
-    /// snapshot id is not ordered, so the bound is an exact match: the id must
-    /// name a snapshot committed after the starting snapshot and already present
-    /// in the table's current history. The connector rejects any other value at
-    /// startup, including a not-yet-committed id, rather than follow forever.
+    /// this id, signaling end-of-input. Iceberg snapshot ids are not ordered, so
+    /// the bound is an exact match: the id must name a snapshot committed after
+    /// the starting snapshot and already present in the table's current history.
+    /// The connector rejects any other value at startup, including a
+    /// not-yet-committed id, rather than follow forever.
     pub end_snapshot_id: Option<i64>,
 
     /// Location of the table metadata JSON file.

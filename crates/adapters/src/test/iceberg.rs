@@ -1144,6 +1144,36 @@ fn iceberg_rest_follow_transaction_catchup_end_snapshot_id() {
     });
 }
 
+/// Covers the follow delete path (removed files), which the append-only follow
+/// tests miss. A copy-on-write overwrite removes the old files and adds new
+/// ones; drop one row and edit another, then expect the four survivors.
+#[test]
+#[cfg(feature = "iceberg-tests-follow")]
+fn iceberg_rest_follow_copy_on_write_delete() {
+    let all = data(5);
+    let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    let table = &format!("{ns}.cow_delete");
+
+    follow_table_op("create", table, &all);
+
+    let mut updated = all[..4].to_vec();
+    updated[2].s = "cow-updated".to_string();
+
+    with_follow_pipeline(table, "snapshot_and_follow", |pipeline, out_path| {
+        wait(|| ingested_records(pipeline) >= 5, 120_000).expect("timed out ingesting snapshot");
+        follow_table_op("overwrite", table, &updated);
+        // Overwrite reads 5 deletes + 4 inserts, so ingested reaches 14.
+        wait(|| ingested_records(pipeline) >= 14, 120_000)
+            .expect("timed out following the overwrite");
+        // 8 records: 5 snapshot inserts, 2 for the edited row, 1 for the dropped
+        // row. Wait for the last so the fold sees complete output.
+        wait(|| output_record_count(out_path) >= 8, 60_000).expect("timed out writing output");
+
+        let zset = output_zset(out_path);
+        assert_eq!(zset, expected_zset(&updated));
+    });
+}
+
 /// Number of complete `insert_delete` records written to the output file so
 /// far (one JSON value per line).
 #[cfg(feature = "iceberg-tests-follow")]
