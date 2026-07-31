@@ -216,7 +216,9 @@ class Manager:
         assert self._proc is None and self._container is None, "already running"
         self.config = config
         env = {
-            "RUST_LOG": "info",
+            # Why a token was refused is logged at debug in `auth` and `oidc`,
+            # so at plain info a 401 reaches the test with no reason attached.
+            "RUST_LOG": "info,pipeline_manager::auth=debug,pipeline_manager::oidc=debug",
             "RUST_BACKTRACE": "1",
             "FELDERA_UNSTABLE_FEATURES": "runtime_version,testing",
             "SSL_CERT_FILE": str(self._ca_bundle()),

@@ -43,6 +43,29 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
 
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
+    """Attach the manager and issuer logs to a failing test.
+
+    A failed assertion says what the API answered, not why. The manager fixture
+    removes its container when it tears down, so CI's `always()` cleanup finds
+    nothing left to dump; here the test's fixtures are still alive, which makes
+    this the last moment the logs exist.
+    """
+    report = yield
+    if report.when != "call" or not report.failed:
+        return report
+    funcargs = getattr(item, "funcargs", {})
+    manager = funcargs.get("manager")
+    if manager is not None:
+        report.sections.append(("Manager log", manager.logs()[-8000:]))
+    workdir = funcargs.get("workdir")
+    if workdir is not None:
+        for log in sorted(Path(workdir).glob("logs/*.log")):
+            report.sections.append((log.stem, log.read_text(errors="replace")[-4000:]))
+    return report
+
+
 @pytest.fixture(scope="session")
 def workdir() -> Path:
     """A short-pathed working directory.
