@@ -388,6 +388,41 @@ class Manager:
         ]
         return "\n".join(interesting[-20:]) or self.logs()[-2000:]
 
+    def container_tls_view(self, probe_url: str | None = None) -> str:
+        """What the manager's container sees of the CA bundle it was handed.
+
+        A JWKS fetch that cannot verify the issuer looks the same whether
+        `SSL_CERT_FILE` never reached the process or reached it and does not
+        verify that issuer, and those have different fixes. `curl --cacert`
+        against the issuer separates them: it succeeds only when the bundle is
+        readable in the container and does chain to the issuer's certificate.
+        """
+        if not self._container:
+            return ""
+        script = (
+            'echo "user=$(id -un) uid=$(id -u)"\n'
+            'echo "SSL_CERT_FILE=${SSL_CERT_FILE:-<unset>}"\n'
+            'if [ -n "$SSL_CERT_FILE" ]; then\n'
+            '  ls -l "$SSL_CERT_FILE" 2>&1\n'
+            "  echo \"certs_in_bundle=$(grep -c 'BEGIN CERTIFICATE' "
+            '"$SSL_CERT_FILE" 2>/dev/null || echo unreadable)"\n'
+            "fi\n"
+        )
+        if probe_url:
+            script += (
+                f'curl -sS --cacert "$SSL_CERT_FILE" -o /dev/null '
+                f"-w 'curl_with_bundle=%{{http_code}}\\n' '{probe_url}' 2>&1\n"
+                f"curl -sS -o /dev/null "
+                f"-w 'curl_ambient_roots=%{{http_code}}\\n' '{probe_url}' 2>&1\n"
+            )
+        out = subprocess.run(
+            ["docker", "exec", self._container, "sh", "-c", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return out.stdout + out.stderr
+
     def logs(self) -> str:
         if self._container:
             out = subprocess.run(

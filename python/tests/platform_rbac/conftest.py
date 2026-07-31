@@ -59,6 +59,11 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
     manager = funcargs.get("manager")
     if manager is not None:
         report.sections.append(("Manager log", manager.logs()[-8000:]))
+        idp = funcargs.get("primary_idp")
+        probe_url = f"{idp.url}/.well-known/openid-configuration" if idp else None
+        view = manager.container_tls_view(probe_url)
+        if view:
+            report.sections.append(("Container TLS view", view))
     workdir = funcargs.get("workdir")
     if workdir is not None:
         for log in sorted(Path(workdir).glob("logs/*.log")):
