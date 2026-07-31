@@ -111,9 +111,7 @@ def start_issuer(
                 verify=str(cert) if cert else True,
             )
             if r.status_code == 200:
-                return Issuer(
-                    url=url, process=process, log_path=log_path, cert=cert
-                )
+                return Issuer(url=url, process=process, log_path=log_path, cert=cert)
         except requests.RequestException:
             pass
         time.sleep(0.5)
