@@ -168,7 +168,7 @@ jobs:
       # is stateful and ordered, so it runs serially rather than under -n.
       - name: RBAC, OIDC trust and the route/role matrix
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked pytest tests/platform_rbac --timeout=2400 -vv
+        run: uv run --locked pytest tests/platform_rbac --timeout=2400 --maxfail=1 -vv
         working-directory: python
         env:
           FELDERA_TEST_IMAGE: ${{ vars.FELDERA_IMAGE_NAME }}:${{ inputs.image_tag || format('sha-{0}', github.sha) }}
@@ -178,11 +178,18 @@ jobs:
         if: always()
         run: |
           rm -rf test-tls
-          docker logs pipeline-manager-https 2>/dev/null || true
-          docker rm -f pipeline-manager-https || true
+          # Only if it outlived the phase that normally removes it, which is
+          # what happens when that phase failed and its log is worth having.
+          if docker inspect pipeline-manager-https >/dev/null 2>&1; then
+            docker logs pipeline-manager-https || true
+            docker rm -f pipeline-manager-https || true
+          fi
           for c in $(docker ps -aq --filter "name=feldera-rbac-"); do
             echo "=== $c ==="; docker logs "$c" 2>&1 | tail -100 || true
             docker rm -f "$c" || true
+          done
+          for v in $(docker volume ls -q --filter "name=feldera-rbac-state-"); do
+            docker volume rm -f "$v" || true
           done
 
   oss-platform-tests:
