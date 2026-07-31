@@ -23,8 +23,12 @@ This script then:
   - mints tokens for four identities,
   - provisions them into one shared tenant ("acme") with roles read/write/admin,
   - leaves owner@example.com as the platform owner (from FELDERA_OWNERS),
-  - prints a ready-to-use token per role, and
-  - runs a request matrix showing what each role may and may not do.
+  - prints a ready-to-use token per role.
+
+It asserts nothing. The RBAC boundaries are covered by
+`python/tests/platform_rbac`, which owns the manager and can restart it under
+different authentication configurations; this script only sets a playground up
+so you can poke at it by hand.
 
 The four identities (all via the dummy IdP):
 
@@ -39,7 +43,7 @@ The four identities (all via the dummy IdP):
 
 import argparse
 import sys
-import time
+
 import requests
 
 TENANT_HEADER = "Feldera-Tenant"
@@ -134,99 +138,7 @@ def main() -> int:
             f"\n(owner acts in a tenant by adding the header: -H '{TENANT_HEADER}: {tenant}')"
         )
 
-    # 6. Verification matrix: each row is (role, method, path, expected, note).
-    #    `expected` is the status family we assert: 'ok' = not 403, 'deny' = 403.
-    print("\n" + "=" * 72)
-    print("VERIFICATION MATRIX (ok = 2xx; deny = 403 by RBAC; invalid = 400)")
-    print("=" * 72)
-    checks = [
-        ("read", "GET", "/pipelines", None, "ok", "monitor"),
-        ("read", "POST", "/pipelines", {"name": "x"}, "deny", "no mutate"),
-        ("read", "GET", "/tenant/users", None, "deny", "not admin"),
-        ("write", "GET", "/pipelines", None, "ok", "monitor"),
-        (
-            "write",
-            "POST",
-            "/api_keys",
-            {"name": "w1", "role": "read"},
-            "ok",
-            "mint read key",
-        ),
-        (
-            "write",
-            "POST",
-            "/api_keys",
-            {"name": "w2", "role": "admin"},
-            "deny",
-            "cannot mint admin key",
-        ),
-        ("write", "GET", "/tenant/users", None, "deny", "not admin"),
-        ("admin", "GET", "/tenant/users", None, "ok", "manage users"),
-        (
-            "admin",
-            "POST",
-            "/oidc_trust",
-            {
-                "name": "t1",
-                "issuer": "https://x",
-                "subject": "s",
-                "audience": "acme",
-                "role": "write",
-            },
-            "ok",
-            "create trust (write needs concrete audience)",
-        ),
-        (
-            "admin",
-            "POST",
-            "/oidc_trust",
-            {"name": "t2", "issuer": "https://x", "subject": "s", "role": "owner"},
-            "invalid",
-            "owner is configuration only",
-        ),
-        ("admin", "GET", "/tenants", None, "deny", "owner only"),
-        ("owner", "GET", "/tenants", None, "ok", "platform view"),
-        ("owner", "GET", "/tenant/users", None, "ok", "acts in tenant"),
-        ("admin", "GET", "/config/owners", None, "deny", "owner only"),
-        ("owner", "GET", "/config/owners", None, "ok", "who holds owner"),
-        # The configured owner trust, with no Feldera-Tenant header at all: this
-        # is how automation reaches the tenant routes on a fresh deployment,
-        # where there is no tenant to name yet.
-        ("ownertrust", "GET", "/tenants", None, "ok", "no header needed", None),
-        (
-            "ownertrust",
-            "POST",
-            "/tenants",
-            {"name": f"bootstrap-{int(time.time())}"},
-            "ok",
-            "creates a tenant with no header",
-            None,
-        ),
-    ]
-    passed = failed = 0
-    # A row carries (role, method, path, body, expected, note) and acts in
-    # `tenant`; a seventh element overrides the Feldera-Tenant header, where
-    # None means the request sends none.
-    for check in checks:
-        role, method, path, body, expected, note = check[:6]
-        tn = check[6] if len(check) > 6 else tenant
-        code, _ = call(m, method, path, tok[role], tenant=tn, body=body)
-        # ok = passed RBAC and the action succeeded (2xx); deny = blocked by RBAC
-        # (403); invalid = the request itself is not expressible (400). Anything
-        # else (401, 5xx) is an unexpected failure, not a pass.
-        good = (
-            (expected == "deny" and code == 403)
-            or (expected == "invalid" and code == 400)
-            or (expected == "ok" and 200 <= code < 300)
-        )
-        passed += good
-        failed += not good
-        mark = "PASS" if good else "FAIL"
-        print(
-            f"  [{mark}] {role:5} {method:4} {path:16} -> {code:3} (want {expected:4}; {note})"
-        )
-    print(f"\n{passed} passed, {failed} failed")
-    return 0 if failed == 0 else 2
+    return 0
 
 
 if __name__ == "__main__":

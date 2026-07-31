@@ -98,6 +98,17 @@ mod test {
         assert!(claim_matches("*-prod", "service-prod"));
     }
 
+    /// Only `*` is special. A pattern carrying regex metacharacters matches
+    /// them literally, and matching is case-sensitive.
+    #[test]
+    fn nothing_but_star_is_special() {
+        assert!(!claim_matches("repo:acme/a.c", "repo:acme/abc"));
+        assert!(claim_matches("repo:acme/a.c", "repo:acme/a.c"));
+        assert!(!claim_matches("repo:acme/a+", "repo:acme/aa"));
+        assert!(!claim_matches("repo:acme/[a]", "repo:acme/a"));
+        assert!(!claim_matches("Repo:Acme/*", "repo:acme/api"));
+    }
+
     #[test]
     fn full_wildcard() {
         assert!(claim_matches("*", ""));
