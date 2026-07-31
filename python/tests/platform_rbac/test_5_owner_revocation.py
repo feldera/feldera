@@ -32,7 +32,9 @@ def test_owners_hold_the_platform_before_the_change(
 ):
     """Both kinds of owner work, so the next test measures a change."""
     assert (
-        api.status("GET", "/tenants", token=primary_idp.token("owner", email=OWNER_EMAIL))
+        api.status(
+            "GET", "/tenants", token=primary_idp.token("owner", email=OWNER_EMAIL)
+        )
         == 200
     )
     assert (
@@ -69,9 +71,7 @@ def test_restarting_without_them_revokes_both(
     assert api.status("GET", "/config/owners", token=successor) == 200
 
 
-def test_a_revoked_owner_keeps_its_tenant_membership(
-    api: Api, primary_idp: Issuer
-):
+def test_a_revoked_owner_keeps_its_tenant_membership(api: Api, primary_idp: Issuer):
     """Losing ownership is not losing the account.
 
     A former owner that also holds a membership still acts in that tenant at the

@@ -448,9 +448,7 @@ async fn oidc_trust_auth(
             };
             match tenant_matches.iter().find(|(t, _)| *t == selected).copied() {
                 Some(pair) => pair,
-                None => {
-                    return db_err(DBError::OidcTenantNotTrusted { tenant: selector }, req)
-                }
+                None => return db_err(DBError::OidcTenantNotTrusted { tenant: selector }, req),
             }
         }
         // Without a selector a single match is unambiguous; several are not.
