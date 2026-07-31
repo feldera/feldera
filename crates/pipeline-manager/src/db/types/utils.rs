@@ -13,10 +13,11 @@ use tracing::error;
 
 /// Pattern for non-empty string containing lowercase (a-z), uppercase (A-Z),
 /// number (0-9), underscore (_) or hyphen (-) characters.
-const PATTERN_NON_EMPTY_ALPHANUMERIC_UNDERSCORE_HYPHEN: &str = r"^[a-zA-Z0-9_-]+$";
+pub(crate) const PATTERN_NON_EMPTY_ALPHANUMERIC_UNDERSCORE_HYPHEN: &str = r"^[a-zA-Z0-9_-]+$";
 
 /// Description of the non-empty alphanumeric-underscore-hyphen pattern.
-const PATTERN_NON_EMPTY_ALPHANUMERIC_UNDERSCORE_HYPHEN_DESCRIPTION: &str = "be non-empty and only \
+pub(crate) const PATTERN_NON_EMPTY_ALPHANUMERIC_UNDERSCORE_HYPHEN_DESCRIPTION: &str =
+    "be non-empty and only \
 contain lowercase (a-z), uppercase (A-Z), number (0-9), underscore (_) or hyphen (-) characters";
 
 /// The pattern is almost the same as for Kubernetes label values but slightly stricter.
@@ -61,19 +62,6 @@ pub fn validate_pipeline_name(name: &str) -> Result<(), DBError> {
     )
 }
 
-/// Maximum OIDC trust relationship name length.
-pub(crate) const MAXIMUM_OIDC_TRUST_NAME_LENGTH: usize = 100;
-
-/// Checks the provided OIDC trust relationship name is valid.
-pub fn validate_oidc_trust_name(name: &str) -> Result<(), DBError> {
-    validate_name(
-        name,
-        MAXIMUM_OIDC_TRUST_NAME_LENGTH,
-        PATTERN_NON_EMPTY_ALPHANUMERIC_UNDERSCORE_HYPHEN,
-        PATTERN_NON_EMPTY_ALPHANUMERIC_UNDERSCORE_HYPHEN_DESCRIPTION,
-    )
-}
-
 /// Checks the provided connector name is valid.
 pub fn validate_connector_name(name: &str) -> Result<(), DBError> {
     validate_name(
@@ -103,7 +91,7 @@ pub const MAXIMUM_DESCRIPTION_LENGTH: usize = 300;
 /// - It cannot be empty
 /// - It must be at most `length_limit` characters long
 /// - It must contain characters that follow the `pattern`
-fn validate_name(
+pub(crate) fn validate_name(
     name: &str,
     length_limit: usize,
     pattern: &str,

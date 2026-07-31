@@ -164,6 +164,10 @@ pub enum DBError {
     EmptyOidcTrustField {
         field: String,
     },
+    InvalidOidcIssuerUrl {
+        issuer: String,
+        reason: String,
+    },
     AmbiguousOidcTenant,
     OidcTenantNotTrusted {
         tenant: String,
@@ -687,6 +691,12 @@ impl Display for DBError {
                     "OIDC trust relationship field '{field}' must not be empty"
                 )
             }
+            DBError::InvalidOidcIssuerUrl { issuer, reason } => {
+                write!(
+                    f,
+                    "OIDC trust issuer '{issuer}' is not a permitted destination: {reason}"
+                )
+            }
             DBError::AmbiguousOidcTenant => {
                 write!(
                     f,
@@ -1007,6 +1017,7 @@ impl DetailedError for DBError {
             Self::UnknownUser { .. } => Cow::from("UnknownUser"),
             Self::UnknownOidcTrust { .. } => Cow::from("UnknownOidcTrust"),
             Self::EmptyOidcTrustField { .. } => Cow::from("EmptyOidcTrustField"),
+            Self::InvalidOidcIssuerUrl { .. } => Cow::from("InvalidOidcIssuerUrl"),
             Self::AmbiguousOidcTenant => Cow::from("AmbiguousOidcTenant"),
             Self::OidcTenantNotTrusted { .. } => Cow::from("OidcTenantNotTrusted"),
             Self::InvalidOidcToken { .. } => Cow::from("InvalidOidcToken"),
@@ -1134,6 +1145,7 @@ impl ResponseError for DBError {
             Self::UnknownUser { .. } => StatusCode::NOT_FOUND,
             Self::UnknownOidcTrust { .. } => StatusCode::NOT_FOUND,
             Self::EmptyOidcTrustField { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidOidcIssuerUrl { .. } => StatusCode::BAD_REQUEST,
             Self::AmbiguousOidcTenant => StatusCode::BAD_REQUEST,
             Self::OidcTenantNotTrusted { .. } => StatusCode::FORBIDDEN,
             Self::InvalidOidcToken { .. } => StatusCode::UNAUTHORIZED,

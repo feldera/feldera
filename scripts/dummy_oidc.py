@@ -34,6 +34,7 @@ import hashlib
 import html
 import json
 import secrets
+import ssl
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -664,13 +665,29 @@ def main() -> None:
         "(reader/writer/admin); default 'acme'. Use e.g. 'acme,beta' to place them "
         "in two tenants and exercise multi-tenant selection.",
     )
+    parser.add_argument(
+        "--tls-cert",
+        default=None,
+        help="Serve https with this certificate (PEM); requires --tls-key. The "
+        "manager refuses a registered trust whose issuer is not https, so the "
+        "integration suite runs the provider this way.",
+    )
+    parser.add_argument("--tls-key", default=None, help="Private key for --tls-cert")
     args = parser.parse_args()
 
-    issuer = args.issuer or f"http://localhost:{args.port}"
+    if bool(args.tls_cert) != bool(args.tls_key):
+        parser.error("--tls-cert and --tls-key must be given together")
+
+    scheme = "https" if args.tls_cert else "http"
+    issuer = args.issuer or f"{scheme}://localhost:{args.port}"
     demo_tenants = [t.strip() for t in args.demo_tenants.split(",") if t.strip()]
     keys = KeyMaterial()
     handler = make_handler(keys, issuer, args.audience, demo_tenants)
     server = ThreadingHTTPServer(("0.0.0.0", args.port), handler)
+    if args.tls_cert:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile=args.tls_cert, keyfile=args.tls_key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
 
     print_startup(issuer, args.audience, args.port)
     try:

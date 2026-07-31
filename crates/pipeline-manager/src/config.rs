@@ -4,6 +4,7 @@ use crate::db::types::role::Role;
 use crate::db::types::version::Version;
 use crate::db::{error::DBError, types::pipeline::PipelineId};
 use crate::has_unstable_feature;
+use crate::oidc::destination::TenantIssuerPolicy;
 use actix_web::http::header;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
@@ -1007,6 +1008,21 @@ pub struct ApiServerConfig {
     #[arg(long, default_value = "[]", env = "FELDERA_OWNER_TRUSTS")]
     pub owner_trusts: OwnerTrusts,
 
+    /// Permit a trust registered through the API to name an issuer on a private
+    /// or loopback address. Default: `false`.
+    ///
+    /// The manager fetches a trust's issuer from its own network position
+    /// before it verifies any token: in installations where tenant admins are
+    /// allowed and need to point to local issuers, set this to true. Not
+    /// permitted by default, so tenant admins cannot steer the manager to fetch
+    /// internal service locations. https is required either way.
+    ///
+    /// Issuers named at deploy time, the login provider and `--owner-trusts`,
+    /// are unaffected: they may sit on a private network either way.
+    #[serde(default)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = false, env = "FELDERA_ALLOW_INTERNAL_TENANT_TRUST_ISSUERS")]
+    pub allow_internal_tenant_trust_issuers: bool,
+
     /// Role assigned to an authenticated user who has no explicit tenant
     /// membership yet. Must be `read` or `write`. Default: `read`.
     #[serde(default = "default_default_role")]
@@ -1096,6 +1112,15 @@ impl FromStr for OwnerTrusts {
 }
 
 impl ApiServerConfig {
+    /// Where a trust registered through the API may point.
+    pub(crate) fn tenant_issuer_policy(&self) -> TenantIssuerPolicy {
+        if self.allow_internal_tenant_trust_issuers {
+            TenantIssuerPolicy::AllowInternal
+        } else {
+            TenantIssuerPolicy::PublicHttpsOnly
+        }
+    }
+
     /// CORS configuration
     pub(crate) fn cors(&self) -> actix_cors::Cors {
         if self.dev_mode {
@@ -1142,6 +1167,7 @@ impl ApiServerConfig {
             auth_audience: "feldera-api".to_string(),
             owners: vec![],
             owner_trusts: OwnerTrusts::default(),
+            allow_internal_tenant_trust_issuers: false,
             default_role: Role::Read,
             first_user_role: Role::Admin,
         }

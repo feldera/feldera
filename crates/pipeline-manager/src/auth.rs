@@ -886,6 +886,11 @@ const OIDC_FETCH_TIMEOUT_SECONDS: u64 = 10;
 /// issuer endpoint (defense in depth behind the trusted-issuer gate).
 fn oidc_http_client() -> Result<reqwest::Client, reqwest::Error> {
     reqwest::Client::builder()
+        // rustls with the platform's roots, so which certificates an issuer may
+        // present is decided the same way on every platform. The default
+        // backend is whatever the target ships, and on macOS that store cannot
+        // be pointed elsewhere.
+        .use_rustls_tls()
         .timeout(Duration::from_secs(OIDC_FETCH_TIMEOUT_SECONDS))
         .redirect(reqwest::redirect::Policy::none())
         .build()
@@ -1576,6 +1581,7 @@ mod test {
             auth_audience: "feldera-api".to_string(),
             owners: vec![],
             owner_trusts: crate::config::OwnerTrusts::default(),
+            allow_internal_tenant_trust_issuers: false,
             default_role: Role::Read,
             first_user_role: Role::Admin,
         };

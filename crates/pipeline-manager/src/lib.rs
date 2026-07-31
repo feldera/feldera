@@ -15,6 +15,7 @@ pub mod error;
 pub mod events_cleaner;
 pub mod license;
 pub mod logging;
+pub mod oidc;
 pub mod pipeline_env;
 pub mod runner;
 

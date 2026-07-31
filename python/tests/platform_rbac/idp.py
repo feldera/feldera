@@ -8,6 +8,10 @@ issuer" testable rather than assumed.
 Tokens come from `scripts/dummy_oidc.py`, whose `/token` endpoint takes the
 claims directly (`sub`, `aud`, `tenants`, `exp_secs`). A negative `exp_secs`
 yields an already-expired token, so expiry needs no clock manipulation.
+
+Every issuer serves https, because a trust registered through the API must name
+an https issuer. They share the `localhost` certificate the suite generates for
+the manager, and the manager trusts the CA behind it through `SSL_CERT_FILE`.
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ class Issuer:
     url: str
     process: subprocess.Popen
     log_path: Path
+    cert: Path | None = None
 
     def token(
         self,
@@ -53,7 +58,12 @@ class Issuer:
             params["aud"] = audience
         if tenants:
             params["tenants"] = ",".join(tenants)
-        r = requests.get(f"{self.url}/token", params=params, timeout=10)
+        r = requests.get(
+            f"{self.url}/token",
+            params=params,
+            timeout=10,
+            verify=str(self.cert) if self.cert else True,
+        )
         r.raise_for_status()
         return r.json()["access_token"]
 
@@ -65,14 +75,25 @@ class Issuer:
             self.process.kill()
 
 
-def start_issuer(port: int, run_dir: Path, name: str = "idp") -> Issuer:
-    """Start `dummy_oidc.py` on `port` and wait for its discovery document."""
+def start_issuer(
+    port: int,
+    run_dir: Path,
+    name: str = "idp",
+    tls: tuple[Path, Path, Path] | None = None,
+) -> Issuer:
+    """Start `dummy_oidc.py` on `port` and wait for its discovery document.
+
+    With `tls` (certificate, key, CA) the issuer serves https, which a trust
+    registered through the API requires of it.
+    """
     run_dir.mkdir(parents=True, exist_ok=True)
     log_path = run_dir / f"{name}.log"
-    url = f"http://localhost:{port}"
+    cert = tls[2] if tls else None
+    url = f"{'https' if tls else 'http'}://localhost:{port}"
     log = log_path.open("ab")
+    tls_args = ["--tls-cert", str(tls[0]), "--tls-key", str(tls[1])] if tls else []
     process = subprocess.Popen(
-        ["uv", "run", str(DUMMY_OIDC), "--port", str(port), "--issuer", url],
+        ["uv", "run", str(DUMMY_OIDC), "--port", str(port), "--issuer", url, *tls_args],
         cwd=REPO_ROOT,
         stdout=log,
         stderr=subprocess.STDOUT,
@@ -84,9 +105,15 @@ def start_issuer(port: int, run_dir: Path, name: str = "idp") -> Issuer:
                 f"{name} exited early:\n{log_path.read_text(errors='replace')}"
             )
         try:
-            r = requests.get(f"{url}/.well-known/openid-configuration", timeout=2)
+            r = requests.get(
+                f"{url}/.well-known/openid-configuration",
+                timeout=2,
+                verify=str(cert) if cert else True,
+            )
             if r.status_code == 200:
-                return Issuer(url=url, process=process, log_path=log_path)
+                return Issuer(
+                    url=url, process=process, log_path=log_path, cert=cert
+                )
         except requests.RequestException:
             pass
         time.sleep(0.5)

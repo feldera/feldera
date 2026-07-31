@@ -62,44 +62,55 @@ def free_port() -> int:
         return int(s.getsockname()[1])
 
 
-def generate_tls_cert(directory: Path) -> tuple[Path, Path]:
-    """Self-signed certificate for `localhost`, so the suite covers the HTTPS
-    listener rather than testing auth over plaintext only."""
+def generate_tls_cert(directory: Path) -> tuple[Path, Path, Path]:
+    """A local CA, and the `localhost` server certificate it signs.
+
+    Returns `(cert, key, ca_cert)`. Everything the suite runs over TLS serves
+    `cert`: the manager's own listener and every issuer. The manager trusts
+    `ca_cert` as a root, which is how it reaches those issuers.
+
+    Two certificates rather than one self-signed: a certificate marked as a CA
+    is refused when a server presents it (rustls calls this
+    `CaUsedAsEndEntity`), so the root and the server certificate have to be
+    different certificates.
+    """
     directory.mkdir(parents=True, exist_ok=True)
     cert, key = directory / "tls.crt", directory / "tls.key"
-    if cert.exists() and key.exists():
-        return cert, key
+    ca_cert, ca_key = directory / "ca.crt", directory / "ca.key"
+    if cert.exists() and key.exists() and ca_cert.exists():
+        return cert, key, ca_cert
+
+    def openssl(*args: str) -> None:
+        subprocess.run(["openssl", *args], check=True, capture_output=True)
+
+    openssl(
+        "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+        "-keyout", str(ca_key), "-out", str(ca_cert),
+        "-days", "365", "-subj", "/CN=Feldera RBAC test CA",
+        "-addext", "basicConstraints=critical,CA:TRUE",
+        "-addext", "keyUsage=critical,keyCertSign,cRLSign",
+    )  # fmt: skip
+
     ext = directory / "x509_v3.ext"
     ext.write_text(
-        "[x509_v3]\nsubjectAltName = @alt_names\n\n"
+        "subjectAltName = @alt_names\n"
+        "basicConstraints = critical, CA:FALSE\n"
+        "keyUsage = critical, digitalSignature, keyEncipherment\n"
+        "extendedKeyUsage = serverAuth\n\n"
         "[alt_names]\nDNS.1 = localhost\nIP.1 = 127.0.0.1\n"
     )
-    subprocess.run(
-        [
-            "openssl",
-            "req",
-            "-x509",
-            "-newkey",
-            "rsa:4096",
-            "-nodes",
-            "-keyout",
-            str(key),
-            "-out",
-            str(cert),
-            "-days",
-            "365",
-            "-subj",
-            "/CN=localhost",
-            "-config",
-            str(ext),
-            "-extensions",
-            "x509_v3",
-        ],
-        check=True,
-        capture_output=True,
-    )
+    csr = directory / "tls.csr"
+    openssl(
+        "req", "-newkey", "rsa:2048", "-nodes",
+        "-keyout", str(key), "-out", str(csr), "-subj", "/CN=localhost",
+    )  # fmt: skip
+    openssl(
+        "x509", "-req", "-in", str(csr),
+        "-CA", str(ca_cert), "-CAkey", str(ca_key), "-CAcreateserial",
+        "-out", str(cert), "-days", "365", "-extfile", str(ext),
+    )  # fmt: skip
     key.chmod(0o644)
-    return cert, key
+    return cert, key, ca_cert
 
 
 class Manager:
@@ -143,8 +154,8 @@ class Manager:
         for sub in ("pg", "runner", "compiler"):
             (state_dir / sub).mkdir(parents=True, exist_ok=True)
         run_dir.mkdir(parents=True, exist_ok=True)
-        self.cert, self.key = (
-            generate_tls_cert(run_dir / "tls") if https else (None, None)
+        self.cert, self.key, self.ca_cert = (
+            generate_tls_cert(run_dir / "tls") if https else (None, None, None)
         )
 
     @property
@@ -154,12 +165,36 @@ class Manager:
 
     @property
     def verify(self):
-        """`verify=` for requests: the certificate we issued, or False."""
-        return str(self.cert) if self.https else True
+        """`verify=` for requests: the CA that signed our certificate."""
+        return str(self.ca_cert) if self.https else True
 
     # Where the state root is visible to the manager: a fixed path inside the
     # container, or the host directory when running the binary directly.
     CONTAINER_STATE = "/state"
+
+    # Root stores a Linux image is likely to ship, in preference order.
+    SYSTEM_CA_BUNDLES = (
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/etc/pki/tls/certs/ca-bundle.crt",
+    )
+
+    def _ca_bundle(self) -> Path:
+        """Roots the manager trusts: the suite's certificate and the platform's.
+
+        The manager reaches every issuer over https, so it has to trust the CA
+        that signed what they serve. Its TLS stack reads `SSL_CERT_FILE`
+        *instead of* the system store rather than in addition to it, so the
+        platform's roots are carried along; without them the manager loses every
+        other outbound https destination.
+        """
+        bundle = self.run_dir / "ca-bundle.crt"
+        roots = [self.ca_cert.read_text()]
+        for path in map(Path, self.SYSTEM_CA_BUNDLES):
+            if path.exists():
+                roots.append(path.read_text())
+                break
+        bundle.write_text("\n".join(roots))
+        return bundle
 
     def _flags(self) -> list[str]:
         root = self.CONTAINER_STATE if self.image else str(self.state_dir)
@@ -184,6 +219,7 @@ class Manager:
             "RUST_LOG": "info",
             "RUST_BACKTRACE": "1",
             "FELDERA_UNSTABLE_FEATURES": "runtime_version,testing",
+            "SSL_CERT_FILE": str(self._ca_bundle()),
             **config.env,
         }
         if self.image:

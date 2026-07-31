@@ -146,6 +146,27 @@ def test_tenant_the_token_does_not_name_is_refused(api: Api, primary_idp: Issuer
             "owner is deploy-time configuration",
             id="owner-role",
         ),
+        # The manager fetches a registered issuer from its own network position
+        # before it verifies any token, so it refuses one it should not go to.
+        pytest.param(
+            {"name": "plaintext", "issuer": "http://idp.example.com", "subject": "s"},
+            "issuer is not https",
+            id="issuer-not-https",
+        ),
+        pytest.param(
+            {"name": "loopback", "issuer": "https://127.0.0.1:9999", "subject": "s"},
+            "issuer on a loopback address",
+            id="issuer-loopback",
+        ),
+        pytest.param(
+            {
+                "name": "metadata-service",
+                "issuer": "https://169.254.169.254/latest",
+                "subject": "s",
+            },
+            "issuer at the cloud metadata service",
+            id="issuer-link-local",
+        ),
     ],
 )
 def test_trust_registration_rejects_bad_input(
@@ -208,7 +229,7 @@ CLAIM_PATTERNS = [
     # Matching is case-sensitive.
     ("case-sensitive", "Repo:Acme/*", "repo:acme/api", False),
     # A trailing star is a prefix match, so it admits anything that merely
-    # begins with the pattern. Pinned because it is the shape that surprises.
+    # begins with the pattern.
     ("prefix-is-open-ended", "svc-a*", "svc-april-fools", True),
     # A realistic pattern and the near misses around it. These matter more than
     # the match: a pattern that is too eager grants a workload nobody meant to.

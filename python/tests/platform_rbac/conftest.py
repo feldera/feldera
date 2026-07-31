@@ -23,7 +23,7 @@ import pytest
 import requests
 
 from .idp import DEFAULT_AUDIENCE, Issuer, start_issuer
-from .manager import AuthConfig, Manager, free_port
+from .manager import AuthConfig, Manager, free_port, generate_tls_cert
 
 TENANT_HEADER = "Feldera-Tenant"
 
@@ -63,35 +63,49 @@ def workdir() -> Path:
 
 
 @pytest.fixture(scope="session")
-def primary_idp(workdir: Path) -> Issuer:
+def tls(workdir: Path) -> tuple[Path, Path, Path]:
+    """The suite's CA and the `localhost` certificate it signs.
+
+    A trust registered through the API must name an https issuer, so every
+    issuer here serves TLS, and the manager is pointed at the CA through
+    `SSL_CERT_FILE`.
+    """
+    return generate_tls_cert(workdir / "run" / "tls")
+
+
+@pytest.fixture(scope="session")
+def primary_idp(workdir: Path, tls: tuple[Path, Path, Path]) -> Issuer:
     """The issuer every authenticated configuration trusts."""
-    issuer = start_issuer(free_port(), workdir / "logs", name="primary-idp")
+    issuer = start_issuer(free_port(), workdir / "logs", name="primary-idp", tls=tls)
     yield issuer
     issuer.stop()
 
 
 @pytest.fixture(scope="session")
-def workload_idp(workdir: Path) -> Issuer:
-    """A trusted issuer that is not the login provider."""
-    issuer = start_issuer(free_port(), workdir / "logs", name="workload-idp")
+def workload_idp(workdir: Path, tls: tuple[Path, Path, Path]) -> Issuer:
+    """A trusted issuer that is not the login provider.
+
+    Trusts are registered against this one through the API.
+    """
+    issuer = start_issuer(free_port(), workdir / "logs", name="workload-idp", tls=tls)
     yield issuer
     issuer.stop()
 
 
 @pytest.fixture(scope="session")
-def rogue_idp(workdir: Path) -> Issuer:
+def rogue_idp(workdir: Path, tls: tuple[Path, Path, Path]) -> Issuer:
     """A second issuer the manager trusts for nothing.
 
     It signs with its own key, so a token from it fails verification even when
     it claims the trusted issuer's `iss`.
     """
-    issuer = start_issuer(free_port(), workdir / "logs", name="rogue-idp")
+    issuer = start_issuer(free_port(), workdir / "logs", name="rogue-idp", tls=tls)
     yield issuer
     issuer.stop()
 
 
 @pytest.fixture(scope="session")
-def manager(workdir: Path) -> Manager:
+def manager(workdir: Path, tls: tuple[Path, Path, Path]) -> Manager:
     """The manager under test, shared and restarted by the scenarios."""
     mgr = Manager(state_dir=workdir / "state", run_dir=workdir / "run", https=True)
     yield mgr
