@@ -1288,6 +1288,28 @@ async fn rbac_login_resolution_and_membership() {
 /// before any fetch, an optional audience narrows candidates, and a token
 /// trusted by several tenants returns all of them (the caller disambiguates via
 /// the Feldera-Tenant header, verified at the auth layer).
+/// Every start recreates the default tenant if it is missing, and the default
+/// tenant can be renamed, so that bootstrap must not insert a second row for it.
+#[tokio::test]
+async fn default_tenant_bootstrap_survives_a_rename() {
+    let handle = test_setup().await;
+    let default_id = TenantRecord::default().id;
+
+    handle
+        .db
+        .rename_tenant(default_id, "renamed-away", false)
+        .await
+        .unwrap();
+
+    // What the next start does.
+    handle.db.ensure_default_tenant().await.unwrap();
+
+    // Still one tenant, still under the name the rename gave it.
+    let tenants = handle.db.list_tenants().await.unwrap();
+    assert_eq!(tenants.len(), 1, "the bootstrap must not add a second row");
+    assert_eq!(tenants[0].name, "renamed-away");
+}
+
 /// A registered issuer becomes a fetch destination before any signature is
 /// verified, so registration refuses one that names an internal service unless
 /// the operator permits it.

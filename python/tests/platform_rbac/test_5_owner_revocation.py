@@ -74,11 +74,18 @@ def test_restarting_without_them_revokes_both(
 def test_a_revoked_owner_keeps_its_tenant_membership(api: Api, primary_idp: Issuer):
     """Losing ownership is not losing the account.
 
-    A former owner that also holds a membership still acts in that tenant at the
-    role the membership gives it. Ownership is platform-wide and separate, so
-    withdrawing it must not disturb anything tenant-scoped.
+    A member still acts in its tenant at the role the membership gives it.
+    Ownership is platform-wide and separate, so withdrawing it must not disturb
+    anything tenant-scoped.
+
+    The admin's membership is in the tenant the migration displaced, which the
+    rename left as `acme (<id>)`; a different tenant holds the name `acme` now.
     """
-    admin = primary_idp.token("admin", email="admin@example.com", tenants=[TENANT])
-    assert api.status("GET", "/tenant/users", token=admin, tenant=TENANT) == 200
+    successor = primary_idp.token("successor", email=SUCCESSOR_EMAIL)
+    tenants = api.v0("GET", "/tenants", token=successor).json()
+    home = next(t["name"] for t in tenants if t["name"].startswith(f"{TENANT} ("))
+
+    admin = primary_idp.token("admin", email="admin@example.com", tenants=[home])
+    assert api.status("GET", "/tenant/users", token=admin, tenant=home) == 200
     # And still cannot reach the platform routes, which is what it never had.
-    assert api.status("GET", "/tenants", token=admin, tenant=TENANT) == 403
+    assert api.status("GET", "/tenants", token=admin, tenant=home) == 403
