@@ -29,6 +29,7 @@
   let monaco: typeof Monaco
 
   let container: HTMLDivElement
+  let isDestroyed = false
   let {
     editor = $bindable(),
     model,
@@ -116,6 +117,13 @@
         )
       }
     }
+    // Both awaits above yield to the event loop, and the consumer can unmount
+    // in that window: Svelte nulls `container` on teardown, and Monaco walks up
+    // from it looking for a shadow root, so creating the editor now would throw
+    // "Cannot read properties of null (reading 'parentNode')".
+    if (isDestroyed) {
+      return
+    }
     editor = monaco.editor.create(container, {
       // TODO: Workaround for Windows-only cursor mis-positioning on mouse click
       // (cursor lands progressively further off the clicked glyph along the line;
@@ -139,7 +147,10 @@
     onready(editor)
   })
 
-  onDestroy(() => editor?.dispose())
+  onDestroy(() => {
+    isDestroyed = true
+    editor?.dispose()
+  })
 </script>
 
 <div
