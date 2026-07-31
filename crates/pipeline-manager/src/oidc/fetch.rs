@@ -65,8 +65,9 @@ impl reqwest::dns::Resolve for PublicAddrsOnly {
 /// [`PublicAddrsOnly`], so it cannot name an internal service.
 pub(crate) fn oidc_http_client(
     destination: OidcDestination,
+    extra_roots: &[reqwest::Certificate],
 ) -> Result<reqwest::Client, reqwest::Error> {
-    let builder = reqwest::Client::builder()
+    let mut builder = reqwest::Client::builder()
         // rustls with the platform's roots, so which certificates an issuer may
         // present is decided the same way on every platform. The default
         // backend is whatever the target ships, and on macOS that store cannot
@@ -74,6 +75,12 @@ pub(crate) fn oidc_http_client(
         .use_rustls_tls()
         .timeout(Duration::from_secs(OIDC_FETCH_TIMEOUT_SECONDS))
         .redirect(reqwest::redirect::Policy::none());
+    // An issuer may sit behind the deployment's own CA, which the web PKI does
+    // not know. These add to the platform's roots rather than replacing them,
+    // so a public provider still verifies.
+    for root in extra_roots {
+        builder = builder.add_root_certificate(root.clone());
+    }
     match destination {
         OidcDestination::TenantRegistered(TenantIssuerPolicy::PublicHttpsOnly) => {
             builder.dns_resolver(Arc::new(PublicAddrsOnly)).build()
@@ -86,12 +93,13 @@ pub(crate) fn oidc_http_client(
 pub(crate) async fn fetch_jwks_uri_from_discovery(
     issuer: &str,
     destination: OidcDestination,
+    extra_roots: &[reqwest::Certificate],
 ) -> Result<String, reqwest::Error> {
     let discovery_url = format!(
         "{}/.well-known/openid-configuration",
         issuer.trim_end_matches('/')
     );
-    let discovery: OidcDiscoveryDocument = oidc_http_client(destination)?
+    let discovery: OidcDiscoveryDocument = oidc_http_client(destination, extra_roots)?
         .get(&discovery_url)
         .send()
         .await?
@@ -111,8 +119,9 @@ pub(crate) async fn fetch_jwks_uri_from_discovery(
 pub(crate) async fn fetch_issuer_jwks(
     issuer: &str,
     destination: OidcDestination,
+    extra_roots: &[reqwest::Certificate],
 ) -> Result<HashMap<String, DecodingKey>, AuthError> {
-    let jwks_uri = fetch_jwks_uri_from_discovery(issuer, destination)
+    let jwks_uri = fetch_jwks_uri_from_discovery(issuer, destination, extra_roots)
         .await
         .map_err(|e| AuthError::JwkShape(format!("OIDC discovery failed: {e}")))?;
     if let OidcDestination::TenantRegistered(policy) = destination {
@@ -122,7 +131,7 @@ pub(crate) async fn fetch_issuer_jwks(
             ))
         })?;
     }
-    let client = oidc_http_client(destination)
+    let client = oidc_http_client(destination, extra_roots)
         .map_err(|e| AuthError::JwkShape(format!("OIDC client build: {e}")))?;
     let keys_json: Value = client
         .get(&jwks_uri)

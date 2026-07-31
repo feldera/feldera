@@ -862,6 +862,9 @@ pub(crate) struct ServerState {
     pub config: ApiServerConfig,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
     pub issuer_jwk_cache: Arc<Mutex<IssuerJwkCache>>,
+    /// Roots an OIDC fetch trusts on top of the platform's, read once here so
+    /// that authenticating a request never touches the filesystem.
+    pub oidc_root_certs: Vec<reqwest::Certificate>,
     probe: Arc<Mutex<DbProbe>>,
     pub demos: Vec<Demo>,
     pub license_check: Arc<RwLock<Option<LicenseCheck>>>,
@@ -877,6 +880,7 @@ impl ServerState {
         let runner = RunnerInteraction::new(common_config.clone(), db.clone());
         let db_copy = db.clone();
         let demos = read_demos_from_directories(&config.demos_dir);
+        let oidc_root_certs = common_config.configured_root_certificates().await?;
         Ok(Self {
             db,
             runner,
@@ -884,6 +888,7 @@ impl ServerState {
             config,
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
             issuer_jwk_cache: Arc::new(Mutex::new(IssuerJwkCache::new())),
+            oidc_root_certs,
             probe: DbProbe::new(db_copy).await,
             demos,
             license_check,
@@ -960,7 +965,7 @@ pub async fn run(
         crate::config::AuthProviderType::None => None,
         crate::config::AuthProviderType::AwsCognito => Some(crate::auth::aws_auth_config()),
         crate::config::AuthProviderType::GenericOidc => {
-            match crate::auth::generic_oidc_auth_config(&api_config).await {
+            match crate::auth::generic_oidc_auth_config(&api_config, &state.oidc_root_certs).await {
                 Ok(config) => Some(config),
                 Err(e) => {
                     error!("Failed to configure generic OIDC authentication: {}", e);

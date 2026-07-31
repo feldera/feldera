@@ -172,30 +172,6 @@ class Manager:
     # container, or the host directory when running the binary directly.
     CONTAINER_STATE = "/state"
 
-    # Root stores a Linux image is likely to ship, in preference order.
-    SYSTEM_CA_BUNDLES = (
-        "/etc/ssl/certs/ca-certificates.crt",
-        "/etc/pki/tls/certs/ca-bundle.crt",
-    )
-
-    def _ca_bundle(self) -> Path:
-        """Roots the manager trusts: the suite's certificate and the platform's.
-
-        The manager reaches every issuer over https, so it has to trust the CA
-        that signed what they serve. Its TLS stack reads `SSL_CERT_FILE`
-        *instead of* the system store rather than in addition to it, so the
-        platform's roots are carried along; without them the manager loses every
-        other outbound https destination.
-        """
-        bundle = self.run_dir / "ca-bundle.crt"
-        roots = [self.ca_cert.read_text()]
-        for path in map(Path, self.SYSTEM_CA_BUNDLES):
-            if path.exists():
-                roots.append(path.read_text())
-                break
-        bundle.write_text("\n".join(roots))
-        return bundle
-
     def _flags(self) -> list[str]:
         root = self.CONTAINER_STATE if self.image else str(self.state_dir)
         flags = [
@@ -208,6 +184,7 @@ class Manager:
                 "--enable-https",
                 f"--https-tls-cert-path={self.cert}",
                 f"--https-tls-key-path={self.key}",
+                f"--private-ca-cert-path={self.ca_cert}",
             ]
         return flags
 
@@ -221,7 +198,6 @@ class Manager:
             "RUST_LOG": "info,pipeline_manager::auth=debug,pipeline_manager::oidc=debug",
             "RUST_BACKTRACE": "1",
             "FELDERA_UNSTABLE_FEATURES": "runtime_version,testing",
-            "SSL_CERT_FILE": str(self._ca_bundle()),
             **config.env,
         }
         if self.image:
@@ -389,29 +365,25 @@ class Manager:
         return "\n".join(interesting[-20:]) or self.logs()[-2000:]
 
     def container_tls_view(self, probe_url: str | None = None) -> str:
-        """What the manager's container sees of the CA bundle it was handed.
+        """What the manager's container sees of the CA it was pointed at.
 
-        A JWKS fetch that cannot verify the issuer looks the same whether
-        `SSL_CERT_FILE` never reached the process or reached it and does not
-        verify that issuer, and those have different fixes. `curl --cacert`
-        against the issuer separates them: it succeeds only when the bundle is
-        readable in the container and does chain to the issuer's certificate.
+        A fetch that cannot verify the issuer looks the same whether the CA
+        never reached the container or reached it and does not chain to the
+        issuer, and those have different fixes. `curl --cacert` separates them:
+        it succeeds only when the file is readable there and does chain.
         """
-        if not self._container:
+        if not self._container or not self.ca_cert:
             return ""
+        ca = self.ca_cert
         script = (
             'echo "user=$(id -un) uid=$(id -u)"\n'
-            'echo "SSL_CERT_FILE=${SSL_CERT_FILE:-<unset>}"\n'
-            'if [ -n "$SSL_CERT_FILE" ]; then\n'
-            '  ls -l "$SSL_CERT_FILE" 2>&1\n'
-            "  echo \"certs_in_bundle=$(grep -c 'BEGIN CERTIFICATE' "
-            '"$SSL_CERT_FILE" 2>/dev/null || echo unreadable)"\n'
-            "fi\n"
+            f'echo "ca_cert={ca}"\n'
+            f'ls -l "{ca}" 2>&1\n'
         )
         if probe_url:
             script += (
-                f'curl -sS --cacert "$SSL_CERT_FILE" -o /dev/null '
-                f"-w 'curl_with_bundle=%{{http_code}}\\n' '{probe_url}' 2>&1\n"
+                f'curl -sS --cacert "{ca}" -o /dev/null '
+                f"-w 'curl_with_ca=%{{http_code}}\\n' '{probe_url}' 2>&1\n"
                 f"curl -sS -o /dev/null "
                 f"-w 'curl_ambient_roots=%{{http_code}}\\n' '{probe_url}' 2>&1\n"
             )
