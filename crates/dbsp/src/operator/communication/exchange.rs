@@ -55,7 +55,7 @@ use tokio::{
     },
     sync::{Notify, OnceCell, futures::OwnedNotified},
     task::JoinHandle,
-    time::sleep,
+    time::{sleep, timeout},
 };
 use tokio_util::sync::{CancellationToken, DropGuard};
 use tracing::{error, info, warn};
@@ -331,6 +331,12 @@ impl ExchangeChannel {
     fn drain_waiter(&self) -> Option<OwnedNotified> {
         self.inner().drain_waiter()
     }
+
+    /// True if the channel holds messages that the receiver has not
+    /// acknowledged yet.
+    fn has_unacknowledged(&self) -> bool {
+        !self.inner().messages.is_empty()
+    }
 }
 
 pub struct ExchangeClient {
@@ -373,6 +379,26 @@ impl ExchangeClient {
             // Get the next message to send.
             let (message, sequence) = match channel.get(min_sequence) {
                 Ok(result) => result,
+                Err(notified) if channel.has_unacknowledged() => {
+                    // Nothing new to send, but the receiver has not
+                    // acknowledged everything we sent.  Retransmit from the
+                    // oldest unacknowledged message if that does not change
+                    // before the timeout.
+                    //
+                    // Without this, a message lost while the connection stays
+                    // up wedges both ends forever: the receiver waits for the
+                    // message, we wait for its acknowledgement, and only a new
+                    // message or a reconnection would make us send anything.
+                    // In a synchronous exchange no new message can arrive,
+                    // because the workers on both ends are waiting for this
+                    // one.  Retransmitting costs nothing when it is not
+                    // needed: the receiver drops messages whose sequence
+                    // number it has already seen.
+                    if timeout(retransmit_timeout(), notified).await.is_err() {
+                        min_sequence = 0;
+                    }
+                    continue;
+                }
                 Err(notified) => {
                     notified.await;
                     continue;
@@ -2130,6 +2156,24 @@ fn inject_fault(kind: impl Display) -> bool {
 #[cfg(not(test))]
 fn inject_fault(_kind: impl Display) -> bool {
     false
+}
+
+/// How long a connection waits for an acknowledgement before retransmitting
+/// the messages it has already sent.  See [ExchangeClient::run_connection_tx].
+///
+/// A receiver acknowledges a message only after its workers have consumed it,
+/// which can legitimately take a while under load, and retransmitting a large
+/// message needlessly is not free.  The timeout is therefore generous: it
+/// recovers from a wedged connection, which would otherwise last forever, and
+/// is not meant to recover promptly.
+#[cfg(test)]
+fn retransmit_timeout() -> Duration {
+    Duration::from_millis(100)
+}
+
+#[cfg(not(test))]
+fn retransmit_timeout() -> Duration {
+    Duration::from_secs(10)
 }
 
 #[cfg(test)]
