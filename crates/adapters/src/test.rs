@@ -74,7 +74,7 @@ pub use mock_dezset::{
     MockDeZSet, MockUpdate, wait_for_output_count, wait_for_output_ordered,
     wait_for_output_unordered,
 };
-pub use mock_input_consumer::{MockInputConsumer, MockInputParser};
+pub use mock_input_consumer::{ErrorCallback, MockInputConsumer, MockInputParser};
 pub use mock_output_consumer::MockOutputConsumer;
 
 pub static DEFAULT_TIMEOUT_MS: u128 = 600_000;

@@ -965,7 +965,10 @@ fn to_s3_config(config: &Arc<S3InputConfig>) -> aws_sdk_s3::Config {
 #[cfg(test)]
 mod test {
     use crate::{
-        test::{MockDeZSet, MockInputConsumer, MockInputParser, mock_parser_pipeline, wait},
+        test::{
+            ErrorCallback, MockDeZSet, MockInputConsumer, MockInputParser, mock_parser_pipeline,
+            wait,
+        },
         transport::s3::{S3InputConfig, S3InputReader},
     };
     use aws_sdk_s3::{
@@ -984,6 +987,12 @@ mod test {
     use mockall::predicate::eq;
     use serde::{Deserialize, Serialize};
     use std::sync::Arc;
+    use std::time::Duration;
+
+    /// How long a test waits for an error the connector is expected to report.
+    /// Generous: it only bounds the wait so a regression fails instead of
+    /// hanging the whole test binary.
+    const ERROR_TIMEOUT: Duration = Duration::from_secs(60);
 
     #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone, PartialOrd, Ord)]
     struct TestStruct {
@@ -1027,9 +1036,16 @@ mod test {
   }
 }"#;
 
+    /// Builds a reader over `mock`, with `on_error` already installed.
+    ///
+    /// The callback has to be passed in rather than registered afterwards:
+    /// [`S3InputReader::new_inner`] starts listing objects as soon as it is
+    /// called, so a caller that registers later can miss an error the listing
+    /// already reported.
     fn test_setup(
         config_str: &str,
         mock: super::MockS3Client,
+        on_error: ErrorCallback,
     ) -> (
         Box<dyn crate::InputReader>,
         MockInputConsumer,
@@ -1049,7 +1065,7 @@ mod test {
             &config.connector_config.format.unwrap(),
         )
         .unwrap();
-        consumer.on_error(Some(Box::new(|_, _| ())));
+        consumer.on_error(Some(on_error));
         let reader = Box::new(S3InputReader::new_inner(
             &transport_config,
             Box::new(consumer.clone()),
@@ -1061,7 +1077,8 @@ mod test {
     }
 
     fn run_test(config_str: &str, mock: super::MockS3Client, mut test_data: Vec<TestStruct>) {
-        let (reader, consumer, parser, input_handle) = test_setup(config_str, mock);
+        let (reader, consumer, parser, input_handle) =
+            test_setup(config_str, mock, Box::new(|_, _| ()));
         // No outputs should be produced at this point.
         assert!(parser.state().data.is_empty());
         assert!(!consumer.state().eoi);
@@ -1185,7 +1202,8 @@ mod test {
             .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
             .return_once(|_, _, _, _| Ok((objs, None)));
         let test_data: Vec<TestStruct> = (0..1000).map(|i| TestStruct { i }).collect();
-        let (reader, _consumer, _parser, input_handle) = test_setup(MULTI_KEY_CONFIG_STR, mock);
+        let (reader, _consumer, _parser, input_handle) =
+            test_setup(MULTI_KEY_CONFIG_STR, mock, Box::new(|_, _| ()));
         reader.extend();
         wait(
             || {
@@ -1220,13 +1238,22 @@ mod test {
             .return_once(|_, _, _, _| {
                 Err(ListObjectsV2Error::NoSuchBucket(NoSuchBucketBuilder::default().build()).into())
             });
-        let (reader, consumer, _parser, _) = test_setup(MULTI_KEY_CONFIG_STR, mock);
         let (tx, rx) = std::sync::mpsc::channel();
-        consumer.on_error(Some(Box::new(move |fatal, err| {
-            tx.send((fatal, format!("{err}"))).unwrap()
-        })));
+        let (reader, _consumer, _parser, _) = test_setup(
+            MULTI_KEY_CONFIG_STR,
+            mock,
+            // Ignore a send failure: the receiver is gone once the assertion
+            // below has run, and the reader can still report during teardown.
+            Box::new(move |fatal, err| {
+                let _ = tx.send((fatal, format!("{err}")));
+            }),
+        );
         reader.extend();
-        assert_eq!((true, "NoSuchBucket".to_string()), rx.recv().unwrap());
+        assert_eq!(
+            (true, "NoSuchBucket".to_string()),
+            rx.recv_timeout(ERROR_TIMEOUT)
+                .expect("connector reported no error for a missing bucket"),
+        );
     }
 
     #[test]
