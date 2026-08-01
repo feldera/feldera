@@ -227,6 +227,10 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.AGGREGATE_MERGE,
                 CoreRules.INTERSECT_MERGE);
 
+        // Must run before "Expand windows", which converts the RexOver
+        // projections this rewrite creates.
+        this.addStep(new SimpleOptimizerStep("Rewrite SESSION", 0,
+                new SessionRewriteRule()));
         this.addStep(new SimpleOptimizerStep("Constant fold", 2,
                 CoreRules.COERCE_INPUTS,
                 SingleValuesOptimizationRules.JOIN_LEFT_INSTANCE,

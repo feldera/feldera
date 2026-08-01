@@ -871,6 +871,224 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void sessionGc() {
+        // LATENESS on the SESSION timestamp column with SESSION windows.
+        // Both RetainNValues operators attach to the same JoinIndex (the
+        // LAG); the steps below run with compaction to check that this works.
+        String sql = """
+                CREATE TABLE events(
+                    ts  TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS,
+                    uid VARCHAR
+                );
+                CREATE VIEW sessions AS
+                SELECT uid, COUNT(*) AS cnt, window_start, window_end
+                FROM TABLE(SESSION(TABLE events, DESCRIPTOR(ts), DESCRIPTOR(uid), INTERVAL 10 MINUTES))
+                GROUP BY uid, window_start, window_end;""";
+        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep().withStringTrim();
+        // TODO: window_start cannot have a waterline (a session can be unbounded)
+        // but window_end does, but the algorithm we use does not find it.
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int retainKeys = 0;
+            int retainNValues = 0;
+            int rollingWithWaterline = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.retainKeys++;
+            }
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
+                this.retainNValues++;
+            }
+
+            @Override
+            public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator operator) {
+                this.rollingWithWaterline++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.rollingWithWaterline);
+                Assert.assertEquals(2, this.retainKeys);
+                Assert.assertEquals(2, this.retainNValues);
+            }
+        });
+        // The waterline is max over all data of (ts - 1 hour); each step is
+        // filtered with the waterline computed from the previous steps.
+        // Before this step: waterline = minimum, table is empty.
+        // Two sessions start: 'a' has two events 5 minutes apart, 'b' one event
+        ccs.step("""
+                INSERT INTO events VALUES('2020-01-01 10:00:00', 'a'),
+                                         ('2020-01-01 10:05:00', 'a'),
+                                         ('2020-01-01 10:00:00', 'b');""", """
+                 uid | cnt | window_start        | window_end          | weight
+                ----------------------------------------------------------------
+                 a   |   2 | 2020-01-01 10:00:00 | 2020-01-01 10:15:00 | 1
+                 b   |   1 | 2020-01-01 10:00:00 | 2020-01-01 10:10:00 | 1""");
+        // Before this step, table contents (rows above the ==== line are
+        // below the waterline):
+        //   ts    | uid |
+        //  -------+-----+
+        //  ==============  waterline = 10:05 - 1:00 = 09:05
+        //   10:00 | a   |
+        //   10:00 | b   |
+        //   10:05 | a   |
+        // 7 minutes after the last 'a' event: extends the 'a' session
+        ccs.step("""
+                INSERT INTO events VALUES('2020-01-01 10:12:00', 'a');""", """
+                 uid | cnt | window_start        | window_end          | weight
+                ----------------------------------------------------------------
+                 a   | 2   | 2020-01-01 10:00:00 | 2020-01-01 10:15:00 | -1
+                 a   | 3   | 2020-01-01 10:00:00 | 2020-01-01 10:22:00 | 1""");
+        // Before this step:
+        //   ts    | uid |
+        //  -------+-----+
+        //  ==============  waterline = 10:12 - 1:00 = 09:12
+        //   10:00 | a   |
+        //   10:00 | b   |
+        //   10:05 | a   |
+        //   10:12 | a   |
+        // Far from the previous event: a new session
+        ccs.step("""
+                INSERT INTO events VALUES('2020-01-01 13:00:00', 'a');""", """
+                 uid | cnt | window_start        | window_end          | weight
+                -----------------------------------------------------------------
+                 a   | 1   | 2020-01-01 13:00:00 | 2020-01-01 13:10:00 | 1""");
+        // Before this step:
+        //   ts    | uid |
+        //  -------+-----+
+        //   10:00 | a   | frozen
+        //   10:00 | b   | frozen
+        //   10:05 | a   | frozen
+        //   10:12 | a   | frozen
+        //  ==============  waterline = 13:00 - 1:00 = 12:00
+        //   13:00 | a   |
+        // The frozen sessions can no longer change; compaction may collect
+        // their state.  This row is below the waterline: late, dropped
+        ccs.step("""
+                INSERT INTO events VALUES('2020-01-01 11:30:00', 'a');""", """
+                 uid | cnt | window_start | window_end | weight
+                ------------------------------------------------""");
+        // Before this step: same contents and waterline as the previous step.
+        // Exactly on the waterline: not late; more than one gap away from
+        // both neighbor sessions, so it forms its own
+        ccs.step("""
+                INSERT INTO events VALUES('2020-01-01 12:00:00', 'a');""", """
+                 uid | cnt | window_start        | window_end          | weight
+                ----------------------------------------------------------------
+                 a   |   1 | 2020-01-01 12:00:00 | 2020-01-01 12:10:00 | 1""");
+    }
+
+    @Test
+    public void sessionDelete() {
+        // Sessions react to deletions: removing a row can split a session in
+        // two, or move its start.  No LATENESS.
+        String sql = """
+                CREATE TABLE events(
+                    ts  TIMESTAMP NOT NULL,
+                    uid VARCHAR
+                );
+                CREATE VIEW sessions AS
+                SELECT uid, COUNT(*) AS cnt, window_start, window_end
+                FROM TABLE(SESSION(TABLE events, DESCRIPTOR(ts), DESCRIPTOR(uid), INTERVAL 10 MINUTES))
+                GROUP BY uid, window_start, window_end;""";
+        CompilerCircuitStream ccs = this.getCCS(sql).withStringTrim();
+        // 10:05 and 10:20 are 15 minutes apart, so there are two sessions
+        ccs.step("""
+                INSERT INTO events VALUES('2020-01-01 10:00:00', 'a'),
+                                         ('2020-01-01 10:05:00', 'a'),
+                                         ('2020-01-01 10:20:00', 'a');""", """
+                 uid | cnt | window_start        | window_end          | weight
+                ----------------------------------------------------------------
+                 a   | 2   | 2020-01-01 10:00:00 | 2020-01-01 10:15:00 | 1
+                 a   | 1   | 2020-01-01 10:20:00 | 2020-01-01 10:30:00 | 1""");
+        // 10:12 is within the gap of both neighbors, so it bridges the two
+        // sessions into one
+        ccs.step("""
+                INSERT INTO events VALUES('2020-01-01 10:12:00', 'a');""", """
+                 uid | cnt | window_start        | window_end          | weight
+                ----------------------------------------------------------------
+                 a   | 2   | 2020-01-01 10:00:00 | 2020-01-01 10:15:00 | -1
+                 a   | 1   | 2020-01-01 10:20:00 | 2020-01-01 10:30:00 | -1
+                 a   | 4   | 2020-01-01 10:00:00 | 2020-01-01 10:30:00 | 1""");
+        // Removing the bridge splits the session again
+        ccs.step("""
+                REMOVE FROM events VALUES('2020-01-01 10:12:00', 'a');""", """
+                 uid | cnt | window_start        | window_end          | weight
+                ----------------------------------------------------------------
+                 a   |   4 | 2020-01-01 10:00:00 | 2020-01-01 10:30:00 | -1
+                 a   |   2 | 2020-01-01 10:00:00 | 2020-01-01 10:15:00 | 1
+                 a   |   1 | 2020-01-01 10:20:00 | 2020-01-01 10:30:00 | 1""");
+        // Removing the first row of a session moves its window_start
+        ccs.step("""
+                REMOVE FROM events VALUES('2020-01-01 10:00:00', 'a');""", """
+                 uid | cnt | window_start        | window_end          | weight
+                ----------------------------------------------------------------
+                 a   |   2 | 2020-01-01 10:00:00 | 2020-01-01 10:15:00 | -1
+                 a   |   1 | 2020-01-01 10:05:00 | 2020-01-01 10:15:00 | 1""");
+        // Removing the last remaining row of a session deletes it
+        ccs.step("""
+                REMOVE FROM events VALUES('2020-01-01 10:20:00', 'a');""", """
+                 uid | cnt | window_start        | window_end          | weight
+                ----------------------------------------------------------------
+                 a   |   1 | 2020-01-01 10:20:00 | 2020-01-01 10:30:00 | -1""");
+    }
+
+    @Test
+    public void sessionGcLateMerge() {
+        // A session that straddles the waterline can still merge with an
+        // on-time row; the merged session's window_start comes from a value
+        // below the waterline, so value retention must keep it.
+        String sql = """
+                CREATE TABLE events(
+                    ts  TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS,
+                    uid VARCHAR
+                );
+                CREATE VIEW sessions AS
+                SELECT uid, COUNT(*) AS cnt, window_start, window_end
+                FROM TABLE(SESSION(TABLE events, DESCRIPTOR(ts), DESCRIPTOR(uid), INTERVAL 10 MINUTES))
+                GROUP BY uid, window_start, window_end;""";
+        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep().withStringTrim();
+        // Before this step: waterline = minimum, table is empty
+        ccs.step("""
+                INSERT INTO events VALUES('2020-01-01 11:50:00', 'a'),
+                                         ('2020-01-01 11:55:00', 'a');""", """
+                 uid | cnt | window_start        | window_end          | weight
+                ----------------------------------------------------------------
+                 a   |   2 | 2020-01-01 11:50:00 | 2020-01-01 12:05:00 | 1""");
+        // Before this step:
+        //   ts    | uid |
+        //  -------+-----+
+        //  ==============  waterline = 11:55 - 1:00 = 10:55
+        //   11:50 | a   |
+        //   11:55 | a   |
+        // An unrelated key advances the waterline to 12:00; the 'a' session
+        // now straddles it: its rows are below, but a row on the waterline
+        // can still merge with it
+        ccs.step("""
+                INSERT INTO events VALUES('2020-01-01 13:00:00', 'z');""", """
+                 uid | cnt | window_start        | window_end          | weight
+                ----------------------------------------------------------------
+                 z   |   1 | 2020-01-01 13:00:00 | 2020-01-01 13:10:00 | 1""");
+        // Before this step:
+        //   ts    | uid |
+        //  -------+-----+
+        //   11:50 | a   | below the waterline, but the session is still live
+        //   11:55 | a   | (a row at 12:00..12:05 can merge with it)
+        //  ==============  waterline = 13:00 - 1:00 = 12:00
+        //   13:00 | z   |
+        // On-time row 9 minutes after 11:55: merges; window_start must still
+        // be 11:50, which only survives GC if value retention kept it
+        ccs.step("""
+                INSERT INTO events VALUES('2020-01-01 12:04:00', 'a');""", """
+                 uid | cnt | window_start        | window_end          | weight
+                ----------------------------------------------------------------
+                 a   |   2 | 2020-01-01 11:50:00 | 2020-01-01 12:05:00 | -1
+                 a   |   3 | 2020-01-01 11:50:00 | 2020-01-01 12:14:00 | 1""");
+    }
+
+    @Test
     public void gcUpsertBoundary() {
         // The LATENESS column is not part of the primary key, so the input
         // trace is never garbage-collected: any key can still be updated.

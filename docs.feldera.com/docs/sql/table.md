@@ -118,3 +118,70 @@ function:
 - `window_end`, of the same type as the column `orders.rowtime`
 
 A `NULL` timestamp produces no rows in the result.
+
+### `SESSION`
+
+`SESSION` groups rows into sessions based on a timestamp column.  Two
+rows belong to the same session when their timestamps are less than
+`size` (the inactivity gap) apart.  Unlike `TUMBLE` and `HOP` windows,
+session windows are not fixed in absolute time: each session starts at
+the timestamp of its first row and ends `size` after the timestamp of
+its last row.  The optional `key` descriptor partitions the rows;
+sessions are formed separately within each key.
+
+Here is an example showing session windows defined by intervals longer
+than 10 minutes (we only show the timestamps of the rows involved,
+sorted increasingly).
+
+```
+10:00 -- session starts
+10:04 |
+10:13 |
+10:20 -- session ends
+10:32 -- session starts
+10:36 |
+10:40 -- session ends
+10:51 -- session starts and ends
+```
+
+#### Syntax:
+
+```
+SESSION(data, DESCRIPTOR(timecol) [, DESCRIPTOR(key) ], size)
+```
+
+The type of the `timecol` has to be `TIMESTAMP`.
+
+Here is an example:
+
+```sql
+SELECT * FROM TABLE(
+  SESSION(
+    TABLE orders,
+    DESCRIPTOR(rowtime),
+    DESCRIPTOR(product),
+    INTERVAL '20' MINUTE));
+
+-- or with the named params
+-- note: the DATA param must be the first
+SELECT * FROM TABLE(
+  SESSION(
+    DATA => TABLE orders,
+    TIMECOL => DESCRIPTOR(rowtime),
+    KEY => DESCRIPTOR(product),
+    SIZE => INTERVAL '20' MINUTE));
+```
+
+groups the rows of `orders` into sessions per `product`; a session
+ends when a product receives no orders for 20 minutes.
+
+The result is a table that has all the columns of the `orders` table,
+and in addition the following columns, defined by the `SESSION`
+function:
+- `window_start`, of the same type as the column `orders.rowtime`;
+  the timestamp of the session's first row
+- `window_end`, of the same type as the column `orders.rowtime`;
+  the timestamp of the session's last row plus `size`
+
+A `NULL` timestamp produces no rows in the result.  A `NULL` key
+groups rows like any other key value.
