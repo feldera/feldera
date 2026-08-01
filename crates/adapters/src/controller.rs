@@ -5902,6 +5902,14 @@ impl BackpressureThread {
                 == ConcurrentBootstrapPhase::Synchronizing;
 
             for (epid, ep) in controller.status.input_status().iter() {
+                // `add_input_endpoint` registers an endpoint before `open`
+                // hands back its reader, so an endpoint can show up here with
+                // no reader yet.  Skip it: recording the id in
+                // `running_endpoints` now would swallow the endpoint's one and
+                // only `extend()` and leave it paused forever.
+                let Some(reader) = ep.reader.as_ref() else {
+                    continue;
+                };
                 let should_run = globally_running
                     && !bootstrap_in_progress
                     && !concurrent_synchronize
@@ -5909,16 +5917,12 @@ impl BackpressureThread {
                     && !ep.is_full();
                 match should_run {
                     true => {
-                        if running_endpoints.insert(*epid)
-                            && let Some(reader) = ep.reader.as_ref()
-                        {
+                        if running_endpoints.insert(*epid) {
                             reader.extend()
                         }
                     }
                     false => {
-                        if running_endpoints.remove(epid)
-                            && let Some(reader) = ep.reader.as_ref()
-                        {
+                        if running_endpoints.remove(epid) {
                             reader.pause()
                         }
                     }
