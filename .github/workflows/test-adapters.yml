@@ -16,6 +16,11 @@ jobs:
   adapter-tests:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'adapter-tests') }}
     name: Test Adapters
+    # The suite runs in 3 to 10 minutes. Without a bound, a test that blocks
+    # instead of failing holds a runner for the 6 hour default and stalls the
+    # merge queue behind it; the cancel-if-* sentinels cannot help, because a
+    # job that hangs never reports failure.
+    timeout-minutes: 30
     strategy:
       matrix:
         include:
