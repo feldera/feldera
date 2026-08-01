@@ -10,8 +10,10 @@
 //! |--------|------|
 //! | [`key`] | Which types may form a key, and how key values become comparable bytes |
 //! | [`chunk`] | The bounded buffer of encoded keys awaiting a lookup pass |
+//! | [`probe`] | Turning a set of keys into the (file, row ordinal) pairs to tombstone |
 //! | [`tombstone`] | Turning located row ordinals into deletion vectors and log actions |
 
 pub(crate) mod chunk;
 pub(crate) mod key;
+pub(crate) mod probe;
 pub(crate) mod tombstone;

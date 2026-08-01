@@ -137,8 +137,17 @@ impl LookupChunk {
 
     /// Whether `key` is present. Requires [`Self::sort`].
     pub fn contains(&self, key: &[u8]) -> bool {
+        self.position(key).is_some()
+    }
+
+    /// Index of `key` in sorted order, or `None` when absent.
+    ///
+    /// The lookup uses the index to count how many distinct keys it found, which is what
+    /// distinguishes "this key is not in the table" from "this key is in two files".
+    /// Requires [`Self::sort`].
+    pub fn position(&self, key: &[u8]) -> Option<usize> {
         let i = self.lower_bound(key);
-        i < self.order.len() && self.key_at(self.order[i] as usize) == key
+        (i < self.order.len() && self.key_at(self.order[i] as usize) == key).then_some(i)
     }
 
     /// Whether any key falls within `[min, max]` inclusive.

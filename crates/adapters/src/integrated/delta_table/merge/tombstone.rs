@@ -58,6 +58,11 @@ impl Tombstones {
     pub fn total_rows(&self) -> u64 {
         self.files.values().map(|b| b.len()).sum()
     }
+
+    /// Ordinals marked in one file, for tests and diagnostics.
+    pub fn ordinals_for(&self, path: &str) -> Option<&RoaringTreemap> {
+        self.files.get(path)
+    }
 }
 
 /// Helper so `insert` reads as one line without cloning the path on every hit.
