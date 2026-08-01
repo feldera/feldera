@@ -29,6 +29,55 @@ pub enum DeltaTableWriteMode {
     ErrorIfExists,
 }
 
+/// How the Delta table connector applies pipeline updates to the target table.
+///
+/// This is orthogonal to [`DeltaTableWriteMode`], which governs what happens to an
+/// existing table when the connector starts.
+#[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+pub enum DeltaTableUpdateMode {
+    /// Append a change log.
+    ///
+    /// Every insert and delete becomes a row carrying `__feldera_op` and `__feldera_ts`
+    /// metadata columns. The table is an append-only record of changes, which a
+    /// downstream job folds into a state table.
+    #[default]
+    #[serde(rename = "cdc")]
+    Cdc,
+
+    /// Keep the table in sync with the current contents of the view.
+    ///
+    /// New row versions are appended and superseded rows are tombstoned with Delta
+    /// deletion vectors, so no data file is ever rewritten. The table holds exactly the
+    /// view's columns, with no metadata columns.
+    ///
+    /// Requires the view to have a unique key (the connector's `index` property) and the
+    /// target table to have `delta.enableDeletionVectors` set to `true`.
+    #[serde(rename = "merge")]
+    Merge,
+}
+
+impl Display for DeltaTableUpdateMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            DeltaTableUpdateMode::Cdc => write!(f, "cdc"),
+            DeltaTableUpdateMode::Merge => write!(f, "merge"),
+        }
+    }
+}
+
+/// Default ceiling on the encoded lookup keys held in memory at once, in bytes.
+///
+/// At roughly 21 bytes per encoded 8-byte key this holds about 12M keys, more than a
+/// steady-state flush produces, so the common case is a single lookup pass.
+const fn default_lookup_chunk_bytes() -> usize {
+    256 * 1024 * 1024
+}
+
+/// Default number of row groups probed concurrently.
+const fn default_max_concurrent_probes() -> usize {
+    4
+}
+
 /// Delta table output connector configuration.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct DeltaTableWriterConfig {
@@ -38,6 +87,38 @@ pub struct DeltaTableWriterConfig {
     /// Determines how the Delta table connector handles an existing table at the target location.
     #[serde(default)]
     pub mode: DeltaTableWriteMode,
+
+    /// Determines how the connector applies updates to the target table.
+    ///
+    /// See [`DeltaTableUpdateMode`]. When omitted, defaults to
+    /// [`DeltaTableUpdateMode::Cdc`], the historical behavior.
+    #[serde(default)]
+    pub update_mode: DeltaTableUpdateMode,
+
+    /// Add a `__feldera_ts` column recording when each row was last written.
+    ///
+    /// Only valid when `update_mode` is `merge`; in `cdc` mode the column is always
+    /// present. Off by default so that the target table holds exactly the view's columns.
+    #[serde(default)]
+    pub add_timestamp_column: bool,
+
+    /// Ceiling, in bytes, on the encoded keys the connector holds while locating rows to
+    /// tombstone.
+    ///
+    /// Only used when `update_mode` is `merge`. A flush whose key set exceeds this budget
+    /// is split into successive lookup passes, which bounds memory at the cost of
+    /// re-scanning candidate row groups. Default: 256 MiB.
+    #[serde(default = "default_lookup_chunk_bytes")]
+    pub lookup_chunk_bytes: usize,
+
+    /// Number of row groups probed concurrently while locating rows to tombstone.
+    ///
+    /// Only used when `update_mode` is `merge`. Each concurrent probe holds one decoded
+    /// batch, so this bounds the probe's memory as well as its request concurrency.
+    /// Default: 4.
+    #[serde(default = "default_max_concurrent_probes")]
+    #[schema(minimum = 1)]
+    pub max_concurrent_probes: usize,
 
     /// Checkpoint interval (i.e., the number of commits after which a new checkpoint should be created) for newly created Delta tables.
     ///
@@ -122,7 +203,30 @@ impl DeltaTableWriterConfig {
             validate_delta_interval(duration)
                 .map_err(|e| format!("invalid 'log_retention_duration' value '{duration}': {e}"))?;
         }
+        if !self.is_merge() {
+            // These only have meaning for the merge apply path. Rejecting them in `cdc`
+            // mode turns a silently ignored setting into a startup error.
+            if self.add_timestamp_column {
+                return Err(
+                    "'add_timestamp_column' requires 'update_mode' to be 'merge'; in 'cdc' mode \
+                     the '__feldera_ts' column is always present"
+                        .to_string(),
+                );
+            }
+        }
+        if self.max_concurrent_probes == 0 {
+            return Err("max_concurrent_probes must be greater than 0".to_string());
+        }
+        if self.lookup_chunk_bytes == 0 {
+            return Err("lookup_chunk_bytes must be greater than 0".to_string());
+        }
         Ok(())
+    }
+
+    /// `true` if the connector keeps the target table in sync with the view rather than
+    /// appending a change log.
+    pub fn is_merge(&self) -> bool {
+        self.update_mode == DeltaTableUpdateMode::Merge
     }
 }
 
@@ -530,6 +634,10 @@ mod log_retention_tests {
         DeltaTableWriterConfig {
             uri: "memory://".to_string(),
             mode: DeltaTableWriteMode::default(),
+            update_mode: DeltaTableUpdateMode::default(),
+            add_timestamp_column: false,
+            lookup_chunk_bytes: default_lookup_chunk_bytes(),
+            max_concurrent_probes: default_max_concurrent_probes(),
             checkpoint_interval: None,
             log_retention_duration: log_retention.map(str::to_string),
             enable_expired_log_cleanup: None,
@@ -615,6 +723,62 @@ mod log_retention_tests {
     fn validate_accepts_unset_interval() {
         let cfg = make_config(None);
         assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn update_mode_defaults_to_cdc() {
+        let config: DeltaTableWriterConfig =
+            serde_json::from_str(r#"{"uri":"memory://"}"#).unwrap();
+        assert_eq!(config.update_mode, DeltaTableUpdateMode::Cdc);
+        assert!(!config.is_merge());
+        assert_eq!(config.lookup_chunk_bytes, default_lookup_chunk_bytes());
+        assert_eq!(config.max_concurrent_probes, default_max_concurrent_probes());
+    }
+
+    #[test]
+    fn update_mode_merge_round_trips() {
+        let config: DeltaTableWriterConfig =
+            serde_json::from_str(r#"{"uri":"memory://","update_mode":"merge"}"#).unwrap();
+        assert!(config.is_merge());
+
+        // The flattened `object_store_config` makes it easy to typo a field into storage
+        // options instead of failing; confirm the mode survives a round trip.
+        let reparsed: DeltaTableWriterConfig =
+            serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(reparsed.update_mode, DeltaTableUpdateMode::Merge);
+        assert!(reparsed.object_store_config.is_empty());
+    }
+
+    #[test]
+    fn validate_rejects_timestamp_column_in_cdc_mode() {
+        let mut cfg = make_config(None);
+        cfg.add_timestamp_column = true;
+        let err = cfg.validate().unwrap_err();
+        assert!(err.contains("add_timestamp_column"), "unexpected: {err}");
+
+        cfg.update_mode = DeltaTableUpdateMode::Merge;
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_zero_budgets() {
+        let mut cfg = make_config(None);
+        cfg.max_concurrent_probes = 0;
+        assert!(
+            cfg.validate()
+                .unwrap_err()
+                .contains("max_concurrent_probes")
+        );
+
+        let mut cfg = make_config(None);
+        cfg.lookup_chunk_bytes = 0;
+        assert!(cfg.validate().unwrap_err().contains("lookup_chunk_bytes"));
+    }
+
+    #[test]
+    fn update_mode_display() {
+        assert_eq!(DeltaTableUpdateMode::Cdc.to_string(), "cdc");
+        assert_eq!(DeltaTableUpdateMode::Merge.to_string(), "merge");
     }
 }
 
