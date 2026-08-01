@@ -120,11 +120,6 @@ example usage.  Dynamic `PIVOT` is not yet supported.
 ## `MULTISET` Data Type
 The `MULTISET` data type is not currently supported.
 
-## Session windows
-
-Session windows (grouping events into sessions based on a gap in
-activity) are not yet supported.
-
 ## `TIME` with timezone
 
 The type `TIME WITH TIME ZONE` is not supported.

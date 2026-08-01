@@ -229,6 +229,7 @@
 * `SECH`: [float](float.md#sech)
 * `SECOND`: [datetime](datetime.md#date_second), [datetime](datetime.md#time_second), [datetime](datetime.md#timestamp_second)
 * `SEQUENCE`: [integer](integer.md#sequence)
+* `SESSION`: [table](table.md#session)
 * `SIGN`: [decimal](decimal.md#sign)
 * `SIN`: [float](float.md#sin)
 * `SINH`: [float](float.md#sinh)

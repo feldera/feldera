@@ -498,6 +498,8 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
             new Func(SqlStdOperatorTable.HOP, "HOP", SqlLibrary.STANDARD, "table#hop",
                     "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
+            new Func(SqlStdOperatorTable.SESSION, "SESSION", SqlLibrary.STANDARD, "table#session",
+                    FunctionDocumentation.NO_FILE, false),
 
             // SqlLibraryOperators operators
             // DATEADD is not implemented, but give a better error message

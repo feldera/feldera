@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
@@ -16,10 +17,32 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.util.graph.Port;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /** Check if all GC operators have an obvious operator they apply to */
 public class StrayGC extends CircuitWithGraphsVisitor {
+    /** Maps each port that has a value-retention operator to that operator. */
+    final Map<OutputPort, DBSPOperator> valueRetainers = new HashMap<>();
+    /** Maps each port that has a key-retention operator to that operator. */
+    final Map<OutputPort, DBSPOperator> keyRetainers = new HashMap<>();
+
     public StrayGC(DBSPCompiler compiler, CircuitGraphs g) {
         super(compiler, g);
+    }
+
+    /** Check that 'operator' is the only retention of its kind attached to
+     * its source.
+     * The same operator can be visited twice, hence the identity test. */
+    void checkSingleRetainer(DBSPBinaryOperator operator,
+                             Map<OutputPort, DBSPOperator> retainers, String what) {
+        DBSPOperator previous = retainers.put(operator.left(), operator);
+        if (previous != null && previous != operator) {
+            throw new InternalCompilerError(
+                    "Operators " + previous + " and " + operator +
+                    " both garbage-collect the " + what + " of " + operator.left().operator +
+                    "; the runtime honors only one " + what + " retention condition per trace");
+        }
     }
 
     /** Check that the retain operator invokes the runtime function variant that
@@ -63,6 +86,7 @@ public class StrayGC extends CircuitWithGraphsVisitor {
     public void postorder(DBSPIntegrateTraceRetainValuesOperator operator) {
         // This operator always uses the accumulate_ variant
         this.checkAccumulate(operator, true);
+        this.checkSingleRetainer(operator, this.valueRetainers, "values");
         this.check(operator);
     }
 
@@ -70,12 +94,14 @@ public class StrayGC extends CircuitWithGraphsVisitor {
     public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
         // This operator always uses the accumulate_ variant
         this.checkAccumulate(operator, true);
+        this.checkSingleRetainer(operator, this.valueRetainers, "values");
         this.check(operator);
     }
 
     @Override
     public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
         this.checkAccumulate(operator, operator.accumulate);
+        this.checkSingleRetainer(operator, this.keyRetainers, "keys");
         DBSPOperator left = operator.left().operator;
         if (left.is(DBSPAggregateLinearPostprocessRetainKeysOperator.class) ||
             left.is(DBSPChainAggregateOperator.class) ||
