@@ -6,7 +6,7 @@ use crate::{
     test::{
         DEFAULT_TIMEOUT_MS, TestStruct, generate_test_batch, init_test_logger, test_circuit, wait,
     },
-    transport::set_barrier,
+    transport::{input_transport_config_to_endpoint, set_barrier},
 };
 use anyhow::anyhow;
 use crossbeam::sync::Parker;
@@ -957,6 +957,92 @@ fn test_connector_init_error() {
     );
 
     assert!(result.is_err());
+}
+
+/// A connector rejected by the fault-tolerance check must leave nothing behind.
+///
+/// `add_input_endpoint` registers and opens the endpoint before it compares the
+/// endpoint's fault tolerance with the pipeline's, so the rejection path has to
+/// undo both.  It used to return the error while leaving the endpoint in the
+/// status map, where the endpoint could never run yet still reserved its own
+/// name against a retry.
+#[test]
+fn fault_tolerance_mismatch_unregisters_the_endpoint() {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_file = tempdir.path().join("input.csv");
+    File::create(&input_file).unwrap();
+
+    // `file_input` reports at-least-once for a path with a barrier, weaker than
+    // this pipeline's exactly-once requirement.
+    set_barrier(input_file.to_str().unwrap(), 0);
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
+        },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    // `add_input_endpoint` refuses to run while the pipeline is still restoring,
+    // which on a fault-tolerant pipeline is the state it starts in.
+    controller.start();
+    wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    let connector = json!({
+        "name": "file_input",
+        "config": {
+            "path": input_file,
+            "follow": true
+        }
+    });
+    let endpoint = input_transport_config_to_endpoint(
+        &serde_json::from_value(connector.clone()).unwrap(),
+        "weak_ft",
+        tempdir.path(),
+    )
+    .unwrap()
+    .unwrap();
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": connector,
+        "format": { "name": "csv" }
+    }))
+    .unwrap();
+
+    let error = controller
+        .add_input_endpoint("weak_ft", endpoint_config, endpoint, None)
+        .expect_err("an at-least-once connector must be rejected by an exactly-once pipeline");
+    assert!(error.to_string().contains("fault tolerance"), "{error}");
+
+    assert!(
+        controller.input_endpoint_id_by_name("weak_ft").is_err(),
+        "the rejected endpoint stayed registered"
+    );
+    assert!(controller.status().input_status().is_empty());
+
+    controller.stop().unwrap();
 }
 
 #[test]

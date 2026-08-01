@@ -7426,6 +7426,11 @@ impl ControllerInner {
         };
 
         if fault_tolerance < self.fault_tolerance {
+            // The endpoint is registered and open by now, so undo both.  A
+            // rejected endpoint left in the map can never run, yet it counts
+            // toward the pipeline's statistics and reserves its own name
+            // against a later attempt to add the connector.
+            self.disconnect_input(&endpoint_id);
             return Err(ControllerError::input_transport_error(
                 endpoint_name,
                 true,
