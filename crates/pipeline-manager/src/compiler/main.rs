@@ -10,7 +10,7 @@ use crate::compiler::sql_compiler::{
     validate_program, ProgramValidationRequest, SqlCompilationError, SqlCompilationOutput,
 };
 use crate::compiler::util::{
-    pipeline_binary_filename, program_info_filename, validate_is_sha256_checksum,
+    pipeline_binary_filename, program_info_filename, validate_is_sha256_checksum, DiskSpace,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::probe::DbProbe;
@@ -649,9 +649,47 @@ async fn remove_temp_upload_file(temp_file_path: &Path) {
     }
 }
 
+/// Fraction of the working-directory filesystem above which the deep health
+/// check reports storage pressure: binary uploads are about to fail with
+/// ENOSPC and an operator must grow the volume or reclaim space.
+const STORAGE_PRESSURE_THRESHOLD: f64 = 0.95;
+
+/// Message for the deep health check when the working-directory filesystem is
+/// above `threshold`, `None` when it is not.
+fn storage_pressure_message(disk_space: &DiskSpace, threshold: f64) -> Option<String> {
+    if disk_space.used_fraction < threshold {
+        return None;
+    }
+    Some(format!(
+        "unhealthy: compiler working directory filesystem is {:.1}% full ({} of {} bytes used); \
+         binary uploads will fail until an operator grows the volume or storage is reclaimed",
+        disk_space.used_fraction * 100.0,
+        disk_space.used_byte,
+        disk_space.total_byte
+    ))
+}
+
 /// Health check which returns success if it is able to reach the database.
+/// With a `deep` query parameter it additionally fails on storage pressure of
+/// the working-directory filesystem. Kubernetes probes use the shallow
+/// variant: a full disk must not restart the pod, which still serves already
+/// compiled binaries; the cluster monitor uses the deep variant so
+/// /v0/cluster_healthz surfaces the condition to operators.
 #[get("/healthz")]
-async fn healthz(probe: web::Data<Arc<Mutex<DbProbe>>>) -> Result<impl Responder, ManagerError> {
+async fn healthz(
+    probe: web::Data<Arc<Mutex<DbProbe>>>,
+    config: web::Data<CompilerConfig>,
+    req: HttpRequest,
+) -> Result<impl Responder, ManagerError> {
+    if req.query_string().contains("deep") {
+        if let Some(disk_space) = DiskSpace::new_from_path(&config.working_dir()) {
+            if let Some(message) = storage_pressure_message(&disk_space, STORAGE_PRESSURE_THRESHOLD)
+            {
+                return Ok(HttpResponse::ServiceUnavailable()
+                    .json(serde_json::json!({ "status": message })));
+            }
+        }
+    }
     Ok(probe.lock().await.as_http_response())
 }
 
@@ -1280,6 +1318,23 @@ mod test {
             dir_names.is_empty(),
             "No file may remain after an interrupted upload, found: {dir_names:?}"
         );
+    }
+
+    /// The deep health check reports storage pressure at or above the
+    /// threshold and stays silent below it.
+    #[test]
+    fn storage_pressure_threshold() {
+        let disk_space = |used_fraction: f64| crate::compiler::util::DiskSpace {
+            total_byte: 100,
+            used_byte: (used_fraction * 100.0) as u64,
+            used_fraction,
+            available_byte: 100 - (used_fraction * 100.0) as u64,
+            available_fraction: 1.0 - used_fraction,
+        };
+        assert!(super::storage_pressure_message(&disk_space(0.5), 0.95).is_none());
+        assert!(super::storage_pressure_message(&disk_space(0.95), 0.95).is_some());
+        let message = super::storage_pressure_message(&disk_space(1.0), 0.95).unwrap();
+        assert!(message.contains("100.0% full"));
     }
 
     /// Stale-entry removal deletes only entries older than the maximum age and

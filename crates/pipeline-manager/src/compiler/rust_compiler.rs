@@ -342,13 +342,22 @@ async fn attempt_end_to_end_rust_compilation(
                 );
             }
             RustCompilationError::FileUploadError(upload_error) => {
-                // No status is written: the row stays `CompilingRust` and the next
-                // iteration's reset returns it to `SqlCompiled`, so the compile and
-                // upload are retried once the upload endpoint is reachable again.
+                // The in-cycle retry budget already absorbed transient blips, so a
+                // failure here (endpoint down for long, disk full) needs an operator;
+                // a terminal status tells the user why their compile failed.
+                db.lock()
+                    .await
+                    .transit_program_status_to_system_error(
+                        tenant_id,
+                        pipeline.id,
+                        pipeline.program_version,
+                        &upload_error,
+                    )
+                    .await?;
                 error!(
                     pipeline_id = %pipeline.id,
                     pipeline = %pipeline.name,
-                    "Rust compilation failed due to binary upload error; it will be retried (program version: {}): {upload_error}",
+                    "Rust compilation failed due to binary upload error (program version: {}): {upload_error}",
                     pipeline.program_version
                 );
             }

@@ -225,6 +225,10 @@ During a 0 to N cold start the compiler section reports not ready together with 
 
 Compiler pods that observe a replica change exit with `SCALING DETECTED` and restart with the new worker count. During 0 to N and N to 0 transitions these restarts are expected and bounded; the pods converge as soon as the transition completes.
 
+- **`/cluster_healthz` reports the compiler unhealthy with a storage message:**
+
+The compiler health check fails once the binary store filesystem is 95% full, before uploads start failing with `No space left on device`. Grow the artifact server PVC (the storage class must support volume expansion) or delete unused pipelines so the garbage collector reclaims their binaries. Budget roughly 200 to 300 MB per optimized program version when sizing `compilerAutoscaling.artifactServer.pvcSize`.
+
 - **Compilers never scale down:**
 
 A compilation that never reaches a terminal status keeps demand pending and keeps the workers up. The typical cause is a compile that is OOM-killed on every attempt: the pipeline cycles between `SqlCompiled` and `CompilingRust` forever. Give the compiler pods more memory or remove the offending pipeline.
@@ -243,7 +247,7 @@ If a pipeline is assigned to a worker pod that is not yet running or is unhealth
 
 - **Failed to upload binary:**
 
-If a worker pod cannot upload its binary to `<_>-compiler-server-0` due to a transient failure (network error, HTTP 5xx), the compilation stays in a compiling status and is retried once the upload target is reachable again. A permanent rejection (an HTTP 4xx response, for example a proxy body-size limit) surfaces as `SystemError` instead of retrying forever.
+Transient upload failures (network errors, HTTP 5xx) are retried with exponential backoff inside the compilation attempt; with the default retry settings this absorbs roughly half an hour of outage, for example a restart of the upload target during an upgrade. A permanent rejection (an HTTP 4xx response, for example a proxy body-size limit) or a failure that outlives the retry budget surfaces as `SystemError` with the underlying cause, such as `No space left on device` when the binary store volume is full. After fixing the cause (for example growing the artifact store PVC), recompile affected pipelines by editing or re-saving their program.
 
 You can check if `<_>-compiler-server-0` is healthy or not by `/cluster_healthz` endpoint. Make sure to adjust binary upload related configuration as per your needs, e.g. if your _upgrade_ takes a while, we should configure retries and backoff interval to sane values such that pods get time to come up to receive the binary.
 

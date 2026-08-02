@@ -72,8 +72,10 @@ pub async fn cluster_monitor<P: ResourcesPoller>(
         "{protocol}://{}:{}/healthz",
         common_config.api_host, common_config.api_port
     );
+    // The deep variant additionally fails on storage pressure of the compiler
+    // working directory, which would make binary uploads fail with ENOSPC.
     let compiler_url = format!(
-        "{protocol}://{}:{}/healthz",
+        "{protocol}://{}:{}/healthz?deep=1",
         common_config.compiler_host, common_config.compiler_port
     );
     let runner_url = format!(
