@@ -1542,6 +1542,14 @@ impl Storage for StoragePostgres {
         Ok(next_pipeline_program)
     }
 
+    async fn count_pipelines_needing_compilation(&self) -> Result<u64, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let count = operations::pipeline::count_pipelines_needing_compilation(&txn).await?;
+        txn.commit().await?;
+        Ok(count)
+    }
+
     async fn list_pipeline_programs_across_all_tenants(
         &self,
     ) -> Result<
@@ -1824,6 +1832,13 @@ impl Storage for StoragePostgres {
 }
 
 impl StoragePostgres {
+    /// Public mirror of the `Storage::count_pipelines_needing_compilation`
+    /// trait method: the enterprise runner derives compiler autoscaling demand
+    /// from it but cannot name the crate-private `Storage` trait.
+    pub async fn count_pipelines_needing_compilation(&self) -> Result<u64, DBError> {
+        <Self as Storage>::count_pipelines_needing_compilation(self).await
+    }
+
     pub async fn connect(
         db_config: &DatabaseConfig,
         #[cfg(feature = "postgresql_embedded")] pg_embed_config: PgEmbedConfig,
