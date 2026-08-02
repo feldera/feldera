@@ -17,7 +17,7 @@ Feldera deploys the compiler server as a Kubernetes StatefulSet with **N** repli
 To further accelerate builds, Feldera optionally supports [sccache](https://github.com/mozilla/sccache) with an S3-compatible backend. This allows workers to share compiled operator artifacts instead of rebuilding identical code.
 
 :::info
-Autoscaling based on workload is not yet supported. You must set the number of compiler server replicas at install time or scale them manually later.
+Workload-based autoscaling is available as an experimental feature; see [Autoscaling (experimental)](#autoscaling-experimental). Without it, you set the number of compiler server replicas at install time or scale them manually later.
 :::
 
 ---
@@ -133,6 +133,104 @@ parallelCompilation:
 
 ---
 
+## Autoscaling (experimental)
+
+Compiler autoscaling scales the compiler server StatefulSet between 0 and N replicas so that idle deployments stop paying for compiler nodes. The kubernetes-runner drives the scaling:
+
+- Every `pollIntervalSeconds` the runner counts pipelines that need compilation. A pipeline counts when its deployment resources are stopped and its program status is `Pending`, `CompilingSql`, `SqlCompiled`, or `CompilingRust`.
+- When the count is greater than zero, the runner scales the StatefulSet to N. N is `parallelCompilation.replicas` when parallel compilation is enabled, otherwise 1.
+- After `idleTimeoutSeconds` without pending compilation work, the runner scales the StatefulSet to zero.
+
+A small always-on artifact server Deployment (`<release>-compiler-artifact-server`) owns the binary store and serves compiled pipeline binaries and SQL program validation. The `<release>-compiler-server-0` service routes to it, so the api-server, the runner, and pipeline pods keep working while the compiler workers are scaled to zero. All compiler workers, including worker 0, upload their binaries to the artifact server.
+
+### Configuration Defaults
+
+```yaml
+compilerAutoscaling:
+  # Experimental: scale the compiler server StatefulSet to zero when idle.
+  enabled: false
+  # Seconds without pending compilation work before scaling to zero.
+  idleTimeoutSeconds: 1800
+  # Seconds between checks for pending compilation work.
+  pollIntervalSeconds: 10
+  artifactServer:
+    httpWorkers: 2
+    pvcSize: 20Gi
+    # The artifact server also serves SQL program validation (a JVM); the CPU
+    # limit lets the JVM size its heap.
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2000Mi
+      limits:
+        cpu: "1"
+        memory: 2000Mi
+    # Seed the artifact store once from the compiler-server-0 PVC of an
+    # existing installation. Keep false on fresh installs.
+    seedFromCompilerServer0: false
+```
+
+### Latency Expectations
+
+A compilation submitted while the compilers are scaled to zero waits for the full cold start: the autoscaler poll (up to `pollIntervalSeconds`), node provisioning if the cluster must add compiler nodes, image pull, and compiler server startup including precompiled dependency extraction. The pipeline shows `Pending` during this time; that is expected, not a stall. Compilations submitted while workers are already up behave exactly as without autoscaling.
+
+Starting or restarting a pipeline whose binary is already compiled does not wake the compilers; the artifact server serves the stored binary directly.
+
+### Enabling on an Existing Installation
+
+Enabling changes the StatefulSet `podManagementPolicy` (an immutable field) and moves the binary store to the artifact server PVC, so it is a short maintenance event rather than a pure values change:
+
+1. Upgrade to images that support autoscaling, with `compilerAutoscaling.enabled` still `false`. Older images do not understand the new flags and would crash loop.
+2. Run the enabling upgrade with `compilerAutoscaling.enabled=true` and `compilerAutoscaling.artifactServer.seedFromCompilerServer0=true`. While the seed setting is true the chart omits the compiler StatefulSet, so this upgrade deletes the existing one and frees its ReadWriteOnce `compiler-storage-<release>-compiler-server-0` volume; the artifact server then copies the compiled binaries from that volume into the artifact store, so existing pipelines keep their binaries. No compilation runs during this window.
+3. Wait until the artifact server pod is `Running` (the copy happens in its init container).
+4. Run a follow-up upgrade with `seedFromCompilerServer0` back to `false`. This recreates the compiler StatefulSet (fresh, with the required `podManagementPolicy`) and detaches the old volume from the artifact server.
+
+Fresh installations skip this procedure: set `compilerAutoscaling.enabled=true` at install time.
+
+### Disabling
+
+1. Copy binaries compiled while autoscaling was enabled back to the compiler-server-0 volume. Without this step, a running pipeline whose pod restarts after disabling cannot fetch its binary until the program is recompiled. Scale the artifact server down so its ReadWriteOnce volume is free:
+
+   ```bash
+   kubectl scale deployment <release>-compiler-artifact-server -n <namespace> --replicas=0
+   ```
+
+   then run a one-shot pod that mounts both the `<release>-compiler-artifact-server` and the `compiler-storage-<release>-compiler-server-0` PVCs and copies `rust-compilation/pipeline-binaries` across (the mirror image of the seed init container).
+2. Delete the compiler StatefulSet (disabling reverts `podManagementPolicy`, which is immutable):
+
+   ```bash
+   kubectl delete statefulset <release>-compiler-server -n <namespace>
+   ```
+
+3. Run `helm upgrade` with `compilerAutoscaling.enabled=false`. Helm recreates the StatefulSet and restores the configured replica count. The artifact store PVC carries `helm.sh/resource-policy: keep`, so it survives disabling and is re-adopted if you re-enable later.
+4. Verify with `kubectl get statefulset <release>-compiler-server -n <namespace>` that the replica count matches your configuration.
+
+If the runner starts with autoscaling disabled and finds the compiler StatefulSet scaled to zero (for example after a disable that raced the old autoscaler), it patches the StatefulSet to 1 replica so compilation never stays wedged; the next `helm upgrade` restores the configured count.
+
+:::warning
+Avoid `helm upgrade --force` while autoscaling is enabled: it replaces the StatefulSet, which resets `spec.replicas` and restarts compiler pods; the autoscaler restores the correct count within one poll interval, but in-flight compilations restart. Do not `helm rollback` across the enable boundary either: the rollback tries to revert the immutable `podManagementPolicy` field and fails on the StatefulSet, leaving the release half rolled back. To return to a pre-autoscaling revision, follow the Disabling procedure instead.
+:::
+
+### Autoscaling Troubleshooting
+
+- **`/cluster_healthz` reports `scaled_to_zero`:**
+
+While the compilers are parked at zero, the health endpoint reports the compiler section as healthy with a `"scaled_to_zero": true` marker. This is the intended idle state, not a failure.
+
+- **`/cluster_healthz` reports the compiler not ready during scale-up:**
+
+During a 0 to N cold start the compiler section reports not ready together with a note that autoscaling is active; this resolves once the compiler pods pass their startup probes. Only a not-ready state that persists well beyond the expected cold start indicates a real problem (for example unschedulable pods or exhausted quota).
+
+- **`SCALING DETECTED` restarts during transitions:**
+
+Compiler pods that observe a replica change exit with `SCALING DETECTED` and restart with the new worker count. During 0 to N and N to 0 transitions these restarts are expected and bounded; the pods converge as soon as the transition completes.
+
+- **Compilers never scale down:**
+
+A compilation that never reaches a terminal status keeps demand pending and keeps the workers up. The typical cause is a compile that is OOM-killed on every attempt: the pipeline cycles between `SqlCompiled` and `CompilingRust` forever. Give the compiler pods more memory or remove the offending pipeline.
+
+---
+
 ## Troubleshooting & FAQs
 
 - **Resource requirements:**
@@ -143,9 +241,9 @@ Ensure your cluster nodes have enough resources to run the desired number of com
 
 If a pipeline is assigned to a worker pod that is not yet running or is unhealthy, it will not be compiled until that pod is available and running. Make sure to validate all pods are running.
 
-- **SystemError: Failed to upload binary:**
+- **Failed to upload binary:**
 
-If the pipeline gets this status, that means pod N failed to upload its binary to `<_>-compiler-server-0`.
+If a worker pod cannot upload its binary to `<_>-compiler-server-0` due to a transient failure (network error, HTTP 5xx), the compilation stays in a compiling status and is retried once the upload target is reachable again. A permanent rejection (an HTTP 4xx response, for example a proxy body-size limit) surfaces as `SystemError` instead of retrying forever.
 
 You can check if `<_>-compiler-server-0` is healthy or not by `/cluster_healthz` endpoint. Make sure to adjust binary upload related configuration as per your needs, e.g. if your _upgrade_ takes a while, we should configure retries and backoff interval to sane values such that pods get time to come up to receive the binary.
 
@@ -178,5 +276,16 @@ Comman causes can be misconfigured S3 bucket / endpoint / credentials.
 | `parallelCompilation.sccache.s3.existingSecret` | Secret for S3 credentials (omit if using IRSA) | `sccache-s3-secret` |
 | `parallelCompilation.sccache.s3.serverSideEncryption` | Enable server-side encryption with s3 managed key (SSE-S3) | `false` |
 | `parallelCompilation.sccache.s3.endpoint` | Custom endpoint (e.g. MinIO) | `minio.mydomain.com:9000` |
+
+**Autoscaling (Experimental)**
+| Key | Description | Default/Example |
+|-----|-------------|-----------------|
+| `compilerAutoscaling.enabled` | Scale the compiler server StatefulSet to zero when idle | `false` (ex: `true`) |
+| `compilerAutoscaling.idleTimeoutSeconds` | Seconds without pending compilation work before scaling to zero | `1800` |
+| `compilerAutoscaling.pollIntervalSeconds` | Seconds between checks for pending compilation work | `10` |
+| `compilerAutoscaling.artifactServer.httpWorkers` | HTTP worker threads of the artifact server | `2` |
+| `compilerAutoscaling.artifactServer.pvcSize` | Size of the artifact store volume | `20Gi` |
+| `compilerAutoscaling.artifactServer.resources` | Artifact server pod resources | `1` CPU, `2000Mi` memory |
+| `compilerAutoscaling.artifactServer.seedFromCompilerServer0` | Seed the artifact store from the compiler-server-0 PVC during the enabling upgrade | `false` (ex: `true`) |
 
 ---
