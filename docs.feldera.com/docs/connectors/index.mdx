@@ -265,7 +265,9 @@ updated record, where ranking the deletion first would drop it.
 
 Notes and restrictions:
 
-* The table must not have a primary key.
+* The table must not have a primary key: a deletion in such a table identifies
+  a key rather than a record, so there is nothing to insert in its place. The
+  compiler rejects a `soft_delete` connector attached to a table that has one.
 
 * Soft deletes are a property of the connector, not of the data format, so they
   apply to every format that expresses deletions, e.g., the

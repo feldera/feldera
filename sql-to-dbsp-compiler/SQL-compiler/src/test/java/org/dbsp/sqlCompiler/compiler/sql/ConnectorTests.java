@@ -304,6 +304,54 @@ public class ConnectorTests extends BaseSQLTests {
                     5|      "config": {}""");
     }
 
+    @Test
+    public void testSoftDeleteValidation() {
+        // A table without a primary key accepts soft deletes.
+        runConnectorTest("""
+                CREATE TABLE T(x INT) WITH ('connectors' = '[{
+                   "name": "0",
+                   "soft_delete": true,
+                   "transport": {
+                     "name": "datagen",
+                     "config": {}
+                   }
+                }]');""");
+
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT NOT NULL PRIMARY KEY, y INT) WITH ('connectors' = '[{
+                   "name": "0",
+                   "soft_delete": true,
+                   "transport": {
+                     "name": "datagen",
+                     "config": {}
+                   }
+                }]');""", """
+                Compilation error: "soft_delete" property cannot be used for table 't', which has a primary key (x); soft deletes are only supported for tables without a primary key
+                    3|   "soft_delete": true,
+                                        ^""");
+
+        // Soft deletes describe what a connector ingests, so they are meaningless on a view.
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT);
+                CREATE VIEW V WITH ('connectors' = '[{
+                   "name": "0",
+                   "soft_delete": true
+                }]') AS SELECT * FROM T;""", """
+                Compilation error: "soft_delete" property for view 'v' must be attached to a table: soft deletes apply to the records a connector ingests
+                    4|   "soft_delete": true""");
+
+        // `soft_delete: false` is the default and imposes no restriction.
+        runConnectorTest("""
+                CREATE TABLE T(x INT NOT NULL PRIMARY KEY) WITH ('connectors' = '[{
+                   "name": "0",
+                   "soft_delete": false,
+                   "transport": {
+                     "name": "datagen",
+                     "config": {}
+                   }
+                }]');""");
+    }
+
     // ---- CSV format config ----
 
     @Test

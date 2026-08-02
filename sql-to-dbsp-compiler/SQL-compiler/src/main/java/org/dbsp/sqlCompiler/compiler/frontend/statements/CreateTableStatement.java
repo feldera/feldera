@@ -45,6 +45,8 @@ public class CreateTableStatement extends CreateRelationStatement {
     public static final String EXPECTED_SIZE = "expected_size";
     public static final String PREPROCESSOR = "preprocessor";
     public static final String MESSAGE_ORIENTED = "message_oriented";
+    /** Connector attribute: ingest deletions as insertions. */
+    public static final String SOFT_DELETE = "soft_delete";
 
     public final List<ForeignKey> foreignKeys;
 
