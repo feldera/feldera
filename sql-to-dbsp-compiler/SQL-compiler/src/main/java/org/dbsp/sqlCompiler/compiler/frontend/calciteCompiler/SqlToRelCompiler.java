@@ -1924,9 +1924,11 @@ public class SqlToRelCompiler implements IWritesLogs {
         @Nullable PropertyList properties = this.createProperties(ct.tableProperties);
         Properties props = null;
         if (properties != null) {
+            List<ProgramIdentifier> primaryKey = Linq.map(
+                    Linq.where(cols, col -> col.isPrimaryKey), RelColumnMetadata::getName);
             properties.checkDuplicates(this.errorReporter);
             for (var prop: properties) {
-                this.validateTableProperty(tableName, prop.getKey(), prop.getValue());
+                this.validateTableProperty(tableName, primaryKey, prop.getKey(), prop.getValue());
             }
             props = new Properties(properties);
         }
@@ -2003,7 +2005,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 break;
             case "rust":
             case "connectors":
-                this.validateConnectorsProperty(node, false, view, key, value);
+                this.validateConnectorsProperty(node, false, view, List.of(), key, value);
                 break;
             default:
                 throw new CompilationError("Unknown view property " + Utilities.singleQuote(keyString), node);
@@ -2037,8 +2039,11 @@ public class SqlToRelCompiler implements IWritesLogs {
             return pos.asRange().relativeTo(value.getSourcePosition().start);
     }
 
+    /** @param primaryKey Primary key columns of the table; empty for a view or for a table
+     *                    without a primary key. */
     @SuppressWarnings("unused")
     void validateConnectorsProperty(CalciteObject ignored, boolean isTable, ProgramIdentifier tableView,
+                                    List<ProgramIdentifier> primaryKey,
                                     SqlFragment keyIgnored, SqlFragment value) {
         final String json = value.getString();
         final Result<JsonNode> jsonNode = Utilities.validateJson(json);
@@ -2069,6 +2074,25 @@ public class SqlToRelCompiler implements IWritesLogs {
                                 " cannot have the same name: " + Utilities.singleQuote(name.asText()), pos);
                     }
                     names.add(name.asText());
+                }
+                JsonNode softDelete = connector.get(CreateTableStatement.SOFT_DELETE);
+                if (softDelete != null && softDelete.asBoolean(false)) {
+                    String sd = path + "/" + CreateTableStatement.SOFT_DELETE;
+                    if (!isTable) {
+                        SourcePositionRange pos = elementPositionRange(value, sd, true);
+                        throw new CompilationError("\"" + CreateTableStatement.SOFT_DELETE +
+                                "\" property for " + objectName +
+                                " must be attached to a table: soft deletes apply to the records a" +
+                                " connector ingests", pos);
+                    }
+                    if (!primaryKey.isEmpty()) {
+                        SourcePositionRange pos = elementPositionRange(value, sd, true);
+                        throw new CompilationError("\"" + CreateTableStatement.SOFT_DELETE +
+                                "\" property cannot be used for " + objectName +
+                                ", which has a primary key (" +
+                                String.join(", ", Linq.map(primaryKey, ProgramIdentifier::name)) +
+                                "); soft deletes are only supported for tables without a primary key", pos);
+                    }
                 }
                 JsonNode preprocessor = connector.get(CreateTableStatement.PREPROCESSOR);
                 if (preprocessor != null) {
@@ -2178,7 +2202,9 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
     }
 
-    void validateTableProperty(ProgramIdentifier table, SqlFragment key, SqlFragment value) {
+    /** @param primaryKey Primary key columns of {@code table}; empty if it has no primary key. */
+    void validateTableProperty(ProgramIdentifier table, List<ProgramIdentifier> primaryKey,
+                               SqlFragment key, SqlFragment value) {
         CalciteObject node = CalciteObject.create(key.getParserPosition());
         String keyString = key.getString();
         switch (key.getString()) {
@@ -2188,7 +2214,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 this.validateBooleanProperty(node, key, value);
                 break;
             case CreateTableStatement.CONNECTORS:
-                this.validateConnectorsProperty(node, true, table, key, value);
+                this.validateConnectorsProperty(node, true, table, primaryKey, key, value);
                 break;
             case CreateTableStatement.EXPECTED_SIZE:
                 this.validateNumericProperty(node, key, value);
