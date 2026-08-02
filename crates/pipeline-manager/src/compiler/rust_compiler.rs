@@ -56,7 +56,11 @@ const POLL_ERROR_INTERVAL: Duration = Duration::from_secs(30);
 const COMPILATION_CHECK_INTERVAL: Duration = Duration::from_millis(250);
 
 /// The frequency at which Rust cleanup is performed.
-const CLEANUP_INTERVAL: Duration = Duration::from_secs(120);
+pub(crate) const CLEANUP_INTERVAL: Duration = Duration::from_secs(120);
+
+/// Age above which a `.tmp-` upload file is an orphan of a crashed upload
+/// rather than an upload in flight, and is removed by the binaries cleanup.
+const STALE_TEMP_UPLOAD_MAX_AGE: Duration = Duration::from_secs(3600);
 
 /// Minimum time between when the Rust cleanup has detected a pipeline to be deleted until
 /// its compilation artifacts are actually cleaned up. It is a minimum, as cleanup both
@@ -338,19 +342,13 @@ async fn attempt_end_to_end_rust_compilation(
                 );
             }
             RustCompilationError::FileUploadError(upload_error) => {
-                db.lock()
-                    .await
-                    .transit_program_status_to_system_error(
-                        tenant_id,
-                        pipeline.id,
-                        pipeline.program_version,
-                        &upload_error,
-                    )
-                    .await?;
+                // No status is written: the row stays `CompilingRust` and the next
+                // iteration's reset returns it to `SqlCompiled`, so the compile and
+                // upload are retried once the upload endpoint is reachable again.
                 error!(
                     pipeline_id = %pipeline.id,
                     pipeline = %pipeline.name,
-                    "Rust compilation failed due to binary upload error (program version: {}): {upload_error}",
+                    "Rust compilation failed due to binary upload error; it will be retried (program version: {}): {upload_error}",
                     pipeline.program_version
                 );
             }
@@ -607,6 +605,11 @@ async fn upload_binary_to_endpoint_with_retries(
                 return Ok(result);
             }
             Err(e) => {
+                // A permanent rejection cannot be fixed by retrying; surface
+                // it immediately so a terminal status is written.
+                if matches!(e, RustCompilationError::SystemError(_)) {
+                    return Err(e);
+                }
                 if attempts > max_retries {
                     error!(
                         pipeline_id = %metadata.pipeline_id,
@@ -685,6 +688,11 @@ async fn upload_program_info_to_endpoint_with_retries(
                 return Ok(result);
             }
             Err(e) => {
+                // A permanent rejection cannot be fixed by retrying; surface
+                // it immediately so a terminal status is written.
+                if matches!(e, RustCompilationError::SystemError(_)) {
+                    return Err(e);
+                }
                 if attempts > max_retries {
                     error!(
                         pipeline_id = %metadata.pipeline_id,
@@ -713,6 +721,14 @@ async fn upload_program_info_to_endpoint_with_retries(
             }
         }
     }
+}
+
+/// Returns true when the upload response status indicates a permanent
+/// rejection (4xx other than 408 and 429) that no retry or recompile can fix.
+fn is_permanent_upload_rejection(status: reqwest::StatusCode) -> bool {
+    status.is_client_error()
+        && status != reqwest::StatusCode::REQUEST_TIMEOUT
+        && status != reqwest::StatusCode::TOO_MANY_REQUESTS
 }
 
 /// Uploads the compiled binary to an HTTP endpoint (single attempt) using streaming.
@@ -794,10 +810,14 @@ async fn upload_binary_to_endpoint(
             .text()
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
-        return Err(RustCompilationError::FileUploadError(format!(
-            "Binary upload failed with status {}: {}",
-            status, error_text
-        )));
+        let message = format!("Binary upload failed with status {status}: {error_text}");
+        // A 4xx other than 408/429 is a permanent rejection: retrying or
+        // recompiling cannot succeed, so surface a terminal SystemError.
+        return Err(if is_permanent_upload_rejection(status) {
+            RustCompilationError::SystemError(message)
+        } else {
+            RustCompilationError::FileUploadError(message)
+        });
     }
 
     // Get response body for any location information
@@ -862,10 +882,14 @@ async fn upload_program_info_to_endpoint(
             .text()
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
-        return Err(RustCompilationError::FileUploadError(format!(
-            "Program info upload failed with status {}: {}",
-            status, error_text
-        )));
+        let message = format!("Program info upload failed with status {status}: {error_text}");
+        // A 4xx other than 408/429 is a permanent rejection: retrying or
+        // recompiling cannot succeed, so surface a terminal SystemError.
+        return Err(if is_permanent_upload_rejection(status) {
+            RustCompilationError::SystemError(message)
+        } else {
+            RustCompilationError::FileUploadError(message)
+        });
     }
 
     // Get response body for any location information
@@ -1753,7 +1777,7 @@ async fn call_compiler(
 }
 
 /// Rust compilation cleanup possible error outcomes.
-enum RustCompilationCleanupError {
+pub(crate) enum RustCompilationCleanupError {
     /// Database error occurred (e.g., lost connectivity).
     Database(DBError),
     /// Utility function problem occurred (e.g., I/O error)
@@ -1773,6 +1797,18 @@ impl From<DBError> for RustCompilationCleanupError {
 impl From<UtilError> for RustCompilationCleanupError {
     fn from(value: UtilError) -> Self {
         RustCompilationCleanupError::Utility(value)
+    }
+}
+
+impl std::fmt::Display for RustCompilationCleanupError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RustCompilationCleanupError::Database(e) => write!(f, "database error occurred: {e}"),
+            RustCompilationCleanupError::Utility(e) => write!(f, "utility error occurred: {e}"),
+            RustCompilationCleanupError::TargetCleared => {
+                write!(f, "target directory was cleared")
+            }
+        }
     }
 }
 
@@ -1817,26 +1853,73 @@ fn decide_cleanup(
     }
 }
 
-/// Cleans up the Rust compilation working directory by removing binaries and compilation artifacts.
-/// If the working directory `target` directory is about to become full (due to old dependencies),
-/// it will be fully cleared. Otherwise, it will only clear compilation artifacts of pipeline
-/// programs that no longer exist.
-async fn cleanup_rust_compilation(
+/// Decides whether a file in the pipeline-binaries directory is kept,
+/// removed, or ignored by the binaries cleanup.
+fn decide_pipeline_binary_cleanup(
+    filename: &str,
+    metadata: Option<std::fs::Metadata>,
+    valid_pipeline_binary_filenames: &[String],
+    valid_program_info_filenames: &[String],
+) -> CleanupDecision {
+    // Temp upload files share the binary name prefixes, so they must
+    // be decided before the prefix matches below would keep them.
+    if filename.contains(".tmp-") {
+        let is_stale_orphan = metadata
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|modified_time| modified_time.elapsed().ok())
+            .is_some_and(|age| age >= STALE_TEMP_UPLOAD_MAX_AGE);
+        return if is_stale_orphan {
+            CleanupDecision::Remove
+        } else {
+            // Keep rather than Ignore: an upload may still be writing this
+            // file, and Ignore would warn on every cleanup pass.
+            CleanupDecision::Keep {
+                motivation: filename.to_string(),
+            }
+        };
+    }
+    if filename.starts_with("pipeline_") {
+        if valid_pipeline_binary_filenames
+            .iter()
+            .any(|f| filename.starts_with(f))
+        {
+            CleanupDecision::Keep {
+                motivation: filename.to_string(),
+            }
+        } else {
+            CleanupDecision::Remove
+        }
+    } else if filename.starts_with("program_info_") {
+        if valid_program_info_filenames
+            .iter()
+            .any(|f| filename.starts_with(f))
+        {
+            CleanupDecision::Keep {
+                motivation: filename.to_string(),
+            }
+        } else {
+            CleanupDecision::Remove
+        }
+    } else {
+        CleanupDecision::Ignore
+    }
+}
+
+/// Removes pipeline binaries and program info files that no longer correspond
+/// to an existing pipeline program; only the latest version of each program is
+/// retained. A row still `CompilingRust` has no checksums yet, so its files
+/// are matched on a checksum-less prefix and retained.
+pub(crate) async fn cleanup_pipeline_binaries(
     config: &CompilerConfig,
     db: Arc<Mutex<StoragePostgres>>,
 ) -> Result<(), RustCompilationCleanupError> {
-    trace!("Performing Rust cleanup...");
-
-    // Rust compilation directory
-    let rust_compilation_dir = config.working_dir().join("rust-compilation");
-    if !rust_compilation_dir.exists() {
+    let pipeline_binaries_dir = config
+        .working_dir()
+        .join("rust-compilation")
+        .join("pipeline-binaries");
+    if !pipeline_binaries_dir.is_dir() {
         return Ok(());
     }
-
-    ///////////////////////////////
-    // PHASE 1: PIPELINE BINARIES
-    // Only the latest version binaries of successfully compiled pipeline
-    // programs are retained. Older version binaries are deleted.
 
     // Retrieve existing pipeline programs
     // (pipeline_id, program_version, program_binary_source_checksum, program_binary_integrity_checksum, program_info_integrity_checksum)
@@ -1848,7 +1931,6 @@ async fn cleanup_rust_compilation(
 
     // Clean up pipeline binaries
     // These are not subject to the retention period.
-    let pipeline_binaries_dir = rust_compilation_dir.join("pipeline-binaries");
     let valid_pipeline_binary_filenames: Vec<String> = existing_pipeline_programs
         .iter()
         .map(
@@ -1905,44 +1987,44 @@ async fn cleanup_rust_compilation(
         )
         .collect();
 
-    if pipeline_binaries_dir.is_dir() {
-        cleanup_specific_files(
-            "Rust compilation pipeline binaries",
-            &pipeline_binaries_dir,
-            Arc::new(
-                move |filename: &str, _metadata: Option<std::fs::Metadata>| {
-                    if filename.starts_with("pipeline_") {
-                        if valid_pipeline_binary_filenames
-                            .iter()
-                            .any(|f| filename.starts_with(f))
-                        {
-                            CleanupDecision::Keep {
-                                motivation: filename.to_string(),
-                            }
-                        } else {
-                            CleanupDecision::Remove
-                        }
-                    } else if filename.starts_with("program_info_") {
-                        if valid_program_info_filenames
-                            .iter()
-                            .any(|f| filename.starts_with(f))
-                        {
-                            CleanupDecision::Keep {
-                                motivation: filename.to_string(),
-                            }
-                        } else {
-                            CleanupDecision::Remove
-                        }
-                    } else {
-                        CleanupDecision::Ignore
-                    }
-                },
-            ),
-            true,
-            false,
-        )
-        .await?;
+    cleanup_specific_files(
+        "Rust compilation pipeline binaries",
+        &pipeline_binaries_dir,
+        Arc::new(move |filename: &str, metadata: Option<std::fs::Metadata>| {
+            decide_pipeline_binary_cleanup(
+                filename,
+                metadata,
+                &valid_pipeline_binary_filenames,
+                &valid_program_info_filenames,
+            )
+        }),
+        true,
+        true,
+    )
+    .await?;
+
+    Ok(())
+}
+
+/// Cleans up the Rust compilation working directory by removing binaries and compilation artifacts.
+/// If the working directory `target` directory is about to become full (due to old dependencies),
+/// it will be fully cleared. Otherwise, it will only clear compilation artifacts of pipeline
+/// programs that no longer exist.
+async fn cleanup_rust_compilation(
+    config: &CompilerConfig,
+    db: Arc<Mutex<StoragePostgres>>,
+) -> Result<(), RustCompilationCleanupError> {
+    trace!("Performing Rust cleanup...");
+
+    // Rust compilation directory
+    let rust_compilation_dir = config.working_dir().join("rust-compilation");
+    if !rust_compilation_dir.exists() {
+        return Ok(());
     }
+
+    ///////////////////////////////
+    // PHASE 1: PIPELINE BINARIES
+    cleanup_pipeline_binaries(config, db.clone()).await?;
 
     ///////////////////////////////////
     // PHASE 2: COMPILATION ARTIFACTS
@@ -2298,7 +2380,10 @@ async fn cleanup_rust_compilation(
 mod test {
     use crate::auth::TenantRecord;
     use crate::compiler::rust_compiler::prepare_workspace;
-    use crate::compiler::rust_compiler::{calculate_source_checksum, decide_cleanup};
+    use crate::compiler::rust_compiler::{
+        calculate_source_checksum, decide_cleanup, decide_pipeline_binary_cleanup,
+        STALE_TEMP_UPLOAD_MAX_AGE,
+    };
     use crate::compiler::test::{list_content_as_sorted_names, CompilerTest};
     use crate::compiler::util::{
         crate_name_pipeline_globals, crate_name_pipeline_main, read_file_content, CleanupDecision,
@@ -2543,5 +2628,78 @@ mod test {
                 "test case {i} (zero-based index) fails"
             );
         }
+    }
+
+    /// Checks the pipeline binaries cleanup decision: stale `.tmp-` uploads are
+    /// removed, fresh or unstat-able ones are kept, and prefix matching decides the rest.
+    #[test]
+    fn pipeline_binary_cleanup_decision() {
+        let valid_binaries = vec!["pipeline_a_v1_".to_string()];
+        let valid_program_infos = vec!["program_info_a_v1_".to_string()];
+        let decide = |filename: &str, metadata: Option<std::fs::Metadata>| {
+            decide_pipeline_binary_cleanup(
+                filename,
+                metadata,
+                &valid_binaries,
+                &valid_program_infos,
+            )
+        };
+
+        // Metadata with an mtime older than the staleness threshold
+        let temp_dir = tempfile::tempdir().unwrap();
+        let stale_file_path = temp_dir.path().join("stale");
+        let stale_file = std::fs::File::create(&stale_file_path).unwrap();
+        let stale_mtime = std::time::SystemTime::now()
+            - (STALE_TEMP_UPLOAD_MAX_AGE + std::time::Duration::from_secs(60));
+        stale_file
+            .set_times(std::fs::FileTimes::new().set_modified(stale_mtime))
+            .unwrap();
+        let stale_metadata = std::fs::metadata(&stale_file_path).unwrap();
+
+        // Metadata with a current mtime
+        let fresh_file_path = temp_dir.path().join("fresh");
+        std::fs::File::create(&fresh_file_path).unwrap();
+        let fresh_metadata = std::fs::metadata(&fresh_file_path).unwrap();
+
+        // Stale temp upload is removed
+        assert_eq!(
+            decide("pipeline_a_v1_x.tmp-123", Some(stale_metadata)),
+            CleanupDecision::Remove
+        );
+        // Fresh temp upload is kept (upload may still be in flight)
+        assert_eq!(
+            decide("pipeline_a_v1_x.tmp-123", Some(fresh_metadata)),
+            CleanupDecision::Keep {
+                motivation: "pipeline_a_v1_x.tmp-123".to_string()
+            }
+        );
+        // Missing metadata never removes a temp upload
+        assert_eq!(
+            decide("pipeline_a_v1_x.tmp-123", None),
+            CleanupDecision::Keep {
+                motivation: "pipeline_a_v1_x.tmp-123".to_string()
+            }
+        );
+        // Binary with a valid prefix is kept, unknown is removed
+        assert_eq!(
+            decide("pipeline_a_v1_abc", None),
+            CleanupDecision::Keep {
+                motivation: "pipeline_a_v1_abc".to_string()
+            }
+        );
+        assert_eq!(decide("pipeline_b_v1_abc", None), CleanupDecision::Remove);
+        // Program info with a valid prefix is kept, unknown is removed
+        assert_eq!(
+            decide("program_info_a_v1_abc", None),
+            CleanupDecision::Keep {
+                motivation: "program_info_a_v1_abc".to_string()
+            }
+        );
+        assert_eq!(
+            decide("program_info_b_v1_abc", None),
+            CleanupDecision::Remove
+        );
+        // Unrelated file is ignored
+        assert_eq!(decide("unrelated.txt", None), CleanupDecision::Ignore);
     }
 }
