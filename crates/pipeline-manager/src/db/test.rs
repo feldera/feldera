@@ -2390,6 +2390,245 @@ async fn pipeline_program_compilation() {
     );
 }
 
+/// Checks that `count_pipelines_needing_compilation` counts exactly the stopped
+/// pipelines whose program status is pending, compiling_sql, sql_compiled or
+/// compiling_rust.
+#[tokio::test]
+async fn count_pipelines_needing_compilation() {
+    async fn new_test_pipeline(
+        db: &StoragePostgres,
+        tenant_id: TenantId,
+        name: &str,
+    ) -> ExtendedPipelineDescr {
+        db.new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            "v0",
+            PipelineDescr {
+                name: name.to_string(),
+                description: "".to_string(),
+                tags: vec![],
+                runtime_config: json!({}),
+                program_code: "".to_string(),
+                udf_rust: "".to_string(),
+                udf_toml: "".to_string(),
+                program_config: json!({}),
+            },
+        )
+        .await
+        .unwrap()
+    }
+
+    async fn advance_program_status(
+        db: &StoragePostgres,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        statuses: &[ProgramStatus],
+        program_info: &serde_json::Value,
+    ) {
+        let sql_compilation = SqlCompilationInfo {
+            exit_code: 0,
+            messages: vec![],
+        };
+        let rust_compilation = RustCompilationInfo {
+            exit_code: 0,
+            stdout: "".to_string(),
+            stderr: "".to_string(),
+        };
+        for status in statuses {
+            match status {
+                ProgramStatus::Pending => db
+                    .transit_program_status_to_pending(tenant_id, pipeline_id, Version(1))
+                    .await
+                    .unwrap(),
+                ProgramStatus::CompilingSql => db
+                    .transit_program_status_to_compiling_sql(tenant_id, pipeline_id, Version(1))
+                    .await
+                    .unwrap(),
+                ProgramStatus::SqlCompiled => db
+                    .transit_program_status_to_sql_compiled(
+                        tenant_id,
+                        pipeline_id,
+                        Version(1),
+                        &sql_compilation,
+                        program_info,
+                    )
+                    .await
+                    .unwrap(),
+                ProgramStatus::CompilingRust => db
+                    .transit_program_status_to_compiling_rust(tenant_id, pipeline_id, Version(1))
+                    .await
+                    .unwrap(),
+                ProgramStatus::Success => db
+                    .transit_program_status_to_success(
+                        tenant_id,
+                        pipeline_id,
+                        Version(1),
+                        &rust_compilation,
+                        "abc",
+                        "123",
+                        "456",
+                    )
+                    .await
+                    .unwrap(),
+                ProgramStatus::SqlError => db
+                    .transit_program_status_to_sql_error(
+                        tenant_id,
+                        pipeline_id,
+                        Version(1),
+                        &sql_compilation,
+                    )
+                    .await
+                    .unwrap(),
+                ProgramStatus::RustError => db
+                    .transit_program_status_to_rust_error(
+                        tenant_id,
+                        pipeline_id,
+                        Version(1),
+                        &rust_compilation,
+                    )
+                    .await
+                    .unwrap(),
+                ProgramStatus::SystemError => db
+                    .transit_program_status_to_system_error(
+                        tenant_id,
+                        pipeline_id,
+                        Version(1),
+                        "system error",
+                    )
+                    .await
+                    .unwrap(),
+            }
+        }
+    }
+
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    let program_info = serde_json::to_value(ProgramInfo {
+        schema: serde_json::to_value(ProgramSchema {
+            inputs: vec![],
+            outputs: vec![],
+        })
+        .unwrap(),
+        main_rust: "".to_string(),
+        udf_stubs: "".to_string(),
+        input_connectors: BTreeMap::new(),
+        output_connectors: BTreeMap::new(),
+        dataflow: None,
+    })
+    .unwrap();
+
+    assert_eq!(
+        handle
+            .db
+            .count_pipelines_needing_compilation()
+            .await
+            .unwrap(),
+        0
+    );
+
+    // One counted pipeline per status with outstanding compilation work
+    let p_pending = new_test_pipeline(&handle.db, tenant_id, "counted-pending").await;
+    for (name, statuses) in [
+        ("counted-compiling-sql", vec![ProgramStatus::CompilingSql]),
+        (
+            "counted-sql-compiled",
+            vec![ProgramStatus::CompilingSql, ProgramStatus::SqlCompiled],
+        ),
+        (
+            "counted-compiling-rust",
+            vec![
+                ProgramStatus::CompilingSql,
+                ProgramStatus::SqlCompiled,
+                ProgramStatus::CompilingRust,
+            ],
+        ),
+    ] {
+        let pipeline = new_test_pipeline(&handle.db, tenant_id, name).await;
+        advance_program_status(&handle.db, tenant_id, pipeline.id, &statuses, &program_info).await;
+    }
+    assert_eq!(
+        handle
+            .db
+            .count_pipelines_needing_compilation()
+            .await
+            .unwrap(),
+        4
+    );
+
+    // Terminal statuses are counted while in flight, no longer once reached
+    for (name, statuses) in [
+        (
+            "done-success",
+            vec![
+                ProgramStatus::CompilingSql,
+                ProgramStatus::SqlCompiled,
+                ProgramStatus::CompilingRust,
+                ProgramStatus::Success,
+            ],
+        ),
+        (
+            "done-sql-error",
+            vec![ProgramStatus::CompilingSql, ProgramStatus::SqlError],
+        ),
+        (
+            "done-rust-error",
+            vec![
+                ProgramStatus::CompilingSql,
+                ProgramStatus::SqlCompiled,
+                ProgramStatus::CompilingRust,
+                ProgramStatus::RustError,
+            ],
+        ),
+        ("done-system-error", vec![ProgramStatus::SystemError]),
+    ] {
+        let pipeline = new_test_pipeline(&handle.db, tenant_id, name).await;
+        assert_eq!(
+            handle
+                .db
+                .count_pipelines_needing_compilation()
+                .await
+                .unwrap(),
+            5
+        );
+        advance_program_status(&handle.db, tenant_id, pipeline.id, &statuses, &program_info).await;
+        assert_eq!(
+            handle
+                .db
+                .count_pipelines_needing_compilation()
+                .await
+                .unwrap(),
+            4
+        );
+    }
+
+    // A non-stopped deployment is not counted. Non-stopped resources with an
+    // unfinished program is unreachable through the Storage API (provisioning
+    // requires a compiled program), so force the state to pin the predicate.
+    for (resources_status, expected_count) in [("provisioning", 3), ("stopped", 4)] {
+        handle
+            .db
+            .pool
+            .get()
+            .await
+            .unwrap()
+            .execute(
+                "UPDATE pipeline SET deployment_resources_status = $1 WHERE id = $2",
+                &[&resources_status, &p_pending.id.0],
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            handle
+                .db
+                .count_pipelines_needing_compilation()
+                .await
+                .unwrap(),
+            expected_count
+        );
+    }
+}
+
 /// Tests the following sequence of events:
 /// - Pipeline is compiled
 /// - User calls /start
@@ -4380,6 +4619,7 @@ enum StorageAction {
     GetNextSqlCompilation(#[proptest(strategy = "limited_platform_version()")] String),
     ClearOngoingRustCompilation(#[proptest(strategy = "limited_platform_version()")] String),
     GetNextRustCompilation(#[proptest(strategy = "limited_platform_version()")] String),
+    CountPipelinesNeedingCompilation,
     ListPipelineProgramsAcrossAllTenants,
     ListClusterMonitorEvents,
     GetClusterMonitorEventShort(ClusterMonitorEventId),
@@ -5173,6 +5413,11 @@ fn db_impl_behaves_like_model() {
                                 let model_response = model.get_next_rust_compilation(&platform_version, 0, 1).await;
                                 let impl_response = handle.db.get_next_rust_compilation(&platform_version, 0, 1).await;
                                 check_response_optional_pipeline_with_tenant_id(i, model_response, impl_response);
+                            }
+                            StorageAction::CountPipelinesNeedingCompilation => {
+                                let model_response = model.count_pipelines_needing_compilation().await;
+                                let impl_response = handle.db.count_pipelines_needing_compilation().await;
+                                check_responses(i, model_response, impl_response);
                             }
                             StorageAction::ListPipelineProgramsAcrossAllTenants => {
                                 let model_response = model.list_pipeline_programs_across_all_tenants().await;
@@ -7639,6 +7884,25 @@ impl Storage for Mutex<DbModel> {
         });
         let chosen = pipelines.first().unwrap().clone(); // Already checked for empty
         Ok(Some((chosen.0, chosen.1)))
+    }
+
+    async fn count_pipelines_needing_compilation(&self) -> Result<u64, DBError> {
+        Ok(self
+            .lock()
+            .await
+            .pipelines
+            .values()
+            .filter(|p| {
+                p.deployment_resources_status == ResourcesStatus::Stopped
+                    && matches!(
+                        p.program_status,
+                        ProgramStatus::Pending
+                            | ProgramStatus::CompilingSql
+                            | ProgramStatus::SqlCompiled
+                            | ProgramStatus::CompilingRust
+                    )
+            })
+            .count() as u64)
     }
 
     async fn list_pipeline_programs_across_all_tenants(

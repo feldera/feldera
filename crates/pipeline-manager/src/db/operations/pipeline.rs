@@ -2024,6 +2024,30 @@ pub(crate) async fn get_next_rust_compilation(
     }
 }
 
+/// Counts pipelines with outstanding compilation work.
+///
+/// The predicate must remain the union of the predicates of the four worker
+/// queries above (the two `_needing_*_compilation_clear` lists and the two
+/// `get_next_*_compilation` pickers) across all shards and platform versions:
+/// the count is greater than zero if and only if some compiler worker would
+/// act. It drives compiler autoscaling in the enterprise runner.
+pub(crate) async fn count_pipelines_needing_compilation(
+    txn: &Transaction<'_>,
+) -> Result<u64, DBError> {
+    let stmt = txn
+        .prepare_cached(
+            "SELECT COUNT(*)
+             FROM pipeline AS p
+             WHERE p.deployment_resources_status = 'stopped'
+                   AND p.program_status IN ('pending', 'compiling_sql', 'sql_compiled', 'compiling_rust')
+            ",
+        )
+        .await?;
+    let row = txn.query_one(&stmt, &[]).await?;
+    let count: i64 = row.get(0);
+    Ok(count as u64)
+}
+
 /// Retrieves the list of successfully compiled pipeline programs (pipeline identifier, program version,
 /// program binary source checksum, program binary integrity checksum, program info integrity checksum) AND pipeline programs that
 /// are currently being compiled (pipeline identifier, program version) across all tenants.
