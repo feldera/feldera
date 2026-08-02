@@ -17,7 +17,8 @@ import TabItem from '@theme/TabItem';
         - Input connectors support the `soft_delete` property, which ingests
           deletions as insertions and reports the original polarity of each
           record in the `is_delete` metadata attribute, so that a table
-          accumulates the history of its input stream. See
+          represents the stream of updates it receives rather than the current
+          contents of that stream. See
           [Soft deletes](/connectors#soft-deletes).
 
         - Connectors that ingest columnar data, e.g., Delta Lake, Iceberg, and

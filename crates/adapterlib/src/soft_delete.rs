@@ -3,9 +3,8 @@
 //! An input connector configured with `soft_delete` pushes every record it
 //! receives to the table as an insertion, including records that the input
 //! stream marks as deleted, and reports the original polarity of each record in
-//! the [`IS_DELETE_ATTRIBUTE`] metadata attribute.  The table then accumulates
-//! the entire history of the input stream instead of tracking its current
-//! contents.
+//! the [`IS_DELETE_ATTRIBUTE`] metadata attribute.  The table then contains the
+//! entire history of the input stream instead of tracking its current contents.
 //!
 //! The transformation wraps the input handle of the table, so it applies to
 //! every data format and to integrated connectors alike:
@@ -252,6 +251,9 @@ impl ArrowStream for SoftDeleteArrowStream {
 
         // Inserted and deleted records in the batch need different metadata,
         // but metadata applies to an entire batch, so split the batch in two.
+        // Splitting reorders the records of the batch, which is harmless: a
+        // table with soft deletes cannot have a primary key, so its updates
+        // commute.
         let inserted_mask = BooleanArray::from(polarities.to_vec());
         let deleted_mask = BooleanArray::from(
             polarities

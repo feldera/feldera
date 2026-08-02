@@ -1689,7 +1689,7 @@ pub struct ConnectorConfig {
     /// `is_delete` metadata attribute set to `true` to it. Insertions carry no
     /// `is_delete` attribute, so a column declared as
     /// `DEFAULT CAST(CONNECTOR_METADATA()['is_delete'] AS BOOLEAN)` is `NULL`
-    /// for them. The table then accumulates the entire history of the input
+    /// for them. The table then contains the entire history of the input
     /// stream instead of tracking its current contents.
     ///
     /// Only tables without a primary key support this mode, since deletions in

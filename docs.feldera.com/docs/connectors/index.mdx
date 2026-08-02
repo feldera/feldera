@@ -181,13 +181,14 @@ attached to: an insertion adds a record, a deletion removes it. The table
 therefore holds the current contents of the input stream, and the records the
 stream deleted are gone.
 
-Setting `soft_delete` to `true` keeps them. The connector pushes every record it
-reads to the table as an insertion, including the records the stream deletes, and
-attaches the `is_delete` metadata attribute to the deleted ones. The table then
-accumulates the entire history of the input stream, and a query can select the
-part of it that it needs.
+Setting `soft_delete` to `true` converts the table into a log of every operation
+the connector reads. The connector pushes every record to the table as an
+insertion, including the records the stream deletes, and attaches the
+`is_delete` metadata attribute to the deleted ones. The table then represents
+the unbounded stream of updates rather than the current contents of the stream,
+and a query can select the part of it that it needs.
 
-Read the polarity of a record with the
+SQL programs can access the polarity of a record with the
 [`CONNECTOR_METADATA()`](/sql/grammar#connector_metadata) function:
 
 | Metadata attribute | SQL type  | `CONNECTOR_METADATA()` field |
@@ -197,12 +198,17 @@ Read the polarity of a record with the
 The attribute is `true` for a deleted record and absent for an inserted one, so
 the column is `NULL` for insertions.
 
-A table fed this way is an append-only log of changes. A SQL query can be used
-to recover the current contents of the stream by ranking the changes of each key
-by time, keeping the most recent one, and returning it only when it is an insertion.
-Order the changes by a timestamp that the source attaches to each change rather
-than by a column of the record. The example below use the timestamp the Kafka connector
-reports for each message as the `kafka_timestamp` metadata attribute:
+A SQL query can recover the current contents of the stream from such a log by
+ranking the changes of each key by time, keeping the most recent one, and
+returning it only when it is an insertion.
+
+Such a query needs a column that orders the changes of a key in time. Any
+column of the table can serve. When the record itself carries no suitable
+timestamp, a connector metadata attribute is often the better choice, since
+several connectors report the time at which they received each change. Feldera
+does not add such a column on its own, so declare one that suits the source.
+The example below uses the timestamp the Kafka connector reports for each
+message as the `kafka_timestamp` metadata attribute:
 
 ```sql
 CREATE TABLE changes (
@@ -249,13 +255,13 @@ WHERE rn = 1 AND is_delete IS NOT TRUE;
 
 Ranking one key at a time and keeping a single row is the
 [TopK pattern](/sql/aggregates#window-aggregates), which Feldera evaluates
-incrementally.
+efficiently.
 
-Changes of the same key that share a timestamp rank in an arbitrary order,
-which is why the query breaks the tie on `is_delete`. A CDC stream reports an
-update as a single message that deletes the old value of a record and inserts
-the new one, so those two changes carry one timestamp; ranking the insertion
-first keeps the updated record, where ranking the deletion first would drop it.
+The `is_delete` term in the `ORDER BY` clause breaks the tie between changes
+that carry the same timestamp. A CDC stream reports an update as a single
+message that deletes the old value of a record and inserts the new one, so
+those two changes carry one timestamp; ranking the insertion first keeps the
+updated record, where ranking the deletion first would drop it.
 
 Notes and restrictions:
 
@@ -277,7 +283,7 @@ Notes and restrictions:
   conflicts.
 
 * Deletions that a soft-delete connector reads do not cancel out earlier
-  insertions of the same record, so the table can hold several copies of a
+  insertions of the same record, so the table can receive several copies of a
   record that the input stream inserted and deleted repeatedly.
 
 ### Configuring the output buffer
