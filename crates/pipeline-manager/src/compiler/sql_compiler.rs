@@ -334,6 +334,15 @@ impl From<UtilError> for SqlCompilationError {
     }
 }
 
+/// Directory in which downloaded SQL compiler jars for non-platform runtime
+/// versions are cached.
+pub(crate) fn jar_cache_dir(config: &CompilerConfig) -> PathBuf {
+    config
+        .working_dir()
+        .join("sql-compilation")
+        .join("jar-cache")
+}
+
 /// Determines the path to the SQL compiler executable based on the runtime selector.
 fn determine_sql_compiler_path(
     config: &CompilerConfig,
@@ -341,16 +350,12 @@ fn determine_sql_compiler_path(
 ) -> PathBuf {
     match runtime_selector {
         RuntimeSelector::Platform(_) => PathBuf::from(&config.sql_compiler_path),
-        RuntimeSelector::Sha(sha) => config
-            .working_dir()
-            .join("sql-compilation")
-            .join("jar-cache")
-            .join(format!("sql2dbsp-jar-with-dependencies-{sha}.jar")),
-        RuntimeSelector::Version(version) => config
-            .working_dir()
-            .join("sql-compilation")
-            .join("jar-cache")
-            .join(format!("sql2dbsp-jar-with-dependencies-{version}.jar")),
+        RuntimeSelector::Sha(sha) => {
+            jar_cache_dir(config).join(format!("sql2dbsp-jar-with-dependencies-{sha}.jar"))
+        }
+        RuntimeSelector::Version(version) => {
+            jar_cache_dir(config).join(format!("sql2dbsp-jar-with-dependencies-{version}.jar"))
+        }
     }
 }
 
@@ -363,10 +368,7 @@ async fn fetch_sql_compiler(
         "This code-path is only enabled in unstable mode"
     );
 
-    let jar_cache_dir = config
-        .working_dir()
-        .join("sql-compilation")
-        .join("jar-cache");
+    let jar_cache_dir = jar_cache_dir(config);
     fs::create_dir_all(&jar_cache_dir).await.map_err(|e| SqlCompilationError::SystemError(format!(
         "Unable initialize JAR cache directory '{}': {}. If possible, fall-back to platform version by removing `runtime_version` in the program config.",
         jar_cache_dir.display(),
@@ -1032,10 +1034,7 @@ pub(crate) async fn cleanup_sql_compilation(
     }
 
     // (3) Clean up JAR cache to make sure it does not grow unboundedly
-    let jar_cache_dir = config
-        .working_dir()
-        .join("sql-compilation")
-        .join("jar-cache");
+    let jar_cache_dir = jar_cache_dir(config);
     if jar_cache_dir.is_dir() {
         cleanup_specific_files(
             "SQL JAR cache",

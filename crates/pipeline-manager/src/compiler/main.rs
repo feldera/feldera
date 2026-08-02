@@ -2,11 +2,12 @@ use crate::api::error::ApiError;
 use crate::common_error::CommonError;
 use crate::compiler::error::CompilerError;
 use crate::compiler::rust_compiler::{
-    perform_rust_compilation, rust_compiler_task, RustCompilationError, RustCompilationResult,
+    cleanup_pipeline_binaries, perform_rust_compilation, rust_compiler_task, RustCompilationError,
+    RustCompilationResult, CLEANUP_INTERVAL,
 };
 use crate::compiler::sql_compiler::{
-    ephemeral_compilation_dir, perform_sql_compilation, sql_compiler_task, validate_program,
-    ProgramValidationRequest, SqlCompilationError, SqlCompilationOutput,
+    ephemeral_compilation_dir, jar_cache_dir, perform_sql_compilation, sql_compiler_task,
+    validate_program, ProgramValidationRequest, SqlCompilationError, SqlCompilationOutput,
 };
 use crate::compiler::util::{
     pipeline_binary_filename, program_info_filename, validate_is_sha256_checksum,
@@ -20,14 +21,18 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use actix_files::NamedFile;
+use actix_web::error::PayloadError;
 use actix_web::{get, post, web, HttpRequest, HttpResponse, HttpServer, Responder};
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 use std::net::TcpListener;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::task::JoinHandle;
+use tokio::time::sleep;
 use tokio::{fs, io::AsyncWriteExt, spawn, sync::Mutex};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 /// Decodes the URL encoded parameter value as a string.
@@ -496,15 +501,82 @@ async fn validate_program_endpoint(
     Ok(HttpResponse::Ok().json(response))
 }
 
+/// Streams the payload to a temp file next to `target_file_path`, verifies the
+/// sha256 checksum, and only then renames the temp file onto the final path.
+/// The final path therefore never holds a partially written or corrupt file;
+/// on any error the temp file is removed.
 async fn save_file(
     target_file_path: &Path,
-    mut payload: web::Payload,
+    payload: impl Stream<Item = Result<web::Bytes, PayloadError>> + Unpin,
     expected_integrity_checksum: &str,
 ) -> Result<usize, ManagerError> {
-    // Stream the binary directly to disk with integrity checksum validation
-    let mut file = fs::File::create(&target_file_path).await.map_err(|e| {
+    let target_file_name = target_file_path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let temp_file_path =
+        target_file_path.with_file_name(format!("{target_file_name}.tmp-{}", Uuid::now_v7()));
+
+    let write_result =
+        stream_to_file_and_verify(&temp_file_path, payload, expected_integrity_checksum).await;
+
+    match write_result {
+        Ok(total_size) => match fs::rename(&temp_file_path, target_file_path).await {
+            Ok(()) => {
+                // Persist the rename: without a directory fsync a crash can
+                // lose the entry while the database already says Success.
+                fsync_parent_dir(target_file_path).await?;
+                Ok(total_size)
+            }
+            Err(e) => {
+                remove_temp_upload_file(&temp_file_path).await;
+                Err(ManagerError::from(CommonError::io_error(
+                    format!(
+                        "renaming '{}' to '{}'",
+                        temp_file_path.display(),
+                        target_file_path.display()
+                    ),
+                    e,
+                )))
+            }
+        },
+        Err(e) => {
+            remove_temp_upload_file(&temp_file_path).await;
+            Err(e)
+        }
+    }
+}
+
+/// Fsyncs the directory containing `path` so that a rename into it is durable.
+async fn fsync_parent_dir(path: &Path) -> Result<(), ManagerError> {
+    let Some(parent_dir) = path.parent() else {
+        return Ok(());
+    };
+    let parent_dir_handle = fs::File::open(parent_dir).await.map_err(|e| {
         ManagerError::from(CommonError::io_error(
-            format!("creating file '{}'", target_file_path.display()),
+            format!("opening directory '{}'", parent_dir.display()),
+            e,
+        ))
+    })?;
+    parent_dir_handle.sync_all().await.map_err(|e| {
+        ManagerError::from(CommonError::io_error(
+            format!("syncing directory '{}'", parent_dir.display()),
+            e,
+        ))
+    })
+}
+
+/// Streams the payload to `file_path` and validates the sha256 checksum after
+/// flushing. Returns the total size in bytes. The caller removes the file on
+/// any error.
+async fn stream_to_file_and_verify(
+    file_path: &Path,
+    mut payload: impl Stream<Item = Result<web::Bytes, PayloadError>> + Unpin,
+    expected_integrity_checksum: &str,
+) -> Result<usize, ManagerError> {
+    let mut file = fs::File::create(&file_path).await.map_err(|e| {
+        ManagerError::from(CommonError::io_error(
+            format!("creating file '{}'", file_path.display()),
             e,
         ))
     })?;
@@ -527,16 +599,23 @@ async fn save_file(
         // Write chunk to file
         file.write_all(&chunk).await.map_err(|e| {
             ManagerError::from(CommonError::io_error(
-                format!("writing to file '{}'", target_file_path.display()),
+                format!("writing to file '{}'", file_path.display()),
                 e,
             ))
         })?;
     }
 
-    // Flush and close file
+    // Flush and persist to disk before the rename makes the file visible
+    // under its final name.
     file.flush().await.map_err(|e| {
         ManagerError::from(CommonError::io_error(
-            format!("flushing file '{}'", target_file_path.display()),
+            format!("flushing file '{}'", file_path.display()),
+            e,
+        ))
+    })?;
+    file.sync_all().await.map_err(|e| {
+        ManagerError::from(CommonError::io_error(
+            format!("syncing file '{}'", file_path.display()),
             e,
         ))
     })?;
@@ -545,8 +624,6 @@ async fn save_file(
     // Validate integrity checksum
     let actual_integrity_checksum = hex::encode(hasher.finish());
     if actual_integrity_checksum != expected_integrity_checksum {
-        // Remove the invalid file
-        let _ = fs::remove_file(&target_file_path).await;
         return Err(ManagerError::from(ApiError::InvalidChecksumParam {
             value: format!(
                 "Expected integrity checksum '{}', but calculated '{}'",
@@ -557,6 +634,19 @@ async fn save_file(
     }
 
     Ok(total_size)
+}
+
+/// Removes a temp upload file. Failure only leaves an orphan file behind, so
+/// it is logged rather than propagated.
+async fn remove_temp_upload_file(temp_file_path: &Path) {
+    if let Err(e) = fs::remove_file(temp_file_path).await {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            warn!(
+                "Unable to remove temp upload file '{}': {e}",
+                temp_file_path.display()
+            );
+        }
+    }
 }
 
 /// Health check which returns success if it is able to reach the database.
@@ -742,6 +832,54 @@ pub async fn compiler_main(
     ));
 
     // Spawn HTTP server thread
+    let http_server = spawn_compiler_http_server(&common_config, &config, &db).await;
+
+    // All threads should run indefinitely
+    let error = tokio::select! {
+        _ = sql_task => "Compiler SQL task ended prematurely",
+        _ = rust_task => "Compiler Rust task ended prematurely",
+        _ = http_server => "Compiler HTTP(S) server task ended prematurely",
+    };
+    error!("{error}");
+    error!("Returning compiler thread");
+    Err(ManagerError::from(CompilerError::TaskFailed {
+        error: error.to_string(),
+    }))
+}
+
+/// Runs the artifact-store variant of the compiler server: the full HTTP
+/// surface plus a janitor, but no SQL or Rust compilation tasks. Serves
+/// deployments where compiler workers are ephemeral and this process is the
+/// durable binary store (see enterprise compiler autoscaling).
+pub async fn artifact_server_main(
+    common_config: CommonConfig,
+    config: CompilerConfig,
+    db: Arc<Mutex<StoragePostgres>>,
+) -> Result<(), ManagerError> {
+    create_working_directory_if_not_exists(&config).await?;
+
+    // Spawn janitor and HTTP server threads
+    let janitor_task = spawn(artifact_server_janitor_task(config.clone(), db.clone()));
+    let http_server = spawn_compiler_http_server(&common_config, &config, &db).await;
+
+    // Both threads should run indefinitely
+    let error = tokio::select! {
+        _ = janitor_task => "Artifact server janitor task ended prematurely",
+        _ = http_server => "Artifact server HTTP(S) server task ended prematurely",
+    };
+    error!("{error}");
+    Err(ManagerError::from(CompilerError::TaskFailed {
+        error: error.to_string(),
+    }))
+}
+
+/// Spawns the compiler HTTP(S) server serving artifacts, uploads, program
+/// validation, and health checks. Panics if the listener cannot be bound.
+async fn spawn_compiler_http_server(
+    common_config: &CommonConfig,
+    config: &CompilerConfig,
+    db: &Arc<Mutex<StoragePostgres>>,
+) -> JoinHandle<Result<(), std::io::Error>> {
     let config = web::Data::new(config.clone());
     let common_config_data = web::Data::new(common_config.clone());
     let probe = web::Data::new(DbProbe::new(db.clone()).await);
@@ -793,25 +931,116 @@ pub async fn compiler_main(
         common_config.compiler_port,
         common_config.http_workers,
     );
+    http_server
+}
 
-    // All threads should run indefinitely
-    let error = tokio::select! {
-        _ = sql_task => "Compiler SQL task ended prematurely",
-        _ = rust_task => "Compiler Rust task ended prematurely",
-        _ = http_server => "Compiler HTTP(S) server task ended prematurely",
-    };
-    error!("{error}");
-    error!("Returning compiler thread");
-    Err(ManagerError::from(CompilerError::TaskFailed {
-        error: error.to_string(),
-    }))
+/// Age above which an ephemeral validation directory is an orphan of a crashed
+/// validation; live validations finish within seconds.
+const ORPHANED_EPHEMERAL_DIR_MAX_AGE: Duration = Duration::from_secs(3600);
+
+/// Age above which the janitor removes a cached SQL compiler jar.
+const STALE_JAR_MAX_AGE: Duration = Duration::from_secs(30 * 24 * 3600);
+
+/// Janitor of the artifact server: garbage-collects pipeline binaries of
+/// deleted or recompiled pipelines, ephemeral validation directories orphaned
+/// by crashed validations, and stale SQL compiler jars. Errors within a pass
+/// are logged and the loop continues.
+async fn artifact_server_janitor_task(config: CompilerConfig, db: Arc<Mutex<StoragePostgres>>) {
+    loop {
+        if let Err(e) = cleanup_pipeline_binaries(&config, db.clone()).await {
+            error!("Artifact server janitor: pipeline binaries cleanup failed: {e}");
+        }
+        if let Err(e) = remove_stale_entries(
+            &ephemeral_compilation_dir(&config),
+            ORPHANED_EPHEMERAL_DIR_MAX_AGE,
+            StaleEntryKind::Directories,
+        )
+        .await
+        {
+            error!("Artifact server janitor: ephemeral validation directory cleanup failed: {e}");
+        }
+        if let Err(e) = remove_stale_entries(
+            &jar_cache_dir(&config),
+            STALE_JAR_MAX_AGE,
+            StaleEntryKind::Files,
+        )
+        .await
+        {
+            error!("Artifact server janitor: SQL compiler jar cache cleanup failed: {e}");
+        }
+        sleep(CLEANUP_INTERVAL).await;
+    }
+}
+
+/// Which kind of directory entry [`remove_stale_entries`] removes.
+#[derive(Clone, Copy)]
+enum StaleEntryKind {
+    Directories,
+    Files,
+}
+
+/// Removes the entries of `dir` of the given kind whose modification time is
+/// older than `max_age`. A failure to remove one entry is logged and does not
+/// stop the sweep.
+async fn remove_stale_entries(
+    dir: &Path,
+    max_age: Duration,
+    kind: StaleEntryKind,
+) -> Result<(), std::io::Error> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    let mut entries = fs::read_dir(dir).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        // Entries can vanish mid-sweep when racing a finishing validation;
+        // one unstat-able entry must not abort the whole sweep.
+        let metadata = match entry.metadata().await {
+            Ok(metadata) => metadata,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                warn!(
+                    "Unable to stat entry '{}' during stale entry sweep: {e}",
+                    entry.path().display()
+                );
+                continue;
+            }
+        };
+        let matches_kind = match kind {
+            StaleEntryKind::Directories => metadata.is_dir(),
+            StaleEntryKind::Files => metadata.is_file(),
+        };
+        if !matches_kind {
+            continue;
+        }
+        // A modification time that is unavailable or in the future never
+        // counts as stale.
+        let Ok(modified_time) = metadata.modified() else {
+            continue;
+        };
+        if !modified_time.elapsed().is_ok_and(|age| age >= max_age) {
+            continue;
+        }
+        let removal_result = match kind {
+            StaleEntryKind::Directories => fs::remove_dir_all(entry.path()).await,
+            StaleEntryKind::Files => fs::remove_file(entry.path()).await,
+        };
+        match removal_result {
+            Ok(()) => info!("Removed stale entry '{}'", entry.path().display()),
+            Err(e) => warn!(
+                "Unable to remove stale entry '{}': {e}",
+                entry.path().display()
+            ),
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod test {
     use crate::api::error::ApiError;
     use crate::compiler::main::{
-        create_working_directory_if_not_exists, decode_url_encoded_parameter, upload_binary,
+        create_working_directory_if_not_exists, decode_url_encoded_parameter, remove_stale_entries,
+        save_file, upload_binary, StaleEntryKind,
     };
     use crate::compiler::util::pipeline_binary_filename;
     use crate::config::CompilerConfig;
@@ -819,8 +1048,10 @@ mod test {
     use crate::db::types::program::CompilationProfile;
     use crate::db::types::version::Version;
     use crate::error::ManagerError;
+    use actix_web::error::PayloadError;
     use actix_web::{test as actix_test, web, App};
     use openssl::sha::sha256;
+    use std::time::Duration;
     use tokio::fs;
     use uuid::Uuid;
 
@@ -961,6 +1192,14 @@ mod test {
                 "Checksum should match for test case: {}",
                 test_case.name
             );
+
+            // No temp file may be left behind
+            let dir_names =
+                list_file_names(expected_path.parent().expect("path must have a parent")).await;
+            assert!(
+                dir_names.iter().all(|name| !name.contains(".tmp-")),
+                "No temp file may remain, found: {dir_names:?}"
+            );
         }
     }
 
@@ -1004,6 +1243,79 @@ mod test {
             !expected_path.exists(),
             "Binary file should not exist after checksum failure"
         );
+
+        // Neither the final file nor a temp file may remain
+        let dir_names =
+            list_file_names(expected_path.parent().expect("path must have a parent")).await;
+        assert!(
+            dir_names.is_empty(),
+            "No file may remain after checksum failure, found: {dir_names:?}"
+        );
+    }
+
+    /// An upload whose payload errors mid-stream leaves no file under the
+    /// final name and no temp file behind.
+    #[tokio::test]
+    async fn test_interrupted_upload_leaves_no_file() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let pipeline_binaries_dir = tempdir.path().join("pipeline-binaries");
+        fs::create_dir_all(&pipeline_binaries_dir).await.unwrap();
+        let target_file_path = pipeline_binaries_dir.join("pipeline_example_binary");
+
+        let data = b"partial data";
+        let interrupted_payload = futures_util::stream::iter(vec![
+            Ok(web::Bytes::from_static(data)),
+            Err(PayloadError::Incomplete(None)),
+        ]);
+        let result = save_file(
+            &target_file_path,
+            interrupted_payload,
+            &hex::encode(sha256(data)),
+        )
+        .await;
+        assert!(result.is_err(), "Interrupted upload should fail");
+
+        let dir_names = list_file_names(&pipeline_binaries_dir).await;
+        assert!(
+            dir_names.is_empty(),
+            "No file may remain after an interrupted upload, found: {dir_names:?}"
+        );
+    }
+
+    /// Stale-entry removal deletes only entries older than the maximum age and
+    /// only entries of the requested kind.
+    #[tokio::test]
+    async fn test_stale_entry_removal() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dir = tempdir.path();
+        let subdir = dir.join("subdir");
+        fs::create_dir(&subdir).await.unwrap();
+        let file = dir.join("file.jar");
+        fs::write(&file, b"jar").await.unwrap();
+
+        // Entries younger than the maximum age are kept
+        let long_max_age = Duration::from_secs(3600);
+        remove_stale_entries(dir, long_max_age, StaleEntryKind::Directories)
+            .await
+            .unwrap();
+        remove_stale_entries(dir, long_max_age, StaleEntryKind::Files)
+            .await
+            .unwrap();
+        assert!(subdir.is_dir());
+        assert!(file.is_file());
+
+        // Older entries are removed, but only those of the requested kind
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let short_max_age = Duration::from_millis(50);
+        remove_stale_entries(dir, short_max_age, StaleEntryKind::Directories)
+            .await
+            .unwrap();
+        assert!(!subdir.exists());
+        assert!(file.is_file());
+        remove_stale_entries(dir, short_max_age, StaleEntryKind::Files)
+            .await
+            .unwrap();
+        assert!(!file.exists());
     }
 
     #[tokio::test]
@@ -1099,6 +1411,16 @@ mod test {
     /// Creates test binary data of specified size with predictable pattern
     fn create_test_data(size: usize) -> Vec<u8> {
         (0..size).map(|i| (i % 256) as u8).collect()
+    }
+
+    /// Lists the file names in a directory
+    async fn list_file_names(dir: &std::path::Path) -> Vec<String> {
+        let mut file_names = vec![];
+        let mut entries = fs::read_dir(dir).await.unwrap();
+        while let Some(entry) = entries.next_entry().await.unwrap() {
+            file_names.push(entry.file_name().to_string_lossy().to_string());
+        }
+        file_names
     }
 
     /// Builds upload URL from parameters
