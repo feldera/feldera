@@ -733,8 +733,13 @@ async fn upload_program_info_to_endpoint_with_retries(
 }
 
 /// Returns true when the upload response status indicates a permanent
-/// rejection (4xx other than 408 and 429) that no retry or recompile can fix.
+/// rejection that no retry can fix: a 4xx other than 408 and 429, or 507
+/// Insufficient Storage (the binary store is full and only an operator can
+/// grow it, so retrying just delays the user-visible error).
 fn is_permanent_upload_rejection(status: reqwest::StatusCode) -> bool {
+    if status == reqwest::StatusCode::INSUFFICIENT_STORAGE {
+        return true;
+    }
     status.is_client_error()
         && status != reqwest::StatusCode::REQUEST_TIMEOUT
         && status != reqwest::StatusCode::TOO_MANY_REQUESTS
@@ -2391,7 +2396,7 @@ mod test {
     use crate::compiler::rust_compiler::prepare_workspace;
     use crate::compiler::rust_compiler::{
         calculate_source_checksum, decide_cleanup, decide_pipeline_binary_cleanup,
-        STALE_TEMP_UPLOAD_MAX_AGE,
+        is_permanent_upload_rejection, STALE_TEMP_UPLOAD_MAX_AGE,
     };
     use crate::compiler::test::{list_content_as_sorted_names, CompilerTest};
     use crate::compiler::util::{
@@ -2641,6 +2646,27 @@ mod test {
 
     /// Checks the pipeline binaries cleanup decision: stale `.tmp-` uploads are
     /// removed, fresh or unstat-able ones are kept, and prefix matching decides the rest.
+    /// 4xx (except 408 and 429) and 507 fail an upload permanently; transient
+    /// statuses stay retryable.
+    #[test]
+    fn permanent_upload_rejection_classification() {
+        use reqwest::StatusCode;
+        assert!(is_permanent_upload_rejection(StatusCode::BAD_REQUEST));
+        assert!(is_permanent_upload_rejection(StatusCode::NOT_FOUND));
+        assert!(is_permanent_upload_rejection(StatusCode::PAYLOAD_TOO_LARGE));
+        assert!(is_permanent_upload_rejection(
+            StatusCode::INSUFFICIENT_STORAGE
+        ));
+        assert!(!is_permanent_upload_rejection(StatusCode::REQUEST_TIMEOUT));
+        assert!(!is_permanent_upload_rejection(
+            StatusCode::TOO_MANY_REQUESTS
+        ));
+        assert!(!is_permanent_upload_rejection(
+            StatusCode::INTERNAL_SERVER_ERROR
+        ));
+        assert!(!is_permanent_upload_rejection(StatusCode::BAD_GATEWAY));
+    }
+
     #[test]
     fn pipeline_binary_cleanup_decision() {
         let valid_binaries = vec!["pipeline_a_v1_".to_string()];

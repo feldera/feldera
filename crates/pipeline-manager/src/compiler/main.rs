@@ -362,7 +362,14 @@ async fn upload_binary(
         &expected_integrity_checksum,
     ));
 
-    let total_size = save_file(&target_file_path, payload, &expected_integrity_checksum).await?;
+    let total_size = match save_file(&target_file_path, payload, &expected_integrity_checksum).await
+    {
+        Ok(total_size) => total_size,
+        Err(error) if is_out_of_storage_error(&error) => {
+            return Ok(insufficient_storage_response(&error));
+        }
+        Err(error) => return Err(error),
+    };
 
     info!(
         pipeline_id = %pipeline_id,
@@ -457,7 +464,14 @@ async fn upload_program_info(
         &expected_integrity_checksum,
     ));
 
-    let total_size = save_file(&target_file_path, payload, &expected_integrity_checksum).await?;
+    let total_size = match save_file(&target_file_path, payload, &expected_integrity_checksum).await
+    {
+        Ok(total_size) => total_size,
+        Err(error) if is_out_of_storage_error(&error) => {
+            return Ok(insufficient_storage_response(&error));
+        }
+        Err(error) => return Err(error),
+    };
 
     info!(
         pipeline_id = %pipeline_id,
@@ -634,6 +648,28 @@ async fn stream_to_file_and_verify(
     }
 
     Ok(total_size)
+}
+
+/// Whether the error is an out-of-storage I/O error (ENOSPC).
+fn is_out_of_storage_error(error: &ManagerError) -> bool {
+    let ManagerError::CommonError {
+        common_error: CommonError::IoError { io_error, .. },
+    } = error
+    else {
+        return false;
+    };
+    // ENOSPC is errno 28 on Linux and macOS.
+    io_error.raw_os_error() == Some(28)
+}
+
+/// 507 Insufficient Storage response for an upload that failed with ENOSPC.
+/// The distinct status lets workers fail the compilation fast with a
+/// user-visible error instead of burning their retry budget on a volume that
+/// only an operator can grow.
+fn insufficient_storage_response(error: &ManagerError) -> HttpResponse {
+    HttpResponse::InsufficientStorage().json(serde_json::json!({
+        "message": format!("Insufficient storage on the binary store: {error}"),
+    }))
 }
 
 /// Removes a temp upload file. Failure only leaves an orphan file behind, so
@@ -1318,6 +1354,21 @@ mod test {
             dir_names.is_empty(),
             "No file may remain after an interrupted upload, found: {dir_names:?}"
         );
+    }
+
+    /// ENOSPC I/O errors are recognized as out-of-storage; other errors are not.
+    #[test]
+    fn out_of_storage_error_detection() {
+        let enospc = ManagerError::from(crate::common_error::CommonError::io_error(
+            "writing".to_string(),
+            std::io::Error::from_raw_os_error(28),
+        ));
+        assert!(super::is_out_of_storage_error(&enospc));
+        let other_io = ManagerError::from(crate::common_error::CommonError::io_error(
+            "writing".to_string(),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+        ));
+        assert!(!super::is_out_of_storage_error(&other_io));
     }
 
     /// The deep health check reports storage pressure at or above the
