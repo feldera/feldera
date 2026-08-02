@@ -2,6 +2,6 @@
 # scanner = "@bun-security-scanner/npm"
 
 [install]
-# Only install package versions published at least 7 days ago
-minimumReleaseAge = 604800
+# Only install package versions published at least 2 days ago
+minimumReleaseAge = 172800
 minimumReleaseAgeExcludes = []
