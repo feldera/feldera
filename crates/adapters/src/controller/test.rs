@@ -5196,6 +5196,265 @@ fn test_removing_a_lagging_output_endpoint_republishes_completion() {
     );
 }
 
+/// A bare [`ControllerStatus`] for the output-endpoint accounting tests.
+fn test_controller_status(name: &str) -> crate::ControllerStatus {
+    crate::ControllerStatus::new(
+        serde_json::from_value(json!({ "name": name, "workers": 1 })).unwrap(),
+        0,
+        None,
+        uuid::Uuid::nil(),
+    )
+}
+
+/// A file sink writing CSV, which transmits one record per tuple.
+fn test_output_config() -> OutputEndpointConfig {
+    serde_json::from_value(json!({
+        "stream": "v1",
+        "transport": { "name": "file_output", "config": { "path": "/dev/null" } },
+        "format": { "name": "csv", "config": {} }
+    }))
+    .unwrap()
+}
+
+/// An output endpoint must report what it had transmitted at the moment it
+/// caught up with a checkpoint: not less, because the endpoint was still
+/// writing when the checkpoint started, and not more, because it keeps working
+/// while the checkpoint commits.
+///
+/// The checkpoint stores this as the endpoint's `transmitted_records`, so
+/// getting it wrong makes a resumed connector misreport for the rest of the
+/// pipeline's life. Adding up the live counters cannot produce it: a batch
+/// stays queued until the endpoint has finished writing it, by which time
+/// `transmitted_records` already covers what went out, so the two overlap.
+#[test]
+fn test_output_endpoint_reports_totals_at_the_checkpoint() {
+    use super::stats::ProcessedRecords;
+
+    // Two steps of output that the circuit queued before the endpoint thread
+    // got to either. These are the batch sizes from the `suspend_barrier4` CI
+    // failure that exposed the double count.
+    const FIRST_BATCH: usize = 630;
+    const SECOND_BATCH: usize = 370;
+    const TOTAL: u64 = (FIRST_BATCH + SECOND_BATCH) as u64;
+
+    let status = test_controller_status("test_checkpoint_output_stats");
+    let output_config = test_output_config();
+    status.add_output(&0, "out", &output_config, None, true);
+
+    let parker = Parker::new();
+    let unparker = parker.unparker().clone();
+    let processed = |records: u64, steps| ProcessedRecords {
+        total_processed_input_records: records,
+        total_processed_steps: steps,
+    };
+    let transmitted = || {
+        status
+            .output_status()
+            .get(&0)
+            .unwrap()
+            .transmitted_records()
+    };
+    let reported = || {
+        status
+            .take_output_checkpoint_totals()
+            .remove("out")
+            .map(|totals| totals.records)
+    };
+
+    // The circuit queues two steps of output, then takes a checkpoint covering
+    // every record it has ingested.
+    status.enqueue_batch(0, FIRST_BATCH);
+    status.enqueue_batch(0, SECOND_BATCH);
+    status.arm_output_checkpoint(TOTAL);
+
+    // The endpoint writes the first batch to the transport. That write does not
+    // take the batch off the queue; the endpoint thread does that once it is
+    // done with the whole batch. The endpoint owes the checkpoint the rest, so
+    // it has nothing to report yet.
+    status.output_buffer(0, 4096, FIRST_BATCH);
+    status.output_batch(
+        0,
+        Some(processed(FIRST_BATCH as u64, 1)),
+        FIRST_BATCH,
+        &unparker,
+    );
+
+    // The second batch takes it to the checkpoint.
+    status.output_buffer(0, 4096, SECOND_BATCH);
+    status.output_batch(0, Some(processed(TOTAL, 2)), SECOND_BATCH, &unparker);
+    assert_eq!(transmitted(), TOTAL);
+
+    // The circuit keeps running while the checkpoint commits. What the endpoint
+    // transmits now belongs to the steps after the checkpoint, and the
+    // pipeline re-emits it on resume, so the checkpoint must not count it.
+    const AFTERWARDS: usize = 500;
+    status.enqueue_batch(0, AFTERWARDS);
+    status.output_buffer(0, 4096, AFTERWARDS);
+    status.output_batch(
+        0,
+        Some(processed(TOTAL + AFTERWARDS as u64, 3)),
+        AFTERWARDS,
+        &unparker,
+    );
+    assert_eq!(transmitted(), TOTAL + AFTERWARDS as u64);
+
+    assert_eq!(reported(), Some(TOTAL));
+    assert_eq!(reported(), None, "collecting the reading disarms the latch");
+}
+
+/// An endpoint that is already caught up when the checkpoint starts must
+/// report right away.
+///
+/// Nothing more reaches it on an idle pipeline, so it would never take the
+/// reading otherwise, and the checkpoint would wait on it forever.
+#[test]
+fn test_idle_output_endpoint_reports_at_once() {
+    use super::stats::ProcessedRecords;
+
+    const RECORDS: usize = 100;
+
+    let status = test_controller_status("test_checkpoint_idle_endpoint");
+    let output_config = test_output_config();
+    status.add_output(&0, "out", &output_config, None, true);
+
+    let parker = Parker::new();
+    let unparker = parker.unparker().clone();
+
+    status.enqueue_batch(0, RECORDS);
+    status.output_buffer(0, 4096, RECORDS);
+    status.output_batch(
+        0,
+        Some(ProcessedRecords {
+            total_processed_input_records: RECORDS as u64,
+            total_processed_steps: 1,
+        }),
+        RECORDS,
+        &unparker,
+    );
+
+    status.arm_output_checkpoint(RECORDS as u64);
+    assert_eq!(
+        status
+            .take_output_checkpoint_totals()
+            .remove("out")
+            .map(|totals| totals.records),
+        Some(RECORDS as u64)
+    );
+}
+
+/// An endpoint removed before it catches up reports nothing, and the
+/// checkpoint keeps the figures it captured when it started.
+#[test]
+fn test_removed_output_endpoint_reports_nothing() {
+    const RECORDS: usize = 100;
+
+    let status = test_controller_status("test_checkpoint_removed_endpoint");
+    let output_config = test_output_config();
+    status.add_output(&0, "out", &output_config, None, true);
+
+    // The endpoint is still holding the batch when the checkpoint starts.
+    status.enqueue_batch(0, RECORDS);
+    status.arm_output_checkpoint(RECORDS as u64);
+
+    status.remove_output(&0);
+    assert!(status.take_output_checkpoint_totals().is_empty());
+}
+
+/// The reading an endpoint reports must be exact however the checkpoint
+/// interleaves with the endpoint's own work.
+///
+/// Each round arms the checkpoint at a different point, so it lands before the
+/// endpoint has caught up, at the moment it does, and after. The endpoint
+/// transmits one record per record the circuit ingested, so whatever the
+/// checkpoint covers is exactly what it must report.
+#[test]
+fn test_output_endpoint_reports_totals_under_concurrency() {
+    use super::stats::ProcessedRecords;
+    use std::sync::mpsc::channel;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+
+    const BATCHES: usize = 400;
+    // Transmitting a batch in two chunks widens the window in which the
+    // endpoint has put part of a batch on the transport but has not yet
+    // released it.
+    const FIRST_CHUNK: usize = 630;
+    const SECOND_CHUNK: usize = 370;
+    const BATCH: usize = FIRST_CHUNK + SECOND_CHUNK;
+    const ROUNDS: usize = 16;
+
+    for round in 0..ROUNDS {
+        let status = Arc::new(test_controller_status("test_checkpoint_concurrency"));
+        status.add_output(&0, "out", &test_output_config(), None, true);
+
+        let (sender, receiver) = channel();
+        // Stands in for the circuit thread. The thread that produces output is
+        // the thread that arms the checkpoint, so no output can appear while a
+        // checkpoint is being armed, and the endpoint can never be past what
+        // the checkpoint covers.
+        let ingested = Arc::new(Mutex::new(0u64));
+
+        let circuit = {
+            let status = status.clone();
+            let ingested = ingested.clone();
+            thread::spawn(move || {
+                for _ in 0..BATCHES {
+                    let mut ingested = ingested.lock().unwrap();
+                    status.enqueue_batch(0, BATCH);
+                    *ingested += BATCH as u64;
+                    let processed = *ingested;
+                    drop(ingested);
+                    sender.send(processed).unwrap();
+                }
+            })
+        };
+
+        let endpoint = {
+            let status = status.clone();
+            thread::spawn(move || {
+                let parker = Parker::new();
+                let unparker = parker.unparker().clone();
+                while let Ok(processed) = receiver.recv() {
+                    status.output_buffer(0, 4096, FIRST_CHUNK);
+                    thread::yield_now();
+                    status.output_buffer(0, 4096, SECOND_CHUNK);
+                    status.output_batch(
+                        0,
+                        Some(ProcessedRecords {
+                            total_processed_input_records: processed,
+                            total_processed_steps: 0,
+                        }),
+                        BATCH,
+                        &unparker,
+                    );
+                }
+            })
+        };
+
+        let arm_after = ((round * BATCHES) / ROUNDS * BATCH) as u64;
+        while *ingested.lock().unwrap() < arm_after {
+            thread::yield_now();
+        }
+        let threshold = {
+            let ingested = ingested.lock().unwrap();
+            status.arm_output_checkpoint(*ingested);
+            *ingested
+        };
+
+        circuit.join().unwrap();
+        endpoint.join().unwrap();
+
+        assert_eq!(
+            status
+                .take_output_checkpoint_totals()
+                .remove("out")
+                .map(|totals| totals.records),
+            Some(threshold),
+            "round {round}: the checkpoint covers {threshold} records"
+        );
+    }
+}
+
 /// Only a changed relation makes an output endpoint fall behind. A connector whose
 /// own definition changed still emits nothing for inputs already processed, so it
 /// stays caught up and keeps its seeded progress counter.

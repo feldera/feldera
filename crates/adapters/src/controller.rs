@@ -9141,6 +9141,14 @@ impl RunningCheckpoint {
                 )
             })
             .collect();
+        // Ask the output endpoints to record what they have transmitted once
+        // they catch up with this checkpoint. `CheckpointThread` waits for
+        // them and collects the readings.
+        circuit
+            .controller
+            .status
+            .arm_output_checkpoint(processed_records);
+
         let output_statistics = {
             let outputs_by_name: HashMap<String, bool> = circuit
                 .controller
@@ -9347,6 +9355,19 @@ impl CheckpointThread {
                     );
                 }
             });
+        }
+
+        // Every endpoint has now transmitted the output this checkpoint covers
+        // and recorded what that came to. Those readings are the endpoint
+        // statistics the checkpoint stores: taken by the endpoint itself at
+        // the moment it caught up, they neither miss what it was still
+        // transmitting when the checkpoint started nor count what it went on
+        // to transmit afterwards.
+        for (endpoint_name, transmitted) in self.status.take_output_checkpoint_totals() {
+            if let Some(metrics) = self.checkpoint.output_statistics.get_mut(&endpoint_name) {
+                metrics.transmitted_records = transmitted.records;
+                metrics.transmitted_bytes = transmitted.bytes;
+            }
         }
 
         // Finalize the checkpoint on storage.

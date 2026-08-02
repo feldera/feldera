@@ -73,7 +73,7 @@ use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
 use size_of::HumanBytes;
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     fmt::Display,
     sync::{
         Arc, Mutex,
@@ -1293,6 +1293,36 @@ impl ControllerStatus {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             endpoint_stats.output_buffer(num_bytes, num_records);
         };
+    }
+
+    /// Ask every output endpoint to record what it has transmitted once it has
+    /// transmitted everything derived from the first `threshold` records the
+    /// pipeline ingested.
+    ///
+    /// Call from the circuit thread when a checkpoint starts;
+    /// [`Self::take_output_checkpoint_totals`] collects the readings once the
+    /// endpoints have got there.
+    pub fn arm_output_checkpoint(&self, threshold: u64) {
+        for endpoint_stats in self.output_status().values() {
+            endpoint_stats.arm_checkpoint(threshold);
+        }
+    }
+
+    /// Collect what each output endpoint transmitted for the armed checkpoint,
+    /// keyed by endpoint name, and disarm them all.
+    ///
+    /// An endpoint that never caught up, because it was removed first, is
+    /// absent from the result.
+    pub fn take_output_checkpoint_totals(&self) -> HashMap<String, TransmittedTotals> {
+        self.output_status()
+            .values()
+            .filter_map(|endpoint_stats| {
+                Some((
+                    endpoint_stats.endpoint_name.clone(),
+                    endpoint_stats.take_checkpoint_totals()?,
+                ))
+            })
+            .collect()
     }
 
     pub fn output_buffers_full(&self) -> bool {
@@ -2702,6 +2732,42 @@ pub struct OutputEndpointStatus {
 
     /// Connector-specific metrics for Prometheus export.
     pub custom_metrics: Option<Arc<dyn ConnectorMetrics>>,
+
+    /// The checkpoint waiting on this endpoint, if one is in progress.
+    ///
+    /// A checkpoint needs each endpoint's [`Self::transmitted_records`] as of
+    /// the moment the endpoint has transmitted the output the checkpoint
+    /// covers, since that is the state the pipeline resumes from. The circuit
+    /// thread cannot read it at that moment: it takes the checkpoint while the endpoints
+    /// are still working, and it must not block waiting for them. So it arms
+    /// this latch instead, and the endpoint takes the reading itself the
+    /// moment it gets there.
+    checkpoint_latch: Mutex<Option<CheckpointLatch>>,
+}
+
+/// What an output endpoint had put on the transport at a particular moment.
+#[derive(Clone, Copy, Debug)]
+pub struct TransmittedTotals {
+    pub records: u64,
+    pub bytes: u64,
+}
+
+/// A checkpoint waiting for an output endpoint to catch up with it.
+struct CheckpointLatch {
+    /// Pipeline records the checkpoint covers. The endpoint has caught up once
+    /// its [`OutputEndpointMetrics::total_processed_input_records`] reaches
+    /// this, i.e., the endpoint has transmitted every batch derived from
+    /// `threshold` records.
+    ///
+    /// The endpoint lands on this figure exactly, because the circuit hands it
+    /// one batch per step and the checkpoint covers whole steps. The exception
+    /// is output buffering: a flush can span the checkpoint, carrying the
+    /// counter past it in one write, and the reading then covers the whole
+    /// flush.
+    threshold: u64,
+
+    /// What the endpoint had transmitted when it caught up, once it does.
+    transmitted_totals: Option<TransmittedTotals>,
 }
 
 impl OutputEndpointStatus {
@@ -2756,6 +2822,54 @@ impl OutputEndpointStatus {
     pub fn transmitted_records(&self) -> u64 {
         self.metrics.transmitted_records.load(Ordering::Acquire)
     }
+
+    /// What this endpoint has put on the transport so far.
+    fn transmitted_totals(&self) -> TransmittedTotals {
+        TransmittedTotals {
+            records: self.metrics.transmitted_records.load(Ordering::Acquire),
+            bytes: self.metrics.transmitted_bytes.load(Ordering::Acquire),
+        }
+    }
+
+    /// Ask this endpoint to record what it has transmitted once it has
+    /// transmitted everything derived from the first `threshold` records the
+    /// pipeline ingested. See [`Self::checkpoint_latch`].
+    ///
+    /// An endpoint that is already there records it now: nothing more will
+    /// reach it on an idle pipeline, so it would never take the reading
+    /// otherwise.
+    fn arm_checkpoint(&self, threshold: u64) {
+        let mut latch = self.checkpoint_latch.lock().unwrap();
+        let transmitted_totals = (self.num_total_processed_input_records() >= threshold)
+            .then(|| self.transmitted_totals());
+        *latch = Some(CheckpointLatch {
+            threshold,
+            transmitted_totals,
+        });
+    }
+
+    /// Record what this endpoint has transmitted if it has just caught up with
+    /// the checkpoint waiting on it. Call after advancing
+    /// [`OutputEndpointMetrics::total_processed_input_records`].
+    fn note_checkpoint_progress(&self) {
+        let mut latch = self.checkpoint_latch.lock().unwrap();
+        if let Some(latch) = latch.as_mut()
+            && latch.transmitted_totals.is_none()
+            && self.num_total_processed_input_records() >= latch.threshold
+        {
+            latch.transmitted_totals = Some(self.transmitted_totals());
+        }
+    }
+
+    /// Take the reading this endpoint recorded for the checkpoint waiting on
+    /// it, and disarm. `None` if it never caught up.
+    fn take_checkpoint_totals(&self) -> Option<TransmittedTotals> {
+        self.checkpoint_latch
+            .lock()
+            .unwrap()
+            .take()?
+            .transmitted_totals
+    }
 }
 
 impl OutputEndpointStatus {
@@ -2782,6 +2896,7 @@ impl OutputEndpointStatus {
             transport_errors: Mutex::new(transport_errors),
             health: Mutex::new(None),
             custom_metrics: None,
+            checkpoint_latch: Mutex::new(None),
         }
     }
 
@@ -2802,6 +2917,7 @@ impl OutputEndpointStatus {
             self.metrics
                 .total_processed_steps
                 .store(processed.total_processed_steps, Ordering::Release);
+            self.note_checkpoint_progress();
         }
 
         let old = self
@@ -2848,8 +2964,11 @@ impl OutputEndpointStatus {
         self.metrics
             .total_processed_steps
             .store(processed.total_processed_steps, Ordering::Release);
+        self.note_checkpoint_progress();
     }
 
+    /// A chunk of the batch the endpoint is transmitting has reached the
+    /// transport.
     fn output_buffer(&self, num_bytes: usize, num_records: usize) {
         self.metrics
             .transmitted_bytes
