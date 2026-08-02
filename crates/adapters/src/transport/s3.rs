@@ -965,6 +965,7 @@ fn to_s3_config(config: &Arc<S3InputConfig>) -> aws_sdk_s3::Config {
 #[cfg(test)]
 mod test {
     use crate::{
+        preprocess::PassthroughPreprocessorFactory,
         test::{
             ErrorCallback, MockDeZSet, MockInputConsumer, MockInputParser, mock_parser_pipeline,
             wait,
@@ -979,6 +980,9 @@ mod test {
         primitives::{ByteStream, SdkBody},
         types::error::builders::{NoSuchBucketBuilder, NoSuchKeyBuilder},
     };
+    use feldera_adapterlib::format::{MessageOrientedPreprocessedParser, Parser};
+    use feldera_adapterlib::preprocess::PreprocessorFactory;
+    use feldera_types::preprocess::PreprocessorConfig;
     use feldera_types::{
         config::{InputEndpointConfig, TransportConfig},
         deserialize_without_context,
@@ -1036,6 +1040,30 @@ mod test {
   }
 }"#;
 
+    /// Newline-delimited JSON: `lines: single` picks the greedy line splitter.
+    const NDJSON_SINGLE_KEY_CONFIG_STR: &str = r#"
+{
+  "stream": "test_input",
+  "transport": {
+    "name": "s3_input",
+    "config": {
+      "aws_access_key_id": "FAKE_ACCESS_KEY",
+      "aws_secret_access_key": "FAKE_SECRET",
+      "bucket_name": "test-bucket",
+      "region": "us-west-1",
+      "key": "obj1"
+    }
+  },
+  "format": {
+    "name": "json",
+    "config": {
+      "update_format": "raw",
+      "array": false,
+      "lines": "single"
+    }
+  }
+}"#;
+
     /// Builds a reader over `mock`, with `on_error` already installed.
     ///
     /// The callback has to be passed in rather than registered afterwards:
@@ -1046,6 +1074,29 @@ mod test {
         config_str: &str,
         mock: super::MockS3Client,
         on_error: ErrorCallback,
+    ) -> (
+        Box<dyn crate::InputReader>,
+        MockInputConsumer,
+        MockInputParser,
+        MockDeZSet<TestStruct, TestStruct>,
+    ) {
+        test_setup_with(config_str, mock, on_error, Preprocess::No)
+    }
+
+    /// Whether to wrap the endpoint's parser the way a connector configured with
+    /// a message-oriented preprocessor does, which makes `parse` return a nested
+    /// buffer instead of a flat one.
+    #[derive(Copy, Clone, PartialEq)]
+    enum Preprocess {
+        No,
+        Passthrough,
+    }
+
+    fn test_setup_with(
+        config_str: &str,
+        mock: super::MockS3Client,
+        on_error: ErrorCallback,
+        preprocess: Preprocess,
     ) -> (
         Box<dyn crate::InputReader>,
         MockInputConsumer,
@@ -1066,10 +1117,25 @@ mod test {
         )
         .unwrap();
         consumer.on_error(Some(on_error));
+        let endpoint_parser: Box<dyn Parser> = if preprocess == Preprocess::Passthrough {
+            let preprocessor = PassthroughPreprocessorFactory
+                .create(&PreprocessorConfig {
+                    name: "passthrough".to_string(),
+                    message_oriented: true,
+                    config: serde_json::Value::Null,
+                })
+                .unwrap();
+            Box::new(MessageOrientedPreprocessedParser::new(
+                preprocessor,
+                Box::new(parser.clone()),
+            ))
+        } else {
+            Box::new(parser.clone())
+        };
         let reader = Box::new(S3InputReader::new_inner(
             &transport_config,
             Box::new(consumer.clone()),
-            Box::new(parser.clone()),
+            endpoint_parser,
             Arc::new(mock),
             None,
         )) as Box<dyn crate::InputReader>;
@@ -1131,6 +1197,74 @@ mod test {
             });
         let test_data: Vec<TestStruct> = (1..4).map(|i| TestStruct { i }).collect();
         run_test(SINGLE_KEY_CONFIG_STR, mock, test_data);
+    }
+
+    /// A preprocessor makes `parse` return a nested buffer, and the endpoint
+    /// hands the circuit at most `max_batch_size` records per step, so a single
+    /// parsed buffer has to survive being split across steps. Dropping the
+    /// remainder loses records the endpoint already reported as received, which
+    /// pins `total_input_records` above `total_processed_records` and stops the
+    /// pipeline from ever reporting completion.
+    ///
+    /// The format matters: newline-delimited JSON splits with `LineSplitter`,
+    /// which takes as many records as it can per chunk, so one nested element
+    /// holds many records and a batch boundary lands inside it. A CSV splitter
+    /// yields one record per element and never exercises the split.
+    #[test]
+    fn preprocessed_read_split_across_batches() {
+        const RECORDS: i64 = 100;
+        // Not a divisor of RECORDS, so the last batch is short too.
+        const MAX_BATCH_SIZE: usize = 7;
+
+        let body = (1..=RECORDS)
+            .map(|i| format!("{{\"i\":{i}}}\n"))
+            .collect::<Vec<_>>()
+            .concat();
+
+        let mut mock = super::MockS3Client::default();
+        mock.expect_get_object_keys()
+            .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
+            .return_once(|_, _, _, _| Ok((vec!["obj1".to_string()], None)));
+        mock.expect_get_object()
+            .with(eq("test-bucket"), eq("obj1"), eq(0), eq(&None))
+            .return_once(move |_, _, _, _| {
+                Ok(GetObjectOutput::builder()
+                    .body(ByteStream::from(SdkBody::from(body.as_str())))
+                    .build())
+            });
+
+        let (reader, consumer, _parser, input_handle) = test_setup_with(
+            NDJSON_SINGLE_KEY_CONFIG_STR,
+            mock,
+            Box::new(|_, _| ()),
+            Preprocess::Passthrough,
+        );
+        consumer.set_max_batch_size(MAX_BATCH_SIZE);
+
+        reader.extend();
+        wait(
+            || {
+                reader.queue(false);
+                input_handle.state().flushed.len() == RECORDS as usize
+            },
+            10000,
+        )
+        .unwrap_or_else(|_| {
+            panic!(
+                "only {} of {RECORDS} records reached the circuit",
+                input_handle.state().flushed.len()
+            )
+        });
+
+        let mut outputs = input_handle
+            .state()
+            .flushed
+            .iter()
+            .map(|upd| upd.unwrap_insert().clone())
+            .collect::<Vec<_>>();
+        outputs.sort();
+        let expected: Vec<TestStruct> = (1..=RECORDS).map(|i| TestStruct { i }).collect();
+        assert_eq!(outputs, expected);
     }
 
     #[test]
