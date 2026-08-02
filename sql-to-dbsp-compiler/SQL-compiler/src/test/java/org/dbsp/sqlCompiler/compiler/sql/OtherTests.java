@@ -28,6 +28,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
@@ -42,12 +44,14 @@ import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.FunctionDocumentation;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.simple.EndToEndTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -88,6 +92,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /** Miscellaneous tests that do not fit into standard categories */
@@ -657,6 +662,69 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         // All nodes in circuit0 must be in circuit1
         common.retainAll(c1);
         Assert.assertEquals(common.size(), c0.size());
+    }
+
+    /** Persistent id of each operator of the circuit of {@code cc}, computed as if the
+     * runtime stored the state of a recursive circuit in format {@code stateVersion}. */
+    static Map<Long, HashString> persistentIds(CompilerCircuit cc, String stateVersion) {
+        MerkleOuter visitor = new MerkleOuter(cc.compiler, true, stateVersion);
+        visitor.apply(cc.getCircuit());
+        return visitor.operatorHash;
+    }
+
+    @Test
+    public void recursiveStateVersionTest() {
+        /* The runtime does not store the state of a recursive circuit the same way in every
+           version.  A version that changes the format must also change the persistent id of
+           every stream that leaves the recursive circuit, and thus of every operator
+           downstream of the recursion: only then does a pipeline resuming from a checkpoint
+           written by an older runtime recompute these views, instead of restoring state that
+           it cannot interpret.  The pipeline manager compares the same ids, so this is also
+           what tells it that the recursive views have changed.
+           See MerkleOuter.RECURSIVE_STATE_VERSION. */
+        var cc = this.getCC("""
+                CREATE TABLE T(x INT NOT NULL);
+                DECLARE RECURSIVE VIEW closure(a INT NOT NULL, b INT NOT NULL);
+                CREATE LOCAL VIEW pairs AS SELECT x AS a, x + 1 AS b FROM T;
+                CREATE VIEW closure AS
+                  (SELECT a, b FROM pairs)
+                  UNION
+                  (SELECT p.a, c.b FROM pairs p JOIN closure c ON p.b = c.a);
+                CREATE VIEW closure_size AS SELECT COUNT(*) AS n FROM closure;
+                CREATE VIEW unrelated AS SELECT x + 1 AS y FROM T;""");
+        DBSPCircuit circuit = cc.getCircuit();
+        Map<Long, HashString> before = persistentIds(cc, "state-version-0");
+        Map<Long, HashString> after = persistentIds(cc, "state-version-1");
+
+        DBSPNestedOperator recursion = null;
+        for (DBSPOperator operator : circuit.allOperators)
+            if (operator.is(DBSPNestedOperator.class))
+                recursion = operator.to(DBSPNestedOperator.class);
+        Assert.assertNotNull(recursion);
+
+        // Every stream that leaves the recursive circuit gets a new id.
+        boolean found = false;
+        for (OutputPort output : recursion.internalOutputs) {
+            if (output == null)
+                continue;
+            found = true;
+            long id = output.node().getId();
+            Assert.assertNotEquals("stream leaving the recursive circuit",
+                    before.get(id), after.get(id));
+        }
+        Assert.assertTrue("recursive circuit with no outputs", found);
+
+        // So do the views computed from these streams.
+        for (String view : new String[] { "closure", "closure_size" }) {
+            long id = Objects.requireNonNull(circuit.getSink(new ProgramIdentifier(view))).getId();
+            Assert.assertNotEquals(view, before.get(id), after.get(id));
+        }
+
+        // Views that do not depend on the recursion keep their ids, so a pipeline that
+        // resumes from a checkpoint keeps their state.
+        long id = Objects.requireNonNull(
+                circuit.getSink(new ProgramIdentifier("unrelated"))).getId();
+        Assert.assertEquals("unrelated", before.get(id), after.get(id));
     }
 
     @Test

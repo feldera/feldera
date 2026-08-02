@@ -19,8 +19,10 @@ import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Computes a Merkle hash for each operator.
  * The hash combines the hashes of the inputs (if includeInputs is true), and the hashes of all
@@ -29,16 +31,44 @@ import java.util.Map;
  *
  * <p>This visitor is declared read-only, but it actually modifies the annotations on operators. */
 public class MerkleOuter extends CircuitVisitor {
+    /** Version of the format in which the runtime stores the state of a recursive circuit.
+     *
+     * <p>Mixed into the persistent id of every stream that leaves a recursive circuit, and
+     * hence into the ids of all operators downstream of the recursion.  A pipeline resumed
+     * from a checkpoint written by a runtime that used a different format does not find the
+     * state of these operators, so it recomputes the recursive views from their inputs
+     * instead of restoring state that it cannot interpret.  The pipeline manager sees the
+     * same ids, so it reports the recursive views as modified and bootstraps them.
+     *
+     * <p>Bump this string whenever the runtime changes the way it stores that state. */
+    public static final String RECURSIVE_STATE_VERSION = "recursive-state-v1";
+
     public final Map<Long, HashString> operatorHash;
     public final boolean includeInputs;
+    /** Value mixed into the hash of the streams that leave a recursive circuit;
+     * {@link #RECURSIVE_STATE_VERSION} in production, other values in tests. */
+    final String recursiveStateVersion;
+    /** Ids of the operators that produce the outputs of a recursive circuit. */
+    final Set<Long> recursiveOutputs;
 
     public MerkleOuter(DBSPCompiler compiler, boolean includeInputs) {
+        this(compiler, includeInputs, RECURSIVE_STATE_VERSION);
+    }
+
+    public MerkleOuter(DBSPCompiler compiler, boolean includeInputs, String recursiveStateVersion) {
         super(compiler);
         this.includeInputs = includeInputs;
+        this.recursiveStateVersion = recursiveStateVersion;
         this.operatorHash = new HashMap<>();
+        this.recursiveOutputs = new HashSet<>();
     }
 
     void setHashedString(DBSPOperator operator, String string) {
+        // A stream that leaves a recursive circuit gets an id that depends on the format
+        // in which its state is stored.  Only the global hash becomes a persistent id;
+        // the local hash just names the generated code.
+        if (this.includeInputs && this.recursiveOutputs.contains(operator.getId()))
+            string += this.recursiveStateVersion;
         HashString hash = MerkleInner.hash(string);
         Logger.INSTANCE.belowLevel(this, 1)
                 .append(this.includeInputs ? "Global " : "")
@@ -78,6 +108,11 @@ public class MerkleOuter extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPNestedOperator nested) {
         this.push(nested);
+        // Mark the streams that leave the recursive circuit before hashing the operators
+        // that produce them.
+        for (OutputPort output : nested.internalOutputs)
+            if (output != null)
+                this.recursiveOutputs.add(output.node().getId());
         int repeats = 1 + (this.includeInputs ? 1 : 0);
         for (int i = 0; i < repeats; i++) {
             this.startArrayProperty("allOperators");
