@@ -11,12 +11,18 @@ returns it only when it is an insertion. The table below is fed by two
 soft-delete connectors, one reading JSON and one reading Avro, since the
 polarity of a record is reported by the connector rather than by the data
 format.
+
+Ranking every change of a key needs unbounded state, so one way of bounding it
+is covered too: a temporal filter, which keeps only the changes inside the
+filter window.
 """
 
 import io
 import json
+import time
 import uuid
-from typing import Any, Optional
+from contextlib import contextmanager
+from typing import Any, Iterator, Optional
 
 import fastavro
 from confluent_kafka import Producer
@@ -57,6 +63,21 @@ AVRO_SCHEMA: dict[str, Any] = {
 # view.
 FIRST_CHANGE = 1_700_000_000_000
 
+# The `ts` column of the `changes` table.
+TS_COLUMN = (
+    "ts TIMESTAMP DEFAULT CAST(CONNECTOR_METADATA()['kafka_timestamp'] AS TIMESTAMP)"
+)
+
+# The changes that end up live, whichever query recovers them: record 1 ends
+# deleted and record 4 was never inserted, so neither is live; record 3 is live
+# with the value of its latest insertion, and record 5 with the value the update
+# gave it.
+LIVE_RECORDS = [
+    {"id": 2, "s": "json-2"},
+    {"id": 3, "s": "avro-3-again"},
+    {"id": 5, "s": "avro-5-updated"},
+]
+
 
 def _random_topic(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
@@ -78,11 +99,13 @@ def _delete_topic_best_effort(admin: AdminClient, topic: str) -> None:
         pass
 
 
-def _produce(topic: str, messages: list[bytes]) -> None:
+def _produce(
+    topic: str, messages: list[bytes], first_change: int = FIRST_CHANGE
+) -> None:
     """Produce `messages` oldest first, stamped one second apart."""
     producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP})
     for index, message in enumerate(messages):
-        producer.produce(topic, value=message, timestamp=FIRST_CHANGE + index * 1_000)
+        producer.produce(topic, value=message, timestamp=first_change + index * 1_000)
     remaining = producer.flush(timeout=30)
     assert remaining == 0, f"failed to flush Kafka messages, remaining={remaining}"
 
@@ -175,21 +198,18 @@ def _connectors(json_topic: str, avro_topic: str) -> list[dict[str, Any]]:
     ]
 
 
-def test_soft_delete_kafka_json_and_avro(pipeline_name):
-    """Deletions from either connector land as rows with `is_delete` set, and
-    the latest change of each key determines what is live."""
-    admin = AdminClient({"bootstrap.servers": KAFKA_BOOTSTRAP})
-    json_topic = _random_topic("soft-delete-json")
-    avro_topic = _random_topic("soft-delete-avro")
-    _create_topic(admin, json_topic)
-    _create_topic(admin, avro_topic)
+def _changes_table(json_topic: str, avro_topic: str, ts_column: str) -> str:
+    """The soft-delete table, fed by a JSON and an Avro connector.
 
+    `history` is not part of the documented example, where it would grow without
+    bound; the tests use it to observe every change the connectors ingest.
+    """
     connectors = json.dumps(_connectors(json_topic, avro_topic))
-    sql = f"""
+    return f"""
     CREATE TABLE changes(
         id BIGINT,
         s VARCHAR,
-        ts TIMESTAMP DEFAULT CAST(CONNECTOR_METADATA()['kafka_timestamp'] AS TIMESTAMP),
+        {ts_column},
         is_delete BOOLEAN DEFAULT CAST(CONNECTOR_METADATA()['is_delete'] AS BOOLEAN)
     ) WITH (
       'connectors' = '{connectors}'
@@ -197,6 +217,67 @@ def test_soft_delete_kafka_json_and_avro(pipeline_name):
 
     CREATE MATERIALIZED VIEW history AS SELECT id, s, is_delete FROM changes;
 
+    -- Every change must carry the time the connector received it, since that
+    -- is what orders the changes of a key.
+    CREATE MATERIALIZED VIEW undated AS SELECT id FROM changes WHERE ts IS NULL;
+    """
+
+
+@contextmanager
+def _running_pipeline(pipeline_name: str, sql: str) -> Iterator[Pipeline]:
+    pipeline: Pipeline = PipelineBuilder(
+        TEST_CLIENT, name=pipeline_name, sql=sql.strip()
+    ).create_or_replace()
+    pipeline.start()
+    try:
+        yield pipeline
+    finally:
+        pipeline.stop(force=True)
+
+
+@contextmanager
+def _kafka_topics(*prefixes: str) -> Iterator[list[str]]:
+    admin = AdminClient({"bootstrap.servers": KAFKA_BOOTSTRAP})
+    topics = [_random_topic(prefix) for prefix in prefixes]
+    for topic in topics:
+        _create_topic(admin, topic)
+    try:
+        yield topics
+    finally:
+        for topic in topics:
+            _delete_topic_best_effort(admin, topic)
+
+
+def _history(pipeline: Pipeline) -> list[dict[str, Any]]:
+    # `query` streams results, so materialize them before comparing.  An
+    # insertion and the deletion of the same record differ only in
+    # `is_delete`, which therefore has to order them.
+    return list(
+        pipeline.query(
+            "SELECT id, s, is_delete FROM history ORDER BY id, s, is_delete NULLS FIRST"
+        )
+    )
+
+
+def _wait_for_changes(pipeline: Pipeline, expected: int) -> None:
+    wait_for_condition(
+        f"all {expected} changes ingested",
+        lambda: len(_history(pipeline)) == expected,
+        timeout_s=120.0,
+        poll_interval_s=1.0,
+    )
+
+
+def test_soft_delete_kafka_json_and_avro(pipeline_name):
+    """Deletions from either connector land as rows with `is_delete` set, and
+    the latest change of each key determines what is live."""
+    with _kafka_topics("soft-delete-json", "soft-delete-avro") as (
+        json_topic,
+        avro_topic,
+    ):
+        sql = (
+            _changes_table(json_topic, avro_topic, TS_COLUMN)
+            + """
     -- The latest change of each key, kept only when it is an insertion.  An
     -- update arrives as one message that deletes the old value and inserts the
     -- new one, so both changes carry the same timestamp: rank the insertion
@@ -210,63 +291,77 @@ def test_soft_delete_kafka_json_and_avro(pipeline_name):
         FROM changes
     )
     WHERE rn = 1 AND is_delete IS NOT TRUE;
+    """
+        )
 
-    -- Every change must carry the time the connector received it, since that
-    -- is what orders the changes of a key.
-    CREATE MATERIALIZED VIEW undated AS SELECT id FROM changes WHERE ts IS NULL;
-    """.strip()
+        with _running_pipeline(pipeline_name, sql) as pipeline:
+            _produce(json_topic, _json_messages())
+            _produce(avro_topic, _avro_messages())
+            _wait_for_changes(pipeline, 10)
 
-    pipeline: Pipeline = PipelineBuilder(
-        TEST_CLIENT, name=pipeline_name, sql=sql
-    ).create_or_replace()
-    pipeline.start()
+            assert _history(pipeline) == [
+                {"id": 1, "s": "json-1", "is_delete": None},
+                {"id": 1, "s": "json-1", "is_delete": True},
+                {"id": 2, "s": "json-2", "is_delete": None},
+                {"id": 3, "s": "avro-3", "is_delete": None},
+                {"id": 3, "s": "avro-3", "is_delete": True},
+                {"id": 3, "s": "avro-3-again", "is_delete": None},
+                {"id": 4, "s": "avro-4", "is_delete": True},
+                {"id": 5, "s": "avro-5", "is_delete": None},
+                {"id": 5, "s": "avro-5", "is_delete": True},
+                {"id": 5, "s": "avro-5-updated", "is_delete": None},
+            ]
 
-    def history() -> list[dict[str, Any]]:
-        # `query` streams results, so materialize them before comparing.  An
-        # insertion and the deletion of the same record differ only in
-        # `is_delete`, which therefore has to order them.
-        return list(
-            pipeline.query(
-                "SELECT id, s, is_delete FROM history"
-                " ORDER BY id, s, is_delete NULLS FIRST"
+            assert list(pipeline.query("SELECT id FROM undated")) == []
+
+            assert (
+                list(pipeline.query("SELECT id, s FROM live ORDER BY id"))
+                == LIVE_RECORDS
             )
+
+
+def test_soft_delete_temporal_filter_bounds_state(pipeline_name):
+    """A temporal filter bounds the state of the query to the changes inside
+    its window, and drops the keys whose latest change fell out of it."""
+    # `NOW()` is the physical clock, so the changes that must stay inside the
+    # window have to be stamped near the present.
+    recent = int(time.time() * 1_000) - 60_000
+
+    with _kafka_topics("soft-delete-window-json", "soft-delete-window-avro") as (
+        json_topic,
+        avro_topic,
+    ):
+        sql = (
+            _changes_table(json_topic, avro_topic, TS_COLUMN)
+            + """
+    CREATE MATERIALIZED VIEW live_recent AS
+    SELECT id, s
+    FROM (
+        SELECT *, ROW_NUMBER() OVER (
+            PARTITION BY id ORDER BY ts DESC, is_delete NULLS FIRST
+        ) AS rn
+        FROM changes
+        WHERE ts >= NOW() - INTERVAL 1 HOUR
+    )
+    WHERE rn = 1 AND is_delete IS NOT TRUE;
+    """
         )
 
-    try:
-        _produce(json_topic, _json_messages())
-        _produce(avro_topic, _avro_messages())
+        with _running_pipeline(pipeline_name, sql) as pipeline:
+            # Record 6 is inserted years ago and never deleted.  It is live, but
+            # it falls outside the window, which is what distinguishes this view
+            # from `live`.
+            stale = [json.dumps({"insert": {"id": 6, "s": "json-6"}}).encode()]
+            _produce(json_topic, stale, first_change=FIRST_CHANGE)
+            _produce(json_topic, _json_messages(), first_change=recent)
+            _produce(avro_topic, _avro_messages(), first_change=recent)
+            _wait_for_changes(pipeline, 11)
 
-        wait_for_condition(
-            "all ten changes ingested",
-            lambda: len(history()) == 10,
-            timeout_s=120.0,
-            poll_interval_s=1.0,
-        )
+            # The stale change did reach the table, so the filter, not
+            # ingestion, is what keeps it out of the view.
+            assert {row["id"] for row in _history(pipeline)} == {1, 2, 3, 4, 5, 6}
 
-        assert history() == [
-            {"id": 1, "s": "json-1", "is_delete": None},
-            {"id": 1, "s": "json-1", "is_delete": True},
-            {"id": 2, "s": "json-2", "is_delete": None},
-            {"id": 3, "s": "avro-3", "is_delete": None},
-            {"id": 3, "s": "avro-3", "is_delete": True},
-            {"id": 3, "s": "avro-3-again", "is_delete": None},
-            {"id": 4, "s": "avro-4", "is_delete": True},
-            {"id": 5, "s": "avro-5", "is_delete": None},
-            {"id": 5, "s": "avro-5", "is_delete": True},
-            {"id": 5, "s": "avro-5-updated", "is_delete": None},
-        ]
-
-        assert list(pipeline.query("SELECT id FROM undated")) == []
-
-        # Record 1 ends deleted and record 4 was never inserted, so neither is
-        # live; record 3 is live with the value of its latest insertion, and
-        # record 5 with the value the update gave it.
-        assert list(pipeline.query("SELECT id, s FROM live ORDER BY id")) == [
-            {"id": 2, "s": "json-2"},
-            {"id": 3, "s": "avro-3-again"},
-            {"id": 5, "s": "avro-5-updated"},
-        ]
-    finally:
-        pipeline.stop(force=True)
-        _delete_topic_best_effort(admin, json_topic)
-        _delete_topic_best_effort(admin, avro_topic)
+            assert (
+                list(pipeline.query("SELECT id, s FROM live_recent ORDER BY id"))
+                == LIVE_RECORDS
+            )
