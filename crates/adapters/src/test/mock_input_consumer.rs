@@ -20,6 +20,12 @@ pub struct MockInputConsumerState {
     /// Number of times `extended` has been called since the last `reset`.
     pub n_extended: usize,
 
+    /// Value reported by `InputConsumer::max_batch_size`.
+    ///
+    /// Unlimited by default, so a test that wants an endpoint to split a parsed
+    /// buffer across steps has to lower it.
+    max_batch_size: usize,
+
     /// The last error received from the endpoint since the last `reset`.
     pub endpoint_error: Option<AnyError>,
 
@@ -36,6 +42,7 @@ impl MockInputConsumerState {
         Self {
             eoi: false,
             n_extended: 0,
+            max_batch_size: usize::MAX,
             endpoint_error: None,
             error_cb: None,
             transaction_in_progress: false,
@@ -68,6 +75,11 @@ impl MockInputConsumer {
 
     pub fn reset(&self) {
         self.state().reset();
+    }
+
+    /// Caps the records an endpoint may hand to the circuit per step.
+    pub fn set_max_batch_size(&self, max_batch_size: usize) {
+        self.state().max_batch_size = max_batch_size;
     }
 
     pub fn state(&self) -> MutexGuard<'_, MockInputConsumerState> {
@@ -104,7 +116,7 @@ impl InputConsumer for MockInputConsumer {
     }
 
     fn max_batch_size(&self) -> usize {
-        usize::MAX
+        self.state().max_batch_size
     }
 
     fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
