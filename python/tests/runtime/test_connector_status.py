@@ -1,45 +1,22 @@
 import json
-import uuid
 from datetime import datetime
 from typing import Any
 
 from confluent_kafka import Producer
-from confluent_kafka.admin import AdminClient, NewTopic
 from feldera import Pipeline, PipelineBuilder
 from feldera.stats import InputEndpointStatus, OutputEndpointStatus
 from tests import KAFKA_BOOTSTRAP, TEST_CLIENT
+from tests.kafka import (
+    create_topic,
+    delete_topic_best_effort,
+    kafka_admin,
+    random_topic,
+)
 from tests.platform.helper import gen_pipeline_name, wait_for_condition
 
 
-def _random_topic(prefix: str) -> str:
-    return f"{prefix}-{uuid.uuid4().hex[:12]}"
-
-
-def _kafka_clients() -> tuple[Any, Any, Any]:
-    return Producer, AdminClient, NewTopic
-
-
-def _create_topic(
-    admin: Any, topic: str, new_topic_cls: Any, timeout_s: float = 30.0
-) -> None:
-    futures = admin.create_topics(
-        [new_topic_cls(topic=topic, num_partitions=1, replication_factor=1)]
-    )
-    futures[topic].result(timeout=timeout_s)
-
-
-def _delete_topic_best_effort(admin: Any, topic: str) -> None:
-    try:
-        futures = admin.delete_topics([topic], operation_timeout=10)
-        futures[topic].result(timeout=10)
-    except Exception:
-        # Topic deletion can be disabled on some brokers; cleanup is best-effort.
-        pass
-
-
 def _produce_records(topic: str, values: list[str]) -> None:
-    producer_cls, _, _ = _kafka_clients()
-    producer = producer_cls({"bootstrap.servers": KAFKA_BOOTSTRAP})
+    producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP})
     for value in values:
         producer.produce(topic, value=value.encode("utf-8"))
     remaining = producer.flush(timeout=30)
@@ -144,13 +121,12 @@ def test_connector_status(pipeline_name):
     error counts and error lists.
     """
 
-    _, admin_cls, new_topic_cls = _kafka_clients()
-    admin = admin_cls({"bootstrap.servers": KAFKA_BOOTSTRAP})
-    input_topic = _random_topic("connector-errors-input")
-    output_topic = _random_topic("connector-errors-output")
+    admin = kafka_admin()
+    input_topic = random_topic("connector-errors-input")
+    output_topic = random_topic("connector-errors-output")
 
-    _create_topic(admin, input_topic, new_topic_cls)
-    _create_topic(admin, output_topic, new_topic_cls)
+    create_topic(admin, input_topic)
+    create_topic(admin, output_topic)
 
     wrong_avro_schema = {
         "type": "record",
@@ -279,5 +255,5 @@ def test_connector_status(pipeline_name):
         assert output_status.health is None
 
     finally:
-        _delete_topic_best_effort(admin, input_topic)
-        _delete_topic_best_effort(admin, output_topic)
+        delete_topic_best_effort(admin, input_topic)
+        delete_topic_best_effort(admin, output_topic)

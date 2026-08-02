@@ -20,15 +20,14 @@ filter window.
 import io
 import json
 import time
-import uuid
 from contextlib import contextmanager
 from typing import Any, Iterator, Optional
 
 import fastavro
 from confluent_kafka import Producer
-from confluent_kafka.admin import AdminClient, NewTopic
 from feldera import Pipeline, PipelineBuilder
 from tests import KAFKA_BOOTSTRAP, TEST_CLIENT
+from tests.kafka import kafka_topics
 from tests.platform.helper import wait_for_condition
 
 # Debezium envelope schema of the Avro stream.  It has no `is_delete` or `ts`
@@ -77,26 +76,6 @@ LIVE_RECORDS = [
     {"id": 3, "s": "avro-3-again"},
     {"id": 5, "s": "avro-5-updated"},
 ]
-
-
-def _random_topic(prefix: str) -> str:
-    return f"{prefix}-{uuid.uuid4().hex[:12]}"
-
-
-def _create_topic(admin: AdminClient, topic: str) -> None:
-    futures = admin.create_topics(
-        [NewTopic(topic=topic, num_partitions=1, replication_factor=1)]
-    )
-    futures[topic].result(timeout=30)
-
-
-def _delete_topic_best_effort(admin: AdminClient, topic: str) -> None:
-    try:
-        futures = admin.delete_topics([topic], operation_timeout=10)
-        futures[topic].result(timeout=10)
-    except Exception:
-        # Topic deletion can be disabled on some brokers; cleanup is best-effort.
-        pass
 
 
 def _produce(
@@ -235,19 +214,6 @@ def _running_pipeline(pipeline_name: str, sql: str) -> Iterator[Pipeline]:
         pipeline.stop(force=True)
 
 
-@contextmanager
-def _kafka_topics(*prefixes: str) -> Iterator[list[str]]:
-    admin = AdminClient({"bootstrap.servers": KAFKA_BOOTSTRAP})
-    topics = [_random_topic(prefix) for prefix in prefixes]
-    for topic in topics:
-        _create_topic(admin, topic)
-    try:
-        yield topics
-    finally:
-        for topic in topics:
-            _delete_topic_best_effort(admin, topic)
-
-
 def _history(pipeline: Pipeline) -> list[dict[str, Any]]:
     # `query` streams results, so materialize them before comparing.  An
     # insertion and the deletion of the same record differ only in
@@ -271,7 +237,7 @@ def _wait_for_changes(pipeline: Pipeline, expected: int) -> None:
 def test_soft_delete_kafka_json_and_avro(pipeline_name):
     """Deletions from either connector land as rows with `is_delete` set, and
     the latest change of each key determines what is live."""
-    with _kafka_topics("soft-delete-json", "soft-delete-avro") as (
+    with kafka_topics("soft-delete-json", "soft-delete-avro") as (
         json_topic,
         avro_topic,
     ):
@@ -327,7 +293,7 @@ def test_soft_delete_temporal_filter_bounds_state(pipeline_name):
     # window have to be stamped near the present.
     recent = int(time.time() * 1_000) - 60_000
 
-    with _kafka_topics("soft-delete-window-json", "soft-delete-window-avro") as (
+    with kafka_topics("soft-delete-window-json", "soft-delete-window-avro") as (
         json_topic,
         avro_topic,
     ):

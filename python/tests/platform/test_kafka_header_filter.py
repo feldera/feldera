@@ -9,36 +9,20 @@ been decided, so the observed row set is final.
 """
 
 import json
-import uuid
 from typing import Any, Optional
 
 from confluent_kafka import Producer
-from confluent_kafka.admin import AdminClient, NewTopic
 from feldera import Pipeline, PipelineBuilder
 from tests import KAFKA_BOOTSTRAP, TEST_CLIENT
+from tests.kafka import (
+    create_topic,
+    delete_topic_best_effort,
+    kafka_admin,
+    random_topic,
+)
 from tests.platform.helper import wait_for_condition
 
 SENTINEL_ID = 100
-
-
-def _random_topic(prefix: str) -> str:
-    return f"{prefix}-{uuid.uuid4().hex[:12]}"
-
-
-def _create_topic(admin: AdminClient, topic: str) -> None:
-    futures = admin.create_topics(
-        [NewTopic(topic=topic, num_partitions=1, replication_factor=1)]
-    )
-    futures[topic].result(timeout=30)
-
-
-def _delete_topic_best_effort(admin: AdminClient, topic: str) -> None:
-    try:
-        futures = admin.delete_topics([topic], operation_timeout=10)
-        futures[topic].result(timeout=10)
-    except Exception:
-        # Topic deletion can be disabled on some brokers; cleanup is best-effort.
-        pass
 
 
 def _produce(
@@ -62,9 +46,9 @@ def _run_filter_test(
     records: list[tuple[int, Optional[list[tuple[str, bytes]]]]],
     expected_ids: set[int],
 ) -> None:
-    admin = AdminClient({"bootstrap.servers": KAFKA_BOOTSTRAP})
-    topic = _random_topic("header-filter-in")
-    _create_topic(admin, topic)
+    admin = kafka_admin()
+    topic = random_topic("header-filter-in")
+    create_topic(admin, topic)
 
     input_connector = {
         "name": "kafka_in",
@@ -112,7 +96,7 @@ def _run_filter_test(
         assert ingested_ids() == expected_ids
     finally:
         pipeline.stop(force=True)
-        _delete_topic_best_effort(admin, topic)
+        delete_topic_best_effort(admin, topic)
 
 
 def test_kafka_header_filter_leaf(pipeline_name):

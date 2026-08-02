@@ -3,36 +3,21 @@ import uuid
 import unittest
 
 from confluent_kafka import Consumer, KafkaError
-from confluent_kafka.admin import AdminClient, NewTopic
 from feldera import PipelineBuilder
 from tests import KAFKA_BOOTSTRAP, TEST_CLIENT
+from tests.kafka import (
+    create_topic,
+    delete_topic_best_effort,
+    kafka_admin,
+    random_topic,
+)
 from tests.platform.helper import PipelineTestCase
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
-from typing import Any
 
 LIMIT = 100
 # Uncomment the following for local testing
 # KAFKA_BOOTSTRAP = "ci-kafka-bootstrap.korat-vibes.ts.net:9094"
-
-
-def _random_topic(prefix: str) -> str:
-    return f"{prefix}-{uuid.uuid4().hex[:12]}"
-
-
-def _create_topic(admin: Any, topic: str) -> None:
-    futures = admin.create_topics(
-        [NewTopic(topic=topic, num_partitions=1, replication_factor=1)]
-    )
-    futures[topic].result(timeout=30)
-
-
-def _delete_topic(admin: Any, topic: str) -> None:
-    try:
-        futures = admin.delete_topics([topic], operation_timeout=10)
-        futures[topic].result(timeout=10)
-    except Exception:
-        pass  # Topic deletion can be disabled on some brokers; cleanup is best-effort.
 
 
 def _consume_all(topic: str, timeout_s: float = 30.0) -> list[dict]:
@@ -68,9 +53,9 @@ def _consume_all(topic: str, timeout_s: float = 30.0) -> list[dict]:
 # Kafka lets us verify the scaled values it wrote.
 class TestPostprocessor(PipelineTestCase):
     def test_postprocessor(self):
-        admin = AdminClient({"bootstrap.servers": KAFKA_BOOTSTRAP})
-        output_topic = _random_topic("postprocessor-out")
-        _create_topic(admin, output_topic)
+        admin = kafka_admin()
+        output_topic = random_topic("postprocessor-out")
+        create_topic(admin, output_topic)
 
         sql = f"""
 CREATE TABLE t (i BIGINT) WITH ('connectors' = '[{{
@@ -200,7 +185,7 @@ tracing = { version = "0.1.40" }
         finally:
             pipeline.stop(force=True)
             # Pipeline will be reaped in 24 hours automatically
-            _delete_topic(admin, output_topic)
+            delete_topic_best_effort(admin, output_topic)
 
 
 if __name__ == "__main__":
