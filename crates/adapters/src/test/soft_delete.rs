@@ -1,12 +1,16 @@
 //! Tests for the `soft_delete` connector property.
 //!
-//! Each test drives records through a real parser (or, for connectors that
-//! bypass parsers, through the Arrow input stream) into a table whose
-//! `is_delete` column is populated from record metadata, and checks that:
+//! Each test drives records into a table whose `is_delete` column is populated
+//! from record metadata, and checks that:
 //!
 //! * every record arrives as an insertion, and
 //! * `is_delete` is `true` for records the input stream deleted and NULL for
 //!   records it inserted.
+//!
+//! Records reach the table through a real parser or, for integrated connectors
+//! that parse the data themselves, through the input stream the connector
+//! writes to: the Arrow stream for Delta Lake and Iceberg, the record stream
+//! for Postgres CDC.
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -326,8 +330,9 @@ fn arrow_polarities_length_mismatch() {
     );
 }
 
-/// Transports that stage input buffers instead of flushing them, e.g., the
-/// fault-tolerant Kafka connector, push the same records into the circuit.
+/// A transport that stages input buffers instead of flushing them directly,
+/// e.g., the fault-tolerant Kafka connector, delivers the same records to the
+/// table as a transport that flushes them.
 #[test]
 fn staged_buffers() {
     let relation = Relation::new(

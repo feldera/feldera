@@ -2,8 +2,8 @@
 
 A soft-delete connector pushes every record it receives to the table as an
 insertion and reports the original polarity of the record in the ``is_delete``
-metadata attribute, so the table accumulates the history of its input stream
-instead of tracking the stream's current contents.
+metadata attribute, so the table represents the stream of updates it receives
+instead of the current contents of that stream.
 
 The current contents are recovered by a query that ranks the changes of each
 key by the time the connector received them, keeps the most recent one, and
@@ -53,7 +53,8 @@ AVRO_SCHEMA: dict[str, Any] = {
 }
 
 # Message timestamps, milliseconds since the epoch.  Each change of a key gets a
-# later timestamp than the previous one, which is what orders them in `live`.
+# later timestamp than the previous one, which is what orders them in the `live`
+# view.
 FIRST_CHANGE = 1_700_000_000_000
 
 
@@ -78,7 +79,7 @@ def _delete_topic_best_effort(admin: AdminClient, topic: str) -> None:
 
 
 def _produce(topic: str, messages: list[bytes]) -> None:
-    """Produce `messages` one second apart, oldest first."""
+    """Produce `messages` oldest first, stamped one second apart."""
     producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP})
     for index, message in enumerate(messages):
         producer.produce(topic, value=message, timestamp=FIRST_CHANGE + index * 1_000)
@@ -117,9 +118,9 @@ def _avro_messages() -> list[bytes]:
 
     Record 3 is inserted, deleted, and inserted again with a new value, so the
     latest of its three changes is what is live; record 4 is only deleted, so
-    nothing of it is. Record 5 is updated, which is one message that deletes
-    the old value and inserts the new one: both changes carry the timestamp of
-    that message, so only the tie-break in `live` keeps the record.
+    it is not live. Record 5 is updated, which is one message that deletes the
+    old value and inserts the new one: both changes carry the timestamp of that
+    message, so only the tie-break in the `live` view keeps the record.
     """
     return [
         _avro_message("c", None, {"id": 3, "s": "avro-3"}),

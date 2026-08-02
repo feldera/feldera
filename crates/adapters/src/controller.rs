@@ -639,7 +639,9 @@ fn soft_delete_input_handle(
     // A version of Feldera that predates this property drops it silently, so
     // record that it took effect: the absence of this line in the log is how an
     // operator recognizes that case.
-    info!("endpoint '{endpoint_name}': ingesting deletions into table '{stream}' as insertions");
+    info!(
+        "endpoint '{endpoint_name}': ingesting deletions into table '{stream}' as insertions with is_delete = true"
+    );
 
     Ok(InputCollectionHandle::new(
         input_handle.schema.clone(),
