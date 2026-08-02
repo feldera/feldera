@@ -237,16 +237,12 @@ impl CheckpointOutputEndpointMetrics {
     pub fn from_endpoint_status(status: &OutputEndpointStatus, snapshot_sent: bool) -> Self {
         let snapshot = status.metrics.snapshot();
         Self {
-            // Includes all the records that have been transmitted plus all
-            // of the records that will be transmitted by the time we commit
-            // the checkpoint.
-            transmitted_records: snapshot.transmitted_records
-                + snapshot.buffered_records
-                + snapshot.queued_records,
-
-            // Only the bytes and errors already transmitted, not including
-            // those that will be transmitted by the time we commit the
-            // checkpoint (we don't have proper statistics for those).
+            // What the endpoint had transmitted when the checkpoint started.
+            // `CheckpointThread` replaces both figures with what it had
+            // transmitted once it caught up with the checkpoint, which is what
+            // the checkpoint needs; these stand only for an endpoint that goes
+            // away before it gets there.
+            transmitted_records: snapshot.transmitted_records,
             transmitted_bytes: snapshot.transmitted_bytes,
 
             // We can't predict how many errors there will be by the time we
