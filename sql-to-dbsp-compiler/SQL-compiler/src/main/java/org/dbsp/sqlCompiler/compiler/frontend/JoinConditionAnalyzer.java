@@ -27,11 +27,8 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rex.*;
 import org.apache.calcite.sql.SqlKind;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -219,10 +216,12 @@ public class JoinConditionAnalyzer implements IWritesLogs {
                 // Both columns refer to the same table.
                 return false;
             }
+            // The key is built from the input tuples, so a ROW-typed key must be a tuple
+            // type and not a struct type; the two differ only in the field names
             DBSPType leftType = JoinConditionAnalyzer.this.typeCompiler.convertType(
-                    node.getPositionRange(), left.getType(), true);
+                    node.getPositionRange(), left.getType(), false);
             DBSPType rightType = JoinConditionAnalyzer.this.typeCompiler.convertType(
-                    node.getPositionRange(), right.getType(), true);
+                    node.getPositionRange(), right.getType(), false);
             boolean mayBeNull = false;
             if (call.op.kind == SqlKind.IS_NOT_DISTINCT_FROM) {
                 // Only used if any of the operands is not nullable
@@ -230,8 +229,6 @@ public class JoinConditionAnalyzer implements IWritesLogs {
                     mayBeNull = true;
                 }
             }
-            if (leftType.is(DBSPTypeTupleBase.class) || leftType.is(DBSPTypeStruct.class))
-                throw new UnimplementedException("Join on struct types", 3398, node);
             DBSPType commonType = TypeCompiler.reduceType(node,
                     leftType, rightType, "Consider using an INNER JOIN with an explicit ON condition.\n" +
                             "In NATURAL or USING JOIN: ", true).withMayBeNull(mayBeNull);

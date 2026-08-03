@@ -42,8 +42,6 @@ class illarg_equality_legal(TstView):
                 "uuidd": True,
                 "arr": True,
                 "mapp": True,
-                "roww": True,
-                "udt": True,
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW equality_legal AS SELECT
@@ -60,9 +58,7 @@ class illarg_equality_legal(TstView):
                       tme = TIME '14:23:44.456' AS tme,
                       uuidd = UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
                       arr = ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AS arr,
-                      mapp = MAP['a', 12, 'b', 17] AS mapp,
-                      roww = ROW(4, 'cat') AS roww,
-                      udt = (4, 'cat') AS udt
+                      mapp = MAP['a', 12, 'b', 17] AS mapp
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -76,6 +72,38 @@ class illarg_equality_illegal(TstView):
                       FROM illegal_tbl
                       WHERE id = 1"""
         self.expected_error = "Cannot apply '=' to arguments of type"
+
+
+# Negative Test: '=' is rejected for ROW values
+class illarg_equality_roww_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW equality_roww_illegal AS SELECT
+                      roww = ROW(4, 'cat') AS roww
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "ROW values cannot be compared using '='"
+
+
+# Negative Test: a user-defined type is a ROW type
+class illarg_equality_udt_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW equality_udt_illegal AS SELECT
+                      udt = (4, 'cat') AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "ROW values cannot be compared using '='"
+
+
+# 'IS NOT DISTINCT FROM' replaces '=' for ROW values
+class illarg_equality_roww_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"roww": True, "udt": True}]
+        self.sql = """CREATE MATERIALIZED VIEW equality_roww_legal AS SELECT
+                      roww IS NOT DISTINCT FROM ROW(4, 'cat') AS roww,
+                      udt IS NOT DISTINCT FROM (4, 'cat') AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
 
 
 # Inequality
@@ -98,8 +126,6 @@ class illarg_inequality_legal(TstView):
                 "uuidd": False,
                 "arr": False,
                 "mapp": False,
-                "roww": False,
-                "udt": False,
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW inequality_legal AS SELECT
@@ -116,9 +142,7 @@ class illarg_inequality_legal(TstView):
                       tme != TIME '14:23:44.456' AS tme,
                       uuidd != UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
                       arr != ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] AS arr,
-                      mapp != MAP['a', 12, 'b', 17] AS mapp,
-                      roww != ROW(4, 'cat') AS roww,
-                      udt != (4, 'cat') AS udt
+                      mapp != MAP['a', 12, 'b', 17] AS mapp
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -132,6 +156,38 @@ class illarg_inequality_illegal(TstView):
                       FROM illegal_tbl
                       WHERE id = 1"""
         self.expected_error = "Cannot apply '<>' to arguments of type"
+
+
+# Negative Test: '!=' is rejected for ROW values
+class illarg_inequality_roww_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW inequality_roww_illegal AS SELECT
+                      roww != ROW(4, 'cat') AS roww
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "ROW values cannot be compared using '<>'"
+
+
+# Negative Test: a user-defined type is a ROW type
+class illarg_inequality_udt_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW inequality_udt_illegal AS SELECT
+                      udt != (4, 'cat') AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "ROW values cannot be compared using '<>'"
+
+
+# 'IS DISTINCT FROM' replaces '!=' for ROW values
+class illarg_inequality_roww_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"roww": False, "udt": False}]
+        self.sql = """CREATE MATERIALIZED VIEW inequality_roww_legal AS SELECT
+                      roww IS DISTINCT FROM ROW(4, 'cat') AS roww,
+                      udt IS DISTINCT FROM (4, 'cat') AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
 
 
 # Greater Than
@@ -862,8 +918,6 @@ class illarg_in_legal(TstView):
                 "uuidd": True,
                 "arr": True,
                 "mapp": True,
-                "roww": True,
-                "udt": True,
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW in_legal AS SELECT
@@ -880,9 +934,39 @@ class illarg_in_legal(TstView):
                       tme IN (TIME '14:23:44.456') AS tme,
                       uuidd IN (UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
                       arr IN (ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE']) AS arr,
-                      mapp IN (MAP['a', 12, 'b', 17]) AS mapp,
-                      roww IN (ROW(4,'cat')) AS roww,
+                      mapp IN (MAP['a', 12, 'b', 17]) AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test: IN expands into an equality test, rejected for ROW values
+class illarg_in_roww_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW in_roww_illegal AS SELECT
+                      roww IN (ROW(4,'cat')) AS roww
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "ROW values cannot be compared using '='"
+
+
+# Negative Test: a user-defined type is a ROW type
+class illarg_in_udt_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW in_udt_illegal AS SELECT
                       udt IN ((4,'cat')) AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "ROW values cannot be compared using '='"
+
+
+# A disjunction of 'IS NOT DISTINCT FROM' replaces IN for ROW values
+class illarg_in_roww_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"roww": True, "udt": True}]
+        self.sql = """CREATE MATERIALIZED VIEW in_roww_legal AS SELECT
+                      roww IS NOT DISTINCT FROM ROW(4,'cat') AS roww,
+                      udt IS NOT DISTINCT FROM (4,'cat') AS udt
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -906,8 +990,6 @@ class illarg_not_in_legal(TstView):
                 "uuidd": False,
                 "arr": False,
                 "mapp": False,
-                "roww": False,
-                "udt": False,
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW not_in_legal AS SELECT
@@ -924,9 +1006,39 @@ class illarg_not_in_legal(TstView):
                       tme NOT IN (TIME '14:23:44.456') AS tme,
                       uuidd NOT IN (UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
                       arr NOT IN (ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE']) AS arr,
-                      mapp NOT IN (MAP['a', 12, 'b', 17]) AS mapp,
-                      roww NOT IN (ROW(4,'cat')) AS roww,
+                      mapp NOT IN (MAP['a', 12, 'b', 17]) AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test: NOT IN expands into an equality test, rejected for ROW values
+class illarg_not_in_roww_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW not_in_roww_illegal AS SELECT
+                      roww NOT IN (ROW(4,'cat')) AS roww
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "ROW values cannot be compared using '='"
+
+
+# Negative Test: a user-defined type is a ROW type
+class illarg_not_in_udt_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW not_in_udt_illegal AS SELECT
                       udt NOT IN ((4,'cat')) AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "ROW values cannot be compared using '='"
+
+
+# A conjunction of 'IS DISTINCT FROM' replaces NOT IN for ROW values
+class illarg_not_in_roww_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"roww": False, "udt": False}]
+        self.sql = """CREATE MATERIALIZED VIEW not_in_roww_legal AS SELECT
+                      roww IS DISTINCT FROM ROW(4,'cat') AS roww,
+                      udt IS DISTINCT FROM (4,'cat') AS udt
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -1191,6 +1303,33 @@ class illarg_case_val_when_mapp_legal(TstView):
                       FROM illegal_tbl"""
 
 
+# Negative Test: 'CASE value WHEN' expands into an equality test
+class illarg_case_val_when_roww_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW case_val_when_roww_illegal AS SELECT
+                      id,
+                      CASE roww
+                          WHEN ROW(4,'cat') THEN 0
+                          ELSE NULL
+                      END AS roww
+                      FROM illegal_tbl"""
+        self.expected_error = "ROW values cannot be compared using '='"
+
+
+# Negative Test: a user-defined type is a ROW type
+class illarg_case_val_when_udt_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW case_val_when_udt_illegal AS SELECT
+                      id,
+                      CASE udt
+                          WHEN (4,'cat') THEN 0
+                          ELSE NULL
+                      END AS udt
+                      FROM illegal_tbl"""
+        self.expected_error = "ROW values cannot be compared using '='"
+
+
+# A searched CASE over 'IS NOT DISTINCT FROM' replaces 'CASE value WHEN'
 class illarg_case_val_when_roww_legal(TstView):
     def __init__(self):
         # checked manually
@@ -1201,9 +1340,9 @@ class illarg_case_val_when_roww_legal(TstView):
         ]
         self.sql = """CREATE MATERIALIZED VIEW case_val_when_roww_legal AS SELECT
                       id,
-                      CASE roww
-                          WHEN ROW(4,'cat') THEN 0
-                          WHEN ROW(5,NULL) THEN 1
+                      CASE
+                          WHEN roww IS NOT DISTINCT FROM ROW(4,'cat') THEN 0
+                          WHEN roww IS NOT DISTINCT FROM ROW(5,NULL) THEN 1
                           ELSE NULL
                       END AS roww
                       FROM illegal_tbl"""
@@ -1219,9 +1358,9 @@ class illarg_case_val_when_udt_legal(TstView):
         ]
         self.sql = """CREATE MATERIALIZED VIEW case_val_when_udt_legal AS SELECT
                       id,
-                      CASE udt
-                          WHEN (4,'cat') THEN 0
-                          WHEN (5,NULL) THEN 1
+                      CASE
+                          WHEN udt IS NOT DISTINCT FROM (4,'cat') THEN 0
+                          WHEN udt IS NOT DISTINCT FROM (5,NULL) THEN 1
                           ELSE NULL
                       END AS udt
                       FROM illegal_tbl"""
@@ -1271,6 +1410,7 @@ class illarg_case_when_legal(TstView):
                 "udt": True,
             }
         ]
+        # 'roww' and 'udt' use IS NOT DISTINCT FROM: '=' is rejected for ROW values
         self.sql = """CREATE MATERIALIZED VIEW case_when_legal AS SELECT
                       CASE WHEN intt = -12 THEN True ELSE NULL END AS intt,
                       CASE WHEN decimall = -1111.52 THEN True ELSE NULL END AS decimall,
@@ -1286,8 +1426,8 @@ class illarg_case_when_legal(TstView):
                       CASE WHEN uuidd = UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' THEN True ELSE NULL END AS uuidd,
                       CASE WHEN arr = ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello ', 'TRUE'] THEN True ELSE NULL END AS arr,
                       CASE WHEN mapp = MAP['a', 12, 'b', 17] THEN True ELSE NULL END AS mapp,
-                      CASE WHEN roww = ROW(4,'cat') THEN True ELSE NULL END AS roww,
-                      CASE WHEN udt = (4,'cat') THEN True ELSE NULL END AS udt
+                      CASE WHEN roww IS NOT DISTINCT FROM ROW(4,'cat') THEN True ELSE NULL END AS roww,
+                      CASE WHEN udt IS NOT DISTINCT FROM (4,'cat') THEN True ELSE NULL END AS udt
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -1694,10 +1834,32 @@ class illarg_nullif_legal(TstView):
                         NULLIF(uuidd, UUID'42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
                         NULLIF(arr, ARRAY['apple']) AS arr,
                         NULLIF(mapp, MAP['a', 13, 'b', 17]) AS mapp,
-                        NULLIF(roww, ROW(4,'cat')) AS roww,
+                        CASE WHEN roww IS NOT DISTINCT FROM ROW(4,'cat')
+                             THEN NULL ELSE roww END AS roww,
+                        CASE WHEN udt IS NOT DISTINCT FROM (4,'cat')
+                             THEN NULL ELSE udt END AS udt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test: NULLIF compares its arguments for equality
+class illarg_nullif_roww_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW nullif_roww_illegal AS SELECT
+                        NULLIF(roww, ROW(4,'cat')) AS roww
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "'NULLIF' compares ROW values for equality"
+
+
+# Negative Test: a user-defined type is a ROW type
+class illarg_nullif_udt_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW nullif_udt_illegal AS SELECT
                         NULLIF(udt, (4,'cat')) AS udt
                       FROM illegal_tbl
                       WHERE id = 0"""
+        self.expected_error = "'NULLIF' compares ROW values for equality"
 
 
 # Negative Test
@@ -2071,3 +2233,46 @@ class illarg_imm_succeeds_illegal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW imm_succeeds_illegal AS SELECT
                         (INTERVAL '1' HOUR, INTERVAL '1' DAY) IMMEDIATELY SUCCEEDS (INTERVAL '1' DAY, INTERVAL '1' HOUR) AS res_date_immed"""
         self.expected_error = "Cannot apply 'IMMEDIATELY SUCCEEDS' to arguments of type"
+
+
+# Joins on ROW values
+
+
+# Negative Test: a NATURAL JOIN implies equality on the shared ROW column
+class illarg_natural_join_roww_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW natural_join_roww_illegal AS SELECT *
+                      FROM (SELECT roww FROM illegal_tbl) a
+                      NATURAL JOIN (SELECT roww FROM illegal_tbl) b"""
+        self.expected_error = "ROW values cannot be compared using '='"
+
+
+# Negative Test: USING implies equality on the named ROW column
+class illarg_using_join_roww_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW using_join_roww_illegal AS SELECT a.id
+                      FROM illegal_tbl a JOIN illegal_tbl b USING (roww)"""
+        self.expected_error = "ROW values cannot be compared using '='"
+
+
+# Negative Test: an explicit equality in a join condition
+class illarg_on_join_roww_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW on_join_roww_illegal AS SELECT a.id
+                      FROM illegal_tbl a JOIN illegal_tbl b ON a.roww = b.roww"""
+        self.expected_error = "ROW values cannot be compared using '='"
+
+
+# A join on ROW values uses IS NOT DISTINCT FROM: the row with a NULL field and
+# the row with a NULL 'roww' each match only themselves
+class illarg_join_roww_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {"a": 0, "b": 0},
+            {"a": 1, "b": 1},
+            {"a": 2, "b": 2},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW join_roww_legal AS SELECT a.id AS a, b.id AS b
+                      FROM illegal_tbl a JOIN illegal_tbl b
+                      ON a.roww IS NOT DISTINCT FROM b.roww"""

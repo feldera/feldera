@@ -14,6 +14,29 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - Breaking change (SQL): `=`, `<>` and `!=` are no longer allowed between
+          `ROW` values, so some programs that used to compile are now rejected.
+          The previous implementation of these operations did not follow the
+          standard SQL semantics, which requires that `ROW(NULL) = ROW(NULL)` evaluates
+          to `NULL` (in our implementation it would evaluate to `TRUE`).
+
+          Instead of these operators, use `IS NOT DISTINCT FROM` (or its
+          shorthand `<=>`) and `IS DISTINCT FROM` instead.  A user-defined type declared with
+          `CREATE TYPE ... AS (...)` is a `ROW` type, so the restriction covers its
+          values too.
+
+          The restriction also covers the forms that ask for `ROW` equality without
+          writing `=`: a join condition, `NATURAL JOIN`, `USING`, `IN`,
+          `CASE value WHEN`, `NULLIF`, and a comparison between two row constructors
+          such as `(a, b) = (c, d)`.  See
+          [comparing `ROW` values](https://docs.feldera.com/sql/comparisons#comparing-row-values)
+          for the accepted rewrite of each form.
+
+        - Joining on `ROW` values is now supported, using
+          `ON left.r IS NOT DISTINCT FROM right.r` (#3398).
+
+        ## v0.330.0
+
         - Feldera's membership table now authorizes every login: a user acts
           in the tenants they hold a membership in, whether or not the token's
           `tenants` claim names them. The claim, the issuer tenant, and the
@@ -64,17 +87,7 @@ import TabItem from '@theme/TabItem';
           Both responses carry the tenant's `id`, `name`, and
           `initial_provider`. `fda tenant create` is the CLI counterpart.
 
-        - Input connectors support the `soft_delete` property, which ingests
-          deletions as insertions and reports the original polarity of each
-          record in the `is_delete` metadata attribute, so that a table
-          represents the stream of updates it receives rather than the current
-          contents of that stream. See
-          [Soft deletes](/connectors#soft-deletes).
-
-        - Connectors that ingest columnar data, e.g., Delta Lake, Iceberg, and
-          the Parquet format, now populate columns that default to
-          `CONNECTOR_METADATA()`. Previously such a column was always `NULL`
-          for these connectors.
+        ## v0.329.0
 
         - Backward-incompatible change in the `dbsp` crate Rust API: the
           `add_input_set` operator was removed, together with the `SetHandle`
@@ -86,6 +99,20 @@ import TabItem from '@theme/TabItem';
           a cheaper alternative, but the caller must guarantee that weights
           stay 0 or 1. SQL pipelines are not affected: the SQL compiler never
           generated input sets.
+
+        ## v0.328.0
+
+        - Input connectors support the `soft_delete` property, which ingests
+          deletions as insertions and reports the original polarity of each
+          record in the `is_delete` metadata attribute, so that a table
+          represents the stream of updates it receives rather than the current
+          contents of that stream. See
+          [Soft deletes](/connectors#soft-deletes).
+
+        - Connectors that ingest columnar data, e.g., Delta Lake, Iceberg, and
+          the Parquet format, now populate columns that default to
+          `CONNECTOR_METADATA()`. Previously such a column was always `NULL`
+          for these connectors.
 
         ## v0.327.0
 

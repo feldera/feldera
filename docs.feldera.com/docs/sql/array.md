@@ -80,9 +80,19 @@ column.
 
 Comparison operations (`=`, `<>`, `!=`, `>`, `<`, `>=`, `<=`) in arrays occur **lexicographically**, from left to right. The elements are compared one by one until a difference is found. Arrays can be compared even if they are different in size.
 
+A `NULL` array element is smaller than any other element,
+whatever the `NULLS FIRST` or `NULLS
+LAST` clause of an enclosing `ORDER BY` says.
+
+On arrays, `=` is equivalent to `IS NOT DISTINCT FROM` and `<>` is
+equivalent to `IS DISTINCT FROM`: two `NULL` elements compare as
+equal, so `ARRAY[1, NULL] = ARRAY[1, NULL]` is `true`.  See
+[comparing complex values](comparisons.md#comparing-complex-values).
+
 **Examples:**
 - `[45] > [22]`
 - `[23, 56, 16] > [23, NULL]`
+- `[NULL] < [1]`
 
 ## Predefined functions on array values
 
