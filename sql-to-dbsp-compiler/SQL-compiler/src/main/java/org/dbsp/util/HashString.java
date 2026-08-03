@@ -22,4 +22,8 @@ public record HashString(String value) {
             prefix = "s";
         return prefix + "_" + this.shortString();
     }
+
+    public String toQuotedString() {
+        return Utilities.doubleQuote(this.toString(), false);
+    }
 }

@@ -445,8 +445,16 @@ public class ToRustVisitor extends CircuitVisitor {
             if (decl != null) {
                 this.builder.append(decl.getNodeName(this.preferHash)).append(", ");
             } else {
-                // view is not really recursive
-                this.builder.append("_").append(", ");
+                // view is not really recursive.
+                if (operator.internalOutputs.get(i) != null) {
+                    // It is not used in recursion,
+                    // but it must be an output of the recursive component, and we
+                    // want to assign it a persistent ID.
+                    this.builder.append("unused_").append(i).append(", ");
+                } else {
+                    // This output doesn't even exist
+                    this.builder.append("_, ");
+                }
             }
         }
         this.builder.append("): (");
@@ -471,11 +479,27 @@ public class ToRustVisitor extends CircuitVisitor {
         for (int i = 0; i < operator.outputCount(); i++) {
             ProgramIdentifier view = operator.outputViews.get(i);
             DBSPViewDeclarationOperator decl = operator.declarationByName.get(view);
+            OutputPort port = operator.internalOutputs.get(i);
             if (decl != null) {
                 this.computeHash(decl);
                 this.tagStream(decl);
-                this.builder.newline();
+            } else if (port != null) {
+                this.builder.append("let hash = ");
+                HashString hash = OperatorHash.getHash(port.operator, true);
+                if (hash == null) {
+                    this.builder.append("None;").newline();
+                } else {
+                    this.builder.append("Some(concat!(")
+                            .append(hash.toQuotedString())
+                            .append(", \".delay\"));")
+                            .newline();
+                }
+                this.builder
+                        .append("unused_")
+                        .append(i)
+                        .append(".set_persistent_id(hash);");
             }
+            this.builder.newline();
         }
 
         for (IDBSPNode node : operator.getAllOperators())
@@ -607,7 +631,7 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append("None;").newline();
         } else {
             this.builder.append("Some(")
-                    .append(Utilities.doubleQuote(hash.toString(), true))
+                    .append(hash.toQuotedString())
                     .append(");")
                     .newline();
         }

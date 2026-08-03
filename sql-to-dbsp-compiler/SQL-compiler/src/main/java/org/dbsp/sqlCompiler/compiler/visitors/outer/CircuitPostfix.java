@@ -36,7 +36,7 @@ public class CircuitPostfix extends CircuitVisitor {
             builder.append("circuit.set_balancer_hint(").increase();
             var input = this.strategy.input == 0 ? this.operator.left() : operator.right();
             var inputHash = OperatorHash.getHash(input.node(), true);
-            builder.append(Utilities.doubleQuote(Objects.requireNonNull(inputHash).toString(), true))
+            builder.append(Objects.requireNonNull(inputHash).toQuotedString())
                     .append(",").newline();
             builder.append(this.strategy.toRust()).newline();
             builder.decrease().append(")?;").newline();
