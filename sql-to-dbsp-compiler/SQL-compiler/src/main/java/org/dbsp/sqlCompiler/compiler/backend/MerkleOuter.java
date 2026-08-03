@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.backend;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -70,10 +71,13 @@ public class MerkleOuter extends CircuitVisitor {
         if (this.includeInputs && this.recursiveOutputs.contains(operator.getId()))
             string += this.recursiveStateVersion;
         HashString hash = MerkleInner.hash(string);
+        String name = CompactName.getCompactName(operator);
         Logger.INSTANCE.belowLevel(this, 1)
                 .append(this.includeInputs ? "Global " : "")
                 .append("Merkle hash of ")
-                .append(operator.id);
+                .append(operator.id)
+                .append(" ")
+                .append(name != null ? name : "");
         Logger.INSTANCE.belowLevel(this, 2)
                 .append(" from").newline()
                 .append(string).newline();

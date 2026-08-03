@@ -122,7 +122,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
             this.builder().append("None;").newline();
         } else {
             this.builder().append("Some(")
-                    .append(Utilities.doubleQuote(hash.toString(), false))
+                    .append(hash.toQuotedString())
                     .append(");")
                     .newline();
         }
@@ -195,8 +195,16 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
             if (decl != null) {
                 this.builder().append(decl.getNodeName(false)).append(", ");
             } else {
-                // view is not really recursive
-                this.builder().append("_").append(", ");
+                // view is not really recursive.
+                if (operator.internalOutputs.get(i) != null) {
+                    // It is not used in recursion,
+                    // but it must be an output of the recursive component, and we
+                    // want to assign it a persistent ID.
+                    this.builder().append("unused_").append(i).append(", ");
+                } else {
+                    // This output doesn't even exist
+                    this.builder().append("_, ");
+                }
             }
         }
         this.builder().append("): (");
@@ -219,8 +227,25 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         for (int i = 0; i < operator.outputCount(); i++) {
             ProgramIdentifier view = operator.outputViews.get(i);
             DBSPViewDeclarationOperator decl = operator.declarationByName.get(view);
-            if (decl != null)
+            OutputPort port = operator.internalOutputs.get(i);
+            if (decl != null) {
                 this.setPersistentId(decl, decl.getNodeName(false));
+            } else if (port != null) {
+                HashString hash0 = OperatorHash.getHash(port.operator, true);
+                if (hash0 == null) {
+                    this.builder().append("let hash = None;");
+                } else {
+                    this.builder().append("let hash = Some(concat!(")
+                            .append(hash0.toQuotedString())
+                            .append(", \".delay\"));");
+                }
+                this.builder()
+                        .newline()
+                        .append("unused_")
+                        .append(i)
+                        .append(".set_persistent_id(hash);")
+                        .newline();
+            }
         }
 
         for (DBSPOperator node : this.operator.getAllOperators())
