@@ -177,7 +177,7 @@ public class ToJsonVisitor extends CircuitVisitor {
         HashString hash = OperatorHash.getHash(operator, true);
         if (hash != null) {
             this.builder.appendJsonLabelAndColon("persistent_id");
-            this.builder.append(Utilities.doubleQuote(hash.toString(), false)).newline();
+            this.builder.append(hash.toQuotedString()).newline();
         }
         this.builder.decrease().append("}");
     }
@@ -224,7 +224,7 @@ public class ToJsonVisitor extends CircuitVisitor {
         HashString hash = OperatorHash.getHash(operator, true);
         if (hash != null) {
             this.builder.appendJsonLabelAndColon("persistent_id");
-            this.builder.append(Utilities.doubleQuote(hash.toString(), false)).newline();
+            this.builder.append(hash.toQuotedString()).newline();
         }
         this.builder.decrease().append("}");
     }
@@ -271,7 +271,7 @@ public class ToJsonVisitor extends CircuitVisitor {
         HashString hash = OperatorHash.getHash(operator, true);
         if (hash != null) {
             this.builder.appendJsonLabelAndColon("persistent_id");
-            this.builder.append(Utilities.doubleQuote(hash.toString(), false)).newline();
+            this.builder.append(hash.toQuotedString()).newline();
         }
         this.builder.decrease().append("}");
     }
