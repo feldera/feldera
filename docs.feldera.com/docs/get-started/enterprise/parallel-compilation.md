@@ -155,7 +155,7 @@ compilerAutoscaling:
   pollIntervalSeconds: 10
   artifactServer:
     httpWorkers: 2
-    # Budget roughly 200 to 300 MB per optimized program version.
+    # Budget at least 200 to 300 MB per optimized program version.
     pvcSize: 50Gi
     # The artifact server also serves SQL program validation (a JVM); the CPU
     # limit lets the JVM size its heap.
@@ -173,20 +173,20 @@ compilerAutoscaling:
 
 ### Latency Expectations
 
-A compilation submitted while the compiler workers are scaled to zero waits for the full cold start: the autoscaler poll (up to `pollIntervalSeconds`), node provisioning if the cluster must add compiler nodes, image pull, and compiler server startup including precompiled dependency extraction. The pipeline shows `Pending` during this time; that is expected, not a stall. Compilations submitted while workers are already up behave exactly as without autoscaling.
+A compilation submitted while the compiler workers are scaled to zero waits for the full cold start: the autoscaler poll (up to `pollIntervalSeconds`), node provisioning if the cluster must add compiler nodes, image pull, and compiler server startup including precompiled dependency extraction. The pipeline shows `Pending` during this time; the cold start usually adds 1 to 3 minutes of latency to the compilation, more if node provisioning is needed. Compilations submitted while workers are already up behave exactly as without autoscaling.
 
 Starting or restarting a pipeline whose binary is already compiled does not wake the compiler workers; the artifact server serves the stored binary directly.
 
 ### Enabling on an Existing Installation
 
-Toggling the feature changes the StatefulSet `podManagementPolicy`, an immutable field. A pre-upgrade hook (`compilerAutoscaling.kubectlImage`) handles that automatically: on the one upgrade that flips the policy it deletes the compiler StatefulSet, and the same upgrade recreates it with the new policy while the retained per-replica volumes re-attach. The hook renders only on such transition upgrades; steady-state upgrades and installations that never toggle the feature run no hook at all. The hook image must be reachable from your cluster (mirror it for air-gapped installations).
+Toggling the feature changes the StatefulSet `podManagementPolicy`, an immutable field. A pre-upgrade hook (`compilerAutoscaling.kubectlImage`) handles that automatically: on the one upgrade that flips the policy it deletes the compiler StatefulSet, and the same upgrade recreates it with the new policy while the retained per-replica volumes re-attach. The hook renders only on such transition upgrades; steady-state upgrades and installations that never toggle the feature run no hook at all. The hook runs `kubectl` from the image configured in `compilerAutoscaling.kubectlImage`, which must be pullable from your cluster. For air-gapped installations, copy the image into your registry (for example `crane copy docker.io/rancher/kubectl:v1.33.13 registry.example.com/kubectl:v1.33.13`) and set `compilerAutoscaling.kubectlImage` to the mirrored reference.
 
-1. Upgrade to images that support autoscaling, with `compilerAutoscaling.enabled` still `false`. Older images do not understand the new flags and would crash loop.
-2. Run the enabling upgrade with `compilerAutoscaling.enabled=true` and `compilerAutoscaling.artifactServer.seedFromCompilerServer0=true`. While the seed setting is true the chart omits the compiler StatefulSet and frees its ReadWriteOnce `compiler-storage-<release>-compiler-server-0` volume; the artifact server then copies the compiled binaries from that volume into the artifact store, so existing pipelines keep their binaries. No compilation runs during this window.
+1. Upgrade to images that support autoscaling, with `compilerAutoscaling.enabled` still `false`.
+2. Run the enabling upgrade with `compilerAutoscaling.enabled=true` and `compilerAutoscaling.artifactServer.seedFromCompilerServer0=true`. While the seed setting is true the chart omits the compiler StatefulSet and frees its ReadWriteOnce `compiler-storage-<release>-compiler-server-0` volume; the artifact server then copies the compiled binaries from that volume into the artifact store, so existing pipelines keep their binaries.
 3. Wait until the artifact server pod is `Running` (the copy happens in its init container).
 4. Run a follow-up upgrade with `seedFromCompilerServer0` back to `false`. This recreates the compiler StatefulSet and detaches the old volume from the artifact server.
 
-To enable without preserving existing binaries, skip the seeding: a single upgrade with `compilerAutoscaling.enabled=true` suffices. The artifact store then starts empty: stopped pipelines recompile on their next start, but a running pipeline whose pod restarts cannot fetch its binary until its program is recompiled (stop and start it once). Stop running pipelines first if that is not acceptable.
+Setting `seedFromCompilerServer0=true` is optional: skipping it means a single upgrade with `compilerAutoscaling.enabled=true` suffices, and the existing binaries are recompiled instead of carried over. The artifact store starts empty, stopped pipelines recompile on their next start, and a running pipeline whose pod restarts cannot fetch its binary until its program is recompiled (stop and start it once). Stop running pipelines first if that is not acceptable.
 
 Fresh installations need no procedure: set `compilerAutoscaling.enabled=true` at install time.
 
@@ -205,20 +205,36 @@ To preserve the binaries (required if pipelines are running and must survive pod
    kubectl scale deployment <release>-compiler-artifact-server -n <namespace> --replicas=0
    ```
 
-2. Run a one-shot pod that mounts both the `<release>-compiler-artifact-server` and the `compiler-storage-<release>-compiler-server-0` PVCs and copies `rust-compilation/pipeline-binaries` across (the mirror image of the seed init container).
+2. Run a one-shot pod that mounts the `<release>-compiler-artifact-server` PVC (source) and the `compiler-storage-<release>-compiler-server-0` PVC (target) and copies the `rust-compilation/pipeline-binaries` directory from source to target. Both paths are relative to the volume root:
+
+   ```yaml
+   apiVersion: v1
+   kind: Pod
+   metadata:
+     name: binary-restore
+   spec:
+     restartPolicy: Never
+     containers:
+       - name: copy
+         image: busybox:1.37.0
+         command: ["sh", "-c", "mkdir -p /target/rust-compilation/pipeline-binaries && cp -a /source/rust-compilation/pipeline-binaries/. /target/rust-compilation/pipeline-binaries/"]
+         volumeMounts:
+           - {name: source, mountPath: /source, readOnly: true}
+           - {name: target, mountPath: /target}
+     volumes:
+       - {name: source, persistentVolumeClaim: {claimName: <release>-compiler-artifact-server}}
+       - {name: target, persistentVolumeClaim: {claimName: compiler-storage-<release>-compiler-server-0}}
+   ```
+
+   Wait for the pod to reach `Succeeded`, then delete it.
 3. Run `helm upgrade` with `compilerAutoscaling.enabled=false` and verify the replica count as above.
 
-If the runner starts with autoscaling disabled and finds the compiler StatefulSet scaled to zero (for example after a disable that raced the old autoscaler), it patches the StatefulSet to 1 replica so compilation never stays wedged; the next `helm upgrade` restores the configured count.
-
-:::warning
-Avoid `helm upgrade --force` while autoscaling is enabled: it replaces the StatefulSet, which resets `spec.replicas` and restarts compiler pods; the autoscaler restores the correct count within one poll interval, but in-flight compilations restart. Do not `helm rollback` across the enable boundary either: the rollback tries to revert the immutable `podManagementPolicy` field and fails on the StatefulSet, leaving the release half rolled back. To return to a pre-autoscaling revision, follow the Disabling procedure instead.
-:::
 
 ### Autoscaling Troubleshooting
 
 - **`/cluster_healthz` reports `scaled_to_zero`:**
 
-While the compiler workers are parked at zero, the health endpoint reports the compiler section as healthy with a `"scaled_to_zero": true` marker. This is the intended idle state, not a failure.
+While the compiler workers are parked at zero, the health endpoint reports the compiler section as healthy with a `"scaled_to_zero": true` marker.
 
 - **`/cluster_healthz` reports the compiler not ready during scale-up:**
 
@@ -230,7 +246,7 @@ Compiler pods that observe a replica change exit with `SCALING DETECTED` and res
 
 - **`/cluster_healthz` reports the compiler unhealthy with a storage message:**
 
-The compiler health check fails once the binary store filesystem is 95% full, before uploads start failing with `No space left on device`. Grow the artifact server PVC (the storage class must support volume expansion) or delete unused pipelines so the garbage collector reclaims their binaries. Budget roughly 200 to 300 MB per optimized program version when sizing `compilerAutoscaling.artifactServer.pvcSize`.
+The compiler health check fails once the binary store filesystem is 95% full, before uploads start failing with `No space left on device`. Grow the artifact server PVC (the storage class must support volume expansion) or delete unused pipelines so the garbage collector reclaims their binaries. Budget at least 200 to 300 MB per optimized program version when sizing `compilerAutoscaling.artifactServer.pvcSize`.
 
 - **Compilers never scale down:**
 
@@ -256,7 +272,7 @@ Upload failures fall into three classes:
   - Permanent: surface immediately as `SystemError` with the underlying cause and skip the retry budget: an HTTP 4xx rejection (for example a proxy body-size limit), or HTTP 507 when the binary store volume is full (`Insufficient storage on the binary store`).
   - Retry budget exhausted: a retryable failure that outlives the retry budget also ends in `SystemError`.
 
-After fixing the cause (for example growing the artifact store PVC), recompile affected pipelines by editing or re-saving their program. Check `<release>-compiler-server-0` health via the `/cluster_healthz` endpoint; if your upgrades take long, raise the upload retry settings so the upload target has time to come back up before the retry budget runs out.
+After fixing the cause (for example growing the artifact store PVC), recompile affected pipelines by editing or re-saving their program. Check `<release>-compiler-server-0` health via the `/cluster_healthz` endpoint.
 
 - **error: process didn't exit successfully: `sccache .. rustc -vV`:**
 
