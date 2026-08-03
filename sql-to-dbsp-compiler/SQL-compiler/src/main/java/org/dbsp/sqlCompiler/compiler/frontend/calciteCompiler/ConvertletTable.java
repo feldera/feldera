@@ -1205,6 +1205,12 @@ public class ConvertletTable extends ReflectiveConvertletTable {
         final List<RexNode> exprs = convertOperands(cx, call, consistency);
         RelDataType type = rexBuilder.deriveReturnType(op, exprs);
 
+        /*
+        Deliberately removed.
+
+        Calcite expands 'ROW (x0, x1, ...) = ROW (y0, y1, ...)' into
+        'x0 = y0 AND x1 = y1 AND ...'.  Feldera rejects '=' between ROW values
+
         // Expand 'ROW (x0, x1, ...) = ROW (y0, y1, ...)'
         // to 'x0 = y0 AND x1 = y1 AND ...'
         // If there are casts to ROW, apply them fieldwise:
@@ -1266,6 +1272,7 @@ public class ConvertletTable extends ReflectiveConvertletTable {
                 return RexUtil.composeConjunction(rexBuilder, eqList);
             }
         }
+        */
         return rexBuilder.makeCall(call.getParserPosition(), type, op, RexUtil.flatten(exprs, op));
     }
 

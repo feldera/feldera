@@ -2397,33 +2397,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
     @Nullable
     ModifyTableTranslation modifyTableTranslation;
 
-    /**
-     * Visit a LogicalValue: a SQL literal, as produced by a VALUES expression.
-     * This can be invoked by a DDM statement, or by a SQL query that computes a constant result.
-     */
-    void visitLogicalValues(LogicalValues values) {
+    /** Convert the rows of a VALUES into a Z-set; each row is cast to 'resultType'. */
+    DBSPZSetExpression compileValues(LogicalValues values, DBSPTypeTuple resultType) {
         IntermediateRel node = CalciteObject.create(values);
         ExpressionCompiler expressionCompiler = new ExpressionCompiler(values, null, this.compiler);
-        DBSPTypeTuple sourceType = this.convertType(node.getPositionRange(), values.getRowType(), false).to(DBSPTypeTuple.class);
-        DBSPTypeTuple resultType;
-        if (this.modifyTableTranslation != null) {
-            resultType = this.modifyTableTranslation.getResultType();
-            if (sourceType.size() != resultType.size()) {
-                this.compiler.reportError(this.modifyTableTranslation.getPosition(),
-                        "Schema error",
-                        "VALUES has " + sourceType.size() + " columns but " + resultType.size() + " are expected");
-                // Ignore value
-                return;
-            }
-        } else {
-            resultType = sourceType;
-        }
-
         DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(resultType);
         for (List<RexLiteral> t : values.getTuples()) {
             List<DBSPExpression> expressions = new ArrayList<>();
-            if (t.size() != sourceType.size())
-                throw new InternalCompilerError("Expected a tuple with " + sourceType.size() +
+            if (t.size() != resultType.size())
+                throw new InternalCompilerError("Expected a tuple with " + resultType.size() +
                         " values but got " + t, node);
             int i = 0;
             for (RexLiteral rl : t) {
@@ -2447,7 +2429,31 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPTupleExpression expression = new DBSPTupleExpression(node, expressions);
             result.append(expression);
         }
+        return result;
+    }
 
+    /**
+     * Visit a LogicalValue: a SQL literal, as produced by a VALUES expression.
+     * This can be invoked by a DDM statement, or by a SQL query that computes a constant result.
+     */
+    void visitLogicalValues(LogicalValues values) {
+        IntermediateRel node = CalciteObject.create(values);
+        DBSPTypeTuple sourceType = this.convertType(node.getPositionRange(), values.getRowType(), false).to(DBSPTypeTuple.class);
+        DBSPTypeTuple resultType;
+        if (this.modifyTableTranslation != null) {
+            resultType = this.modifyTableTranslation.getResultType();
+            if (sourceType.size() != resultType.size()) {
+                this.compiler.reportError(this.modifyTableTranslation.getPosition(),
+                        "Schema error",
+                        "VALUES has " + sourceType.size() + " columns but " + resultType.size() + " are expected");
+                // Ignore value
+                return;
+            }
+        } else {
+            resultType = sourceType;
+        }
+
+        DBSPZSetExpression result = this.compileValues(values, resultType);
         if (this.modifyTableTranslation != null) {
             this.modifyTableTranslation.setResult(result);
         } else {
@@ -3206,15 +3212,28 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // the case where all project expressions are "constants".
             result = this.compileConstantProject((LogicalProject) modify.rel);
         } else if (modify.rel instanceof LogicalUnion union) {
+            // A VALUES with several rows becomes a union: a row that Calcite can represent
+            // as a literal is a LogicalValues, any other row needs a LogicalProject.
+            // Every input must contribute, otherwise rows are lost silently.
             result = null;
             for (RelNode node: union.getInputs()) {
+                DBSPZSetExpression lit;
                 if (node instanceof LogicalProject project) {
-                    DBSPZSetExpression lit = this.compileConstantProject(project);
-                    if (result == null)
-                        result = lit;
-                    else
-                        result.append(lit);
+                    lit = this.compileConstantProject(project);
+                } else if (node instanceof LogicalValues values) {
+                    DBSPTypeTuple rowType = this.convertType(
+                                    CalciteObject.create(values).getPositionRange(),
+                                    values.getRowType(), false)
+                            .to(DBSPTypeTuple.class);
+                    lit = this.compileValues(values, rowType);
+                } else {
+                    throw new UnimplementedException("statement of this form not supported",
+                            modify.getCalciteObject());
                 }
+                if (result == null)
+                    result = lit;
+                else
+                    result.append(lit);
             }
             Utilities.enforce(result != null);
         } else {
