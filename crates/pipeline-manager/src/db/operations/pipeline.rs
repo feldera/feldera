@@ -1859,6 +1859,7 @@ pub(crate) async fn list_pipelines_across_all_tenants_needing_sql_compilation_cl
     worker_id: usize,
     total_workers: usize,
 ) -> Result<Vec<(TenantId, ExtendedPipelineDescrMonitoring)>, DBError> {
+    // Predicate changes must be mirrored in count_pipelines_needing_compilation.
     let stmt = txn
         .prepare_cached(&format!(
             "SELECT p.tenant_id, {PIPELINE_COLUMNS_MONITORING}
@@ -1908,6 +1909,7 @@ pub(crate) async fn list_pipelines_across_all_tenants_needing_rust_compilation_c
     worker_id: usize,
     total_workers: usize,
 ) -> Result<Vec<(TenantId, ExtendedPipelineDescrMonitoring)>, DBError> {
+    // Predicate changes must be mirrored in count_pipelines_needing_compilation.
     let stmt = txn
         .prepare_cached(&format!(
             "SELECT p.tenant_id, {PIPELINE_COLUMNS_MONITORING}
@@ -1952,6 +1954,7 @@ pub(crate) async fn get_next_sql_compilation(
     worker_id: usize,
     total_workers: usize,
 ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
+    // Predicate changes must be mirrored in count_pipelines_needing_compilation.
     let stmt = txn
         .prepare_cached(&format!(
             "SELECT p.tenant_id, {PIPELINE_COLUMNS_ALL}
@@ -1992,6 +1995,7 @@ pub(crate) async fn get_next_rust_compilation(
     worker_id: usize,
     total_workers: usize,
 ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
+    // Predicate changes must be mirrored in count_pipelines_needing_compilation.
     let stmt = txn
         .prepare_cached(&format!(
             "SELECT p.tenant_id, {PIPELINE_COLUMNS_ALL}

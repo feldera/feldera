@@ -8,6 +8,7 @@ use crate::compiler::rust_compiler::{
 use crate::compiler::sql_compiler::{
     ephemeral_compilation_dir, jar_cache_dir, perform_sql_compilation, sql_compiler_task,
     validate_program, ProgramValidationRequest, SqlCompilationError, SqlCompilationOutput,
+    JAR_CACHE_RETENTION,
 };
 use crate::compiler::util::{
     pipeline_binary_filename, program_info_filename, validate_is_sha256_checksum, DiskSpace,
@@ -526,8 +527,8 @@ async fn save_file(
 ) -> Result<usize, ManagerError> {
     let target_file_name = target_file_path
         .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_default();
+        .expect("target_file_path must name a file")
+        .to_string_lossy();
     let temp_file_path =
         target_file_path.with_file_name(format!("{target_file_name}.tmp-{}", Uuid::now_v7()));
 
@@ -658,8 +659,7 @@ fn is_out_of_storage_error(error: &ManagerError) -> bool {
     else {
         return false;
     };
-    // ENOSPC is errno 28 on Linux and macOS.
-    io_error.raw_os_error() == Some(28)
+    io_error.kind() == std::io::ErrorKind::StorageFull
 }
 
 /// 507 Insufficient Storage response for an upload that failed with ENOSPC.
@@ -691,9 +691,12 @@ async fn remove_temp_upload_file(temp_file_path: &Path) {
 const STORAGE_PRESSURE_THRESHOLD: f64 = 0.95;
 
 /// Message for the deep health check when the working-directory filesystem is
-/// above `threshold`, `None` when it is not.
-fn storage_pressure_message(disk_space: &DiskSpace, threshold: f64) -> Option<String> {
-    if disk_space.used_fraction < threshold {
+/// at or above `used_fraction_threshold`, `None` when it is below.
+fn storage_pressure_message(
+    disk_space: &DiskSpace,
+    used_fraction_threshold: f64,
+) -> Option<String> {
+    if disk_space.used_fraction < used_fraction_threshold {
         return None;
     }
     Some(format!(
@@ -705,8 +708,15 @@ fn storage_pressure_message(disk_space: &DiskSpace, threshold: f64) -> Option<St
     ))
 }
 
+/// Query parameters of the `/healthz` endpoint.
+#[derive(serde::Deserialize)]
+struct HealthzQuery {
+    #[serde(default)]
+    deep: bool,
+}
+
 /// Health check which returns success if it is able to reach the database.
-/// With a `deep` query parameter it additionally fails on storage pressure of
+/// With `?deep=true` it additionally fails on storage pressure of
 /// the working-directory filesystem. Kubernetes probes use the shallow
 /// variant: a full disk must not restart the pod, which still serves already
 /// compiled binaries; the cluster monitor uses the deep variant so
@@ -715,9 +725,9 @@ fn storage_pressure_message(disk_space: &DiskSpace, threshold: f64) -> Option<St
 async fn healthz(
     probe: web::Data<Arc<Mutex<DbProbe>>>,
     config: web::Data<CompilerConfig>,
-    req: HttpRequest,
+    query: web::Query<HealthzQuery>,
 ) -> Result<impl Responder, ManagerError> {
-    if req.query_string().contains("deep") {
+    if query.deep {
         if let Some(disk_space) = DiskSpace::new_from_path(&config.working_dir()) {
             if let Some(message) = storage_pressure_message(&disk_space, STORAGE_PRESSURE_THRESHOLD)
             {
@@ -1012,9 +1022,6 @@ async fn spawn_compiler_http_server(
 /// validation; live validations finish within seconds.
 const ORPHANED_EPHEMERAL_DIR_MAX_AGE: Duration = Duration::from_secs(3600);
 
-/// Age above which the janitor removes a cached SQL compiler jar.
-const STALE_JAR_MAX_AGE: Duration = Duration::from_secs(30 * 24 * 3600);
-
 /// Janitor of the artifact server: garbage-collects pipeline binaries of
 /// deleted or recompiled pipelines, ephemeral validation directories orphaned
 /// by crashed validations, and stale SQL compiler jars. Errors within a pass
@@ -1033,9 +1040,11 @@ async fn artifact_server_janitor_task(config: CompilerConfig, db: Arc<Mutex<Stor
         {
             error!("Artifact server janitor: ephemeral validation directory cleanup failed: {e}");
         }
+        // The janitor sweeps by mtime because atime is unreliable on PVC
+        // mounts; same retention the worker-side cleanup applies by atime.
         if let Err(e) = remove_stale_entries(
             &jar_cache_dir(&config),
-            STALE_JAR_MAX_AGE,
+            JAR_CACHE_RETENTION,
             StaleEntryKind::Files,
         )
         .await
@@ -1364,6 +1373,11 @@ mod test {
             std::io::Error::from_raw_os_error(28),
         ));
         assert!(super::is_out_of_storage_error(&enospc));
+        let storage_full = ManagerError::from(crate::common_error::CommonError::io_error(
+            "writing".to_string(),
+            std::io::Error::new(std::io::ErrorKind::StorageFull, "full"),
+        ));
+        assert!(super::is_out_of_storage_error(&storage_full));
         let other_io = ManagerError::from(crate::common_error::CommonError::io_error(
             "writing".to_string(),
             std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),

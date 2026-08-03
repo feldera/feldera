@@ -656,17 +656,9 @@ pub(crate) trait Storage {
 
     /// Counts pipelines with outstanding compilation work: stopped pipelines
     /// whose program status is `Pending`, `CompilingSql`, `SqlCompiled`, or
-    /// `CompilingRust`.
-    ///
-    /// Invariant: the predicate is exactly the union of the predicates of the
-    /// four worker queries
-    /// (`list_pipelines_across_all_tenants_needing_sql_compilation_clear`,
-    /// `list_pipelines_across_all_tenants_needing_rust_compilation_clear`,
-    /// `get_next_sql_compilation` and `get_next_rust_compilation`) across all
-    /// shards and platform versions, so the count is greater than zero if and
-    /// only if some compiler worker would act. If you change one of those four
-    /// queries you must keep this count in sync. It drives compiler
-    /// autoscaling in the enterprise runner.
+    /// `CompilingRust`. The predicate must stay the union of the four worker
+    /// queries; the full invariant is documented at
+    /// `operations::pipeline::count_pipelines_needing_compilation`.
     async fn count_pipelines_needing_compilation(&self) -> Result<u64, DBError>;
 
     /// Retrieves the list of fully compiled pipeline programs (pipeline identifier, program version,

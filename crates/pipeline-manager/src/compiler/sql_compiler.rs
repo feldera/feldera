@@ -334,6 +334,9 @@ impl From<UtilError> for SqlCompilationError {
     }
 }
 
+/// How long a cached SQL compiler jar is retained after its last use.
+pub(crate) const JAR_CACHE_RETENTION: Duration = Duration::from_secs(7 * 24 * 3600);
+
 /// Directory in which downloaded SQL compiler jars for non-platform runtime
 /// versions are cached.
 pub(crate) fn jar_cache_dir(config: &CompilerConfig) -> PathBuf {
@@ -1040,16 +1043,15 @@ pub(crate) async fn cleanup_sql_compilation(
             "SQL JAR cache",
             &jar_cache_dir,
             Arc::new(move |_jar_name: &str, metadata: Option<Metadata>| {
-                // Get rid of JAR files that have not been accessed within the last week
-                const MAX_AGE: Duration = Duration::from_secs(7*24*60*60);
+                // Get rid of JAR files that have not been accessed within the retention window
                 if let Some(metadata) = metadata {
                     match metadata.accessed() {
                         Ok(atime) => {
                             if let Ok(elapsed) = atime.elapsed() {
-                                if elapsed < MAX_AGE {
-                                    trace!("Keeping {_jar_name} because it was accessed within the last 7 days ({elapsed:?} ago)");
+                                if elapsed < JAR_CACHE_RETENTION {
+                                    trace!("Keeping {_jar_name} because it was accessed within the retention window ({elapsed:?} ago)");
                                     CleanupDecision::Keep {
-                                        motivation: "Accessed within the last week".to_string(),
+                                        motivation: "Accessed within the retention window".to_string(),
                                     }
                                 } else {
                                     CleanupDecision::Remove
