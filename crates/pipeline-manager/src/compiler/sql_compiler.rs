@@ -337,6 +337,35 @@ impl From<UtilError> for SqlCompilationError {
 /// How long a cached SQL compiler jar is retained after its last use.
 pub(crate) const JAR_CACHE_RETENTION: Duration = Duration::from_secs(7 * 24 * 3600);
 
+/// Removes a cached SQL compiler jar that was not accessed within
+/// [`JAR_CACHE_RETENTION`]; jars still read by compilations or validations
+/// stay cached. Missing metadata or access times never remove.
+pub(crate) fn decide_stale_jar(jar_name: &str, metadata: Option<Metadata>) -> CleanupDecision {
+    let Some(metadata) = metadata else {
+        debug!("Failed to get metadata for JAR file");
+        return CleanupDecision::Ignore;
+    };
+    let atime = match metadata.accessed() {
+        Ok(atime) => atime,
+        Err(e) => {
+            debug!("Failed to get access time for JAR file: {:?}", e);
+            return CleanupDecision::Ignore;
+        }
+    };
+    let Ok(elapsed) = atime.elapsed() else {
+        warn!("Unable to determine access time for JAR file, your system clock may be set incorrectly.");
+        return CleanupDecision::Ignore;
+    };
+    if elapsed < JAR_CACHE_RETENTION {
+        trace!("Keeping {jar_name} because it was accessed within the retention window ({elapsed:?} ago)");
+        CleanupDecision::Keep {
+            motivation: "Accessed within the retention window".to_string(),
+        }
+    } else {
+        CleanupDecision::Remove
+    }
+}
+
 /// Directory in which downloaded SQL compiler jars for non-platform runtime
 /// versions are cached.
 pub(crate) fn jar_cache_dir(config: &CompilerConfig) -> PathBuf {
@@ -1008,7 +1037,7 @@ pub(crate) async fn cleanup_sql_compilation(
         cleanup_specific_directories(
             "SQL compilation directories",
             &sql_pipelines_dir,
-            Arc::new(move |dirname: &str| {
+            Arc::new(move |dirname: &str, _metadata: Option<Metadata>| {
                 let spl: Vec<&str> = dirname.splitn(2, '-').collect();
                 if spl.len() == 2 && spl[0] == "pipeline" {
                     if let Ok(uuid) = Uuid::parse_str(spl[1]) {
@@ -1032,6 +1061,7 @@ pub(crate) async fn cleanup_sql_compilation(
                 }
             }),
             true,
+            false,
         )
         .await?;
     }
@@ -1042,35 +1072,7 @@ pub(crate) async fn cleanup_sql_compilation(
         cleanup_specific_files(
             "SQL JAR cache",
             &jar_cache_dir,
-            Arc::new(move |_jar_name: &str, metadata: Option<Metadata>| {
-                // Get rid of JAR files that have not been accessed within the retention window
-                if let Some(metadata) = metadata {
-                    match metadata.accessed() {
-                        Ok(atime) => {
-                            if let Ok(elapsed) = atime.elapsed() {
-                                if elapsed < JAR_CACHE_RETENTION {
-                                    trace!("Keeping {_jar_name} because it was accessed within the retention window ({elapsed:?} ago)");
-                                    CleanupDecision::Keep {
-                                        motivation: "Accessed within the retention window".to_string(),
-                                    }
-                                } else {
-                                    CleanupDecision::Remove
-                                }
-                            } else {
-                                warn!("Unable to determine access time for JAR file, your system clock may be set incorrectly.");
-                                CleanupDecision::Ignore
-                            }
-                        }
-                        Err(e) => {
-                            debug!("Failed to get access time for JAR file: {:?}", e);
-                            CleanupDecision::Ignore
-                        }
-                    }
-                } else {
-                    debug!("Failed to get metadata for JAR file");
-                    CleanupDecision::Ignore
-                }
-            }),
+            Arc::new(decide_stale_jar),
             true,
             true,
         )
@@ -1083,6 +1085,39 @@ pub(crate) async fn cleanup_sql_compilation(
 #[cfg(test)]
 mod test {
     use crate::auth::TenantRecord;
+
+    /// A jar unaccessed past the retention window is removed, a recently
+    /// accessed one is kept, and missing metadata never removes.
+    #[test]
+    fn stale_jar_decision() {
+        use crate::compiler::sql_compiler::{decide_stale_jar, JAR_CACHE_RETENTION};
+        use crate::compiler::util::CleanupDecision;
+        let tempdir = tempfile::tempdir().unwrap();
+        let jar_path = tempdir.path().join("a.jar");
+        std::fs::write(&jar_path, b"jar").unwrap();
+        let recent = std::fs::metadata(&jar_path).unwrap();
+        assert!(matches!(
+            decide_stale_jar("a.jar", Some(recent)),
+            CleanupDecision::Keep { .. }
+        ));
+        let old_time = std::time::SystemTime::now() - JAR_CACHE_RETENTION - JAR_CACHE_RETENTION;
+        let times = std::fs::FileTimes::new()
+            .set_accessed(old_time)
+            .set_modified(old_time);
+        std::fs::File::options()
+            .write(true)
+            .open(&jar_path)
+            .unwrap()
+            .set_times(times)
+            .unwrap();
+        let old = std::fs::metadata(&jar_path).unwrap();
+        assert_eq!(
+            decide_stale_jar("a.jar", Some(old)),
+            CleanupDecision::Remove
+        );
+        assert_eq!(decide_stale_jar("a.jar", None), CleanupDecision::Ignore);
+    }
+
     use crate::compiler::test::{list_content_as_sorted_names, CompilerTest};
     use crate::compiler::util::{create_new_file, recreate_dir};
     use crate::db::types::program::ProgramStatus;

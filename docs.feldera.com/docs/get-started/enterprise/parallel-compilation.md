@@ -137,8 +137,8 @@ parallelCompilation:
 
 Compiler autoscaling scales the compiler server StatefulSet between 0 and N replicas so that idle deployments stop paying for compiler nodes. The kubernetes-runner drives the scaling:
 
-- Every `pollIntervalSeconds` the runner counts pipelines that need compilation. A pipeline counts when its deployment resources are stopped and its program status is `Pending`, `CompilingSql`, `SqlCompiled`, or `CompilingRust`.
-- When the count is greater than zero, the runner scales the StatefulSet to N. N is `parallelCompilation.replicas` when parallel compilation is enabled, otherwise 1.
+- Every `pollIntervalSeconds` the runner checks whether there are outstanding compilation requests.
+- When there are, the runner scales the StatefulSet to N. N is `parallelCompilation.replicas` when parallel compilation is enabled, otherwise 1.
 - After `idleTimeoutSeconds` without pending compilation work, the runner scales the StatefulSet to zero.
 
 A small always-on artifact server Deployment (`<release>-compiler-artifact-server`) owns the binary store and serves compiled pipeline binaries and SQL program validation. The `<release>-compiler-server-0` service routes to it, so the api-server, the runner, and pipeline pods keep working while the compiler workers are scaled to zero. All compiler workers, including worker 0, upload their binaries to the artifact server.

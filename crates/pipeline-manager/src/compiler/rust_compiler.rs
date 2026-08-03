@@ -2162,8 +2162,11 @@ async fn cleanup_rust_compilation(
             &mut cleanup_specific_directories(
                 "Rust compilation crates",
                 &crates_dir,
-                Arc::new(move |name: &str| decide_cleanup(name, None, &deletion_clone)),
+                Arc::new(move |name: &str, _metadata: Option<std::fs::Metadata>| {
+                    decide_cleanup(name, None, &deletion_clone)
+                }),
                 true,
+                false,
             )
             .await?,
         );
@@ -2308,9 +2311,10 @@ async fn cleanup_rust_compilation(
                     &mut cleanup_specific_directories(
                         &format!("Rust compilation target/{target_profile_folder}/.fingerprint"),
                         &fingerprint_dir,
-                        Arc::new(move |name: &str| {
+                        Arc::new(move |name: &str, _metadata: Option<std::fs::Metadata>| {
                             decide_cleanup(name, Some((true, '-')), &deletion_clone)
                         }),
+                        false,
                         false,
                     )
                     .await?,
@@ -2325,9 +2329,10 @@ async fn cleanup_rust_compilation(
                     &mut cleanup_specific_directories(
                         &format!("Rust compilation target/{target_profile_folder}/incremental"),
                         &incremental_dir,
-                        Arc::new(move |name: &str| {
+                        Arc::new(move |name: &str, _metadata: Option<std::fs::Metadata>| {
                             decide_cleanup(name, Some((true, '-')), &deletion_clone)
                         }),
+                        false,
                         false,
                     )
                     .await?,
