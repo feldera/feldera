@@ -34,6 +34,20 @@ public class StructTests extends SqlIoTest {
     }
 
     @Test
+    public void insertNullStructAmongConstructedRows() {
+        var ccs = this.getCCS("""
+                CREATE TYPE point AS (x INT, y INT);
+                CREATE TABLE T(p point);
+                CREATE VIEW V AS SELECT p.x AS x FROM T;""");
+        ccs.step("INSERT INTO T VALUES(point(1, 2)), (NULL), (point(3, 4))", """
+                 x | weight
+                ------------
+                 1 | 1
+                 3 | 1
+                   | 1""");
+    }
+
+    @Test
     public void rowTest() {
         String sql = """
                 CREATE TABLE t(

@@ -14,11 +14,28 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
-        - The SQL compiler was incorrectly garbage-collecting input
-          tables with a primary key and a column with LATENESS (#6690).  Such
-          tables can only be GC-ed if the column with LATENESS is part of
-          the primary key.  As a result some programs that used to run
-          with finite state will now have unbounded state.
+        - Breaking change (SQL): `=`, `<>` and `!=` are no longer allowed between
+          `ROW` values, so some programs that used to compile are now rejected.
+          The previous implementation of these operations did not follow the
+          standard SQL semantics, which requires that `ROW(NULL) = ROW(NULL)` evaluates
+          to `NULL` (in our implementation it would evaluate to `TRUE`).
+
+          Instead of these operators, use `IS NOT DISTINCT FROM` (or its
+          shorthand `<=>`) and `IS DISTINCT FROM` instead.  A user-defined type declared with
+          `CREATE TYPE ... AS (...)` is a `ROW` type, so the restriction covers its
+          values too.
+
+          The restriction also covers the forms that ask for `ROW` equality without
+          writing `=`: a join condition, `NATURAL JOIN`, `USING`, `IN`,
+          `CASE value WHEN`, `NULLIF`, and a comparison between two row constructors
+          such as `(a, b) = (c, d)`.  See
+          [comparing `ROW` values](https://docs.feldera.com/sql/comparisons#comparing-row-values)
+          for the accepted rewrite of each form.
+
+        - Joining on `ROW` values is now supported, using
+          `ON left.r IS NOT DISTINCT FROM right.r` (#3398).
+
+        ## v0.327.0
 
         - Role-based access control (RBAC). Access is now governed by per-user,
           per-tenant roles (`read` < `write` < `admin` < `owner`) rather than every
@@ -67,6 +84,14 @@ import TabItem from '@theme/TabItem';
           creates a `read`-only key; pass `{"role": "write"}` to keep the previous
           behavior. `fda apikey create` defaults to `--role read` for the same reason;
           pass `--role write` where a key needs to make changes.
+
+        ## v0.325.0
+
+        - The SQL compiler was incorrectly garbage-collecting input
+          tables with a primary key and a column with LATENESS (#6690).  Such
+          tables can only be GC-ed if the column with LATENESS is part of
+          the primary key.  As a result some programs that used to run
+          with finite state will now have unbounded state.
 
         ## v0.322.0
 

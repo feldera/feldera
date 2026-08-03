@@ -1217,7 +1217,8 @@ public class Regression1Tests extends SqlIoTest {
 
     @Test
     public void issue4890() {
-        this.getCC("""
+        // IN expands into an equality test, which is not supported for ROW values
+        this.statementsFailingInCompilation("""
                 CREATE TABLE tbl(
                 roww ROW(i1 INT, v1 VARCHAR NULL));
 
@@ -1227,12 +1228,12 @@ public class Regression1Tests extends SqlIoTest {
 
                 CREATE MATERIALIZED VIEW v2 AS SELECT
                 roww IN (ROW(4,'cat')) AS roww
-                FROM tbl;""");
+                FROM tbl;""", "ROW values cannot be compared using '='");
     }
 
     @Test
     public void issue4891() {
-        this.getCC("""
+        this.statementsFailingInCompilation("""
                 CREATE TABLE tbl(
                 roww ROW(i1 INT, v1 VARCHAR NULL));
 
@@ -1242,7 +1243,7 @@ public class Regression1Tests extends SqlIoTest {
 
                 CREATE MATERIALIZED VIEW v2 AS SELECT
                 roww NOT IN (roww) AS roww
-                FROM tbl;""");
+                FROM tbl;""", "ROW values cannot be compared using '='");
     }
 
     @Test

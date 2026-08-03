@@ -42,6 +42,12 @@ Comparison operations (`=`, `<>`, `!=`, `>`, `<`, `>=`, `<=`) can be applied to 
    - `MAP['f', 1, 'v', 0]` and `MAP['f', 1]`
    - The map with more elements, `MAP['f', 1, 'v', 0]`, is considered larger.
 
+On maps, `=` is equivalent to `IS NOT DISTINCT FROM` and `<>` is
+equivalent to `IS DISTINCT FROM`: two `NULL` values compare as equal,
+so `MAP['x', NULL] = MAP['x', NULL]` is `true`.  A `NULL` value is
+smaller than any other value.  See [comparing complex
+values](comparisons.md#comparing-complex-values).
+
 
 ## Predefined functions on map values
 
