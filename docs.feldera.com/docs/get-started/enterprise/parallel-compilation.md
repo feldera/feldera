@@ -179,32 +179,34 @@ Starting or restarting a pipeline whose binary is already compiled does not wake
 
 ### Enabling on an Existing Installation
 
-Enabling changes the StatefulSet `podManagementPolicy` (an immutable field) and moves the binary store to the artifact server PVC, so it is a short maintenance event rather than a pure values change:
+Toggling the feature changes the StatefulSet `podManagementPolicy`, an immutable field. A pre-upgrade hook (`compilerAutoscaling.kubectlImage`) handles that automatically: on the one upgrade that flips the policy it deletes the compiler StatefulSet, and the same upgrade recreates it with the new policy while the retained per-replica volumes re-attach. The hook renders only on such transition upgrades; steady-state upgrades and installations that never toggle the feature run no hook at all. The hook image must be reachable from your cluster (mirror it for air-gapped installations).
 
 1. Upgrade to images that support autoscaling, with `compilerAutoscaling.enabled` still `false`. Older images do not understand the new flags and would crash loop.
-2. Run the enabling upgrade with `compilerAutoscaling.enabled=true` and `compilerAutoscaling.artifactServer.seedFromCompilerServer0=true`. While the seed setting is true the chart omits the compiler StatefulSet, so this upgrade deletes the existing one and frees its ReadWriteOnce `compiler-storage-<release>-compiler-server-0` volume; the artifact server then copies the compiled binaries from that volume into the artifact store, so existing pipelines keep their binaries. No compilation runs during this window.
+2. Run the enabling upgrade with `compilerAutoscaling.enabled=true` and `compilerAutoscaling.artifactServer.seedFromCompilerServer0=true`. While the seed setting is true the chart omits the compiler StatefulSet and frees its ReadWriteOnce `compiler-storage-<release>-compiler-server-0` volume; the artifact server then copies the compiled binaries from that volume into the artifact store, so existing pipelines keep their binaries. No compilation runs during this window.
 3. Wait until the artifact server pod is `Running` (the copy happens in its init container).
-4. Run a follow-up upgrade with `seedFromCompilerServer0` back to `false`. This recreates the compiler StatefulSet (fresh, with the required `podManagementPolicy`) and detaches the old volume from the artifact server.
+4. Run a follow-up upgrade with `seedFromCompilerServer0` back to `false`. This recreates the compiler StatefulSet and detaches the old volume from the artifact server.
 
-Fresh installations skip this procedure: set `compilerAutoscaling.enabled=true` at install time.
+To enable without preserving existing binaries, skip the seeding: a single upgrade with `compilerAutoscaling.enabled=true` suffices. The artifact store then starts empty: stopped pipelines recompile on their next start, but a running pipeline whose pod restarts cannot fetch its binary until its program is recompiled (stop and start it once). Stop running pipelines first if that is not acceptable.
+
+Fresh installations need no procedure: set `compilerAutoscaling.enabled=true` at install time.
 
 ### Disabling
 
-1. Delete the compiler StatefulSet (disabling reverts `podManagementPolicy`, which is immutable):
+Without preserving binaries compiled while autoscaling was enabled, disabling is a single upgrade; stopped pipelines recompile on their next start:
 
-   ```bash
-   kubectl delete statefulset <release>-compiler-server -n <namespace>
-   ```
+1. Run `helm upgrade` with `compilerAutoscaling.enabled=false`. The pre-upgrade hook recreates the StatefulSet and helm restores the configured replica count. The artifact store PVC carries `helm.sh/resource-policy: keep`, so it survives disabling and is re-adopted if you re-enable later.
+2. Verify with `kubectl get statefulset <release>-compiler-server -n <namespace>` that the replica count matches your configuration.
 
-2. Scale the artifact server down so its ReadWriteOnce volume is free:
+To preserve the binaries (required if pipelines are running and must survive pod restarts without a recompile), copy them back before the upgrade:
+
+1. Wait until the compiler workers are parked at zero replicas (or scale the StatefulSet to zero), then scale the artifact server down so both ReadWriteOnce volumes are free:
 
    ```bash
    kubectl scale deployment <release>-compiler-artifact-server -n <namespace> --replicas=0
    ```
 
-3. Copy binaries compiled while autoscaling was enabled back to the compiler-server-0 volume: run a one-shot pod that mounts both the `<release>-compiler-artifact-server` and the `compiler-storage-<release>-compiler-server-0` PVCs and copies `rust-compilation/pipeline-binaries` across (the mirror image of the seed init container). Without this step, a running pipeline whose pod restarts after disabling cannot fetch its binary until the program is recompiled.
-4. Run `helm upgrade` with `compilerAutoscaling.enabled=false`. Helm recreates the StatefulSet and restores the configured replica count. The artifact store PVC carries `helm.sh/resource-policy: keep`, so it survives disabling and is re-adopted if you re-enable later.
-5. Verify with `kubectl get statefulset <release>-compiler-server -n <namespace>` that the replica count matches your configuration.
+2. Run a one-shot pod that mounts both the `<release>-compiler-artifact-server` and the `compiler-storage-<release>-compiler-server-0` PVCs and copies `rust-compilation/pipeline-binaries` across (the mirror image of the seed init container).
+3. Run `helm upgrade` with `compilerAutoscaling.enabled=false` and verify the replica count as above.
 
 If the runner starts with autoscaling disabled and finds the compiler StatefulSet scaled to zero (for example after a disable that raced the old autoscaler), it patches the StatefulSet to 1 replica so compilation never stays wedged; the next `helm upgrade` restores the configured count.
 
