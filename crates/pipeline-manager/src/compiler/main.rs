@@ -6,12 +6,13 @@ use crate::compiler::rust_compiler::{
     RustCompilationResult, CLEANUP_INTERVAL,
 };
 use crate::compiler::sql_compiler::{
-    ephemeral_compilation_dir, jar_cache_dir, perform_sql_compilation, sql_compiler_task,
-    validate_program, ProgramValidationRequest, SqlCompilationError, SqlCompilationOutput,
-    JAR_CACHE_RETENTION,
+    decide_stale_jar, ephemeral_compilation_dir, jar_cache_dir, perform_sql_compilation,
+    sql_compiler_task, validate_program, ProgramValidationRequest, SqlCompilationError,
+    SqlCompilationOutput,
 };
 use crate::compiler::util::{
-    pipeline_binary_filename, program_info_filename, validate_is_sha256_checksum, DiskSpace,
+    cleanup_specific_directories, cleanup_specific_files, pipeline_binary_filename,
+    program_info_filename, validate_is_sha256_checksum, CleanupDecision, DiskSpace,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::probe::DbProbe;
@@ -1022,6 +1023,28 @@ async fn spawn_compiler_http_server(
 /// validation; live validations finish within seconds.
 const ORPHANED_EPHEMERAL_DIR_MAX_AGE: Duration = Duration::from_secs(3600);
 
+/// Removes an ephemeral validation directory whose modification time exceeds
+/// [`ORPHANED_EPHEMERAL_DIR_MAX_AGE`]. Missing or future modification times
+/// never remove.
+fn decide_orphaned_ephemeral_dir(
+    _dir_name: &str,
+    metadata: Option<std::fs::Metadata>,
+) -> CleanupDecision {
+    let Some(modified_time) = metadata.and_then(|metadata| metadata.modified().ok()) else {
+        return CleanupDecision::Ignore;
+    };
+    if modified_time
+        .elapsed()
+        .is_ok_and(|age| age >= ORPHANED_EPHEMERAL_DIR_MAX_AGE)
+    {
+        CleanupDecision::Remove
+    } else {
+        CleanupDecision::Keep {
+            motivation: "Validation may still be in progress".to_string(),
+        }
+    }
+}
+
 /// Janitor of the artifact server: garbage-collects pipeline binaries of
 /// deleted or recompiled pipelines, ephemeral validation directories orphaned
 /// by crashed validations, and stale SQL compiler jars. Errors within a pass
@@ -1031,101 +1054,49 @@ async fn artifact_server_janitor_task(config: CompilerConfig, db: Arc<Mutex<Stor
         if let Err(e) = cleanup_pipeline_binaries(&config, db.clone()).await {
             error!("Artifact server janitor: pipeline binaries cleanup failed: {e}");
         }
-        if let Err(e) = remove_stale_entries(
-            &ephemeral_compilation_dir(&config),
-            ORPHANED_EPHEMERAL_DIR_MAX_AGE,
-            StaleEntryKind::Directories,
-        )
-        .await
-        {
-            error!("Artifact server janitor: ephemeral validation directory cleanup failed: {e}");
+        let ephemeral_dir = ephemeral_compilation_dir(&config);
+        if ephemeral_dir.is_dir() {
+            if let Err(e) = cleanup_specific_directories(
+                "Ephemeral validation directories",
+                &ephemeral_dir,
+                Arc::new(decide_orphaned_ephemeral_dir),
+                false,
+                true,
+            )
+            .await
+            {
+                error!(
+                    "Artifact server janitor: ephemeral validation directory cleanup failed: {e}"
+                );
+            }
         }
-        // The janitor sweeps by mtime because atime is unreliable on PVC
-        // mounts; same retention the worker-side cleanup applies by atime.
-        if let Err(e) = remove_stale_entries(
-            &jar_cache_dir(&config),
-            JAR_CACHE_RETENTION,
-            StaleEntryKind::Files,
-        )
-        .await
-        {
-            error!("Artifact server janitor: SQL compiler jar cache cleanup failed: {e}");
+        let jar_cache_dir = jar_cache_dir(&config);
+        if jar_cache_dir.is_dir() {
+            if let Err(e) = cleanup_specific_files(
+                "SQL JAR cache",
+                &jar_cache_dir,
+                Arc::new(decide_stale_jar),
+                true,
+                true,
+            )
+            .await
+            {
+                error!("Artifact server janitor: SQL compiler jar cache cleanup failed: {e}");
+            }
         }
         sleep(CLEANUP_INTERVAL).await;
     }
-}
-
-/// Which kind of directory entry [`remove_stale_entries`] removes.
-#[derive(Clone, Copy)]
-enum StaleEntryKind {
-    Directories,
-    Files,
-}
-
-/// Removes the entries of `dir` of the given kind whose modification time is
-/// older than `max_age`. A failure to remove one entry is logged and does not
-/// stop the sweep.
-async fn remove_stale_entries(
-    dir: &Path,
-    max_age: Duration,
-    kind: StaleEntryKind,
-) -> Result<(), std::io::Error> {
-    if !dir.is_dir() {
-        return Ok(());
-    }
-    let mut entries = fs::read_dir(dir).await?;
-    while let Some(entry) = entries.next_entry().await? {
-        // Entries can vanish mid-sweep when racing a finishing validation;
-        // one unstat-able entry must not abort the whole sweep.
-        let metadata = match entry.metadata().await {
-            Ok(metadata) => metadata,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => {
-                warn!(
-                    "Unable to stat entry '{}' during stale entry sweep: {e}",
-                    entry.path().display()
-                );
-                continue;
-            }
-        };
-        let matches_kind = match kind {
-            StaleEntryKind::Directories => metadata.is_dir(),
-            StaleEntryKind::Files => metadata.is_file(),
-        };
-        if !matches_kind {
-            continue;
-        }
-        // A modification time that is unavailable or in the future never
-        // counts as stale.
-        let Ok(modified_time) = metadata.modified() else {
-            continue;
-        };
-        if !modified_time.elapsed().is_ok_and(|age| age >= max_age) {
-            continue;
-        }
-        let removal_result = match kind {
-            StaleEntryKind::Directories => fs::remove_dir_all(entry.path()).await,
-            StaleEntryKind::Files => fs::remove_file(entry.path()).await,
-        };
-        match removal_result {
-            Ok(()) => info!("Removed stale entry '{}'", entry.path().display()),
-            Err(e) => warn!(
-                "Unable to remove stale entry '{}': {e}",
-                entry.path().display()
-            ),
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
 mod test {
     use crate::api::error::ApiError;
     use crate::compiler::main::{
-        create_working_directory_if_not_exists, decode_url_encoded_parameter, remove_stale_entries,
-        save_file, upload_binary, StaleEntryKind,
+        create_working_directory_if_not_exists, decide_orphaned_ephemeral_dir,
+        decode_url_encoded_parameter, save_file, upload_binary,
     };
     use crate::compiler::util::pipeline_binary_filename;
+    use crate::compiler::util::CleanupDecision;
     use crate::config::CompilerConfig;
     use crate::db::types::pipeline::PipelineId;
     use crate::db::types::program::CompilationProfile;
@@ -1402,40 +1373,34 @@ mod test {
         assert!(message.contains("100.0% full"));
     }
 
-    /// Stale-entry removal deletes only entries older than the maximum age and
-    /// only entries of the requested kind.
-    #[tokio::test]
-    async fn test_stale_entry_removal() {
+    /// An old ephemeral validation directory is removed, a fresh one is kept,
+    /// and missing metadata never removes.
+    #[test]
+    fn orphaned_ephemeral_dir_decision() {
         let tempdir = tempfile::tempdir().unwrap();
-        let dir = tempdir.path();
-        let subdir = dir.join("subdir");
-        fs::create_dir(&subdir).await.unwrap();
-        let file = dir.join("file.jar");
-        fs::write(&file, b"jar").await.unwrap();
-
-        // Entries younger than the maximum age are kept
-        let long_max_age = Duration::from_secs(3600);
-        remove_stale_entries(dir, long_max_age, StaleEntryKind::Directories)
-            .await
+        let dir_path = tempdir.path();
+        let recent = std::fs::metadata(dir_path).unwrap();
+        assert!(matches!(
+            decide_orphaned_ephemeral_dir("d", Some(recent)),
+            CleanupDecision::Keep { .. }
+        ));
+        let old_time = std::time::SystemTime::now() - Duration::from_secs(2 * 3600);
+        let times = std::fs::FileTimes::new()
+            .set_accessed(old_time)
+            .set_modified(old_time);
+        std::fs::File::open(dir_path)
+            .unwrap()
+            .set_times(times)
             .unwrap();
-        remove_stale_entries(dir, long_max_age, StaleEntryKind::Files)
-            .await
-            .unwrap();
-        assert!(subdir.is_dir());
-        assert!(file.is_file());
-
-        // Older entries are removed, but only those of the requested kind
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let short_max_age = Duration::from_millis(50);
-        remove_stale_entries(dir, short_max_age, StaleEntryKind::Directories)
-            .await
-            .unwrap();
-        assert!(!subdir.exists());
-        assert!(file.is_file());
-        remove_stale_entries(dir, short_max_age, StaleEntryKind::Files)
-            .await
-            .unwrap();
-        assert!(!file.exists());
+        let old = std::fs::metadata(dir_path).unwrap();
+        assert_eq!(
+            decide_orphaned_ephemeral_dir("d", Some(old)),
+            CleanupDecision::Remove
+        );
+        assert_eq!(
+            decide_orphaned_ephemeral_dir("d", None),
+            CleanupDecision::Ignore
+        );
     }
 
     #[tokio::test]

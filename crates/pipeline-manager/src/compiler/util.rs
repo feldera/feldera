@@ -530,14 +530,20 @@ pub async fn cleanup_specific_files(
 pub async fn cleanup_specific_directories(
     cleanup_name: &str,
     dir: &Path,
-    decide: Arc<dyn Fn(&str) -> CleanupDecision + Send + Sync>,
+    decide: DecisionFn,
     warn_ignore: bool,
+    add_metadata: bool,
 ) -> Result<Vec<String>, UtilError> {
     let content = DirectoryContent::new(dir).await?.content;
     let mut keep_motivations = vec![];
     for (path, name, is_file) in content {
         if !is_file {
-            match decide(&name) {
+            let metadata = if add_metadata {
+                fs::metadata(&path).await.ok()
+            } else {
+                None
+            };
+            match decide(&name, metadata) {
                 CleanupDecision::Keep { motivation } => {
                     // If it should be kept, nothing needs to happen to the directory
                     keep_motivations.push(motivation);
@@ -1135,7 +1141,7 @@ mod test {
         cleanup_specific_directories(
             "",
             &dir_path,
-            Arc::new(|name: &str| {
+            Arc::new(|name: &str, _metadata: Option<std::fs::Metadata>| {
                 if name.starts_with("dir-") {
                     CleanupDecision::Remove
                 } else {
@@ -1145,6 +1151,7 @@ mod test {
                 }
             }),
             true,
+            false,
         )
         .await
         .unwrap();
