@@ -55,7 +55,7 @@ use tokio::{
     },
     sync::{Notify, OnceCell, futures::OwnedNotified},
     task::JoinHandle,
-    time::sleep,
+    time::{sleep, timeout},
 };
 use tokio_util::sync::{CancellationToken, DropGuard};
 use tracing::{error, info, warn};
@@ -144,7 +144,38 @@ impl ExchangeHeader {
             }
         }
     }
+
+    /// Constructs a ping frame: an [ExchangeHeader] with [PING_SEQUENCE] as its
+    /// sequence number and `n` zero-length payloads, matching the shape
+    /// `read_message` expects for a real message on this connection.  The
+    /// receiver recognizes and skips it (see `ExchangeServer::serve`); the
+    /// caller doesn't wait for or need a reply, since the write attempt itself
+    /// is the point.
+    fn new_ping(
+        exchange_id: ExchangeId,
+        sender: u32,
+        message_type: MessageType,
+        count: usize,
+    ) -> Self {
+        Self {
+            exchange_id,
+            sequence: PING_SEQUENCE,
+            sender,
+            message_type,
+            payload_lens: vec![0; count],
+        }
+    }
 }
+
+/// Sequence number that marks an [ExchangeHeader] as a liveness probe rather
+/// than a real message, with all of its payload lengths zero.  No real
+/// message ever uses this sequence number, since real sequence numbers start
+/// at 0 and increase by one at a time.
+///
+/// A probe lets a sender that is waiting for an acknowledgement cheaply check
+/// whether the connection has gone half-open, without paying to retransmit a
+/// possibly large backlog on the chance that the receiver is merely busy.
+const PING_SEQUENCE: u64 = u64::MAX;
 
 struct ExchangeMessage {
     /// The time at which the message was created.  This allows tracking the
@@ -331,6 +362,12 @@ impl ExchangeChannel {
     fn drain_waiter(&self) -> Option<OwnedNotified> {
         self.inner().drain_waiter()
     }
+
+    /// True if the channel holds messages that the receiver has not
+    /// acknowledged yet.
+    fn has_unacknowledged(&self) -> bool {
+        !self.inner().messages.is_empty()
+    }
 }
 
 pub struct ExchangeClient {
@@ -369,13 +406,45 @@ impl ExchangeClient {
         channel: ExchangeChannel,
     ) -> std::io::Result<()> {
         let mut min_sequence = 0;
+        let count = remote_workers.len();
         loop {
             // Get the next message to send.
-            let (message, sequence) = match channel.get(min_sequence) {
-                Ok(result) => result,
-                Err(notified) => {
-                    notified.await;
-                    continue;
+            let (message, sequence) = loop {
+                // Either get a message to send or a notification that will tell
+                // us when one is ready.
+                let txq_grew = match channel.get(min_sequence) {
+                    Ok(result) => break result,
+                    Err(txq_grew) => txq_grew,
+                };
+
+                if channel.has_unacknowledged() {
+                    // We've sent messages that the server has not yet
+                    // acknowledged.  This is common, because the server only
+                    // acknowledges them once they're fully received.  However,
+                    // if it takes a long time for the server to acknowledge any
+                    // given message, that can mean that the connection got
+                    // closed silently and we'll never get a reply (perhaps
+                    // because a FIN or RST from the server got dropped on the
+                    // wire).  We will only find that out if we send more data.
+                    // Let's make sure that we always send more data by sending
+                    // a "ping" no-op message if the data we send is not
+                    // acknowledged within `ping_interval()`.
+                    if timeout(ping_interval(), txq_grew).await.is_err()
+                        && let Ok((message, _sequence)) = channel.get(0)
+                    {
+                        tx.write_all(
+                            &ExchangeHeader::new_ping(
+                                message.exchange_id,
+                                message.sender as u32,
+                                message_type,
+                                count,
+                            )
+                            .to_bytes(),
+                        )
+                        .await?;
+                    }
+                } else {
+                    txq_grew.await;
                 }
             };
             min_sequence = sequence + 1;
@@ -387,7 +456,6 @@ impl ExchangeClient {
             // We want to write a header, followed by all the data buffers.  To
             // minimize the system calls required to do this, we assemble them
             // into a collection of IoSlices.  First, create the header.
-            let n = remote_workers.len();
             let header = ExchangeHeader {
                 exchange_id: message.exchange_id,
                 sequence,
@@ -402,7 +470,7 @@ impl ExchangeClient {
             .to_bytes();
 
             // Assemble the IoSlices.
-            let mut slices = Vec::with_capacity(1 + n);
+            let mut slices = Vec::with_capacity(1 + count);
             slices.push(IoSlice::new(&header));
             for data in &message.data {
                 if !data.is_empty() {
@@ -448,7 +516,7 @@ impl ExchangeClient {
             tx,
             message_type,
             remote_workers.clone(),
-            channel.clone()
+            channel.clone(),
         ));
         select(rx, tx).await.factor_first().0
     }
@@ -837,6 +905,13 @@ impl ExchangeServer {
                         handle,
                     )
                     .await;
+            }
+
+            if sequence == PING_SEQUENCE {
+                // A liveness probe: the sender doesn't wait for or need a
+                // reply, so just skip it rather than running it through
+                // delivery or the sequence counter.
+                continue;
             }
 
             let ExchangeGet {
@@ -2143,6 +2218,25 @@ fn backoff_time() -> Duration {
     Duration::from_millis(1000)
 }
 
+/// How long a connection tx task waits, after it has nothing new to send and
+/// the receiver has not acknowledged everything already sent, before probing
+/// with a ping.
+///
+/// A receiver acknowledges a message only after its workers have consumed it,
+/// which can legitimately take a while under load, so this should not be so
+/// short that ordinary scheduling delays trigger probes constantly. But
+/// because a ping costs only a few bytes, this can be much shorter than it
+/// would need to be if it triggered a retransmission instead.
+#[cfg(test)]
+fn ping_interval() -> Duration {
+    Duration::from_millis(20)
+}
+
+#[cfg(not(test))]
+fn ping_interval() -> Duration {
+    Duration::from_secs(1)
+}
+
 #[cfg(test)]
 mod tests {
     use feldera_storage::tokio::TOKIO;
@@ -2370,5 +2464,93 @@ mod tests {
     fn operators_multihost_dynamic() {
         init_test_logger();
         test_operators_multihost(operator_circuit::<DynamicScheduler>);
+    }
+
+    // Exercises the liveness ping mechanism directly: a fake receiver
+    // acknowledges nothing, so the sender has no way to tell a slow receiver
+    // from a half-open connection except by asking.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn pings_repeatedly_without_retransmitting() {
+        use super::{ExchangeClient, ExchangeHeader, MessageType, PING_SEQUENCE};
+        use feldera_storage::fbuf::FBuf;
+        use std::time::Duration;
+        use tokio::{io::AsyncWriteExt, net::TcpListener as AsyncTcpListener, time::timeout};
+
+        init_test_logger();
+        TOKIO.block_on(async {
+            let listener = AsyncTcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let remote_workers = 0..1;
+            let client = ExchangeClient::new(MessageType::Streaming, addr, &remote_workers).await;
+            let (mut stream, _) = listener.accept().await.unwrap();
+
+            client.send(Arc::new("test".into()), 0, 0, vec![FBuf::new()]);
+
+            // Read the message but never acknowledge it.
+            let header = ExchangeHeader::read(1, &mut stream).await.unwrap().unwrap();
+            assert_eq!(header.sequence, 0);
+
+            // With nothing new to send and no acknowledgement, the sender
+            // should keep probing rather than hang -- and answering the
+            // probe should not turn the next one into a retransmit.
+            for _ in 0..3 {
+                let ping = timeout(Duration::from_secs(5), ExchangeHeader::read(1, &mut stream))
+                    .await
+                    .expect("sender should keep pinging instead of hanging")
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    ping.sequence, PING_SEQUENCE,
+                    "expected a ping, not a retransmit"
+                );
+                stream.write_u64_le(0).await.unwrap();
+            }
+        });
+    }
+
+    // Checks that a message queued right after the sender has sent a ping goes
+    // out immediately.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn new_message_sent_without_waiting_after_a_ping() {
+        use super::{ExchangeClient, ExchangeHeader, MessageType, PING_SEQUENCE};
+        use feldera_storage::fbuf::FBuf;
+        use std::time::{Duration, Instant};
+        use tokio::net::TcpListener as AsyncTcpListener;
+
+        init_test_logger();
+        TOKIO.block_on(async {
+            let listener = AsyncTcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let remote_workers = 0..1;
+            let client = ExchangeClient::new(MessageType::Streaming, addr, &remote_workers).await;
+            let (mut stream, _) = listener.accept().await.unwrap();
+
+            // Send and never acknowledge the first message, leaving the sender
+            // idle with an unacknowledged backlog, then wait for it to actually
+            // ping rather than guessing how long that takes.
+            client.send(Arc::new("test".into()), 0, 0, vec![FBuf::new()]);
+            let header = ExchangeHeader::read(1, &mut stream).await.unwrap().unwrap();
+            assert_eq!(header.sequence, 0);
+            let ping = ExchangeHeader::read(1, &mut stream).await.unwrap().unwrap();
+            assert_eq!(ping.sequence, PING_SEQUENCE);
+
+            // Queue a second message right after the ping and check it
+            // arrives promptly, not held up by anything.
+            client.send(Arc::new("test".into()), 0, 0, vec![FBuf::new()]);
+            let start = Instant::now();
+            let header =
+                tokio::time::timeout(Duration::from_secs(5), ExchangeHeader::read(1, &mut stream))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(header.sequence, 1);
+            assert!(
+                start.elapsed() < Duration::from_millis(15),
+                "new data should be sent immediately after a ping, not held up behind it"
+            );
+        });
     }
 }
