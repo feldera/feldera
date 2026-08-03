@@ -614,8 +614,7 @@ async fn upload_binary_to_endpoint_with_retries(
                 return Ok(result);
             }
             Err(e) => {
-                // A permanent rejection cannot be fixed by retrying; surface
-                // it immediately so a terminal status is written.
+                // Permanent rejections skip the retry budget.
                 if matches!(e, RustCompilationError::SystemError(_)) {
                     return Err(e);
                 }
@@ -697,8 +696,7 @@ async fn upload_program_info_to_endpoint_with_retries(
                 return Ok(result);
             }
             Err(e) => {
-                // A permanent rejection cannot be fixed by retrying; surface
-                // it immediately so a terminal status is written.
+                // Permanent rejections skip the retry budget.
                 if matches!(e, RustCompilationError::SystemError(_)) {
                     return Err(e);
                 }
@@ -743,6 +741,17 @@ fn is_permanent_upload_rejection(status: reqwest::StatusCode) -> bool {
     status.is_client_error()
         && status != reqwest::StatusCode::REQUEST_TIMEOUT
         && status != reqwest::StatusCode::TOO_MANY_REQUESTS
+}
+
+/// Classifies a non-2xx upload response: a permanent rejection becomes a
+/// terminal `SystemError` because retrying or recompiling cannot succeed;
+/// anything else stays a retryable `FileUploadError`.
+fn upload_failure_error(status: reqwest::StatusCode, message: String) -> RustCompilationError {
+    if is_permanent_upload_rejection(status) {
+        RustCompilationError::SystemError(message)
+    } else {
+        RustCompilationError::FileUploadError(message)
+    }
 }
 
 /// Uploads the compiled binary to an HTTP endpoint (single attempt) using streaming.
@@ -825,13 +834,7 @@ async fn upload_binary_to_endpoint(
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
         let message = format!("Binary upload failed with status {status}: {error_text}");
-        // A 4xx other than 408/429 is a permanent rejection: retrying or
-        // recompiling cannot succeed, so surface a terminal SystemError.
-        return Err(if is_permanent_upload_rejection(status) {
-            RustCompilationError::SystemError(message)
-        } else {
-            RustCompilationError::FileUploadError(message)
-        });
+        return Err(upload_failure_error(status, message));
     }
 
     // Get response body for any location information
@@ -897,13 +900,7 @@ async fn upload_program_info_to_endpoint(
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
         let message = format!("Program info upload failed with status {status}: {error_text}");
-        // A 4xx other than 408/429 is a permanent rejection: retrying or
-        // recompiling cannot succeed, so surface a terminal SystemError.
-        return Err(if is_permanent_upload_rejection(status) {
-            RustCompilationError::SystemError(message)
-        } else {
-            RustCompilationError::FileUploadError(message)
-        });
+        return Err(upload_failure_error(status, message));
     }
 
     // Get response body for any location information
@@ -2644,8 +2641,6 @@ mod test {
         }
     }
 
-    /// Checks the pipeline binaries cleanup decision: stale `.tmp-` uploads are
-    /// removed, fresh or unstat-able ones are kept, and prefix matching decides the rest.
     /// 4xx (except 408 and 429) and 507 fail an upload permanently; transient
     /// statuses stay retryable.
     #[test]
@@ -2667,6 +2662,8 @@ mod test {
         assert!(!is_permanent_upload_rejection(StatusCode::BAD_GATEWAY));
     }
 
+    /// Stale `.tmp-` uploads are removed, fresh or unstat-able ones are kept,
+    /// and prefix matching decides the rest.
     #[test]
     fn pipeline_binary_cleanup_decision() {
         let valid_binaries = vec!["pipeline_a_v1_".to_string()];
