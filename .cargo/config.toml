@@ -6,12 +6,3 @@
 # - Also note that we can't change the major version without making sure
 #   the database directories in ~/.feldera for users get upgraded too.
 POSTGRESQL_VERSION = "=15.13.0"
-
-# aws-lc-sys's CPU Jitter Entropy source can fail its startup health check on
-# freshly-started VMs/containers (timing jitter too regular in the first
-# seconds of process life), which aws-lc treats as fatal and aborts with no
-# stderr output. This disables jitter entropy at build time, leaving
-# getrandom(2) as the sole (and still sound) entropy source.
-# See https://github.com/feldera/cloud/issues/1845 and
-# https://github.com/aws/aws-lc-rs/issues/1072
-AWS_LC_SYS_NO_JITTER_ENTROPY = "1"
