@@ -9,7 +9,11 @@ from feldera import Pipeline, PipelineBuilder
 from feldera.enums import CompilationProfile
 from feldera.rest.errors import FelderaAPIError
 from feldera.runtime_config import Resources, RuntimeConfig
-from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
+from feldera.testutils import (
+    FELDERA_TEST_NUM_WORKERS,
+    FELDERA_TEST_NUM_HOSTS,
+    reclaim_pipeline,
+)
 from tests import TEST_CLIENT, unique_pipeline_name
 
 JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None
@@ -325,8 +329,8 @@ class TstAccumulator:
                         raise
 
             if pipeline is not None:
-                pipeline.stop(force=True)
-                pipeline.delete(True)
+                for failure in reclaim_pipeline(pipeline_name, delete=True):
+                    print(f"WARNING: {failure}")
 
     def assert_expected_error(self, obj: SqlObject, actual_exception: Exception):
         """Validate the error produced by the failing pipeline with the expected error type"""

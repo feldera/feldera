@@ -1,3 +1,4 @@
+import logging
 import unittest
 
 from feldera import Pipeline, PipelineBuilder
@@ -5,9 +6,12 @@ from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import (
     FELDERA_TEST_NUM_HOSTS,
     FELDERA_TEST_NUM_WORKERS,
+    reclaim_pipeline,
     unique_pipeline_name,
 )
 from tests import TEST_CLIENT
+
+logger = logging.getLogger(__name__)
 
 
 def sql(text_or_iterable):
@@ -59,30 +63,27 @@ class SharedTestPipeline(unittest.TestCase):
             ).create_or_replace()
 
     def setUp(self):
-        p = PipelineBuilder(
-            self.client,
-            unique_pipeline_name(self._testMethodName),
-            sql=self.ddl,
-            runtime_config=RuntimeConfig(
-                workers=FELDERA_TEST_NUM_WORKERS,
-                hosts=FELDERA_TEST_NUM_HOSTS,
-                logging="debug",
-            ),
-        ).create_or_replace()
-        self.p = p
+        self._owned_pipelines = []
+        self.p = self._build_pipeline(self._testMethodName)
 
     def tearDown(self):
-        self.p.stop(force=True)
-        self.p.clear_storage()
+        """Force-stop and clear every pipeline the test owns."""
+        for pipeline in self._owned_pipelines:
+            for failure in reclaim_pipeline(pipeline.name):
+                logger.warning("pipeline teardown: %s", failure)
 
     @property
     def pipeline(self) -> Pipeline:
         return self.p
 
     def new_pipeline_with_suffix(self, suffix: str) -> Pipeline:
-        return PipelineBuilder(
+        return self._build_pipeline(f"{self._testMethodName}_{suffix}")
+
+    def _build_pipeline(self, base_name: str) -> Pipeline:
+        """Create a pipeline over the class DDL and hand it to `tearDown`."""
+        pipeline = PipelineBuilder(
             self.client,
-            unique_pipeline_name(f"{self._testMethodName}_{suffix}"),
+            unique_pipeline_name(base_name),
             sql=self.ddl,
             runtime_config=RuntimeConfig(
                 workers=FELDERA_TEST_NUM_WORKERS,
@@ -90,3 +91,5 @@ class SharedTestPipeline(unittest.TestCase):
                 logging="debug",
             ),
         ).create_or_replace()
+        self._owned_pipelines.append(pipeline)
+        return pipeline
