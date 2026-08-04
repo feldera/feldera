@@ -1,0 +1,18 @@
+/* The parent .buttonGroup button already supplies the chip
+   background/border/opacity; this just fixes the label itself. The global
+   `main .theme-doc-markdown a` rule forces links to brand pink with
+   !important, which only has ~3.8:1 contrast against the dark code
+   background — override it back to the code block's light text color.
+   :global(.theme-code-block) raises specificity enough to win against that
+   rule's own !important. */
+:global(.theme-code-block) .sandboxButton {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.2;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0 0.25rem;
+  color: var(--prism-color) !important;
+  text-decoration: none !important;
+  white-space: nowrap;
+}

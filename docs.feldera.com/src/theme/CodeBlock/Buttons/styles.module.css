@@ -8,23 +8,27 @@
 }
 
 .buttonGroup button {
+  /* A background that matches the code surface makes the button invisible
+     except for its border — use a translucent light overlay instead so it
+     reads as a distinct chip against the dark code background. */
   display: flex;
   align-items: center;
-  background: var(--prism-background-color);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--prism-color);
-  border: 1px solid var(--ifm-color-emphasis-300);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: var(--ifm-global-radius);
   padding: 0.4rem;
   line-height: 0;
-  transition: opacity var(--ifm-transition-fast) ease-in-out;
+  transition: opacity var(--ifm-transition-fast) ease-in-out, background-color var(--ifm-transition-fast) ease-in-out;
   opacity: 0;
 }
 
 .buttonGroup button:focus-visible,
 .buttonGroup button:hover {
   opacity: 1 !important;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 :global(.theme-code-block:hover) .buttonGroup button {
-  opacity: 0.4;
+  opacity: 0.6;
 }

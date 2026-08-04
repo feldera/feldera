@@ -4,19 +4,12 @@
  * work well for content-centric websites.
  */
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap');
-
-@font-face {
-  font-family: "Signifier Thin";
-  src: url("/font/signifier-thin.woff2") format("woff2");
-  font-weight: 300;
-  font-style: normal;
-}
-
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=DM+Mono:wght@400;500&display=swap');
 
 /* You can override the default Infima variables here. */
 :root {
   --ifm-font-family-base: "DM Sans", sans-serif;
+  --ifm-font-family-monospace: "DM Mono", monospace;
   --ifm-color-primary: #C533B9;
   --ifm-color-primary-dark: #B12EA6;
   --ifm-color-primary-darker: #9D2993;
@@ -25,7 +18,7 @@
   --ifm-color-primary-lighter: #D75BCD;
   --ifm-color-primary-lightest: #E06FD7;
   --ifm-code-font-size: 95%;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --docusaurus-highlighted-code-line-bg: rgba(255, 255, 255, 0.08);
   --ifm-navbar-background-color: #ffffff;
   --ifm-navbar-link-color: #333333;
   --ifm-navbar-link-hover-color: #C533B9;
@@ -33,6 +26,24 @@
   --feldera-deep-purple: #360E3B;
   --feldera-red-orange: #FF2D55;
   --feldera-olive-green: #94C445;
+
+  /* Shared spacing/radius scale for buttons, cards, tables, alerts, code blocks */
+  --feldera-space-2xs: 0.25rem;
+  --feldera-space-xs: 0.5rem;
+  --feldera-space-sm: 0.75rem;
+  --feldera-space-md: 1rem;
+  --feldera-space-lg: 1.5rem;
+  --feldera-space-xl: 2.5rem;
+  --feldera-space-2xl: 3rem;
+  --feldera-radius-sm: 8px;
+  --feldera-radius-md: 12px;
+
+  /* Code blocks stay dark even in light mode, tinted with our own deep purple
+     rather than a generic black, so the "dark code" convention still reads as
+     Feldera rather than a borrowed template. */
+  --feldera-code-bg: #1e1626;
+  --feldera-code-text: #e7e4ee;
+  --feldera-code-border: rgba(255, 255, 255, 0.08);
 }
 
 /* For readability concerns, you should choose a lighter palette in dark mode. */
@@ -51,20 +62,22 @@
   --ifm-alert-background-color: rgba(255, 45, 85, 0.15);
 }
 
-/* Customize inline code style */
+/* Inline code reads as a quiet brand-tinted chip rather than bare colored text */
 code {
-  background: none;
-  color: #C533B9;
+  background: rgba(197, 51, 185, 0.08);
+  color: #A32C99;
   font-weight: 500;
-  font-size: 0.9em;
-  font-family: 'DM Mono', monospace !important;
-  border-radius: 0;
+  font-size: 0.85em;
+  font-family: var(--ifm-font-family-monospace);
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
   border: none;
   box-shadow: none;
   vertical-align: baseline;
 }
 
 [data-theme='dark'] code {
+  background: rgba(252, 175, 79, 0.12);
   color: #FCAF4F;
 }
 
@@ -84,27 +97,36 @@ main .theme-doc-markdown a:hover {
   text-decoration: underline !important;
 }
 
-/* Navbar styling */
+/* Navbar styling: a hairline border reads calmer than a drop shadow */
 .navbar {
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: none;
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
   height: 70px;
   padding: 0.5rem 2rem;
-  /* Add consistent padding */
+}
+
+@media (max-width: 996px) {
+  .navbar {
+    height: 60px;
+    padding: 0.5rem 1rem;
+  }
+
+  .navbar__logo img {
+    height: 28px;
+    margin-right: 0.5rem;
+  }
 }
 
 /* Logo sizing and alignment */
 .navbar__logo {
   height: 40px;
-  /* Increase logo container height */
   display: flex;
   align-items: center;
 }
 
 .navbar__logo img {
   height: 32px;
-  /* Adjust logo size */
   margin-right: 1rem;
-  /* Add spacing between logo and nav items */
 }
 
 /* Navigation items alignment */
@@ -116,17 +138,55 @@ main .theme-doc-markdown a:hover {
 .navbar__item {
   font-weight: 500;
   padding: 0 1rem;
-  /* Add consistent padding to nav items */
+  position: relative;
 }
 
 .navbar__link--active {
   font-weight: 600;
 }
 
+/* Underline accent on the active top-level nav item instead of a color fill */
+.navbar__link--active::after {
+  content: '';
+  position: absolute;
+  left: 1rem;
+  right: 1rem;
+  bottom: -0.5rem;
+  height: 2px;
+  background: var(--ifm-color-primary);
+  border-radius: 1px;
+}
+
+/* Search box reads as a quiet rounded pill, matching the calmer chrome */
+.DocSearch-Button {
+  border-radius: 999px;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  box-shadow: none;
+}
+
+.DocSearch-Button:hover {
+  border-color: var(--ifm-color-primary);
+  box-shadow: none;
+  background: rgba(197, 51, 185, 0.04);
+}
+
 .footer {
   background-color: var(--feldera-deep-purple);
   color: white;
-  padding: 40px 0;
+  padding: var(--feldera-space-2xl) 0 var(--feldera-space-xl);
+}
+
+.footer__title {
+  font-weight: 600;
+  margin-bottom: var(--feldera-space-sm);
+}
+
+.footer__link-item {
+  transition: color 0.15s ease;
+}
+
+.footer__link-item:hover {
+  color: var(--feldera-tangerine);
 }
 
 /* This makes the page scroll to a position above the anchor specified in url's hash value - to account for the fixed-width header that overlaps the page contents */
@@ -139,23 +199,48 @@ main .theme-doc-markdown a:hover {
 
 /* Additional styles for better consistency */
 .button {
-  border-radius: 8px;
+  border-radius: var(--feldera-radius-sm);
   padding: 12px 24px;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.2s ease;
+}
+
+.button:hover {
+  transform: translateY(-1px);
 }
 
 .pagination-nav__link {
-  border-radius: 8px;
+  border-radius: var(--feldera-radius-sm);
+  transition: transform 0.15s ease, border-color 0.15s ease;
 }
 
+.pagination-nav__link:hover {
+  border-color: var(--ifm-color-primary);
+  transform: translateY(-1px);
+}
+
+/* Table of contents: muted by default, brand-colored only for the active section */
 .table-of-contents {
-  font-size: 0.9em;
+  font-size: 0.85em;
+  --ifm-toc-link-color: var(--ifm-color-emphasis-600);
+  border-left: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.table-of-contents__link--active {
+  color: var(--ifm-color-primary) !important;
+  font-weight: 500;
 }
 
 /* Sidebar styling improvements */
 .theme-doc-sidebar-container {
   --ifm-font-size-base: 0.9rem;
+  --ifm-menu-link-padding-vertical: 0.5rem;
+  border-right: none !important;
+}
+
+.menu__link,
+.menu__caret {
+  border-radius: var(--feldera-radius-sm);
 }
 
 .theme-doc-sidebar-menu {
@@ -165,7 +250,6 @@ main .theme-doc-markdown a:hover {
 /* Category/section headers in sidebar */
 .theme-doc-sidebar-item-category>.menu__list-item-collapsible {
   font-weight: 400;
-  /* Default weight for all category headers */
   font-size: 0.9rem;
   letter-spacing: normal;
   color: var(--ifm-color-emphasis-700);
@@ -174,6 +258,7 @@ main .theme-doc-markdown a:hover {
 /* Bold only top-level categories */
 .theme-doc-sidebar-menu>.theme-doc-sidebar-item-category>.menu__list-item-collapsible {
   font-weight: 600;
+  color: var(--ifm-color-emphasis-900);
 }
 
 /* Regular menu items */
@@ -187,61 +272,62 @@ main .theme-doc-markdown a:hover {
 /* Documentation page styling improvements */
 .theme-doc-markdown {
   --content-font-size: 16px;
-  --content-line-height: 1.625;
+  --content-line-height: 1.65;
   font-size: var(--content-font-size);
   line-height: var(--content-line-height);
   max-width: 960px;
-  /* Increased from 42rem for better wide screen display */
   margin: 0 auto;
 }
 
 /* Main content container width and spacing */
 .container {
-  max-width: 1400px !important;
-  /* Increased from 1140px */
+  max-width: 1200px !important;
   padding: 0 2rem;
 }
 
-/* Headers styling */
+@media (min-width: 1440px) {
+  .container {
+    max-width: 1400px !important;
+  }
+}
+
+@media (max-width: 996px) {
+  .container {
+    padding: 0 1rem;
+  }
+}
+
+/* Headers styling: a decisive size/weight jump for h1, quieter steps after */
 .theme-doc-markdown h1 {
-  font-size: 2.5rem;
-  line-height: 1.25;
-  margin-bottom: 2rem;
-  font-weight: 600;
+  font-size: 2.75rem;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin: 0 0 var(--feldera-space-lg);
+  font-weight: 700;
+  color: var(--ifm-color-emphasis-900);
 }
 
 .theme-doc-markdown h2 {
   font-size: 1.75rem;
-  line-height: 1.3;
-  margin: 2.5rem 0 1.25rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin: var(--feldera-space-2xl) 0 var(--feldera-space-md);
   font-weight: 600;
+  color: var(--ifm-color-emphasis-900);
 }
 
 .theme-doc-markdown h3 {
   font-size: 1.375rem;
-  line-height: 1.4;
-  margin: 2rem 0 1rem;
+  line-height: 1.35;
+  margin: var(--feldera-space-lg) 0 var(--feldera-space-sm);
   font-weight: 600;
+  color: var(--ifm-color-emphasis-900);
 }
 
 .theme-doc-markdown h4 {
-  font-weight: 500;
-  margin-top: 2rem;
-  margin-bottom: 1rem;
-}
-
-/* Add more space after sections that contain lists */
-.theme-doc-markdown h2+ul,
-.theme-doc-markdown h3+ul,
-.theme-doc-markdown h2+ol,
-.theme-doc-markdown h3+ol {
-  margin-top: -0.5rem;
-}
-
-/* Adjust spacing between paragraphs and lists */
-.theme-doc-markdown p+ul,
-.theme-doc-markdown p+ol {
-  margin-top: -0.75rem;
+  font-weight: 600;
+  margin: var(--feldera-space-lg) 0 var(--feldera-space-sm);
+  color: var(--ifm-color-emphasis-900);
 }
 
 /* Remove max-width from paragraphs since it's handled by parent */
@@ -261,18 +347,34 @@ main .theme-doc-markdown a:hover {
   padding-left: 0.5rem;
 }
 
-/* Code blocks spacing */
+/* Code blocks: dark, brand-tinted surface with generous padding */
+.theme-code-block {
+  --prism-background-color: var(--feldera-code-bg) !important;
+  --prism-color: var(--feldera-code-text) !important;
+}
+
 .theme-doc-markdown .prism-code {
   font-size: 0.875rem;
-  line-height: 1.5;
-  padding: 1rem;
+  line-height: 1.6;
+  padding: 1.25rem;
   margin: 1.5rem 0;
+  background: var(--feldera-code-bg) !important;
+  color: var(--feldera-code-text) !important;
+  border: 1px solid var(--feldera-code-border);
+  border-radius: var(--feldera-radius-md);
+  box-shadow: none;
 }
 
 /* Index/category cards styling */
 .card {
   margin-bottom: 1rem !important;
-  padding: 1rem !important;
+  padding: 1.25rem !important;
+  border-radius: var(--feldera-radius-md);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
 }
 
 .card__header {
@@ -301,6 +403,9 @@ main .theme-doc-markdown a:hover {
   line-height: 1.5;
   margin: 1.5rem 0;
   padding: 1rem 1.25rem;
+  border: 1px solid var(--ifm-alert-border-color);
+  border-left-width: 4px;
+  border-radius: var(--feldera-radius-sm);
 }
 
 .alert__title {
@@ -308,39 +413,32 @@ main .theme-doc-markdown a:hover {
   margin-bottom: 0.5rem;
 }
 
+.admonition-icon svg {
+  fill: var(--ifm-alert-border-color);
+}
+
 /* Notes - use Deep Purple */
 .alert--info {
   --ifm-alert-background-color: rgba(54, 14, 59, 0.03);
   --ifm-alert-border-color: var(--feldera-deep-purple);
   background: #F9F6FA;
-  /* Light purple background */
+}
+
+[data-theme='dark'] .alert--info {
+  background: rgba(54, 14, 59, 0.1);
+}
+
+.alert--info .alert__title {
+  color: var(--feldera-deep-purple);
+  font-weight: 500;
 }
 
 /* Tips - use Olive Green */
 .alert--success,
 .alert--tip {
-  --ifm-alert-background-color: rgba(148, 196, 69, 0.03);
+  --ifm-alert-background-color: rgba(148, 196, 69, 0.1);
   --ifm-alert-border-color: var(--feldera-olive-green);
-}
-
-/* Warnings - use Tangerine with more visible styling */
-.alert--warning {
-  --ifm-alert-background-color: rgba(252, 175, 79, 0.05);
-  --ifm-alert-border-color: var(--feldera-tangerine);
-  background: #FFF9F2;
-  /* Light tangerine background */
-}
-
-/* Danger/Important - use Red Orange */
-.alert--danger {
-  --ifm-alert-background-color: rgba(255, 45, 85, 0.03);
-  --ifm-alert-border-color: var(--feldera-red-orange);
-}
-
-/* Make admonition titles match their border colors */
-.alert--info .alert__title {
-  color: var(--feldera-deep-purple);
-  font-weight: 500;
+  --ifm-alert-color: var(--feldera-olive-green);
 }
 
 .alert--success .alert__title,
@@ -348,9 +446,26 @@ main .theme-doc-markdown a:hover {
   color: var(--feldera-olive-green);
 }
 
+/* Warnings - use Tangerine with more visible styling */
+.alert--warning {
+  --ifm-alert-background-color: rgba(252, 175, 79, 0.05);
+  --ifm-alert-border-color: var(--feldera-tangerine);
+  background: #FFF9F2;
+}
+
+[data-theme='dark'] .alert--warning {
+  background: rgba(252, 175, 79, 0.05);
+}
+
 .alert--warning .alert__title {
   color: var(--feldera-tangerine);
   font-weight: 600;
+}
+
+/* Danger/Important - use Red Orange */
+.alert--danger {
+  --ifm-alert-background-color: rgba(255, 45, 85, 0.03);
+  --ifm-alert-border-color: var(--feldera-red-orange);
 }
 
 .alert--danger .alert__title {
@@ -360,18 +475,6 @@ main .theme-doc-markdown a:hover {
 /* Dark mode adjustments */
 [data-theme='dark'] .alert {
   --ifm-alert-background-color: rgba(255, 255, 255, 0.03);
-}
-
-/* Use olive green for success messages and tips */
-.alert--success {
-  --ifm-alert-background-color: rgba(148, 196, 69, 0.1);
-  --ifm-alert-border-color: var(--feldera-olive-green);
-  --ifm-alert-color: var(--feldera-olive-green);
-}
-
-/* Add subtle olive green accent for info blocks */
-.alert--info {
-  border-left: 4px solid var(--feldera-olive-green);
 }
 
 /* Use red-orange for deprecated or beta feature badges */
@@ -386,7 +489,6 @@ main .theme-doc-markdown a:hover {
   color: white;
 }
 
-/* Add Deep Purple to more UI elements */
 /* Blockquotes for important callouts */
 blockquote {
   background-color: rgba(54, 14, 59, 0.05);
@@ -395,106 +497,73 @@ blockquote {
   padding: 1rem;
 }
 
-/* Table headers */
-table th {
-  background-color: var(--feldera-deep-purple);
-  color: white;
-}
-
-[data-theme='dark'] table th {
-  background-color: rgba(54, 14, 59, 0.8);
-}
-
-/* Update the admonition styling for better visibility */
-.alert {
-  border: 1px solid var(--ifm-alert-border-color);
-  border-left-width: 6px;
-  border-radius: 6px;
-  margin: 1.5rem 0;
-}
-
-/* Warnings - use Tangerine with more visible styling */
-.alert--warning {
-  --ifm-alert-background-color: rgba(252, 175, 79, 0.05);
-  --ifm-alert-border-color: var(--feldera-tangerine);
-  background: #FFF9F2;
-  /* Light tangerine background */
-}
-
-[data-theme='dark'] .alert--warning {
-  background: rgba(252, 175, 79, 0.05);
-}
-
-/* Make warning icons and titles more visible */
-.alert--warning .alert__title {
-  color: var(--feldera-tangerine);
-  font-weight: 600;
-}
-
-.admonition-icon svg {
-  fill: var(--ifm-alert-border-color);
-}
-
-/* Update note styling to be more visible */
-.alert--info {
-  --ifm-alert-background-color: rgba(54, 14, 59, 0.03);
-  --ifm-alert-border-color: var(--feldera-deep-purple);
-  background: #F9F6FA;
-  /* Light purple background */
-}
-
-[data-theme='dark'] .alert--info {
-  background: rgba(54, 14, 59, 0.1);
-}
-
-/* Make note icons and titles more visible */
-.alert--info .alert__title {
-  color: var(--feldera-deep-purple);
-  font-weight: 500;
-}
-
-.admonition-icon svg {
-  fill: var(--ifm-alert-border-color);
-}
-
-/* Ensure tables and code blocks span full width of content */
-.theme-doc-markdown table,
+/* Ensure code blocks and alerts span full width of content */
 .theme-doc-markdown .prism-code,
 .theme-doc-markdown .alert {
   width: 100%;
   max-width: none;
 }
 
-/* Table container to enable horizontal scrolling */
-.theme-doc-markdown table {
-  display: block;
+/* MDXComponents wraps every markdown table in .table-scroll-container.
+   The scroll/border/radius live on that wrapper, not the table itself —
+   overflow-x directly on a <table> lets it size its internal row/column
+   layout independently of its specified width, leaving narrow tables with
+   dead space inside a full-width border. The wrapper hugs the table's own
+   content width (capped at 100%) rather than forcing width:100%, so a
+   two-column table with short cells doesn't stretch its columns to fill
+   space they don't need — it only grows to fill the container when its
+   content actually calls for it. */
+.theme-doc-markdown .table-scroll-container {
+  width: fit-content;
+  max-width: 100%;
   overflow-x: auto;
-  border-collapse: collapse;
-  width: 100%;
-  margin: 1rem 0;
+  margin: 1.5rem 0;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: var(--feldera-radius-md);
 }
 
-/* Make the table structure behave normally inside the scrollable container */
-.theme-doc-markdown table thead,
-.theme-doc-markdown table tbody,
-.theme-doc-markdown table tr {
-  width: 100%;
+.theme-doc-markdown .table-scroll-container table {
+  /* Infima's base stylesheet forces `table { display: block; overflow: auto }`
+     on every table (its own responsive-table default) — cancel both here so
+     this table uses normal table layout and lets the wrapper div above be
+     the only scrolling element. */
+  display: table;
+  overflow: visible;
+  border-collapse: collapse;
+  width: auto;
+  max-width: 100%;
+  margin: 0;
 }
 
 /* Ensure table headers and cells align properly */
 .theme-doc-markdown table th,
 .theme-doc-markdown table td {
   padding: 0.75rem 1rem;
-  border: 1px solid var(--ifm-color-emphasis-200);
+  text-align: left;
+  border: none;
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
   min-width: 100px;
-  /* Prevent cells from becoming too narrow */
 }
 
-/* Keep header styling */
+.theme-doc-markdown table tr:last-child td {
+  border-bottom: none;
+}
+
+.theme-doc-markdown table tr:nth-child(2n) {
+  background-color: transparent;
+}
+
+/* Header uses a subtle neutral fill with a brand-colored accent underline, not a full brand fill */
 .theme-doc-markdown table th {
-  background-color: var(--feldera-deep-purple);
-  color: white;
-  font-weight: 500;
+  background-color: var(--ifm-color-emphasis-100);
+  color: var(--ifm-color-emphasis-800);
+  font-weight: 600;
+  border-bottom: 2px solid var(--ifm-color-primary);
+}
+
+[data-theme='dark'] .theme-doc-markdown table th {
+  background-color: rgba(255, 255, 255, 0.04);
+  color: var(--ifm-color-emphasis-700);
 }
 
 /* Active and hover states */
@@ -508,10 +577,9 @@ table th {
   font-weight: 500;
 }
 
-/* Indent nested items for better hierarchy */
+/* Nested items get quieter indentation only, no vertical rule */
 .menu__list .menu__list {
   margin-left: 0.8rem;
-  border-left: 1px solid var(--ifm-color-emphasis-200);
   padding-left: 0.4rem;
 }
 
@@ -556,18 +624,17 @@ table th {
   transform: rotate(90deg);
 }
 
-/* Sidebar hover and active states */
+/* Sidebar hover and active states: a quiet brand-tinted pill, not a color wash */
 .menu__link:hover {
-  background-color: var(--ifm-menu-color-background-hover, rgba(54, 14, 59, 0.05));
+  background-color: var(--ifm-menu-color-background-hover, rgba(197, 51, 185, 0.05));
 }
 
 [data-theme='dark'] .menu__link:hover {
   background-color: var(--ifm-menu-color-background-hover, rgba(252, 175, 79, 0.05));
 }
 
-/* Keep active state background */
 .menu__link--active {
-  background-color: var(--ifm-menu-color-background-active, rgba(54, 14, 59, 0.1));
+  background-color: var(--ifm-menu-color-background-active, rgba(197, 51, 185, 0.08));
 }
 
 [data-theme='dark'] .menu__link--active {

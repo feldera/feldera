@@ -1,8 +1,58 @@
-import { themes as prismThemes } from "prism-react-renderer";
+import type { PrismTheme } from "prism-react-renderer";
 import type { Config } from "@docusaurus/types";
 import type * as Preset from "@docusaurus/preset-classic";
 import type * as PresetOpenapi from "docusaurus-preset-openapi";
 import type * as Redocusaurus from "redocusaurus";
+
+// Custom syntax theme for code blocks, derived from Feldera's own brand
+// palette instead of an off-the-shelf theme's arbitrary conventions:
+// tangerine for keywords/control flow, the brand olive green for
+// strings/literals, a light brand-pink tint for numbers/identifiers, and
+// red-orange/olive for diff deleted/inserted lines (mirroring the same
+// danger/success mapping used for admonitions elsewhere on the site).
+// `property` (object/JSON keys) uses the plain near-white instead of the
+// pink accent: WCAG contrast alone (5.23:1, passes AA) understates how
+// muddy pink-on-this-purple-background reads in practice since they share
+// a hue family, and keys are the single most common token in JSON-heavy
+// examples — not a color to leave at a borderline ratio. Every color below
+// was checked against the code block's dark-purple background (#1e1626,
+// see custom.css --feldera-code-bg); worst case is now 6.10:1.
+const felderaCodeTheme: PrismTheme = {
+  plain: {
+    color: "#e7e4ee",
+    backgroundColor: "#1e1626",
+  },
+  styles: [
+    {
+      types: ["comment", "prolog", "doctype", "cdata", "namespace"],
+      style: { color: "#a19bae", fontStyle: "italic" },
+    },
+    {
+      types: ["punctuation", "operator", "entity", "url", "variable"],
+      style: { color: "#ada7bc" },
+    },
+    {
+      types: ["property", "tag"],
+      style: { color: "#e7e4ee" },
+    },
+    {
+      types: ["deleted"],
+      style: { color: "#ff6280" },
+    },
+    {
+      types: ["inserted", "selector", "attr-name", "string", "char", "builtin", "regex"],
+      style: { color: "#94C445" },
+    },
+    {
+      types: ["boolean", "number", "constant", "symbol", "function", "class-name"],
+      style: { color: "#e794e0" },
+    },
+    {
+      types: ["atrule", "attr-value", "keyword", "changed", "important"],
+      style: { color: "#FCAF4F" },
+    },
+  ],
+};
 
 const config: Config = {
   title: "Feldera Documentation",
@@ -411,8 +461,8 @@ const config: Config = {
       copyright: `Copyright © ${new Date().getFullYear()} Feldera Inc.`,
     },
     prism: {
-      theme: prismThemes.github,
-      darkTheme: prismThemes.dracula,
+      theme: felderaCodeTheme,
+      darkTheme: felderaCodeTheme,
     },
     headTags: [
       // Declare a <link> preconnect tag
