@@ -9,7 +9,7 @@
 use crate::{
     Error, NumEntries, Runtime,
     circuit::{
-        ElapsedTime, ThreadCpuTime, max_level0_batch_size_records,
+        ElapsedTime, max_level0_batch_size_records,
         metadata::{
             BLOOM_FILTER_BITS_PER_KEY, BLOOM_FILTER_HIT_RATE_PERCENT, BLOOM_FILTER_HITS_COUNT,
             BLOOM_FILTER_MISSES_COUNT, BLOOM_FILTER_SIZE_BYTES, COMPACTION_STATE, COMPLETED_MERGES,
@@ -1324,8 +1324,8 @@ where
             if level == 0 {
                 self.worker_state.report_slot0_merge(merger.fuel);
             }
-            let merger = opt_merger.take().unwrap();
-            let new_batch = Arc::new(merger.builder.done());
+            let mut merger = opt_merger.take().unwrap();
+            let new_batch = merger.elapsed.record(|| Arc::new(merger.builder.done()));
             let new_level =
                 Spine::<B>::size_to_level(&new_batch, self.max_level0_batch_size_records, true);
             self.state.lock().unwrap().merge_complete(
@@ -1454,9 +1454,7 @@ where
     fn merge(&mut self, mut fuel: isize) -> isize {
         debug_assert!(fuel > 0);
         let supplied_fuel = fuel;
-        let start = Instant::now();
-        let start_cpu = ThreadCpuTime::now();
-        match &mut self.inner {
+        self.elapsed.record(|| match &mut self.inner {
             MergeInner::ListMerger(merger) => {
                 merger.work(&mut self.builder, &self.frontier, &mut fuel);
                 self.done = fuel > 0;
@@ -1470,11 +1468,7 @@ where
                     merger.run();
                 }
             }
-        };
-        self.elapsed += ElapsedTime {
-            real: start.elapsed(),
-            cpu: start_cpu.elapsed(),
-        };
+        });
         self.n_steps += 1;
         let consumed_fuel = supplied_fuel - fuel;
         self.fuel += consumed_fuel;

@@ -8859,6 +8859,24 @@ pub struct ElapsedTime {
     pub cpu: Duration,
 }
 
+impl ElapsedTime {
+    /// Calls `f()` and adds the real time and CPU that the call takes to this
+    /// `ElapsedTime`.
+    pub fn record<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let start = Instant::now();
+        let start_cpu = ThreadCpuTime::now();
+        let result = f();
+        *self += ElapsedTime {
+            real: start.elapsed(),
+            cpu: start_cpu.elapsed(),
+        };
+        result
+    }
+}
+
 impl AddAssign for ElapsedTime {
     fn add_assign(&mut self, rhs: Self) {
         self.real += rhs.real;
@@ -8929,11 +8947,7 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let start = Instant::now();
-        let start_cputime = ThreadCpuTime::now();
-        let ret = this.task.poll(cx);
-        this.elapsed.real += start.elapsed();
-        this.elapsed.cpu += start_cputime.elapsed();
+        let ret = this.elapsed.record(|| this.task.poll(cx));
         ret.map(|value| (value, take(&mut *this.elapsed)))
     }
 }
@@ -8946,8 +8960,39 @@ mod tests {
         monitor::TraceMonitor,
         operator::{Generator, Z1},
     };
+    use super::ElapsedTime;
     use anyhow::anyhow;
-    use std::{cell::RefCell, ops::Deref, rc::Rc, vec::Vec};
+    use std::{cell::RefCell, ops::Deref, rc::Rc, thread, time::Duration, vec::Vec};
+
+    #[test]
+    fn elapsed_time_record_returns_closure_result() {
+        let mut elapsed = ElapsedTime::default();
+        let result = elapsed.record(|| 1 + 1);
+        assert_eq!(result, 2);
+    }
+
+    #[test]
+    fn elapsed_time_record_accumulates_across_calls() {
+        let mut elapsed = ElapsedTime::default();
+        elapsed.record(|| thread::sleep(Duration::from_millis(20)));
+        elapsed.record(|| thread::sleep(Duration::from_millis(20)));
+
+        // Each call's real time adds to the total instead of overwriting it.
+        assert!(elapsed.real >= Duration::from_millis(35));
+    }
+
+    #[test]
+    fn elapsed_time_record_detects_blocking() {
+        // A closure that only sleeps blocks the thread without spending any
+        // CPU time, which is the same signature a stalled synchronous I/O
+        // call (e.g. a slow `fsync`) leaves behind. This is what lets
+        // `real` much greater than `cpu` flag a stall in the merge stats.
+        let mut elapsed = ElapsedTime::default();
+        elapsed.record(|| thread::sleep(Duration::from_millis(50)));
+
+        assert!(elapsed.real >= Duration::from_millis(45));
+        assert!(elapsed.cpu < elapsed.real / 4);
+    }
 
     #[test]
     fn sum_circuit_dynamic() {
