@@ -44,12 +44,9 @@ from feldera.testutils import (
 MAX_CONCURRENT_RECLAIMS = 8
 
 
-def ci_run_prefix() -> str:
-    """The prefix `unique_pipeline_name` gives every pipeline of this run."""
-    return unique_pipeline_name("")
-
-
 def warn(message: str) -> None:
+    # `::warning::` reaches the run's annotation summary, which is where a
+    # cleanup that found something has to show up. Nothing reads it elsewhere.
     if os.environ.get("GITHUB_ACTIONS"):
         print(f"::warning::{message}", flush=True)
     else:
@@ -73,7 +70,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    prefix = args.prefix or ci_run_prefix()
+    # `unique_pipeline_name` stamps this prefix on every pipeline of this run.
+    prefix = args.prefix or unique_pipeline_name("")
     print(f"Sweeping pipelines named '{prefix}*' on {BASE_URL}", flush=True)
 
     try:
