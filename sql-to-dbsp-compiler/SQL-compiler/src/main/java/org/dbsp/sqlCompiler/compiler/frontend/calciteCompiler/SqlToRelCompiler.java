@@ -1991,7 +1991,10 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     RelRoot sqlToRel(SqlNode node) {
         SqlToRelConverter converter = this.getConverter();
-        return converter.convertQuery(node, true, true);
+        RelRoot root = converter.convertQuery(node, true, true);
+        // Reject programs using ROW equality
+        root.rel.accept(new RejectRowEquality(this.errorReporter));
+        return root;
     }
 
     void validateViewProperty(ProgramIdentifier view, SqlFragment key, SqlFragment value) {

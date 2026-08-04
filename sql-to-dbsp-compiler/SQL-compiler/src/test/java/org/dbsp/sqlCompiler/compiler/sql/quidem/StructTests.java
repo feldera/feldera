@@ -44,13 +44,14 @@ public class StructTests extends ScottBaseTests {
                 (2 rows)
                 
                 -- [CALCITE-3482] Equality of nested ROWs returns false for identical literal value
+                -- Feldera rejects '=' between ROW values, so this uses IS NOT DISTINCT FROM
                 select * from
                 (values
                     (1, ROW(1,2)),
                     (2, ROW(2,1)),
                     (3, ROW(1,2)),
                     (4, ROW(2,1))) as t(id,struct)
-                where t.struct = ROW(2,1);
+                where t.struct IS NOT DISTINCT FROM ROW(2,1);
                 +----+--------+
                 | ID | STRUCT |
                 +----+--------+
@@ -60,13 +61,14 @@ public class StructTests extends ScottBaseTests {
                 (2 rows)
                 
                 -- [CALCITE-3482] Equality of nested ROWs returns false for identical literal value
+                -- Feldera rejects '=' between ROW values, so this uses IS NOT DISTINCT FROM
                 select id from
                 (values
                     (1, ROW(2, ROW(4,3))),
                     (2, ROW(2, ROW(3,4))),
                     (3, ROW(1, ROW(3,4))),
                     (4, ROW(2, ROW(3,4)))) as t(id,struct)
-                where t.struct = ROW(2, ROW(3,4));
+                where t.struct IS NOT DISTINCT FROM ROW(2, ROW(3,4));
                 +----+
                 | ID |
                 +----+
@@ -76,10 +78,12 @@ public class StructTests extends ScottBaseTests {
                 (2 rows)
                 
                 -- [CALCITE-4434] Cannot implement 'CASE row WHEN row ...'
+                -- 'CASE row WHEN row' expands into an equality between ROW values,
+                -- which Feldera rejects, so this uses IS NOT DISTINCT FROM
                 SELECT deptno, job,
-                  CASE (deptno, job)
-                  WHEN (20, 'CLERK') THEN 1
-                  WHEN (30, 'SALESMAN') THEN 2
+                  CASE
+                  WHEN (deptno, job) IS NOT DISTINCT FROM (20, 'CLERK') THEN 1
+                  WHEN (deptno, job) IS NOT DISTINCT FROM (30, 'SALESMAN') THEN 2
                   ELSE 3
                   END AS x
                 FROM emp

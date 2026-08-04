@@ -109,12 +109,19 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void issue3364() {
+        // Joining on ROW values is supported, but only with IS NOT DISTINCT FROM
         this.statementsFailingInCompilation("""
                 create type typ1 as (f int);
                 create table t1 (x1 typ1);
                 create table t2 (x1 typ1);
                 create view v1 as select t1.* from t1 join t2
-                on t1.x1 = t2.x1;""", "Not yet implemented: Join on struct types");
+                on t1.x1 = t2.x1;""", "ROW values cannot be compared using '='");
+        this.getCC("""
+                create type typ1 as (f int);
+                create table t1 (x1 typ1);
+                create table t2 (x1 typ1);
+                create view v1 as select t1.* from t1 join t2
+                on t1.x1 is not distinct from t2.x1;""");
     }
 
     @Test
@@ -907,7 +914,7 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void issue3180() {
-        this.getCCS("CREATE VIEW V AS SELECT ROW(1, 'x') = ROW('x', 1);");
+        this.getCCS("CREATE VIEW V AS SELECT ROW(1, 'x') IS NOT DISTINCT FROM ROW('x', 1);");
     }
 
     @Test

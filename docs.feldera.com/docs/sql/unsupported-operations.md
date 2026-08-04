@@ -120,6 +120,16 @@ example usage.  Dynamic `PIVOT` is not yet supported.
 ## `MULTISET` Data Type
 The `MULTISET` data type is not currently supported.
 
+## Equality between `ROW` values
+
+`=`, `<>`, and `!=` are rejected between `ROW` values, and so are the
+forms that imply such a comparison: a join condition, `NATURAL JOIN`,
+`USING`, `IN`, `CASE`, and `NULLIF`.  A user-defined structure type is
+a `ROW` type, so the restriction covers its values too.  Use `IS [NOT]
+DISTINCT FROM` instead, and see [comparing `ROW`
+values](comparisons.md#comparing-row-values) for the accepted rewrite
+of each form.
+
 ## Session windows
 
 Session windows (grouping events into sessions based on a gap in
