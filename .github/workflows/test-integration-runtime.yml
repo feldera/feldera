@@ -9,6 +9,12 @@ on:
         description: "ID of the workflow run that uploaded the artifact"
         required: true
 
+# Reaching the CI instances needs an OIDC token. A caller must grant the same
+# permission, which ci.yml does on the job that invokes this workflow.
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   runtime-tests:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'runtime-tests') }}
@@ -18,14 +24,10 @@ jobs:
         include:
           - runner: [gke-runners-amd64]
             feldera_host: ${{ vars.FELDERA_HOST_CI_GKE_AMD64 }}
-            feldera_api_key: FELDERA_API_KEY_CI_GKE_AMD64
           - runner: [gke-runners-arm64]
             feldera_host: ${{ vars.FELDERA_HOST_CI_GKE_ARM64 }}
-            feldera_api_key: FELDERA_API_KEY_CI_GKE_ARM64
     runs-on: ${{ matrix.runner }}
     env:
-      FELDERA_HOST: ${{ matrix.feldera_host }}
-      FELDERA_API_KEY: ${{ secrets[matrix.feldera_api_key] }}
       FELDERA_RUNTIME_VERSION: ${{ github.sha }}
       # GCS test bucket over the S3-interop endpoint; the env names are the
       # standard ones the tests read (python/tests/utils.py).
@@ -45,13 +47,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
+      # The instances identify this workflow by the audience it requests, so
+      # the value has to match the one their trust pins.
+      - name: Authenticate to Feldera
+        uses: feldera/oidc-auth-action@d1fce411d12fcda95a1f1a0bc441d2dc191e3f2c # v1.0.0
+        with:
+          host: ${{ matrix.feldera_host }}
+          audience: feldera-ci-runtime-tests
+
       - name: Python runtime tests
         if: ${{ vars.CI_DRY_RUN != 'true' && !contains(vars.CI_SKIP_JOBS, 'runtime-pytest') }}
         run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/runtime --timeout=3600 --maxfail=1 -vv ${{ vars.PYTEST_EXTRA }}
         working-directory: python
         env:
           PYTHONPATH: ${{ github.workspace }}/python
-          FELDERA_TLS_INSECURE: true
 
       - name: Python runtime_aggtest test
         if: ${{ vars.CI_DRY_RUN != 'true' && !contains(vars.CI_SKIP_JOBS, 'runtime-aggtest') }}
@@ -60,7 +69,6 @@ jobs:
         env:
           RUNTIME_AGGTEST_JOBS: ${{ vars.RUNTIME_AGGTEST_JOBS }}
           PYTHONPATH: ${{ github.workspace }}/python
-          FELDERA_TLS_INSECURE: true
 
       - name: Python workload tests
         if: ${{ vars.CI_DRY_RUN != 'true' && !contains(vars.CI_SKIP_JOBS, 'runtime-workload') }}
@@ -68,7 +76,6 @@ jobs:
         working-directory: python
         env:
           PYTHONPATH: ${{ github.workspace }}/python
-          FELDERA_TLS_INSECURE: true
           KAFKA_BOOTSTRAP_SERVERS: ${{ vars.CI_KAFKA_BOOTSTRAP }}
           SCHEMA_REGISTRY_URL: ${{ vars.CI_SCHEMA_REGISTRY }}
           RUN_ID: 1 # we use this to run a single variant of the Kafka tests in test_kafka_avro.py

@@ -3,6 +3,8 @@
 import logging
 import math
 import os
+import urllib.parse
+import urllib.request
 import platform
 import re
 import time
@@ -42,6 +44,35 @@ def _get_effective_api_key():
     """Get effective API key - OIDC token takes precedence over static API key"""
     oidc_token = _get_oidc_token()
     return oidc_token if oidc_token else API_KEY
+
+
+def _github_oidc_token() -> str:
+    """Mint a fresh GitHub Actions ID token for this job."""
+    request_url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+    audience = os.environ.get("FELDERA_OIDC_AUDIENCE")
+    if audience:
+        request_url += "&audience=" + urllib.parse.quote(audience, safe="")
+    request = urllib.request.Request(request_url)
+    request.add_header(
+        "Authorization", f"bearer {os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']}"
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.load(response)["value"]
+
+
+def _feldera_credential():
+    """Bearer credential for the test client.
+
+    Under GitHub Actions the credential is an ID token that expires well inside
+    a long test run, so hand the SDK the callable rather than a token: it
+    re-resolves per request and retries once on 401, which a fixed string
+    cannot do. The OIDC login flow, where configured, still wins.
+    """
+    if os.environ.get("OIDC_TEST_ISSUER"):
+        return _get_effective_api_key()
+    if os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL"):
+        return _github_oidc_token
+    return API_KEY
 
 
 BASE_URL = os.environ.get("FELDERA_HOST") or "http://localhost:8080"
@@ -87,7 +118,7 @@ class _LazyClient:
         if self._client is None:
             self._client = FelderaClient(
                 connection_timeout=10,
-                api_key=_get_effective_api_key(),
+                api_key=_feldera_credential(),
             )
         return self._client
 
