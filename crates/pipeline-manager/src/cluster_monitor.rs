@@ -101,7 +101,9 @@ pub async fn cluster_monitor<P: ResourcesPoller>(
                 if matches!(e, DBError::NoClusterMonitorEventsAvailable) {
                     None
                 } else {
-                    error!("Cluster monitor cannot perform monitoring because it is unable to retrieve the latest event due to: {e}");
+                    error!(
+                        "Cluster monitor cannot perform monitoring because it is unable to retrieve the latest event due to: {e}"
+                    );
                     tokio::time::sleep(MONITOR_INTERVAL).await;
                     continue;
                 }
@@ -234,8 +236,8 @@ pub async fn cluster_monitor<P: ResourcesPoller>(
             };
 
             // Clean up events that no longer need to be retained
-            if stored {
-                if let Err(e) = db
+            if stored
+                && let Err(e) = db
                     .lock()
                     .await
                     .delete_cluster_monitor_events_beyond_retention(
@@ -243,9 +245,8 @@ pub async fn cluster_monitor<P: ResourcesPoller>(
                         MONITOR_RETENTION_NUM,
                     )
                     .await
-                {
-                    error!("Cluster monitor is unable to clean up based on retention due to: {e}");
-                }
+            {
+                error!("Cluster monitor is unable to clean up based on retention due to: {e}");
             }
         } else {
             iterations_without_insert += 1;
@@ -281,7 +282,9 @@ async fn poll_service_health_endpoint(
     {
         Ok(resp) if resp.status().is_success() => (
             true,
-            format!("Healthy: The {service_name} service responded successfully to the last health check."),
+            format!(
+                "Healthy: The {service_name} service responded successfully to the last health check."
+            ),
         ),
         Ok(resp) => {
             let status = resp.status();
@@ -323,7 +326,6 @@ async fn poll_service_health_endpoint(
                  source: {}. Please check the {service_name} logs for more information.",
                 source_error(&e)
             ),
-
         ),
     }
 }

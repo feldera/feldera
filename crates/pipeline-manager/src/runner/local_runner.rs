@@ -4,17 +4,17 @@
 use crate::common_error::CommonError;
 use crate::config::{CommonConfig, LocalRunnerConfig};
 use crate::db::types::pipeline::{
-    bootstrap_policy_to_string, runtime_desired_status_to_string, PipelineId,
+    PipelineId, bootstrap_policy_to_string, runtime_desired_status_to_string,
 };
 use crate::db::types::version::Version;
-use crate::error::{source_error, ManagerError};
+use crate::error::{ManagerError, source_error};
 use crate::pipeline_env::validate_pipeline_env;
 use crate::runner::error::RunnerError;
 use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use async_trait::async_trait;
-use feldera_observability::system::total_memory_megabyte;
 use feldera_observability::ReqwestTracingExt;
+use feldera_observability::system::total_memory_megabyte;
 use feldera_types::config::{
     PipelineConfig, PipelineConfigProgramInfo, RuntimeConfig, StorageCacheConfig, StorageConfig,
 };
@@ -37,7 +37,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use tokio::{fs, fs::create_dir_all, select, spawn};
 use tokio_stream::StreamExt;
-use tracing::{error, info, warn, Level};
+use tracing::{Level, error, info, warn};
 use uuid::Uuid;
 
 /// How many times to attempt to retrieve the pipeline binary.
@@ -1226,7 +1226,7 @@ impl PipelineExecutor for LocalRunner {
                     return Err(RunnerError::RunnerProvisionError {
                         error: format!("unable to spawn process due to: {e}"),
                     }
-                    .into())
+                    .into());
                 }
             }
         };
@@ -1413,14 +1413,14 @@ fn per_host_share(available_mb: Option<u64>, n_hosts: usize) -> Option<u64> {
 /// Sets `global.resources.memory_mb_max` to `available_mb` when the pipeline
 /// has no memory budget.
 fn apply_default_memory_limit(global: &mut RuntimeConfig, available_mb: Option<u64>) {
-    if global.effective_memory_mb().is_none() {
-        if let Some(available_mb) = available_mb {
-            info!(
-                "pipeline has no memory limit ('max_rss_mb' or 'resources.memory_mb_max'): \
+    if global.effective_memory_mb().is_none()
+        && let Some(available_mb) = available_mb
+    {
+        info!(
+            "pipeline has no memory limit ('max_rss_mb' or 'resources.memory_mb_max'): \
 defaulting 'resources.memory_mb_max' to {available_mb} MB"
-            );
-            global.resources.memory_mb_max = Some(available_mb);
-        }
+        );
+        global.resources.memory_mb_max = Some(available_mb);
     }
 }
 
@@ -1441,8 +1441,8 @@ mod memory_limit_tests {
 #[cfg(test)]
 mod multihost_tests {
     use super::{
-        multihost_coordinator_ip, multihost_host_ip, multihost_host_template, MAX_MULTIHOST_HOSTS,
-        MULTIHOST_LOOPBACK_OCTET,
+        MAX_MULTIHOST_HOSTS, MULTIHOST_LOOPBACK_OCTET, multihost_coordinator_ip, multihost_host_ip,
+        multihost_host_template,
     };
     use std::net::Ipv4Addr;
 

@@ -2,7 +2,7 @@ use crate::db::error::DBError;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::tenant::TenantId;
-use futures_util::{stream, StreamExt};
+use futures_util::{StreamExt, stream};
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error as ThisError;
@@ -128,7 +128,9 @@ async fn attempt_listen_table(
                                     if let Err(e) = notification_sender.try_send(n) {
                                         match e {
                                             TrySendError::Full(_n) => {
-                                                error!("Notifier is unable to send notification out on channel because it has reached capacity");
+                                                error!(
+                                                    "Notifier is unable to send notification out on channel because it has reached capacity"
+                                                );
                                             }
                                             TrySendError::Closed(_n) => {
                                                 break ListenError::NotificationReceiverClosed;
@@ -148,7 +150,9 @@ async fn attempt_listen_table(
                         }
                         // AsyncMessage is marked non-exhaustive
                         _ => {
-                            error!("Notifier received AsyncMessage that isn't a notification or notice")
+                            error!(
+                                "Notifier received AsyncMessage that isn't a notification or notice"
+                            )
                         }
                     }
                 }
@@ -248,9 +252,9 @@ fn parse_notification(
 #[cfg(test)]
 mod test {
     use super::{
-        listen_table, NotificationError, PipelineNotification, PIPELINE_NOTIFY_CHANNEL_CAPACITY,
+        NotificationError, PIPELINE_NOTIFY_CHANNEL_CAPACITY, PipelineNotification, listen_table,
     };
-    use super::{parse_notification, Operation};
+    use super::{Operation, parse_notification};
     use crate::db::types::pipeline::{PatchClientMetadata, PipelineDescr, PipelineId};
     use crate::db::types::program::ProgramConfig;
     use crate::db::types::tenant::TenantId;

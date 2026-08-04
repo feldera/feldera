@@ -1,6 +1,6 @@
 use colored::ColoredString;
 use feldera_observability::json_logging::{
-    init_pipeline_logging, init_service_logging as init_service_logging_subscriber, ServiceName,
+    ServiceName, init_pipeline_logging, init_service_logging as init_service_logging_subscriber,
 };
 use tracing::warn;
 use tracing_subscriber::EnvFilter;

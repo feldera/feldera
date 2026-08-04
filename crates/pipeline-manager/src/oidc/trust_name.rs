@@ -1,7 +1,7 @@
 use crate::db::error::DBError;
 use crate::db::types::utils::{
-    validate_name, PATTERN_NON_EMPTY_ALPHANUMERIC_UNDERSCORE_HYPHEN,
-    PATTERN_NON_EMPTY_ALPHANUMERIC_UNDERSCORE_HYPHEN_DESCRIPTION,
+    PATTERN_NON_EMPTY_ALPHANUMERIC_UNDERSCORE_HYPHEN,
+    PATTERN_NON_EMPTY_ALPHANUMERIC_UNDERSCORE_HYPHEN_DESCRIPTION, validate_name,
 };
 
 /// Longest permitted name for a trust relationship.

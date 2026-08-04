@@ -19,11 +19,10 @@ use crate::db::types::role::{MemberRole, Role};
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use actix_web::{
-    delete, get,
+    HttpRequest, HttpResponse, delete, get,
     http::header::{CacheControl, CacheDirective},
     post,
     web::{self, Data as WebData, ReqData},
-    HttpRequest, HttpResponse,
 };
 use serde::{Deserialize, Serialize};
 use tracing::info;

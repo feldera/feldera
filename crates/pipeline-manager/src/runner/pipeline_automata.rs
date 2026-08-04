@@ -3,10 +3,10 @@ use crate::db::error::DBError;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::{
-    runtime_desired_status_to_string, runtime_status_to_string, ExtendedPipelineDescr,
-    ExtendedPipelineDescrMonitoring, PipelineId,
+    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineId,
+    runtime_desired_status_to_string, runtime_status_to_string,
 };
-use crate::db::types::program::{generate_pipeline_config, ProgramStatus};
+use crate::db::types::program::{ProgramStatus, generate_pipeline_config};
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
@@ -18,7 +18,7 @@ use crate::is_supported_runtime;
 use crate::runner::error::RunnerError;
 use crate::runner::interaction::{format_pipeline_url, format_timeout_error_message};
 use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
-use crate::runner::pipeline_logs::{start_thread_pipeline_logs, LogMessage, LogsSender};
+use crate::runner::pipeline_logs::{LogMessage, LogsSender, start_thread_pipeline_logs};
 use chrono::Utc;
 use feldera_observability::ReqwestTracingExt;
 use feldera_types::error::ErrorResponse;
@@ -36,7 +36,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio::{sync::Mutex, time::Duration};
 use tokio::{sync::Notify, time::timeout};
-use tracing::{debug, error, info, warn, Level};
+use tracing::{Level, debug, error, info, warn};
 use uuid::Uuid;
 
 /// Every cycle, the automaton decides one of these actions to undertake.
@@ -851,7 +851,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             match serde_json::to_value(details) {
                 Ok(storage_status_details) => Some(storage_status_details),
                 Err(e) => {
-                    error!("Automaton of pipeline {} is unable to serialize storage status details due to: {e}", self.pipeline_id);
+                    error!(
+                        "Automaton of pipeline {} is unable to serialize storage status details due to: {e}",
+                        self.pipeline_id
+                    );
                     None
                 }
             }
@@ -871,7 +874,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             ProgramStatus::Success
                 if !is_supported_runtime(&self.platform_version, &pipeline.platform_version) =>
             {
-                info!("Runner cannot start pipeline {} because its runtime version ({}) is incompatible with current ({})", pipeline.id, pipeline.platform_version, self.platform_version);
+                info!(
+                    "Runner cannot start pipeline {} because its runtime version ({}) is incompatible with current ({})",
+                    pipeline.id, pipeline.platform_version, self.platform_version
+                );
 
                 Ok(Action::RemainStoppedUpdateError {
                     error: ErrorResponse::from_error_nolog(
@@ -1207,7 +1213,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingDeploymentInitial.into()),
                     storage_status_details: None,
-                }
+                };
             }
             Some(deployment_initial) => *deployment_initial,
         };
@@ -1218,7 +1224,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingDeploymentId.into()),
                     storage_status_details: None,
-                }
+                };
             }
             Some(deployment_id) => *deployment_id,
         };
@@ -1229,7 +1235,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingDeploymentConfig.into()),
                     storage_status_details: None,
-                }
+                };
             }
             Some(deployment_config) => match validate_deployment_config(deployment_config) {
                 Ok(deployment_config) => deployment_config,
@@ -1407,7 +1413,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingDeploymentInitial.into()),
                     storage_status_details: None,
-                }
+                };
             }
             Some(deployment_initial) => *deployment_initial,
         };
@@ -1658,7 +1664,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     return Action::TransitionToStopping {
                         error: Some(e.into()),
                         storage_status_details: None,
-                    }
+                    };
                 }
             };
 
@@ -1669,7 +1675,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingDeploymentLocation.into()),
                     storage_status_details: None,
-                }
+                };
             }
         };
 
@@ -1680,7 +1686,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 return Action::TransitionToStopping {
                     error: Some(RunnerError::AutomatonMissingDeploymentInitial.into()),
                     storage_status_details: None,
-                }
+                };
             }
         };
 
@@ -1700,7 +1706,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 return Action::TransitionToStopping {
                     error: Some(e),
                     storage_status_details: None,
-                }
+                };
             }
         };
 
@@ -1876,11 +1882,11 @@ mod test {
     use std::str::FromStr;
     use std::sync::Arc;
     use std::time::Duration;
-    use tokio::sync::mpsc::{channel, Sender};
+    use tokio::sync::mpsc::{Sender, channel};
     use tokio::sync::{Mutex, Notify};
     use uuid::Uuid;
     use wiremock::matchers::{method, path};
-    use wiremock::{http, Mock, MockServer, ResponseTemplate};
+    use wiremock::{Mock, MockServer, ResponseTemplate, http};
 
     struct MockRunner {
         deployment_location: String,

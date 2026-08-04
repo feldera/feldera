@@ -35,7 +35,9 @@ pub fn platform_enable_unstable(requested_features: &str) {
         if let Some(supported_feature) = all_features.get(requested_feature) {
             enabled.insert(*supported_feature);
         } else {
-            warn!("Requested unstable feature '{requested_feature}' is not supported by the platform.");
+            warn!(
+                "Requested unstable feature '{requested_feature}' is not supported by the platform."
+            );
         }
     }
     UNSTABLE_FEATURES

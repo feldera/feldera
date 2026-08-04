@@ -1,4 +1,4 @@
-use crate::api::demo::{read_demos_from_directories, Demo};
+use crate::api::demo::{Demo, read_demos_from_directories};
 use crate::api::endpoints;
 use crate::api::support_data_collector::SupportDataCollector;
 use crate::auth::{IssuerJwkCache, JwkCache};
@@ -9,17 +9,16 @@ use crate::error::ManagerError;
 use crate::license::LicenseCheck;
 use crate::runner::interaction::RunnerInteraction;
 use crate::unstable_features;
-use actix_http::body::BoxBody;
 use actix_http::StatusCode;
+use actix_http::body::BoxBody;
+use actix_web::Scope;
 use actix_web::body::MessageBody;
 use actix_web::dev::{Service, ServiceResponse};
-use actix_web::http::{header, Method};
-use actix_web::Scope;
+use actix_web::http::{Method, header};
 use actix_web::{
-    get, middleware,
+    App, HttpResponse, HttpServer, get, middleware,
     web::Data as WebData,
     web::{self},
-    App, HttpResponse, HttpServer,
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
@@ -29,11 +28,11 @@ use futures_util::FutureExt;
 use std::io::Write;
 use std::time::Duration;
 use std::{env, io, net::TcpListener, sync::Arc};
-use termbg::{theme, Theme};
+use termbg::{Theme, theme};
 use tokio::signal;
 use tokio::sync::watch;
 use tokio::sync::{Mutex, RwLock};
-use tracing::{error, info, Level};
+use tracing::{Level, error, info};
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
@@ -608,13 +607,16 @@ fn build_app(
     api_config: &ApiServerConfig,
     auth_configuration: &Option<crate::auth::AuthConfiguration>,
 ) -> App<
+    // `use<>`: the returned app owns everything it needs, so it must not
+    // capture the argument lifetimes that edition 2024 would capture by
+    // default. Callers pass short-lived config to an app that outlives it.
     impl actix_web::dev::ServiceFactory<
         actix_web::dev::ServiceRequest,
         Config = (),
-        Response = actix_web::dev::ServiceResponse<impl MessageBody>,
+        Response = actix_web::dev::ServiceResponse<impl MessageBody + use<>>,
         Error = actix_web::Error,
         InitError = (),
-    >,
+    > + use<>,
 > {
     let cors = api_config.cors();
     let app = App::new()
@@ -1119,7 +1121,7 @@ Version: {} v{}{}
     });
     #[cfg(unix)]
     {
-        use tokio::signal::unix::{signal as unix_signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal as unix_signal};
         let mut term_stream = unix_signal(SignalKind::terminate()).expect("SIGTERM handler");
         let server_handle_term = server.handle();
         tokio::spawn(async move {
@@ -1221,10 +1223,11 @@ mod tests {
             "public, max-age=86400",
         );
         // Only the immutable branch emits ACAO/EXPIRES.
-        assert!(res
-            .headers()
-            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-            .is_none());
+        assert!(
+            res.headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_none()
+        );
         assert!(res.headers().get(header::EXPIRES).is_none());
     }
 
@@ -1288,7 +1291,9 @@ mod tests {
         let res = test::call_service(&app, req).await;
 
         assert!(
-            res.headers().get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS).is_none(),
+            res.headers()
+                .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+                .is_none(),
             "static asset leaked Access-Control-Allow-Credentials — actix-cors regressed onto the static scope",
         );
         if let Some(vary) = res.headers().get(header::VARY) {

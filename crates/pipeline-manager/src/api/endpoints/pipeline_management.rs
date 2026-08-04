@@ -7,7 +7,7 @@ use crate::compiler::{ProgramValidationRequest, ValidateProgramResponse};
 use crate::config::CommonConfig;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
-use crate::db::types::combined_status::{combine_since, CombinedDesiredStatus, CombinedStatus};
+use crate::db::types::combined_status::{CombinedDesiredStatus, CombinedStatus, combine_since};
 use crate::db::types::pipeline::{
     ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PatchClientMetadata,
     PipelineDescr, PipelineId,
@@ -24,17 +24,16 @@ use crate::has_unstable_feature;
 #[cfg(feature = "feldera-enterprise")]
 use actix_web::http::Method;
 use actix_web::{
-    delete, get,
+    HttpResponse, delete, get,
     http::header::{CacheControl, CacheDirective},
     patch, post, put,
     web::{self, Data as WebData, ReqData},
-    HttpResponse,
 };
 use chrono::{DateTime, Utc};
 use feldera_types::adapter_stats::PipelineStatsErrorsResponse;
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
-use feldera_types::pipeline_diff::{compute_pipeline_diff, PipelineDiff};
+use feldera_types::pipeline_diff::{PipelineDiff, compute_pipeline_diff};
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
     BootstrapConfig, BootstrapPolicy, ConnectorStats, RuntimeDesiredStatus, RuntimeStatus,
@@ -878,12 +877,11 @@ async fn fetch_connector_error_stats(
     let details = backward_compatible_runtime_status_details(
         pipeline.deployment_runtime_status_details.clone(),
     );
-    if let Some(value) = details {
-        if let Ok(details) = serde_json::from_value::<RuntimeStatusDetails>(value) {
-            if let Some(connector_stats) = details.connector_stats {
-                return Some(connector_stats);
-            }
-        }
+    if let Some(value) = details
+        && let Ok(details) = serde_json::from_value::<RuntimeStatusDetails>(value)
+        && let Some(connector_stats) = details.connector_stats
+    {
+        return Some(connector_stats);
     };
 
     // Only forward the request if the pipeline is in a valid runtime status

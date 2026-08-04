@@ -1,5 +1,5 @@
 use actix_web::{
-    body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
+    HttpResponse, HttpResponseBuilder, ResponseError, body::BoxBody, http::StatusCode,
 };
 use feldera_types::error::{DetailedError, ErrorResponse};
 use serde::Serialize;

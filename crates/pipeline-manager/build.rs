@@ -1,5 +1,5 @@
 use change_detection::ChangeDetection;
-use static_files::{resource_dir, NpmBuild};
+use static_files::{NpmBuild, resource_dir};
 use std::env;
 use std::path::{Path, PathBuf};
 use vergen_gitcl::*;

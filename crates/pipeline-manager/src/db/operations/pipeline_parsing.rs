@@ -3,9 +3,9 @@ use crate::db::types::monitor::{
     ExtendedPipelineMonitorEvent, PipelineMonitorEvent, PipelineMonitorEventId,
 };
 use crate::db::types::pipeline::{
-    parse_string_as_bootstrap_config, parse_string_as_runtime_desired_status,
-    parse_string_as_runtime_status, ClientMetadata, ExtendedPipelineDescr,
-    ExtendedPipelineDescrEventInfo, ExtendedPipelineDescrMonitoring, PipelineId,
+    ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrEventInfo,
+    ExtendedPipelineDescrMonitoring, PipelineId, parse_string_as_bootstrap_config,
+    parse_string_as_runtime_desired_status, parse_string_as_runtime_status,
 };
 use crate::db::types::program::{ProgramError, ProgramStatus};
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
@@ -524,10 +524,10 @@ fn deserialize_program_error_with_default(s: &str) -> ProgramError {
 #[cfg(test)]
 mod tests {
     use super::{
-        deserialize_error_response, deserialize_json_value, deserialize_program_error,
-        deserialize_program_error_with_default, serialize_error_response, serialize_program_error,
         PIPELINE_COLUMNS_ALL, PIPELINE_COLUMNS_EVENT_INFO, PIPELINE_COLUMNS_MONITORING,
-        PIPELINE_EVENT_COLUMNS_ALL, PIPELINE_EVENT_COLUMNS_SHORT,
+        PIPELINE_EVENT_COLUMNS_ALL, PIPELINE_EVENT_COLUMNS_SHORT, deserialize_error_response,
+        deserialize_json_value, deserialize_program_error, deserialize_program_error_with_default,
+        serialize_error_response, serialize_program_error,
     };
     use crate::db::error::DBError;
     use crate::db::types::monitor::{

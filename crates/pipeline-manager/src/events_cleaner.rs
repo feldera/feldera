@@ -26,7 +26,9 @@ pub async fn events_cleaner(db: Arc<Mutex<StoragePostgres>>, common_config: Comm
         {
             Ok(num_deleted) => {
                 if num_deleted > 0 {
-                    debug!("Pipeline monitor events cleanup: deleted {num_deleted} events that exceeded retention limits");
+                    debug!(
+                        "Pipeline monitor events cleanup: deleted {num_deleted} events that exceeded retention limits"
+                    );
                 }
             }
             Err(e) => {

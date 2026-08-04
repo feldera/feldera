@@ -2,27 +2,27 @@ use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
 use crate::db::operations::pipeline_monitor::new_pipeline_monitor_event;
 use crate::db::operations::pipeline_parsing::{
+    PIPELINE_COLUMNS_ALL, PIPELINE_COLUMNS_EVENT_INFO, PIPELINE_COLUMNS_MONITORING,
     parse_pipeline_row_all, parse_pipeline_row_event_info, parse_pipeline_row_monitoring,
-    serialize_error_response, serialize_program_error, PIPELINE_COLUMNS_ALL,
-    PIPELINE_COLUMNS_EVENT_INFO, PIPELINE_COLUMNS_MONITORING,
+    serialize_error_response, serialize_program_error,
 };
 use crate::db::operations::utils::{
     maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
 };
 use crate::db::types::pipeline::{
-    bootstrap_config_to_string, runtime_desired_status_to_string, runtime_status_to_string,
     ExtendedPipelineDescr, ExtendedPipelineDescrEventInfo, ExtendedPipelineDescrMonitoring,
-    PatchClientMetadata, PipelineDescr, PipelineId,
+    PatchClientMetadata, PipelineDescr, PipelineId, bootstrap_config_to_string,
+    runtime_desired_status_to_string, runtime_status_to_string,
 };
 use crate::db::types::program::{
-    validate_program_status_transition, ProgramError, ProgramStatus, RustCompilationInfo,
-    SqlCompilationInfo,
+    ProgramError, ProgramStatus, RustCompilationInfo, SqlCompilationInfo,
+    validate_program_status_transition,
 };
 use crate::db::types::resources_status::{
-    validate_resources_desired_status_transition, validate_resources_status_transition,
-    ResourcesDesiredStatus, ResourcesStatus,
+    ResourcesDesiredStatus, ResourcesStatus, validate_resources_desired_status_transition,
+    validate_resources_status_transition,
 };
-use crate::db::types::storage::{validate_storage_status_transition, StorageStatus};
+use crate::db::types::storage::{StorageStatus, validate_storage_status_transition};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
     validate_deployment_config, validate_pipeline_name, validate_program_config,
@@ -1128,21 +1128,19 @@ pub(crate) async fn set_deployment_resources_desired_status(
     };
 
     // If the current initial desired runtime status is already set, it cannot be changed
-    if let Some(current_initial) = current.deployment_initial {
-        if let Some(new_initial) = final_deployment_initial {
-            if current_initial != new_initial {
-                return Err(DBError::InitialImmutableUnlessStopped);
-            }
-        }
+    if let Some(current_initial) = current.deployment_initial
+        && let Some(new_initial) = final_deployment_initial
+        && current_initial != new_initial
+    {
+        return Err(DBError::InitialImmutableUnlessStopped);
     }
 
     // If the current bootstrap policy is already set, it cannot be changed
-    if let Some(current_bootstrap_config) = current.bootstrap_policy {
-        if let Some(new_bootstrap_config) = final_bootstrap_config {
-            if current_bootstrap_config != new_bootstrap_config {
-                return Err(DBError::BootstrapPolicyImmutableUnlessStopped);
-            }
-        }
+    if let Some(current_bootstrap_config) = current.bootstrap_policy
+        && let Some(new_bootstrap_config) = final_bootstrap_config
+        && current_bootstrap_config != new_bootstrap_config
+    {
+        return Err(DBError::BootstrapPolicyImmutableUnlessStopped);
     }
 
     // Desired status cannot be set to standby if no file backend is configured

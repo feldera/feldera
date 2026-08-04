@@ -1,8 +1,7 @@
 // Configuration API to retrieve the current authentication configuration and list of demos
 use actix_web::{
-    get,
+    HttpRequest, HttpResponse, get,
     web::{Data as WebData, ReqData},
-    HttpRequest, HttpResponse,
 };
 use feldera_cloud1_client::license::DisplaySchedule;
 use serde::Serialize;

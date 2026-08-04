@@ -7,7 +7,7 @@ use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use actix_web::http::header::{self, HeaderValue};
-use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
+use actix_web::{HttpRequest, HttpResponse, HttpResponseBuilder, http::Method, web::Payload};
 use actix_ws::{CloseCode, CloseReason};
 use awc::error::{ConnectError, SendRequestError};
 use awc::{ClientRequest, ClientResponse};
@@ -866,7 +866,7 @@ mod tests {
     /// connection), while a client offering none gets no header back.
     #[actix_web::test]
     async fn ws_handshake_echoes_offered_subprotocol() {
-        use actix_web::{web, App};
+        use actix_web::{App, web};
         setup(); // awc's TLS connector needs a rustls CryptoProvider installed.
 
         // Mirrors the production handshake: complete the upgrade, then echo.

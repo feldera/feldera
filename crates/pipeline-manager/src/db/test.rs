@@ -1,41 +1,41 @@
 use crate::api::support_data_collector::SupportBundleData;
-use crate::auth::{generate_api_key, TenantRecord};
+use crate::auth::{TenantRecord, generate_api_key};
 use crate::db::error::DBError;
 use crate::db::error::DBError::InvalidResourcesStatusNotRemain;
 use crate::db::operations::pipeline::get_pipeline_by_id_for_monitoring;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
-use crate::db::storage_postgres::{is_pipeline_assigned_to_worker, StoragePostgres};
+use crate::db::storage_postgres::{StoragePostgres, is_pipeline_assigned_to_worker};
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId};
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
     ExtendedPipelineMonitorEvent, MonitorStatus, NewClusterMonitorEvent, PipelineMonitorEvent,
     PipelineMonitorEventId,
 };
-use crate::db::types::oidc_trust::{claim_matches, OidcTrustDescr, OidcTrustId};
+use crate::db::types::oidc_trust::{OidcTrustDescr, OidcTrustId, claim_matches};
 use crate::db::types::pipeline::{
     ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PatchClientMetadata,
     PipelineDescr, PipelineId,
 };
 use crate::db::types::program::{
-    generate_pipeline_config, validate_program_status_transition, CompilationProfile,
-    ProgramConfig, ProgramError, ProgramInfo, ProgramStatus, RustCompilationInfo,
-    SqlCompilationInfo,
+    CompilationProfile, ProgramConfig, ProgramError, ProgramInfo, ProgramStatus,
+    RustCompilationInfo, SqlCompilationInfo, generate_pipeline_config,
+    validate_program_status_transition,
 };
 use crate::db::types::resources_status::{
-    validate_resources_desired_status_transition, validate_resources_status_transition,
-    ResourcesDesiredStatus, ResourcesStatus,
+    ResourcesDesiredStatus, ResourcesStatus, validate_resources_desired_status_transition,
+    validate_resources_status_transition,
 };
 use crate::db::types::role::{MemberRole, MintableKeyRole, Role};
-use crate::db::types::storage::{validate_storage_status_transition, StorageStatus};
+use crate::db::types::storage::{StorageStatus, validate_storage_status_transition};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::user::{TenantInfo, TenantMember, UserId};
 use crate::db::types::utils::{
-    validate_api_key_name, validate_deployment_config, validate_pipeline_name,
+    MAXIMUM_TAG_LENGTH, validate_api_key_name, validate_deployment_config, validate_pipeline_name,
     validate_program_config, validate_program_info, validate_runtime_config,
-    validate_storage_status_details, MAXIMUM_TAG_LENGTH,
+    validate_storage_status_details,
 };
 use crate::db::types::version::Version;
-use crate::oidc::destination::{validate_tenant_oidc_url, TenantIssuerPolicy};
+use crate::oidc::destination::{TenantIssuerPolicy, validate_tenant_oidc_url};
 use crate::oidc::trust_name::validate_oidc_trust_name;
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
@@ -61,7 +61,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::vec;
 use tokio::spawn;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
 use tokio::time::sleep;
 use tracing::info;
 use uuid::Uuid;
@@ -91,7 +91,7 @@ impl Drop for DbHandle {
     #[cfg(not(feature = "postgresql_embedded"))]
     fn drop(&mut self) {
         use postgres_openssl::TlsStream;
-        use tokio_postgres::{tls::NoTlsStream, Connection, Socket};
+        use tokio_postgres::{Connection, Socket, tls::NoTlsStream};
         enum ConnWrapper {
             Tls(Connection<Socket, TlsStream<Socket>>),
             NoTls(Connection<Socket, NoTlsStream>),
@@ -173,7 +173,10 @@ pub(crate) async fn setup_pg() -> (StoragePostgres, tempfile::TempDir) {
         match crate::db::pg_setup::install(temp_path.into(), false, Some(port)).await {
             Ok(pg) => break (_temp_dir, pg),
             Err(e) => {
-                info!("Unable to install test database on port {port} ({} attempts left) -- port might have become occupied in the meanwhile. Original error: {e}", 10 - attempt);
+                info!(
+                    "Unable to install test database on port {port} ({} attempts left) -- port might have become occupied in the meanwhile. Original error: {e}",
+                    10 - attempt
+                );
                 sleep(Duration::from_millis(100)).await;
             }
         }
@@ -637,7 +640,7 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
         } else {
             val.2.invalid0 = 1; // Prevent it from being invalid
             let runtime_config = map_val_to_limited_runtime_config(val.2);
-            val.3 .0 = 1; // Prevent it from being invalid
+            val.3.0 = 1; // Prevent it from being invalid
             let program_info: ProgramInfo =
                 serde_json::from_value(map_val_to_limited_program_info(val.3)).unwrap();
             serde_json::to_value(PipelineConfig {
@@ -729,15 +732,14 @@ fn limited_optional_storage_status_details() -> impl Strategy<Value = Option<ser
         if v.0 {
             None
         } else {
-            let mut checkpoints = Vec::new();
-            checkpoints.push(CheckpointMetadata {
+            let checkpoints = vec![CheckpointMetadata {
                 uuid: Default::default(),
                 identifier: None,
                 fingerprint: 0,
                 size: None,
                 steps: Some(v.1),
                 processed_records: None,
-            });
+            }];
             Some(serde_json::to_value(&StorageStatusDetails { checkpoints }).unwrap())
         }
     })
@@ -1133,13 +1135,15 @@ async fn deleting_a_tenant_requires_it_to_be_empty() {
 
     handle.db.delete_api_key(tenant, "key").await.unwrap();
     handle.db.delete_tenant(tenant).await.unwrap();
-    assert!(!handle
-        .db
-        .list_tenants()
-        .await
-        .unwrap()
-        .iter()
-        .any(|t| t.id == tenant));
+    assert!(
+        !handle
+            .db
+            .list_tenants()
+            .await
+            .unwrap()
+            .iter()
+            .any(|t| t.id == tenant)
+    );
 
     // Deleting it again reports the tenant as unknown.
     assert!(matches!(
@@ -1423,12 +1427,14 @@ async fn oidc_trust_matching_and_issuer_gate() {
 
     // Unregistered issuer: gate is closed and no trust matches.
     assert!(!handle.db.is_trusted_issuer(iss).await.unwrap());
-    assert!(handle
-        .db
-        .match_oidc_trust(iss, "system:sa:app", &["a".to_string()])
-        .await
-        .unwrap()
-        .is_empty());
+    assert!(
+        handle
+            .db
+            .match_oidc_trust(iss, "system:sa:app", &["a".to_string()])
+            .await
+            .unwrap()
+            .is_empty()
+    );
 
     // Two tenants trust the same issuer+subject, disambiguated by audience.
     let sub = "system:sa:app";
@@ -1481,12 +1487,14 @@ async fn oidc_trust_matching_and_issuer_gate() {
         vec![(tenant_b, Role::Write)]
     );
     // A token whose audience matches neither trust does not resolve.
-    assert!(handle
-        .db
-        .match_oidc_trust(iss, sub, &["c".to_string()])
-        .await
-        .unwrap()
-        .is_empty());
+    assert!(
+        handle
+            .db
+            .match_oidc_trust(iss, sub, &["c".to_string()])
+            .await
+            .unwrap()
+            .is_empty()
+    );
 
     // A third tenant trusts the same issuer+subject with NO audience, so it
     // matches any token. A token with audience "a" now resolves to two tenants
@@ -1519,21 +1527,23 @@ async fn oidc_trust_matching_and_issuer_gate() {
     assert_eq!(got, want);
 
     // `owner` is configuration only, so the schema refuses a row carrying it.
-    assert!(handle
-        .db
-        .create_oidc_trust(
-            tenant_a,
-            Uuid::now_v7(),
-            "bad-owner",
-            None,
-            "https://owner.example",
-            "root",
-            None,
-            Role::Owner,
-            TenantIssuerPolicy::PublicHttpsOnly,
-        )
-        .await
-        .is_err());
+    assert!(
+        handle
+            .db
+            .create_oidc_trust(
+                tenant_a,
+                Uuid::now_v7(),
+                "bad-owner",
+                None,
+                "https://owner.example",
+                "root",
+                None,
+                Role::Owner,
+                TenantIssuerPolicy::PublicHttpsOnly,
+            )
+            .await
+            .is_err()
+    );
 }
 
 /// Pre-provisioning: an admin grants a role by identity before first login; the
@@ -4177,16 +4187,12 @@ async fn pipeline_concurrent_access_deadlock() {
             return Some(e);
         }
         txn1.commit().await.unwrap();
-        return None;
+        None
     });
     rx.await.unwrap();
-    let t2_error = if let Err(e) =
-        get_pipeline_by_id_for_monitoring(&txn2, tenant_id, pipeline1.id, true).await
-    {
-        Some(e)
-    } else {
-        None
-    };
+    let t2_error = get_pipeline_by_id_for_monitoring(&txn2, tenant_id, pipeline1.id, true)
+        .await
+        .err();
     let t1_error = join_handle.await.unwrap();
     assert!(!(t1_error.is_some() && t2_error.is_some()));
     let error = t1_error.unwrap_or_else(|| {
@@ -4773,10 +4779,14 @@ fn check_responses<T: Debug + PartialEq>(
             "mismatch detected with model (left) and impl (right)"
         ),
         (Err(err_model), Ok(val_impl)) => {
-            panic!("step({step}): model returned error: {err_model:?}, but impl returned result: {val_impl:?}");
+            panic!(
+                "step({step}): model returned error: {err_model:?}, but impl returned result: {val_impl:?}"
+            );
         }
         (Ok(val_model), Err(err_impl)) => {
-            panic!("step({step}): model returned result: {val_model:?}, but impl returned error: {err_impl:?}");
+            panic!(
+                "step({step}): model returned result: {val_model:?}, but impl returned error: {err_impl:?}"
+            );
         }
         (Err(err_model), Err(err_impl)) => {
             assert_eq!(
@@ -6057,7 +6067,9 @@ impl Storage for Mutex<DbModel> {
         _tenant_name: String,
         _provider: String,
     ) -> DBResult<TenantId> {
-        panic!("For model-based tests, we generate the TenantID using proptest, as opposed to generating a claim that we then get or create an ID for");
+        panic!(
+            "For model-based tests, we generate the TenantID using proptest, as opposed to generating a claim that we then get or create an ID for"
+        );
     }
 
     async fn create_tenant(&self, id: Uuid, _name: &str, _provider: &str) -> DBResult<TenantId> {
@@ -6076,11 +6088,11 @@ impl Storage for Mutex<DbModel> {
         let s = self.lock().await;
         Ok(s.api_keys
             .iter()
-            .filter(|k| k.0 .0 == tenant_id)
+            .filter(|k| k.0.0 == tenant_id)
             .map(|k| ApiKeyDescr {
-                id: k.1 .0,
-                name: k.0 .1.clone(),
-                role: k.1 .2,
+                id: k.1.0,
+                name: k.0.1.clone(),
+                role: k.1.2,
             })
             .collect())
     }
@@ -6124,13 +6136,13 @@ impl Storage for Mutex<DbModel> {
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
-        if s.api_keys.iter().any(|k| k.1 .0 == ApiKeyId(id)) {
+        if s.api_keys.iter().any(|k| k.1.0 == ApiKeyId(id)) {
             return Err(DBError::unique_key_violation("api_key_pkey"));
         }
         if s.api_keys.contains_key(&(tenant_id, name.to_string())) {
             return Err(DBError::DuplicateName);
         }
-        if s.api_keys.iter().any(|k| k.1 .1 == hash) {
+        if s.api_keys.iter().any(|k| k.1.1 == hash) {
             return Err(DBError::duplicate_key());
         }
         s.api_keys.insert(
@@ -6148,8 +6160,8 @@ impl Storage for Mutex<DbModel> {
         let record: Vec<(TenantId, Role)> = s
             .api_keys
             .iter()
-            .filter(|k| k.1 .1 == hash)
-            .map(|k| (k.0 .0, k.1 .2))
+            .filter(|k| k.1.1 == hash)
+            .map(|k| (k.0.0, k.1.2))
             .collect();
         assert!(record.len() <= 1);
         match record.first() {
@@ -6268,10 +6280,10 @@ impl Storage for Mutex<DbModel> {
             if descr.issuer != issuer || !claim_matches(&descr.subject, subject) {
                 continue;
             }
-            if let Some(pattern) = &descr.audience {
-                if !audiences.iter().any(|a| claim_matches(pattern, a)) {
-                    continue;
-                }
+            if let Some(pattern) = &descr.audience
+                && !audiences.iter().any(|a| claim_matches(pattern, a))
+            {
+                continue;
             }
             match matched.iter_mut().find(|(t, _)| t == scope) {
                 Some(entry) => entry.1 = entry.1.max(descr.role),
@@ -8279,7 +8291,7 @@ impl Storage for Mutex<DbModel> {
     ) -> Result<u64, DBError> {
         let mut state = self.lock().await;
         let mut num_deleted: usize = 0;
-        let keys: Vec<(TenantId, PipelineId)> = state.pipelines.keys().map(|v| v.clone()).collect();
+        let keys: Vec<(TenantId, PipelineId)> = state.pipelines.keys().copied().collect();
         for (tenant_id, pipeline_id) in keys {
             let events = state
                 .pipeline_events

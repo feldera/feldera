@@ -9,11 +9,10 @@ use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::{api::examples, db::storage::Storage};
 use actix_web::{
-    delete, get,
+    HttpRequest, HttpResponse, delete, get,
     http::header::{CacheControl, CacheDirective},
     post,
     web::{self, Data as WebData, ReqData},
-    HttpRequest, HttpResponse,
 };
 use serde::{Deserialize, Serialize};
 use tracing::info;

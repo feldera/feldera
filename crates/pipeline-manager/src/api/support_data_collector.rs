@@ -11,9 +11,9 @@ use crate::db::types::combined_status::CombinedStatus;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
+use actix_web::HttpResponse;
 use actix_web::http::Method;
 use actix_web::rt::time::timeout;
-use actix_web::HttpResponse;
 use awc::Client;
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::sync::Arc;
 use tokio::sync::watch;
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{Duration, Instant, sleep};
 use tracing::{debug, error, info};
 use utoipa::{IntoParams, ToSchema};
 
@@ -1367,7 +1367,7 @@ mod tests {
     use serde_json::json;
     use std::sync::Arc;
     use tokio::sync::Mutex;
-    use tokio::time::{sleep, Duration};
+    use tokio::time::{Duration, sleep};
     use uuid::Uuid;
 
     #[test]

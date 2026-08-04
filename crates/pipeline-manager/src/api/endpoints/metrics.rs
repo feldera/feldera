@@ -2,10 +2,9 @@ use crate::api::main::ServerState;
 use crate::db::{storage::Storage as _, types::tenant::TenantId};
 use crate::error::ManagerError;
 use actix_web::{
-    get,
+    HttpResponse, get,
     http::Method,
     web::{Data as WebData, ReqData},
-    HttpResponse,
 };
 use awc::body::MessageBody as _;
 use feldera_types::runtime_status::RuntimeStatus;
@@ -45,10 +44,9 @@ pub(crate) async fn get_metrics(
     let mut result = Vec::new();
 
     for pipeline in pipelines {
-        if pipeline.deployment_runtime_status == Some(RuntimeStatus::Running)
-            || pipeline.deployment_runtime_status == Some(RuntimeStatus::Paused)
-        {
-            if let Ok(res) = state
+        if (pipeline.deployment_runtime_status == Some(RuntimeStatus::Running)
+            || pipeline.deployment_runtime_status == Some(RuntimeStatus::Paused))
+            && let Ok(res) = state
                 .runner
                 .forward_http_request_to_pipeline_by_name(
                     client.as_ref(),
@@ -61,14 +59,11 @@ pub(crate) async fn get_metrics(
                     None,
                 )
                 .await
-            {
-                if res.status().is_success() {
-                    if let Ok(bytes) = res.into_body().try_into_bytes() {
-                        result.extend(bytes);
-                        result.push(NEWLINE);
-                    }
-                }
-            }
+            && res.status().is_success()
+            && let Ok(bytes) = res.into_body().try_into_bytes()
+        {
+            result.extend(bytes);
+            result.push(NEWLINE);
         }
     }
 

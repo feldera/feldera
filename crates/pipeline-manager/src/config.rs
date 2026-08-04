@@ -16,7 +16,7 @@ use openssl::pkey::PKey;
 use openssl::rsa::Rsa;
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use openssl::x509::extension::SubjectAlternativeName;
-use openssl::x509::{X509NameBuilder, X509};
+use openssl::x509::{X509, X509NameBuilder};
 use postgres_openssl::MakeTlsConnector;
 use reqwest::Certificate;
 use rustls::pki_types::pem::PemObject;
@@ -812,7 +812,9 @@ impl DatabaseConfig {
         let mut connector = MakeTlsConnector::new(builder.build());
 
         if self.disable_tls_hostname_verify {
-            warn!("PostgreSQL TLS hostname verification is disabled. The PostgreSQL server's hostname may not match the one specified in the SSL certificate.");
+            warn!(
+                "PostgreSQL TLS hostname verification is disabled. The PostgreSQL server's hostname may not match the one specified in the SSL certificate."
+            );
             connector.set_callback(|ctx, _| {
                 ctx.set_verify_hostname(false);
                 Ok(())
@@ -1411,9 +1413,11 @@ mod tests {
         // A trust that names no issuer or no subject would match on the wrong
         // half of the pair, so it is refused at startup rather than at auth time.
         assert!(r#"[{"issuer": "", "subject": "x"}]"#.parse::<OwnerTrusts>().is_err());
-        assert!(r#"[{"issuer": "https://idp.example", "subject": ""}]"#
-            .parse::<OwnerTrusts>()
-            .is_err());
+        assert!(
+            r#"[{"issuer": "https://idp.example", "subject": ""}]"#
+                .parse::<OwnerTrusts>()
+                .is_err()
+        );
         assert!("not json".parse::<OwnerTrusts>().is_err());
     }
 

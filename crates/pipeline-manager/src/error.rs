@@ -27,7 +27,7 @@ use crate::compiler::error::CompilerError;
 use crate::db::error::DBError;
 use crate::runner::error::RunnerError;
 use actix_web::{
-    body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
+    HttpResponse, HttpResponseBuilder, ResponseError, body::BoxBody, http::StatusCode,
 };
 use feldera_types::error::{DetailedError, ErrorResponse};
 use openssl::error::ErrorStack;

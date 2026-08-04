@@ -2,10 +2,10 @@ use crate::db::error::DBError;
 use crate::db::operations::utils::{
     maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
 };
-use crate::db::types::oidc_trust::{claim_matches, OidcTrustDescr, OidcTrustId};
+use crate::db::types::oidc_trust::{OidcTrustDescr, OidcTrustId, claim_matches};
 use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
-use crate::oidc::destination::{validate_tenant_oidc_url, TenantIssuerPolicy};
+use crate::oidc::destination::{TenantIssuerPolicy, validate_tenant_oidc_url};
 use crate::oidc::trust_name::validate_oidc_trust_name;
 use deadpool_postgres::Transaction;
 use std::str::FromStr;
@@ -211,10 +211,10 @@ pub async fn match_oidc_trust(
         if !claim_matches(&pattern_subject, subject) {
             continue;
         }
-        if let Some(aud_pattern) = &pattern_audience {
-            if !audiences.iter().any(|a| claim_matches(aud_pattern, a)) {
-                continue;
-            }
+        if let Some(aud_pattern) = &pattern_audience
+            && !audiences.iter().any(|a| claim_matches(aud_pattern, a))
+        {
+            continue;
         }
         match matched.iter_mut().find(|(t, _)| *t == tenant_id) {
             Some(entry) => entry.1 = entry.1.max(role),

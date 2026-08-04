@@ -48,24 +48,24 @@
 
 use std::{collections::HashMap, env, sync::Arc};
 
+use actix_web::HttpMessage;
 use actix_web::body::MessageBody;
 use actix_web::http::header::{self, HeaderMap, HeaderName, HeaderValue};
 use actix_web::middleware::Next;
-use actix_web::HttpMessage;
 use actix_web::{
     dev::{ServiceRequest, ServiceResponse},
     error::ErrorUnauthorized,
     web::Data,
 };
 use actix_web_httpauth::extractors::{
-    bearer::{BearerAuth, Config},
     AuthenticationError,
+    bearer::{BearerAuth, Config},
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use cached::{Cached, TimedCache};
-use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, TokenData, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, TokenData, Validation, decode, decode_header};
 use rand::rngs::ThreadRng;
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{Rng, distributions::Alphanumeric};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use static_assertions::assert_impl_any;
@@ -82,7 +82,7 @@ use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
 use crate::oidc::fetch::{
-    fetch_issuer_jwks, fetch_jwks_uri_from_discovery, oidc_http_client, OidcDestination,
+    OidcDestination, fetch_issuer_jwks, fetch_jwks_uri_from_discovery, oidc_http_client,
 };
 use reqwest::Certificate;
 
@@ -191,20 +191,17 @@ pub(crate) async fn promote_websocket_subprotocol_auth(
     mut req: ServiceRequest,
     next: Next<impl MessageBody>,
 ) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
-    if !req.headers().contains_key(header::AUTHORIZATION) {
-        if let Some(token) = decode_ws_subprotocol(req.headers(), WS_BEARER_PROTOCOL_PREFIX) {
-            if let Ok(authorization) = HeaderValue::from_str(&format!("Bearer {token}")) {
-                req.headers_mut()
-                    .insert(header::AUTHORIZATION, authorization);
-                if let Some(tenant) =
-                    decode_ws_subprotocol(req.headers(), WS_TENANT_PROTOCOL_PREFIX)
-                {
-                    if let Ok(tenant) = HeaderValue::from_str(&tenant) {
-                        req.headers_mut()
-                            .insert(HeaderName::from_static(TENANT_HEADER), tenant);
-                    }
-                }
-            }
+    if !req.headers().contains_key(header::AUTHORIZATION)
+        && let Some(token) = decode_ws_subprotocol(req.headers(), WS_BEARER_PROTOCOL_PREFIX)
+        && let Ok(authorization) = HeaderValue::from_str(&format!("Bearer {token}"))
+    {
+        req.headers_mut()
+            .insert(header::AUTHORIZATION, authorization);
+        if let Some(tenant) = decode_ws_subprotocol(req.headers(), WS_TENANT_PROTOCOL_PREFIX)
+            && let Ok(tenant) = HeaderValue::from_str(&tenant)
+        {
+            req.headers_mut()
+                .insert(HeaderName::from_static(TENANT_HEADER), tenant);
         }
     }
     next.call(req).await
@@ -571,7 +568,7 @@ async fn bearer_auth(
                                         "Database error while fetching tenant: {e}"
                                     )),
                                     req,
-                                ))
+                                ));
                             }
                         }
                     }
@@ -772,27 +769,27 @@ impl OidcClaimExt for TokenData<OidcClaim> {
         let sub = &self.claims.sub;
 
         // Check if we have explicit tenant authorization in the claim
-        if let Some(authorized) = self.authorized_tenants() {
-            if !authorized.is_empty() {
-                let selected = headers
-                    .get(TENANT_HEADER)
-                    .and_then(|h| h.to_str().ok())
-                    .filter(|s| !s.is_empty());
-                // A selector is always checked against the claim, never ignored.
-                // Honouring it only when the claim lists several tenants would
-                // silently place a caller in its one authorized tenant while it
-                // believes it named another.
-                return match selected {
-                    Some(selected) if authorized.iter().any(|t| t == selected) => {
-                        Ok(selected.to_string())
-                    }
-                    Some(selected) => Err(AuthError::UnauthorizedTenant(selected.to_string())),
-                    None if authorized.len() == 1 => Ok(authorized[0].clone()),
-                    None => Err(AuthError::MissingTenantHeader),
-                };
-            }
-            // Empty array falls through to fallback logic
+        if let Some(authorized) = self.authorized_tenants()
+            && !authorized.is_empty()
+        {
+            let selected = headers
+                .get(TENANT_HEADER)
+                .and_then(|h| h.to_str().ok())
+                .filter(|s| !s.is_empty());
+            // A selector is always checked against the claim, never ignored.
+            // Honouring it only when the claim lists several tenants would
+            // silently place a caller in its one authorized tenant while it
+            // believes it named another.
+            return match selected {
+                Some(selected) if authorized.iter().any(|t| t == selected) => {
+                    Ok(selected.to_string())
+                }
+                Some(selected) => Err(AuthError::UnauthorizedTenant(selected.to_string())),
+                None if authorized.len() == 1 => Ok(authorized[0].clone()),
+                None => Err(AuthError::MissingTenantHeader),
+            };
         }
+        // Empty array falls through to fallback logic
 
         // Fallback when the token claims no tenant at all: derive one.
         // Priority: issuer-domain > sub (if enabled)
@@ -1212,17 +1209,17 @@ async fn decode_token_with_validation(
     // Provider-specific validations based on optional fields
 
     // Validate client_id if present (AWS Cognito puts it in a separate field)
-    if let Some(ref client_id) = token_data.claims.client_id {
-        if configuration.client_id != *client_id {
-            return Err(jsonwebtoken::errors::ErrorKind::InvalidAudience.into());
-        }
+    if let Some(ref client_id) = token_data.claims.client_id
+        && configuration.client_id != *client_id
+    {
+        return Err(jsonwebtoken::errors::ErrorKind::InvalidAudience.into());
     }
 
     // Validate token_use if present (AWS Cognito requires "access" for access tokens)
-    if let Some(ref token_use) = token_data.claims.token_use {
-        if token_use != "access" {
-            return Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into());
-        }
+    if let Some(ref token_use) = token_data.claims.token_use
+        && token_use != "access"
+    {
+        return Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into());
     }
 
     Ok(token_data)
@@ -1442,10 +1439,10 @@ pub(crate) fn parse_rsa_jwks(value: &Value) -> Result<HashMap<String, DecodingKe
 }
 
 fn check_key_as_str<'a>(key: &str, check: &str, json: &'a Value) -> Option<&'a Value> {
-    if let Some(value) = validate_field_is_str(key, json) {
-        if value == check {
-            return Some(json);
-        }
+    if let Some(value) = validate_field_is_str(key, json)
+        && value == check
+    {
+        return Some(json);
     }
     debug!(
         "Skipping JWK key because it did not match the required shape {} {}",
@@ -1456,10 +1453,10 @@ fn check_key_as_str<'a>(key: &str, check: &str, json: &'a Value) -> Option<&'a V
 
 fn validate_field_is_str<'a>(key: &str, json: &'a Value) -> Option<&'a str> {
     let value = json.get(key);
-    if let Some(value) = value {
-        if let Some(value) = value.as_str() {
-            return Some(value);
-        }
+    if let Some(value) = value
+        && let Some(value) = value.as_str()
+    {
+        return Some(value);
     }
     None
 }
@@ -1487,16 +1484,17 @@ mod test {
 
     use actix_http::{HttpMessage, StatusCode};
     use actix_web::{
+        App, HttpRequest, HttpResponse,
         body::{BoxBody, EitherBody},
         dev::ServiceResponse,
         http::{self},
-        test, web, App, HttpRequest, HttpResponse,
+        test, web,
     };
     use actix_web_httpauth::middleware::HttpAuthentication;
     use base64::Engine;
     use cached::Cached;
     use chrono::Utc;
-    use jsonwebtoken::{encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+    use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, encode};
     use tokio::sync::{Mutex, RwLock};
     use uuid::Uuid;
 

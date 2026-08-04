@@ -43,10 +43,10 @@ impl LicenseCheck {
                 }
             };
 
-        if let Some(license_check) = &mut license_check {
-            if let LicenseValidity::Exists(license_info) = &mut license_check.check_outcome {
-                license_info.current += license_check.checked_at.elapsed();
-            }
+        if let Some(license_check) = &mut license_check
+            && let LicenseValidity::Exists(license_info) = &mut license_check.check_outcome
+        {
+            license_info.current += license_check.checked_at.elapsed();
         }
 
         Ok(license_check)

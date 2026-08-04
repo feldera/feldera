@@ -1,9 +1,9 @@
 use actix_web::{
-    body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
+    HttpResponse, HttpResponseBuilder, ResponseError, body::BoxBody, http::StatusCode,
 };
 use feldera_types::error::{DetailedError, ErrorResponse};
 use serde::Serialize;
-use serde::{ser::SerializeStruct, Serializer};
+use serde::{Serializer, ser::SerializeStruct};
 use std::backtrace::Backtrace;
 use std::io::Error as IOError;
 use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display};

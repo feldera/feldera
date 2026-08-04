@@ -7,7 +7,7 @@ use crate::{
     error::ManagerError,
 };
 use actix_web::http::header::{CacheControl, CacheDirective};
-use actix_web::{get, web, web::Data as WebData, HttpResponse};
+use actix_web::{HttpResponse, get, web, web::Data as WebData};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
