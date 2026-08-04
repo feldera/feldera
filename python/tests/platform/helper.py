@@ -25,12 +25,11 @@ import requests
 from feldera.testutils import (
     FELDERA_TEST_NUM_HOSTS,
     FELDERA_TEST_NUM_WORKERS,
+    feldera_bearer_token,
     reclaim_pipeline,
 )
-from feldera.testutils_oidc import get_oidc_test_helper
 
 from tests import (
-    API_KEY,
     BASE_URL,
     FELDERA_REQUESTS_VERIFY,
     TEST_CLIENT,
@@ -48,13 +47,10 @@ def _base_headers() -> Dict[str, str]:
         "Accept": "application/json",
     }
 
-    # Try OIDC authentication first, then fall back to API_KEY
-    oidc_helper = get_oidc_test_helper()
-    if oidc_helper is not None:
-        token = oidc_helper.obtain_access_token()
+    # Resolved per request: a GitHub Actions ID token expires mid-suite.
+    token = feldera_bearer_token()
+    if token:
         headers["Authorization"] = f"Bearer {token}"
-    elif API_KEY:
-        headers["Authorization"] = f"Bearer {API_KEY}"
 
     return headers
 

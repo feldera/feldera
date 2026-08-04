@@ -99,18 +99,19 @@ def _token_expiry(token: str) -> float:
         return time.time()
 
 
-def _feldera_credential():
-    """Bearer credential for the test client.
+def feldera_bearer_token() -> Optional[str]:
+    """The bearer token to send with a request issued now.
 
-    Under GitHub Actions the credential is an ID token that expires well inside
-    a long test run, so hand the SDK the callable rather than a token: it
-    re-resolves per request and retries once on 401. A configured OIDC login
-    flow takes precedence over both.
+    A configured OIDC login flow wins, then a GitHub Actions ID token, then the
+    static API key. None when nothing is configured, which is how a local
+    instance without authentication runs. Callers that build their own requests
+    resolve this per request: under Actions the token expires well inside a test
+    run, and one read at import time starts returning 401 partway through.
     """
     if os.environ.get("OIDC_TEST_ISSUER"):
         return _get_effective_api_key()
     if os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL"):
-        return _github_oidc_token
+        return _github_oidc_token()
     return API_KEY
 
 
@@ -155,9 +156,16 @@ class _LazyClient:
 
     def _ensure(self):
         if self._client is None:
+            # Under Actions the token expires inside a run, so the SDK gets the
+            # resolver itself: it re-resolves per request and retries once on
+            # 401. Elsewhere the credential is fixed for the process.
             self._client = FelderaClient(
                 connection_timeout=10,
-                api_key=_feldera_credential(),
+                api_key=(
+                    feldera_bearer_token
+                    if os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")
+                    else feldera_bearer_token()
+                ),
             )
         return self._client
 

@@ -136,8 +136,13 @@ uv run pytest tests/platform -v
 The platform tests automatically select authentication in this order:
 
 1. **OIDC Token** (if all OIDC environment variables are set)
-2. **API Key** (if `FELDERA_API_KEY` is set)
-3. **No Authentication** (fallback for development)
+2. **GitHub Actions ID token** (if `ACTIONS_ID_TOKEN_REQUEST_URL` is set)
+3. **API Key** (if `FELDERA_API_KEY` is set)
+4. **No Authentication** (fallback for development)
+
+`feldera.testutils.feldera_bearer_token()` resolves this order. Call it per
+request rather than caching what it returns: an ID token expires well inside a
+long suite, and the function re-mints one shortly before its expiry.
 
 ## CI/CD Configuration
 
