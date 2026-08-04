@@ -119,6 +119,30 @@ explicitly request larger volumes for each pipeline:
    }
    ```
 
+#### Compiler binary store
+
+**Error**: a pipeline fails to compile with:
+```
+Unable to write to the binary store: the storage volume is full; an operator
+must grow it or delete unused pipelines to reclaim space
+```
+
+The compiler stores every compiled pipeline binary on its own volume, separate
+from the pipeline storage above. Compilation fails immediately rather than
+retrying, because only an operator can resolve it.
+
+**Solution**: grow the compiler volume or reclaim space. Budget at least 200 to
+300 MB per compiled program version. Deleting unused pipelines lets the
+compiler's garbage collector reclaim their binaries. The compiler health check
+reports this condition through `/cluster_healthz` once the volume is 95% full,
+before uploads start failing.
+
+If the message instead says the volume is read-only, the kernel remounted the
+filesystem after a disk failure; repair or replace the underlying disk.
+
+After resolving the cause, recompile affected pipelines by editing or re-saving
+their program.
+
 ### Kubernetes evictions
 
 **Error**: the pipeline becomes `UNAVAILABLE` with no errors in the logs.

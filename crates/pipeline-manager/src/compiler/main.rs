@@ -367,10 +367,10 @@ async fn upload_binary(
     let total_size = match save_file(&target_file_path, payload, &expected_integrity_checksum).await
     {
         Ok(total_size) => total_size,
-        Err(error) if is_out_of_storage_error(&error) => {
-            return Ok(insufficient_storage_response(&error));
-        }
-        Err(error) => return Err(error),
+        Err(error) => match unwritable_store_cause(&error) {
+            Some(cause) => return Ok(insufficient_storage_response(cause, &error)),
+            None => return Err(error),
+        },
     };
 
     info!(
@@ -469,10 +469,10 @@ async fn upload_program_info(
     let total_size = match save_file(&target_file_path, payload, &expected_integrity_checksum).await
     {
         Ok(total_size) => total_size,
-        Err(error) if is_out_of_storage_error(&error) => {
-            return Ok(insufficient_storage_response(&error));
-        }
-        Err(error) => return Err(error),
+        Err(error) => match unwritable_store_cause(&error) {
+            Some(cause) => return Ok(insufficient_storage_response(cause, &error)),
+            None => return Err(error),
+        },
     };
 
     info!(
@@ -526,12 +526,7 @@ async fn save_file(
     payload: impl Stream<Item = Result<web::Bytes, PayloadError>> + Unpin,
     expected_integrity_checksum: &str,
 ) -> Result<usize, ManagerError> {
-    let target_file_name = target_file_path
-        .file_name()
-        .expect("target_file_path must name a file")
-        .to_string_lossy();
-    let temp_file_path =
-        target_file_path.with_file_name(format!("{target_file_name}.tmp-{}", Uuid::now_v7()));
+    let temp_file_path = target_file_path.with_added_extension(format!("tmp-{}", Uuid::now_v7()));
 
     let write_result =
         stream_to_file_and_verify(&temp_file_path, payload, expected_integrity_checksum).await;
@@ -652,24 +647,46 @@ async fn stream_to_file_and_verify(
     Ok(total_size)
 }
 
-/// Whether the error is an out-of-storage I/O error (ENOSPC).
-fn is_out_of_storage_error(error: &ManagerError) -> bool {
+/// Operator documentation on resolving a full or read-only storage volume.
+const OUT_OF_STORAGE_DOCS_URL: &str =
+    "https://docs.feldera.com/operations/guide/#out-of-storage-errors";
+
+/// Why the binary store cannot accept writes, phrased as the cause plus the
+/// action that resolves it, or `None` when the error is something else. Only
+/// ENOSPC and EROFS qualify: both need an operator, so an upload that hits
+/// either must fail rather than retry.
+fn unwritable_store_cause(error: &ManagerError) -> Option<&'static str> {
     let ManagerError::CommonError {
         common_error: CommonError::IoError { io_error, .. },
     } = error
     else {
-        return false;
+        return None;
     };
-    io_error.kind() == std::io::ErrorKind::StorageFull
+    match io_error.kind() {
+        std::io::ErrorKind::StorageFull => Some(
+            "the storage volume is full; an operator must grow it or delete unused pipelines \
+             to reclaim space",
+        ),
+        // EROFS in practice means the underlying disk failed and the kernel
+        // remounted the filesystem read-only.
+        std::io::ErrorKind::ReadOnlyFilesystem => Some(
+            "the storage volume is read-only, which usually means the underlying disk failed; \
+             an operator must repair or replace it",
+        ),
+        _ => None,
+    }
 }
 
-/// 507 Insufficient Storage response for an upload that failed with ENOSPC.
-/// The distinct status lets workers fail the compilation fast with a
-/// user-visible error instead of burning their retry budget on a volume that
-/// only an operator can grow.
-fn insufficient_storage_response(error: &ManagerError) -> HttpResponse {
+/// 507 Insufficient Storage response naming the cause and how to resolve it.
+/// The distinct status lets workers fail the compilation fast with this
+/// message instead of burning their retry budget on a volume that only an
+/// operator can grow or repair.
+fn insufficient_storage_response(cause: &str, error: &ManagerError) -> HttpResponse {
     HttpResponse::InsufficientStorage().json(serde_json::json!({
-        "message": format!("Insufficient storage on the binary store: {error}"),
+        "message": format!(
+            "Unable to write to the binary store: {cause}. \
+             See {OUT_OF_STORAGE_DOCS_URL}. Underlying error: {error}"
+        ),
     }))
 }
 
@@ -686,13 +703,13 @@ async fn remove_temp_upload_file(temp_file_path: &Path) {
     }
 }
 
-/// Fraction of the working-directory filesystem above which the deep health
-/// check reports storage pressure: binary uploads are about to fail with
-/// ENOSPC and an operator must grow the volume or reclaim space.
+/// Fraction of the working-directory filesystem above which `/healthz` reports
+/// storage pressure: binary uploads are about to fail with ENOSPC and an
+/// operator must grow the volume or reclaim space.
 const STORAGE_PRESSURE_THRESHOLD: f64 = 0.95;
 
-/// Message for the deep health check when the working-directory filesystem is
-/// at or above `used_fraction_threshold`, `None` when it is below.
+/// Message reported when the working-directory filesystem is at or above
+/// `used_fraction_threshold`, `None` when it is below.
 fn storage_pressure_message(
     disk_space: &DiskSpace,
     used_fraction_threshold: f64,
@@ -712,29 +729,33 @@ fn storage_pressure_message(
 /// Query parameters of the `/healthz` endpoint.
 #[derive(serde::Deserialize)]
 struct HealthzQuery {
+    /// Also report storage pressure of the working-directory filesystem.
     #[serde(default)]
-    deep: bool,
+    check_storage: bool,
 }
 
 /// Health check which returns success if it is able to reach the database.
-/// With `?deep=true` it additionally fails on storage pressure of
-/// the working-directory filesystem. Kubernetes probes use the shallow
-/// variant: a full disk must not restart the pod, which still serves already
-/// compiled binaries; the cluster monitor uses the deep variant so
-/// /v0/cluster_healthz surfaces the condition to operators.
+/// With `?check_storage=true` it also fails when the working-directory
+/// filesystem is nearly full.
+///
+/// Kubernetes probes must omit the parameter, because restarting the pod
+/// cannot free disk space and the pod still serves already compiled binaries.
+/// The cluster monitor passes it so that /v0/cluster_healthz surfaces the
+/// condition to operators, who can act on it.
 #[get("/healthz")]
 async fn healthz(
     probe: web::Data<Arc<Mutex<DbProbe>>>,
     config: web::Data<CompilerConfig>,
     query: web::Query<HealthzQuery>,
 ) -> Result<impl Responder, ManagerError> {
-    if query.deep {
-        if let Some(disk_space) = DiskSpace::new_from_path(&config.working_dir()) {
-            if let Some(message) = storage_pressure_message(&disk_space, STORAGE_PRESSURE_THRESHOLD)
-            {
-                return Ok(HttpResponse::ServiceUnavailable()
-                    .json(serde_json::json!({ "status": message })));
-            }
+    if query.check_storage {
+        let pressure = DiskSpace::new_from_path(&config.working_dir()).and_then(|disk_space| {
+            storage_pressure_message(&disk_space, STORAGE_PRESSURE_THRESHOLD)
+        });
+        if let Some(message) = pressure {
+            return Ok(
+                HttpResponse::ServiceUnavailable().json(serde_json::json!({ "status": message }))
+            );
         }
     }
     Ok(probe.lock().await.as_http_response())
@@ -1336,28 +1357,76 @@ mod test {
         );
     }
 
-    /// ENOSPC I/O errors are recognized as out-of-storage; other errors are not.
+    /// A full or read-only store yields a cause naming the fix; other I/O
+    /// errors yield none.
     #[test]
-    fn out_of_storage_error_detection() {
-        let enospc = ManagerError::from(crate::common_error::CommonError::io_error(
-            "writing".to_string(),
-            std::io::Error::from_raw_os_error(28),
-        ));
-        assert!(super::is_out_of_storage_error(&enospc));
-        let storage_full = ManagerError::from(crate::common_error::CommonError::io_error(
-            "writing".to_string(),
-            std::io::Error::new(std::io::ErrorKind::StorageFull, "full"),
-        ));
-        assert!(super::is_out_of_storage_error(&storage_full));
-        let other_io = ManagerError::from(crate::common_error::CommonError::io_error(
-            "writing".to_string(),
-            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
-        ));
-        assert!(!super::is_out_of_storage_error(&other_io));
+    fn unwritable_store_cause_detection() {
+        let io_error = |kind| {
+            ManagerError::from(crate::common_error::CommonError::io_error(
+                "writing".to_string(),
+                std::io::Error::new(kind, "test"),
+            ))
+        };
+        let full = super::unwritable_store_cause(&io_error(std::io::ErrorKind::StorageFull))
+            .expect("a full volume is unwritable");
+        assert!(full.contains("full"), "unexpected cause: {full}");
+        let read_only =
+            super::unwritable_store_cause(&io_error(std::io::ErrorKind::ReadOnlyFilesystem))
+                .expect("a read-only volume is unwritable");
+        assert!(
+            read_only.contains("read-only"),
+            "unexpected cause: {read_only}"
+        );
+        assert!(
+            super::unwritable_store_cause(&io_error(std::io::ErrorKind::PermissionDenied))
+                .is_none()
+        );
     }
 
-    /// The deep health check reports storage pressure at or above the
-    /// threshold and stays silent below it.
+    /// The 507 response names the cause and links the operator documentation.
+    #[actix_web::test]
+    async fn insufficient_storage_response_is_actionable() {
+        let error = ManagerError::from(crate::common_error::CommonError::io_error(
+            "writing".to_string(),
+            std::io::Error::new(std::io::ErrorKind::StorageFull, "test"),
+        ));
+        let cause = super::unwritable_store_cause(&error).unwrap();
+        let response = super::insufficient_storage_response(cause, &error);
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::INSUFFICIENT_STORAGE
+        );
+        let body = actix_web::body::to_bytes(response.into_body())
+            .await
+            .unwrap();
+        let message = serde_json::from_slice::<serde_json::Value>(&body).unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            message.starts_with("Unable to write to the binary store:"),
+            "unexpected message: {message}"
+        );
+        assert!(message.contains(super::OUT_OF_STORAGE_DOCS_URL));
+    }
+
+    /// The kernel errnos the upload path actually sees map to the
+    /// `ErrorKind`s `unwritable_store_cause` matches on.
+    #[cfg(unix)]
+    #[test]
+    fn unwritable_store_errnos_map_to_expected_error_kinds() {
+        assert_eq!(
+            std::io::Error::from_raw_os_error(libc::ENOSPC).kind(),
+            std::io::ErrorKind::StorageFull
+        );
+        assert_eq!(
+            std::io::Error::from_raw_os_error(libc::EROFS).kind(),
+            std::io::ErrorKind::ReadOnlyFilesystem
+        );
+    }
+
+    /// Storage pressure is reported at or above the threshold and stays silent
+    /// below it.
     #[test]
     fn storage_pressure_threshold() {
         let disk_space = |used_fraction: f64| crate::compiler::util::DiskSpace {
