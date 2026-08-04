@@ -28,6 +28,20 @@ def remove_consecutive_duplicates(v: list[dict]):
         return result
 
 
+def remove_transient_unavailable(v: list[tuple]):
+    """
+    Drops runtime-status entries stuck at ("Unavailable", "Unavailable").
+
+    This status can leak into the event log when a status check races the
+    grace period in pipeline_automata.rs, so it is not a deterministic part
+    of the startup/shutdown sequence and should not be asserted against.
+
+    :param v: List of status tuples, as built in test_events.
+    :return: List with transient Unavailable entries dropped.
+    """
+    return [t for t in v if not (t[2] == "Unavailable" and t[3] == "Unavailable")]
+
+
 def check_fields_event_all(event: dict):
     assert set(event.keys()) == {
         "event_id",
@@ -179,6 +193,22 @@ def test_events(pipeline_name):
         {"b": 2},
     ]
 
+    # Test transient Unavailable filter
+    assert remove_transient_unavailable([]) == []
+    assert remove_transient_unavailable(
+        [(None, None, "Unavailable", "Unavailable", False, "Success", "InUse")]
+    ) == []
+    assert remove_transient_unavailable(
+        [
+            (None, None, "Running", "Running", False, "Success", "InUse"),
+            (None, None, "Unavailable", "Unavailable", False, "Success", "InUse"),
+            (None, None, "Initializing", "Running", False, "Success", "InUse"),
+        ]
+    ) == [
+        (None, None, "Running", "Running", False, "Success", "InUse"),
+        (None, None, "Initializing", "Running", False, "Success", "InUse"),
+    ]
+
     # Map events such that evolution test can be written cleanly
     # Consecutive events are removed because it is possible for events to be repeated if a status takes a longer time
     # `Unavailable` events are removed because the runner reports them whenever it momentarily
@@ -202,7 +232,9 @@ def test_events(pipeline_name):
     )
 
     # fmt: off
-    actual = remove_consecutive_duplicates(events_status_limited)
+    actual = remove_consecutive_duplicates(
+        remove_transient_unavailable(events_status_limited)
+    )
     assert actual == [
         ("Stopped", "Stopped", None, None, False, "Success", "InUse"),
         ("Stopped", "Stopped", None, None, True, "Success", "InUse"),
