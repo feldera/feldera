@@ -111,3 +111,21 @@ after the test completed.
 def test_some_property(pipeline_name):
     pass
 ```
+
+## Cleaning up after a run
+
+Teardown only runs while the test process is alive. A cancelled workflow run, an
+evicted runner or a job timeout kills pytest outright, and every pipeline that
+was running at that moment keeps consuming compute on the shared CI instance.
+
+`tests/stop_ci_run_pipelines.py` sweeps up what such a run left behind. It
+matches the prefix `unique_pipeline_name` stamps on every test pipeline.
+
+```bash
+cd python
+PYTHONPATH=`pwd` uv run python -m tests.stop_ci_run_pipelines --prefix <sha5>_
+```
+
+Whatever cleanup a test does itself should go through
+`feldera.testutils.reclaim_pipeline`: it bounds every wait, and it clears
+storage even when the stop failed instead of abandoning a running pipeline.

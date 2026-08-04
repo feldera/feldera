@@ -13,6 +13,7 @@ No automatic cleanup; pipelines are left in place for inspection after failures.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import unittest
 from http import HTTPStatus
@@ -21,7 +22,11 @@ from urllib.parse import quote, quote_plus
 
 import pytest
 import requests
-from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
+from feldera.testutils import (
+    FELDERA_TEST_NUM_HOSTS,
+    FELDERA_TEST_NUM_WORKERS,
+    reclaim_pipeline,
+)
 from feldera.testutils_oidc import get_oidc_test_helper
 
 from tests import (
@@ -34,6 +39,8 @@ from tests import (
 from tests.utils import wait_for_condition, wait_for_records
 
 API_PREFIX = "/v0"
+
+logger = logging.getLogger(__name__)
 
 
 def _base_headers() -> Dict[str, str]:
@@ -162,22 +169,25 @@ def pause_pipeline(name: str, wait: bool = True):
     TEST_CLIENT.pause_pipeline(name, wait=wait)
 
 
-def stop_pipeline(name: str, force: bool = True, wait: bool = True):
-    TEST_CLIENT.stop_pipeline(name, force=force, wait=wait)
+def stop_pipeline(
+    name: str, force: bool = True, wait: bool = True, timeout_s: float | None = None
+):
+    TEST_CLIENT.stop_pipeline(name, force=force, wait=wait, timeout_s=timeout_s)
 
 
-def clear_pipeline(name: str, wait: bool = True):
+def clear_pipeline(name: str, wait: bool = True, timeout_s: float | None = None):
     r = post_no_body(f"{API_PREFIX}/pipelines/{name}/clear")
     if wait and r.status_code == HTTPStatus.ACCEPTED:
-        TEST_CLIENT.clear_storage(name)
+        TEST_CLIENT.clear_storage(name, timeout_s=timeout_s)
     return r
 
 
 def reset_pipeline(name: str):
+    """Force-stop `name` and clear its storage."""
     if get_pipeline(name, "status").status_code != HTTPStatus.OK:
         return
-    stop_pipeline(name, force=True)
-    clear_pipeline(name)
+    for failure in reclaim_pipeline(name):
+        logger.warning("pipeline cleanup: %s", failure)
 
 
 def delete_pipeline(name: str):

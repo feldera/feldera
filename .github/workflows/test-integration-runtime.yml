@@ -79,3 +79,15 @@ jobs:
           KAFKA_BOOTSTRAP_SERVERS: ${{ vars.CI_KAFKA_BOOTSTRAP }}
           SCHEMA_REGISTRY_URL: ${{ vars.CI_SCHEMA_REGISTRY }}
           RUN_ID: 1 # we use this to run a single variant of the Kafka tests in test_kafka_avro.py
+
+      # Test teardown only runs while pytest is alive. A cancel sentinel firing
+      # for some other job, a runner eviction or a job timeout leaves tests
+      # running on the shared instance to burn compute.
+      # This step reclaims the pipelines this run named after itself
+      - name: Stop pipelines this run leaked
+        if: ${{ always() && vars.CI_DRY_RUN != 'true' }}
+        timeout-minutes: 10
+        run: uv run --locked python -m tests.stop_ci_run_pipelines
+        working-directory: python
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python

@@ -287,6 +287,42 @@ def unique_pipeline_name(base_name: str) -> str:
     return name
 
 
+# Teardown must not block on one wedged pipeline: the SDK otherwise polls for
+# `Stopped` forever, and when the runner finally kills the job every pipeline
+# the run started keeps consuming compute on the shared instance.
+RECLAIM_TIMEOUT_SECONDS = 60.0
+
+
+def reclaim_pipeline(name: str, delete: bool = False) -> List[str]:
+    """Force-stop `name`, clear its storage, and optionally delete it.
+
+    Every step runs even when the one before it raised: a pipeline that never
+    reports `Stopped` can still release its storage, and abandoning the rest on
+    the first error leaves them running on a shared instance. Returns one
+    message per failed step, empty when the pipeline is fully reclaimed, so the
+    caller decides whether a cleanup failure is worth failing a test over.
+    """
+    failures = []
+
+    try:
+        TEST_CLIENT.stop_pipeline(name, force=True, timeout_s=RECLAIM_TIMEOUT_SECONDS)
+    except Exception as error:
+        failures.append(f"{name}: stop: {error}")
+
+    try:
+        TEST_CLIENT.clear_storage(name, timeout_s=RECLAIM_TIMEOUT_SECONDS)
+    except Exception as error:
+        failures.append(f"{name}: clear storage: {error}")
+
+    if delete:
+        try:
+            TEST_CLIENT.delete_pipeline(name)
+        except Exception as error:
+            failures.append(f"{name}: delete: {error}")
+
+    return failures
+
+
 def enterprise_only(fn):
     fn._enterprise_only = True
     return unittest.skipUnless(
