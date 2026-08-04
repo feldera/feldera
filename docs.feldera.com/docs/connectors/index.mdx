@@ -260,39 +260,13 @@ message that deletes the old value of a record and inserts the new one, so
 those two changes carry one timestamp; ranking the insertion first keeps the
 updated record, where ranking the deletion first would drop it.
 
-{/* Revise after implementing the append-only optimization for soft-delete tables.
-
-#### Bounding the state of the query
-
 As written, `live` needs unbounded state. A change carrying any timestamp can
 arrive at any moment and displace the record that is currently the latest one
 for its key, so Feldera has to keep every insertion and deletion the stream
-ever reported.
-
-An application that only needs values from a bounded time frame can filter the
-changes with a
-[temporal filter](/tutorials/time-series#now-and-temporal-filters) before
-ranking them, which leaves Feldera storing only the changes newer than the
-lower bound of the interval:
-
-```sql
-CREATE MATERIALIZED VIEW live_recent AS
-SELECT id, s, ts
-FROM (
-    SELECT *, ROW_NUMBER() OVER (
-        PARTITION BY id ORDER BY ts DESC, is_delete NULLS FIRST
-    ) AS rn
-    FROM changes
-    WHERE ts >= NOW() - INTERVAL 7 DAYS
-)
-WHERE rn = 1 AND is_delete IS NOT TRUE;
-```
-
-A record whose latest change ages out of the window leaves `live_recent`, so
-this variant reports what is live among the keys the stream touched in the last
-seven days rather than what is live overall.
-
-*/}
+ever reported. An application that only needs values from a bounded time frame
+can filter the changes with a temporal filter before ranking them, which
+bounds the state of the query; see
+[Soft deletes with temporal filters](/sql/streaming#soft-deletes-with-temporal-filters).
 
 Notes and restrictions:
 
