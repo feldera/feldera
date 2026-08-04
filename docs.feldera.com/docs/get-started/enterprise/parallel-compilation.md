@@ -269,7 +269,7 @@ If a pipeline is assigned to a worker pod that is not yet running or is unhealth
 Upload failures fall into three classes:
 
   - Transient (network errors, HTTP 5xx): retried with exponential backoff inside the compilation attempt; the default retry settings absorb roughly half an hour of outage, for example a restart of the upload target during an upgrade.
-  - Permanent: surface immediately as `SystemError` with the underlying cause and skip the retry budget: an HTTP 4xx rejection (for example a proxy body-size limit), or HTTP 507 when the binary store volume is full (`Insufficient storage on the binary store`).
+  - Permanent: surface immediately as `SystemError` with the underlying cause and skip the retry budget: an HTTP 4xx rejection (for example a proxy body-size limit), or HTTP 507 when the binary store volume is full or has remounted itself read-only after a storage failure (`Unable to write to the binary store`, see [Out-of-storage Errors](/operations/guide#out-of-storage-errors)).
   - Retry budget exhausted: a retryable failure that outlives the retry budget also ends in `SystemError`.
 
 After fixing the cause (for example growing the artifact store PVC), recompile affected pipelines by editing or re-saving their program. Check `<release>-compiler-server-0` health via the `/cluster_healthz` endpoint.

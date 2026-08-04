@@ -8927,6 +8927,7 @@ dependencies = [
  "indoc",
  "itertools 0.14.0",
  "jsonwebtoken",
+ "libc",
  "nix 0.29.0",
  "openssl",
  "pg-client-config",

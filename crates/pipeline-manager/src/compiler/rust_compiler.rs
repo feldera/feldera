@@ -732,8 +732,8 @@ async fn upload_program_info_to_endpoint_with_retries(
 
 /// Returns true when the upload response status indicates a permanent
 /// rejection that no retry can fix: a 4xx other than 408 and 429, or 507
-/// Insufficient Storage (the binary store is full and only an operator can
-/// grow it, so retrying just delays the user-visible error).
+/// Insufficient Storage (the binary store cannot accept writes and only an
+/// operator can fix that, so retrying just delays the user-visible error).
 fn is_permanent_upload_rejection(status: reqwest::StatusCode) -> bool {
     if status == reqwest::StatusCode::INSUFFICIENT_STORAGE {
         return true;

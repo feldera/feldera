@@ -151,6 +151,7 @@ wiremock = { workspace = true }
 feldera-types = { workspace = true, features = ["testing"] }
 itertools = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+libc = { workspace = true }  # For: asserting errno-to-ErrorKind mapping
 
 [package.metadata.cargo-machete]
 ignored = ["static-files", "compare", "tikv-jemallocator"]
