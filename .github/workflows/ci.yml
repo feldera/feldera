@@ -87,6 +87,11 @@ jobs:
     name: Integration Tests
     needs: [invoke-build-java]
     uses: ./.github/workflows/test-integration-runtime.yml
+    # A called workflow gets no more than the calling job grants, and the
+    # runtime tests authenticate to the CI instances with an OIDC token.
+    permissions:
+      contents: read
+      id-token: write
     secrets: inherit
 
   invoke-tests-java:
