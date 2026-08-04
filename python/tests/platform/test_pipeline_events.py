@@ -195,9 +195,12 @@ def test_events(pipeline_name):
 
     # Test transient Unavailable filter
     assert remove_transient_unavailable([]) == []
-    assert remove_transient_unavailable(
-        [(None, None, "Unavailable", "Unavailable", False, "Success", "InUse")]
-    ) == []
+    assert (
+        remove_transient_unavailable(
+            [(None, None, "Unavailable", "Unavailable", False, "Success", "InUse")]
+        )
+        == []
+    )
     assert remove_transient_unavailable(
         [
             (None, None, "Running", "Running", False, "Success", "InUse"),
