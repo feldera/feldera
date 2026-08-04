@@ -47,21 +47,21 @@ def _get_effective_api_key():
     return oidc_token if oidc_token else API_KEY
 
 
-# Token and the moment it stops being handed out, keyed by audience.
+# Audience -> (token, seconds since the epoch after which it is re-minted).
 _oidc_token_cache: dict[str, tuple[str, float]] = {}
 
-# Re-mint this long before the token's own expiry, so a request issued just
-# before the check cannot arrive after it.
-_OIDC_REFRESH_MARGIN_S = 120.0
+# Re-mint a token this many seconds before its own expiry, so a request issued
+# just before the check cannot arrive after it.
+_OIDC_REFRESH_MARGIN_SECONDS = 120.0
 
 
 def _github_oidc_token() -> str:
     """A GitHub Actions ID token, re-minted shortly before it expires.
 
-    The SDK resolves this before every request, so it has to be cheap. Minting
-    per request adds a round trip to GitHub each time, and a suite that polls in
-    loops across parallel workers sends enough of them to be throttled, which
-    arrives as a connection timeout rather than an error.
+    The SDK resolves this before every request, so the implementation has to be
+    cheap. Minting per request adds a round trip to GitHub each time, and a
+    suite that polls in loops across parallel workers sends enough of them to be
+    throttled, which results in a connection timeout rather than an error.
     """
     audience = os.environ.get("FELDERA_OIDC_AUDIENCE", "")
     cached = _oidc_token_cache.get(audience)
@@ -78,15 +78,18 @@ def _github_oidc_token() -> str:
     with urllib.request.urlopen(request, timeout=30) as response:
         token = json.load(response)["value"]
 
-    _oidc_token_cache[audience] = (token, _token_expiry(token) - _OIDC_REFRESH_MARGIN_S)
+    _oidc_token_cache[audience] = (
+        token,
+        _token_expiry(token) - _OIDC_REFRESH_MARGIN_SECONDS,
+    )
     return token
 
 
 def _token_expiry(token: str) -> float:
-    """`exp` out of a JWT payload, or now if it cannot be read.
+    """`exp` from a JWT payload, in seconds since the epoch.
 
-    An unreadable payload means every call re-mints, which is the old
-    behaviour: slow, but never serving a token past its expiry.
+    Returns the current time if the payload cannot be read, which re-mints on
+    every call rather than serving a token past its expiry.
     """
     try:
         payload = token.split(".")[1]
@@ -101,8 +104,8 @@ def _feldera_credential():
 
     Under GitHub Actions the credential is an ID token that expires well inside
     a long test run, so hand the SDK the callable rather than a token: it
-    re-resolves per request and retries once on 401, which a fixed string
-    cannot do. The OIDC login flow, where configured, still wins.
+    re-resolves per request and retries once on 401. A configured OIDC login
+    flow takes precedence over both.
     """
     if os.environ.get("OIDC_TEST_ISSUER"):
         return _get_effective_api_key()
