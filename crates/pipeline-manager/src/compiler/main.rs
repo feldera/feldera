@@ -2,17 +2,17 @@ use crate::api::error::ApiError;
 use crate::common_error::CommonError;
 use crate::compiler::error::CompilerError;
 use crate::compiler::rust_compiler::{
-    cleanup_pipeline_binaries, perform_rust_compilation, rust_compiler_task, RustCompilationError,
-    RustCompilationResult, CLEANUP_INTERVAL,
+    CLEANUP_INTERVAL, RustCompilationError, RustCompilationResult, cleanup_pipeline_binaries,
+    perform_rust_compilation, rust_compiler_task,
 };
 use crate::compiler::sql_compiler::{
-    decide_stale_jar, ephemeral_compilation_dir, jar_cache_dir, perform_sql_compilation,
-    sql_compiler_task, validate_program, ProgramValidationRequest, SqlCompilationError,
-    SqlCompilationOutput,
+    ProgramValidationRequest, SqlCompilationError, SqlCompilationOutput, decide_stale_jar,
+    ephemeral_compilation_dir, jar_cache_dir, perform_sql_compilation, sql_compiler_task,
+    validate_program,
 };
 use crate::compiler::util::{
-    cleanup_specific_directories, cleanup_specific_files, pipeline_binary_filename,
-    program_info_filename, validate_is_sha256_checksum, CleanupDecision, DiskSpace,
+    CleanupDecision, DiskSpace, cleanup_specific_directories, cleanup_specific_files,
+    pipeline_binary_filename, program_info_filename, validate_is_sha256_checksum,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::probe::DbProbe;
@@ -24,7 +24,7 @@ use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use actix_files::NamedFile;
 use actix_web::error::PayloadError;
-use actix_web::{get, post, web, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web::{HttpRequest, HttpResponse, HttpServer, Responder, get, post, web};
 use futures_util::{Stream, StreamExt};
 use std::net::TcpListener;
 use std::path::Path;
@@ -52,7 +52,9 @@ fn decode_url_encoded_parameter(
 
 /// Checks if the required compilation artifacts exist for the specified pipeline and version.
 /// If `program_info_integrity_checksum` is "none", only the binary existence is checked.
-#[get("/artifacts/{pipeline_id}/{program_version}/{source_checksum}/{binary_integrity_checksum}/{program_info_integrity_checksum}")]
+#[get(
+    "/artifacts/{pipeline_id}/{program_version}/{source_checksum}/{binary_integrity_checksum}/{program_info_integrity_checksum}"
+)]
 async fn check_compilation_artifacts(
     config: web::Data<CompilerConfig>,
     req: HttpRequest,
@@ -693,13 +695,13 @@ fn insufficient_storage_response(cause: &str, error: &ManagerError) -> HttpRespo
 /// Removes a temp upload file. Failure only leaves an orphan file behind, so
 /// it is logged rather than propagated.
 async fn remove_temp_upload_file(temp_file_path: &Path) {
-    if let Err(e) = fs::remove_file(temp_file_path).await {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            warn!(
-                "Unable to remove temp upload file '{}': {e}",
-                temp_file_path.display()
-            );
-        }
+    if let Err(e) = fs::remove_file(temp_file_path).await
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        warn!(
+            "Unable to remove temp upload file '{}': {e}",
+            temp_file_path.display()
+        );
     }
 }
 
@@ -748,15 +750,13 @@ async fn healthz(
     config: web::Data<CompilerConfig>,
     query: web::Query<HealthzQuery>,
 ) -> Result<impl Responder, ManagerError> {
-    if query.check_storage {
-        let pressure = DiskSpace::new_from_path(&config.working_dir()).and_then(|disk_space| {
-            storage_pressure_message(&disk_space, STORAGE_PRESSURE_THRESHOLD)
-        });
-        if let Some(message) = pressure {
-            return Ok(
-                HttpResponse::ServiceUnavailable().json(serde_json::json!({ "status": message }))
-            );
-        }
+    if query.check_storage
+        && let Some(disk_space) = DiskSpace::new_from_path(&config.working_dir())
+        && let Some(message) = storage_pressure_message(&disk_space, STORAGE_PRESSURE_THRESHOLD)
+    {
+        return Ok(
+            HttpResponse::ServiceUnavailable().json(serde_json::json!({ "status": message }))
+        );
     }
     Ok(probe.lock().await.as_http_response())
 }
@@ -1076,8 +1076,8 @@ async fn artifact_server_janitor_task(config: CompilerConfig, db: Arc<Mutex<Stor
             error!("Artifact server janitor: pipeline binaries cleanup failed: {e}");
         }
         let ephemeral_dir = ephemeral_compilation_dir(&config);
-        if ephemeral_dir.is_dir() {
-            if let Err(e) = cleanup_specific_directories(
+        if ephemeral_dir.is_dir()
+            && let Err(e) = cleanup_specific_directories(
                 "Ephemeral validation directories",
                 &ephemeral_dir,
                 Arc::new(decide_orphaned_ephemeral_dir),
@@ -1085,15 +1085,12 @@ async fn artifact_server_janitor_task(config: CompilerConfig, db: Arc<Mutex<Stor
                 true,
             )
             .await
-            {
-                error!(
-                    "Artifact server janitor: ephemeral validation directory cleanup failed: {e}"
-                );
-            }
+        {
+            error!("Artifact server janitor: ephemeral validation directory cleanup failed: {e}");
         }
         let jar_cache_dir = jar_cache_dir(&config);
-        if jar_cache_dir.is_dir() {
-            if let Err(e) = cleanup_specific_files(
+        if jar_cache_dir.is_dir()
+            && let Err(e) = cleanup_specific_files(
                 "SQL JAR cache",
                 &jar_cache_dir,
                 Arc::new(decide_stale_jar),
@@ -1101,9 +1098,8 @@ async fn artifact_server_janitor_task(config: CompilerConfig, db: Arc<Mutex<Stor
                 true,
             )
             .await
-            {
-                error!("Artifact server janitor: SQL compiler jar cache cleanup failed: {e}");
-            }
+        {
+            error!("Artifact server janitor: SQL compiler jar cache cleanup failed: {e}");
         }
         sleep(CLEANUP_INTERVAL).await;
     }
@@ -1116,15 +1112,15 @@ mod test {
         create_working_directory_if_not_exists, decide_orphaned_ephemeral_dir,
         decode_url_encoded_parameter, save_file, upload_binary,
     };
-    use crate::compiler::util::pipeline_binary_filename;
     use crate::compiler::util::CleanupDecision;
+    use crate::compiler::util::pipeline_binary_filename;
     use crate::config::CompilerConfig;
     use crate::db::types::pipeline::PipelineId;
     use crate::db::types::program::CompilationProfile;
     use crate::db::types::version::Version;
     use crate::error::ManagerError;
     use actix_web::error::PayloadError;
-    use actix_web::{test as actix_test, web, App};
+    use actix_web::{App, test as actix_test, web};
     use openssl::sha::sha256;
     use std::time::Duration;
     use tokio::fs;

@@ -1,10 +1,10 @@
 use crate::compiler::util::{
+    CleanupDecision, DirectoryContent, DiskSpace, ProcessGroupTerminator, UtilError,
     checksum_buffer, checksum_file, cleanup_specific_directories, cleanup_specific_files,
     copy_file, copy_file_if_checksum_differs, crate_name_pipeline_globals,
     crate_name_pipeline_main, create_dir_if_not_exists, create_new_file, decode_string_as_dir,
     pipeline_binary_filename, program_info_filename, read_file_content, recreate_dir,
-    recreate_file_with_content, truncate_sha256_checksum, write_file, CleanupDecision,
-    DirectoryContent, DiskSpace, ProcessGroupTerminator, UtilError,
+    recreate_file_with_content, truncate_sha256_checksum, write_file,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
@@ -32,7 +32,7 @@ use tokio::{
     io::AsyncReadExt,
     process::Command,
     sync::Mutex,
-    time::{sleep, Duration},
+    time::{Duration, sleep},
 };
 use tracing::{debug, error, info, trace, warn};
 
@@ -102,18 +102,26 @@ pub async fn rust_compiler_task(
             if let Err(e) = cleanup_rust_compilation(&config, db.clone()).await {
                 match e {
                     RustCompilationCleanupError::Database(e) => {
-                        error!("Rust worker {worker_id}: compilation cleanup failed: database error occurred: {e}");
+                        error!(
+                            "Rust worker {worker_id}: compilation cleanup failed: database error occurred: {e}"
+                        );
                     }
                     RustCompilationCleanupError::Utility(e) => {
-                        error!("Rust worker {worker_id}: compilation cleanup failed: utility error occurred: {e}");
+                        error!(
+                            "Rust worker {worker_id}: compilation cleanup failed: utility error occurred: {e}"
+                        );
                     }
                     RustCompilationCleanupError::TargetCleared => {
                         if allow_exit_upon_target_cleared {
                             // This restart behavior only occurs for a standalone compiler server
-                            warn!("Rust worker {worker_id}: target directory has been cleared due to lack of space -- restarting to have any precompilation re-applied");
+                            warn!(
+                                "Rust worker {worker_id}: target directory has been cleared due to lack of space -- restarting to have any precompilation re-applied"
+                            );
                             return Err(());
                         } else {
-                            warn!("Rust worker {worker_id}: target directory has been cleared due to lack of space -- the next compilation will be slow");
+                            warn!(
+                                "Rust worker {worker_id}: target directory has been cleared due to lack of space -- the next compilation will be slow"
+                            );
                         }
                     }
                 }
@@ -144,11 +152,15 @@ pub async fn rust_compiler_task(
                     outdated_version,
                     latest_version,
                 } => {
-                    debug!("Rust worker {worker_id}: compilation canceled: pipeline program version ({outdated_version}) is outdated by latest ({latest_version})");
+                    debug!(
+                        "Rust worker {worker_id}: compilation canceled: pipeline program version ({outdated_version}) is outdated by latest ({latest_version})"
+                    );
                 }
                 e => {
                     unexpected_error = true;
-                    error!("Rust worker {worker_id}: compilation canceled: unexpected database error occurred: {e}");
+                    error!(
+                        "Rust worker {worker_id}: compilation canceled: unexpected database error occurred: {e}"
+                    );
                 }
             }
         }
@@ -585,7 +597,7 @@ async fn upload_binary_to_endpoint_with_retries(
         _ => {
             return Err(RustCompilationError::SystemError(
                 "Invalid delivery mode for HTTP upload".to_string(),
-            ))
+            ));
         }
     };
 
@@ -667,7 +679,7 @@ async fn upload_program_info_to_endpoint_with_retries(
         _ => {
             return Err(RustCompilationError::SystemError(
                 "Invalid delivery mode for HTTP upload".to_string(),
-            ))
+            ));
         }
     };
 
@@ -1155,15 +1167,19 @@ async fn checkout_runtime_version(
         match clone(repo_location).await {
             Ok(output) => {
                 if !output.status.success() {
-                    return Err(RustCompilationError::SystemError(format!("Unable to clone latest runtime version for '{requested_runtime_version}' for compilation.\n`git clone` failed with exit code: {}\nstderr:\n{}\nstdout:\n{}",
+                    return Err(RustCompilationError::SystemError(format!(
+                        "Unable to clone latest runtime version for '{requested_runtime_version}' for compilation.\n`git clone` failed with exit code: {}\nstderr:\n{}\nstdout:\n{}",
                         output.status.code().unwrap_or(-1),
                         String::from_utf8_lossy(&output.stderr),
-                        String::from_utf8_lossy(&output.stdout))));
+                        String::from_utf8_lossy(&output.stdout)
+                    )));
                 }
             }
-            Err(e) => return Err(RustCompilationError::SystemError(format!(
-                "Unable to clone repo for runtime version override to '{requested_runtime_version}' for compilation, `git clone` failed: {e}",
-            ))),
+            Err(e) => {
+                return Err(RustCompilationError::SystemError(format!(
+                    "Unable to clone repo for runtime version override to '{requested_runtime_version}' for compilation, `git clone` failed: {e}",
+                )));
+            }
         }
     }
 
@@ -1219,14 +1235,18 @@ async fn checkout_runtime_version(
             if output.status.success() {
                 Ok(())
             } else {
-                debug!("Failed to checkout requested runtime, trying to sync with latest git repository.");
+                debug!(
+                    "Failed to checkout requested runtime, trying to sync with latest git repository."
+                );
                 let fetch_result = fetch(repo_location, requested_runtime_version).await.map_err(|e| {
                     RustCompilationError::SystemError(format!("Unable to switch runtime version to '{requested_runtime_version}' for compilation, `git fetch` failed: {e}"))})?;
                 if !fetch_result.status.success() {
-                    return Err(RustCompilationError::SystemError(format!("Unable to fetch latest runtime version for '{requested_runtime_version}' for compilation.\nGit command failed with exit code: {}\nstderr:\n{}\nstdout:\n{}",
+                    return Err(RustCompilationError::SystemError(format!(
+                        "Unable to fetch latest runtime version for '{requested_runtime_version}' for compilation.\nGit command failed with exit code: {}\nstderr:\n{}\nstdout:\n{}",
                         fetch_result.status.code().unwrap_or(-1),
                         String::from_utf8_lossy(&fetch_result.stderr),
-                        String::from_utf8_lossy(&fetch_result.stdout))));
+                        String::from_utf8_lossy(&fetch_result.stdout)
+                    )));
                 }
 
                 let output = checkout(repo_location, requested_runtime_version)
@@ -1263,12 +1283,7 @@ pub async fn resolve_runtime_sha(
             let repo_location = runtime_version.runtime_sources(config);
             match Command::new("git")
                 .current_dir(&repo_location)
-                .args([
-                    "-c",
-                    "protocol.version=2",
-                    "rev-parse",
-                    version,
-                ])
+                .args(["-c", "protocol.version=2", "rev-parse", version])
                 .output()
                 .await
             {
@@ -2146,7 +2161,10 @@ async fn cleanup_rust_compilation(
             .is_ok_and(|duration| duration >= CLEANUP_RETENTION)
         {
             deletion.insert(artifact_name.clone());
-            trace!("Rust compilation cleanup: retention for artifact '{}' has expired -- marked for deletion", artifact_name);
+            trace!(
+                "Rust compilation cleanup: retention for artifact '{}' has expired -- marked for deletion",
+                artifact_name
+            );
         }
     }
     let deletion: Vec<String> = deletion.into_iter().collect();
@@ -2196,10 +2214,14 @@ async fn cleanup_rust_compilation(
                     match target_size_byte {
                         Ok(Ok(target_size_byte)) => {
                             if target_size_byte < disk_space.total_byte / 20 {
-                                error!("Not clearing `target` directory because its size ({target_size_byte} byte) is less than 5%. Please reduce disk usage in another way.");
+                                error!(
+                                    "Not clearing `target` directory because its size ({target_size_byte} byte) is less than 5%. Please reduce disk usage in another way."
+                                );
                                 false
                             } else {
-                                error!("Removing `target` directory to make space (should clear up {target_size_byte} byte)...");
+                                error!(
+                                    "Removing `target` directory to make space (should clear up {target_size_byte} byte)..."
+                                );
                                 if let Err(e) = fs::remove_dir_all(&target_dir).await {
                                     error!(
                                         "Unable to remove `target` directory to make space due to: {e}"
@@ -2222,11 +2244,15 @@ async fn cleanup_rust_compilation(
                             }
                         }
                         Ok(Err(e)) => {
-                            error!("Not clearing `target` directory because its size cannot be determined. Reduce disk usage in another way. Due to error: {e}");
+                            error!(
+                                "Not clearing `target` directory because its size cannot be determined. Reduce disk usage in another way. Due to error: {e}"
+                            );
                             false
                         }
                         Err(e) => {
-                            error!("Not clearing `target` directory because its size cannot be determined due to a thread join error: {e}");
+                            error!(
+                                "Not clearing `target` directory because its size cannot be determined due to a thread join error: {e}"
+                            );
                             false
                         }
                     }
@@ -2249,7 +2275,10 @@ async fn cleanup_rust_compilation(
                     false
                 }
             } else {
-                warn!("Unable to determine disk space remaining: unable to find disk corresponding to '{}'", target_dir.display());
+                warn!(
+                    "Unable to determine disk space remaining: unable to find disk corresponding to '{}'",
+                    target_dir.display()
+                );
                 false
             }
         } else {
@@ -2397,12 +2426,12 @@ mod test {
     use crate::auth::TenantRecord;
     use crate::compiler::rust_compiler::prepare_workspace;
     use crate::compiler::rust_compiler::{
-        calculate_source_checksum, decide_cleanup, decide_pipeline_binary_cleanup,
-        is_permanent_upload_rejection, STALE_TEMP_UPLOAD_MAX_AGE,
+        STALE_TEMP_UPLOAD_MAX_AGE, calculate_source_checksum, decide_cleanup,
+        decide_pipeline_binary_cleanup, is_permanent_upload_rejection,
     };
-    use crate::compiler::test::{list_content_as_sorted_names, CompilerTest};
+    use crate::compiler::test::{CompilerTest, list_content_as_sorted_names};
     use crate::compiler::util::{
-        crate_name_pipeline_globals, crate_name_pipeline_main, read_file_content, CleanupDecision,
+        CleanupDecision, crate_name_pipeline_globals, crate_name_pipeline_main, read_file_content,
     };
     use crate::db::types::program::{CompilationProfile, ProgramStatus, RuntimeSelector};
     use crate::db::types::utils::validate_program_info;
@@ -2549,18 +2578,22 @@ mod test {
                 .unwrap(),
             pipeline_descr.udf_rust
         );
-        assert!(read_file_content(&globals_crate_path.join("Cargo.toml"))
-            .await
-            .unwrap()
-            .contains(&pipeline_descr.udf_toml));
+        assert!(
+            read_file_content(&globals_crate_path.join("Cargo.toml"))
+                .await
+                .unwrap()
+                .contains(&pipeline_descr.udf_toml)
+        );
 
         // Workspace-wide Cargo.toml
         let workspace_toml_file = test.rust_workdir.join("Cargo.toml");
         assert!(workspace_toml_file.is_file());
-        assert!(read_file_content(&workspace_toml_file)
-            .await
-            .unwrap()
-            .contains(&format!("members = [\n  \"crates/{main_crate_name}\"\n]")));
+        assert!(
+            read_file_content(&workspace_toml_file)
+                .await
+                .unwrap()
+                .contains(&format!("members = [\n  \"crates/{main_crate_name}\"\n]"))
+        );
     }
 
     /// Tests the binary delivery mode configuration.

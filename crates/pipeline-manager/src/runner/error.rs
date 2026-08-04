@@ -1,7 +1,7 @@
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::utils::ValidationError;
 use actix_web::{
-    body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
+    HttpResponse, HttpResponseBuilder, ResponseError, body::BoxBody, http::StatusCode,
 };
 use feldera_types::error::{DetailedError, ErrorResponse};
 use indoc::writedoc;
@@ -319,7 +319,10 @@ impl Display for RunnerError {
                 write!(f, "Pipeline provision failed: {error}")
             }
             Self::RunnerCheckError { error } => {
-                write!(f, "Pipeline check failed: compute and/or storage resources encountered a fatal error.\n\n{error}")
+                write!(
+                    f,
+                    "Pipeline check failed: compute and/or storage resources encountered a fatal error.\n\n{error}"
+                )
             }
             Self::RunnerStopError { error } => {
                 write!(f, "Pipeline stop failed (will retry): {error}")
@@ -337,10 +340,16 @@ impl Display for RunnerError {
                 )
             }
             Self::RunnerInteractionLogFollowRequestChannelFull => {
-                write!(f, "Log follow request channel is full -- this indicates that the runner logging is overwhelmed")
+                write!(
+                    f,
+                    "Log follow request channel is full -- this indicates that the runner logging is overwhelmed"
+                )
             }
             Self::RunnerInteractionLogFollowRequestChannelClosed => {
-                write!(f, "Log follow request channel is closed -- this indicates that the runner crashed unexpectedly")
+                write!(
+                    f,
+                    "Log follow request channel is closed -- this indicates that the runner crashed unexpectedly"
+                )
             }
             Self::PipelineInteractionNotDeployed {
                 pipeline_name,

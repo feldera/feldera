@@ -1,12 +1,12 @@
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::version::Version;
-use base64::prelude::{Engine, BASE64_STANDARD};
+use base64::prelude::{BASE64_STANDARD, Engine};
 use flate2::Compression;
 use hex;
-use nix::libc::pid_t;
-use nix::sys::signal::{killpg, Signal};
-use nix::unistd::Pid;
 use nix::NixPath;
+use nix::libc::pid_t;
+use nix::sys::signal::{Signal, killpg};
+use nix::unistd::Pid;
 use openssl::sha::sha256;
 use sha2::{Digest, Sha256};
 use std::fs::Metadata;
@@ -69,7 +69,10 @@ impl Drop for ProcessGroupTerminator {
             };
             // Send the SIGKILL to the PGRP
             if let Err(e) = killpg(Pid::from_raw(pgrp), Signal::SIGKILL) {
-                error!("Failed to cancel {}: attempt to kill the process and its subprocesses (PGRP: {}) failed: {e}", self.subject, self.process_group);
+                error!(
+                    "Failed to cancel {}: attempt to kill the process and its subprocesses (PGRP: {}) failed: {e}",
+                    self.subject, self.process_group
+                );
             }
             debug!(
                 "Successfully cancelled {} by killing its process group",
@@ -518,7 +521,10 @@ pub async fn cleanup_specific_files(
                 }
             }
         } else if warn_ignore {
-            warn!("{cleanup_name} cleanup: ignoring '{}' (unexpected directory entry which is not a file)", path.display());
+            warn!(
+                "{cleanup_name} cleanup: ignoring '{}' (unexpected directory entry which is not a file)",
+                path.display()
+            );
         }
     }
     Ok(keep_motivations)
@@ -567,7 +573,10 @@ pub async fn cleanup_specific_directories(
                 }
             }
         } else if warn_ignore {
-            warn!("{cleanup_name} cleanup: ignoring '{}' (unexpected directory entry which is not a directory)", path.display());
+            warn!(
+                "{cleanup_name} cleanup: ignoring '{}' (unexpected directory entry which is not a directory)",
+                path.display()
+            );
         }
     }
     Ok(keep_motivations)
@@ -716,13 +725,12 @@ impl DiskSpace {
 #[cfg(test)]
 mod test {
     use crate::compiler::util::{
-        cleanup_specific_directories, cleanup_specific_files, copy_file,
-        copy_file_if_checksum_differs, crate_name_pipeline_base, crate_name_pipeline_globals,
-        crate_name_pipeline_main, create_dir_if_not_exists, create_new_file,
-        create_new_file_with_content, decode_string_as_dir, encode_dir_as_string,
+        CleanupDecision, DirectoryContent, cleanup_specific_directories, cleanup_specific_files,
+        copy_file, copy_file_if_checksum_differs, crate_name_pipeline_base,
+        crate_name_pipeline_globals, crate_name_pipeline_main, create_dir_if_not_exists,
+        create_new_file, create_new_file_with_content, decode_string_as_dir, encode_dir_as_string,
         pipeline_binary_filename, read_file_content, read_file_content_bytes, recreate_dir,
         recreate_file_with_content, truncate_sha256_checksum, validate_is_sha256_checksum,
-        CleanupDecision, DirectoryContent,
     };
     use crate::db::types::pipeline::PipelineId;
     use crate::db::types::version::Version;

@@ -510,7 +510,7 @@ mod test {
     #[actix_web::test]
     async fn middleware_enforces_in_a_real_pipeline() {
         use actix_web::middleware::from_fn;
-        use actix_web::{test, web, App, HttpResponse};
+        use actix_web::{App, HttpResponse, test, web};
         use std::str::FromStr;
 
         // Installs a principal whose role comes from the `x-test-role` header,
@@ -603,8 +603,8 @@ mod test {
     /// Paths outside `/v0` are unauthenticated (public scope) and not gated.
     fn openapi_v0_routes() -> Vec<(String, String)> {
         use crate::api::main::ApiDoc;
-        use utoipa::openapi::PathItemType;
         use utoipa::OpenApi;
+        use utoipa::openapi::PathItemType;
 
         let method = |t: &PathItemType| match t {
             PathItemType::Get => "GET",
@@ -701,8 +701,8 @@ mod test {
     #[test]
     fn every_v0_operation_documents_its_min_role() {
         use crate::api::main::ApiDoc;
-        use utoipa::openapi::PathItemType;
         use utoipa::OpenApi;
+        use utoipa::openapi::PathItemType;
 
         let method = |t: &PathItemType| match t {
             PathItemType::Get => "GET",

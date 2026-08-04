@@ -9,13 +9,13 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::ValidationError;
 use crate::db::types::version::Version;
 use actix_web::{
-    body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
+    HttpResponse, HttpResponseBuilder, ResponseError, body::BoxBody, http::StatusCode,
 };
 use deadpool_postgres::PoolError;
 use feldera_types::error::DetailedError;
 use feldera_types::error::ErrorResponse;
 use refinery::Error as RefineryError;
-use serde::{ser::SerializeStruct, Serialize, Serializer};
+use serde::{Serialize, Serializer, ser::SerializeStruct};
 use std::{backtrace::Backtrace, borrow::Cow, error::Error as StdError, fmt, fmt::Display};
 use tokio_postgres::error::{Error as PgError, SqlState};
 
@@ -551,7 +551,10 @@ impl Display for DBError {
                 )
             }
             DBError::InvalidProgramError { value, error } => {
-                write!(f, "JSON for 'program_error' field:\n{value:#}\n\n... is not valid due to: {error}")
+                write!(
+                    f,
+                    "JSON for 'program_error' field:\n{value:#}\n\n... is not valid due to: {error}"
+                )
             }
             DBError::EditRestrictedToClearedStorage { not_allowed } => {
                 write!(
@@ -561,19 +564,34 @@ impl Display for DBError {
                 )
             }
             DBError::InvalidErrorResponse { value, error } => {
-                write!(f, "JSON for 'deployment_error' field:\n{value:#}\n\n... is not valid due to: {error}")
+                write!(
+                    f,
+                    "JSON for 'deployment_error' field:\n{value:#}\n\n... is not valid due to: {error}"
+                )
             }
             DBError::FailedToSerializeRuntimeConfig { error } => {
-                write!(f, "Unable to serialize runtime configuration for 'runtime_config' field as JSON due to: {error}")
+                write!(
+                    f,
+                    "Unable to serialize runtime configuration for 'runtime_config' field as JSON due to: {error}"
+                )
             }
             DBError::FailedToSerializeProgramConfig { error } => {
-                write!(f, "Unable to serialize program configuration for 'program_config' field as JSON due to: {error}")
+                write!(
+                    f,
+                    "Unable to serialize program configuration for 'program_config' field as JSON due to: {error}"
+                )
             }
             DBError::FailedToSerializeProgramError { error } => {
-                write!(f, "Unable to serialize program error for 'program_error' field as JSON due to: {error}")
+                write!(
+                    f,
+                    "Unable to serialize program error for 'program_error' field as JSON due to: {error}"
+                )
             }
             DBError::FailedToSerializeErrorResponse { error } => {
-                write!(f, "Unable to serialize error response for 'deployment_error' field as JSON due to: {error}")
+                write!(
+                    f,
+                    "Unable to serialize error response for 'deployment_error' field as JSON due to: {error}"
+                )
             }
             DBError::UniqueKeyViolation { constraint, .. } => {
                 write!(f, "Unique key violation for '{constraint}'")
@@ -720,16 +738,25 @@ impl Display for DBError {
                 write!(f, "Unknown pipeline name '{pipeline_name}'")
             }
             DBError::UpdateRestrictedToStopped => {
-                write!(f, "Pipeline can only be updated while stopped. Stop it first by invoking '/stop'.")
+                write!(
+                    f,
+                    "Pipeline can only be updated while stopped. Stop it first by invoking '/stop'."
+                )
             }
             DBError::ProgramStatusUpdateRestrictedToStopped => {
                 write!(f, "Program status can only be updated while stopped.")
             }
             DBError::DeleteRestrictedToFullyStopped => {
-                write!(f, "Cannot delete a pipeline which is not fully stopped. Stop the pipeline first fully by invoking the '/stop' endpoint.")
+                write!(
+                    f,
+                    "Cannot delete a pipeline which is not fully stopped. Stop the pipeline first fully by invoking the '/stop' endpoint."
+                )
             }
             DBError::CannotRenameNonExistingPipeline => {
-                write!(f, "The pipeline name in the request body does not match the one provided in the URL path. This is not allowed when no pipeline with the name provided in the URL path exists.")
+                write!(
+                    f,
+                    "The pipeline name in the request body does not match the one provided in the URL path. This is not allowed when no pipeline with the name provided in the URL path exists."
+                )
             }
             DBError::OutdatedProgramVersion {
                 outdated_version,
@@ -930,7 +957,11 @@ impl Display for DBError {
                 write!(f, "Invalid monitor status: '{value}'")
             }
             DBError::UnknownClusterMonitorEvent { event_id } => {
-                write!(f, "Cluster monitor event with identifier '{event_id}' does not exist -- it might have been deleted as monitor events are only retained for {}h and at most {}", MONITOR_RETENTION_HOURS, MONITOR_RETENTION_NUM)
+                write!(
+                    f,
+                    "Cluster monitor event with identifier '{event_id}' does not exist -- it might have been deleted as monitor events are only retained for {}h and at most {}",
+                    MONITOR_RETENTION_HOURS, MONITOR_RETENTION_NUM
+                )
             }
             DBError::NoClusterMonitorEventsAvailable => {
                 write!(f, "There are not yet any cluster monitor events recorded")
@@ -946,16 +977,25 @@ impl Display for DBError {
                 )
             }
             DBError::UnknownPipelineMonitorEvent { event_id } => {
-                write!(f, "Pipeline monitor event with identifier '{event_id}' does not exist -- it might have been deleted as only a limited number of events are retained")
+                write!(
+                    f,
+                    "Pipeline monitor event with identifier '{event_id}' does not exist -- it might have been deleted as only a limited number of events are retained"
+                )
             }
             DBError::NoPipelineMonitorEventsAvailable => {
                 write!(f, "There are not yet any pipeline monitor events recorded")
             }
             DBError::LockTookTooLong => {
-                write!(f, "The lock required for this operation took too long to acquire. Try this operation again later.")
+                write!(
+                    f,
+                    "The lock required for this operation took too long to acquire. Try this operation again later."
+                )
             }
             DBError::DeadlockDetected => {
-                write!(f, "A deadlock was detected while performing the operation. Try this operation again later. Please also file a bug report, as this error should not happen.")
+                write!(
+                    f,
+                    "A deadlock was detected while performing the operation. Try this operation again later. Please also file a bug report, as this error should not happen."
+                )
             }
         }
     }

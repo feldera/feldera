@@ -5,7 +5,7 @@ use clap::{Args, Command, FromArgMatches};
 use colored::Colorize;
 use feldera_observability as observability;
 use pipeline_manager::api::main::ApiDoc;
-use pipeline_manager::cluster_monitor::{cluster_monitor, LocalResourcesPoller};
+use pipeline_manager::cluster_monitor::{LocalResourcesPoller, cluster_monitor};
 use pipeline_manager::compiler::main::{compiler_main, compiler_precompile};
 #[cfg(feature = "postgresql_embedded")]
 use pipeline_manager::config::PgEmbedConfig;
@@ -25,7 +25,11 @@ use utoipa::OpenApi;
 fn main() -> anyhow::Result<()> {
     ensure_default_crypto_provider();
     init_fd_limit();
-    let _guard = observability::init("https://18aa37ae23e7130b57b91aaad432bc18@o4510219052253184.ingest.us.sentry.io/4510298809827328", "pipeline-manager", env!("CARGO_PKG_VERSION"));
+    let _guard = observability::init(
+        "https://18aa37ae23e7130b57b91aaad432bc18@o4510219052253184.ingest.us.sentry.io/4510298809827328",
+        "pipeline-manager",
+        env!("CARGO_PKG_VERSION"),
+    );
     pipeline_manager::logging::init_service_logging(
         "[manager]".cyan(),
         feldera_observability::json_logging::ServiceName::Manager,

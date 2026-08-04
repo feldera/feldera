@@ -1,9 +1,8 @@
 use crate::common_error::CommonError;
 use crate::compiler::util::{
-    cleanup_specific_directories, cleanup_specific_files, crate_name_pipeline_base,
-    crate_name_pipeline_globals, create_new_file, create_new_file_with_content,
-    encode_dir_as_string, read_file_content, recreate_dir, CleanupDecision, ProcessGroupTerminator,
-    UtilError,
+    CleanupDecision, ProcessGroupTerminator, UtilError, cleanup_specific_directories,
+    cleanup_specific_files, crate_name_pipeline_base, crate_name_pipeline_globals, create_new_file,
+    create_new_file_with_content, encode_dir_as_string, read_file_content, recreate_dir,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
@@ -11,7 +10,7 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::{
-    generate_program_info, RuntimeSelector, SqlCompilationInfo, SqlCompilerMessage,
+    RuntimeSelector, SqlCompilationInfo, SqlCompilerMessage, generate_program_info,
 };
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::validate_program_config;
@@ -33,7 +32,7 @@ use tokio::{
     fs,
     process::Command,
     sync::Mutex,
-    time::{sleep, Duration},
+    time::{Duration, sleep},
 };
 use tracing::{debug, error, info, trace, warn};
 use utoipa::ToSchema;
@@ -81,10 +80,14 @@ pub async fn sql_compiler_task(
             if let Err(e) = cleanup_sql_compilation(&config, db.clone()).await {
                 match e {
                     SqlCompilationCleanupError::Database(e) => {
-                        error!("SQL worker {worker_id}: compilation cleanup failed: database error occurred: {e}");
+                        error!(
+                            "SQL worker {worker_id}: compilation cleanup failed: database error occurred: {e}"
+                        );
                     }
                     SqlCompilationCleanupError::Utility(e) => {
-                        error!("SQL worker {worker_id}: compilation cleanup failed: filesystem operation error occurred: {e}");
+                        error!(
+                            "SQL worker {worker_id}: compilation cleanup failed: filesystem operation error occurred: {e}"
+                        );
                     }
                 }
                 unexpected_error = true;
@@ -114,11 +117,15 @@ pub async fn sql_compiler_task(
                     outdated_version,
                     latest_version,
                 } => {
-                    debug!("SQL worker {worker_id}: compilation canceled: pipeline program version ({outdated_version}) is outdated by latest ({latest_version})");
+                    debug!(
+                        "SQL worker {worker_id}: compilation canceled: pipeline program version ({outdated_version}) is outdated by latest ({latest_version})"
+                    );
                 }
                 e => {
                     unexpected_error = true;
-                    error!("SQL worker {worker_id}: compilation canceled: unexpected database error occurred: {e}");
+                    error!(
+                        "SQL worker {worker_id}: compilation canceled: unexpected database error occurred: {e}"
+                    );
                 }
             }
         }
@@ -353,11 +360,15 @@ pub(crate) fn decide_stale_jar(jar_name: &str, metadata: Option<Metadata>) -> Cl
         }
     };
     let Ok(elapsed) = atime.elapsed() else {
-        warn!("Unable to determine access time for JAR file, your system clock may be set incorrectly.");
+        warn!(
+            "Unable to determine access time for JAR file, your system clock may be set incorrectly."
+        );
         return CleanupDecision::Ignore;
     };
     if elapsed < JAR_CACHE_RETENTION {
-        trace!("Keeping {jar_name} because it was accessed within the retention window ({elapsed:?} ago)");
+        trace!(
+            "Keeping {jar_name} because it was accessed within the retention window ({elapsed:?} ago)"
+        );
         CleanupDecision::Keep {
             motivation: "Accessed within the retention window".to_string(),
         }
@@ -789,9 +800,9 @@ pub(crate) async fn perform_sql_compilation(
             Ok(messages) => messages,
             Err(e) => {
                 if !exit_status.success() {
-                    return Err(SqlCompilationError::SystemError(
-                        format!("SQL compiler process returned with exit status code ({exit_code}) and stderr which cannot be deserialized due to {e}:\n{stderr_str}")
-                    ));
+                    return Err(SqlCompilationError::SystemError(format!(
+                        "SQL compiler process returned with exit status code ({exit_code}) and stderr which cannot be deserialized due to {e}:\n{stderr_str}"
+                    )));
                 } else {
                     error!(
                         pipeline_id = %pipeline_id,
@@ -1090,7 +1101,7 @@ mod test {
     /// accessed one is kept, and missing metadata never removes.
     #[test]
     fn stale_jar_decision() {
-        use crate::compiler::sql_compiler::{decide_stale_jar, JAR_CACHE_RETENTION};
+        use crate::compiler::sql_compiler::{JAR_CACHE_RETENTION, decide_stale_jar};
         use crate::compiler::util::CleanupDecision;
         let tempdir = tempfile::tempdir().unwrap();
         let jar_path = tempdir.path().join("a.jar");
@@ -1118,7 +1129,7 @@ mod test {
         assert_eq!(decide_stale_jar("a.jar", None), CleanupDecision::Ignore);
     }
 
-    use crate::compiler::test::{list_content_as_sorted_names, CompilerTest};
+    use crate::compiler::test::{CompilerTest, list_content_as_sorted_names};
     use crate::compiler::util::{create_new_file, recreate_dir};
     use crate::db::types::program::ProgramStatus;
     use crate::db::types::utils::validate_program_info;
@@ -1484,9 +1495,11 @@ mod test {
         assert_eq!(table_properties_only.name, "t1");
         assert_eq!(table_properties_only.properties.len(), 1);
         assert!(table_properties_only.properties.contains_key("connectors"));
-        assert!(table_properties_only.properties["connectors"]
-            .value
-            .contains("\"name\": \"c1\""));
+        assert!(
+            table_properties_only.properties["connectors"]
+                .value
+                .contains("\"name\": \"c1\"")
+        );
     }
 
     /// Tests that SQL compiler recovers from an incorrect platform version.
@@ -1570,11 +1583,13 @@ mod test {
         test.sql_compiler_tick().await;
         let pipeline_descr = test.get_pipeline(tenant_id, pipeline_id).await;
         assert_eq!(pipeline_descr.program_status, ProgramStatus::SqlError);
-        assert!(pipeline_descr
-            .program_error
-            .sql_compilation
-            .is_some_and(|info| info.messages.len() == 1
-                && info.messages[0].to_owned().error_type == "Error parsing SQL"));
+        assert!(
+            pipeline_descr
+                .program_error
+                .sql_compilation
+                .is_some_and(|info| info.messages.len() == 1
+                    && info.messages[0].to_owned().error_type == "Error parsing SQL")
+        );
     }
 
     /// Tests that compilation fails with an invalid connector.
@@ -1597,11 +1612,13 @@ mod test {
         assert_eq!(pipeline_descr.program_status, ProgramStatus::SqlError);
         // First message is a warning about the connector missing a name
         // Second message is an error
-        assert!(pipeline_descr
-            .program_error
-            .sql_compilation
-            .is_some_and(|info| info.messages.len() == 2
-                && info.messages[1].to_owned().error_type == "ConnectorGenerationError"));
+        assert!(
+            pipeline_descr
+                .program_error
+                .sql_compilation
+                .is_some_and(|info| info.messages.len() == 2
+                    && info.messages[1].to_owned().error_type == "ConnectorGenerationError")
+        );
     }
 
     /// Tests that the cleanup ignores files and directories that do not follow the pattern.

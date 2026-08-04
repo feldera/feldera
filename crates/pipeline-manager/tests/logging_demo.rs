@@ -7,8 +7,8 @@ use tracing::info;
 #[test]
 fn emits_sample_log() {
     // When invoked as a subprocess, just emit the logs and exit so the parent can assert on output.
-    if let Ok(mode) = std::env::var("LOGGING_DEMO_CHILD") {
-        emit_logs(mode == "json");
+    if std::env::var("LOGGING_DEMO_CHILD").is_ok() {
+        emit_logs();
         return;
     }
 
@@ -82,15 +82,9 @@ fn run_child(mode: &str) -> String {
     String::from_utf8(output.stdout).expect("child stdout to be utf-8")
 }
 
-fn emit_logs(json: bool) {
-    if json {
-        std::env::set_var("FELDERA_LOG_JSON", "1");
-    } else {
-        std::env::remove_var("FELDERA_LOG_JSON");
-    }
-    // Force INFO output for the demo regardless of upstream defaults.
-    std::env::set_var("RUST_LOG", "info");
-    std::env::set_var("NO_COLOR", "1");
+/// `run_child` passes the log format, `RUST_LOG` and `NO_COLOR` in the child's
+/// environment, so this only has to initialize logging and emit.
+fn emit_logs() {
     init_logging("[logging-demo]".cyan());
     info!("logging demo event");
     info!(

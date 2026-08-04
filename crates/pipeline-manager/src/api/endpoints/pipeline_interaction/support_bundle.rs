@@ -9,14 +9,13 @@ use crate::api::main::ServerState;
 use crate::api::support_data_collector::{
     CollectionSummary, SupportBundleData, SupportBundleParameters,
 };
-use crate::db::types::combined_status::{combine_since, CombinedDesiredStatus, CombinedStatus};
+use crate::db::types::combined_status::{CombinedDesiredStatus, CombinedStatus, combine_since};
 use crate::db::types::pipeline::ExtendedPipelineDescrMonitoring;
 use crate::db::{storage::Storage, types::tenant::TenantId};
 use crate::error::ManagerError;
 use actix_web::{
-    get,
+    HttpResponse, get,
     web::{self, Data as WebData, ReqData},
-    HttpResponse,
 };
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -459,11 +458,13 @@ mod tests {
         assert_eq!(collections.len(), 2);
         for c in collections {
             assert!(dirs.contains(c["directory"].as_str().unwrap()));
-            assert!(c["collected"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|f| f == "pipeline_events.json"));
+            assert!(
+                c["collected"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|f| f == "pipeline_events.json")
+            );
         }
     }
 

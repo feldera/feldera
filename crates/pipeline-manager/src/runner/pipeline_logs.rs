@@ -8,7 +8,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 use tokio::{select, spawn};
-use tracing::{debug, error, warn, Level};
+use tracing::{Level, debug, error, warn};
 
 // Logs buffer size limit constants.
 const LOGS_BUFFER_LIMIT_BYTE: usize = 1_000_000; // 1 MB
@@ -171,7 +171,10 @@ async fn catch_up_and_add_follower(
 
     // First line mentions the number of discarded lines due to the circular buffer
     if logs.num_discarded_lines() > 0 {
-        let first_line = format!("... {} prior log lines were discarded due to buffer constraints and are thus not shown.", logs.num_discarded_lines());
+        let first_line = format!(
+            "... {} prior log lines were discarded due to buffer constraints and are thus not shown.",
+            logs.num_discarded_lines()
+        );
         // Tag as control-plane metadata so the notice is formatted (text or JSON) consistently with other runner messages.
         let formatted_notice = format_log_line(&LogMessage::new_from_control_plane(
             module_path!(),
@@ -184,7 +187,9 @@ async fn catch_up_and_add_follower(
         if let Err(e) = new_follower.try_send(formatted_notice) {
             match e {
                 TrySendError::Full(_) => {
-                    error!("Unable to catch up new follower because buffer is full, the follower will be dropped");
+                    error!(
+                        "Unable to catch up new follower because buffer is full, the follower will be dropped"
+                    );
                 }
                 TrySendError::Closed(_) => {}
             }
@@ -198,7 +203,9 @@ async fn catch_up_and_add_follower(
             if let Err(e) = new_follower.try_send(line.clone()) {
                 match e {
                     TrySendError::Full(_) => {
-                        error!("Unable to catch up new follower because buffer is full, the follower will be dropped")
+                        error!(
+                            "Unable to catch up new follower because buffer is full, the follower will be dropped"
+                        )
                     }
                     TrySendError::Closed(_) => {}
                 }
@@ -240,7 +247,9 @@ async fn process_log_line_with_followers(
                     // There exists a buffer to give a follower the chance to catch up.
                     // However, if the limit of the buffer is reached and thus unable to send new,
                     // the log follower will be removed to prevent it from slowing down the rest.
-                    error!("Unable to send log line to follower because buffer is full: the follower will be removed")
+                    error!(
+                        "Unable to send log line to follower because buffer is full: the follower will be removed"
+                    )
                 }
                 TrySendError::Closed(_) => {}
             },
@@ -344,12 +353,16 @@ impl LogsSender {
                     SendTimeoutError::Timeout(unsent_message) => {
                         warn!(
                             "Unable to send logs message because receiver buffer is full -- trying again in {}ms (attempt {} / {})",
-                            SEND_LOG_MESSAGE_TIMEOUT.as_millis(), i, SEND_LOG_MESSAGE_TRIES
+                            SEND_LOG_MESSAGE_TIMEOUT.as_millis(),
+                            i,
+                            SEND_LOG_MESSAGE_TRIES
                         );
                         unsent_message
                     }
                     SendTimeoutError::Closed(_) => {
-                        debug!("Unable to send logs message because receiver is closed -- this can happen when the pipeline is deleted");
+                        debug!(
+                            "Unable to send logs message because receiver is closed -- this can happen when the pipeline is deleted"
+                        );
                         return;
                     }
                 },

@@ -15,11 +15,10 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::user::{TenantInfo, UserId};
 use crate::error::ManagerError;
 use actix_web::{
-    delete, get,
+    HttpRequest, HttpResponse, delete, get,
     http::header::{CacheControl, CacheDirective},
     patch, post, put,
     web::{self, Data as WebData, ReqData},
-    HttpRequest, HttpResponse,
 };
 use serde::{Deserialize, Serialize};
 use tracing::info;

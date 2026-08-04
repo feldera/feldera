@@ -61,7 +61,9 @@ impl CombinedStatus {
                         RuntimeStatus::Suspended => Self::Suspended,
                     }
                 } else {
-                    error!("Generating combined status encountered unexpected scenario: resource status is Provisioned but runtime status is None -- falling back to Unavailable");
+                    error!(
+                        "Generating combined status encountered unexpected scenario: resource status is Provisioned but runtime status is None -- falling back to Unavailable"
+                    );
                     Self::Unavailable
                 }
             }
@@ -114,7 +116,9 @@ impl CombinedDesiredStatus {
                         RuntimeDesiredStatus::Suspended => Self::Suspended,
                     }
                 } else {
-                    error!("Generating combined desired status encountered unexpected scenario: resource desired status is Provisioned but initial and current runtime desired status is None -- falling back to Unavailable");
+                    error!(
+                        "Generating combined desired status encountered unexpected scenario: resource desired status is Provisioned but initial and current runtime desired status is None -- falling back to Unavailable"
+                    );
                     Self::Unavailable
                 }
             }

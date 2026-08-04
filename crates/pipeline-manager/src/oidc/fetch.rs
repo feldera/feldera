@@ -4,8 +4,8 @@
 //! verify the token's signature, so the fetch happens on behalf of whoever
 //! presented it.
 
-use crate::auth::{parse_rsa_jwks, AuthError};
-use crate::oidc::destination::{is_public_ip, validate_tenant_oidc_url, TenantIssuerPolicy};
+use crate::auth::{AuthError, parse_rsa_jwks};
+use crate::oidc::destination::{TenantIssuerPolicy, is_public_ip, validate_tenant_oidc_url};
 use jsonwebtoken::DecodingKey;
 use serde::Deserialize;
 use serde_json::Value;

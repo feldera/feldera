@@ -5,7 +5,7 @@ keywords = ["DBSP", "streaming", "analytics", "database", "webui"]
 categories = ["database", "gui"]
 publish = false
 
-edition = { workspace = true }
+edition = "2024"
 version = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }

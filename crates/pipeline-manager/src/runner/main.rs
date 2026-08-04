@@ -13,7 +13,7 @@ use crate::runner::pipeline_executor::PipelineExecutor;
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use actix_web::HttpResponse;
 use actix_web::Responder;
-use actix_web::{get, web, HttpRequest, HttpServer};
+use actix_web::{HttpRequest, HttpServer, get, web};
 use async_stream::try_stream;
 use std::collections::BTreeMap;
 use std::net::TcpListener;
@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::spawn;
 use tokio::sync::mpsc::error::TrySendError;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
@@ -107,22 +107,24 @@ async fn get_logs(
                         .append_header(("X-Content-Type-Options", "nosniff"))
                         .streaming(logs_stream(receiver).await))
                 }
-                Err(e) => {
-                    match e {
-                        TrySendError::Full(_) => {
-                            error!("Unable to follow pipeline logs because the request channel is full");
-                            Err(ManagerError::from(
-                                RunnerError::RunnerInteractionLogFollowRequestChannelFull,
-                            ))
-                        }
-                        TrySendError::Closed(_) => {
-                            error!("Unable to follow pipeline logs because the request channel is closed");
-                            Err(ManagerError::from(
-                                RunnerError::RunnerInteractionLogFollowRequestChannelClosed,
-                            ))
-                        }
+                Err(e) => match e {
+                    TrySendError::Full(_) => {
+                        error!(
+                            "Unable to follow pipeline logs because the request channel is full"
+                        );
+                        Err(ManagerError::from(
+                            RunnerError::RunnerInteractionLogFollowRequestChannelFull,
+                        ))
                     }
-                }
+                    TrySendError::Closed(_) => {
+                        error!(
+                            "Unable to follow pipeline logs because the request channel is closed"
+                        );
+                        Err(ManagerError::from(
+                            RunnerError::RunnerInteractionLogFollowRequestChannelClosed,
+                        ))
+                    }
+                },
             }
         }
     }
@@ -249,7 +251,9 @@ async fn reconcile<E: PipelineExecutor + 'static>(
                     }
                 }
                 None => {
-                    error!("Runner main: listen notifier sending side has disconnected -- no longer able to send notifications");
+                    error!(
+                        "Runner main: listen notifier sending side has disconnected -- no longer able to send notifications"
+                    );
                     break;
                 }
             }
@@ -269,7 +273,9 @@ async fn reconcile<E: PipelineExecutor + 'static>(
         match db.lock().await.list_pipeline_ids_across_all_tenants().await {
             Ok(pipeline_ids) => {
                 if db_error_previously {
-                    info!("Runner main: again able to retrieve pipeline identifiers from the database. Any new pipelines will be retroactively detected.");
+                    info!(
+                        "Runner main: again able to retrieve pipeline identifiers from the database. Any new pipelines will be retroactively detected."
+                    );
                     db_error_previously = false;
                 }
                 for (tenant_id, pipeline_id) in pipeline_ids {
@@ -313,7 +319,9 @@ async fn reconcile<E: PipelineExecutor + 'static>(
                 }
             }
             Err(e) => {
-                error!("Runner main: unable to retrieve pipeline identifiers from the database. Any new pipelines are not detected until again able to. Error: {e}");
+                error!(
+                    "Runner main: unable to retrieve pipeline identifiers from the database. Any new pipelines are not detected until again able to. Error: {e}"
+                );
                 db_error_previously = true;
             }
         }

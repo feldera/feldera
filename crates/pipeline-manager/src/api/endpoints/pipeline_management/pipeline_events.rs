@@ -10,10 +10,9 @@ use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use actix_web::{
-    get,
+    HttpResponse, get,
     http::header::{CacheControl, CacheDirective},
     web::{self, Data as WebData, ReqData},
-    HttpResponse,
 };
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;

@@ -1,5 +1,5 @@
 use crate::compiler::sql_compiler::{attempt_end_to_end_sql_compilation, cleanup_sql_compilation};
-use crate::compiler::util::{encode_dir_as_string, read_file_content, DirectoryContent};
+use crate::compiler::util::{DirectoryContent, encode_dir_as_string, read_file_content};
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;

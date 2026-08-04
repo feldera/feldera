@@ -9,11 +9,10 @@ use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use actix_http::StatusCode;
 use actix_web::{
-    get,
-    http::{header, Method},
+    HttpRequest, HttpResponse, get,
+    http::{Method, header},
     post,
     web::{self, Data as WebData, ReqData},
-    HttpRequest, HttpResponse,
 };
 #[allow(unused_imports)]
 use feldera_types::checkpoint::RemoteCheckpoint;
