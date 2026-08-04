@@ -3617,4 +3617,67 @@ public class StreamingTests extends StreamingTestBase {
                 --------------------------
                  2     | ddd     | -1""");
     }
+
+    @Test
+    public void softDeleteLog() {
+        // The example from docs/sql/streaming.md: reconstruct the current
+        // contents of a soft-deleted stream with bounded state and aggregate
+        // over it.
+        String sql = """
+                CREATE TABLE input_log (
+                    id BIGINT,
+                    s VARCHAR,
+                    ts TIMESTAMP,
+                    is_delete BOOLEAN DEFAULT CAST(CONNECTOR_METADATA()['is_delete'] AS BOOLEAN)
+                ) WITH (
+                    'append_only' = 'true',
+                    'connectors' = '[{
+                        "name": "changes",
+                        "soft_delete": true,
+                        "transport": {
+                            "name": "kafka_input",
+                            "config": {
+                                "topic": "changes",
+                                "start_from": "earliest",
+                                "bootstrap.servers": "example.com:9092",
+                                "include_timestamp": true
+                            }
+                        },
+                        "format": {
+                            "name": "json",
+                            "config": { "update_format": "insert_delete" }
+                        }
+                    }]'
+                );
+
+                CREATE LOCAL VIEW recent AS
+                SELECT * FROM input_log
+                WHERE ts >= NOW() - INTERVAL 7 DAYS AND ts <= NOW();
+
+                CREATE LOCAL VIEW input AS
+                SELECT id, s, ts
+                FROM (
+                    SELECT *, ROW_NUMBER() OVER (
+                        PARTITION BY id ORDER BY ts DESC, is_delete NULLS FIRST
+                    ) AS rn
+                    FROM recent
+                )
+                WHERE rn = 1 AND is_delete IS NOT TRUE;
+
+                CREATE VIEW input_stats AS
+                SELECT
+                    id, s, ts,
+                    COUNT(*) OVER minute_window AS rows_last_minute,
+                    COUNT(*) OVER hour_window AS rows_last_hour,
+                    COUNT(*) OVER day_window AS rows_last_day
+                FROM input
+                WINDOW
+                    minute_window AS (ORDER BY ts RANGE BETWEEN INTERVAL 1 MINUTE PRECEDING AND CURRENT ROW),
+                    hour_window AS (ORDER BY ts RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND CURRENT ROW),
+                    day_window AS (ORDER BY ts RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW);""";
+        var ccs = this.getCCS(sql);
+        FindUnboundedState gc = new FindUnboundedState(ccs.compiler);
+        ccs.visit(gc);
+        Assert.assertTrue(gc.unbounded.toString(), gc.unbounded.isEmpty());
+    }
 }
