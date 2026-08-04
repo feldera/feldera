@@ -181,6 +181,8 @@ def test_events(pipeline_name):
 
     # Map events such that evolution test can be written cleanly
     # Consecutive events are removed because it is possible for events to be repeated if a status takes a longer time
+    # `Unavailable` events are removed because the runner reports them whenever it momentarily
+    # cannot reach the pipeline, which depends on the environment rather than on the lifecycle
     events_status_limited = list(
         map(
             lambda e1: (
@@ -192,7 +194,10 @@ def test_events(pipeline_name):
                 e1["program_status"],
                 e1["storage_status"],
             ),
-            events_status,
+            filter(
+                lambda e1: e1["deployment_runtime_status"] != "Unavailable",
+                events_status,
+            ),
         )
     )
 
