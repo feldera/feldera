@@ -15,7 +15,7 @@ export default function SandboxButton({code, className}: Props): JSX.Element {
     domain = 'http://localhost:8080/create/';
   }
   const href = domain + params;
-console.log('styles', styles)
+
   return (
     <button>
       <a
