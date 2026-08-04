@@ -1,5 +1,6 @@
 "Utility functions for writing tests against a Feldera instance."
 
+import base64
 import logging
 import math
 import os
@@ -46,10 +47,28 @@ def _get_effective_api_key():
     return oidc_token if oidc_token else API_KEY
 
 
+# Token and the moment it stops being handed out, keyed by audience.
+_oidc_token_cache: dict[str, tuple[str, float]] = {}
+
+# Re-mint this long before the token's own expiry, so a request issued just
+# before the check cannot arrive after it.
+_OIDC_REFRESH_MARGIN_S = 120.0
+
+
 def _github_oidc_token() -> str:
-    """Mint a fresh GitHub Actions ID token for this job."""
+    """A GitHub Actions ID token, re-minted shortly before it expires.
+
+    The SDK resolves this before every request, so it has to be cheap. Minting
+    per request adds a round trip to GitHub each time, and a suite that polls in
+    loops across parallel workers sends enough of them to be throttled, which
+    arrives as a connection timeout rather than an error.
+    """
+    audience = os.environ.get("FELDERA_OIDC_AUDIENCE", "")
+    cached = _oidc_token_cache.get(audience)
+    if cached is not None and time.time() < cached[1]:
+        return cached[0]
+
     request_url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
-    audience = os.environ.get("FELDERA_OIDC_AUDIENCE")
     if audience:
         request_url += "&audience=" + urllib.parse.quote(audience, safe="")
     request = urllib.request.Request(request_url)
@@ -57,7 +76,24 @@ def _github_oidc_token() -> str:
         "Authorization", f"bearer {os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']}"
     )
     with urllib.request.urlopen(request, timeout=30) as response:
-        return json.load(response)["value"]
+        token = json.load(response)["value"]
+
+    _oidc_token_cache[audience] = (token, _token_expiry(token) - _OIDC_REFRESH_MARGIN_S)
+    return token
+
+
+def _token_expiry(token: str) -> float:
+    """`exp` out of a JWT payload, or now if it cannot be read.
+
+    An unreadable payload means every call re-mints, which is the old
+    behaviour: slow, but never serving a token past its expiry.
+    """
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return float(json.loads(base64.urlsafe_b64decode(payload))["exp"])
+    except Exception:
+        return time.time()
 
 
 def _feldera_credential():
