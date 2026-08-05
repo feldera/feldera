@@ -752,12 +752,23 @@ trait OidcClaimExt {
 
 impl OidcClaimExt for TokenData<OidcClaim> {
     fn authorized_tenants(&self) -> Option<Vec<String>> {
-        // Priority: tenants array > single tenant claim
-        if let Some(ref tenants) = self.claims.tenants {
-            Some(tenants.clone())
+        // Priority: tenants array > single tenant claim.
+        //
+        // Empty and whitespace-only entries are dropped: IdP claim templates
+        // emit "" when a group mapping evaluates empty, and that must mean
+        // "no claim" (fall through to derivation), not a shared tenant
+        // literally named the empty string.
+        let listed = if let Some(ref tenants) = self.claims.tenants {
+            tenants.clone()
         } else {
-            self.claims.tenant.as_ref().map(|t| vec![t.clone()])
-        }
+            self.claims.tenant.iter().cloned().collect()
+        };
+        let non_empty: Vec<String> = listed
+            .into_iter()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect();
+        (!non_empty.is_empty()).then_some(non_empty)
     }
 
     fn tenant_name(
@@ -768,10 +779,10 @@ impl OidcClaimExt for TokenData<OidcClaim> {
         let issuer = &self.claims.iss;
         let sub = &self.claims.sub;
 
-        // Check if we have explicit tenant authorization in the claim
-        if let Some(authorized) = self.authorized_tenants()
-            && !authorized.is_empty()
-        {
+        // Check if we have explicit tenant authorization in the claim.
+        // `authorized_tenants` never returns an empty list: a claim with no
+        // usable entries is `None` and falls through to derivation.
+        if let Some(authorized) = self.authorized_tenants() {
             let selected = headers
                 .get(TENANT_HEADER)
                 .and_then(|h| h.to_str().ok())
@@ -789,7 +800,6 @@ impl OidcClaimExt for TokenData<OidcClaim> {
                 None => Err(AuthError::MissingTenantHeader),
             };
         }
-        // Empty array falls through to fallback logic
 
         // Fallback when the token claims no tenant at all: derive one.
         // Priority: issuer-domain > sub (if enabled)
@@ -1532,6 +1542,30 @@ mod test {
         validation
     }
 
+    fn default_manager_test_config() -> ApiServerConfig {
+        ApiServerConfig {
+            auth_provider: crate::config::AuthProviderType::AwsCognito,
+            dev_mode: false,
+            dump_openapi: false,
+            allowed_origins: None,
+            demos_dir: vec![],
+            telemetry: "".to_owned(),
+            conceptualhq: "".to_owned(),
+            product_fruits: "".to_owned(),
+            support_data_collection_frequency: 15,
+            support_data_retention: 3,
+            authorized_groups: vec![],
+            individual_tenant: true,
+            issuer_tenant: false,
+            auth_audience: "feldera-api".to_string(),
+            owners: vec![],
+            owner_trusts: crate::config::OwnerTrusts::default(),
+            allow_internal_tenant_trust_issuers: false,
+            default_role: Role::Read,
+            first_user_role: Role::Admin,
+        }
+    }
+
     fn default_claim() -> OidcClaim {
         OidcClaim {
             aud: None,
@@ -1551,6 +1585,37 @@ mod test {
             groups: None,
             additional_claims: serde_json::Map::new(),
         }
+    }
+
+    /// Empty and whitespace claim entries mean "no claim": they fall through
+    /// to derivation instead of naming a tenant literally called "".
+    #[tokio::test]
+    async fn empty_claim_entries_are_ignored() {
+        use super::OidcClaimExt;
+        use jsonwebtoken::TokenData;
+
+        let config = default_manager_test_config();
+        let headers = actix_web::http::header::HeaderMap::new();
+        let name_for = |tenant: Option<&str>, tenants: Option<Vec<&str>>| {
+            let mut claim = default_claim();
+            claim.tenant = tenant.map(str::to_string);
+            claim.tenants = tenants.map(|ts| ts.into_iter().map(str::to_string).collect());
+            TokenData {
+                header: Header::new(Algorithm::RS256),
+                claims: claim,
+            }
+            .tenant_name(&config, &headers)
+        };
+
+        // individual_tenant is on, so a token with no usable claim derives
+        // its personal tenant from the sub.
+        assert_eq!(name_for(None, None).unwrap(), "some-sub");
+        assert_eq!(name_for(Some(""), None).unwrap(), "some-sub");
+        assert_eq!(name_for(None, Some(vec![""])).unwrap(), "some-sub");
+        assert_eq!(name_for(None, Some(vec!["  ", ""])).unwrap(), "some-sub");
+        // Usable entries survive, trimmed, with empties dropped around them.
+        assert_eq!(name_for(None, Some(vec![" acme "])).unwrap(), "acme");
+        assert_eq!(name_for(None, Some(vec!["", "acme"])).unwrap(), "acme");
     }
 
     async fn run_test(
@@ -1600,27 +1665,7 @@ mod test {
             disable_cluster_monitor_resources: false,
         };
 
-        let manager_config = ApiServerConfig {
-            auth_provider: crate::config::AuthProviderType::AwsCognito,
-            dev_mode: false,
-            dump_openapi: false,
-            allowed_origins: None,
-            demos_dir: vec![],
-            telemetry: "".to_owned(),
-            conceptualhq: "".to_owned(),
-            product_fruits: "".to_owned(),
-            support_data_collection_frequency: 15,
-            support_data_retention: 3,
-            authorized_groups: vec![],
-            individual_tenant: true,
-            issuer_tenant: false,
-            auth_audience: "feldera-api".to_string(),
-            owners: vec![],
-            owner_trusts: crate::config::OwnerTrusts::default(),
-            allow_internal_tenant_trust_issuers: false,
-            default_role: Role::Read,
-            first_user_role: Role::Admin,
-        };
+        let manager_config = default_manager_test_config();
 
         let (conn, _temp) = crate::db::test::setup_pg().await;
         if let Some(api_key) = api_key {
