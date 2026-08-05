@@ -14,6 +14,37 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - Feldera's membership table now authorizes every login: a user acts
+          in the tenants they hold a membership in, whether or not the token's
+          `tenants` claim names them. The claim, the issuer tenant, and the
+          per-`sub` personal tenant become provisioning strategies that create
+          memberships at login, gated by the new
+          `authorization.provisionOnLogin` (default `true`). Set it to `false`
+          so that access comes only from memberships granted through
+          `POST /v0/tenant/users` and the web console, with no claim mapping
+          maintained at the identity provider. See
+          [Tenant Assignment Strategies](/get-started/enterprise/authentication#tenant-assignment-strategies)
+          and the
+          [migration guide](/get-started/enterprise/authentication#migrating-to-feldera-managed-memberships).
+
+        - Breaking change (revocation): narrowing a token's `tenants` claim no
+          longer revokes access, because membership rows from past logins stay
+          live. While `provisionOnLogin` is `true`, removing a member does not
+          keep them out either: the claim re-enrolls them on their next login,
+          so full revocation takes both levers. Audit memberships per tenant
+          with `GET /v0/tenant/users` before or right after upgrading, and see
+          [Revoking access](/get-started/enterprise/authentication/roles#revoking-access).
+          Managed tenancy (the `tenants` claim) is deprecated in favor of
+          Feldera-managed memberships. Two smaller visible changes: some
+          login-path refusals answer `403` or `400` where they answered `401`,
+          and a claim entry a multi-tenant user does not select no longer
+          creates a missing tenant at login (create tenants explicitly with
+          `POST /v0/tenants`).
+
+        - Renaming a tenant no longer requires updating identity provider
+          claim mappings once `provisionOnLogin` is `false`: memberships
+          reference the tenant by id, not by name.
+
         - Owners can retrieve a single tenant by name or identifier through
           `GET /v0/tenants/{tenant_id}` or `fda tenant get`, so provisioning
           automation such as an operator reconcile loop checks for a tenant
