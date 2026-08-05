@@ -1691,7 +1691,7 @@ public class AggScottTests extends ScottBaseTests {
                 (7 rows)""");
     }
 
-    @Test @Ignore("Several not-implemented aggregation functions")
+    @Test
     public void testRegrValue() {
         this.qst("""
                 -- [CALCITE-1776, CALCITE-2402] REGR_COUNT
@@ -1706,11 +1706,13 @@ public class AggScottTests extends ScottBaseTests {
                 (1 row)
 
                 -- [CALCITE-1776, CALCITE-2402] REGR_SXX, REGR_SXY, REGR_SYY
+                -- The arguments are cast to a wider DECIMAL because the result,
+                -- which sums squared values, overflows DECIMAL(7,2)
                 SELECT
-                  regr_sxx(COMM, SAL) as "REGR_SXX(COMM, SAL)",
-                  regr_syy(COMM, SAL) as "REGR_SYY(COMM, SAL)",
-                  regr_sxx(SAL, COMM) as "REGR_SXX(SAL, COMM)",
-                  regr_syy(SAL, COMM) as "REGR_SYY(SAL, COMM)"
+                  regr_sxx(CAST(COMM AS DECIMAL(12, 4)), CAST(SAL AS DECIMAL(12, 4))) as "REGR_SXX(COMM, SAL)",
+                  regr_syy(CAST(COMM AS DECIMAL(12, 4)), CAST(SAL AS DECIMAL(12, 4))) as "REGR_SYY(COMM, SAL)",
+                  regr_sxx(CAST(SAL AS DECIMAL(12, 4)), CAST(COMM AS DECIMAL(12, 4))) as "REGR_SXX(SAL, COMM)",
+                  regr_syy(CAST(SAL AS DECIMAL(12, 4)), CAST(COMM AS DECIMAL(12, 4))) as "REGR_SYY(SAL, COMM)"
                 from emp;
                 +---------------------+---------------------+---------------------+---------------------+
                 | REGR_SXX(COMM, SAL) | REGR_SYY(COMM, SAL) | REGR_SXX(SAL, COMM) | REGR_SYY(SAL, COMM) |
@@ -1721,16 +1723,16 @@ public class AggScottTests extends ScottBaseTests {
 
                 -- [CALCITE-1776, CALCITE-2402] COVAR_POP, COVAR_SAMP, VAR_SAMP, VAR_POP
                 SELECT
-                  covar_pop(COMM, COMM) as "COVAR_POP(COMM, COMM)",
-                  covar_samp(SAL, SAL) as "COVAR_SAMP(SAL, SAL)",
-                  var_pop(COMM) as "VAR_POP(COMM)",
-                  var_samp(SAL) as "VAR_SAMP(SAL)"
+                  covar_pop(CAST(COMM AS DECIMAL(12, 4)), CAST(COMM AS DECIMAL(12, 4))) as "COVAR_POP(COMM, COMM)",
+                  covar_samp(CAST(SAL AS DECIMAL(12, 4)), CAST(SAL AS DECIMAL(12, 4))) as "COVAR_SAMP(SAL, SAL)",
+                  var_pop(CAST(COMM AS DECIMAL(12, 4))) as "VAR_POP(COMM)",
+                  var_samp(CAST(SAL AS DECIMAL(12, 4))) as "VAR_SAMP(SAL)"
                 from emp;
-                +-----------------------+----------------------+---------------+-------------------+
-                | COVAR_POP(COMM, COMM) | COVAR_SAMP(SAL, SAL) | VAR_POP(COMM) | VAR_SAMP(SAL)     |
-                +-----------------------+----------------------+---------------+-------------------+
-                |           272500.0000 |    1398313.873626374 |   272500.0000 | 1398313.873626374 |
-                +-----------------------+----------------------+---------------+-------------------+
+                +-----------------------+----------------------+---------------+---------------+
+                | COVAR_POP(COMM, COMM) | COVAR_SAMP(SAL, SAL) | VAR_POP(COMM) | VAR_SAMP(SAL) |
+                +-----------------------+----------------------+---------------+---------------+
+                |           272500.0000 |         1398313.8736 |   272500.0000 |  1398313.8736 |
+                +-----------------------+----------------------+---------------+---------------+
                 (1 row)""");
     }
 

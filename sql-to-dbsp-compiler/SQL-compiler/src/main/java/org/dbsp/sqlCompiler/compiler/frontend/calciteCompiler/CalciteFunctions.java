@@ -198,12 +198,22 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     runtime_aggtest/aggregate_tests3/test_{binary_count,binary_count_col,un_int_count,un_int_count_col,un_int_countif,varbinary_count,varbinary_count_col,empty_set}.py|
                     runtime_aggtest/aggregate_tests4/test_{array_count,array_count_col,map_count,map_count_col,varchar_count,varchar_count_col,varcharn_count,varcharn_count_col}.py|
                     runtime_aggtest/aggregate_tests6/test_{interval_count_mths,interval_count_col_mths}.py""", true),
+            new Func(SqlStdOperatorTable.COVAR_POP, "COVAR_POP", SqlLibrary.STANDARD, "aggregates#covar_pop",
+                    FunctionDocumentation.NO_FILE, true),
+            new Func(SqlStdOperatorTable.COVAR_SAMP, "COVAR_SAMP", SqlLibrary.STANDARD, "aggregates#covar_samp",
+                    FunctionDocumentation.NO_FILE, true),
             new Func(SqlStdOperatorTable.EVERY, "EVERY", SqlLibrary.STANDARD, "aggregates#every", """
                     runtime_aggtest/aggregate_tests/test_{every,decimal_every,row_every,empty_set}.py|
                     runtime_aggtest/aggregate_tests2/test_{charn_every,date_every,interval_every,time_every,timestamp_every}.py|
                     runtime_aggtest/aggregate_tests3/test_{binary_every,un_int_every,varbinary_every,empty_set}.py|
                     runtime_aggtest/aggregate_tests4/test_{array_every,map_every,varchar_every,varcharn_every}.py|
                     runtime_aggtest/aggregate_tests6/test_{interval_mths_every}.py""", true),
+            new Func(SqlStdOperatorTable.REGR_COUNT, "REGR_COUNT", SqlLibrary.STANDARD, "aggregates#regr_count",
+                    FunctionDocumentation.NO_FILE, true),
+            new Func(SqlStdOperatorTable.REGR_SXX, "REGR_SXX", SqlLibrary.STANDARD, "aggregates#regr_sxx",
+                    FunctionDocumentation.NO_FILE, true),
+            new Func(SqlStdOperatorTable.REGR_SYY, "REGR_SYY", SqlLibrary.STANDARD, "aggregates#regr_syy",
+                    FunctionDocumentation.NO_FILE, true),
             new Func(SqlStdOperatorTable.MAX, "MAX", SqlLibrary.STANDARD, "aggregates#max,aggregates#window-max",
                 """
                 runtime_aggtest/aggregate_tests/test_{decimal_max,float_max,max,row_max,empty_set}.py|
