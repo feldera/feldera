@@ -2,7 +2,9 @@
   import Dayjs from 'dayjs'
   import { invalidateAll } from '$app/navigation'
   import { page } from '$app/state'
+  import TenantPicker from '$lib/components/auth/TenantPicker.svelte'
   import SvelteKitTopLoader from '$lib/components/common/SvelteKitTopLoader.svelte'
+  import { tenantAccessLost } from '$lib/compositions/tenantAccess.svelte'
   import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
   import LineBanner, { BannerButton } from '$lib/components/layout/LineBanner.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
@@ -32,8 +34,27 @@
 
   const { children, data }: { children: Snippet; data: LayoutData } = $props()
 
-  useRefreshPipelineList()
-  useRefreshClusterHealth()
+  // Reactive on purpose: the gate can engage after init. A warm-cache session
+  // whose user was removed from the saved tenant recovers via clear-and-retry
+  // plus `invalidateAll()` (see configCache.ts), without a reload, and this
+  // persistent layout must then swap to the picker. Leaving the unresolved
+  // state still always goes through `switchTenant`'s full reload.
+  //
+  // Losing the last membership mid-session never reaches that path: no fetch
+  // is pending to carry the news, so it arrives as a failed request instead
+  // (see `tenantAccessLost`). Such a session has no tenants to offer, hence
+  // the empty membership list, which `TenantPicker` renders as the no-access
+  // notice.
+  const unresolvedTenant = $derived(
+    data.unresolvedTenant ?? (tenantAccessLost.current ? { memberships: [] } : undefined)
+  )
+
+  // The pollers stay mounted for the life of this layout, so they are guarded
+  // per tick rather than skipped at init: while no acting tenant is resolved,
+  // every route except /config/session refuses to answer, and polling would
+  // only spray failing requests.
+  useRefreshPipelineList(() => !unresolvedTenant)
+  useRefreshClusterHealth(() => !unresolvedTenant)
   usePipelineAction()
 
   const rightDrawer = useAdaptiveDrawer('right')
@@ -51,11 +72,17 @@
   let dismissTimeout: ReturnType<typeof setTimeout> | undefined
   $effect.pre(() =>
     closedIntervalAction(async () => {
+      if (unresolvedTenant) {
+        // No acting tenant resolved: /config does not answer, so there is no
+        // version to compare against.
+        return
+      }
       try {
         const { config } = await fetchConfigs()
         const currentVersion = data.feldera?.version
         const currentRevision = data.feldera?.revision
         if (
+          config &&
           currentVersion &&
           currentRevision &&
           (config.version !== currentVersion || config.revision !== currentRevision)
@@ -135,67 +162,72 @@
   ignoreBeforeNavigate={() => false}
   ignoreAfterNavigate={() => false}
 ></SvelteKitTopLoader>
-<div
-  class="flex h-full flex-col {isFelderaReachable
-    ? ''
-    : 'disabled pointer-events-auto select-text [&_.monaco-editor-background]:pointer-events-none [&_[role="button"]]:pointer-events-none [&_[role="separator"]]:pointer-events-none [&_a]:pointer-events-none [&_button]:pointer-events-none'}"
->
-  {#if healthMessage && !page.url.pathname.startsWith('/health')}
-    <LineBanner variant="error">
-      {#snippet start()}
-        <span>{healthMessage}</span>
-        {@render BannerButton({
-          text: 'See details',
-          href: '/health/'
-        })}
-      {/snippet}
-    </LineBanner>
-  {/if}
-  {#each displayedMessages as message}
-    {#if message.id.startsWith('expiring_license_')}
-      <LineBanner
-        dismiss={message.dismissable !== 'never'
-          ? () => systemMessages.dismiss(message.id)
-          : undefined}
-      >
+{#if unresolvedTenant}
+  <!-- Must-pick gate: no acting tenant is resolved, so the normal UI (which
+       relies on feldera.tenantId and tenant-scoped requests) cannot render. -->
+  <TenantPicker memberships={unresolvedTenant.memberships}></TenantPicker>
+{:else}
+  <div
+    class="flex h-full flex-col {isFelderaReachable
+      ? ''
+      : 'disabled pointer-events-auto select-text [&_.monaco-editor-background]:pointer-events-none [&_[role="button"]]:pointer-events-none [&_[role="separator"]]:pointer-events-none [&_a]:pointer-events-none [&_button]:pointer-events-none'}"
+  >
+    {#if healthMessage && !page.url.pathname.startsWith('/health')}
+      <LineBanner variant="error">
         {#snippet start()}
-          <span>{@html message.text}</span>
-          {#if message.action}
-            {@render BannerButton(message.action)}
-          {/if}
-        {/snippet}
-      </LineBanner>
-    {:else if message.id.startsWith('version_available_')}
-      <LineBanner
-        dismiss={message.dismissable !== 'never'
-          ? () => systemMessages.dismiss(message.id)
-          : undefined}
-        variant="aether"
-      >
-        {#snippet center()}
-          <span>{@html message.text}</span>
-          {#if message.action}
-            {@render BannerButton(message.action)}
-          {/if}
-        {/snippet}
-      </LineBanner>
-    {:else}
-      <LineBanner
-        dismiss={message.dismissable !== 'never'
-          ? () => systemMessages.dismiss(message.id)
-          : undefined}
-        testid={`box-system-message-${message.id}`}
-      >
-        {#snippet start()}
-          <span>{@html message.text}</span>
-          {#if message.action}
-            {@render BannerButton(message.action)}
-          {/if}
+          <span>{healthMessage}</span>
+          {@render BannerButton({
+            text: 'See details',
+            href: '/health/'
+          })}
         {/snippet}
       </LineBanner>
     {/if}
-  {/each}
-  <!-- <Drawer width="w-[22rem]" bind:open={showDrawer.value} side="left">
+    {#each displayedMessages as message}
+      {#if message.id.startsWith('expiring_license_')}
+        <LineBanner
+          dismiss={message.dismissable !== 'never'
+            ? () => systemMessages.dismiss(message.id)
+            : undefined}
+        >
+          {#snippet start()}
+            <span>{@html message.text}</span>
+            {#if message.action}
+              {@render BannerButton(message.action)}
+            {/if}
+          {/snippet}
+        </LineBanner>
+      {:else if message.id.startsWith('version_available_')}
+        <LineBanner
+          dismiss={message.dismissable !== 'never'
+            ? () => systemMessages.dismiss(message.id)
+            : undefined}
+          variant="aether"
+        >
+          {#snippet center()}
+            <span>{@html message.text}</span>
+            {#if message.action}
+              {@render BannerButton(message.action)}
+            {/if}
+          {/snippet}
+        </LineBanner>
+      {:else}
+        <LineBanner
+          dismiss={message.dismissable !== 'never'
+            ? () => systemMessages.dismiss(message.id)
+            : undefined}
+          testid={`box-system-message-${message.id}`}
+        >
+          {#snippet start()}
+            <span>{@html message.text}</span>
+            {#if message.action}
+              {@render BannerButton(message.action)}
+            {/if}
+          {/snippet}
+        </LineBanner>
+      {/if}
+    {/each}
+    <!-- <Drawer width="w-[22rem]" bind:open={showDrawer.value} side="left">
     <div class="flex h-full w-full flex-col gap-1">
       <span class="mx-5 my-4 flex items-end justify-center">
         <a href="{base}/">
@@ -209,36 +241,37 @@
       <PipelinesList bind:pipelines={pipelines.pipelines}></PipelinesList>
     </div>
   </Drawer> -->
-  {@render children()}
+    {@render children()}
 
-  <OverlayDrawer
-    width="w-72"
-    bind:open={rightDrawer.value}
-    side="right"
-    modal={true}
-    class="bg-white-dark flex flex-col gap-2 p-4"
-  >
-    <div class="relative my-2 mt-4">
-      <CreatePipelineButton
-        btnClass="preset-filled-surface-50-950"
-        onSuccess={() => {
-          rightDrawer.value = false
-        }}
-      ></CreatePipelineButton>
-    </div>
-    <BookADemo class="btn self-center preset-filled-primary-500" placement="nav_drawer"
-      >Book a demo</BookADemo
+    <OverlayDrawer
+      width="w-72"
+      bind:open={rightDrawer.value}
+      side="right"
+      modal={true}
+      class="bg-white-dark flex flex-col gap-2 p-4"
     >
-    <NavigationExtras inline></NavigationExtras>
-  </OverlayDrawer>
-  <OverlayDrawer
-    width="w-[100vw] md:w-[50vw] max-w-3xl"
-    side="right"
-    bind:open={() => !!contextDrawer.content, () => (contextDrawer.content = null)}
-    modal={false}
-    class="bg-white-dark scrollbar overflow-auto p-4 pb-0 md:p-6 md:pb-0"
-  >
-    {@render contextDrawer.content?.()}
-  </OverlayDrawer>
-</div>
-<GlobalModal dialog={dialog.dialog}></GlobalModal>
+      <div class="relative my-2 mt-4">
+        <CreatePipelineButton
+          btnClass="preset-filled-surface-50-950"
+          onSuccess={() => {
+            rightDrawer.value = false
+          }}
+        ></CreatePipelineButton>
+      </div>
+      <BookADemo class="btn self-center preset-filled-primary-500" placement="nav_drawer"
+        >Book a demo</BookADemo
+      >
+      <NavigationExtras inline></NavigationExtras>
+    </OverlayDrawer>
+    <OverlayDrawer
+      width="w-[100vw] md:w-[50vw] max-w-3xl"
+      side="right"
+      bind:open={() => !!contextDrawer.content, () => (contextDrawer.content = null)}
+      modal={false}
+      class="bg-white-dark scrollbar overflow-auto p-4 pb-0 md:p-6 md:pb-0"
+    >
+      {@render contextDrawer.content?.()}
+    </OverlayDrawer>
+  </div>
+  <GlobalModal dialog={dialog.dialog}></GlobalModal>
+{/if}

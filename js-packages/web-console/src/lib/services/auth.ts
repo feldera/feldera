@@ -1,22 +1,45 @@
 import * as AxaOidc from '@axa-fr/oidc-client'
+import { errorCodeOf, tenantAccessLost } from '$lib/compositions/tenantAccess.svelte'
 
 const { OidcClient } = AxaOidc
 
-let selectedTenant: string | undefined =
-  ('window' in globalThis ? window.localStorage.getItem('session/selected_tenant') : undefined) ??
-  undefined
+// The tenant selection is stored per user ('session/selected_tenant/<sub>') so
+// two people sharing a browser never inherit each other's selection. Until
+// `setSelectedTenantUser` names the logged-in user, no selection is readable
+// and none can be persisted.
+const SELECTED_TENANT_KEY_PREFIX = 'session/selected_tenant/'
+
+let selectedTenantStorageKey: string | undefined
+let selectedTenant: string | undefined
+
+/**
+ * Key the tenant selection to the logged-in user (OIDC `sub`) and load that
+ * user's saved selection. Must run before the first request that attaches the
+ * `Feldera-Tenant` header (see the auth init in `routes/+layout.ts`).
+ */
+export const setSelectedTenantUser = (sub: string) => {
+  // The pre-per-user key is not scoped to any user, so an old selection there
+  // must not leak into this login.
+  window.localStorage.removeItem('session/selected_tenant')
+  selectedTenantStorageKey = SELECTED_TENANT_KEY_PREFIX + sub
+  selectedTenant = window.localStorage.getItem(selectedTenantStorageKey) ?? undefined
+}
 
 export const getSelectedTenant = () => {
   return selectedTenant
 }
 
 export const setSelectedTenant = (tenant?: string) => {
-  selectedTenant = tenant
-  if (tenant === undefined) {
-    window.localStorage.removeItem('session/selected_tenant')
+  if (!selectedTenantStorageKey) {
+    // No user known yet: nothing to persist and no request header to shape.
     return
   }
-  window.localStorage.setItem('session/selected_tenant', tenant)
+  selectedTenant = tenant
+  if (tenant === undefined) {
+    window.localStorage.removeItem(selectedTenantStorageKey)
+    return
+  }
+  window.localStorage.setItem(selectedTenantStorageKey, tenant)
 }
 
 /**
@@ -96,6 +119,13 @@ export const authResponseMiddleware = async (response: Response, request: Reques
  * when the interceptor fires from the fetch-failure path (network error).
  */
 export const errorResponseMiddleware = (error: unknown, response: Response | undefined) => {
+  // A session that has lost its last membership cannot recover by retrying or
+  // reloading, so record it here, where every failed response passes, rather
+  // than waiting for the next config fetch: the pollers would otherwise keep
+  // firing against layout data that still believes a tenant is resolved.
+  if (errorCodeOf(error) === 'NoTenantMemberships') {
+    tenantAccessLost.mark()
+  }
   if (error && typeof error === 'object') {
     try {
       ;(error as any).response = response

@@ -15,10 +15,16 @@ let status = $state({
  * publish the result to the module-level `status` store. A single instance of
  * this hook should be mounted at one time (the authenticated layout owns it);
  * consumers read the state via {@link useClusterHealth}.
+ *
+ * `shouldPoll` is consulted on every tick, because the owning layout persists
+ * across states in which polling must stop (e.g. no acting tenant resolved).
  */
-export const useRefreshClusterHealth = () => {
+export const useRefreshClusterHealth = (shouldPoll?: () => boolean) => {
   const api = usePipelineManager()
   useInterval(async () => {
+    if (shouldPoll?.() === false) {
+      return
+    }
     const event = await api.getClusterEvent('latest')
     status = {
       api: toEventType(event.api_status),
