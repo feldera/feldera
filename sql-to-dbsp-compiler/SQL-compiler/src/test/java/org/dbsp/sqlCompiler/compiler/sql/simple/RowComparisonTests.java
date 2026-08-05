@@ -5,7 +5,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
 
 /** Tests for the rejection of equality comparisons between ROW values,
- * implemented by {@link org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RejectRowEquality}. */
+ * implemented by {@link org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RejectUnsupportedPlans}. */
 public class RowComparisonTests extends SqlIoTest {
     static final String EQ_REJECTED = "ROW values cannot be compared using '='";
     static final String NE_REJECTED = "ROW values cannot be compared using '<>'";

@@ -116,6 +116,13 @@ in the size of input values, such as `VAR_*` or `REGR_*`.
      <td>Returns the minimum value of value across all input values</td>
   </tr>
   <tr>
+     <td><a id="mode"></a><code>MODE(value)</code></td>
+     <td>Returns the most frequent value; <code>NULL</code> values are ignored.
+         Returns <code>NULL</code> if all values are <code>NULL</code>, or if there are no rows.
+         The rule for selecting the value is not specified if multiple values are tied for the highest frequency.
+         <code>DISTINCT</code> is not supported.</td>
+  </tr>
+  <tr>
      <td><a id="regr_count"></a><code>REGR_COUNT(y, x)</code></td>
      <td>Returns the number of pairs where both y and x are non-<code>NULL</code>.</td>
   </tr>

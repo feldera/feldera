@@ -185,6 +185,7 @@
 * `MIN` (aggregate): [aggregates](aggregates.md#min), [aggregates](aggregates.md#window-min)
 * `MINUTE`: [datetime](datetime.md#date_minute), [datetime](datetime.md#time_minute), [datetime](datetime.md#timestamp_minute)
 * `MOD`: [integer](integer.md#mod)
+* `MODE` (aggregate): [aggregates](aggregates.md#mode)
 * `MONTH`: [datetime](datetime.md#month)
 * `NOT`: [boolean](boolean.md#not)
 * `NOT BETWEEN`: [comparisons](comparisons.md#notbetween)
