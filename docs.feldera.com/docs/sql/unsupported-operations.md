@@ -9,7 +9,7 @@ resolved in future releases.
 ## Aggregate functions
 
 The following aggregate functions are not supported:
-`PERCENTILE_DISC`, `PERCENTILE_CONT`, `MODE`, `CORR`,
+`PERCENTILE_DISC`, `PERCENTILE_CONT`, `CORR`,
 `REGR_SLOPE`, `REGR_INTERCEPT`, `REGR_R2`, `JSON_AGG`,
 `JSON_OBJECT_AGG`, `LISTAGG`.
 

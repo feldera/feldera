@@ -1299,22 +1299,36 @@ public class AggTests extends PostBaseTests {
                 | Jane,Alice,Susan,Eve,Grace,Wilma | Jane; Susan; Alice; Eve; Grace; Wilma |
                 +----------------------------------+---------------------------------------+
                 (2 rows)
+                */
 
-                -- [CALCITE-3661] Add MODE aggregate function
+    @Test
+    public void testRowNumber() {
+        this.qst("""
+                -- Test case for [CALCITE-5388] tempList expression inside EnumerableWindow.getPartitionIterator should be unoptimized
+                with
+                    CTE1(rownr1, val1) as ( select ROW_NUMBER() OVER(ORDER BY id ASC), id from (values (1), (2)) as Vals1(id) ),
+                    CTE2(rownr2, val2) as ( select ROW_NUMBER() OVER(ORDER BY id ASC), id from (values (1), (2)) as Vals2(id) )
+                select
+                    CTE1.rownr1, CTE1.val1, CTE2.rownr2, CTE2.val2
+                from
+                    CTE1,CTE2
+                where
+                    CTE1.val1 = CTE2.val2;
+                +--------+------+--------+------+
+                | ROWNR1 | VAL1 | ROWNR2 | VAL2 |
+                +--------+------+--------+------+
+                |      1 |    1 |      1 |    1 |
+                |      2 |    2 |      2 |    2 |
+                +--------+------+--------+------+
+                (2 rows)""");
+    }
 
+    @Test
+    public void testMode() {
+        // From agg.iq: [CALCITE-3661] Add MODE aggregate function
+        this.qst("""
                 -- MODE without GROUP BY
                 select MODE(gender) as m
-                from emp;
-                +---+
-                | M |
-                +---+
-                | F |
-                +---+
-                (1 row)
-
-                -- MODE with DISTINCT is pretty much useless (because every value occurs once),
-                -- but we allow it. It returns the first value seen, in this case 'F'.
-                select MODE(distinct gender) as m
                 from emp;
                 +---+
                 | M |
@@ -1339,11 +1353,11 @@ public class AggTests extends PostBaseTests {
                 select MODE(gender) as m
                 from emp
                 where deptno > 60;
-                +---+
-                | M |
-                +---+
-                |   |
-                +---+
+                +----+
+                |  M |
+                +----+
+                |NULL|
+                +----+
                 (1 row)
 
                 -- MODE function with GROUP BY.
@@ -1400,7 +1414,30 @@ public class AggTests extends PostBaseTests {
                 |     60 |   |
                 |        |   |
                 +--------+---+
-                (6 rows)
+                (6 rows)""");
+    }
+
+    @Test
+    public void testModeDistinct() {
+        // From agg.iq; Calcite allows MODE(DISTINCT), which returns an
+        // arbitrary value, but we reject it.
+        this.queryFailingInCompilation("select MODE(distinct gender) as m from emp",
+                "MODE does not support DISTINCT");
+    }
+
+    @Test
+    public void testModeGroupingSets() {
+        // From agg.iq; ModeToArgMaxRule does not handle GROUPING SETS.
+        this.queryFailingInCompilation("""
+                select deptno, ename, MODE(gender) as m
+                from emp
+                group by grouping sets (deptno, ename)""",
+                "Aggregate function not yet implemented");
+    }
+
+    /* Reference output from agg.iq, for when MODE supports GROUPING SETS.
+       (When converting to a qst test, blank ENAME cells must become NULL,
+       flush left against the separator.)
 
                 -- MODE function with GROUPING SETS.
                 select deptno, ename, MODE(gender) as m
@@ -1426,27 +1463,5 @@ public class AggTests extends PostBaseTests {
                 |        |       | F |
                 +--------+-------+---+
                 (15 rows)
-                */
-
-    @Test
-    public void testRowNumber() {
-        this.qst("""
-                -- Test case for [CALCITE-5388] tempList expression inside EnumerableWindow.getPartitionIterator should be unoptimized
-                with
-                    CTE1(rownr1, val1) as ( select ROW_NUMBER() OVER(ORDER BY id ASC), id from (values (1), (2)) as Vals1(id) ),
-                    CTE2(rownr2, val2) as ( select ROW_NUMBER() OVER(ORDER BY id ASC), id from (values (1), (2)) as Vals2(id) )
-                select
-                    CTE1.rownr1, CTE1.val1, CTE2.rownr2, CTE2.val2
-                from
-                    CTE1,CTE2
-                where
-                    CTE1.val1 = CTE2.val2;
-                +--------+------+--------+------+
-                | ROWNR1 | VAL1 | ROWNR2 | VAL2 |
-                +--------+------+--------+------+
-                |      1 |    1 |      1 |    1 |
-                |      2 |    2 |      2 |    2 |
-                +--------+------+--------+------+
-                (2 rows)""");
-    }
+    */
 }

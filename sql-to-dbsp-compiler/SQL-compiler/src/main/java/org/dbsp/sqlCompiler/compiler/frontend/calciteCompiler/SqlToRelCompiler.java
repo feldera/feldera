@@ -2004,8 +2004,7 @@ public class SqlToRelCompiler implements IWritesLogs {
     RelRoot sqlToRel(SqlNode node) {
         SqlToRelConverter converter = this.getConverter();
         RelRoot root = converter.convertQuery(node, true, true);
-        // Reject programs using ROW equality
-        root.rel.accept(new RejectRowEquality(this.errorReporter));
+        root.rel.accept(new RejectUnsupportedPlans(this.errorReporter));
         return root;
     }
 
