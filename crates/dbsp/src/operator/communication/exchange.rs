@@ -2190,10 +2190,18 @@ where
     Some((sender, receiver))
 }
 
+/// Count of tests currently disabling fault injection (see
+/// `tests::FaultInjectionDisabled`).
+#[cfg(test)]
+static FAULT_INJECTION_DISABLE_COUNT: AtomicUsize = AtomicUsize::new(0);
+
 #[cfg(test)]
 fn inject_fault(kind: impl Display) -> bool {
     use rand::Rng as _;
 
+    if FAULT_INJECTION_DISABLE_COUNT.load(Ordering::Relaxed) > 0 {
+        return false;
+    }
     if rand::thread_rng().gen_range(0..100) == 0 {
         warn!("injecting failure: {kind}");
         true
@@ -2261,7 +2269,7 @@ mod tests {
     use std::{
         iter::{repeat, zip},
         net::TcpListener,
-        sync::Arc,
+        sync::{Arc, atomic::Ordering},
     };
 
     /// Number of rounds for exchange.
@@ -2466,6 +2474,32 @@ mod tests {
         test_operators_multihost(operator_circuit::<DynamicScheduler>);
     }
 
+    /// Disables the random `inject_fault` failures used by the round-based
+    /// resilience tests (`single_host`, `multihost`, ...) for the lifetime of
+    /// the guard. Tests that drive the wire protocol directly through a single
+    /// hand-accepted `TcpStream` have no way to recover from an injected
+    /// "connection failure": the client would reconnect to a fresh socket that
+    /// the test never accepts, leaving the test reading a dead stream.
+    ///
+    /// If we used this feature for disabling fault injection a lot, then it
+    /// would negate the value of fault injection entirely, but we only use it
+    /// in tests that run very quickly, whereas the tests that do benefit from
+    /// fault injection are longer running.
+    struct FaultInjectionDisabled;
+
+    impl FaultInjectionDisabled {
+        fn new() -> Self {
+            super::FAULT_INJECTION_DISABLE_COUNT.fetch_add(1, Ordering::Relaxed);
+            Self
+        }
+    }
+
+    impl Drop for FaultInjectionDisabled {
+        fn drop(&mut self) {
+            super::FAULT_INJECTION_DISABLE_COUNT.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+
     // Exercises the liveness ping mechanism directly: a fake receiver
     // acknowledges nothing, so the sender has no way to tell a slow receiver
     // from a half-open connection except by asking.
@@ -2478,6 +2512,7 @@ mod tests {
         use tokio::{io::AsyncWriteExt, net::TcpListener as AsyncTcpListener, time::timeout};
 
         init_test_logger();
+        let _guard = FaultInjectionDisabled::new();
         TOKIO.block_on(async {
             let listener = AsyncTcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
@@ -2520,6 +2555,7 @@ mod tests {
         use tokio::net::TcpListener as AsyncTcpListener;
 
         init_test_logger();
+        let _guard = FaultInjectionDisabled::new();
         TOKIO.block_on(async {
             let listener = AsyncTcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
