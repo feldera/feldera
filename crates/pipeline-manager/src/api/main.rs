@@ -358,6 +358,8 @@ It contains the following fields:
         crate::db::types::user::UserId,
         crate::db::types::user::TenantMember,
         crate::db::types::user::TenantInfo,
+        crate::db::types::user::MembershipOrigin,
+        crate::db::types::user::UserMembership,
         crate::api::endpoints::tenant::SetMemberRoleRequest,
         crate::api::endpoints::tenant::AddMemberRequest,
         crate::api::endpoints::tenant::AddMemberResponse,
@@ -954,6 +956,9 @@ pub async fn run(
     api_config: ApiServerConfig,
     license_check: Arc<RwLock<Option<LicenseCheck>>>,
 ) -> AnyResult<()> {
+    if let Err(reason) = api_config.validate_authorization() {
+        return Err(anyhow::anyhow!(reason));
+    }
     let listener = TcpListener::bind((common_config.bind_address.clone(), common_config.api_port))
         .unwrap_or_else(|_| {
             panic!(
