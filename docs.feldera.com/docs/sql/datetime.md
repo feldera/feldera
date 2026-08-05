@@ -254,7 +254,7 @@ CREATE_TIMESTAMP function which creates a `TIMESTAMP` given a number of
 seconds:
 
 ```sql
-CREATE FUNCTION CREATE_TIMESTAMP(SECONDS BIGINT) RETURNS TIMESTAMP AS
+CREATE FUNCTION create_timestamp(SECONDS BIGINT) RETURNS TIMESTAMP AS
 TIMESTAMPADD(SECOND, SECONDS, DATE '1970-01-01');
 ```
 
@@ -440,7 +440,7 @@ that use `NOW()` can be implemented very efficiently.  These are the
 so-called "temporal filters".  Here is an example:
 
 ```sql
-SELECT * FROM T WHERE T.ts >= NOW() - INTERVAL 1 DAYS;
+SELECT * FROM t WHERE t.ts >= NOW() - INTERVAL 1 DAYS;
 ```
 
 In general, a temporal filter will involve inequality or equality
@@ -455,8 +455,8 @@ of the following views count the rows from the last day, and both are
 implemented with a temporal filter:
 
 ```sql
-SELECT COUNT(CASE WHEN T.ts >= NOW() - INTERVAL 1 DAYS THEN 1 END) FROM T;
-SELECT COUNT(*) FILTER (WHERE T.ts >= NOW() - INTERVAL 1 DAYS) FROM T;
+SELECT COUNT(CASE WHEN t.ts >= NOW() - INTERVAL 1 DAYS THEN 1 END) FROM t;
+SELECT COUNT(*) FILTER (WHERE t.ts >= NOW() - INTERVAL 1 DAYS) FROM t;
 ```
 
 ## Date parsing and formatting

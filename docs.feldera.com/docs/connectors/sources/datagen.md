@@ -161,11 +161,11 @@ the `range` parameter.
 * A table with no configuration generates incrementing values for all types:
 
 ```sql
-CREATE TABLE Stocks (
+CREATE TABLE stocks (
     symbol VARCHAR NOT NULL,
     price_time BIGINT NOT NULL,  -- UNIX timestamp
     price DECIMAL(38, 2) NOT NULL
-) with (
+) WITH (
   'connectors' = '[{
     "transport": {
       "name": "datagen",
@@ -192,11 +192,11 @@ Will generate the following data:
 * A table with a single plan that generates 5 rows with a rate of 1 row per second:
 
 ```sql
-CREATE TABLE Stocks (
+CREATE TABLE stocks (
     symbol VARCHAR NOT NULL,
     price_time BIGINT NOT NULL,  -- UNIX timestamp
     price DECIMAL(38, 2) NOT NULL
-) with (
+) WITH (
   'connectors' = '[{
     "transport": {
       "name": "datagen",
@@ -235,7 +235,7 @@ Will generate the following data:
 ```sql
 CREATE TABLE binary_tbl (
     bin VARBINARY NOT NULL
-) with (
+) WITH (
   'connectors' = '[{
     "transport": {
       "name": "datagen",
@@ -275,7 +275,7 @@ CREATE TABLE times (
     dt DATE NOT NULL,
     ts TIMESTAMP NOT NULL,
     t TIME NOT NULL
-) with (
+) WITH (
   'connectors' = '[{
     "transport": {
       "name": "datagen",

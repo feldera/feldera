@@ -31,7 +31,7 @@ The following reads a file named `/tmp/input.txt`:
 CREATE TABLE stocks (
     symbol VARCHAR NOT NULL,
     price DECIMAL(38, 2) NOT NULL
-) with (
+) WITH (
   'connectors' = '[{
     "transport": {
       "name": "file_input",

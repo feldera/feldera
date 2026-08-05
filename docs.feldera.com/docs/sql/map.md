@@ -11,7 +11,7 @@ always assume that map keys are *not* nullable, while values
 *are* nullable:
 
 ```sql
-CREATE TABLE T(m MAP<VARCHAR, INT>);
+CREATE TABLE t(m MAP<VARCHAR, INT>);
 ```
 
 Table `T` will have a single column `m` whose values are nullable
@@ -65,9 +65,9 @@ When the `UNNEST` operator is used in self-joins as follows, an alias needs
 to be used to name the key and value fields (`zips(city, zip)` in the example):
 
 ```sql
-CREATE TABLE data(zipcodes MAP<VARCHAR, INT>, COUNTRY VARCHAR);
+CREATE TABLE data(zipcodes MAP<VARCHAR, INT>, country VARCHAR);
 
-CREATE VIEW V AS SELECT data.country, city, zip
+CREATE VIEW v AS SELECT data.country, city, zip
 FROM data CROSS JOIN UNNEST(data.zipcodes) AS zips(city, zip);
 ```
 

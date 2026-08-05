@@ -215,7 +215,7 @@ the daily maximum purchase amount:
 ```sql
 CREATE VIEW daily_max AS
 SELECT
-    TIMESTAMP_TRUNC(ts, DAY) as d,
+    TIMESTAMP_TRUNC(ts, DAY) AS d,
     MAX(amount) AS max_amount
 FROM
     purchase
@@ -303,7 +303,7 @@ for each day.
 ```sql
 CREATE VIEW daily_total AS
 SELECT
-    TIMESTAMP_TRUNC(ts, DAY) as d,
+    TIMESTAMP_TRUNC(ts, DAY) AS d,
     SUM(amount) AS total
 FROM
     purchase
@@ -346,7 +346,7 @@ CREATE VIEW daily_total_final
 WITH ('emit_final' = 'd')
 AS
 SELECT
-    TIMESTAMP_TRUNC(ts, DAY) as d,
+    TIMESTAMP_TRUNC(ts, DAY) AS d,
     SUM(amount) AS total
 FROM
     purchase
@@ -454,7 +454,7 @@ optimize certain types of queries. Consider the `daily_max` view from above:
 ```sql
 CREATE VIEW daily_max AS
 SELECT
-    TIMESTAMP_TRUNC(ts, DAY) as d,
+    TIMESTAMP_TRUNC(ts, DAY) AS d,
     MAX(amount) AS max_amount
 FROM
     purchase
@@ -538,7 +538,7 @@ SELECT
 FROM TABLE(
   TUMBLE(
     "DATA" => TABLE purchase,
-    "TIMECOL" => DESCRIPTOR(ts),
+    "TIMECOL" => descriptor(ts),
     "SIZE" => INTERVAL 1 DAY))
 GROUP BY
     window_start;
@@ -596,22 +596,22 @@ CREATE VIEW daily_totals AS
 WITH
     purchase_totals AS (
         SELECT
-            TIMESTAMP_TRUNC(purchase.ts, DAY) as purchase_date,
-            SUM(purchase.amount) as total_purchase_amount
+            TIMESTAMP_TRUNC(purchase.ts, DAY) AS purchase_date,
+            SUM(purchase.amount) AS total_purchase_amount
         FROM purchase
         GROUP BY
             TIMESTAMP_TRUNC(purchase.ts, DAY)
     ),
     return_totals AS (
         SELECT
-            TIMESTAMP_TRUNC(returns.ts, DAY) as return_date,
-            SUM(returns.amount) as total_return_amount
+            TIMESTAMP_TRUNC(returns.ts, DAY) AS return_date,
+            SUM(returns.amount) AS total_return_amount
         FROM returns
         GROUP BY
             TIMESTAMP_TRUNC(returns.ts, DAY)
     )
 SELECT
-    purchase_totals.purchase_date as d,
+    purchase_totals.purchase_date AS d,
     purchase_totals.total_purchase_amount,
     return_totals.total_return_amount
 FROM
@@ -650,7 +650,7 @@ SELECT
     purchase.customer_id,
     customer.address
 FROM purchase
-LEFT ASOF JOIN customer MATCH_CONDITION(purchase.ts >= customer.ts)
+LEFT asof JOIN customer match_condition(purchase.ts >= customer.ts)
 ON purchase.customer_id = customer.customer_id;
 ```
 
@@ -676,8 +676,8 @@ SELECT
     ts,
     customer_id,
     amount,
-    LAG(amount) OVER(PARTITION BY customer_id ORDER BY ts) as previous_amount,
-    LEAD(amount) OVER(PARTITION BY customer_id ORDER BY ts) as next_amount
+    LAG(amount) OVER(PARTITION BY customer_id ORDER BY ts) AS previous_amount,
+    LEAD(amount) OVER(PARTITION BY customer_id ORDER BY ts) AS next_amount
 FROM
     purchase;
 ```

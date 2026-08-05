@@ -4,13 +4,13 @@ In this section, we demonstrate how to debug a new SQL program with the
 WebConsole. We are reusing the code from the previous tutorial as an example:
 
 ```sql
-CREATE TABLE Person
+CREATE TABLE person
 (
     name    VARCHAR,
     age     INT,
     present BOOLEAN
-) with ('materialized' = 'true');
-CREATE MATERIALIZED VIEW Adult AS SELECT Person.name, Person.age FROM Person WHERE Person.age > 18;
+) WITH ('materialized' = 'true');
+CREATE MATERIALIZED VIEW adult AS SELECT person.name, person.age FROM person WHERE person.age > 18;
 ```
 
 Enter the code in the SQL editor. Once the program compiled successfully, (as

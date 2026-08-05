@@ -36,7 +36,7 @@ The Avro format must be configured with:
 Example:
 
 ```sql
-create materialized view pizzas with (
+CREATE MATERIALIZED VIEW pizzas WITH (
    'connectors' = '[
     {
       "index": "idx1",
@@ -58,8 +58,8 @@ create materialized view pizzas with (
       }
     }
    ]'
-) as select * from tbl order by order_number desc limit 10;
-create index idx1 on pizzas(order_number);
+) AS SELECT * FROM tbl ORDER BY order_number DESC LIMIT 10;
+CREATE INDEX idx1 ON pizzas(order_number);
 ```
 
 :::important

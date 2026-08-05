@@ -55,9 +55,9 @@ as a single record.  This can require a lot of memory when reading large files.
 The following example shows a table with an input connector configured to ingest raw data from a URL line-by-line.
 
 ```sql
-create table raw_table(
-    data varchar
-) with (
+CREATE TABLE raw_table(
+    data VARCHAR
+) WITH (
     'connectors' = '[{
         "format": {
             "name": "raw",
@@ -83,8 +83,8 @@ message metadata into other columns (see [Accessing Kafka metadata](/connectors/
 ```sql
 CREATE TABLE raw_table (
     data VARCHAR,
-    kafka_headers MAP<STRING, VARBINARY> DEFAULT CAST(CONNECTOR_METADATA()['kafka_headers'] as MAP<STRING, VARBINARY>),
-    kafka_timestamp TIMESTAMP DEFAULT CAST(CONNECTOR_METADATA()['kafka_timestamp'] as TIMESTAMP),
+    kafka_headers MAP<STRING, VARBINARY> DEFAULT CAST(CONNECTOR_METADATA()['kafka_headers'] AS MAP<STRING, VARBINARY>),
+    kafka_timestamp TIMESTAMP DEFAULT CAST(CONNECTOR_METADATA()['kafka_timestamp'] AS TIMESTAMP),
     kafka_topic VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['kafka_topic'] AS VARCHAR),
     kafka_offset BIGINT DEFAULT CAST(CONNECTOR_METADATA()['kafka_offset'] AS BIGINT),
     kafka_partition INT DEFAULT CAST(CONNECTOR_METADATA()['kafka_partition'] AS INT)
@@ -126,8 +126,8 @@ You can also push raw data to a pipeline via [HTTP](/connectors/sources/http) by
 Create a pipeline called `my_pipeline` with the following table declaration:
 
 ```sql
-create table raw_table(
-    data varchar
+CREATE TABLE raw_table(
+    data VARCHAR
 );
 ```
 

@@ -120,7 +120,7 @@ Please ensure you have a Google Cloud account before proceeding.
 
   ```sql
   CREATE TABLE pub_sub_input (
-    id int
+    id INT
   ) WITH (
       'connectors' = '[
       {

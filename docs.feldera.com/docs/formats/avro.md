@@ -155,7 +155,7 @@ Configure the Avro parser to receive raw Avro records without embedded schema id
 CREATE TABLE my_table (
     id INT NOT NULL PRIMARY KEY,
     ts TIMESTAMP
-) with (
+) WITH (
   'connectors' = '[{
     "transport": {
       "name": "kafka_input",
@@ -182,7 +182,7 @@ Configure the Avro parser to ingest data change events from Debezium (refer to [
 CREATE TABLE my_table (
     id INT NOT NULL PRIMARY KEY,
     ts TIMESTAMP
-) with (
+) WITH (
   'connectors' = '[{
     "transport": {
       "name": "kafka_input",
@@ -215,12 +215,12 @@ SQL function.  In the following example we extract the `avro_schema_id` attribut
 [Kafka message metadata](/connectors/sources/kafka#accessing-kafka-metadata) from the Kafka connector:
 
 ```sql
-create table my_table(
-    x int,
-    avro_schema_id INT UNSIGNED DEFAULT CAST(CONNECTOR_METADATA()['avro_schema_id'] as INT UNSIGNED),
+CREATE TABLE my_table(
+    x INT,
+    avro_schema_id INT UNSIGNED DEFAULT CAST(CONNECTOR_METADATA()['avro_schema_id'] AS INT UNSIGNED),
     kafka_offset BIGINT DEFAULT CAST(CONNECTOR_METADATA()['kafka_offset'] AS BIGINT),
     kafka_partition INT DEFAULT CAST(CONNECTOR_METADATA()['kafka_partition'] AS INT)
-) with (
+) WITH (
     'materialized' = 'true',
     'connectors' = '[{
       "transport": {
@@ -299,13 +299,13 @@ Configure the Avro encoder to send raw Avro records using a static user-provided
 specify a schema registry URL, so the encoder will not try to publish the schema.
 
 ```sql
-create table my_table (
-   id bigint,
-   name string
+CREATE TABLE my_table (
+   id BIGINT,
+   name STRING
 );
 
-create view my_view
-with (
+CREATE VIEW my_view
+WITH (
   'connectors' = '[{
     "transport": {
       "name": "kafka_output",
@@ -324,7 +324,7 @@ with (
     }
   }]'
 )
-as select * from my_table;
+AS SELECT * FROM my_table;
 ```
 
 Configure the Avro encoder to send raw Avro records. The connector is associated with a SQL index
@@ -334,13 +334,13 @@ operations with the same unique key into atomic updates. The encoder will genera
 schemas for the key and value components of the message and publish them in the schema registry.
 
 ```sql
-create table my_table (
-   id bigint,
-   name string
+CREATE TABLE my_table (
+   id BIGINT,
+   name STRING
 );
 
-create view my_view
-with (
+CREATE VIEW my_view
+WITH (
   'connectors' = '[{
     "index": "my_index",
     "transport": {
@@ -359,9 +359,9 @@ with (
     }
   }]'
 )
-as select * from my_table;
+AS SELECT * FROM my_table;
 
-create index my_index on my_view(id);
+CREATE INDEX my_index ON my_view(id);
 ```
 
 Configure the Avro encoder to output changes in the format expected by the
@@ -372,13 +372,13 @@ operations with the same unique key into atomic updates.  The encoder will gener
 key and value components of the message and publish them in the schema registry.
 
 ```sql
-create table my_table (
-   id bigint,
-   name string
+CREATE TABLE my_table (
+   id BIGINT,
+   name STRING
 );
 
-create view my_view
-with (
+CREATE VIEW my_view
+WITH (
   'connectors' = '[{
     "index": "my_index",
     "transport": {
@@ -397,9 +397,9 @@ with (
     }
   }]'
 )
-as select * from my_table;
+AS SELECT * FROM my_table;
 
-create index my_index on my_view(id);
+CREATE INDEX my_index ON my_view(id);
 ```
 
 #### Emitting change data capture (CDC) metadata
@@ -419,7 +419,7 @@ metadata to maintain the materialized view in Iceberg.
 Example:
 
 ```sql
-create materialized view pizzas with (
+CREATE MATERIALIZED VIEW pizzas WITH (
    'connectors' = '[
     {
       "index": "idx1",
@@ -441,6 +441,6 @@ create materialized view pizzas with (
       }
     }
    ]'
-) as select * from tbl order by order_number desc limit 10;
-create index idx1 on pizzas(order_number);
+) AS SELECT * FROM tbl ORDER BY order_number DESC LIMIT 10;
+CREATE INDEX idx1 ON pizzas(order_number);
 ```

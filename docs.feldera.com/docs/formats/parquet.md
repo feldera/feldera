@@ -40,11 +40,11 @@ and [Arrow types](https://docs.rs/arrow/latest/arrow/datatypes/enum.DataType.htm
 In this example, we configure a table to load data from a Parquet file.
 
 ```sql
-create table PARTS (
-  part bigint not null,
-  vendor bigint not null,
-  price bigint not null
-) with ('connectors' = '[{
+CREATE TABLE parts (
+  part BIGINT NOT NULL,
+  vendor BIGINT NOT NULL,
+  price BIGINT NOT NULL
+) WITH ('connectors' = '[{
   "transport": {
     "name": "url_input",
     "config": { "path": "https://feldera-basics-tutorial.s3.amazonaws.com/parts.parquet" }

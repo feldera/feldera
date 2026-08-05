@@ -12,7 +12,7 @@ CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER)
 RETURNS BOOLEAN NOT NULL
 AS (str LIKE ('%' || CAST(value AS VARCHAR) || '%'));
 
-CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5' AS VARCHAR), 5)
+CREATE VIEW v0 AS SELECT contains_number(CAST('YES: 10 NO:5' AS VARCHAR), 5)
 ```
 
 ## User-defined functions written in Rust
@@ -306,10 +306,10 @@ type.  These tuple types can be imported from the current crate.
 Here are some examples using `ROW` and user-defined types:
 
 ```sql
-CREATE TYPE X AS (x int);
-CREATE FUNCTION f(arg X) RETURNS X;
-CREATE FUNCTION g(x int NOT NULL) RETURNS ROW(a INT, b INT) NOT NULL;
-CREATE VIEW V AS SELECT f(X(1)), g(2).a;
+CREATE TYPE x AS (x INT);
+CREATE FUNCTION f(arg x) RETURNS x;
+CREATE FUNCTION g(x INT NOT NULL) RETURNS ROW(a INT, b INT) NOT NULL;
+CREATE VIEW v AS SELECT f(x(1)), g(2).a;
 ```
 
 And here is a possible implementation of the user-defined functions
@@ -485,16 +485,16 @@ represent 128-bit numbers.  The first step requires declaring the
 user-defined aggregate function in SQL:
 
 ```sql
-CREATE LINEAR AGGREGATE i128_sum(value BINARY(16)) RETURNS BINARY(16);
+CREATE linear AGGREGATE i128_sum(value BINARY(16)) RETURNS BINARY(16);
 ```
 
 Notice that the type of the argument and result are both nullable.  We
 can then use the user-defined aggregate in a SQL program:
 
 ```sql
-CREATE TABLE T(value BINARY(16));
+CREATE TABLE t(value BINARY(16));
 
-CREATE MATERIALIZED VIEW V0 AS SELECT i128_sum(value) FROM T;
+CREATE MATERIALIZED VIEW v0 AS SELECT i128_sum(value) FROM t;
 ```
 
 In SQL the `SUM` function is polymorphic, since it works for any

@@ -45,13 +45,13 @@ The code used in this article is available in our [GitHub repository](https://gi
 We need a table to store cell content. Below is the SQL to create it:
 
 ```sql
-create table spreadsheet_data (
-    id bigint not null,
-    ip varchar(45) not null,
-    ts timestamp not null,
-    raw_value varchar(64) not null,
-    background integer not null
-) with (
+CREATE TABLE spreadsheet_data (
+    id BIGINT NOT NULL,
+    ip VARCHAR(45) NOT NULL,
+    ts TIMESTAMP NOT NULL,
+    raw_value VARCHAR(64) NOT NULL,
+    background INTEGER NOT NULL
+) WITH (
     'materialized' = 'true',
     'connectors' = '[{
         "transport": {
@@ -99,26 +99,26 @@ In many database scenarios, you might expect a PRIMARY KEY on id. However, we wa
 We also need to discover if the cell references other cells (e.g., with a formula like `=A0+B0`). Extracting references from `raw_value` is tricky in SQL because it requires parsing spreadsheet formulas. To handle this, we define a Rust UDF called `mentions`, which returns an array of referenced cell IDs. Below the SQL view that uses the `mentions` function (which we’ll implement in Rust) and selects only the most recent cellll for each id in `spreadsheet_data`:
 
 ```sql
-create function mentions(cell varchar(64)) returns bigint array;
+CREATE FUNCTION mentions(cell VARCHAR(64)) RETURNS BIGINT ARRAY;
 
-create materialized view latest_cells as with
-    max_ts_per_cell as (
-        select
+CREATE MATERIALIZED VIEW latest_cells AS WITH
+    max_ts_per_cell AS (
+        SELECT
             id,
-            max(ts) as max_ts
-        from
+            MAX(ts) AS max_ts
+        FROM
             spreadsheet_data
-        group by
+        GROUP BY
             id
     )
-select
+SELECT
     s.id,
     s.raw_value,
     s.background,
-    ARRAY_APPEND(mentions(s.raw_value), null) as mentioned_cell_ids
-from
+    ARRAY_APPEND(mentions(s.raw_value), NULL) AS mentioned_cell_ids
+FROM
     spreadsheet_data s
-join max_ts_per_cell mt on s.id = mt.id and s.ts = mt.max_ts;
+JOIN max_ts_per_cell mt ON s.id = mt.id AND s.ts = mt.max_ts;
 ```
 
 This SQL won’t compile yet because we haven’t implemented mentions. Here’s the Rust UDF code:
@@ -214,7 +214,7 @@ Notice null appears in every mentions array. This ensures the array isn’t empt
 To see the latest_cells view in action, you can insert a newer value for cell 0:
 
 ```sql
-insert into spreadsheet_data values (0, 0, '2025-01-01T00:00:00', '0', 0)
+INSERT INTO spreadsheet_data VALUES (0, 0, '2025-01-01T00:00:00', '0', 0)
 ```
 
 You should see two changes being emitted in the `latest_cell`
@@ -234,14 +234,14 @@ We accomplish this by:
 * Rejoining with `spreadsheet_data` to look up each referenced cell’s `raw_value`.
 
 ```sql
-create view latest_cells_with_mentions as
-select
+CREATE VIEW latest_cells_with_mentions AS
+SELECT
     s.id,
     s.raw_value,
     s.background,
     m.mentioned_id
-from
-    latest_cells s, unnest(s.mentioned_cell_ids) as m(mentioned_id);
+FROM
+    latest_cells s, UNNEST(s.mentioned_cell_ids) AS m(mentioned_id);
 ```
 
 In the final line, we cross-join `latest_cells` with a new “table” created by `unnest` on the `mentions` array. Here’s how the view looks given our inserted data:
@@ -259,17 +259,17 @@ In the final line, we cross-join `latest_cells` with a new “table” created b
 Next, we join this intermediate result with `spreadsheet_data` to find the `raw_value` for each `mentioned_id`:
 
 ```sql
-create materialized view mentions_with_values as
-select
+CREATE MATERIALIZED VIEW mentions_with_values AS
+SELECT
     m.id,
     m.raw_value,
     m.background,
     m.mentioned_id,
-    sv.raw_value as mentioned_value
-from
+    sv.raw_value AS mentioned_value
+FROM
     latest_cells_with_mentions m
-        left join
-    spreadsheet_data sv on m.mentioned_id = sv.id;
+        LEFT JOIN
+    spreadsheet_data sv ON m.mentioned_id = sv.id;
 ```
 
 This produces the same view as above but with an added `mentioned_value` column:
@@ -287,16 +287,16 @@ This produces the same view as above but with an added `mentioned_value` column:
 Finally, we flatten this data by grouping `mentioned_id` and `mentioned_value` into arrays, producing one row per cell:
 
 ```sql
-create materialized view mentions_aggregated as
-select
+CREATE MATERIALIZED VIEW mentions_aggregated AS
+SELECT
     id,
     raw_value,
     background,
-    ARRAY_AGG(mentioned_id) as mentions_ids,
-    ARRAY_AGG(mentioned_value) as mentions_values
-from
+    ARRAY_AGG(mentioned_id) AS mentions_ids,
+    ARRAY_AGG(mentioned_value) AS mentions_values
+FROM
     mentions_with_values
-group by
+GROUP BY
     id,
     raw_value,
     background;
@@ -318,15 +318,15 @@ At this point, we have two arrays — `mentions_ids` and `mentions_values` — w
 First, we introduce a view that calls this UDF and produces a `computed_value` for each cell:
 
 ```sql
-create function cell_value(cell varchar(64), mentions_ids bigint array, mentions_values varchar(64) array) returns varchar(64);
+CREATE FUNCTION cell_value(cell VARCHAR(64), mentions_ids BIGINT ARRAY, mentions_values VARCHAR(64) ARRAY) RETURNS VARCHAR(64);
 
-create materialized view spreadsheet_view as
-select
+CREATE MATERIALIZED VIEW spreadsheet_view AS
+SELECT
     id,
     background,
     raw_value,
     cell_value(raw_value, mentions_ids, mentions_values) AS computed_value
-from
+FROM
     mentions_aggregated;
 ```
 
@@ -414,17 +414,17 @@ Fortunately, Feldera SQL can do recursive queries to solve this. Instead of look
 Here’s how we update `mentions_with_values`:
 
 ```sql
-create materialized view mentions_with_values as
-select
+CREATE MATERIALIZED VIEW mentions_with_values AS
+SELECT
     m.id,
     m.raw_value,
     m.background,
     m.mentioned_id,
-    sv.compute_value as mentioned_value
-from
+    sv.compute_value AS mentioned_value
+FROM
     latest_cells_with_mentions m
-        left join
-    spreadsheet_view sv on m.mentioned_id = sv.id;
+        LEFT JOIN
+    spreadsheet_view sv ON m.mentioned_id = sv.id;
 ```
 
 Note the three changes:
@@ -432,14 +432,14 @@ Note the three changes:
 * We now get the final (evaluted) values for every cell:
 
   ```sql
-  sv.compute_value as mentioned_value
+  sv.compute_value AS mentioned_value
   ```
 
 * By reading them from `spreadsheet_view`:
 
   ```sql
-  left join
-      spreadsheet_view sv on m.mentioned_id = sv.id;
+  LEFT JOIN
+      spreadsheet_view sv ON m.mentioned_id = sv.id;
   ```
 
 If you try to compile at this point, you’ll see:
@@ -454,11 +454,11 @@ Object 'spreadsheet_view' not found
 That’s because `spreadsheet_view` doesn’t exist when we define `mentions_with_values`. To fix this, add a **forward declaration** at the start of your program:
 
 ```sql
-declare recursive view spreadsheet_view (
-    id bigint not null,
-    background integer not null,
-    raw_value varchar(64) not null,
-    computed_value varchar(64)
+DECLARE RECURSIVE VIEW spreadsheet_view (
+    id BIGINT NOT NULL,
+    background INTEGER NOT NULL,
+    raw_value VARCHAR(64) NOT NULL,
+    computed_value VARCHAR(64)
 );
 ```
 
@@ -484,7 +484,7 @@ We can test this by updating cell 0 again:
 
 
 ```sql
-insert into spreadsheet_data values (0, 0, '2025-01-01T00:00:00', '0', 0)
+INSERT INTO spreadsheet_data VALUES (0, 0, '2025-01-01T00:00:00', '0', 0)
 ```
 
 Checking the `spreadsheet_view` changestream, we see just two cells affected:

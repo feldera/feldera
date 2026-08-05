@@ -6,13 +6,13 @@ becomes an input, and each view definition becomes an output. Here is an example
 program:
 
 ```sql
-CREATE TABLE Person
+CREATE TABLE person
 (
     name    VARCHAR,
     age     INT,
     present BOOLEAN
 );
-CREATE MATERIALIZED VIEW Adult AS SELECT Person.name, Person.age FROM Person WHERE Person.age > 18;
+CREATE MATERIALIZED VIEW adult AS SELECT person.name, person.age FROM person WHERE person.age > 18;
 ```
 
 Statements need to be separated by semicolons.
@@ -27,15 +27,15 @@ formed by a query on other tables or views.
 For example, the following query defines a view:
 
 ```sql
-CREATE MATERIALIZED VIEW Adult AS SELECT Person.name FROM Person WHERE Person.age > 18
+CREATE MATERIALIZED VIEW adult AS SELECT person.name FROM person WHERE person.age > 18
 ```
 
 In order to interpret this query the compiler needs to have been given
 a definition of table (or view) Person.  The table `Person` must be
 defined using a SQL DDL statement, e.g.:
 
-```SQL
-CREATE TABLE Person
+```sql
+CREATE TABLE person
 (
     name    VARCHAR,
     age     INT,

@@ -296,7 +296,7 @@ CREATE TABLE iceberg_table(
   id BIGINT,
   name STRING,
   b BOOLEAN,
-  ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 day,
+  ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 DAY,
   dt DATE
 ) WITH (
   'materialized' = 'true',
@@ -326,13 +326,13 @@ data. These credentials can either be the same, when using a single IAM identity
 services, or different, when using separate IAM identities.
 
 ```sql
-create table iceberg_table(
-  id bigint,
+CREATE TABLE iceberg_table(
+  id BIGINT,
   name STRING,
   b BOOLEAN,
   ts TIMESTAMP,
   dt DATE
-) with (
+) WITH (
     'materialized' = 'true',
     'connectors' = '[{
         "transport": {
@@ -364,13 +364,13 @@ files from S3 (`s3.*`). These credentials can either be the same, when using a s
 identity for both, or different, when using separate IAM identities.
 
 ```sql
-create table iceberg_table(
-  id bigint,
+CREATE TABLE iceberg_table(
+  id BIGINT,
   name STRING,
   b BOOLEAN,
   ts TIMESTAMP,
   dt DATE
-) with (
+) WITH (
     'materialized' = 'true',
     'connectors' = '[{
         "transport": {
@@ -398,14 +398,14 @@ Create an Iceberg input connector to read a snapshot of a table stored in an S3 
 through a REST catalog running on `http://127.0.0.1:8181`.
 
 ```sql
-create table iceberg_table(
-  id bigint,
+CREATE TABLE iceberg_table(
+  id BIGINT,
   name STRING,
   b BOOLEAN,
   ts TIMESTAMP,
   dt DATE
 )
-with (
+WITH (
     'materialized' = 'true',
     'connectors' = '[{
         "transport": {
@@ -431,13 +431,13 @@ Read an Iceberg table from the local file system. Use the specified snapshot id.
 Only select records with timestamp `2023-01-01 00:00:00` or later.
 
 ```sql
-create table iceberg_table(
-  id bigint,
+CREATE TABLE iceberg_table(
+  id BIGINT,
   name STRING,
   b BOOLEAN,
   ts TIMESTAMP,
   dt DATE
-) with (
+) WITH (
     'materialized' = 'true',
     'connectors' = '[{
         "transport": {

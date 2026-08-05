@@ -19,7 +19,7 @@ CREATE LOCAL VIEW spans_tumble_10s AS
 SELECT * FROM TABLE(
 	TUMBLE(
 		TABLE spans,
-		DESCRIPTOR(eventTime),
+		descriptor(eventtime),
 		INTERVAL '10' SECOND
 	)
 );
@@ -78,11 +78,11 @@ This function:
 -- Calculate the p95 latency in milliseconds
 CREATE MATERIALIZED VIEW p95_latency AS
 SELECT
-	p95(array_agg(elapsedTimeMillis)) as latencyMs,
-	window_start as 'time'
+	p95(ARRAY_AGG(elapsedtimemillis)) AS latencyms,
+	window_start AS 'time'
 FROM spans_tumble_10s
 WHERE
-	parentSpanId = '' -- Only consider top-level requests
+	parentspanid = '' -- Only consider top-level requests
 GROUP BY
 	window_start;
 ```
@@ -97,12 +97,12 @@ In this demo however, we calculate throughput on 10 second time buckets instead 
 ```sql
 CREATE MATERIALIZED VIEW throughput AS
 SELECT
-	COUNT(*) as throughput,
-	window_start as 'time'
+	COUNT(*) AS throughput,
+	window_start AS 'time'
 FROM
 	spans_tumble_10s
 WHERE
-	parentSpanId = ''
+	parentspanid = ''
 GROUP BY
 	window_start;
 ```
@@ -112,20 +112,20 @@ GROUP BY
 Operation execution time measures how long each operation actually took, excluding time spent in child spans.
 
 ```sql
-CREATE MATERIALIZED VIEW operation_execution_time as
+CREATE MATERIALIZED VIEW operation_execution_time AS
 SELECT
     s.name,
     SUM(
-        s.elapsedTimeMillis -
-        coalesce(
-            select
-                sum(elapsedTimeMillis)
+        s.elapsedtimemillis -
+        COALESCE(
+            SELECT
+                SUM(elapsedtimemillis)
                 FROM spans k
-                WHERE k.traceId = s.traceId
-                AND k.parentSpanId = s.spanId,
+                WHERE k.traceid = s.traceid
+                AND k.parentspanid = s.spanid,
             0
         )
-    ) as elapsed
+    ) AS elapsed
 FROM spans s
 GROUP BY s.name;
 ```

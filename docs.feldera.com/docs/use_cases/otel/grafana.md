@@ -52,12 +52,12 @@ Visualization Type: **Stat**
 ```sql
 -- requests count
 SELECT
-	COUNT(*) as num_traces
+	COUNT(*) AS num_traces
 FROM
 	spans s
 WHERE
-	s.parentSpanId = '' AND
-	s.eventTime BETWEEN $__timeFrom() AND $__timeTo()
+	s.parentspanid = '' AND
+	s.eventtime BETWEEN $__timefrom() AND $__timeto()
 ```
 
 - Filters only **top-level spans** (i.e., spans without a `parentSpanId`).
@@ -71,14 +71,14 @@ Visualization Type: **Table**
 ```sql
 -- slowest traces
 SELECT
-	s.traceId, s.name, s.elapsedTimeMillis
+	s.traceid, s.name, s.elapsedtimemillis
 FROM
 	spans s
 WHERE
-	s.parentSpanId = '' AND
-	s.eventTime BETWEEN $__timeFrom() AND $__timeTo()
+	s.parentspanid = '' AND
+	s.eventtime BETWEEN $__timefrom() AND $__timeto()
 ORDER BY
-	elapsedTimeMillis DESC
+	elapsedtimemillis DESC
 LIMIT
 	6
 ```
@@ -90,14 +90,14 @@ Visualization Type: **Histogram**
 ```sql
 -- histogram of latencies
 SELECT
-	s.elapsedTimeMillis
+	s.elapsedtimemillis
 FROM
 	spans s
 WHERE
-	s.parentSpanId = '' AND
-	s.eventTime BETWEEN $__timeFrom() AND $__timeTo()
+	s.parentspanid = '' AND
+	s.eventtime BETWEEN $__timefrom() AND $__timeto()
 ORDER BY
-	s.eventTime DESC
+	s.eventtime DESC
 ```
 
 #### P95 Latencies
@@ -112,9 +112,9 @@ SELECT
 FROM
 	p95_latency
 WHERE
-	time BETWEEN $__timeFrom() AND $__timeTo()
+	TIME BETWEEN $__timefrom() AND $__timeto()
 ORDER BY
-	time DESC
+	TIME DESC
 ```
 
 #### Throughput
@@ -129,9 +129,9 @@ SELECT
 FROM
 	throughput
 WHERE
-	time BETWEEN $__timeFrom() AND $__timeTo()
+	TIME BETWEEN $__timefrom() AND $__timeto()
 ORDER BY
-	time DESC
+	TIME DESC
 ```
 
 #### Pie chart of Operation Executions Time
@@ -142,7 +142,7 @@ Visualization Type: **"Pie chart"**
 ```sql
 -- operation executions time
 SELECT
-	sum(elapsed) as elapsed,
+	SUM(elapsed) AS elapsed,
 	name
 FROM
 	operation_execution_time

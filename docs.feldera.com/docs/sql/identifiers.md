@@ -71,21 +71,21 @@ and Redshift.
 Example:
 
 ```sql
-CREATE TABLE T(x INT);
-INSERT INTO T VALUES(3);
+CREATE TABLE t(x INT);
+INSERT INTO t VALUES(3);
 
-SELECT 1 as X, X+X as Y;
+SELECT 1 AS x, x+x AS y;
 -- result is 1, 2
 
-SELECT x+1 as Y
-FROM T
-GROUP BY Y;
+SELECT x+1 AS y
+FROM t
+GROUP BY y;
 -- result is 4
 
-SELECT x+1 as Y
-FROM T
-GROUP BY Y
-HAVING Y > 0;
+SELECT x+1 AS y
+FROM t
+GROUP BY y
+HAVING y > 0;
 -- result is 4
 ```
 
@@ -98,14 +98,14 @@ the above programs are equivalent to the following standard SQL
 programs:
 
 ```sql
-SELECT 1 as X, 1+1 as Y;
+SELECT 1 AS x, 1+1 AS y;
 
-SELECT x+1 as Y
-FROM T
+SELECT x+1 AS y
+FROM t
 GROUP BY x+1;
 
-SELECT x+1 as Y
-FROM T
+SELECT x+1 AS y
+FROM t
 GROUP BY x+1
 HAVING x+1 > 0;
 ```
@@ -118,7 +118,7 @@ name already available in the `FROM` statement.  In the following
 example:
 
 ```sql
-SELECT 1+1 as x, x+x as Y FROM T;
+SELECT 1+1 AS x, x+x AS y FROM t;
 -- result is 2, 6, and not 2, 4!
 ```
 
@@ -132,7 +132,7 @@ the `SELECT` statement uses for `x` the value of the column from table
 A comment is a sequence of characters beginning with double dashes and
 extending to the end of the line, e.g.:
 
-```SQL
+```sql
 -- This is a standard SQL comment
 ```
 

@@ -146,8 +146,8 @@ other rows are discarded. For example:
 
 ```sql
 SELECT
-    count(*) AS unfiltered,
-    count(*) FILTER (WHERE i < 5) AS filtered
+    COUNT(*) AS unfiltered,
+    COUNT(*) FILTER (WHERE i < 5) AS filtered
 FROM my_table
 ```
 
@@ -270,40 +270,40 @@ PIVOT ( { aggregate_expression [ AS aggregate_expression_alias ] } [ , ... ]
 ### Example
 
 ```sql
-CREATE TABLE FURNITURE (
-   type VARCHAR,
-   year INTEGER,
-   count INTEGER
+CREATE TABLE furniture (
+   TYPE VARCHAR,
+   YEAR INTEGER,
+   COUNT INTEGER
 );
-INSERT INTO FURNITURE VALUES
+INSERT INTO furniture VALUES
   ('chair', 2020, 4),
   ('table', 2021, 3),
   ('chair', 2021, 4),
   ('desk', 2023, 1),
   ('table', 2023, 2);
 
-SELECT year, type, SUM(count) FROM FURNITURE GROUP BY year,type;
-year | type  | sum
+SELECT YEAR, TYPE, SUM(COUNT) FROM furniture GROUP BY YEAR,TYPE;
+YEAR | TYPE  | SUM
 -------------------
 2020 | chair | 4
-2021 | table | 3
+2021 | TABLE | 3
 2021 | chair | 4
 2023 | desk  | 1
-2023 | table | 2
-(5 rows)
+2023 | TABLE | 2
+(5 ROWS)
 
-SELECT * FROM FURNITURE
+SELECT * FROM furniture
 PIVOT (
-    SUM(count) AS ct
-    FOR type IN ('desk' AS desks, 'table' AS tables, 'chair' as chairs)
+    SUM(COUNT) AS ct
+    FOR TYPE IN ('desk' AS desks, 'table' AS tables, 'chair' AS chairs)
 );
 
-year | desks | tables | chairs
+YEAR | desks | tables | chairs
 ------------------------------
 2020 |       |        |    4
 2021 |       |     3  |    4
 2023 |     1 |     2  |
-(3 rows)
+(3 ROWS)
 ```
 
 Notice how the same information is presented in a tabular form where
@@ -313,30 +313,30 @@ that if we add an additional type, the `GROUP BY` query will produce a
 correct result, while the `PIVOT` query will produce the same result.
 
 ```sql
-INSERT INTO FURNITURE VALUES ('bed', 2020, 5);
-SELECT year, type, SUM(count) FROM FURNITURE GROUP BY year,type;
-year | type  | sum
+INSERT INTO furniture VALUES ('bed', 2020, 5);
+SELECT YEAR, TYPE, SUM(COUNT) FROM furniture GROUP BY YEAR,TYPE;
+YEAR | TYPE  | SUM
 -------------------
 2020 | chair | 4
 2020 | bed   | 5
-2021 | table | 3
+2021 | TABLE | 3
 2021 | chair | 4
 2023 | desk  | 1
-2023 | table | 2
-(6 rows)
+2023 | TABLE | 2
+(6 ROWS)
 
-SELECT * FROM FURNITURE
+SELECT * FROM furniture
 PIVOT (
-    SUM(count) AS ct
-    FOR type IN ('desk' AS desks, 'table' AS tables, 'chair' as chairs)
+    SUM(COUNT) AS ct
+    FOR TYPE IN ('desk' AS desks, 'table' AS tables, 'chair' AS chairs)
 );
 
-year | desks | tables | chairs
+YEAR | desks | tables | chairs
 ------------------------------
 2020 |       |        |    4
 2021 |       |     3  |    4
 2023 |     1 |     2  |
-(3 rows)
+(3 ROWS)
 ```
 
 ## On the efficiency of aggregates computations
@@ -383,7 +383,7 @@ reasonable cost in three circumstances:
 ```sql
 SELECT * FROM (
    SELECT empno,
-          row_number() OVER (ORDER BY empno) rn
+          ROW_NUMBER() OVER (ORDER BY empno) rn
    FROM empsalary) emp
 WHERE rn < 3
 ```

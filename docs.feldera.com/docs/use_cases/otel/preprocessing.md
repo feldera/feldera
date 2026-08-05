@@ -61,16 +61,16 @@ We do this by performing a series of `UNNEST` operations.
 -- concat with the previous table definitions
 
 -- (ResouceMetrics[N]) -> (Resource, ScopeMetrics[N])
-CREATE LOCAL VIEW rsMetrics AS SELECT resource, scopeMetrics
-FROM otel_metrics, UNNEST(resourceMetrics) as t (resource, scopeMetrics);
+CREATE LOCAL VIEW rsmetrics AS SELECT resource, scopemetrics
+FROM otel_metrics, UNNEST(resourcemetrics) AS t (resource, scopemetrics);
 
 -- (ResouceSpans[N]) -> (Resource, ScopeSpans[N])
-CREATE LOCAL VIEW rsSpans AS SELECT resource, scopeSpans
-FROM otel_traces, UNNEST(resourceSpans) as t (resource, scopeSpans);
+CREATE LOCAL VIEW rsspans AS SELECT resource, scopespans
+FROM otel_traces, UNNEST(resourcespans) AS t (resource, scopespans);
 
 -- (ResouceLogs[N]) -> (Resource, ScopeLogs[N])
-CREATE LOCAL VIEW rsLogs AS SELECT resource, scopeLogs
-FROM otel_logs, UNNEST(resourceLogs) as t (resource, scopeLogs);
+CREATE LOCAL VIEW rslogs AS SELECT resource, scopelogs
+FROM otel_logs, UNNEST(resourcelogs) AS t (resource, scopelogs);
 ```
 
 Here we `UNNEST` arrays of `ResourceSpans`, `ResourceMetrics` and `ResourceLogs` into separate rows.
@@ -84,7 +84,7 @@ SELECT
     resource,
     scope,
     metrics
-FROM rsMetrics, UNNEST(rsMetrics.scopeMetrics) as t(scope, metrics);
+FROM rsmetrics, UNNEST(rsmetrics.scopemetrics) AS t(scope, metrics);
 
 -- (ScopeLogs[N]) -> (ScopeLogs) x N
 CREATE LOCAL VIEW logs_array AS
@@ -92,7 +92,7 @@ SELECT
     resource,
     scope,
     logs
-FROM rsLogs, UNNEST(rsLogs.scopeLogs) as t(scope, logs);
+FROM rslogs, UNNEST(rslogs.scopelogs) AS t(scope, logs);
 
 -- (ScopeSpans[N]) -> (ScopeSpans) x N
 CREATE LOCAL VIEW spans_array AS
@@ -100,7 +100,7 @@ SELECT
     resource,
     scope,
     spans
-FROM rsSpans, UNNEST(rsSpans.scopeSpans) as t(scope, spans);
+FROM rsspans, UNNEST(rsspans.scopespans) AS t(scope, spans);
 ```
 
 Similarly, we `UNNEST` the `ScopeMetrics`, `ScopeLogs` and `ScopeSpans` into separate rows.
@@ -118,7 +118,7 @@ SELECT
     summary,
     gauge,
     histogram,
-    exponentialHistogram,
+    exponentialhistogram,
     resource,
     scope,
     metadata
@@ -130,14 +130,14 @@ SELECT
     resource,
     scope,
     attributes,
-    timeUnixNano,
-    observedTimeUnixNano,
-    severityNumber,
-    severityText,
+    timeunixnano,
+    observedtimeunixnano,
+    severitynumber,
+    severitytext,
     flags,
-    traceId,
-    spanId,
-    eventName,
+    traceid,
+    spanid,
+    eventname,
     body
 FROM logs_array, UNNEST(logs_array.logs);
 ```
@@ -154,35 +154,35 @@ For spans, we not only extract individual records but also compute useful derive
 
 ```sql
 -- Convert nanoseconds to seconds
-CREATE FUNCTION NANOS_TO_SECONDS(NANOS BIGINT) RETURNS BIGINT AS
-(NANOS / 1000000000::BIGINT);
+CREATE FUNCTION nanos_to_seconds(nanos BIGINT) RETURNS BIGINT AS
+(nanos / 1000000000::BIGINT);
 
 -- Convert nanoseconds to milliseconds
-CREATE FUNCTION NANOS_TO_MILLIS(NANOS BIGINT) RETURNS BIGINT AS
-(NANOS / 1000000::BIGINT);
+CREATE FUNCTION nanos_to_millis(nanos BIGINT) RETURNS BIGINT AS
+(nanos / 1000000::BIGINT);
 
 -- Convert to TIMESTAMP type from a BIGINT that represents time in nanoseconds
-CREATE FUNCTION MAKE_TIMESTAMP_FROM_NANOS(NANOS BIGINT) RETURNS TIMESTAMP AS
-TIMESTAMPADD(SECOND, NANOS_TO_SECONDS(NANOS), DATE '1970-01-01');
+CREATE FUNCTION make_timestamp_from_nanos(nanos BIGINT) RETURNS TIMESTAMP AS
+TIMESTAMPADD(SECOND, nanos_to_seconds(nanos), DATE '1970-01-01');
 
 -- (Spans[N]) -> (Span, elapsedTimeMillis, eventTime) x N
 CREATE MATERIALIZED VIEW spans AS
 SELECT
     resource,
     scope,
-    traceId,
-    spanId,
+    traceid,
+    spanid,
     tracestate,
-    parentSpanId,
+    parentspanid,
     flags,
     name,
     kind,
-    startTimeUnixNano,
-    endTimeUnixNano,
+    starttimeunixnano,
+    endtimeunixnano,
     attributes,
     events,
-    NANOS_TO_MILLIS(endTimeUnixNano::BIGINT - startTimeUnixNano::BIGINT) as elapsedTimeMillis,
-    MAKE_TIMESTAMP_FROM_NANOS(startTimeUnixNano) as eventTime
+    nanos_to_millis(endtimeunixnano::BIGINT - starttimeunixnano::BIGINT) AS elapsedtimemillis,
+    make_timestamp_from_nanos(starttimeunixnano) AS eventtime
 FROM spans_array, UNNEST(spans_array.spans);
 ```
 

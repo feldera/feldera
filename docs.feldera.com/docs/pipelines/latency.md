@@ -143,11 +143,11 @@ the first Delta table version after version 10 (if any). For example, using Spar
 
 ```sql
 WITH history AS (
-  DESCRIBE HISTORY my_table
+  describe history my_table
 )
 SELECT
-  CASE WHEN version = 11 THEN timestamp END AS v11_timestamp,
-  (unix_timestamp(now()) - unix_timestamp(v11_timestamp)) AS seconds_between
+  CASE WHEN version = 11 THEN TIMESTAMP END AS v11_timestamp,
+  (unix_timestamp(NOW()) - unix_timestamp(v11_timestamp)) AS seconds_between
 FROM history;
 ```
 

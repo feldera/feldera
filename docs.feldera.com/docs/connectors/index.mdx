@@ -16,10 +16,10 @@ from an HTTP URL, and a `VENDOR_VIEW` which sends the changes of the view
 to a Kafka topic in a format that can be consumed by Debezium:
 
 ```sql
-create table VENDOR (
-    id bigint not null primary key,
-    name varchar,
-    address varchar
+CREATE TABLE vendor (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name VARCHAR,
+    address VARCHAR
 ) WITH ('connectors' = '[{
     "transport": {
         "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json"}
@@ -27,7 +27,7 @@ create table VENDOR (
     "format": { "name": "json" }
 }]');
 
-create view VENDOR_VIEW
+CREATE VIEW vendor_view
 WITH (
     'connectors' = '[{
         "max_queued_bytes": 1000000,
@@ -46,7 +46,7 @@ WITH (
         }
     }]'
 )
-as select * from VENDOR;
+AS SELECT * FROM vendor;
 ```
 
 :::info

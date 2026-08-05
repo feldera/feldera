@@ -71,7 +71,7 @@ CREATE TABLE public.orders (
 
 ALTER TABLE public.orders REPLICA IDENTITY FULL;
 
-CREATE PUBLICATION feldera_orders FOR TABLE public.orders;
+CREATE publication feldera_orders FOR TABLE public.orders;
 ```
 
 `REPLICA IDENTITY FULL` is recommended so update and delete events include the
@@ -99,9 +99,9 @@ CREATE TABLE public.orders (
     status TEXT NOT NULL
 );
 
-ALTER TABLE public.orders REPLICA IDENTITY FULL;
+ALTER TABLE public.orders replica identity FULL;
 
-CREATE PUBLICATION feldera_orders FOR TABLE public.orders;
+CREATE publication feldera_orders FOR TABLE public.orders;
 
 INSERT INTO public.orders VALUES
     (1, 'Alice', 25.00, 'new'),

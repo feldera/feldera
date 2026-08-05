@@ -41,7 +41,7 @@ MERGE INTO {target_table} AS target
                    ROW_NUMBER() OVER (
                      PARTITION BY {merge_key}
                      ORDER BY __feldera_ts DESC
-                   ) as rn
+                   ) AS rn
             FROM {source_table}
             -- Only consider new updates since the last merge.
             WHERE __feldera_ts >= (
@@ -133,7 +133,7 @@ Create a Delta Lake output connector that writes a stream of updates to a table
 stored in an S3 bucket, truncating any existing contents of the table.
 
 ```sql
-CREATE VIEW V
+CREATE VIEW v
 WITH (
  'connectors' = '[{
     "transport": {
@@ -166,7 +166,7 @@ triggers a fresh snapshot on the next start, and is delivered even if the
 pipeline is started or resumed in `Paused` state.
 
 ```sql
-CREATE MATERIALIZED VIEW V
+CREATE MATERIALIZED VIEW v
 WITH (
  'connectors' = '[{
     "name": "delta_sink",

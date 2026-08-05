@@ -50,16 +50,16 @@ Here is an example:
 SELECT * FROM TABLE(
   TUMBLE(
     TABLE orders,
-    DESCRIPTOR(rowtime),
+    descriptor(rowtime),
     INTERVAL '1' MINUTE));
 
 -- or with the named params
 -- note: the DATA param must be the first
 SELECT * FROM TABLE(
   TUMBLE(
-    DATA => TABLE orders,
-    TIMECOL => DESCRIPTOR(rowtime),
-    SIZE => INTERVAL '1' MINUTE));
+    data => TABLE orders,
+    timecol => descriptor(rowtime),
+    size => INTERVAL '1' MINUTE));
 ```
 
 The result is a table that has all the columns of the `orders` table,
@@ -94,7 +94,7 @@ Here is an example:
 SELECT * FROM TABLE(
   HOP(
     TABLE orders,
-    DESCRIPTOR(rowtime),
+    descriptor(rowtime),
     INTERVAL '2' MINUTE,
     INTERVAL '5' MINUTE));
 
@@ -102,10 +102,10 @@ SELECT * FROM TABLE(
 -- note: the DATA param must be the first
 SELECT * FROM TABLE(
   HOP(
-    DATA => TABLE orders,
-    TIMECOL => DESCRIPTOR(rowtime),
-    SLIDE => INTERVAL '2' MINUTE,
-    SIZE => INTERVAL '5' MINUTE));
+    data => TABLE orders,
+    timecol => descriptor(rowtime),
+    slide => INTERVAL '2' MINUTE,
+    size => INTERVAL '5' MINUTE));
 ```
 
 applies hopping with 5-minute interval size on rows from table
