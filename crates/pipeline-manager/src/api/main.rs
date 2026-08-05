@@ -269,6 +269,7 @@ It contains the following fields:
         endpoints::tenant::put_tenant_user,
         endpoints::tenant::delete_tenant_user,
         endpoints::tenant::list_tenants,
+        endpoints::tenant::get_tenant,
         endpoints::tenant::create_tenant,
         endpoints::tenant::patch_tenant,
         endpoints::tenant::delete_tenant
@@ -363,7 +364,6 @@ It contains the following fields:
         crate::api::endpoints::tenant::NewTenantRequest,
         crate::api::endpoints::tenant::RenameTenantRequest,
         crate::api::endpoints::tenant::RenameTenantResponse,
-        crate::api::endpoints::tenant::NewTenantResponse,
 
         // API key
         crate::db::types::api_key::ApiKeyId,
@@ -783,6 +783,7 @@ fn api_scope() -> Scope {
         .service(endpoints::tenant::put_tenant_user)
         .service(endpoints::tenant::delete_tenant_user)
         .service(endpoints::tenant::list_tenants)
+        .service(endpoints::tenant::get_tenant)
         .service(endpoints::tenant::create_tenant)
         .service(endpoints::tenant::patch_tenant)
         .service(endpoints::tenant::delete_tenant)

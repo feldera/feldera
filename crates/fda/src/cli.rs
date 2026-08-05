@@ -344,6 +344,19 @@ pub enum TrustRole {
 pub enum TenantActions {
     /// List every tenant in the installation.
     List,
+    /// Retrieve a single tenant by name or identifier.
+    Get {
+        /// The tenant's name, or its identifier as shown by `fda tenant list`.
+        tenant: String,
+    },
+    /// Create a tenant, or return it if one with this name already exists.
+    ///
+    /// A login resolves its tenant by name, so a user whose identity provider
+    /// asserts this name lands in the tenant created here.
+    Create {
+        /// The name of the tenant.
+        name: String,
+    },
     /// Rename a tenant.
     ///
     /// A login resolves its tenant by name, so the new name decides which users

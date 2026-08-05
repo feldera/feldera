@@ -126,15 +126,23 @@ impl Storage for StoragePostgres {
         Ok(result)
     }
 
-    async fn create_tenant(
-        &self,
-        id: Uuid,
-        name: &str,
-        provider: &str,
-    ) -> Result<TenantId, DBError> {
+    async fn get_tenant(&self, selector: &str) -> Result<TenantInfo, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let result = operations::tenant::create_tenant(&txn, id, name, provider).await?;
+        let result = operations::tenant::get_tenant(&txn, selector).await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    async fn get_or_create_tenant(
+        &self,
+        new_id: Uuid,
+        name: &str,
+        provider: &str,
+    ) -> Result<(TenantInfo, bool), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let result = operations::tenant::get_or_create_tenant(&txn, new_id, name, provider).await?;
         txn.commit().await?;
         Ok(result)
     }

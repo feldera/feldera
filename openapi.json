@@ -7690,7 +7690,7 @@
           "Platform"
         ],
         "summary": "Create Tenant",
-        "description": "Required role: `owner`.\n\nExplicitly create a tenant, rather than relying on first login.\nA login resolves its tenant by name, so a user whose identity provider\nasserts this name lands in the tenant created here. Fails with a conflict if\nthe name is already taken.",
+        "description": "Required role: `owner`.\n\nExplicitly create a tenant, rather than relying on first login.\nA login resolves its tenant by name, so a user whose identity provider\nasserts this name lands in the tenant created here.",
         "operationId": "create_tenant",
         "requestBody": {
           "content": {
@@ -7703,28 +7703,28 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "description": "Tenant with that name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantInfo"
+                }
+              }
+            }
+          },
           "201": {
             "description": "Tenant created",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NewTenantResponse"
+                  "$ref": "#/components/schemas/TenantInfo"
                 }
               }
             }
           },
           "403": {
             "description": "Caller is not a platform owner",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A tenant with that name already exists",
             "content": {
               "application/json": {
                 "schema": {
@@ -7752,6 +7752,72 @@
       }
     },
     "/v0/tenants/{tenant_id}": {
+      "get": {
+        "tags": [
+          "Platform"
+        ],
+        "summary": "Get Tenant",
+        "description": "Required role: `owner`.\n\nRetrieve a single tenant by name or identifier. A selector that parses as a\nUUID is looked up by tenant identifier, otherwise by name.",
+        "operationId": "get_tenant",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "description": "Tenant name or identifier (UUID)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenant retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantInfo"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not a platform owner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No tenant with that name or identifier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      },
       "delete": {
         "tags": [
           "Platform"
@@ -11845,22 +11911,6 @@
           }
         }
       },
-      "NewTenantResponse": {
-        "type": "object",
-        "description": "Response to a successful tenant creation.",
-        "required": [
-          "id",
-          "name"
-        ],
-        "properties": {
-          "id": {
-            "$ref": "#/components/schemas/TenantId"
-          },
-          "name": {
-            "type": "string"
-          }
-        }
-      },
       "NexmarkInputConfig": {
         "type": "object",
         "description": "Configuration for generating Nexmark input data.\n\nThis connector must be used exactly three times in a pipeline if it is used\nat all, once for each [`NexmarkTable`].",
@@ -15395,7 +15445,7 @@
       },
       "TenantInfo": {
         "type": "object",
-        "description": "A tenant, as returned by the platform (owner-only) tenant list.",
+        "description": "A tenant, as returned by the owner-only tenant endpoints.",
         "required": [
           "id",
           "name",

@@ -39,7 +39,7 @@ pub struct TenantMember {
     pub role: Role,
 }
 
-/// A tenant, as returned by the platform (owner-only) tenant list.
+/// A tenant, as returned by the owner-only tenant endpoints.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TenantInfo {
     pub id: TenantId,
