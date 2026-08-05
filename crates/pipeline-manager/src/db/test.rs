@@ -838,6 +838,72 @@ async fn tenant_creation() {
     assert_eq!(tenant_id_3, tenant_id_5);
 }
 
+/// Explicit tenant creation is idempotent: repeating a name returns the
+/// existing tenant, unchanged, with `created = false`.
+#[tokio::test]
+async fn explicit_tenant_creation_is_idempotent() {
+    let handle = test_setup().await;
+    let new_id = Uuid::now_v7();
+    let (first, created) = handle
+        .db
+        .get_or_create_tenant(new_id, "acme", "issuer-a")
+        .await
+        .unwrap();
+    assert!(created);
+    assert_eq!(first.id, TenantId(new_id));
+    assert_eq!(first.name, "acme");
+    assert_eq!(first.initial_provider, "issuer-a");
+
+    // A repeat, even under another provider, returns the tenant unchanged.
+    let (second, created) = handle
+        .db
+        .get_or_create_tenant(Uuid::now_v7(), "acme", "issuer-b")
+        .await
+        .unwrap();
+    assert!(!created);
+    assert_eq!(second, first);
+}
+
+/// Single-tenant retrieval resolves a name or a UUID, and a miss is an error.
+#[tokio::test]
+async fn tenant_retrieval_by_name_or_id() {
+    let handle = test_setup().await;
+    let (tenant, _) = handle
+        .db
+        .get_or_create_tenant(Uuid::now_v7(), "acme", "issuer-a")
+        .await
+        .unwrap();
+    assert_eq!(handle.db.get_tenant("acme").await.unwrap(), tenant);
+    assert_eq!(
+        handle.db.get_tenant(&tenant.id.to_string()).await.unwrap(),
+        tenant
+    );
+    assert!(matches!(
+        handle.db.get_tenant("absent").await.unwrap_err(),
+        DBError::UnknownTenantName { .. }
+    ));
+    // A UUID selector is looked up by id only, never as a name: a tenant whose
+    // name is a UUID string is not resolvable through that name, only its id.
+    let uuid_name = Uuid::now_v7().to_string();
+    let (uuid_named, _) = handle
+        .db
+        .get_or_create_tenant(Uuid::now_v7(), &uuid_name, "issuer-a")
+        .await
+        .unwrap();
+    assert!(matches!(
+        handle.db.get_tenant(&uuid_name).await.unwrap_err(),
+        DBError::UnknownTenantName { .. }
+    ));
+    assert_eq!(
+        handle
+            .db
+            .get_tenant(&uuid_named.id.to_string())
+            .await
+            .unwrap(),
+        uuid_named
+    );
+}
+
 /// Creation, deletion and validation of API keys.
 #[tokio::test]
 async fn api_key_store_and_validation() {
@@ -4322,6 +4388,30 @@ async fn check_rbac_action(
             impl_response.sort_by(|a, b| a.id.cmp(&b.id));
             assert_eq!(model_response, impl_response);
         }
+        RbacAction::GetTenantById(tenant_id) => {
+            // Not seeded first, so the id-selector miss path is exercised too.
+            let selector = tenant_id.0.to_string();
+            let model_response = model.get_tenant(&selector).await;
+            let impl_response = handle.db.get_tenant(&selector).await;
+            check_responses(i, model_response, impl_response);
+        }
+        RbacAction::GetTenantByName(name) => {
+            let model_response = model.get_tenant(&name).await;
+            let impl_response = handle.db.get_tenant(&name).await;
+            check_responses(i, model_response, impl_response);
+        }
+        RbacAction::CreateTenant(name, provider) => {
+            // Both sides get the same fresh id; only a creation uses it. The
+            // provider varies so that the exists path returning the stored
+            // rather than the passed provider is observable.
+            let new_id = Uuid::now_v7();
+            let model_response = model.get_or_create_tenant(new_id, &name, &provider).await;
+            let impl_response = handle
+                .db
+                .get_or_create_tenant(new_id, &name, &provider)
+                .await;
+            check_responses(i, model_response, impl_response);
+        }
         RbacAction::GetOrCreateUser((provider, subject), email) => {
             let id = user_id_for_identity(&provider, &subject);
             let model_response = model
@@ -4432,6 +4522,12 @@ enum RbacAction {
     DeleteTenant(TenantId),
     // Users and tenant memberships
     ListTenants,
+    GetTenantById(TenantId),
+    GetTenantByName(#[proptest(strategy = "limited_tenant_name()")] String),
+    CreateTenant(
+        #[proptest(strategy = "limited_tenant_name()")] String,
+        #[proptest(strategy = "limited_issuer()")] String,
+    ),
     GetOrCreateUser(
         #[proptest(strategy = "limited_identity()")] (String, String),
         #[proptest(strategy = "limited_email()")] Option<String>,
@@ -6072,8 +6168,64 @@ impl Storage for Mutex<DbModel> {
         );
     }
 
-    async fn create_tenant(&self, id: Uuid, _name: &str, _provider: &str) -> DBResult<TenantId> {
-        Ok(TenantId(id))
+    async fn get_tenant(&self, selector: &str) -> DBResult<TenantInfo> {
+        let s = self.lock().await;
+        let matched = if let Ok(uuid) = Uuid::parse_str(selector) {
+            s.tenants.get_key_value(&TenantId(uuid))
+        } else {
+            s.tenants.iter().find(|(_, t)| t.tenant == selector)
+        };
+        matched
+            .map(|(id, t)| TenantInfo {
+                id: *id,
+                name: t.tenant.clone(),
+                initial_provider: t.initial_provider.clone(),
+            })
+            .ok_or(DBError::UnknownTenantName {
+                name: selector.to_string(),
+            })
+    }
+
+    async fn get_or_create_tenant(
+        &self,
+        new_id: Uuid,
+        name: &str,
+        provider: &str,
+    ) -> DBResult<(TenantInfo, bool)> {
+        let mut s = self.lock().await;
+        if let Some((id, t)) = s.tenants.iter().find(|(_, t)| t.tenant == name) {
+            return Ok((
+                TenantInfo {
+                    id: *id,
+                    name: t.tenant.clone(),
+                    initial_provider: t.initial_provider.clone(),
+                },
+                false,
+            ));
+        }
+        let id = TenantId(new_id);
+        // Postgres would raise a primary-key violation here; callers mint a
+        // fresh v7 id, so crash rather than diverge from it silently.
+        assert!(
+            !s.tenants.contains_key(&id),
+            "get_or_create_tenant: id {id} already exists under another name"
+        );
+        s.tenants.insert(
+            id,
+            TenantRecord {
+                id,
+                tenant: name.to_string(),
+                initial_provider: provider.to_string(),
+            },
+        );
+        Ok((
+            TenantInfo {
+                id,
+                name: name.to_string(),
+                initial_provider: provider.to_string(),
+            },
+            true,
+        ))
     }
 
     async fn get_tenant_name(&self, tenant_id: TenantId) -> Result<String, DBError> {
@@ -6295,21 +6447,9 @@ impl Storage for Mutex<DbModel> {
     }
 
     async fn resolve_tenant_selector(&self, selector: &str) -> DBResult<TenantId> {
-        let s = self.lock().await;
-        if let Ok(uuid) = Uuid::parse_str(selector) {
-            return s.tenants.keys().find(|id| id.0 == uuid).copied().ok_or(
-                DBError::UnknownTenantName {
-                    name: selector.to_string(),
-                },
-            );
-        }
-        s.tenants
-            .iter()
-            .find(|(_, t)| t.tenant == selector)
-            .map(|(id, _)| *id)
-            .ok_or(DBError::UnknownTenantName {
-                name: selector.to_string(),
-            })
+        // Mirrors the production shape, where the selector semantics live in
+        // one place: `resolve_tenant_selector` delegates to `get_tenant`.
+        Ok(self.get_tenant(selector).await?.id)
     }
 
     async fn delete_tenant(&self, tenant_id: TenantId) -> DBResult<()> {

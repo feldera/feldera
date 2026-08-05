@@ -18,6 +18,45 @@ pub async fn get_or_create_tenant_id(
         .0)
 }
 
+/// Retrieves the tenant with this name, creating it with `new_id` if it does
+/// not exist yet. The second component is `true` if this call created the
+/// tenant, and `false` if it already existed.
+///
+/// Atomic get-or-create: a single INSERT ... ON CONFLICT DO NOTHING avoids
+/// the SELECT-then-INSERT race where two concurrent creations of a fresh
+/// name both miss the SELECT, then one INSERT wins and the other fails with a
+/// unique violation. `inserted` (1 vs 0 rows affected) tells us whether THIS
+/// call created the tenant. The SELECT after it misses only if a concurrent
+/// delete commits in between, which surfaces as an error, not a wrong result.
+pub async fn get_or_create_tenant(
+    txn: &Transaction<'_>,
+    new_id: Uuid,
+    name: &str,
+    provider: &str,
+) -> Result<(TenantInfo, bool), DBError> {
+    let stmt_insert = txn
+        .prepare_cached(
+            "INSERT INTO tenant (id, tenant, initial_provider) VALUES ($1, $2, $3) \
+             ON CONFLICT (tenant) DO NOTHING",
+        )
+        .await?;
+    let inserted = txn
+        .execute(&stmt_insert, &[&new_id, &name, &provider])
+        .await?;
+    let stmt_select = txn
+        .prepare_cached("SELECT id, tenant, initial_provider FROM tenant WHERE tenant = $1")
+        .await?;
+    let row = txn.query_one(&stmt_select, &[&name]).await?;
+    Ok((
+        TenantInfo {
+            id: TenantId(row.get(0)),
+            name: row.get(1),
+            initial_provider: row.get(2),
+        },
+        inserted == 1,
+    ))
+}
+
 /// Ensures the default tenant exists, which every start does.
 ///
 /// Keyed by id rather than by name: the default tenant may have been renamed
@@ -43,51 +82,15 @@ pub async fn ensure_default_tenant(
 
 /// As [`get_or_create_tenant_id`]. The second component of the returned value
 /// is `true` if this call created the tenant, and `false` if it already existed.
+/// The created flag decides the first-member grant in `resolve_login`.
 pub async fn get_or_create_tenant_id_created(
     txn: &Transaction<'_>,
     new_id: Uuid,
     name: String,
     provider: String,
 ) -> Result<(TenantId, bool), DBError> {
-    // Atomic get-or-create: a single INSERT ... ON CONFLICT DO NOTHING avoids
-    // the SELECT-then-INSERT race where two concurrent first-logins to a fresh
-    // name both miss the SELECT, then one INSERT wins and the other fails with a
-    // unique violation. `inserted` (1 vs 0 rows affected) tells us whether THIS
-    // call created the tenant, which decides the first-member grant in
-    // `resolve_login`. A subsequent SELECT always finds the row.
-    //
-    // The name alone identifies the tenant. `provider` is recorded as the issuer
-    // it was first seen under, and deliberately not matched on: were it part of
-    // the key, changing the configured issuer would miss here and fork a second
-    // tenant of the same name, stranding the pipelines on the first.
-    let stmt_insert = txn
-        .prepare_cached(
-            "INSERT INTO tenant (id, tenant, initial_provider) VALUES ($1, $2, $3) \
-             ON CONFLICT (tenant) DO NOTHING",
-        )
-        .await?;
-    let inserted = txn
-        .execute(&stmt_insert, &[&new_id, &name, &provider])
-        .await?;
-    let stmt_select = txn
-        .prepare_cached("SELECT id FROM tenant WHERE tenant = $1")
-        .await?;
-    let row = txn.query_one(&stmt_select, &[&name]).await?;
-    Ok((TenantId(row.get(0)), inserted == 1))
-}
-
-/// Strict lookup of a tenant by name, used to resolve a `Feldera-Tenant` header.
-/// Never creates a tenant; a miss is an error. The name is unique, so at most
-/// one tenant can match.
-pub async fn get_tenant_id_by_name(txn: &Transaction<'_>, name: &str) -> Result<TenantId, DBError> {
-    let stmt = txn
-        .prepare_cached("SELECT id FROM tenant WHERE tenant = $1")
-        .await?;
-    let row = txn.query_opt(&stmt, &[&name]).await?;
-    row.map(|row| TenantId(row.get(0)))
-        .ok_or(DBError::UnknownTenantName {
-            name: name.to_string(),
-        })
+    let (tenant, created) = get_or_create_tenant(txn, new_id, &name, &provider).await?;
+    Ok((tenant.id, created))
 }
 
 /// Strict resolution of a `Feldera-Tenant` selector, used wherever a principal
@@ -101,37 +104,32 @@ pub async fn resolve_tenant_selector(
     txn: &Transaction<'_>,
     selector: &str,
 ) -> Result<TenantId, DBError> {
-    if let Ok(uuid) = Uuid::parse_str(selector) {
-        let stmt = txn
-            .prepare_cached("SELECT id FROM tenant WHERE id = $1")
-            .await?;
-        let row = txn.query_opt(&stmt, &[&uuid]).await?;
-        return row
-            .map(|r| TenantId(r.get(0)))
-            .ok_or_else(|| DBError::UnknownTenantName {
-                name: selector.to_string(),
-            });
-    }
-    get_tenant_id_by_name(txn, selector).await
+    Ok(get_tenant(txn, selector).await?.id)
 }
 
-/// Create a tenant, failing with a conflict if the name is already taken.
-/// Distinct from the get-or-create login path: the owner-only explicit
-/// create endpoint should report a duplicate rather than silently returning the
-/// existing tenant.
-pub async fn create_tenant(
-    txn: &Transaction<'_>,
-    id: Uuid,
-    name: &str,
-    provider: &str,
-) -> Result<TenantId, DBError> {
-    let stmt = txn
-        .prepare_cached("INSERT INTO tenant (id, tenant, initial_provider) VALUES ($1, $2, $3)")
-        .await?;
-    txn.execute(&stmt, &[&id, &name, &provider])
-        .await
-        .map_err(maybe_unique_violation)?;
-    Ok(TenantId(id))
+/// Retrieves a single tenant by selector, as [`resolve_tenant_selector`]:
+/// a selector that parses as a UUID is looked up by tenant id, otherwise by
+/// name. Never creates a tenant; errors with `UnknownTenantName` on miss.
+pub async fn get_tenant(txn: &Transaction<'_>, selector: &str) -> Result<TenantInfo, DBError> {
+    let row = if let Ok(uuid) = Uuid::parse_str(selector) {
+        let stmt = txn
+            .prepare_cached("SELECT id, tenant, initial_provider FROM tenant WHERE id = $1")
+            .await?;
+        txn.query_opt(&stmt, &[&uuid]).await?
+    } else {
+        let stmt = txn
+            .prepare_cached("SELECT id, tenant, initial_provider FROM tenant WHERE tenant = $1")
+            .await?;
+        txn.query_opt(&stmt, &[&selector]).await?
+    };
+    row.map(|row| TenantInfo {
+        id: TenantId(row.get(0)),
+        name: row.get(1),
+        initial_provider: row.get(2),
+    })
+    .ok_or(DBError::UnknownTenantName {
+        name: selector.to_string(),
+    })
 }
 
 /// Renames a tenant, failing with a conflict if the name is already taken.

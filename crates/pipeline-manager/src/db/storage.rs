@@ -101,14 +101,20 @@ pub(crate) trait Storage {
     /// [`crate::db::operations::tenant::resolve_tenant_selector`].
     async fn resolve_tenant_selector(&self, selector: &str) -> Result<TenantId, DBError>;
 
-    /// Creates a tenant, failing with `DuplicateName` if the name is already
-    /// taken.
-    async fn create_tenant(
+    /// Retrieves a single tenant by selector (a tenant UUID or name). Errors
+    /// with `UnknownTenantName` on miss.
+    /// See [`crate::db::operations::tenant::get_tenant`].
+    async fn get_tenant(&self, selector: &str) -> Result<TenantInfo, DBError>;
+
+    /// Retrieves the tenant with this name, creating it if absent. The second
+    /// component is `true` if this call created the tenant.
+    /// See [`crate::db::operations::tenant::get_or_create_tenant`].
+    async fn get_or_create_tenant(
         &self,
-        id: Uuid,
+        new_id: Uuid, // Used only if the tenant does not yet exist
         name: &str,
         provider: &str,
-    ) -> Result<TenantId, DBError>;
+    ) -> Result<(TenantInfo, bool), DBError>;
 
     /// Renames a tenant, failing with `DuplicateName` if the name is already
     /// taken, unless `displace_existing` lets it take the name from the tenant
