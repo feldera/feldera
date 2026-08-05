@@ -606,6 +606,90 @@ async fn tenant_commands(format: OutputFormat, action: TenantActions, client: Cl
                 }
             }
         }
+        TenantActions::Get { tenant } => {
+            debug!("Retrieving tenant {tenant}");
+            let response = client
+                .get_tenant()
+                .tenant_id(&tenant)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to retrieve tenant",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    let rows = vec![
+                        [
+                            "name".to_string(),
+                            "id".to_string(),
+                            "initial provider".to_string(),
+                        ],
+                        [
+                            response.name.clone(),
+                            response.id.0.to_string(),
+                            response.initial_provider.clone(),
+                        ],
+                    ];
+                    println!(
+                        "{}",
+                        Builder::from_iter(rows).build().with(Style::rounded())
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize tenant")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+        TenantActions::Create { name } => {
+            debug!("Creating tenant {name}");
+            let response = client
+                .create_tenant()
+                .body_map(|body| body.name(name.clone()))
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to create tenant",
+                    1,
+                ))
+                .unwrap();
+            // 201 is a fresh creation; 200 returns the pre-existing tenant.
+            let created = response.status() == reqwest::StatusCode::CREATED;
+            match format {
+                OutputFormat::Text => {
+                    if created {
+                        println!("Created tenant '{}' ({}).", response.name, response.id.0);
+                    } else {
+                        println!(
+                            "Tenant '{}' already exists ({}).",
+                            response.name, response.id.0
+                        );
+                    }
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize tenant")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
         TenantActions::Rename {
             tenant_id,
             name,

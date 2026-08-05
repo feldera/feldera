@@ -21,7 +21,7 @@ use actix_web::{
     web::{self, Data as WebData, ReqData},
 };
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{debug, info};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -293,13 +293,6 @@ pub(crate) async fn add_tenant_user(
         .json(&AddMemberResponse { user_id }))
 }
 
-/// Response to a successful tenant creation.
-#[derive(Debug, Serialize, ToSchema)]
-pub(crate) struct NewTenantResponse {
-    pub id: TenantId,
-    pub name: String,
-}
-
 /// Rename Tenant
 ///
 /// Change a tenant's name. Only the name changes: pipelines, API keys, members
@@ -407,20 +400,47 @@ pub(crate) async fn list_tenants(
         .json(&tenants))
 }
 
+/// Get Tenant
+///
+/// Retrieve a single tenant by name or identifier. A selector that parses as a
+/// UUID is looked up by tenant identifier, otherwise by name.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(("tenant_id" = String, Path, description = "Tenant name or identifier (UUID)")),
+    responses(
+        (status = OK, description = "Tenant retrieved", body = TenantInfo),
+        (status = FORBIDDEN, description = "Caller is not a platform owner", body = ErrorResponse),
+        (status = NOT_FOUND, description = "No tenant with that name or identifier", body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
+    ),
+    tag = "Platform"
+)]
+#[get("/tenants/{tenant_id}")]
+pub(crate) async fn get_tenant(
+    state: WebData<ServerState>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let selector = parse_url_parameter(&req, "tenant_id")?;
+    let tenant = state.db.lock().await.get_tenant(&selector).await?;
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&tenant))
+}
+
 /// Create Tenant
 ///
 /// Explicitly create a tenant, rather than relying on first login.
 /// A login resolves its tenant by name, so a user whose identity provider
-/// asserts this name lands in the tenant created here. Fails with a conflict if
-/// the name is already taken.
+/// asserts this name lands in the tenant created here.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     request_body = NewTenantRequest,
     responses(
-        (status = CREATED, description = "Tenant created", body = NewTenantResponse),
+        (status = CREATED, description = "Tenant created", body = TenantInfo),
+        (status = OK, description = "Tenant with that name already exists", body = TenantInfo),
         (status = FORBIDDEN, description = "Caller is not a platform owner", body = ErrorResponse),
-        (status = CONFLICT, description = "A tenant with that name already exists", body = ErrorResponse),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
     tag = "Platform"
@@ -440,20 +460,23 @@ pub(crate) async fn create_tenant(
         .app_data::<crate::auth::AuthConfiguration>()
         .map(|c| c.provider.issuer().to_string())
         .unwrap_or_else(|| "manual".to_string());
-    let id = state
+    let (tenant, created) = state
         .db
         .lock()
         .await
-        .create_tenant(Uuid::now_v7(), &body.name, &provider)
+        .get_or_create_tenant(Uuid::now_v7(), &body.name, &provider)
         .await?;
-    info!(
-        "Created tenant '{}' ({id}, provider: {provider})",
-        body.name
-    );
-    Ok(HttpResponse::Created()
+    let mut response = if created {
+        info!(
+            "Created tenant '{}' ({}, provider: {provider})",
+            tenant.name, tenant.id
+        );
+        HttpResponse::Created()
+    } else {
+        debug!("Tenant '{}' ({}) already exists", tenant.name, tenant.id);
+        HttpResponse::Ok()
+    };
+    Ok(response
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-        .json(&NewTenantResponse {
-            id,
-            name: body.name,
-        }))
+        .json(&tenant))
 }

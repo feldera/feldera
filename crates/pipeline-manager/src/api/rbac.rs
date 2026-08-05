@@ -99,6 +99,7 @@ static ROUTE_MIN_ROLE: &[(&str, &str, Role)] = &[
     ("DELETE", "/v0/tenant/users/{user_id}", Role::Admin), // delete_tenant_user
     ("GET", "/v0/tenants", Role::Owner), // list_tenants
     ("POST", "/v0/tenants", Role::Owner), // create_tenant
+    ("GET", "/v0/tenants/{tenant_id}", Role::Owner), // get_tenant
     ("PATCH", "/v0/tenants/{tenant_id}", Role::Owner), // patch_tenant
     ("DELETE", "/v0/tenants/{tenant_id}", Role::Owner), // delete_tenant
 ];
@@ -500,6 +501,7 @@ mod test {
         // Platform administration is owner.
         expect("GET", "/v0/tenants", Role::Owner);
         expect("POST", "/v0/tenants", Role::Owner);
+        expect("GET", "/v0/tenants/{tenant_id}", Role::Owner);
     }
 
     /// End-to-end through a real actix pipeline: the middleware short-circuits

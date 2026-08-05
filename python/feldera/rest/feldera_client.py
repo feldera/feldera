@@ -1659,6 +1659,38 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         """
         return self.http.get(path="/tenants")
 
+    def get_tenant(self, tenant: str) -> dict:
+        """
+        Retrieve a single tenant by name or identifier. Platform owners only.
+
+        A selector that parses as a UUID is looked up by tenant identifier,
+        otherwise by name.
+
+        :param tenant: The tenant's name or identifier (UUID).
+        :returns: A dict describing the tenant (`id`, `name`,
+                  `initial_provider`).
+        :raises FelderaAPIError: If no tenant matches the selector.
+        """
+        if not tenant:
+            raise ValueError("Tenant selector must be a non-empty string")
+        return self.http.get(path=f"/tenants/{quote(tenant, safe='')}")
+
+    def create_tenant(self, name: str) -> dict:
+        """
+        Create a tenant, or return it if one with this name already exists.
+        Platform owners only.
+
+        A login resolves its tenant by name, so a user whose identity provider
+        asserts this name lands in the tenant created here.
+
+        :param name: The name of the tenant.
+        :returns: A dict describing the tenant (`id`, `name`,
+                  `initial_provider`).
+        """
+        if not name:
+            raise ValueError("Tenant name must be a non-empty string")
+        return self.http.post(path="/tenants", body={"name": name})
+
     def rename_tenant(
         self, tenant_id: str, name: str, displace_existing: bool = False
     ) -> dict:
