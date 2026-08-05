@@ -1,7 +1,7 @@
 {
   "name": "feldera-js",
   "dependencies": {
-    "@sveltejs/kit": "^2.49.5",
+    "@sveltejs/kit": "^2.70.2",
     "svelte": "5.55.7"
   },
   "private": true,
