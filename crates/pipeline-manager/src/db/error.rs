@@ -6,6 +6,7 @@ use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus
 use crate::db::types::role::{InvalidRole, Role};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
+use crate::db::types::user::InvalidMembershipOrigin;
 use crate::db::types::utils::ValidationError;
 use crate::db::types::version::Version;
 use actix_web::{
@@ -172,6 +173,15 @@ pub enum DBError {
     OidcTenantNotTrusted {
         tenant: String,
     },
+    /// A login whose user belongs to several tenants sent no selector.
+    AmbiguousTenantMembership,
+    /// A login named a tenant it holds no membership in, or one that does not
+    /// exist; one variant for both, so the login path is no existence oracle.
+    NotATenantMember {
+        tenant: String,
+    },
+    /// A login whose user belongs to no tenant at all.
+    NoTenantMemberships,
     InvalidOidcToken {
         reason: String,
     },
@@ -188,6 +198,9 @@ pub enum DBError {
     OwnerAdminNotMintableAsApiKey,
     OwnerRoleNotAssignable,
     InvalidRoleString {
+        value: String,
+    },
+    InvalidMembershipOriginString {
         value: String,
     },
     UnknownUser {
@@ -473,6 +486,12 @@ impl From<InvalidRole> for DBError {
     }
 }
 
+impl From<InvalidMembershipOrigin> for DBError {
+    fn from(error: InvalidMembershipOrigin) -> Self {
+        Self::InvalidMembershipOriginString { value: error.0 }
+    }
+}
+
 impl From<RefineryError> for DBError {
     fn from(error: RefineryError) -> Self {
         Self::PostgresMigrationError {
@@ -697,6 +716,9 @@ impl Display for DBError {
             DBError::InvalidRoleString { value } => {
                 write!(f, "Invalid role string '{value}' encountered")
             }
+            DBError::InvalidMembershipOriginString { value } => {
+                write!(f, "Invalid membership origin string '{value}' encountered")
+            }
             DBError::UnknownUser { user_id } => {
                 write!(f, "Unknown user '{user_id}'")
             }
@@ -724,6 +746,23 @@ impl Display for DBError {
             }
             DBError::OidcTenantNotTrusted { tenant } => {
                 write!(f, "Token is not trusted in tenant '{tenant}'")
+            }
+            DBError::AmbiguousTenantMembership => {
+                write!(
+                    f,
+                    "This user belongs to several tenants; set the Feldera-Tenant \
+                     header to select one"
+                )
+            }
+            DBError::NotATenantMember { tenant } => {
+                write!(f, "Not a member of tenant '{tenant}', or no such tenant")
+            }
+            DBError::NoTenantMemberships => {
+                write!(
+                    f,
+                    "This user has no tenant memberships. A tenant admin grants \
+                     access through the tenant's member management"
+                )
             }
             DBError::InvalidOidcToken { reason } => {
                 write!(f, "Invalid OIDC token: {reason}")
@@ -1054,12 +1093,18 @@ impl DetailedError for DBError {
             Self::OwnerAdminNotMintableAsApiKey => Cow::from("OwnerAdminNotMintableAsApiKey"),
             Self::OwnerRoleNotAssignable => Cow::from("OwnerRoleNotAssignable"),
             Self::InvalidRoleString { .. } => Cow::from("InvalidRoleString"),
+            Self::InvalidMembershipOriginString { .. } => {
+                Cow::from("InvalidMembershipOriginString")
+            }
             Self::UnknownUser { .. } => Cow::from("UnknownUser"),
             Self::UnknownOidcTrust { .. } => Cow::from("UnknownOidcTrust"),
             Self::EmptyOidcTrustField { .. } => Cow::from("EmptyOidcTrustField"),
             Self::InvalidOidcIssuerUrl { .. } => Cow::from("InvalidOidcIssuerUrl"),
             Self::AmbiguousOidcTenant => Cow::from("AmbiguousOidcTenant"),
             Self::OidcTenantNotTrusted { .. } => Cow::from("OidcTenantNotTrusted"),
+            Self::AmbiguousTenantMembership => Cow::from("AmbiguousTenantMembership"),
+            Self::NotATenantMember { .. } => Cow::from("NotATenantMember"),
+            Self::NoTenantMemberships => Cow::from("NoTenantMemberships"),
             Self::InvalidOidcToken { .. } => Cow::from("InvalidOidcToken"),
             Self::UnauthorizedOidcToken => Cow::from("UnauthorizedOidcToken"),
             Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
@@ -1182,12 +1227,16 @@ impl ResponseError for DBError {
             Self::OwnerAdminNotMintableAsApiKey => StatusCode::FORBIDDEN,
             Self::OwnerRoleNotAssignable => StatusCode::FORBIDDEN,
             Self::InvalidRoleString { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidMembershipOriginString { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UnknownUser { .. } => StatusCode::NOT_FOUND,
             Self::UnknownOidcTrust { .. } => StatusCode::NOT_FOUND,
             Self::EmptyOidcTrustField { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidOidcIssuerUrl { .. } => StatusCode::BAD_REQUEST,
             Self::AmbiguousOidcTenant => StatusCode::BAD_REQUEST,
             Self::OidcTenantNotTrusted { .. } => StatusCode::FORBIDDEN,
+            Self::AmbiguousTenantMembership => StatusCode::BAD_REQUEST,
+            Self::NotATenantMember { .. } => StatusCode::FORBIDDEN,
+            Self::NoTenantMemberships => StatusCode::FORBIDDEN,
             Self::InvalidOidcToken { .. } => StatusCode::UNAUTHORIZED,
             Self::UnauthorizedOidcToken => StatusCode::UNAUTHORIZED,
             Self::UnknownPipeline { .. } => StatusCode::NOT_FOUND,
