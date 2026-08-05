@@ -116,9 +116,9 @@ We distinguish two kinds of user-defined types:
 The following example shows a table using two user-defined types:
 
 ```sql
-CREATE TYPE INT32 AS INTEGER;
-CREATE TYPE IA AS INT ARRAY;
-CREATE TABLE T(x INT32, a IA);
+CREATE TYPE int32 AS INTEGER;
+CREATE TYPE ia AS INT ARRAY;
+CREATE TABLE t(x int32, a ia);
 ```
 
 ### New structure types
@@ -166,8 +166,8 @@ Here is an example query creating an object with the user-defined type
 the same program):
 
 ```sql
-CREATE TABLE T(street VARCHAR, city VARCHAR, year INT);
-CREATE VIEW V AS SELECT address_typ(T.street, city, 'CA', 94087) as address, T.year as year FROM T;
+CREATE TABLE t(street VARCHAR, city VARCHAR, YEAR INT);
+CREATE VIEW v AS SELECT address_typ(t.street, city, 'CA', 94087) AS address, t.YEAR AS YEAR FROM t;
 ```
 
 ## Grammar for specifying types

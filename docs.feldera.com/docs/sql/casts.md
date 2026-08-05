@@ -69,7 +69,7 @@ the source value to the corresponding type of the destination field.
 For example, the following statement is legal:
 
 ```sql
-SELECT cast(row(1, 2) as row(a integer, b tinyint)) as r;
+SELECT CAST(ROW(1, 2) AS ROW(a INTEGER, b TINYINT)) AS r;
 ```
 
 ## Safe casts

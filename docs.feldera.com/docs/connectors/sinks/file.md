@@ -33,6 +33,6 @@ CREATE VIEW copy WITH (
     "format": { "name": "csv" }
   }]'
 )
-AS SELECT * FROM Stocks;
+AS SELECT * FROM stocks;
 ```
 

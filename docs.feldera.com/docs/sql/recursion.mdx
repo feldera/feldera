@@ -29,7 +29,7 @@ when a view references itself or another view before their definition.
 A forward declaration specifies the view's name, column names, and column types.
 
 ```sql
-DECLARE RECURSIVE VIEW CLOSURE(x INT, y INT);
+DECLARE RECURSIVE VIEW closure(x INT, y INT);
 ```
 
 This forward declaration states that `CLOSURE` is a recursive view with two columns, `x` and `y`, both of type `INT`.
@@ -42,19 +42,19 @@ Once declared, recursive views are defined using standard SQL syntax. Feldera SQ
 reference each other recursively.
 
 ```sql
-CREATE TABLE EDGES(x INT, y INT);
+CREATE TABLE edges(x INT, y INT);
 
 -- Define a local view STEP depending on CLOSURE and EDGES
-CREATE LOCAL VIEW STEP AS
-SELECT E.x, CLOSURE.y
-FROM EDGES E
-JOIN CLOSURE ON E.y = CLOSURE.x;
+CREATE LOCAL VIEW step AS
+SELECT e.x, closure.y
+FROM edges e
+JOIN closure ON e.y = closure.x;
 
 -- Define the recursive view CLOSURE
-CREATE MATERIALIZED VIEW CLOSURE AS
-(SELECT * FROM EDGES)
+CREATE MATERIALIZED VIEW closure AS
+(SELECT * FROM edges)
 UNION
-(SELECT * FROM STEP);
+(SELECT * FROM step);
 ```
 
 In this example we compute a transitive closure:
@@ -87,20 +87,20 @@ match the type of the declared view, including the column names.
 We can verify this using our previous program and using the [Feldera Shell](/interface/cli)
 
 ```sql
-INSERT INTO EDGES VALUES(0, 1);
-SELECT * FROM CLOSURE;
+INSERT INTO edges VALUES(0, 1);
+SELECT * FROM closure;
  x | y
 -------
  0 | 1
-(1 row)
-INSERT INTO EDGES VALUES(1, 2);
-SELECT * FROM CLOSURE;
+(1 ROW)
+INSERT INTO edges VALUES(1, 2);
+SELECT * FROM closure;
  x | y
 -------
  0 | 1
  1 | 2
  0 | 2
-(3 rows)
+(3 ROWS)
 ```
 
 Deletions are recomputed incrementally as well. Ad-hoc queries do not support
@@ -117,11 +117,11 @@ curl -X POST 'http://127.0.0.1:8080/v0/pipelines/{pipeline_name}/ingress/EDGES?f
 `CLOSURE` now contains only the edges reachable without the deleted edge:
 
 ```sql
-SELECT * FROM CLOSURE;
+SELECT * FROM closure;
  x | y
 -------
  1 | 2
-(1 row)
+(1 ROW)
 ```
 
 ## Debugging Recursive SQL
@@ -131,27 +131,27 @@ create a view that computes all Fibonacci numbers. However, this program will fa
 it reaches values that do not fit into a 32-bit integer:
 
 ```sql
-declare recursive view fibonacci(n int, value int);
+DECLARE RECURSIVE VIEW fibonacci(n INT, value INT);
 
-create view fibonacci as
+CREATE VIEW fibonacci AS
 (
     -- Base case: first two Fibonacci numbers
-    select 0 as n, 0 as value
-    union all
-    select 1 as n, 1 as value
+    SELECT 0 AS n, 0 AS value
+    UNION ALL
+    SELECT 1 AS n, 1 AS value
 )
-union all
+UNION ALL
 (
     -- Compute F(n)=F(n-1)+F(n-2)
-    select
-        curr.n + 1 as n,
-        (prev.value + curr.value) as value
-    from fibonacci as curr
-    join fibonacci as prev
-    on prev.n = curr.n - 1
+    SELECT
+        curr.n + 1 AS n,
+        (prev.value + curr.value) AS value
+    FROM fibonacci AS curr
+    JOIN fibonacci AS prev
+    ON prev.n = curr.n - 1
 );
 
-create view fib_outputs as select * from fibonacci;
+CREATE VIEW fib_outputs AS SELECT * FROM fibonacci;
 ```
 
 Recursive computations are evaluated in a single [circuit step](https://www.feldera.com/blog/synchronous-streaming),
@@ -163,28 +163,28 @@ prints each invocation of the fibonacci view during recursion:
 <Tabs>
   <TabItem value="program.sql" label="program.sql" default>
     ```sql
-    create function logger(n int not null, value int not null) returns int not null;
-    declare recursive view fibonacci(n int not null, value int not null);
+    CREATE FUNCTION logger(n INT NOT NULL, value INT NOT NULL) RETURNS INT NOT NULL;
+    DECLARE RECURSIVE VIEW fibonacci(n INT NOT NULL, value INT NOT NULL);
 
-    create view fibonacci as
+    CREATE VIEW fibonacci AS
     (
         -- Base case: first two Fibonacci numbers
-        select 0 as n, 0 as value
-        union all
-        select 1 as n, 1 as value
+        SELECT 0 AS n, 0 AS value
+        UNION ALL
+        SELECT 1 AS n, 1 AS value
     )
-    union all
+    UNION ALL
     (
         -- Compute F(n)=F(n-1)+F(n-2)
-        select
-            logger(curr.n + 1, prev.value + curr.value) as n,
-            (prev.value + curr.value) as value
-        from fibonacci as curr
-        join fibonacci as prev
-        on prev.n = curr.n - 1
+        SELECT
+            logger(curr.n + 1, prev.value + curr.value) AS n,
+            (prev.value + curr.value) AS value
+        FROM fibonacci AS curr
+        JOIN fibonacci AS prev
+        ON prev.n = curr.n - 1
     );
 
-    create view fib_outputs as select * from fibonacci;
+    CREATE VIEW fib_outputs AS SELECT * FROM fibonacci;
     ```
   </TabItem>
   <TabItem value="udf.toml" label="udf.toml">
@@ -218,28 +218,28 @@ The 46-th fibonacci value is the last one that fits in a 32-bit integer.
 The fix is to bound the recursion depth, e.g., by adding a `WHERE` clause to the `fibonacci` view:
 
 ```sql
-declare recursive view fibonacci(n int not null, value int not null);
+DECLARE RECURSIVE VIEW fibonacci(n INT NOT NULL, value INT NOT NULL);
 
-create view fibonacci as
+CREATE VIEW fibonacci AS
 (
     -- Base case: first two Fibonacci numbers
-    select 0 as n, 0 as value
-    union all
-    select 1 as n, 1 as value
+    SELECT 0 AS n, 0 AS value
+    UNION ALL
+    SELECT 1 AS n, 1 AS value
 )
-union all
+UNION ALL
 (
     -- Compute F(n)=F(n-1)+F(n-2)
-    select
-        curr.n + 1 as n,
-        (prev.value + curr.value) as value
-    from fibonacci as curr
-    join fibonacci as prev
-    on prev.n = curr.n - 1
-    where curr.n <= 45
+    SELECT
+        curr.n + 1 AS n,
+        (prev.value + curr.value) AS value
+    FROM fibonacci AS curr
+    JOIN fibonacci AS prev
+    ON prev.n = curr.n - 1
+    WHERE curr.n <= 45
 );
 
-create view fib_outputs as select * from fibonacci;
+CREATE VIEW fib_outputs AS SELECT * FROM fibonacci;
 ```
 
 ## Supported and Unsupported Features

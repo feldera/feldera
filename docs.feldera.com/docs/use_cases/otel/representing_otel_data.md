@@ -11,94 +11,94 @@ Custom types also have a smaller memory footprint and offer better type checking
 Feldera SQL allows us to define these custom types as follows:
 
 ```sql
-CREATE TYPE KeyValue AS (
-    key VARCHAR,
+CREATE TYPE keyvalue AS (
+    KEY VARCHAR,
     value VARIANT
 );
 
-CREATE TYPE Event AS (
-    timeUnixNano CHAR(20),
+CREATE TYPE event AS (
+    timeunixnano CHAR(20),
     name VARCHAR,
-    attributes KeyValue ARRAY
+    attributes keyvalue ARRAY
 );
 
-CREATE TYPE Span AS (
-    traceId VARCHAR,
-    spanId VARCHAR,
-    traceState VARCHAR,
-    parentSpanId VARCHAR,
+CREATE TYPE span AS (
+    traceid VARCHAR,
+    spanid VARCHAR,
+    tracestate VARCHAR,
+    parentspanid VARCHAR,
     flags BIGINT,
     name VARCHAR,
     kind INT,
-    startTimeUnixNano CHAR(20),
-    endTimeUnixNano CHAR(20),
-    attributes KeyValue ARRAY,
-    events Event ARRAY
+    starttimeunixnano CHAR(20),
+    endtimeunixnano CHAR(20),
+    attributes keyvalue ARRAY,
+    events event ARRAY
 );
 
-CREATE TYPE Metric AS (
+CREATE TYPE metric AS (
     name VARCHAR,
     description VARCHAR,
     unit VARCHAR,
-    sum VARIANT,
+    SUM VARIANT,
     gauge VARIANT,
     summary VARIANT,
     histogram VARIANT,
-    exponentialHistogram VARIANT,
-    metadata KeyValue ARRAY
+    exponentialhistogram VARIANT,
+    metadata keyvalue ARRAY
 );
 
-CREATE TYPE LogRecords AS (
-    attributes KeyValue ARRAY,
-    timeUnixNano CHAR(20),
-    observedTimeUnixNano CHAR(20),
-    severityNumber INT,
-    severityText VARCHAR,
+CREATE TYPE logrecords AS (
+    attributes keyvalue ARRAY,
+    timeunixnano CHAR(20),
+    observedtimeunixnano CHAR(20),
+    severitynumber INT,
+    severitytext VARCHAR,
     flags INT4,
-    traceId VARCHAR,
-    spanId VARCHAR,
-    eventName VARCHAR,
+    traceid VARCHAR,
+    spanid VARCHAR,
+    eventname VARCHAR,
     body VARIANT
 );
 
-CREATE TYPE Scope AS (
+CREATE TYPE scope AS (
     name VARCHAR,
     version VARCHAR,
-    attributes KeyValue ARRAY
+    attributes keyvalue ARRAY
 );
 
-CREATE TYPE ScopeSpans AS (
-    scope Scope,
-    spans Span ARRAY
+CREATE TYPE scopespans AS (
+    scope scope,
+    spans span ARRAY
 );
 
-CREATE TYPE ScopeLogs AS (
-    scope Scope,
-    logRecords LogRecords ARRAY
+CREATE TYPE scopelogs AS (
+    scope scope,
+    logrecords logrecords ARRAY
 );
 
-CREATE TYPE ScopeMetrics AS (
-    scope Scope,
-    metrics Metric ARRAY
+CREATE TYPE scopemetrics AS (
+    scope scope,
+    metrics metric ARRAY
 );
 
-CREATE TYPE Resource AS (
-    attributes KeyValue ARRAY
+CREATE TYPE resource AS (
+    attributes keyvalue ARRAY
 );
 
-CREATE TYPE ResourceMetrics AS (
-    resource Resource,
-    scopeMetrics ScopeMetrics ARRAY
+CREATE TYPE resourcemetrics AS (
+    resource resource,
+    scopemetrics scopemetrics ARRAY
 );
 
-CREATE TYPE ResourceSpans AS (
-    resource Resource,
-    scopeSpans ScopeSpans ARRAY
+CREATE TYPE resourcespans AS (
+    resource resource,
+    scopespans scopespans ARRAY
 );
 
-CREATE TYPE ResourceLogs AS (
-    resource Resource,
-    scopeLogs ScopeLogs ARRAY
+CREATE TYPE resourcelogs AS (
+    resource resource,
+    scopelogs scopelogs ARRAY
 );
 ```
 
@@ -115,17 +115,17 @@ Tables in Feldera model input data streams.
 
 -- Input table that ingests resource spans from the collector.
 CREATE TABLE otel_traces (
-    resourceSpans ResourceSpans ARRAY
+    resourcespans resourcespans ARRAY
 ) WITH ('append_only' = 'true');
 
 -- Input table that ingests resource logs from the collector.
 CREATE TABLE otel_logs (
-    resourceLogs ResourceLogs ARRAY
+    resourcelogs resourcelogs ARRAY
 ) WITH ('append_only' = 'true');
 
 -- Input table that ingests resource metrics from the collector.
 CREATE TABLE otel_metrics (
-    resourceMetrics ResourceMetrics ARRAY
+    resourcemetrics resourcemetrics ARRAY
 ) WITH ('append_only' = 'true');
 ```
 

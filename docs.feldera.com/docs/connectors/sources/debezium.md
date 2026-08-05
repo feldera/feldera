@@ -215,7 +215,7 @@ for decoding the messages as part of Avro format configuration.
 CREATE TABLE my_table (
     id INT NOT NULL PRIMARY KEY,
     ts TIMESTAMP
-) with (
+) WITH (
   'connectors' = '[{
     "transport": {
       "name": "kafka_input",

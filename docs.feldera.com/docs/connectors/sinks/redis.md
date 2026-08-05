@@ -39,9 +39,9 @@ Consider a Feldera pipeline with table `t0` and view `v0` as defined
 below.
 
 ```sql
-create table t0 (c0 int, c1 int, c2 varchar);
+CREATE TABLE t0 (c0 INT, c1 INT, c2 VARCHAR);
 
-create materialized view v0 with (
+CREATE MATERIALIZED VIEW v0 WITH (
 'connectors' = '[
   {
     "transport": {
@@ -59,7 +59,7 @@ create materialized view v0 with (
     }
   }
 ]'
-) as select * from t0;
+) AS SELECT * FROM t0;
 ```
 
 We populate this table with an ad-hoc query as follows:

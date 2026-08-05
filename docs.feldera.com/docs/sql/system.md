@@ -9,7 +9,7 @@ are pre-populated by the runtime.
 given by the following (illegal) SQL declaration:
 
 ```sql
-CREATE VIEW ERROR_VIEW(
+CREATE VIEW error_view(
    table_or_view_name VARCHAR NOT NULL,
    message VARCHAR NOT NULL,
    metadata VARCHAR NOT NULL

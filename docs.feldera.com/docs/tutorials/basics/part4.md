@@ -32,11 +32,11 @@ Let's configure a datagen connector for the `VENDOR` table to generate the follo
 
 
 ```sql
-create table VENDOR (
-    id bigint not null primary key,
-    name varchar,
-    address varchar
-) with (
+CREATE TABLE vendor (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name VARCHAR,
+    address VARCHAR
+) WITH (
   'materialized' = 'true',
   'connectors' = '[{
     "transport": {
@@ -66,9 +66,9 @@ generate an incrementing sequence of numbers starting from 0.
 We'll cover these "increment" generation strategies in more detail for the next table, `PART`:
 
 ```sql
-create table PART (
-    id bigint not null primary key,
-    name varchar
+CREATE TABLE part (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name VARCHAR
 ) WITH (
   'connectors' = '[{
     "transport": {
@@ -107,13 +107,13 @@ For the last table, `PRICE`, we insert some static contents to the table as we d
 plan to the connector that dynamically updates the prices to make it more interesting.
 
 ```sql
-create table PRICE (
-  part bigint not null,
-  vendor bigint not null,
-  price integer,
+CREATE TABLE price (
+  part BIGINT NOT NULL,
+  vendor BIGINT NOT NULL,
+  price INTEGER,
   -- Make sure that new updates overwrite existing entries in PRICE for the same part and vendor ids.
   PRIMARY KEY (part, vendor)
-) with (
+) WITH (
   'materialized' = 'true',
   'connectors' = '[
   {

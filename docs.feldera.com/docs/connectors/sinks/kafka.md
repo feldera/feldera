@@ -25,7 +25,7 @@ We will create a Kafka output connector named `total-sales`.
 Kafka broker is located at `example.com:9092` and the topic is `total-sales`.
 
 ```sql
-CREATE VIEW V
+CREATE VIEW v
 WITH (
    'connectors' = '[
     {
@@ -116,7 +116,7 @@ Other protocols and mechanisms aren't supported.
 
 ```sql
 
-CREATE VIEW OUTPUT
+CREATE VIEW output
 WITH (
    'connectors' = '[
     {
@@ -139,7 +139,7 @@ WITH (
       }
    }
    ]'
-) as select * from INPUT;
+) AS SELECT * FROM input;
 ```
 
 ## Additional resources

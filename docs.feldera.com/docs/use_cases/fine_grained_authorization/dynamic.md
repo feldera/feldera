@@ -29,7 +29,7 @@ In the interests of clarity, we use strings instead of integers for unique objec
 objects to be referenced by their names.
 
 ```sql
-create type id_t as string;
+CREATE TYPE id_t AS STRING;
 ```
 
 We start by modeling all object types as a single table. This approach allows new object types
@@ -38,11 +38,11 @@ sets of attributes, we use a dynamically-typed representation of attributes with
 [`VARIANT` type](/sql/json). Think of a `VARIANT` instance as a JSON document.
 
 ```sql
-create type properties_t as variant;
+CREATE TYPE properties_t AS VARIANT;
 
 -- All objects in the object graph.
-create table objects (
-    id id_t not null primary key,
+CREATE TABLE objects (
+    id id_t NOT NULL PRIMARY KEY,
     properties properties_t
 );
 ```
@@ -52,12 +52,12 @@ Following common FGA terminology, a relationship connects a **subject** (the ent
 permission) to a **resource** (the entity to which the relationship grants access):
 
 ```sql
-create table relationships (
+CREATE TABLE relationships (
     -- Subject id (reference to the `objects` table).
-    subject_id id_t not null,
+    subject_id id_t NOT NULL,
     -- Resource id (reference to the `objects` table).
-    resource_id id_t not null,
-    relationship id_t not null
+    resource_id id_t NOT NULL,
+    relationship id_t NOT NULL
 );
 ```
 
@@ -81,7 +81,7 @@ documents (rather than just filtering and extracting values from the document):
 
 ```sql
 -- JMESPath expression.
-create type predicate_t as string;
+CREATE TYPE predicate_t AS STRING;
 ```
 
 The JMESPath expression that defines the condition has access to two predefined variables:
@@ -94,11 +94,11 @@ JMESPath expressions:
 ```sql
 -- Returns `true` if the expression evaluates to `true`, `false` if it evaluates to any other value
 -- and `NULL` if `condition` is not a valid JMESPAth expression.
-create function check_condition(
+CREATE FUNCTION check_condition(
     condition predicate_t,
     subject_properties properties_t,
     resource_properties properties_t
-) returns boolean;
+) RETURNS BOOLEAN;
 ```
 
 The implementation of this UDF in Rust is given below. It uses the [`jmespath` crate](https://crates.io/crates/jmespath)
@@ -146,7 +146,7 @@ prerequisites only:
 -- Rules with one pre-requisite:
 --
 -- prerequisite_relationship(object1, object2) and condition(object1, object2) -> derived_relationship(object1, object2)
-create table unary_rules (
+CREATE TABLE unary_rules (
     prerequisite_relationship id_t,
     condition predicate_t,
     derived_relationship id_t
@@ -156,7 +156,7 @@ create table unary_rules (
 --
 -- prerequisite1_relationship(object1, object2) and prerequisite2_relationship(object2, object3) and condition(object1, object3)
 --     -> derived_relationship(object1, object3)
-create table binary_rules (
+CREATE TABLE binary_rules (
     prerequisite1_relationship id_t,
     prerequisite2_relationship id_t,
     condition predicate_t,
@@ -185,59 +185,59 @@ The final step is to write SQL views that evaluate these rules over the object g
 
 ```sql
 -- Relationships derived using unary rules.
-declare recursive view derived_unary_relationships (
-    subject_id id_t not null,
-    resource_id id_t not null,
+DECLARE RECURSIVE VIEW derived_unary_relationships (
+    subject_id id_t NOT NULL,
+    resource_id id_t NOT NULL,
     relationship id_t
 );
 
 -- Relationships derived using binary rules.
-declare recursive view derived_binary_relationships (
-    subject_id id_t not null,
-    resource_id id_t not null,
+DECLARE RECURSIVE VIEW derived_binary_relationships (
+    subject_id id_t NOT NULL,
+    resource_id id_t NOT NULL,
     relationship id_t
 );
 
 -- All derived relationships.
-declare recursive view derived_relationships (
-    subject_id id_t not null,
-    resource_id id_t not null,
+DECLARE RECURSIVE VIEW derived_relationships (
+    subject_id id_t NOT NULL,
+    resource_id id_t NOT NULL,
     relationship id_t
 );
 
-create materialized view derived_unary_relationships as
-select
+CREATE MATERIALIZED VIEW derived_unary_relationships AS
+SELECT
     derived_relationships.subject_id,
     derived_relationships.resource_id,
-    unary_rules.derived_relationship as relationship
-from
+    unary_rules.derived_relationship AS relationship
+FROM
     derived_relationships
-    join unary_rules on derived_relationships.relationship = unary_rules.prerequisite_relationship
-    join objects subject on subject.id = derived_relationships.subject_id
-    join objects resource on resource.id = derived_relationships.resource_id
-where
+    JOIN unary_rules ON derived_relationships.relationship = unary_rules.prerequisite_relationship
+    JOIN objects subject ON subject.id = derived_relationships.subject_id
+    JOIN objects resource ON resource.id = derived_relationships.resource_id
+WHERE
     check_condition(unary_rules.condition, subject.properties, resource.properties);
 
-create materialized view derived_binary_relationships as
-select
+CREATE MATERIALIZED VIEW derived_binary_relationships AS
+SELECT
     r1.subject_id,
     r2.resource_id,
-    binary_rules.derived_relationship as relationship
-from
+    binary_rules.derived_relationship AS relationship
+FROM
 derived_relationships r1
-    join binary_rules on r1.relationship = binary_rules.prerequisite1_relationship
-    join derived_relationships r2 on r1.resource_id = r2.subject_id and binary_rules.prerequisite2_relationship = r2.relationship
-    join objects subject on subject.id = r1.subject_id
-    join objects resource on resource.id = r2.resource_id
-where
+    JOIN binary_rules ON r1.relationship = binary_rules.prerequisite1_relationship
+    JOIN derived_relationships r2 ON r1.resource_id = r2.subject_id AND binary_rules.prerequisite2_relationship = r2.relationship
+    JOIN objects subject ON subject.id = r1.subject_id
+    JOIN objects resource ON resource.id = r2.resource_id
+WHERE
     check_condition(binary_rules.condition, subject.properties, resource.properties);
 
-create materialized view derived_relationships as
-select * from relationships
-union all
-select * from derived_unary_relationships
-union all
-select * from derived_binary_relationships;
+CREATE MATERIALIZED VIEW derived_relationships AS
+SELECT * FROM relationships
+UNION ALL
+SELECT * FROM derived_unary_relationships
+UNION ALL
+SELECT * FROM derived_binary_relationships;
 ```
 
 ### Lights, Camera, Action!
@@ -249,12 +249,12 @@ Let's see if it works. Open the complete code provided above in one of the follo
 Start the pipeline and create rules for the file manager example using ad hoc queries:
 
 ```sql
-insert into unary_rules values
+INSERT INTO unary_rules VALUES
   ('editor', '`true`', 'group-can-write'),         -- Rule 1.
   ('viewer', '`true`', 'group-can-read'),          -- Rule 3.
   ('group-can-write', '`true`', 'group-can-read'); -- Rule 4.
 
-insert into binary_rules values
+INSERT INTO binary_rules VALUES
   ('group-can-write', 'parent', '`true`', 'group-can-write'),                     -- Rule 2.
   ('group-can-read', 'parent', '`true`', 'group-can-read'),                       -- Rule 5.
   ('member', 'group-can-write', 'subject.is_banned != `true`', 'user-can-write'), -- Rule 6.
@@ -264,7 +264,7 @@ insert into binary_rules values
 Populate the object graph:
 
 ```sql
-insert into objects values
+INSERT INTO objects VALUES
   ('user:emily', '{"is_banned": false}'),
   ('user:irene', '{"is_banned": false}'),
   ('user:adam', '{"is_banned": true}'),
@@ -277,7 +277,7 @@ insert into objects values
   ('file:f2', '{}'),
   ('file:f3', '{}');
 
-insert into relationships values
+INSERT INTO relationships VALUES
   ('user:emily', 'group:engineering', 'member'),
   ('user:irene', 'group:it', 'member'),
   ('user:adam', 'group:accounting', 'member'),
@@ -294,9 +294,9 @@ insert into relationships values
 Validate the output of the program:
 
 ```sql
-select *
-from derived_relationships
-where
+SELECT *
+FROM derived_relationships
+WHERE
   relationship = 'user-can-read';
 ```
 
@@ -328,11 +328,11 @@ The corresponding FGA rules are:
 In SQL:
 
 ```sql
-insert into unary_rules values
+INSERT INTO unary_rules VALUES
   ('owner', '`true`', 'group-can-write'),
   ('owner', '`true`', 'group-can-permanently-delete');
 
-insert into binary_rules values
+INSERT INTO binary_rules VALUES
   ('group-can-permanently-delete', 'parent', '`true`', 'group-can-permanently-delete'),
   ('member', 'group-can-permanently-delete', 'subject.is_banned != `true`', 'user-can-permanently-delete');
 ```
@@ -341,11 +341,11 @@ Let's see if it worked.  Make `group:engineering` an owner of `file:designs` and
 `user-can-permanently-delete` relationships:
 
 ```sql
-insert into relationships values ('group:engineering', 'file:designs', 'owner');
+INSERT INTO relationships VALUES ('group:engineering', 'file:designs', 'owner');
 
-select *
-from derived_relationships
-where
+SELECT *
+FROM derived_relationships
+WHERE
   relationship = 'user-can-permanently-delete';
 ```
 
@@ -374,8 +374,8 @@ with the following fragment:
 
 ```sql
 -- All objects in the system, including active and currently inactive objects.
-create table all_objects (
-    id id_t not null primary key,
+CREATE TABLE all_objects (
+    id id_t NOT NULL PRIMARY KEY,
     properties properties_t
 );
 
@@ -384,26 +384,26 @@ create table all_objects (
 -- This table is a subset of object ids, including only those objects for which authorization rules need to be evaluated.
 -- The definition of an "active object" varies depending on the application and may include, for example, folders or wiki pages
 -- currently accessed or open by at least one user.
-create table active_objects(
-    object_id id_t not null
+CREATE TABLE active_objects(
+    object_id id_t NOT NULL
 );
 
 -- Relevant objects are all active objects plus all objects from which
 -- an active object can be reached by following object graph edges.
-declare recursive view relevant_objects(
-    object_id id_t not null
+DECLARE RECURSIVE VIEW relevant_objects(
+    object_id id_t NOT NULL
 );
 
-create view relevant_objects as
-select * from active_objects
-union all
-select relationships.subject_id
-    from relevant_objects join relationships on relevant_objects.object_id = relationships.resource_id;
+CREATE VIEW relevant_objects AS
+SELECT * FROM active_objects
+UNION ALL
+SELECT relationships.subject_id
+    FROM relevant_objects JOIN relationships ON relevant_objects.object_id = relationships.resource_id;
 
 -- Objects whose id's are in `relevant_objects`.
-create materialized view objects as
-select all_objects.*
-    from all_objects join relevant_objects on all_objects.id = relevant_objects.object_id;
+CREATE MATERIALIZED VIEW objects AS
+SELECT all_objects.*
+    FROM all_objects JOIN relevant_objects ON all_objects.id = relevant_objects.object_id;
 ```
 
 The new program will only compute derived relationships over objects in `relevant_objects` only.

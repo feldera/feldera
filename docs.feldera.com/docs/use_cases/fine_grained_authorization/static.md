@@ -19,23 +19,23 @@ as in your local Feldera installation.
 We start with modeling the three object types—users, groups, and files—as SQL tables:
 
 ```sql
-create table users (
-    id bigint not null primary key,
-    name string,
-    is_banned bool
-) with ('materialized' = 'true');
+CREATE TABLE users (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name STRING,
+    is_banned BOOL
+) WITH ('materialized' = 'true');
 
-create table groups (
-    id bigint not null primary key,
-    name string
-) with ('materialized' = 'true');
+CREATE TABLE groups (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name STRING
+) WITH ('materialized' = 'true');
 
-create table files (
-    id bigint not null primary key,
-    name string,
+CREATE TABLE files (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name STRING,
     -- Parent folder id; NULL for a root folder.
-    parent_id bigint
-) with ('materialized' = 'true');
+    parent_id BIGINT
+) WITH ('materialized' = 'true');
 ```
 
 Note that the `parent_id` field models the `parent` relationship between files.
@@ -44,24 +44,24 @@ Next, we model `member`, `editor`, and `viewer` relationships:
 
 ```sql
 -- Member relationship models user membership in groups.
-create table members (
-    id bigint not null primary key,
-    user_id  bigint not null,
-    group_id bigint not null
-) with ('materialized' = 'true');
+CREATE TABLE members (
+    id BIGINT NOT NULL PRIMARY KEY,
+    user_id  BIGINT NOT NULL,
+    group_id BIGINT NOT NULL
+) WITH ('materialized' = 'true');
 
 -- Editor relationship between a group and a file that gives the group the permission
 -- to read or write the file.
-create table group_file_editor (
-    group_id bigint not null,
-    file_id bigint not null
-) with ('materialized' = 'true');
+CREATE TABLE group_file_editor (
+    group_id BIGINT NOT NULL,
+    file_id BIGINT NOT NULL
+) WITH ('materialized' = 'true');
 
 -- Viewer relationship between a group and a file that gives the group the permission to read the file.
-create table group_file_viewer (
-    group_id bigint not null,
-    file_id bigint not null
-) with ('materialized' = 'true');
+CREATE TABLE group_file_viewer (
+    group_id BIGINT NOT NULL,
+    file_id BIGINT NOT NULL
+) WITH ('materialized' = 'true');
 ```
 
 ## Implementing rules
@@ -79,24 +79,24 @@ for which it is an editor. Rule 2 defines the recursive step: write permissions 
 file to all its children.  We implement these rules as a recursive SQL view:
 
 ```sql
-declare recursive view group_can_write (
-    group_id bigint not null,
-    file_id bigint not null
+DECLARE RECURSIVE VIEW group_can_write (
+    group_id BIGINT NOT NULL,
+    file_id BIGINT NOT NULL
 );
 
-create materialized view group_can_write as
+CREATE MATERIALIZED VIEW group_can_write AS
 -- Rule 1: editor(group, file) -> group-can-write(group, file).
 (
-  select group_id, file_id from group_file_editor
+  SELECT group_id, file_id FROM group_file_editor
 )
-union all
+UNION ALL
 -- Rule 2: group-can-write(group, file1) and parent(file1, file2) -> group-can-write(group, file2).
 (
-  select
+  SELECT
     group_can_write.group_id,
-    files.id as file_id
-  from
-    group_can_write join files on group_can_write.file_id = files.parent_id
+    files.id AS file_id
+  FROM
+    group_can_write JOIN files ON group_can_write.file_id = files.parent_id
 );
 ```
 
@@ -109,29 +109,29 @@ the read permission `group-can-read`:
 * **Rule 5:** `group-can-read(group, file1) and parent(file1, file2) -> group-can-read(group, file2)`.
 
 ```sql
-declare recursive view group_can_read (
-    group_id bigint not null,
-    file_id bigint not null
+DECLARE RECURSIVE VIEW group_can_read (
+    group_id BIGINT NOT NULL,
+    file_id BIGINT NOT NULL
 );
 
-create materialized view group_can_read as
+CREATE MATERIALIZED VIEW group_can_read AS
 -- Rule 3: viewer(group, file) -> group-can-read(group, file).
 (
-  select group_id, file_id from group_file_viewer
+  SELECT group_id, file_id FROM group_file_viewer
 )
-union all
+UNION ALL
 -- Rule 4: group-can-write(group, file) -> group-can-read(group, file).
 (
-  select group_id, file_id from group_can_write
+  SELECT group_id, file_id FROM group_can_write
 )
-union all
+UNION ALL
 -- Rule 5: group-can-read(group, file1) and parent(file1, file2) -> group-can-read(group, file2).
 (
-  select
+  SELECT
     group_can_read.group_id,
-    files.id as file_id
- from
-    group_can_read join files on group_can_read.file_id = files.parent_id
+    files.id AS file_id
+ FROM
+    group_can_read JOIN files ON group_can_read.file_id = files.parent_id
 );
 ```
 
@@ -142,26 +142,26 @@ Finally, we implement `user-can-write` and `user-can-read` relationships:
 
 ```sql
 -- Rule 6: member(user, group) and group-can-write(group, file) and (not user.is_banned) -> user-can-write(user, file).
-create materialized view user_can_write as
-select distinct
+CREATE MATERIALIZED VIEW user_can_write AS
+SELECT DISTINCT
     members.user_id,
     group_can_write.file_id
-from
+FROM
     members
-    join group_can_write on members.group_id = group_can_write.group_id
-    join users on users.id = members.user_id
-where not users.is_banned;
+    JOIN group_can_write ON members.group_id = group_can_write.group_id
+    JOIN users ON users.id = members.user_id
+WHERE NOT users.is_banned;
 
 -- Rule 7: member(user, group) and group-can-read(group, file) and (not user.is_banned) -> user-can-read(user, file).
-create materialized view user_can_read as
-select distinct
+CREATE MATERIALIZED VIEW user_can_read AS
+SELECT DISTINCT
     members.user_id,
     group_can_read.file_id
-from
+FROM
     members
-    join group_can_read on members.group_id = group_can_read.group_id
-    join users on users.id = members.user_id
-where not users.is_banned;
+    JOIN group_can_read ON members.group_id = group_can_read.group_id
+    JOIN users ON users.id = members.user_id
+WHERE NOT users.is_banned;
 ```
 
 This is it! With a few lines of SQL we implemented an incremental recursive FGA engine.
@@ -175,110 +175,110 @@ online sandbox).
 <summary> Expand to see full SQL code </summary>
 
 ```sql
-create table users (
-    id bigint not null primary key,
-    name string,
-    is_banned bool
-) with ('materialized' = 'true');
+CREATE TABLE users (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name STRING,
+    is_banned BOOL
+) WITH ('materialized' = 'true');
 
-create table groups (
-    id bigint not null primary key,
-    name string
-) with ('materialized' = 'true');
+CREATE TABLE groups (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name STRING
+) WITH ('materialized' = 'true');
 
-create table files (
-    id bigint not null primary key,
-    name string,
+CREATE TABLE files (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name STRING,
     -- Parent folder id when not NULL
-    parent_id bigint
-) with ('materialized' = 'true');
+    parent_id BIGINT
+) WITH ('materialized' = 'true');
 
 -- Member relationship models user membership in groups.
-create table members (
-    id bigint not null primary key,
-    user_id  bigint not null,
-    group_id bigint not null
-) with ('materialized' = 'true');
+CREATE TABLE members (
+    id BIGINT NOT NULL PRIMARY KEY,
+    user_id  BIGINT NOT NULL,
+    group_id BIGINT NOT NULL
+) WITH ('materialized' = 'true');
 
 -- Editor relationship between a group and a file that gives the group the permission
 -- to read or write the file.
-create table group_file_editor (
-    group_id bigint not null,
-    file_id bigint not null
-) with ('materialized' = 'true');
+CREATE TABLE group_file_editor (
+    group_id BIGINT NOT NULL,
+    file_id BIGINT NOT NULL
+) WITH ('materialized' = 'true');
 
 -- Viewer relationship between a group and a file that gives the group the permission to read the file.
-create table group_file_viewer (
-    group_id bigint not null,
-    file_id bigint not null
-) with ('materialized' = 'true');
+CREATE TABLE group_file_viewer (
+    group_id BIGINT NOT NULL,
+    file_id BIGINT NOT NULL
+) WITH ('materialized' = 'true');
 
-declare recursive view group_can_write (
-    group_id bigint not null,
-    file_id bigint not null
+DECLARE RECURSIVE VIEW group_can_write (
+    group_id BIGINT NOT NULL,
+    file_id BIGINT NOT NULL
 );
 
-create materialized view group_can_write as
+CREATE MATERIALIZED VIEW group_can_write AS
 -- Rule 1: editor(group, file) -> group-can-write(group, file).
 (
-  select group_id, file_id from group_file_editor
+  SELECT group_id, file_id FROM group_file_editor
 )
-union all
+UNION ALL
 -- Rule 2: group-can-write(group, file1) and parent(file1, file2) -> group-can-write(group, file2).
 (
-  select
+  SELECT
     group_can_write.group_id,
-    files.id as file_id
-  from
-    group_can_write join files on group_can_write.file_id = files.parent_id
+    files.id AS file_id
+  FROM
+    group_can_write JOIN files ON group_can_write.file_id = files.parent_id
 );
 
-declare recursive view group_can_read (
-    group_id bigint not null,
-    file_id bigint not null
+DECLARE RECURSIVE VIEW group_can_read (
+    group_id BIGINT NOT NULL,
+    file_id BIGINT NOT NULL
 );
 
-create materialized view group_can_read as
+CREATE MATERIALIZED VIEW group_can_read AS
 -- Rule 3: viewer(group, file) -> group-can-read(group, file).
 (
-  select group_id, file_id from group_file_viewer
+  SELECT group_id, file_id FROM group_file_viewer
 )
-union all
+UNION ALL
 -- Rule 4: group-can-write(group, file) -> group-can-read(group, file).
 (
-  select group_id, file_id from group_can_write
+  SELECT group_id, file_id FROM group_can_write
 )
-union all
+UNION ALL
 -- Rule 5: group-can-read(group, file1) and parent(file1, file2) -> group-can-read(group, file2).
 (
-  select
+  SELECT
     group_can_read.group_id,
-    files.id as file_id
- from
-    group_can_read join files on group_can_read.file_id = files.parent_id
+    files.id AS file_id
+ FROM
+    group_can_read JOIN files ON group_can_read.file_id = files.parent_id
 );
 
 -- Rule 6: member(user, group) and group-can-write(group, file) and (not user.is_banned) -> user-can-write(user, file).
-create materialized view user_can_write as
-select distinct
+CREATE MATERIALIZED VIEW user_can_write AS
+SELECT DISTINCT
     members.user_id,
     group_can_write.file_id
-from
+FROM
     members
-    join group_can_write on members.group_id = group_can_write.group_id
-    join users on users.id = members.user_id
-where not users.is_banned;
+    JOIN group_can_write ON members.group_id = group_can_write.group_id
+    JOIN users ON users.id = members.user_id
+WHERE NOT users.is_banned;
 
 -- Rule 7: member(user, group) and group-can-read(group, file) and (not user.is_banned) -> user-can-read(user, file).
-create materialized view user_can_read as
-select distinct
+CREATE MATERIALIZED VIEW user_can_read AS
+SELECT DISTINCT
     members.user_id,
     group_can_read.file_id
-from
+FROM
     members
-    join group_can_read on members.group_id = group_can_read.group_id
-    join users on users.id = members.user_id
-where not users.is_banned;
+    JOIN group_can_read ON members.group_id = group_can_read.group_id
+    JOIN users ON users.id = members.user_id
+WHERE NOT users.is_banned;
 ```
 </details>
 
@@ -286,47 +286,47 @@ Start the pipeline and populate the object graph to match the [example](intro.md
 ad hoc queries:
 
 ```sql
-insert into users values
-    (1, 'emily', false),
-    (2, 'irene', false),
-    (3, 'adam', true);
+INSERT INTO users VALUES
+    (1, 'emily', FALSE),
+    (2, 'irene', FALSE),
+    (3, 'adam', TRUE);
 
-insert into groups values
+INSERT INTO groups VALUES
     (1, 'engineering'),
     (2, 'it'),
     (3, 'accounting');
 
-insert into files values
+INSERT INTO files VALUES
     (1, 'designs', NULL),
     (2, 'financials', NULL),
     (3, 'f1', 1),
     (4, 'f2', 1),
     (5, 'f3', 2);
 
-insert into members values
+INSERT INTO members VALUES
     (1, 1, 1), -- emily is in engineering
     (2, 2, 2), -- irene is in IT
     (3, 3, 3); -- adam is in accounting
 
-insert into group_file_editor values
+INSERT INTO group_file_editor VALUES
     (1, 1),         -- 'engineering' can edit 'designs'
     (2, 1), (2, 2), -- 'it' can edit 'designs' and 'financials'
     (3, 2);         -- 'accounting' can edit 'financials'.
 
-insert into group_file_viewer values
+INSERT INTO group_file_viewer VALUES
     (3, 1); -- 'accounting' can view 'designs'.
 ```
 
 We can now validate the output of the program, e.g.:
 
 ```sql
-select
-  users.name as user_name,
-  files.name as file_name
-from
+SELECT
+  users.name AS user_name,
+  files.name AS file_name
+FROM
   user_can_read
-  join users on users.id = user_can_read.user_id
-  join files on files.id = user_can_read.file_id;
+  JOIN users ON users.id = user_can_read.user_id
+  JOIN files ON files.id = user_can_read.file_id;
 ```
 
 | user_name | file_name   |
@@ -346,7 +346,7 @@ while `irene`, a member of `it`, can read files under both `designs` and `financ
 Next we make an incremental change to the object graph, adding `emily` to the `it` group:
 
 ```sql
-insert into members values (4, 1, 2);
+INSERT INTO members VALUES (4, 1, 2);
 ```
 
 Running the `select` query above will return two _additional_ rows:
@@ -370,11 +370,11 @@ memberships.
 <summary> Expand to see full SQL code </summary>
 
 ```sql
-create table users (
-    id bigint not null primary key,
-    name string,
-    is_banned bool
-) with (
+CREATE TABLE users (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name STRING,
+    is_banned BOOL
+) WITH (
   'materialized' = 'true',
   -- Generate 1000 random users
   'connectors' = '[{
@@ -392,10 +392,10 @@ create table users (
   }]'
 );
 
-create table groups (
-    id bigint not null primary key,
-    name string
-) with (
+CREATE TABLE groups (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name STRING
+) WITH (
   'materialized' = 'true',
   -- Generate 100 random groups
   'connectors' = '[{
@@ -413,12 +413,12 @@ create table groups (
   }]'
 );
 
-create table files (
-    id bigint not null primary key,
-    name string,
+CREATE TABLE files (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name STRING,
     -- Parent folder id when not NULL
-    parent_id bigint
-) with (
+    parent_id BIGINT
+) WITH (
   'materialized' = 'true',
   -- Generate a file hierarchy with 100 top-level folders, 1,000 sub-folders, and 100,000 files
   -- randomly distributed across sub-folders. The generator will continue running indefinitely
@@ -457,11 +457,11 @@ create table files (
 );
 
 -- Member relationship models user membership in groups.
-create table members (
-    id bigint not null primary key,
-    user_id  bigint not null,
-    group_id bigint not null
-) with (
+CREATE TABLE members (
+    id BIGINT NOT NULL PRIMARY KEY,
+    user_id  BIGINT NOT NULL,
+    group_id BIGINT NOT NULL
+) WITH (
   'materialized' = 'true',
   -- Assign each use to 3 randomly selected groups. The generator will continue running indefinitely
   -- randomly re-assigning users to groups.
@@ -484,10 +484,10 @@ create table members (
 
 -- Editor relationship between a group and a file that gives the group the permission
 -- to read or write the file.
-create table group_file_editor (
-    group_id bigint not null,
-    file_id bigint not null
-) with (
+CREATE TABLE group_file_editor (
+    group_id BIGINT NOT NULL,
+    file_id BIGINT NOT NULL
+) WITH (
   'materialized' = 'true',
   -- Randomly assign one group as an editor to each top-level folder.
   'connectors' = '[{
@@ -507,10 +507,10 @@ create table group_file_editor (
 );
 
 -- Viewer relationship between a group and a file that gives the group the permission to read the file.
-create table group_file_viewer (
-    group_id bigint not null,
-    file_id bigint not null
-) with (
+CREATE TABLE group_file_viewer (
+    group_id BIGINT NOT NULL,
+    file_id BIGINT NOT NULL
+) WITH (
   'materialized' = 'true',
   -- Give viewer permissions to 10 randomly selected subfolders to each user group.
   'connectors' = '[{
@@ -529,72 +529,72 @@ create table group_file_viewer (
   }]'
 );
 
-declare recursive view group_can_write (
-    group_id bigint not null,
-    file_id bigint not null
+DECLARE RECURSIVE VIEW group_can_write (
+    group_id BIGINT NOT NULL,
+    file_id BIGINT NOT NULL
 );
 
-create materialized view group_can_write as
+CREATE MATERIALIZED VIEW group_can_write AS
 -- Rule 1: editor(group, file) -> group-can-write(group, file).
 (
-  select group_id, file_id from group_file_editor
+  SELECT group_id, file_id FROM group_file_editor
 )
-union all
+UNION ALL
 -- Rule 2: group-can-write(group, file1) and parent(file1, file2) -> group-can-write(group, file2).
 (
-  select
+  SELECT
     group_can_write.group_id,
-    files.id as file_id
-  from
-    group_can_write join files on group_can_write.file_id = files.parent_id
+    files.id AS file_id
+  FROM
+    group_can_write JOIN files ON group_can_write.file_id = files.parent_id
 );
 
-declare recursive view group_can_read (
-    group_id bigint not null,
-    file_id bigint not null
+DECLARE RECURSIVE VIEW group_can_read (
+    group_id BIGINT NOT NULL,
+    file_id BIGINT NOT NULL
 );
 
-create materialized view group_can_read as
+CREATE MATERIALIZED VIEW group_can_read AS
 -- Rule 3: viewer(group, file) -> group-can-read(group, file).
 (
-  select group_id, file_id from group_file_viewer
+  SELECT group_id, file_id FROM group_file_viewer
 )
-union all
+UNION ALL
 -- Rule 4: group-can-write(group, file) -> group-can-read(group, file).
 (
-  select group_id, file_id from group_can_write
+  SELECT group_id, file_id FROM group_can_write
 )
-union all
+UNION ALL
 -- Rule 5: group-can-read(group, file1) and parent(file1, file2) -> group-can-read(group, file2).
 (
-  select
+  SELECT
     group_can_read.group_id,
-    files.id as file_id
- from
-    group_can_read join files on group_can_read.file_id = files.parent_id
+    files.id AS file_id
+ FROM
+    group_can_read JOIN files ON group_can_read.file_id = files.parent_id
 );
 
 -- Rule 6: member(user, group) and group-can-write(group, file) and (not user.is_banned) -> user-can-write(user, file).
-create materialized view user_can_write as
-select distinct
+CREATE MATERIALIZED VIEW user_can_write AS
+SELECT DISTINCT
     members.user_id,
     group_can_write.file_id
-from
+FROM
     members
-    join group_can_write on members.group_id = group_can_write.group_id
-    join users on users.id = members.user_id
-where not users.is_banned;
+    JOIN group_can_write ON members.group_id = group_can_write.group_id
+    JOIN users ON users.id = members.user_id
+WHERE NOT users.is_banned;
 
 -- Rule 7: member(user, group) and group-can-read(group, file) and (not user.is_banned) -> user-can-read(user, file).
-create materialized view user_can_read as
-select distinct
+CREATE MATERIALIZED VIEW user_can_read AS
+SELECT DISTINCT
     members.user_id,
     group_can_read.file_id
-from
+FROM
     members
-    join group_can_read on members.group_id = group_can_read.group_id
-    join users on users.id = members.user_id
-where not users.is_banned;
+    JOIN group_can_read ON members.group_id = group_can_read.group_id
+    JOIN users ON users.id = members.user_id
+WHERE NOT users.is_banned;
 ```
 </details>
 

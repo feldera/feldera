@@ -139,24 +139,24 @@ into source tables.
 Given the following Feldera SQL program:
 
 ```sql
-create type struct_typ as (
-  a int,
-  b varchar
+CREATE TYPE struct_typ AS (
+  a INT,
+  b VARCHAR
 );
 
-create table complex_types (
-    a int array not null,
-    b struct_typ not null,
-    json variant not null,
-    m map<varchar, int>,
-    tup row(one int not null, two int not null)
-) with ('materialized' = 'true');
+CREATE TABLE complex_types (
+    a INT ARRAY NOT NULL,
+    b struct_typ NOT NULL,
+    json VARIANT NOT NULL,
+    m MAP<VARCHAR, INT>,
+    tup ROW(one INT NOT NULL, two INT NOT NULL)
+) WITH ('materialized' = 'true');
 ```
 
 An ad-hoc query to insert data into the `complex_types` table would look like this:
 
 ```sql
-insert into complex_types values ([1,2,3], struct(2, 'b'), '{"field": 3}', MAP(['answer'], [42]), struct(2, 3));
+INSERT INTO complex_types VALUES ([1,2,3], STRUCT(2, 'b'), '{"field": 3}', MAP(['answer'], [42]), STRUCT(2, 3));
 ```
 
 ### Querying VARIANT Columns with JSON Functions
@@ -215,7 +215,7 @@ values. The two statements must be submitted together in the same
 request, separated by a semicolon:
 
 ```sql
-PREPARE q AS SELECT * FROM materialized_view WHERE v = $1;
+prepare q AS SELECT * FROM materialized_view WHERE v = $1;
 EXECUTE q('2');
 ```
 

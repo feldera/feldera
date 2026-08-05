@@ -89,7 +89,7 @@ SELECT COUNT(*) FROM gold_realtime_inventory_alerts;
 Now make a change that should generate alerts. Raising a supplier's lead time pushes every product it supplies that has recorded sales toward the CRITICAL threshold (`days_of_stock_remaining < lead_time_days * 1.5`):
 
 ```sql
-INSERT INTO bronze_suppliers VALUES (7, 'Blake and Sons', 'DE', 10000, now());
+INSERT INTO bronze_suppliers VALUES (7, 'Blake and Sons', 'DE', 10000, NOW());
 ```
 
 Re-run the count immediately — it jumps within milliseconds, without a batch job or recomputation.

@@ -301,7 +301,7 @@ the connector will fetch all records with timestamps from `2024-01-01`, then all
 
 ```sql
 CREATE TABLE transaction(
-    trans_date_trans_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 day,
+    trans_date_trans_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 DAY,
     cc_num BIGINT,
     merchant STRING,
     category STRING,

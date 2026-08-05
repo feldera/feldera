@@ -172,10 +172,10 @@ The following snippet shows a modified version of this example where the
 second connector is configured to start after the first connector completes:
 
 ```sql
-create table PRICE (
-    part bigint not null,
-    vendor bigint not null,
-    price integer
+CREATE TABLE price (
+    part BIGINT NOT NULL,
+    vendor BIGINT NOT NULL,
+    price INTEGER
 ) WITH ('connectors' = '[{
     "labels": ["price.backfill"],
     "transport": {

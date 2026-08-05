@@ -21,23 +21,23 @@ as well as in your local Feldera installation.
 <summary> Full Feldera SQL code </summary>
 
 ```sql
-CREATE TABLE LINEITEM (
-        L_ORDERKEY    INTEGER NOT NULL,
-        L_PARTKEY     INTEGER NOT NULL,
-        L_SUPPKEY     INTEGER NOT NULL,
-        L_LINENUMBER  INTEGER NOT NULL,
-        L_QUANTITY    DECIMAL(15,2) NOT NULL,
-        L_EXTENDEDPRICE  DECIMAL(15,2) NOT NULL,
-        L_DISCOUNT    DECIMAL(15,2) NOT NULL,
-        L_TAX         DECIMAL(15,2) NOT NULL,
-        L_RETURNFLAG  CHAR(1) NOT NULL,
-        L_LINESTATUS  CHAR(1) NOT NULL,
-        L_SHIPDATE    DATE NOT NULL,
-        L_COMMITDATE  DATE NOT NULL,
-        L_RECEIPTDATE DATE NOT NULL,
-        L_SHIPINSTRUCT CHAR(25) NOT NULL,
-        L_SHIPMODE     CHAR(10) NOT NULL,
-        L_COMMENT      VARCHAR(44) NOT NULL
+CREATE TABLE lineitem (
+        l_orderkey    INTEGER NOT NULL,
+        l_partkey     INTEGER NOT NULL,
+        l_suppkey     INTEGER NOT NULL,
+        l_linenumber  INTEGER NOT NULL,
+        l_quantity    DECIMAL(15,2) NOT NULL,
+        l_extendedprice  DECIMAL(15,2) NOT NULL,
+        l_discount    DECIMAL(15,2) NOT NULL,
+        l_tax         DECIMAL(15,2) NOT NULL,
+        l_returnflag  CHAR(1) NOT NULL,
+        l_linestatus  CHAR(1) NOT NULL,
+        l_shipdate    DATE NOT NULL,
+        l_commitdate  DATE NOT NULL,
+        l_receiptdate DATE NOT NULL,
+        l_shipinstruct CHAR(25) NOT NULL,
+        l_shipmode     CHAR(10) NOT NULL,
+        l_comment      VARCHAR(44) NOT NULL
 ) WITH (
  'connectors' = '[{
     "transport": {
@@ -52,16 +52,16 @@ CREATE TABLE LINEITEM (
  }]'
 );
 
-CREATE TABLE ORDERS  (
-        O_ORDERKEY       INTEGER NOT NULL,
-        O_CUSTKEY        INTEGER NOT NULL,
-        O_ORDERSTATUS    CHAR(1) NOT NULL,
-        O_TOTALPRICE     DECIMAL(15,2) NOT NULL,
-        O_ORDERDATE      DATE NOT NULL,
-        O_ORDERPRIORITY  CHAR(15) NOT NULL,
-        O_CLERK          CHAR(15) NOT NULL,
-        O_SHIPPRIORITY   INTEGER NOT NULL,
-        O_COMMENT        VARCHAR(79) NOT NULL
+CREATE TABLE orders  (
+        o_orderkey       INTEGER NOT NULL,
+        o_custkey        INTEGER NOT NULL,
+        o_orderstatus    CHAR(1) NOT NULL,
+        o_totalprice     DECIMAL(15,2) NOT NULL,
+        o_orderdate      DATE NOT NULL,
+        o_orderpriority  CHAR(15) NOT NULL,
+        o_clerk          CHAR(15) NOT NULL,
+        o_shippriority   INTEGER NOT NULL,
+        o_comment        VARCHAR(79) NOT NULL
 ) WITH (
  'connectors' = '[{
     "transport": {
@@ -76,16 +76,16 @@ CREATE TABLE ORDERS  (
  }]'
 );
 
-CREATE TABLE PART (
-        P_PARTKEY     INTEGER NOT NULL,
-        P_NAME        VARCHAR(55) NOT NULL,
-        P_MFGR        CHAR(25) NOT NULL,
-        P_BRAND       CHAR(10) NOT NULL,
-        P_TYPE        VARCHAR(25) NOT NULL,
-        P_SIZE        INTEGER NOT NULL,
-        P_CONTAINER   CHAR(10) NOT NULL,
-        P_RETAILPRICE DECIMAL(15,2) NOT NULL,
-        P_COMMENT     VARCHAR(23) NOT NULL
+CREATE TABLE part (
+        p_partkey     INTEGER NOT NULL,
+        p_name        VARCHAR(55) NOT NULL,
+        p_mfgr        CHAR(25) NOT NULL,
+        p_brand       CHAR(10) NOT NULL,
+        p_type        VARCHAR(25) NOT NULL,
+        p_size        INTEGER NOT NULL,
+        p_container   CHAR(10) NOT NULL,
+        p_retailprice DECIMAL(15,2) NOT NULL,
+        p_comment     VARCHAR(23) NOT NULL
 ) WITH (
  'connectors' = '[{
     "transport": {
@@ -100,15 +100,15 @@ CREATE TABLE PART (
  }]'
 );
 
-CREATE TABLE CUSTOMER (
-        C_CUSTKEY     INTEGER NOT NULL,
-        C_NAME        VARCHAR(25) NOT NULL,
-        C_ADDRESS     VARCHAR(40) NOT NULL,
-        C_NATIONKEY   INTEGER NOT NULL,
-        C_PHONE       CHAR(15) NOT NULL,
-        C_ACCTBAL     DECIMAL(15,2)   NOT NULL,
-        C_MKTSEGMENT  CHAR(10) NOT NULL,
-        C_COMMENT     VARCHAR(117) NOT NULL
+CREATE TABLE customer (
+        c_custkey     INTEGER NOT NULL,
+        c_name        VARCHAR(25) NOT NULL,
+        c_address     VARCHAR(40) NOT NULL,
+        c_nationkey   INTEGER NOT NULL,
+        c_phone       CHAR(15) NOT NULL,
+        c_acctbal     DECIMAL(15,2)   NOT NULL,
+        c_mktsegment  CHAR(10) NOT NULL,
+        c_comment     VARCHAR(117) NOT NULL
 ) WITH (
  'connectors' = '[{
     "transport": {
@@ -123,14 +123,14 @@ CREATE TABLE CUSTOMER (
  }]'
 );
 
-CREATE TABLE SUPPLIER (
-        S_SUPPKEY     INTEGER NOT NULL,
-        S_NAME        CHAR(25) NOT NULL,
-        S_ADDRESS     VARCHAR(40) NOT NULL,
-        S_NATIONKEY   INTEGER NOT NULL,
-        S_PHONE       CHAR(15) NOT NULL,
-        S_ACCTBAL     DECIMAL(15,2) NOT NULL,
-        S_COMMENT     VARCHAR(101) NOT NULL
+CREATE TABLE supplier (
+        s_suppkey     INTEGER NOT NULL,
+        s_name        CHAR(25) NOT NULL,
+        s_address     VARCHAR(40) NOT NULL,
+        s_nationkey   INTEGER NOT NULL,
+        s_phone       CHAR(15) NOT NULL,
+        s_acctbal     DECIMAL(15,2) NOT NULL,
+        s_comment     VARCHAR(101) NOT NULL
 ) WITH (
  'connectors' = '[{
     "transport": {
@@ -145,12 +145,12 @@ CREATE TABLE SUPPLIER (
  }]'
 );
 
-CREATE TABLE PARTSUPP (
-        PS_PARTKEY     INTEGER NOT NULL,
-        PS_SUPPKEY     INTEGER NOT NULL,
-        PS_AVAILQTY    INTEGER NOT NULL,
-        PS_SUPPLYCOST  DECIMAL(15,2)  NOT NULL,
-        PS_COMMENT     VARCHAR(199) NOT NULL
+CREATE TABLE partsupp (
+        ps_partkey     INTEGER NOT NULL,
+        ps_suppkey     INTEGER NOT NULL,
+        ps_availqty    INTEGER NOT NULL,
+        ps_supplycost  DECIMAL(15,2)  NOT NULL,
+        ps_comment     VARCHAR(199) NOT NULL
 ) WITH (
  'connectors' = '[{
     "transport": {
@@ -165,11 +165,11 @@ CREATE TABLE PARTSUPP (
  }]'
 );
 
-CREATE TABLE NATION  (
-        N_NATIONKEY  INTEGER NOT NULL,
-        N_NAME       CHAR(25) NOT NULL,
-        N_REGIONKEY  INTEGER NOT NULL,
-        N_COMMENT    VARCHAR(152)
+CREATE TABLE nation  (
+        n_nationkey  INTEGER NOT NULL,
+        n_name       CHAR(25) NOT NULL,
+        n_regionkey  INTEGER NOT NULL,
+        n_comment    VARCHAR(152)
 ) WITH (
  'connectors' = '[{
     "transport": {
@@ -184,10 +184,10 @@ CREATE TABLE NATION  (
  }]'
 );
 
-CREATE TABLE REGION  (
-        R_REGIONKEY  INTEGER NOT NULL,
-        R_NAME       CHAR(25) NOT NULL,
-        R_COMMENT    VARCHAR(152)
+CREATE TABLE region  (
+        r_regionkey  INTEGER NOT NULL,
+        r_name       CHAR(25) NOT NULL,
+        r_comment    VARCHAR(152)
 ) WITH (
  'connectors' = '[{
     "transport": {
@@ -202,31 +202,31 @@ CREATE TABLE REGION  (
  }]'
 );
 
-create materialized view q1
-as select
+CREATE MATERIALIZED VIEW q1
+AS SELECT
 	l_returnflag,
 	l_linestatus,
-	sum(l_quantity) as sum_qty,
-	sum(l_extendedprice) as sum_base_price,
-	sum(l_extendedprice * (1 - l_discount)) as sum_disc_price,
-	sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge,
-	avg(l_quantity) as avg_qty,
-	avg(l_extendedprice) as avg_price,
-	avg(l_discount) as avg_disc,
-	count(*) as count_order
-from
+	SUM(l_quantity) AS sum_qty,
+	SUM(l_extendedprice) AS sum_base_price,
+	SUM(l_extendedprice * (1 - l_discount)) AS sum_disc_price,
+	SUM(l_extendedprice * (1 - l_discount) * (1 + l_tax)) AS sum_charge,
+	AVG(l_quantity) AS avg_qty,
+	AVG(l_extendedprice) AS avg_price,
+	AVG(l_discount) AS avg_disc,
+	COUNT(*) AS count_order
+FROM
 	lineitem
-where
-	l_shipdate <= date '1998-12-01' - interval '90' day
-group by
+WHERE
+	l_shipdate <= DATE '1998-12-01' - INTERVAL '90' DAY
+GROUP BY
 	l_returnflag,
 	l_linestatus
-order by
+ORDER BY
 	l_returnflag,
 	l_linestatus;
 
-create materialized view q2
-as select
+CREATE MATERIALIZED VIEW q2
+AS SELECT
 	s_acctbal,
 	s_name,
 	n_name,
@@ -235,183 +235,183 @@ as select
 	s_address,
 	s_phone,
 	s_comment
-from
+FROM
 	part,
 	supplier,
 	partsupp,
 	nation,
 	region
-where
+WHERE
 	p_partkey = ps_partkey
-	and s_suppkey = ps_suppkey
-	and p_size = 15
-	and p_type like '%BRASS'
-	and s_nationkey = n_nationkey
-	and n_regionkey = r_regionkey
-	and r_name = 'EUROPE'
-	and ps_supplycost = (
-		select
-			min(ps_supplycost)
-		from
+	AND s_suppkey = ps_suppkey
+	AND p_size = 15
+	AND p_type LIKE '%BRASS'
+	AND s_nationkey = n_nationkey
+	AND n_regionkey = r_regionkey
+	AND r_name = 'EUROPE'
+	AND ps_supplycost = (
+		SELECT
+			MIN(ps_supplycost)
+		FROM
 			partsupp,
 			supplier,
 			nation,
 			region
-		where
+		WHERE
 			p_partkey = ps_partkey
-			and s_suppkey = ps_suppkey
-			and s_nationkey = n_nationkey
-			and n_regionkey = r_regionkey
-			and r_name = 'EUROPE'
+			AND s_suppkey = ps_suppkey
+			AND s_nationkey = n_nationkey
+			AND n_regionkey = r_regionkey
+			AND r_name = 'EUROPE'
 	)
-order by
-	s_acctbal desc,
+ORDER BY
+	s_acctbal DESC,
 	n_name,
 	s_name,
 	p_partkey
-limit 100;
+LIMIT 100;
 
-create materialized view q3
-as select
+CREATE MATERIALIZED VIEW q3
+AS SELECT
 	l_orderkey,
-	sum(l_extendedprice * (1 - l_discount)) as revenue,
+	SUM(l_extendedprice * (1 - l_discount)) AS revenue,
 	o_orderdate,
 	o_shippriority
-from
+FROM
 	customer,
 	orders,
 	lineitem
-where
+WHERE
 	c_mktsegment = 'BUILDING'
-	and c_custkey = o_custkey
-	and l_orderkey = o_orderkey
-	and o_orderdate < date '1995-03-15'
-	and l_shipdate > date '1995-03-15'
-group by
+	AND c_custkey = o_custkey
+	AND l_orderkey = o_orderkey
+	AND o_orderdate < DATE '1995-03-15'
+	AND l_shipdate > DATE '1995-03-15'
+GROUP BY
 	l_orderkey,
 	o_orderdate,
 	o_shippriority
-order by
-	revenue desc,
+ORDER BY
+	revenue DESC,
 	o_orderdate
-limit 10;
+LIMIT 10;
 
-create materialized view q4
-as select
+CREATE MATERIALIZED VIEW q4
+AS SELECT
 	o_orderpriority,
-	count(*) as order_count
-from
+	COUNT(*) AS order_count
+FROM
 	orders
-where
-	o_orderdate >= date '1993-07-01'
-	and o_orderdate < date '1993-07-01' + interval '3' month
-	and exists (
-		select
+WHERE
+	o_orderdate >= DATE '1993-07-01'
+	AND o_orderdate < DATE '1993-07-01' + INTERVAL '3' MONTH
+	AND EXISTS (
+		SELECT
 			*
-		from
+		FROM
 			lineitem
-		where
+		WHERE
 			l_orderkey = o_orderkey
-			and l_commitdate < l_receiptdate
+			AND l_commitdate < l_receiptdate
 	)
-group by
+GROUP BY
 	o_orderpriority
-order by
+ORDER BY
 	o_orderpriority;
 
-create materialized view q5
-as select
+CREATE MATERIALIZED VIEW q5
+AS SELECT
 	n_name,
-	sum(l_extendedprice * (1 - l_discount)) as revenue
-from
+	SUM(l_extendedprice * (1 - l_discount)) AS revenue
+FROM
 	customer,
 	orders,
 	lineitem,
 	supplier,
 	nation,
 	region
-where
+WHERE
 	c_custkey = o_custkey
-	and l_orderkey = o_orderkey
-	and l_suppkey = s_suppkey
-	and c_nationkey = s_nationkey
-	and s_nationkey = n_nationkey
-	and n_regionkey = r_regionkey
-	and r_name = 'ASIA'
-	and o_orderdate >= date '1994-01-01'
-	and o_orderdate < date '1994-01-01' + interval '1' year
-group by
+	AND l_orderkey = o_orderkey
+	AND l_suppkey = s_suppkey
+	AND c_nationkey = s_nationkey
+	AND s_nationkey = n_nationkey
+	AND n_regionkey = r_regionkey
+	AND r_name = 'ASIA'
+	AND o_orderdate >= DATE '1994-01-01'
+	AND o_orderdate < DATE '1994-01-01' + INTERVAL '1' YEAR
+GROUP BY
 	n_name
-order by
-	revenue desc;
+ORDER BY
+	revenue DESC;
 
-create materialized view q6
-as select
-	sum(l_extendedprice * l_discount) as revenue
-from
+CREATE MATERIALIZED VIEW q6
+AS SELECT
+	SUM(l_extendedprice * l_discount) AS revenue
+FROM
 	lineitem
-where
-	l_shipdate >= date '1994-01-01'
-	and l_shipdate < date '1994-01-01' + interval '1' year
-	and l_discount between .06 - 0.01 and .06 + 0.01
-	and l_quantity < 24;
+WHERE
+	l_shipdate >= DATE '1994-01-01'
+	AND l_shipdate < DATE '1994-01-01' + INTERVAL '1' YEAR
+	AND l_discount BETWEEN .06 - 0.01 AND .06 + 0.01
+	AND l_quantity < 24;
 
-create materialized view q7
-as select
+CREATE MATERIALIZED VIEW q7
+AS SELECT
 	supp_nation,
 	cust_nation,
 	l_year,
-	sum(volume) as revenue
-from
+	SUM(volume) AS revenue
+FROM
 	(
-		select
-			n1.n_name as supp_nation,
-			n2.n_name as cust_nation,
-			year(l_shipdate) as l_year,
-			l_extendedprice * (1 - l_discount) as volume
-		from
+		SELECT
+			n1.n_name AS supp_nation,
+			n2.n_name AS cust_nation,
+			YEAR(l_shipdate) AS l_year,
+			l_extendedprice * (1 - l_discount) AS volume
+		FROM
 			supplier,
 			lineitem,
 			orders,
 			customer,
 			nation n1,
 			nation n2
-		where
+		WHERE
 			s_suppkey = l_suppkey
-			and o_orderkey = l_orderkey
-			and c_custkey = o_custkey
-			and s_nationkey = n1.n_nationkey
-			and c_nationkey = n2.n_nationkey
-			and (
-				(n1.n_name = 'FRANCE' and n2.n_name = 'GERMANY')
-				or (n1.n_name = 'GERMANY' and n2.n_name = 'FRANCE')
+			AND o_orderkey = l_orderkey
+			AND c_custkey = o_custkey
+			AND s_nationkey = n1.n_nationkey
+			AND c_nationkey = n2.n_nationkey
+			AND (
+				(n1.n_name = 'FRANCE' AND n2.n_name = 'GERMANY')
+				OR (n1.n_name = 'GERMANY' AND n2.n_name = 'FRANCE')
 			)
-			and l_shipdate between date '1995-01-01' and date '1996-12-31'
-	) as shipping
-group by
+			AND l_shipdate BETWEEN DATE '1995-01-01' AND DATE '1996-12-31'
+	) AS shipping
+GROUP BY
 	supp_nation,
 	cust_nation,
 	l_year
-order by
+ORDER BY
 	supp_nation,
 	cust_nation,
 	l_year;
 
 
-create materialized view q8
-as select
+CREATE MATERIALIZED VIEW q8
+AS SELECT
 	o_year,
-	sum(case
-		when nation = 'BRAZIL' then volume
-		else 0
-	end) / sum(volume) as mkt_share
-from
+	SUM(CASE
+		WHEN nation = 'BRAZIL' THEN volume
+		ELSE 0
+	END) / SUM(volume) AS mkt_share
+FROM
 	(
-		select
-			year(o_orderdate) as o_year,
-			l_extendedprice * (1 - l_discount) as volume,
-			n2.n_name as nation
-		from
+		SELECT
+			YEAR(o_orderdate) AS o_year,
+			l_extendedprice * (1 - l_discount) AS volume,
+			n2.n_name AS nation
+		FROM
 			part,
 			supplier,
 			lineitem,
@@ -420,81 +420,81 @@ from
 			nation n1,
 			nation n2,
 			region
-		where
+		WHERE
 			p_partkey = l_partkey
-			and s_suppkey = l_suppkey
-			and l_orderkey = o_orderkey
-			and o_custkey = c_custkey
-			and c_nationkey = n1.n_nationkey
-			and n1.n_regionkey = r_regionkey
-			and r_name = 'AMERICA'
-			and s_nationkey = n2.n_nationkey
-			and o_orderdate between date '1995-01-01' and date '1996-12-31'
-			and p_type = 'ECONOMY ANODIZED STEEL'
-	) as all_nations
-group by
+			AND s_suppkey = l_suppkey
+			AND l_orderkey = o_orderkey
+			AND o_custkey = c_custkey
+			AND c_nationkey = n1.n_nationkey
+			AND n1.n_regionkey = r_regionkey
+			AND r_name = 'AMERICA'
+			AND s_nationkey = n2.n_nationkey
+			AND o_orderdate BETWEEN DATE '1995-01-01' AND DATE '1996-12-31'
+			AND p_type = 'ECONOMY ANODIZED STEEL'
+	) AS all_nations
+GROUP BY
 	o_year
-order by
+ORDER BY
 	o_year;
 
-create materialized view q9
-as select
+CREATE MATERIALIZED VIEW q9
+AS SELECT
 	nation,
 	o_year,
-	sum(amount) as sum_profit
-from
+	SUM(amount) AS sum_profit
+FROM
 	(
-		select
-			n_name as nation,
-			year(o_orderdate) as o_year,
-			l_extendedprice * (1 - l_discount) - ps_supplycost * l_quantity as amount
-		from
+		SELECT
+			n_name AS nation,
+			YEAR(o_orderdate) AS o_year,
+			l_extendedprice * (1 - l_discount) - ps_supplycost * l_quantity AS amount
+		FROM
 			part,
 			supplier,
 			lineitem,
 			partsupp,
 			orders,
 			nation
-		where
+		WHERE
 			s_suppkey = l_suppkey
-			and ps_suppkey = l_suppkey
-			and ps_partkey = l_partkey
-			and p_partkey = l_partkey
-			and o_orderkey = l_orderkey
-			and s_nationkey = n_nationkey
-			and p_name like '%green%'
-	) as profit
-group by
+			AND ps_suppkey = l_suppkey
+			AND ps_partkey = l_partkey
+			AND p_partkey = l_partkey
+			AND o_orderkey = l_orderkey
+			AND s_nationkey = n_nationkey
+			AND p_name LIKE '%green%'
+	) AS profit
+GROUP BY
 	nation,
 	o_year
-order by
+ORDER BY
 	nation,
-	o_year desc;
+	o_year DESC;
 
 
-create materialized view q10
-as select
+CREATE MATERIALIZED VIEW q10
+AS SELECT
 	c_custkey,
 	c_name,
-	sum(l_extendedprice * (1 - l_discount)) as revenue,
+	SUM(l_extendedprice * (1 - l_discount)) AS revenue,
 	c_acctbal,
 	n_name,
 	c_address,
 	c_phone,
 	c_comment
-from
+FROM
 	customer,
 	orders,
 	lineitem,
 	nation
-where
+WHERE
 	c_custkey = o_custkey
-	and l_orderkey = o_orderkey
-	and o_orderdate >= date '1993-10-01'
-	and o_orderdate < date '1993-10-01' + interval '3' month
-	and l_returnflag = 'R'
-	and c_nationkey = n_nationkey
-group by
+	AND l_orderkey = o_orderkey
+	AND o_orderdate >= DATE '1993-10-01'
+	AND o_orderdate < DATE '1993-10-01' + INTERVAL '3' MONTH
+	AND l_returnflag = 'R'
+	AND c_nationkey = n_nationkey
+GROUP BY
 	c_custkey,
 	c_name,
 	c_acctbal,
@@ -502,9 +502,9 @@ group by
 	n_name,
 	c_address,
 	c_comment
-order by
-	revenue desc
-limit 20;
+ORDER BY
+	revenue DESC
+LIMIT 20;
 ```
 </details>
 
@@ -516,23 +516,23 @@ read data from our S3 bucket, e.g.:
 
 ```sql
 -- Feldera SQL
-CREATE TABLE LINEITEM (
-        L_ORDERKEY    INTEGER NOT NULL,
-        L_PARTKEY     INTEGER NOT NULL,
-        L_SUPPKEY     INTEGER NOT NULL,
-        L_LINENUMBER  INTEGER NOT NULL,
-        L_QUANTITY    DECIMAL(15,2) NOT NULL,
-        L_EXTENDEDPRICE  DECIMAL(15,2) NOT NULL,
-        L_DISCOUNT    DECIMAL(15,2) NOT NULL,
-        L_TAX         DECIMAL(15,2) NOT NULL,
-        L_RETURNFLAG  CHAR(1) NOT NULL,
-        L_LINESTATUS  CHAR(1) NOT NULL,
-        L_SHIPDATE    DATE NOT NULL,
-        L_COMMITDATE  DATE NOT NULL,
-        L_RECEIPTDATE DATE NOT NULL,
-        L_SHIPINSTRUCT CHAR(25) NOT NULL,
-        L_SHIPMODE     CHAR(10) NOT NULL,
-        L_COMMENT      VARCHAR(44) NOT NULL
+CREATE TABLE lineitem (
+        l_orderkey    INTEGER NOT NULL,
+        l_partkey     INTEGER NOT NULL,
+        l_suppkey     INTEGER NOT NULL,
+        l_linenumber  INTEGER NOT NULL,
+        l_quantity    DECIMAL(15,2) NOT NULL,
+        l_extendedprice  DECIMAL(15,2) NOT NULL,
+        l_discount    DECIMAL(15,2) NOT NULL,
+        l_tax         DECIMAL(15,2) NOT NULL,
+        l_returnflag  CHAR(1) NOT NULL,
+        l_linestatus  CHAR(1) NOT NULL,
+        l_shipdate    DATE NOT NULL,
+        l_commitdate  DATE NOT NULL,
+        l_receiptdate DATE NOT NULL,
+        l_shipinstruct CHAR(25) NOT NULL,
+        l_shipmode     CHAR(10) NOT NULL,
+        l_comment      VARCHAR(44) NOT NULL
 ) WITH (
  'connectors' = '[{
     "transport": {
@@ -575,26 +575,26 @@ The TPC-H SQL queries we used with Spark can be used in Feldera without
 modification, e.g.:
 
 ```sql
-create materialized view q1
-as select
+CREATE MATERIALIZED VIEW q1
+AS SELECT
 	l_returnflag,
 	l_linestatus,
-	sum(l_quantity) as sum_qty,
-	sum(l_extendedprice) as sum_base_price,
-	sum(l_extendedprice * (1 - l_discount)) as sum_disc_price,
-	sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge,
-	avg(l_quantity) as avg_qty,
-	avg(l_extendedprice) as avg_price,
-	avg(l_discount) as avg_disc,
-	count(*) as count_order
-from
+	SUM(l_quantity) AS sum_qty,
+	SUM(l_extendedprice) AS sum_base_price,
+	SUM(l_extendedprice * (1 - l_discount)) AS sum_disc_price,
+	SUM(l_extendedprice * (1 - l_discount) * (1 + l_tax)) AS sum_charge,
+	AVG(l_quantity) AS avg_qty,
+	AVG(l_extendedprice) AS avg_price,
+	AVG(l_discount) AS avg_disc,
+	COUNT(*) AS count_order
+FROM
 	lineitem
-where
-	l_shipdate <= date '1998-12-01' - interval '90' day
-group by
+WHERE
+	l_shipdate <= DATE '1998-12-01' - INTERVAL '90' DAY
+GROUP BY
 	l_returnflag,
 	l_linestatus
-order by
+ORDER BY
 	l_returnflag,
 	l_linestatus;
 ```
@@ -645,7 +645,7 @@ will not observe any changes this way. Instead we demonstrate incremental
 computation by using ad hoc queries to add a new `LINEITEM`:
 
 ```sql
-INSERT INTO LINEITEM VALUES (1, 5, 4, 1, 50, 0.80, 0.65, 0.10, 'B', 'C', '1998-09-01', '1998-09-01', '1998-09-01', 'DELIVER IN PERSON', 'TRUCK', 'new record insertion')
+INSERT INTO lineitem VALUES (1, 5, 4, 1, 50, 0.80, 0.65, 0.10, 'B', 'C', '1998-09-01', '1998-09-01', '1998-09-01', 'DELIVER IN PERSON', 'TRUCK', 'new record insertion')
 ```
 
 This query completes instantly, returning the number of inserted records:

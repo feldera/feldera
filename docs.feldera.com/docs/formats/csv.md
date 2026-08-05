@@ -14,9 +14,9 @@ The rows must appear in the same order as the program table definition specified
 the fields. For example, consider the following table:
 
 ```sql
-create table git_commit (
-    commit_id varchar not null,
-    commit_date timestamp not null,
+CREATE TABLE git_commit (
+    commit_id VARCHAR NOT NULL,
+    commit_date TIMESTAMP NOT NULL,
 );
 ```
 
@@ -154,15 +154,15 @@ When adding a new input or output connector on a table or view,
 the data format is specified in the `format` field of the connector configuration:
 
 ```sql
-create table FAILED_BANKS (
-  name varchar,
-  city varchar,
-  state varchar,
-  cert bigint,
-  acquirer varchar,
-  closing varchar,   -- needs to be translated from 'DD-MMM-YY' format
-  fund bigint
-) with (
+CREATE TABLE failed_banks (
+  name VARCHAR,
+  city VARCHAR,
+  state VARCHAR,
+  cert BIGINT,
+  acquirer VARCHAR,
+  closing VARCHAR,   -- needs to be translated from 'DD-MMM-YY' format
+  fund BIGINT
+) WITH (
   'connectors' = '[{
     "transport": {
         "name": "url_input",

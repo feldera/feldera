@@ -65,7 +65,7 @@ Message 2:
 ```
 
 ```sql
-CREATE TABLE INPUT (
+CREATE TABLE input (
    ... -- columns omitted
 ) WITH (
   'connectors' = '[
@@ -95,7 +95,7 @@ Feldera supports starting a Kafka connector from a specific offset in a specific
 partition.
 
 ```sql
-CREATE TABLE INPUT (
+CREATE TABLE input (
    ... -- columns omitted
 ) WITH (
   'connectors' = '[
@@ -257,7 +257,7 @@ Other protocols and mechanisms aren't supported.
 :::
 
 ```sql
-CREATE TABLE INPUT (
+CREATE TABLE input (
    ... -- columns omitted
 ) WITH (
    'connectors' = '[
@@ -309,14 +309,14 @@ The steps below describe how to extract and use Kafka metadata in SQL tables.
    expressions to initialize table columns:
 
 ```sql
-create table my_table(
-    x int,
-    kafka_headers MAP<STRING, VARBINARY> DEFAULT CAST(CONNECTOR_METADATA()['kafka_headers'] as MAP<STRING, VARBINARY>),
-    kafka_timestamp TIMESTAMP DEFAULT CAST(CONNECTOR_METADATA()['kafka_timestamp'] as TIMESTAMP),
+CREATE TABLE my_table(
+    x INT,
+    kafka_headers MAP<STRING, VARBINARY> DEFAULT CAST(CONNECTOR_METADATA()['kafka_headers'] AS MAP<STRING, VARBINARY>),
+    kafka_timestamp TIMESTAMP DEFAULT CAST(CONNECTOR_METADATA()['kafka_timestamp'] AS TIMESTAMP),
     kafka_topic VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['kafka_topic'] AS VARCHAR),
     kafka_offset BIGINT DEFAULT CAST(CONNECTOR_METADATA()['kafka_offset'] AS BIGINT),
     kafka_partition INT DEFAULT CAST(CONNECTOR_METADATA()['kafka_partition'] AS INT)
-) with (
+) WITH (
     'materialized' = 'true',
     'connectors' = '[{
       "transport": {
@@ -348,10 +348,10 @@ Kafka headers can contain arbitrary byte arrays, but in practice they typically 
 Use the `BIN2UTF8` function to convert binary values to text:
 
 ```sql
-create materialized view v as
-select
-  BIN2UTF8(kafka_headers['my_header']) as my_header
-from t;
+CREATE MATERIALIZED VIEW v AS
+SELECT
+  BIN2UTF8(kafka_headers['my_header']) AS my_header
+FROM t;
 ```
 
 ## <a name="header-filter"></a>Filtering messages by header

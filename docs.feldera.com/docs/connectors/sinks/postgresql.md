@@ -87,7 +87,7 @@ If `ssl_ca_pem` is not specified, the connection will default to **plaintext**.
 Example:
 
 ```sql
-create materialized view v1 with (
+CREATE MATERIALIZED VIEW v1 WITH (
     'connectors' = '[{
         "index": "v1_idx",
         "transport": {
@@ -102,8 +102,8 @@ create materialized view v1 with (
             }
         }
     }]'
-) as select * from t0;
-create index v1_idx on v1(id);
+) AS SELECT * FROM t0;
+CREATE INDEX v1_idx ON v1(id);
 ```
 
 ## Data type mapping
@@ -157,7 +157,7 @@ connector.
 ```sql
 -- Feldera SQL
 -- Create a table and fill it with 5 randomly generated records.
-create table t0 (id int, s varchar) with (
+CREATE TABLE t0 (id INT, s VARCHAR) WITH (
   'connectors' = '[{
     "transport": {
       "name": "datagen",
@@ -173,7 +173,7 @@ create table t0 (id int, s varchar) with (
 
 -- Create a view that will contain a copy of all records in table `t0` and
 -- attach a Postgres output connector to it.
-create materialized view v1 with (
+CREATE MATERIALIZED VIEW v1 WITH (
     'connectors' = '[{
         "index": "v1_idx",
         "transport": {
@@ -184,11 +184,11 @@ create materialized view v1 with (
             }
         }
     }]'
-) as select * from t0;
+) AS SELECT * FROM t0;
 
 -- Index `v1` using `id` column as a key. The Postgres connector requires this
 -- index to group updates by key.
-create index v1_idx on v1(id);
+CREATE INDEX v1_idx ON v1(id);
 ```
 
 :::important
@@ -248,8 +248,8 @@ CREATE TABLE all_types_example (
   }]'
 );
 
-create materialized view v1
-with (
+CREATE MATERIALIZED VIEW v1
+WITH (
     'connectors' = '[{
         "index": "v1_idx",
         "transport": {
@@ -261,8 +261,8 @@ with (
         }
     }]'
 )
-as select * from all_types_example;
-create index v1_idx on v1(my_int2);
+AS SELECT * FROM all_types_example;
+CREATE INDEX v1_idx ON v1(my_int2);
 ```
 
 Now we create the equivalent table in PostgreSQL.
@@ -277,8 +277,8 @@ CREATE TABLE all_types_example (
     my_char_array        CHAR[],
     my_varchar           VARCHAR(50),
     my_varchar_array     VARCHAR(50)[],
-    my_name              NAME,
-    my_name_array        NAME[],
+    my_name              name,
+    my_name_array        name[],
     my_date              DATE,
     my_date_array        DATE[],
     my_time              TIME,
@@ -310,11 +310,11 @@ that Feldera has written to it:
 
 ```sql
 -- PostgreSQL
-SELECT count(*) FROM all_types_example;
- count
+SELECT COUNT(*) FROM all_types_example;
+ COUNT
 -------
      5
-(1 row)
+(1 ROW)
 ```
 
 ### Outputting multi-dimensional arrays

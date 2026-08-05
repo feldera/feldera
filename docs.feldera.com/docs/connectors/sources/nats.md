@@ -175,7 +175,7 @@ Create a NATS input connector that reads from the `my_texts` stream:
 ```sql
 CREATE TABLE raw_text (
     unix BIGINT,
-    text STRING
+    TEXT STRING
 ) WITH (
     'append_only' = 'true',
     'connectors' = '[{
@@ -201,11 +201,11 @@ CREATE TABLE raw_text (
     }]'
 );
 
-CREATE MATERIALIZED VIEW summary as
+CREATE MATERIALIZED VIEW summary AS
     SELECT
-        len(text) as text_length,
-        (max(unix)/1e6)::TIMESTAMP as last_recived,
-        count(*) as count
+        LEN(TEXT) AS text_length,
+        (MAX(unix)/1e6)::TIMESTAMP AS last_received,
+        COUNT(*) AS COUNT
     FROM raw_text
     GROUP BY text_length
 ```
@@ -218,7 +218,7 @@ change `deliver_policy` to `New`.
 ```sql
 CREATE TABLE raw_text (
     unix BIGINT,
-    text STRING
+    TEXT STRING
 ) WITH (
     'append_only' = 'true',
     'connectors' = '[{
@@ -244,11 +244,11 @@ CREATE TABLE raw_text (
     }]'
 );
 
-CREATE MATERIALIZED VIEW summary as
+CREATE MATERIALIZED VIEW summary AS
     SELECT
-        len(text) as text_length,
-        (max(unix)/1e6)::TIMESTAMP as last_recived,
-        count(*) as count
+        LEN(TEXT) AS text_length,
+        (MAX(unix)/1e6)::TIMESTAMP AS last_received,
+        COUNT(*) AS COUNT
     FROM raw_text
     GROUP BY text_length
 ```
@@ -260,7 +260,7 @@ Use `filter_subjects` to only consume messages from specific subjects `text.area
 ```sql
 CREATE TABLE raw_text (
     unix BIGINT,
-    text STRING
+    TEXT STRING
 ) WITH (
     'append_only' = 'true',
     'connectors' = '[{
@@ -287,11 +287,11 @@ CREATE TABLE raw_text (
     }]'
 );
 
-CREATE MATERIALIZED VIEW summary as
+CREATE MATERIALIZED VIEW summary AS
     SELECT
-        len(text) as text_length,
-        (max(unix)/1e6)::TIMESTAMP as last_recived,
-        count(*) as count
+        LEN(TEXT) AS text_length,
+        (MAX(unix)/1e6)::TIMESTAMP AS last_received,
+        COUNT(*) AS COUNT
     FROM raw_text
     GROUP BY text_length
 ```
@@ -303,7 +303,7 @@ You can use `"Original"` replay policy to replay production traffic in a test en
 ```sql
 CREATE TABLE raw_text (
     unix BIGINT,
-    text STRING
+    TEXT STRING
 ) WITH (
     'append_only' = 'true',
     'connectors' = '[{
@@ -330,11 +330,11 @@ CREATE TABLE raw_text (
     }]'
 );
 
-CREATE MATERIALIZED VIEW summary as
+CREATE MATERIALIZED VIEW summary AS
     SELECT
-        len(text) as text_length,
-        (max(unix)/1e6)::TIMESTAMP as last_recived,
-        count(*) as count
+        LEN(TEXT) AS text_length,
+        (MAX(unix)/1e6)::TIMESTAMP AS last_received,
+        COUNT(*) AS COUNT
     FROM raw_text
     GROUP BY text_length
 ```

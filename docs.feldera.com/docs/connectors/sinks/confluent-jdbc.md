@@ -132,7 +132,7 @@ Use the `kafka_output` transport with `avro` output format. Set the following Av
   view are part of the primary key.
 
 ```sql
-create view my_view
+CREATE VIEW my_view
 WITH (
   'connectors' = '[{
     "transport": {
@@ -152,7 +152,7 @@ WITH (
     }
   }]'
 )
-as select * from test_table;
+AS SELECT * FROM test_table;
 ```
 
 :::note

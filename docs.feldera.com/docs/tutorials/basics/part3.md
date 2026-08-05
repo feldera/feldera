@@ -34,10 +34,10 @@ tables in this example to a public S3 bucket:
 Modify your SQL table declarations adding the `WITH` clause with input connector configuration:
 
 ```sql
-create table VENDOR (
-    id bigint not null primary key,
-    name varchar,
-    address varchar
+CREATE TABLE vendor (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name VARCHAR,
+    address VARCHAR
 ) WITH ('connectors' = '[{
     "transport": {
         "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json"}
@@ -45,9 +45,9 @@ create table VENDOR (
     "format": { "name": "json" }
 }]');
 
-create table PART (
-    id bigint not null primary key,
-    name varchar
+CREATE TABLE part (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name VARCHAR
 ) WITH ('connectors' = '[{
     "transport": {
         "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"  }
@@ -55,10 +55,10 @@ create table PART (
     "format": { "name": "json" }
 }]');
 
-create table PRICE (
-    part bigint not null,
-    vendor bigint not null,
-    price integer
+CREATE TABLE price (
+    part BIGINT NOT NULL,
+    vendor BIGINT NOT NULL,
+    price INTEGER
 ) WITH ('connectors' = '[{
     "transport": {
         "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/price.json"  }
@@ -122,10 +122,10 @@ rpk -X brokers=127.0.0.1:19092 topic create price preferred_vendor
 Modify the `PRICE` table adding a Kafka input connector to read from the `price` topic:
 
 ```sql
-create table PRICE (
-    part bigint not null,
-    vendor bigint not null,
-    price integer
+CREATE TABLE price (
+    part BIGINT NOT NULL,
+    vendor BIGINT NOT NULL,
+    price INTEGER
 ) WITH ('connectors' = '[{
     "transport": {
         "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/price.json"  }
@@ -150,7 +150,7 @@ This table now ingests data from two heterogeneous sources: an S3 bucket and a K
 Add a Kafka connector to the `PREFERRED_VENDOR` view:
 
 ```sql
-create view PREFERRED_VENDOR (
+CREATE VIEW preferred_vendor (
     part_id,
     part_name,
     vendor_id,
@@ -169,23 +169,23 @@ WITH (
         }
     }]'
 )
-as
-    select
-        PART.id as part_id,
-        PART.name as part_name,
-        VENDOR.id as vendor_id,
-        VENDOR.name as vendor_name,
-        PRICE.price
-    from
-        PRICE,
-        PART,
-        VENDOR,
-        LOW_PRICE
-    where
-        PRICE.price = LOW_PRICE.price AND
-        PRICE.part = LOW_PRICE.part AND
-        PART.id = PRICE.part AND
-        VENDOR.id = PRICE.vendor;
+AS
+    SELECT
+        part.id AS part_id,
+        part.name AS part_name,
+        vendor.id AS vendor_id,
+        vendor.name AS vendor_name,
+        price.price
+    FROM
+        price,
+        part,
+        vendor,
+        low_price
+    WHERE
+        price.price = low_price.price AND
+        price.part = low_price.part AND
+        part.id = price.part AND
+        vendor.id = price.vendor;
 ```
 
 Here is the final version of the program with all connector:
@@ -194,10 +194,10 @@ Here is the final version of the program with all connector:
 <summary>Click to expand SQL code</summary>
 
 ```sql
-create table VENDOR (
-    id bigint not null primary key,
-    name varchar,
-    address varchar
+CREATE TABLE vendor (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name VARCHAR,
+    address VARCHAR
 ) WITH ('connectors' = '[{
     "transport": {
         "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json"}
@@ -205,9 +205,9 @@ create table VENDOR (
     "format": { "name": "json" }
 }]');
 
-create table PART (
-    id bigint not null primary key,
-    name varchar
+CREATE TABLE part (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name VARCHAR
 ) WITH ('connectors' = '[{
     "transport": {
         "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"  }
@@ -215,10 +215,10 @@ create table PART (
     "format": { "name": "json" }
 }]');
 
-create table PRICE (
-    part bigint not null,
-    vendor bigint not null,
-    price integer
+CREATE TABLE price (
+    part BIGINT NOT NULL,
+    vendor BIGINT NOT NULL,
+    price INTEGER
 ) WITH ('connectors' = '[{
     "transport": {
         "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/price.json"  }
@@ -238,14 +238,14 @@ create table PRICE (
 }]');
 
 -- Lowest available price for each part across all vendors.
-create view LOW_PRICE (
+CREATE VIEW low_price (
     part,
     price
-) as
-    select part, MIN(price) as price from PRICE group by part;
+) AS
+    SELECT part, MIN(price) AS price FROM price GROUP BY part;
 
 -- Lowest available price for each part along with part and vendor details.
-create view PREFERRED_VENDOR (
+CREATE VIEW preferred_vendor (
     part_id,
     part_name,
     vendor_id,
@@ -264,23 +264,23 @@ WITH (
         }
     }]'
 )
-as
-    select
-        PART.id as part_id,
-        PART.name as part_name,
-        VENDOR.id as vendor_id,
-        VENDOR.name as vendor_name,
-        PRICE.price
-    from
-        PRICE,
-        PART,
-        VENDOR,
-        LOW_PRICE
-    where
-        PRICE.price = LOW_PRICE.price AND
-        PRICE.part = LOW_PRICE.part AND
-        PART.id = PRICE.part AND
-        VENDOR.id = PRICE.vendor;
+AS
+    SELECT
+        part.id AS part_id,
+        part.name AS part_name,
+        vendor.id AS vendor_id,
+        vendor.name AS vendor_name,
+        price.price
+    FROM
+        price,
+        part,
+        vendor,
+        low_price
+    WHERE
+        price.price = low_price.price AND
+        price.part = low_price.part AND
+        part.id = price.part AND
+        vendor.id = price.vendor;
 ```
 </details>
 

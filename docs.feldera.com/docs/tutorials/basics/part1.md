@@ -21,54 +21,54 @@ create a new pipeline, called named "supply_chain", and paste the following code
 in the SQL editor:
 
 ```sql
-create table VENDOR (
-    id bigint not null primary key,
-    name varchar,
-    address varchar
-) with ('materialized' = 'true');
+CREATE TABLE vendor (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name VARCHAR,
+    address VARCHAR
+) WITH ('materialized' = 'true');
 
-create table PART (
-    id bigint not null primary key,
-    name varchar
-) with ('materialized' = 'true');
+CREATE TABLE part (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name VARCHAR
+) WITH ('materialized' = 'true');
 
-create table PRICE (
-    part bigint not null,
-    vendor bigint not null,
-    price integer
-) with ('materialized' = 'true');
+CREATE TABLE price (
+    part BIGINT NOT NULL,
+    vendor BIGINT NOT NULL,
+    price INTEGER
+) WITH ('materialized' = 'true');
 
 -- Lowest available price for each part across all vendors.
-create view LOW_PRICE (
+CREATE VIEW low_price (
     part,
     price
-) as
-    select part, MIN(price) as price from PRICE group by part;
+) AS
+    SELECT part, MIN(price) AS price FROM price GROUP BY part;
 
 -- Lowest available price for each part along with part and vendor details.
-create materialized view PREFERRED_VENDOR (
+CREATE MATERIALIZED VIEW preferred_vendor (
     part_id,
     part_name,
     vendor_id,
     vendor_name,
     price
-) as
-    select
-        PART.id as part_id,
-        PART.name as part_name,
-        VENDOR.id as vendor_id,
-        VENDOR.name as vendor_name,
-        PRICE.price
-    from
-        PRICE,
-        PART,
-        VENDOR,
-        LOW_PRICE
-    where
-        PRICE.price = LOW_PRICE.price AND
-        PRICE.part = LOW_PRICE.part AND
-        PART.id = PRICE.part AND
-        VENDOR.id = PRICE.vendor;
+) AS
+    SELECT
+        part.id AS part_id,
+        part.name AS part_name,
+        vendor.id AS vendor_id,
+        vendor.name AS vendor_name,
+        price.price
+    FROM
+        price,
+        part,
+        vendor,
+        low_price
+    WHERE
+        price.price = low_price.price AND
+        price.part = low_price.part AND
+        part.id = price.part AND
+        vendor.id = price.vendor;
 ```
 
 The first part of this listing declares inputs to the pipeline
@@ -107,7 +107,7 @@ When the pipeline is running it can process incoming changes. The changes can be
 Open the "Ad-hoc query" tab and paste the following statement in the input field:
 
 ```sql
-INSERT INTO VENDOR (id, name, address) VALUES
+INSERT INTO vendor (id, name, address) VALUES
 (1, 'Gravitech Dynamics', '222 Graviton Lane'),
 (2, 'HyperDrive Innovations', '456 Warp Way'),
 (3, 'DarkMatter Devices', '333 Singularity Street');
@@ -121,7 +121,7 @@ Ad-hoc queries can also be used to inspect current state of tables and views.
 Now let us check the state of the `VENDOR` table:
 
 ```sql
-SELECT * FROM VENDOR;
+SELECT * FROM vendor;
 ```
 
 ![Inserted vendor data](basics-part1-2.png)
@@ -129,14 +129,14 @@ SELECT * FROM VENDOR;
 Yep, everything is in order. Let us fill the other tables:
 
 ```sql
-INSERT INTO PART (id, name) VALUES
+INSERT INTO part (id, name) VALUES
 (1, 'Flux Capacitor'),
 (2, 'Warp Core'),
 (3, 'Kyber Crystal');
 ```
 
 ```sql
-INSERT INTO PRICE (part, vendor, price) VALUES
+INSERT INTO price (part, vendor, price) VALUES
 (1, 2, 10000),
 (2, 1, 15000),
 (3, 3, 9000);
@@ -151,7 +151,7 @@ Feldera is an incremental view maintenance (IVM) engine. This means that when ne
 When we inserted the new data into `VENDOR`, `PART` and `PRICE` tables, Feldera already computed the results for `LOW_PRICE` and `PREFERRED_VENDOR` views. We can inspect `PREFERRED_VENDOR`:
 
 ```sql
-SELECT part_name, vendor_name FROM PREFERRED_VENDOR;
+SELECT part_name, vendor_name FROM preferred_vendor;
 ```
 
 ![Initial preferred vendors](basics-part1-3.png)
@@ -173,7 +173,7 @@ Open the "Change Stream" tab and tick the checkboxes next to the `PRICE` table, 
 
 Switch back and execute one more ad-hoc query:
 ```sql
-INSERT INTO PRICE (part, vendor, price) VALUES
+INSERT INTO price (part, vendor, price) VALUES
 (2, 3, 12000);
 ```
 
@@ -188,7 +188,7 @@ As was the case here, Feldera incrementally updates the views by deleting old re
 If we inspect the `PREFERRED_VENDOR` again we will see that the entry for the "Warp Core" has indeed been replaced as a result of an incremental update:
 
 ```sql
-SELECT part_name, vendor_name FROM PREFERRED_VENDOR;
+SELECT part_name, vendor_name FROM preferred_vendor;
 ```
 
 Shut down the pipeline by clicking the stop icon <icon icon="bx:stop" /> to forget all its ingested data, computed view results and any accumulated internal state.

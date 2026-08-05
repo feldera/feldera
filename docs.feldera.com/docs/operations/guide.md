@@ -13,7 +13,7 @@ Unfortunately this makes it impossible to run simple SQL testing
 code such as:
 
 ```sql
-CREATE MATERIALIZED VIEW V AS SELECT 1 + 2;
+CREATE MATERIALIZED VIEW v AS SELECT 1 + 2;
 ```
 
 The workaround this limitation is to have at least one table in each
@@ -22,7 +22,7 @@ of an output.  You can use the [datagen
 connector](/connectors/sources/datagen.md) to populate this table:
 
 ```sql
-CREATE TABLE T(c BOOLEAN) WITH (
+CREATE TABLE t(c BOOLEAN) WITH (
   'connectors' = '[{
     "name": "dummy",
     "transport": {
@@ -36,7 +36,7 @@ CREATE TABLE T(c BOOLEAN) WITH (
   }]'
 );
 
-CREATE MATERIALIZED VIEW V AS SELECT 1 + 2 FROM T;
+CREATE MATERIALIZED VIEW v AS SELECT 1 + 2 FROM t;
 ```
 
 ## Diagnosing Performance Issues
@@ -84,7 +84,7 @@ The support bundle has the following content:
 **Solution**: This usually happens when the Delta Table uses features unsupported by `delta-rs`, such as liquid clustering. Check the table properties and set the checkpoint policy to "classic":
 
 ```sql
-ALTER TABLE my_table SET TBLPROPERTIES (
+ALTER TABLE my_table SET tblproperties (
   'checkpointPolicy' = 'classic'
 )
 ```

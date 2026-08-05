@@ -11,7 +11,7 @@ specify the nullability of the elements of an `ARRAY`.  The compiler
 will always assume that array elements are nullable:
 
 ```sql
-CREATE TABLE T(a INT ARRAY);
+CREATE TABLE t(a INT ARRAY);
 ```
 
 Table `T` will have a single column `a` whose values are nullable
@@ -36,24 +36,24 @@ duplicated values, the resulting table will be a multiset.
 The `UNNEST` operator can be used in self-joins as follows:
 
 ```sql
-CREATE TABLE data(CITIES VARCHAR ARRAY, COUNTRY VARCHAR);
+CREATE TABLE data(cities VARCHAR ARRAY, country VARCHAR);
 
-CREATE VIEW V AS SELECT city, country
+CREATE VIEW v AS SELECT city, country
 FROM data, UNNEST(cities) AS t (city);
 ```
 
 The previous query is a shortcut for a CROSS-JOIN query:
 
 ```sql
-CREATE VIEW V AS SELECT city, data.country
+CREATE VIEW v AS SELECT city, data.country
 FROM data CROSS JOIN UNNEST(data.cities) AS city;
 ```
 
 `CROSS APPLY` is another spelling for the same query:
 
 ```sql
-CREATE VIEW V AS SELECT city, data.country
-FROM data CROSS APPLY UNNEST(data.cities) AS city;
+CREATE VIEW v AS SELECT city, data.country
+FROM data CROSS apply UNNEST(data.cities) AS city;
 ```
 
 `UNNEST` applied to a `NULL` value returns an empty table.  As a
@@ -67,7 +67,7 @@ rows where the array is `NULL`, substitute a one-element array in the
 
 ```sql
 -- A row with a NULL cities array produces one row with a NULL city
-CREATE VIEW V AS SELECT city, country
+CREATE VIEW v AS SELECT city, country
 FROM data, UNNEST(COALESCE(cities, ARRAY[NULL])) AS t (city);
 ```
 

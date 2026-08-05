@@ -75,14 +75,14 @@ psql postgresql://postgres:1234@127.0.0.1:7373/postgres
 Next we create a table `people` with columns `id`, `name`, and `age` by pasting the following SQL in `psql`:
 
 ```sql
-create table people (
-    id varchar(36),
-    name varchar(36),
-    age bigint
+CREATE TABLE people (
+    id VARCHAR(36),
+    name VARCHAR(36),
+    age BIGINT
 );
 
-insert into people (id, name, age)
-values
+INSERT INTO people (id, name, age)
+VALUES
     ('11111111-1111-1111-1111-111111111111', 'Alice', 30),
     ('22222222-2222-2222-2222-222222222222', 'Bob', 25),
     ('33333333-3333-3333-3333-333333333333', 'Charlie', 40);
@@ -91,11 +91,11 @@ values
 We can load this table from PostgreSQL into Feldera using the `postgres_input` connector:
 
 ```sql
-create table people (
-    id varchar(36),
-    name varchar(36),
-    the_age bigint,
-    extra bigint not null
+CREATE TABLE people (
+    id VARCHAR(36),
+    name VARCHAR(36),
+    the_age BIGINT,
+    extra BIGINT NOT NULL
 ) WITH (
     'materialized' = 'true',
     'connectors' = '[{
@@ -128,8 +128,8 @@ CREATE TABLE all_types_example (
     my_char_array        CHAR[],
     my_varchar           VARCHAR(50),
     my_varchar_array     VARCHAR(50)[],
-    my_name              NAME,
-    my_name_array        NAME[],
+    my_name              name,
+    my_name_array        name[],
     my_date              DATE,
     my_date_array        DATE[],
     my_time              TIME,
@@ -196,7 +196,7 @@ VALUES (
     '{TRUE, FALSE, TRUE}',
 
     -- BYTEA, BYTEA[]
-    E'\\xDEADBEEF',
+    e'\\xDEADBEEF',
     '{"\\\\xABCD","\\\\x1234"}',
 
     -- CHAR, CHAR[]
@@ -327,10 +327,10 @@ If `ssl_ca_pem` is not specified, the connection will default to **plaintext**.
 Example:
 
 ```sql
-create table people (
-    id varchar(36),
-    name varchar(36),
-    age bigint
+CREATE TABLE people (
+    id VARCHAR(36),
+    name VARCHAR(36),
+    age BIGINT
 ) WITH (
     'materialized' = 'true',
     'connectors' = '[{

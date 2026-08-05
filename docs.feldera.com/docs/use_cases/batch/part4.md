@@ -56,7 +56,7 @@ unique key columns so that updates and deletions in PostgreSQL can be tracked
 correctly:
 
 ```sql
-create index q1_idx on q1(l_returnflag, l_linestatus);
+CREATE INDEX q1_idx ON q1(l_returnflag, l_linestatus);
 ```
 
 :::important
@@ -70,7 +70,7 @@ See docs: [PostgreSQL output connector](/connectors/sinks/postgresql).
 
 ```sql
 -- Feldera SQL
-create materialized view q1 with (
+CREATE MATERIALIZED VIEW q1 WITH (
     'connectors' = '[{
         "index": "q1_idx",
         "transport": {
@@ -81,25 +81,25 @@ create materialized view q1 with (
             }
         }
     }]'
-) as select
+) AS SELECT
 	l_returnflag,
 	l_linestatus,
-	sum(l_quantity) as sum_qty,
-	sum(l_extendedprice) as sum_base_price,
-	sum(l_extendedprice * (1 - l_discount)) as sum_disc_price,
-	sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge,
-	avg(l_quantity) as avg_qty,
-	avg(l_extendedprice) as avg_price,
-	avg(l_discount) as avg_disc,
-	count(*) as count_order
-from
+	SUM(l_quantity) AS sum_qty,
+	SUM(l_extendedprice) AS sum_base_price,
+	SUM(l_extendedprice * (1 - l_discount)) AS sum_disc_price,
+	SUM(l_extendedprice * (1 - l_discount) * (1 + l_tax)) AS sum_charge,
+	AVG(l_quantity) AS avg_qty,
+	AVG(l_extendedprice) AS avg_price,
+	AVG(l_discount) AS avg_disc,
+	COUNT(*) AS count_order
+FROM
 	lineitem
-where
-	l_shipdate <= date '1998-12-01' - interval '90' day
-group by
+WHERE
+	l_shipdate <= DATE '1998-12-01' - INTERVAL '90' DAY
+GROUP BY
 	l_returnflag,
 	l_linestatus
-order by
+ORDER BY
 	l_returnflag,
 	l_linestatus;
 ```
@@ -116,7 +116,7 @@ push its output to the target table defined in PostgreSQL. We can verify that
 data is flowing correctly by querying the target table:
 
 ```sql
-SELECT * FROM Q1;
+SELECT * FROM q1;
 ```
 
 **Result:**
@@ -136,7 +136,7 @@ For example, we can publish the output of `q2` to a Kafka topic:
 
 ```sql
 -- Feldera SQL
-create materialized view q2 with (
+CREATE MATERIALIZED VIEW q2 WITH (
   'connectors' = '[{
     "transport": {
       "name": "kafka_output",
@@ -153,8 +153,8 @@ create materialized view q2 with (
       }
     }
   }]'
-) as
-select ...
+) AS
+SELECT ...
 ```
 
 ## Web Apps / HTTP

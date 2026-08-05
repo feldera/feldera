@@ -27,7 +27,7 @@ on one of its primary key columns—in that case, you must specify the `material
 To declare a materialized view, use the `CREATE MATERIALIZED VIEW` syntax:
 
 ```sql
-CREATE MATERIALIZED VIEW my_view as SELECT * from my_table;
+CREATE MATERIALIZED VIEW my_view AS SELECT * FROM my_table;
 ```
 
 These declarations instruct Feldera to maintain a complete snapshot of the table or view.

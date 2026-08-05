@@ -107,10 +107,10 @@ their types.  Here is an example:
 
 ```sql
 CREATE TABLE empsalary (
-    depname varchar not null PRIMARY KEY,
-    empno bigint FOREIGN KEY REFERENCES employee(empid),
-    salary int,
-    enroll_date date
+    depname VARCHAR NOT NULL PRIMARY KEY,
+    empno BIGINT FOREIGN KEY REFERENCES employee(empid),
+    salary INT,
+    enroll_date DATE
 );
 ```
 
@@ -121,10 +121,10 @@ string.  Here is an example:
 
 ```sql
 CREATE TABLE empsalary (
-    depname varchar,
-    empno bigint,
-    salary int,
-    enroll_date date
+    depname VARCHAR,
+    empno BIGINT,
+    salary INT,
+    enroll_date DATE
 ) WITH (
     'materialized' = 'true'
 );
@@ -146,7 +146,7 @@ Kafka connector, the following expression can be used to extract the
 kafka topic name as a column default value:
 
 ```sql
-CREATE TABLE T(
+CREATE TABLE t(
   kafka_topic VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['kafka_topic'] AS VARCHAR),
   ...
 )
@@ -255,7 +255,7 @@ https://docs.feldera.com/pipelines/modifying/#limitation-3-table-evolution-is-no
 Example:
 
 ```sql
-CREATE TABLE T(x INT, unused INT DEFAULT 0)
+CREATE TABLE t(x INT, unused INT DEFAULT 0)
 WITH ('skip_unused_columns' = 'true');
 ```
 
@@ -590,9 +590,9 @@ Feldera than in standard databases; the statement is used to specify
 fragment:
 
 ```sql
-CREATE VIEW V AS SELECT id, ... FROM ...;
+CREATE VIEW v AS SELECT id, ... FROM ...;
 
-CREATE INDEX v_index ON V(id);
+CREATE INDEX v_index ON v(id);
 ```
 
 The `CREATE INDEX` statement creates an index named `v_index` over the
@@ -655,30 +655,30 @@ to `GROUP BY`.
 Example using `GROUPING`:
 
 ```sql
-select deptno, job, count(*) as c, grouping(deptno) as d,
-  grouping(job) j, grouping(deptno, job) as x
-from emp
-group by cube(deptno, job);
+SELECT deptno, job, COUNT(*) AS c, GROUPING(deptno) AS d,
+  GROUPING(job) j, GROUPING(deptno, job) AS x
+FROM emp
+GROUP BY CUBE(deptno, job);
 +--------+-----------+----+---+---+---+
-| DEPTNO | JOB       | C  | D | J | X |
+| deptno | job       | c  | d | j | x |
 +--------+-----------+----+---+---+---+
-|     10 | CLERK     |  1 | 0 | 0 | 0 |
-|     10 | MANAGER   |  1 | 0 | 0 | 0 |
-|     10 | PRESIDENT |  1 | 0 | 0 | 0 |
+|     10 | clerk     |  1 | 0 | 0 | 0 |
+|     10 | manager   |  1 | 0 | 0 | 0 |
+|     10 | president |  1 | 0 | 0 | 0 |
 |     10 |           |  3 | 0 | 1 | 1 |
-|     20 | ANALYST   |  2 | 0 | 0 | 0 |
-|     20 | CLERK     |  2 | 0 | 0 | 0 |
-|     20 | MANAGER   |  1 | 0 | 0 | 0 |
+|     20 | analyst   |  2 | 0 | 0 | 0 |
+|     20 | clerk     |  2 | 0 | 0 | 0 |
+|     20 | manager   |  1 | 0 | 0 | 0 |
 |     20 |           |  5 | 0 | 1 | 1 |
-|     30 | CLERK     |  1 | 0 | 0 | 0 |
-|     30 | MANAGER   |  1 | 0 | 0 | 0 |
-|     30 | SALESMAN  |  4 | 0 | 0 | 0 |
+|     30 | clerk     |  1 | 0 | 0 | 0 |
+|     30 | manager   |  1 | 0 | 0 | 0 |
+|     30 | salesman  |  4 | 0 | 0 | 0 |
 |     30 |           |  6 | 0 | 1 | 1 |
-|        | ANALYST   |  2 | 1 | 0 | 2 |
-|        | CLERK     |  4 | 1 | 0 | 2 |
-|        | MANAGER   |  3 | 1 | 0 | 2 |
-|        | PRESIDENT |  1 | 1 | 0 | 2 |
-|        | SALESMAN  |  4 | 1 | 0 | 2 |
+|        | analyst   |  2 | 1 | 0 | 2 |
+|        | clerk     |  4 | 1 | 0 | 2 |
+|        | manager   |  3 | 1 | 0 | 2 |
+|        | president |  1 | 1 | 0 | 2 |
+|        | salesman  |  4 | 1 | 0 | 2 |
 |        |           | 14 | 1 | 1 | 3 |
 +--------+-----------+----+---+---+---+
 ```
@@ -745,8 +745,8 @@ the right table are null-padded.
 
 ```sql
 SELECT *
-FROM left_table LEFT ASOF JOIN right_table
-MATCH_CONDITION ( left_table.timecol >= right_table.timecol )
+FROM left_table LEFT asof JOIN right_table
+match_condition ( left_table.timecol >= right_table.timecol )
 ON left_table.col = right_table.col
 ```
 

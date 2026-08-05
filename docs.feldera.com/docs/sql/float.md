@@ -60,7 +60,7 @@ digits`.`digits[`e`[`+-`]digits]
 
 Alternatively, you can use an explicit cast:
 
-```SQL
+```sql
 REAL '1.23'  -- string style
 1.23::REAL   -- PostgreSQL style
 ```

@@ -283,10 +283,10 @@ sequence of zero or more characters.
 Some examples:
 
 ```sql
-'abc' LIKE 'abc'    true
-'abc' LIKE 'a%'     true
-'abc' LIKE '_b_'    true
-'abc' LIKE 'c'      false
+'abc' LIKE 'abc'    TRUE
+'abc' LIKE 'a%'     TRUE
+'abc' LIKE '_b_'    TRUE
+'abc' LIKE 'c'      FALSE
 ```
 
 `LIKE` pattern matching always covers the entire string. Therefore, if
@@ -305,15 +305,15 @@ pattern characters `_` or `%`.
 Some examples where the escape character is changed to `#`:
 
 ```sql
-SELECT 'hawkeye' LIKE 'h%' ESCAPE '#'          true
-SELECT 'hawkeye' NOT LIKE 'h%' ESCAPE '#'      false
-SELECT 'h%' LIKE 'h#%' ESCAPE '#'              true
-SELECT 'h%' NOT LIKE 'h#%' ESCAPE '#'          false
-SELECT 'h%wkeye' LIKE 'h#%' ESCAPE '#'         false
-SELECT 'h%wkeye' NOT LIKE 'h#%' ESCAPE '#'     true
-SELECT 'h%wkeye' LIKE 'h#%%' ESCAPE '#'        true
-SELECT 'h%wkeye' NOT LIKE 'h#%%' ESCAPE '#'    false
-SELECT 'h%awkeye' LIKE 'h#%a%k%e' ESCAPE '#'   true
+SELECT 'hawkeye' LIKE 'h%' ESCAPE '#'          TRUE
+SELECT 'hawkeye' NOT LIKE 'h%' ESCAPE '#'      FALSE
+SELECT 'h%' LIKE 'h#%' ESCAPE '#'              TRUE
+SELECT 'h%' NOT LIKE 'h#%' ESCAPE '#'          FALSE
+SELECT 'h%wkeye' LIKE 'h#%' ESCAPE '#'         FALSE
+SELECT 'h%wkeye' NOT LIKE 'h#%' ESCAPE '#'     TRUE
+SELECT 'h%wkeye' LIKE 'h#%%' ESCAPE '#'        TRUE
+SELECT 'h%wkeye' NOT LIKE 'h#%%' ESCAPE '#'    FALSE
+SELECT 'h%awkeye' LIKE 'h#%a%k%e' ESCAPE '#'   TRUE
 ```
 
 When either argument of `LIKE`, `NOT LIKE` is `NULL`, the result is `NULL`.
@@ -334,16 +334,16 @@ sign (`%`) matches any sequence of zero or more characters.
 Some examples:
 
 ```sql
-SELECT 'hawkeye' ILIKE 'h%'        true
-SELECT 'hawkeye' NOT ILIKE 'h%'    false
-SELECT 'hawkeye' ILIKE 'H%'        true
-SELECT 'hawkeye' NOT ILIKE 'H%'    false
-SELECT 'hawkeye' ILIKE 'H%Eye'     true
-SELECT 'hawkeye' NOT ILIKE 'H%Eye' false
-SELECT 'Hawkeye' ILIKE 'h%'        true
-SELECT 'Hawkeye' NOT ILIKE 'h%'    false
-SELECT 'ABC'     ILIKE '_b_'       true
-SELECT 'ABC'     NOT ILIKE '_b_'   false
+SELECT 'hawkeye' ILIKE 'h%'        TRUE
+SELECT 'hawkeye' NOT ILIKE 'h%'    FALSE
+SELECT 'hawkeye' ILIKE 'H%'        TRUE
+SELECT 'hawkeye' NOT ILIKE 'H%'    FALSE
+SELECT 'hawkeye' ILIKE 'H%Eye'     TRUE
+SELECT 'hawkeye' NOT ILIKE 'H%Eye' FALSE
+SELECT 'Hawkeye' ILIKE 'h%'        TRUE
+SELECT 'Hawkeye' NOT ILIKE 'h%'    FALSE
+SELECT 'ABC'     ILIKE '_b_'       TRUE
+SELECT 'ABC'     NOT ILIKE '_b_'   FALSE
 ```
 When either argument of `ILIKE`, `NOT ILIKE` is `NULL`, the result is `NULL`.
 

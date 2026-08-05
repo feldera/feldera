@@ -47,7 +47,7 @@ as JSON `null` values or by simply omitting the columns whose value is `NULL`.
 For example, given the following table declaration
 
 ```sql
-create table json_test (
+CREATE TABLE json_test (
     b BOOLEAN,
     i INTEGER,
     d DOUBLE,
@@ -303,10 +303,10 @@ When adding a new input or output connector on a table or view,
 the data format is specified in the `format` field of the connector configuration:
 
 ```sql
-create table PART (
-  id bigint not null primary key,
-  name varchar
-) with (
+CREATE TABLE part (
+  id BIGINT NOT NULL PRIMARY KEY,
+  name VARCHAR
+) WITH (
   'connectors' = '[{
     "transport": {
         "name": "url_input",
