@@ -1334,6 +1334,32 @@ where
     }
 }
 
+#[derive(Clone)]
+#[doc(hidden)]
+#[allow(clippy::type_complexity)]
+pub struct QuadSemigroup<T, R, V, W, TS, RS, VS, WS>(PhantomData<(T, R, V, W, TS, RS, VS, WS)>);
+
+#[doc(hidden)]
+#[allow(clippy::type_complexity)]
+impl<T, R, V, W, TS, RS, VS, WS> Semigroup<Tup4<T, R, V, W>>
+    for QuadSemigroup<T, R, V, W, TS, RS, VS, WS>
+where
+    TS: Semigroup<T>,
+    RS: Semigroup<R>,
+    VS: Semigroup<V>,
+    WS: Semigroup<W>,
+{
+    #[doc(hidden)]
+    fn combine(left: &Tup4<T, R, V, W>, right: &Tup4<T, R, V, W>) -> Tup4<T, R, V, W> {
+        Tup4::new(
+            TS::combine(&left.0, &right.0),
+            RS::combine(&left.1, &right.1),
+            VS::combine(&left.2, &right.2),
+            WS::combine(&left.3, &right.3),
+        )
+    }
+}
+
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct ConcatSemigroup<V>(PhantomData<V>);
