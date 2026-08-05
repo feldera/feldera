@@ -728,6 +728,7 @@ pub fn generate_program_info(
                 | TransportConfig::S3Input(_)
                 | TransportConfig::DeltaTableInput(_)
                 | TransportConfig::PostgresInput(_)
+                | TransportConfig::PostgresCdcInput(_)
                 | TransportConfig::IcebergInput(_)
                 | TransportConfig::Datagen(_)
                 | TransportConfig::Nexmark(_)

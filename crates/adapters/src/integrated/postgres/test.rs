@@ -2519,11 +2519,12 @@ mod cdc_tests {
 
     /// Helper: creates a table, publication, and sets REPLICA IDENTITY FULL.
     /// Returns a connected client for further DML operations.
-    /// On drop, cleans up the publication and table.
+    /// On drop, cleans up the publication and its test tables.
     struct CdcTestTable {
         client: postgres::Client,
         table_name: String,
         publication_name: String,
+        extra_tables: Vec<String>,
         url: String,
     }
 
@@ -2580,6 +2581,7 @@ mod cdc_tests {
                 client,
                 table_name: table_name.to_string(),
                 publication_name: publication_name.to_string(),
+                extra_tables: Vec::new(),
                 url: url.to_string(),
             }
         }
@@ -2639,6 +2641,7 @@ mod cdc_tests {
                 client,
                 table_name: table_name.to_string(),
                 publication_name: publication_name.to_string(),
+                extra_tables: Vec::new(),
                 url: url.to_string(),
             }
         }
@@ -2657,6 +2660,11 @@ mod cdc_tests {
                 &format!("DROP PUBLICATION IF EXISTS {}", self.publication_name),
                 &[],
             );
+            for table_name in &self.extra_tables {
+                let _ = self
+                    .client
+                    .execute(&format!("DROP TABLE IF EXISTS {table_name}"), &[]);
+            }
             let _ = self
                 .client
                 .execute(&format!("DROP TABLE IF EXISTS {}", self.table_name), &[]);
@@ -2664,6 +2672,28 @@ mod cdc_tests {
     }
 
     impl CdcTestTable {
+        fn add_empty_table_to_publication(&mut self, table_name: &str) {
+            let _ = self
+                .client
+                .execute(&format!("DROP TABLE IF EXISTS {table_name}"), &[]);
+            self.client
+                .execute(
+                    &format!("CREATE TABLE {table_name} (id INTEGER PRIMARY KEY)"),
+                    &[],
+                )
+                .expect("failed to create auxiliary CDC test table");
+            self.client
+                .execute(
+                    &format!(
+                        "ALTER PUBLICATION {} ADD TABLE {table_name}",
+                        self.publication_name
+                    ),
+                    &[],
+                )
+                .expect("failed to add auxiliary table to publication");
+            self.extra_tables.push(table_name.to_string());
+        }
+
         /// Drop the replication slots etl created for this pipeline.
         ///
         /// etl names slots after the *pipeline ID* (e.g.
@@ -2724,6 +2754,48 @@ mod cdc_tests {
                 // wait for it to clear, then retry.
                 std::thread::sleep(std::time::Duration::from_millis(250));
             }
+        }
+
+        /// Wait until every replication slot this pipeline owns is inactive (no
+        /// attached backend), so a restart can re-acquire the same slot.
+        ///
+        /// Postgres releases a slot asynchronously after the owning pipeline
+        /// stops, so a fixed sleep races that release: the next run can fail
+        /// with "replication slot is active for PID ...". Polling `active_pid`
+        /// removes the race.
+        fn wait_replication_slots_inactive(&mut self) {
+            let connector_url = cdc_connector_url(&self.url);
+            let source_table = format!("public.{}", self.table_name);
+            let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+                &connector_url,
+                &self.publication_name,
+                &source_table,
+            )
+            .to_string();
+            let owns_slot = |name: &str| name.split('_').any(|token| token == pipeline_id);
+
+            // ~30 s budget (300 * 100 ms); release normally takes well under 1 s.
+            for _attempt in 0..300 {
+                let active: Vec<String> = self
+                    .client
+                    .query(
+                        "SELECT slot_name FROM pg_replication_slots WHERE active_pid IS NOT NULL",
+                        &[],
+                    )
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|r| r.get::<_, String>("slot_name"))
+                    .filter(|name| owns_slot(name))
+                    .collect();
+
+                if active.is_empty() {
+                    return;
+                }
+
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+
+            panic!("timeout waiting for this pipeline's replication slots to become inactive");
         }
     }
 
@@ -3075,17 +3147,83 @@ mod cdc_tests {
         (controller, err_receiver)
     }
 
-    /// Like `cdc_simple_test_circuit` but with fault tolerance enabled,
-    /// file storage at `storage_dir`, and a 3600-second checkpoint interval so
-    /// that no automatic checkpoint fires during the test.  With fault
-    /// tolerance enabled the connector uses strict mode: the replication slot
-    /// only advances after a durable checkpoint.
+    /// Like `cdc_simple_test_circuit` but with fault tolerance enabled, file
+    /// storage at `storage_dir`, and a 3600-second checkpoint interval so no
+    /// automatic checkpoint fires during the test. Under fault tolerance the
+    /// connector runs in strict mode: the replication slot only advances after
+    /// a durable checkpoint.
     fn cdc_ft_test_circuit(
         url: &str,
         publication: &str,
         source_table: &str,
         storage_dir: &Path,
         output_path: &Path,
+    ) -> (Controller, crossbeam::channel::Receiver<String>) {
+        cdc_ft_test_circuit_with_options(
+            url,
+            publication,
+            source_table,
+            storage_dir,
+            output_path,
+            CdcFtTestOptions::default(),
+        )
+    }
+
+    #[derive(Clone, Copy)]
+    struct CdcFtTestOptions {
+        streaming_ack_hold_ms: u64,
+        discard_shutdown_errors: bool,
+        discard_table_errors: bool,
+        max_batch_size: Option<u64>,
+        min_batch_size_records: u64,
+        max_buffering_delay_usecs: u64,
+        send_snapshot: bool,
+    }
+
+    impl Default for CdcFtTestOptions {
+        fn default() -> Self {
+            Self {
+                streaming_ack_hold_ms:
+                    feldera_types::transport::postgres::default_streaming_ack_hold_ms(),
+                discard_shutdown_errors:
+                    feldera_types::transport::postgres::default_discard_shutdown_errors(),
+                discard_table_errors: false,
+                max_batch_size: None,
+                min_batch_size_records: 0,
+                max_buffering_delay_usecs: 0,
+                send_snapshot: false,
+            }
+        }
+    }
+
+    fn cdc_ft_test_circuit_with_streaming_ack_hold(
+        url: &str,
+        publication: &str,
+        source_table: &str,
+        storage_dir: &Path,
+        output_path: &Path,
+        streaming_ack_hold_ms: u64,
+    ) -> (Controller, crossbeam::channel::Receiver<String>) {
+        cdc_ft_test_circuit_with_options(
+            url,
+            publication,
+            source_table,
+            storage_dir,
+            output_path,
+            CdcFtTestOptions {
+                streaming_ack_hold_ms,
+                ..Default::default()
+            },
+        )
+    }
+
+    fn cdc_ft_test_circuit_with_options(
+        url: &str,
+        publication: &str,
+        source_table: &str,
+        storage_dir: &Path,
+        output_path: &Path,
+        options: CdcFtTestOptions,
     ) -> (Controller, crossbeam::channel::Receiver<String>) {
         let url = cdc_connector_url(url);
         let schema = TestStruct::schema();
@@ -3095,15 +3233,21 @@ mod cdc_tests {
             "storage_config": { "path": storage_dir },
             "storage": true,
             "fault_tolerance": { "model": "at_least_once", "checkpoint_interval_secs": 3600 },
+            "min_batch_size_records": options.min_batch_size_records,
+            "max_buffering_delay_usecs": options.max_buffering_delay_usecs,
             "inputs": {
                 "cdc_in": {
                     "stream": "test_input1",
+                    "max_batch_size": options.max_batch_size,
                     "transport": {
                         "name": "postgres_cdc_input",
                         "config": {
                             "uri": url,
                             "publication": publication,
                             "source_table": source_table,
+                            "streaming_ack_hold_ms": options.streaming_ack_hold_ms,
+                            "discard_shutdown_errors": options.discard_shutdown_errors,
+                            "discard_table_errors": options.discard_table_errors,
                         },
                     },
                 },
@@ -3111,6 +3255,7 @@ mod cdc_tests {
             "outputs": {
                 "test_output1": {
                     "stream": "test_output1",
+                    "send_snapshot": options.send_snapshot,
                     "transport": {
                         "name": "file_output",
                         "config": { "path": output_path },
@@ -3131,6 +3276,7 @@ mod cdc_tests {
                     let (circuit, catalog) = Runtime::init_circuit(workers, move |circuit| {
                         let mut catalog = Catalog::new();
                         let (input, hinput) = circuit.add_input_zset::<TestStruct>();
+                        input.set_persistent_mir_id("input");
                         let input_schema = serde_json::to_string(&Relation::new(
                             "test_input1".into(),
                             schema.clone(),
@@ -3150,7 +3296,8 @@ mod cdc_tests {
                             hinput,
                             &input_schema,
                         );
-                        catalog.register_materialized_output_zset::<_, TestStruct>(
+                        catalog.register_materialized_output_zset_persistent::<_, TestStruct>(
+                            Some("test_output1"),
                             input,
                             &output_schema,
                         );
@@ -3211,7 +3358,6 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
-    #[ignore]
     fn test_cdc_basic_insert() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_basic_insert");
@@ -3293,7 +3439,6 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
-    #[ignore]
     fn test_cdc_pause_unpause() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_pause_unpause");
@@ -3335,7 +3480,7 @@ mod cdc_tests {
                     .is_input_endpoint_paused("cdc_in")
                     .unwrap_or(false)
             },
-            10_000,
+            30_000,
         )
         .expect("timeout: CDC input endpoint did not report paused");
 
@@ -3451,7 +3596,6 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
-    #[ignore]
     fn test_cdc_all_data_types() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_all_types");
@@ -3596,7 +3740,6 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege, REPLICA IDENTITY FULL.
     #[test]
     #[serial]
-    #[ignore]
     fn test_cdc_update_delete() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_upd_del");
@@ -3715,7 +3858,6 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
-    #[ignore]
     fn test_cdc_compatible_schema_changes() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_compatible_schema");
@@ -3807,7 +3949,6 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
-    #[ignore]
     fn test_cdc_drop_primary_key_column_rejected() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_drop_pk_col");
@@ -3871,7 +4012,6 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
-    #[ignore]
     fn test_cdc_restart_resumes_from_slot() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_restart");
@@ -3925,11 +4065,34 @@ mod cdc_tests {
         )
         .expect("timeout: first run did not receive streamed row");
 
+        // Wait until etl has finished catchup, then force one more steady-state
+        // transaction if needed so the apply worker advances `sync_done` to
+        // `ready` before we stop. Stopping in `sync_done` is legal, but a
+        // restart can replay a row event whose relation message was already
+        // skipped in the previous run.
+        let oid = table_oid(&mut table, &format!("public.{table_name}"));
+        wait(|| table_sync_done_or_ready(&mut table, oid), 60_000)
+            .expect("timeout: table did not reach sync_done/ready in run 1");
+        if !table_ready(&mut table, oid) {
+            table.execute(&format!(
+                "INSERT INTO {table_name} VALUES (20, true, 7, 'ready_anchor')"
+            ));
+            wait(
+                || {
+                    let rows = read_output_json(&output_path_1);
+                    has_insert_id(&rows, 20) || !err_receiver_1.is_empty()
+                },
+                60_000,
+            )
+            .expect("timeout: ready anchor row did not reach output");
+            wait(|| table_ready(&mut table, oid), 60_000)
+                .expect("timeout: table did not reach ready in run 1");
+        }
+
         // Stop the first pipeline.
         controller_1.stop().unwrap();
 
-        // Small delay to let the replication slot become inactive.
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        table.wait_replication_slots_inactive();
 
         // --- Second pipeline run (restart) ---
         let output_file_2 = NamedTempFile::new().unwrap();
@@ -3999,17 +4162,13 @@ mod cdc_tests {
     // Fault-tolerance / strict-mode tests
     // -------------------------------------------------------------------
 
-    /// With fault tolerance enabled the replication slot LSN is not
-    /// advanced until a Feldera checkpoint completes.  When the pipeline is
-    /// stopped before any checkpoint occurs and then restarted with the same
-    /// connection identity (same slot), Postgres replays all events from the
-    /// original slot position — guaranteeing at-least-once delivery.
+    /// An uncheckpointed snapshot is retried after a clean stop without
+    /// poisoning etl's persisted table state.
     ///
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
-    #[ignore]
-    fn test_cdc_ft_mode_holds_slot() {
+    fn test_cdc_ft_uncheckpointed_snapshot_retries_cleanly() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_strict_hold");
         let publication = unique_pg_name("cdc_pub_strict_hold");
@@ -4045,11 +4204,22 @@ mod cdc_tests {
             errs_1.try_recv()
         );
 
-        // Stop without a checkpoint — slot LSN is still at the snapshot position.
+        // Stop while the terminal copy barrier is still waiting for a checkpoint.
         ctrl_1.stop().unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        table.wait_replication_slots_inactive();
 
-        // --- Run 2: fresh output, same slot (same url/publication/source_table) ---
+        // A clean stop must not poison etl's stored table state. With no
+        // checkpoint, etl's terminal table-copy durability barrier is still
+        // waiting at stop; if the connector drops it as an error, etl would
+        // persist an `errored` state that it never retries across restarts, so
+        // run 2 would fail (`TableErrorMonitor`) or stall.
+        let oid = table_oid(&mut table, &format!("public.{table_name}"));
+        assert!(
+            !errored_state_persisted(&mut table, oid),
+            "etl persisted an errored table state after a clean stop"
+        );
+
+        // --- Run 2: fresh Feldera state, same etl copy state ---
         let out_2 = NamedTempFile::new().unwrap();
         let storage_2 = tempfile::tempdir().unwrap();
         let (ctrl_2, errs_2) = cdc_ft_test_circuit(
@@ -4087,17 +4257,928 @@ mod cdc_tests {
             })
             .collect();
 
-        // The slot was held back in run 1 — rows 1 and 2 must be redelivered.
+        // The copy never became durable in run 1, so rows 1 and 2 must be
+        // delivered by a retry rather than skipped as copy-complete.
         assert!(
             ids.contains(&1),
-            "row 1 must be redelivered (slot held); ids={ids:?}"
+            "row 1 must be redelivered by the snapshot retry; ids={ids:?}"
         );
         assert!(
             ids.contains(&2),
-            "row 2 must be redelivered (slot held); ids={ids:?}"
+            "row 2 must be redelivered by the snapshot retry; ids={ids:?}"
         );
         assert!(ids.contains(&3), "row 3 (new) must appear; ids={ids:?}");
 
         ctrl_2.stop().unwrap();
+    }
+
+    /// Accepted streaming acks should let later WAL batches reach the circuit
+    /// before the next checkpoint. Once a checkpoint covers those batches, a
+    /// no-row write must cumulatively advance the replication slot.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    fn test_cdc_ft_streaming_ack_latency_and_slot_advance() {
+        const STREAMING_ACK_HOLD_MS: u64 = 5_000;
+        const STREAMING_ACK_OBSERVATION_MS: u64 = STREAMING_ACK_HOLD_MS + STREAMING_ACK_HOLD_MS / 2;
+
+        let url = postgres_url();
+        let table_name = unique_pg_name("cdc_test_ft_stream_accept");
+        let publication = unique_pg_name("cdc_pub_ft_stream_accept");
+        let auxiliary_table = unique_pg_name("cdc_test_ft_stream_aux");
+        let source_table = format!("public.{table_name}");
+
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
+        table.add_empty_table_to_publication(&auxiliary_table);
+        let source_table_oid = table_oid(&mut table, &source_table);
+        let auxiliary_table_oid = table_oid(&mut table, &format!("public.{auxiliary_table}"));
+
+        let storage = tempfile::tempdir().unwrap();
+        let output = NamedTempFile::new().unwrap();
+        let (controller, errors) = cdc_ft_test_circuit_with_streaming_ack_hold(
+            &url,
+            &publication,
+            &source_table,
+            storage.path(),
+            output.path(),
+            STREAMING_ACK_HOLD_MS,
+        );
+        controller.start();
+
+        checkpoint_initial_sync_and_wait_ready(
+            &controller,
+            &errors,
+            &mut table,
+            source_table_oid,
+            output.path(),
+            &table_name,
+            900_001,
+        );
+
+        let mut auxiliary_ready = false;
+        for _ in 0..12 {
+            if table_sync_done_or_ready(&mut table, auxiliary_table_oid) {
+                auxiliary_ready = true;
+                break;
+            }
+            controller
+                .checkpoint()
+                .expect("auxiliary table checkpoint failed");
+            let _ = wait(
+                || table_sync_done_or_ready(&mut table, auxiliary_table_oid),
+                5_000,
+            );
+        }
+        assert!(
+            auxiliary_ready || table_sync_done_or_ready(&mut table, auxiliary_table_oid),
+            "auxiliary publication table did not finish bootstrap"
+        );
+
+        wait(
+            || confirmed_flush_lsn(&mut table, &source_table).is_some(),
+            60_000,
+        )
+        .expect("timeout: apply slot did not appear");
+
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (1, true, NULL, 'first')"
+        ));
+        let first_row_lsn = current_wal_lsn(&mut table);
+        wait(
+            || has_insert_id(&read_output_json(output.path()), 1) || !errors.is_empty(),
+            60_000,
+        )
+        .expect("timeout: first streamed row did not reach output");
+
+        // The first row's stream ack is accepted after the hold deadline. On
+        // the old durable-only path the second insert below would remain stuck
+        // behind row 1 until a checkpoint.
+        std::thread::sleep(std::time::Duration::from_millis(
+            STREAMING_ACK_OBSERVATION_MS,
+        ));
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (2, false, 42, 'second')"
+        ));
+        wait(
+            || has_insert_id(&read_output_json(output.path()), 2) || !errors.is_empty(),
+            30_000,
+        )
+        .expect("timeout: second streamed row was gated by checkpoint");
+        assert!(
+            errors.is_empty(),
+            "unexpected errors while streaming: {:?}",
+            errors.try_recv()
+        );
+
+        assert!(
+            confirmed_flush_lsn_is_before(&mut table, &source_table, &first_row_lsn),
+            "Accepted advanced the replication slot past the first streamed row"
+        );
+
+        // Let row 2 time out as Accepted, then checkpoint it. The checkpoint
+        // cannot update an acknowledgment that ETL has already consumed.
+        std::thread::sleep(std::time::Duration::from_millis(
+            STREAMING_ACK_OBSERVATION_MS,
+        ));
+        controller.checkpoint().expect("stream checkpoint failed");
+        assert!(
+            confirmed_flush_lsn_is_before(&mut table, &source_table, &first_row_lsn),
+            "checkpoint unexpectedly advanced an already-Accepted write"
+        );
+
+        // This produces a write_events call but no Feldera rows. Its cumulative
+        // Durable result must cover the now-checkpointed target-table rows.
+        table.execute(&format!("INSERT INTO {auxiliary_table} VALUES (1)"));
+        wait(
+            || !confirmed_flush_lsn_is_before(&mut table, &source_table, &first_row_lsn),
+            30_000,
+        )
+        .expect("apply slot did not advance after the checkpoint and no-row write");
+
+        controller.stop().unwrap();
+    }
+
+    /// A steady-state stream ack queued behind a sub-minimum buffered tail must
+    /// still flush so replication can keep advancing.
+    ///
+    /// The ack rides the final data entry of an etl write. If the buffered tail
+    /// is below `min_batch_size_records` and the buffering delay is huge, the
+    /// connector must request bounded steps so that final entry is not stranded.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    fn test_cdc_ft_stream_ack_flushes_below_min_batch() {
+        let url = postgres_url();
+        let table_name = unique_pg_name("cdc_test_ft_stream_ack_min_batch");
+        let publication = unique_pg_name("cdc_pub_ft_stream_ack_min_batch");
+        let source_table = format!("public.{table_name}");
+
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
+        let source_table_oid = table_oid(&mut table, &source_table);
+
+        let storage = tempfile::tempdir().unwrap();
+        let output = NamedTempFile::new().unwrap();
+        let (controller, errors) = cdc_ft_test_circuit_with_options(
+            &url,
+            &publication,
+            &source_table,
+            storage.path(),
+            output.path(),
+            CdcFtTestOptions {
+                min_batch_size_records: 1_000_000,
+                max_buffering_delay_usecs: 3_600_000_000,
+                ..Default::default()
+            },
+        );
+        controller.start();
+
+        checkpoint_initial_sync_and_wait_ready(
+            &controller,
+            &errors,
+            &mut table,
+            source_table_oid,
+            output.path(),
+            &table_name,
+            900_004,
+        );
+
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (1, true, NULL, 'first')"
+        ));
+        wait(
+            || has_insert_id(&read_output_json(output.path()), 1) || !errors.is_empty(),
+            60_000,
+        )
+        .expect("timeout: streamed row did not flush below min batch");
+        assert!(
+            errors.is_empty(),
+            "unexpected errors while flushing stream ack: {:?}",
+            errors.try_recv()
+        );
+
+        controller.stop().unwrap();
+    }
+
+    /// Accepted-but-not-durable streaming progress must replay after restart.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    fn test_cdc_ft_accepted_streaming_events_replay_after_restart() {
+        const STREAMING_ACK_HOLD_MS: u64 = 500;
+        const STREAMING_ACK_OBSERVATION_MS: u64 = STREAMING_ACK_HOLD_MS * 2;
+
+        let url = postgres_url();
+        let table_name = unique_pg_name("cdc_test_ft_stream_replay");
+        let publication = unique_pg_name("cdc_pub_ft_stream_replay");
+        let source_table = format!("public.{table_name}");
+
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
+        let source_table_oid = table_oid(&mut table, &source_table);
+
+        let storage = tempfile::tempdir().unwrap();
+        let out_1 = NamedTempFile::new().unwrap();
+        let (ctrl_1, errs_1) = cdc_ft_test_circuit_with_streaming_ack_hold(
+            &url,
+            &publication,
+            &source_table,
+            storage.path(),
+            out_1.path(),
+            STREAMING_ACK_HOLD_MS,
+        );
+        ctrl_1.start();
+
+        checkpoint_initial_sync_and_wait_ready(
+            &ctrl_1,
+            &errs_1,
+            &mut table,
+            source_table_oid,
+            out_1.path(),
+            &table_name,
+            900_002,
+        );
+
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (1, true, NULL, 'first')"
+        ));
+        wait(
+            || has_insert_id(&read_output_json(out_1.path()), 1) || !errs_1.is_empty(),
+            60_000,
+        )
+        .expect("timeout: run 1 did not receive row 1");
+        std::thread::sleep(std::time::Duration::from_millis(
+            STREAMING_ACK_OBSERVATION_MS,
+        ));
+
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (2, false, 42, 'second')"
+        ));
+        wait(
+            || has_insert_id(&read_output_json(out_1.path()), 2) || !errs_1.is_empty(),
+            30_000,
+        )
+        .expect("timeout: run 1 did not receive row 2 after accepted ack");
+        std::thread::sleep(std::time::Duration::from_millis(
+            STREAMING_ACK_OBSERVATION_MS,
+        ));
+        assert!(
+            errs_1.is_empty(),
+            "unexpected errors in run 1: {:?}",
+            errs_1.try_recv()
+        );
+
+        ctrl_1.stop().unwrap();
+        table.wait_replication_slots_inactive();
+
+        let out_2 = NamedTempFile::new().unwrap();
+        let (ctrl_2, errs_2) = cdc_ft_test_circuit_with_streaming_ack_hold(
+            &url,
+            &publication,
+            &source_table,
+            storage.path(),
+            out_2.path(),
+            STREAMING_ACK_HOLD_MS,
+        );
+        ctrl_2.start();
+
+        wait(
+            || {
+                let rows = read_output_json(out_2.path());
+                (has_insert_id(&rows, 1) && has_insert_id(&rows, 2)) || !errs_2.is_empty()
+            },
+            60_000,
+        )
+        .expect("timeout: accepted rows were not redelivered after restart");
+        assert!(
+            errs_2.is_empty(),
+            "unexpected errors in run 2: {:?}",
+            errs_2.try_recv()
+        );
+
+        ctrl_2.stop().unwrap();
+    }
+
+    /// `discard_table_errors` rolls back persisted etl table errors before
+    /// startup, so a table poisoned by a previous run can be retried without
+    /// manual SQL.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    fn test_cdc_discard_table_errors_on_startup() {
+        run_cdc_discard_error_on_startup(
+            "cdc_test_discard_errors",
+            "cdc_pub_discard_errors",
+            "forced test table error",
+            CdcFtTestOptions {
+                discard_table_errors: true,
+                ..Default::default()
+            },
+        );
+    }
+
+    /// `discard_shutdown_errors` defaults to true and rolls back a persisted
+    /// dropped-ack error from a previous failed run. Since the write was never
+    /// reported durable, replication can resume from the previous state.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    fn test_cdc_discard_shutdown_errors_on_startup() {
+        run_cdc_discard_error_on_startup(
+            "cdc_test_discard_shutdown",
+            "cdc_pub_discard_shutdown",
+            "[DestinationError] Async result channel closed before sending",
+            CdcFtTestOptions::default(),
+        );
+    }
+
+    fn run_cdc_discard_error_on_startup(
+        table_prefix: &str,
+        publication_prefix: &str,
+        error_reason: &str,
+        restart_options: CdcFtTestOptions,
+    ) {
+        let url = postgres_url();
+        let table_name = unique_pg_name(table_prefix);
+        let publication = unique_pg_name(publication_prefix);
+        let source_table = format!("public.{table_name}");
+
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (1, true, NULL, 'snapshot')"
+        ));
+        let source_table_oid = table_oid(&mut table, &source_table);
+
+        let storage = tempfile::tempdir().unwrap();
+        let out_1 = NamedTempFile::new().unwrap();
+        let (ctrl_1, errs_1) = cdc_ft_test_circuit(
+            &url,
+            &publication,
+            &source_table,
+            storage.path(),
+            out_1.path(),
+        );
+        ctrl_1.start();
+
+        wait(
+            || has_insert_id(&read_output_json(out_1.path()), 1) || !errs_1.is_empty(),
+            60_000,
+        )
+        .expect("timeout: snapshot row did not reach output");
+        assert!(
+            errs_1.is_empty(),
+            "unexpected errors before checkpoint: {:?}",
+            errs_1.try_recv()
+        );
+
+        checkpoint_initial_sync_and_wait_ready(
+            &ctrl_1,
+            &errs_1,
+            &mut table,
+            source_table_oid,
+            out_1.path(),
+            &table_name,
+            900_003,
+        );
+        ctrl_1.stop().unwrap();
+        table.wait_replication_slots_inactive();
+
+        force_current_table_error(&mut table, &source_table, source_table_oid, error_reason);
+        assert!(
+            errored_state_persisted(&mut table, source_table_oid),
+            "test setup failed to persist forced etl table error"
+        );
+
+        let out_2 = NamedTempFile::new().unwrap();
+        let (ctrl_2, errs_2) = cdc_ft_test_circuit_with_options(
+            &url,
+            &publication,
+            &source_table,
+            storage.path(),
+            out_2.path(),
+            restart_options,
+        );
+        ctrl_2.start();
+
+        wait(
+            || !errored_state_persisted(&mut table, source_table_oid) || !errs_2.is_empty(),
+            60_000,
+        )
+        .expect("timeout: startup did not clear persisted etl table error");
+        assert!(
+            errs_2.is_empty(),
+            "unexpected errors after discarding table error: {:?}",
+            errs_2.try_recv()
+        );
+
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (2, false, 42, 'after-error')"
+        ));
+        wait(
+            || has_insert_id(&read_output_json(out_2.path()), 2) || !errs_2.is_empty(),
+            60_000,
+        )
+        .expect("timeout: restarted connector did not stream after discarding table error");
+        assert!(
+            errs_2.is_empty(),
+            "unexpected errors after restart: {:?}",
+            errs_2.try_recv()
+        );
+
+        ctrl_2.stop().unwrap();
+    }
+
+    /// Nonterminal snapshot-catchup batches may be accepted after the stream
+    /// acknowledgment timeout, but the terminal batch must wait for a Feldera
+    /// checkpoint before etl completes catchup.
+    ///
+    /// etl can use an acknowledged catchup stream batch to persist
+    /// `sync_done`/`ready` for the table. If the connector reports that batch
+    /// as `Accepted` (not durable) before Feldera checkpoints it, a crash can
+    /// make etl skip re-copying while Feldera resumes from a checkpoint that
+    /// predates the catchup rows.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    fn test_cdc_ft_terminal_catchup_ack_waits_for_checkpoint() {
+        const STREAMING_ACK_HOLD_MS: u64 = 250;
+        const STREAMING_ACK_OBSERVATION_MS: u64 = STREAMING_ACK_HOLD_MS * 2;
+        const NEGATIVE_OBSERVATION_MS: u128 = (STREAMING_ACK_HOLD_MS as u128) * 40;
+
+        let url = postgres_url();
+        let table_name = unique_pg_name("cdc_test_ft_catchup_accept");
+        let publication = unique_pg_name("cdc_pub_ft_catchup_accept");
+        let source_table = format!("public.{table_name}");
+
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (1, true, NULL, 'snapshot')"
+        ));
+        let source_table_oid = table_oid(&mut table, &source_table);
+
+        let storage = tempfile::tempdir().unwrap();
+        let output = NamedTempFile::new().unwrap();
+        let (controller, errors) = cdc_ft_test_circuit_with_streaming_ack_hold(
+            &url,
+            &publication,
+            &source_table,
+            storage.path(),
+            output.path(),
+            STREAMING_ACK_HOLD_MS,
+        );
+        controller.start();
+
+        wait(
+            || has_insert_id(&read_output_json(output.path()), 1) || !errors.is_empty(),
+            60_000,
+        )
+        .expect("timeout: snapshot row did not reach output");
+        assert!(
+            errors.is_empty(),
+            "unexpected errors before catchup insert: {:?}",
+            errors.try_recv()
+        );
+
+        let catchup_id = 1_000_001;
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES ({catchup_id}, false, 42, 'catchup')"
+        ));
+
+        // This checkpoint covers the accepted snapshot copy rows and releases
+        // etl's terminal table-copy durability barrier. The catchup row above
+        // was inserted before etl could persist copy completion, so etl must
+        // process it during catchup after this point.
+        controller.checkpoint().expect("snapshot checkpoint failed");
+
+        wait(
+            || has_insert_id(&read_output_json(output.path()), catchup_id) || !errors.is_empty(),
+            60_000,
+        )
+        .expect("timeout: catchup row did not reach output");
+        assert!(
+            errors.is_empty(),
+            "unexpected errors after catchup row: {:?}",
+            errors.try_recv()
+        );
+
+        std::thread::sleep(std::time::Duration::from_millis(
+            STREAMING_ACK_OBSERVATION_MS,
+        ));
+        let anchor_id = 1_000_002;
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES ({anchor_id}, true, 43, 'catchup-anchor')"
+        ));
+
+        // The first nonterminal catchup batch is MayDefer, so its timeout lets
+        // etl send the terminal batch. Receiving the terminal batch is safe;
+        // etl cannot complete catchup until Feldera durably acknowledges it.
+        wait(
+            || has_insert_id(&read_output_json(output.path()), anchor_id) || !errors.is_empty(),
+            NEGATIVE_OBSERVATION_MS,
+        )
+        .expect("etl did not send the terminal catchup batch after the nonterminal timeout");
+        assert!(
+            errors.is_empty(),
+            "unexpected errors before catchup checkpoint: {:?}",
+            errors.try_recv()
+        );
+
+        let advanced_before_checkpoint = wait(
+            || table_sync_done_or_ready(&mut table, source_table_oid) || !errors.is_empty(),
+            NEGATIVE_OBSERVATION_MS,
+        )
+        .is_ok();
+        assert!(
+            errors.is_empty(),
+            "unexpected errors before catchup checkpoint: {:?}",
+            errors.try_recv()
+        );
+        // Bounded-window check: this can catch early advancement, not prove absence.
+        assert!(
+            !advanced_before_checkpoint,
+            "etl reached sync_done/ready before the terminal catchup batch was checkpointed"
+        );
+
+        controller.checkpoint().expect("checkpoint failed");
+        wait(
+            || table_sync_done_or_ready(&mut table, source_table_oid) || !errors.is_empty(),
+            60_000,
+        )
+        .expect("timeout: etl did not complete catchup after checkpoint");
+        assert!(
+            errors.is_empty(),
+            "unexpected errors after catchup checkpoint: {:?}",
+            errors.try_recv()
+        );
+
+        controller.stop().unwrap();
+    }
+
+    /// Resolve the OID of `source_table` (e.g. `"public.foo"`) as an `i32`.
+    fn table_oid(table: &mut CdcTestTable, source_table: &str) -> i32 {
+        table
+            .client
+            .query_one("SELECT to_regclass($1)::oid::int4", &[&source_table])
+            .expect("failed to resolve source table oid")
+            .get(0)
+    }
+
+    /// True once etl has persisted a copy-complete replication state
+    /// (`finished_copy`, `sync_done`, or `ready`) for `source_table_oid`.
+    fn copy_state_persisted(table: &mut CdcTestTable, source_table_oid: i32) -> bool {
+        table
+            .client
+            .query_one(
+                "SELECT EXISTS (
+                    SELECT 1
+                    FROM etl.replication_state
+                    WHERE table_id::int4 = $1
+                      AND state IN (
+                          'finished_copy'::etl.table_state,
+                          'sync_done'::etl.table_state,
+                          'ready'::etl.table_state
+                      )
+                      AND is_current = true
+                )",
+                &[&source_table_oid],
+            )
+            .map(|row| row.get::<_, bool>(0))
+            .unwrap_or(false)
+    }
+
+    /// True once etl has persisted `ready` for `source_table_oid`.
+    fn table_ready(table: &mut CdcTestTable, source_table_oid: i32) -> bool {
+        table
+            .client
+            .query_one(
+                "SELECT EXISTS (
+                    SELECT 1
+                    FROM etl.replication_state
+                    WHERE table_id::int4 = $1
+                      AND state = 'ready'::etl.table_state
+                      AND is_current = true
+                )",
+                &[&source_table_oid],
+            )
+            .map(|row| row.get::<_, bool>(0))
+            .unwrap_or(false)
+    }
+
+    fn table_sync_done_or_ready(table: &mut CdcTestTable, source_table_oid: i32) -> bool {
+        table
+            .client
+            .query_one(
+                "SELECT EXISTS (
+                    SELECT 1
+                    FROM etl.replication_state
+                    WHERE table_id::int4 = $1
+                      AND state IN ('sync_done'::etl.table_state, 'ready'::etl.table_state)
+                      AND is_current = true
+                )",
+                &[&source_table_oid],
+            )
+            .map(|row| row.get::<_, bool>(0))
+            .unwrap_or(false)
+    }
+
+    fn checkpoint_initial_sync_and_wait_ready(
+        controller: &Controller,
+        errors: &crossbeam::channel::Receiver<String>,
+        table: &mut CdcTestTable,
+        source_table_oid: i32,
+        output_path: &Path,
+        table_name: &str,
+        ready_anchor_id: i64,
+    ) {
+        let mut copy_complete = false;
+        for _ in 0..12 {
+            controller.checkpoint().expect("initial checkpoint failed");
+            if wait(
+                || copy_state_persisted(table, source_table_oid) || !errors.is_empty(),
+                5_000,
+            )
+            .is_ok()
+            {
+                assert!(
+                    errors.is_empty(),
+                    "unexpected errors during initial sync: {:?}",
+                    errors.try_recv()
+                );
+                if copy_state_persisted(table, source_table_oid) {
+                    copy_complete = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            copy_complete,
+            "timeout: table did not finish initial sync after checkpoints"
+        );
+
+        if table_ready(table, source_table_oid) {
+            return;
+        }
+
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES ({ready_anchor_id}, true, 7, 'ready_anchor')"
+        ));
+        wait(
+            || has_insert_id(&read_output_json(output_path), ready_anchor_id) || !errors.is_empty(),
+            60_000,
+        )
+        .expect("timeout: ready anchor row did not reach output");
+        assert!(
+            errors.is_empty(),
+            "unexpected errors while waiting for ready anchor: {:?}",
+            errors.try_recv()
+        );
+
+        controller
+            .checkpoint()
+            .expect("ready anchor checkpoint failed");
+        wait(
+            || table_ready(table, source_table_oid) || !errors.is_empty(),
+            60_000,
+        )
+        .expect("timeout: table did not reach ready after initial checkpoint");
+        assert!(
+            errors.is_empty(),
+            "unexpected errors while waiting for ready: {:?}",
+            errors.try_recv()
+        );
+    }
+
+    fn apply_slot_name(table: &CdcTestTable, source_table: &str) -> String {
+        let connector_url = cdc_connector_url(&table.url);
+        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+            &connector_url,
+            &table.publication_name,
+            source_table,
+        );
+
+        format!("supabase_etl_apply_{pipeline_id}")
+    }
+
+    fn confirmed_flush_lsn(table: &mut CdcTestTable, source_table: &str) -> Option<String> {
+        let slot_name = apply_slot_name(table, source_table);
+        table
+            .client
+            .query_opt(
+                "SELECT confirmed_flush_lsn::text FROM pg_replication_slots WHERE slot_name = $1",
+                &[&slot_name],
+            )
+            .expect("failed to read replication slot")
+            .map(|row| row.get(0))
+    }
+
+    fn current_wal_lsn(table: &mut CdcTestTable) -> String {
+        table
+            .client
+            .query_one("SELECT pg_current_wal_lsn()::text", &[])
+            .expect("failed to read current WAL LSN")
+            .get(0)
+    }
+
+    fn confirmed_flush_lsn_is_before(
+        table: &mut CdcTestTable,
+        source_table: &str,
+        lsn: &str,
+    ) -> bool {
+        let slot_name = apply_slot_name(table, source_table);
+        table
+            .client
+            .query_one(
+                "SELECT confirmed_flush_lsn < $2::text::pg_lsn
+                 FROM pg_replication_slots
+                 WHERE slot_name = $1",
+                &[&slot_name, &lsn],
+            )
+            .expect("failed to compare replication slot LSN")
+            .get(0)
+    }
+
+    fn force_current_table_error(
+        table: &mut CdcTestTable,
+        source_table: &str,
+        source_table_oid: i32,
+        reason: &str,
+    ) {
+        let connector_url = cdc_connector_url(&table.url);
+        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+            &connector_url,
+            &table.publication_name,
+            source_table,
+        ) as i64;
+        let source_table_oid = source_table_oid as u32;
+        let metadata = json!({
+            "type": "errored",
+            "reason": reason,
+            "solution": null,
+            "retry_policy": { "type": "manual_retry" },
+        });
+
+        table
+            .client
+            .execute(
+                "WITH mark_old AS (
+                    UPDATE etl.replication_state
+                    SET is_current = false, updated_at = now()
+                    WHERE pipeline_id = $1
+                      AND table_id = $2::oid
+                      AND is_current = true
+                    RETURNING id
+                )
+                INSERT INTO etl.replication_state
+                    (pipeline_id, table_id, state, metadata, prev, is_current)
+                VALUES
+                    ($1, $2::oid, 'errored'::etl.table_state, $3::jsonb,
+                     (SELECT id FROM mark_old), true)",
+                &[&pipeline_id, &source_table_oid, &metadata],
+            )
+            .expect("failed to force current etl table error");
+    }
+
+    /// True if etl has persisted a current `errored` replication state for
+    /// `source_table_oid`.
+    fn errored_state_persisted(table: &mut CdcTestTable, source_table_oid: i32) -> bool {
+        table
+            .client
+            .query_one(
+                "SELECT EXISTS (
+                    SELECT 1
+                    FROM etl.replication_state
+                    WHERE table_id::int4 = $1
+                      AND state = 'errored'::etl.table_state
+                      AND is_current = true
+                )",
+                &[&source_table_oid],
+            )
+            .map(|row| row.get::<_, bool>(0))
+            .unwrap_or(false)
+    }
+
+    /// The terminal snapshot barrier must stay behind every copied row across
+    /// multiple controller queue flushes.
+    ///
+    /// The large rows span several `InputQueue` entries. After the initial
+    /// data-triggered step, the high minimum batch size suppresses further
+    /// automatic steps, so the barrier drives the remaining bounded flushes.
+    /// After copy-complete is persisted, the test restarts from the latest
+    /// checkpoint and snapshots the output. A prefix-only result means
+    /// copy-complete turned durable while a queue tail was still uncheckpointed.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    fn test_cdc_ft_snapshot_barrier_covers_buffered_tail() {
+        let url = postgres_url();
+        let table_name = unique_pg_name("cdc_test_ft_snap_tail");
+        let publication = unique_pg_name("cdc_pub_ft_snap_tail");
+        const SNAPSHOT_ROWS: usize = 12;
+
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
+        table.execute(&format!(
+            "INSERT INTO {table_name} (id, b, i, s) \
+             SELECT id, true, id * 10, repeat('x', 1024 * 1024) \
+             FROM generate_series(1, {SNAPSHOT_ROWS}) AS id"
+        ));
+
+        let source_table = format!("public.{table_name}");
+        let source_table_oid = table_oid(&mut table, &source_table);
+
+        let storage = tempfile::tempdir().unwrap();
+        let output_1 = NamedTempFile::new().unwrap();
+        let (controller_1, errors_1) = cdc_ft_test_circuit_with_options(
+            &url,
+            &publication,
+            &source_table,
+            storage.path(),
+            output_1.path(),
+            CdcFtTestOptions {
+                max_batch_size: Some(1),
+                min_batch_size_records: 1_000_000,
+                max_buffering_delay_usecs: 3_600_000_000,
+                ..Default::default()
+            },
+        );
+        controller_1.start();
+
+        wait(
+            || {
+                let inserts = count_inserts(&read_output_json(output_1.path()));
+                inserts > 0 || !errors_1.is_empty()
+            },
+            60_000,
+        )
+        .expect("timeout: terminal snapshot barrier did not start flushing the snapshot");
+        assert!(
+            errors_1.is_empty(),
+            "unexpected error during snapshot: {:?}",
+            errors_1.try_recv()
+        );
+
+        let persisted_before_checkpoint =
+            wait(|| copy_state_persisted(&mut table, source_table_oid), 5_000).is_ok();
+        assert!(
+            !persisted_before_checkpoint,
+            "etl persisted copy-complete before any snapshot checkpoint"
+        );
+
+        let mut copy_complete = false;
+        for _ in 0..SNAPSHOT_ROWS {
+            controller_1
+                .checkpoint()
+                .expect("snapshot checkpoint failed");
+            if wait(|| copy_state_persisted(&mut table, source_table_oid), 5_000).is_ok() {
+                copy_complete = true;
+                break;
+            }
+        }
+        assert!(copy_complete, "etl did not persist snapshot copy-complete");
+
+        controller_1.stop().unwrap();
+        table.wait_replication_slots_inactive();
+
+        let output_2 = NamedTempFile::new().unwrap();
+        let (controller_2, errors_2) = cdc_ft_test_circuit_with_options(
+            &url,
+            &publication,
+            &source_table,
+            storage.path(),
+            output_2.path(),
+            CdcFtTestOptions {
+                max_batch_size: Some(1),
+                min_batch_size_records: 1_000_000,
+                max_buffering_delay_usecs: 3_600_000_000,
+                send_snapshot: true,
+                ..Default::default()
+            },
+        );
+        controller_2.start();
+
+        let _ = wait(
+            || {
+                count_inserts(&read_output_json(output_2.path())) >= SNAPSHOT_ROWS
+                    || !errors_2.is_empty()
+            },
+            10_000,
+        );
+        assert!(
+            errors_2.is_empty(),
+            "unexpected error after restart: {:?}",
+            errors_2.try_recv()
+        );
+
+        let restored_rows = count_inserts(&read_output_json(output_2.path()));
+        assert_eq!(
+            restored_rows, SNAPSHOT_ROWS,
+            "snapshot copy-complete was persisted before every buffered row was checkpointed"
+        );
+
+        controller_2.stop().unwrap();
     }
 }

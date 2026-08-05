@@ -24,13 +24,16 @@ privileges.
 
 Use transport name `postgres_cdc_input`.
 
-| Property          | Type   | Default | Description                                                                                                                                                                                     |
-| ----------------- | ------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `uri`\*           | string |         | PostgreSQL connection URL, e.g. `"postgres://postgres:password@localhost:5432/postgres"`. The URL must include a username, host, and database name. The user must have `REPLICATION` privilege. |
-| `publication`\*   | string |         | Name of an existing PostgreSQL publication. The publication must include `source_table`.                                                                                                        |
-| `source_table`\*  | string |         | PostgreSQL table to replicate, usually schema-qualified, e.g. `"public.orders"`.                                                                                                                |
-| `ssl_ca_pem`      | string |         | CA certificates in PEM format. Setting this enables TLS and takes precedence over `ssl_ca_location`.                                                                                            |
-| `ssl_ca_location` | string |         | Path to a PEM file containing CA certificates. Used when `ssl_ca_pem` is not set.                                                                                                               |
+| Property                  | Type    | Default | Description                                                                                                                                                                        |
+| ------------------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `uri`\*                   | string  |         | PostgreSQL connection URI, e.g. `"postgres://postgres:password@localhost:5432/postgres"`. It must include a username, host, and database name. The user needs `REPLICATION` privilege. |
+| `publication`\*           | string  |         | Name of an existing PostgreSQL publication. The publication must include `source_table`.                                                                                           |
+| `source_table`\*          | string  |         | PostgreSQL table to replicate, usually schema-qualified, e.g. `"public.orders"`.                                                                                                  |
+| `ssl_ca_pem`              | string  |         | CA certificates in PEM format. Setting this enables TLS and takes precedence over `ssl_ca_location`.                                                                               |
+| `ssl_ca_location`         | string  |         | Path to a PEM file containing CA certificates. Used when `ssl_ca_pem` is not set.                                                                                                  |
+| `streaming_ack_hold_ms`   | integer | `2000`  | Time to wait for a nonterminal CDC batch to become durable before ingestion may continue without advancing its PostgreSQL WAL position. Must be greater than zero.                  |
+| `discard_shutdown_errors` | boolean | `true`  | Whether to retry a table when the previous connector run stopped before acknowledging pending data.                                                                                |
+| `discard_table_errors`    | boolean | `false` | Whether to retry tables with persisted replication errors at startup. See [Discarding table errors](#discarding-table-errors).                                                      |
 
 [*]: Required fields
 
@@ -86,6 +89,28 @@ Feldera matches columns by name.
 - Extra PostgreSQL columns that do not exist in Feldera are ignored.
 - If a required Feldera column is removed from PostgreSQL while the connector is
   running, the connector reports a fatal error.
+
+We recommend defining a `PRIMARY KEY` on the Feldera input relation because the
+connector provides at-least-once delivery. If the initial copy is interrupted,
+the connector may read the source snapshot again from the beginning. This does
+not create another copy inside PostgreSQL; it sends the same source rows to
+Feldera again. If a Feldera checkpoint already contains rows from the earlier
+attempt, a table with a primary key retains one row per key. Without a primary
+key, the repeated rows can appear as duplicates.
+
+## Discarding table errors
+
+While the connector is stopping, its Feldera destination may close before it
+sends an acknowledgment for pending data. On the next startup,
+`discard_shutdown_errors` defaults to `true`, so the connector retries the
+table from its last durable PostgreSQL position. Set the option to `false` to
+disable this recovery.
+
+Other replication errors remain persisted by default. Set
+`discard_table_errors` to `true` to discard persisted errors and retry the
+affected tables at startup. This recovery may repeat the initial copy, so
+define a primary key on the input relation (see [Schema requirements](#schema-requirements))
+to prevent duplicate rows.
 
 ## Example
 
@@ -168,11 +193,16 @@ CREATE TABLE orders (
 
 ## Resume behavior
 
-The connector stores replication state in PostgreSQL and uses logical
-replication slots managed by the connector. Restarting a pipeline with the same
-database host, port, database, publication, and source table resumes from the
-existing replication state. Changing any of those values creates a different
-replication identity and can cause a new snapshot.
+The connector derives a stable identity from the source database host, port,
+and database name together with `publication` and `source_table`. On an
+ordinary restart with the same identity, it resumes from the last durable
+position. If the connector stops before the initial copy is complete, it may
+repeat that copy.
 
-Rotating the PostgreSQL username or password does not change the replication
-identity.
+Changing any of those identity fields starts a new initial copy. The PostgreSQL
+username and password are not part of the identity, so rotating credentials
+does not start a new copy.
+
+Do not manually reset the connector's replication state. Feldera does not
+provide a supported partial-reset procedure, and resetting state can replay
+rows already present in the Feldera table.

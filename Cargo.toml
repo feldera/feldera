@@ -324,9 +324,9 @@ zip = "6.0.0"
 zstd = "0.12.0"
 backtrace = "0.3.75"
 parking_lot = "0.12.4"
-etl = { git = "https://github.com/supabase/etl", rev = "b2aab62d" }
-etl-config = { git = "https://github.com/supabase/etl", rev = "b2aab62d" }
-etl-postgres = { git = "https://github.com/supabase/etl", rev = "b2aab62d" }
+etl = { git = "https://github.com/supabase/etl", rev = "8762c0fc" }
+etl-config = { git = "https://github.com/supabase/etl", rev = "8762c0fc" }
+etl-postgres = { git = "https://github.com/supabase/etl", rev = "8762c0fc" }
 
 [workspace.metadata.release]
 release = false
