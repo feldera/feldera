@@ -226,13 +226,33 @@ class TestRetryBehavior:
                 client.get("/foo")
         assert m.call_count == 2
 
-    def test_connection_error_wrapped(self):
+    def test_get_connection_error_then_success(self):
+        # GET is idempotent — a connection reset mid-poll is safe to retry.
         client = _make_client()
-        # ConnectionError isn't retryable — the first raise should propagate
-        # and be wrapped as FelderaCommunicationError.
-        with patch_requests("get", [requests.exceptions.ConnectionError("down")]):
+        with patch_requests(
+            "get",
+            [requests.exceptions.ConnectionError("reset"), _make_response(200, b"{}")],
+        ) as m:
+            client.get("/foo")
+        assert m.call_count == 2
+
+    def test_get_connection_error_exhausts_raises_wrapped(self):
+        client = _make_client(_fast_retry(max_retries=1))
+        with patch_requests(
+            "get", [requests.exceptions.ConnectionError("down")] * 2
+        ) as m:
             with pytest.raises(FelderaCommunicationError):
                 client.get("/foo")
+        assert m.call_count == 2
+
+    def test_post_connection_error_is_not_retried(self):
+        # POST isn't idempotent — a lost response may hide an applied write,
+        # so retrying could resubmit it. The first raise must propagate.
+        client = _make_client()
+        with patch_requests("post", [requests.exceptions.ConnectionError("down")]) as m:
+            with pytest.raises(FelderaCommunicationError):
+                client.post("/foo")
+        assert m.call_count == 1
 
     def test_no_retries_when_max_retries_zero(self):
         client = _make_client(_fast_retry(max_retries=0))
