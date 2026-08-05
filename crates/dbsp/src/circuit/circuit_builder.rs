@@ -8954,13 +8954,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::ElapsedTime;
     use crate::{
         Circuit, Error as DbspError, RootCircuit,
         circuit::schedule::{DynamicScheduler, Scheduler},
         monitor::TraceMonitor,
         operator::{Generator, Z1},
     };
-    use super::ElapsedTime;
     use anyhow::anyhow;
     use std::{cell::RefCell, ops::Deref, rc::Rc, thread, time::Duration, vec::Vec};
 
