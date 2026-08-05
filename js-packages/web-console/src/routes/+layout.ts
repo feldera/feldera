@@ -2,7 +2,6 @@ import * as AxaOidc from '@axa-fr/oidc-client'
 import Dayjs from 'dayjs'
 import duration from 'dayjs/plugin/duration'
 import equal from 'fast-deep-equal'
-import { jwtDecode } from 'jwt-decode'
 import posthog from 'posthog-js'
 import { goto, invalidateAll } from '$app/navigation'
 import { fromAxaUserInfo, toAxaOidcConfig } from '$lib/compositions/@axa-fr/auth'
@@ -22,8 +21,7 @@ import {
   authRequestMiddleware,
   authResponseMiddleware,
   errorResponseMiddleware,
-  getSelectedTenant,
-  setSelectedTenant,
+  setSelectedTenantUser,
   triggerOidcLogin
 } from '$lib/services/auth'
 import { initConceptualHq } from '$lib/services/conceptualHq'
@@ -32,7 +30,7 @@ import { client } from '$lib/services/manager/client.gen'
 import { initPosthog } from '$lib/services/posthog'
 import { initProductFruits } from '$lib/services/productFruits'
 import { type Permission, permissionsOf, type Role, roleOf } from '$lib/services/rbac'
-import type { AuthDetails } from '$lib/types/auth'
+import type { AuthDetails, TenantMembership } from '$lib/types/auth'
 import type { LayoutLoad } from './$types'
 
 Dayjs.extend(duration)
@@ -80,6 +78,10 @@ export const trailingSlash = 'always'
  *   - Unauthenticated: auth resolves to `{ login }`  →  empty layout is
  *     returned; `(authenticated)/+layout.ts` triggers `auth.login()` and the
  *     app redirects to the Identity Provider (IdP).
+ *   - No acting tenant resolved (several memberships and no saved selection,
+ *     or none at all): `fetchConfigs()` returns the session payload without a
+ *     `Configuration`, and `load()` returns `unresolvedTenant` so the
+ *     authenticated layout shows the tenant picker or the no-access notice.
  *
  * The warm-cache short-circuit is what keeps repeat visits from
  * double-fetching page-level resources, so be careful when adding new
@@ -110,13 +112,22 @@ export type LayoutData = {
          */
         permissions: Permission[]
         /**
-         * Only available if authenticated and using multi-tenant authorization
+         * Tenants the logged-in user may act in, from the session's membership
+         * list. Empty for API keys, no-auth mode, and owners without explicit
+         * memberships.
          */
-        authorizedTenants?: string[]
+        memberships: TenantMembership[]
         unstableFeatures: string[]
         config: Configuration
       }
     | undefined
+  /**
+   * Set when the login resolved no acting tenant: several memberships and no
+   * saved selection, or no memberships at all. Only /config/session answers in
+   * this state, so `feldera` is undefined; the authenticated layout renders the
+   * tenant picker (or the no-access notice) from this list.
+   */
+  unresolvedTenant?: { memberships: TenantMembership[] }
   error?: Error
 }
 
@@ -125,34 +136,12 @@ const emptyLayoutData: LayoutData = {
   feldera: undefined
 }
 
-const computeAuthorizedTenants = (auth: AuthDetails): string[] | undefined => {
-  if (typeof auth !== 'object' || !('logout' in auth)) {
-    return undefined
-  }
-  const tenantsString = auth.accessToken
-    ? jwtDecode<{ tenants?: string[] | string }>(auth.accessToken).tenants
-    : undefined
-  return tenantsString
-    ? Array.isArray(tenantsString)
-      ? tenantsString
-      : tenantsString.split(',').map((t) => t.trim())
-    : undefined
-}
-
-const applyTenantSelection = (authorizedTenants: string[] | undefined) => {
-  // Only a claim-based authorized list clamps the selection (a multi-tenant
-  // user must land on a tenant the IdP actually authorizes). When there is no
-  // such list, e.g. a platform owner whose token carries no `tenants` claim,
-  // leave the saved selection untouched so the owner's "act as <tenant>" choice
-  // persists across loads instead of being cleared on every navigation.
-  if (!authorizedTenants) {
-    return
-  }
-  const savedTenant = getSelectedTenant()
-  if (!savedTenant || !authorizedTenants.includes(savedTenant)) {
-    setSelectedTenant(authorizedTenants[0])
-  }
-}
+const toMemberships = (sessionConfig: SessionInfo | undefined): TenantMembership[] =>
+  (sessionConfig?.memberships ?? []).map((m) => ({
+    tenantId: m.tenant_id,
+    name: m.name,
+    role: m.role
+  }))
 
 const pushSystemMessageOnce = (message: SystemMessage) => {
   if (!initSystemMessages.some((m) => m.id === message.id)) {
@@ -239,11 +228,15 @@ const lazyUpdateConfig = async () => {
     console.warn('Background config refresh failed:', e)
     return
   }
-  if (!result.config) {
-    return
+  if (result.config) {
+    syncServerTimeFromConfig(result.config)
   }
-  syncServerTimeFromConfig(result.config)
 
+  // `config` may be undefined here: the session stopped resolving an acting
+  // tenant mid-session (e.g. this user was removed from the selected tenant).
+  // `configChanged` then reports a diff against the rendered cache, and the
+  // `invalidateAll()` re-runs `load()`, which lands in the unresolved-tenant
+  // branch and shows the tenant picker.
   if (!configChanged(prevConfig, result.config) && equal(prevSessionConfig, result.sessionConfig)) {
     return
   }
@@ -281,9 +274,10 @@ const initAuth = async (): Promise<AuthInitResult> => {
       goto(redirectTo)
     },
     onBeforeLogout() {
-      // Session-scoped data must not survive a logout/login cycle, since a different
-      // user may sign in on the same browser.
-      setSelectedTenant(undefined)
+      // Config caches must not survive a logout/login cycle, since a different
+      // user may sign in on the same browser. The tenant selection stays: it is
+      // keyed per user, so a returning user resumes their tenant without
+      // re-picking, and another user cannot inherit it.
       clearConfigCaches()
       posthog.reset()
     }
@@ -318,8 +312,8 @@ const authInitPromise: Promise<AuthInitResult> = initAuth()
  *
  *  2. **Config loading** — warm localStorage cache is the common path:
  *       - **Warm cache (most navigations):** return cached `feldera` data
- *         synchronously, run idempotent side effects (tenant selection,
- *         posthog init, system messages), and kick off exactly one
+ *         synchronously, run idempotent side effects (posthog init, system
+ *         messages), and kick off exactly one
  *         background `lazyUpdateConfig()` per session (guarded by
  *         `lazyUpdateScheduled`). The UI renders immediately with cached
  *         values; the background fetch only triggers an `invalidateAll()`
@@ -357,8 +351,6 @@ export const load: LayoutLoad = async (): Promise<LayoutData> => {
     }
   }
 
-  applyTenantSelection(computeAuthorizedTenants(auth))
-
   const cachedConfig = OPTIMISTIC_CONFIG_CACHE ? getConfigFromCache() : undefined
   const cachedSessionConfig = OPTIMISTIC_CONFIG_CACHE ? getSessionConfigFromCache() : undefined
 
@@ -389,6 +381,17 @@ export const load: LayoutLoad = async (): Promise<LayoutData> => {
   }
 
   if (!result.config) {
+    // No acting tenant resolved: /config answers 4xx in this state and only
+    // /config/session replies, so there is no Configuration to build the app
+    // shell from. The authenticated layout renders the tenant picker (or the
+    // no-access notice) from `unresolvedTenant`.
+    if (result.sessionConfig) {
+      return {
+        ...emptyLayoutData,
+        auth,
+        unresolvedTenant: { memberships: toMemberships(result.sessionConfig) }
+      }
+    }
     console.error('Failed to load configuration')
     return emptyLayoutData
   }
@@ -399,12 +402,8 @@ export const load: LayoutLoad = async (): Promise<LayoutData> => {
   return buildLayoutData(auth, result.config, result.sessionConfig)
 }
 
-function buildFelderaData(
-  auth: AuthDetails,
-  config: Configuration,
-  sessionConfig: SessionInfo | undefined
-) {
-  const role = roleOf(sessionConfig?.role)
+function buildFelderaData(config: Configuration, sessionConfig: SessionInfo | undefined) {
+  const role = roleOf(sessionConfig?.role ?? undefined)
   return {
     version: config.version,
     edition: config.edition,
@@ -417,15 +416,17 @@ function buildFelderaData(
         : undefined,
     changelog: config.changelog_url,
     revision: config.revision,
+    // The acting-tenant fields are null only in the unresolved-tenant session
+    // state, which `load()` diverts to `unresolvedTenant` before ever building
+    // `feldera`; the fallbacks below are for a missing session payload.
     tenantId: sessionConfig?.tenant_id || '',
     tenantName: sessionConfig?.tenant_name || '',
-    // `role` is added by the RBAC backend; the SDK type lags, so read it off the
-    // session payload and normalize any unexpected value to the least-privileged
-    // role. Permissions are materialized here once from the client
-    // role→permission map; owner-only UI gates on `write:tenant` (owner-only).
+    // Normalize an absent or unexpected role to the least-privileged one.
+    // Permissions are materialized here once from the client role→permission
+    // map; owner-only UI gates on `write:tenant` (owner-only).
     role,
     permissions: permissionsOf(role),
-    authorizedTenants: computeAuthorizedTenants(auth),
+    memberships: toMemberships(sessionConfig),
     unstableFeatures: config.unstable_features?.split(',').map((f: string) => f.trim()) || [],
     config
   }
@@ -438,7 +439,7 @@ function buildLayoutData(
 ): LayoutData {
   return {
     auth,
-    feldera: buildFelderaData(auth, config, sessionConfig)
+    feldera: buildFelderaData(config, sessionConfig)
   }
 }
 
@@ -526,6 +527,10 @@ const axaOidcAuth = async (params: {
           )
         }
       }
+
+      // The tenant selection is stored per user: key it to this login before
+      // the request interceptor below can attach a `Feldera-Tenant` header.
+      setSelectedTenantUser(userInfo.sub)
 
       client.interceptors.request.use(authRequestMiddleware)
       client.interceptors.response.use(authResponseMiddleware)

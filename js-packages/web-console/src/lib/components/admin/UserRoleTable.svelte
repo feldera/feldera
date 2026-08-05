@@ -101,9 +101,9 @@
 <div class="flex flex-col gap-3">
   <p class="text-sm text-surface-800-200">
     Members appear here after their first login. Assign read, write, or admin. Removing a member
-    drops their role now, but if your identity provider still grants them access they are re-added
-    at the default role on their next login. Revoke access at the provider to disable access
-    completely. Pre-provision a member below to grant a role before their first login.
+    drops their role now; while login provisioning is enabled and your identity provider still
+    resolves this tenant for them, they are re-added at the default role on their next login.
+    Pre-provision a member below to grant a role before their first login.
   </p>
   {#if errorMessage}
     <div class="rounded preset-outlined-error-600-400 p-2 text-sm">{errorMessage}</div>
@@ -173,7 +173,7 @@
           content={{
             title: `Remove ${user.email ?? user.subject}?`,
             description:
-              'Drops their role in this tenant now. If your identity provider still grants them access, they are re-added at the default role on their next login. Revoke access at the provider to disable access completely. Continue?',
+              'Drops their role in this tenant now. While login provisioning is enabled and your identity provider still resolves this tenant for them, they are re-added at the default role on their next login; with provisioning off, removal takes effect on their next request. Removing a member does not revoke API keys or OIDC trust relationships created in this tenant; review those separately. Continue?',
             onSuccess: {
               name: 'Remove',
               callback: async () => {
