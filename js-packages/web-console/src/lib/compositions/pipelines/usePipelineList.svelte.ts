@@ -39,10 +39,14 @@ export const useUpdatePipelineList = () => {
  * Refresh the pipeline list every 2 seconds (with an immediate first call).
  * A single instance of this hook should be mounted at one time; the interval
  * is tied to the caller's effect lifecycle, so it cleans up on unmount.
+ *
+ * `shouldPoll` is consulted on every tick, because the owning layout persists
+ * across states in which polling must stop (e.g. no acting tenant resolved,
+ * where every tenant-scoped request would fail).
  */
-export const useRefreshPipelineList = () => {
+export const useRefreshPipelineList = (shouldPoll?: () => boolean) => {
   const api = usePipelineManager()
-  useInterval(() => reload(api), 2000)
+  useInterval(() => (shouldPoll?.() === false ? undefined : reload(api)), 2000)
 }
 
 export const usePipelineList = (preloaded?: { pipelines: PipelineThumb[] }) => {
