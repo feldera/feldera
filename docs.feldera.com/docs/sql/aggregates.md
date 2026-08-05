@@ -31,9 +31,12 @@ Most aggregation functions produce results of the same type as the
 input data, but compute using higher precision intermediate data
 types; aggregation of `UNSIGNED` values uses signed types for
 intermediate results.  If you expect the result to require a higher
-precision than the aggregated data type, we recommend converting the
-data to a wider data type, e.g.: instead of `SELECT SUM(col)`, you
-should write `SELECT SUM(CAST(col AS BIGINT))`.
+precision than the aggregated data type, or if you expect to aggregate
+many values, requiring a higher intermediate precision, we recommend
+converting the data to a wider data type, e.g.: instead of `SELECT
+SUM(col)`, you should write `SELECT SUM(CAST(col AS BIGINT))`.  This
+is particularly important for aggregates that return results quadratic
+in the size of input values, such as `VAR_*` or `REGR_*`.
 
 <table>
   <tr>
@@ -83,6 +86,16 @@ should write `SELECT SUM(CAST(col AS BIGINT))`.
      <td>Returns the number of input rows for which the condition is true.</td>
   </tr>
   <tr>
+     <td><a id="covar_pop"></a><code>COVAR_POP(y, x)</code></td>
+     <td>Returns the population covariance of the (y, x) pairs; pairs where either value is <code>NULL</code> are ignored.
+         Returns <code>NULL</code> when no pairs remain.  The result has the type of the first argument.</td>
+  </tr>
+  <tr>
+     <td><a id="covar_samp"></a><code>COVAR_SAMP(y, x)</code></td>
+     <td>Returns the sample covariance of the (y, x) pairs; pairs where either value is <code>NULL</code> are ignored.
+         Returns <code>NULL</code> when fewer than two pairs remain.  The result has the type of the first argument.</td>
+  </tr>
+  <tr>
      <td><a id="every"></a><code>EVERY(condition)</code></td>
      <td>Returns <code>TRUE</code> if all of the values of condition are <code>TRUE</code></td>
   </tr>
@@ -101,6 +114,22 @@ should write `SELECT SUM(CAST(col AS BIGINT))`.
   <tr>
      <td><a id="min"></a><code>MIN( [ ALL | DISTINCT ] value)</code></td>
      <td>Returns the minimum value of value across all input values</td>
+  </tr>
+  <tr>
+     <td><a id="regr_count"></a><code>REGR_COUNT(y, x)</code></td>
+     <td>Returns the number of pairs where both y and x are non-<code>NULL</code>.</td>
+  </tr>
+  <tr>
+     <td><a id="regr_sxx"></a><code>REGR_SXX(y, x)</code></td>
+     <td>Returns the sum of squares of deviations of x, the independent variable:
+         <code>REGR_COUNT(y, x) * VAR_POP(x)</code> over the pairs where both values are non-<code>NULL</code>.
+         Returns <code>NULL</code> when no pairs remain.</td>
+  </tr>
+  <tr>
+     <td><a id="regr_syy"></a><code>REGR_SYY(y, x)</code></td>
+     <td>Returns the sum of squares of deviations of y, the dependent variable:
+         <code>REGR_COUNT(y, x) * VAR_POP(y)</code> over the pairs where both values are non-<code>NULL</code>.
+         Returns <code>NULL</code> when no pairs remain.</td>
   </tr>
   <tr>
      <td><a id="some"></a><code>SOME(condition)</code></td>

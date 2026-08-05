@@ -1741,19 +1741,19 @@ public class ConvertletTable extends ReflectiveConvertletTable {
             final SqlNode sum0;
             final SqlNode sum1;
             final SqlNode count;
+            // Calcite's version of this expansion generates internal 2-argument
+            // calls SUM(x, guard); we generate an a CASE statment.
             if (dependent == null) {
                 sumArgSquared = SqlStdOperatorTable.SUM.createCall(pos, argSquared);
-                sum0 = SqlStdOperatorTable.SUM.createCall(pos, arg0, arg1);
-                sum1 = SqlStdOperatorTable.SUM.createCall(pos, arg1, arg0);
+                sum0 = guardedSum(pos, arg0, arg1, highPrecision);
+                sum1 = guardedSum(pos, arg1, arg0, highPrecision);
                 count = SqlStdOperatorTable.REGR_COUNT.createCall(pos, arg0, arg1);
             } else {
-                sumArgSquared = SqlStdOperatorTable.SUM.createCall(pos, argSquared, dependent);
-                sum0 =
-                        SqlStdOperatorTable.SUM.createCall(pos, arg0,
-                                Objects.equals(dependent, arg0Input) ? arg1 : dependent);
-                sum1 =
-                        SqlStdOperatorTable.SUM.createCall(pos, arg1,
-                                Objects.equals(dependent, arg1Input) ? arg0 : dependent);
+                sumArgSquared = guardedSum(pos, argSquared, dependent, highPrecision);
+                sum0 = guardedSum(pos, arg0,
+                        Objects.equals(dependent, arg0Input) ? arg1 : dependent, highPrecision);
+                sum1 = guardedSum(pos, arg1,
+                        Objects.equals(dependent, arg1Input) ? arg0 : dependent, highPrecision);
                 count =
                         SqlStdOperatorTable.REGR_COUNT.createCall(pos, arg0,
                                 Objects.equals(dependent, arg0Input) ? arg1 : dependent);
@@ -1781,6 +1781,19 @@ public class ConvertletTable extends ReflectiveConvertletTable {
             }
 
             return SqlStdOperatorTable.DIVIDE.createCall(pos, diff, denominator);
+        }
+
+        /** SUM of value over the rows where guard is not NULL:
+         * SUM(CASE WHEN guard IS NOT NULL THEN value ELSE NULL END). */
+        private static SqlNode guardedSum(
+                SqlParserPos pos, SqlNode value, SqlNode guard, RelDataType type) {
+            SqlNode nullLiteral = CAST.createCall(pos, SqlLiteral.createNull(pos),
+                    SqlTypeUtil.convertTypeToSpec(type));
+            SqlNode guarded = new SqlCase(pos, null,
+                    SqlNodeList.of(SqlStdOperatorTable.IS_NOT_NULL.createCall(pos, guard)),
+                    SqlNodeList.of(value),
+                    nullLiteral);
+            return SqlStdOperatorTable.SUM.createCall(pos, guarded);
         }
 
         private static SqlNode getCastedSqlNode(SqlNode argInput,
