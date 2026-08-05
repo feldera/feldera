@@ -4,6 +4,7 @@ import base64
 import logging
 import math
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 import platform
@@ -54,6 +55,35 @@ _oidc_token_cache: dict[str, tuple[str, float]] = {}
 # just before the check cannot arrive after it.
 _OIDC_REFRESH_MARGIN_SECONDS = 120.0
 
+# GitHub's own token endpoint occasionally 503s or drops the connection; these
+# are as transient as the pipeline-side errors FelderaClient already retries,
+# so retry the same way rather than letting one blip fail the whole run.
+_OIDC_MINT_RETRYABLE_STATUS_CODES = frozenset({429, 502, 503, 504})
+_OIDC_MINT_MAX_RETRIES = 3
+_OIDC_MINT_INITIAL_BACKOFF_SECONDS = 1.0
+_OIDC_MINT_BACKOFF_MULTIPLIER = 2.0
+
+
+def _mint_github_oidc_token(request: urllib.request.Request) -> str:
+    """Issue the token-mint request, retrying transient failures."""
+    backoff = _OIDC_MINT_INITIAL_BACKOFF_SECONDS
+    for attempt in range(_OIDC_MINT_MAX_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.load(response)["value"]
+        except urllib.error.HTTPError as e:
+            if (
+                e.code not in _OIDC_MINT_RETRYABLE_STATUS_CODES
+                or attempt == _OIDC_MINT_MAX_RETRIES
+            ):
+                raise
+        except urllib.error.URLError:
+            if attempt == _OIDC_MINT_MAX_RETRIES:
+                raise
+        time.sleep(backoff)
+        backoff *= _OIDC_MINT_BACKOFF_MULTIPLIER
+    raise AssertionError("unreachable")  # loop always returns or raises
+
 
 def _github_oidc_token() -> str:
     """A GitHub Actions ID token, re-minted shortly before it expires.
@@ -75,8 +105,7 @@ def _github_oidc_token() -> str:
     request.add_header(
         "Authorization", f"bearer {os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']}"
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        token = json.load(response)["value"]
+    token = _mint_github_oidc_token(request)
 
     _oidc_token_cache[audience] = (
         token,
