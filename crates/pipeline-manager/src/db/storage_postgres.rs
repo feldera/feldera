@@ -24,7 +24,7 @@ use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus
 use crate::db::types::role::{MintableKeyRole, Role};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
-use crate::db::types::user::{TenantInfo, TenantMember, UserId};
+use crate::db::types::user::{MembershipOrigin, TenantInfo, TenantMember, UserId, UserMembership};
 use crate::db::types::version::Version;
 use crate::is_supported_runtime;
 use crate::oidc::destination::TenantIssuerPolicy;
@@ -134,6 +134,14 @@ impl Storage for StoragePostgres {
         Ok(result)
     }
 
+    async fn find_tenant_id_by_name(&self, name: &str) -> Result<Option<TenantId>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let result = operations::tenant::find_tenant_id_by_name(&txn, name).await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
     async fn get_or_create_tenant(
         &self,
         new_id: Uuid,
@@ -188,6 +196,7 @@ impl Storage for StoragePostgres {
         email: Option<String>,
         default_role: Role,
         first_user_role: Role,
+        origin: MembershipOrigin,
     ) -> Result<(TenantId, UserId, Role), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -201,10 +210,50 @@ impl Storage for StoragePostgres {
             email,
             default_role,
             first_user_role,
+            origin,
         )
         .await?;
         txn.commit().await?;
         Ok(result)
+    }
+
+    async fn list_user_memberships(
+        &self,
+        provider: &str,
+        subject: &str,
+    ) -> Result<Vec<UserMembership>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let result = operations::user::list_user_memberships(&txn, provider, subject).await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    async fn enroll_in_existing_tenants(
+        &self,
+        new_user_id: Uuid,
+        provider: &str,
+        subject: &str,
+        email: Option<&str>,
+        names: &[String],
+        role: Role,
+        origin: MembershipOrigin,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::user::enroll_in_existing_tenants(
+            &txn,
+            new_user_id,
+            provider,
+            subject,
+            email,
+            names,
+            role,
+            origin,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
     }
 
     async fn get_or_create_user(
@@ -235,10 +284,11 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         user_id: UserId,
         role: Role,
+        origin: MembershipOrigin,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        operations::user::upsert_member_role(&txn, tenant_id, user_id, role).await?;
+        operations::user::upsert_member_role(&txn, tenant_id, user_id, role, origin).await?;
         txn.commit().await?;
         Ok(())
     }

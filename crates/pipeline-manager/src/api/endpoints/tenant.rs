@@ -12,7 +12,7 @@ use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
-use crate::db::types::user::{TenantInfo, UserId};
+use crate::db::types::user::{MembershipOrigin, TenantInfo, UserId};
 use crate::error::ManagerError;
 use actix_web::{
     HttpRequest, HttpResponse, delete, get,
@@ -192,7 +192,7 @@ pub(crate) async fn put_tenant_user(
         .db
         .lock()
         .await
-        .upsert_member_role(*tenant_id, user_id, requested)
+        .upsert_member_role(*tenant_id, user_id, requested, MembershipOrigin::Api)
         .await?;
     info!(
         "Set role {requested} for user {user_id} (tenant: {})",
@@ -239,9 +239,11 @@ pub(crate) async fn delete_tenant_user(
 /// Provision Tenant Member
 ///
 /// Add a member to the acting tenant by identity, before the user's first
-/// login. The grant is dormant until that identity authenticates into the
-/// tenant through the IdP. The role is capped at the caller's own role and may
-/// not be `owner`.
+/// login. The membership authorizes on its own: as soon as that identity
+/// authenticates through the platform's identity provider, the user may act
+/// in this tenant, and a headerless login with exactly this one membership
+/// lands in it. The role is capped at the caller's own role and may not be
+/// `owner`.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
