@@ -14,6 +14,18 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - Owners can retrieve a single tenant by name or identifier through
+          `GET /v0/tenants/{tenant_id}` or `fda tenant get`, so provisioning
+          automation such as an operator reconcile loop checks for a tenant
+          with one request instead of filtering `GET /v0/tenants`. See
+          [Changing your authentication setup](/get-started/enterprise/authentication#changing-your-authentication-setup).
+
+        - `POST /v0/tenants` is now idempotent: creating a name that already
+          exists returns the existing tenant with `200 OK` instead of failing
+          with `409 Conflict`, and a fresh name still returns `201 Created`.
+          Both responses carry the tenant's `id`, `name`, and
+          `initial_provider`. `fda tenant create` is the CLI counterpart.
+
         - Input connectors support the `soft_delete` property, which ingests
           deletions as insertions and reports the original polarity of each
           record in the `is_delete` metadata attribute, so that a table
@@ -37,11 +49,7 @@ import TabItem from '@theme/TabItem';
           stay 0 or 1. SQL pipelines are not affected: the SQL compiler never
           generated input sets.
 
-        - The SQL compiler was incorrectly garbage-collecting input
-          tables with a primary key and a column with LATENESS (#6690).  Such
-          tables can only be GC-ed if the column with LATENESS is part of
-          the primary key.  As a result some programs that used to run
-          with finite state will now have unbounded state.
+        ## v0.327.0
 
         - Role-based access control (RBAC). Access is now governed by per-user,
           per-tenant roles (`read` < `write` < `admin` < `owner`) rather than every
@@ -90,6 +98,14 @@ import TabItem from '@theme/TabItem';
           creates a `read`-only key; pass `{"role": "write"}` to keep the previous
           behavior. `fda apikey create` defaults to `--role read` for the same reason;
           pass `--role write` where a key needs to make changes.
+
+        ## v0.325.0
+
+        - The SQL compiler was incorrectly garbage-collecting input
+          tables with a primary key and a column with LATENESS (#6690).  Such
+          tables can only be GC-ed if the column with LATENESS is part of
+          the primary key.  As a result some programs that used to run
+          with finite state will now have unbounded state.
 
         ## v0.322.0
 

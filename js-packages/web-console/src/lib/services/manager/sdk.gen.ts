@@ -125,6 +125,9 @@ import type {
   GetRemoteCheckpointsData,
   GetRemoteCheckpointsErrors,
   GetRemoteCheckpointsResponses,
+  GetTenantData,
+  GetTenantErrors,
+  GetTenantResponses,
   HttpInputData,
   HttpInputErrors,
   HttpInputResponses,
@@ -1122,7 +1125,7 @@ export const getPipelineDataflowGraph = <ThrowOnError extends boolean = true>(
 /**
  * Compute Program Diff
  *
- * Required role: `read` or higher.
+ * Required role: `write` or higher.
  *
  * Compute the diff between the pipeline's current program and a proposed new
  * version, without modifying or restarting the pipeline.
@@ -2029,8 +2032,7 @@ export const listTenants = <ThrowOnError extends boolean = true>(
  *
  * Explicitly create a tenant, rather than relying on first login.
  * A login resolves its tenant by name, so a user whose identity provider
- * asserts this name lands in the tenant created here. Fails with a conflict if
- * the name is already taken.
+ * asserts this name lands in the tenant created here.
  */
 export const createTenant = <ThrowOnError extends boolean = true>(
   options: Options<CreateTenantData, ThrowOnError>
@@ -2076,6 +2078,24 @@ export const deleteTenant = <ThrowOnError extends boolean = true>(
   })
 
 /**
+ * Get Tenant
+ *
+ * Required role: `owner`.
+ *
+ * Retrieve a single tenant by name or identifier. A selector that parses as a
+ * UUID is looked up by tenant identifier, otherwise by name.
+ */
+export const getTenant = <ThrowOnError extends boolean = true>(
+  options: Options<GetTenantData, ThrowOnError>
+) =>
+  (options.client ?? client).get<GetTenantResponses, GetTenantErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/tenants/{tenant_id}',
+    ...options
+  })
+
+/**
  * Rename Tenant
  *
  * Required role: `owner`.
@@ -2106,7 +2126,7 @@ export const patchTenant = <ThrowOnError extends boolean = true>(
 /**
  * Validate Program
  *
- * Required role: `read` or higher.
+ * Required role: `write` or higher.
  *
  * Validate a SQL program by compiling it, without creating a pipeline or
  * building the pipeline binary. Reports SQL errors and warnings and the derived

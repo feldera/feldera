@@ -252,7 +252,9 @@ expect to change providers regularly**.
 
 Where the name does change, the old tenant keeps every pipeline and is no longer
 reachable by ordinary logins. Recover it the same way as above: an owner selects
-it with `Feldera-Tenant` (by name or UUID, and `GET /v0/tenants` lists both) and
+it with `Feldera-Tenant` (by name or UUID; [`GET /v0/tenants`](/api/list-tenants)
+lists both, and [`GET /v0/tenants/{tenant_id}`](/api/get-tenant) retrieves one by
+either selector) and
 moves what is needed, or gives it the name the new provider produces, with
 `displace_existing`, so the logins land back on it.
 

@@ -341,6 +341,43 @@ def test_07_tenant_deletion_requires_emptiness(api: Api, primary_idp: Issuer):
     assert TENANT in remaining
 
 
+# Tenant lookup and idempotent creation
+def test_07b_tenant_lookup_and_idempotent_create(api: Api, primary_idp: Issuer):
+    """Creating an existing tenant returns it instead of conflicting, and a
+    single tenant is retrievable by name or identifier without listing all."""
+    owner = primary_idp.token("owner", email=OWNER_EMAIL)
+    created = api.v0("POST", "/tenants", token=owner, body={"name": "gamma"})
+    assert created.status_code == 201, created.text
+    gamma_id = created.json()["id"]
+
+    # Repeating the create returns the existing tenant rather than a conflict.
+    repeat = api.v0("POST", "/tenants", token=owner, body={"name": "gamma"})
+    assert repeat.status_code == 200, repeat.text
+    assert repeat.json()["id"] == gamma_id
+
+    by_name = api.v0("GET", "/tenants/gamma", token=owner)
+    assert by_name.status_code == 200, by_name.text
+    assert by_name.json()["id"] == gamma_id
+    by_id = api.v0("GET", f"/tenants/{gamma_id}", token=owner)
+    assert by_id.status_code == 200, by_id.text
+    assert by_id.json()["name"] == "gamma"
+    assert api.status("GET", "/tenants/no-such-tenant", token=owner) == 404
+
+    # A UUID selector resolves by identifier only: a tenant named a UUID string
+    # is not retrievable through that name, only through its own identifier.
+    uuid_name = "11111111-2222-3333-4444-555555555555"
+    named = api.v0("POST", "/tenants", token=owner, body={"name": uuid_name})
+    assert named.status_code == 201, named.text
+    named_id = named.json()["id"]
+    assert api.status("GET", f"/tenants/{uuid_name}", token=owner) == 404
+    by_own_id = api.v0("GET", f"/tenants/{named_id}", token=owner)
+    assert by_own_id.json()["name"] == uuid_name
+
+    # Leave no trace for the scenarios that follow.
+    assert api.status("DELETE", f"/tenants/{named_id}", token=owner) == 200
+    assert api.status("DELETE", f"/tenants/{gamma_id}", token=owner) == 200
+
+
 # Multi-tenant tokens
 def test_08_one_subject_holds_a_role_per_tenant(
     manager: Manager, api: Api, primary_idp: Issuer, workload_idp: Issuer
