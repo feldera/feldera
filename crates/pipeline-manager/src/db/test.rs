@@ -28,7 +28,7 @@ use crate::db::types::resources_status::{
 use crate::db::types::role::{MemberRole, MintableKeyRole, Role};
 use crate::db::types::storage::{StorageStatus, validate_storage_status_transition};
 use crate::db::types::tenant::TenantId;
-use crate::db::types::user::{TenantInfo, TenantMember, UserId};
+use crate::db::types::user::{MembershipOrigin, TenantInfo, TenantMember, UserId, UserMembership};
 use crate::db::types::utils::{
     MAXIMUM_TAG_LENGTH, validate_api_key_name, validate_deployment_config, validate_pipeline_name,
     validate_program_config, validate_program_info, validate_runtime_config,
@@ -904,6 +904,65 @@ async fn tenant_retrieval_by_name_or_id() {
     );
 }
 
+/// Membership rows record how they came into existence, a role change keeps
+/// the recorded origin, and a user's memberships are listable by identity.
+#[tokio::test]
+async fn membership_origin_is_recorded() {
+    let handle = test_setup().await;
+    let provider = "https://idp.test".to_string();
+    let (tenant, _alice, _) = handle
+        .db
+        .resolve_login(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            "acme".to_string(),
+            provider.clone(),
+            "alice".to_string(),
+            None,
+            Role::Read,
+            Role::Admin,
+            MembershipOrigin::Claim,
+        )
+        .await
+        .unwrap();
+    let members = handle.db.list_tenant_members(tenant).await.unwrap();
+    assert_eq!(members[0].origin, Some(MembershipOrigin::Claim));
+
+    let bob = handle
+        .db
+        .preprovision_member(Uuid::now_v7(), tenant, &provider, "bob", None, Role::Read)
+        .await
+        .unwrap();
+    handle
+        .db
+        .upsert_member_role(tenant, bob, Role::Admin, MembershipOrigin::Derived)
+        .await
+        .unwrap();
+    let members = handle.db.list_tenant_members(tenant).await.unwrap();
+    let bob_row = members.iter().find(|m| m.user_id == bob).unwrap();
+    assert_eq!(bob_row.role, Role::Admin);
+    assert_eq!(bob_row.origin, Some(MembershipOrigin::Api));
+
+    let memberships = handle
+        .db
+        .list_user_memberships(&provider, "alice")
+        .await
+        .unwrap();
+    assert_eq!(memberships.len(), 1);
+    assert_eq!(memberships[0].tenant_id, tenant);
+    assert_eq!(memberships[0].name, "acme");
+    // Alice's login created the tenant, so she holds `first_user_role`.
+    assert_eq!(memberships[0].role, Role::Admin);
+    assert!(
+        handle
+            .db
+            .list_user_memberships(&provider, "nobody")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
 /// Creation, deletion and validation of API keys.
 #[tokio::test]
 async fn api_key_store_and_validation() {
@@ -1178,7 +1237,7 @@ async fn deleting_a_tenant_requires_it_to_be_empty() {
         .unwrap();
     handle
         .db
-        .upsert_member_role(tenant, user, Role::Write)
+        .upsert_member_role(tenant, user, Role::Write, MembershipOrigin::Api)
         .await
         .unwrap();
 
@@ -1238,6 +1297,7 @@ async fn rbac_first_user_role_configurable() {
             Some("founder@sandbox.test".to_string()),
             Role::Read,
             Role::Write,
+            MembershipOrigin::Claim,
         )
         .await
         .unwrap();
@@ -1269,6 +1329,7 @@ async fn rbac_login_resolution_and_membership() {
             Some("alice@acme.test".to_string()),
             Role::Read,
             Role::Admin,
+            MembershipOrigin::Claim,
         )
         .await
         .unwrap();
@@ -1286,6 +1347,7 @@ async fn rbac_login_resolution_and_membership() {
             Some("bob@acme.test".to_string()),
             Role::Read,
             Role::Admin,
+            MembershipOrigin::Claim,
         )
         .await
         .unwrap();
@@ -1304,6 +1366,7 @@ async fn rbac_login_resolution_and_membership() {
             None,
             Role::Read,
             Role::Admin,
+            MembershipOrigin::Claim,
         )
         .await
         .unwrap();
@@ -1322,7 +1385,7 @@ async fn rbac_login_resolution_and_membership() {
     // An admin can change bob's role to write.
     handle
         .db
-        .upsert_member_role(tenant, bob, Role::Write)
+        .upsert_member_role(tenant, bob, Role::Write, MembershipOrigin::Api)
         .await
         .unwrap();
     let members = handle.db.list_tenant_members(tenant).await.unwrap();
@@ -1397,6 +1460,7 @@ async fn oidc_trust_rejects_an_unreachable_issuer() {
             None,
             Role::Read,
             Role::Admin,
+            MembershipOrigin::Claim,
         )
         .await
         .unwrap()
@@ -1482,6 +1546,7 @@ async fn oidc_trust_matching_and_issuer_gate() {
                 None,
                 Role::Read,
                 Role::Admin,
+                MembershipOrigin::Claim,
             )
             .await
             .unwrap()
@@ -1629,6 +1694,7 @@ async fn preprovision_member_survives_first_login() {
             None,
             Role::Read,
             Role::Admin,
+            MembershipOrigin::Claim,
         )
         .await
         .unwrap();
@@ -1664,6 +1730,7 @@ async fn preprovision_member_survives_first_login() {
             Some("carol@acme.test".to_string()),
             Role::Read,
             Role::Admin,
+            MembershipOrigin::Claim,
         )
         .await
         .unwrap();
@@ -4431,17 +4498,70 @@ async fn check_rbac_action(
             let impl_response = handle.db.list_tenant_members(tenant_id).await;
             check_responses(i, model_response, impl_response);
         }
+        RbacAction::EnrollInExistingTenants((provider, subject), names, role) => {
+            let new_user_id = user_id_for_identity(&provider, &subject);
+            let model_response = model
+                .enroll_in_existing_tenants(
+                    new_user_id,
+                    &provider,
+                    &subject,
+                    None,
+                    &names,
+                    role.role(),
+                    MembershipOrigin::Api,
+                )
+                .await;
+            let impl_response = handle
+                .db
+                .enroll_in_existing_tenants(
+                    new_user_id,
+                    &provider,
+                    &subject,
+                    None,
+                    &names,
+                    role.role(),
+                    MembershipOrigin::Api,
+                )
+                .await;
+            check_responses(i, model_response, impl_response);
+        }
+        RbacAction::ListUserMemberships((provider, subject)) => {
+            // Sorted by id on both sides: Postgres collates names by locale,
+            // Rust by bytes, and the order is not what this action checks.
+            let mut model_response = model
+                .list_user_memberships(&provider, &subject)
+                .await
+                .unwrap();
+            let mut impl_response = handle
+                .db
+                .list_user_memberships(&provider, &subject)
+                .await
+                .unwrap();
+            model_response.sort_by_key(|m| m.tenant_id);
+            impl_response.sort_by_key(|m| m.tenant_id);
+            assert_eq!(model_response, impl_response);
+        }
         RbacAction::UpsertMemberRole(tenant_id, (provider, subject), role) => {
             let user_id = user_id_for_identity(&provider, &subject);
             create_tenants_if_not_exists(model, handle, tenant_id)
                 .await
                 .unwrap();
             let model_response = model
-                .upsert_member_role(tenant_id, UserId(user_id), role.role())
+                .upsert_member_role(
+                    tenant_id,
+                    UserId(user_id),
+                    role.role(),
+                    MembershipOrigin::Api,
+                )
                 .await;
             let impl_response = handle
                 .db
-                .upsert_member_role(tenant_id, UserId(user_id), role.role())
+                .upsert_member_role(
+                    tenant_id,
+                    UserId(user_id),
+                    role.role(),
+                    MembershipOrigin::Api,
+                )
                 .await;
             check_responses(i, model_response, impl_response);
         }
@@ -4533,6 +4653,12 @@ enum RbacAction {
         #[proptest(strategy = "limited_email()")] Option<String>,
     ),
     ListTenantMembers(TenantId),
+    ListUserMemberships(#[proptest(strategy = "limited_identity()")] (String, String)),
+    EnrollInExistingTenants(
+        #[proptest(strategy = "limited_identity()")] (String, String),
+        #[proptest(strategy = "prop::collection::vec(limited_tenant_name(), 0..3)")] Vec<String>,
+        MemberRole,
+    ),
     UpsertMemberRole(
         TenantId,
         #[proptest(strategy = "limited_identity()")] (String, String),
@@ -5696,7 +5822,7 @@ struct DbModel {
     /// Keyed by the `(provider, subject)` identity, holding the user's id and
     /// the email last seen for it.
     pub users: BTreeMap<(String, String), (UserId, Option<String>)>,
-    pub memberships: BTreeMap<(TenantId, UserId), Role>,
+    pub memberships: BTreeMap<(TenantId, UserId), (Role, MembershipOrigin)>,
 }
 
 #[async_trait]
@@ -6168,6 +6294,14 @@ impl Storage for Mutex<DbModel> {
         );
     }
 
+    async fn find_tenant_id_by_name(&self, name: &str) -> DBResult<Option<TenantId>> {
+        let s = self.lock().await;
+        Ok(s.tenants
+            .iter()
+            .find(|(_, t)| t.tenant == name)
+            .map(|(id, _)| *id))
+    }
+
     async fn get_tenant(&self, selector: &str) -> DBResult<TenantInfo> {
         let s = self.lock().await;
         let matched = if let Ok(uuid) = Uuid::parse_str(selector) {
@@ -6540,6 +6674,7 @@ impl Storage for Mutex<DbModel> {
         _email: Option<String>,
         default_role: Role,
         _first_user_role: Role,
+        _origin: MembershipOrigin,
     ) -> DBResult<(TenantId, UserId, Role)> {
         Ok((TenantId(Uuid::nil()), UserId(Uuid::nil()), default_role))
     }
@@ -6575,7 +6710,7 @@ impl Storage for Mutex<DbModel> {
             .memberships
             .iter()
             .filter(|((t, _), _)| *t == tenant_id)
-            .filter_map(|((_, user_id), role)| {
+            .filter_map(|((_, user_id), (role, origin))| {
                 s.users.iter().find(|(_, (id, _))| id == user_id).map(
                     |((provider, subject), (id, email))| TenantMember {
                         user_id: *id,
@@ -6583,6 +6718,7 @@ impl Storage for Mutex<DbModel> {
                         subject: subject.clone(),
                         email: email.clone(),
                         role: *role,
+                        origin: Some(*origin),
                     },
                 )
             })
@@ -6601,11 +6737,68 @@ impl Storage for Mutex<DbModel> {
         Ok(members)
     }
 
+    async fn enroll_in_existing_tenants(
+        &self,
+        new_user_id: Uuid,
+        provider: &str,
+        subject: &str,
+        email: Option<&str>,
+        names: &[String],
+        role: Role,
+        origin: MembershipOrigin,
+    ) -> DBResult<()> {
+        let user_id = self
+            .get_or_create_user(new_user_id, provider, subject, email)
+            .await?;
+        let mut s = self.lock().await;
+        for name in names {
+            let Some(tenant_id) = s
+                .tenants
+                .iter()
+                .find(|(_, t)| t.tenant == *name)
+                .map(|(id, _)| *id)
+            else {
+                continue;
+            };
+            // Enroll only where no membership exists; never touch a role.
+            s.memberships
+                .entry((tenant_id, user_id))
+                .or_insert((role, origin));
+        }
+        Ok(())
+    }
+
+    async fn list_user_memberships(
+        &self,
+        provider: &str,
+        subject: &str,
+    ) -> DBResult<Vec<UserMembership>> {
+        let s = self.lock().await;
+        let Some((user_id, _)) = s.users.get(&(provider.to_string(), subject.to_string())) else {
+            return Ok(vec![]);
+        };
+        let mut memberships: Vec<UserMembership> = s
+            .memberships
+            .iter()
+            .filter(|((_, u), _)| u == user_id)
+            .filter_map(|((t, _), (role, _))| {
+                s.tenants.get(t).map(|rec| UserMembership {
+                    tenant_id: *t,
+                    name: rec.tenant.clone(),
+                    role: *role,
+                })
+            })
+            .collect();
+        memberships.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(memberships)
+    }
+
     async fn upsert_member_role(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
         role: Role,
+        origin: MembershipOrigin,
     ) -> DBResult<()> {
         let mut s = self.lock().await;
         if !s.tenants.contains_key(&tenant_id) {
@@ -6616,7 +6809,12 @@ impl Storage for Mutex<DbModel> {
                 user_id: user_id.to_string(),
             });
         }
-        s.memberships.insert((tenant_id, user_id), role);
+        // A conflict updates the role and keeps the recorded origin, as the
+        // SQL upsert does.
+        s.memberships
+            .entry((tenant_id, user_id))
+            .and_modify(|(r, _)| *r = role)
+            .or_insert((role, origin));
         Ok(())
     }
 
@@ -6642,7 +6840,8 @@ impl Storage for Mutex<DbModel> {
         let user_id = self
             .get_or_create_user(new_user_id, provider, subject, email)
             .await?;
-        self.upsert_member_role(tenant_id, user_id, role).await?;
+        self.upsert_member_role(tenant_id, user_id, role, MembershipOrigin::Api)
+            .await?;
         Ok(user_id)
     }
 

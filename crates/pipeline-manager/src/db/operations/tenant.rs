@@ -107,6 +107,21 @@ pub async fn resolve_tenant_selector(
     Ok(get_tenant(txn, selector).await?.id)
 }
 
+/// Looks a tenant up by name alone, `None` on miss. Unlike [`get_tenant`],
+/// a name that happens to parse as a UUID is still treated as a name.
+pub async fn find_tenant_id_by_name(
+    txn: &Transaction<'_>,
+    name: &str,
+) -> Result<Option<TenantId>, DBError> {
+    let stmt = txn
+        .prepare_cached("SELECT id FROM tenant WHERE tenant = $1")
+        .await?;
+    Ok(txn
+        .query_opt(&stmt, &[&name])
+        .await?
+        .map(|row| TenantId(row.get(0))))
+}
+
 /// Retrieves a single tenant by selector, as [`resolve_tenant_selector`]:
 /// a selector that parses as a UUID is looked up by tenant id, otherwise by
 /// name. Never creates a tenant; errors with `UnknownTenantName` on miss.
