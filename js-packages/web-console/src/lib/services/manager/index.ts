@@ -439,6 +439,7 @@ export type {
   ListTenantUsersResponse,
   ListTenantUsersResponses,
   MemberRole,
+  MembershipOrigin,
   MemoryPressure,
   MergerType,
   MetricsFormat,
@@ -670,6 +671,7 @@ export type {
   UrlInputConfig,
   UserAndPassword,
   UserId,
+  UserMembership,
   ValidateProgramRequest,
   ValidateProgramResponse,
   Version

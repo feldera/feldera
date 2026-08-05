@@ -3202,6 +3202,11 @@ export type LicenseValidity =
 export type MemberRole = 'read' | 'write' | 'admin'
 
 /**
+ * How a membership row came into existence, kept for audit.
+ */
+export type MembershipOrigin = 'claim' | 'derived' | 'api'
+
+/**
  * Memory pressure level.
  *
  * The current memory pressure level is computed as a function of the current process
@@ -5476,12 +5481,19 @@ export type ServiceStatus = {
 }
 
 export type SessionInfo = {
-  role: Role
-  tenant_id: TenantId
   /**
-   * Current user's tenant name
+   * The tenants this user may act in, from the membership table. Empty for
+   * principals that are not human logins (API keys, federated workloads,
+   * no-auth mode) and for platform owners without explicit memberships,
+   * who act in any tenant regardless.
    */
-  tenant_name: string
+  memberships: Array<UserMembership>
+  role?: Role | null
+  tenant_id?: TenantId | null
+  /**
+   * Acting tenant name; `null` exactly when `tenant_id` is.
+   */
+  tenant_name?: string | null
 }
 
 /**
@@ -5951,6 +5963,7 @@ export type TenantMember = {
    * Email, if the identity provider supplied one.
    */
   email?: string | null
+  origin?: MembershipOrigin | null
   /**
    * OIDC issuer the user authenticates through.
    */
@@ -6153,6 +6166,19 @@ export type UserAndPassword = {
  * Identifier of a persisted user (the principal behind an OIDC `sub`).
  */
 export type UserId = string
+
+/**
+ * One tenant a user may act in, as surfaced to that user (e.g. in the
+ * session payload that drives the web console's tenant switcher).
+ */
+export type UserMembership = {
+  /**
+   * The tenant's name.
+   */
+  name: string
+  role: Role
+  tenant_id: TenantId
+}
 
 /**
  * Request body for the program validation endpoint.
