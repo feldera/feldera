@@ -111,9 +111,17 @@ class HttpRequests:
             logging.error("Health check failed: %s", e)
             return False
 
-    def _is_retryable(self, exc: BaseException) -> bool:
-        """Define which exceptions are worth retrying."""
+    def _is_retryable(self, exc: BaseException, idempotent: bool) -> bool:
+        """Define which exceptions are worth retrying.
+
+        `idempotent` gates `ConnectionError` (e.g. a connection reset mid-poll):
+        safe to retry for GET, where a lost response can't have caused a
+        server-side side effect, but not for POST/PUT/PATCH/DELETE, where the
+        original request may already have been applied.
+        """
         if isinstance(exc, requests.exceptions.Timeout):
+            return True
+        if idempotent and isinstance(exc, requests.exceptions.ConnectionError):
             return True
         if isinstance(exc, FelderaAPIError):
             return exc.status_code in self.config.retry_config.retryable_status_codes
@@ -204,6 +212,10 @@ class HttpRequests:
         Retry policy:
         - Status codes in `retry_config.retryable_status_codes` (default
           408, 429, 502, 503, 504) and connection/read timeouts retry.
+        - For GET, a `ConnectionError` (e.g. connection reset mid-request)
+          also retries, since a lost response can't have caused a
+          server-side side effect. Not retried for POST/PUT/PATCH/DELETE,
+          where the original request may already have been applied.
         - 502 probes `/cluster_healthz` to distinguish a spurious gateway
           error (cluster healthy → retry immediately) from a real outage
           (cluster unhealthy → wait `unhealthy_backoff` seconds before
@@ -213,6 +225,7 @@ class HttpRequests:
           (capped at `max_backoff`).
         - All other errors are raised immediately.
         """
+        is_idempotent = http_method is requests.get
         request_path = self.config.url + "/" + self.config.version + path
 
         # Serialize the body once, not per retry. None / bytes / `serialize=False`
@@ -235,7 +248,9 @@ class HttpRequests:
 
         cfg = self.config.retry_config
         retryer = Retrying(
-            retry=retry_if_exception(self._is_retryable),
+            retry=retry_if_exception(
+                lambda exc: self._is_retryable(exc, is_idempotent)
+            ),
             wait=self._custom_wait,
             stop=stop_after_attempt(cfg.max_retries + 1),
             reraise=True,
