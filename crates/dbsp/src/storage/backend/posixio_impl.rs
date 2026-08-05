@@ -124,9 +124,7 @@ impl FileRw for PosixReader {
 
 impl FileCommitter for PosixReader {
     fn commit(&self) -> Result<(), StorageError> {
-        self.file
-            .sync_all()
-            .map_err(|e| StorageError::stdio(e.kind(), "fsync", self.drop.path.display()))
+        Ok(())
     }
 }
 
@@ -275,10 +273,6 @@ impl FileWriter for PosixWriter {
         }
 
         SYNC_LATENCY_MICROSECONDS.record_callback(|| {
-            self.file
-                .sync_all()
-                .map_err(|e| StorageError::stdio(e.kind(), "fsync", self.drop.path.display()))?;
-
             // Remove the .mut extension from the file.
             let finalized_path = self.drop.path.with_extension("");
             self.drop.usage.fetch_sub(
