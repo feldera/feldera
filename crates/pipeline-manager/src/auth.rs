@@ -81,6 +81,7 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
+use crate::db::types::user::{MembershipOrigin, UserMembership};
 use crate::oidc::fetch::{
     OidcDestination, fetch_issuer_jwks, fetch_jwks_uri_from_discovery, oidc_http_client,
 };
@@ -117,6 +118,27 @@ impl AuthenticatedPrincipal {
             label: "test".to_string(),
         }
     }
+}
+
+/// Identity of a human login, installed by `bearer_auth` as a request
+/// extension so the session endpoint can look up the user's memberships.
+/// Absent for API keys, federated workloads, and no-auth mode.
+#[derive(Clone, Debug)]
+pub(crate) struct LoginIdentity {
+    pub provider: String,
+    pub subject: String,
+}
+
+/// Marker extension: the login carried no resolvable acting tenant. Only the
+/// session endpoint sees such a request; every other route was refused. The
+/// session handler answers with the caller's memberships and no acting-tenant
+/// fields, so a client can pick a tenant.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct UnresolvedActingTenant;
+
+/// Whether this request may be answered without a resolved acting tenant.
+fn is_session_request(req: &ServiceRequest) -> bool {
+    req.method() == actix_web::http::Method::GET && req.path() == "/v0/config/session"
 }
 
 /// Returns true if the given OIDC identity is configured as a platform owner.
@@ -501,6 +523,149 @@ async fn resolve_owner_acting_tenant(
     }
 }
 
+/// The owner's home tenant: named by its claims, the default tenant when they
+/// name none or, with provisioning off, when the named tenant does not exist.
+/// A login with provisioning off must not create tenants, an owner's included.
+async fn owner_home_tenant(
+    state: &ServerState,
+    token_data: &TokenData<OidcClaim>,
+    provider: &str,
+) -> Result<TenantId, DBError> {
+    // The Feldera-Tenant header selects the acting tenant for an owner, so
+    // the home resolution deliberately reads the claims with no headers.
+    let empty = actix_web::http::header::HeaderMap::new();
+    let Ok(name) = token_data.tenant_name(&state.config, &empty) else {
+        return Ok(DEFAULT_TENANT_ID);
+    };
+    let db = state.db.lock().await;
+    if state.config.provision_on_login {
+        db.get_or_create_tenant_id(Uuid::now_v7(), name, provider.to_string())
+            .await
+    } else {
+        // By name alone: the name came from the claims, and one that parses
+        // as a UUID must not be reinterpreted as a tenant id.
+        Ok(db
+            .find_tenant_id_by_name(&name)
+            .await?
+            .unwrap_or(DEFAULT_TENANT_ID))
+    }
+}
+
+/// Provision what the tenancy strategy implies for this login, when
+/// `provision_on_login` allows it. The deliberately selected claim entry is
+/// fully provisioned (get-or-create, enroll, `first_user_role` on creation);
+/// every other listed entry enrolls into an existing tenant only, so a
+/// mangled claim entry cannot mint a tenant with the logger-in as its admin.
+/// With provisioning off, only the user's identity row is refreshed (email),
+/// so member lists stay readable; tenant creation and enrollment stop.
+async fn provision_login(
+    state: &ServerState,
+    token_data: &TokenData<OidcClaim>,
+    selector: Option<&str>,
+    provider: &str,
+    subject: &str,
+    email: Option<&str>,
+) -> Result<(), DBError> {
+    if !state.config.provision_on_login {
+        let db = state.db.lock().await;
+        db.get_or_create_user(Uuid::now_v7(), provider, subject, email)
+            .await?;
+        return Ok(());
+    }
+    let Some(listed) = token_data.authorized_tenants() else {
+        // The token names no tenant: derive one or, with both derivations
+        // off, provision nothing. That is no error: the user may hold
+        // API-granted memberships, and a user without any is denied by the
+        // acting-tenant selection, not here.
+        let Some(name) = derived_tenant_name(&state.config, provider, subject) else {
+            return Ok(());
+        };
+        let db = state.db.lock().await;
+        db.resolve_login(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            name,
+            provider.to_string(),
+            subject.to_string(),
+            email.map(str::to_string),
+            state.config.default_role,
+            state.config.first_user_role,
+            MembershipOrigin::Derived,
+        )
+        .await?;
+        return Ok(());
+    };
+    let candidate = match selector {
+        Some(sel) => listed.iter().find(|n| n.as_str() == sel).cloned(),
+        None if listed.len() == 1 => Some(listed[0].clone()),
+        None => None,
+    };
+    let db = state.db.lock().await;
+    if let Some(name) = &candidate {
+        db.resolve_login(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            name.clone(),
+            provider.to_string(),
+            subject.to_string(),
+            email.map(str::to_string),
+            state.config.default_role,
+            state.config.first_user_role,
+            MembershipOrigin::Claim,
+        )
+        .await?;
+    }
+    let others: Vec<String> = listed
+        .iter()
+        .filter(|n| Some(*n) != candidate.as_ref())
+        .cloned()
+        .collect();
+    if !others.is_empty() {
+        db.enroll_in_existing_tenants(
+            Uuid::now_v7(),
+            provider,
+            subject,
+            email,
+            &others,
+            state.config.default_role,
+            MembershipOrigin::Claim,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Pick the acting tenant from the user's memberships: a selector must name a
+/// tenant the user is a member of, and without one a sole membership is
+/// unambiguous. One neutral answer covers an unknown tenant and a tenant the
+/// user is no member of, because distinguishing them would let any
+/// authenticated user probe which tenants exist. Only the miss folds in; an
+/// infrastructure error must surface as one, not as an authorization denial.
+async fn select_acting_tenant(
+    state: &ServerState,
+    selector: Option<&str>,
+    memberships: &[UserMembership],
+) -> Result<(TenantId, Role), DBError> {
+    let Some(sel) = selector else {
+        return match memberships {
+            [only] => Ok((only.tenant_id, only.role)),
+            [] => Err(DBError::NoTenantMemberships),
+            _ => Err(DBError::AmbiguousTenantMembership),
+        };
+    };
+    let tenant = match state.db.lock().await.get_tenant(sel).await {
+        Ok(tenant) => Some(tenant),
+        Err(DBError::UnknownTenantName { .. }) => None,
+        Err(e) => return Err(e),
+    };
+    tenant
+        .and_then(|tenant| memberships.iter().find(|m| m.tenant_id == tenant.id))
+        .map(|m| (m.tenant_id, m.role))
+        .ok_or(DBError::NotATenantMember {
+            tenant: sel.to_string(),
+        })
+}
+
 async fn bearer_auth(
     req: ServiceRequest,
     token: &str,
@@ -530,6 +695,12 @@ async fn bearer_auth(
             let subject = token_data.claims.sub.clone();
             let email = token_data.claims.email.clone();
             let label = email.clone().unwrap_or_else(|| subject.clone());
+            // Human logins carry their identity to the session endpoint,
+            // which reports the user's memberships to drive tenant selection.
+            req.extensions_mut().insert(LoginIdentity {
+                provider: provider.clone(),
+                subject: subject.clone(),
+            });
             // Only a provider-verified email may match an owner entry; an
             // unverified, user-settable email must never confer `owner`.
             let verified_email = if token_data.claims.email_verified == Some(true) {
@@ -550,29 +721,16 @@ async fn bearer_auth(
                     );
 
             if is_owner {
-                // The owner's home tenant comes from its claims, ignoring the
-                // Feldera-Tenant header (which selects the acting tenant for an
-                // owner). Falls back to the default tenant when claims name none.
-                let empty = actix_web::http::header::HeaderMap::new();
-                let home = match token_data.tenant_name(&state.config, &empty) {
-                    Ok(name) => {
-                        let db = state.db.lock().await;
-                        match db
-                            .get_or_create_tenant_id(Uuid::now_v7(), name, provider.clone())
-                            .await
-                        {
-                            Ok(t) => t,
-                            Err(e) => {
-                                return Err((
-                                    create_authz_json_error(&format!(
-                                        "Database error while fetching tenant: {e}"
-                                    )),
-                                    req,
-                                ));
-                            }
-                        }
+                let home = match owner_home_tenant(&state, &token_data, &provider).await {
+                    Ok(home) => home,
+                    Err(e) => {
+                        return Err((
+                            create_authz_json_error(&format!(
+                                "Database error while fetching tenant: {e}"
+                            )),
+                            req,
+                        ));
                     }
-                    Err(_) => DEFAULT_TENANT_ID,
                 };
                 let acting = {
                     let db = state.db.lock().await;
@@ -591,52 +749,72 @@ async fn bearer_auth(
                 return Ok(req);
             }
 
-            // Non-owner: the header disambiguates among the authorized tenants
-            // (existing behavior); the role comes from the membership table.
-            // `AuthError::Display` is the single source of these user-facing
-            // messages, so they cannot drift from the error variants.
-            let tenant_name = match token_data.tenant_name(&state.config, req.headers()) {
-                Ok(name) => name,
-                Err(e) => {
-                    error!("Tenant resolution failed: {e}");
-                    return Err((create_authz_json_error(&e.to_string()), req));
+            // Non-owner: the membership table is the authorization authority;
+            // the tenancy strategy only provisions (see `provision_login`).
+            let selector = req
+                .headers()
+                .get(TENANT_HEADER)
+                .and_then(|h| h.to_str().ok())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+
+            if let Err(e) = provision_login(
+                &state,
+                &token_data,
+                selector.as_deref(),
+                &provider,
+                &subject,
+                email.as_deref(),
+            )
+            .await
+            {
+                error!("Could not resolve login, with error {e}");
+                return Err((
+                    create_authz_json_error(&format!("Database error while resolving login: {e}")),
+                    req,
+                ));
+            }
+
+            let memberships = {
+                let db = state.db.lock().await;
+                match db.list_user_memberships(&provider, &subject).await {
+                    Ok(memberships) => memberships,
+                    Err(e) => {
+                        return Err((crate::error::ManagerError::from(e).into(), req));
+                    }
                 }
             };
 
-            let resolved = {
-                let db = state.db.lock().await;
-                db.resolve_login(
-                    Uuid::now_v7(),
-                    Uuid::now_v7(),
-                    tenant_name,
-                    provider,
-                    subject,
-                    email,
-                    state.config.default_role,
-                    state.config.first_user_role,
-                )
-                .await
-            };
-            match resolved {
-                Ok((tenant_id, _user_id, role)) => {
-                    AuthenticatedPrincipal {
-                        acting_tenant: tenant_id,
-                        role,
-                        label,
+            let (acting_tenant, role) =
+                match select_acting_tenant(&state, selector.as_deref(), &memberships).await {
+                    Ok(pair) => pair,
+                    Err(DBError::AmbiguousTenantMembership | DBError::NoTenantMemberships)
+                        if is_session_request(&req) =>
+                    {
+                        // The session endpoint answers a login with no
+                        // resolvable acting tenant (none, or several without a
+                        // selector), so the console can drive its tenant
+                        // picker. The sentinel principal reaches only this
+                        // endpoint, which never reads its acting tenant when
+                        // the marker is present.
+                        req.extensions_mut().insert(UnresolvedActingTenant);
+                        AuthenticatedPrincipal {
+                            acting_tenant: DEFAULT_TENANT_ID,
+                            role: Role::Read,
+                            label,
+                        }
+                        .install(&req);
+                        return Ok(req);
                     }
-                    .install(&req);
-                    Ok(req)
-                }
-                Err(e) => {
-                    error!("Could not resolve login, with error {}", e);
-                    Err((
-                        create_authz_json_error(&format!(
-                            "Database error while resolving login: {e}"
-                        )),
-                        req,
-                    ))
-                }
+                    Err(e) => return Err((crate::error::ManagerError::from(e).into(), req)),
+                };
+            AuthenticatedPrincipal {
+                acting_tenant,
+                role,
+                label,
             }
+            .install(&req);
+            Ok(req)
         }
         Err(error) => {
             let descr = match error {
@@ -802,19 +980,7 @@ impl OidcClaimExt for TokenData<OidcClaim> {
         }
 
         // Fallback when the token claims no tenant at all: derive one.
-        // Priority: issuer-domain > sub (if enabled)
-        let derived = config
-            .issuer_tenant
-            .then(|| extract_tenant_from_issuer(issuer))
-            .flatten()
-            .or_else(|| {
-                config.individual_tenant.then(|| {
-                    debug!("Using sub claim for tenant resolution: {}", sub);
-                    sub.clone()
-                })
-            });
-
-        let Some(derived) = derived else {
+        let Some(derived) = derived_tenant_name(config, issuer, sub) else {
             return Err(AuthError::NoTenantFound);
         };
 
@@ -836,6 +1002,26 @@ impl OidcClaimExt for TokenData<OidcClaim> {
     fn provider(&self) -> String {
         self.claims.iss.clone()
     }
+}
+
+/// The tenant name the strategy derives for a token that claims none.
+/// Priority: issuer domain (if enabled) over the `sub` claim (if enabled);
+/// `None` when both derivations are off.
+fn derived_tenant_name(
+    config: &crate::config::ApiServerConfig,
+    issuer: &str,
+    sub: &str,
+) -> Option<String> {
+    config
+        .issuer_tenant
+        .then(|| extract_tenant_from_issuer(issuer))
+        .flatten()
+        .or_else(|| {
+            config.individual_tenant.then(|| {
+                debug!("Using sub claim for tenant resolution: {}", sub);
+                sub.to_string()
+            })
+        })
 }
 
 /// Validates that the user belongs to at least one required group (for
@@ -1563,6 +1749,7 @@ mod test {
             allow_internal_tenant_trust_issuers: false,
             default_role: Role::Read,
             first_user_role: Role::Admin,
+            provision_on_login: true,
         }
     }
 
