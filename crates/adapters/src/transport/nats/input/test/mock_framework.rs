@@ -170,6 +170,23 @@ impl NatsMockRunner {
         }
     }
 
+    /// Waits for the worker task to fully exit after `disconnect()`.
+    ///
+    /// `disconnect()` only enqueues a command; the background reader task
+    /// keeps pulling and queuing messages until the worker task processes it
+    /// and cancels the reader. Without waiting here, a caller that publishes
+    /// more records right after `disconnect()` races the background reader,
+    /// which can still pick them up and have a stale, already-queued `Queue`
+    /// command flush them. `is_closed()` only goes true once the worker task
+    /// has returned and dropped the command channel, so waiting for it here
+    /// proves the reader is gone before the caller does anything else.
+    fn wait_for_disconnect(&self) -> AnyResult<()> {
+        let endpoint = self.endpoint();
+        wait(|| endpoint.is_closed(), DEFAULT_TIMEOUT_MS)
+            .map_err(|()| anyhow::anyhow!("Timed out waiting for endpoint to disconnect"))?;
+        Ok(())
+    }
+
     fn zset(&self) -> &MockDeZSet<NatsTestRecord, NatsTestRecord> {
         if let Some(zset) = self.zset.as_ref() {
             zset
@@ -342,6 +359,7 @@ impl NatsMockRunner {
                     );
                 }
                 self.endpoint().disconnect();
+                self.wait_for_disconnect()?;
             }
 
             NatsMockAction::DisconnectAllowNonFatal => {
@@ -350,6 +368,7 @@ impl NatsMockRunner {
                     "Streaming NATS connector should never signal end-of-input"
                 );
                 self.endpoint().disconnect();
+                self.wait_for_disconnect()?;
             }
 
             NatsMockAction::Sleep(dur) => {
