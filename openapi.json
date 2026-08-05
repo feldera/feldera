@@ -534,7 +534,7 @@
           "Platform"
         ],
         "summary": "Get Session",
-        "description": "Required role: `read` or higher.\n\nRetrieve login session information for your current user session.",
+        "description": "Required role: `read` or higher.\n\nRetrieve login session information for your current user session.\n\nThis is the one route that answers a login without a resolved acting\ntenant: when the user belongs to several tenants (or none) and no\n`Feldera-Tenant` header selects one, the acting-tenant fields are `null`\nand `memberships` lists the tenants to pick from.",
         "operationId": "get_config_session",
         "responses": {
           "200": {
@@ -7453,7 +7453,7 @@
           "Platform"
         ],
         "summary": "Provision Tenant Member",
-        "description": "Required role: `admin` or higher.\n\nAdd a member to the acting tenant by identity, before the user's first\nlogin. The grant is dormant until that identity authenticates into the\ntenant through the IdP. The role is capped at the caller's own role and may\nnot be `owner`.",
+        "description": "Required role: `admin` or higher.\n\nAdd a member to the acting tenant by identity, before the user's first\nlogin. The membership authorizes on its own: as soon as that identity\nauthenticates through the platform's identity provider, the user may act\nin this tenant, and a headerless login with exactly this one membership\nlands in it. The role is capped at the caller's own role and may not be\n`owner`.",
         "operationId": "add_tenant_user",
         "requestBody": {
           "content": {
@@ -11621,6 +11621,15 @@
           "admin"
         ]
       },
+      "MembershipOrigin": {
+        "type": "string",
+        "description": "How a membership row came into existence, kept for audit.",
+        "enum": [
+          "claim",
+          "derived",
+          "api"
+        ]
+      },
       "MemoryPressure": {
         "type": "string",
         "description": "Memory pressure level.\n\nThe current memory pressure level is computed as a function of the current process\nresident set size (RSS) and the user-configured memory limit (`max_rss`).\n\nAs the memory pressure level increases, the system will apply increasing backpressure to\npush state cached in memory to storage.\n\n- `Low`: less than 85% of the user-configured memory limit has been allocated.\n- `Moderate`: between 85% and 90% of the user-configured memory limit has been allocated.\n- `High`: between 90% and 95% of the user-configured memory limit has been allocated.\n- `Critical`: more than 95% of the user-configured memory limit has been allocated.",
@@ -14839,20 +14848,36 @@
       "SessionInfo": {
         "type": "object",
         "required": [
-          "tenant_id",
-          "tenant_name",
-          "role"
+          "memberships"
         ],
         "properties": {
+          "memberships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserMembership"
+            },
+            "description": "The tenants this user may act in, from the membership table. Empty for\nprincipals that are not human logins (API keys, federated workloads,\nno-auth mode) and for platform owners without explicit memberships,\nwho act in any tenant regardless."
+          },
           "role": {
-            "$ref": "#/components/schemas/Role"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              }
+            ],
+            "nullable": true
           },
           "tenant_id": {
-            "$ref": "#/components/schemas/TenantId"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TenantId"
+              }
+            ],
+            "nullable": true
           },
           "tenant_name": {
             "type": "string",
-            "description": "Current user's tenant name"
+            "description": "Acting tenant name; `null` exactly when `tenant_id` is.",
+            "nullable": true
           }
         }
       },
@@ -15479,6 +15504,14 @@
             "description": "Email, if the identity provider supplied one.",
             "nullable": true
           },
+          "origin": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MembershipOrigin"
+              }
+            ],
+            "nullable": true
+          },
           "provider": {
             "type": "string",
             "description": "OIDC issuer the user authenticates through."
@@ -16060,6 +16093,27 @@
         "type": "string",
         "format": "uuid",
         "description": "Identifier of a persisted user (the principal behind an OIDC `sub`)."
+      },
+      "UserMembership": {
+        "type": "object",
+        "description": "One tenant a user may act in, as surfaced to that user (e.g. in the\nsession payload that drives the web console's tenant switcher).",
+        "required": [
+          "tenant_id",
+          "name",
+          "role"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The tenant's name."
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "tenant_id": {
+            "$ref": "#/components/schemas/TenantId"
+          }
+        }
       },
       "ValidateProgramRequest": {
         "type": "object",

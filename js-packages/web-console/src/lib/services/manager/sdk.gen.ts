@@ -497,6 +497,11 @@ export const getConfigOwners = <ThrowOnError extends boolean = true>(
  * Required role: `read` or higher.
  *
  * Retrieve login session information for your current user session.
+ *
+ * This is the one route that answers a login without a resolved acting
+ * tenant: when the user belongs to several tenants (or none) and no
+ * `Feldera-Tenant` header selects one, the acting-tenant fields are `null`
+ * and `memberships` lists the tenants to pick from.
  */
 export const getConfigSession = <ThrowOnError extends boolean = true>(
   options?: Options<GetConfigSessionData, ThrowOnError>
@@ -1936,9 +1941,11 @@ export const listTenantUsers = <ThrowOnError extends boolean = true>(
  * Required role: `admin` or higher.
  *
  * Add a member to the acting tenant by identity, before the user's first
- * login. The grant is dormant until that identity authenticates into the
- * tenant through the IdP. The role is capped at the caller's own role and may
- * not be `owner`.
+ * login. The membership authorizes on its own: as soon as that identity
+ * authenticates through the platform's identity provider, the user may act
+ * in this tenant, and a headerless login with exactly this one membership
+ * lands in it. The role is capped at the caller's own role and may not be
+ * `owner`.
  */
 export const addTenantUser = <ThrowOnError extends boolean = true>(
   options: Options<AddTenantUserData, ThrowOnError>
