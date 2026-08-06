@@ -64,6 +64,10 @@ size-of = { workspace = true }
 name = "flat_variant_serialize"
 harness = false
 
+[[bench]]
+name = "variant_memory"
+harness = false
+
 [package.metadata.cargo-machete]
 # The md-5 package's library is named md5, which cargo-machete cannot match.
 ignored = ["md-5"]
