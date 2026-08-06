@@ -711,8 +711,30 @@ there, builders and mergers alike. File batches are M4.
 Still open: the mergers take the same path but a merge sees two dictionaries, so B4 and B5
 have not been written yet, and `SPARSE_FACTOR` is a guess until B8 exists.
 
-**M3: shape table.** `TAG_SHAPED_MAP`. The largest single win and strictly additive.
-Benchmarks B1, B2, B3.
+**M3: shape table.** In the tree. Per row on the sample records the VARIANT columns go
+7.2 KiB -> 3.7 KiB, so **4.22x against the flat encoding** and 23x against the enum, against
+the 4.54x this document modelled.
+
+A shape carries its own offset table, `[arity][key ends][keys]`, which is exactly the table
+the document stops carrying. That lets a key too short to earn a dictionary entry sit inline
+beside referenced ones; without it a single short key among the hundreds in these records
+cost the whole map its shape, which measured as almost the entire win.
+
+Shapes are registered while the dictionary is built, because that is the last moment before
+it freezes, and looked up again when a document is rewritten. Both sides translate keys
+through the reference tables rather than resolving strings, so a shape costs one hash of
+itself and never one per key. That is what the 87% measurement was for.
+
+`rank` folds the shaped tag onto the general one so the forms compare and hash alike. Every
+test before this one interned within a single dictionary and none caught that being missing;
+comparing two shaped maps from different dictionaries reached an unreachable arm. Any new
+`match value.tag()` has to be ranked, or handle both tags.
+
+End to end on zeta_cnn at SF100, against a control run back to back with it: peak RSS
+-16.5%, peak storage -39.1%, throughput -33.9%. The encoding win is far larger than the peak
+RSS win, which is the open question in section 0: the peak is not dominated by the batches.
+The throughput cost is the shape lookup, which builds and hashes a map's key area twice per
+document, once to register and once to emit.
 
 **M4: storage.** File-level dictionary block, `Deserializer` context, version bump, compat
 goldens. Benchmarks B7, B9.
