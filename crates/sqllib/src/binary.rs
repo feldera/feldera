@@ -53,6 +53,8 @@ type CompactVec = SmallVec<[u8; THRESHOLD]>;
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[serde(transparent)]
+// Bytes hold no VARIANT, and `SmallVec` belongs to another crate.
+#[interned(opaque)]
 pub struct ByteArray {
     data: CompactVec,
 }

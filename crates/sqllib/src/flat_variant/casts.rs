@@ -18,9 +18,9 @@ use crate::error::{SqlResult, SqlRuntimeError, r2o};
 use crate::flat_variant::{
     Container, FlatVariant, TAG_ARRAY, TAG_BIGINT, TAG_BINARY, TAG_BOOLEAN, TAG_DATE, TAG_DECIMAL,
     TAG_DOUBLE, TAG_GEOMETRY, TAG_INT, TAG_LONG_INTERVAL, TAG_MAP, TAG_REAL, TAG_SHORT_INTERVAL,
-    TAG_SMALLINT, TAG_SQL_NULL, TAG_STRING, TAG_TIME, TAG_TIMESTAMP, TAG_TIMESTAMP_TZ, TAG_TINYINT,
-    TAG_UBIGINT, TAG_UINT, TAG_USMALLINT, TAG_UTINYINT, TAG_UUID, TAG_VARIANT_NULL, Writer,
-    payload_array, sort_map_entries,
+    TAG_SMALLINT, TAG_SQL_NULL, TAG_STRING, TAG_STRING_REF, TAG_TIME, TAG_TIMESTAMP,
+    TAG_TIMESTAMP_TZ, TAG_TINYINT, TAG_UBIGINT, TAG_UINT, TAG_USMALLINT, TAG_UTINYINT, TAG_UUID,
+    TAG_VARIANT_NULL, Val, Writer, payload_array, sort_map_entries,
 };
 use crate::{
     Array, ByteArray, Date, GeoPoint, LongInterval, Map, ShortInterval, SqlDecimal, SqlString,
@@ -64,9 +64,9 @@ pub(crate) enum FVRef<'a> {
     Map,
 }
 
-pub(crate) fn view(bytes: &[u8]) -> FVRef<'_> {
-    let p = &bytes[1..];
-    match bytes[0] {
+pub(crate) fn view<'a>(val: Val<'a>) -> FVRef<'a> {
+    let p = val.payload();
+    match val.tag() {
         TAG_SQL_NULL => FVRef::SqlNull,
         TAG_VARIANT_NULL => FVRef::VariantNull,
         TAG_BOOLEAN => FVRef::Boolean(p[0] != 0),
@@ -81,7 +81,9 @@ pub(crate) fn view(bytes: &[u8]) -> FVRef<'_> {
         TAG_REAL => FVRef::Real(F32::new(f32::from_le_bytes(payload_array(p)))),
         TAG_DOUBLE => FVRef::Double(F64::new(f64::from_le_bytes(payload_array(p)))),
         TAG_DECIMAL => FVRef::Decimal(i128::from_le_bytes(payload_array(&p[..16])), p[16]),
-        TAG_STRING => FVRef::String(std::str::from_utf8(p).expect("encoded string is UTF-8")),
+        TAG_STRING | TAG_STRING_REF => {
+            FVRef::String(std::str::from_utf8(val.string_bytes()).expect("encoded string is UTF-8"))
+        }
         TAG_DATE => FVRef::Date(Date::from_days(i32::from_le_bytes(payload_array(p)))),
         TAG_TIME => FVRef::Time(Time::from_nanoseconds(u64::from_le_bytes(payload_array(p)))),
         TAG_TIMESTAMP => FVRef::Timestamp(Timestamp::from_microseconds(i64::from_le_bytes(
@@ -110,7 +112,7 @@ pub(crate) fn view(bytes: &[u8]) -> FVRef<'_> {
 
 /// The SQL type name of an encoded value, as reported by TYPEOF.
 pub(crate) fn type_string(bytes: &[u8]) -> &'static str {
-    match bytes[0] {
+    match crate::flat_variant::rank(bytes[0]) {
         TAG_SQL_NULL => "NULL",
         TAG_VARIANT_NULL => "VARIANT",
         TAG_BOOLEAN => "BOOLEAN",
@@ -228,7 +230,7 @@ impl<const P: usize, const S: usize> EncodeFV for SqlDecimal<P, S> {
 
 impl EncodeFV for SqlString {
     fn encode(&self, w: &mut Writer) -> Range<usize> {
-        w.scalar(TAG_STRING, self.str().as_bytes())
+        w.string(self.str().as_bytes())
     }
 }
 
@@ -324,7 +326,7 @@ impl<K: EncodeFV, V: EncodeFV> EncodeFV for Map<K, V> {
             .iter()
             .map(|(k, v)| (k.encode(w), v.encode(w)))
             .collect();
-        sort_map_entries(&w.out, &mut entries);
+        sort_map_entries(w, &mut entries);
         w.map(&entries)
     }
 }
@@ -339,16 +341,16 @@ impl<K: EncodeFV, V: EncodeFV> EncodeFV for Map<K, V> {
 /// the supported API.
 #[doc(hidden)]
 pub trait DecodeFV: Sized {
-    fn decode(bytes: &[u8]) -> Result<Self, Box<dyn Error>>;
+    fn decode(val: Val<'_>) -> Result<Self, Box<dyn Error>>;
 
     /// Option semantics: nulls become None for concrete targets. `FlatVariant`
     /// overrides this to always wrap, matching the enum, where
     /// `Option<Variant>` gets its conversion from core's `From<T> for
     /// Option<T>` and a JSON null stays a variant-null value.
-    fn decode_option(bytes: &[u8]) -> Result<Option<Self>, Box<dyn Error>> {
-        match bytes[0] {
+    fn decode_option(val: Val<'_>) -> Result<Option<Self>, Box<dyn Error>> {
+        match val.tag() {
             TAG_SQL_NULL | TAG_VARIANT_NULL => Ok(None),
-            _ => Ok(Some(Self::decode(bytes)?)),
+            _ => Ok(Some(Self::decode(val)?)),
         }
     }
 }
@@ -357,11 +359,11 @@ macro_rules! decode_exact {
     // into!: exact tag, string fallback, else error.
     ($type:ty, $pattern:pat => $value:expr, $cast_s:ident, $sqlname:expr) => {
         impl DecodeFV for $type {
-            fn decode(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
-                match view(bytes) {
+            fn decode(val: Val<'_>) -> Result<Self, Box<dyn Error>> {
+                match view(val) {
                     FVRef::String(x) => Ok($cast_s(SqlString::from_ref(x))?),
                     $pattern => Ok($value),
-                    _ => Err(cannot_convert(bytes, $sqlname).into()),
+                    _ => Err(cannot_convert(val.bytes, $sqlname).into()),
                 }
             }
         }
@@ -369,10 +371,10 @@ macro_rules! decode_exact {
     // into_no_string!: exact tag only.
     ($type:ty, $pattern:pat => $value:expr, $sqlname:expr) => {
         impl DecodeFV for $type {
-            fn decode(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
-                match view(bytes) {
+            fn decode(val: Val<'_>) -> Result<Self, Box<dyn Error>> {
+                match view(val) {
                     $pattern => Ok($value),
-                    _ => Err(cannot_convert(bytes, $sqlname).into()),
+                    _ => Err(cannot_convert(val.bytes, $sqlname).into()),
                 }
             }
         }
@@ -394,8 +396,8 @@ macro_rules! decode_numeric {
     ($type:ty, $name:ident, $sqlname:expr) => {
         ::paste::paste! {
             impl DecodeFV for $type {
-                fn decode(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
-                    match view(bytes) {
+                fn decode(val: Val<'_>) -> Result<Self, Box<dyn Error>> {
+                    match view(val) {
                         FVRef::String(x) => Ok([<cast_to_ $name _s>](SqlString::from_ref(x))?),
                         FVRef::TinyInt(x) => Ok([<cast_to_ $name _i8>](x)?),
                         FVRef::SmallInt(x) => Ok([<cast_to_ $name _i16>](x)?),
@@ -410,10 +412,10 @@ macro_rules! decode_numeric {
                         FVRef::Decimal(sig, scale) => {
                             match i128::try_from(DynamicDecimal::new(sig, scale)) {
                                 Ok(value) => Ok([<cast_to_ $name _i128>](value)?),
-                                Err(_) => Err(cannot_convert(bytes, $sqlname).into()),
+                                Err(_) => Err(cannot_convert(val.bytes, $sqlname).into()),
                             }
                         }
-                        _ => Err(cannot_convert(bytes, $sqlname).into()),
+                        _ => Err(cannot_convert(val.bytes, $sqlname).into()),
                     }
                 }
             }
@@ -434,8 +436,8 @@ decode_numeric!(F64, d, "DOUBLE");
 
 /// Renders any scalar as its SQL string form; containers are an error.
 impl DecodeFV for SqlString {
-    fn decode(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
-        Ok(match view(bytes) {
+    fn decode(val: Val<'_>) -> Result<Self, Box<dyn Error>> {
+        Ok(match view(val) {
             FVRef::Boolean(x) => SqlString::from_ref(if x { "true" } else { "false" }),
             FVRef::TinyInt(x) => SqlString::from(format!("{x}")),
             FVRef::SmallInt(x) => SqlString::from(format!("{x}")),
@@ -466,45 +468,45 @@ impl DecodeFV for SqlString {
             FVRef::Binary(x) => to_hex_(ByteArray::new(x)),
             FVRef::Uuid(x) => SqlString::from(format!("{x}")),
             // GeoPoint, Map, and Array have no cast to string.
-            _ => return Err(cannot_convert(bytes, "CHAR").into()),
+            _ => return Err(cannot_convert(val.bytes, "CHAR").into()),
         })
     }
 }
 
 /// Numeric coercion into a decimal with the target's precision and scale.
 impl<const P: usize, const S: usize> DecodeFV for SqlDecimal<P, S> {
-    fn decode(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
-        match cast_to_SqlDecimalN_FV::<P, S>(FlatVariant::from_bytes(bytes))? {
+    fn decode(val: Val<'_>) -> Result<Self, Box<dyn Error>> {
+        match cast_to_SqlDecimalN_FV::<P, S>(FlatVariant::from_val(val))? {
             Some(value) => Ok(value),
-            None => Err(cannot_convert(bytes, "DECIMAL").into()),
+            None => Err(cannot_convert(val.bytes, "DECIMAL").into()),
         }
     }
 }
 
 impl DecodeFV for FlatVariant {
-    fn decode(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
-        Ok(FlatVariant::from_bytes(bytes))
+    fn decode(val: Val<'_>) -> Result<Self, Box<dyn Error>> {
+        Ok(FlatVariant::from_val(val))
     }
 
-    fn decode_option(bytes: &[u8]) -> Result<Option<Self>, Box<dyn Error>> {
-        Ok(Some(FlatVariant::from_bytes(bytes)))
+    fn decode_option(val: Val<'_>) -> Result<Option<Self>, Box<dyn Error>> {
+        Ok(Some(FlatVariant::from_val(val)))
     }
 }
 
 impl<T: DecodeFV> DecodeFV for Option<T> {
-    fn decode(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
-        T::decode_option(bytes)
+    fn decode(val: Val<'_>) -> Result<Self, Box<dyn Error>> {
+        T::decode_option(val)
     }
 }
 
 impl<T: DecodeFV> DecodeFV for Array<T> {
-    fn decode(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
-        match bytes[0] {
+    fn decode(val: Val<'_>) -> Result<Self, Box<dyn Error>> {
+        match val.tag() {
             TAG_ARRAY => {
-                let c = Container::new(bytes);
+                let c = Container::new(val.bytes);
                 let mut items = Vec::with_capacity(c.count);
                 for i in 0..c.count {
-                    items.push(T::decode(&bytes[c.element(i)])?);
+                    items.push(T::decode(val.sub(c.element(i)))?);
                 }
                 Ok(items.into())
             }
@@ -514,14 +516,14 @@ impl<T: DecodeFV> DecodeFV for Array<T> {
 }
 
 impl<K: DecodeFV + Ord, V: DecodeFV> DecodeFV for Map<K, V> {
-    fn decode(bytes: &[u8]) -> Result<Self, Box<dyn Error>> {
-        match bytes[0] {
+    fn decode(val: Val<'_>) -> Result<Self, Box<dyn Error>> {
+        match val.tag() {
             TAG_MAP => {
-                let c = Container::new(bytes);
+                let c = Container::new(val.bytes);
                 let mut result = std::collections::BTreeMap::new();
                 for i in 0..c.count {
-                    let k = K::decode(&bytes[c.element(i)])?;
-                    let v = V::decode(&bytes[c.map_value(i)])?;
+                    let k = K::decode(val.sub(c.element(i)))?;
+                    let v = V::decode(val.sub(c.map_value(i)))?;
                     result.insert(k, v);
                 }
                 Ok(result.into())
@@ -572,7 +574,7 @@ macro_rules! cast_from_flat_variant {
             // cast_to_i32N_FV
             #[doc(hidden)]
             pub fn [< cast_to_ $name N _FV >](value: FlatVariant) -> SqlResult<Option<$type>> {
-                match view(value.as_bytes()) {
+                match view(value.val()) {
                     FVRef::String(x) => r2o([< cast_to_ $name _s>](SqlString::from_ref(x))),
                     $pattern => Ok(Some($value)),
                     _ => Ok(None),
@@ -598,7 +600,7 @@ macro_rules! cast_from_flat_variant_numeric {
         ::paste::paste! {
             #[doc(hidden)]
             pub fn [< cast_to_ $name N _FV >](value: FlatVariant) -> SqlResult<Option<$type>> {
-                match view(value.as_bytes()) {
+                match view(value.val()) {
                     FVRef::String(x) => r2o([< cast_to_ $name _s>](SqlString::from_ref(x))),
                     FVRef::TinyInt(x) => r2o([< cast_to_ $name _i8 >](x)),
                     FVRef::SmallInt(x) => r2o([< cast_to_ $name _i16 >](x)),
@@ -705,8 +707,8 @@ cast_flat_variant_interval!(LongInterval_YEARS, LongInterval, LongInterval);
 pub fn cast_to_s_FV(value: FlatVariant, size: i32, fixed: bool) -> SqlResult<SqlString> {
     // This function should never be called (the compiler emits the nullable
     // result form), same caveat as cast_to_s_V.
-    let result = SqlString::decode(value.as_bytes())
-        .map_err(|e| SqlRuntimeError::from_string(e.to_string()))?;
+    let result =
+        SqlString::decode(value.val()).map_err(|e| SqlRuntimeError::from_string(e.to_string()))?;
     limit_or_size_string(result.str(), size, fixed)
 }
 
@@ -718,7 +720,7 @@ pub fn cast_to_s_FVN(value: Option<FlatVariant>, size: i32, fixed: bool) -> SqlR
 
 #[doc(hidden)]
 pub fn cast_to_sN_FV(value: FlatVariant, size: i32, fixed: bool) -> SqlResult<Option<SqlString>> {
-    match SqlString::decode(value.as_bytes()) {
+    match SqlString::decode(value.val()) {
         Err(_) => Ok(None),
         Ok(result) => r2o(limit_or_size_string(result.str(), size, fixed)),
     }
@@ -738,7 +740,7 @@ pub fn cast_to_sN_FVN(
 
 #[doc(hidden)]
 pub fn cast_to_bytes_FV(value: FlatVariant, size: i32, fixed: bool) -> SqlResult<ByteArray> {
-    match ByteArray::decode(value.as_bytes()) {
+    match ByteArray::decode(value.val()) {
         Err(e) => Err(SqlRuntimeError::from_string(format!(
             "Error converting VARIANT to BINARY: {}",
             e
@@ -765,7 +767,7 @@ pub fn cast_to_bytesN_FV(
     size: i32,
     fixed: bool,
 ) -> SqlResult<Option<ByteArray>> {
-    match ByteArray::decode(value.as_bytes()) {
+    match ByteArray::decode(value.val()) {
         Err(_) => Ok(None),
         Ok(value) => Ok(Some(ByteArray::with_size(value.as_slice(), size, fixed))),
     }
@@ -788,7 +790,7 @@ pub fn cast_to_bytesN_FVN(
 pub fn cast_to_SqlDecimalN_FV<const P: usize, const S: usize>(
     value: FlatVariant,
 ) -> SqlResult<Option<SqlDecimal<P, S>>> {
-    match view(value.as_bytes()) {
+    match view(value.val()) {
         FVRef::String(x) => r2o(cast_to_SqlDecimal_s::<P, S>(SqlString::from_ref(x))),
         FVRef::TinyInt(i) => r2o(cast_to_SqlDecimal_i8::<P, S>(i)),
         FVRef::SmallInt(i) => r2o(cast_to_SqlDecimal_i16::<P, S>(i)),
@@ -848,7 +850,7 @@ pub fn cast_to_FVN_vecN<T: EncodeFV>(vec: Option<Array<T>>) -> SqlResult<Option<
 
 #[doc(hidden)]
 pub fn cast_to_vec_FV<T: DecodeFV>(value: FlatVariant) -> SqlResult<Array<T>> {
-    match Array::<T>::decode(value.as_bytes()) {
+    match Array::<T>::decode(value.val()) {
         Ok(value) => Ok(value),
         Err(e) => Err(SqlRuntimeError::from_string(format!(
             "Error converting VARIANT to ARRAY: {}",
@@ -867,7 +869,7 @@ pub fn cast_to_vec_FVN<T: DecodeFV>(value: Option<FlatVariant>) -> SqlResult<Opt
 
 #[doc(hidden)]
 pub fn cast_to_vecN_FV<T: DecodeFV>(value: FlatVariant) -> SqlResult<Option<Array<T>>> {
-    match Array::<T>::decode(value.as_bytes()) {
+    match Array::<T>::decode(value.val()) {
         Ok(value) => Ok(Some(value)),
         Err(_) => Ok(None),
     }
@@ -913,7 +915,7 @@ pub fn cast_to_FVN_mapN<K: EncodeFV, V: EncodeFV>(
 
 #[doc(hidden)]
 pub fn cast_to_map_FV<K: DecodeFV + Ord, V: DecodeFV>(value: FlatVariant) -> SqlResult<Map<K, V>> {
-    match Map::<K, V>::decode(value.as_bytes()) {
+    match Map::<K, V>::decode(value.val()) {
         Ok(value) => Ok(value),
         Err(e) => Err(SqlRuntimeError::from_string(format!(
             "Error converting VARIANT to MAP: {}",
@@ -936,7 +938,7 @@ pub fn cast_to_map_FVN<K: DecodeFV + Ord, V: DecodeFV>(
 pub fn cast_to_mapN_FV<K: DecodeFV + Ord, V: DecodeFV>(
     value: FlatVariant,
 ) -> SqlResult<Option<Map<K, V>>> {
-    match Map::<K, V>::decode(value.as_bytes()) {
+    match Map::<K, V>::decode(value.val()) {
         Ok(value) => Ok(Some(value)),
         Err(_) => Ok(None),
     }

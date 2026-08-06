@@ -44,15 +44,19 @@
 
 #[doc(hidden)]
 pub mod casts;
+pub mod dict;
 pub mod functions;
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::sync::{Arc, OnceLock};
+
+pub use dict::{Chunk, Dict, DictBuilder};
 
 use dbsp::algebra::{F32, F64};
 use feldera_fxp::DynamicDecimal;
@@ -104,6 +108,23 @@ pub(crate) const TAG_ARRAY: u8 = 23;
 pub(crate) const TAG_MAP: u8 = 24;
 pub(crate) const TAG_TIMESTAMP_TZ: u8 = 25;
 
+// Dictionary-backed forms. These sit outside the rank order above, so every
+// comparison folds them onto the tag they stand for with `rank`. They never
+// reach storage: rkyv serialization materializes the strings first.
+/// `[TAG_STRING_REF][id: u32]`, a string held in the value's dictionary.
+pub(crate) const TAG_STRING_REF: u8 = 26;
+
+/// Type rank of a tag, which is what `Ord` compares first. Equal for a string
+/// and a string reference, because they denote the same kind of value.
+#[inline]
+pub(crate) fn rank(tag: u8) -> u8 {
+    if tag == TAG_STRING_REF {
+        TAG_STRING
+    } else {
+        tag
+    }
+}
+
 // The type
 
 /// A SQL VARIANT value stored as one flat, canonically encoded byte buffer.
@@ -124,39 +145,151 @@ pub(crate) const TAG_TIMESTAMP_TZ: u8 = 25;
 /// assert_eq!(doc.to_json_string().unwrap(), r#"{"user":{"id":5}}"#);
 /// ```
 #[derive(Clone, IsNone)]
+// The interning implementation is written by hand below: this is the leaf that
+// actually keeps a side table.
+#[interned(manual)]
 pub struct FlatVariant {
-    buf: Arc<[u8]>,
+    chunk: Arc<Chunk>,
     start: u32,
     len: u32,
 }
 
+/// A borrowed encoded value together with the dictionary its references
+/// resolve against.
+///
+/// Every function that reads an encoding takes one of these rather than a
+/// `&[u8]`, because a string reference means nothing without its dictionary.
+/// `dict` is `None` for a value whose strings are all inline, which is what
+/// parsing, casts, and rkyv deserialization produce.
+///
+/// Public because it appears in `DecodeFV::decode`; not part of the supported
+/// API.
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub struct Val<'a> {
+    pub(crate) bytes: &'a [u8],
+    pub(crate) dict: Option<&'a Arc<Dict>>,
+}
+
+impl<'a> Val<'a> {
+    /// A value with no dictionary, for encodings known to hold no references.
+    #[inline]
+    pub(crate) fn inline(bytes: &'a [u8]) -> Val<'a> {
+        Val { bytes, dict: None }
+    }
+
+    #[inline]
+    pub(crate) fn tag(&self) -> u8 {
+        self.bytes[0]
+    }
+
+    #[inline]
+    pub(crate) fn payload(&self) -> &'a [u8] {
+        &self.bytes[1..]
+    }
+
+    /// A sub-value of this one, sharing its dictionary; `range` is relative to
+    /// `self.bytes`.
+    #[inline]
+    pub(crate) fn sub(&self, range: Range<usize>) -> Val<'a> {
+        Val {
+            bytes: &self.bytes[range],
+            dict: self.dict,
+        }
+    }
+
+    /// The bytes of a string value, whether it is stored inline or by
+    /// reference. Panics on any other tag.
+    #[inline]
+    pub(crate) fn string_bytes(&self) -> &'a [u8] {
+        match self.tag() {
+            TAG_STRING => self.payload(),
+            TAG_STRING_REF => self.dict_entry(),
+            tag => unreachable!("not a string tag: {tag}"),
+        }
+    }
+
+    /// Resolve this value's reference against its dictionary.
+    #[inline]
+    fn dict_entry(&self) -> &'a [u8] {
+        let dict = self.dict.expect("a string reference needs a dictionary");
+        dict.get(u32::from_le_bytes(payload_array(self.payload())))
+    }
+
+    /// The reference id, if this value is a string reference.
+    #[inline]
+    fn ref_id(&self) -> Option<u32> {
+        (self.tag() == TAG_STRING_REF).then(|| u32::from_le_bytes(payload_array(self.payload())))
+    }
+
+    /// Whether two values resolve their references against the same
+    /// dictionary, which is when their bytes can be compared directly.
+    #[inline]
+    fn same_dict(&self, other: &Val<'_>) -> bool {
+        match (self.dict, other.dict) {
+            (None, None) => true,
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            _ => false,
+        }
+    }
+}
+
 impl FlatVariant {
-    /// Wrap a complete encoded document.
+    /// Wrap a complete encoded document whose strings are all inline.
     ///
     /// The bytes must be a valid encoding (produced by this module); no
     /// validation is performed beyond non-emptiness.
     pub(crate) fn from_bytes(bytes: &[u8]) -> Self {
-        assert!(!bytes.is_empty(), "encoded value cannot be empty");
+        Self::from_chunk(Chunk::new(Box::from(bytes), None), 0, bytes.len())
+    }
+
+    /// Promote a borrowed value into an owned document, keeping the
+    /// dictionary its references resolve against.
+    pub(crate) fn from_val(val: Val<'_>) -> Self {
+        Self::from_chunk(
+            Chunk::new(Box::from(val.bytes), val.dict.cloned()),
+            0,
+            val.bytes.len(),
+        )
+    }
+
+    fn from_chunk(chunk: Arc<Chunk>, start: usize, len: usize) -> Self {
+        assert!(len > 0, "encoded value cannot be empty");
         FlatVariant {
-            buf: Arc::from(bytes),
-            start: 0,
-            len: bytes.len().try_into().expect("no more than 4 GB of data"),
+            chunk,
+            start: start.try_into().expect("no more than 4 GB of data"),
+            len: len.try_into().expect("no more than 4 GB of data"),
         }
     }
 
     #[inline]
     pub(crate) fn as_bytes(&self) -> &[u8] {
-        &self.buf[self.start as usize..(self.start + self.len) as usize]
+        &self.chunk.bytes()[self.start as usize..(self.start + self.len) as usize]
     }
 
-    /// A sub-value sharing this value's buffer; `range` is relative to
+    /// This value and the dictionary its references resolve against.
+    #[inline]
+    pub(crate) fn val(&self) -> Val<'_> {
+        Val {
+            bytes: self.as_bytes(),
+            dict: self.chunk.dict(),
+        }
+    }
+
+    /// The dictionary this value's references resolve against, if any.
+    #[inline]
+    pub(crate) fn dict(&self) -> Option<&Arc<Dict>> {
+        self.chunk.dict()
+    }
+
+    /// A sub-value sharing this value's chunk; `range` is relative to
     /// `self.as_bytes()`.
     fn subvalue(&self, range: Range<usize>) -> FlatVariant {
         debug_assert!(range.start < self.len as usize);
         debug_assert!(range.end <= self.len as usize);
         debug_assert!(range.end > range.start);
         FlatVariant {
-            buf: self.buf.clone(),
+            chunk: self.chunk.clone(),
             start: self.start + range.start as u32,
             len: (range.end - range.start) as u32,
         }
@@ -173,10 +306,12 @@ impl FlatVariant {
     /// assert_eq!(FlatVariant::sql_null().to_json_string().unwrap(), "null");
     /// ```
     pub fn sql_null() -> FlatVariant {
-        static NULL: OnceLock<Arc<[u8]>> = OnceLock::new();
-        let buf = NULL.get_or_init(|| Arc::from([TAG_SQL_NULL])).clone();
+        static NULL: OnceLock<Arc<Chunk>> = OnceLock::new();
+        let chunk = NULL
+            .get_or_init(|| Chunk::new(Box::from([TAG_SQL_NULL]), None))
+            .clone();
         FlatVariant {
-            buf,
+            chunk,
             start: 0,
             len: 1,
         }
@@ -196,10 +331,12 @@ impl FlatVariant {
     /// assert_ne!(null, FlatVariant::sql_null());
     /// ```
     pub fn variant_null() -> FlatVariant {
-        static NULL: OnceLock<Arc<[u8]>> = OnceLock::new();
-        let buf = NULL.get_or_init(|| Arc::from([TAG_VARIANT_NULL])).clone();
+        static NULL: OnceLock<Arc<Chunk>> = OnceLock::new();
+        let chunk = NULL
+            .get_or_init(|| Chunk::new(Box::from([TAG_VARIANT_NULL]), None))
+            .clone();
         FlatVariant {
-            buf,
+            chunk,
             start: 0,
             len: 1,
         }
@@ -219,13 +356,13 @@ impl FlatVariant {
     /// assert_eq!(doc.index_string("missing"), FlatVariant::sql_null());
     /// ```
     pub fn index_string<I: AsRef<str>>(&self, index: I) -> FlatVariant {
-        let bytes = self.as_bytes();
-        if bytes[0] != TAG_MAP {
+        let val = self.val();
+        if val.tag() != TAG_MAP {
             return FlatVariant::sql_null();
         }
         let key = index.as_ref();
-        match self.find_key_by(|encoded| cmp_with_string_key(encoded, key)) {
-            Some(i) => self.subvalue(Container::new(bytes).map_value(i)),
+        match find_key_by(val, |encoded| cmp_with_string_key(encoded, key)) {
+            Some(i) => self.subvalue(Container::new(val.bytes).map_value(i)),
             None => FlatVariant::sql_null(),
         }
     }
@@ -244,43 +381,19 @@ impl FlatVariant {
     /// assert_eq!(arr.index_from_one(&FlatVariant::from(9i32)), None);
     /// ```
     pub fn index_from_one(&self, index: &FlatVariant) -> Option<FlatVariant> {
-        let bytes = self.as_bytes();
-        match bytes[0] {
+        let val = self.val();
+        match val.tag() {
             TAG_ARRAY => {
                 let i = index.as_isize()?;
-                let c = Container::new(bytes);
+                let c = Container::new(val.bytes);
                 // SQL uses 1-based indexing.
                 let i = usize::try_from(i - 1).ok()?;
                 (i < c.count).then(|| self.subvalue(c.element(i)))
             }
-            TAG_MAP => self
-                .find_key(index.as_bytes())
-                .map(|i| self.subvalue(Container::new(bytes).map_value(i))),
+            TAG_MAP => find_key(val, index.val())
+                .map(|i| self.subvalue(Container::new(val.bytes).map_value(i))),
             _ => None,
         }
-    }
-
-    /// Binary search the sorted key area of a map for an encoded key.
-    fn find_key(&self, probe: &[u8]) -> Option<usize> {
-        self.find_key_by(|encoded| cmp_values(encoded, probe))
-    }
-
-    /// Binary search the sorted key area of a map with `cmp`, which compares
-    /// an encoded key against the probe.
-    fn find_key_by(&self, cmp: impl Fn(&[u8]) -> Ordering) -> Option<usize> {
-        let bytes = self.as_bytes();
-        let c = Container::new(bytes);
-        let mut lo = 0usize;
-        let mut hi = c.count;
-        while lo < hi {
-            let mid = (lo + hi) / 2;
-            match cmp(&bytes[c.element(mid)]) {
-                Ordering::Less => lo = mid + 1,
-                Ordering::Greater => hi = mid,
-                Ordering::Equal => return Some(mid),
-            }
-        }
-        None
     }
 
     /// Integer value of a numeric scalar, for 1-based array indexing.
@@ -324,7 +437,7 @@ impl Default for FlatVariant {
 
 impl PartialEq for FlatVariant {
     fn eq(&self, other: &Self) -> bool {
-        eq_values(self.as_bytes(), other.as_bytes())
+        eq_values(self.val(), other.val())
     }
 }
 
@@ -332,7 +445,7 @@ impl Eq for FlatVariant {}
 
 impl Ord for FlatVariant {
     fn cmp(&self, other: &Self) -> Ordering {
-        cmp_values(self.as_bytes(), other.as_bytes())
+        cmp_values(self.val(), other.val())
     }
 }
 
@@ -344,7 +457,7 @@ impl PartialOrd for FlatVariant {
 
 impl Hash for FlatVariant {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        hash_value(self.as_bytes(), state);
+        hash_value(self.val(), state);
     }
 }
 
@@ -357,8 +470,9 @@ impl fmt::Debug for FlatVariant {
 impl SizeOf for FlatVariant {
     fn size_of_children(&self, context: &mut size_of::Context) {
         // The Arc impl deduplicates by pointer, so sub-values sharing one
-        // document buffer count it once per context.
-        self.buf.size_of_children(context);
+        // chunk count it once per context, and a dictionary shared by every
+        // document of a batch is counted once for the batch.
+        self.chunk.size_of_children(context);
     }
 }
 
@@ -444,11 +558,33 @@ fn f64_at(b: &[u8], at: usize) -> F64 {
 
 /// `cmp_values` against a string key without materializing the key's
 /// encoding: tag rank first, then payload bytes (str Ord is bytewise).
-fn cmp_with_string_key(encoded: &[u8], key: &str) -> Ordering {
-    match encoded[0].cmp(&TAG_STRING) {
-        Ordering::Equal => encoded[1..].cmp(key.as_bytes()),
+fn cmp_with_string_key(encoded: Val<'_>, key: &str) -> Ordering {
+    match rank(encoded.tag()).cmp(&TAG_STRING) {
+        Ordering::Equal => encoded.string_bytes().cmp(key.as_bytes()),
         rank => rank,
     }
+}
+
+/// Binary search the sorted key area of a map for an encoded key.
+fn find_key(map: Val<'_>, probe: Val<'_>) -> Option<usize> {
+    find_key_by(map, |encoded| cmp_values(encoded, probe))
+}
+
+/// Binary search the sorted key area of a map with `cmp`, which compares an
+/// encoded key against the probe.
+fn find_key_by(map: Val<'_>, cmp: impl Fn(Val<'_>) -> Ordering) -> Option<usize> {
+    let c = Container::new(map.bytes);
+    let mut lo = 0usize;
+    let mut hi = c.count;
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        match cmp(map.sub(c.element(mid))) {
+            Ordering::Less => lo = mid + 1,
+            Ordering::Greater => hi = mid,
+            Ordering::Equal => return Some(mid),
+        }
+    }
+    None
 }
 
 /// Total order over two complete encoded values: tag rank first, then
@@ -456,12 +592,24 @@ fn cmp_with_string_key(encoded: &[u8], key: &str) -> Ordering {
 /// map lookup, not SQL comparison semantics: decimals order
 /// lexicographically by (significand, scale) rather than numerically, and
 /// floats use the F32/F64 total order.
-pub(crate) fn cmp_values(a: &[u8], b: &[u8]) -> Ordering {
-    let (ta, tb) = (a[0], b[0]);
+pub(crate) fn cmp_values(a: Val<'_>, b: Val<'_>) -> Ordering {
+    let (ta, tb) = (rank(a.tag()), rank(b.tag()));
     if ta != tb {
         return ta.cmp(&tb);
     }
-    let (pa, pb) = (&a[1..], &b[1..]);
+    if ta == TAG_STRING {
+        // Two references into one dictionary compare by rank, an integer
+        // compare that skips the string bytes entirely. This is the case
+        // inside a batch, where every value shares one dictionary.
+        if let (Some(ia), Some(ib)) = (a.ref_id(), b.ref_id())
+            && a.same_dict(&b)
+        {
+            let dict = a.dict.expect("a string reference needs a dictionary");
+            return dict.rank(ia).cmp(&dict.rank(ib));
+        }
+        return a.string_bytes().cmp(b.string_bytes());
+    }
+    let (pa, pb) = (a.payload(), b.payload());
     match ta {
         TAG_SQL_NULL | TAG_VARIANT_NULL => Ordering::Equal,
         TAG_TINYINT => (pa[0] as i8).cmp(&(pb[0] as i8)),
@@ -492,13 +640,14 @@ pub(crate) fn cmp_values(a: &[u8], b: &[u8]) -> Ordering {
             let db = i128::from_le_bytes(payload_array(&pb[..16]));
             (da, pa[16]).cmp(&(db, pb[16]))
         }
-        // str Ord and SmallVec<u8> Ord are both bytewise; Uuid stores
-        // big-endian bytes whose slice order equals uuid::Uuid Ord.
-        TAG_STRING | TAG_BINARY | TAG_UUID => pa.cmp(pb),
+        // SmallVec<u8> Ord is bytewise; Uuid stores big-endian bytes whose
+        // slice order equals uuid::Uuid Ord. Strings are handled above,
+        // because a reference has to be resolved first.
+        TAG_BINARY | TAG_UUID => pa.cmp(pb),
         TAG_ARRAY => {
-            let (ca, cb) = (Container::new(a), Container::new(b));
+            let (ca, cb) = (Container::new(a.bytes), Container::new(b.bytes));
             for i in 0..ca.count.min(cb.count) {
-                let ord = cmp_values(&a[ca.element(i)], &b[cb.element(i)]);
+                let ord = cmp_values(a.sub(ca.element(i)), b.sub(cb.element(i)));
                 if ord.is_ne() {
                     return ord;
                 }
@@ -508,13 +657,13 @@ pub(crate) fn cmp_values(a: &[u8], b: &[u8]) -> Ordering {
         TAG_MAP => {
             // BTreeMap Ord: lexicographic over (key, value) pairs in
             // ascending key order, then length. Keys are stored sorted.
-            let (ca, cb) = (Container::new(a), Container::new(b));
+            let (ca, cb) = (Container::new(a.bytes), Container::new(b.bytes));
             for i in 0..ca.count.min(cb.count) {
-                let ord = cmp_values(&a[ca.element(i)], &b[cb.element(i)]);
+                let ord = cmp_values(a.sub(ca.element(i)), b.sub(cb.element(i)));
                 if ord.is_ne() {
                     return ord;
                 }
-                let ord = cmp_values(&a[ca.map_value(i)], &b[cb.map_value(i)]);
+                let ord = cmp_values(a.sub(ca.map_value(i)), b.sub(cb.map_value(i)));
                 if ord.is_ne() {
                     return ord;
                 }
@@ -526,22 +675,29 @@ pub(crate) fn cmp_values(a: &[u8], b: &[u8]) -> Ordering {
 }
 
 /// Equality of two complete encoded values.
-fn eq_values(a: &[u8], b: &[u8]) -> bool {
-    // The encoding is canonical, so equal bytes mean equal values. The
-    // reverse fails only through float payloads (negative zero and NaN
+fn eq_values(a: Val<'_>, b: Val<'_>) -> bool {
+    // Within one dictionary the encoding is canonical, so equal bytes mean
+    // equal values. Byte equality says nothing across two dictionaries, and
+    // even within one it fails through float payloads (negative zero and NaN
     // compare equal across different bit patterns), hence the structural
     // fallback.
-    a == b || cmp_values(a, b).is_eq()
+    (a.same_dict(&b) && a.bytes == b.bytes) || cmp_values(a, b).is_eq()
 }
 
 /// Hash one encoded value, consistent with `cmp_values` equality: float
 /// payloads delegate to the F32/F64 Hash impls (which normalize exactly as
 /// their Eq does); every other payload is equal iff its bytes are.
-fn hash_value<H: Hasher>(value: &[u8], state: &mut H) {
-    let tag = value[0];
+///
+/// A string hashes as `TAG_STRING` followed by its bytes whether it is stored
+/// inline or by reference, so a value's hash does not depend on which batch it
+/// came from. Persisted Bloom and roaring batch filters hold these hashes and
+/// `shard()` routes by them, so this equivalence is load bearing.
+fn hash_value<H: Hasher>(value: Val<'_>, state: &mut H) {
+    let tag = rank(value.tag());
     state.write_u8(tag);
-    let payload = &value[1..];
+    let payload = value.payload();
     match tag {
+        TAG_STRING => state.write(value.string_bytes()),
         TAG_REAL => f32_at(payload, 0).hash(state),
         TAG_DOUBLE => f64_at(payload, 0).hash(state),
         TAG_GEOMETRY => {
@@ -549,18 +705,18 @@ fn hash_value<H: Hasher>(value: &[u8], state: &mut H) {
             f64_at(payload, 8).hash(state);
         }
         TAG_ARRAY => {
-            let c = Container::new(value);
+            let c = Container::new(value.bytes);
             state.write_usize(c.count);
             for i in 0..c.count {
-                hash_value(&value[c.element(i)], state);
+                hash_value(value.sub(c.element(i)), state);
             }
         }
         TAG_MAP => {
-            let c = Container::new(value);
+            let c = Container::new(value.bytes);
             state.write_usize(c.count);
             for i in 0..c.count {
-                hash_value(&value[c.element(i)], state);
-                hash_value(&value[c.map_value(i)], state);
+                hash_value(value.sub(c.element(i)), state);
+                hash_value(value.sub(c.map_value(i)), state);
             }
         }
         _ => state.write(payload),
@@ -579,11 +735,23 @@ fn hash_value<H: Hasher>(value: &[u8], state: &mut H) {
 /// in the scratch and the container is assembled after them with
 /// `extend_from_within`, copying bytes O(depth) times.
 ///
+/// A writer carries the dictionary its output references. It starts with
+/// none, and [`Writer::copy`] adopts the dictionary of the first
+/// dictionary-backed value copied into it. Adoption is always safe because
+/// inline strings stay legal in a dictionary-backed document, so bytes
+/// already written keep their meaning.
+///
 /// Public because it appears in `EncodeFV::encode`; not part of the
 /// supported API.
 #[doc(hidden)]
 pub struct Writer {
     pub(crate) out: Vec<u8>,
+    dict: Option<Arc<Dict>>,
+    /// The table [`Writer::string`] interns against, when one is available.
+    /// Always equal to `dict` when set; kept separately because resolving a
+    /// string to an id needs the lookup index that the frozen dictionary
+    /// drops.
+    staging: Option<Arc<InternedStrings>>,
 }
 
 /// Checked conversion for every count and end offset written into a
@@ -637,11 +805,98 @@ impl Writer {
     }
 
     /// Append a complete, already encoded value verbatim.
+    ///
+    /// Only sound when `value` holds no dictionary references, or when they
+    /// resolve against this writer's dictionary. Prefer [`Writer::copy`],
+    /// which checks.
     #[inline]
     pub(crate) fn raw(&mut self, value: &[u8]) -> Range<usize> {
         let start = self.out.len();
         self.out.extend_from_slice(value);
         start..self.out.len()
+    }
+
+    /// Append a string, as a reference when the staging table already holds
+    /// it and inline otherwise.
+    ///
+    /// This is what makes a freshly parsed document compact before it ever
+    /// reaches a batch, which shrinks the input buffers and lets the batch
+    /// builder translate through an array instead of hashing.
+    #[inline]
+    pub(crate) fn string(&mut self, s: &[u8]) -> Range<usize> {
+        let Some(table) = &self.staging else {
+            return self.scalar(TAG_STRING, s);
+        };
+        let Some(id) = table.id_of(s) else {
+            return self.scalar(TAG_STRING, s);
+        };
+        // Adopted only once a reference is actually written. Taking the
+        // dictionary up front would give every scalar document a reference to
+        // it, and the sparseness rule reads that count as a live-document
+        // estimate.
+        if self.dict.is_none() {
+            self.dict = Some(table.dict.clone());
+        }
+        self.scalar(TAG_STRING_REF, &id.to_le_bytes())
+    }
+
+    /// A view of an already written range, resolved against this writer's
+    /// dictionary.
+    #[inline]
+    pub(crate) fn val(&self, range: Range<usize>) -> Val<'_> {
+        Val {
+            bytes: &self.out[range],
+            dict: self.dict.as_ref(),
+        }
+    }
+
+    /// Append `src`, keeping its dictionary references when they will still
+    /// resolve and materializing them when they will not.
+    pub(crate) fn copy(&mut self, src: Val<'_>) -> Range<usize> {
+        match (&self.dict, src.dict) {
+            // Nothing to resolve, or the reader will resolve identically.
+            (_, None) => self.raw(src.bytes),
+            (Some(mine), Some(theirs)) if Arc::ptr_eq(mine, theirs) => self.raw(src.bytes),
+            // Nothing written so far depends on a dictionary, so take theirs.
+            (None, Some(theirs)) => {
+                self.dict = Some(theirs.clone());
+                self.raw(src.bytes)
+            }
+            // Two dictionaries in one document: spell the strings out. Rare,
+            // and only reachable through the functions that combine two
+            // documents.
+            (Some(_), Some(_)) => self.inline_copy(src),
+        }
+    }
+
+    /// Append `src` with every string spelled out, so the result needs no
+    /// dictionary.
+    fn inline_copy(&mut self, src: Val<'_>) -> Range<usize> {
+        match src.tag() {
+            TAG_STRING_REF => self.scalar(TAG_STRING, src.string_bytes()),
+            TAG_ARRAY => {
+                let c = Container::new(src.bytes);
+                self.array_in_place(c.count, |w, i| {
+                    w.inline_copy(src.sub(c.element(i)));
+                })
+            }
+            TAG_MAP => {
+                let c = Container::new(src.bytes);
+                let (start, mut key_ends, mut val_ends) = self.begin_map_in_place(c.count);
+                for i in 0..c.count {
+                    self.inline_copy(src.sub(c.element(i)));
+                    key_ends.record_end(self);
+                }
+                self.begin_map_values(&mut val_ends);
+                for i in 0..c.count {
+                    self.inline_copy(src.sub(c.map_value(i)));
+                    val_ends.record_end(self);
+                }
+                start..self.out.len()
+            }
+            // Scalars hold no references.
+            _ => self.raw(src.bytes),
+        }
     }
 
     /// Reserve a zero-filled end-offset table for `count` children.
@@ -758,12 +1013,18 @@ impl Writer {
 
 /// Sort map entries by encoded key and drop duplicate keys, keeping the last
 /// occurrence (BTreeMap insert semantics: a later insert overwrites).
-pub(crate) fn sort_map_entries(out: &[u8], entries: &mut Vec<(Range<usize>, Range<usize>)>) {
-    entries.sort_by(|a, b| cmp_values(&out[a.0.clone()], &out[b.0.clone()]));
+///
+/// The keys live in `writer`, so they resolve against its dictionary.
+pub(crate) fn sort_map_entries(writer: &Writer, entries: &mut Vec<(Range<usize>, Range<usize>)>) {
+    entries.sort_by(|a, b| cmp_values(writer.val(a.0.clone()), writer.val(b.0.clone())));
     let mut w = 0;
     for i in 0..entries.len() {
         let last_of_run = i + 1 == entries.len()
-            || cmp_values(&out[entries[i].0.clone()], &out[entries[i + 1].0.clone()]).is_ne();
+            || cmp_values(
+                writer.val(entries[i].0.clone()),
+                writer.val(entries[i + 1].0.clone()),
+            )
+            .is_ne();
         if last_of_run {
             entries.swap(w, i);
             w += 1;
@@ -793,7 +1054,7 @@ fn encode_variant(w: &mut Writer, v: &Variant) -> Range<usize> {
         Variant::SqlDecimal((sig, scale)) => {
             w.scalar(TAG_DECIMAL, &casts::decimal_payload(*sig, *scale))
         }
-        Variant::String(s) => w.scalar(TAG_STRING, s.str().as_bytes()),
+        Variant::String(s) => w.string(s.str().as_bytes()),
         Variant::Date(d) => w.scalar(TAG_DATE, &d.days().to_le_bytes()),
         Variant::Time(t) => w.scalar(TAG_TIME, &t.nanoseconds().to_le_bytes()),
         Variant::Timestamp(t) => w.scalar(TAG_TIMESTAMP, &t.microseconds().to_le_bytes()),
@@ -844,12 +1105,25 @@ pub(crate) fn build_document<E>(
     // forever; oversized scratches shrink back to this cap.
     const SCRATCH_RETAIN_BYTES: usize = 2 << 20;
     SCRATCH.with(|scratch| {
+        // A document built here starts on whatever dictionary this thread
+        // last froze for a batch, so its strings arrive already interned.
         let mut w = Writer {
             out: std::mem::take(&mut *scratch.borrow_mut()),
+            dict: None,
+            staging: staging_table(),
         };
         w.out.clear();
         let result = enc(&mut w);
-        let out = result.map(|range| FlatVariant::from_bytes(&w.out[range]));
+        // The document keeps whatever dictionary the writer adopted, so a
+        // value derived from a dictionary-backed one stays compact instead of
+        // spelling its strings out again.
+        let out = result.map(|range| {
+            FlatVariant::from_chunk(
+                Chunk::new(Box::from(&w.out[range.clone()]), w.dict.clone()),
+                0,
+                range.len(),
+            )
+        });
         if w.out.capacity() > SCRATCH_RETAIN_BYTES {
             w.out.clear();
             w.out.shrink_to(SCRATCH_RETAIN_BYTES);
@@ -868,6 +1142,513 @@ pub(crate) fn build_document_infallible(
     }
 }
 
+// Rewiring: moving documents onto a shared dictionary
+
+/// Largest chunk a [`DocSet`] fills before starting another, so a large batch
+/// produces a list of chunks rather than one enormous allocation. A document
+/// bigger than this gets a chunk of its own.
+const CHUNK_CAP: usize = 4 << 20;
+
+/// The dictionary this thread's freshly built documents intern against.
+///
+/// It is a dictionary a batch built earlier on this thread, frozen and shared,
+/// never one that is still growing. That keeps it trivially safe to read from
+/// any thread a document later reaches, and it converges immediately in
+/// practice: a document's field names are the same as the last document's.
+/// A string the table does not hold is simply written inline, so a stale or
+/// absent table costs nothing but a missed opportunity.
+fn staging_table() -> Option<Arc<InternedStrings>> {
+    STAGING.with(|t| t.borrow().clone())
+}
+
+/// Offer a freshly frozen batch dictionary as the staging table for the
+/// documents this thread builds next.
+fn set_staging_table(table: Arc<InternedStrings>) {
+    STAGING.with(|t| *t.borrow_mut() = Some(table));
+}
+
+thread_local! {
+    static STAGING: std::cell::RefCell<Option<Arc<InternedStrings>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Shortest string worth interning.
+///
+/// A reference costs 5 bytes against `1 + len` inline, and a first occurrence
+/// also adds `len + 8` to the dictionary, so interning a string of length `L`
+/// seen `n` times pays off only when `n * (L - 4) > L + 8`. Below `L = 5` no
+/// amount of repetition helps, and a corpus of tiny distinct strings would
+/// otherwise more than double in size. Leaving short strings inline is
+/// deterministic, so a given string always takes the same form within a
+/// dictionary and the encoding stays canonical.
+const MIN_INTERN_LEN: usize = 5;
+
+/// A source dictionary's ids translated into the destination's, filled lazily.
+///
+/// This array is what keeps rewiring near `memcpy` speed: a document's
+/// thousands of references cost an array read each, and only the first
+/// reference to a given source entry pays a hash lookup.
+pub struct Remap {
+    to: Vec<u32>,
+}
+
+const REMAP_NONE: u32 = u32::MAX;
+/// The source entry does not repeat here; spell it out instead.
+const REMAP_INLINE: u32 = u32::MAX - 1;
+
+/// Collects documents onto one shared dictionary.
+///
+/// [`DocSet::push`] takes a reference to the document, which costs a refcount
+/// bump, and counts the strings it holds. [`DocSet::finish`] interns the
+/// strings worth interning, rewires every document, and seals the results into
+/// chunks. Nothing observes a rewired document until `finish`, so the
+/// dictionary is never read while it is still growing.
+///
+/// Counting first is what keeps the adversarial case cheap. A string that
+/// occurs once costs 12 bytes more as a dictionary entry than inline, so a
+/// corpus of long distinct strings grew by 35% when every string was interned.
+/// It also helps the ordinary case, because singletons are common in real
+/// documents even when field names repeat constantly.
+///
+/// This is the operation a batch builder performs (see the `Interned` trait in
+/// the design). Exposed on its own so it can be driven and measured without a
+/// circuit.
+pub struct DocSet {
+    /// Sources, held until `finish`. Holding one is a refcount bump.
+    docs: Vec<FlatVariant>,
+    /// Every candidate string, keyed by hash: where it sits in `seen` and how
+    /// often it has turned up. A hash collision merges two entries, which at
+    /// worst interns a string that occurs once.
+    counts: HashMap<u64, Candidate>,
+    /// Candidate strings, interned as they are first seen so that laying out
+    /// the final dictionary needs no second walk over the documents.
+    seen: DictBuilder,
+    /// Whether documents share chunks. Off by default: see [`DocSet::packed`].
+    packed: bool,
+}
+
+impl Default for DocSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DocSet {
+    /// A set that gives every document its own chunk.
+    ///
+    /// One document per chunk keeps two properties the batch builders depend
+    /// on. A document that dies frees its bytes immediately instead of waiting
+    /// for its neighbours, and a dictionary's `Arc` strong count is exactly the
+    /// number of live documents using it, which is the liveness signal behind
+    /// [`Dict::is_sparse`].
+    pub fn new() -> Self {
+        DocSet {
+            docs: Vec::new(),
+            counts: HashMap::new(),
+            seen: DictBuilder::new(),
+            packed: false,
+        }
+    }
+
+    /// A set that packs documents into shared chunks, trading those two
+    /// properties for far fewer allocations.
+    ///
+    /// Worth roughly 1.4 KiB per row of allocator rounding plus an `Arc`
+    /// header per document, and the reason the design keeps packing as its own
+    /// milestone rather than folding it in here.
+    pub fn packed() -> Self {
+        DocSet {
+            packed: true,
+            ..Self::new()
+        }
+    }
+
+    /// Take `doc` into the set and record the strings it holds.
+    pub fn push(&mut self, doc: &FlatVariant) {
+        count_strings(doc.val(), &mut self.counts, &mut self.seen);
+        self.docs.push(doc.clone());
+    }
+
+    /// Lay out the dictionary for the documents pushed so far.
+    ///
+    /// Deliberately produces no documents. A batch builder rewrites its values
+    /// one at a time against the result, so only one document exists in both
+    /// forms at once; materializing them all here made the whole batch exist
+    /// twice and put 10 GiB on the peak of a large merge.
+    pub fn build_dictionary(&self) -> InternedStrings {
+        let mut dict = DictBuilder::new();
+        let mut ids: HashMap<u64, u32> = HashMap::with_capacity(self.counts.len());
+        // Candidates were interned as they were seen, so this walks the
+        // distinct strings rather than every occurrence of them.
+        for (&hash, candidate) in &self.counts {
+            if candidate.count >= 2 {
+                ids.insert(hash, dict.intern(self.seen.entry(candidate.id)));
+            }
+        }
+        for _ in &self.docs {
+            dict.count_document();
+        }
+        InternedStrings {
+            dict: dict.freeze(),
+            ids,
+        }
+    }
+
+    /// Intern and rewire in one go, for callers holding the whole set anyway.
+    pub fn finish(self) -> Vec<FlatVariant> {
+        let interned = self.build_dictionary();
+        let mut remaps = HashMap::new();
+        if !self.packed {
+            return self
+                .docs
+                .iter()
+                .map(|doc| interned.rewire(doc, &mut remaps))
+                .collect();
+        }
+
+        let mut arena: Vec<u8> = Vec::new();
+        let mut full: Vec<Vec<u8>> = Vec::new();
+        let mut placed: Vec<(usize, u32, u32)> = Vec::new();
+        for doc in &self.docs {
+            let start = arena.len();
+            let mut w = Writer {
+                out: std::mem::take(&mut arena),
+                dict: Some(interned.dict.clone()),
+                staging: None,
+            };
+            rewire(doc.val(), &mut w, &interned, &mut remaps);
+            arena = w.out;
+            placed.push((
+                full.len(),
+                start.try_into().expect("chunk under 4 GB"),
+                (arena.len() - start)
+                    .try_into()
+                    .expect("document under 4 GB"),
+            ));
+            if arena.len() >= CHUNK_CAP {
+                full.push(std::mem::take(&mut arena));
+            }
+        }
+        if !arena.is_empty() {
+            full.push(arena);
+        }
+        let chunks: Vec<Arc<Chunk>> = full
+            .into_iter()
+            .map(|bytes| Chunk::new(bytes.into_boxed_slice(), Some(interned.dict.clone())))
+            .collect();
+        placed
+            .into_iter()
+            .map(|(chunk, start, len)| {
+                FlatVariant::from_chunk(chunks[chunk].clone(), start as usize, len as usize)
+            })
+            .collect()
+    }
+}
+
+/// A frozen dictionary and the id of every string in it, so a document can be
+/// rewired against it one at a time.
+pub struct InternedStrings {
+    dict: Arc<Dict>,
+    /// Hash of each interned string to its id. The dictionary drops its own
+    /// index at freeze, and this is what replaces it for the rewrite pass.
+    ids: HashMap<u64, u32>,
+}
+
+impl InternedStrings {
+    /// The id of `s`, if it earned a dictionary entry.
+    #[inline]
+    fn id_of(&self, s: &[u8]) -> Option<u32> {
+        if !intern_candidate(s) {
+            return None;
+        }
+        self.ids.get(&string_hash(s)).copied()
+    }
+
+    pub fn dict(&self) -> &Arc<Dict> {
+        &self.dict
+    }
+
+    /// A copy of `doc` resolving against this dictionary, in a chunk of its own.
+    pub fn rewire(&self, doc: &FlatVariant, remaps: &mut HashMap<usize, Remap>) -> FlatVariant {
+        let mut w = Writer {
+            out: Vec::with_capacity(doc.as_bytes().len()),
+            dict: Some(self.dict.clone()),
+            staging: None,
+        };
+        let range = rewire(doc.val(), &mut w, self, remaps);
+        debug_assert_eq!(range.start, 0);
+        let len = range.len();
+        FlatVariant::from_chunk(
+            Chunk::new(w.out.into_boxed_slice(), Some(self.dict.clone())),
+            0,
+            len,
+        )
+    }
+}
+
+/// How far below its origin size a dictionary's live-document count has to
+/// fall before a builder stops sharing it and moves the survivors onto a
+/// dictionary of their own.
+///
+/// Low enough that a selective filter compacts promptly, high enough that an
+/// ordinary projection keeps sharing and stays a refcount bump.
+const SPARSE_FACTOR: u32 = 4;
+
+/// Moves the documents of one batch onto a dictionary of their own.
+///
+/// The builder visits every value twice. The first pass hands each document to
+/// [`DocSet`], which counts the strings it holds; the second pass replaces each
+/// document with its rewired copy. In between, `begin_apply` interns and seals.
+///
+/// When every document already shares one dictionary that is still densely
+/// used, the session does nothing at all and the documents keep sharing it, so
+/// pushing a value into a batch stays a refcount bump.
+pub struct FlatVariantSession {
+    state: SessionState,
+}
+
+enum SessionState {
+    /// Gathering. `shared` is the dictionary every document seen so far
+    /// resolves against, or `None` once two of them disagree.
+    Collect {
+        set: DocSet,
+        documents: usize,
+        shared: Option<Option<Arc<Dict>>>,
+    },
+    /// Rewriting. Each document is rewired as it is visited, so the batch
+    /// never exists twice.
+    Apply {
+        interned: Arc<InternedStrings>,
+        remaps: HashMap<usize, Remap>,
+    },
+    /// Every document shares one dense dictionary; leave them alone.
+    Share,
+}
+
+impl Default for FlatVariantSession {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FlatVariantSession {
+    pub fn new() -> Self {
+        FlatVariantSession {
+            state: SessionState::Collect {
+                set: DocSet::new(),
+                documents: 0,
+                shared: None,
+            },
+        }
+    }
+
+    fn visit(&mut self, doc: &mut FlatVariant) {
+        match &mut self.state {
+            SessionState::Collect {
+                set,
+                documents,
+                shared,
+            } => {
+                let dict = doc.dict().cloned();
+                match shared {
+                    None if *documents == 0 => *shared = Some(dict),
+                    Some(Some(seen)) if dict.as_ref().is_some_and(|d| Arc::ptr_eq(d, seen)) => {}
+                    // Either two documents disagree, or one of them has no
+                    // dictionary to share.
+                    _ => *shared = Some(None),
+                }
+                *documents += 1;
+                set.push(doc);
+            }
+            SessionState::Apply { interned, remaps } => {
+                // Assigning releases the old chunk here, before the next
+                // document is copied.
+                *doc = interned.rewire(doc, remaps);
+            }
+            SessionState::Share => {}
+        }
+    }
+}
+
+impl dbsp::dynamic::InternSession for FlatVariantSession {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn begin_apply(&mut self) {
+        let state = std::mem::replace(&mut self.state, SessionState::Share);
+        let SessionState::Collect { set, shared, .. } = state else {
+            panic!("an intern session gathers once and applies once");
+        };
+        // One dictionary behind every document, still carrying its weight:
+        // sharing it costs nothing and copying would cost a document each.
+        if let Some(Some(dict)) = &shared
+            && !Dict::is_sparse(dict, SPARSE_FACTOR)
+        {
+            return;
+        }
+        let interned = Arc::new(set.build_dictionary());
+        // The documents this thread builds next start on this dictionary.
+        set_staging_table(interned.clone());
+        self.state = SessionState::Apply {
+            interned,
+            remaps: HashMap::new(),
+        };
+    }
+}
+
+impl dbsp::dynamic::Interned for FlatVariant {
+    const MAY_INTERN: bool = true;
+
+    fn new_intern_session() -> Option<Box<dyn dbsp::dynamic::InternSession>> {
+        Some(Box::new(FlatVariantSession::new()))
+    }
+
+    fn reintern(&mut self, session: &mut dyn dbsp::dynamic::InternSession) {
+        session
+            .as_any_mut()
+            .downcast_mut::<FlatVariantSession>()
+            .expect("a VARIANT is re-pointed with its own session")
+            .visit(self);
+    }
+}
+
+/// Whether a string is long enough that a reference could pay for itself.
+#[inline]
+fn intern_candidate(s: &[u8]) -> bool {
+    s.len() >= MIN_INTERN_LEN
+}
+
+/// Tally every string in `src` that could be worth interning.
+fn count_strings(src: Val<'_>, counts: &mut HashMap<u64, Candidate>, seen: &mut DictBuilder) {
+    match src.tag() {
+        // Already-interned strings are tallied too. Trusting the source
+        // dictionary instead and keeping every reference a reference looks
+        // cheaper, but it never drops anything: a string interned once stays
+        // interned through every later merge, so a spine's dictionaries
+        // accumulate its whole lineage. Measured on zeta_cnn at SF100 that
+        // cost 8 GiB of peak RSS and 15% of throughput.
+        TAG_STRING | TAG_STRING_REF => {
+            let s = src.string_bytes();
+            if intern_candidate(s) {
+                counts
+                    .entry(string_hash(s))
+                    .or_insert_with(|| Candidate {
+                        id: seen.intern(s),
+                        count: 0,
+                    })
+                    .count += 1;
+            }
+        }
+        TAG_ARRAY => {
+            let c = Container::new(src.bytes);
+            for i in 0..c.count {
+                count_strings(src.sub(c.element(i)), counts, seen);
+            }
+        }
+        TAG_MAP => {
+            let c = Container::new(src.bytes);
+            for i in 0..c.count {
+                count_strings(src.sub(c.element(i)), counts, seen);
+                count_strings(src.sub(c.map_value(i)), counts, seen);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// A string that might earn a dictionary entry: where it is held while the set
+/// is gathered, and how often it has turned up.
+struct Candidate {
+    id: u32,
+    count: u32,
+}
+
+#[inline]
+fn string_hash(s: &[u8]) -> u64 {
+    xxhash_rust::xxh64::xxh64(s, 0x4661_744c_6974_0001)
+}
+
+/// Append `src` to `w`, translating every string into `dict`.
+///
+/// Containers are rebuilt rather than copied because a string's encoded width
+/// changes when it moves between the inline and the referenced form, which
+/// moves the offsets behind it. Once both sides are dictionary-backed the
+/// widths agree and this becomes a copy plus one `u32` write per reference;
+/// that fast path arrives with the batch-builder integration.
+fn rewire(
+    src: Val<'_>,
+    w: &mut Writer,
+    interned: &InternedStrings,
+    remaps: &mut HashMap<usize, Remap>,
+) -> Range<usize> {
+    match src.tag() {
+        TAG_STRING => match interned.id_of(src.payload()) {
+            Some(id) => w.scalar(TAG_STRING_REF, &id.to_le_bytes()),
+            None => w.raw(src.bytes),
+        },
+        TAG_STRING_REF => {
+            let source = src.dict.expect("a string reference needs a dictionary");
+            let old = u32::from_le_bytes(payload_array(src.payload()));
+            let remap = remaps
+                .entry(Arc::as_ptr(source) as usize)
+                .or_insert_with(|| Remap {
+                    to: vec![REMAP_NONE; source.len()],
+                });
+            // Translated once per source entry, never per reference: this
+            // array read is what keeps a merge of two interned batches near
+            // memcpy speed. Hashing per reference here instead measured as a
+            // fifth of the pipeline's throughput.
+            let mut id = remap.to[old as usize];
+            if id == REMAP_NONE {
+                // It may have repeated where it came from but not here.
+                id = interned.id_of(source.get(old)).unwrap_or(REMAP_INLINE);
+                remap.to[old as usize] = id;
+            }
+            if id == REMAP_INLINE {
+                w.scalar(TAG_STRING, source.get(old))
+            } else {
+                w.scalar(TAG_STRING_REF, &id.to_le_bytes())
+            }
+        }
+        TAG_ARRAY => {
+            let c = Container::new(src.bytes);
+            let start = w.out.len();
+            w.out.push(TAG_ARRAY);
+            w.out.extend_from_slice(&encoded_u32(c.count).to_le_bytes());
+            let table = w.reserve_table(c.count);
+            let mut ends = EndTable {
+                table,
+                payload_start: w.out.len(),
+                next: 0,
+            };
+            for i in 0..c.count {
+                rewire(src.sub(c.element(i)), w, interned, remaps);
+                ends.record_end(w);
+            }
+            start..w.out.len()
+        }
+        TAG_MAP => {
+            let c = Container::new(src.bytes);
+            let (start, mut key_ends, mut val_ends) = w.begin_map_in_place(c.count);
+            // Keys keep their relative order: the dictionary orders entries by
+            // content, and rewiring does not change any string's content.
+            for i in 0..c.count {
+                rewire(src.sub(c.element(i)), w, interned, remaps);
+                key_ends.record_end(w);
+            }
+            w.begin_map_values(&mut val_ends);
+            for i in 0..c.count {
+                rewire(src.sub(c.map_value(i)), w, interned, remaps);
+                val_ends.record_end(w);
+            }
+            start..w.out.len()
+        }
+        // Scalars hold no strings.
+        _ => w.raw(src.bytes),
+    }
+}
+
 /// The connector-metadata boundary: the adapters always build metadata as
 /// the enum `Variant`, and a metadata DEFAULT expression for a FlatVariant
 /// column converts it once here. Goes away with the enum.
@@ -878,9 +1659,9 @@ impl From<&Variant> for FlatVariant {
 }
 
 /// Decode one complete encoded value back into a `Variant`.
-fn decode_variant(bytes: &[u8]) -> Variant {
-    let payload = &bytes[1..];
-    match bytes[0] {
+fn decode_variant(value: Val<'_>) -> Variant {
+    let payload = value.payload();
+    match value.tag() {
         TAG_SQL_NULL => Variant::SqlNull,
         TAG_VARIANT_NULL => Variant::VariantNull,
         TAG_BOOLEAN => Variant::Boolean(payload[0] != 0),
@@ -898,8 +1679,8 @@ fn decode_variant(bytes: &[u8]) -> Variant {
             i128::from_le_bytes(payload_array(&payload[..16])),
             payload[16],
         )),
-        TAG_STRING => Variant::String(SqlString::from_ref(
-            std::str::from_utf8(payload).expect("encoded string must be UTF-8"),
+        TAG_STRING | TAG_STRING_REF => Variant::String(SqlString::from_ref(
+            std::str::from_utf8(value.string_bytes()).expect("encoded string must be UTF-8"),
         )),
         TAG_DATE => Variant::Date(Date::from_days(i32::from_le_bytes(payload_array(payload)))),
         TAG_TIME => Variant::Time(Time::from_nanoseconds(u64::from_le_bytes(payload_array(
@@ -924,19 +1705,19 @@ fn decode_variant(bytes: &[u8]) -> Variant {
         )),
         TAG_UUID => Variant::Uuid(Uuid::from_bytes(payload_array(payload))),
         TAG_ARRAY => {
-            let c = Container::new(bytes);
+            let c = Container::new(value.bytes);
             let items: Vec<Variant> = (0..c.count)
-                .map(|i| decode_variant(&bytes[c.element(i)]))
+                .map(|i| decode_variant(value.sub(c.element(i))))
                 .collect();
             Variant::Array(items.into())
         }
         TAG_MAP => {
-            let c = Container::new(bytes);
+            let c = Container::new(value.bytes);
             let map: BTreeMap<Variant, Variant> = (0..c.count)
                 .map(|i| {
                     (
-                        decode_variant(&bytes[c.element(i)]),
-                        decode_variant(&bytes[c.map_value(i)]),
+                        decode_variant(value.sub(c.element(i))),
+                        decode_variant(value.sub(c.map_value(i))),
                     )
                 })
                 .collect();
@@ -948,7 +1729,7 @@ fn decode_variant(bytes: &[u8]) -> Variant {
 
 impl From<&FlatVariant> for Variant {
     fn from(v: &FlatVariant) -> Self {
-        decode_variant(v.as_bytes())
+        decode_variant(v.val())
     }
 }
 
@@ -1084,6 +1865,23 @@ impl<K: crate::flat_variant::casts::EncodeFV, V: crate::flat_variant::casts::Enc
 
 // rkyv: the archived form is the encoding itself
 
+/// The bytes rkyv writes for `value`: its own when they hold no dictionary
+/// references, and a materialized copy when they do.
+///
+/// A dictionary is an in-memory representation only. Keeping it out of the
+/// archived form leaves the storage format, its version, and the archived
+/// `Ord`/`Hash` impls exactly as they were.
+fn archive_bytes(value: &FlatVariant) -> Cow<'_, [u8]> {
+    match value.dict() {
+        None => Cow::Borrowed(value.as_bytes()),
+        Some(_) => {
+            let inlined = build_document_infallible(|w| w.inline_copy(value.val()));
+            debug_assert!(inlined.dict().is_none());
+            Cow::Owned(inlined.as_bytes().to_vec())
+        }
+    }
+}
+
 /// Archived form of [`FlatVariant`]: the encoded bytes, verbatim.
 pub struct ArchivedFlatVariant {
     bytes: ArchivedVec<u8>,
@@ -1104,8 +1902,9 @@ impl rkyv::Archive for FlatVariant {
         let (fp, fo) = rkyv::out_field!(out.bytes);
         // SAFETY: `fo` points into `out`, which the caller guarantees is
         // valid for writes at the archived position, and the resolver was
-        // produced by serializing exactly `self.as_bytes()`.
-        unsafe { ArchivedVec::resolve_from_slice(self.as_bytes(), pos + fp, resolver, fo) };
+        // produced by serializing exactly `archive_bytes(self)`, which is
+        // deterministic and so agrees with what `serialize` wrote.
+        unsafe { ArchivedVec::resolve_from_slice(&archive_bytes(self), pos + fp, resolver, fo) };
     }
 }
 
@@ -1116,7 +1915,11 @@ impl<S: ScratchSpace + RkyvSerializer + ?Sized> rkyv::Serialize<S> for FlatVaria
         // `serialize_from_slice` resolves a slice element by element, one
         // `write` call per byte, which measured 60x slower on a 16 KiB document
         // (`benches/flat_variant_serialize.rs`).
-        unsafe { ArchivedVec::serialize_copy_from_slice(self.as_bytes(), serializer) }
+        //
+        // `archive_bytes` rather than `as_bytes`: a document holding dictionary
+        // references has its strings spelled out first, so the archived form
+        // never depends on a dictionary.
+        unsafe { ArchivedVec::serialize_copy_from_slice(&archive_bytes(self), serializer) }
     }
 }
 
@@ -1128,7 +1931,7 @@ impl<D: rkyv::Fallible + ?Sized> rkyv::Deserialize<FlatVariant, D> for ArchivedF
 
 impl PartialEq for ArchivedFlatVariant {
     fn eq(&self, other: &Self) -> bool {
-        eq_values(self.as_bytes(), other.as_bytes())
+        eq_values(Val::inline(self.as_bytes()), Val::inline(other.as_bytes()))
     }
 }
 
@@ -1136,7 +1939,7 @@ impl Eq for ArchivedFlatVariant {}
 
 impl Ord for ArchivedFlatVariant {
     fn cmp(&self, other: &Self) -> Ordering {
-        cmp_values(self.as_bytes(), other.as_bytes())
+        cmp_values(Val::inline(self.as_bytes()), Val::inline(other.as_bytes()))
     }
 }
 
@@ -1148,7 +1951,7 @@ impl PartialOrd for ArchivedFlatVariant {
 
 impl Hash for ArchivedFlatVariant {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        hash_value(self.as_bytes(), state);
+        hash_value(Val::inline(self.as_bytes()), state);
     }
 }
 
@@ -1208,12 +2011,12 @@ impl<'de> Visitor<'de> for BuildValue<'_> {
 
     #[inline]
     fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
-        Ok(self.w.scalar(TAG_STRING, value.as_bytes()))
+        Ok(self.w.string(value.as_bytes()))
     }
 
     #[inline]
     fn visit_string<E>(self, value: String) -> Result<Self::Value, E> {
-        Ok(self.w.scalar(TAG_STRING, value.as_bytes()))
+        Ok(self.w.string(value.as_bytes()))
     }
 
     #[inline]
@@ -1259,15 +2062,15 @@ impl<'de> Visitor<'de> for BuildValue<'_> {
             }
             Some(KeyClass::Map(first_key)) => {
                 let mut entries = Vec::new();
-                let key_range = self.w.scalar(TAG_STRING, first_key.as_bytes());
+                let key_range = self.w.string(first_key.as_bytes());
                 let val_range = map.next_value_seed(BuildValue { w: self.w })?;
                 entries.push((key_range, val_range));
                 while let Some(key) = map.next_key::<String>()? {
-                    let key_range = self.w.scalar(TAG_STRING, key.as_bytes());
+                    let key_range = self.w.string(key.as_bytes());
                     let val_range = map.next_value_seed(BuildValue { w: self.w })?;
                     entries.push((key_range, val_range));
                 }
-                sort_map_entries(&self.w.out, &mut entries);
+                sort_map_entries(self.w, &mut entries);
                 Ok(self.w.map(&entries))
             }
             None => Ok(self.w.map(&[])),
@@ -1360,14 +2163,14 @@ fn json_config() -> SqlSerdeConfig {
 /// timestamp, ...) and is threaded into every nested scalar; output
 /// connectors with non-default sub-formats depend on this.
 struct Enc<'a> {
-    bytes: &'a [u8],
+    val: Val<'a>,
     config: &'a SqlSerdeConfig,
 }
 
 impl<'a> Enc<'a> {
-    fn child(&self, bytes: &'a [u8]) -> Enc<'a> {
+    fn child(&self, range: Range<usize>) -> Enc<'a> {
         Enc {
-            bytes,
+            val: self.val.sub(range),
             config: self.config,
         }
     }
@@ -1378,9 +2181,9 @@ impl Serialize for Enc<'_> {
     where
         S: Serializer,
     {
-        let bytes = self.bytes;
-        let p = &bytes[1..];
-        match bytes[0] {
+        let bytes = self.val.bytes;
+        let p = self.val.payload();
+        match self.val.tag() {
             TAG_SQL_NULL | TAG_VARIANT_NULL => serializer.serialize_none(),
             TAG_BOOLEAN => serializer.serialize_bool(p[0] != 0),
             TAG_TINYINT => serializer.serialize_i8(p[0] as i8),
@@ -1395,7 +2198,9 @@ impl Serialize for Enc<'_> {
             TAG_DOUBLE => serializer.serialize_f64(f64::from_le_bytes(payload_array(p))),
             TAG_DECIMAL => DynamicDecimal::new(i128::from_le_bytes(payload_array(&p[..16])), p[16])
                 .serialize_with_context(serializer, self.config),
-            TAG_STRING => serializer.serialize_str(std::str::from_utf8(p).expect("encoded UTF-8")),
+            TAG_STRING | TAG_STRING_REF => serializer.serialize_str(
+                std::str::from_utf8(self.val.string_bytes()).expect("encoded UTF-8"),
+            ),
             TAG_DATE => Date::from_days(i32::from_le_bytes(payload_array(p)))
                 .serialize_with_context(serializer, self.config),
             TAG_TIME => Time::from_nanoseconds(u64::from_le_bytes(payload_array(p)))
@@ -1426,7 +2231,7 @@ impl Serialize for Enc<'_> {
                 let c = Container::new(bytes);
                 let mut seq = serializer.serialize_seq(Some(c.count))?;
                 for i in 0..c.count {
-                    seq.serialize_element(&self.child(&bytes[c.element(i)]))?;
+                    seq.serialize_element(&self.child(c.element(i)))?;
                 }
                 seq.end()
             }
@@ -1434,10 +2239,7 @@ impl Serialize for Enc<'_> {
                 let c = Container::new(bytes);
                 let mut map = serializer.serialize_map(Some(c.count))?;
                 for i in 0..c.count {
-                    map.serialize_entry(
-                        &self.child(&bytes[c.element(i)]),
-                        &self.child(&bytes[c.map_value(i)]),
-                    )?;
+                    map.serialize_entry(&self.child(c.element(i)), &self.child(c.map_value(i)))?;
                 }
                 map.end()
             }
@@ -1453,7 +2255,7 @@ impl Serialize for FlatVariant {
     {
         let config = json_config();
         Enc {
-            bytes: self.as_bytes(),
+            val: self.val(),
             config: &config,
         }
         .serialize(serializer)
@@ -1478,7 +2280,7 @@ impl SerializeWithContext<SqlSerdeConfig> for FlatVariant {
                 })?)
             }
             VariantFormat::Json => Enc {
-                bytes: self.as_bytes(),
+                val: self.val(),
                 config: context,
             }
             .serialize(serializer),
@@ -1599,6 +2401,437 @@ mod tests {
             let new = a2.index_string(&key);
             prop_assert_eq!(&Variant::from(&new), &old);
         }
+
+        /// The property the whole dictionary design rests on: a document that
+        /// has been moved onto a dictionary is indistinguishable from the
+        /// inline one through every observable.
+        #[test]
+        fn interning_preserves_every_observable(a in variant(), b in variant()) {
+            let (ia, ib) = (FlatVariant::from(&a), FlatVariant::from(&b));
+            let interned = intern_all(&[ia.clone(), ib.clone()]);
+            let (da, db) = (&interned[0], &interned[1]);
+
+            prop_assert_eq!(da, &ia);
+            prop_assert_eq!(db, &ib);
+            prop_assert_eq!(&Variant::from(da), &a);
+            prop_assert_eq!(hash_of(da), hash_of(&ia));
+            // `ok()` because JSON has no rendering for INTERVAL; both sides
+            // must simply agree.
+            prop_assert_eq!(da.to_json_string().ok(), ia.to_json_string().ok());
+
+            // Order must agree whether the two sides share a dictionary, hold
+            // different ones, or hold none.
+            prop_assert_eq!(da.cmp(db), ia.cmp(&ib));
+            prop_assert_eq!(da.cmp(&ib), ia.cmp(&ib));
+            prop_assert_eq!(ia.cmp(db), ia.cmp(&ib));
+            let (sa, sb) = (
+                intern_all(std::slice::from_ref(&ia)),
+                intern_all(std::slice::from_ref(&ib)),
+            );
+            prop_assert_eq!(sa[0].cmp(&sb[0]), ia.cmp(&ib));
+            prop_assert_eq!(sa[0] == sb[0], ia == ib);
+        }
+
+        /// rkyv must never see a dictionary: the archived bytes of an interned
+        /// document have to equal those of the inline one, or storage and the
+        /// exchange path would need a format change.
+        #[test]
+        fn interning_leaves_the_archived_form_alone(a in variant()) {
+            let inline = FlatVariant::from(&a);
+            let interned = intern_all(std::slice::from_ref(&inline)).pop().unwrap();
+            let archived = archive_bytes(&interned);
+            prop_assert_eq!(archived.as_ref(), inline.as_bytes());
+        }
+
+        /// Rewiring an already interned document into another dictionary is
+        /// the path a merge takes, and it has to be a fixed point in value
+        /// terms however many times it happens.
+        #[test]
+        fn rewiring_is_idempotent(a in variant()) {
+            let inline = FlatVariant::from(&a);
+            let once = intern_all(std::slice::from_ref(&inline)).pop().unwrap();
+            let twice = intern_all(std::slice::from_ref(&once)).pop().unwrap();
+            prop_assert_eq!(&twice, &once);
+            prop_assert_eq!(twice.as_bytes(), once.as_bytes(),
+                "a dictionary-to-dictionary rewire must preserve the encoding");
+        }
+    }
+
+    /// Move documents onto one shared dictionary, as a batch builder would.
+    fn intern_all(docs: &[FlatVariant]) -> Vec<FlatVariant> {
+        let mut set = DocSet::new();
+        for doc in docs {
+            set.push(doc);
+        }
+        set.finish()
+    }
+
+    /// Drive documents through a session the way a batch builder will: gather
+    /// them all, then rewrite them all.
+    fn run_session(docs: &mut [FlatVariant]) {
+        use dbsp::dynamic::Interned;
+        let mut session = FlatVariant::new_intern_session().expect("VARIANT interns");
+        for doc in docs.iter_mut() {
+            doc.reintern(&mut *session);
+        }
+        session.begin_apply();
+        for doc in docs.iter_mut() {
+            doc.reintern(&mut *session);
+        }
+    }
+
+    #[test]
+    fn a_session_interns_a_batch() {
+        let mut docs: Vec<FlatVariant> = (0..100)
+            .map(|i| {
+                serde_json::from_str(&format!(
+                    r#"{{"subscription_country_code": "germany", "account_identifier": {i}}}"#
+                ))
+                .unwrap()
+            })
+            .collect();
+        let before = docs.clone();
+        run_session(&mut docs);
+
+        assert_eq!(docs, before, "interning must not change any value");
+        let dict = docs[0].dict().expect("the batch gained a dictionary");
+        assert!(docs.iter().all(|d| Arc::ptr_eq(d.dict().unwrap(), dict)));
+        let (after, before) = (docs.size_of().total_bytes(), before.size_of().total_bytes());
+        assert!(
+            after * 4 < before * 3,
+            "a batch of repeated field names should shrink by at least a quarter: \
+             {before} -> {after}"
+        );
+    }
+
+    /// A batch whose documents already share one densely used dictionary must
+    /// keep sharing it. Copying them would cost a document each and buy
+    /// nothing, and it is the case every projection hits.
+    #[test]
+    fn a_session_shares_a_dense_dictionary_instead_of_copying() {
+        let mut docs: Vec<FlatVariant> = (0..100)
+            .map(|i| {
+                serde_json::from_str(&format!(
+                    r#"{{"subscription_country_code": "germany", "account_identifier": {i}}}"#
+                ))
+                .unwrap()
+            })
+            .collect();
+        run_session(&mut docs);
+        let first = docs[0].dict().unwrap().clone();
+
+        // Second time around every document already shares one dictionary
+        // whose documents are all still alive.
+        let chunks: Vec<*const Chunk> = docs.iter().map(|d| Arc::as_ptr(&d.chunk)).collect();
+        run_session(&mut docs);
+        assert!(Arc::ptr_eq(docs[0].dict().unwrap(), &first));
+        let after: Vec<*const Chunk> = docs.iter().map(|d| Arc::as_ptr(&d.chunk)).collect();
+        assert_eq!(chunks, after, "sharing must not move any document");
+    }
+
+    /// When most of a dictionary's documents are gone, the survivors move off
+    /// it so it can be released. Without the sparseness test one surviving row
+    /// would pin the whole batch's strings.
+    #[test]
+    fn a_session_abandons_a_sparse_dictionary() {
+        let mut docs: Vec<FlatVariant> = (0..100)
+            .map(|i| {
+                serde_json::from_str(&format!(
+                    r#"{{"subscription_country_code": "germany", "account_identifier": {i}}}"#
+                ))
+                .unwrap()
+            })
+            .collect();
+        run_session(&mut docs);
+        let crowded = docs[0].dict().unwrap().clone();
+
+        // Keep one row, as a selective filter would.
+        let mut survivor = vec![docs.remove(0)];
+        drop(docs);
+        assert!(Dict::is_sparse(&crowded, SPARSE_FACTOR));
+
+        run_session(&mut survivor);
+        assert!(
+            !Arc::ptr_eq(survivor[0].dict().unwrap(), &crowded),
+            "a survivor must not keep a dictionary built for a hundred rows"
+        );
+        assert_eq!(Arc::strong_count(&crowded), 1, "the old dictionary is free");
+    }
+
+    /// Field names of a realistic length, repeated across documents: the case
+    /// the dictionary exists for.
+    #[test]
+    fn interning_shares_one_dictionary_and_deduplicates() {
+        let docs: Vec<FlatVariant> = (0..100)
+            .map(|i| {
+                serde_json::from_str(&format!(
+                    r#"{{"subscription_country_code": "germany",
+                         "preferred_display_city": "berlin-brandenburg",
+                         "account_identifier": {i}}}"#
+                ))
+                .unwrap()
+            })
+            .collect();
+        let interned = intern_all(&docs);
+
+        let dict = interned[0]
+            .dict()
+            .expect("interned documents carry a dictionary");
+        for doc in &interned {
+            assert!(
+                Arc::ptr_eq(doc.dict().unwrap(), dict),
+                "every document of one set shares its dictionary"
+            );
+        }
+        // Three keys and two repeated values, each stored once.
+        assert_eq!(dict.len(), 5);
+
+        let inline_bytes: usize = docs.iter().map(|d| d.as_bytes().len()).sum();
+        let interned_bytes: usize =
+            interned.iter().map(|d| d.as_bytes().len()).sum::<usize>() + dict.byte_size();
+        assert!(
+            interned_bytes * 2 < inline_bytes,
+            "interning should more than halve these documents: {inline_bytes} -> {interned_bytes}"
+        );
+    }
+
+    /// Strings too short to earn a reference stay inline, so a corpus of tiny
+    /// distinct strings costs exactly what it costs today.
+    ///
+    /// Without the `MIN_INTERN_LEN` floor this corpus grew by 2.1x, because a
+    /// 5-byte reference plus an 8-byte table slot replaced a 3-byte string.
+    #[test]
+    fn short_strings_are_not_interned() {
+        let docs: Vec<FlatVariant> = (0..200)
+            .map(|i| serde_json::from_str(&format!(r#"{{"k{i}": "v{i}"}}"#)).unwrap())
+            .collect();
+        let interned = intern_all(&docs);
+        for (a, b) in docs.iter().zip(&interned) {
+            assert_eq!(a, b);
+            assert_eq!(a.as_bytes(), b.as_bytes(), "short strings stay inline");
+        }
+        // No key or value here reaches five bytes, so the dictionary is empty.
+        assert_eq!(interned[0].dict().map_or(0, |d| d.len()), 0);
+    }
+
+    /// A document that already holds references, copied into a writer with a
+    /// different dictionary, has to have its strings spelled out rather than
+    /// keeping ids that would resolve against the wrong table.
+    #[test]
+    fn combining_two_dictionaries_materializes_strings() {
+        let left: FlatVariant = serde_json::from_str(r#"{"a": "one"}"#).unwrap();
+        let right: FlatVariant = serde_json::from_str(r#"{"b": "two"}"#).unwrap();
+        // Separate sets, so the two documents hold unrelated dictionaries
+        // whose ids collide: "a" and "b" are both id 0.
+        let left = intern_all(&[left]).pop().unwrap();
+        let right = intern_all(&[right]).pop().unwrap();
+        assert!(!Arc::ptr_eq(left.dict().unwrap(), right.dict().unwrap()));
+
+        let merged = functions::variant_merge_FV_FV(left, right);
+        assert_eq!(merged.to_json_string().unwrap(), r#"{"a":"one","b":"two"}"#);
+    }
+
+    /// The empty string is a legal dictionary entry and a legal map key.
+    #[test]
+    fn interning_handles_empty_strings() {
+        let doc: FlatVariant = serde_json::from_str(r#"{"": "", "k": ""}"#).unwrap();
+        let interned = intern_all(std::slice::from_ref(&doc)).pop().unwrap();
+        assert_eq!(interned, doc);
+        assert_eq!(interned.to_json_string().unwrap(), r#"{"":"","k":""}"#);
+    }
+
+    /// Long strings that never repeat are the adversarial case. Interning
+    /// them would cost 12 bytes each and buy nothing, so the counting pass has
+    /// to leave them alone: this corpus grew 35% before it existed.
+    #[test]
+    fn interning_all_distinct_strings_stays_bounded() {
+        let docs: Vec<FlatVariant> = (0..200)
+            .map(|i| {
+                serde_json::from_str(&format!(
+                    r#"{{"unique_key_{i:04}": "unique-value-{i:04}-{}"}}"#,
+                    "p".repeat(20)
+                ))
+                .unwrap()
+            })
+            .collect();
+        let interned = intern_all(&docs);
+        for (a, b) in docs.iter().zip(&interned) {
+            assert_eq!(a, b);
+        }
+        let inline: usize = docs.iter().map(|d| d.as_bytes().len()).sum();
+        let dict = interned[0].dict().unwrap();
+        let total: usize =
+            interned.iter().map(|d| d.as_bytes().len()).sum::<usize>() + dict.byte_size();
+        assert!(
+            total < inline * 21 / 20,
+            "a dictionary of unique strings must cost at most 5%: {inline} -> {total}"
+        );
+    }
+
+    /// The point of the whole exercise: a DBSP batch of VARIANT rows must come
+    /// out holding one dictionary, without anything in the SQL runtime asking
+    /// for it.
+    #[test]
+    fn a_dbsp_batch_shares_one_dictionary() {
+        use dbsp::dynamic::DowncastTrait;
+        use dbsp::trace::{BatchReader, Cursor};
+        use dbsp::typed_batch::BatchReader as _;
+        use dbsp::utils::Tup2;
+        use dbsp::{OrdZSet, ZWeight};
+
+        let rows: Vec<Tup2<Tup2<SqlString, FlatVariant>, ZWeight>> = (0..200)
+            .map(|i| {
+                let doc: FlatVariant = serde_json::from_str(&format!(
+                    r#"{{"subscription_country_code": "germany",
+                         "preferred_display_city": "berlin-brandenburg",
+                         "account_identifier": {i}}}"#
+                ))
+                .unwrap();
+                Tup2(Tup2(SqlString::from(format!("key-{i:04}")), doc), 1)
+            })
+            .collect();
+        let loose: Vec<FlatVariant> = rows.iter().map(|r| r.0.1.clone()).collect();
+
+        let batch: OrdZSet<Tup2<SqlString, FlatVariant>> = OrdZSet::from_keys((), rows);
+        assert_eq!(batch.len(), 200);
+
+        let mut dicts: Vec<*const Dict> = Vec::new();
+        let mut encoded = 0usize;
+        let mut cursor = batch.inner().cursor();
+        while cursor.key_valid() {
+            let key = unsafe { cursor.key().downcast::<Tup2<SqlString, FlatVariant>>() };
+            dicts.push(Arc::as_ptr(
+                key.1
+                    .dict()
+                    .expect("a batch's documents carry a dictionary"),
+            ));
+            encoded += key.1.as_bytes().len();
+            cursor.step_key();
+        }
+        assert_eq!(dicts.len(), 200);
+        assert!(
+            dicts.windows(2).all(|w| w[0] == w[1]),
+            "every document in a batch resolves against the same dictionary"
+        );
+
+        // The documents the batch holds have to be smaller than the ones it
+        // was built from, which is the only reason any of this exists.
+        let loose_bytes: usize = loose.iter().map(|d| d.as_bytes().len()).sum();
+        let dict_bytes = unsafe {
+            let c = batch.inner().cursor();
+            let key = c.key().downcast::<Tup2<SqlString, FlatVariant>>();
+            key.1.dict().unwrap().byte_size()
+        };
+        assert!(
+            (encoded + dict_bytes) * 2 < loose_bytes,
+            "batching should more than halve the documents: \
+             {loose_bytes} -> {encoded} + {dict_bytes} of dictionary"
+        );
+    }
+
+    /// Once a batch has frozen a dictionary, documents parsed afterwards on
+    /// the same thread arrive already interned, so the input buffers hold the
+    /// compact form and the next batch build translates through an array
+    /// instead of hashing.
+    #[test]
+    fn parsing_uses_the_last_batch_dictionary() {
+        fn record(i: u32) -> String {
+            format!(
+                r#"{{"subscription_country_code": "germany",
+                     "preferred_display_city": "berlin-brandenburg",
+                     "account_identifier": {i}}}"#
+            )
+        }
+        let parse = |i: u32| -> FlatVariant { serde_json::from_str(&record(i)).unwrap() };
+
+        // Nothing staged yet: strings land inline.
+        let cold = parse(0);
+        assert!(cold.dict().is_none());
+
+        let mut batch: Vec<FlatVariant> = (0..100).map(parse).collect();
+        let inline_bytes = batch[0].as_bytes().len();
+        run_session(&mut batch);
+        let staged = batch[0]
+            .dict()
+            .expect("the batch froze a dictionary")
+            .clone();
+
+        // Parsed after the batch: same value, but already compact.
+        let warm = parse(0);
+        assert_eq!(warm, cold, "interning at parse time changes no value");
+        assert_eq!(
+            warm.to_json_string().unwrap(),
+            cold.to_json_string().unwrap()
+        );
+        assert!(
+            Arc::ptr_eq(
+                warm.dict().expect("parsed onto the staged dictionary"),
+                &staged
+            ),
+            "a freshly parsed document joins the dictionary the last batch froze"
+        );
+        assert!(
+            warm.as_bytes().len() * 2 < inline_bytes,
+            "parsing should more than halve these documents: \
+             {inline_bytes} -> {}",
+            warm.as_bytes().len()
+        );
+
+        // A document holding nothing the table knows must not take a
+        // reference to it, or the sparseness rule would read the count as
+        // live documents that do not exist.
+        let unrelated: FlatVariant = serde_json::from_str(r#"{"zzz_unseen_key": 1}"#).unwrap();
+        assert!(unrelated.dict().is_none());
+    }
+
+    /// A dictionary shared by a batch must be charged to the batch once, not
+    /// once per document, or the spill accounting in
+    /// `dbsp::trace::ord::fallback` would see a batch tens of times larger
+    /// than it is. Measuring the benchmark's rows one at a time reported
+    /// 54000% of their real heap before this was understood.
+    #[test]
+    fn size_of_counts_a_shared_dictionary_once() {
+        let docs: Vec<FlatVariant> = (0..100)
+            .map(|i| {
+                serde_json::from_str(&format!(
+                    r#"{{"subscription_country_code": "germany", "account_identifier": {i}}}"#
+                ))
+                .unwrap()
+            })
+            .collect();
+        let interned = intern_all(&docs);
+        let dict_bytes = interned[0].dict().unwrap().byte_size();
+
+        let together = interned.size_of().total_bytes();
+        let separately: usize = interned.iter().map(|d| d.size_of().total_bytes()).sum();
+
+        assert!(
+            separately > together + 90 * dict_bytes,
+            "measuring documents one at a time should charge the dictionary to each"
+        );
+        assert!(
+            together < separately / 2,
+            "one context must charge the shared dictionary once: {together} vs {separately}"
+        );
+    }
+
+    /// A document larger than one chunk gets its own, and documents keep
+    /// their identity across the chunk boundary.
+    #[test]
+    fn interning_spans_chunks() {
+        let big: FlatVariant = serde_json::from_str(&format!(
+            r#"{{"payload": "{}"}}"#,
+            "x".repeat(CHUNK_CAP + 1024)
+        ))
+        .unwrap();
+        let small: FlatVariant = serde_json::from_str(r#"{"k": 1}"#).unwrap();
+        let interned = intern_all(&[big.clone(), small.clone(), big.clone()]);
+        assert_eq!(interned[0], big);
+        assert_eq!(interned[1], small);
+        assert_eq!(interned[2], big);
+        // The oversized value and the key "payload"; the small document's
+        // single-character key stays inline.
+        assert_eq!(interned[0].dict().unwrap().len(), 2);
     }
 
     /// The archived form is the encoding verbatim. `Serialize` copies the

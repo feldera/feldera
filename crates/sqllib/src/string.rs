@@ -41,6 +41,9 @@ pub type InternedString = InternedStringId;
 #[derive(
     Clone, Default, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize, IsNone,
 )]
+// A string holds no VARIANT, and `ArcStr` belongs to another crate, so the
+// derive cannot bound it.
+#[interned(opaque)]
 #[serde(transparent)]
 pub struct SqlString(StringRef);
 
