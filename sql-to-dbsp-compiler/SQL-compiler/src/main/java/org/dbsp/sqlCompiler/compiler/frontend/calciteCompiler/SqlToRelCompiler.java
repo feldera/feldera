@@ -419,11 +419,15 @@ public class SqlToRelCompiler implements IWritesLogs {
         /** Type of COVAR_POP, COVAR_SAMP, REGR_SXX, and REGR_SYY.
          * These aggregates ignore the pairs where either argument is NULL, so
          * the result is NULL when no pair remains, whatever the arguments are
-         * declared to be. */
+         * declared to be.  Both arguments are summed, so the result type must
+         * hold the values of both. */
         @Override
         public RelDataType deriveCovarType(RelDataTypeFactory typeFactory,
                                            RelDataType arg0Type, RelDataType arg1Type) {
-            return typeFactory.createTypeWithNullability(arg0Type, true);
+            RelDataType common = typeFactory.leastRestrictive(List.of(arg0Type, arg1Type));
+            if (common == null)
+                common = arg0Type;
+            return typeFactory.createTypeWithNullability(common, true);
         }
 
         @Override

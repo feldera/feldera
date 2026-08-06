@@ -85,12 +85,12 @@ should write `SELECT SUM(CAST(col AS BIGINT))`.
   <tr>
      <td><a id="covar_pop"></a><code>COVAR_POP(y, x)</code></td>
      <td>Returns the population covariance of the (y, x) pairs; pairs where either value is <code>NULL</code> are ignored.
-         Returns <code>NULL</code> when no pairs remain.  The result has the type of the first argument.</td>
+         Returns <code>NULL</code> when no pairs remain.  The result has the wider of the two argument types.</td>
   </tr>
   <tr>
      <td><a id="covar_samp"></a><code>COVAR_SAMP(y, x)</code></td>
      <td>Returns the sample covariance of the (y, x) pairs; pairs where either value is <code>NULL</code> are ignored.
-         Returns <code>NULL</code> when fewer than two pairs remain.  The result has the type of the first argument.</td>
+         Returns <code>NULL</code> when fewer than two pairs remain.  The result has the wider of the two argument types.</td>
   </tr>
   <tr>
      <td><a id="every"></a><code>EVERY(condition)</code></td>
