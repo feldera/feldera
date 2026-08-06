@@ -146,14 +146,14 @@ fn json_each_typed<T: DecodeFV>(
 ) -> Map<SqlString, Option<T>> {
     let mut result = BTreeMap::<SqlString, Option<T>>::new();
     let doc = value.val();
-    if doc.tag() == TAG_MAP {
-        let c = Container::new(doc.bytes);
-        for i in 0..c.count {
-            let key = doc.sub(c.element(i));
+    if rank(doc.tag()) == TAG_MAP {
+        let m = doc.as_map();
+        for i in 0..m.count() {
+            let key = m.key(i);
             if !is_string(key) {
                 continue;
             }
-            let val = doc.sub(c.map_value(i));
+            let val = m.value(i);
             if !keep(val) {
                 continue;
             }
@@ -198,10 +198,10 @@ json_each!(timestamp, Timestamp, |v: Val<'_>| matches!(
 pub fn json_object_keys_FV(value: FlatVariant) -> Array<SqlString> {
     let mut result = Vec::new();
     let doc = value.val();
-    if doc.tag() == TAG_MAP {
-        let c = Container::new(doc.bytes);
-        for i in 0..c.count {
-            let key = doc.sub(c.element(i));
+    if rank(doc.tag()) == TAG_MAP {
+        let m = doc.as_map();
+        for i in 0..m.count() {
+            let key = m.key(i);
             if is_string(key) {
                 result.push(SqlString::from_ref(key_str(key)));
             }
@@ -215,15 +215,15 @@ crate::some_polymorphic_function1!(json_object_keys, FV, FlatVariant, Array<SqlS
 #[doc(hidden)]
 pub fn json_keys_FV(value: FlatVariant) -> Array<SqlString> {
     fn collect(prefix: &str, map: Val<'_>, result: &mut BTreeSet<SqlString>) {
-        let c = Container::new(map.bytes);
-        for i in 0..c.count {
-            let key = map.sub(c.element(i));
+        let m = map.as_map();
+        for i in 0..m.count() {
+            let key = m.key(i);
             if !is_string(key) {
                 continue;
             }
             let path = append_path_component(prefix, key_str(key));
-            let val = map.sub(c.map_value(i));
-            if val.tag() == TAG_MAP {
+            let val = m.value(i);
+            if rank(val.tag()) == TAG_MAP {
                 collect(&path, val, result);
             }
 
@@ -232,7 +232,7 @@ pub fn json_keys_FV(value: FlatVariant) -> Array<SqlString> {
     }
     let mut result = BTreeSet::new();
     let doc = value.val();
-    if doc.tag() == TAG_MAP {
+    if rank(doc.tag()) == TAG_MAP {
         collect("", doc, &mut result);
     }
     result.into_iter().collect::<Vec<_>>().into()
@@ -251,32 +251,31 @@ pub fn variant_merge_FV_FV(left: FlatVariant, right: FlatVariant) -> FlatVariant
         Owned(FlatVariant),
     }
     let (a, b) = (left.val(), right.val());
-    if a.tag() != TAG_MAP || b.tag() != TAG_MAP {
+    if rank(a.tag()) != TAG_MAP || rank(b.tag()) != TAG_MAP {
         return right;
     }
-    let (ca, cb) = (Container::new(a.bytes), Container::new(b.bytes));
-    if cb.count == 0 {
+    let (ma, mb) = (a.as_map(), b.as_map());
+    if mb.count() == 0 {
         return left;
     }
-    let mut entries: Vec<(Val, Merged)> = Vec::with_capacity(ca.count + cb.count);
+    let mut entries: Vec<(Val, Merged)> = Vec::with_capacity(ma.count() + mb.count());
     let (mut i, mut j) = (0, 0);
-    while i < ca.count && j < cb.count {
-        let ka = a.sub(ca.element(i));
-        let kb = b.sub(cb.element(j));
+    while i < ma.count() && j < mb.count() {
+        let (ka, kb) = (ma.key(i), mb.key(j));
         match cmp_values(ka, kb) {
             Ordering::Less => {
-                entries.push((ka, Merged::Borrowed(a.sub(ca.map_value(i)))));
+                entries.push((ka, Merged::Borrowed(ma.value(i))));
                 i += 1;
             }
             Ordering::Greater => {
-                entries.push((kb, Merged::Borrowed(b.sub(cb.map_value(j)))));
+                entries.push((kb, Merged::Borrowed(mb.value(j))));
                 j += 1;
             }
             // The right key wins
             Ordering::Equal => {
                 let merged = variant_merge_FV_FV(
-                    left.subvalue(ca.map_value(i)),
-                    right.subvalue(cb.map_value(j)),
+                    FlatVariant::from_val(ma.value(i)),
+                    FlatVariant::from_val(mb.value(j)),
                 );
                 entries.push((kb, Merged::Owned(merged)));
                 i += 1;
@@ -284,18 +283,12 @@ pub fn variant_merge_FV_FV(left: FlatVariant, right: FlatVariant) -> FlatVariant
             }
         }
     }
-    while i < ca.count {
-        entries.push((
-            a.sub(ca.element(i)),
-            Merged::Borrowed(a.sub(ca.map_value(i))),
-        ));
+    while i < ma.count() {
+        entries.push((ma.key(i), Merged::Borrowed(ma.value(i))));
         i += 1;
     }
-    while j < cb.count {
-        entries.push((
-            b.sub(cb.element(j)),
-            Merged::Borrowed(b.sub(cb.map_value(j))),
-        ));
+    while j < mb.count() {
+        entries.push((mb.key(j), Merged::Borrowed(mb.value(j))));
         j += 1;
     }
     build_document_infallible(|w| {
@@ -325,31 +318,31 @@ where
     B: Into<Option<bool>>,
 {
     let doc = value.val();
-    if doc.tag() != TAG_MAP {
+    if rank(doc.tag()) != TAG_MAP {
         return if predicate_keeps(predicate(&None, &value)) {
             Some(value)
         } else {
             None
         };
     }
-    let c = Container::new(doc.bytes);
+    let m = doc.as_map();
     // Kept entries stay sorted, so the result map needs no re-sorting.
-    let kept: Vec<usize> = (0..c.count)
+    let kept: Vec<usize> = (0..m.count())
         .filter(|&i| {
-            let key = Some(value.subvalue(c.element(i)));
-            let val = value.subvalue(c.map_value(i));
+            let key = Some(FlatVariant::from_val(m.key(i)));
+            let val = FlatVariant::from_val(m.value(i));
             predicate_keeps(predicate(&key, &val))
         })
         .collect();
     Some(build_document_infallible(|w| {
         let (start, mut key_ends, mut val_ends) = w.begin_map_in_place(kept.len());
         for &i in &kept {
-            w.copy(doc.sub(c.element(i)));
+            w.copy(m.key(i));
             key_ends.record_end(w);
         }
         w.begin_map_values(&mut val_ends);
         for &i in &kept {
-            w.copy(doc.sub(c.map_value(i)));
+            w.copy(m.value(i));
             val_ends.record_end(w);
         }
         start..w.out.len()
@@ -372,24 +365,24 @@ where
     R: Into<Option<FlatVariant>>,
 {
     let doc = value.val();
-    if doc.tag() != TAG_MAP {
+    if rank(doc.tag()) != TAG_MAP {
         return mapper(&None, &value).into();
     }
-    let c = Container::new(doc.bytes);
+    let m = doc.as_map();
     // Keys are unchanged, so the result map reuses their order.
-    let mapped: Vec<FlatVariant> = (0..c.count)
+    let mapped: Vec<FlatVariant> = (0..m.count())
         .map(|i| {
-            let key = Some(value.subvalue(c.element(i)));
-            let val = value.subvalue(c.map_value(i));
+            let key = Some(FlatVariant::from_val(m.key(i)));
+            let val = FlatVariant::from_val(m.value(i));
             mapper(&key, &val)
                 .into()
                 .unwrap_or_else(FlatVariant::sql_null)
         })
         .collect();
     Some(build_document_infallible(|w| {
-        let (start, mut key_ends, mut val_ends) = w.begin_map_in_place(c.count);
-        for i in 0..c.count {
-            w.copy(doc.sub(c.element(i)));
+        let (start, mut key_ends, mut val_ends) = w.begin_map_in_place(m.count());
+        for i in 0..m.count() {
+            w.copy(m.key(i));
             key_ends.record_end(w);
         }
         w.begin_map_values(&mut val_ends);
@@ -423,13 +416,13 @@ where
     // The kept count is unknown, so children are encoded
     // first and the container is assembled from their ranges.
     let doc = value.val();
-    match doc.tag() {
+    match rank(doc.tag()) {
         TAG_MAP => {
-            let c = Container::new(doc.bytes);
-            let mut entries = Vec::with_capacity(c.count);
-            for i in 0..c.count {
-                let key = doc.sub(c.element(i));
-                let val = value.subvalue(c.map_value(i));
+            let m = doc.as_map();
+            let mut entries = Vec::with_capacity(m.count());
+            for i in 0..m.count() {
+                let key = m.key(i);
+                let val = FlatVariant::from_val(m.value(i));
                 if !is_string(key) {
                     // A non-string key has no path; keep the field untouched
                     let k = w.copy(key);
@@ -508,13 +501,13 @@ where
     R: Into<Option<FlatVariant>>,
 {
     let doc = value.val();
-    match doc.tag() {
+    match rank(doc.tag()) {
         TAG_MAP => {
-            let c = Container::new(doc.bytes);
-            let mut entries = Vec::with_capacity(c.count);
-            for i in 0..c.count {
-                let key = doc.sub(c.element(i));
-                let val = value.subvalue(c.map_value(i));
+            let m = doc.as_map();
+            let mut entries = Vec::with_capacity(m.count());
+            for i in 0..m.count() {
+                let key = m.key(i);
+                let val = FlatVariant::from_val(m.value(i));
                 if !is_string(key) {
                     // A non-string key has no path; keep the field untouched
                     let k = w.copy(key);

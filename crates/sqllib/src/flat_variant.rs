@@ -365,6 +365,15 @@ impl FlatVariant {
         self.chunk.dict()
     }
 
+    /// Map value `i` as an owned sub-value, for either map form.
+    fn value_at(&self, i: usize) -> FlatVariant {
+        let m = self.val().as_map();
+        let value = m.value(i);
+        // The value always lives in the document, so it can share the chunk.
+        let offset = value.bytes.as_ptr() as usize - self.as_bytes().as_ptr() as usize;
+        self.subvalue(offset..offset + value.bytes.len())
+    }
+
     /// A sub-value sharing this value's chunk; `range` is relative to
     /// `self.as_bytes()`.
     fn subvalue(&self, range: Range<usize>) -> FlatVariant {
@@ -440,12 +449,12 @@ impl FlatVariant {
     /// ```
     pub fn index_string<I: AsRef<str>>(&self, index: I) -> FlatVariant {
         let val = self.val();
-        if val.tag() != TAG_MAP {
+        if rank(val.tag()) != TAG_MAP {
             return FlatVariant::sql_null();
         }
         let key = index.as_ref();
         match find_key_by(val, |encoded| cmp_with_string_key(encoded, key)) {
-            Some(i) => self.subvalue(Container::new(val.bytes).map_value(i)),
+            Some(i) => self.value_at(i),
             None => FlatVariant::sql_null(),
         }
     }
@@ -473,8 +482,7 @@ impl FlatVariant {
                 let i = usize::try_from(i - 1).ok()?;
                 (i < c.count).then(|| self.subvalue(c.element(i)))
             }
-            TAG_MAP => find_key(val, index.val())
-                .map(|i| self.subvalue(Container::new(val.bytes).map_value(i))),
+            TAG_MAP | TAG_SHAPED_MAP => find_key(val, index.val()).map(|i| self.value_at(i)),
             _ => None,
         }
     }
@@ -674,12 +682,12 @@ fn find_key(map: Val<'_>, probe: Val<'_>) -> Option<usize> {
 /// Binary search the sorted key area of a map with `cmp`, which compares an
 /// encoded key against the probe.
 fn find_key_by(map: Val<'_>, cmp: impl Fn(Val<'_>) -> Ordering) -> Option<usize> {
-    let c = Container::new(map.bytes);
+    let m = map.as_map();
     let mut lo = 0usize;
-    let mut hi = c.count;
+    let mut hi = m.count();
     while lo < hi {
         let mid = (lo + hi) / 2;
-        match cmp(map.sub(c.element(mid))) {
+        match cmp(m.key(mid)) {
             Ordering::Less => lo = mid + 1,
             Ordering::Greater => hi = mid,
             Ordering::Equal => return Some(mid),
@@ -758,18 +766,18 @@ pub(crate) fn cmp_values(a: Val<'_>, b: Val<'_>) -> Ordering {
         TAG_MAP => {
             // BTreeMap Ord: lexicographic over (key, value) pairs in
             // ascending key order, then length. Keys are stored sorted.
-            let (ca, cb) = (Container::new(a.bytes), Container::new(b.bytes));
-            for i in 0..ca.count.min(cb.count) {
-                let ord = cmp_values(a.sub(ca.element(i)), b.sub(cb.element(i)));
+            let (ma, mb) = (a.as_map(), b.as_map());
+            for i in 0..ma.count().min(mb.count()) {
+                let ord = cmp_values(ma.key(i), mb.key(i));
                 if ord.is_ne() {
                     return ord;
                 }
-                let ord = cmp_values(a.sub(ca.map_value(i)), b.sub(cb.map_value(i)));
+                let ord = cmp_values(ma.value(i), mb.value(i));
                 if ord.is_ne() {
                     return ord;
                 }
             }
-            ca.count.cmp(&cb.count)
+            ma.count().cmp(&mb.count())
         }
         tag => unreachable!("invalid tag {tag}"),
     }
@@ -813,11 +821,11 @@ fn hash_value<H: Hasher>(value: Val<'_>, state: &mut H) {
             }
         }
         TAG_MAP => {
-            let c = Container::new(value.bytes);
-            state.write_usize(c.count);
-            for i in 0..c.count {
-                hash_value(value.sub(c.element(i)), state);
-                hash_value(value.sub(c.map_value(i)), state);
+            let m = value.as_map();
+            state.write_usize(m.count());
+            for i in 0..m.count() {
+                hash_value(m.key(i), state);
+                hash_value(m.value(i), state);
             }
         }
         _ => state.write(payload),
@@ -981,16 +989,16 @@ impl Writer {
                     w.inline_copy(src.sub(c.element(i)));
                 })
             }
-            TAG_MAP => {
-                let c = Container::new(src.bytes);
-                let (start, mut key_ends, mut val_ends) = self.begin_map_in_place(c.count);
-                for i in 0..c.count {
-                    self.inline_copy(src.sub(c.element(i)));
+            TAG_MAP | TAG_SHAPED_MAP => {
+                let m = src.as_map();
+                let (start, mut key_ends, mut val_ends) = self.begin_map_in_place(m.count());
+                for i in 0..m.count() {
+                    self.inline_copy(m.key(i));
                     key_ends.record_end(self);
                 }
                 self.begin_map_values(&mut val_ends);
-                for i in 0..c.count {
-                    self.inline_copy(src.sub(c.map_value(i)));
+                for i in 0..m.count() {
+                    self.inline_copy(m.value(i));
                     val_ends.record_end(self);
                 }
                 start..self.out.len()
@@ -1699,11 +1707,11 @@ fn count_strings(
                 count_strings(src.sub(c.element(i)), counts, seen, refs);
             }
         }
-        TAG_MAP => {
-            let c = Container::new(src.bytes);
-            for i in 0..c.count {
-                count_strings(src.sub(c.element(i)), counts, seen, refs);
-                count_strings(src.sub(c.map_value(i)), counts, seen, refs);
+        TAG_MAP | TAG_SHAPED_MAP => {
+            let m = src.as_map();
+            for i in 0..m.count() {
+                count_strings(m.key(i), counts, seen, refs);
+                count_strings(m.value(i), counts, seen, refs);
             }
         }
         _ => {}
@@ -1789,18 +1797,18 @@ fn rewire(
             }
             start..w.out.len()
         }
-        TAG_MAP => {
-            let c = Container::new(src.bytes);
-            let (start, mut key_ends, mut val_ends) = w.begin_map_in_place(c.count);
+        TAG_MAP | TAG_SHAPED_MAP => {
+            let m = src.as_map();
             // Keys keep their relative order: the dictionary orders entries by
             // content, and rewiring does not change any string's content.
-            for i in 0..c.count {
-                rewire(src.sub(c.element(i)), w, interned, remaps);
+            let (start, mut key_ends, mut val_ends) = w.begin_map_in_place(m.count());
+            for i in 0..m.count() {
+                rewire(m.key(i), w, interned, remaps);
                 key_ends.record_end(w);
             }
             w.begin_map_values(&mut val_ends);
-            for i in 0..c.count {
-                rewire(src.sub(c.map_value(i)), w, interned, remaps);
+            for i in 0..m.count() {
+                rewire(m.value(i), w, interned, remaps);
                 val_ends.record_end(w);
             }
             start..w.out.len()
@@ -1872,15 +1880,10 @@ fn decode_variant(value: Val<'_>) -> Variant {
                 .collect();
             Variant::Array(items.into())
         }
-        TAG_MAP => {
-            let c = Container::new(value.bytes);
-            let map: BTreeMap<Variant, Variant> = (0..c.count)
-                .map(|i| {
-                    (
-                        decode_variant(value.sub(c.element(i))),
-                        decode_variant(value.sub(c.map_value(i))),
-                    )
-                })
+        TAG_MAP | TAG_SHAPED_MAP => {
+            let m = value.as_map();
+            let map: BTreeMap<Variant, Variant> = (0..m.count())
+                .map(|i| (decode_variant(m.key(i)), decode_variant(m.value(i))))
                 .collect();
             Variant::Map(map.into())
         }
@@ -2396,11 +2399,20 @@ impl Serialize for Enc<'_> {
                 }
                 seq.end()
             }
-            TAG_MAP => {
-                let c = Container::new(bytes);
-                let mut map = serializer.serialize_map(Some(c.count))?;
-                for i in 0..c.count {
-                    map.serialize_entry(&self.child(c.element(i)), &self.child(c.map_value(i)))?;
+            TAG_MAP | TAG_SHAPED_MAP => {
+                let m = self.val.as_map();
+                let mut map = serializer.serialize_map(Some(m.count()))?;
+                for i in 0..m.count() {
+                    map.serialize_entry(
+                        &Enc {
+                            val: m.key(i),
+                            config: self.config,
+                        },
+                        &Enc {
+                            val: m.value(i),
+                            config: self.config,
+                        },
+                    )?;
                 }
                 map.end()
             }

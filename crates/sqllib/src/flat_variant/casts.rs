@@ -517,13 +517,13 @@ impl<T: DecodeFV> DecodeFV for Array<T> {
 
 impl<K: DecodeFV + Ord, V: DecodeFV> DecodeFV for Map<K, V> {
     fn decode(val: Val<'_>) -> Result<Self, Box<dyn Error>> {
-        match val.tag() {
+        match crate::flat_variant::rank(val.tag()) {
             TAG_MAP => {
-                let c = Container::new(val.bytes);
+                let m = val.as_map();
                 let mut result = std::collections::BTreeMap::new();
-                for i in 0..c.count {
-                    let k = K::decode(val.sub(c.element(i)))?;
-                    let v = V::decode(val.sub(c.map_value(i)))?;
+                for i in 0..m.count() {
+                    let k = K::decode(m.key(i))?;
+                    let v = V::decode(m.value(i))?;
                     result.insert(k, v);
                 }
                 Ok(result.into())
