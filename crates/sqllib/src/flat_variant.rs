@@ -2996,6 +2996,77 @@ mod tests {
         );
     }
 
+    /// How many of a real corpus's maps arrive with every key already a
+    /// reference, once the staging dictionary is warm.
+    ///
+    /// This decides how shapes get registered. A map whose keys are all
+    /// references can have its shape built from array reads alone; one with an
+    /// inline key would need its keys hashed, which is the per-occurrence
+    /// hashing that cost 30% of throughput before the array tally replaced it.
+    #[test]
+    fn most_maps_arrive_fully_referenced() {
+        use std::io::Read as _;
+        let gz = include_bytes!("../benches/data/user_props.jsonl.gz");
+        let mut text = String::new();
+        flate2::read::GzDecoder::new(&gz[..])
+            .read_to_string(&mut text)
+            .expect("sample decompresses");
+        let records: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert!(records.len() > 10, "need a real corpus");
+
+        let parse = |r: &str| -> FlatVariant {
+            let v: serde_json::Value = serde_json::from_str(r).unwrap();
+            serde_json::from_str(&v["properties"].to_string()).unwrap()
+        };
+
+        // Warm the staging dictionary the way a first batch would.
+        let cold: Vec<FlatVariant> = records.iter().map(|r| parse(r)).collect();
+        let mut batch = cold.clone();
+        run_session(&mut batch);
+
+        // Parse again: these are what a later batch would receive.
+        let warm: Vec<FlatVariant> = records.iter().map(|r| parse(r)).collect();
+
+        fn tally(v: Val<'_>, maps: &mut usize, referenced: &mut usize) {
+            match v.tag() {
+                TAG_MAP | TAG_SHAPED_MAP => {
+                    let m = v.as_map();
+                    *maps += 1;
+                    if (0..m.count()).all(|i| m.key(i).tag() == TAG_STRING_REF) {
+                        *referenced += 1;
+                    }
+                    for i in 0..m.count() {
+                        tally(m.value(i), maps, referenced);
+                    }
+                }
+                TAG_ARRAY => {
+                    let c = Container::new(v.bytes);
+                    for i in 0..c.count {
+                        tally(v.sub(c.element(i)), maps, referenced);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let (mut maps, mut referenced) = (0usize, 0usize);
+        for doc in &warm {
+            tally(doc.val(), &mut maps, &mut referenced);
+        }
+        println!("maps {maps}, fully referenced {referenced}");
+        assert!(maps > 0);
+        // Measured 232 of 267, 87%. The rest hold a key too short to earn an
+        // entry or one that occurred only once, and they stay general maps,
+        // the same fallback a non-string key takes. The floor is set below the
+        // measurement so that a change in the corpus does not fail the build,
+        // but a collapse in the ratio does: below it, registering shapes would
+        // have to hash keys and would cost more than shaping saves.
+        assert!(
+            referenced * 4 >= maps * 3,
+            "shapes are only cheap to register while most maps arrive fully \
+             referenced: {referenced} of {maps}"
+        );
+    }
+
     /// A dictionary shared by a batch must be charged to the batch once, not
     /// once per document, or the spill accounting in
     /// `dbsp::trace::ord::fallback` would see a batch tens of times larger
