@@ -36,18 +36,18 @@ pub struct Dict {
     /// builder compares it against the dictionary's live reference count to
     /// decide whether the dictionary has gone sparse.
     origin_docs: u32,
-    /// Key areas of the interned map shapes, concatenated. A shape's area is
-    /// exactly the bytes a general map would hold for its keys: one
-    /// `[TAG_STRING_REF][id]` per key, in the canonical order. Storing the
-    /// encoded form rather than the ids means a shaped map's key still reads
-    /// back as an ordinary value, just from here instead of the document.
+    /// The interned map shapes, concatenated. A shape is
+    /// `[arity u32][key_end u32 x arity][key bytes]`: a general map's key area
+    /// together with the table that delimits it, which is exactly what a
+    /// shaped map no longer carries. Keys keep their encoded form, so a shaped
+    /// map's key still reads back as an ordinary value, just from here instead
+    /// of from the document, and a key too short to earn a dictionary entry
+    /// can sit inline beside referenced ones rather than costing the whole map
+    /// its shape.
     shape_keys: Box<[u8]>,
     /// `shape_ends[i]` is where shape `i` ends in `shape_keys`.
     shape_ends: Box<[u32]>,
 }
-
-/// Bytes one key occupies in a shape's key area: the tag plus a `u32` id.
-pub(crate) const SHAPE_KEY_WIDTH: usize = 5;
 
 impl Dict {
     #[inline]
@@ -72,9 +72,7 @@ impl Dict {
         self.ends.len()
     }
 
-    /// The encoded key area of shape `id`, laid out exactly as a general map's
-    /// key area.
-    #[allow(dead_code)]
+    /// Shape `id`, as laid out above.
     #[inline]
     pub(crate) fn shape(&self, id: u32) -> &[u8] {
         let id = id as usize;
@@ -86,15 +84,8 @@ impl Dict {
         &self.shape_keys[start..self.shape_ends[id] as usize]
     }
 
-    /// How many keys shape `id` has.
-    #[allow(dead_code)]
-    #[inline]
-    pub(crate) fn shape_arity(&self, id: u32) -> usize {
-        self.shape(id).len() / SHAPE_KEY_WIDTH
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn shape_count(&self) -> usize {
+    /// How many distinct map shapes this dictionary holds.
+    pub fn shape_count(&self) -> usize {
         self.shape_ends.len()
     }
 
@@ -221,11 +212,10 @@ impl DictBuilder {
 
     /// Id of the shape whose key area is `keys`, interning it if new.
     ///
-    /// `keys` must already be the encoded key area: one `[TAG_STRING_REF][id]`
-    /// per key, in canonical order, with the ids belonging to this builder.
-    #[allow(dead_code)]
+    /// `keys` must already be the whole shape: arity, the end table, then the
+    /// encoded keys in canonical order, with any reference's id belonging to
+    /// this builder.
     pub fn intern_shape(&mut self, keys: &[u8]) -> u32 {
-        debug_assert_eq!(keys.len() % SHAPE_KEY_WIDTH, 0, "whole keys only");
         if let Some(&id) = self.shape_ids.get(keys) {
             return id;
         }
@@ -245,7 +235,6 @@ impl DictBuilder {
         id
     }
 
-    #[allow(dead_code)]
     pub fn shape_count(&self) -> usize {
         self.shape_ends.len()
     }

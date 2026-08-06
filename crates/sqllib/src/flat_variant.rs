@@ -113,9 +113,6 @@ pub(crate) const TAG_TIMESTAMP_TZ: u8 = 25;
 // reach storage: rkyv serialization materializes the strings first.
 /// `[TAG_STRING_REF][id: u32]`, a string held in the value's dictionary.
 pub(crate) const TAG_STRING_REF: u8 = 26;
-// Nothing emits a shaped map yet: this is the encoding and the read path, and
-// the writer that produces one follows.
-#[allow(dead_code)]
 /// `[TAG_SHAPED_MAP][shape: u32][val_end_i: u32 x count][values]`, a map whose
 /// whole key vector is held in the value's dictionary.
 ///
@@ -129,10 +126,10 @@ pub(crate) const TAG_SHAPED_MAP: u8 = 27;
 /// and a string reference, because they denote the same kind of value.
 #[inline]
 pub(crate) fn rank(tag: u8) -> u8 {
-    if tag == TAG_STRING_REF {
-        TAG_STRING
-    } else {
-        tag
+    match tag {
+        TAG_STRING_REF => TAG_STRING,
+        TAG_SHAPED_MAP => TAG_MAP,
+        other => other,
     }
 }
 
@@ -213,7 +210,6 @@ impl<'a> Val<'a> {
     ///
     /// Both forms answer the same three questions, so every caller that walks
     /// a map goes through this rather than through [`Container`] directly.
-    #[allow(dead_code)]
     #[inline]
     pub(crate) fn as_map(&self) -> MapView<'a> {
         match self.tag() {
@@ -225,11 +221,11 @@ impl<'a> Val<'a> {
             TAG_SHAPED_MAP => {
                 let dict = self.dict.expect("a shaped map needs a dictionary");
                 let id = u32::from_le_bytes(payload_array(&self.payload()[..4]));
-                let keys = dict.shape(id);
+                let shape = dict.shape(id);
                 MapView {
                     val: *self,
-                    c: Container::shaped(self.bytes, keys.len() / dict::SHAPE_KEY_WIDTH),
-                    shape: Some(keys),
+                    c: Container::shaped(self.bytes, read_u32(shape, 0) as usize),
+                    shape: Some(shape),
                 }
             }
             tag => panic!("not a map tag: {tag}"),
@@ -277,7 +273,6 @@ impl<'a> Val<'a> {
 /// A shaped map keeps its keys in the dictionary, so `key` reads them from
 /// there; everything else is identical, and callers need not know which form
 /// they hold.
-#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub(crate) struct MapView<'a> {
     val: Val<'a>,
@@ -286,7 +281,6 @@ pub(crate) struct MapView<'a> {
     shape: Option<&'a [u8]>,
 }
 
-#[allow(dead_code)]
 impl<'a> MapView<'a> {
     #[inline]
     pub(crate) fn count(&self) -> usize {
@@ -298,11 +292,26 @@ impl<'a> MapView<'a> {
     pub(crate) fn key(&self, i: usize) -> Val<'a> {
         match self.shape {
             None => self.val.sub(self.c.element(i)),
-            Some(keys) => Val {
-                bytes: &keys[i * dict::SHAPE_KEY_WIDTH..(i + 1) * dict::SHAPE_KEY_WIDTH],
-                dict: self.val.dict,
-            },
+            Some(shape) => {
+                let base = 4 + 4 * self.c.count;
+                let start = if i == 0 {
+                    0
+                } else {
+                    read_u32(shape, 4 + 4 * (i - 1)) as usize
+                };
+                let end = read_u32(shape, 4 + 4 * i) as usize;
+                Val {
+                    bytes: &shape[base + start..base + end],
+                    dict: self.val.dict,
+                }
+            }
         }
+    }
+
+    /// The dictionary this map's keys resolve against.
+    #[inline]
+    pub(crate) fn dict(&self) -> Option<&'a Arc<Dict>> {
+        self.val.dict
     }
 
     /// Value `i`.
@@ -474,7 +483,7 @@ impl FlatVariant {
     /// ```
     pub fn index_from_one(&self, index: &FlatVariant) -> Option<FlatVariant> {
         let val = self.val();
-        match val.tag() {
+        match rank(val.tag()) {
             TAG_ARRAY => {
                 let i = index.as_isize()?;
                 let c = Container::new(val.bytes);
@@ -606,7 +615,6 @@ impl<'a> Container<'a> {
 
     /// A shaped map, whose header holds a shape id where a general map holds
     /// its arity, and which has one offset table rather than two.
-    #[allow(dead_code)]
     pub(crate) fn shaped(value: &'a [u8], arity: usize) -> Self {
         debug_assert_eq!(value[0], TAG_SHAPED_MAP);
         Container {
@@ -1389,7 +1397,7 @@ impl DocSet {
     /// one at a time against the result, so only one document exists in both
     /// forms at once; materializing them all here made the whole batch exist
     /// twice and put 10 GiB on the peak of a large merge.
-    pub fn build_dictionary(&self) -> InternedStrings {
+    pub fn build_dictionary(&self) -> Arc<InternedStrings> {
         let mut dict = DictBuilder::new();
         let mut ids: HashMap<u64, u32> = HashMap::with_capacity(self.counts.len());
         // Referenced entries first, because a string can arrive both ways and
@@ -1419,24 +1427,53 @@ impl DocSet {
                 slot.insert(dict.intern(self.seen.entry(candidate.id)));
             }
         }
+        // Every reference's destination is known now, so the translation
+        // tables can be filled in one go.
+        let mut remaps: HashMap<usize, Remap> = HashMap::with_capacity(self.refs.len());
+        for tally in &self.refs {
+            let mut to = vec![REMAP_NONE; tally.counts.len()];
+            for (id, &referenced) in tally.counts.iter().enumerate() {
+                if referenced > 0 {
+                    let s = tally.dict.get(id as u32);
+                    to[id] = ids.get(&string_hash(s)).copied().unwrap_or(REMAP_INLINE);
+                }
+            }
+            remaps.insert(tally.key, Remap { to });
+        }
+
+        // Shapes have to be interned before the dictionary freezes, but they
+        // are only discovered by walking the documents, so that walk happens
+        // here. Translating a key needs no hashing, only the tables above.
+        let mut shape_ids: HashMap<Box<[u8]>, u32> = HashMap::new();
+        let mut keys = Vec::new();
+        for doc in &self.docs {
+            register_shapes(doc.val(), &mut dict, &remaps, &mut shape_ids, &mut keys);
+        }
+
         for _ in &self.docs {
             dict.count_document();
         }
-        InternedStrings {
+        // Freezing a dictionary for a batch is exactly the event that makes it
+        // worth staging, so both paths that build one publish it here.
+        let interned = Arc::new(InternedStrings {
             dict: dict.freeze(),
             ids,
-        }
+            remaps,
+            shape_ids,
+        });
+        set_staging_table(interned.clone());
+        interned
     }
 
     /// Intern and rewire in one go, for callers holding the whole set anyway.
     pub fn finish(self) -> Vec<FlatVariant> {
         let interned = self.build_dictionary();
-        let mut remaps = HashMap::new();
+        let mut keys = Vec::new();
         if !self.packed {
             return self
                 .docs
                 .iter()
-                .map(|doc| interned.rewire(doc, &mut remaps))
+                .map(|doc| interned.rewire(doc, &mut keys))
                 .collect();
         }
 
@@ -1450,7 +1487,7 @@ impl DocSet {
                 dict: Some(interned.dict.clone()),
                 staging: None,
             };
-            rewire(doc.val(), &mut w, &interned, &mut remaps);
+            rewire(doc.val(), &mut w, &interned, &mut keys);
             arena = w.out;
             placed.push((
                 full.len(),
@@ -1486,6 +1523,12 @@ pub struct InternedStrings {
     /// Hash of each interned string to its id. The dictionary drops its own
     /// index at freeze, and this is what replaces it for the rewrite pass.
     ids: HashMap<u64, u32>,
+    /// Destination id of every entry of every source dictionary, by the source
+    /// dictionary's address. Built up front rather than lazily, so translating
+    /// a reference, and with it recognising a shape, is a pure array read.
+    remaps: HashMap<usize, Remap>,
+    /// Destination shape id, keyed by the shape it stands for.
+    shape_ids: HashMap<Box<[u8]>, u32>,
 }
 
 impl InternedStrings {
@@ -1502,14 +1545,32 @@ impl InternedStrings {
         &self.dict
     }
 
+    /// The destination id of entry `old` of `source`, or `None` when that
+    /// string earned no entry here.
+    #[inline]
+    fn translate(&self, source: &Arc<Dict>, old: u32) -> Option<u32> {
+        match self.remaps.get(&(Arc::as_ptr(source) as usize))?.to[old as usize] {
+            REMAP_NONE | REMAP_INLINE => None,
+            id => Some(id),
+        }
+    }
+
+    /// The shape of `m` in this dictionary, when it has one. One hash of the
+    /// whole shape, never one per key.
+    fn shape_of(&self, m: &MapView<'_>, keys: &mut Vec<u8>) -> Option<u32> {
+        destination_shape(m, &self.remaps, keys)
+            .then(|| self.shape_ids.get(keys.as_slice()).copied())
+            .flatten()
+    }
+
     /// A copy of `doc` resolving against this dictionary, in a chunk of its own.
-    pub fn rewire(&self, doc: &FlatVariant, remaps: &mut HashMap<usize, Remap>) -> FlatVariant {
+    pub fn rewire(&self, doc: &FlatVariant, keys: &mut Vec<u8>) -> FlatVariant {
         let mut w = Writer {
             out: Vec::with_capacity(doc.as_bytes().len()),
             dict: Some(self.dict.clone()),
             staging: None,
         };
-        let range = rewire(doc.val(), &mut w, self, remaps);
+        let range = rewire(doc.val(), &mut w, self, keys);
         debug_assert_eq!(range.start, 0);
         let len = range.len();
         FlatVariant::from_chunk(
@@ -1553,7 +1614,8 @@ enum SessionState {
     /// never exists twice.
     Apply {
         interned: Arc<InternedStrings>,
-        remaps: HashMap<usize, Remap>,
+        /// Scratch for building a shape, reused across documents.
+        keys: Vec<u8>,
     },
     /// Every document shares one dense dictionary; leave them alone.
     Share,
@@ -1594,10 +1656,10 @@ impl FlatVariantSession {
                 *documents += 1;
                 set.push(doc);
             }
-            SessionState::Apply { interned, remaps } => {
+            SessionState::Apply { interned, keys } => {
                 // Assigning releases the old chunk here, before the next
                 // document is copied.
-                *doc = interned.rewire(doc, remaps);
+                *doc = interned.rewire(doc, keys);
             }
             SessionState::Share => {}
         }
@@ -1621,12 +1683,10 @@ impl dbsp::dynamic::InternSession for FlatVariantSession {
         {
             return;
         }
-        let interned = Arc::new(set.build_dictionary());
-        // The documents this thread builds next start on this dictionary.
-        set_staging_table(interned.clone());
+        let interned = set.build_dictionary();
         self.state = SessionState::Apply {
             interned,
-            remaps: HashMap::new(),
+            keys: Vec::new(),
         };
     }
 }
@@ -1718,6 +1778,87 @@ fn count_strings(
     }
 }
 
+/// Build the shape `m` would have in the destination dictionary, or return
+/// false when it can have none.
+///
+/// The result is `[arity][key ends][keys]`: a general map's key area plus the
+/// table that delimits it. A key that earned no dictionary entry is copied
+/// inline rather than disqualifying the map, because one short key among
+/// hundreds would otherwise cost the largest maps their shape.
+fn destination_shape(m: &MapView<'_>, remaps: &HashMap<usize, Remap>, keys: &mut Vec<u8>) -> bool {
+    keys.clear();
+    if m.count() == 0 {
+        return false;
+    }
+    // A map reached from no dictionary has nothing to translate, and shaping
+    // it would move its keys into the table without sharing them.
+    let Some(source) = m.dict() else {
+        return false;
+    };
+    let Some(remap) = remaps.get(&(Arc::as_ptr(source) as usize)) else {
+        return false;
+    };
+    keys.extend_from_slice(&(m.count() as u32).to_le_bytes());
+    let table = keys.len();
+    keys.resize(table + 4 * m.count(), 0);
+    let base = keys.len();
+    for i in 0..m.count() {
+        let key = m.key(i);
+        match key.tag() {
+            TAG_STRING => keys.extend_from_slice(key.bytes),
+            TAG_STRING_REF => {
+                let old = u32::from_le_bytes(payload_array(key.payload())) as usize;
+                match remap.to[old] {
+                    REMAP_NONE | REMAP_INLINE => {
+                        keys.push(TAG_STRING);
+                        keys.extend_from_slice(source.get(old as u32));
+                    }
+                    id => {
+                        keys.push(TAG_STRING_REF);
+                        keys.extend_from_slice(&id.to_le_bytes());
+                    }
+                }
+            }
+            // A map keyed by anything else cannot be described by a shape.
+            _ => return false,
+        }
+        let end = ((keys.len() - base) as u32).to_le_bytes();
+        keys[table + 4 * i..table + 4 * i + 4].copy_from_slice(&end);
+    }
+    true
+}
+
+/// Give every shapeable map in `src` an entry in the destination dictionary.
+fn register_shapes(
+    src: Val<'_>,
+    dict: &mut DictBuilder,
+    remaps: &HashMap<usize, Remap>,
+    shape_ids: &mut HashMap<Box<[u8]>, u32>,
+    keys: &mut Vec<u8>,
+) {
+    match rank(src.tag()) {
+        TAG_MAP => {
+            let m = src.as_map();
+            if destination_shape(&m, remaps, keys)
+                && let std::collections::hash_map::Entry::Vacant(slot) =
+                    shape_ids.entry(Box::from(keys.as_slice()))
+            {
+                slot.insert(dict.intern_shape(keys));
+            }
+            for i in 0..m.count() {
+                register_shapes(m.value(i), dict, remaps, shape_ids, keys);
+            }
+        }
+        TAG_ARRAY => {
+            let c = Container::new(src.bytes);
+            for i in 0..c.count {
+                register_shapes(src.sub(c.element(i)), dict, remaps, shape_ids, keys);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// How often each entry of one source dictionary was referenced.
 struct RefTally {
     /// The source dictionary's address, its identity for this tally.
@@ -1749,7 +1890,7 @@ fn rewire(
     src: Val<'_>,
     w: &mut Writer,
     interned: &InternedStrings,
-    remaps: &mut HashMap<usize, Remap>,
+    keys: &mut Vec<u8>,
 ) -> Range<usize> {
     match src.tag() {
         TAG_STRING => match interned.id_of(src.payload()) {
@@ -1759,25 +1900,12 @@ fn rewire(
         TAG_STRING_REF => {
             let source = src.dict.expect("a string reference needs a dictionary");
             let old = u32::from_le_bytes(payload_array(src.payload()));
-            let remap = remaps
-                .entry(Arc::as_ptr(source) as usize)
-                .or_insert_with(|| Remap {
-                    to: vec![REMAP_NONE; source.len()],
-                });
-            // Translated once per source entry, never per reference: this
-            // array read is what keeps a merge of two interned batches near
-            // memcpy speed. Hashing per reference here instead measured as a
-            // fifth of the pipeline's throughput.
-            let mut id = remap.to[old as usize];
-            if id == REMAP_NONE {
-                // It may have repeated where it came from but not here.
-                id = interned.id_of(source.get(old)).unwrap_or(REMAP_INLINE);
-                remap.to[old as usize] = id;
-            }
-            if id == REMAP_INLINE {
-                w.scalar(TAG_STRING, source.get(old))
-            } else {
-                w.scalar(TAG_STRING_REF, &id.to_le_bytes())
+            // A pure array read. Hashing per reference here instead measured
+            // as a fifth of the pipeline's throughput.
+            match interned.translate(source, old) {
+                Some(id) => w.scalar(TAG_STRING_REF, &id.to_le_bytes()),
+                // It repeated where it came from but not here.
+                None => w.scalar(TAG_STRING, source.get(old)),
             }
         }
         TAG_ARRAY => {
@@ -1792,7 +1920,7 @@ fn rewire(
                 next: 0,
             };
             for i in 0..c.count {
-                rewire(src.sub(c.element(i)), w, interned, remaps);
+                rewire(src.sub(c.element(i)), w, interned, keys);
                 ends.record_end(w);
             }
             start..w.out.len()
@@ -1800,15 +1928,32 @@ fn rewire(
         TAG_MAP | TAG_SHAPED_MAP => {
             let m = src.as_map();
             // Keys keep their relative order: the dictionary orders entries by
-            // content, and rewiring does not change any string's content.
+            // content, and rewiring changes no string's content, so a shape
+            // registered from these keys still describes them.
+            if let Some(shape) = interned.shape_of(&m, keys) {
+                let start = w.out.len();
+                w.out.push(TAG_SHAPED_MAP);
+                w.out.extend_from_slice(&shape.to_le_bytes());
+                let table = w.reserve_table(m.count());
+                let mut ends = EndTable {
+                    table,
+                    payload_start: w.out.len(),
+                    next: 0,
+                };
+                for i in 0..m.count() {
+                    rewire(m.value(i), w, interned, keys);
+                    ends.record_end(w);
+                }
+                return start..w.out.len();
+            }
             let (start, mut key_ends, mut val_ends) = w.begin_map_in_place(m.count());
             for i in 0..m.count() {
-                rewire(m.key(i), w, interned, remaps);
+                rewire(m.key(i), w, interned, keys);
                 key_ends.record_end(w);
             }
             w.begin_map_values(&mut val_ends);
             for i in 0..m.count() {
-                rewire(m.value(i), w, interned, remaps);
+                rewire(m.value(i), w, interned, keys);
                 val_ends.record_end(w);
             }
             start..w.out.len()
@@ -1830,7 +1975,7 @@ impl From<&Variant> for FlatVariant {
 /// Decode one complete encoded value back into a `Variant`.
 fn decode_variant(value: Val<'_>) -> Variant {
     let payload = value.payload();
-    match value.tag() {
+    match rank(value.tag()) {
         TAG_SQL_NULL => Variant::SqlNull,
         TAG_VARIANT_NULL => Variant::VariantNull,
         TAG_BOOLEAN => Variant::Boolean(payload[0] != 0),
@@ -1848,7 +1993,7 @@ fn decode_variant(value: Val<'_>) -> Variant {
             i128::from_le_bytes(payload_array(&payload[..16])),
             payload[16],
         )),
-        TAG_STRING | TAG_STRING_REF => Variant::String(SqlString::from_ref(
+        TAG_STRING => Variant::String(SqlString::from_ref(
             std::str::from_utf8(value.string_bytes()).expect("encoded string must be UTF-8"),
         )),
         TAG_DATE => Variant::Date(Date::from_days(i32::from_le_bytes(payload_array(payload)))),
@@ -1880,7 +2025,7 @@ fn decode_variant(value: Val<'_>) -> Variant {
                 .collect();
             Variant::Array(items.into())
         }
-        TAG_MAP | TAG_SHAPED_MAP => {
+        TAG_MAP => {
             let m = value.as_map();
             let map: BTreeMap<Variant, Variant> = (0..m.count())
                 .map(|i| (decode_variant(m.key(i)), decode_variant(m.value(i))))
@@ -2347,7 +2492,7 @@ impl Serialize for Enc<'_> {
     {
         let bytes = self.val.bytes;
         let p = self.val.payload();
-        match self.val.tag() {
+        match rank(self.val.tag()) {
             TAG_SQL_NULL | TAG_VARIANT_NULL => serializer.serialize_none(),
             TAG_BOOLEAN => serializer.serialize_bool(p[0] != 0),
             TAG_TINYINT => serializer.serialize_i8(p[0] as i8),
@@ -2362,7 +2507,7 @@ impl Serialize for Enc<'_> {
             TAG_DOUBLE => serializer.serialize_f64(f64::from_le_bytes(payload_array(p))),
             TAG_DECIMAL => DynamicDecimal::new(i128::from_le_bytes(payload_array(&p[..16])), p[16])
                 .serialize_with_context(serializer, self.config),
-            TAG_STRING | TAG_STRING_REF => serializer.serialize_str(
+            TAG_STRING => serializer.serialize_str(
                 std::str::from_utf8(self.val.string_bytes()).expect("encoded UTF-8"),
             ),
             TAG_DATE => Date::from_days(i32::from_le_bytes(payload_array(p)))
@@ -2399,7 +2544,7 @@ impl Serialize for Enc<'_> {
                 }
                 seq.end()
             }
-            TAG_MAP | TAG_SHAPED_MAP => {
+            TAG_MAP => {
                 let m = self.val.as_map();
                 let mut map = serializer.serialize_map(Some(m.count()))?;
                 for i in 0..m.count() {
@@ -3065,6 +3210,70 @@ mod tests {
             "shapes are only cheap to register while most maps arrive fully \
              referenced: {referenced} of {maps}"
         );
+    }
+
+    /// Shaped maps must behave like general ones across dictionary
+    /// boundaries, which is where a merge compares them.
+    ///
+    /// Every unit test before this one interned within a single dictionary, so
+    /// none of them noticed that `rank` was not folding `TAG_SHAPED_MAP` onto
+    /// `TAG_MAP`; comparing two of them reached `cmp_values`' unreachable arm.
+    #[test]
+    fn shaped_maps_compare_across_dictionaries() {
+        fn shaped(seed: u32) -> Vec<FlatVariant> {
+            let docs: Vec<FlatVariant> = (0..20)
+                .map(|i| {
+                    serde_json::from_str(&format!(
+                        r#"{{"subscription_country_code": "germany",
+                             "preferred_display_city": "berlin-brandenburg",
+                             "id": {},
+                             "account_identifier_value": "id-{i}"}}"#,
+                        seed + i
+                    ))
+                    .unwrap()
+                })
+                .collect();
+            // Twice, so the second pass sees interned sources and shapes.
+            let once = intern_all(&docs);
+            intern_all(&once)
+        }
+        let left = shaped(0);
+        let right = shaped(0);
+        assert_eq!(left[0].val().tag(), TAG_SHAPED_MAP, "the map is shaped");
+        assert_eq!(
+            left[0].dict().unwrap().shape_count(),
+            1,
+            "twenty maps with the same keys share one shape"
+        );
+        assert!(!Arc::ptr_eq(
+            left[0].dict().unwrap(),
+            right[0].dict().unwrap()
+        ));
+
+        // Same contents, different dictionaries, so different shape tables.
+        for (a, b) in left.iter().zip(&right) {
+            assert_eq!(a, b);
+            assert_eq!(hash_of(a), hash_of(b));
+            assert_eq!(a.cmp(b), Ordering::Equal);
+            assert_eq!(a.to_json_string().unwrap(), b.to_json_string().unwrap());
+        }
+        // And against the general form.
+        let plain: FlatVariant =
+            serde_json::from_str(r#"{"a_long_enough_key": "a_long_enough_value"}"#).unwrap();
+        assert_eq!(
+            plain.cmp(&left[0]),
+            Variant::from(&plain).cmp(&Variant::from(&left[0]))
+        );
+
+        // A shaped map still answers lookups and decodes.
+        assert_eq!(
+            left[0]
+                .index_string("preferred_display_city")
+                .to_json_string()
+                .unwrap(),
+            "\"berlin-brandenburg\""
+        );
+        assert_eq!(Variant::from(&left[0]), Variant::from(&right[0]));
     }
 
     /// A dictionary shared by a batch must be charged to the batch once, not

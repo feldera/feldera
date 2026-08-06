@@ -66,7 +66,7 @@ pub(crate) enum FVRef<'a> {
 
 pub(crate) fn view<'a>(val: Val<'a>) -> FVRef<'a> {
     let p = val.payload();
-    match val.tag() {
+    match crate::flat_variant::rank(val.tag()) {
         TAG_SQL_NULL => FVRef::SqlNull,
         TAG_VARIANT_NULL => FVRef::VariantNull,
         TAG_BOOLEAN => FVRef::Boolean(p[0] != 0),
