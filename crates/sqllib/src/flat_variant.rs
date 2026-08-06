@@ -1223,6 +1223,10 @@ pub struct DocSet {
     /// Candidate strings, interned as they are first seen so that laying out
     /// the final dictionary needs no second walk over the documents.
     seen: DictBuilder,
+    /// References, tallied per source dictionary entry rather than by hashing
+    /// the string they point at. Once documents arrive already interned this
+    /// is the whole counting pass, and it never hashes.
+    refs: Vec<RefTally>,
     /// Whether documents share chunks. Off by default: see [`DocSet::packed`].
     packed: bool,
 }
@@ -1246,6 +1250,7 @@ impl DocSet {
             docs: Vec::new(),
             counts: HashMap::new(),
             seen: DictBuilder::new(),
+            refs: Vec::new(),
             packed: false,
         }
     }
@@ -1265,7 +1270,7 @@ impl DocSet {
 
     /// Take `doc` into the set and record the strings it holds.
     pub fn push(&mut self, doc: &FlatVariant) {
-        count_strings(doc.val(), &mut self.counts, &mut self.seen);
+        count_strings(doc.val(), &mut self.counts, &mut self.seen, &mut self.refs);
         self.docs.push(doc.clone());
     }
 
@@ -1278,11 +1283,31 @@ impl DocSet {
     pub fn build_dictionary(&self) -> InternedStrings {
         let mut dict = DictBuilder::new();
         let mut ids: HashMap<u64, u32> = HashMap::with_capacity(self.counts.len());
+        // Referenced entries first, because a string can arrive both ways and
+        // the two tallies have to be added before the threshold is applied.
+        // One hash per distinct source entry, never per reference.
+        for tally in &self.refs {
+            for (id, &referenced) in tally.counts.iter().enumerate() {
+                if referenced == 0 {
+                    continue;
+                }
+                let s = tally.dict.get(id as u32);
+                let hash = string_hash(s);
+                let inline = self.counts.get(&hash).map_or(0, |c| c.count);
+                if referenced + inline >= 2
+                    && let std::collections::hash_map::Entry::Vacant(slot) = ids.entry(hash)
+                {
+                    slot.insert(dict.intern(s));
+                }
+            }
+        }
         // Candidates were interned as they were seen, so this walks the
         // distinct strings rather than every occurrence of them.
         for (&hash, candidate) in &self.counts {
-            if candidate.count >= 2 {
-                ids.insert(hash, dict.intern(self.seen.entry(candidate.id)));
+            if candidate.count >= 2
+                && let std::collections::hash_map::Entry::Vacant(slot) = ids.entry(hash)
+            {
+                slot.insert(dict.intern(self.seen.entry(candidate.id)));
             }
         }
         for _ in &self.docs {
@@ -1520,16 +1545,15 @@ fn intern_candidate(s: &[u8]) -> bool {
 }
 
 /// Tally every string in `src` that could be worth interning.
-fn count_strings(src: Val<'_>, counts: &mut HashMap<u64, Candidate>, seen: &mut DictBuilder) {
+fn count_strings(
+    src: Val<'_>,
+    counts: &mut HashMap<u64, Candidate>,
+    seen: &mut DictBuilder,
+    refs: &mut Vec<RefTally>,
+) {
     match src.tag() {
-        // Already-interned strings are tallied too. Trusting the source
-        // dictionary instead and keeping every reference a reference looks
-        // cheaper, but it never drops anything: a string interned once stays
-        // interned through every later merge, so a spine's dictionaries
-        // accumulate its whole lineage. Measured on zeta_cnn at SF100 that
-        // cost 8 GiB of peak RSS and 15% of throughput.
-        TAG_STRING | TAG_STRING_REF => {
-            let s = src.string_bytes();
+        TAG_STRING => {
+            let s = src.payload();
             if intern_candidate(s) {
                 counts
                     .entry(string_hash(s))
@@ -1540,21 +1564,57 @@ fn count_strings(src: Val<'_>, counts: &mut HashMap<u64, Candidate>, seen: &mut 
                     .count += 1;
             }
         }
+        // Already-interned strings are tallied too. Trusting the source
+        // dictionary instead and keeping every reference a reference looks
+        // cheaper, but it never drops anything: a string interned once stays
+        // interned through every later merge, so a spine's dictionaries
+        // accumulate its whole lineage. Measured on zeta_cnn at SF100 that
+        // cost 8 GiB of peak RSS and 15% of throughput.
+        //
+        // Tallying through the source entry's own array keeps that pruning
+        // without hashing the string it points at.
+        TAG_STRING_REF => {
+            let source = src.dict.expect("a string reference needs a dictionary");
+            let id = u32::from_le_bytes(payload_array(src.payload())) as usize;
+            let key = Arc::as_ptr(source) as usize;
+            // A set almost always draws on one dictionary, two in a merge, so
+            // a scan beats hashing the pointer.
+            let tally = match refs.iter_mut().position(|t| t.key == key) {
+                Some(i) => &mut refs[i],
+                None => {
+                    refs.push(RefTally {
+                        key,
+                        dict: source.clone(),
+                        counts: vec![0; source.len()],
+                    });
+                    refs.last_mut().expect("just pushed")
+                }
+            };
+            tally.counts[id] += 1;
+        }
         TAG_ARRAY => {
             let c = Container::new(src.bytes);
             for i in 0..c.count {
-                count_strings(src.sub(c.element(i)), counts, seen);
+                count_strings(src.sub(c.element(i)), counts, seen, refs);
             }
         }
         TAG_MAP => {
             let c = Container::new(src.bytes);
             for i in 0..c.count {
-                count_strings(src.sub(c.element(i)), counts, seen);
-                count_strings(src.sub(c.map_value(i)), counts, seen);
+                count_strings(src.sub(c.element(i)), counts, seen, refs);
+                count_strings(src.sub(c.map_value(i)), counts, seen, refs);
             }
         }
         _ => {}
     }
+}
+
+/// How often each entry of one source dictionary was referenced.
+struct RefTally {
+    /// The source dictionary's address, its identity for this tally.
+    key: usize,
+    dict: Arc<Dict>,
+    counts: Vec<u32>,
 }
 
 /// A string that might earn a dictionary entry: where it is held while the set
@@ -2782,6 +2842,45 @@ mod tests {
         // live documents that do not exist.
         let unrelated: FlatVariant = serde_json::from_str(r#"{"zzz_unseen_key": 1}"#).unwrap();
         assert!(unrelated.dict().is_none());
+    }
+
+    /// A string can reach one set both inline and as a reference, and the two
+    /// tallies have to be added before the repeat threshold is applied.
+    /// Counting them separately would leave a string that occurs once each way
+    /// inline, and interning the reference side unconditionally would stop the
+    /// set pruning anything.
+    #[test]
+    fn inline_and_referenced_occurrences_are_added_up() {
+        let text = "a_repeated_property_value";
+        let json = format!(r#"{{"some_property_name": "{text}"}}"#);
+
+        // One document carrying the string as a reference, built by giving it
+        // a dictionary of its own first.
+        let referenced = intern_all(std::slice::from_ref(
+            &serde_json::from_str::<FlatVariant>(&json).unwrap(),
+        ))
+        .pop()
+        .unwrap();
+        assert!(referenced.dict().is_some(), "the source holds references");
+
+        // And one carrying it inline.
+        let inline: FlatVariant = serde_json::from_str(&json).unwrap();
+        assert!(inline.dict().is_none());
+
+        let merged = intern_all(&[referenced.clone(), inline.clone()]);
+        assert_eq!(merged[0], referenced);
+        assert_eq!(merged[1], inline);
+        let dict = merged[0].dict().expect("the set has a dictionary");
+        assert!(
+            (0..dict.len() as u32).any(|id| dict.get(id) == text.as_bytes()),
+            "one occurrence each way is two occurrences, so the string is interned"
+        );
+        // Both documents must resolve against it identically.
+        assert_eq!(merged[0], merged[1]);
+        assert_eq!(
+            merged[1].to_json_string().unwrap(),
+            inline.to_json_string().unwrap()
+        );
     }
 
     /// A dictionary shared by a batch must be charged to the batch once, not
