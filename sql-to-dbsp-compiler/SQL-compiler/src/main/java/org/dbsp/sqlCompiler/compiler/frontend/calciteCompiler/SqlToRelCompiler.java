@@ -416,6 +416,16 @@ public class SqlToRelCompiler implements IWritesLogs {
     }
 
     public static final RelDataTypeSystem TYPE_SYSTEM = new RelDataTypeSystemImpl() {
+        /** Type of COVAR_POP, COVAR_SAMP, REGR_SXX, and REGR_SYY.
+         * These aggregates ignore the pairs where either argument is NULL, so
+         * the result is NULL when no pair remains, whatever the arguments are
+         * declared to be. */
+        @Override
+        public RelDataType deriveCovarType(RelDataTypeFactory typeFactory,
+                                           RelDataType arg0Type, RelDataType arg1Type) {
+            return typeFactory.createTypeWithNullability(arg0Type, true);
+        }
+
         @Override
         public int getMaxPrecision(SqlTypeName typeName) {
             if (typeName == SqlTypeName.DECIMAL)
