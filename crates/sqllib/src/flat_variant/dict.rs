@@ -36,7 +36,18 @@ pub struct Dict {
     /// builder compares it against the dictionary's live reference count to
     /// decide whether the dictionary has gone sparse.
     origin_docs: u32,
+    /// Key areas of the interned map shapes, concatenated. A shape's area is
+    /// exactly the bytes a general map would hold for its keys: one
+    /// `[TAG_STRING_REF][id]` per key, in the canonical order. Storing the
+    /// encoded form rather than the ids means a shaped map's key still reads
+    /// back as an ordinary value, just from here instead of the document.
+    shape_keys: Box<[u8]>,
+    /// `shape_ends[i]` is where shape `i` ends in `shape_keys`.
+    shape_ends: Box<[u32]>,
 }
+
+/// Bytes one key occupies in a shape's key area: the tag plus a `u32` id.
+pub(crate) const SHAPE_KEY_WIDTH: usize = 5;
 
 impl Dict {
     #[inline]
@@ -61,9 +72,35 @@ impl Dict {
         self.ends.len()
     }
 
+    /// The encoded key area of shape `id`, laid out exactly as a general map's
+    /// key area.
+    #[allow(dead_code)]
+    #[inline]
+    pub(crate) fn shape(&self, id: u32) -> &[u8] {
+        let id = id as usize;
+        let start = if id == 0 {
+            0
+        } else {
+            self.shape_ends[id - 1] as usize
+        };
+        &self.shape_keys[start..self.shape_ends[id] as usize]
+    }
+
+    /// How many keys shape `id` has.
+    #[allow(dead_code)]
+    #[inline]
+    pub(crate) fn shape_arity(&self, id: u32) -> usize {
+        self.shape(id).len() / SHAPE_KEY_WIDTH
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn shape_count(&self) -> usize {
+        self.shape_ends.len()
+    }
+
     /// Bytes the dictionary occupies, for telemetry and tests.
     pub fn byte_size(&self) -> usize {
-        self.bytes.len() + 8 * self.ends.len()
+        self.bytes.len() + 8 * self.ends.len() + self.shape_keys.len() + 4 * self.shape_ends.len()
     }
 
     pub fn origin_docs(&self) -> u32 {
@@ -96,6 +133,12 @@ pub struct DictBuilder {
     /// Entry id plus one, or 0 for an empty slot. Always a power of two.
     slots: Vec<u32>,
     docs: u32,
+    /// Interned shapes, as concatenated key areas.
+    shape_keys: Vec<u8>,
+    shape_ends: Vec<u32>,
+    /// Shape id by key area, so a repeated shape is stored once. Shapes are
+    /// few enough that an ordinary map is fine here.
+    shape_ids: std::collections::HashMap<Box<[u8]>, u32>,
 }
 
 impl Default for DictBuilder {
@@ -111,6 +154,9 @@ impl DictBuilder {
             ends: Vec::new(),
             slots: vec![0; 64],
             docs: 0,
+            shape_keys: Vec::new(),
+            shape_ends: Vec::new(),
+            shape_ids: std::collections::HashMap::new(),
         }
     }
 
@@ -173,6 +219,37 @@ impl DictBuilder {
         self.slots = slots;
     }
 
+    /// Id of the shape whose key area is `keys`, interning it if new.
+    ///
+    /// `keys` must already be the encoded key area: one `[TAG_STRING_REF][id]`
+    /// per key, in canonical order, with the ids belonging to this builder.
+    #[allow(dead_code)]
+    pub fn intern_shape(&mut self, keys: &[u8]) -> u32 {
+        debug_assert_eq!(keys.len() % SHAPE_KEY_WIDTH, 0, "whole keys only");
+        if let Some(&id) = self.shape_ids.get(keys) {
+            return id;
+        }
+        let id: u32 = self
+            .shape_ends
+            .len()
+            .try_into()
+            .expect("no more than 4 billion shapes");
+        self.shape_keys.extend_from_slice(keys);
+        self.shape_ends.push(
+            self.shape_keys
+                .len()
+                .try_into()
+                .expect("no more than 4 GB of shapes"),
+        );
+        self.shape_ids.insert(Box::from(keys), id);
+        id
+    }
+
+    #[allow(dead_code)]
+    pub fn shape_count(&self) -> usize {
+        self.shape_ends.len()
+    }
+
     /// Record that one more document was interned against this dictionary.
     pub fn count_document(&mut self) {
         self.docs += 1;
@@ -204,6 +281,8 @@ impl DictBuilder {
             ends: self.ends.into_boxed_slice(),
             ranks: ranks.into_boxed_slice(),
             origin_docs: self.docs,
+            shape_keys: self.shape_keys.into_boxed_slice(),
+            shape_ends: self.shape_ends.into_boxed_slice(),
         })
     }
 }

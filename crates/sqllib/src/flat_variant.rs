@@ -113,6 +113,17 @@ pub(crate) const TAG_TIMESTAMP_TZ: u8 = 25;
 // reach storage: rkyv serialization materializes the strings first.
 /// `[TAG_STRING_REF][id: u32]`, a string held in the value's dictionary.
 pub(crate) const TAG_STRING_REF: u8 = 26;
+// Nothing emits a shaped map yet: this is the encoding and the read path, and
+// the writer that produces one follows.
+#[allow(dead_code)]
+/// `[TAG_SHAPED_MAP][shape: u32][val_end_i: u32 x count][values]`, a map whose
+/// whole key vector is held in the value's dictionary.
+///
+/// Documents repeat their key vectors far more than their individual keys: the
+/// sample corpus has 547 maps and 28 distinct shapes. Interning the vector
+/// drops the key area, the key-end table, and the per-key tag together, where
+/// interning the keys one at a time drops only the bytes.
+pub(crate) const TAG_SHAPED_MAP: u8 = 27;
 
 /// Type rank of a tag, which is what `Ord` compares first. Equal for a string
 /// and a string reference, because they denote the same kind of value.
@@ -198,6 +209,33 @@ impl<'a> Val<'a> {
         }
     }
 
+    /// Read access to this value as a map, whichever form it takes.
+    ///
+    /// Both forms answer the same three questions, so every caller that walks
+    /// a map goes through this rather than through [`Container`] directly.
+    #[allow(dead_code)]
+    #[inline]
+    pub(crate) fn as_map(&self) -> MapView<'a> {
+        match self.tag() {
+            TAG_MAP => MapView {
+                val: *self,
+                c: Container::new(self.bytes),
+                shape: None,
+            },
+            TAG_SHAPED_MAP => {
+                let dict = self.dict.expect("a shaped map needs a dictionary");
+                let id = u32::from_le_bytes(payload_array(&self.payload()[..4]));
+                let keys = dict.shape(id);
+                MapView {
+                    val: *self,
+                    c: Container::shaped(self.bytes, keys.len() / dict::SHAPE_KEY_WIDTH),
+                    shape: Some(keys),
+                }
+            }
+            tag => panic!("not a map tag: {tag}"),
+        }
+    }
+
     /// The bytes of a string value, whether it is stored inline or by
     /// reference. Panics on any other tag.
     #[inline]
@@ -230,6 +268,51 @@ impl<'a> Val<'a> {
             (None, None) => true,
             (Some(a), Some(b)) => Arc::ptr_eq(a, b),
             _ => false,
+        }
+    }
+}
+
+/// Read access to one encoded map, general or shaped.
+///
+/// A shaped map keeps its keys in the dictionary, so `key` reads them from
+/// there; everything else is identical, and callers need not know which form
+/// they hold.
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+pub(crate) struct MapView<'a> {
+    val: Val<'a>,
+    c: Container<'a>,
+    /// The shape's encoded key area, for a shaped map.
+    shape: Option<&'a [u8]>,
+}
+
+#[allow(dead_code)]
+impl<'a> MapView<'a> {
+    #[inline]
+    pub(crate) fn count(&self) -> usize {
+        self.c.count
+    }
+
+    /// Key `i`, from the document or from the shape table.
+    #[inline]
+    pub(crate) fn key(&self, i: usize) -> Val<'a> {
+        match self.shape {
+            None => self.val.sub(self.c.element(i)),
+            Some(keys) => Val {
+                bytes: &keys[i * dict::SHAPE_KEY_WIDTH..(i + 1) * dict::SHAPE_KEY_WIDTH],
+                dict: self.val.dict,
+            },
+        }
+    }
+
+    /// Value `i`.
+    #[inline]
+    pub(crate) fn value(&self, i: usize) -> Val<'a> {
+        match self.shape {
+            None => self.val.sub(self.c.map_value(i)),
+            // A shaped map has one offset table, so its values sit where a
+            // general map's elements would.
+            Some(_) => self.val.sub(self.c.element(i)),
         }
     }
 }
@@ -481,6 +564,7 @@ impl SizeOf for FlatVariant {
 /// Read access to one encoded array or map: the child count, the range of
 /// each element or key, and the range of each map value, all resolved
 /// through the end-offset tables in O(1) per child.
+#[derive(Clone, Copy)]
 pub(crate) struct Container<'a> {
     body: &'a [u8],
     pub(crate) count: usize,
@@ -494,6 +578,9 @@ fn read_u32(bytes: &[u8], at: usize) -> u32 {
 
 impl<'a> Container<'a> {
     /// `value` is one complete encoded value with an Array or Map tag.
+    /// `value` is one complete encoded value with an Array or Map tag. A
+    /// shaped map needs [`Container::shaped`] instead, because its arity lives
+    /// in the dictionary rather than the value.
     pub(crate) fn new(value: &'a [u8]) -> Self {
         let is_map = match value[0] {
             TAG_ARRAY => false,
@@ -509,12 +596,26 @@ impl<'a> Container<'a> {
         }
     }
 
+    /// A shaped map, whose header holds a shape id where a general map holds
+    /// its arity, and which has one offset table rather than two.
+    #[allow(dead_code)]
+    pub(crate) fn shaped(value: &'a [u8], arity: usize) -> Self {
+        debug_assert_eq!(value[0], TAG_SHAPED_MAP);
+        Container {
+            body: &value[1..],
+            count: arity,
+            is_map: false,
+        }
+    }
+
     /// Offset-table entry `i` of table 0 (elements or keys) or 1 (map values).
     #[inline]
     fn end(&self, table: usize, i: usize) -> usize {
         read_u32(self.body, 4 + (table * self.count + i) * 4) as usize
     }
 
+    /// Where the payload area starts, relative to the body. A general map has
+    /// two offset tables; an array and a shaped map have one.
     #[inline]
     fn payload_base(&self) -> usize {
         4 + (if self.is_map { 2 } else { 1 }) * self.count * 4
@@ -1436,7 +1537,7 @@ enum SessionState {
     /// Gathering. `shared` is the dictionary every document seen so far
     /// resolves against, or `None` once two of them disagree.
     Collect {
-        set: DocSet,
+        set: Box<DocSet>,
         documents: usize,
         shared: Option<Option<Arc<Dict>>>,
     },
@@ -1460,7 +1561,7 @@ impl FlatVariantSession {
     pub fn new() -> Self {
         FlatVariantSession {
             state: SessionState::Collect {
-                set: DocSet::new(),
+                set: Box::new(DocSet::new()),
                 documents: 0,
                 shared: None,
             },
