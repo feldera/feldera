@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -31,6 +32,11 @@ public class ReferenceMap {
 
     public IDBSPDeclaration getDeclaration(DBSPVariablePath var) {
         return Utilities.getExists(this.declarations, var);
+    }
+
+    /** Number of references to a specific declaration */
+    public int count(IDBSPDeclaration decl) {
+        return Linq.where(this.declarations.values(), v -> v == decl).size();
     }
 
     @Nullable
