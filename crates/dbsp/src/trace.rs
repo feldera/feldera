@@ -27,7 +27,7 @@
 //! the `(time, diff)` pairs associated with a key and value.
 
 use crate::circuit::metadata::OperatorMeta;
-use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
+use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Interned, Weight};
 use crate::storage::buffer_cache::CacheStats;
 use crate::storage::file::SerializerInner;
 use crate::storage::file::TouchedWindowCount;
@@ -108,6 +108,7 @@ pub trait DBData:
     + ArchivedDBData
     + IsNone<Inner: ArchivedDBData>
     + SupportsRoaring
+    + Interned
     + 'static
 {
 }
@@ -126,6 +127,7 @@ impl<T> DBData for T where
         + ArchivedDBData
         + IsNone<Inner: ArchivedDBData>
         + SupportsRoaring
+        + Interned
         + 'static
 {
 }

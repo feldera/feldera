@@ -45,6 +45,19 @@ pub trait Data:
     ///
     /// This method will not be needed once trait downcasting has been stabilized.
     fn as_data_mut(&mut self) -> &mut dyn Data;
+
+    /// Whether this value's type can hold references into a shared side table.
+    ///
+    /// The erased form of [`Interned::MAY_INTERN`](crate::dynamic::Interned::MAY_INTERN),
+    /// so a batch builder can skip the visit for the types that have nothing
+    /// to move.
+    fn may_intern(&self) -> bool;
+
+    /// Re-point this value's interned references at `session`.
+    fn reintern_dyn(&mut self, session: &mut dyn crate::dynamic::InternSession);
+
+    /// Create the session this value's type needs, if any.
+    fn new_intern_session_dyn(&self) -> Option<Box<dyn crate::dynamic::InternSession>>;
 }
 
 /// The base trait for trait objects that DBSP can compute on.
@@ -93,6 +106,21 @@ impl<T: DBData> Data for T {
 
     fn as_data_mut(&mut self) -> &mut DynData {
         self
+    }
+
+    #[inline]
+    fn may_intern(&self) -> bool {
+        <T as crate::dynamic::Interned>::MAY_INTERN
+    }
+
+    #[inline]
+    fn reintern_dyn(&mut self, session: &mut dyn crate::dynamic::InternSession) {
+        <T as crate::dynamic::Interned>::reintern(self, session)
+    }
+
+    #[inline]
+    fn new_intern_session_dyn(&self) -> Option<Box<dyn crate::dynamic::InternSession>> {
+        <T as crate::dynamic::Interned>::new_intern_session()
     }
 }
 

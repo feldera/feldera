@@ -129,6 +129,10 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
         mut diffs: Box<DynVec<R>>,
     ) -> Self {
         debug_assert_eq!(keys.len(), diffs.len());
+        // Every Vec-backed batch is assembled here, so this is where a key
+        // type that keeps its strings in a shared side table moves them onto
+        // one belonging to this batch. Costs nothing for a type with none.
+        crate::dynamic::reintern_values(&mut *keys);
         if keys.spare_capacity() >= keys.len() / 10 {
             keys.shrink_to_fit();
         }

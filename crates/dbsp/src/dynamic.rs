@@ -123,6 +123,7 @@ mod declare_trait_object;
 mod downcast;
 mod erase;
 mod factory;
+mod intern;
 mod lean_vec;
 mod option;
 pub mod pair;
@@ -139,6 +140,7 @@ pub use data::{Data, DataTrait, DataTraitTyped, DynBool, DynData, DynDataTyped, 
 pub use downcast::{AsAny, DowncastTrait};
 pub use erase::Erase;
 pub use factory::{Factory, WithFactory};
+pub use intern::{InternSession, Interned, reintern_values};
 pub use lean_vec::{LeanVec, RawIter, RawVec};
 pub use option::{DynOpt, Opt};
 pub use pair::{DynPair, Pair};

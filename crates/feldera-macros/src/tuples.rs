@@ -263,6 +263,29 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     };
 
+    // Forward interning to every element, so a row reaches whichever of its
+    // leaves keeps its strings in a shared side table.
+    let field_indices: Vec<syn::Index> = (0..num_elements).map(syn::Index::from).collect();
+    let interned_impl = quote! {
+        impl<#(#generics: ::dbsp::dynamic::Interned),*> ::dbsp::dynamic::Interned
+            for #name<#(#generics),*>
+        {
+            const MAY_INTERN: bool = #(#generics::MAY_INTERN ||)* false;
+
+            fn new_intern_session() -> Option<Box<dyn ::dbsp::dynamic::InternSession>> {
+                None #(.or_else(|| if #generics::MAY_INTERN {
+                    #generics::new_intern_session()
+                } else {
+                    None
+                }))*
+            }
+
+            fn reintern(&mut self, session: &mut dyn ::dbsp::dynamic::InternSession) {
+                #(::dbsp::dynamic::Interned::reintern(&mut self.#field_indices, session);)*
+            }
+        }
+    };
+
     let sparse_get_methods = fields
         .iter()
         .enumerate()
@@ -986,6 +1009,8 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         #checkpoint_impl
         #not_an_option
         #roaring_u32_key_impl
+
+        #interned_impl
     });
 
     expanded

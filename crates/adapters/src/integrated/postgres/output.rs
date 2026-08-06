@@ -1707,6 +1707,9 @@ mod tests {
         #[derive(
             Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, Clone, Hash, IsNone,
         )]
+        // Test fixture only: its `serde_json::Value` and `NaiveDateTime`
+        // fields belong to other crates.
+        #[interned(opaque)]
         struct TestRecordWithExtraColumns {
             id: i32,
             b: bool,

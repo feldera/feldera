@@ -61,6 +61,8 @@ use std::hash::Hash;
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
+// No VARIANT here, and `Decimal` belongs to another crate.
+#[interned(opaque)]
 pub struct Q14Output(u64, u64, Decimal, BidTimeType, u64, String, u64);
 
 type Q14Stream = Stream<RootCircuit, OrdZSet<Q14Output>>;
