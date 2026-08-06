@@ -13,7 +13,7 @@ import org.dbsp.util.Logger;
 import javax.annotation.Nullable;
 
 /** Discovers whether an expression contains a call to the now() function. */
-class ContainsNow extends InnerVisitor {
+public class ContainsNow extends InnerVisitor {
     public boolean found;
     /** If true the 'found' is reset for each invocation. */
     public final boolean perExpression;

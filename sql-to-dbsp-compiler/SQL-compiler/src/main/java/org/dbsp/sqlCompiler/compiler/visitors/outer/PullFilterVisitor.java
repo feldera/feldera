@@ -14,6 +14,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Expensive;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -73,7 +74,10 @@ public class PullFilterVisitor extends CircuitCloneWithGraphsVisitor {
                 || source.node().is(DBSPMapIndexOperator.class)) {
             DBSPClosureExpression mapClosure = source.simpleNode().getClosureFunction();
             DBSPClosureExpression filterClosure = operator.getClosureFunction();
-            if (filterClosure.shouldInlineComposition(this.compiler, mapClosure)) {
+            // If we combine the two, the body of the map will be essentially executed twice
+            // so do it only if the map body is not expensive
+            boolean isExpensive = Expensive.isExpensive(compiler, mapClosure);
+            if (!isExpensive) {
                 final DBSPClosureExpression newFilter;
                 if (source.node().is(DBSPMapOperator.class)) {
                     newFilter = filterClosure.applyAfter(this.compiler, mapClosure, Maybe.YES);

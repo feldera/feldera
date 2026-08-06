@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Expensive;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -189,6 +190,13 @@ public final class DBSPClosureExpression extends DBSPExpression {
                 .append(")");
     }
 
+    /** Counts how many times a parameter is referenced within the closure body */
+    int parameterReferences(DBSPCompiler compiler, DBSPParameter param) {
+        ResolveReferences resolver = new ResolveReferences(compiler, true);
+        resolver.apply(this);
+        return resolver.reference.count(param);
+    }
+
     /** True if the composition this(before) can productively inline before */
     public boolean shouldInlineComposition(DBSPCompiler compiler, DBSPClosureExpression before) {
         Projection projection = new Projection(compiler, true, true);
@@ -196,8 +204,10 @@ public final class DBSPClosureExpression extends DBSPExpression {
         if (projection.isProjection && before.body.is(DBSPBaseTupleExpression.class)) {
             return true;
         } else {
-            // TODO: this could be refined by checking how many times the source expression
-            // is substituted in the result.
+            int refCount = this.parameterReferences(compiler, this.parameters[0]);
+            if (refCount <= 1)
+                // Parameter referenced only once: allow inlining
+                return true;
             return !Expensive.isExpensive(compiler, before);
         }
     }
