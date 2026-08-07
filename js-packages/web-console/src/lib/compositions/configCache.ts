@@ -1,5 +1,9 @@
 import equal from 'fast-deep-equal'
-import { errorCodeOf, tenantAccessLost } from '$lib/compositions/tenantAccess.svelte'
+import {
+  errorCodeOf,
+  isTenantRecheckPending,
+  resetTenantRecheck
+} from '$lib/compositions/tenantAccess'
 import { getSelectedTenant, setSelectedTenant } from '$lib/services/auth'
 import type { Configuration, SessionInfo } from '$lib/services/manager'
 import { getConfig, getConfigSession } from '$lib/services/pipelineManager'
@@ -45,6 +49,24 @@ export const setSessionConfigCache = (sessionConfig: SessionInfo | undefined) =>
   } catch (e) {
     console.warn('Failed to cache session config:', e)
   }
+}
+
+/**
+ * The cached payloads a warm-cache render may use, or nothing when it must not.
+ *
+ * A pending tenant re-check means the server told this session it holds no
+ * membership, so the cache still describes a tenant it no longer resolves.
+ * Rendering from it would leave the app up while every request fails, so the
+ * caller has to fetch and discover the unresolved state instead.
+ */
+export const getCachedConfigsForRender = (): {
+  config?: Configuration
+  sessionConfig?: SessionInfo
+} => {
+  if (isTenantRecheckPending()) {
+    return {}
+  }
+  return { config: getConfigFromCache(), sessionConfig: getSessionConfigFromCache() }
 }
 
 const fetchConfigsOnce = async (): Promise<{
@@ -101,7 +123,7 @@ const INVALID_SELECTION_ERROR_CODES = ['NotATenantMember', 'UnknownTenantName']
 export const fetchConfigs = async () => {
   try {
     const fetched = await fetchConfigsOnce()
-    tenantAccessLost.reset()
+    resetTenantRecheck()
     return fetched
   } catch (e) {
     const code = errorCodeOf(e)
@@ -110,7 +132,7 @@ export const fetchConfigs = async () => {
     }
     setSelectedTenant(undefined)
     const retried = await fetchConfigsOnce()
-    tenantAccessLost.reset()
+    resetTenantRecheck()
     return retried
   }
 }

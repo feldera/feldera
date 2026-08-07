@@ -85,6 +85,15 @@
         {#snippet adminIcon()}
           <div class="fd fd-shield text-[20px]"></div>
         {/snippet}
+        {#snippet healthIcon()}
+          <div
+            class="m-2 h-2.5 w-2.5 rounded-full text-[64px] {combinedStatus === 'healthy'
+              ? 'bg-success-500'
+              : combinedStatus === 'unhealthy'
+                ? 'bg-warning-500'
+                : 'bg-error-500'}"
+          ></div>
+        {/snippet}
 
         {#if typeof auth === 'object' && 'logout' in auth}
           <RBAC require="write:tenant_member">
@@ -137,17 +146,10 @@
             Sign Out
           </button>
         {/if}
-        <div class="hr"></div>
-        {#snippet healthIcon()}
-          <div
-            class="m-2 h-2.5 w-2.5 rounded-full text-[64px] {combinedStatus === 'healthy'
-              ? 'bg-success-500'
-              : combinedStatus === 'unhealthy'
-                ? 'bg-warning-500'
-                : 'bg-error-500'}"
-          ></div>
-        {/snippet}
-        {@render profileItemButton('Feldera Health', healthIcon, { href: resolve('/health') })}
+        <RBAC require="read:cluster_health">
+          <div class="hr"></div>
+          {@render profileItemButton('Feldera Health', healthIcon, { href: resolve('/health') })}
+        </RBAC>
         <div class="hr"></div>
         <VersionDisplay></VersionDisplay>
       </div>

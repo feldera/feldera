@@ -12,6 +12,10 @@ vi.mock('$lib/services/pipelineManager', () => ({
   getConfigSession: vi.fn()
 }))
 
+// The tenant re-check latch is real here (it gates the warm-cache read); only
+// its `invalidateAll()` side effect is stubbed.
+vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn() }))
+
 const selection = vi.hoisted(() => ({ current: undefined as string | undefined }))
 vi.mock('$lib/services/auth', () => ({
   getSelectedTenant: vi.fn(() => selection.current),
@@ -20,11 +24,13 @@ vi.mock('$lib/services/auth', () => ({
   })
 }))
 
+import { requestTenantRecheck, resetTenantRecheck } from '$lib/compositions/tenantAccess'
 import { getConfig, getConfigSession } from '$lib/services/pipelineManager'
 import {
   clearConfigCaches,
   configChanged,
   fetchConfigs,
+  getCachedConfigsForRender,
   getConfigFromCache,
   getSessionConfigFromCache,
   setConfigCache,
@@ -77,6 +83,7 @@ beforeEach(() => {
   mockedGetConfig.mockReset()
   mockedGetConfigSession.mockReset()
   selection.current = undefined
+  resetTenantRecheck()
 })
 
 afterEach(() => {
@@ -120,6 +127,30 @@ describe('configCache primitives', () => {
     clearConfigCaches()
     expect(localStorage.getItem(CONFIG_KEY)).toBeNull()
     expect(localStorage.getItem(SESSION_KEY)).toBeNull()
+  })
+})
+
+describe('getCachedConfigsForRender', () => {
+  it('hands over both cached payloads on an ordinary warm start', () => {
+    setConfigCache(baseConfig)
+    setSessionConfigCache(sessionConfig)
+    expect(getCachedConfigsForRender()).toEqual({ config: baseConfig, sessionConfig })
+  })
+
+  it('withholds them while a tenant re-check is pending', () => {
+    setConfigCache(baseConfig)
+    setSessionConfigCache(sessionConfig)
+    requestTenantRecheck()
+    // The cache still names the tenant this session just lost, so a warm render
+    // from it would leave the app up with every request failing.
+    expect(getCachedConfigsForRender()).toEqual({})
+  })
+
+  it('hands them over again once access is regained', () => {
+    setConfigCache(baseConfig)
+    requestTenantRecheck()
+    resetTenantRecheck()
+    expect(getCachedConfigsForRender().config).toEqual(baseConfig)
   })
 })
 
