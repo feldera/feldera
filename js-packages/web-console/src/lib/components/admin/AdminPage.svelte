@@ -69,7 +69,7 @@
     <UserRoleTable tenant={selectedTenant}></UserRoleTable>
   {/snippet}
   {#snippet usersTitle()}
-    Users &amp; roles for {#if manageTenants.allowed}
+    Users &amp; roles for {#if manageTenants.allowed && tenantCollection.items.length > 0}
       <!-- Owner-only: click the tenant name to switch which tenant's members
            show below, without moving the global acting-tenant. -->
       <Popup wrapperClass="inline-block align-baseline">
@@ -147,7 +147,7 @@
     )}
 
     {#snippet tenantsBody()}
-      <TenantList></TenantList>
+      <TenantList {tenants}></TenantList>
     {/snippet}
     {@render section('Tenants', 'Owner-only: list and create tenants.', tenantsBody)}
   {/if}

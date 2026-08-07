@@ -28,17 +28,21 @@ vi.mock('$lib/services/pipelineManager', () => ({
 }))
 
 // Imported AFTER vi.mock so the mocks take effect.
+import { asyncReadable } from '@square/svelte-store'
 import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
 import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+import { getTenants, type Tenant } from '$lib/services/pipelineManager'
 import TenantList from './TenantList.svelte'
 
 let mounted: { unmount: () => Promise<void> } | undefined
 let mountTarget: HTMLDivElement | undefined
 
+// The tenant store is owned by AdminPage and passed in, so stand one up here.
 function mountList() {
   mountTarget = document.createElement('div')
   document.body.appendChild(mountTarget)
-  mounted = render(TenantList, { target: mountTarget }) as any
+  const tenants = asyncReadable<Tenant[]>([], getTenants, { reloadable: true })
+  mounted = render(TenantList, { target: mountTarget, props: { tenants } }) as any
 }
 
 // The rename input is the DoubleClickInput's, distinct from the create-tenant
