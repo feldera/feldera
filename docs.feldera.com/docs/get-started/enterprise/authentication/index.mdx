@@ -335,6 +335,25 @@ behavior is unchanged until an admin grants cross-tenant memberships, and
 `provisionOnLogin: false` is available whenever explicit provisioning is
 preferred.
 
+### How members are identified in the member list
+
+A membership is keyed to an OIDC subject, which is rarely a string anyone
+recognizes. So that an administrator can tell members apart,
+[`GET /v0/tenant/users`](/api/list-tenant-members), the web console's member
+list, and `fda member list` also report the name and email the identity
+provider holds:
+
+| Field | Source |
+|---|---|
+| `subject` | the token's `sub`; the identity itself |
+| `display_name` | the provider's `name`, or `preferred_username` |
+| `email` | the provider's `email`, or an email supplied when pre-provisioning |
+| `email_verified` | whether the provider vouches for `email` |
+
+Feldera reads the name and email from the provider's
+[OIDC UserInfo endpoint](https://openid.net/specs/openid-connect-core-1_0.html#UserInfo),
+because an access token often carries neither.
+
 ## Configuration options
 
 ### Mapping Pipeline Manager Options to Helm Chart Values
