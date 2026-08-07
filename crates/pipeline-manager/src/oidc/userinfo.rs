@@ -16,9 +16,9 @@
 
 use crate::db::types::user::UserProfile;
 use crate::oidc::destination::{OidcUrlError, validate_tenant_oidc_url};
-use crate::oidc::fetch::{OidcDestination, fetch_discovery_document, oidc_http_client};
+use crate::oidc::fetch::{OidcClients, OidcDestination, fetch_discovery_document};
 use cached::{Cached, TimedSizedCache};
-use reqwest::{Certificate, StatusCode};
+use reqwest::StatusCode;
 use serde::Deserialize;
 use std::fmt;
 
@@ -116,13 +116,13 @@ pub(crate) async fn fetch_user_profile(
     subject: &str,
     access_token: &str,
     destination: OidcDestination,
-    extra_roots: &[Certificate],
+    clients: &OidcClients,
 ) -> Result<UserProfile, UserInfoError> {
     if let OidcDestination::TenantRegistered(policy) = destination {
         validate_tenant_oidc_url(userinfo_endpoint, policy).map_err(UserInfoError::Destination)?;
     }
-    let response = oidc_http_client(destination, extra_roots)
-        .map_err(UserInfoError::Request)?
+    let response = clients
+        .for_destination(destination)
         .get(userinfo_endpoint)
         .bearer_auth(access_token)
         .send()
@@ -212,14 +212,14 @@ pub(crate) async fn resolve_userinfo_endpoint(
     cache: &tokio::sync::Mutex<UserProfileCache>,
     issuer: &str,
     destination: OidcDestination,
-    extra_roots: &[Certificate],
+    clients: &OidcClients,
 ) -> Result<String, UserInfoError> {
     if let Some(cached) = cache.lock().await.cached_endpoint(issuer) {
         return cached.ok_or(UserInfoError::NotOffered);
     }
     // Discovery runs without the cache lock held, so a slow issuer cannot
     // serialize every login.
-    let endpoint = fetch_discovery_document(issuer, destination, extra_roots)
+    let endpoint = fetch_discovery_document(issuer, destination, clients)
         .await
         .map_err(UserInfoError::Request)?
         .userinfo_endpoint;
@@ -237,7 +237,7 @@ mod test {
         resolve_userinfo_endpoint,
     };
     use crate::db::types::user::UserProfile;
-    use crate::oidc::fetch::OidcDestination;
+    use crate::oidc::fetch::{OidcClients, OidcDestination};
     use tokio::sync::Mutex;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -291,11 +291,12 @@ mod test {
         .await;
         let cache = Mutex::new(UserProfileCache::new());
         let destination = OidcDestination::OperatorConfigured;
+        let clients = OidcClients::new(&[]).unwrap();
 
-        let endpoint = resolve_userinfo_endpoint(&cache, &server.uri(), destination, &[])
+        let endpoint = resolve_userinfo_endpoint(&cache, &server.uri(), destination, &clients)
             .await
             .unwrap();
-        let profile = fetch_user_profile(&endpoint, "ada", "token", destination, &[])
+        let profile = fetch_user_profile(&endpoint, "ada", "token", destination, &clients)
             .await
             .unwrap();
         assert_eq!(profile.email.as_deref(), Some("ada@example.com"));
@@ -305,7 +306,7 @@ mod test {
         // The second resolution is served from the cache; `expect(1)` on the
         // discovery mock fails the test on drop if it is not.
         assert_eq!(
-            resolve_userinfo_endpoint(&cache, &server.uri(), destination, &[])
+            resolve_userinfo_endpoint(&cache, &server.uri(), destination, &clients)
                 .await
                 .unwrap(),
             endpoint
@@ -322,12 +323,13 @@ mod test {
         .await;
         let cache = Mutex::new(UserProfileCache::new());
         let destination = OidcDestination::OperatorConfigured;
+        let clients = OidcClients::new(&[]).unwrap();
 
-        let endpoint = resolve_userinfo_endpoint(&cache, &server.uri(), destination, &[])
+        let endpoint = resolve_userinfo_endpoint(&cache, &server.uri(), destination, &clients)
             .await
             .unwrap();
         assert!(matches!(
-            fetch_user_profile(&endpoint, "ada", "token", destination, &[]).await,
+            fetch_user_profile(&endpoint, "ada", "token", destination, &clients).await,
             Err(UserInfoError::SubjectMismatch)
         ));
     }
@@ -339,10 +341,11 @@ mod test {
         let server = provider(None, 1).await;
         let cache = Mutex::new(UserProfileCache::new());
         let destination = OidcDestination::OperatorConfigured;
+        let clients = OidcClients::new(&[]).unwrap();
 
         for _ in 0..3 {
             assert!(matches!(
-                resolve_userinfo_endpoint(&cache, &server.uri(), destination, &[]).await,
+                resolve_userinfo_endpoint(&cache, &server.uri(), destination, &clients).await,
                 Err(UserInfoError::NotOffered)
             ));
         }
