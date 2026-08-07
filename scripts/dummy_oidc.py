@@ -35,6 +35,7 @@ import html
 import json
 import secrets
 import ssl
+import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -48,28 +49,45 @@ CODE_TTL_SECS = 600  # authorization codes live ~10 minutes
 
 # Four demo identities offered on the login page. The effective role hint shows
 # what each becomes once provisioned via scripts/rbac_demo.py.
+#
+# `email_verified` is emitted verbatim, in both the token and the UserInfo
+# answer, so the demo covers the three shapes a real provider sends: the
+# boolean of the specification, the string AWS Cognito answers with, and a
+# provider that will not vouch for the address at all. Feldera marks only a
+# verified address as such, and an email entry in FELDERA_OWNERS matches only a
+# verified one, which is why `owner` is verified here.
 ROLES: dict[str, dict] = {
     "reader": {
         "sub": "reader",
         "email": "reader@example.com",
+        "name": "Rita Reader",
+        "email_verified": True,
         "tenants": ["acme"],
         "hint": "read access in tenant acme",
     },
     "writer": {
         "sub": "writer",
         "email": "writer@example.com",
+        "name": "Walt Writer",
+        # Unverified: the console shows the address without the check mark.
+        "email_verified": False,
         "tenants": ["acme"],
         "hint": "write access in tenant acme (after provisioning)",
     },
     "admin": {
         "sub": "admin",
         "email": "admin@example.com",
+        "name": "Ada Admin",
+        # The string spelling AWS Cognito uses, which Feldera reads as verified.
+        "email_verified": "true",
         "tenants": ["acme"],
         "hint": "admin of tenant acme",
     },
     "owner": {
         "sub": "owner",
         "email": "owner@example.com",
+        "name": "Otto Owner",
+        "email_verified": True,
         # No tenants claim: owner selects a tenant via the Feldera-Tenant header.
         "hint": "platform owner (FELDERA_OWNERS)",
     },
@@ -115,12 +133,20 @@ class KeyMaterial:
 
 
 def make_handler(
-    keys: KeyMaterial, issuer: str, default_audience: str, demo_tenants: list[str]
+    keys: KeyMaterial,
+    issuer: str,
+    default_audience: str,
+    demo_tenants: list[str],
+    omit_token_email: bool = False,
 ):
     """Build a request handler bound to one keypair and issuer.
 
     `demo_tenants` is the tenants claim given to the built-in tenanted demo users
     (reader/writer/admin) on the login page; the owner demo user stays untenanted.
+
+    `omit_token_email` keeps `email` and `email_verified` out of access tokens,
+    as an AWS Cognito access token does, leaving the UserInfo endpoint as the
+    only place Feldera can learn them.
     """
 
     # In-memory, single-process stores. Codes are single-use; refresh tokens map
@@ -190,11 +216,19 @@ def make_handler(
 
         # Optional claims: include only when the caller supplies them, so tenant
         # resolution can fall back to `sub` when absent (individual_tenant=true).
-        if (email := one("email")) is not None:
+        # An authentication time, as a real provider issues: Feldera reads it to
+        # decide when to ask the provider for the user's profile again.
+        if (auth_time := one("auth_time")) is not None:
+            claims["auth_time"] = int(auth_time)
+        else:
+            claims["auth_time"] = now
+        if (email := one("email")) is not None and not omit_token_email:
             claims["email"] = email
             # The manager only trusts an email for owner designation when the
-            # provider marks it verified, so this test IdP asserts it.
-            claims["email_verified"] = True
+            # provider marks it verified, so this test IdP asserts it unless the
+            # caller says otherwise.
+            verified = one("email_verified", "true")
+            claims["email_verified"] = verified == "true"
         if (tenant := one("tenant")) is not None:
             claims["tenant"] = tenant
         if (tenants := one("tenants")) is not None:
@@ -218,10 +252,15 @@ def make_handler(
             "iat": now,
             "exp": now + 3600,
             "token_use": "access",
-            "email": stored["email"],
-            "email_verified": True,
+            # When the user signed in, not when this token was minted. Refresh
+            # re-signs from the same record, so it survives, which is what makes
+            # it a usable marker of a new login.
+            "auth_time": stored["auth_time"],
             "scope": stored.get("scope", "openid profile email"),
         }
+        if not omit_token_email:
+            claims["email"] = stored["email"]
+            claims["email_verified"] = stored["email_verified"]
         if stored.get("tenants"):
             claims["tenants"] = stored["tenants"]
         return sign(claims)
@@ -236,9 +275,10 @@ def make_handler(
             "aud": stored.get("client_id") or "feldera",
             "iat": now,
             "exp": now + 3600,
+            "auth_time": stored["auth_time"],
             "email": stored["email"],
-            "email_verified": True,
-            "name": sub.title(),
+            "email_verified": stored["email_verified"],
+            "name": stored["name"],
             "preferred_username": sub,
         }
         if stored.get("nonce"):
@@ -420,6 +460,11 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
             auth_codes[code] = {
                 "sub": profile["sub"],
                 "email": profile["email"],
+                "email_verified": profile["email_verified"],
+                "name": profile["name"],
+                # This click is the authentication; every token minted from it,
+                # including refreshed ones, reports this instant.
+                "auth_time": int(time.time()),
                 # Tenanted demo users get the configured demo tenants; the owner
                 # demo user (no tenants in ROLES) stays untenanted.
                 "tenants": demo_tenants if profile.get("tenants") else None,
@@ -541,15 +586,24 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
                 )
                 return
             sub = claims.get("sub", "")
+            # The demo identities answer from their profile rather than from the
+            # token, which is how a real provider behaves: an access token often
+            # carries no email at all, and the profile is what UserInfo is for.
+            # Anyone else (a machine mint, say) falls back to the token.
+            profile = next((p for p in ROLES.values() if p["sub"] == sub), None)
             info = {
                 "sub": sub,
-                "email": claims.get("email"),
-                "name": sub.title(),
+                "email": profile["email"] if profile else claims.get("email"),
+                "email_verified": profile["email_verified"]
+                if profile
+                else claims.get("email_verified"),
+                "name": profile["name"] if profile else sub.title(),
                 "preferred_username": sub,
+                "tenants": claims.get("tenants"),
             }
-            if claims.get("tenants"):
-                info["tenants"] = claims["tenants"]
-            self._send_json(info)
+            # A provider omits what it has nothing to say about rather than
+            # answering null, so drop the empty entries.
+            self._send_json({k: v for k, v in info.items() if v is not None})
 
         # /logout
         def _handle_logout(self, query: dict[str, list[str]]) -> None:
@@ -623,7 +677,8 @@ def print_startup(issuer: str, audience: str, port: int) -> None:
     print("-" * 70)
     print("Browser roles (pick one on the login page):")
     for role, profile in ROLES.items():
-        print(f"  {role:7} {profile['email']:20} -> {profile['hint']}")
+        verified = f"email_verified={profile['email_verified']!r}"
+        print(f"  {role:7} {profile['email']:20} {verified:26} {profile['hint']}")
     print("-" * 70)
     print("Launch the pipeline-manager against it:")
     print(
@@ -644,6 +699,12 @@ def print_startup(issuer: str, audience: str, port: int) -> None:
 
 
 def main() -> None:
+    # scripts/rbac_up.sh redirects this to a file, where Python would otherwise
+    # buffer whole blocks and leave the log empty for minutes at a time. The
+    # access log is the only record of what a browser asked the issuer for.
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+
     parser = argparse.ArgumentParser(
         description="Dummy OIDC/OAuth2 provider for local Feldera auth testing (DEV ONLY)."
     )
@@ -673,6 +734,14 @@ def main() -> None:
         "integration suite runs the provider this way.",
     )
     parser.add_argument("--tls-key", default=None, help="Private key for --tls-cert")
+    parser.add_argument(
+        "--omit-token-email",
+        action="store_true",
+        help="Keep email and email_verified out of access tokens, as an AWS "
+        "Cognito access token does, so the UserInfo endpoint is the only place "
+        "Feldera can learn them. Note that an email entry in FELDERA_OWNERS then "
+        "matches nobody.",
+    )
     args = parser.parse_args()
 
     if bool(args.tls_cert) != bool(args.tls_key):
@@ -682,7 +751,9 @@ def main() -> None:
     issuer = args.issuer or f"{scheme}://localhost:{args.port}"
     demo_tenants = [t.strip() for t in args.demo_tenants.split(",") if t.strip()]
     keys = KeyMaterial()
-    handler = make_handler(keys, issuer, args.audience, demo_tenants)
+    handler = make_handler(
+        keys, issuer, args.audience, demo_tenants, args.omit_token_email
+    )
     server = ThreadingHTTPServer(("0.0.0.0", args.port), handler)
     if args.tls_cert:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
