@@ -55,6 +55,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     usePipelineList,
     useUpdatePipelineList
   } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { useConceptualHq } from '$lib/compositions/useConceptualHq.svelte'
   import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
@@ -68,6 +69,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   } from '$lib/functions/pipelines/status'
   import { resolve } from '$lib/functions/svelte'
   import { captureEvent } from '$lib/services/analytics'
+  import { bookADemoUrl } from '$lib/services/calendly'
   import type { PipelineAction } from '$lib/services/pipelineManager'
   import type { Snippet } from '$lib/types/svelte'
 
@@ -114,6 +116,12 @@ groups related actions into multi-action dropdowns when multiple options are ava
     await goto(resolve(`/pipelines/${encodeURIComponent(newPipeline.name)}/`))
   }
   const { toastError } = useToast()
+
+  const conceptualHq = useConceptualHq()
+  const calendlyPlacement = 'pipeline_actions_upgrade'
+  const calendlyUrl = $derived(
+    bookADemoUrl({ visitorId: conceptualHq.deviceId, placement: calendlyPlacement })
+  )
 
   // An already-deleted pipeline offers no Delete action; otherwise the backend
   // dictates when deletion is possible (fully stopped, storage cleared).
@@ -884,13 +892,12 @@ groups related actions into multi-action dropdowns when multiple options are ava
       Stopping pipelines gracefully is only available in the Enterprise edition.<br />
       <a
         class="block pt-2 underline"
-        href="https://calendly.com/d/cqnj-p63-mbq/feldera-demo"
+        href={calendlyUrl}
         target="_blank"
         rel="noreferrer"
         onclick={() =>
-          captureEvent('calendly_opened', {
-            url: 'https://calendly.com/d/cqnj-p63-mbq/feldera-demo'
-          })}>Upgrade</a
+          captureEvent('calendly_opened', { url: calendlyUrl, placement: calendlyPlacement })}
+        >Upgrade</a
       >
     </Popover>
   {/if}

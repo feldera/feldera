@@ -1,15 +1,24 @@
 <script lang="ts">
+  import { useConceptualHq } from '$lib/compositions/useConceptualHq.svelte'
   import { captureEvent } from '$lib/services/analytics'
+  import { bookADemoUrl } from '$lib/services/calendly'
   import type { Snippet } from '$lib/types/svelte'
 
   const {
     class: _class,
     children,
     icon = defaultIcon,
-    triggerLocation
-  }: { class?: string; children?: Snippet; icon?: Snippet; triggerLocation?: string } = $props()
+    placement
+  }: {
+    class?: string
+    children?: Snippet
+    icon?: Snippet
+    /** Where this button sits, e.g. 'footer'. Reaches Calendly and analytics. */
+    placement?: string
+  } = $props()
 
-  const calendlyUrl = 'https://calendly.com/d/cqnj-p63-mbq/feldera-demo'
+  const conceptualHq = useConceptualHq()
+  const calendlyUrl = $derived(bookADemoUrl({ visitorId: conceptualHq.deviceId, placement }))
 </script>
 
 {#snippet defaultIcon()}
@@ -21,8 +30,7 @@
   href={calendlyUrl}
   target="_blank"
   rel="noreferrer"
-  onclick={() =>
-    captureEvent('calendly_opened', { url: calendlyUrl, trigger_location: triggerLocation })}
+  onclick={() => captureEvent('calendly_opened', { url: calendlyUrl, placement })}
 >
   {@render icon()}
   {@render children?.()}

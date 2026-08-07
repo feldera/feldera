@@ -3,6 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Configuration } from '$lib/services/manager'
 import type { UserProfile } from '$lib/types/auth'
 
+// The composition owns the reactive visitor ID; here we only assert that the
+// loader script triggers a refresh. Mocking it also keeps runes out of this
+// node-environment spec.
+const refreshConceptualHqDeviceId = vi.hoisted(() => vi.fn())
+
+vi.mock('$lib/compositions/useConceptualHq.svelte', () => ({ refreshConceptualHqDeviceId }))
+
 const profile: UserProfile = { id: 'user-1', email: 'a@b.com', name: 'Ann' }
 
 // Only `conceptualhq` is read; the rest is filler to satisfy the type.
@@ -35,6 +42,7 @@ const queued = () => (window.ca?.q ?? []).map((a) => Array.from(a))
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  refreshConceptualHqDeviceId.mockClear()
 })
 
 describe('initConceptualHq', () => {
@@ -85,6 +93,30 @@ describe('initConceptualHq', () => {
     const { initConceptualHq } = await freshModule(false)
     // Must not throw when `window` is undefined.
     expect(() => initConceptualHq(config('my-key'), profile)).not.toThrow()
+  })
+})
+
+describe('visitor ID refresh', () => {
+  it('refreshes the visitor ID when the loader script arrives', async () => {
+    const { script } = stubDom()
+    const { initConceptualHq } = await freshModule(true)
+
+    initConceptualHq(config('my-key'), profile)
+    expect(refreshConceptualHqDeviceId).not.toHaveBeenCalled()
+    ;(script.onload as () => void)()
+
+    // The ID only exists once the loader has replaced the queue stub, which is
+    // after the first render on a first visit.
+    expect(refreshConceptualHqDeviceId).toHaveBeenCalledOnce()
+  })
+
+  it('never refreshes when analytics is disabled', async () => {
+    stubDom()
+    const { initConceptualHq } = await freshModule(true)
+
+    initConceptualHq(config(''), profile)
+
+    expect(refreshConceptualHqDeviceId).not.toHaveBeenCalled()
   })
 })
 

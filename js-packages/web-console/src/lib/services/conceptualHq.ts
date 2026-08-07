@@ -1,3 +1,4 @@
+import { refreshConceptualHqDeviceId } from '$lib/compositions/useConceptualHq.svelte'
 import type { Configuration } from '$lib/services/manager'
 import type { UserProfile } from '$lib/types/auth'
 
@@ -11,6 +12,7 @@ import type { UserProfile } from '$lib/types/auth'
 type ConceptualAnalytics = ((command: string, ...args: unknown[]) => void) & {
   q: unknown[][]
   l?: number
+  getDeviceId?: () => string | null | undefined
 }
 
 declare global {
@@ -47,6 +49,7 @@ const loadConceptualAnalytics = (key: string): ConceptualAnalytics => {
   const script = document.createElement('script')
   script.async = true
   script.src = `${LOADER_BASE}?key=${encodeURIComponent(key)}&v=${LOADER_VERSION}`
+  script.onload = refreshConceptualHqDeviceId
   const firstScript = document.getElementsByTagName('script')[0]
   firstScript.parentNode?.insertBefore(script, firstScript)
 
