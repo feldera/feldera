@@ -127,10 +127,78 @@ pub fn validate_tenant_oidc_url(url: &str, policy: TenantIssuerPolicy) -> Result
     }
 }
 
+/// Validate a URL that a request will carry a bearer credential to.
+///
+/// A token read off the wire is replayable as the user it belongs to, so a
+/// credential-carrying request must be encrypted. This is a stricter rule than
+/// the one governing key fetches: a JWKS is signed and its exposure costs
+/// nothing, whereas the UserInfo request presents the caller's own live access
+/// token (OpenID Connect Core 1.0 §5.3.1), so a discovery document that names
+/// an `http://` endpoint must not be followed.
+///
+/// Loopback is the exception. Nothing off the host can observe it, and an
+/// identity provider on `localhost` is the ordinary shape of a development
+/// deployment. The check is on the URL alone; see [`validate_tenant_oidc_url`]
+/// for the address policy that additionally applies to issuers a tenant chose.
+pub fn validate_credential_destination(url: &str) -> Result<(), OidcUrlError> {
+    let parsed = Url::parse(url).map_err(|e| OidcUrlError::Malformed(e.to_string()))?;
+    if parsed.scheme() == "https" {
+        return Ok(());
+    }
+    let host = parsed.host().ok_or(OidcUrlError::NoHost)?;
+    let loopback = match host {
+        // RFC 6761 reserves `localhost`, so it resolves to a loopback address.
+        Host::Domain(name) => name.eq_ignore_ascii_case("localhost"),
+        Host::Ipv4(v4) => v4.is_loopback(),
+        Host::Ipv6(v6) => v6.is_loopback(),
+    };
+    if loopback {
+        Ok(())
+    } else {
+        Err(OidcUrlError::NotHttps(parsed.scheme().to_string()))
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use std::str::FromStr;
+
+    /// A URL that will carry a bearer token must be encrypted, except on
+    /// loopback, which nothing off the host can observe.
+    #[test]
+    fn a_credential_destination_must_be_https_unless_it_is_loopback() {
+        for url in [
+            "https://idp.example.com/oauth2/userInfo",
+            "https://10.0.0.4/userinfo",
+            "http://localhost:9876/userinfo",
+            "http://LOCALHOST:9876/userinfo",
+            "http://127.0.0.1:9876/userinfo",
+            "http://[::1]:9876/userinfo",
+        ] {
+            assert!(validate_credential_destination(url).is_ok(), "{url}");
+        }
+
+        for url in [
+            "http://idp.example.com/oauth2/userInfo",
+            // A private address is still observable on that network.
+            "http://10.0.0.4/userinfo",
+            "http://192.168.1.9/userinfo",
+            // Not loopback, however much it reads like it.
+            "http://localhost.evil.example.com/userinfo",
+            "http://notlocalhost/userinfo",
+        ] {
+            assert!(
+                matches!(
+                    validate_credential_destination(url),
+                    Err(OidcUrlError::NotHttps(_))
+                ),
+                "{url}"
+            );
+        }
+
+        assert!(validate_credential_destination("not a url").is_err());
+    }
 
     fn public(ip: &str) -> bool {
         is_public_ip(IpAddr::from_str(ip).unwrap())
