@@ -1,5 +1,6 @@
 import * as AxaOidc from '@axa-fr/oidc-client'
-import { errorCodeOf, tenantAccessLost } from '$lib/compositions/tenantAccess.svelte'
+import { errorCodeOf, requestTenantRecheck } from '$lib/compositions/tenantAccess'
+import { stashRedirectTarget } from '$lib/services/redirectTarget'
 
 const { OidcClient } = AxaOidc
 
@@ -119,12 +120,12 @@ export const authResponseMiddleware = async (response: Response, request: Reques
  * when the interceptor fires from the fetch-failure path (network error).
  */
 export const errorResponseMiddleware = (error: unknown, response: Response | undefined) => {
-  // A session that has lost its last membership cannot recover by retrying or
-  // reloading, so record it here, where every failed response passes, rather
-  // than waiting for the next config fetch: the pollers would otherwise keep
-  // firing against layout data that still believes a tenant is resolved.
+  // Losing the last membership is not carried by any pending fetch, so it
+  // arrives here, on whatever request happens to fail. Re-running the loaders is
+  // what moves the session to the tenant gate; until then the app renders
+  // against layout data that still believes a tenant is resolved.
   if (errorCodeOf(error) === 'NoTenantMemberships') {
-    tenantAccessLost.mark()
+    requestTenantRecheck()
   }
   if (error && typeof error === 'object') {
     try {
@@ -147,12 +148,10 @@ export const errorResponseMiddleware = (error: unknown, response: Response | und
 /**
  * Start an OIDC re-authentication flow.
  *
- * Stashes the current URL under `redirect_to` in session storage so the
- * `onAfterLogin` hook in `routes/+layout.ts` can restore it via `goto` once
- * the provider callback completes. Only writes the key if it isn't already
- * set, so the *first* call (which captures the user's actual page) wins —
- * the fallback navigation below re-invokes this function from `/`, and we
- * must not overwrite the original target `redirect_to` with `/`.
+ * Stashes the current URL so the `onAfterLogin` hook in `routes/+layout.ts` can
+ * restore it via `goto` once the provider callback completes (see
+ * {@link stashRedirectTarget}, which the fallback navigation below relies on to
+ * keep the page originally asked for).
  *
  * If the OIDC singleton has not been initialized yet — e.g. the backend was
  * unauthenticated when the root layout first loaded and has since flipped to
@@ -163,9 +162,7 @@ export const errorResponseMiddleware = (error: unknown, response: Response | und
  * available — and complete the redirect to the provider.
  */
 export const triggerOidcLogin = async (): Promise<void> => {
-  if (!window.sessionStorage.getItem('redirect_to')) {
-    window.sessionStorage.setItem('redirect_to', window.location.href)
-  }
+  stashRedirectTarget(window.location.href)
   let oidcClient
   try {
     oidcClient = OidcClient.get()

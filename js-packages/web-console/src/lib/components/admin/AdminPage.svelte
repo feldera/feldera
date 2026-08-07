@@ -16,13 +16,14 @@
 
   // Owner-only: pick a tenant (by UUID) to inspect its members in place, without
   // changing the global acting-tenant. Empty string means the current tenant.
-  let adminTenant = $state(page.data.feldera?.tenantId ?? '')
+  let adminTenant = $state(page.data.feldera!.tenantId)
   const selectedTenant = $derived(adminTenant || undefined)
   const tenants = asyncReadable<Tenant[]>([], getTenants, { reloadable: true })
+  // Before the tenant list arrives, name the acting tenant from the session. It
+  // is unnamed only when the session payload is absent (no-auth deployments).
   const tenantLabel = $derived(
     $tenants.find((t) => t.id === adminTenant)?.name ??
-      page.data.feldera?.tenantName ??
-      'current tenant'
+      (page.data.feldera!.tenantName || 'current tenant')
   )
   // Tenants the header picker can switch to: every tenant except the one whose
   // members already show below, since the picker's job is to pick a different one.

@@ -10,6 +10,7 @@ import {
   clearConfigCaches,
   configChanged,
   fetchConfigs,
+  getCachedConfigsForRender,
   getConfigFromCache,
   getSessionConfigFromCache
 } from '$lib/compositions/configCache'
@@ -29,7 +30,8 @@ import type { Configuration, SessionInfo } from '$lib/services/manager'
 import { client } from '$lib/services/manager/client.gen'
 import { initPosthog } from '$lib/services/posthog'
 import { initProductFruits } from '$lib/services/productFruits'
-import { type Permission, permissionsOf, type Role, roleOf } from '$lib/services/rbac'
+import { type Permission, permissionsOf, roleOf, type SessionRole } from '$lib/services/rbac'
+import { takeRedirectTarget } from '$lib/services/redirectTarget'
 import type { AuthDetails, TenantMembership } from '$lib/types/auth'
 import type { LayoutLoad } from './$types'
 
@@ -80,8 +82,10 @@ export const trailingSlash = 'always'
  *     app redirects to the Identity Provider (IdP).
  *   - No acting tenant resolved (several memberships and no saved selection,
  *     or none at all): `fetchConfigs()` returns the session payload without a
- *     `Configuration`, and `load()` returns `unresolvedTenant` so the
- *     authenticated layout shows the tenant picker or the no-access notice.
+ *     `Configuration`, and `load()` returns `unresolvedTenant`. The
+ *     `(authorized)` group's gate turns that into a redirect to
+ *     `/select-tenant`, so nothing below it ever loads or renders without a
+ *     tenant.
  *
  * The warm-cache short-circuit is what keeps repeat visits from
  * double-fetching page-level resources, so be careful when adding new
@@ -103,12 +107,14 @@ export type LayoutData = {
         tenantId: string
         tenantName: string
         /**
-         * Caller's RBAC role in the current tenant: read < write < admin < owner.
+         * Caller's RBAC role in the current tenant: read < write < admin < owner,
+         * or `NO_ROLE` when the session named none, which the server does exactly
+         * when it resolved no acting tenant.
          */
-        role: Role
+        role: SessionRole
         /**
          * Permissions the role grants, materialized from the client role→permission
-         * map at init.
+         * map at init. Empty without a role.
          */
         permissions: Permission[]
         /**
@@ -124,8 +130,8 @@ export type LayoutData = {
   /**
    * Set when the login resolved no acting tenant: several memberships and no
    * saved selection, or no memberships at all. Only /config/session answers in
-   * this state, so `feldera` is undefined; the authenticated layout renders the
-   * tenant picker (or the no-access notice) from this list.
+   * this state, so `feldera` is undefined; `/select-tenant` renders the picker
+   * (or the no-access notice) from this list.
    */
   unresolvedTenant?: { memberships: TenantMembership[] }
   error?: Error
@@ -236,7 +242,7 @@ const lazyUpdateConfig = async () => {
   // tenant mid-session (e.g. this user was removed from the selected tenant).
   // `configChanged` then reports a diff against the rendered cache, and the
   // `invalidateAll()` re-runs `load()`, which lands in the unresolved-tenant
-  // branch and shows the tenant picker.
+  // branch, from where the `(authorized)` gate redirects to `/select-tenant`.
   if (!configChanged(prevConfig, result.config) && equal(prevSessionConfig, result.sessionConfig)) {
     return
   }
@@ -266,11 +272,10 @@ const initAuth = async (): Promise<AuthInitResult> => {
     oidcConfig: { ...toAxaOidcConfig(authConfig.oidc) },
     logoutExtras: authConfig.logoutExtras,
     onAfterLogin: async () => {
-      const redirectTo = window.sessionStorage.getItem('redirect_to')
+      const redirectTo = takeRedirectTarget()
       if (!redirectTo) {
         return
       }
-      window.sessionStorage.removeItem('redirect_to')
       goto(redirectTo)
     },
     onBeforeLogout() {
@@ -351,8 +356,9 @@ export const load: LayoutLoad = async (): Promise<LayoutData> => {
     }
   }
 
-  const cachedConfig = OPTIMISTIC_CONFIG_CACHE ? getConfigFromCache() : undefined
-  const cachedSessionConfig = OPTIMISTIC_CONFIG_CACHE ? getSessionConfigFromCache() : undefined
+  const { config: cachedConfig, sessionConfig: cachedSessionConfig } = OPTIMISTIC_CONFIG_CACHE
+    ? getCachedConfigsForRender()
+    : {}
 
   if (cachedConfig) {
     initializeConfigDependencies(auth, cachedConfig)
@@ -383,8 +389,8 @@ export const load: LayoutLoad = async (): Promise<LayoutData> => {
   if (!result.config) {
     // No acting tenant resolved: /config answers 4xx in this state and only
     // /config/session replies, so there is no Configuration to build the app
-    // shell from. The authenticated layout renders the tenant picker (or the
-    // no-access notice) from `unresolvedTenant`.
+    // shell from. The `(authorized)` gate redirects to `/select-tenant`, which
+    // renders the picker (or the no-access notice) from `unresolvedTenant`.
     if (result.sessionConfig) {
       return {
         ...emptyLayoutData,
@@ -421,9 +427,10 @@ function buildFelderaData(config: Configuration, sessionConfig: SessionInfo | un
     // `feldera`; the fallbacks below are for a missing session payload.
     tenantId: sessionConfig?.tenant_id || '',
     tenantName: sessionConfig?.tenant_name || '',
-    // Normalize an absent or unexpected role to the least-privileged one.
-    // Permissions are materialized here once from the client role→permission
-    // map; owner-only UI gates on `write:tenant` (owner-only).
+    // Absent when the session named no role, which the server does exactly when
+    // it resolved no acting tenant. Permissions are materialized here once from
+    // the client role→permission map, and are empty in that case; owner-only UI
+    // gates on `write:tenant` (owner-only).
     role,
     permissions: permissionsOf(role),
     memberships: toMemberships(sessionConfig),

@@ -73,7 +73,6 @@
     onscroll={() => (scrollTop = scrollEl?.scrollTop ?? 0)}
     class="-mr-4 scrollbar h-full overflow-auto pr-4 sm:-mr-8 sm:pr-8"
   >
-
     <p class="text-sm text-surface-800-200">
       Grant read/write/admin to workloads (CI, services) in tenant <b>{tenantName}</b> by trusting JWTs
       from an issuer.

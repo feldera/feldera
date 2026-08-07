@@ -11,11 +11,25 @@
 
 export type Role = 'read' | 'write' | 'admin' | 'owner'
 
+/**
+ * What a session reports when it holds no role, which the server does exactly
+ * when it resolved no acting tenant: a role is granted per membership and means
+ * nothing outside one.
+ *
+ * A named case rather than `undefined`, so `page.data.feldera.role` is total and
+ * a consumer that forgets this case gets a type error instead of `undefined`
+ * flowing through. `Role` itself stays the four roles the backend grants, since
+ * that is what the permission map and the drift guard are about.
+ */
+export const NO_ROLE = 'no_role'
+export type SessionRole = Role | typeof NO_ROLE
+
 export type Permission =
   | 'read:pipeline'
   | 'read:pipeline_code'
   | 'read:pipeline_config'
   | 'read:support_bundle'
+  | 'read:cluster_health'
   | 'write:pipeline'
   | 'write:pipeline_code'
   | 'write:pipeline_config'
@@ -35,7 +49,13 @@ export const ROLES: Role[] = ['read', 'write', 'admin', 'owner']
 
 // What each role adds on top of the role below it (cumulative, see below).
 const GRANTS: Record<Role, Permission[]> = {
-  read: ['read:pipeline', 'read:pipeline_code', 'read:pipeline_config', 'read:support_bundle'],
+  read: [
+    'read:pipeline',
+    'read:pipeline_code',
+    'read:pipeline_config',
+    'read:support_bundle',
+    'read:cluster_health'
+  ],
   write: [
     'write:pipeline',
     'write:pipeline_code',
@@ -65,28 +85,41 @@ const PERMISSIONS: Record<Role, ReadonlySet<Permission>> = (() => {
 export const hasPermission = (role: Role, permission: Permission): boolean =>
   PERMISSIONS[role].has(permission)
 
-// The permissions a role grants, as a plain array. `+layout.ts` materializes
-// this into `page.data.feldera.permissions` at session-config init, so UI gates
-// read a data field (as if the server sent it) instead of applying the map at
-// every call site.
-export const permissionsOf = (role: Role): Permission[] => [...PERMISSIONS[role]]
+/**
+ * The permissions a role grants, and none for {@link NO_ROLE}. `+layout.ts`
+ * materializes this into `page.data.feldera.permissions` at session-config init,
+ * so UI gates read a data field (as if the server sent it) instead of applying
+ * the map at every call site.
+ */
+export const permissionsOf = (role: SessionRole): Permission[] =>
+  role === NO_ROLE ? [] : [...PERMISSIONS[role]]
 
-// Default to the least-privileged role when the session payload lacks one, so a
-// missing role never silently unlocks a feature.
-export const roleOf = (role: string | undefined): Role =>
-  (ROLES as string[]).includes(role ?? '') ? (role as Role) : 'read'
+/**
+ * The role a session holds, or {@link NO_ROLE} when it holds none.
+ *
+ * The server sends `role: null` exactly when no acting tenant resolved, together
+ * with `tenant_id` and `tenant_name`. Reporting `read` for that would advertise
+ * features whose every request fails, since such a session is refused everywhere
+ * but `/v0/config/session`.
+ *
+ * An unrecognized role reads the same way: the backend gaining a role this
+ * client does not model grants nothing until the map catches up, rather than
+ * silently unlocking a feature. `rbac.spec.ts` guards against that drift.
+ */
+export const roleOf = (role: string | null | undefined): SessionRole =>
+  (ROLES as string[]).includes(role ?? '') ? (role as Role) : NO_ROLE
 
-// Fallback for a session whose config is not present yet (boot, unauthenticated,
-// or a config-load error that still renders the app shell). Frozen so a consumer
-// cannot mutate the shared default.
-export const DEFAULT_PERMISSIONS: readonly Permission[] = Object.freeze(permissionsOf('read'))
+// A session holding nothing. Frozen so a consumer reading the shared value
+// cannot mutate it.
+export const NO_PERMISSIONS: readonly Permission[] = Object.freeze([])
 
 // Whether the session grants a permission. Reads the permission list
-// materialized into `page.data.feldera` (see +layout.ts) and falls back to the
-// read floor when `feldera` is absent, so gates never crash and never leak write
-// access before the session loads. This is the session-facing check; the
+// materialized into `page.data.feldera` (see +layout.ts). An absent `feldera`
+// means no session resolved a tenant — booting, unauthenticated, a config-load
+// error, or no tenant picked yet — and grants nothing, so gates deny by default
+// the way the backend's route table does. This is the session-facing check; the
 // role-facing `hasPermission` above is used at init and in tests.
 export const hasPermissions = (
   feldera: { permissions: readonly Permission[] } | undefined,
   permission: Permission
-): boolean => (feldera?.permissions ?? DEFAULT_PERMISSIONS).includes(permission)
+): boolean => (feldera?.permissions ?? NO_PERMISSIONS).includes(permission)
