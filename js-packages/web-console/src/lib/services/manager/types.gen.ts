@@ -5960,9 +5960,22 @@ export type TenantInfo = {
  */
 export type TenantMember = {
   /**
-   * Email, if the identity provider supplied one.
+   * The member's name, as the identity provider spells it; `null` until the
+   * provider has been asked.
+   */
+  display_name?: string | null
+  /**
+   * Email, if the identity provider supplied one or an administrator
+   * recorded one when pre-provisioning the membership.
    */
   email?: string | null
+  /**
+   * Whether the identity provider vouches for `email`. False until the
+   * provider has been asked, and for providers that say nothing either way.
+   * An email an administrator typed is never verified, so this is what
+   * separates an address the provider stands behind from a claim about one.
+   */
+  email_verified?: boolean
   origin?: MembershipOrigin | null
   /**
    * OIDC issuer the user authenticates through.
