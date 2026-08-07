@@ -72,6 +72,20 @@ impl fmt::Display for InvalidMembershipOrigin {
     }
 }
 
+/// What an identity provider reports about a person, read from its OIDC
+/// UserInfo endpoint (see [`crate::oidc::userinfo`]). Every field is optional:
+/// providers differ in what they publish, and a token's scopes decide how much
+/// of it Feldera is allowed to see.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UserProfile {
+    pub email: Option<String>,
+    /// Whether the provider vouches for the email. False unless it says so, so
+    /// that a provider saying nothing never reads as an endorsement.
+    pub email_verified: bool,
+    /// The person's name, as the provider spells it.
+    pub display_name: Option<String>,
+}
+
 /// A member of a tenant, as returned by the user-management API.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TenantMember {
@@ -80,9 +94,20 @@ pub struct TenantMember {
     pub provider: String,
     /// OIDC subject.
     pub subject: String,
-    /// Email, if the identity provider supplied one.
+    /// Email, if the identity provider supplied one or an administrator
+    /// recorded one when pre-provisioning the membership.
     #[serde(default)]
     pub email: Option<String>,
+    /// Whether the identity provider vouches for `email`. False until the
+    /// provider has been asked, and for providers that say nothing either way.
+    /// An email an administrator typed is never verified, so this is what
+    /// separates an address the provider stands behind from a claim about one.
+    #[serde(default)]
+    pub email_verified: bool,
+    /// The member's name, as the identity provider spells it; `null` until the
+    /// provider has been asked.
+    #[serde(default)]
+    pub display_name: Option<String>,
     /// The user's role within this tenant.
     pub role: Role,
     /// How the membership came into existence. `null` for rows created before

@@ -7,6 +7,7 @@ use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::error::ManagerError;
 use crate::license::LicenseCheck;
+use crate::oidc::userinfo::UserProfileCache;
 use crate::runner::interaction::RunnerInteraction;
 use crate::unstable_features;
 use actix_http::StatusCode;
@@ -867,6 +868,9 @@ pub(crate) struct ServerState {
     pub config: ApiServerConfig,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
     pub issuer_jwk_cache: Arc<Mutex<IssuerJwkCache>>,
+    /// Which logins have had their profile read from the identity provider
+    /// recently, and where each issuer's UserInfo endpoint lives.
+    pub user_profiles: Arc<Mutex<UserProfileCache>>,
     /// Roots an OIDC fetch trusts on top of the platform's, read once here so
     /// that authenticating a request never touches the filesystem.
     pub oidc_root_certs: Vec<reqwest::Certificate>,
@@ -893,6 +897,7 @@ impl ServerState {
             config,
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
             issuer_jwk_cache: Arc::new(Mutex::new(IssuerJwkCache::new())),
+            user_profiles: Arc::new(Mutex::new(UserProfileCache::new())),
             oidc_root_certs,
             probe: DbProbe::new(db_copy).await,
             demos,
