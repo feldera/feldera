@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { bookADemoUrl } from './calendly'
 
 const DEMO_URL = 'https://calendly.com/d/cxz2-37b-qqd/feldera-demo-30min'
 
 const paramsOf = (url: string) => Object.fromEntries(new URL(url).searchParams)
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('bookADemoUrl', () => {
   it('tags the link with the visitor ID and the placement', () => {
@@ -36,5 +40,17 @@ describe('bookADemoUrl', () => {
 
   it('leaves the link untagged when nothing is known', () => {
     expect(bookADemoUrl({ visitorId: '' })).toBe(DEMO_URL)
+  })
+
+  it('writes both tags into a link that carries no parameters of its own', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    bookADemoUrl({ visitorId: 'dev-123', placement: 'footer' })
+
+    // The day the demo link itself carries `utm_content` or `utm_term`, this
+    // warns instead of silently replacing the value, and the ID must move to a
+    // free parameter such as `salesforce_uuid`.
+    expect(warn).not.toHaveBeenCalled()
+    expect([...new URL(bookADemoUrl({ visitorId: '' })).searchParams]).toEqual([])
   })
 })

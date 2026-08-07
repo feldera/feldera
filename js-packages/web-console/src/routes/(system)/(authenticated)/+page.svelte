@@ -204,7 +204,7 @@
                 class="grid grid-cols-1 gap-x-6 gap-y-5 py-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
               >
                 {#each demos.current.slice(0, maxShownDemos) as demo}
-                  <DemoTile {demo} triggerLocation="home"></DemoTile>
+                  <DemoTile {demo} placement="home"></DemoTile>
                 {/each}
                 <div class="flex flex-col card p-4">
                   <div class="text-sm text-surface-500"></div>

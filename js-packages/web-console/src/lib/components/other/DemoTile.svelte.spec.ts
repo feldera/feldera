@@ -29,8 +29,10 @@ vi.mock('$lib/compositions/pipelines/usePipelineList.svelte', () => ({
   })
 }))
 
+const tryPipeline = vi.hoisted(() => vi.fn())
+
 vi.mock('$lib/compositions/pipelines/useTryPipeline', () => ({
-  useTryPipeline: () => vi.fn()
+  useTryPipeline: () => tryPipeline
 }))
 
 import DemoTile from './DemoTile.svelte'
@@ -45,6 +47,7 @@ const demo = {
 afterEach(() => {
   roleState.current = 'read'
   listState.current = []
+  tryPipeline.mockClear()
 })
 
 describe('DemoTile.svelte', () => {
@@ -68,5 +71,15 @@ describe('DemoTile.svelte', () => {
     listState.current = []
     await render(DemoTile, { demo })
     await expect.element(page.getByRole('button', { name: 'Demo One' })).not.toBeDisabled()
+  })
+
+  it('reports where the demo was opened from', async () => {
+    roleState.current = 'write'
+    await render(DemoTile, { demo, placement: 'home' })
+
+    await page.getByRole('button', { name: 'Demo One' }).click()
+
+    // The placement reaches the `demo_opened` analytics event through here.
+    expect(tryPipeline).toHaveBeenCalledWith(demo, 'home')
   })
 })

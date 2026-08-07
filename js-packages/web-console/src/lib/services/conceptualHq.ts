@@ -49,6 +49,12 @@ const loadConceptualAnalytics = (key: string): ConceptualAnalytics => {
   const script = document.createElement('script')
   script.async = true
   script.src = `${LOADER_BASE}?key=${encodeURIComponent(key)}&v=${LOADER_VERSION}`
+  // The loader installs the full `ca` API, and with it the visitor ID. It does
+  // so before `onload` fires: replacing the stub and draining
+  // `ca.q` are synchronous steps of the script, so `getDeviceId` is in place by
+  // the time we read it.
+  // Potential for regression: were the loaded script to defer that work, a first-time
+  // visitor would keep the empty ID until the next page load.
   script.onload = refreshConceptualHqDeviceId
   const firstScript = document.getElementsByTagName('script')[0]
   firstScript.parentNode?.insertBefore(script, firstScript)
