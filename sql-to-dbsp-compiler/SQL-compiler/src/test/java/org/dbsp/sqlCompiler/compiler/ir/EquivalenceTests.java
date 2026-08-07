@@ -6,70 +6,55 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpressionsCSE;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ValueNumbering;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
 import org.junit.Test;
 
-/** Unit tests for expression equivalence */
+/** Unit tests for expression equivalence.
+ * The alpha-equivalence tests build variables by hand: they need specific
+ * names shared between distinct nodes, which {@link ExpressionBuilder}
+ * avoids by construction. */
 public class EquivalenceTests {
-    static DBSPExpression neg(DBSPExpression expression) {
-        return new DBSPUnaryExpression(
-                expression.getNode(), expression.getType(), DBSPOpcode.NEG, expression);
+    final ExpressionBuilder b = new ExpressionBuilder();
+
+    /** Count the let expressions that CSE introduced */
+    static void assertLets(DBSPCompiler compiler, IDBSPInnerNode node, int expected) {
+        InnerVisitor visitor = new InnerVisitor(compiler) {
+            int lets = 0;
+
+            @Override
+            public void postorder(DBSPLetExpression expression) {
+                this.lets++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(expected, this.lets);
+            }
+        };
+        visitor.apply(node);
     }
 
-    static DBSPExpression binary(DBSPOpcode opcode, DBSPExpression left, DBSPExpression right) {
-        return new DBSPBinaryExpression(
-                left.getNode(), left.getType(), opcode, left, right);
-    }
-
-    static DBSPExpression add(DBSPExpression left, DBSPExpression right) {
-        return binary(DBSPOpcode.ADD, left, right);
-    }
-
-    @Test
-    public void testCSE() {
-        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
-        DBSPType i = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true);
-        DBSPTypeTuple tuple = new DBSPTypeTuple(i, i, i);
-        DBSPVariablePath var = tuple.ref().var();
-        DBSPExpression c = new DBSPI32Literal(1);
-        DBSPExpression v0 = var.deref().field(0);
-        DBSPExpression v1 = var.deref().field(1);
-        DBSPExpression v2 = var.deref().field(2);
-        DBSPExpression v0m = neg(v0);
-        DBSPExpression p0 = binary(DBSPOpcode.DIV, v0m, v1);
-        DBSPExpression a = binary(DBSPOpcode.MUL, p0, p0);
-        DBSPExpression b = add(v2, c);
-        DBSPExpression d = add(b, b);
-        DBSPExpression body = new DBSPTupleExpression(a, d);
-        DBSPClosureExpression closure = body.closure(var.asParameter());
-
+    static IDBSPInnerNode cse(DBSPCompiler compiler, DBSPClosureExpression closure) {
         DBSPOperator fake = new DBSPConstantOperator(
                 CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()), false);
         ValueNumbering numbering = new ValueNumbering(compiler);
@@ -78,30 +63,27 @@ public class EquivalenceTests {
         ExpressionsCSE cse = new ExpressionsCSE(compiler, numbering.canonical);
         cse.setOperatorContext(fake);
         cse.apply(closure);
-        IDBSPInnerNode translated = cse.get(closure);
-        InnerVisitor visitor = new InnerVisitor(compiler) {
-            int vars = 0;
-            public void postorder(DBSPLetExpression expression) {
-                this.vars++;
-            }
+        return cse.get(closure);
+    }
 
-            @Override
-            public void endVisit() {
-                // Find 2 common subexpressions; one has a single use
-                Assert.assertEquals(2, this.vars);
-            }
-        };
-        visitor.apply(translated);
+    @Test
+    public void testCSE() {
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        DBSPClosureExpression closure = b.closure(b.tup(b.i32n(), b.i32n(), b.i32n()), t -> {
+            DBSPExpression p0 = b.binary(DBSPOpcode.DIV, b.neg(b.field(t, 0)), b.field(t, 1));
+            DBSPExpression a = b.binary(DBSPOpcode.MUL, p0, p0);
+            DBSPExpression sum = b.add(b.field(t, 2), b.lit(1));
+            return b.tuple(a, b.add(sum, sum));
+        });
+        // Find 2 common subexpressions; one has a single use
+        assertLets(compiler, cse(compiler, closure), 2);
     }
 
     @Test
     public void testLetEquivalenceContextUnchanged() {
         // Comparing let expressions may not modify the caller's context
-        DBSPType i = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true);
-        DBSPVariablePath v0 = i.var();
-        DBSPVariablePath v1 = i.var();
-        DBSPExpression let0 = new DBSPLetExpression(v0, new DBSPI32Literal(2, true), add(v0, v0));
-        DBSPExpression let1 = new DBSPLetExpression(v1, new DBSPI32Literal(2, true), add(v1, v1));
+        DBSPExpression let0 = b.let(b.lit(2, true), x -> b.add(x, x));
+        DBSPExpression let1 = b.let(b.lit(2, true), x -> b.add(x, x));
         EquivalenceContext context = new EquivalenceContext();
         Assert.assertTrue(context.equivalent(let0, let1));
         context.leftDeclaration.mustBeEmpty();
@@ -111,104 +93,60 @@ public class EquivalenceTests {
     @Test
     public void testCSENested() {
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
-        DBSPType i = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true);
-        DBSPTypeTuple tuple = new DBSPTypeTuple(i, i);
-        DBSPVariablePath var = tuple.ref().var();
+        DBSPTypeTuple tuple = b.tup(b.i32n(), b.i32n());
+        DBSPVariablePath var = b.refVar(tuple);
 
         DBSPLetStatement stat0 = new DBSPLetStatement("t0",
-                add(var.deref().field(0), var.deref().field(1)));
+                b.add(b.field(var, 0), b.field(var, 1)));
 
-        DBSPVariablePath t = tuple.ref().var();
+        DBSPVariablePath t = b.refVar(tuple);
         DBSPExpression let = new DBSPLetExpression(
                 t, new DBSPTupleExpression(
                         stat0.getVarReference(),
-                        neg(stat0.getVarReference())).borrow(),
-                new DBSPTupleExpression(neg(t.deref().field(0)), neg(t.deref().field(0))));
+                        b.neg(stat0.getVarReference())).borrow(),
+                b.tuple(b.neg(b.field(t, 0)), b.neg(b.field(t, 0))));
 
         DBSPLetStatement stat1 = new DBSPLetStatement("t1", let);
         DBSPExpression block = new DBSPBlockExpression(
                 Linq.list(stat0, stat1),
                 stat1.getVarReference());
-        DBSPClosureExpression closure = block.closure(var.asParameter());
+        DBSPClosureExpression closure = block.closure(var);
 
-        DBSPOperator fake = new DBSPConstantOperator(
-                CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()), false);
-        ValueNumbering numbering = new ValueNumbering(compiler);
-        numbering.setOperatorContext(fake);
-        numbering.apply(closure);
-        ExpressionsCSE cse = new ExpressionsCSE(compiler, numbering.canonical);
-        cse.setOperatorContext(fake);
-        cse.apply(closure);
-        IDBSPInnerNode translated = cse.get(closure);
-        ResolveReferences resolver = new ResolveReferences(compiler, false);
         // Crash on incorrect translation.
-        resolver.apply(translated);
+        ResolveReferences resolver = new ResolveReferences(compiler, false);
+        resolver.apply(cse(compiler, closure));
     }
 
     @Test
     public void testConditionalCSE() {
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
-        DBSPType i = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true);
-        DBSPType b = DBSPTypeBool.create(true);
-        DBSPTypeTuple tuple = new DBSPTypeTuple(i, i, i);
-        DBSPVariablePath var = tuple.ref().var();
-        DBSPExpression z = new DBSPI32Literal(1);
-        DBSPExpression cond = new DBSPBinaryExpression(
-                CalciteObject.EMPTY, b, DBSPOpcode.GTE, var.deref().field(0), z)
-                .wrapBoolIfNeeded();
-
-        DBSPExpression un = neg(var.deref().field(1));
-
-        DBSPExpression if0 = new DBSPIfExpression(
-                CalciteObject.EMPTY, cond, un, var.deref().field(2));
-        DBSPExpression if1 = new DBSPIfExpression(
-                CalciteObject.EMPTY, cond, var.deref().field(2), un);
-
-        DBSPExpression body = new DBSPTupleExpression(if0, if1);
-        DBSPClosureExpression closure = body.closure(var.asParameter());
-
-        ValueNumbering numbering = new ValueNumbering(compiler);
-        numbering.apply(closure);
-        ExpressionsCSE cse = new ExpressionsCSE(compiler, numbering.canonical);
-        DBSPOperator fake = new DBSPConstantOperator(
-                CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()), false);
-        cse.setOperatorContext(fake);
-        cse.apply(closure);
-        IDBSPInnerNode translated = cse.get(closure);
-
-        InnerVisitor visitor = new InnerVisitor(compiler) {
-            int vars = 0;
-            public void postorder(DBSPLetExpression expression) {
-                this.vars++;
-            }
-
-            @Override
-            public void endVisit() {
-                // Find 2 common subexpressions
-                Assert.assertEquals(2, this.vars);
-            }
-        };
-        visitor.apply(translated);
+        DBSPClosureExpression closure = b.closure(b.tup(b.i32n(), b.i32n(), b.i32n()), t -> {
+            DBSPExpression cond = b.binary(DBSPOpcode.GTE, b.field(t, 0), b.lit(1))
+                    .wrapBoolIfNeeded();
+            DBSPExpression un = b.neg(b.field(t, 1));
+            return b.tuple(
+                    b.ifThenElse(cond, un, b.field(t, 2)),
+                    b.ifThenElse(cond, b.field(t, 2), un));
+        });
+        // Find 2 common subexpressions
+        assertLets(compiler, cse(compiler, closure), 2);
     }
 
     @Test
     public void testEquiv() {
-        DBSPLiteral zero0 = new DBSPI32Literal(0);
+        DBSPExpression zero0 = b.lit(0);
         DBSPType i32 = zero0.getType();
-        DBSPLiteral zero1 = new DBSPI32Literal(0);
+        DBSPExpression zero1 = b.lit(0);
         Assert.assertTrue(EquivalenceContext.equiv(zero0, zero1));
 
-        DBSPLiteral one = new DBSPI32Literal(1);
+        DBSPExpression one = b.lit(1);
         Assert.assertFalse(EquivalenceContext.equiv(zero0, one));
 
-        DBSPExpression plus0 = new DBSPBinaryExpression(
-                CalciteObject.EMPTY, zero0.getType(), DBSPOpcode.ADD, zero0, one);
-        DBSPExpression plus1 = new DBSPBinaryExpression(
-                CalciteObject.EMPTY, zero0.getType(), DBSPOpcode.ADD, zero1, one);
+        DBSPExpression plus0 = b.add(zero0, one);
+        DBSPExpression plus1 = b.add(zero1, one);
         Assert.assertTrue(EquivalenceContext.equiv(plus0, plus1));
 
-        DBSPExpression plus2 = new DBSPBinaryExpression(
-                CalciteObject.EMPTY, zero0.getType(), DBSPOpcode.ADD, one, one);
+        DBSPExpression plus2 = b.add(one, one);
         Assert.assertFalse(EquivalenceContext.equiv(plus2, plus1));
 
         DBSPVariablePath var0 = new DBSPVariablePath("x", i32);
@@ -220,8 +158,7 @@ public class EquivalenceTests {
     @SuppressWarnings("SuspiciousNameCombination")
     @Test
     public void testLambdas() {
-        DBSPLiteral zero0 = new DBSPI32Literal(0);
-        DBSPType i32 = zero0.getType();
+        DBSPType i32 = b.i32();
         DBSPVariablePath x = new DBSPVariablePath("x", i32);
         DBSPExpression id0 = x.closure(x);
 
@@ -235,22 +172,19 @@ public class EquivalenceTests {
 
         DBSPVariablePath x2 = new DBSPVariablePath("x", i32);
         DBSPVariablePath y2 = new DBSPVariablePath("y", i32);
-        DBSPExpression plus0 = new DBSPBinaryExpression(
-                CalciteObject.EMPTY, i32, DBSPOpcode.ADD, x2, y2);
+        DBSPExpression plus0 = b.add(x2, y2);
         DBSPExpression lambda0 = plus0.closure(x2, y2);
 
         DBSPVariablePath x3 = new DBSPVariablePath("x", i32);
         DBSPVariablePath y3 = new DBSPVariablePath("y", i32);
-        DBSPExpression plus1 = new DBSPBinaryExpression(
-                CalciteObject.EMPTY, i32, DBSPOpcode.ADD, y3, x3);
+        DBSPExpression plus1 = b.add(y3, x3);
         DBSPExpression lambda1 = plus1.closure(x3, y3);
         // Compiler doesn't know that ADD is commutative
         Assert.assertFalse(EquivalenceContext.equiv(lambda0, lambda1));
 
         DBSPVariablePath x4 = new DBSPVariablePath("x", i32);
         DBSPVariablePath y4 = new DBSPVariablePath("y", i32);
-        DBSPExpression plus1_1 = new DBSPBinaryExpression(
-                CalciteObject.EMPTY, i32, DBSPOpcode.ADD, x4, y4);
+        DBSPExpression plus1_1 = b.add(x4, y4);
         DBSPExpression lambda2 = plus1_1.closure(x4, y4);
         Assert.assertTrue(EquivalenceContext.equiv(lambda0, lambda2));
 
@@ -266,8 +200,8 @@ public class EquivalenceTests {
                 x.deepCopy().to(DBSPVariablePath.class));
         Assert.assertTrue(EquivalenceContext.equiv(blockLambda0, blockLambda1));
 
-        DBSPTypeTuple ii = new DBSPTypeTuple(i32, i32);
-        DBSPTypeTuple iii = new DBSPTypeTuple(i32, i32, i32);
+        DBSPTypeTuple ii = b.tup(i32, i32);
+        DBSPTypeTuple iii = b.tup(i32, i32, i32);
         DBSPVariablePath x5 = new DBSPVariablePath("x", ii);
         DBSPVariablePath y5 = new DBSPVariablePath("y", iii);
         DBSPExpression x0 = x5.field(0).closure(x5);
