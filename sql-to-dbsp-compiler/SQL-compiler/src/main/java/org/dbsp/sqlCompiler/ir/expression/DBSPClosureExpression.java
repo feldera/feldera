@@ -43,7 +43,9 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Maybe;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.dbsp.util.Maybe.*;
 
@@ -202,6 +204,14 @@ public final class DBSPClosureExpression extends DBSPExpression {
         Projection projection = new Projection(compiler, true, true);
         projection.apply(this);
         if (projection.isProjection && before.body.is(DBSPBaseTupleExpression.class)) {
+            DBSPExpression[] fields = before.body.to(DBSPBaseTupleExpression.class).fields;
+            if (projection.hasIoMap() && this.parameters.length == 1 && fields != null) {
+                // Do not inline a projection that duplicates an expensive field
+                Set<Integer> seen = new HashSet<>();
+                for (int field : projection.getIoMap().getFieldsOfInput(0))
+                    if (!seen.add(field) && Expensive.isExpensive(compiler, fields[field]))
+                        return false;
+            }
             return true;
         } else {
             int refCount = this.parameterReferences(compiler, this.parameters[0]);

@@ -96,6 +96,7 @@ public class CircuitOptimizer extends Passes {
         AnalyzedSet<DBSPOperator> operatorsAnalyzed = new AnalyzedSet<>();
         this.add(new OptimizeWithGraph(compiler,
                 g -> new OptimizeProjections(compiler, true, g, operatorsAnalyzed), 1));
+        this.add(new FuseExpensiveMaps(compiler));
         this.add(new RemoveViewOperators(compiler, false));
         this.add(new UnusedFields(compiler));
         this.add(new Intern(compiler));
@@ -173,6 +174,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new OptimizeWithGraph(compiler, g -> new StrayGC(compiler, g)));
         // The canonical form is needed if we want the Merkle hashes to be "stable".
         this.add(new CanonicalForm(compiler).getCircuitRewriter(false));
+        this.add(new ConstantViews(compiler));
         this.add(new StaticDeclarations(compiler, new ImplementStatics(compiler, !compiler.options.ioOptions.multiCrates())));
         // From now on we cannot really change the graph anymore.
 
