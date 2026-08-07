@@ -1,6 +1,6 @@
 // switchTenant persists the selection, drops the config caches, and restarts
-// the app: on the home page by default (header switcher), or on the current
-// URL with `reloadInPlace` (must-pick gate, preserving deep links).
+// the app: on the home page by default (header switcher), or on the page named
+// by `to` (the tenant page, restoring the link the gate interrupted).
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -38,11 +38,15 @@ describe('switchTenant', () => {
     expect(location.reload).not.toHaveBeenCalled()
   })
 
-  it('reloads the current URL with reloadInPlace, preserving a deep link', () => {
-    switchTenant('t-acme', { reloadInPlace: true })
+  it('restarts on the page named by `to`, preserving a deep link', () => {
+    switchTenant('t-acme', { to: 'http://localhost/pipelines/foo/' })
     expect(setSelectedTenant.mock.calls).toEqual([['t-acme']])
     expect(clearConfigCaches).toHaveBeenCalledOnce()
-    expect(location.reload).toHaveBeenCalledOnce()
-    expect(location.assign).not.toHaveBeenCalled()
+    expect(location.assign.mock.calls).toEqual([['http://localhost/pipelines/foo/']])
+  })
+
+  it('falls back to the home page when `to` is unset', () => {
+    switchTenant('t-acme', { to: undefined })
+    expect(location.assign.mock.calls).toEqual([['/']])
   })
 })

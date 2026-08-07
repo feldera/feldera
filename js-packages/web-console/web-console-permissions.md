@@ -32,6 +32,7 @@ not a rank comparison scattered across call sites.
 | `read:pipeline_code`    | view SQL / UDF code                                                           |
 | `read:pipeline_config`  | view runtime / program config, resources                                      |
 | `read:support_bundle`   | download support bundle, collect heap/samply/circuit profiles, diff           |
+| `read:cluster_health`   | cluster monitor events, the health page, the header's health indicator        |
 | `write:pipeline`        | create, duplicate, import demo, delete                                        |
 | `write:pipeline_code`   | edit SQL / UDF Rust / UDF TOML                                                |
 | `write:pipeline_config` | edit runtime config, compilation profile, resources                           |
@@ -53,14 +54,15 @@ the source of truth in `src/lib/services/rbac.ts` (§5.1).
 
 | Role    | Adds                                                                                                                                                                                       |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `read`  | `read:pipeline`, `read:pipeline_code`, `read:pipeline_config`, `read:support_bundle`                                                                                                       |
+| `read`  | `read:pipeline`, `read:pipeline_code`, `read:pipeline_config`, `read:support_bundle`, `read:cluster_health`                                                                                |
 | `write` | `write:pipeline`, `write:pipeline_code`, `write:pipeline_config`, `write:pipeline_meta`, `exec:pipeline`, `exec:checkpoint`, `exec:runtime_upgrade`, `exec:pipeline_data`, `write:api_key` |
 | `admin` | `write:tenant_member`, `write:oidc_trust`                                                                                                                                                  |
 | `owner` | `write:tenant`, `write:owner_trust`                                                                                                                                                        |
 
 Consequences for `read`:
 
-- Sees every pipeline, its code, config, stats, logs. Reads are the floor, never gated.
+- Sees every pipeline, its code, config, stats, logs. Reads are the floor within a
+  tenant, so they are gated only where a session without one could reach them.
 - Downloads support bundles and collects profiling data (all `read`-role on the backend).
 - No pipeline actions, no editing, no ad-hoc query, no API keys, no admin.
 
@@ -114,9 +116,9 @@ init, so a `read` caller never lands on a blank panel. Because the tab is hidden
 
 ### 4.4 Demos (conditional for `read`)
 
-| File                                                                                                                      | Behavior                                                                                                                                                                                                       |
-| ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `other/DemoTile.svelte`, `compositions/pipelines/useTryPipeline.ts`, `routes/(system)/(authenticated)/demos/+page.svelte` | Enabled when a pipeline with the demo's name already exists (clicking navigates to it, allowed for `read`) OR the caller has `write:pipeline` (clicking creates it). Disable the tile only when neither holds. |
+| File                                                                                                                                   | Behavior                                                                                                                                                                                                       |
+| -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `other/DemoTile.svelte`, `compositions/pipelines/useTryPipeline.ts`, `routes/(system)/(authenticated)/(authorized)/demos/+page.svelte` | Enabled when a pipeline with the demo's name already exists (clicking navigates to it, allowed for `read`) OR the caller has `write:pipeline` (clicking creates it). Disable the tile only when neither holds. |
 
 This is the one gate that is not a plain permission check: `enabled = pipelineExists || has('write:pipeline')`. The header Create Pipeline button stays a plain `write:pipeline` hide.
 
@@ -125,10 +127,11 @@ This is the one gate that is not a plain permission check: `enabled = pipelineEx
 | File                                                                                            | Permission            | Min role | Status                                                                                           |
 | ----------------------------------------------------------------------------------------------- | --------------------- | -------- | ------------------------------------------------------------------------------------------------ |
 | `auth/ProfileButton.svelte`, `other/ApiKeyMenu.svelte`, `apiKey/NewApiKeyForm.svelte`           | `write:api_key`       | write    | menu already gated; migrate its ad-hoc role check to `write:api_key`                             |
-| `routes/(system)/(authenticated)/admin/+page.ts`                                                | `write:tenant_member` | admin    | already redirects; express via permission                                                        |
+| `routes/(system)/(authenticated)/(authorized)/admin/+page.ts`                                   | `write:tenant_member` | admin    | already redirects; express via permission                                                        |
 | `admin/UserRoleTable.svelte`                                                                    | `write:tenant_member` | admin    | in admin area                                                                                    |
 | `other/OidcTrustMenu.svelte`, `oidcTrust/NewOidcTrustForm.svelte`                               | `write:oidc_trust`    | admin    | in gated menu                                                                                    |
 | `admin/TenantList.svelte`, `admin/AdminPage.svelte` (tenant switcher, Platform owners, Tenants) | `write:tenant`        | owner    | gated on `write:tenant`; owner-trust CRUD removed (owner is deploy-time config, shown read-only) |
+| `auth/ProfileButton.svelte` (Feldera Health entry)                                              | `read:cluster_health` | read     | the one read gate: this header also renders on `/select-tenant`, where a session holds nothing   |
 
 Within `NewApiKeyForm.svelte`, both `read` and `write` key options stay offered:
 everyone who can open the menu already holds `write:api_key`, so the old
@@ -139,7 +142,10 @@ everyone who can open the menu already holds `write:api_key`, so the old
 `auth/CurrentTenant.svelte` (tenant switch), `auth/ProfileButton.svelte` Sign Out,
 `other/AuthErrorToast.svelte` (re-auth), `layout/userPopup/DarkModeSwitch.svelte`,
 `layout/pipelines/EditorOptionsPopup.svelte`, `layout/{Drawer,InlineDrawer}.svelte`,
-`profile-viewer/+page.svelte`, `version/**`, `health/**`.
+`profile-viewer/+page.svelte`, `version/**`. The `/health` page itself carries no
+gate: it sits in the `(authorized)` route group, so reaching it already means a
+tenant resolved, and every role holds `read:cluster_health`. The header entry
+linking to it is gated, since that header also renders on `/select-tenant`.
 
 ## 5. Technical design
 
@@ -160,6 +166,7 @@ export type Permission =
   | 'read:pipeline_code'
   | 'read:pipeline_config'
   | 'read:support_bundle'
+  | 'read:cluster_health'
   | 'write:pipeline'
   | 'write:pipeline_code'
   | 'write:pipeline_config'
@@ -178,7 +185,13 @@ export type Permission =
 const ROLES: Role[] = ['read', 'write', 'admin', 'owner']
 
 const GRANTS: Record<Role, Permission[]> = {
-  read: ['read:pipeline', 'read:pipeline_code', 'read:pipeline_config', 'read:support_bundle'],
+  read: [
+    'read:pipeline',
+    'read:pipeline_code',
+    'read:pipeline_config',
+    'read:support_bundle',
+    'read:cluster_health'
+  ],
   write: [
     'write:pipeline',
     'write:pipeline_code',
@@ -208,21 +221,40 @@ const PERMISSIONS: Record<Role, ReadonlySet<Permission>> = (() => {
 export const hasPermission = (role: Role, permission: Permission): boolean =>
   PERMISSIONS[role].has(permission)
 
-// The permissions a role grants, as a plain array. `+layout.ts` materializes
+// What a session reports when it holds no role. A named case rather than
+// `undefined`, so `page.data.feldera.role` is total and a consumer that forgets
+// this case gets a type error. `Role` stays the four roles the backend grants.
+export const NO_ROLE = 'no_role'
+export type SessionRole = Role | typeof NO_ROLE
+
+// The permissions a role grants, and none for NO_ROLE. `+layout.ts` materializes
 // this into `page.data.feldera.permissions` at session-config init.
-export const permissionsOf = (role: Role): Permission[] => [...PERMISSIONS[role]]
+export const permissionsOf = (role: SessionRole): Permission[] =>
+  role === NO_ROLE ? [] : [...PERMISSIONS[role]]
 
-// Fallback for a session whose config is not present yet.
-export const DEFAULT_PERMISSIONS: readonly Permission[] = Object.freeze(permissionsOf('read'))
+// The role a session holds, or NO_ROLE. The server sends `role: null` exactly
+// when no acting tenant resolved, since a role is granted per membership. An
+// unrecognized role reads the same way, so a backend role the map has not caught
+// up with grants nothing.
+export const roleOf = (role: string | null | undefined): SessionRole =>
+  (ROLES as string[]).includes(role ?? '') ? (role as Role) : NO_ROLE
 
-// Session-facing check: reads the materialized list off `page.data.feldera` and
-// falls back to the read floor when it is absent, so gates never crash and never
-// leak write access before the session loads.
+export const NO_PERMISSIONS: readonly Permission[] = Object.freeze([])
+
+// Session-facing check: reads the materialized list off `page.data.feldera`. An
+// absent `feldera` means no session resolved a tenant, and grants nothing, so
+// gates deny by default the way the backend's route table does.
 export const hasPermissions = (
   feldera: { permissions: readonly Permission[] } | undefined,
   permission: Permission
-): boolean => (feldera?.permissions ?? DEFAULT_PERMISSIONS).includes(permission)
+): boolean => (feldera?.permissions ?? NO_PERMISSIONS).includes(permission)
 ```
+
+A `NO_ROLE` session holding no permissions is what lets every gate be a plain
+`<RBAC>`. The alternative, reporting `read` for a missing role, would make read
+gates useless: the header renders on `/select-tenant`, where a read-role
+permission would be held by a session that cannot call a single tenant-scoped
+route.
 
 `+layout.ts` normalizes the role once with `roleOf` and injects the granted
 permissions, so the role to permission map is applied at the single boundary

@@ -15,6 +15,8 @@
       return granted
     }
     return [
+      // A resolved acting tenant always carries a real role; the server sends the
+      // two together or neither.
       { tenantId: feldera.tenantId, name: feldera.tenantName, role: feldera.role },
       ...granted
     ]
@@ -30,7 +32,7 @@
      than the one clicked. -->
 {#if feldera && (memberships.length > 1 || feldera.tenantName)}
   <label class="label {className}">
-    <span class="text-left">Tenant</span>
+    <span class="text-left">Tenant:</span>
     {#if memberships.length > 1}
       <Select
         value={feldera.tenantId}

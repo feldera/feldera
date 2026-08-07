@@ -34,7 +34,7 @@
 
   // Compare/select by tenant id (UUID): a name can be reassigned by a rename,
   // the id never changes, and the backend's Feldera-Tenant resolver accepts it.
-  const currentTenantId = $derived(page.data.feldera?.tenantId)
+  const currentTenantId = $derived(page.data.feldera!.tenantId)
 
   let newName = $state('')
   let creating = $state(false)

@@ -27,17 +27,19 @@ Distinct role subsets exist for different principals:
 The role comes from the session payload, not the JWT. `GET /v0/config/session` returns `SessionInfo`:
 
 ```
-SessionInfo { tenant_id, tenant_name, role }   // role: read | write | admin | owner
+SessionInfo { tenant_id, tenant_name, role, memberships }  // role: read|write|admin|owner
 ```
 
-`src/routes/+layout.ts` reads it into `page.data.feldera`:
+`tenant_id`, `tenant_name` and `role` are null together, exactly when the login
+resolved no acting tenant. `src/routes/+layout.ts` diverts that case into
+`unresolvedTenant` and never builds `feldera` from it; otherwise it reads:
 
-| `page.data.feldera` field | Source                          | Use                             |
-| ------------------------- | ------------------------------- | ------------------------------- |
-| `role`                    | `roleOf(sessionConfig.role)`    | normalized role, default `read` |
-| `permissions`             | `permissionsOf(role)`           | the list UI gates read          |
-| `tenantId`, `tenantName`  | `sessionConfig.tenant_id/_name` | current acting tenant           |
-| `authorizedTenants?`      | JWT `tenants` claim (decoded)   | multi-tenant switch list        |
+| `page.data.feldera` field | Source                          | Use                                                       |
+| ------------------------- | ------------------------------- | --------------------------------------------------------- |
+| `role`                    | `roleOf(sessionConfig.role)`    | normalized role, or `NO_ROLE` when the session named none |
+| `permissions`             | `permissionsOf(role)`           | the list UI gates read; empty for `NO_ROLE`               |
+| `tenantId`, `tenantName`  | `sessionConfig.tenant_id/_name` | current acting tenant                                     |
+| `memberships`             | `sessionConfig.memberships`     | tenants this login may switch to                          |
 
 `role` is the whole permission surface the backend sends: one ordered role,
 `read < write < admin < owner`, no separate capability list or resource-level
@@ -46,9 +48,11 @@ materializes `permissions` from the role via the client role to permission map
 (see `web-console-permissions.md`), shaped as if the server had sent the list, so
 each UI gate names the permission it needs and reads `permissions` for it.
 
-`authorizedTenants` is the only value read from the token: the `tenants` claim
-(array, or comma-separated string) lists tenants a multi-tenant login may act in.
-An owner's token typically carries no `tenants` claim.
+A role is granted per membership and carries no meaning outside a tenant, so the
+server omits it when none resolves, `roleOf` reports `NO_ROLE`, `permissions`
+comes out empty, and every `<RBAC>` gate closes on its own. Nothing is read from the token: `memberships`
+comes from the membership table by way of the session payload, which is also what
+the tenant picker offers.
 
 ## Tenancy and the acting tenant
 
@@ -124,7 +128,7 @@ where `*` matches any run of characters. A match grants the trust's `role`.
 
 ## Admin dashboard
 
-Route `/admin` (`src/routes/(system)/(authenticated)/admin/+page.ts`). Gated in
+Route `/admin` (`src/routes/(system)/(authenticated)/(authorized)/admin/+page.ts`). Gated in
 `load`: entry requires `role` of `admin` or `owner`; anyone else is redirected home.
 
 `AdminPage.svelte` composes:
