@@ -603,16 +603,27 @@ async fn member_commands(format: OutputFormat, action: MemberActions, client: Cl
                 OutputFormat::Text => {
                     let mut rows = vec![[
                         "user id".to_string(),
+                        "name".to_string(),
                         "subject".to_string(),
                         "email".to_string(),
+                        "verified".to_string(),
                         "role".to_string(),
                         "origin".to_string(),
                     ]];
                     for m in response.iter() {
                         rows.push([
                             m.user_id.0.to_string(),
+                            m.display_name.clone().unwrap_or_default(),
                             m.subject.clone(),
                             m.email.clone().unwrap_or_default(),
+                            // Absent from an older manager's answer, which is
+                            // the same as not verified.
+                            if m.email_verified.unwrap_or(false) {
+                                "yes"
+                            } else {
+                                "no"
+                            }
+                            .to_string(),
                             m.role.to_string(),
                             m.origin.as_ref().map(|o| o.to_string()).unwrap_or_default(),
                         ]);
