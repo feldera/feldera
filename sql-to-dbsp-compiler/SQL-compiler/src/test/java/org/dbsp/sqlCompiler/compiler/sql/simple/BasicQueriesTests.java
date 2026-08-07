@@ -61,12 +61,11 @@ import org.junit.Test;
 import java.math.BigDecimal;
 
 /**
- * Test end-to-end by compiling some DDL statements and view
- * queries by compiling them to rust and executing them
- * by inserting data in the input tables and reading data
- * from the declared views. */
-public class EndToEndTests extends BaseSQLTests {
-    public static final String E2E_TABLE = """
+ * Basic queries over a single table.
+ * Each view is compiled to Rust and executed by inserting
+ * data in the input table and reading data from the view. */
+public class BasicQueriesTests extends BaseSQLTests {
+    public static final String BASIC_TABLE = """
             CREATE TABLE T (
             COL1 INT NOT NULL
             , COL2 DOUBLE PRECISION NOT NULL
@@ -109,7 +108,7 @@ public class EndToEndTests extends BaseSQLTests {
 
     public DBSPCompiler compileQuery(String query) {
         DBSPCompiler compiler = this.testCompiler();
-        compiler.submitStatementForCompilation(E2E_TABLE);
+        compiler.submitStatementForCompilation(BASIC_TABLE);
         compiler.submitStatementForCompilation(query);
         return compiler;
     }
