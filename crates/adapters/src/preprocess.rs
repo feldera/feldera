@@ -3,10 +3,10 @@
 use crate::format::SpongeSplitter;
 use std::borrow::Cow;
 
+use aws_lc_rs::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use feldera_adapterlib::preprocess::{Preprocessor, PreprocessorCreateError, PreprocessorFactory};
 use feldera_types::preprocess::PreprocessorConfig;
-use openssl::symm::{Cipher, decrypt_aead};
 use serde::Deserialize;
 
 use crate::format::{ParseError, Splitter};
@@ -112,14 +112,7 @@ impl Preprocessor for DecryptionPreprocessor {
         let ciphertext = &data[Self::NONCE_SIZE..tag_start];
         let tag = &data[tag_start..];
 
-        match decrypt_aead(
-            Cipher::aes_256_gcm(),
-            &self.key,
-            Some(nonce),
-            &[],
-            ciphertext,
-            tag,
-        ) {
+        match aes256gcm_decrypt(&self.key, nonce, ciphertext, tag) {
             Ok(plaintext) => (plaintext, vec![]),
             Err(e) => (
                 vec![],
@@ -176,22 +169,45 @@ impl PreprocessorFactory for DecryptionPreprocessorFactory {
     }
 }
 
+/// Decrypt AES-256-GCM `ciphertext` authenticated by `tag`, with no associated data.
+pub(crate) fn aes256gcm_decrypt(
+    key: &[u8],
+    nonce: &[u8],
+    ciphertext: &[u8],
+    tag: &[u8],
+) -> Result<Vec<u8>, aws_lc_rs::error::Unspecified> {
+    let key = LessSafeKey::new(UnboundKey::new(&AES_256_GCM, key)?);
+    let nonce = Nonce::try_assume_unique_for_key(nonce)?;
+
+    // `open_in_place` expects the tag to trail the ciphertext, and decrypts in place.
+    let mut in_out = Vec::with_capacity(ciphertext.len() + tag.len());
+    in_out.extend_from_slice(ciphertext);
+    in_out.extend_from_slice(tag);
+
+    let plaintext = key.open_in_place(nonce, Aad::empty(), &mut in_out)?;
+    Ok(plaintext.to_vec())
+}
+
+/// Encrypt `plaintext` with AES-256-GCM, returning the ciphertext and its tag.
 #[cfg(test)]
-use openssl::symm::encrypt_aead;
+pub(crate) fn aes256gcm_encrypt_with_tag(
+    key: &[u8],
+    nonce: &[u8],
+    plaintext: &[u8],
+) -> Result<(Vec<u8>, Vec<u8>), aws_lc_rs::error::Unspecified> {
+    let key = LessSafeKey::new(UnboundKey::new(&AES_256_GCM, key)?);
+    let nonce = Nonce::try_assume_unique_for_key(nonce)?;
+
+    let mut ciphertext = plaintext.to_vec();
+    let tag = key.seal_in_place_separate_tag(nonce, Aad::empty(), &mut ciphertext)?;
+    Ok((ciphertext, tag.as_ref().to_vec()))
+}
 
 #[cfg(test)]
 /// Encrypt `plaintext` with AES-256-GCM, returning `[nonce || ciphertext || tag]`.
 pub fn aes256gcm_encrypt(key: &[u8], nonce: &[u8; 12], plaintext: &[u8]) -> Vec<u8> {
-    let mut tag = vec![0u8; 16];
-    let ciphertext = encrypt_aead(
-        Cipher::aes_256_gcm(),
-        key,
-        Some(nonce),
-        &[],
-        plaintext,
-        &mut tag,
-    )
-    .expect("AES-256-GCM encryption failed");
+    let (ciphertext, tag) =
+        aes256gcm_encrypt_with_tag(key, nonce, plaintext).expect("AES-256-GCM encryption failed");
 
     let mut out = Vec::with_capacity(12 + ciphertext.len() + 16);
     out.extend_from_slice(nonce);

@@ -4,7 +4,7 @@ use crate::compiler::util::{
     copy_file, copy_file_if_checksum_differs, crate_name_pipeline_globals,
     crate_name_pipeline_main, create_dir_if_not_exists, create_new_file, decode_string_as_dir,
     pipeline_binary_filename, program_info_filename, read_file_content, recreate_dir,
-    recreate_file_with_content, truncate_sha256_checksum, write_file,
+    recreate_file_with_content, sha256, truncate_sha256_checksum, write_file,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
@@ -17,12 +17,11 @@ use crate::db::types::utils::{validate_program_config, validate_program_info};
 use crate::db::types::version::Version;
 use crate::error::source_error;
 use crate::has_unstable_feature;
+use aws_lc_rs::digest;
 use chrono::{DateTime, Utc};
 use feldera_types::config::PipelineConfigProgramInfo;
 use futures_util::stream;
 use indoc::formatdoc;
-use openssl::sha;
-use openssl::sha::sha256;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime};
@@ -392,7 +391,7 @@ fn calculate_source_checksum(
     udf_rust: &str,
     udf_toml: &str,
 ) -> String {
-    let mut hasher = sha::Sha256::new();
+    let mut hasher = digest::Context::new(&digest::SHA256);
     let profile = profile.to_string();
     let to_hash = vec![
         ("platform_version", platform_version.as_bytes()),
