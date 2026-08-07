@@ -41,6 +41,13 @@ import TabItem from '@theme/TabItem';
           creates a missing tenant at login (create tenants explicitly with
           `POST /v0/tenants`).
 
+        - Member lists now carry the name and email the identity provider
+          holds for each member, and whether that provider vouches for the
+          email, so an administrator recognizes a member without decoding an
+          OIDC `sub`. `GET /v0/tenant/users` gains `display_name` and
+          `email_verified`; the web console's member list and `fda member list`
+          show both.
+
         - Renaming a tenant no longer requires updating identity provider
           claim mappings once `provisionOnLogin` is `false`: memberships
           reference the tenant by id, not by name.

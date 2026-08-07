@@ -99,6 +99,12 @@ authorization:
 Prefer the subject or provider-qualified form over email. An email entry matches
 only when the identity provider marks the email verified, and an email address is
 user-facing and can change, whereas the subject is stable.
+
+Owner matching reads the access token itself, never the provider's UserInfo
+endpoint, so that who is an owner is settled by the token in hand. Many
+providers put neither `email` nor `email_verified` in an access token, and an
+email entry cannot match on such a provider. If an owner entry appears to have
+no effect, check the token's own claims and use the subject form instead.
 :::
 
 Set `authorization.ownerTrusts` (environment: `FELDERA_OWNER_TRUSTS`), a list of
