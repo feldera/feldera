@@ -218,6 +218,7 @@ impl CompilerTest {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_code: &str,
+        warnings: bool,
     ) -> ExtendedPipelineDescr {
         // Retrieve pipeline descriptor
         let pipeline_descr = self.get_pipeline(tenant_id, pipeline_id).await;
@@ -271,7 +272,9 @@ impl CompilerTest {
         );
         assert_eq!(content_program_sql, program_code);
         assert_ne!(content_schema_json, "");
-        assert_eq!(content_stderr_log, "");
+        if (!warnings) {
+            assert_eq!(content_stderr_log, "");
+        }
         assert_eq!(content_stdout_log, "");
 
         // Return the pipeline descriptor

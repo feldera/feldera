@@ -92,7 +92,8 @@ public class Logger {
             "visitors.outer.monotonicity",
             "visitors.unusedFields",
             "frontend",
-            "frontend.calciteCompiler"
+            "frontend.calciteCompiler",
+            "frontend.calciteCompiler.optimizer"
     };
 
     Class<?> locateClass(String className) {

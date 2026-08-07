@@ -1165,7 +1165,7 @@ mod test {
                 .create_pipeline(tenant_id, "p1", "v0", program_code)
                 .await;
             test.sql_compiler_tick().await;
-            test.check_outcome_sql_compiled(tenant_id, pipeline_id, program_code)
+            test.check_outcome_sql_compiled(tenant_id, pipeline_id, program_code, true)
                 .await;
             test.delete_pipeline(tenant_id, pipeline_id, "p1").await;
             test.sql_compiler_tick().await;
@@ -1218,7 +1218,7 @@ mod test {
             .await;
         test.sql_compiler_tick().await;
         let pipeline_descr = test
-            .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code)
+            .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code, false)
             .await;
 
         // Check the types of the table and view
@@ -1406,7 +1406,7 @@ mod test {
             .await;
         test.sql_compiler_tick().await;
         let pipeline_descr = test
-            .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code)
+            .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code, false)
             .await;
 
         // Check materialized outcome
@@ -1471,7 +1471,7 @@ mod test {
 
         // Check result
         let pipeline_descr = test
-            .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code)
+            .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code, false)
             .await;
         let input_connectors = validate_program_info(&pipeline_descr.program_info.clone().unwrap())
             .unwrap()

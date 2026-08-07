@@ -72,7 +72,6 @@ public class Expensive extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPBinaryExpression expression) {
-        // Lowered to a runtime function call
         if (expression.opcode == DBSPOpcode.VARIANT_INDEX) {
             this.expensive = true;
             return VisitDecision.STOP;
@@ -82,7 +81,6 @@ public class Expensive extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPCastExpression expression) {
-        // VARIANT casts are lowered to runtime function calls
         if (expression.getType().is(DBSPTypeVariant.class) ||
                 expression.source.getType().is(DBSPTypeVariant.class)) {
             this.expensive = true;
