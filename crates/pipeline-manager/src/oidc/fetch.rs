@@ -15,8 +15,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Deserialize)]
-struct OidcDiscoveryDocument {
-    jwks_uri: String,
+pub(crate) struct OidcDiscoveryDocument {
+    pub jwks_uri: String,
+    /// Absent for providers that publish no UserInfo endpoint. Optional in the
+    /// discovery metadata (OpenID Connect Discovery 1.0 §3).
+    #[serde(default)]
+    pub userinfo_endpoint: Option<String>,
 }
 
 /// Timeout for OIDC discovery / JWKS HTTP requests.
@@ -89,23 +93,33 @@ pub(crate) fn oidc_http_client(
     }
 }
 
+/// Fetch an issuer's OIDC discovery document.
+pub(crate) async fn fetch_discovery_document(
+    issuer: &str,
+    destination: OidcDestination,
+    extra_roots: &[reqwest::Certificate],
+) -> Result<OidcDiscoveryDocument, reqwest::Error> {
+    let discovery_url = format!(
+        "{}/.well-known/openid-configuration",
+        issuer.trim_end_matches('/')
+    );
+    oidc_http_client(destination, extra_roots)?
+        .get(&discovery_url)
+        .send()
+        .await?
+        .json()
+        .await
+}
+
 /// Fetch OIDC discovery document and extract `jwks_uri`.
 pub(crate) async fn fetch_jwks_uri_from_discovery(
     issuer: &str,
     destination: OidcDestination,
     extra_roots: &[reqwest::Certificate],
 ) -> Result<String, reqwest::Error> {
-    let discovery_url = format!(
-        "{}/.well-known/openid-configuration",
-        issuer.trim_end_matches('/')
-    );
-    let discovery: OidcDiscoveryDocument = oidc_http_client(destination, extra_roots)?
-        .get(&discovery_url)
-        .send()
+    Ok(fetch_discovery_document(issuer, destination, extra_roots)
         .await?
-        .json()
-        .await?;
-    Ok(discovery.jwks_uri)
+        .jwks_uri)
 }
 
 /// Fetch and parse the RSA JWKS for a federated `issuer` (discovery then keys),

@@ -24,7 +24,9 @@ use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus
 use crate::db::types::role::{MintableKeyRole, Role};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
-use crate::db::types::user::{MembershipOrigin, TenantInfo, TenantMember, UserId, UserMembership};
+use crate::db::types::user::{
+    MembershipOrigin, TenantInfo, TenantMember, UserId, UserMembership, UserProfile,
+};
 use crate::db::types::version::Version;
 use crate::is_supported_runtime;
 use crate::oidc::destination::TenantIssuerPolicy;
@@ -269,6 +271,42 @@ impl Storage for StoragePostgres {
             operations::user::get_or_create_user(&txn, new_id, provider, subject, email).await?;
         txn.commit().await?;
         Ok(result)
+    }
+
+    async fn claim_profile_refresh(
+        &self,
+        new_id: Uuid,
+        provider: &str,
+        subject: &str,
+        auth_time: Option<i64>,
+        ttl_seconds: i64,
+    ) -> Result<bool, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let result = operations::user::claim_profile_refresh(
+            &txn,
+            new_id,
+            provider,
+            subject,
+            auth_time,
+            ttl_seconds,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    async fn store_user_profile(
+        &self,
+        provider: &str,
+        subject: &str,
+        profile: &UserProfile,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        operations::user::store_user_profile(&txn, provider, subject, profile).await?;
+        txn.commit().await?;
+        Ok(())
     }
 
     async fn list_tenant_members(&self, tenant_id: TenantId) -> Result<Vec<TenantMember>, DBError> {
