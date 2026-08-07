@@ -48,7 +48,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.FunctionDocumentation;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.sql.simple.EndToEndTests;
+import org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
@@ -195,7 +195,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     @Test
     public void toCsvTest() {
         DBSPCompiler compiler = testCompiler();
-        DBSPZSetExpression s = new DBSPZSetExpression(EndToEndTests.E0, EndToEndTests.E1);
+        DBSPZSetExpression s = new DBSPZSetExpression(BasicQueriesTests.E0, BasicQueriesTests.E1);
         StringBuilder builder = new StringBuilder();
         ToCsvVisitor visitor = new ToCsvVisitor(compiler, builder, () -> "");
         visitor.apply(s);
@@ -210,7 +210,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     @Test
     public void rustCsvTest() throws IOException, InterruptedException {
         DBSPCompiler compiler = testCompiler();
-        DBSPZSetExpression data = new DBSPZSetExpression(EndToEndTests.E0, EndToEndTests.E1);
+        DBSPZSetExpression data = new DBSPZSetExpression(BasicQueriesTests.E0, BasicQueriesTests.E1);
         File file = File.createTempFile("test", ".csv", new File(BaseSQLTests.RUST_DIRECTORY));
         file.deleteOnExit();
         ToCsvVisitor.toCsv(compiler, file, data);

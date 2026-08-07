@@ -45,12 +45,12 @@ public class MultiViewTests extends BaseSQLTests {
         String query2 = "CREATE VIEW V2 as SELECT T.COL2 FROM T";
 
         DBSPCompiler compiler = testCompiler();
-        compiler.submitStatementForCompilation(EndToEndTests.E2E_TABLE);
+        compiler.submitStatementForCompilation(BasicQueriesTests.BASIC_TABLE);
         compiler.submitStatementForCompilation(query1);
         compiler.submitStatementForCompilation(query2);
 
         CompilerCircuitStream ccs = this.getCCS(compiler);
-        Change inputChange = EndToEndTests.INPUT;
+        Change inputChange = BasicQueriesTests.INPUT;
         Change outputChange = new Change(
                 new TableData("V1", new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral(true)),
@@ -68,13 +68,13 @@ public class MultiViewTests extends BaseSQLTests {
         String query2 = "CREATE VIEW V2 as SELECT * FROM V1";
 
         DBSPCompiler compiler = testCompiler();
-        compiler.submitStatementForCompilation(EndToEndTests.E2E_TABLE);
+        compiler.submitStatementForCompilation(BasicQueriesTests.BASIC_TABLE);
         compiler.submitStatementForCompilation(query1);
         compiler.submitStatementForCompilation(query2);
         CompilerCircuitStream ccs = this.getCCS(compiler);
 
         InputOutputChange change = new InputOutputChange(
-                EndToEndTests.INPUT,
+                BasicQueriesTests.INPUT,
                 new Change(
                         new TableData("V1", new DBSPZSetExpression(
                                 new DBSPTupleExpression(new DBSPBoolLiteral(true)),
@@ -92,13 +92,13 @@ public class MultiViewTests extends BaseSQLTests {
         String query2 = "CREATE VIEW V2 as SELECT DISTINCT COL1 FROM (SELECT * FROM V1 JOIN T ON V1.COL3 = T.COL3)";
 
         DBSPCompiler compiler = testCompiler();
-        compiler.submitStatementForCompilation(EndToEndTests.E2E_TABLE);
+        compiler.submitStatementForCompilation(BasicQueriesTests.BASIC_TABLE);
         compiler.submitStatementForCompilation(query1);
         compiler.submitStatementForCompilation(query2);
 
         CompilerCircuitStream ccs = this.getCCS(compiler);
         InputOutputChange change = new InputOutputChange(
-                EndToEndTests.INPUT,
+                BasicQueriesTests.INPUT,
                 new Change(new TableData("V1", new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral(true)),
                         new DBSPTupleExpression(new DBSPBoolLiteral(false)))),
