@@ -15,7 +15,9 @@
 //! [`PROFILE_REFRESH_TTL_SECONDS`].
 
 use crate::db::types::user::UserProfile;
-use crate::oidc::destination::{OidcUrlError, validate_tenant_oidc_url};
+use crate::oidc::destination::{
+    OidcUrlError, validate_credential_destination, validate_tenant_oidc_url,
+};
 use crate::oidc::fetch::{OidcClients, OidcDestination, fetch_discovery_document};
 use cached::{Cached, TimedSizedCache};
 use reqwest::StatusCode;
@@ -109,8 +111,10 @@ impl std::error::Error for UserInfoError {}
 /// Read the profile the provider holds for the identity behind `access_token`.
 ///
 /// The endpoint comes out of the issuer's discovery document, which the issuer
-/// controls, so a tenant-registered issuer is held to the same destination
-/// policy here as its `jwks_uri` is in [`crate::oidc::fetch::fetch_issuer_jwks`].
+/// controls, so two checks apply. Every mode requires an encrypted destination,
+/// because this request carries the caller's token; a tenant-registered issuer
+/// is additionally held to the same address policy here as its `jwks_uri` is in
+/// [`crate::oidc::fetch::fetch_issuer_jwks`].
 pub(crate) async fn fetch_user_profile(
     userinfo_endpoint: &str,
     subject: &str,
@@ -118,6 +122,11 @@ pub(crate) async fn fetch_user_profile(
     destination: OidcDestination,
     clients: &OidcClients,
 ) -> Result<UserProfile, UserInfoError> {
+    // This request presents the caller's own access token, so the endpoint has
+    // to be encrypted whoever chose the issuer. The issuer writes its own
+    // discovery document, and an operator naming a trusted issuer is not
+    // vouching for every URL that document contains.
+    validate_credential_destination(userinfo_endpoint).map_err(UserInfoError::Destination)?;
     if let OidcDestination::TenantRegistered(policy) = destination {
         validate_tenant_oidc_url(userinfo_endpoint, policy).map_err(UserInfoError::Destination)?;
     }
@@ -237,6 +246,7 @@ mod test {
         resolve_userinfo_endpoint,
     };
     use crate::db::types::user::UserProfile;
+    use crate::oidc::destination::TenantIssuerPolicy;
     use crate::oidc::fetch::{OidcClients, OidcDestination};
     use tokio::sync::Mutex;
     use wiremock::matchers::{method, path};
@@ -311,6 +321,39 @@ mod test {
                 .unwrap(),
             endpoint
         );
+    }
+
+    /// A plain-HTTP endpoint is refused before the token is attached, whoever
+    /// chose the issuer. `expect(0)` on the UserInfo mock is the proof: the
+    /// request must never be made.
+    #[tokio::test]
+    async fn a_plain_http_endpoint_never_receives_the_token() {
+        crate::ensure_default_crypto_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/userinfo"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"sub": "ada"})),
+            )
+            .expect(0)
+            .mount(&server)
+            .await;
+        let clients = OidcClients::new(&[]).unwrap();
+        // The mock binds loopback, which is a permitted cleartext destination,
+        // so name a routable host to get the case that matters.
+        let endpoint = server.uri().replace("127.0.0.1", "idp.example.com");
+
+        for destination in [
+            OidcDestination::OperatorConfigured,
+            OidcDestination::TenantRegistered(TenantIssuerPolicy::AllowInternal),
+        ] {
+            let refused =
+                fetch_user_profile(&endpoint, "ada", "token", destination, &clients).await;
+            assert!(
+                matches!(refused, Err(UserInfoError::Destination(_))),
+                "{destination:?} accepted {endpoint}"
+            );
+        }
     }
 
     /// An answer about another identity is refused, however well-formed.
