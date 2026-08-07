@@ -7,7 +7,7 @@ use crate::db::operations::utils::{
 };
 use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
-use crate::db::types::user::{MembershipOrigin, TenantMember, UserId, UserMembership};
+use crate::db::types::user::{MembershipOrigin, TenantMember, UserId, UserMembership, UserProfile};
 use deadpool_postgres::Transaction;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -28,8 +28,16 @@ pub async fn get_or_create_user(
             // COALESCE keeps a previously stored email when a later token omits
             // the claim (some IdPs drop email on refresh-derived access tokens),
             // rather than overwriting it with NULL.
+            //
+            // An address the provider vouched for outranks both callers here: a
+            // token claim, and the email an administrator types into
+            // `preprovision_member`. Neither carries verification, so letting
+            // either overwrite would strip a verified address of its mark or,
+            // worse, leave the mark next to a different address.
             "INSERT INTO app_user (id, provider, subject, email) VALUES ($1, $2, $3, $4) \
-             ON CONFLICT (provider, subject) DO UPDATE SET email = COALESCE(EXCLUDED.email, app_user.email) \
+             ON CONFLICT (provider, subject) DO UPDATE SET \
+             email = CASE WHEN app_user.email_verified THEN app_user.email \
+                          ELSE COALESCE(EXCLUDED.email, app_user.email) END \
              RETURNING id",
         )
         .await?;
@@ -138,7 +146,8 @@ pub async fn list_tenant_members(
             // `provider` breaks the tie: two identities can share a subject
             // across providers, and both may have no email, which would
             // otherwise leave the order for those rows unspecified.
-            "SELECT u.id, u.provider, u.subject, u.email, m.role, m.origin \
+            "SELECT u.id, u.provider, u.subject, u.email, u.email_verified, u.display_name, \
+             m.role, m.origin \
              FROM tenant_membership m JOIN app_user u ON u.id = m.user_id \
              WHERE m.tenant_id = $1 ORDER BY u.email, u.subject, u.provider",
         )
@@ -151,14 +160,92 @@ pub async fn list_tenant_members(
             provider: row.get(1),
             subject: row.get(2),
             email: row.get(3),
-            role: Role::from_str(&row.get::<_, String>(4))?,
+            email_verified: row.get(4),
+            display_name: row.get(5),
+            role: Role::from_str(&row.get::<_, String>(6))?,
             origin: row
-                .get::<_, Option<&str>>(5)
+                .get::<_, Option<&str>>(7)
                 .map(MembershipOrigin::from_str)
                 .transpose()?,
         });
     }
     Ok(result)
+}
+
+/// Claim the right to refresh this identity's profile from the provider, and
+/// report whether this caller won it. Creates the identity's row when the user
+/// has none yet, which is the case for a platform owner: an owner's role comes
+/// from configuration, so nothing else on the login path records one.
+///
+/// A refresh is due when none has run, when the last one has aged past
+/// `ttl_seconds`, or when `auth_time` says the user authenticated more recently
+/// than the last one covered. Deciding and recording in one statement is what
+/// makes the claim exclusive: PostgreSQL locks the row for the update, so
+/// exactly one caller sees a row returned however many api-servers ask at once.
+pub async fn claim_profile_refresh(
+    txn: &Transaction<'_>,
+    new_id: Uuid,
+    provider: &str,
+    subject: &str,
+    auth_time: Option<i64>,
+    ttl_seconds: i64,
+) -> Result<bool, DBError> {
+    let stmt = txn
+        .prepare_cached(
+            "INSERT INTO app_user (id, provider, subject, profile_refreshed_at, profile_auth_time) \
+             VALUES ($1, $2, $3, now(), $4) \
+             ON CONFLICT (provider, subject) DO UPDATE \
+             SET profile_refreshed_at = now(), profile_auth_time = EXCLUDED.profile_auth_time \
+             WHERE app_user.profile_refreshed_at IS NULL \
+                OR app_user.profile_refreshed_at < now() - ($5::bigint * INTERVAL '1 second') \
+                OR (EXCLUDED.profile_auth_time IS NOT NULL \
+                    AND (app_user.profile_auth_time IS NULL \
+                         OR EXCLUDED.profile_auth_time > app_user.profile_auth_time)) \
+             RETURNING id",
+        )
+        .await?;
+    let claimed = txn
+        .query_opt(
+            &stmt,
+            &[&new_id, &provider, &subject, &auth_time, &ttl_seconds],
+        )
+        .await?;
+    Ok(claimed.is_some())
+}
+
+/// Store what the provider reports about an identity. Absent fields leave the
+/// stored ones alone, so a token scoped too narrowly to see the email does not
+/// erase one an earlier, wider login recorded.
+pub async fn store_user_profile(
+    txn: &Transaction<'_>,
+    provider: &str,
+    subject: &str,
+    profile: &UserProfile,
+) -> Result<(), DBError> {
+    let stmt = txn
+        .prepare_cached(
+            // Whether an address is verified is a statement about that address,
+            // so the two move together: keeping the stored email means keeping
+            // the verdict that came with it.
+            "UPDATE app_user SET \
+             email = COALESCE($3, email), \
+             email_verified = CASE WHEN $3 IS NULL THEN email_verified ELSE $4 END, \
+             display_name = COALESCE($5, display_name) \
+             WHERE provider = $1 AND subject = $2",
+        )
+        .await?;
+    txn.execute(
+        &stmt,
+        &[
+            &provider,
+            &subject,
+            &profile.email,
+            &profile.email_verified,
+            &profile.display_name,
+        ],
+    )
+    .await?;
+    Ok(())
 }
 
 /// Enrolls a user into the listed tenants where the tenant already exists and

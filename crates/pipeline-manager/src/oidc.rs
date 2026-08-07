@@ -3,3 +3,4 @@
 pub mod destination;
 pub mod fetch;
 pub mod trust_name;
+pub mod userinfo;

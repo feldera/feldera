@@ -85,6 +85,10 @@ use crate::db::types::user::{MembershipOrigin, UserMembership};
 use crate::oidc::fetch::{
     OidcDestination, fetch_issuer_jwks, fetch_jwks_uri_from_discovery, oidc_http_client,
 };
+use crate::oidc::userinfo::{
+    PROFILE_REFRESH_TTL_SECONDS, deserialize_bool_or_string, fetch_user_profile,
+    resolve_userinfo_endpoint,
+};
 use reqwest::Certificate;
 
 /// The authenticated principal behind a request, resolved by `auth_validator`
@@ -635,6 +639,94 @@ async fn provision_login(
     Ok(())
 }
 
+/// Ask the identity provider what it holds for this login, when that is due:
+/// after one of `auth_time` or [`PROFILE_REFRESH_TTL_SECONDS`] expires. See
+/// [`crate::oidc::userinfo`] for the reasoning.
+///
+/// Display data only, so fetch detached.
+async fn refresh_profile_if_due(
+    state: &Data<ServerState>,
+    token_data: &TokenData<OidcClaim>,
+    provider: &str,
+    subject: &str,
+    token: &str,
+) {
+    let auth_time = token_data.claims.auth_time;
+    let due = state
+        .user_profiles
+        .lock()
+        .await
+        .claim_refresh(provider, subject, auth_time);
+    if !due {
+        return;
+    }
+    let state = state.clone();
+    let issuer = token_data.claims.iss.clone();
+    let provider = provider.to_string();
+    let subject = subject.to_string();
+    let token = token.to_string();
+    tokio::spawn(async move {
+        if let Err(e) =
+            refresh_user_profile(&state, &issuer, &provider, &subject, &token, auth_time).await
+        {
+            // The recorded attempt holds off the next try, so a provider
+            // without a UserInfo endpoint says this once a day, not per login.
+            debug!("Profile refresh for '{subject}' at '{issuer}' did not complete: {e}");
+        }
+    });
+}
+
+/// Read this identity's profile from the provider and store it. The issuer is
+/// the configured login provider, which the operator named, so its fetches are
+/// [`OidcDestination::OperatorConfigured`] like its JWKS fetches.
+async fn refresh_user_profile(
+    state: &ServerState,
+    issuer: &str,
+    provider: &str,
+    subject: &str,
+    token: &str,
+    auth_time: Option<i64>,
+) -> anyhow::Result<()> {
+    let claimed = state
+        .db
+        .lock()
+        .await
+        .claim_profile_refresh(
+            Uuid::now_v7(),
+            provider,
+            subject,
+            auth_time,
+            PROFILE_REFRESH_TTL_SECONDS as i64,
+        )
+        .await?;
+    if !claimed {
+        return Ok(());
+    }
+    let destination = OidcDestination::OperatorConfigured;
+    let endpoint = resolve_userinfo_endpoint(
+        &state.user_profiles,
+        issuer,
+        destination,
+        &state.oidc_root_certs,
+    )
+    .await?;
+    let profile = fetch_user_profile(
+        &endpoint,
+        subject,
+        token,
+        destination,
+        &state.oidc_root_certs,
+    )
+    .await?;
+    state
+        .db
+        .lock()
+        .await
+        .store_user_profile(provider, subject, &profile)
+        .await?;
+    Ok(())
+}
+
 /// Pick the acting tenant from the user's memberships: a selector must name a
 /// tenant the user is a member of, and without one a sole membership is
 /// unambiguous. One neutral answer covers an unknown tenant and a tenant the
@@ -701,9 +793,14 @@ async fn bearer_auth(
                 provider: provider.clone(),
                 subject: subject.clone(),
             });
+            // Owners take an early return below, and a token need not carry an
+            // email claim at all, so this sits ahead of both. It deliberately
+            // does not feed owner matching: that must not turn on whether a
+            // background fetch has landed yet.
+            refresh_profile_if_due(&state, &token_data, &provider, &subject, token).await;
             // Only a provider-verified email may match an owner entry; an
             // unverified, user-settable email must never confer `owner`.
-            let verified_email = if token_data.claims.email_verified == Some(true) {
+            let verified_email = if token_data.claims.email_verified {
                 email.as_deref()
             } else {
                 None
@@ -1259,7 +1356,14 @@ struct OidcClaim {
     /// Whether the identity provider verified the email address. Owner matching
     /// on `email` requires this to be `true`: an unverified, user-settable email
     /// must never confer the platform-wide `owner` role.
-    email_verified: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_bool_or_string")]
+    email_verified: bool,
+
+    /// When the user last authenticated, in Unix time. Standard OIDC (Core 1.0
+    /// §2), and unchanged by token refresh, so a newer value marks a genuine
+    /// new login rather than a renewed token. Drives how often Feldera asks the
+    /// provider for the user's profile (see [`crate::oidc::userinfo`]).
+    auth_time: Option<i64>,
 
     /// Tenant identifier for single-tenant deployments
     /// TODO: Deprecated, remove when no one no longer uses it
@@ -1766,7 +1870,8 @@ mod test {
             token_use: Some("access".to_owned()),
             username: Some("some-user".to_owned()),
             email: None,
-            email_verified: None,
+            email_verified: false,
+            auth_time: None,
             tenant: None,
             tenants: None,
             groups: None,
@@ -1947,6 +2052,30 @@ mod test {
         let with_blank = vec!["a".to_string(), "".to_string(), "b".to_string()];
         assert!(!is_configured_owner(&with_blank, "iss", "", Some("")));
         assert!(!is_configured_owner(&with_blank, "iss", "", None));
+    }
+
+    /// A provider that spells `email_verified` as a string still confers owner
+    /// on an `owners` entry naming that email, and `auth_time` reaches the
+    /// profile refresh.
+    #[tokio::test]
+    async fn a_string_email_verified_still_counts_as_verified() {
+        let parse = |json: &str| serde_json::from_str::<OidcClaim>(json).unwrap();
+        let base = r#""exp":1,"iat":1,"iss":"i","sub":"s""#;
+
+        let cognito = parse(&format!(r#"{{{base},"email_verified":"true"}}"#));
+        assert!(cognito.email_verified);
+        assert!(parse(&format!(r#"{{{base},"email_verified":true}}"#)).email_verified);
+        assert!(!parse(&format!(r#"{{{base},"email_verified":"false"}}"#)).email_verified);
+        // Absent, or a shape neither spelling covers, reads as unverified
+        // rather than failing the whole token.
+        assert!(!parse(&format!("{{{base}}}")).email_verified);
+        assert!(!parse(&format!(r#"{{{base},"email_verified":"maybe"}}"#)).email_verified);
+
+        assert_eq!(
+            parse(&format!(r#"{{{base},"auth_time":1737000000}}"#)).auth_time,
+            Some(1737000000)
+        );
+        assert_eq!(parse(&format!("{{{base}}}")).auth_time, None);
     }
 
     #[tokio::test]

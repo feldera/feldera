@@ -15499,10 +15499,19 @@
           "role"
         ],
         "properties": {
+          "display_name": {
+            "type": "string",
+            "description": "The member's name, as the identity provider spells it; `null` until the\nprovider has been asked.",
+            "nullable": true
+          },
           "email": {
             "type": "string",
-            "description": "Email, if the identity provider supplied one.",
+            "description": "Email, if the identity provider supplied one or an administrator\nrecorded one when pre-provisioning the membership.",
             "nullable": true
+          },
+          "email_verified": {
+            "type": "boolean",
+            "description": "Whether the identity provider vouches for `email`. False until the\nprovider has been asked, and for providers that say nothing either way.\nAn email an administrator typed is never verified, so this is what\nseparates an address the provider stands behind from a claim about one."
           },
           "origin": {
             "allOf": [

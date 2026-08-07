@@ -14,7 +14,9 @@ use crate::db::types::pipeline::{
 use crate::db::types::program::{RustCompilationInfo, SqlCompilationInfo};
 use crate::db::types::role::{MintableKeyRole, Role};
 use crate::db::types::tenant::TenantId;
-use crate::db::types::user::{MembershipOrigin, TenantInfo, TenantMember, UserId, UserMembership};
+use crate::db::types::user::{
+    MembershipOrigin, TenantInfo, TenantMember, UserId, UserMembership, UserProfile,
+};
 use crate::db::types::version::Version;
 use crate::oidc::destination::TenantIssuerPolicy;
 use async_trait::async_trait;
@@ -193,6 +195,27 @@ pub(crate) trait Storage {
         subject: &str,
         email: Option<&str>,
     ) -> Result<UserId, DBError>;
+
+    /// Claims the right to refresh an identity's profile from its provider,
+    /// reporting whether this caller won it. See
+    /// [`crate::db::operations::user::claim_profile_refresh`].
+    async fn claim_profile_refresh(
+        &self,
+        new_id: Uuid,
+        provider: &str,
+        subject: &str,
+        auth_time: Option<i64>,
+        ttl_seconds: i64,
+    ) -> Result<bool, DBError>;
+
+    /// Stores what the identity provider reports about an identity.
+    /// See [`crate::db::operations::user::store_user_profile`].
+    async fn store_user_profile(
+        &self,
+        provider: &str,
+        subject: &str,
+        profile: &UserProfile,
+    ) -> Result<(), DBError>;
 
     /// Lists the members of a tenant with their roles.
     async fn list_tenant_members(&self, tenant_id: TenantId) -> Result<Vec<TenantMember>, DBError>;
