@@ -4,7 +4,7 @@
   import { usePermission } from '$lib/compositions/usePermission.svelte'
   import type { Demo } from '$lib/services/pipelineManager'
 
-  let { demo, triggerLocation }: { demo: Demo | null; triggerLocation?: string } = $props()
+  let { demo, placement }: { demo: Demo | null; placement?: string } = $props()
   const tryPipeline = useTryPipeline()
   const canCreate = usePermission('write:pipeline')
   const list = usePipelineList()
@@ -21,7 +21,7 @@
       class="text-left disabled:pointer-events-none disabled:opacity-50"
       disabled={!enabled}
       title={enabled ? undefined : 'Creating a demo pipeline needs write access'}
-      onclick={() => tryPipeline(demo, triggerLocation)}
+      onclick={() => tryPipeline(demo, placement)}
     >
       <span class="py-2 font-semibold">{demo.title}</span>
       <!-- <span class="fd fd-arrow-right inline-block w-2 text-[20px]"></span> -->

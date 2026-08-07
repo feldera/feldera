@@ -70,7 +70,7 @@
     {#each demos.current.filter((demo) => {
       return !demo || demosType === 'All' || demo.type === demosType
     }) as demo}
-      <DemoTile {demo} triggerLocation="demos"></DemoTile>
+      <DemoTile {demo} placement="demos"></DemoTile>
     {/each}
   </div>
   <Footer></Footer>

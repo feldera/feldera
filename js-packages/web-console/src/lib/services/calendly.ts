@@ -24,6 +24,20 @@ const PLACEMENT_PARAM = 'utm_term'
 const PLACEMENT_PREFIX = 'try.feldera.com:'
 
 /**
+ * Tag the link, reporting collisions with any existing query params.
+ */
+const setTrackingParam = (url: URL, param: string, value: string) => {
+  if (url.searchParams.has(param)) {
+    console.warn(
+      `Calendly demo link already carries '${param}' ` +
+        `('${url.searchParams.get(param)}'); overwriting it with '${value}'. ` +
+        `Move our value to a free parameter, e.g. 'salesforce_uuid', and remap it in Zapier.`
+    )
+  }
+  url.searchParams.set(param, value)
+}
+
+/**
  * The demo link, tagged with the analytics visitor ID and the placement of the
  * button that opens it. An empty ID leaves the link unattributed: the booking
  * still works, it just does not tie back to the visitor.
@@ -42,10 +56,10 @@ export const bookADemoUrl = ({
   }
   const url = new URL(DEMO_URL)
   if (visitorId) {
-    url.searchParams.set(VISITOR_ID_PARAM, visitorId)
+    setTrackingParam(url, VISITOR_ID_PARAM, visitorId)
   }
   if (placement) {
-    url.searchParams.set(PLACEMENT_PARAM, PLACEMENT_PREFIX + placement)
+    setTrackingParam(url, PLACEMENT_PARAM, PLACEMENT_PREFIX + placement)
   }
   return url.toString()
 }
