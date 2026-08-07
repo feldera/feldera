@@ -7,6 +7,7 @@ use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::error::ManagerError;
 use crate::license::LicenseCheck;
+use crate::oidc::fetch::OidcClients;
 use crate::oidc::userinfo::UserProfileCache;
 use crate::runner::interaction::RunnerInteraction;
 use crate::unstable_features;
@@ -874,6 +875,10 @@ pub(crate) struct ServerState {
     /// Roots an OIDC fetch trusts on top of the platform's, read once here so
     /// that authenticating a request never touches the filesystem.
     pub oidc_root_certs: Vec<reqwest::Certificate>,
+    /// The HTTP clients OIDC fetches use, built once: constructing one loads
+    /// the platform's root certificate store, which is far too slow to do per
+    /// request.
+    pub oidc_clients: OidcClients,
     probe: Arc<Mutex<DbProbe>>,
     pub demos: Vec<Demo>,
     pub license_check: Arc<RwLock<Option<LicenseCheck>>>,
@@ -898,6 +903,7 @@ impl ServerState {
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
             issuer_jwk_cache: Arc::new(Mutex::new(IssuerJwkCache::new())),
             user_profiles: Arc::new(Mutex::new(UserProfileCache::new())),
+            oidc_clients: OidcClients::new(&oidc_root_certs)?,
             oidc_root_certs,
             probe: DbProbe::new(db_copy).await,
             demos,
