@@ -6,17 +6,23 @@
   let { class: className = '' }: { class?: string } = $props()
 
   const feldera = $derived(page.data.feldera)
-  const memberships = $derived(feldera?.memberships ?? [])
   // Owners can act in a tenant outside their membership list (the admin page's
-  // act-as flow); the acting tenant must still display, so it joins the options
-  // without being a membership.
-  const actingOutsideMemberships = $derived(
-    feldera !== undefined && !memberships.some((m) => m.tenantId === feldera.tenantId)
-  )
+  // act-as flow); the acting tenant heads the list so it displays and remains
+  // selectable, even though it is no membership.
+  const memberships = $derived.by(() => {
+    const granted = feldera?.memberships ?? []
+    if (feldera === undefined || granted.some((m) => m.tenantId === feldera.tenantId)) {
+      return granted
+    }
+    return [
+      { tenantId: feldera.tenantId, name: feldera.tenantName, role: feldera.role },
+      ...granted
+    ]
+  })
 </script>
 
 <!-- The acting tenant name is always shown; the dropdown affordance only when
-     the session's membership list offers more than one tenant to act in.
+     there is more than one tenant to act in.
      Switching selects by tenant id: ids are rename-stable, and the
      Feldera-Tenant resolver matches a UUID-shaped selector by id first, while
      per-sub personal tenants are named after the OIDC sub (itself a UUID on
@@ -31,9 +37,6 @@
         onchange={(e) => switchTenant(e.currentTarget.value)}
         class="text-base"
       >
-        {#if actingOutsideMemberships}
-          <option value={feldera.tenantId}>{feldera.tenantName}</option>
-        {/if}
         {#each memberships as membership (membership.tenantId)}
           <option value={membership.tenantId}>{membership.name}</option>
         {/each}
