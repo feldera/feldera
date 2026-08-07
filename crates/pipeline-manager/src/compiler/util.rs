@@ -1,5 +1,6 @@
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::version::Version;
+use aws_lc_rs::digest;
 use base64::prelude::{BASE64_STANDARD, Engine};
 use flate2::Compression;
 use hex;
@@ -7,7 +8,6 @@ use nix::NixPath;
 use nix::libc::pid_t;
 use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
-use openssl::sha::sha256;
 use sha2::{Digest, Sha256};
 use std::fs::Metadata;
 use std::path::{Path, PathBuf};
@@ -19,6 +19,13 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
 };
 use tracing::{debug, error, warn};
+
+/// SHA-256 of `data`, computed by the cryptographic module the binary links.
+pub fn sha256(data: &[u8]) -> [u8; 32] {
+    let mut checksum = [0u8; 32];
+    checksum.copy_from_slice(digest::digest(&digest::SHA256, data).as_ref());
+    checksum
+}
 
 /// Automatically terminates a process and all subprocesses it spawns using
 /// the group they are all in. The process must have set a process group ID
@@ -730,11 +737,10 @@ mod test {
         crate_name_pipeline_globals, crate_name_pipeline_main, create_dir_if_not_exists,
         create_new_file, create_new_file_with_content, decode_string_as_dir, encode_dir_as_string,
         pipeline_binary_filename, read_file_content, read_file_content_bytes, recreate_dir,
-        recreate_file_with_content, truncate_sha256_checksum, validate_is_sha256_checksum,
+        recreate_file_with_content, sha256, truncate_sha256_checksum, validate_is_sha256_checksum,
     };
     use crate::db::types::pipeline::PipelineId;
     use crate::db::types::version::Version;
-    use openssl::sha::sha256;
     use std::fs::Metadata;
     use std::sync::Arc;
     use std::time::Duration;

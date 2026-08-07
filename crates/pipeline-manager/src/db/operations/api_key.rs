@@ -6,8 +6,10 @@ use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId};
 use crate::db::types::role::{MintableKeyRole, Role};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::validate_api_key_name;
+use aws_lc_rs::digest;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use deadpool_postgres::Transaction;
-use openssl::sha;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -79,9 +81,7 @@ pub async fn store_api_key_hash(
     role: MintableKeyRole,
 ) -> Result<(), DBError> {
     validate_api_key_name(name)?;
-    let mut hasher = sha::Sha256::new();
-    hasher.update(key.as_bytes());
-    let hash = openssl::base64::encode_block(&hasher.finish());
+    let hash = BASE64_STANDARD.encode(digest::digest(&digest::SHA256, key.as_bytes()).as_ref());
     let stmt = txn
         .prepare_cached(
             "INSERT INTO api_key (id, tenant_id, name, hash, role) VALUES ($1, $2, $3, $4, $5)",
@@ -106,9 +106,7 @@ pub async fn validate_api_key(
     txn: &Transaction<'_>,
     api_key: &str,
 ) -> Result<(TenantId, Role), DBError> {
-    let mut hasher = sha::Sha256::new();
-    hasher.update(api_key.as_bytes());
-    let hash = openssl::base64::encode_block(&hasher.finish());
+    let hash = BASE64_STANDARD.encode(digest::digest(&digest::SHA256, api_key.as_bytes()).as_ref());
     let stmt = txn
         .prepare_cached("SELECT tenant_id, role FROM api_key WHERE hash = $1")
         .await?;

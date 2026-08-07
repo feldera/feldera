@@ -1508,19 +1508,29 @@ mod test {
         ensure_default_crypto_provider,
     };
     use crate::{auth::fetch_jwk_oidc_keys, config::CommonConfig};
+    use rsa::pkcs1::{EncodeRsaPrivateKey, LineEnding};
+    use rsa::pkcs8::EncodePublicKey;
+    use rsa::{RsaPrivateKey, RsaPublicKey};
 
     async fn setup(claim: OidcClaim) -> (String, DecodingKey) {
-        let rsa = openssl::rsa::Rsa::generate(2048).unwrap();
+        let rsa = RsaPrivateKey::new(&mut rand::thread_rng(), 2048).unwrap();
         let mut header = Header::new(Algorithm::RS256);
         header.kid = Some("rsa01".to_owned());
 
         let token_encoded = encode(
             &header,
             &claim,
-            &EncodingKey::from_rsa_pem(&rsa.private_key_to_pem().unwrap()).unwrap(),
+            &EncodingKey::from_rsa_pem(rsa.to_pkcs1_pem(LineEnding::LF).unwrap().as_bytes())
+                .unwrap(),
         )
         .unwrap();
-        let decoding_key = DecodingKey::from_rsa_pem(&rsa.public_key_to_pem().unwrap()).unwrap();
+        let decoding_key = DecodingKey::from_rsa_pem(
+            RsaPublicKey::from(&rsa)
+                .to_public_key_pem(LineEnding::LF)
+                .unwrap()
+                .as_bytes(),
+        )
+        .unwrap();
         let token = token_encoded.as_str();
         (token.to_owned(), decoding_key)
     }
