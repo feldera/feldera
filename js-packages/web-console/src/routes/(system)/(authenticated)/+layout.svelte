@@ -226,7 +226,7 @@
         }}
       ></CreatePipelineButton>
     </div>
-    <BookADemo class="btn self-center preset-filled-primary-500" triggerLocation="nav_drawer"
+    <BookADemo class="btn self-center preset-filled-primary-500" placement="nav_drawer"
       >Book a demo</BookADemo
     >
     <NavigationExtras inline></NavigationExtras>
