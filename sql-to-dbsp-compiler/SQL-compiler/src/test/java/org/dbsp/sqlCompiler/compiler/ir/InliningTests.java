@@ -2,41 +2,33 @@ package org.dbsp.sqlCompiler.compiler.ir;
 
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
-import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.Maybe;
 import org.junit.Assert;
 import org.junit.Test;
 
 public class InliningTests {
+    final ExpressionBuilder b = new ExpressionBuilder();
+
     @Test
     public void testInlining() {
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
-        DBSPType i32 = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true);
+        // inner = |x: &Tup2<i32, i32>| Tup3::new(f(x.0), x.0, x.1)
+        DBSPClosureExpression inner = b.closure(b.tup(b.i32n(), b.i32n()), x ->
+                b.tuple(
+                        b.call(b.i32n(), "f", b.field(x, 0)),
+                        b.field(x, 0),
+                        b.field(x, 1)));
 
-        DBSPType twice = new DBSPTypeTuple(i32, i32);
-        DBSPVariablePath x = twice.ref().var();
-        // inner = |x: Tup2<i32, i32>| Tup3::new(f(x), x.0, x.1)
-        DBSPClosureExpression inner = new DBSPTupleExpression(
-                new DBSPApplyExpression("f", i32, x.deref().field(0)),
-                x.deref().field(0),
-                x.deref().field(1)).closure(x);
-
-        DBSPVariablePath var = inner.getResultType().ref().var();
-        // project = |x: Tup3<i32, i32, i32>| Tup2::new(x.0, x.2)
-        DBSPClosureExpression project = new DBSPTupleExpression(
-                var.deref().field(0),
-                var.deref().field(2)).closure(var);
+        // project = |v: &Tup3<i32, i32, i32>| Tup2::new(v.0, v.2)
+        DBSPClosureExpression project = b.closure(
+                inner.getResultType().to(DBSPTypeTuple.class), v ->
+                        b.tuple(b.field(v, 0), b.field(v, 2)));
 
         DBSPClosureExpression compose = project.applyAfter(compiler, inner, Maybe.NO);
         CanonicalForm cf = new CanonicalForm(compiler);
@@ -59,23 +51,19 @@ public class InliningTests {
     @Test
     public void testLambdaInlining() {
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
-        DBSPType i32 = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true);
-
         // lambda = |e: &i32| abs(e)
-        DBSPVariablePath e = i32.ref().var();
-        DBSPClosureExpression lambda = new DBSPApplyExpression("abs", i32, e.deref()).closure(e);
+        DBSPClosureExpression lambda = b.closure(b.i32n(), e ->
+                b.call(b.i32n(), "abs", e.deref()));
 
-        DBSPType tup = new DBSPTypeTuple(i32);
-        DBSPVariablePath x = tup.ref().var();
         // inner = |x: &Tup1<i32>| Tup1::new(hof(lambda, x.0))
-        DBSPClosureExpression inner = new DBSPTupleExpression(
-                new DBSPApplyExpression("hof", i32, lambda, x.deref().field(0))).closure(x);
+        DBSPClosureExpression inner = b.closure(b.tup(b.i32n()), x ->
+                b.tuple(b.call(b.i32n(), "hof", lambda, b.field(x, 0))));
 
-        DBSPVariablePath v = inner.getResultType().ref().var();
         // project = |v: &Tup1<i32>| Tup2::new(v.0, v.0): uses the inner value twice,
         // so inlining copies the lambda into both use sites
-        DBSPClosureExpression project = new DBSPTupleExpression(
-                v.deref().field(0), v.deref().field(0)).closure(v);
+        DBSPClosureExpression project = b.closure(
+                inner.getResultType().to(DBSPTypeTuple.class), v ->
+                        b.tuple(b.field(v, 0), b.field(v, 0)));
         DBSPClosureExpression compose = project.applyAfter(compiler, inner, Maybe.YES);
 
         // This would crash if the expression is malformed
@@ -85,17 +73,15 @@ public class InliningTests {
     @Test
     public void testEnsureTreeWithLambda() {
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
-        DBSPType i32 = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true);
-
         // lambda = |e: &i32| abs(e)
-        DBSPVariablePath e = i32.ref().var();
-        DBSPClosureExpression lambda = new DBSPApplyExpression("abs", i32, e.deref()).closure(e);
+        DBSPClosureExpression lambda = b.closure(b.i32n(), e ->
+                b.call(b.i32n(), "abs", e.deref()));
 
-        DBSPType tup = new DBSPTypeTuple(i32);
-        DBSPVariablePath x = tup.ref().var();
         // The same lambda-bearing subtree appears twice: the body is a DAG
-        DBSPExpression shared = new DBSPApplyExpression("hof", i32, lambda, x.deref().field(0));
-        DBSPClosureExpression function = new DBSPTupleExpression(shared, shared).closure(x);
+        DBSPClosureExpression function = b.closure(b.tup(b.i32n()), x -> {
+            DBSPExpression shared = b.call(b.i32n(), "hof", lambda, b.field(x, 0));
+            return b.tuple(shared, shared);
+        });
 
         DBSPClosureExpression tree = function.ensureTree(compiler).to(DBSPClosureExpression.class);
         // The function's own parameters are preserved: analyses key results by them

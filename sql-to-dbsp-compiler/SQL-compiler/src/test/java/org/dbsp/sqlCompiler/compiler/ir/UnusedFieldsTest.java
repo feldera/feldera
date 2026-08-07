@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUsedFields;
@@ -12,12 +13,10 @@ import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.RewriteFields;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
@@ -28,6 +27,8 @@ import org.junit.Test;
 import java.util.Objects;
 
 public class UnusedFieldsTest {
+    final ExpressionBuilder b = new ExpressionBuilder();
+
     @Test
     public void testZSetString() {
         DBSPExpression none = new DBSPTypeArray(DBSPTypeString.varchar(false), true).none();
@@ -52,23 +53,13 @@ public class UnusedFieldsTest {
     @Test
     public void testReduce() {
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
-        DBSPTypeTuple tuple = new DBSPTypeTuple(
-                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),
-                DBSPTypeBool.create(false),
-                DBSPTypeBool.create(true),
-                new DBSPTypeTuple(
-                        DBSPTypeString.varchar(true),
-                        DBSPTypeString.varchar(false)));
+        DBSPTypeTuple tuple = b.tup(
+                b.i32n(), b.bool(), b.booln(), b.tup(b.strn(), b.str()));
 
-        DBSPVariablePath var0 = tuple.ref().var();
-        DBSPExpression body0 = new DBSPTupleExpression(
-                var0.deref().field(1),
-                var0.deref().field(3).field(0));
-        DBSPClosureExpression closure0 = body0.closure(var0.asParameter());
-
-        DBSPVariablePath var1 = tuple.ref().var();
-        DBSPExpression body1 = new DBSPTupleExpression(var1.deref().field(0));
-        DBSPClosureExpression closure1 = body1.closure(var1.asParameter());
+        DBSPClosureExpression closure0 = b.closure(tuple, t ->
+                b.tuple(b.field(t, 1), b.field(t, 3).field(0)));
+        DBSPClosureExpression closure1 = b.closure(tuple, t ->
+                b.tuple(b.field(t, 0)));
 
         FindUsedFields fuf = new FindUsedFields(compiler);
         ParameterFieldUse fum = fuf.findUsedFields(closure0);
@@ -86,19 +77,13 @@ public class UnusedFieldsTest {
 
     @Test
     public void unusedFieldsTest() {
-        DBSPTypeTuple tuple = new DBSPTypeTuple(
-                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),
-                DBSPTypeBool.create(false),
-                DBSPTypeBool.create(true),
-                new DBSPTypeTuple(
-                        DBSPTypeString.varchar(true),
-                        DBSPTypeString.varchar(false)));
-        DBSPVariablePath var = tuple.ref().var();
-        DBSPExpression body = new DBSPTupleExpression(
-                var.deref().field(0),
-                var.deref().field(2),
-                var.deref().field(3).field(0).applyClone());
-        DBSPClosureExpression closure = body.closure(var.asParameter());
+        DBSPTypeTuple tuple = b.tup(
+                b.i32n(), b.bool(), b.booln(), b.tup(b.strn(), b.str()));
+        DBSPClosureExpression closure = b.closure(tuple, t ->
+                b.tuple(
+                        b.field(t, 0),
+                        b.field(t, 2),
+                        b.field(t, 3).field(0).applyClone()));
 
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
         CanonicalForm cf = new CanonicalForm(compiler);
