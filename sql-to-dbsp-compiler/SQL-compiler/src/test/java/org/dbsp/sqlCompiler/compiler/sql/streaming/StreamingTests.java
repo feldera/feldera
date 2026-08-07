@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
@@ -41,7 +42,10 @@ import org.dbsp.util.NullPrintStream;
 import org.junit.Assert;
 import org.junit.Test;
 
+import javax.annotation.Nullable;
 import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Tests that exercise streaming features. */
 public class StreamingTests extends StreamingTestBase {
@@ -870,6 +874,244 @@ public class StreamingTests extends StreamingTestBase {
         });
     }
 
+    /** Asserts the placement of the trace GC operators around a join.
+     * The circuit must contain exactly one join.
+     * @param cc          Compiled circuit.
+     * @param leftValues  retain_values operators expected on the left join input.
+     * @param rightValues retain_values operators expected on the right join input.
+     * @param rightLastN  retain_n_values operators expected on the right join input. */
+    void checkJoinGC(CompilerCircuit cc, int leftValues, int rightValues, int rightLastN) {
+        cc.visit(new CircuitVisitor(cc.compiler) {
+            @Nullable DBSPJoinBaseOperator join = null;
+            final List<OutputPort> retainValuesData = new ArrayList<>();
+            final List<OutputPort> retainNData = new ArrayList<>();
+
+            @Override
+            public void postorder(DBSPJoinBaseOperator operator) {
+                Assert.assertNull("more than one join", this.join);
+                this.join = operator;
+            }
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainValuesOperator operator) {
+                this.retainValuesData.add(operator.left());
+            }
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
+                this.retainNData.add(operator.left());
+            }
+
+            @Override
+            public void endVisit() {
+                DBSPJoinBaseOperator join = this.join;
+                Assert.assertNotNull(join);
+                Assert.assertEquals(leftValues,
+                        Linq.where(this.retainValuesData, p -> p.equals(join.left())).size());
+                Assert.assertEquals(rightValues,
+                        Linq.where(this.retainValuesData, p -> p.equals(join.right())).size());
+                Assert.assertEquals(rightLastN,
+                        Linq.where(this.retainNData, p -> p.equals(join.right())).size());
+                // No GC operators anywhere else
+                Assert.assertEquals(leftValues + rightValues, this.retainValuesData.size());
+                Assert.assertEquals(rightLastN, this.retainNData.size());
+            }
+        });
+    }
+
+    @Test
+    public void issue6829() {
+        // As-of lookup written as an inequality join plus ARG_MAX.
+        // The history row (1, 0, 7) must stay joinable forever
+        String sql = """
+                CREATE TABLE queries (
+                    entity_id BIGINT NOT NULL,
+                    query_ts BIGINT NOT NULL LATENESS 0,
+                    query_id BIGINT NOT NULL
+                ) WITH ('append_only' = 'true');
+                CREATE TABLE config_history (
+                    entity_id BIGINT NOT NULL,
+                    effective_ts BIGINT NOT NULL LATENESS 0,
+                    config_value BIGINT NOT NULL
+                ) WITH ('append_only' = 'true');
+                CREATE VIEW v AS
+                SELECT q.entity_id, q.query_ts, q.query_id,
+                       ARG_MAX(c.config_value, c.effective_ts) AS config_value
+                FROM queries q JOIN config_history c
+                  ON q.entity_id = c.entity_id
+                 AND c.effective_ts <= q.query_ts
+                GROUP BY q.entity_id, q.query_ts, q.query_id;""";
+        // GC happens when trace batches merge, and merging is per-shard, so
+        // every row uses entity 1, keeping a single worker busy.
+        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep();
+        this.checkJoinGC(ccs, 1, 0, 0);
+        this.run6829Circuit(ccs);
+        // Control: no input row is late, so the program without LATENESS
+        // must produce the same outputs; it has no GC operators.
+        CompilerCircuitStream control = this.getCCS(
+                sql.replace(" LATENESS 0", "")).compactAfterEachStep();
+        this.checkJoinGC(control, 0, 0, 0);
+        this.run6829Circuit(control);
+    }
+
+    /** No input row is ever late: each
+     * timestamp column arrives in non-decreasing order.
+     * The trace diagrams describe the inequality-join variant with
+     * LATENESS: they show the queries join trace and the bound of its
+     * integrate_trace_retain_values operator, the config_history waterline
+     * delayed by one transaction.  Rows above the ==== line are below the
+     * bound and may be dropped when trace batches merge. */
+    void run6829Circuit(CompilerCircuitStream ccs) {
+        // Before this step: bound = minimum, both tables are empty.
+        ccs.step("""
+                INSERT INTO config_history VALUES(1, 0, 7);
+                INSERT INTO queries VALUES(1, 10, 1);
+                """, """
+                 entity_id | query_ts | query_id | config_value | weight
+                ---------------------------------------------------------
+                 1         | 10       | 1        | 7            | 1""");
+        // Before this step, queries trace:
+        //   entity | query_ts | id
+        //  --------+----------+---
+        //  ==========================  bound = 0
+        //        1 |       10 |  1
+        // This row advances the effective_ts waterline to 2000.  Its
+        // effective_ts is above the final query's query_ts, so it never
+        // changes the lookup result, and it does not join query (1, 10, 1).
+        ccs.step("""
+                INSERT INTO config_history VALUES(1, 2000, 50);
+                """, """
+                 entity_id | query_ts | query_id | config_value | weight
+                ---------------------------------------------------------""");
+        // Before this step, queries trace:
+        //   entity | query_ts | id
+        //  --------+----------+---
+        //        1 |       10 |  1    droppable: future history rows all
+        //  ==========================  bound = 2000    exceed its query_ts
+        ccs.step("""
+                INSERT INTO config_history VALUES(1, 2001, 51);
+                """, """
+                 entity_id | query_ts | query_id | config_value | weight
+                ---------------------------------------------------------""");
+        // The merge after the previous step runs with bound 2000; it may
+        // drop query (1, 10, 1), whose output stands.  It must retain
+        // history row (1, 0, 7): the config_history trace has no GC bound.
+        ccs.step("""
+                INSERT INTO queries VALUES(1, 1000, 999);
+                """, """
+                 entity_id | query_ts | query_id | config_value | weight
+                ---------------------------------------------------------
+                 1         | 1000     | 999      | 7            | 1""");
+    }
+
+    @Test
+    public void issue6829Windowed() {
+        // The windowed-join variant of issue6829, with the streams' waterlines
+        // skewed: orders run far ahead of payments.
+        String sql = """
+                CREATE TABLE orders (
+                    order_id BIGINT NOT NULL,
+                    order_ts BIGINT NOT NULL LATENESS 0
+                ) WITH ('append_only' = 'true');
+                CREATE TABLE payments (
+                    order_id BIGINT NOT NULL,
+                    pay_ts BIGINT NOT NULL LATENESS 0
+                ) WITH ('append_only' = 'true');
+                CREATE VIEW v AS
+                SELECT o.order_id, o.order_ts, p.pay_ts
+                FROM orders o JOIN payments p
+                  ON o.order_id = p.order_id
+                 AND p.pay_ts >= o.order_ts
+                 AND p.pay_ts <= o.order_ts + 100;""";
+        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep();
+        this.checkJoinGC(ccs, 1, 1, 0);
+        this.runCircuit6829Windowed(ccs);
+        // Control: no input row is late, so the program without LATENESS
+        // must produce the same outputs; it has no GC operators.
+        CompilerCircuitStream control = this.getCCS(
+                sql.replace(" LATENESS 0", "")).compactAfterEachStep();
+        this.checkJoinGC(control, 0, 0, 0);
+        this.runCircuit6829Windowed(control);
+    }
+
+    /** No input row is ever late:
+     * both timestamp columns arrive in non-decreasing order.  The outputs
+     * must therefore be identical with and without the LATENESS
+     * annotations.
+     * The trace diagrams describe the LATENESS variant: they show the
+     * orders join trace and the bound of its integrate_trace_retain_values
+     * operator, the payments waterline minus the window width 100, delayed
+     * by one transaction.  Payments never advance here, so the bound stays
+     * at minimum and every order must survive every merge. */
+    void runCircuit6829Windowed(CompilerCircuitStream ccs) {
+        // Before this step: bound = minimum, both tables are empty.
+        ccs.step("""
+                INSERT INTO orders VALUES(1, 0);
+                """, """
+                 order_id | order_ts | pay_ts | weight
+                ---------------------------------------""");
+        // Before this step, orders trace:
+        //   order | order_ts
+        //  -------+---------
+        //  ===================  bound = minimum
+        //       1 |        0
+        // This row advances the order_ts waterline to 500.
+        ccs.step("""
+                INSERT INTO orders VALUES(1, 500);
+                """, """
+                 order_id | order_ts | pay_ts | weight
+                ---------------------------------------""");
+        // Before this step, orders trace:
+        //   order | order_ts
+        //  -------+---------
+        //  ===================  bound = minimum
+        //       1 |        0    payment window [0, 100] still open
+        //       1 |      500
+        ccs.step("""
+                INSERT INTO orders VALUES(1, 501);
+                """, """
+                 order_id | order_ts | pay_ts | weight
+                ---------------------------------------""");
+        // The first payment: on time, because the payments waterline has
+        // never advanced.  It falls only inside the window of order (1, 0).
+        ccs.step("""
+                INSERT INTO payments VALUES(1, 50);
+                """, """
+                 order_id | order_ts | pay_ts | weight
+                ---------------------------------------
+                 1        | 0        | 50     | 1""");
+    }
+
+    @Test
+    public void issue6829Asof() {
+        String sql = """
+                CREATE TABLE queries (
+                    entity_id BIGINT NOT NULL,
+                    query_ts BIGINT NOT NULL LATENESS 0,
+                    query_id BIGINT NOT NULL
+                ) WITH ('append_only' = 'true');
+                CREATE TABLE config_history (
+                    entity_id BIGINT NOT NULL,
+                    effective_ts BIGINT NOT NULL LATENESS 0,
+                    config_value BIGINT NOT NULL
+                ) WITH ('append_only' = 'true');
+                CREATE VIEW v AS
+                SELECT q.entity_id, q.query_ts, q.query_id, c.config_value
+                FROM queries q
+                LEFT ASOF JOIN config_history c
+                MATCH_CONDITION(q.query_ts >= c.effective_ts)
+                ON q.entity_id = c.entity_id;""";
+        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep();
+        this.checkJoinGC(ccs, 1, 0, 1);
+        this.run6829Circuit(ccs);
+        // Control: no input row is late, so the program without LATENESS
+        // must produce the same outputs; it has no GC operators.
+        CompilerCircuitStream control = this.getCCS(
+                sql.replace(" LATENESS 0", "")).compactAfterEachStep();
+        this.checkJoinGC(control, 0, 0, 0);
+        this.run6829Circuit(control);
+    }
+
     @Test
     public void gcUpsertBoundary() {
         // The LATENESS column is not part of the primary key, so the input
@@ -1208,7 +1450,7 @@ public class StreamingTests extends StreamingTestBase {
     @Test
     public void gcKeyLateness() {
         // The LATENESS column is the primary key, so the compiler
-        // garbage-collects the input trace by key.  
+        // garbage-collects the input trace by key.
         String sql = """
                 CREATE TABLE t (
                     ts BIGINT NOT NULL PRIMARY KEY LATENESS 100,
