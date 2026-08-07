@@ -35,12 +35,14 @@ mod cli;
 mod debug;
 mod shell;
 mod tags;
+mod util;
 
 pub(crate) const UPGRADE_NOTICE: &str = "Try upgrading to the latest CLI version to resolve this issue. Also make sure the pipeline is recompiled with the latest version of feldera. Report it on github.com/feldera/feldera if the issue persists.";
 
 use crate::adhoc::handle_adhoc_query;
 use crate::cli::*;
 use crate::shell::shell;
+use crate::util::terminal_safe;
 
 /// Creates a unique filename by appending a number to the base name if it already exists.
 fn unique_file(base: &str, extension: &str) -> Result<(PathBuf, File), std::io::Error> {
@@ -250,7 +252,7 @@ fn handle_errors_fatal(
     Box::new(move |err: Error<ErrorResponse>| -> Infallible {
         match err {
             Error::ErrorResponse(e) => {
-                eprintln!("{}", e.message);
+                eprintln!("{}", terminal_safe(&e.message));
                 debug!("Details: {:#?}", e.details);
             }
             Error::InvalidRequest(s) => {
@@ -317,7 +319,7 @@ fn handle_errors_fatal(
                 });
                 match server_msg {
                     Some(m) => {
-                        eprintln!("{msg}: {m}");
+                        eprintln!("{msg}: {}", terminal_safe(&m));
                         if status == StatusCode::UNAUTHORIZED && is_http {
                             eprintln!("Did you mean to use https?");
                         }
@@ -389,7 +391,11 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
                 .unwrap();
             match format {
                 OutputFormat::Text => {
-                    println!("API key '{}' created: {}", response.name, response.api_key);
+                    println!(
+                        "API key '{}' created: {}",
+                        terminal_safe(&response.name),
+                        response.api_key
+                    );
                 }
                 OutputFormat::Json => {
                     println!(
@@ -437,7 +443,7 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
                     rows.push(["name".to_string(), "role".to_string(), "id".to_string()]);
                     for key in response.iter() {
                         rows.push([
-                            key.name.to_string(),
+                            terminal_safe(&key.name),
                             key.role.to_string(),
                             key.id.0.to_string(),
                         ]);
@@ -556,12 +562,12 @@ async fn oidc_trust_commands(format: OutputFormat, action: OidcTrustActions, cli
                     ]];
                     for t in response.iter() {
                         rows.push([
-                            t.name.clone(),
+                            terminal_safe(&t.name),
                             t.role.to_string(),
-                            t.issuer.clone(),
-                            t.subject.clone(),
-                            t.audience.clone().unwrap_or_default(),
-                            t.description.clone().unwrap_or_default(),
+                            terminal_safe(&t.issuer),
+                            terminal_safe(&t.subject),
+                            terminal_safe(&t.audience.clone().unwrap_or_default()),
+                            terminal_safe(&t.description.clone().unwrap_or_default()),
                         ]);
                     }
                     println!(
@@ -613,9 +619,9 @@ async fn member_commands(format: OutputFormat, action: MemberActions, client: Cl
                     for m in response.iter() {
                         rows.push([
                             m.user_id.0.to_string(),
-                            m.display_name.clone().unwrap_or_default(),
-                            m.subject.clone(),
-                            m.email.clone().unwrap_or_default(),
+                            terminal_safe(&m.display_name.clone().unwrap_or_default()),
+                            terminal_safe(&m.subject),
+                            terminal_safe(&m.email.clone().unwrap_or_default()),
                             // Absent from an older manager's answer, which is
                             // the same as not verified.
                             if m.email_verified.unwrap_or(false) {
@@ -729,9 +735,9 @@ async fn tenant_commands(format: OutputFormat, action: TenantActions, client: Cl
                     ]];
                     for tenant in response.iter() {
                         rows.push([
-                            tenant.name.clone(),
+                            terminal_safe(&tenant.name),
                             tenant.id.0.to_string(),
-                            tenant.initial_provider.clone(),
+                            terminal_safe(&tenant.initial_provider),
                         ]);
                     }
                     println!(
@@ -815,7 +821,11 @@ async fn tenant_commands(format: OutputFormat, action: TenantActions, client: Cl
             match format {
                 OutputFormat::Text => {
                     if created {
-                        println!("Created tenant '{}' ({}).", response.name, response.id.0);
+                        println!(
+                            "Created tenant '{}' ({}).",
+                            terminal_safe(&response.name),
+                            response.id.0
+                        );
                     } else {
                         println!(
                             "Tenant '{}' already exists ({}).",
@@ -898,7 +908,7 @@ async fn pipelines(format: OutputFormat, client: Client) {
     rows.push(["name".to_string(), "status".to_string()]);
     for pipeline in response.iter() {
         rows.push([
-            pipeline.name.to_string(),
+            terminal_safe(&pipeline.name),
             pipeline.deployment_status.to_string(),
         ]);
     }
@@ -1146,7 +1156,7 @@ async fn wait_for_status_one_of(
                         .unwrap_or_default()
                 );
             } else {
-                eprintln!("{}", deployment_error.message);
+                eprintln!("{}", terminal_safe(&deployment_error.message));
             }
             std::process::exit(1);
         }
