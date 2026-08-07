@@ -73,6 +73,7 @@ public class ResolveReferences extends InnerVisitor {
         expression.initializer.accept(this);
         this.substitutionContext.newContext();
         this.substitutionContext.substitute(expression.variable.variable, expression);
+        this.reference.declare(expression.variable, expression);
         expression.consumer.accept(this);
         this.substitutionContext.popContext();
         return VisitDecision.STOP;

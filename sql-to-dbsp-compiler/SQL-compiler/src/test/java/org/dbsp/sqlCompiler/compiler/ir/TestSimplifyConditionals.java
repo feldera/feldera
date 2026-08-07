@@ -1,40 +1,27 @@
 package org.dbsp.sqlCompiler.compiler.ir;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
+import org.dbsp.sqlCompiler.compiler.sql.tools.ExpressionBuilder;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyConditionals;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Assert;
 import org.junit.Test;
 
 /** Unit tests for {@link SimplifyConditionals} */
 public class TestSimplifyConditionals extends BaseSQLTests {
+    final ExpressionBuilder b = new ExpressionBuilder();
+
     @Test
     public void testVariable() {
         DBSPCompiler compiler = this.testCompiler();
-        DBSPType b = DBSPTypeBool.INSTANCE;
-        DBSPVariablePath x = b.var();
-        // inner = |x: boolean| if (x) { x } else { !x }
-        DBSPClosureExpression clo = new DBSPIfExpression(
-                CalciteObject.EMPTY,
-                x.deepCopy(),
-                x.deepCopy(),
-                x.deepCopy().not()).closure(x);
+        // clo = |x: boolean| if (x) { x } else { !x }
+        var clo = b.lambda(b.bool(), x ->
+                b.ifThenElse(x.deepCopy(), x.deepCopy(), x.deepCopy().not()));
 
         SimplifyConditionals sc = new SimplifyConditionals(compiler);
         var result = sc.apply(clo);
@@ -60,15 +47,6 @@ public class TestSimplifyConditionals extends BaseSQLTests {
     @Test
     public void testComplexComparison() {
         DBSPCompiler compiler = this.testCompiler();
-        DBSPType i32 = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, false);
-        DBSPType b = DBSPTypeBool.INSTANCE;
-
-        DBSPVariablePath x = i32.var();
-        DBSPIntLiteral two = new DBSPI32Literal(CalciteObject.EMPTY, i32, 2);
-        DBSPIntLiteral one = new DBSPI32Literal(CalciteObject.EMPTY, i32, 1);
-        DBSPIntLiteral zero = new DBSPI32Literal(CalciteObject.EMPTY, i32, 0);
-        DBSPExpression xPlusOne = new DBSPBinaryExpression(CalciteObject.EMPTY, i32, DBSPOpcode.ADD, x, one);
-        DBSPExpression lZ = new DBSPBinaryExpression(CalciteObject.EMPTY, b, DBSPOpcode.LT, xPlusOne, zero);
         // |x: i32| {
         //    if ((x + 1) < 0) {
         //      if ((x + 1) < 0) { 0 } else { 1 }
@@ -76,16 +54,13 @@ public class TestSimplifyConditionals extends BaseSQLTests {
         //      2
         //    }
         // }
-        var innerIf = new DBSPIfExpression(
-                CalciteObject.EMPTY,
-                lZ.deepCopy(),
-                zero.deepCopy(),
-                one.deepCopy());
-        var clo = new DBSPIfExpression(
-                CalciteObject.EMPTY,
-                lZ.deepCopy(),
-                innerIf,
-                two).closure(x);
+        var clo = b.lambda(b.i32(), x -> {
+            DBSPExpression lZ = b.binary(DBSPOpcode.LT, b.add(x, b.lit(1)), b.lit(0));
+            return b.ifThenElse(
+                    lZ.deepCopy(),
+                    b.ifThenElse(lZ.deepCopy(), b.lit(0), b.lit(1)),
+                    b.lit(2));
+        });
         CanonicalForm cf = new CanonicalForm(compiler);
 
         SimplifyConditionals sc = new SimplifyConditionals(compiler);
@@ -102,7 +77,7 @@ public class TestSimplifyConditionals extends BaseSQLTests {
                 } else {
                     2
                 }))""", result.toString());
-        
+
         Simplify simplify = new Simplify(compiler);
         result = simplify.apply(result);
         result = cf.apply(result);
@@ -118,16 +93,8 @@ public class TestSimplifyConditionals extends BaseSQLTests {
     @Test
     public void testAliasedVariable() {
         DBSPCompiler compiler = this.testCompiler();
-        DBSPType i32 = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, false);
-        DBSPType b = DBSPTypeBool.INSTANCE;
-
-        // The compiler never reuses variable names, but this is supposed to work too.
-        DBSPVariablePath x = i32.var();
-        DBSPIntLiteral two = new DBSPI32Literal(CalciteObject.EMPTY, i32, 2);
-        DBSPIntLiteral one = new DBSPI32Literal(CalciteObject.EMPTY, i32, 1);
-        DBSPIntLiteral zero = new DBSPI32Literal(CalciteObject.EMPTY, i32, 0);
-        DBSPExpression xPlusOne = new DBSPBinaryExpression(CalciteObject.EMPTY, i32, DBSPOpcode.ADD, x, one);
-        DBSPExpression lZ = new DBSPBinaryExpression(CalciteObject.EMPTY, b, DBSPOpcode.LT, xPlusOne, zero);
+        // The compiler never reuses variable names, but this is supposed to work
+        // too; the let deliberately rebinds the lambda's own parameter node.
         // inner = |x: i32| {
         //    if ((x + 1) < 0) {
         //      let x = x + 1;
@@ -135,17 +102,13 @@ public class TestSimplifyConditionals extends BaseSQLTests {
         //    } else {
         //      2
         //    }
-        var innerIf = new DBSPIfExpression(
-                CalciteObject.EMPTY,
-                lZ.deepCopy(),
-                zero.deepCopy(),
-                one.deepCopy());
-        var let = new DBSPLetExpression(x, xPlusOne.deepCopy(), innerIf);
-        var clo = new DBSPIfExpression(
-                CalciteObject.EMPTY,
-                lZ.deepCopy(),
-                let,
-                two).closure(x);
+        var clo = b.lambda(b.i32(), x -> {
+            DBSPExpression xPlusOne = b.add(x, b.lit(1));
+            DBSPExpression lZ = b.binary(DBSPOpcode.LT, xPlusOne, b.lit(0));
+            var innerIf = b.ifThenElse(lZ.deepCopy(), b.lit(0), b.lit(1));
+            var let = new DBSPLetExpression(x, xPlusOne.deepCopy(), innerIf);
+            return b.ifThenElse(lZ.deepCopy(), let, b.lit(2));
+        });
         CanonicalForm cf = new CanonicalForm(compiler);
         var initial = cf.apply(clo);
         Assert.assertEquals("""
