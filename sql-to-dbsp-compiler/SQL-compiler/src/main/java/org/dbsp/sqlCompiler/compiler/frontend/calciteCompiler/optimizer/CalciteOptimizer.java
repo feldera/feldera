@@ -438,6 +438,7 @@ public class CalciteOptimizer implements IWritesLogs {
         this.addStep(merge);
         this.addStep(new SimpleOptimizerStep("Remove dead code", 0,
                 CoreRules.AGGREGATE_REMOVE,
+                new AntiJoinDistinctRemoveRule(),
                 CoreRules.UNION_REMOVE,
                 CoreRules.PROJECT_REMOVE,
                 CoreRules.PROJECT_JOIN_JOIN_REMOVE,
