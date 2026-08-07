@@ -52,12 +52,17 @@ serde_yaml = { workspace = true }
 rmp-serde = { workspace = true }
 hex = { workspace = true }
 indoc = { workspace = true }
-openssl = { workspace = true }
 url = { workspace = true }
 urlencoding = { workspace = true }
 regex = { workspace = true }
 tar = { workspace = true }
 flate2 = { workspace = true }
+aws-lc-rs = { workspace = true }
+rcgen = { workspace = true }
+time = { workspace = true }
+tokio-postgres-rustls = { workspace = true }
+rustls-native-certs = { workspace = true }
+rustls-pemfile = { workspace = true }
 base64 = { workspace = true }
 zip = { workspace = true }
 semver = { workspace = true }
@@ -71,7 +76,6 @@ tokio-postgres = { workspace = true, features = ["with-serde_json-1", "with-uuid
 deadpool-postgres = { workspace = true }
 postgresql_embedded = { workspace = true, optional = true }
 refinery = { workspace = true, features = ["tokio-postgres"] }
-postgres-openssl = { workspace = true }
 
 # HTTP server and client
 actix-web = { workspace = true, features = ["rustls-0_23"] }
@@ -132,7 +136,7 @@ tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_mal
 default = ["postgresql_embedded"]
 feldera-enterprise = []
 runtime-version = []
-fips = ["rustls/fips"]
+fips = ["rustls/fips", "aws-lc-rs/fips", "rcgen/fips"]
 
 [build-dependencies]
 change-detection = { workspace = true }
@@ -140,6 +144,7 @@ static-files = { workspace = true }
 vergen-gitcl = { workspace = true, features = ["build", "cargo", "rustc", "si"] }
 
 [dev-dependencies]
+rsa = { workspace = true }
 proptest = { workspace = true }
 proptest-derive = { workspace = true }
 pg-client-config = { workspace = true }
