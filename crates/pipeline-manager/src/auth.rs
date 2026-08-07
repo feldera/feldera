@@ -83,7 +83,7 @@ use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::user::{MembershipOrigin, UserMembership};
 use crate::oidc::fetch::{
-    OidcDestination, fetch_issuer_jwks, fetch_jwks_uri_from_discovery, oidc_http_client,
+    OidcClients, OidcDestination, fetch_issuer_jwks, fetch_jwks_uri_from_discovery,
 };
 use crate::oidc::userinfo::{
     PROFILE_REFRESH_TTL_SECONDS, deserialize_bool_or_string, fetch_user_profile,
@@ -707,17 +707,11 @@ async fn refresh_user_profile(
         &state.user_profiles,
         issuer,
         destination,
-        &state.oidc_root_certs,
+        &state.oidc_clients,
     )
     .await?;
-    let profile = fetch_user_profile(
-        &endpoint,
-        subject,
-        token,
-        destination,
-        &state.oidc_root_certs,
-    )
-    .await?;
+    let profile =
+        fetch_user_profile(&endpoint, subject, token, destination, &state.oidc_clients).await?;
     state
         .db
         .lock()
@@ -1216,7 +1210,7 @@ async fn resolve_issuer_jwk(
         cache.mark_refreshed(issuer);
     }
 
-    let keys = fetch_issuer_jwks(issuer, destination, &state.oidc_root_certs).await?;
+    let keys = fetch_issuer_jwks(issuer, destination, &state.oidc_clients).await?;
     let mut cache = state.issuer_jwk_cache.lock().await;
     cache.insert(issuer, keys);
     cache
@@ -1278,9 +1272,12 @@ pub(crate) async fn generic_oidc_auth_config(
 
     // Use OIDC discovery to fetch jwks_uri. The operator set this issuer, so it
     // may name a provider on the deployment's own network.
-    let jwk_uri =
-        fetch_jwks_uri_from_discovery(&iss, OidcDestination::OperatorConfigured, extra_roots)
-            .await?;
+    let jwk_uri = fetch_jwks_uri_from_discovery(
+        &iss,
+        OidcDestination::OperatorConfigured,
+        &OidcClients::new(extra_roots)?,
+    )
+    .await?;
 
     validation.set_issuer(&[&iss]);
     // Use configurable audience claim from API server configuration
@@ -1473,7 +1470,7 @@ async fn decode_oidc_token(
                     let state = req.app_data::<Data<ServerState>>().unwrap();
                     let cache = &mut state.jwk_cache.lock().await;
                     let jwk = cache
-                        .get(&kid, &configuration.provider, &state.oidc_root_certs)
+                        .get(&kid, &configuration.provider, &state.oidc_clients)
                         .await?;
 
                     let token_data = decode::<OidcClaim>(token, &jwk, &configuration.validation);
@@ -1626,7 +1623,7 @@ impl JwkCache {
         &mut self,
         key: &String,
         provider: &AuthProvider,
-        extra_roots: &[Certificate],
+        clients: &OidcClients,
     ) -> Result<DecodingKey, AuthError> {
         let cache = &mut self.cache;
         let val = &cache.cache_get(key);
@@ -1634,7 +1631,7 @@ impl JwkCache {
             Some(dk) => Ok((*dk).clone()),
             None => {
                 // TODO: Introduce a minimum delay between refreshes
-                let fetched = fetch_jwk_keys(provider, extra_roots).await;
+                let fetched = fetch_jwk_keys(provider, clients).await;
                 match fetched {
                     Ok(map) => {
                         for (key_id, decoding_key) in map {
@@ -1655,14 +1652,12 @@ impl JwkCache {
 
 async fn fetch_jwk_keys(
     provider: &AuthProvider,
-    extra_roots: &[Certificate],
+    clients: &OidcClients,
 ) -> Result<HashMap<String, DecodingKey>, AuthError> {
     match &provider {
-        AuthProvider::AwsCognito(provider) => {
-            fetch_jwk_oidc_keys(&provider.jwk_uri, extra_roots).await
-        }
+        AuthProvider::AwsCognito(provider) => fetch_jwk_oidc_keys(&provider.jwk_uri, clients).await,
         AuthProvider::GenericOidc(provider) => {
-            fetch_jwk_oidc_keys(&provider.jwk_uri, extra_roots).await
+            fetch_jwk_oidc_keys(&provider.jwk_uri, clients).await
         }
     }
 }
@@ -1678,10 +1673,9 @@ async fn fetch_jwk_keys(
 // outside the public web PKI, including this deployment's own CA.
 async fn fetch_jwk_oidc_keys(
     url: &str,
-    extra_roots: &[Certificate],
+    clients: &OidcClients,
 ) -> Result<HashMap<String, DecodingKey>, AuthError> {
-    let client = oidc_http_client(OidcDestination::OperatorConfigured, extra_roots)
-        .map_err(|e| AuthError::JwkShape(format!("OIDC client build: {e}")))?;
+    let client = clients.for_destination(OidcDestination::OperatorConfigured);
 
     let response = client.get(url).send().await.map_err(|e| {
         debug!("JWK fetch request failed: {:?}", e);
@@ -1800,6 +1794,7 @@ mod test {
 
     use super::{AuthError, AuthenticatedPrincipal};
     use crate::db::types::role::{MintableKeyRole, Role};
+    use crate::oidc::fetch::OidcClients;
     use crate::{
         api::main::ServerState,
         auth::{self, AuthConfiguration, AuthProvider, OidcClaim},
@@ -2025,7 +2020,7 @@ mod test {
     async fn invalid_url() {
         ensure_default_crypto_provider();
         let url = "http://localhost/doesnotexist".to_owned();
-        let res = fetch_jwk_oidc_keys(&url, &[]).await;
+        let res = fetch_jwk_oidc_keys(&url, &OidcClients::new(&[]).unwrap()).await;
         assert!(matches!(res.err().unwrap(), AuthError::JwkFetch(_)));
     }
 
