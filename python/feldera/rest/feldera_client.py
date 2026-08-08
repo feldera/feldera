@@ -260,10 +260,13 @@ class FelderaClient:
         start_time = time.monotonic()
         wait_for_state = LongOperationWarning(
             logger,
-            lambda elapsed: f"still waiting for {pipeline_name} to transition to "
-            f"'{state}', waited {elapsed:.1f} seconds",
-            lambda elapsed: f"{pipeline_name} transitioned to '{state}' after "
-            f"{elapsed:.1f} seconds",
+            lambda elapsed: (
+                f"still waiting for {pipeline_name} to transition to "
+                f"'{state}', waited {elapsed:.1f} seconds"
+            ),
+            lambda elapsed: (
+                f"{pipeline_name} transitioned to '{state}' after {elapsed:.1f} seconds"
+            ),
         )
 
         while True:
@@ -308,8 +311,10 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         states = [state.lower() for state in states]
         wait_for_states = LongOperationWarning(
             logger,
-            lambda elapsed: f"still waiting for {pipeline_name} to transition to "
-            f"one of {states}, waited {elapsed:.1f} seconds",
+            lambda elapsed: (
+                f"still waiting for {pipeline_name} to transition to "
+                f"one of {states}, waited {elapsed:.1f} seconds"
+            ),
             lambda elapsed: f"{pipeline_name} transitioned after {elapsed:.1f} seconds",
         )
 
@@ -794,7 +799,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         start = time.monotonic()
         wait_for_stop = LongOperationWarning(
             logger,
-            lambda elapsed: f"still stopping {pipeline_name}, waited {elapsed:.1f} seconds",
+            lambda elapsed: (
+                f"still stopping {pipeline_name}, waited {elapsed:.1f} seconds"
+            ),
             lambda elapsed: f"{pipeline_name} stopped after {elapsed:.1f} seconds",
         )
 
@@ -855,8 +862,12 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         start = time.monotonic()
         wait_for_clear = LongOperationWarning(
             logger,
-            lambda elapsed: f"still clearing {pipeline_name}, waited {elapsed:.1f} seconds",
-            lambda elapsed: f"{pipeline_name} storage cleared after {elapsed:.1f} seconds",
+            lambda elapsed: (
+                f"still clearing {pipeline_name}, waited {elapsed:.1f} seconds"
+            ),
+            lambda elapsed: (
+                f"{pipeline_name} storage cleared after {elapsed:.1f} seconds"
+            ),
         )
         while True:
             if timeout_s is not None and time.monotonic() - start > timeout_s:
@@ -1069,10 +1080,14 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         wait_for_commit = LongOperationWarning(
             logger,
-            lambda elapsed: f"transaction {transaction_id} on {pipeline_name} "
-            f"hasn't committed, waited {elapsed:.1f} seconds",
-            lambda elapsed: f"transaction {transaction_id} on {pipeline_name} "
-            f"committed after {elapsed:.1f} seconds",
+            lambda elapsed: (
+                f"transaction {transaction_id} on {pipeline_name} "
+                f"hasn't committed, waited {elapsed:.1f} seconds"
+            ),
+            lambda elapsed: (
+                f"transaction {transaction_id} on {pipeline_name} "
+                f"committed after {elapsed:.1f} seconds"
+            ),
         )
         while True:
             if timeout_s is not None:
@@ -1300,10 +1315,13 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         retries = 0
         wait_for_token_processed = LongOperationWarning(
             logger,
-            lambda elapsed: f"still waiting for inputs represented by {token} "
-            f"to be processed, waited {elapsed:.1f} seconds",
-            lambda elapsed: f"inputs represented by {token} processed after "
-            f"{elapsed:.1f} seconds",
+            lambda elapsed: (
+                f"still waiting for inputs represented by {token} "
+                f"to be processed, waited {elapsed:.1f} seconds"
+            ),
+            lambda elapsed: (
+                f"inputs represented by {token} processed after {elapsed:.1f} seconds"
+            ),
         )
 
         while True:
