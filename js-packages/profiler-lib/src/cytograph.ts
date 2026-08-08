@@ -12,6 +12,7 @@ import { ViewNavigator } from './navigator.js';
 import { ZSet } from "./zset.js";
 import { MetadataSelection } from './metadataSelection.js';
 import { type NodeAttributes, type TooltipCell, type ProfilerCallbacks } from './profiler.js';
+import { exportGraphSvg, type SvgExportOptions } from './svgExport.js';
 
 /** A measurement together with a normalized [0, 100] percentile for color scaling. The original
  * `PropertyValue` is preserved so consumers can format on demand (via `.toString()`) or compute
@@ -1106,6 +1107,14 @@ export class CytographRendering {
         let reachable = this.cy.edges();
         reachable.removeClass('highlight-forward');
         reachable.removeClass('highlight-backward');
+    }
+
+    /**
+     * Serialize the current graph to a standalone SVG document string.
+     * Exports the whole graph with a solid background.
+     */
+    async exportSvg(options?: SvgExportOptions): Promise<string> {
+        return exportGraphSvg(this.cy, options);
     }
 
     /**

@@ -9,6 +9,7 @@ export {
     type NodeAttributes,
     type TooltipRow,
     type TooltipCell,
+    type SvgExportOptions,
     NodeAndMetric,
     shadeOfRed
 } from './profiler.js';

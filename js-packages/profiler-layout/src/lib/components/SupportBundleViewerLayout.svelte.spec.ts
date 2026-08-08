@@ -100,6 +100,32 @@ const expectDividerDownGrowsTopPane = async (container: HTMLElement) => {
   await expect.poll(topPaneSize).toBeGreaterThan(sizeBefore)
 }
 
+describe('SupportBundleViewerLayout File menu', () => {
+  const findButtonByText = (container: HTMLElement, text: string) =>
+    Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.trim() === text)
+
+  it('shows the File menu only once a profile is present', async () => {
+    const { container, rerender } = render(SupportBundleViewerLayout, baseProps())
+    // Exporting needs a rendered diagram, so the menu is gated on the profile.
+    expect(findButtonByText(container, 'File')).toBeUndefined()
+    await rerender({ profileData: someProfile })
+    expect(findButtonByText(container, 'File')).toBeDefined()
+  })
+
+  it('reveals "Export as .svg" when the File menu is opened', async () => {
+    const { container } = render(SupportBundleViewerLayout, {
+      ...baseProps(),
+      profileData: someProfile
+    })
+    const fileButton = findButtonByText(container, 'File')
+    expect(fileButton).toBeDefined()
+    expect(findButtonByText(container, 'Export as .svg')).toBeUndefined()
+
+    fileButton?.click()
+    await expect.poll(() => findButtonByText(container, 'Export as .svg') !== undefined).toBe(true)
+  })
+})
+
 describe('SupportBundleViewerLayout vertical pane order', () => {
   it('grows the graph pane when the divider moves down after a profile loads late', async () => {
     const { container, rerender } = render(SupportBundleViewerLayout, baseProps())

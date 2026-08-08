@@ -136,6 +136,7 @@
       "version": "0.0.1",
       "devDependencies": {
         "@types/cytoscape": "^3.21.9",
+        "happy-dom": "^20.9.0",
         "typescript": "^5.9.2",
         "vitest": "^4.1.8",
       },
@@ -143,6 +144,7 @@
         "cytoscape": "^3.33.1",
         "cytoscape-dblclick": "^0.3.1",
         "cytoscape-elk": "^2.3.0",
+        "cytoscape-svg": "^0.4.0",
         "elkjs": "^0.11.0",
       },
     },
@@ -1161,6 +1163,8 @@
     "cytoscape-dblclick": ["cytoscape-dblclick@0.3.1", "", { "peerDependencies": { "cytoscape": "^3.4.2" } }, "sha512-xeL6lP2Td0RIvVSTxsBDY94KM0JfDsi9X6BPr6Y7PQGi5CP2RXx+1fNEtageXpk+gDkKFylW0pjoGbk2uc1J7Q=="],
 
     "cytoscape-elk": ["cytoscape-elk@2.3.0", "", { "dependencies": { "elkjs": "^0.9.3" }, "peerDependencies": { "cytoscape": "^3.2.0" } }, "sha512-1h2ZmPOy5HD2+mrfF3P2ICxfnDyPCWg/xLVs7fIjTOzdQu51ydrMtm6Sb7KnhFwLBzhGIVYI2Gbns0njggBarQ=="],
+
+    "cytoscape-svg": ["cytoscape-svg@0.4.0", "", { "peerDependencies": { "cytoscape": "^3.2.0" } }, "sha512-omqIzfPd1Vy9mk6lHTiR2wTbjxELxb9GXSQ2pE6W+GwAe/6/yvOUQ2h5ApFf2QhCBnpMwLkCTq5DZXxBCgUpDw=="],
 
     "d3-format": ["d3-format@3.1.2", "", {}, "sha512-AJDdYOdnyRDV5b6ArilzCPPwc1ejkHcoyFarqlPqT7zRYjhavcT3uSrqcMvsgh2CgoPbK3RCwyHaVyxYcP2Arg=="],
 

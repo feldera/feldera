@@ -26,6 +26,7 @@
   import { type AnalysisView, isNodeView, metricsModeOf } from '../functions/metricsMode'
   import { severityLabel, uniqueCategories, uniqueSeverities } from '../functions/triage'
   import type { MetricsMode } from './MetricsView.svelte'
+  import DiagramFileMenu from './DiagramFileMenu.svelte'
   import ProfilerDiagram from './ProfilerDiagram.svelte'
   import type { TooltipData } from './ProfilerTooltip.svelte'
   import ProfileTimestampSelector from './ProfileTimestampSelector.svelte'
@@ -50,6 +51,8 @@
      *  tab. Absent when the bundle carried no config. */
     runtimeConfig?: unknown
     triageResults: TriageResults
+    /** Pipeline name, used in the exported diagram's file name. */
+    pipelineName?: string
     profileFiles: [Date, ZipItem[]][]
     selectedTimestamp: Date | null
     onSelectTimestamp: (timestamp: Date) => void
@@ -72,6 +75,7 @@
     globalMetrics,
     runtimeConfig,
     triageResults,
+    pipelineName,
     profileFiles,
     selectedTimestamp,
     onSelectTimestamp,
@@ -329,8 +333,14 @@
     <!-- Header -->
     <div class="flex flex-shrink-0 flex-wrap items-center gap-2 p-4">
       {@render loadProfileControl?.()}
-      <ProfileTimestampSelector {profileFiles} {selectedTimestamp} {onSelectTimestamp} />
       {#if hasProfile}
+        <DiagramFileMenu
+          exportSvg={() => profilerDiagram?.exportSvg() ?? Promise.resolve(null)}
+          onError={(message) => (error = message)}
+          {pipelineName}
+          snapshotDate={selectedTimestamp}
+        />
+        <ProfileTimestampSelector {profileFiles} {selectedTimestamp} {onSelectTimestamp} />
         <div class="ml-auto">
           <input
             bind:value={nodeSearchQuery}
