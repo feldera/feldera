@@ -197,6 +197,7 @@ class HttpRequests:
         params: Optional[Mapping[str, Any]] = None,
         stream: bool = False,
         serialize: bool = True,
+        idempotent: Optional[bool] = None,
     ) -> Any:
         """
         :param http_method: The HTTP method to use. Takes the equivalent `requests.*` module. (Example: `requests.get`)
@@ -206,6 +207,10 @@ class HttpRequests:
         :param params: The query parameters part of this request.
         :param stream: True if the response is expected to be a HTTP stream.
         :param serialize: True if the body needs to be serialized to JSON.
+        :param idempotent: Overrides the by-method idempotency assumption
+            (only GET is assumed idempotent). Callers whose endpoint is
+            idempotent by API contract, such as a desired-state setter,
+            pass True so a dropped connection retries.
 
         Send an HTTP request, retrying transient failures per the client's
         `RetryConfig`.
@@ -213,10 +218,15 @@ class HttpRequests:
         Retry policy:
         - Status codes in `retry_config.retryable_status_codes` (default
           408, 429, 502, 503, 504) and connection/read timeouts retry.
-        - For GET, a `ConnectionError` (e.g. connection reset mid-request)
-          also retries, since a lost response can't have caused a
-          server-side side effect. Not retried for POST/PUT/PATCH/DELETE,
-          where the original request may already have been applied.
+        - For GET, and for any request marked `idempotent=True`, a
+          `ConnectionError` (e.g. connection reset mid-request) also
+          retries: a lost response can't change the outcome of an
+          idempotent request. Other POST/PUT/PATCH/DELETE requests do not
+          retry it, since the original request may already have been
+          applied.
+        - A DELETE marked `idempotent=True` that receives 404 on a retry
+          attempt reports success: the resource vanished between attempts,
+          so an earlier attempt was applied and the postcondition holds.
         - 502 probes `/cluster_healthz` to distinguish a spurious gateway
           error (cluster healthy → retry immediately) from a real outage
           (cluster unhealthy → wait `unhealthy_backoff` seconds before
@@ -229,7 +239,9 @@ class HttpRequests:
           budget is spent (the attempt count is then unbounded).
         - All other errors are raised immediately.
         """
-        is_idempotent = http_method is requests.get
+        is_idempotent = (
+            (http_method is requests.get) if idempotent is None else idempotent
+        )
         request_path = self.config.url + "/" + self.config.version + path
 
         # Serialize the body once, not per retry. None / bytes / `serialize=False`
@@ -270,9 +282,23 @@ class HttpRequests:
         try:
             for attempt in retryer:
                 with attempt:
-                    return self._do_single_request(
-                        http_method, request_path, data, params, stream, headers
-                    )
+                    try:
+                        return self._do_single_request(
+                            http_method, request_path, data, params, stream, headers
+                        )
+                    except FelderaAPIError as err:
+                        if (
+                            is_idempotent
+                            and http_method is requests.delete
+                            and err.status_code == 404
+                            and attempt.retry_state.attempt_number > 1
+                        ):
+                            # The resource vanished between attempts: an
+                            # earlier attempt was applied server-side even
+                            # though its response was lost. The postcondition
+                            # (resource absent) holds, so report success.
+                            return None
+                        raise
         except FelderaAPIError as err:
             # On 401, if the bearer is a callable, re-resolve once and retry.
             # Covers tokens that expire mid-flight in long-running scripts
@@ -313,6 +339,7 @@ class HttpRequests:
         params: Optional[Mapping[str, Any]] = None,
         stream: bool = False,
         serialize: bool = True,
+        idempotent: Optional[bool] = None,
     ) -> Any:
         return self.send_request(
             requests.post,
@@ -322,6 +349,7 @@ class HttpRequests:
             params,
             stream=stream,
             serialize=serialize,
+            idempotent=idempotent,
         )
 
     def patch(
@@ -343,8 +371,11 @@ class HttpRequests:
         ] = None,
         content_type: str = "application/json",
         params: Optional[Mapping[str, Any]] = None,
+        idempotent: Optional[bool] = None,
     ) -> Any:
-        return self.send_request(requests.put, path, body, content_type, params)
+        return self.send_request(
+            requests.put, path, body, content_type, params, idempotent=idempotent
+        )
 
     def delete(
         self,
@@ -353,8 +384,11 @@ class HttpRequests:
             Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str]]
         ] = None,
         params: Optional[Mapping[str, Any]] = None,
+        idempotent: Optional[bool] = None,
     ) -> Any:
-        return self.send_request(requests.delete, path, body, params=params)
+        return self.send_request(
+            requests.delete, path, body, params=params, idempotent=idempotent
+        )
 
     @staticmethod
     def __to_json(request: requests.Response) -> Any:

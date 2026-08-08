@@ -394,9 +394,12 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             "tags": _normalize_tags(pipeline.tags),
         }
 
+        # Upsert by name: applying the same body twice yields the same
+        # pipeline, so a dropped connection is safe to retry.
         self.http.put(
             path=f"/pipelines/{pipeline.name}",
             body=body,
+            idempotent=True,
         )
 
         if not wait:
@@ -466,6 +469,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         """
         self.http.delete(
             path=f"/pipelines/{name}",
+            idempotent=True,
         )
 
     def get_pipeline_stats(self, name: str) -> dict:
@@ -509,8 +513,11 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             pipeline to activate.
         """
 
+        # Desired-state setter: activating an already-activating pipeline is
+        # a no-op, so a dropped connection is safe to retry.
         self.http.post(
             path=f"/pipelines/{pipeline_name}/activate",
+            idempotent=True,
         )
 
         if not wait:
@@ -547,7 +554,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         # Any error is dismissed separately in order to make sure we only dismiss any error
         # BEFORE it was started, not after it has been started by this call
         if dismiss_error:
-            self.http.post(path=f"/pipelines/{pipeline_name}/dismiss_error")
+            self.http.post(
+                path=f"/pipelines/{pipeline_name}/dismiss_error", idempotent=True
+            )
         start_params["dismiss_error"] = "false"
 
         start_params["initial"] = initial
@@ -560,9 +569,13 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if concurrent_bootstrap:
             start_params["concurrent_bootstrap"] = "true"
 
+        # Desired-state setters (start/pause/stop): repeating the request
+        # yields the same desired state, so a dropped connection is safe to
+        # retry.
         self.http.post(
             path=f"/pipelines/{pipeline_name}/start",
             params=start_params,
+            idempotent=True,
         )
 
         if not wait:
@@ -711,6 +724,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         self.http.post(
             path=f"/pipelines/{pipeline_name}/pause",
+            idempotent=True,
         )
 
         if not wait:
@@ -771,6 +785,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         self.http.post(
             path=f"/pipelines/{pipeline_name}/stop",
             params=params,
+            idempotent=True,
         )
 
         if not wait:
@@ -1588,6 +1603,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         self.http.post(
             path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/pause",
+            idempotent=True,
         )
 
     def resume_connector(
@@ -1612,6 +1628,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         self.http.post(
             path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/start",
+            idempotent=True,
         )
 
     def get_config(self) -> FelderaConfig:
