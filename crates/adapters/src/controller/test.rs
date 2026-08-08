@@ -4543,7 +4543,7 @@ fn test_postprocessor() {
 #[test]
 fn test_encryption_postprocessor() {
     use crate::postprocess::EncryptionPostprocessorFactory;
-    use openssl::symm::{Cipher, decrypt_aead};
+    use crate::preprocess::aes256gcm_decrypt;
 
     init_test_logger();
 
@@ -4652,15 +4652,8 @@ fn test_encryption_postprocessor() {
     let tag_start = encrypted.len() - 16;
     let ciphertext = &encrypted[12..tag_start];
     let tag = &encrypted[tag_start..];
-    let plaintext = decrypt_aead(
-        Cipher::aes_256_gcm(),
-        key,
-        Some(enc_nonce),
-        &[],
-        ciphertext,
-        tag,
-    )
-    .expect("decryption of postprocessed output failed");
+    let plaintext = aes256gcm_decrypt(key, enc_nonce, ciphertext, tag)
+        .expect("decryption of postprocessed output failed");
 
     // The decrypted payload must be parseable CSV with 2 records.
     let mut rdr = CsvReaderBuilder::new()

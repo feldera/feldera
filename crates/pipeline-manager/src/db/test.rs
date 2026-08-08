@@ -38,6 +38,9 @@ use crate::db::types::version::Version;
 use crate::oidc::destination::{TenantIssuerPolicy, validate_tenant_oidc_url};
 use crate::oidc::trust_name::validate_oidc_trust_name;
 use async_trait::async_trait;
+use aws_lc_rs::digest;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use chrono::{TimeZone, Utc};
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::config::{
@@ -48,7 +51,6 @@ use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
     BootstrapConfig, BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus, StorageStatusDetails,
 };
-use openssl::sha;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
 use proptest_derive::Arbitrary;
@@ -90,8 +92,8 @@ impl Drop for DbHandle {
 
     #[cfg(not(feature = "postgresql_embedded"))]
     fn drop(&mut self) {
-        use postgres_openssl::TlsStream;
         use tokio_postgres::{Connection, Socket, tls::NoTlsStream};
+        use tokio_postgres_rustls::RustlsStream as TlsStream;
         enum ConnWrapper {
             Tls(Connection<Socket, TlsStream<Socket>>),
             NoTls(Connection<Socket, NoTlsStream>),
@@ -6133,9 +6135,7 @@ impl Storage for Mutex<DbModel> {
     ) -> DBResult<()> {
         let mut s = self.lock().await;
         validate_api_key_name(name)?;
-        let mut hasher = sha::Sha256::new();
-        hasher.update(key.as_bytes());
-        let hash = openssl::base64::encode_block(&hasher.finish());
+        let hash = BASE64_STANDARD.encode(digest::digest(&digest::SHA256, key.as_bytes()).as_ref());
         if s.api_keys.iter().any(|k| k.1.0 == ApiKeyId(id)) {
             return Err(DBError::unique_key_violation("api_key_pkey"));
         }
@@ -6154,9 +6154,7 @@ impl Storage for Mutex<DbModel> {
 
     async fn validate_api_key(&self, key: &str) -> DBResult<(TenantId, Role)> {
         let s = self.lock().await;
-        let mut hasher = sha::Sha256::new();
-        hasher.update(key.as_bytes());
-        let hash = openssl::base64::encode_block(&hasher.finish());
+        let hash = BASE64_STANDARD.encode(digest::digest(&digest::SHA256, key.as_bytes()).as_ref());
         let record: Vec<(TenantId, Role)> = s
             .api_keys
             .iter()

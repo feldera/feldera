@@ -1,11 +1,11 @@
 //! Example postprocessor implementations.
 
+use crate::preprocess::aes256gcm_encrypt_with_tag;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use feldera_adapterlib::postprocess::{
     Postprocessor, PostprocessorCreateError, PostprocessorFactory,
 };
 use feldera_types::postprocess::PostprocessorConfig;
-use openssl::symm::{Cipher, encrypt_aead};
 use serde::Deserialize;
 
 /// A postprocessor that performs no transformation.
@@ -75,16 +75,8 @@ impl EncryptionPostprocessor {
 
 impl Postprocessor for EncryptionPostprocessor {
     fn push_buffer(&mut self, data: &[u8]) -> anyhow::Result<Vec<u8>> {
-        let mut tag = vec![0u8; 16];
-        match encrypt_aead(
-            Cipher::aes_256_gcm(),
-            &self.key,
-            Some(&self.nonce),
-            &[],
-            data,
-            &mut tag,
-        ) {
-            Ok(ciphertext) => {
+        match aes256gcm_encrypt_with_tag(&self.key, &self.nonce, data) {
+            Ok((ciphertext, tag)) => {
                 let mut out = Vec::with_capacity(self.nonce.len() + ciphertext.len() + 16);
                 out.extend_from_slice(&self.nonce);
                 out.extend_from_slice(&ciphertext);
@@ -149,7 +141,7 @@ impl PostprocessorFactory for EncryptionPostprocessorFactory {
 }
 
 #[cfg(test)]
-pub use openssl::symm::decrypt_aead;
+pub(crate) use crate::preprocess::aes256gcm_decrypt;
 
 #[cfg(test)]
 mod tests {
@@ -172,15 +164,7 @@ mod tests {
         let tag_start = blob.len() - 16;
         let ciphertext = &blob[12..tag_start];
         let tag = &blob[tag_start..];
-        decrypt_aead(
-            Cipher::aes_256_gcm(),
-            key,
-            Some(nonce),
-            &[],
-            ciphertext,
-            tag,
-        )
-        .expect("decryption failed")
+        aes256gcm_decrypt(key, nonce, ciphertext, tag).expect("decryption failed")
     }
 
     #[test]

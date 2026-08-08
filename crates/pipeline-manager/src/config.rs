@@ -8,21 +8,17 @@ use crate::oidc::destination::TenantIssuerPolicy;
 use actix_web::http::header;
 use anyhow::{Context, Error as AnyError, Result as AnyResult};
 use clap::Parser;
-use openssl::asn1::Asn1Time;
-use openssl::bn::{BigNum, MsbOption};
-use openssl::hash::MessageDigest;
-use openssl::nid::Nid;
-use openssl::pkey::PKey;
-use openssl::rsa::Rsa;
-use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
-use openssl::x509::extension::SubjectAlternativeName;
-use openssl::x509::{X509, X509NameBuilder};
-use postgres_openssl::MakeTlsConnector;
 use reqwest::Certificate;
+use rustls::client::WebPkiServerVerifier;
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::pki_types::PrivateKeyDer;
 use rustls::pki_types::pem::PemObject;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use rustls::{ClientConfig, RootCertStore};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{
+    CertificateError, ClientConfig, DigitallySignedStruct, RootCertStore, SignatureScheme,
+};
 use serde::{Deserialize, Serialize};
+use std::net::{IpAddr, Ipv4Addr};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::{
@@ -32,6 +28,8 @@ use std::{
     sync::Once,
     thread,
 };
+use time::{Duration, OffsetDateTime};
+use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::warn;
 
 /// The default `platform_version` is formed using three compilation environment variables:
@@ -391,34 +389,24 @@ impl CommonConfig {
             return Ok(());
         }
 
-        let private_key = PKey::from_rsa(Rsa::generate(2048)?)?;
+        let mut params = rcgen::CertificateParams::default();
+        params.distinguished_name = {
+            let mut name = rcgen::DistinguishedName::new();
+            name.push(rcgen::DnType::CommonName, "localhost");
+            name
+        };
+        params.subject_alt_names = vec![
+            rcgen::SanType::DnsName("localhost".try_into()?),
+            rcgen::SanType::IpAddress(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+        ];
+        params.not_before = OffsetDateTime::now_utc();
+        params.not_after = params.not_before + Duration::days(30);
 
-        let mut name_builder = X509NameBuilder::new()?;
-        name_builder.append_entry_by_nid(Nid::COMMONNAME, "localhost")?;
-        let name = name_builder.build();
+        let key_pair = rcgen::KeyPair::generate()?;
+        let certificate = params.self_signed(&key_pair)?;
 
-        let mut certificate_builder = X509::builder()?;
-        certificate_builder.set_version(2)?;
-        let mut serial = BigNum::new()?;
-        serial.rand(128, MsbOption::MAYBE_ZERO, false)?;
-        let serial = serial.to_asn1_integer()?;
-        certificate_builder.set_serial_number(&serial)?;
-        certificate_builder.set_subject_name(&name)?;
-        certificate_builder.set_issuer_name(&name)?;
-        certificate_builder.set_pubkey(&private_key)?;
-        let not_before = Asn1Time::days_from_now(0)?;
-        let not_after = Asn1Time::days_from_now(30)?;
-        certificate_builder.set_not_before(not_before.as_ref())?;
-        certificate_builder.set_not_after(not_after.as_ref())?;
-        let san = SubjectAlternativeName::new()
-            .dns("localhost")
-            .ip("127.0.0.1")
-            .build(&certificate_builder.x509v3_context(None, None))?;
-        certificate_builder.append_extension(san)?;
-        certificate_builder.sign(&private_key, MessageDigest::sha256())?;
-
-        let cert_pem = certificate_builder.build().to_pem()?;
-        let key_pem = private_key.private_key_to_pem_pkcs8()?;
+        let cert_pem = certificate.pem().into_bytes();
+        let key_pem = key_pair.serialize_pem().into_bytes();
 
         let dir = env::temp_dir().join("feldera-testing-https");
         create_dir_all(&dir)?;
@@ -775,53 +763,157 @@ impl DatabaseConfig {
         }
     }
 
-    pub(crate) fn tls_connector(&self) -> Result<MakeTlsConnector, DBError> {
-        let mut builder =
-            SslConnector::builder(SslMethod::tls()).map_err(|e| DBError::TlsConnection {
-                hint: "Unable to build TLS Connector to connect to PostgreSQL".to_string(),
-                openssl_error: Some(e),
+    pub(crate) fn tls_connector(&self) -> Result<MakeRustlsConnect, DBError> {
+        let mut roots = RootCertStore::empty();
+        if let Some(ca_path) = &self.db_tls_certificate_path {
+            let pem = std::fs::read(ca_path).map_err(|e| DBError::TlsConnection {
+                hint: format!("Unable to read TLS certificate at {ca_path:?}"),
+                error: Some(e.to_string()),
             })?;
+            let certs: Result<Vec<_>, _> = rustls_pemfile::certs(&mut pem.as_slice()).collect();
+            let certs = certs.map_err(|e| DBError::TlsConnection {
+                hint: format!("Unable to parse TLS certificate at {ca_path:?}"),
+                error: Some(e.to_string()),
+            })?;
+            for cert in certs {
+                roots.add(cert).map_err(|e| DBError::TlsConnection {
+                    hint: format!("Unable to trust TLS certificate at {ca_path:?}"),
+                    error: Some(e.to_string()),
+                })?;
+            }
+        } else {
+            // Mirrors openssl's set_default_verify_paths: use the system trust store.
+            let native =
+                rustls_native_certs::load_native_certs().map_err(|e| DBError::TlsConnection {
+                    hint: "Unable to load the system TLS trust store".to_string(),
+                    error: Some(e.to_string()),
+                })?;
+            for cert in native {
+                let _ = roots.add(cert);
+            }
+        }
 
-        if self.disable_tls_verify {
+        let builder = ClientConfig::builder();
+        let config = if self.disable_tls_verify {
             static ONCE: Once = Once::new();
             ONCE.call_once(|| {
                 warn!("PostgreSQL TLS verification is disabled -- not recommended for production environments.");
             });
-            builder.set_verify(SslVerifyMode::NONE);
-        }
-
-        if let Some(ca_path) = &self.db_tls_certificate_path {
             builder
-                .set_ca_file(ca_path)
-                .map_err(|e| DBError::TlsConnection {
-                    hint: format!(
-                        "Unable to find TLS certificate at {:?}",
-                        self.db_tls_certificate_path
-                    ),
-                    openssl_error: Some(e),
-                })?;
-        } else {
-            builder
-                .set_default_verify_paths()
-                .map_err(|e| DBError::TlsConnection {
-                    hint: "Unable to configure default TLS paths".to_string(),
-                    openssl_error: Some(e),
-                })?;
-        }
-
-        let mut connector = MakeTlsConnector::new(builder.build());
-
-        if self.disable_tls_hostname_verify {
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
+                .with_no_client_auth()
+        } else if self.disable_tls_hostname_verify {
             warn!(
                 "PostgreSQL TLS hostname verification is disabled. The PostgreSQL server's hostname may not match the one specified in the SSL certificate."
             );
-            connector.set_callback(|ctx, _| {
-                ctx.set_verify_hostname(false);
-                Ok(())
-            });
-        }
+            let inner = WebPkiServerVerifier::builder(Arc::new(roots))
+                .build()
+                .map_err(|e| DBError::TlsConnection {
+                    hint: "Unable to build TLS Connector to connect to PostgreSQL".to_string(),
+                    error: Some(e.to_string()),
+                })?;
+            builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(SkipHostnameVerification(inner)))
+                .with_no_client_auth()
+        } else {
+            builder.with_root_certificates(roots).with_no_client_auth()
+        };
 
-        Ok(connector)
+        Ok(MakeRustlsConnect::new(config))
+    }
+}
+
+/// Accepts any server certificate. Used only when TLS verification is disabled
+/// explicitly, which the connector warns about.
+#[derive(Debug)]
+struct NoCertificateVerification;
+
+impl ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        rustls::crypto::CryptoProvider::get_default()
+            .expect("a default crypto provider is installed at startup")
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
+}
+
+/// Verifies the certificate chain but tolerates a name mismatch, matching the
+/// behaviour of the `disable_tls_hostname_verify` option.
+#[derive(Debug)]
+struct SkipHostnameVerification(Arc<WebPkiServerVerifier>);
+
+impl ServerCertVerifier for SkipHostnameVerification {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp_response: &[u8],
+        now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        match self
+            .0
+            .verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
+        {
+            Err(rustls::Error::InvalidCertificate(CertificateError::NotValidForName))
+            | Err(rustls::Error::InvalidCertificate(CertificateError::NotValidForNameContext {
+                ..
+            })) => Ok(ServerCertVerified::assertion()),
+            other => other,
+        }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.0.verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.0.verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.0.supported_verify_schemes()
     }
 }
 

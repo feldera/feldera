@@ -255,8 +255,7 @@ pub enum DBError {
     },
     TlsConnection {
         hint: String,
-        #[serde(skip)]
-        openssl_error: Option<openssl::error::ErrorStack>,
+        error: Option<String>,
     },
     PauseWhileNotProvisioned,
     ResumeWhileNotProvisioned,

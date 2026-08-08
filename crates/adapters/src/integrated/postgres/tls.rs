@@ -1,28 +1,8 @@
 use anyhow::{Context, Result as AnyResult};
 use feldera_types::transport::postgres::PostgresTlsConfig;
-use openssl::{
-    pkey::PKey,
-    rsa::Rsa,
-    ssl::{SslConnector, SslConnectorBuilder, SslFiletype, SslMethod},
-    x509::X509,
-};
-use postgres_openssl::MakeTlsConnector;
-use std::{io::Write, path::PathBuf};
-use tempfile::NamedTempFile;
-
-/// Writes the given certificate to file and returns the file path.
-fn write_ca_cert_to_file(cert: &str) -> AnyResult<PathBuf> {
-    let mut file =
-        NamedTempFile::new().context("failed to create tempfile to write CA certificate to")?;
-
-    file.write_all(cert.as_bytes())
-        .context("failed to write CA certificate to tempfile")?;
-    file.flush()
-        .context("failed to flush CA certificate to tempfile")?;
-
-    let (_, path) = file.keep()?;
-    Ok(path)
-}
+use rustls::pki_types::CertificateDer;
+use rustls::{ClientConfig, RootCertStore};
+use tokio_postgres_rustls::MakeRustlsConnect;
 
 /// Resolves the configured certificate-authority certificate(s) to PEM text.
 ///
@@ -53,104 +33,60 @@ pub(crate) fn resolve_ca_pem(
     }
 }
 
-/// Configures SSL certificates for the PostgreSQL connection if enabled.
-///
-/// Sets the CA certificate (`ssl_ca_pem`) and optionally the client certificate
-/// and private key when provided.
-fn set_certs(
-    builder: &mut SslConnectorBuilder,
-    config: &PostgresTlsConfig,
-    endpoint_name: &str,
-) -> AnyResult<()> {
-    let Some(ca_cert) = resolve_ca_pem(config, endpoint_name)? else {
-        return Ok(());
-    };
-    let ca_cert_path = write_ca_cert_to_file(&ca_cert)?;
-
-    builder
-        .set_ca_file(ca_cert_path)
-        .context("failed to set CA certificate in SSL connector")?;
-
-    fn builder_set_client_from_pem(builder: &mut SslConnectorBuilder, pem: &str) -> AnyResult<()> {
-        let cert =
-            X509::from_pem(pem.as_bytes()).context("failed to parse client certificate as X509")?;
-        builder
-            .set_certificate(&cert)
-            .context("failed to set client certificate in SSL connector")?;
-        Ok(())
-    }
-
-    fn builder_set_client_key_from_pem(
-        builder: &mut SslConnectorBuilder,
-        pem: &str,
-    ) -> AnyResult<()> {
-        let rsa = Rsa::private_key_from_pem(pem.as_bytes())
-            .context("failed to parse client private key as RSA")?;
-        let key = PKey::from_rsa(rsa).context("failed to client private key from RSA")?;
-        builder
-            .set_private_key(key.as_ref())
-            .context("failed to set client private key")?;
-        Ok(())
-    }
-
-    // Set the client certificate, `ssl_client_pem` takes priority.
+/// Resolves the client certificate chain, preferring inline PEM over a path.
+fn resolve_client_cert_pem(config: &PostgresTlsConfig) -> AnyResult<Option<String>> {
     match (&config.ssl_client_pem, &config.ssl_client_location) {
         (Some(pem), Some(_)) => {
             tracing::warn!(
                 "postgres: both `ssl_client_pem` and `ssl_client_location` are provided; using `ssl_client_pem`"
             );
-            builder_set_client_from_pem(builder, pem)?;
+            Ok(Some(pem.clone()))
         }
-        (Some(pem), None) => {
-            builder_set_client_from_pem(builder, pem)?;
-        }
-        (None, Some(location)) => {
-            builder
-                .set_certificate_file(location, SslFiletype::PEM)
-                .context("failed to set client certificate")?;
-        }
-        // No client cert — ssl_certificate_chain_location only applies to the
-        // client-side cert chain, so nothing more to configure here.
-        (None, None) => return Ok(()),
+        (Some(pem), None) => Ok(Some(pem.clone())),
+        (None, Some(location)) => Ok(Some(
+            std::fs::read_to_string(location)
+                .with_context(|| format!("failed to read client certificate at '{location}'"))?,
+        )),
+        (None, None) => Ok(None),
     }
+}
 
-    // Set the client key, `ssl_client_key` takes priority.
+/// Resolves the client private key, preferring inline PEM over a path.
+fn resolve_client_key_pem(config: &PostgresTlsConfig) -> AnyResult<Option<String>> {
     match (&config.ssl_client_key, &config.ssl_client_key_location) {
         (Some(key), Some(_)) => {
             tracing::warn!(
                 "postgres: both `ssl_client_key` and `ssl_client_key_location` are provided; using `ssl_client_key`"
             );
-            builder_set_client_key_from_pem(builder, key)?;
+            Ok(Some(key.clone()))
         }
-        (Some(key), None) => {
-            builder_set_client_key_from_pem(builder, key)?;
-        }
-        (None, Some(location)) => {
-            builder
-                .set_private_key_file(location, SslFiletype::PEM)
-                .context("failed to set client private key")?;
-        }
-        (None, None) => return Ok(()),
+        (Some(key), None) => Ok(Some(key.clone())),
+        (None, Some(location)) => Ok(Some(
+            std::fs::read_to_string(location)
+                .with_context(|| format!("failed to read client private key at '{location}'"))?,
+        )),
+        (None, None) => Ok(None),
     }
-
-    // Set the SSL chain certificate.
-    if let Some(chain) = &config.ssl_certificate_chain_location {
-        builder
-            .set_certificate_chain_file(chain)
-            .context("failed to set certificate chain")?;
-    }
-
-    Ok(())
 }
 
-/// Builds a [`MakeTlsConnector`] from the given TLS configuration.
+/// Parses every certificate in `pem`.
+fn parse_certs(pem: &str, what: &str) -> AnyResult<Vec<CertificateDer<'static>>> {
+    let certs: Result<Vec<_>, _> = rustls_pemfile::certs(&mut pem.as_bytes()).collect();
+    let certs = certs.with_context(|| format!("failed to parse {what} as PEM certificates"))?;
+    if certs.is_empty() {
+        anyhow::bail!("{what} contains no certificates");
+    }
+    Ok(certs)
+}
+
+/// Builds a [`MakeRustlsConnect`] from the given TLS configuration.
 ///
 /// Returns `None` if no TLS configuration is provided, meaning the caller
 /// should use `NoTls` instead.
 pub(crate) fn make_tls_connector(
     tls: &PostgresTlsConfig,
     endpoint_name: &str,
-) -> AnyResult<Option<MakeTlsConnector>> {
+) -> AnyResult<Option<MakeRustlsConnect>> {
     if !tls.has_tls()
         && (tls.ssl_client_pem.is_some()
             || tls.ssl_client_location.is_some()
@@ -168,23 +104,53 @@ pub(crate) fn make_tls_connector(
         return Ok(None);
     }
 
-    let mut builder =
-        SslConnector::builder(SslMethod::tls()).context("failed to build SSL connection")?;
+    let Some(ca_pem) = resolve_ca_pem(tls, endpoint_name)? else {
+        return Ok(None);
+    };
 
-    set_certs(&mut builder, tls, endpoint_name)?;
-
-    let mut connector = MakeTlsConnector::new(builder.build());
-
-    if Some(false) == tls.verify_hostname {
-        let endpoint_name = endpoint_name.to_owned();
-        connector.set_callback(move |ctx, _| {
-            tracing::warn!("postgres: ssl: disabling hostname verification in connector '{endpoint_name}'. The PostgreSQL server's hostname may not match the one specified in the SSL certificate.");
-            ctx.set_verify_hostname(false);
-            Ok(())
-        });
+    let mut roots = RootCertStore::empty();
+    for cert in parse_certs(&ca_pem, "CA certificate")? {
+        roots
+            .add(cert)
+            .context("failed to add CA certificate to the trust store")?;
     }
 
-    Ok(Some(connector))
+    let builder = ClientConfig::builder().with_root_certificates(roots);
+
+    // A client certificate needs its key, and the chain file extends it.
+    let config = match (resolve_client_cert_pem(tls)?, resolve_client_key_pem(tls)?) {
+        (Some(cert_pem), Some(key_pem)) => {
+            let mut chain = parse_certs(&cert_pem, "client certificate")?;
+            if let Some(location) = &tls.ssl_certificate_chain_location {
+                let chain_pem = std::fs::read_to_string(location)
+                    .with_context(|| format!("failed to read certificate chain at '{location}'"))?;
+                chain.extend(parse_certs(&chain_pem, "certificate chain")?);
+            }
+            let key = rustls_pemfile::private_key(&mut key_pem.as_bytes())
+                .context("failed to parse client private key as PEM")?
+                .context("client private key PEM contains no key")?;
+            builder
+                .with_client_auth_cert(chain, key)
+                .context("failed to configure client certificate authentication")?
+        }
+        (Some(_), None) => {
+            anyhow::bail!("postgres: a client certificate was provided without a private key")
+        }
+        (None, Some(_)) => {
+            anyhow::bail!("postgres: a client private key was provided without a certificate")
+        }
+        (None, None) => builder.with_no_client_auth(),
+    };
+
+    if Some(false) == tls.verify_hostname {
+        tracing::warn!(
+            "postgres: ssl: `verify_hostname` is not supported by the rustls connector in \
+             endpoint '{endpoint_name}'; the server hostname is still verified against its \
+             certificate."
+        );
+    }
+
+    Ok(Some(MakeRustlsConnect::new(config)))
 }
 
 /// Extracts the trusted root certificates from [`PostgresTlsConfig`]

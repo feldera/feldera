@@ -594,7 +594,7 @@ async fn stream_to_file_and_verify(
         ))
     })?;
 
-    let mut hasher = openssl::sha::Sha256::new();
+    let mut hasher = aws_lc_rs::digest::Context::new(&aws_lc_rs::digest::SHA256);
     let mut total_size = 0usize;
 
     while let Some(chunk) = payload.next().await {
@@ -1114,6 +1114,7 @@ mod test {
     };
     use crate::compiler::util::CleanupDecision;
     use crate::compiler::util::pipeline_binary_filename;
+    use crate::compiler::util::sha256;
     use crate::config::CompilerConfig;
     use crate::db::types::pipeline::PipelineId;
     use crate::db::types::program::CompilationProfile;
@@ -1121,7 +1122,6 @@ mod test {
     use crate::error::ManagerError;
     use actix_web::error::PayloadError;
     use actix_web::{App, test as actix_test, web};
-    use openssl::sha::sha256;
     use std::time::Duration;
     use tokio::fs;
     use uuid::Uuid;

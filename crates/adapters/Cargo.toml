@@ -70,7 +70,7 @@ iceberg-tests-s3tables = []
 # Follow-mode tests. Need a REST catalog and an S3 store both the writer
 # (pyiceberg) and the connector can reach. See crates/iceberg/src/test/README.md.
 iceberg-tests-follow = []
-fips = ["rustls/fips"]
+fips = ["rustls/fips", "aws-lc-rs/fips"]
 bench-mode = []
 with-postgres-cdc = ["etl", "etl-config", "etl-postgres"]
 # jemalloc heap-profiling endpoint (/heap_profile). Linux-only dep; on other
@@ -167,7 +167,6 @@ rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1",
 ] }
 url = { workspace = true }
 ordered-float = { workspace = true }
-openssl = { workspace = true }
 atomic = { workspace = true }
 once_cell = { workspace = true }
 dbsp_nexmark = { workspace = true, features = [], optional = true }
@@ -203,10 +202,13 @@ bytemuck = { workspace = true }
 num-derive = { workspace = true }
 num-traits = { workspace = true } # Used by num-derive derive macro, which cargo-machete can't see
 postgres = { workspace = true }
-postgres-openssl = { workspace = true }
 dyn-clone = { workspace = true }
 cpu-time = "1.0.0"
 feldera-ir = { workspace = true }
+aws-lc-rs = { workspace = true }
+tokio-postgres-rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
+openssl-sys = { workspace = true }
 base64 = { workspace = true }
 aws-msk-iam-sasl-signer = "1.0.1"
 aws-credential-types = "1.2.3"
