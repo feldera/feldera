@@ -31,7 +31,7 @@ import org.junit.Test;
 
 // Runs the EndToEnd tests but on an input stream with 3 elements each and
 // using an incremental non-optimized circuit.
-public class NaiveIncrementalTests extends EndToEndTests {
+public class NaiveIncrementalTests extends BasicQueriesTests {
     @Override
     public CompilerOptions testOptions() {
         CompilerOptions options = super.testOptions();
