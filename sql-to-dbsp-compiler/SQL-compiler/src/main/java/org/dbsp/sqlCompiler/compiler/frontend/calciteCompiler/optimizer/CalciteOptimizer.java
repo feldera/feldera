@@ -9,6 +9,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.Correlate;
 import org.apache.calcite.rel.core.Join;
+import org.apache.calcite.rel.core.Uncollect;
 import org.apache.calcite.rel.hint.Hintable;
 import org.apache.calcite.rel.hint.RelHint;
 import org.apache.calcite.rel.rules.CoreRules;
@@ -48,6 +49,16 @@ public class CalciteOptimizer implements IWritesLogs {
             return true;
         for (RelNode input : node.getInputs()) {
             if (containsCorrelate(input))
+                return true;
+        }
+        return false;
+    }
+
+    public static boolean containsUncollect(RelNode node) {
+        if (node instanceof Uncollect)
+            return true;
+        for (RelNode input : node.getInputs()) {
+            if (containsUncollect(input))
                 return true;
         }
         return false;
@@ -259,6 +270,33 @@ public class CalciteOptimizer implements IWritesLogs {
                 PruneEmptyRules.JOIN_RIGHT_INSTANCE,
                 PruneEmptyRules.SORT_FETCH_ZERO_INSTANCE
         ));
+        this.addStep(new CalciteOptimizerStep() {
+            final CorrelateProjectExtractor extractor = new CorrelateProjectExtractor(
+                    RelBuilder.proto(CalciteOptimizer.this.builder));
+
+            @Override
+            public String getName() {
+                return "Move Correlate projections";
+            }
+
+            @Override
+            public RelNode optimize(RelNode rel, int level) {
+                return this.extractor.visit(rel);
+            }
+        });
+        var uncollect = new BaseOptimizerStep("Convert UNCOLLECT", 0) {
+            HepProgram getProgram(RelNode node, int level) {
+                if (containsUncollect(node)) {
+                    this.addRules(level,
+                            CoreRules.PROJECT_FILTER_TRANSPOSE,
+                            CoreRules.FILTER_CORRELATE,
+                            CoreRules.PROJECT_REMOVE,
+                            CoreRules.CORRELATE_UNCOLLECT_MERGE);
+                }
+                return this.builder.build();
+            }
+        };
+        this.addStep(uncollect);
         this.addStep(new SimpleOptimizerStep("Convert complex aggregates", 0,
                 // MaxCaseToCountRule must run before AGGREGATE_CASE_TO_FILTER:
                 // both match MAX(CASE WHEN c THEN 1 END), but a COUNT-based
