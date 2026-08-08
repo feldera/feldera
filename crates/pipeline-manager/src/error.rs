@@ -27,7 +27,7 @@ use crate::compiler::error::CompilerError;
 use crate::db::error::DBError;
 use crate::runner::error::RunnerError;
 use actix_web::{
-    HttpResponse, HttpResponseBuilder, ResponseError, body::BoxBody, http::StatusCode,
+    HttpResponse, HttpResponseBuilder, ResponseError, body::BoxBody, http::StatusCode, http::header,
 };
 use feldera_types::error::{DetailedError, ErrorResponse};
 use openssl::error::ErrorStack;
@@ -125,6 +125,30 @@ impl Display for ManagerError {
     }
 }
 
+/// Seconds a client should wait before retrying a 503. Matches the runner's
+/// fastest pipeline-status probe interval and its pipeline-descriptor cache
+/// TTL: the soonest an unavailable pipeline can be observed healthy again.
+pub(crate) const SERVICE_UNAVAILABLE_RETRY_AFTER_SECONDS: u32 = 5;
+
+/// Build the JSON error response. A 503 carries `Retry-After` so clients
+/// back off for a server-chosen interval instead of guessing: 503s signal a
+/// transient condition (pipeline pod rescheduling, runner restart) that
+/// resolves within seconds.
+pub(crate) fn json_error_response<E>(error: &E) -> HttpResponse<BoxBody>
+where
+    E: DetailedError,
+{
+    let status = error.status_code();
+    let mut builder = HttpResponseBuilder::new(status);
+    if status == StatusCode::SERVICE_UNAVAILABLE {
+        builder.insert_header((
+            header::RETRY_AFTER,
+            SERVICE_UNAVAILABLE_RETRY_AFTER_SECONDS.to_string(),
+        ));
+    }
+    builder.json(ErrorResponse::from_error(error))
+}
+
 impl ResponseError for ManagerError {
     fn status_code(&self) -> StatusCode {
         match self {
@@ -138,7 +162,7 @@ impl ResponseError for ManagerError {
     }
 
     fn error_response(&self) -> HttpResponse<BoxBody> {
-        HttpResponseBuilder::new(self.status_code()).json(ErrorResponse::from_error(self))
+        json_error_response(self)
     }
 }
 
@@ -166,5 +190,32 @@ pub(crate) fn source_error(mut err: &dyn StdError) -> &dyn StdError {
 impl From<ManagerError> for ErrorResponse {
     fn from(val: ManagerError) -> Self {
         ErrorResponse::from_error_nolog(&val)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::runner::error::RunnerError;
+
+    #[test]
+    fn service_unavailable_carries_retry_after() {
+        let err = ManagerError::from(RunnerError::PipelineUnavailable {
+            pipeline_name: "p".to_string(),
+        });
+        let resp = err.error_response();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            resp.headers().get(header::RETRY_AFTER).unwrap(),
+            &SERVICE_UNAVAILABLE_RETRY_AFTER_SECONDS.to_string()
+        );
+    }
+
+    #[test]
+    fn other_statuses_carry_no_retry_after() {
+        let err = ManagerError::from(RunnerError::AutomatonMissingProgramInfo);
+        let resp = err.error_response();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(resp.headers().get(header::RETRY_AFTER).is_none());
     }
 }

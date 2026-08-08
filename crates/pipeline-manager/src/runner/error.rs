@@ -1,8 +1,6 @@
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::utils::ValidationError;
-use actix_web::{
-    HttpResponse, HttpResponseBuilder, ResponseError, body::BoxBody, http::StatusCode,
-};
+use actix_web::{HttpResponse, ResponseError, body::BoxBody, http::StatusCode};
 use feldera_types::error::{DetailedError, ErrorResponse};
 use indoc::writedoc;
 use serde::Serialize;
@@ -469,6 +467,6 @@ impl ResponseError for RunnerError {
     }
 
     fn error_response(&self) -> HttpResponse<BoxBody> {
-        HttpResponseBuilder::new(self.status_code()).json(ErrorResponse::from_error(self))
+        crate::error::json_error_response(self)
     }
 }
