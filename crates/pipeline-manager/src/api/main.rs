@@ -25,7 +25,6 @@ use actix_web::{
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::Result as AnyResult;
-use feldera_observability as observability;
 use futures_util::FutureExt;
 use std::io::Write;
 use std::time::Duration;
@@ -37,7 +36,6 @@ use tokio::sync::{Mutex, RwLock};
 use tracing::{Level, error, info};
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
-use utoipa_swagger_ui::SwaggerUi;
 
 macro_rules! log_with_level {
     ($level:expr, $($arg:tt)+) => {
@@ -633,8 +631,7 @@ fn build_app(
             log_with_level!(log_level, "Request: {} {}", req.method(), req.path());
             srv.call(req).map(log_response)
         })
-        .wrap(middleware::Compress::default())
-        .wrap(observability::actix_middleware());
+        .wrap(middleware::Compress::default());
 
     let app = match auth_configuration {
         Some(auth_configuration) => {
@@ -677,22 +674,19 @@ fn build_app(
 // Unauthenticated public endpoints and static UI assets. CORS is scoped to
 // `/config/*` only — it's the unauthenticated API surface that browser clients
 // may need to reach cross-origin. Every other route here is same-origin in practice
-// (swagger UI, healthz monitoring, static bundle), and keeping CORS off them
+// (healthz monitoring, static bundle), and keeping CORS off them
 // is what allows Firefox to honor `Cache-Control: immutable` on the bundle
 // (no `Vary: Origin`, no `Access-Control-Allow-Credentials`).
 //
 // Must be registered LAST in the App: the inner empty-prefix scope acts as the
 // SPA fallback and would otherwise shadow other top-level scopes.
 fn public_scope(api_config: &ApiServerConfig) -> Scope {
-    let openapi = ApiDoc::openapi();
-
     web::scope("")
         .service(
             web::scope("/config")
                 .wrap(api_config.cors())
                 .service(endpoints::config::get_config_authentication),
         )
-        .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
         .service(healthz)
         .service(robots_txt)
         .service(
@@ -1155,11 +1149,6 @@ Version: {} v{}{}
         let _ = collector_handle.join();
     }
 
-    if let Some(client) = sentry::Hub::current().client() {
-        info!("Shutting down sentry");
-        client.close(Some(Duration::from_secs(3)));
-    }
-
     server_result?;
     Ok(())
 }
@@ -1447,7 +1436,7 @@ mod tests {
         // handlers (which 500 on `WebData<ServerState>` extraction since this
         // test skips `app_data` — `actix-cors` still adds headers on the
         // response), api_scope param routes, the cors-wrapped `/config`
-        // sub-scope, and the unwrapped public routes (`/healthz`, swagger).
+        // sub-scope, and the unwrapped public routes (`/healthz`).
         // `/config/authentication` works through its real handler because
         // `auth_provider = None` in test_config returns early without state.
         for uri in [
@@ -1466,7 +1455,6 @@ mod tests {
             "/v0/cluster_healthz",
             "/config/authentication",
             "/healthz",
-            "/swagger-ui/index.html",
         ] {
             let req = test::TestRequest::get()
                 .uri(uri)
