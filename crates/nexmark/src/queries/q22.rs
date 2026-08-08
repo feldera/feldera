@@ -2,7 +2,7 @@ use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{utils::Tup7, OrdZSet, RootCircuit, Stream};
 
-type Q22Set = OrdZSet<Tup7<u64, u64, u64, String, String, String, String>>;
+type Q22Set = OrdZSet<Tup7<u64, u64, u64, String, Option<String>, Option<String>, Option<String>>>;
 type Q22Stream = Stream<RootCircuit, Q22Set>;
 
 /// Query 22: Get URL Directories (Not in original suite)
@@ -33,11 +33,12 @@ type Q22Stream = Stream<RootCircuit, Q22Set>;
 pub fn q22(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q22Stream {
     input.flat_map(|event| match event {
         Event::Bid(b) => {
-            let mut split = b.channel.as_str().split('/').skip(3);
+            // SPLIT_INDEX returns NULL when the index is out of range.
+            let mut split = b.url.as_str().split('/').skip(3);
             let (dir1, dir2, dir3) = (
-                split.next().unwrap_or_default(),
-                split.next().unwrap_or_default(),
-                split.next().unwrap_or_default(),
+                split.next().map(String::from),
+                split.next().map(String::from),
+                split.next().map(String::from),
             );
 
             Some(Tup7(
@@ -45,9 +46,9 @@ pub fn q22(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q22Stream {
                 b.bidder,
                 b.price,
                 b.channel.clone(),
-                dir1.into(),
-                dir2.into(),
-                dir3.into(),
+                dir1,
+                dir2,
+                dir3,
             ))
         }
         _ => None,
@@ -61,42 +62,35 @@ mod tests {
     use dbsp::{utils::Tup2, zset};
     use rstest::rstest;
 
+    fn make_url_bid(url: &str) -> Bid {
+        Bid {
+            channel: String::from(url),
+            url: String::from(url),
+            ..make_bid()
+        }
+    }
+
     #[rstest]
     #[case::bids_with_well_formed_urls(
         vec![vec![
-            Event::Bid(Bid {
-                channel: String::from("https://example.com/foo/bar/zed"),
-                ..make_bid()
-            }),
-            Event::Bid(Bid {
-                channel: String::from("https://example.com/dir1/dir2/dir3/dir4/dir5"),
-                ..make_bid()
-            }),
+            Event::Bid(make_url_bid("https://example.com/foo/bar/zed")),
+            Event::Bid(make_url_bid("https://example.com/dir1/dir2/dir3/dir4/dir5")),
         ]],
         vec![zset!{
-            Tup7(1, 1, 99, String::from("https://example.com/foo/bar/zed"), String::from("foo"), String::from("bar"), String::from("zed")) => 1,
-            Tup7(1, 1, 99, String::from("https://example.com/dir1/dir2/dir3/dir4/dir5"), String::from("dir1"), String::from("dir2"), String::from("dir3")) => 1,
+            Tup7(1, 1, 99, String::from("https://example.com/foo/bar/zed"), Some(String::from("foo")), Some(String::from("bar")), Some(String::from("zed"))) => 1,
+            Tup7(1, 1, 99, String::from("https://example.com/dir1/dir2/dir3/dir4/dir5"), Some(String::from("dir1")), Some(String::from("dir2")), Some(String::from("dir3"))) => 1,
         }],
     )]
     #[case::bids_mixed_with_non_urls(
         vec![vec![
-            Event::Bid(Bid {
-                channel: String::from("https://example.com/foo/bar/zed"),
-                ..make_bid()
-            }),
-            Event::Bid(Bid {
-                channel: String::from("Google"),
-                ..make_bid()
-            }),
-            Event::Bid(Bid {
-                channel: String::from("https:badly.formed/dir1/dir2/dir3"),
-                ..make_bid()
-            }),
+            Event::Bid(make_url_bid("https://example.com/foo/bar/zed")),
+            Event::Bid(make_url_bid("Google")),
+            Event::Bid(make_url_bid("https:badly.formed/dir1/dir2/dir3")),
         ]],
         vec![zset!{
-            Tup7(1, 1, 99, String::from("https://example.com/foo/bar/zed"), String::from("foo"), String::from("bar"), String::from("zed")) => 1,
-            Tup7(1, 1, 99, String::from("Google"), String::from(""), String::from(""), String::from("")) => 1,
-            Tup7(1, 1, 99, String::from("https:badly.formed/dir1/dir2/dir3"), String::from("dir3"), String::from(""), String::from("")) => 1,
+            Tup7(1, 1, 99, String::from("https://example.com/foo/bar/zed"), Some(String::from("foo")), Some(String::from("bar")), Some(String::from("zed"))) => 1,
+            Tup7(1, 1, 99, String::from("Google"), None, None, None) => 1,
+            Tup7(1, 1, 99, String::from("https:badly.formed/dir1/dir2/dir3"), Some(String::from("dir3")), None, None) => 1,
         }],
     )]
     fn test_q22(#[case] input_event_batches: Vec<Vec<Event>>, #[case] expected_zsets: Vec<Q22Set>) {

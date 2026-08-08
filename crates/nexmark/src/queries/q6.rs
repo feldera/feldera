@@ -4,18 +4,23 @@ use dbsp::{
     OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
     algebra::UnimplementedSemigroup,
     operator::{Fold, Max},
-    utils::Tup2,
+    utils::{Tup2, Tup3},
 };
 
 type Q6Stream = Stream<RootCircuit, OrdIndexedZSet<u64, u64>>;
 
-const NUM_AUCTIONS_PER_SELLER: usize = 10;
+// ROWS BETWEEN 10 PRECEDING AND CURRENT ROW covers 11 rows.
+const WINDOW_ROWS: usize = 11;
 
 /// Query 6: Average Selling Price by Seller
 ///
 /// What is the average selling price per seller for their last 10 closed
 /// auctions. Shares the same ‘winning bids’ core as for Query4, and illustrates
 /// a specialized combiner.
+///
+/// Following the OVER clause of the original query, the result contains one
+/// running average per auction, computed over a window of 11 rows (10
+/// PRECEDING plus CURRENT ROW) ordered by the date of the winning bid.
 ///
 /// From [Nexmark q6.sql](https://github.com/nexmark/nexmark/blob/v0.2.0/nexmark-flink/src/main/resources/queries/q6.sql):
 ///
@@ -73,41 +78,45 @@ pub fn q6(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q6Stream {
     let bids_for_auctions_indexed = bids_for_auctions.flat_map_index(
         |&((auction_id, seller, a_date_time, a_expires), (bid_price, bid_date_time))| {
             if bid_date_time >= a_date_time && bid_date_time <= a_expires {
-                Some(((auction_id, seller), bid_price))
+                // Price first, so that Max picks the winning bid and its date.
+                Some(((auction_id, seller), Tup2(bid_price, bid_date_time)))
             } else {
                 None
             }
         },
     );
 
-    // winning_bids_by_seller: once we have the winning bids, we don't
-    // need the auction ids anymore.
+    // winning_bids_by_seller: the winning bid of each auction, indexed by
+    // seller.  The date of the winning bid comes first, so that the values of
+    // each seller are ordered by date, as the OVER clause requires.
     // TODO: We can optimize this given that there are no deletions, as DBSP
     // doesn't need to keep records of the bids for future max calculations.
-    type WinningBidsBySeller = Stream<RootCircuit, OrdIndexedZSet<u64, Tup2<u64, u64>>>;
+    type WinningBidsBySeller = Stream<RootCircuit, OrdIndexedZSet<u64, Tup3<u64, u64, u64>>>;
     let winning_bids_by_seller_indexed: WinningBidsBySeller = bids_for_auctions_indexed
         .aggregate(Max)
-        .map_index(|(key, max)| (key.1, Tup2(key.0, *max)));
+        .map_index(|(key, win)| (key.1, Tup3(win.1, win.0, key.0)));
 
-    // Finally, calculate the average winning bid per seller, using the last
-    // 10 closed auctions.
-    // TODO: use linear aggregation when ready (#138).
-    winning_bids_by_seller_indexed.aggregate(
-        <Fold<_, _, UnimplementedSemigroup<_>, _, _>>::with_output(
-            Vec::with_capacity(NUM_AUCTIONS_PER_SELLER),
-            |top: &mut Vec<u64>, val: &Tup2<u64, u64>, _w| {
-                if top.len() >= NUM_AUCTIONS_PER_SELLER {
-                    top.remove(0);
-                }
-                top.push(val.1);
-            },
-            |top: Vec<u64>| -> u64 {
-                let len = top.len() as u64;
-                let sum: u64 = Iterator::sum(top.into_iter());
-                sum / len
-            },
-        ),
-    )
+    // Calculate the running average over the trailing WINDOW_ROWS winning
+    // bids, one output row per auction.
+    winning_bids_by_seller_indexed
+        .aggregate(
+            <Fold<_, _, UnimplementedSemigroup<_>, _, _>>::with_output(
+                Vec::new(),
+                |prices: &mut Vec<u64>, val: &Tup3<u64, u64, u64>, _w| {
+                    prices.push(val.1);
+                },
+                |prices: Vec<u64>| -> Vec<u64> {
+                    (0..prices.len())
+                        .map(|i| {
+                            let window = &prices[(i + 1).saturating_sub(WINDOW_ROWS)..=i];
+                            let sum: u64 = window.iter().sum();
+                            sum / window.len() as u64
+                        })
+                        .collect()
+                },
+            ),
+        )
+        .flat_map_index(|(seller, avgs)| avgs.iter().map(|avg| (*seller, *avg)).collect::<Vec<_>>())
 }
 
 #[cfg(test)]
@@ -258,9 +267,10 @@ mod tests {
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.
                 indexed_zset! { 99 => {100 => 1} },
-                // The second batch adds another auction for the same seller with a final bid of
-                // 200, so average is 150.
-                indexed_zset! { 99 => {100 => -1, 150 => 1} },
+                // The second batch adds another auction for the same seller with a final bid
+                // of 200, adding a running average row of 150; the row of the first auction
+                // stays.
+                indexed_zset! { 99 => {150 => 1} },
             ]
             .into_iter();
 
@@ -496,13 +506,15 @@ mod tests {
         let (mut circuit, input_handle) = dbsp::Runtime::init_circuit(1, move |circuit| {
             let (stream, input_handle) = circuit.add_input_zset::<Event>();
             let mut expected_output = vec![
-                // First has 5 auction for person 99, but average is (200 + 100 * 4) / 5.
-                indexed_zset! { 99 => {120 => 1} },
-                // Second batch adds another 5 auctions for person 99, but average is still 110.
-                indexed_zset! { 99 => {120 => -1, 110 => 1} },
-                // Third batch adds a single auction with bid of 100, pushing
-                // out the first bid so average is now 100.
-                indexed_zset! { 99 => {110 => -1, 100 => 1} },
+                // All winning bids share one date, so the rows sort by price: four rows of
+                // 100 (running average 100), then 200, averaging (4 * 100 + 200) / 5 = 120.
+                indexed_zset! { 99 => {100 => 4, 120 => 1} },
+                // Second batch adds another 5 auctions of 100; the last row now averages
+                // (9 * 100 + 200) / 10 = 110.
+                indexed_zset! { 99 => {100 => 5, 110 => 1, 120 => -1} },
+                // Third batch adds a single auction of 100; the bid of 200 is still inside
+                // the 11 row window of the last row: (10 * 100 + 200) / 11 = 109.
+                indexed_zset! { 99 => {100 => 1, 109 => 1, 110 => -1} },
             ]
             .into_iter();
 
@@ -617,11 +629,11 @@ mod tests {
             let mut expected_output = vec![
                 // First batch has a single auction seller with best bid of 100.
                 indexed_zset! { 99 => {100 => 1} },
-                // The second batch adds another auction for the same seller with a final bid of
-                // 200, so average is 150.
+                // The second batch adds an auction of another seller with a final bid of 200.
                 indexed_zset! { 33 => {200 => 1} },
-                // The average for person 33 doesn't change, only for 99.
-                indexed_zset! { 99 => {100 => -1, 150 => 1} },
+                // Both sellers gain a running average row: (100 + 200) / 2 = 150 for seller
+                // 99, and (200 + 200) / 2 = 200 for seller 33.
+                indexed_zset! { 33 => {200 => 1}, 99 => {150 => 1} },
             ]
             .into_iter();
 

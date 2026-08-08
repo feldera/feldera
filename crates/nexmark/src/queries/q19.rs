@@ -4,7 +4,9 @@ use dbsp::{
     algebra::UnimplementedSemigroup, operator::Fold, utils::Tup2, OrdZSet, RootCircuit, Stream,
 };
 
-type Q19Stream = Stream<RootCircuit, OrdZSet<Bid>>;
+// Each output row is a bid and its rank_number, following SELECT * of the
+// original query, which includes the ROW_NUMBER column.
+type Q19Stream = Stream<RootCircuit, OrdZSet<Tup2<Bid, u64>>>;
 
 const TOP_BIDS: usize = 10;
 
@@ -48,15 +50,47 @@ pub fn q19(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q19Stream {
                 top.push(bid.clone());
             },
         ))
-        .flat_map(|(_, vec)| -> Vec<Bid> { (*vec).clone() })
+        // The vector contains the top bids in ascending price order, so the
+        // last one has rank 1.
+        .flat_map(|(_, vec)| -> Vec<Tup2<Bid, u64>> {
+            let len = vec.len();
+            vec.iter()
+                .enumerate()
+                .map(|(i, bid)| Tup2(bid.clone(), (len - i) as u64))
+                .collect()
+        })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{generator::tests::make_bid, model::Bid};
-    use dbsp::zset;
     use rstest::rstest;
+
+    // (auction, bidder, price, rank_number, weight)
+    type ExpectedRow = (u64, u64, u64, u64, i64);
+
+    fn expected_zset(rows: &[ExpectedRow]) -> OrdZSet<Tup2<Bid, u64>> {
+        OrdZSet::from_keys(
+            (),
+            rows.iter()
+                .map(|&(auction, bidder, price, rank, w)| {
+                    Tup2(
+                        Tup2(
+                            Bid {
+                                auction,
+                                bidder,
+                                price,
+                                ..make_bid()
+                            },
+                            rank,
+                        ),
+                        w,
+                    )
+                })
+                .collect(),
+        )
+    }
 
     #[rstest]
     #[case::top_bids_for_single_auction(
@@ -81,79 +115,40 @@ mod tests {
                 (1, 1, 50),
             ]
         ],
-        vec![zset![
-            Bid {
-                auction: 1,
-                bidder: 6,
-                price: 300,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 1,
-                price: 400,
-                bidder: 7,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 1,
-                price: 500,
-                bidder: 8,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 1,
-                price: 600,
-                bidder: 9,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 1,
-                price: 700,
-                bidder: 10,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 1,
-                price: 800,
-                bidder: 11,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 1,
-                price: 900,
-                bidder: 12,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 1,
-                price: 1000,
-                bidder: 4,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 1,
-                price: 1100,
-                bidder: 3,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 1,
-                price: 1200,
-                bidder: 1,
-                ..make_bid()
-            } => 1,
-        ], zset![
-            Bid {
-                auction: 1,
-                price: 300,
-                bidder: 6,
-                ..make_bid()
-            } => -1,
-            Bid {
-                auction: 1,
-                price: 1_300,
-                ..make_bid()
-            } => 1,
+        vec![vec![
+            (1, 1, 1_200, 1, 1),
+            (1, 3, 1_100, 2, 1),
+            (1, 4, 1_000, 3, 1),
+            (1, 12, 900, 4, 1),
+            (1, 11, 800, 5, 1),
+            (1, 10, 700, 6, 1),
+            (1, 9, 600, 7, 1),
+            (1, 8, 500, 8, 1),
+            (1, 7, 400, 9, 1),
+            (1, 6, 300, 10, 1),
+        ], vec![
+            // The new top bid of 1300 shifts every rank down by one and pushes
+            // the bid of 300 out of the top 10.
+            (1, 1, 1_200, 1, -1),
+            (1, 3, 1_100, 2, -1),
+            (1, 4, 1_000, 3, -1),
+            (1, 12, 900, 4, -1),
+            (1, 11, 800, 5, -1),
+            (1, 10, 700, 6, -1),
+            (1, 9, 600, 7, -1),
+            (1, 8, 500, 8, -1),
+            (1, 7, 400, 9, -1),
+            (1, 6, 300, 10, -1),
+            (1, 1, 1_300, 1, 1),
+            (1, 1, 1_200, 2, 1),
+            (1, 3, 1_100, 3, 1),
+            (1, 4, 1_000, 4, 1),
+            (1, 12, 900, 5, 1),
+            (1, 11, 800, 6, 1),
+            (1, 10, 700, 7, 1),
+            (1, 9, 600, 8, 1),
+            (1, 8, 500, 9, 1),
+            (1, 7, 400, 10, 1),
         ]]
     )]
     #[case::top_bids_for_multiple_auctions(
@@ -180,83 +175,32 @@ mod tests {
                 (1, 1, 50),
             ]
         ],
-        vec![zset![
-            Bid {
-                auction: 1,
-                price: 100,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 1,
-                price: 200,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 7,
-                price: 300,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 7,
-                price: 400,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 7,
-                price: 500,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 7,
-                price: 600,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 7,
-                price: 700,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 7,
-                price: 800,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 7,
-                price: 900,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 7,
-                price: 1000,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 7,
-                price: 1100,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 7,
-                price: 1200,
-                ..make_bid()
-            } => 1,
-        ], zset![
-            Bid {
-                auction: 1,
-                price: 50,
-                ..make_bid()
-            } => 1,
-            Bid {
-                auction: 1,
-                price: 1_300,
-                ..make_bid()
-            } => 1,
+        vec![vec![
+            (1, 1, 200, 1, 1),
+            (1, 1, 100, 2, 1),
+            (7, 1, 1_200, 1, 1),
+            (7, 1, 1_100, 2, 1),
+            (7, 1, 1_000, 3, 1),
+            (7, 1, 900, 4, 1),
+            (7, 1, 800, 5, 1),
+            (7, 1, 700, 6, 1),
+            (7, 1, 600, 7, 1),
+            (7, 1, 500, 8, 1),
+            (7, 1, 400, 9, 1),
+            (7, 1, 300, 10, 1),
+        ], vec![
+            // Auction 7 is unchanged; the ranks of auction 1 shift.
+            (1, 1, 200, 1, -1),
+            (1, 1, 100, 2, -1),
+            (1, 1, 1_300, 1, 1),
+            (1, 1, 200, 2, 1),
+            (1, 1, 100, 3, 1),
+            (1, 1, 50, 4, 1),
         ]]
     )]
     pub fn test_q19(
         #[case] input_bid_batches: Vec<Vec<(u64, u64, u64)>>,
-        #[case] expected_zsets: Vec<OrdZSet<Bid>>,
+        #[case] expected_batches: Vec<Vec<ExpectedRow>>,
     ) {
         let input_vecs = input_bid_batches.into_iter().map(|batch| {
             batch
@@ -280,7 +224,7 @@ mod tests {
 
             let output = q19(circuit, stream);
 
-            let mut expected_output = expected_zsets.into_iter();
+            let mut expected_output = expected_batches.into_iter().map(|b| expected_zset(&b));
             output.inspect(move |batch| assert_eq!(batch, &expected_output.next().unwrap()));
 
             Ok(input_handle)
