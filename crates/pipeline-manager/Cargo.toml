@@ -89,7 +89,6 @@ bytestring = { workspace = true }
 jsonwebtoken = { workspace = true }
 static-files = { workspace = true }
 utoipa = { workspace = true, features = ["actix_extras", "chrono", "uuid"] }
-utoipa-swagger-ui = { workspace = true, features = ["actix-web"] }
 # The `rustls-0_23-native-roots` feature is such that when you create a default awc::Client (during auth workflow),
 # it can connect to HTTPS with the system root certificates.
 #
