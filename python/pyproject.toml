@@ -40,6 +40,7 @@ Issues = "https://github.com/feldera/feldera/issues"
 
 [dependency-groups]
 dev = [
+    "pytest-rerunfailures>=15",
     "pytest-timeout>=2.3.1",
     "pytest-xdist>=3.8.0",
     "pytest>=8.3.5",
@@ -54,6 +55,19 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = "feldera"
+# Rerun tests that die on infra-shaped errors: the shared CI instances see
+# node replacement and pipeline pod rescheduling that no request-level retry
+# can fully absorb. The allowlist keeps reruns to transport failures and
+# pipeline unavailability; assertion failures never match, so real bugs
+# still fail deterministically.
+addopts = [
+    "--reruns=2",
+    "--only-rerun=FelderaCommunicationError",
+    "--only-rerun=PipelineUnavailable",
+    "--only-rerun=ChunkedEncodingError",
+    "--only-rerun=ProtocolError",
+    "--only-rerun=ArrowInvalid",
+]
 
 [tool.setuptools.packages.find]
 include = ["feldera", "feldera.*"]
