@@ -10,6 +10,7 @@ use dbsp::{
     },
     utils::consolidate,
 };
+#[cfg(unix)]
 use pprof::criterion::{Output, PProfProfiler};
 use rand::{Rng, SeedableRng, distributions::Standard, prelude::Distribution};
 use rand_xoshiro::Xoshiro256StarStar;
@@ -233,9 +234,18 @@ leaf_benches! {
     "100,000,000-erased" = [Leaf]100_000_000,
 }
 
+#[cfg(unix)]
 criterion_group!(
     name = benches;
     config = Criterion::default().with_profiler(PProfProfiler::new(300, Output::Flamegraph(None)));
     targets = column_leaf, merge_ordered_column_leaf_builder
 );
+
+#[cfg(not(unix))]
+criterion_group!(
+    name = benches;
+    config = Criterion::default();
+    targets = column_leaf, merge_ordered_column_leaf_builder
+);
+
 criterion_main!(benches);

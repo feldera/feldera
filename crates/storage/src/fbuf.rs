@@ -13,18 +13,20 @@
 use std::{
     alloc,
     borrow::{Borrow, BorrowMut},
-    cmp::Ordering,
     fmt,
     fs::File,
     io::{self, Error as IoError, ErrorKind, Read},
     mem,
     ops::{Deref, DerefMut, Index, IndexMut},
-    os::fd::AsRawFd,
     ptr::NonNull,
     slice,
 };
 
-use libc::c_void;
+#[cfg(unix)]
+use std::os::unix::fs::FileExt;
+#[cfg(windows)]
+use std::os::windows::io::{AsRawHandle, FromRawHandle};
+
 use rkyv::{
     Archive, Archived, Serialize,
     ser::{ScratchSpace, Serializer},
@@ -551,40 +553,175 @@ impl FBuf {
     /// Reads `len` bytes from `file` at the given `offset` and appends them to
     /// this `FBuf`.
     ///
-    /// This avoids zero-initializing the buffer before reading into it.
+    /// This does not change the file's current position and avoids
+    /// zero-initializing the buffer before reading into it.
+    ///
+    /// Returns an error if fewer than `len` bytes are available or an I/O error
+    /// occurs.
     pub fn read_exact_at(
         &mut self,
         file: &File,
+        offset: u64,
+        len: usize,
+    ) -> Result<(), IoError> {
+        #[cfg(unix)]
+        {
+            self.read_exact_at_with(offset, len, |buffer, offset| {
+                read_at(file, buffer, offset)
+            })
+        }
+
+        #[cfg(windows)]
+        {
+            let read_file = reopen_for_overlapped_read(file)?;
+            self.read_exact_at_overlapped(&read_file, offset, len)
+        }
+    }
+
+    /// Reads `len` bytes from an overlapped Windows file handle at the given
+    /// `offset` and appends them to this `FBuf`.
+    ///
+    /// The file must have been opened with `FILE_FLAG_OVERLAPPED`.
+    ///
+    /// Returns an error if fewer than `len` bytes are available or an I/O error
+    /// occurs.
+    #[cfg(windows)]
+    pub fn read_exact_at_overlapped(
+        &mut self,
+        file: &File,
+        offset: u64,
+        len: usize,
+    ) -> Result<(), IoError> {
+        self.read_exact_at_with(offset, len, |buffer, offset| {
+            read_at_overlapped(file, buffer, offset)
+        })
+    }
+
+    /// Reads and appends exactly `len` bytes by repeatedly invoking `read_at`.
+    ///
+    /// `read_at` must read from the supplied offset without changing the file's
+    /// current position. Returns an error if it returns zero bytes before the
+    /// requested length is read or reports an I/O error.
+    fn read_exact_at_with<F>(
+        &mut self,
         mut offset: u64,
         mut len: usize,
-    ) -> Result<(), IoError> {
+        mut read_at: F,
+    ) -> Result<(), IoError>
+    where
+        F: FnMut(&mut [u8], u64) -> Result<usize, IoError>,
+    {
         self.reserve(len);
         while len > 0 {
-            let retval = unsafe {
-                libc::pread(
-                    file.as_raw_fd(),
-                    self.as_mut_ptr().add(self.len) as *mut c_void,
-                    len,
-                    offset as i64,
-                )
+            // SAFETY: `reserve` ensures that the allocation has room for `len`
+            // bytes after `self.len`. The exclusive `&mut self` borrow prevents
+            // reallocation while `read_at` uses the returned slice.
+            let read_buf =
+                unsafe { slice::from_raw_parts_mut(self.as_mut_ptr().add(self.len), len) };
+            let read = match read_at(read_buf, offset) {
+                Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+                result => result?,
             };
-            match retval.cmp(&0) {
-                Ordering::Equal => return Err(ErrorKind::UnexpectedEof.into()),
-                Ordering::Less => {
-                    let error = IoError::last_os_error();
-                    if error.kind() != ErrorKind::Interrupted {
-                        return Err(error);
-                    }
-                }
-                Ordering::Greater => {
-                    self.len += retval as usize;
-                    len -= retval as usize;
-                    offset += retval as u64;
-                }
+            if read == 0 {
+                return Err(ErrorKind::UnexpectedEof.into());
             }
+            self.len += read;
+            len -= read;
+            offset += read as u64;
         }
         Ok(())
     }
+}
+
+#[cfg(unix)]
+/// Reads from `file` at `offset` without changing the file's current position.
+fn read_at(file: &File, buffer: &mut [u8], offset: u64) -> Result<usize, IoError> {
+    file.read_at(buffer, offset)
+}
+
+#[cfg(windows)]
+/// Reopens `file` with overlapped I/O enabled for positioned reads.
+fn reopen_for_overlapped_read(file: &File) -> Result<File, IoError> {
+    // The caller's file may not have FILE_FLAG_OVERLAPPED. The returned File
+    // owns the duplicated handle used for positioned reads.
+    use windows_sys::Win32::{
+        Foundation::INVALID_HANDLE_VALUE,
+        Storage::FileSystem::{
+            FILE_FLAG_OVERLAPPED, FILE_GENERIC_READ, FILE_SHARE_DELETE, FILE_SHARE_READ,
+            FILE_SHARE_WRITE, ReOpenFile,
+        },
+    };
+
+    // SAFETY: `file` owns a valid handle, which remains borrowed for the
+    // duration of this call.
+    let handle = unsafe {
+        ReOpenFile(
+            file.as_raw_handle(),
+            FILE_GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            FILE_FLAG_OVERLAPPED,
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return Err(IoError::last_os_error());
+    }
+
+    // SAFETY: `ReOpenFile` returned a distinct owned handle after the invalid
+    // handle case was excluded. The returned `File` takes ownership of it.
+    Ok(unsafe { File::from_raw_handle(handle) })
+}
+
+#[cfg(windows)]
+/// Reads from an overlapped `file` at `offset` and waits for the operation to complete.
+fn read_at_overlapped(file: &File, buffer: &mut [u8], offset: u64) -> Result<usize, IoError> {
+    use windows_sys::Win32::{
+        Foundation::ERROR_IO_PENDING,
+        Storage::FileSystem::ReadFile,
+        System::IO::{GetOverlappedResult, OVERLAPPED, OVERLAPPED_0_0},
+    };
+
+    let byte_count = u32::try_from(buffer.len()).map_err(|_| {
+        IoError::new(
+            ErrorKind::InvalidInput,
+            "read buffer length exceeds the Windows ReadFile limit",
+        )
+    })?;
+    let mut overlapped = OVERLAPPED::default();
+    overlapped.Anonymous.Anonymous = OVERLAPPED_0_0 {
+        Offset: offset as u32,
+        OffsetHigh: (offset >> 32) as u32,
+    };
+    let mut bytes_read = 0;
+
+    // SAFETY: `buffer` is writable for `byte_count` bytes, `file` owns a valid
+    // handle, and `overlapped` is initialized for this operation.
+    let result = unsafe {
+        ReadFile(
+            file.as_raw_handle(),
+            buffer.as_mut_ptr(),
+            byte_count,
+            &mut bytes_read,
+            &mut overlapped,
+        )
+    };
+    if result == 0 {
+        let error = IoError::last_os_error();
+        if error.raw_os_error() != Some(ERROR_IO_PENDING as i32) {
+            return Err(error);
+        }
+
+        // Wait for pending I/O before returning so `overlapped` and `buffer` remain valid.
+        // SAFETY: This uses the same handle and `OVERLAPPED` as the pending
+        // `ReadFile` operation and waits for it to complete before either is dropped.
+        if unsafe {
+            GetOverlappedResult(file.as_raw_handle(), &mut overlapped, &mut bytes_read, 1)
+        } == 0
+        {
+            return Err(IoError::last_os_error());
+        }
+    }
+
+    Ok(bytes_read as usize)
 }
 
 impl From<FBuf> for Vec<u8> {
@@ -868,5 +1005,74 @@ impl<A: Borrow<FBuf> + BorrowMut<FBuf>> Serializer for FBufSerializer<A> {
             value.resolve_unsized(from, to, metadata_resolver, ptr);
             Ok(from)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FBuf;
+    use std::{
+        fs::{File, OpenOptions},
+        io::{Read, Seek, SeekFrom, Write},
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    #[cfg(windows)]
+    use std::os::windows::fs::OpenOptionsExt;
+
+    fn temporary_file_path() -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "feldera-storage-fbuf-read-at-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn read_exact_at_reads_from_offset_without_seeking_file() {
+        let path = temporary_file_path();
+        let mut writer = File::create(&path).unwrap();
+        writer.write_all(b"0123456789abcdef").unwrap();
+        drop(writer);
+
+        let mut file = OpenOptions::new().read(true).open(&path).unwrap();
+        file.seek(SeekFrom::Start(2)).unwrap();
+
+        let mut buffer = FBuf::new();
+        buffer.read_exact_at(&file, 8, 4).unwrap();
+        assert_eq!(buffer.as_slice(), b"89ab");
+
+        let mut next_byte = [0_u8; 1];
+        file.read_exact(&mut next_byte).unwrap();
+        assert_eq!(next_byte, *b"2");
+
+        drop(file);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn read_exact_at_overlapped_reads_from_offset() {
+        use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
+
+        let path = temporary_file_path();
+        let mut writer = File::create(&path).unwrap();
+        writer.write_all(b"0123456789abcdef").unwrap();
+        drop(writer);
+
+        let file = OpenOptions::new()
+            .read(true)
+            .custom_flags(FILE_FLAG_OVERLAPPED)
+            .open(&path)
+            .unwrap();
+
+        let mut buffer = FBuf::new();
+        buffer.read_exact_at_overlapped(&file, 8, 4).unwrap();
+        assert_eq!(buffer.as_slice(), b"89ab");
+
+        drop(file);
+        std::fs::remove_file(path).unwrap();
     }
 }

@@ -20,7 +20,6 @@ flate2 = { workspace = true }
 itertools = { workspace = true }
 libc = { workspace = true }
 memory-stats = { workspace = true }
-nix = { workspace = true, features = ["process", "time"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_json_path_to_error = { workspace = true }
@@ -29,6 +28,9 @@ thiserror = { workspace = true }
 thread-id = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 tracing = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["process", "time"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 mach2 = { workspace = true }

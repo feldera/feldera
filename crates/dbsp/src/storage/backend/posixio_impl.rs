@@ -27,7 +27,6 @@ use std::time::{Duration, Instant};
 use std::{
     fs::{self, File, OpenOptions},
     io::Error as IoError,
-    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -36,10 +35,54 @@ use std::{
 };
 use tracing::{debug, warn};
 
+#[cfg(windows)]
+/// Opens a separate overlapped reader handle for `file`.
+///
+/// The returned handle is reused by every positioned read from this reader.
+fn reader_file(file: &File) -> Result<Arc<File>, IoError> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle};
+    use windows_sys::Win32::{
+        Foundation::INVALID_HANDLE_VALUE,
+        Storage::FileSystem::{
+            FILE_FLAG_OVERLAPPED, FILE_GENERIC_READ, FILE_SHARE_DELETE, FILE_SHARE_READ,
+            FILE_SHARE_WRITE, ReOpenFile,
+        },
+    };
+
+    // SAFETY: `file` owns a valid handle borrowed for the duration of this call.
+    let handle = unsafe {
+        ReOpenFile(
+            file.as_raw_handle(),
+            FILE_GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            FILE_FLAG_OVERLAPPED,
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return Err(IoError::last_os_error());
+    }
+    // SAFETY: ReOpenFile returned a distinct owned handle after excluding
+    // INVALID_HANDLE_VALUE. The returned File takes ownership exactly once.
+    Ok(Arc::new(unsafe { File::from_raw_handle(handle) }))
+}
+
+#[cfg(windows)]
+/// Reads exactly `len` bytes at `offset` through an overlapped `file` and
+/// appends them to `buffer`.
+fn read_exact_at_overlapped(
+    buffer: &mut FBuf,
+    file: &File,
+    offset: u64,
+    len: usize,
+) -> Result<(), IoError> {
+    buffer.read_exact_at_overlapped(file, offset, len)
+}
+
 /// fsync the directory at `path` so a freshly-created child entry (a
 /// rename target or a new subdirectory) becomes durable. Without this,
 /// POSIX gives no guarantee that the directory entry survives a crash
 /// even if the child file itself has been fully fsynced.
+#[cfg(unix)]
 fn fsync_dir(path: &Path) -> Result<(), StorageError> {
     let dir = File::open(path)
         .map_err(|e| StorageError::stdio(e.kind(), "open dir for fsync", path.display()))?;
@@ -47,9 +90,69 @@ fn fsync_dir(path: &Path) -> Result<(), StorageError> {
         .map_err(|e| StorageError::stdio(e.kind(), "fsync dir", path.display()))
 }
 
+#[cfg(windows)]
+/// Flushes the directory at `path` so newly-created child entries are durable.
+///
+/// Windows requires `FILE_FLAG_BACKUP_SEMANTICS` to open a directory handle.
+fn fsync_dir(path: &Path) -> Result<(), StorageError> {
+    use std::{iter::once, os::windows::ffi::OsStrExt, ptr::null_mut};
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
+        Storage::FileSystem::{
+            CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
+            FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FlushFileBuffers, OPEN_EXISTING,
+        },
+    };
+
+    let wide_path = path
+        .as_os_str()
+        .encode_wide()
+        .chain(once(0))
+        .collect::<Vec<_>>();
+    // SAFETY: `wide_path` is NUL-terminated and remains valid for this call.
+    let handle = unsafe {
+        CreateFileW(
+            wide_path.as_ptr(),
+            FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            null_mut(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return Err(StorageError::stdio(
+            IoError::last_os_error().kind(),
+            "open dir for fsync",
+            path.display(),
+        ));
+    }
+
+    // SAFETY: `handle` is valid until CloseHandle below.
+    let result = unsafe { FlushFileBuffers(handle) };
+    let flush_error = (result == 0).then(IoError::last_os_error);
+    // SAFETY: CreateFileW returned this owned handle, which is closed exactly once.
+    let close_result = unsafe { CloseHandle(handle) };
+    if let Some(error) = flush_error {
+        return Err(StorageError::stdio(error.kind(), "fsync dir", path.display()));
+    }
+    if close_result == 0 {
+        return Err(StorageError::stdio(
+            IoError::last_os_error().kind(),
+            "close dir after fsync",
+            path.display(),
+        ));
+    }
+    Ok(())
+}
+
 pub(super) struct PosixReader {
     path: StoragePath,
+    #[cfg(unix)]
     file: Arc<File>,
+    #[cfg(windows)]
+    read_file: Arc<File>,
     file_id: FileId,
     drop: DeleteOnDrop,
 
@@ -67,6 +170,7 @@ impl Debug for PosixReader {
 }
 
 impl PosixReader {
+    #[cfg(unix)]
     fn new(
         path: StoragePath,
         file: Arc<File>,
@@ -84,6 +188,26 @@ impl PosixReader {
             ioop_delay,
         }
     }
+
+    #[cfg(windows)]
+    fn new(
+        path: StoragePath,
+        file: Arc<File>,
+        file_id: FileId,
+        drop: DeleteOnDrop,
+        async_threads: bool,
+        ioop_delay: Duration,
+    ) -> Result<Self, IoError> {
+        let read_file = reader_file(&file)?;
+        Ok(Self {
+            path,
+            read_file,
+            file_id,
+            drop,
+            async_threads,
+            ioop_delay,
+        })
+    }
     fn open(
         path: StoragePath,
         file_name: PathBuf,
@@ -100,8 +224,10 @@ impl PosixReader {
         let size = file
             .metadata()
             .map_err(|e| StorageError::stdio(e.kind(), "fstat", file_name.display()))?
-            .size();
+            .len();
 
+        #[cfg(unix)]
+        {
         Ok(Arc::new(Self::new(
             path,
             Arc::new(file),
@@ -110,6 +236,25 @@ impl PosixReader {
             async_threads,
             ioop_delay,
         )))
+        }
+
+        #[cfg(windows)]
+        {
+            let reader_path = file_name.clone();
+            Ok(Arc::new(
+                Self::new(
+                    path,
+                    Arc::new(file),
+                    FileId::new(),
+                    DeleteOnDrop::new(file_name, true, size, usage),
+                    async_threads,
+                    ioop_delay,
+                )
+                .map_err(|e| {
+                    StorageError::stdio(e.kind(), "open overlapped reader", reader_path.display())
+                })?,
+            ))
+        }
     }
 }
 
@@ -124,6 +269,15 @@ impl FileRw for PosixReader {
 
 impl FileCommitter for PosixReader {
     fn commit(&self) -> Result<(), StorageError> {
+        #[cfg(windows)]
+        {
+            // PosixWriter::complete flushes the writable handle before renaming
+            // the file into its immutable path. This reader owns a read-only
+            // overlapped handle, which FlushFileBuffers cannot flush.
+            return Ok(());
+        }
+
+        #[cfg(unix)]
         self.file
             .sync_all()
             .map_err(|e| StorageError::stdio(e.kind(), "fsync", self.drop.path.display()))
@@ -141,7 +295,16 @@ impl FileReader for PosixReader {
             sleep(self.ioop_delay);
             let mut buffer = FBuf::with_capacity(location.size);
 
-            match buffer.read_exact_at(&self.file, location.offset, location.size) {
+            #[cfg(unix)]
+            let result = buffer.read_exact_at(&self.file, location.offset, location.size);
+            #[cfg(windows)]
+            let result = read_exact_at_overlapped(
+                &mut buffer,
+                &self.read_file,
+                location.offset,
+                location.size,
+            );
+            match result {
                 Ok(()) => Ok(Arc::new(buffer)),
                 Err(e) => Err(StorageError::stdio(
                     e.kind(),
@@ -158,7 +321,10 @@ impl FileReader for PosixReader {
         callback: Box<dyn FnOnce(Vec<Result<Arc<FBuf>, StorageError>>) + Send>,
     ) {
         if self.async_threads {
+            #[cfg(unix)]
             let file = self.file.clone();
+            #[cfg(windows)]
+            let file = self.read_file.clone();
             let ioop_delay = self.ioop_delay;
             let start = Instant::now();
             TOKIO.spawn_blocking(move || {
@@ -169,7 +335,16 @@ impl FileReader for PosixReader {
                     .map(|location| {
                         READ_BLOCKS_BYTES.record(location.size);
                         let mut buffer = FBuf::with_capacity(location.size);
-                        match buffer.read_exact_at(&file, location.offset, location.size) {
+                        #[cfg(unix)]
+                        let result = buffer.read_exact_at(&file, location.offset, location.size);
+                        #[cfg(windows)]
+                        let result = read_exact_at_overlapped(
+                            &mut buffer,
+                            &file,
+                            location.offset,
+                            location.size,
+                        );
+                        match result {
                             Ok(()) => Ok(Arc::new(buffer)),
                             Err(e) => Err(StorageError::StdIo {
                                 kind: e.kind(),
@@ -284,12 +459,14 @@ impl FileWriter for PosixWriter {
             self.drop.usage.fetch_sub(
                 finalized_path
                     .metadata()
-                    .map_or(0, |metadata| metadata.size() as i64),
+                    .map_or(0, |metadata| metadata.len() as i64),
                 Ordering::Relaxed,
             );
             fs::rename(&self.drop.path, &finalized_path)
                 .map_err(|e| StorageError::stdio(e.kind(), "rename", self.drop.path.display()))?;
 
+            #[cfg(unix)]
+            {
             Ok(Arc::new(PosixReader::new(
                 self.name,
                 Arc::new(self.file),
@@ -298,6 +475,29 @@ impl FileWriter for PosixWriter {
                 self.async_threads,
                 self.ioop_delay,
             )) as Arc<dyn FileReader>)
+            }
+
+            #[cfg(windows)]
+            {
+                let reader_path = finalized_path.clone();
+                Ok(Arc::new(
+                    PosixReader::new(
+                        self.name,
+                        Arc::new(self.file),
+                        self.file_id,
+                        self.drop.with_path(finalized_path),
+                        self.async_threads,
+                        self.ioop_delay,
+                    )
+                    .map_err(|e| {
+                        StorageError::stdio(
+                            e.kind(),
+                            "open overlapped reader",
+                            reader_path.display(),
+                        )
+                    })?,
+                ) as Arc<dyn FileReader>)
+            }
         })
     }
 }
@@ -441,7 +641,7 @@ impl PosixBackend {
                 if file_type.is_dir() {
                     self.remove_dir_all_recursive(&path)
                 } else if file_type.is_file() {
-                    let size = child.metadata().map_or(0, |metadata| metadata.size());
+                    let size = child.metadata().map_or(0, |metadata| metadata.len());
                     fs::remove_file(&path).inspect(|_| {
                         self.usage.fetch_sub(size as i64, Ordering::Relaxed);
                     })
@@ -518,7 +718,7 @@ impl StorageBackend for PosixBackend {
                         .map_err(|e| {
                             StorageError::stdio(e.kind(), "readdir fstat", entry.path().display())
                         })?
-                        .size(),
+                        .len(),
                 }
             } else if file_type.is_dir() {
                 StorageFileType::Directory
@@ -582,7 +782,7 @@ impl StorageBackend for PosixBackend {
             .map_err(|e| StorageError::stdio(e.kind(), "unlink", path.display()))?;
         if metadata.file_type().is_file() {
             self.usage
-                .fetch_sub(metadata.size() as i64, Ordering::Relaxed);
+                .fetch_sub(metadata.len() as i64, Ordering::Relaxed);
         }
         Ok(())
     }
