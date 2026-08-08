@@ -259,6 +259,47 @@ class TestRetryBehavior:
                 client.post("/foo")
         assert m.call_count == 1
 
+    def test_post_marked_idempotent_retries_connection_error(self):
+        client = _make_client()
+        with patch_requests(
+            "post",
+            [requests.exceptions.ConnectionError("reset"), _make_response(200, b"{}")],
+        ) as m:
+            client.post("/foo", idempotent=True)
+        assert m.call_count == 2
+
+    def test_get_marked_not_idempotent_skips_connection_error_retry(self):
+        client = _make_client()
+        with patch_requests("get", [requests.exceptions.ConnectionError("down")]) as m:
+            with pytest.raises(FelderaCommunicationError):
+                client.send_request(requests.get, "/foo", idempotent=False)
+        assert m.call_count == 1
+
+    def test_idempotent_delete_treats_404_after_retry_as_success(self):
+        # First attempt drops the connection after the server applied the
+        # DELETE; the retry finds the resource gone. The postcondition holds.
+        client = _make_client()
+        with patch_requests(
+            "delete",
+            [
+                requests.exceptions.ConnectionError("reset"),
+                _make_response(404, b'{"error":"not found"}'),
+            ],
+        ) as m:
+            assert client.delete("/foo", idempotent=True) is None
+        assert m.call_count == 2
+
+    def test_idempotent_delete_first_attempt_404_still_raises(self):
+        # No retry happened, so the resource genuinely did not exist.
+        client = _make_client()
+        with patch_requests(
+            "delete", [_make_response(404, b'{"error":"not found"}')]
+        ) as m:
+            with pytest.raises(FelderaAPIError) as exc_info:
+                client.delete("/foo", idempotent=True)
+        assert exc_info.value.status_code == 404
+        assert m.call_count == 1
+
     def test_no_retries_when_max_retries_zero(self):
         client = _make_client(_fast_retry(max_retries=0))
         with patch_requests("get", [_make_response(503)]) as m:
@@ -435,6 +476,35 @@ class Test502HealthHandling:
                     client.get("/foo")
         assert exc_info.value.status_code == 502
         assert m.call_count == 3
+
+
+class TestClientMarksIdempotentEndpoints:
+    @staticmethod
+    def _client_with_mock_http():
+        from feldera.rest.feldera_client import FelderaClient
+
+        # Skip the server-version handshake performed in __init__.
+        with mock.patch.object(
+            FelderaClient, "get_config", return_value=mock.Mock(version="x")
+        ):
+            client = FelderaClient(url="http://example.test")
+        client.http = mock.Mock()
+        return client
+
+    def test_stop_pipeline_posts_idempotent(self):
+        client = self._client_with_mock_http()
+        client.stop_pipeline("p", force=True, wait=False)
+        assert client.http.post.call_args.kwargs["idempotent"] is True
+
+    def test_pause_pipeline_posts_idempotent(self):
+        client = self._client_with_mock_http()
+        client.pause_pipeline("p", wait=False)
+        assert client.http.post.call_args.kwargs["idempotent"] is True
+
+    def test_delete_pipeline_deletes_idempotent(self):
+        client = self._client_with_mock_http()
+        client.delete_pipeline("p")
+        assert client.http.delete.call_args.kwargs["idempotent"] is True
 
 
 class TestFelderaClientAcceptsRetryConfig:
