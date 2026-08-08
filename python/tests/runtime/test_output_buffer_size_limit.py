@@ -20,7 +20,7 @@ size cap.
 import json
 
 from feldera import Pipeline, PipelineBuilder
-from feldera.runtime_config import RuntimeConfig
+from feldera.runtime_config import Resources, RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS
 from tests import TEST_CLIENT
 from tests.utils import DeltaTestLocation, wait_for_condition
@@ -90,7 +90,13 @@ CREATE INDEX v_idx ON v(id);
         TEST_CLIENT,
         name=pipeline_name,
         sql=sql,
-        runtime_config=RuntimeConfig(workers=FELDERA_TEST_NUM_WORKERS),
+        runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            # Buffering 10M+ records for the Delta sink peaks near 2 GiB;
+            # the default 1 GiB request under-reserves, and the kubelet
+            # evicts the pod when a packed node runs out of memory.
+            resources=Resources(memory_mb_min=4096),
+        ),
     ).create_or_replace()
 
     pipeline.start()
