@@ -35,6 +35,7 @@ import org.apache.calcite.sql.fun.SqlAvgAggFunction;
 import org.apache.calcite.sql.fun.SqlBasicAggFunction;
 import org.apache.calcite.sql.fun.SqlBitOpAggFunction;
 import org.apache.calcite.sql.fun.SqlCountAggFunction;
+import org.apache.calcite.sql.fun.SqlCovarAggFunction;
 import org.apache.calcite.sql.fun.SqlMinMaxAggFunction;
 import org.apache.calcite.sql.fun.SqlSingleValueAggFunction;
 import org.apache.calcite.sql.fun.SqlSumAggFunction;
@@ -917,9 +918,8 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPExpression cast = this.getAggregatedValue().cast(
                     this.node, typedZero.getType(), DBSPCastExpression.CastType.SqlUnsafe);
             DBSPExpression sq = ExpressionCompiler.makeBinaryExpression(
-                    this.node, this.partialResultType, DBSPOpcode.MUL, cast, cast);
-            DBSPExpression first = new DBSPIfExpression(this.node, condition,
-                    sq.cast(this.node, typedZero.getType(), DBSPCastExpression.CastType.SqlUnsafe), typedZero);
+                    this.node, typedZero.getType(), DBSPOpcode.MUL, cast, cast);
+            DBSPExpression first = new DBSPIfExpression(this.node, condition, sq, typedZero);
 
             DBSPExpression second = this.ifNotFilteredId();
             DBSPExpression third = this.ifNotFilteredOne();
@@ -1007,6 +1007,192 @@ public class AggregateCompiler implements ICompilerComponent {
         this.setResult(implementation);
     }
 
+    /** An expression which computes a covariance-family aggregate from
+     * sum(a*b), sum(a), sum(b), and the count of aggregated rows.
+     * All aggregates take the arguments (y, x), where y is the dependent
+     * variable and x the independent variable, and use only the rows where
+     * both are non-NULL:
+     * <pre>
+     * numerator       = sumAB - (sumA * sumB / n)
+     * COVAR_POP(y, x) = numerator / n        with a = y, b = x
+     * COVAR_SAMP(y, x)= numerator / (n - 1)  with a = y, b = x
+     * REGR_SXX(y, x)  = numerator            with a = b = x, the sum of squares
+     *                                        of deviations of the independent
+     *                                        variable, n * VAR_POP(x)
+     * REGR_SYY(y, x)  = numerator            with a = b = y, the sum of squares
+     *                                        of deviations of the dependent
+     *                                        variable, n * VAR_POP(y)
+     * </pre>
+     * Division uses DIV_NULL. */
+    DBSPExpression covariance(SqlKind kind, DBSPType intermediateResultType,
+                              DBSPExpression sumAB, DBSPExpression sumA,
+                              DBSPExpression sumB, DBSPExpression count) {
+        DBSPExpression crossSum = ExpressionCompiler.makeBinaryExpression(
+                this.node, intermediateResultType, DBSPOpcode.MUL,
+                sumA, sumB);
+        DBSPExpression normalized = ExpressionCompiler.makeBinaryExpression(
+                this.node, intermediateResultType, DBSPOpcode.DIV_NULL,
+                crossSum, count);
+        DBSPExpression numerator = ExpressionCompiler.makeBinaryExpression(
+                this.node, intermediateResultType, DBSPOpcode.SUB,
+                sumAB, normalized);
+
+        final DBSPExpression result;
+        if (kind == SqlKind.REGR_SXX || kind == SqlKind.REGR_SYY) {
+            result = numerator;
+        } else {
+            DBSPExpression denom = kind == SqlKind.COVAR_SAMP ?
+                    ExpressionCompiler.makeBinaryExpression(
+                            this.node, intermediateResultType, DBSPOpcode.SUB,
+                            count, intermediateResultType.to(IsNumericType.class).getOne()) :
+                    count;
+            result = ExpressionCompiler.makeBinaryExpression(
+                    this.node, intermediateResultType, DBSPOpcode.DIV_NULL,
+                    numerator, denom);
+        }
+        return result.cast(this.node, this.nullableResultType, DBSPCastExpression.CastType.SqlUnsafe);
+    }
+
+    /** Implements COVAR_POP, COVAR_SAMP, REGR_SXX, and REGR_SYY.
+     * All of them aggregate only rows where both arguments are non-NULL. */
+    IAggregate doCovariance(SqlCovarAggFunction function) {
+        final SqlKind kind = function.getKind();
+        final DBSPType intermediateResultType = this.partialResultType.withMayBeNull(true);
+        final DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
+
+        DBSPTupleExpression arguments = this.getAggregatedValue().to(DBSPTupleExpression.class);
+        Utilities.enforce(arguments.fields != null && arguments.fields.length == 2,
+                () -> "Expected 2 arguments for " + kind);
+        // In FUNC(y, x) the summed values are: y, x for COVAR;
+        // x, x for REGR_SXX; y, y for REGR_SYY.
+        final DBSPExpression y = arguments.fields[0];
+        final DBSPExpression x = arguments.fields[1];
+        final DBSPExpression a = kind == SqlKind.REGR_SXX ? x : y;
+        final DBSPExpression b = kind == SqlKind.REGR_SYY ? y : x;
+        final DBSPExpression bothNonNull = ExpressionCompiler.makeBinaryExpression(
+                this.node, DBSPTypeBool.create(false), DBSPOpcode.AND,
+                y.is_null().not(), x.is_null().not());
+
+        if (this.linearAllowed && !this.fp()) {
+            // map = |v| {
+            //     ( if filter(v) && both_non_null(v) { cast(a) * cast(b) } else { 0 },
+            //       if filter(v) && both_non_null(v) { cast(a) } else { 0 },
+            //       if filter(v) && both_non_null(v) { cast(b) } else { 0 },
+            //       if filter(v) && both_non_null(v) { 1 } else { 0 },
+            //       1 )}
+            DBSPExpression typedZero = this.partialResultType
+                    .withMayBeNull(false).to(IsNumericType.class).getZero();
+            DBSPExpression condition = bothNonNull;
+            DBSPExpression filter = this.filterArgument();
+            if (filter != null)
+                condition = ExpressionCompiler.makeBinaryExpression(
+                        this.node, DBSPTypeBool.create(false), DBSPOpcode.AND, filter, condition);
+
+            DBSPExpression castA = a.cast(
+                    this.node, typedZero.getType(), DBSPCastExpression.CastType.SqlUnsafe);
+            DBSPExpression castB = b.cast(
+                    this.node, typedZero.getType(), DBSPCastExpression.CastType.SqlUnsafe);
+            DBSPExpression product = ExpressionCompiler.makeBinaryExpression(
+                    this.node, typedZero.getType(), DBSPOpcode.MUL, castA, castB);
+            DBSPExpression first = new DBSPIfExpression(this.node, condition, product, typedZero);
+            DBSPExpression second = new DBSPIfExpression(this.node, condition, castA, typedZero);
+            DBSPExpression third = new DBSPIfExpression(this.node, condition, castB, typedZero);
+            DBSPExpression fourth = new DBSPIfExpression(this.node, condition,
+                    new DBSPI64Literal(1), new DBSPI64Literal(0));
+            DBSPExpression mapBody = new DBSPTupleExpression(
+                    first, second, third, fourth, new DBSPI64Literal(1));
+
+            DBSPVariablePath postVar = mapBody.getType().var();
+            DBSPExpression postBody = this.covariance(kind, intermediateResultType,
+                    postVar.field(0), postVar.field(1), postVar.field(2),
+                    postVar.field(3).cast(node, intermediateResultType, DBSPCastExpression.CastType.SqlUnsafe));
+            DBSPClosureExpression post = postBody.closure(postVar);
+            DBSPClosureExpression map = mapBody.closure(this.v);
+            return new LinearAggregate(node, map, post, postZero);
+        } else {
+            // Compute 4 sums: Sum(a*b), Sum(a), Sum(b), Count of rows with both non-NULL
+            DBSPExpression zero = new DBSPTupleExpression(
+                    DBSPLiteral.none(intermediateResultType),
+                    DBSPLiteral.none(intermediateResultType),
+                    DBSPLiteral.none(intermediateResultType),
+                    DBSPLiteral.none(intermediateResultType));
+            DBSPType quadType = zero.getType();
+            DBSPVariablePath accumulator = quadType.var();
+            final int sumABIndex = 0;
+            final int sumAIndex = 1;
+            final int sumBIndex = 2;
+            final int countIndex = 3;
+
+            DBSPType intermediateResultTypeNonNull = intermediateResultType.withMayBeNull(false);
+            // Values are masked with NULL when the other argument is NULL,
+            // so that AGG_ADD skips such rows.
+            DBSPExpression castA = a.cast(
+                    this.node, intermediateResultType, DBSPCastExpression.CastType.SqlUnsafe);
+            DBSPExpression castB = b.cast(
+                    this.node, intermediateResultType, DBSPCastExpression.CastType.SqlUnsafe);
+            DBSPExpression maskedA = new DBSPIfExpression(this.node, bothNonNull,
+                    castA, DBSPLiteral.none(intermediateResultType));
+            DBSPExpression maskedB = new DBSPIfExpression(this.node, bothNonNull,
+                    castB, DBSPLiteral.none(intermediateResultType));
+
+            // The indicator of the argument tuple is 1 only when both fields are non-NULL
+            DBSPExpression plusOne = ExpressionCompiler.makeIndicator(
+                    this.node, intermediateResultTypeNonNull, this.getAggregatedValue());
+            DBSPExpression weightedCount = new DBSPBinaryExpression(
+                    this.node, intermediateResultType.withMayBeNull(plusOne.getType().mayBeNull),
+                    DBSPOpcode.MUL_WEIGHT, plusOne, this.compiler.weightVar);
+            DBSPExpression count = this.incrementOperation(
+                    this.node, DBSPOpcode.AGG_ADD, intermediateResultType,
+                    accumulator.field(countIndex), weightedCount, this.filterArgument());
+
+            DBSPExpression weightedA = new DBSPBinaryExpression(
+                    this.node, intermediateResultType, DBSPOpcode.MUL_WEIGHT,
+                    maskedA, this.compiler.weightVar);
+            DBSPExpression sumA = this.incrementOperation(
+                    this.node, DBSPOpcode.AGG_ADD, intermediateResultType,
+                    accumulator.field(sumAIndex), weightedA, this.filterArgument());
+
+            DBSPExpression weightedB = new DBSPBinaryExpression(
+                    this.node, intermediateResultType, DBSPOpcode.MUL_WEIGHT,
+                    maskedB, this.compiler.weightVar);
+            DBSPExpression sumB = this.incrementOperation(
+                    this.node, DBSPOpcode.AGG_ADD, intermediateResultType,
+                    accumulator.field(sumBIndex), weightedB, this.filterArgument());
+
+            // a * (b * weight)
+            DBSPExpression weightedAB = ExpressionCompiler.makeBinaryExpression(
+                    this.node, intermediateResultType, DBSPOpcode.MUL,
+                    maskedA, weightedB);
+            DBSPExpression sumAB = this.incrementOperation(
+                    this.node, DBSPOpcode.AGG_ADD, intermediateResultType,
+                    accumulator.field(sumABIndex), weightedAB, this.filterArgument());
+
+            DBSPExpression increment = new DBSPTupleExpression(sumAB, sumA, sumB, count);
+
+            DBSPVariablePath q = quadType.var();
+            DBSPExpression postBody = this.covariance(kind, intermediateResultType,
+                    q.field(sumABIndex), q.field(sumAIndex), q.field(sumBIndex), q.field(countIndex));
+            DBSPClosureExpression post = new DBSPClosureExpression(node, postBody, q.asParameter());
+            DBSPTypeUser optSemigroup = new DBSPTypeUser(this.node, SEMIGROUP, "DefaultOptSemigroup",
+                    false, intermediateResultTypeNonNull);
+            DBSPTypeUser semigroup = new DBSPTypeUser(node, SEMIGROUP, "QuadSemigroup", false,
+                    intermediateResultType, intermediateResultType,
+                    intermediateResultType, intermediateResultType,
+                    optSemigroup, optSemigroup, optSemigroup, optSemigroup);
+            return new NonLinearAggregate(
+                    this.node, zero, this.makeRowClosure(increment, accumulator), post, postZero, semigroup);
+        }
+    }
+
+    void processCovar(SqlCovarAggFunction function) {
+        // REGR_COUNT is a SqlCountAggFunction, handled by processCount
+        IAggregate implementation = switch (function.getKind()) {
+            case COVAR_POP, COVAR_SAMP, REGR_SXX, REGR_SYY -> this.doCovariance(function);
+            default -> throw new UnimplementedException("Statistical aggregate function not yet implemented", 172, node);
+        };
+        this.setResult(implementation);
+    }
+
     // user-defined aggregates
     void processUDA(SqlUserDefinedAggregationFunction function) {
         ProgramIdentifier name = new ProgramIdentifier(function.getName());
@@ -1056,6 +1242,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 this.process(this.aggFunction, SqlSumAggFunction.class, this::processSum) ||
                 this.process(this.aggFunction, SqlSumEmptyIsZeroAggFunction.class, this::processSumZero) ||
                 this.process(this.aggFunction, SqlAvgAggFunction.class, this::processAvg) || // handles stddev too
+                this.process(this.aggFunction, SqlCovarAggFunction.class, this::processCovar) ||
                 this.process(this.aggFunction, SqlBitOpAggFunction.class, this::processBitOp) ||
                 this.process(this.aggFunction, SqlSingleValueAggFunction.class, this::processSingle) ||
                 this.process(this.aggFunction, SqlAbstractGroupFunction.class, this::processGrouping) ||
