@@ -18,7 +18,6 @@ use crate::db::types::version::Version;
 use crate::error::source_error;
 use crate::has_unstable_feature;
 use feldera_ir::Dataflow;
-use feldera_observability::ReqwestTracingExt;
 use futures_util::StreamExt;
 use indoc::formatdoc;
 use serde::{Deserialize, Serialize};
@@ -445,7 +444,6 @@ async fn fetch_sql_compiler(
 
     let response = client
         .get(&jar_cache_url)
-        .with_sentry_tracing()
         .send()
         .await
         .map_err(|e| {

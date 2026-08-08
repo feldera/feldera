@@ -5,7 +5,6 @@ use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::monitor::{MonitorStatus, NewClusterMonitorEvent};
 use crate::error::source_error;
 use async_trait::async_trait;
-use feldera_observability::ReqwestTracingExt;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use tracing::{error, info};
@@ -276,7 +275,6 @@ async fn poll_service_health_endpoint(
     match client
         .get(url)
         .timeout(DEFAULT_REQUEST_TIMEOUT)
-        .with_sentry_tracing()
         .send()
         .await
     {

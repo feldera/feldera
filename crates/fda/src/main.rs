@@ -3,7 +3,6 @@
 use chrono::Utc;
 use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
-use feldera_observability as observability;
 use feldera_rest_api::types::*;
 use feldera_rest_api::*;
 use feldera_types::config::{FtModel, RuntimeConfig, StorageOptions};
@@ -3696,11 +3695,6 @@ async fn cluster(format: OutputFormat, action: ClusterAction, client: Client) {
 }
 
 fn main() {
-    let _guard = observability::init(
-        "https://18aa37ae23e7130b57b91aaad432bc18@o4510219052253184.ingest.us.sentry.io/4510298809827328",
-        "fda",
-        env!("CARGO_PKG_VERSION"),
-    );
     init_logging("warn");
 
     tokio::runtime::Builder::new_multi_thread()
@@ -3762,7 +3756,6 @@ fn init_logging(default_level: &str) {
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
     let _ = LogTracer::init();
     let _ = tracing_subscriber::registry()
-        .with(sentry::integrations::tracing::layer())
         .with(filter)
         .with(
             tracing_subscriber::fmt::layer()

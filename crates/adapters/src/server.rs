@@ -759,18 +759,6 @@ pub fn run_server(
         eprintln!("{e}");
     })?;
 
-    let _guard = observability::init(
-        "https://f0ec61ff0f8483e9ec8117645ad0c0e1@o4510219052253184.ingest.us.sentry.io/4510299519844352",
-        "pipeline",
-        env!("CARGO_PKG_VERSION"),
-    );
-    let config_cln = config.clone();
-    sentry::configure_scope(|scope| {
-        if let Some(id) = config_cln.name.as_ref() {
-            scope.set_tag("pipeline.name", id);
-        }
-    });
-
     // Initialize the logger by setting its filter and template.
     let pipeline_label = config
         .given_name
@@ -802,7 +790,7 @@ pub fn run_server(
     }
     if config.global.tracing {
         warn!(
-            "Pipeline tracing was enabled but the 'tracing' option was deprecated, use `FELDERA_SENTRY_ENABLED` for tracing."
+            "Pipeline tracing was enabled but the 'tracing' option is deprecated and has no effect."
         );
     }
 
@@ -1005,38 +993,36 @@ pub fn run_server(
     let server = HttpServer::new({
         move || {
             let state = state.clone();
-            let app = App::new()
-                .wrap_fn(|req, srv| {
-                    debug!("Request: {} {}", req.method(), req.path());
-                    srv.call(req).map(|res| {
-                        match &res {
-                            Ok(response) => {
-                                let level = if response.status().is_success()
-                                    || response.status().is_redirection()
-                                    || response.status().is_informational()
-                                {
-                                    Level::DEBUG
-                                } else {
-                                    Level::ERROR
-                                };
-                                let req = response.request();
-                                dyn_event!(
-                                    level,
-                                    "Response: {} (size: {:?}) to request {} {}",
-                                    response.status(),
-                                    response.response().body().size(),
-                                    req.method(),
-                                    req.path()
-                                );
-                            }
-                            Err(e) => {
-                                error!("Service response error: {e}");
-                            }
+            let app = App::new().wrap_fn(|req, srv| {
+                debug!("Request: {} {}", req.method(), req.path());
+                srv.call(req).map(|res| {
+                    match &res {
+                        Ok(response) => {
+                            let level = if response.status().is_success()
+                                || response.status().is_redirection()
+                                || response.status().is_informational()
+                            {
+                                Level::DEBUG
+                            } else {
+                                Level::ERROR
+                            };
+                            let req = response.request();
+                            dyn_event!(
+                                level,
+                                "Response: {} (size: {:?}) to request {} {}",
+                                response.status(),
+                                response.response().body().size(),
+                                req.method(),
+                                req.path()
+                            );
                         }
-                        res
-                    })
+                        Err(e) => {
+                            error!("Service response error: {e}");
+                        }
+                    }
+                    res
                 })
-                .wrap(observability::actix_middleware());
+            });
             build_app(app, state)
         }
     })
