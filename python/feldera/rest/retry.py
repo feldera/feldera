@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import FrozenSet
+from typing import FrozenSet, Optional
 
 
 _DEFAULT_RETRYABLE_STATUS_CODES: FrozenSet[int] = frozenset({408, 429, 502, 503, 504})
@@ -29,7 +29,13 @@ class RetryConfig:
 
     :param max_retries: Number of retries to attempt after the initial request.
         A value of `3` means up to `4` total attempts. Must be `>= 0`.
-        Default: `3`.
+        Ignored when `deadline_seconds` is set. Default: `3`.
+    :param deadline_seconds: Wall-clock retry budget in seconds, measured from
+        the first attempt. When set, `max_retries` no longer applies: retries
+        continue (with the usual waits) until the budget is exhausted.
+        Transient outages such as a node replacement last for a duration, not
+        a number of requests, so a duration budget survives them where an
+        attempt cap gives up early. Default: `None` (attempt-based stopping).
     :param initial_backoff: Base wait in seconds before the first retry.
         Default: `2.0`.
     :param max_backoff: Maximum wait in seconds between retries. The computed
@@ -49,6 +55,7 @@ class RetryConfig:
     """
 
     max_retries: int = 3
+    deadline_seconds: Optional[float] = None
     initial_backoff: float = 2.0
     max_backoff: float = 64.0
     multiplier: float = 2.0
@@ -61,6 +68,8 @@ class RetryConfig:
     def __post_init__(self) -> None:
         if self.max_retries < 0:
             raise ValueError("max_retries must be >= 0")
+        if self.deadline_seconds is not None and self.deadline_seconds <= 0:
+            raise ValueError("deadline_seconds must be > 0")
         if self.initial_backoff < 0:
             raise ValueError("initial_backoff must be >= 0")
         if self.max_backoff < 0:

@@ -98,6 +98,7 @@ class TestRetryConfig:
     def test_defaults(self):
         cfg = RetryConfig()
         assert cfg.max_retries == 3
+        assert cfg.deadline_seconds is None
         assert cfg.initial_backoff == 2.0
         assert cfg.max_backoff == 64.0
         assert cfg.multiplier == 2.0
@@ -118,6 +119,10 @@ class TestRetryConfig:
             RetryConfig(jitter=-0.1)
         with pytest.raises(ValueError):
             RetryConfig(unhealthy_backoff=-1.0)
+        with pytest.raises(ValueError):
+            RetryConfig(deadline_seconds=0.0)
+        with pytest.raises(ValueError):
+            RetryConfig(deadline_seconds=-1.0)
 
     def test_is_frozen(self):
         cfg = RetryConfig()
@@ -267,6 +272,34 @@ class TestRetryBehavior:
             with pytest.raises(FelderaAPIError):
                 client.get("/foo")
         assert m.call_count == 6  # 1 initial + 5 retries
+
+
+class TestRetryDeadline:
+    def test_deadline_lifts_attempt_cap(self):
+        # max_retries=1 alone would stop after 2 calls; the deadline keeps
+        # the client retrying until it succeeds.
+        client = _make_client(_fast_retry(max_retries=1, deadline_seconds=60.0))
+        responses = [_make_response(503)] * 5 + [_make_response(200, b"{}")]
+        with patch_requests("get", responses) as m:
+            assert client.get("/foo") == {}
+        assert m.call_count == 6
+
+    def test_deadline_expiry_stops_retrying(self):
+        cfg = RetryConfig(
+            max_retries=0,
+            initial_backoff=0.05,
+            max_backoff=0.05,
+            multiplier=1.0,
+            deadline_seconds=0.12,
+        )
+        client = _make_client(cfg)
+        with patch_requests("get", [_make_response(503)] * 100) as m:
+            with pytest.raises(FelderaAPIError) as exc_info:
+                client.get("/foo")
+        assert exc_info.value.status_code == 503
+        # Attempts run at ~0, 0.05, 0.10, 0.15 seconds; the budget expires
+        # after at most four. Bounds are loose to tolerate scheduling delay.
+        assert 2 <= m.call_count <= 5
 
 
 class TestRetryAfter:
