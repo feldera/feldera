@@ -194,7 +194,14 @@ class _LazyClient:
                 # replacement, pipeline pod rescheduling) that outlasts the
                 # default attempt-based retry budget of ~14 seconds. Retry on
                 # a wall-clock budget sized to ride out a node replacement.
-                retry_config=RetryConfig(deadline_seconds=300.0),
+                # CI only: `enterprise_only` gates call `get_config` at
+                # import time, and a 5-minute retry against an instance that
+                # is not running would hang local test collection.
+                retry_config=(
+                    RetryConfig(deadline_seconds=300.0)
+                    if os.environ.get("CI")
+                    else RetryConfig()
+                ),
                 api_key=(
                     feldera_bearer_token
                     if os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")
