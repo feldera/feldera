@@ -43,6 +43,8 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.RelWriter;
+import org.apache.calcite.rel.core.Aggregate;
+import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.externalize.RelWriterImpl;
 import org.apache.calcite.rel.hint.HintPredicates;
@@ -68,6 +70,8 @@ import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexShuttle;
+import org.apache.calcite.rex.RexSubQuery;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.runtime.MapEntry;
@@ -1991,9 +1995,37 @@ public class SqlToRelCompiler implements IWritesLogs {
         return new CreateFunctionStatement(node, function);
     }
 
+    /** Rejects plans that the Calcite validator accepts but that we do not support. */
+    static class RejectUnsupportedPlans extends RelVisitor {
+        final RexShuttle subQueryVisitor = new RexShuttle() {
+            @Override
+            public RexNode visitSubQuery(RexSubQuery subQuery) {
+                RejectUnsupportedPlans.this.go(subQuery.rel);
+                return super.visitSubQuery(subQuery);
+            }
+        };
+
+        @Override
+        public void visit(RelNode node, int ordinal,
+                          @org.checkerframework.checker.nullness.qual.Nullable RelNode parent) {
+            if (node instanceof Aggregate aggregate) {
+                for (AggregateCall agg : aggregate.getAggCallList()) {
+                    if (agg.getAggregation().getKind() == SqlKind.MODE && agg.isDistinct())
+                        throw new UnsupportedException("MODE does not support DISTINCT",
+                                CalciteObject.create(aggregate, agg));
+                }
+            }
+            // Check the plans of uncorrelated subqueries, which are not yet inlined.
+            node.accept(this.subQueryVisitor);
+            super.visit(node, ordinal, parent);
+        }
+    }
+
     RelRoot sqlToRel(SqlNode node) {
         SqlToRelConverter converter = this.getConverter();
-        return converter.convertQuery(node, true, true);
+        RelRoot root = converter.convertQuery(node, true, true);
+        new RejectUnsupportedPlans().go(root.rel);
+        return root;
     }
 
     void validateViewProperty(ProgramIdentifier view, SqlFragment key, SqlFragment value) {

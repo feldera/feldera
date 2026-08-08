@@ -211,6 +211,8 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                 runtime_aggtest/aggregate_tests3/test_{binary_max,un_int_max,varbinary_max}.py|
                 runtime_aggtest/aggregate_tests4/test_{array_max,map_max,varchar_max,varcharn_max}.py|
                 runtime_aggtest/aggregate_tests6/test_{interval_mths_max}.py""", true),
+            new Func(SqlStdOperatorTable.MODE, "MODE", SqlLibrary.STANDARD, "aggregates#mode",
+                    FunctionDocumentation.NO_FILE, true),
             new Func(SqlStdOperatorTable.MIN, "MIN", SqlLibrary.STANDARD, "aggregates#min,aggregates#window-min",
                 """
                 runtime_aggtest/aggregate_tests/test_{decimal_min,float_min,min,row_min,empty_set}.py|

@@ -103,6 +103,13 @@ should write `SELECT SUM(CAST(col AS BIGINT))`.
      <td>Returns the minimum value of value across all input values</td>
   </tr>
   <tr>
+     <td><a id="mode"></a><code>MODE(value)</code></td>
+     <td>Returns the most frequent value; <code>NULL</code> values are ignored.
+         Returns <code>NULL</code> if all values are <code>NULL</code>, or if there are no rows.
+         The rule for selecting the value is not specified if multiple values are tied for the highest frequency.
+         <code>DISTINCT</code> is not supported.</td>
+  </tr>
+  <tr>
      <td><a id="some"></a><code>SOME(condition)</code></td>
      <td>Returns <code>TRUE</code> if one or more of the values of condition is <code>TRUE</code></td>
   </tr>
