@@ -158,9 +158,12 @@ deltalake = { workspace = true, features = [
 ], optional = true }
 deltalake-catalog-unity = { workspace = true, features = ["aws", "azure", "gcp"], optional = true}
 apache-avro = { workspace = true, optional = true }
+# default-features off drops native_tls, which pulls the OpenSSL crate.
 schema_registry_converter = { workspace = true, features = [
     "avro",
     "blocking",
+    "futures",
+    "rustls_tls",
 ], optional = true }
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = [
     "tokio-pg",
@@ -224,7 +227,6 @@ dashmap = { workspace = true }
 thread-id = { workspace = true }
 parking_lot = { workspace = true }
 backoff = { workspace = true }
-sentry = { workspace = true }
 zip = { workspace = true }
 smallvec = { workspace = true }
 delta_kernel = { workspace = true }
