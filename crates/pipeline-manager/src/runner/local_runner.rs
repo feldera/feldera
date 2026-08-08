@@ -13,7 +13,6 @@ use crate::runner::error::RunnerError;
 use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use async_trait::async_trait;
-use feldera_observability::ReqwestTracingExt;
 use feldera_observability::system::total_memory_megabyte;
 use feldera_types::config::{
     PipelineConfig, PipelineConfigProgramInfo, RuntimeConfig, StorageCacheConfig, StorageConfig,
@@ -489,7 +488,7 @@ impl LocalRunner {
         // Perform request
         let mut attempt = 1;
         loop {
-            match self.client.get(file_url).with_sentry_tracing().send().await {
+            match self.client.get(file_url).send().await {
                 Ok(response) => {
                     // Check status code
                     if response.status() != StatusCode::OK {

@@ -20,10 +20,6 @@ on:
         required: false
         type: string
 
-env:
-  FELDERA_SENTRY_ENABLED: 1
-  SENTRY_ENVIRONMENT: ci
-
 jobs:
   manager-no-network:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'manager-no-network') }}

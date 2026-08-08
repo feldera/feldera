@@ -303,7 +303,6 @@ fn init_logging(
                     .with_ansi(false),
             )
             .with(env_filter)
-            .with(sentry::integrations::tracing::layer())
             .try_init()
     } else {
         tracing_subscriber::registry()
@@ -313,7 +312,6 @@ fn init_logging(
                     .fmt_fields(plain_text_fields()),
             )
             .with(env_filter)
-            .with(sentry::integrations::tracing::layer())
             .try_init()
     }
 }
