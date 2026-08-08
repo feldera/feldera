@@ -9,9 +9,7 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::user::InvalidMembershipOrigin;
 use crate::db::types::utils::ValidationError;
 use crate::db::types::version::Version;
-use actix_web::{
-    HttpResponse, HttpResponseBuilder, ResponseError, body::BoxBody, http::StatusCode,
-};
+use actix_web::{HttpResponse, ResponseError, body::BoxBody, http::StatusCode};
 use deadpool_postgres::PoolError;
 use feldera_types::error::DetailedError;
 use feldera_types::error::ErrorResponse;
@@ -1286,7 +1284,7 @@ impl ResponseError for DBError {
     }
 
     fn error_response(&self) -> HttpResponse<BoxBody> {
-        HttpResponseBuilder::new(self.status_code()).json(ErrorResponse::from_error(self))
+        crate::error::json_error_response(self)
     }
 }
 

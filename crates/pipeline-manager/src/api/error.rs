@@ -1,6 +1,4 @@
-use actix_web::{
-    HttpResponse, HttpResponseBuilder, ResponseError, body::BoxBody, http::StatusCode,
-};
+use actix_web::{HttpResponse, ResponseError, body::BoxBody, http::StatusCode};
 use feldera_types::error::{DetailedError, ErrorResponse};
 use serde::Serialize;
 use std::time::Duration;
@@ -201,6 +199,6 @@ impl ResponseError for ApiError {
     }
 
     fn error_response(&self) -> HttpResponse<BoxBody> {
-        HttpResponseBuilder::new(self.status_code()).json(ErrorResponse::from_error(self))
+        crate::error::json_error_response(self)
     }
 }
