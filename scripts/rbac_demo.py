@@ -108,8 +108,10 @@ def main() -> int:
 
     # 4. The admin promotes writer -> write (admin manages its own tenant).
     code, resp = call(m, "GET", "/tenant/users", tok["admin"], tenant=tenant)
-    members = {u["email"]: u["user_id"] for u in resp.json()} if code == 200 else {}
-    wid = members.get("writer@example.com")
+    # Key by subject: it is the identity itself, whereas the email is display
+    # data the provider may not put in an access token at all.
+    members = {u["subject"]: u["user_id"] for u in resp.json()} if code == 200 else {}
+    wid = members.get("writer")
     if wid:
         code, _ = call(
             m,

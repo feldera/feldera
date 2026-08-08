@@ -14,7 +14,9 @@ use crate::db::types::pipeline::{
 use crate::db::types::program::{RustCompilationInfo, SqlCompilationInfo};
 use crate::db::types::role::{MintableKeyRole, Role};
 use crate::db::types::tenant::TenantId;
-use crate::db::types::user::{TenantInfo, TenantMember, UserId};
+use crate::db::types::user::{
+    MembershipOrigin, TenantInfo, TenantMember, UserId, UserMembership, UserProfile,
+};
 use crate::db::types::version::Version;
 use crate::oidc::destination::TenantIssuerPolicy;
 use async_trait::async_trait;
@@ -101,14 +103,25 @@ pub(crate) trait Storage {
     /// [`crate::db::operations::tenant::resolve_tenant_selector`].
     async fn resolve_tenant_selector(&self, selector: &str) -> Result<TenantId, DBError>;
 
-    /// Creates a tenant, failing with `DuplicateName` if the name is already
-    /// taken.
-    async fn create_tenant(
+    /// Retrieves a single tenant by selector (a tenant UUID or name). Errors
+    /// with `UnknownTenantName` on miss.
+    /// See [`crate::db::operations::tenant::get_tenant`].
+    async fn get_tenant(&self, selector: &str) -> Result<TenantInfo, DBError>;
+
+    /// Looks a tenant up by name alone, `None` on miss; a name that parses as
+    /// a UUID is still a name. For callers that hold a known tenant name, not
+    /// a user-supplied selector.
+    async fn find_tenant_id_by_name(&self, name: &str) -> Result<Option<TenantId>, DBError>;
+
+    /// Retrieves the tenant with this name, creating it if absent. The second
+    /// component is `true` if this call created the tenant.
+    /// See [`crate::db::operations::tenant::get_or_create_tenant`].
+    async fn get_or_create_tenant(
         &self,
-        id: Uuid,
+        new_id: Uuid, // Used only if the tenant does not yet exist
         name: &str,
         provider: &str,
-    ) -> Result<TenantId, DBError>;
+    ) -> Result<(TenantInfo, bool), DBError>;
 
     /// Renames a tenant, failing with `DuplicateName` if the name is already
     /// taken, unless `displace_existing` lets it take the name from the tenant
@@ -145,10 +158,36 @@ pub(crate) trait Storage {
         email: Option<String>,
         default_role: Role,
         first_user_role: Role,
+        origin: MembershipOrigin,
     ) -> Result<(TenantId, UserId, Role), DBError>;
 
-    /// Ensures a user record exists for an OIDC `(provider, subject)`.
-    #[allow(dead_code)] // Provided for completeness; logins go through `resolve_login`.
+    /// Lists the tenants a user may act in, with the user's role in each.
+    /// See [`crate::db::operations::user::list_user_memberships`].
+    async fn list_user_memberships(
+        &self,
+        provider: &str,
+        subject: &str,
+    ) -> Result<Vec<UserMembership>, DBError>;
+
+    /// Enrolls a user into the listed tenants where the tenant exists and the
+    /// user is not yet a member; never creates tenants or changes existing
+    /// memberships. See
+    /// [`crate::db::operations::user::enroll_in_existing_tenants`].
+    #[allow(clippy::too_many_arguments)]
+    async fn enroll_in_existing_tenants(
+        &self,
+        new_user_id: Uuid,
+        provider: &str,
+        subject: &str,
+        email: Option<&str>,
+        names: &[String],
+        role: Role,
+        origin: MembershipOrigin,
+    ) -> Result<(), DBError>;
+
+    /// Ensures a user record exists for an OIDC `(provider, subject)` and
+    /// refreshes its stored email. The login path with provisioning off calls
+    /// this instead of [`Storage::resolve_login`].
     async fn get_or_create_user(
         &self,
         new_id: Uuid,
@@ -157,15 +196,38 @@ pub(crate) trait Storage {
         email: Option<&str>,
     ) -> Result<UserId, DBError>;
 
+    /// Claims the right to refresh an identity's profile from its provider,
+    /// reporting whether this caller won it. See
+    /// [`crate::db::operations::user::claim_profile_refresh`].
+    async fn claim_profile_refresh(
+        &self,
+        new_id: Uuid,
+        provider: &str,
+        subject: &str,
+        auth_time: Option<i64>,
+        ttl_seconds: i64,
+    ) -> Result<bool, DBError>;
+
+    /// Stores what the identity provider reports about an identity.
+    /// See [`crate::db::operations::user::store_user_profile`].
+    async fn store_user_profile(
+        &self,
+        provider: &str,
+        subject: &str,
+        profile: &UserProfile,
+    ) -> Result<(), DBError>;
+
     /// Lists the members of a tenant with their roles.
     async fn list_tenant_members(&self, tenant_id: TenantId) -> Result<Vec<TenantMember>, DBError>;
 
-    /// Assigns or updates a member's role within a tenant.
+    /// Assigns or updates a member's role within a tenant. `origin` records
+    /// provenance on a fresh row; an existing row keeps its recorded origin.
     async fn upsert_member_role(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
         role: Role,
+        origin: MembershipOrigin,
     ) -> Result<(), DBError>;
 
     /// Pre-provisions a tenant member by identity `(provider, subject)`: ensures

@@ -3,7 +3,9 @@
  * "Users & roles" header lets an owner switch which tenant's members show
  * below; the trigger (the tenant name plus a "select a different tenant" hint)
  * is owner-only (`write:tenant`). A non-owner sees the tenant name as plain
- * text. The picker omits the tenant already shown and closes on selection.
+ * text; an owner with no other tenant sees the trigger inert, so an empty list
+ * cannot open. The picker omits the tenant already shown and closes on
+ * selection.
  *
  * The child tables (UserRoleTable, TenantList) are stubbed out: they mount
  * monaco-backed dialogs and fetch on mount, none of which the header gate
@@ -59,6 +61,10 @@ const headingText = () =>
 const usersHeading = () => headingText().find((t) => t.includes('Users & roles')) ?? ''
 const optionLabels = () =>
   Array.from(document.querySelectorAll('[role="option"]')).map((e) => e.textContent?.trim() ?? '')
+const triggerButton = () =>
+  Array.from(document.querySelectorAll<HTMLButtonElement>('h2 button')).find((b) =>
+    b.textContent?.includes(current.name)
+  )
 
 describe('AdminPage — write:tenant header picker', () => {
   afterEach(async () => {
@@ -73,10 +79,17 @@ describe('AdminPage — write:tenant header picker', () => {
     vi.clearAllMocks()
   })
 
-  it('offers the tenant picker to an owner', () => {
+  it('offers the tenant picker to an owner with another tenant to switch to', async () => {
+    current.id = 't-acme'
+    current.name = 'acme'
+    tenantsState.list = [
+      { id: 't-acme', name: 'acme' },
+      { id: 't-beta', name: 'beta' }
+    ]
     mountPage('owner')
-    expect(usersHeading()).toContain('acme-tenant')
-    expect(usersHeading()).toContain('select a different tenant')
+    await expect.poll(usersHeading).toContain('acme')
+    await expect.poll(usersHeading).toContain('select a different tenant')
+    await expect.poll(() => triggerButton()?.disabled).toBe(false)
   })
 
   it('shows the tenant name as plain text to a non-owner admin', () => {
@@ -85,6 +98,20 @@ describe('AdminPage — write:tenant header picker', () => {
     // hint here and fails this test.
     expect(usersHeading()).toContain('acme-tenant')
     expect(usersHeading()).not.toContain('select a different tenant')
+    expect(triggerButton()).toBeUndefined()
+  })
+
+  it('shows the tenant name as plain text to an owner of a single tenant', async () => {
+    current.id = 't-acme'
+    current.name = 'acme'
+    tenantsState.list = [{ id: 't-acme', name: 'acme' }]
+    mountPage('owner')
+    await expect.poll(usersHeading).toContain('acme')
+    // Nothing to switch to, so no trigger and no way to open an empty list.
+    // Dropping `canSwitchTenant` from the gate surfaces the hint and fails here.
+    expect(usersHeading()).not.toContain('select a different tenant')
+    expect(triggerButton()).toBeUndefined()
+    expect(optionLabels()).toEqual([])
   })
 
   it('lists the other tenants and omits the one already shown', async () => {

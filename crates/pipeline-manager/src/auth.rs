@@ -81,8 +81,13 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
+use crate::db::types::user::{MembershipOrigin, UserMembership};
 use crate::oidc::fetch::{
-    OidcDestination, fetch_issuer_jwks, fetch_jwks_uri_from_discovery, oidc_http_client,
+    OidcClients, OidcDestination, fetch_issuer_jwks, fetch_jwks_uri_from_discovery,
+};
+use crate::oidc::userinfo::{
+    PROFILE_REFRESH_TTL_SECONDS, deserialize_bool_or_string, fetch_user_profile,
+    resolve_userinfo_endpoint,
 };
 use reqwest::Certificate;
 
@@ -117,6 +122,27 @@ impl AuthenticatedPrincipal {
             label: "test".to_string(),
         }
     }
+}
+
+/// Identity of a human login, installed by `bearer_auth` as a request
+/// extension so the session endpoint can look up the user's memberships.
+/// Absent for API keys, federated workloads, and no-auth mode.
+#[derive(Clone, Debug)]
+pub(crate) struct LoginIdentity {
+    pub provider: String,
+    pub subject: String,
+}
+
+/// Marker extension: the login carried no resolvable acting tenant. Only the
+/// session endpoint sees such a request; every other route was refused. The
+/// session handler answers with the caller's memberships and no acting-tenant
+/// fields, so a client can pick a tenant.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct UnresolvedActingTenant;
+
+/// Whether this request may be answered without a resolved acting tenant.
+fn is_session_request(req: &ServiceRequest) -> bool {
+    req.method() == actix_web::http::Method::GET && req.path() == "/v0/config/session"
 }
 
 /// Returns true if the given OIDC identity is configured as a platform owner.
@@ -501,6 +527,231 @@ async fn resolve_owner_acting_tenant(
     }
 }
 
+/// The owner's home tenant: named by its claims, the default tenant when they
+/// name none or, with provisioning off, when the named tenant does not exist.
+/// A login with provisioning off must not create tenants, an owner's included.
+async fn owner_home_tenant(
+    state: &ServerState,
+    token_data: &TokenData<OidcClaim>,
+    provider: &str,
+) -> Result<TenantId, DBError> {
+    // The Feldera-Tenant header selects the acting tenant for an owner, so
+    // the home resolution deliberately reads the claims with no headers.
+    let empty = actix_web::http::header::HeaderMap::new();
+    let Ok(name) = token_data.tenant_name(&state.config, &empty) else {
+        return Ok(DEFAULT_TENANT_ID);
+    };
+    let db = state.db.lock().await;
+    if state.config.provision_on_login {
+        db.get_or_create_tenant_id(Uuid::now_v7(), name, provider.to_string())
+            .await
+    } else {
+        // By name alone: the name came from the claims, and one that parses
+        // as a UUID must not be reinterpreted as a tenant id.
+        Ok(db
+            .find_tenant_id_by_name(&name)
+            .await?
+            .unwrap_or(DEFAULT_TENANT_ID))
+    }
+}
+
+/// Provision what the tenancy strategy implies for this login, when
+/// `provision_on_login` allows it. The deliberately selected claim entry is
+/// fully provisioned (get-or-create, enroll, `first_user_role` on creation);
+/// every other listed entry enrolls into an existing tenant only, so a
+/// mangled claim entry cannot mint a tenant with the logger-in as its admin.
+/// With provisioning off, only the user's identity row is refreshed (email),
+/// so member lists stay readable; tenant creation and enrollment stop.
+async fn provision_login(
+    state: &ServerState,
+    token_data: &TokenData<OidcClaim>,
+    selector: Option<&str>,
+    provider: &str,
+    subject: &str,
+    email: Option<&str>,
+) -> Result<(), DBError> {
+    if !state.config.provision_on_login {
+        let db = state.db.lock().await;
+        db.get_or_create_user(Uuid::now_v7(), provider, subject, email)
+            .await?;
+        return Ok(());
+    }
+    let Some(listed) = token_data.authorized_tenants() else {
+        // The token names no tenant: derive one or, with both derivations
+        // off, provision nothing. That is no error: the user may hold
+        // API-granted memberships, and a user without any is denied by the
+        // acting-tenant selection, not here.
+        let Some(name) = derived_tenant_name(&state.config, provider, subject) else {
+            return Ok(());
+        };
+        let db = state.db.lock().await;
+        db.resolve_login(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            name,
+            provider.to_string(),
+            subject.to_string(),
+            email.map(str::to_string),
+            state.config.default_role,
+            state.config.first_user_role,
+            MembershipOrigin::Derived,
+        )
+        .await?;
+        return Ok(());
+    };
+    let candidate = match selector {
+        Some(sel) => listed.iter().find(|n| n.as_str() == sel).cloned(),
+        None if listed.len() == 1 => Some(listed[0].clone()),
+        None => None,
+    };
+    let db = state.db.lock().await;
+    if let Some(name) = &candidate {
+        db.resolve_login(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            name.clone(),
+            provider.to_string(),
+            subject.to_string(),
+            email.map(str::to_string),
+            state.config.default_role,
+            state.config.first_user_role,
+            MembershipOrigin::Claim,
+        )
+        .await?;
+    }
+    let others: Vec<String> = listed
+        .iter()
+        .filter(|n| Some(*n) != candidate.as_ref())
+        .cloned()
+        .collect();
+    if !others.is_empty() {
+        db.enroll_in_existing_tenants(
+            Uuid::now_v7(),
+            provider,
+            subject,
+            email,
+            &others,
+            state.config.default_role,
+            MembershipOrigin::Claim,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Ask the identity provider what it holds for this login, when that is due:
+/// after one of `auth_time` or [`PROFILE_REFRESH_TTL_SECONDS`] expires. See
+/// [`crate::oidc::userinfo`] for the reasoning.
+///
+/// Display data only, so fetch detached.
+async fn refresh_profile_if_due(
+    state: &Data<ServerState>,
+    token_data: &TokenData<OidcClaim>,
+    provider: &str,
+    subject: &str,
+    token: &str,
+) {
+    let auth_time = token_data.claims.auth_time;
+    let due = state
+        .user_profiles
+        .lock()
+        .await
+        .claim_refresh(provider, subject, auth_time);
+    if !due {
+        return;
+    }
+    let state = state.clone();
+    let issuer = token_data.claims.iss.clone();
+    let provider = provider.to_string();
+    let subject = subject.to_string();
+    let token = token.to_string();
+    tokio::spawn(async move {
+        if let Err(e) =
+            refresh_user_profile(&state, &issuer, &provider, &subject, &token, auth_time).await
+        {
+            // The recorded attempt holds off the next try, so a provider
+            // without a UserInfo endpoint says this once a day, not per login.
+            debug!("Profile refresh for '{subject}' at '{issuer}' did not complete: {e}");
+        }
+    });
+}
+
+/// Read this identity's profile from the provider and store it. The issuer is
+/// the configured login provider, which the operator named, so its fetches are
+/// [`OidcDestination::OperatorConfigured`] like its JWKS fetches.
+async fn refresh_user_profile(
+    state: &ServerState,
+    issuer: &str,
+    provider: &str,
+    subject: &str,
+    token: &str,
+    auth_time: Option<i64>,
+) -> anyhow::Result<()> {
+    let claimed = state
+        .db
+        .lock()
+        .await
+        .claim_profile_refresh(
+            Uuid::now_v7(),
+            provider,
+            subject,
+            auth_time,
+            PROFILE_REFRESH_TTL_SECONDS as i64,
+        )
+        .await?;
+    if !claimed {
+        return Ok(());
+    }
+    let destination = OidcDestination::OperatorConfigured;
+    let endpoint = resolve_userinfo_endpoint(
+        &state.user_profiles,
+        issuer,
+        destination,
+        &state.oidc_clients,
+    )
+    .await?;
+    let profile =
+        fetch_user_profile(&endpoint, subject, token, destination, &state.oidc_clients).await?;
+    state
+        .db
+        .lock()
+        .await
+        .store_user_profile(provider, subject, &profile)
+        .await?;
+    Ok(())
+}
+
+/// Pick the acting tenant from the user's memberships: a selector must name a
+/// tenant the user is a member of, and without one a sole membership is
+/// unambiguous. One neutral answer covers an unknown tenant and a tenant the
+/// user is no member of, because distinguishing them would let any
+/// authenticated user probe which tenants exist. Only the miss folds in; an
+/// infrastructure error must surface as one, not as an authorization denial.
+async fn select_acting_tenant(
+    state: &ServerState,
+    selector: Option<&str>,
+    memberships: &[UserMembership],
+) -> Result<(TenantId, Role), DBError> {
+    let Some(sel) = selector else {
+        return match memberships {
+            [only] => Ok((only.tenant_id, only.role)),
+            [] => Err(DBError::NoTenantMemberships),
+            _ => Err(DBError::AmbiguousTenantMembership),
+        };
+    };
+    let tenant = match state.db.lock().await.get_tenant(sel).await {
+        Ok(tenant) => Some(tenant),
+        Err(DBError::UnknownTenantName { .. }) => None,
+        Err(e) => return Err(e),
+    };
+    tenant
+        .and_then(|tenant| memberships.iter().find(|m| m.tenant_id == tenant.id))
+        .map(|m| (m.tenant_id, m.role))
+        .ok_or(DBError::NotATenantMember {
+            tenant: sel.to_string(),
+        })
+}
+
 async fn bearer_auth(
     req: ServiceRequest,
     token: &str,
@@ -530,9 +781,20 @@ async fn bearer_auth(
             let subject = token_data.claims.sub.clone();
             let email = token_data.claims.email.clone();
             let label = email.clone().unwrap_or_else(|| subject.clone());
+            // Human logins carry their identity to the session endpoint,
+            // which reports the user's memberships to drive tenant selection.
+            req.extensions_mut().insert(LoginIdentity {
+                provider: provider.clone(),
+                subject: subject.clone(),
+            });
+            // Owners take an early return below, and a token need not carry an
+            // email claim at all, so this sits ahead of both. It deliberately
+            // does not feed owner matching: that must not turn on whether a
+            // background fetch has landed yet.
+            refresh_profile_if_due(&state, &token_data, &provider, &subject, token).await;
             // Only a provider-verified email may match an owner entry; an
             // unverified, user-settable email must never confer `owner`.
-            let verified_email = if token_data.claims.email_verified == Some(true) {
+            let verified_email = if token_data.claims.email_verified {
                 email.as_deref()
             } else {
                 None
@@ -550,29 +812,16 @@ async fn bearer_auth(
                     );
 
             if is_owner {
-                // The owner's home tenant comes from its claims, ignoring the
-                // Feldera-Tenant header (which selects the acting tenant for an
-                // owner). Falls back to the default tenant when claims name none.
-                let empty = actix_web::http::header::HeaderMap::new();
-                let home = match token_data.tenant_name(&state.config, &empty) {
-                    Ok(name) => {
-                        let db = state.db.lock().await;
-                        match db
-                            .get_or_create_tenant_id(Uuid::now_v7(), name, provider.clone())
-                            .await
-                        {
-                            Ok(t) => t,
-                            Err(e) => {
-                                return Err((
-                                    create_authz_json_error(&format!(
-                                        "Database error while fetching tenant: {e}"
-                                    )),
-                                    req,
-                                ));
-                            }
-                        }
+                let home = match owner_home_tenant(&state, &token_data, &provider).await {
+                    Ok(home) => home,
+                    Err(e) => {
+                        return Err((
+                            create_authz_json_error(&format!(
+                                "Database error while fetching tenant: {e}"
+                            )),
+                            req,
+                        ));
                     }
-                    Err(_) => DEFAULT_TENANT_ID,
                 };
                 let acting = {
                     let db = state.db.lock().await;
@@ -591,52 +840,72 @@ async fn bearer_auth(
                 return Ok(req);
             }
 
-            // Non-owner: the header disambiguates among the authorized tenants
-            // (existing behavior); the role comes from the membership table.
-            // `AuthError::Display` is the single source of these user-facing
-            // messages, so they cannot drift from the error variants.
-            let tenant_name = match token_data.tenant_name(&state.config, req.headers()) {
-                Ok(name) => name,
-                Err(e) => {
-                    error!("Tenant resolution failed: {e}");
-                    return Err((create_authz_json_error(&e.to_string()), req));
+            // Non-owner: the membership table is the authorization authority;
+            // the tenancy strategy only provisions (see `provision_login`).
+            let selector = req
+                .headers()
+                .get(TENANT_HEADER)
+                .and_then(|h| h.to_str().ok())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+
+            if let Err(e) = provision_login(
+                &state,
+                &token_data,
+                selector.as_deref(),
+                &provider,
+                &subject,
+                email.as_deref(),
+            )
+            .await
+            {
+                error!("Could not resolve login, with error {e}");
+                return Err((
+                    create_authz_json_error(&format!("Database error while resolving login: {e}")),
+                    req,
+                ));
+            }
+
+            let memberships = {
+                let db = state.db.lock().await;
+                match db.list_user_memberships(&provider, &subject).await {
+                    Ok(memberships) => memberships,
+                    Err(e) => {
+                        return Err((crate::error::ManagerError::from(e).into(), req));
+                    }
                 }
             };
 
-            let resolved = {
-                let db = state.db.lock().await;
-                db.resolve_login(
-                    Uuid::now_v7(),
-                    Uuid::now_v7(),
-                    tenant_name,
-                    provider,
-                    subject,
-                    email,
-                    state.config.default_role,
-                    state.config.first_user_role,
-                )
-                .await
-            };
-            match resolved {
-                Ok((tenant_id, _user_id, role)) => {
-                    AuthenticatedPrincipal {
-                        acting_tenant: tenant_id,
-                        role,
-                        label,
+            let (acting_tenant, role) =
+                match select_acting_tenant(&state, selector.as_deref(), &memberships).await {
+                    Ok(pair) => pair,
+                    Err(DBError::AmbiguousTenantMembership | DBError::NoTenantMemberships)
+                        if is_session_request(&req) =>
+                    {
+                        // The session endpoint answers a login with no
+                        // resolvable acting tenant (none, or several without a
+                        // selector), so the console can drive its tenant
+                        // picker. The sentinel principal reaches only this
+                        // endpoint, which never reads its acting tenant when
+                        // the marker is present.
+                        req.extensions_mut().insert(UnresolvedActingTenant);
+                        AuthenticatedPrincipal {
+                            acting_tenant: DEFAULT_TENANT_ID,
+                            role: Role::Read,
+                            label,
+                        }
+                        .install(&req);
+                        return Ok(req);
                     }
-                    .install(&req);
-                    Ok(req)
-                }
-                Err(e) => {
-                    error!("Could not resolve login, with error {}", e);
-                    Err((
-                        create_authz_json_error(&format!(
-                            "Database error while resolving login: {e}"
-                        )),
-                        req,
-                    ))
-                }
+                    Err(e) => return Err((crate::error::ManagerError::from(e).into(), req)),
+                };
+            AuthenticatedPrincipal {
+                acting_tenant,
+                role,
+                label,
             }
+            .install(&req);
+            Ok(req)
         }
         Err(error) => {
             let descr = match error {
@@ -752,12 +1021,23 @@ trait OidcClaimExt {
 
 impl OidcClaimExt for TokenData<OidcClaim> {
     fn authorized_tenants(&self) -> Option<Vec<String>> {
-        // Priority: tenants array > single tenant claim
-        if let Some(ref tenants) = self.claims.tenants {
-            Some(tenants.clone())
+        // Priority: tenants array > single tenant claim.
+        //
+        // Empty and whitespace-only entries are dropped: IdP claim templates
+        // emit "" when a group mapping evaluates empty, and that must mean
+        // "no claim" (fall through to derivation), not a shared tenant
+        // literally named the empty string.
+        let listed = if let Some(ref tenants) = self.claims.tenants {
+            tenants.clone()
         } else {
-            self.claims.tenant.as_ref().map(|t| vec![t.clone()])
-        }
+            self.claims.tenant.iter().cloned().collect()
+        };
+        let non_empty: Vec<String> = listed
+            .into_iter()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect();
+        (!non_empty.is_empty()).then_some(non_empty)
     }
 
     fn tenant_name(
@@ -768,10 +1048,10 @@ impl OidcClaimExt for TokenData<OidcClaim> {
         let issuer = &self.claims.iss;
         let sub = &self.claims.sub;
 
-        // Check if we have explicit tenant authorization in the claim
-        if let Some(authorized) = self.authorized_tenants()
-            && !authorized.is_empty()
-        {
+        // Check if we have explicit tenant authorization in the claim.
+        // `authorized_tenants` never returns an empty list: a claim with no
+        // usable entries is `None` and falls through to derivation.
+        if let Some(authorized) = self.authorized_tenants() {
             let selected = headers
                 .get(TENANT_HEADER)
                 .and_then(|h| h.to_str().ok())
@@ -789,22 +1069,9 @@ impl OidcClaimExt for TokenData<OidcClaim> {
                 None => Err(AuthError::MissingTenantHeader),
             };
         }
-        // Empty array falls through to fallback logic
 
         // Fallback when the token claims no tenant at all: derive one.
-        // Priority: issuer-domain > sub (if enabled)
-        let derived = config
-            .issuer_tenant
-            .then(|| extract_tenant_from_issuer(issuer))
-            .flatten()
-            .or_else(|| {
-                config.individual_tenant.then(|| {
-                    debug!("Using sub claim for tenant resolution: {}", sub);
-                    sub.clone()
-                })
-            });
-
-        let Some(derived) = derived else {
+        let Some(derived) = derived_tenant_name(config, issuer, sub) else {
             return Err(AuthError::NoTenantFound);
         };
 
@@ -826,6 +1093,26 @@ impl OidcClaimExt for TokenData<OidcClaim> {
     fn provider(&self) -> String {
         self.claims.iss.clone()
     }
+}
+
+/// The tenant name the strategy derives for a token that claims none.
+/// Priority: issuer domain (if enabled) over the `sub` claim (if enabled);
+/// `None` when both derivations are off.
+fn derived_tenant_name(
+    config: &crate::config::ApiServerConfig,
+    issuer: &str,
+    sub: &str,
+) -> Option<String> {
+    config
+        .issuer_tenant
+        .then(|| extract_tenant_from_issuer(issuer))
+        .flatten()
+        .or_else(|| {
+            config.individual_tenant.then(|| {
+                debug!("Using sub claim for tenant resolution: {}", sub);
+                sub.to_string()
+            })
+        })
 }
 
 /// Validates that the user belongs to at least one required group (for
@@ -923,7 +1210,7 @@ async fn resolve_issuer_jwk(
         cache.mark_refreshed(issuer);
     }
 
-    let keys = fetch_issuer_jwks(issuer, destination, &state.oidc_root_certs).await?;
+    let keys = fetch_issuer_jwks(issuer, destination, &state.oidc_clients).await?;
     let mut cache = state.issuer_jwk_cache.lock().await;
     cache.insert(issuer, keys);
     cache
@@ -985,9 +1272,12 @@ pub(crate) async fn generic_oidc_auth_config(
 
     // Use OIDC discovery to fetch jwks_uri. The operator set this issuer, so it
     // may name a provider on the deployment's own network.
-    let jwk_uri =
-        fetch_jwks_uri_from_discovery(&iss, OidcDestination::OperatorConfigured, extra_roots)
-            .await?;
+    let jwk_uri = fetch_jwks_uri_from_discovery(
+        &iss,
+        OidcDestination::OperatorConfigured,
+        &OidcClients::new(extra_roots)?,
+    )
+    .await?;
 
     validation.set_issuer(&[&iss]);
     // Use configurable audience claim from API server configuration
@@ -1063,7 +1353,14 @@ struct OidcClaim {
     /// Whether the identity provider verified the email address. Owner matching
     /// on `email` requires this to be `true`: an unverified, user-settable email
     /// must never confer the platform-wide `owner` role.
-    email_verified: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_bool_or_string")]
+    email_verified: bool,
+
+    /// When the user last authenticated, in Unix time. Standard OIDC (Core 1.0
+    /// §2), and unchanged by token refresh, so a newer value marks a genuine
+    /// new login rather than a renewed token. Drives how often Feldera asks the
+    /// provider for the user's profile (see [`crate::oidc::userinfo`]).
+    auth_time: Option<i64>,
 
     /// Tenant identifier for single-tenant deployments
     /// TODO: Deprecated, remove when no one no longer uses it
@@ -1173,7 +1470,7 @@ async fn decode_oidc_token(
                     let state = req.app_data::<Data<ServerState>>().unwrap();
                     let cache = &mut state.jwk_cache.lock().await;
                     let jwk = cache
-                        .get(&kid, &configuration.provider, &state.oidc_root_certs)
+                        .get(&kid, &configuration.provider, &state.oidc_clients)
                         .await?;
 
                     let token_data = decode::<OidcClaim>(token, &jwk, &configuration.validation);
@@ -1326,7 +1623,7 @@ impl JwkCache {
         &mut self,
         key: &String,
         provider: &AuthProvider,
-        extra_roots: &[Certificate],
+        clients: &OidcClients,
     ) -> Result<DecodingKey, AuthError> {
         let cache = &mut self.cache;
         let val = &cache.cache_get(key);
@@ -1334,7 +1631,7 @@ impl JwkCache {
             Some(dk) => Ok((*dk).clone()),
             None => {
                 // TODO: Introduce a minimum delay between refreshes
-                let fetched = fetch_jwk_keys(provider, extra_roots).await;
+                let fetched = fetch_jwk_keys(provider, clients).await;
                 match fetched {
                     Ok(map) => {
                         for (key_id, decoding_key) in map {
@@ -1355,14 +1652,12 @@ impl JwkCache {
 
 async fn fetch_jwk_keys(
     provider: &AuthProvider,
-    extra_roots: &[Certificate],
+    clients: &OidcClients,
 ) -> Result<HashMap<String, DecodingKey>, AuthError> {
     match &provider {
-        AuthProvider::AwsCognito(provider) => {
-            fetch_jwk_oidc_keys(&provider.jwk_uri, extra_roots).await
-        }
+        AuthProvider::AwsCognito(provider) => fetch_jwk_oidc_keys(&provider.jwk_uri, clients).await,
         AuthProvider::GenericOidc(provider) => {
-            fetch_jwk_oidc_keys(&provider.jwk_uri, extra_roots).await
+            fetch_jwk_oidc_keys(&provider.jwk_uri, clients).await
         }
     }
 }
@@ -1378,10 +1673,9 @@ async fn fetch_jwk_keys(
 // outside the public web PKI, including this deployment's own CA.
 async fn fetch_jwk_oidc_keys(
     url: &str,
-    extra_roots: &[Certificate],
+    clients: &OidcClients,
 ) -> Result<HashMap<String, DecodingKey>, AuthError> {
-    let client = oidc_http_client(OidcDestination::OperatorConfigured, extra_roots)
-        .map_err(|e| AuthError::JwkShape(format!("OIDC client build: {e}")))?;
+    let client = clients.for_destination(OidcDestination::OperatorConfigured);
 
     let response = client.get(url).send().await.map_err(|e| {
         debug!("JWK fetch request failed: {:?}", e);
@@ -1500,6 +1794,7 @@ mod test {
 
     use super::{AuthError, AuthenticatedPrincipal};
     use crate::db::types::role::{MintableKeyRole, Role};
+    use crate::oidc::fetch::OidcClients;
     use crate::{
         api::main::ServerState,
         auth::{self, AuthConfiguration, AuthProvider, OidcClaim},
@@ -1532,6 +1827,31 @@ mod test {
         validation
     }
 
+    fn default_manager_test_config() -> ApiServerConfig {
+        ApiServerConfig {
+            auth_provider: crate::config::AuthProviderType::AwsCognito,
+            dev_mode: false,
+            dump_openapi: false,
+            allowed_origins: None,
+            demos_dir: vec![],
+            telemetry: "".to_owned(),
+            conceptualhq: "".to_owned(),
+            product_fruits: "".to_owned(),
+            support_data_collection_frequency: 15,
+            support_data_retention: 3,
+            authorized_groups: vec![],
+            individual_tenant: true,
+            issuer_tenant: false,
+            auth_audience: "feldera-api".to_string(),
+            owners: vec![],
+            owner_trusts: crate::config::OwnerTrusts::default(),
+            allow_internal_tenant_trust_issuers: false,
+            default_role: Role::Read,
+            first_user_role: Role::Admin,
+            provision_on_login: true,
+        }
+    }
+
     fn default_claim() -> OidcClaim {
         OidcClaim {
             aud: None,
@@ -1545,12 +1865,44 @@ mod test {
             token_use: Some("access".to_owned()),
             username: Some("some-user".to_owned()),
             email: None,
-            email_verified: None,
+            email_verified: false,
+            auth_time: None,
             tenant: None,
             tenants: None,
             groups: None,
             additional_claims: serde_json::Map::new(),
         }
+    }
+
+    /// Empty and whitespace claim entries mean "no claim": they fall through
+    /// to derivation instead of naming a tenant literally called "".
+    #[tokio::test]
+    async fn empty_claim_entries_are_ignored() {
+        use super::OidcClaimExt;
+        use jsonwebtoken::TokenData;
+
+        let config = default_manager_test_config();
+        let headers = actix_web::http::header::HeaderMap::new();
+        let name_for = |tenant: Option<&str>, tenants: Option<Vec<&str>>| {
+            let mut claim = default_claim();
+            claim.tenant = tenant.map(str::to_string);
+            claim.tenants = tenants.map(|ts| ts.into_iter().map(str::to_string).collect());
+            TokenData {
+                header: Header::new(Algorithm::RS256),
+                claims: claim,
+            }
+            .tenant_name(&config, &headers)
+        };
+
+        // individual_tenant is on, so a token with no usable claim derives
+        // its personal tenant from the sub.
+        assert_eq!(name_for(None, None).unwrap(), "some-sub");
+        assert_eq!(name_for(Some(""), None).unwrap(), "some-sub");
+        assert_eq!(name_for(None, Some(vec![""])).unwrap(), "some-sub");
+        assert_eq!(name_for(None, Some(vec!["  ", ""])).unwrap(), "some-sub");
+        // Usable entries survive, trimmed, with empties dropped around them.
+        assert_eq!(name_for(None, Some(vec![" acme "])).unwrap(), "acme");
+        assert_eq!(name_for(None, Some(vec!["", "acme"])).unwrap(), "acme");
     }
 
     async fn run_test(
@@ -1600,27 +1952,7 @@ mod test {
             disable_cluster_monitor_resources: false,
         };
 
-        let manager_config = ApiServerConfig {
-            auth_provider: crate::config::AuthProviderType::AwsCognito,
-            dev_mode: false,
-            dump_openapi: false,
-            allowed_origins: None,
-            demos_dir: vec![],
-            telemetry: "".to_owned(),
-            conceptualhq: "".to_owned(),
-            product_fruits: "".to_owned(),
-            support_data_collection_frequency: 15,
-            support_data_retention: 3,
-            authorized_groups: vec![],
-            individual_tenant: true,
-            issuer_tenant: false,
-            auth_audience: "feldera-api".to_string(),
-            owners: vec![],
-            owner_trusts: crate::config::OwnerTrusts::default(),
-            allow_internal_tenant_trust_issuers: false,
-            default_role: Role::Read,
-            first_user_role: Role::Admin,
-        };
+        let manager_config = default_manager_test_config();
 
         let (conn, _temp) = crate::db::test::setup_pg().await;
         if let Some(api_key) = api_key {
@@ -1688,7 +2020,7 @@ mod test {
     async fn invalid_url() {
         ensure_default_crypto_provider();
         let url = "http://localhost/doesnotexist".to_owned();
-        let res = fetch_jwk_oidc_keys(&url, &[]).await;
+        let res = fetch_jwk_oidc_keys(&url, &OidcClients::new(&[]).unwrap()).await;
         assert!(matches!(res.err().unwrap(), AuthError::JwkFetch(_)));
     }
 
@@ -1715,6 +2047,30 @@ mod test {
         let with_blank = vec!["a".to_string(), "".to_string(), "b".to_string()];
         assert!(!is_configured_owner(&with_blank, "iss", "", Some("")));
         assert!(!is_configured_owner(&with_blank, "iss", "", None));
+    }
+
+    /// A provider that spells `email_verified` as a string still confers owner
+    /// on an `owners` entry naming that email, and `auth_time` reaches the
+    /// profile refresh.
+    #[tokio::test]
+    async fn a_string_email_verified_still_counts_as_verified() {
+        let parse = |json: &str| serde_json::from_str::<OidcClaim>(json).unwrap();
+        let base = r#""exp":1,"iat":1,"iss":"i","sub":"s""#;
+
+        let cognito = parse(&format!(r#"{{{base},"email_verified":"true"}}"#));
+        assert!(cognito.email_verified);
+        assert!(parse(&format!(r#"{{{base},"email_verified":true}}"#)).email_verified);
+        assert!(!parse(&format!(r#"{{{base},"email_verified":"false"}}"#)).email_verified);
+        // Absent, or a shape neither spelling covers, reads as unverified
+        // rather than failing the whole token.
+        assert!(!parse(&format!("{{{base}}}")).email_verified);
+        assert!(!parse(&format!(r#"{{{base},"email_verified":"maybe"}}"#)).email_verified);
+
+        assert_eq!(
+            parse(&format!(r#"{{{base},"auth_time":1737000000}}"#)).auth_time,
+            Some(1737000000)
+        );
+        assert_eq!(parse(&format!("{{{base}}}")).auth_time, None);
     }
 
     #[tokio::test]

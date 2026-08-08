@@ -35,12 +35,14 @@ mod cli;
 mod debug;
 mod shell;
 mod tags;
+mod util;
 
 pub(crate) const UPGRADE_NOTICE: &str = "Try upgrading to the latest CLI version to resolve this issue. Also make sure the pipeline is recompiled with the latest version of feldera. Report it on github.com/feldera/feldera if the issue persists.";
 
 use crate::adhoc::handle_adhoc_query;
 use crate::cli::*;
 use crate::shell::shell;
+use crate::util::terminal_safe;
 
 /// Creates a unique filename by appending a number to the base name if it already exists.
 fn unique_file(base: &str, extension: &str) -> Result<(PathBuf, File), std::io::Error> {
@@ -79,6 +81,7 @@ fn make_auth_headers(auth: &Option<String>) -> Result<HeaderMap, InvalidHeaderVa
 /// true, then the client won't verify TLS certificates.  If `tls_cert` is
 /// provided, its contents are parsed as one or more PEM-encoded certificates
 /// and each is added to the set of trusted roots for HTTPS connections.
+/// `tenant` becomes the `Feldera-Tenant` header on every request.
 pub(crate) fn make_client(
     host: String,
     insecure: bool,
@@ -86,6 +89,7 @@ pub(crate) fn make_client(
     auth: Option<String>,
     auth_token_command: Option<String>,
     timeout: Option<u64>,
+    tenant: Option<String>,
 ) -> Result<Client, Box<dyn std::error::Error>> {
     let mut client_builder = reqwest::ClientBuilder::new().danger_accept_invalid_certs(insecure);
 
@@ -118,19 +122,29 @@ pub(crate) fn make_client(
         }
     }
 
-    // Only execute the auth-token command if we are actually going to send the
-    // credentials, which is https alone.
+    // The tenant selector is not a credential and travels on any scheme;
+    // bearer credentials go over https alone. Only execute the auth-token
+    // command if the credentials will actually be sent.
+    let mut headers = HeaderMap::new();
+    if let Some(tenant) = &tenant {
+        headers.insert(
+            "Feldera-Tenant",
+            HeaderValue::from_str(tenant)
+                .map_err(|e| format!("Invalid --tenant value `{tenant}`: {e}"))?,
+        );
+    }
     if host.starts_with("https://") {
         let resolved_auth = match auth_token_command {
             Some(cmd) => Some(run_auth_token_command(&cmd)?),
             None => auth,
         };
-        client_builder = client_builder.default_headers(make_auth_headers(&resolved_auth)?);
+        headers.extend(make_auth_headers(&resolved_auth)?);
     } else if host.starts_with("http://") && (auth.is_some() || auth_token_command.is_some()) {
         warn!(
             "The provided credentials are not added to the request because {host} does not use `https`."
         );
     }
+    client_builder = client_builder.default_headers(headers);
 
     let client = client_builder.build()?;
     Ok(Client::new_with_client(host.as_str(), client))
@@ -238,7 +252,7 @@ fn handle_errors_fatal(
     Box::new(move |err: Error<ErrorResponse>| -> Infallible {
         match err {
             Error::ErrorResponse(e) => {
-                eprintln!("{}", e.message);
+                eprintln!("{}", terminal_safe(&e.message));
                 debug!("Details: {:#?}", e.details);
             }
             Error::InvalidRequest(s) => {
@@ -305,9 +319,22 @@ fn handle_errors_fatal(
                 });
                 match server_msg {
                     Some(m) => {
-                        eprintln!("{msg}: {m}");
+                        eprintln!("{msg}: {}", terminal_safe(&m));
                         if status == StatusCode::UNAUTHORIZED && is_http {
                             eprintln!("Did you mean to use https?");
+                        }
+                    }
+                    // A bodyless 401 is what the auth middleware answers when
+                    // no credentials arrived at all; the version-mismatch
+                    // notice would point in exactly the wrong direction.
+                    None if status == StatusCode::UNAUTHORIZED => {
+                        eprintln!("{msg}: authentication failed.");
+                        if is_http {
+                            eprintln!(
+                                "fda sends credentials only over https, so this request carried none. Did you mean to use https?"
+                            );
+                        } else {
+                            eprintln!("Check that the API key or token is valid and not expired.");
                         }
                     }
                     None => {
@@ -364,7 +391,11 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
                 .unwrap();
             match format {
                 OutputFormat::Text => {
-                    println!("API key '{}' created: {}", response.name, response.api_key);
+                    println!(
+                        "API key '{}' created: {}",
+                        terminal_safe(&response.name),
+                        response.api_key
+                    );
                 }
                 OutputFormat::Json => {
                     println!(
@@ -412,7 +443,7 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
                     rows.push(["name".to_string(), "role".to_string(), "id".to_string()]);
                     for key in response.iter() {
                         rows.push([
-                            key.name.to_string(),
+                            terminal_safe(&key.name),
                             key.role.to_string(),
                             key.id.0.to_string(),
                         ]);
@@ -531,12 +562,12 @@ async fn oidc_trust_commands(format: OutputFormat, action: OidcTrustActions, cli
                     ]];
                     for t in response.iter() {
                         rows.push([
-                            t.name.clone(),
+                            terminal_safe(&t.name),
                             t.role.to_string(),
-                            t.issuer.clone(),
-                            t.subject.clone(),
-                            t.audience.clone().unwrap_or_default(),
-                            t.description.clone().unwrap_or_default(),
+                            terminal_safe(&t.issuer),
+                            terminal_safe(&t.subject),
+                            terminal_safe(&t.audience.clone().unwrap_or_default()),
+                            terminal_safe(&t.description.clone().unwrap_or_default()),
                         ]);
                     }
                     println!(
@@ -556,6 +587,127 @@ async fn oidc_trust_commands(format: OutputFormat, action: OidcTrustActions, cli
                     std::process::exit(1);
                 }
             }
+        }
+    }
+}
+
+async fn member_commands(format: OutputFormat, action: MemberActions, client: Client) {
+    match action {
+        MemberActions::List => {
+            debug!("Listing tenant members");
+            let response = client
+                .list_tenant_users()
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to list tenant members",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    let mut rows = vec![[
+                        "user id".to_string(),
+                        "name".to_string(),
+                        "subject".to_string(),
+                        "email".to_string(),
+                        "verified".to_string(),
+                        "role".to_string(),
+                        "origin".to_string(),
+                    ]];
+                    for m in response.iter() {
+                        rows.push([
+                            m.user_id.0.to_string(),
+                            terminal_safe(&m.display_name.clone().unwrap_or_default()),
+                            terminal_safe(&m.subject),
+                            terminal_safe(&m.email.clone().unwrap_or_default()),
+                            // Absent from an older manager's answer, which is
+                            // the same as not verified.
+                            if m.email_verified.unwrap_or(false) {
+                                "yes"
+                            } else {
+                                "no"
+                            }
+                            .to_string(),
+                            m.role.to_string(),
+                            m.origin.as_ref().map(|o| o.to_string()).unwrap_or_default(),
+                        ]);
+                    }
+                    println!(
+                        "{}",
+                        Builder::from_iter(rows).build().with(Style::rounded())
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize member list")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+        MemberActions::Add {
+            subject,
+            role,
+            email,
+        } => {
+            debug!("Adding member {subject}");
+            let response = client
+                .add_tenant_user()
+                .body_map(|body| {
+                    body.subject(subject.clone())
+                        .role(role)
+                        .email(email.clone())
+                })
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to add tenant member",
+                    1,
+                ))
+                .unwrap();
+            println!(
+                "Added '{subject}' as {role} (user id {}).",
+                response.user_id.0
+            );
+        }
+        MemberActions::SetRole { user_id, role } => {
+            debug!("Setting role for {user_id}");
+            client
+                .put_tenant_user()
+                .user_id(user_id)
+                .body_map(|body| body.role(role))
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to set member role",
+                    1,
+                ))
+                .unwrap();
+            println!("User {user_id} is now {role}.");
+        }
+        MemberActions::Remove { user_id } => {
+            debug!("Removing member {user_id}");
+            client
+                .delete_tenant_user()
+                .user_id(user_id)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to remove tenant member",
+                    1,
+                ))
+                .unwrap();
+            println!("Removed user {user_id} from the tenant.");
         }
     }
 }
@@ -583,9 +735,9 @@ async fn tenant_commands(format: OutputFormat, action: TenantActions, client: Cl
                     ]];
                     for tenant in response.iter() {
                         rows.push([
-                            tenant.name.clone(),
+                            terminal_safe(&tenant.name),
                             tenant.id.0.to_string(),
-                            tenant.initial_provider.clone(),
+                            terminal_safe(&tenant.initial_provider),
                         ]);
                     }
                     println!(
@@ -598,6 +750,94 @@ async fn tenant_commands(format: OutputFormat, action: TenantActions, client: Cl
                         "{}",
                         serde_json::to_string_pretty(&response.into_inner())
                             .expect("Failed to serialize tenant list")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+        TenantActions::Get { tenant } => {
+            debug!("Retrieving tenant {tenant}");
+            let response = client
+                .get_tenant()
+                .tenant_id(&tenant)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to retrieve tenant",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    let rows = vec![
+                        [
+                            "name".to_string(),
+                            "id".to_string(),
+                            "initial provider".to_string(),
+                        ],
+                        [
+                            response.name.clone(),
+                            response.id.0.to_string(),
+                            response.initial_provider.clone(),
+                        ],
+                    ];
+                    println!(
+                        "{}",
+                        Builder::from_iter(rows).build().with(Style::rounded())
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize tenant")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
+        TenantActions::Create { name } => {
+            debug!("Creating tenant {name}");
+            let response = client
+                .create_tenant()
+                .body_map(|body| body.name(name.clone()))
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to create tenant",
+                    1,
+                ))
+                .unwrap();
+            // 201 is a fresh creation; 200 returns the pre-existing tenant.
+            let created = response.status() == reqwest::StatusCode::CREATED;
+            match format {
+                OutputFormat::Text => {
+                    if created {
+                        println!(
+                            "Created tenant '{}' ({}).",
+                            terminal_safe(&response.name),
+                            response.id.0
+                        );
+                    } else {
+                        println!(
+                            "Tenant '{}' already exists ({}).",
+                            response.name, response.id.0
+                        );
+                    }
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize tenant")
                     );
                 }
                 _ => {
@@ -668,7 +908,7 @@ async fn pipelines(format: OutputFormat, client: Client) {
     rows.push(["name".to_string(), "status".to_string()]);
     for pipeline in response.iter() {
         rows.push([
-            pipeline.name.to_string(),
+            terminal_safe(&pipeline.name),
             pipeline.deployment_status.to_string(),
         ]);
     }
@@ -916,7 +1156,7 @@ async fn wait_for_status_one_of(
                         .unwrap_or_default()
                 );
             } else {
-                eprintln!("{}", deployment_error.message);
+                eprintln!("{}", terminal_safe(&deployment_error.message));
             }
             std::process::exit(1);
         }
@@ -3487,6 +3727,7 @@ fn main() {
                     cli.auth,
                     cli.auth_token_command,
                     cli.timeout,
+                    cli.tenant,
                 )
                 .map_err(|e| {
                     eprintln!("Failed to create HTTP client: {}", e);
@@ -3501,6 +3742,7 @@ fn main() {
                     oidc_trust_commands(cli.format, action, client()).await
                 }
                 Commands::Tenant { action } => tenant_commands(cli.format, action, client()).await,
+                Commands::Member { action } => member_commands(cli.format, action, client()).await,
                 Commands::Pipelines => pipelines(cli.format, client()).await,
                 Commands::Pipeline(action) => pipeline(cli.format, action, client()).await,
                 Commands::ValidateProgram {
@@ -3565,6 +3807,7 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
             None,
             None,
             None,
+            None,
         )
         .expect_err("non-existent cert path must produce an error");
         let msg = err.to_string();
@@ -3583,6 +3826,7 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
             "https://example.invalid".to_string(),
             false,
             Some(file.path().to_path_buf()),
+            None,
             None,
             None,
             None,
@@ -3610,6 +3854,7 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
             "https://example.invalid".to_string(),
             false,
             Some(file.path().to_path_buf()),
+            None,
             None,
             None,
             None,

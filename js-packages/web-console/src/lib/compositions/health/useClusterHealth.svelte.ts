@@ -13,7 +13,7 @@ let status = $state({
 /**
  * Poll cluster health every 10 seconds (with an immediate first call) and
  * publish the result to the module-level `status` store. A single instance of
- * this hook should be mounted at one time (the authenticated layout owns it);
+ * this hook should be mounted at one time (the `(authorized)` layout owns it);
  * consumers read the state via {@link useClusterHealth}.
  */
 export const useRefreshClusterHealth = () => {

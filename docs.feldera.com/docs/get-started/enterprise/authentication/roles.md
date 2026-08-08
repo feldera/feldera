@@ -30,9 +30,12 @@ platform-wide and comes only from deploy-time configuration, as a user
 
 ## How a role is assigned
 
-- On a user's first login to a tenant, if the user has no membership yet, they
-  are admitted at the configured default role (see [below](#default-roles))
-  and a membership record is created.
+- On a user's first login to a tenant that the tenancy strategy resolves, if
+  the user has no membership yet, they are admitted at the configured default role
+  (see [below](#default-roles)) and a membership record is created. This
+  login-time enrollment only happens while `authorization.provisionOnLogin` is
+  `true` (the default); with it off, access comes solely from memberships
+  granted through the API and console, and a user without one is denied.
 - When that first login also creates the tenant (auto-provisioning, because the
   resolved tenant did not exist yet), the user is granted the configured
   first-user role, `admin` by default (see [below](#default-roles)). A
@@ -49,6 +52,27 @@ platform-wide and comes only from deploy-time configuration, as a user
   audience patterns narrow: a broad pattern promotes every workload it matches.
 - An API key carries a role capped at its creator's role, limited to `read` or
   `write`.
+
+## Revoking access
+
+Removing a member ([`DELETE /v0/tenant/users/{user_id}`](/api/remove-tenant-member),
+or the Admin page) deletes their membership. Whether that alone revokes access depends on
+`authorization.provisionOnLogin`:
+
+- With provisioning on (the default), the user's next login re-enrolls them at
+  the default role whenever the tenancy strategy still resolves the tenant:
+  their `tenants` claim still names it, or it is their personal or issuer
+  tenant. Full revocation then takes both levers: remove the membership in
+  Feldera and stop the strategy from re-provisioning it (adjust the claim at
+  the identity provider). Deassigning the user from the application at the
+  provider always revokes, because no token is issued at all.
+- With provisioning off, nothing re-enrolls: removing the membership is
+  revocation, effective on the user's next request.
+
+Removal does not touch what the member created: API keys and OIDC trust
+relationships are tenant resources and keep working, and a role demotion
+demotes neither. Review API keys and trusts separately when members depart
+and revoke them if necessary.
 
 ## Platform owners
 
@@ -75,6 +99,12 @@ authorization:
 Prefer the subject or provider-qualified form over email. An email entry matches
 only when the identity provider marks the email verified, and an email address is
 user-facing and can change, whereas the subject is stable.
+
+Owner matching reads the access token itself, never the provider's UserInfo
+endpoint, so that who is an owner is settled by the token in hand. Many
+providers put neither `email` nor `email_verified` in an access token, and an
+email entry cannot match on such a provider. If an owner entry appears to have
+no effect, check the token's own claims and use the subject form instead.
 :::
 
 Set `authorization.ownerTrusts` (environment: `FELDERA_OWNER_TRUSTS`), a list of

@@ -7,6 +7,8 @@ use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::error::ManagerError;
 use crate::license::LicenseCheck;
+use crate::oidc::fetch::OidcClients;
+use crate::oidc::userinfo::UserProfileCache;
 use crate::runner::interaction::RunnerInteraction;
 use crate::unstable_features;
 use actix_http::StatusCode;
@@ -269,6 +271,7 @@ It contains the following fields:
         endpoints::tenant::put_tenant_user,
         endpoints::tenant::delete_tenant_user,
         endpoints::tenant::list_tenants,
+        endpoints::tenant::get_tenant,
         endpoints::tenant::create_tenant,
         endpoints::tenant::patch_tenant,
         endpoints::tenant::delete_tenant
@@ -357,13 +360,14 @@ It contains the following fields:
         crate::db::types::user::UserId,
         crate::db::types::user::TenantMember,
         crate::db::types::user::TenantInfo,
+        crate::db::types::user::MembershipOrigin,
+        crate::db::types::user::UserMembership,
         crate::api::endpoints::tenant::SetMemberRoleRequest,
         crate::api::endpoints::tenant::AddMemberRequest,
         crate::api::endpoints::tenant::AddMemberResponse,
         crate::api::endpoints::tenant::NewTenantRequest,
         crate::api::endpoints::tenant::RenameTenantRequest,
         crate::api::endpoints::tenant::RenameTenantResponse,
-        crate::api::endpoints::tenant::NewTenantResponse,
 
         // API key
         crate::db::types::api_key::ApiKeyId,
@@ -783,6 +787,7 @@ fn api_scope() -> Scope {
         .service(endpoints::tenant::put_tenant_user)
         .service(endpoints::tenant::delete_tenant_user)
         .service(endpoints::tenant::list_tenants)
+        .service(endpoints::tenant::get_tenant)
         .service(endpoints::tenant::create_tenant)
         .service(endpoints::tenant::patch_tenant)
         .service(endpoints::tenant::delete_tenant)
@@ -864,9 +869,16 @@ pub(crate) struct ServerState {
     pub config: ApiServerConfig,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
     pub issuer_jwk_cache: Arc<Mutex<IssuerJwkCache>>,
+    /// Which logins have had their profile read from the identity provider
+    /// recently, and where each issuer's UserInfo endpoint lives.
+    pub user_profiles: Arc<Mutex<UserProfileCache>>,
     /// Roots an OIDC fetch trusts on top of the platform's, read once here so
     /// that authenticating a request never touches the filesystem.
     pub oidc_root_certs: Vec<reqwest::Certificate>,
+    /// The HTTP clients OIDC fetches use, built once: constructing one loads
+    /// the platform's root certificate store, which is far too slow to do per
+    /// request.
+    pub oidc_clients: OidcClients,
     probe: Arc<Mutex<DbProbe>>,
     pub demos: Vec<Demo>,
     pub license_check: Arc<RwLock<Option<LicenseCheck>>>,
@@ -890,6 +902,8 @@ impl ServerState {
             config,
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
             issuer_jwk_cache: Arc::new(Mutex::new(IssuerJwkCache::new())),
+            user_profiles: Arc::new(Mutex::new(UserProfileCache::new())),
+            oidc_clients: OidcClients::new(&oidc_root_certs)?,
             oidc_root_certs,
             probe: DbProbe::new(db_copy).await,
             demos,
@@ -953,6 +967,9 @@ pub async fn run(
     api_config: ApiServerConfig,
     license_check: Arc<RwLock<Option<LicenseCheck>>>,
 ) -> AnyResult<()> {
+    if let Err(reason) = api_config.validate_authorization() {
+        return Err(anyhow::anyhow!(reason));
+    }
     let listener = TcpListener::bind((common_config.bind_address.clone(), common_config.api_port))
         .unwrap_or_else(|_| {
             panic!(

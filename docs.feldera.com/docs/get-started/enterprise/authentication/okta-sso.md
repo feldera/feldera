@@ -82,7 +82,13 @@ You can take advantage of the supported authorization models by properly configu
 
 ## Tenant Assignment with custom claims
 
-Feldera supports multiple authorization use-cases through [managed tenancy](index.mdx#Managed%20Tenancy). You can choose between the supported tenant claims to implement the appropriate authorization scenario. Navigate to the **Claims** tab in the Custom Authorization Server to configure one of:
+Tenant assignment through custom claims is deprecated in favor of
+[Feldera-managed memberships](index.mdx#migrating-to-feldera-managed-memberships),
+which need no claim mapping and no Custom Authorization Server. For a
+deployment staying on [managed tenancy](index.mdx#managed-tenancy-deprecated),
+choose between the supported tenant claims to implement the appropriate
+authorization scenario. Navigate to the **Claims** tab in the Custom
+Authorization Server to configure one of:
 
 ### `tenants` claim
 

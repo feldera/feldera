@@ -125,6 +125,9 @@ import type {
   GetRemoteCheckpointsData,
   GetRemoteCheckpointsErrors,
   GetRemoteCheckpointsResponses,
+  GetTenantData,
+  GetTenantErrors,
+  GetTenantResponses,
   HttpInputData,
   HttpInputErrors,
   HttpInputResponses,
@@ -494,6 +497,11 @@ export const getConfigOwners = <ThrowOnError extends boolean = true>(
  * Required role: `read` or higher.
  *
  * Retrieve login session information for your current user session.
+ *
+ * This is the one route that answers a login without a resolved acting
+ * tenant: when the user belongs to several tenants (or none) and no
+ * `Feldera-Tenant` header selects one, the acting-tenant fields are `null`
+ * and `memberships` lists the tenants to pick from.
  */
 export const getConfigSession = <ThrowOnError extends boolean = true>(
   options?: Options<GetConfigSessionData, ThrowOnError>
@@ -1122,7 +1130,7 @@ export const getPipelineDataflowGraph = <ThrowOnError extends boolean = true>(
 /**
  * Compute Program Diff
  *
- * Required role: `read` or higher.
+ * Required role: `write` or higher.
  *
  * Compute the diff between the pipeline's current program and a proposed new
  * version, without modifying or restarting the pipeline.
@@ -1933,9 +1941,11 @@ export const listTenantUsers = <ThrowOnError extends boolean = true>(
  * Required role: `admin` or higher.
  *
  * Add a member to the acting tenant by identity, before the user's first
- * login. The grant is dormant until that identity authenticates into the
- * tenant through the IdP. The role is capped at the caller's own role and may
- * not be `owner`.
+ * login. The membership authorizes on its own: as soon as that identity
+ * authenticates through the platform's identity provider, the user may act
+ * in this tenant, and a headerless login with exactly this one membership
+ * lands in it. The role is capped at the caller's own role and may not be
+ * `owner`.
  */
 export const addTenantUser = <ThrowOnError extends boolean = true>(
   options: Options<AddTenantUserData, ThrowOnError>
@@ -2029,8 +2039,7 @@ export const listTenants = <ThrowOnError extends boolean = true>(
  *
  * Explicitly create a tenant, rather than relying on first login.
  * A login resolves its tenant by name, so a user whose identity provider
- * asserts this name lands in the tenant created here. Fails with a conflict if
- * the name is already taken.
+ * asserts this name lands in the tenant created here.
  */
 export const createTenant = <ThrowOnError extends boolean = true>(
   options: Options<CreateTenantData, ThrowOnError>
@@ -2076,6 +2085,24 @@ export const deleteTenant = <ThrowOnError extends boolean = true>(
   })
 
 /**
+ * Get Tenant
+ *
+ * Required role: `owner`.
+ *
+ * Retrieve a single tenant by name or identifier. A selector that parses as a
+ * UUID is looked up by tenant identifier, otherwise by name.
+ */
+export const getTenant = <ThrowOnError extends boolean = true>(
+  options: Options<GetTenantData, ThrowOnError>
+) =>
+  (options.client ?? client).get<GetTenantResponses, GetTenantErrors, ThrowOnError, 'data'>({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/tenants/{tenant_id}',
+    ...options
+  })
+
+/**
  * Rename Tenant
  *
  * Required role: `owner`.
@@ -2106,7 +2133,7 @@ export const patchTenant = <ThrowOnError extends boolean = true>(
 /**
  * Validate Program
  *
- * Required role: `read` or higher.
+ * Required role: `write` or higher.
  *
  * Validate a SQL program by compiling it, without creating a pipeline or
  * building the pipeline binary. Reports SQL errors and warnings and the derived

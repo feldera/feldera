@@ -196,6 +196,16 @@ def multi_tenant_auth(
     return AuthConfig(name="multi-tenant", env=config.env)
 
 
+def membership_auth(idp: Issuer, owners: str = OWNER_EMAIL) -> AuthConfig:
+    """Authenticated with login provisioning off: memberships are the only
+    authority, and rows come solely from the RBAC and tenant endpoints."""
+    config = single_tenant_auth(idp, None, owners)
+    env = dict(config.env)
+    env["FELDERA_AUTH_PROVISION_ON_LOGIN"] = "false"
+    env["FELDERA_AUTH_INDIVIDUAL_TENANT"] = "false"
+    return AuthConfig(name="membership", env=env)
+
+
 # Talking to the manager
 class Api:
     """Raw REST against the manager.

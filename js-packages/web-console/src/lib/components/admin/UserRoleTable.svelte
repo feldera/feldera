@@ -56,6 +56,10 @@
 
   const roleOf = (user: TenantUser) => pendingRole[user.user_id] ?? user.role
 
+  // What to call a member: the name their provider spells, an email if it has
+  // told us one, and the bare subject when it has told us neither.
+  const labelOf = (user: TenantUser) => user.display_name ?? user.email ?? user.subject
+
   const addMember = async () => {
     errorMessage = ''
     adding = true
@@ -101,9 +105,9 @@
 <div class="flex flex-col gap-3">
   <p class="text-sm text-surface-800-200">
     Members appear here after their first login. Assign read, write, or admin. Removing a member
-    drops their role now, but if your identity provider still grants them access they are re-added
-    at the default role on their next login. Revoke access at the provider to disable access
-    completely. Pre-provision a member below to grant a role before their first login.
+    drops their role now; while login provisioning is enabled and your identity provider still
+    resolves this tenant for them, they are re-added at the default role on their next login.
+    Pre-provision a member below to grant a role before their first login.
   </p>
   {#if errorMessage}
     <div class="rounded preset-outlined-error-600-400 p-2 text-sm">{errorMessage}</div>
@@ -171,9 +175,9 @@
       {#snippet removeDialog()}
         <GenericDialog
           content={{
-            title: `Remove ${user.email ?? user.subject}?`,
+            title: `Remove ${labelOf(user)}?`,
             description:
-              'Drops their role in this tenant now. If your identity provider still grants them access, they are re-added at the default role on their next login. Revoke access at the provider to disable access completely. Continue?',
+              'Drops their role in this tenant now. While login provisioning is enabled and your identity provider still resolves this tenant for them, they are re-added at the default role on their next login; with provisioning off, removal takes effect on their next request. Removing a member does not revoke API keys or OIDC trust relationships created in this tenant; review those separately. Continue?',
             onSuccess: {
               name: 'Remove',
               callback: async () => {
@@ -202,9 +206,26 @@
       {/snippet}
       <div class="flex flex-nowrap items-center gap-2 border-b border-surface-100-900 py-2">
         <div class="w-full">
-          <div class="font-medium">{user.email ?? user.subject}</div>
-          <div class="text-sm text-surface-800-200">
-            <code>{user.provider}</code> · sub=<code>{user.subject}</code>
+          <div class="font-medium">{labelOf(user)}</div>
+          <div class="flex flex-wrap items-center gap-x-1 text-sm text-surface-800-200">
+            {#if user.email}
+              <span>{user.email}</span>
+              <!-- Only the identity provider's own verdict earns the mark, and
+                   an unmarked address is simply unmarked: an email typed into
+                   the pre-provisioning form above is a claim about an address,
+                   and so is one from a provider that will not vouch for it. -->
+              {#if user.email_verified}
+                <span
+                  class="fd fd-check text-success-600-400"
+                  title="{user.provider} has verified this email address"
+                  aria-label="Verified email"
+                ></span>
+              {/if}
+              <span aria-hidden="true">·</span>
+            {/if}
+            <code>{user.provider}</code>
+            <span aria-hidden="true">·</span>
+            <span>sub=<code>{user.subject}</code></span>
           </div>
         </div>
         {#if isAssignable(user.role)}
@@ -217,7 +238,7 @@
                 | 'admin'
             }}
             class="h-9 w-28"
-            aria-label="Role for {user.email ?? user.subject}"
+            aria-label="Role for {labelOf(user)}"
           >
             <option value="read">read</option>
             <option value="write">write</option>
@@ -237,7 +258,7 @@
         {/if}
         <button
           class="fd fd-trash-2 btn-icon text-[20px]"
-          aria-label="Remove {user.email ?? user.subject}"
+          aria-label="Remove {labelOf(user)}"
           onclick={() => (globalDialog.dialog = removeDialog)}
         ></button>
       </div>

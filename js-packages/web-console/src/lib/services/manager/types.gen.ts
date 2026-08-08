@@ -407,6 +407,12 @@ export type ClockConfig = {
    * the first emitted tick.  `None` means no shift is applied.
    */
   now_offset_ms?: number | null
+  /**
+   * Constant offset added to every emitted `NOW()` value, in milliseconds
+   * east of UTC.  Populated from the `clock_timezone_offset` pipeline
+   * property; 0 means UTC.
+   */
+  timezone_offset_ms?: number
 }
 
 /**
@@ -877,6 +883,25 @@ export type ConnectorConfig = OutputBufferConfig & {
    * `truncate` mode and Postgres).
    */
   send_snapshot?: boolean
+  /**
+   * Ingest deletions as insertions, recording the original polarity in the
+   * `is_delete` metadata attribute. Valid for input connectors only.
+   *
+   * When `true`, a delete received by the connector is pushed to the table
+   * as an insertion of the same record, and the connector attaches the
+   * `is_delete` metadata attribute set to `true` to it. Insertions carry no
+   * `is_delete` attribute, so a column declared as
+   * `DEFAULT CAST(CONNECTOR_METADATA()['is_delete'] AS BOOLEAN)` is `NULL`
+   * for them. The table then contains the entire history of the input
+   * stream instead of tracking its current contents.
+   *
+   * Only tables without a primary key support this mode, since deletions in
+   * a table with a primary key delete a key rather than a record.
+   *
+   * Versions of Feldera that predate this option ignore it and apply
+   * deletions as regular deletions.
+   */
+  soft_delete?: boolean
   /**
    * Start the connector after all connectors with specified labels.
    *
@@ -2513,6 +2538,19 @@ export type IcebergReaderConfig = GlueCatalogConfig &
      */
     datetime?: string | null
     /**
+     * Optional final snapshot id.
+     *
+     * Valid only in `follow` and `snapshot_and_follow` modes.
+     *
+     * When set, the connector stops after fully ingesting the snapshot with
+     * this id, signaling end-of-input. Iceberg snapshot ids are not ordered, so
+     * the bound is an exact match: the id must name a snapshot committed after
+     * the starting snapshot and already present in the table's current history.
+     * The connector rejects any other value at startup, including a
+     * not-yet-committed id, rather than follow forever.
+     */
+    end_snapshot_id?: number | null
+    /**
      * Maximum number of retries for reading the table snapshot.
      *
      * When reading the snapshot fails partway through, for example because an
@@ -2605,6 +2643,8 @@ export type IcebergReaderConfig = GlueCatalogConfig &
       | null
       | number
       | null
+      | number
+      | null
       | string
       | null
       | IcebergIngestMode
@@ -2626,18 +2666,26 @@ export type IcebergReaderConfig = GlueCatalogConfig &
  *
  * Determines how the connector breaks up its input into Feldera transactions.
  *
- * * `none` - the connector does not break up its input into transactions.
- * * `snapshot` - ingest the initial snapshot of the table in one or several transactions.
+ * * `none` - the connector does not group its input into transactions.
+ * * `snapshot` - ingest the initial snapshot in one or more transactions (see below). Changes
+ * ingested afterward, in the follow phase, are not grouped into transactions.
+ * * `catchup` - ingest the initial snapshot like `snapshot`. In the follow phase, the connector
+ * batches all currently available table commits into a single transaction. Once that transaction
+ * completes, it checks for commits added since the transaction began, ingests them in the next
+ * transaction, and repeats continuously. Most efficient for backfill and steady-state following.
+ * * `always` - ingest the initial snapshot like `snapshot`. In the follow phase, each table commit
+ * is ingested in its own transaction.
  *
  * # How the table snapshot is ingested using transactions
  *
- * When `transaction_mode` is set to `snapshot`, the connector ingests the snapshot in one
- * or several transactions, depending on `timestamp_column`. If `timestamp_column` is not set,
- * the whole snapshot is ingested in a single Feldera transaction. If `timestamp_column` is set,
- * the connector ingests the snapshot in a series of timestamp ranges of width equal to the
- * `LATENESS` attribute of the column, each range in a separate transaction.
+ * For the initial snapshot (`snapshot`, `catchup`, and `always` all behave the same), the
+ * connector ingests the snapshot in one or several transactions, depending on `timestamp_column`.
+ * If `timestamp_column` is not set, the whole snapshot is ingested in a single Feldera
+ * transaction. If `timestamp_column` is set, the connector ingests the snapshot in a series of
+ * timestamp ranges of width equal to the `LATENESS` attribute of the column, each range in a
+ * separate transaction.
  */
-export type IcebergTransactionMode = 'none' | 'snapshot'
+export type IcebergTransactionMode = 'none' | 'snapshot' | 'catchup' | 'always'
 
 /**
  * Describes an input connector configuration
@@ -3154,6 +3202,11 @@ export type LicenseValidity =
 export type MemberRole = 'read' | 'write' | 'admin'
 
 /**
+ * How a membership row came into existence, kept for audit.
+ */
+export type MembershipOrigin = 'claim' | 'derived' | 'api'
+
+/**
  * Memory pressure level.
  *
  * The current memory pressure level is computed as a function of the current process
@@ -3315,14 +3368,6 @@ export type NewOidcTrustResponse = {
  * Request to create a tenant (owner-only).
  */
 export type NewTenantRequest = {
-  name: string
-}
-
-/**
- * Response to a successful tenant creation.
- */
-export type NewTenantResponse = {
-  id: TenantId
   name: string
 }
 
@@ -3711,6 +3756,19 @@ export type PipelineConfig = {
    * It is set to 1 second (1,000,000 microseconds) by default.
    */
   clock_resolution_usecs?: number | null
+  /**
+   * Fixed timezone offset for the SQL `NOW()` clock.
+   *
+   * An ISO-8601 UTC offset, for example `"+05:30"` or `"-08:00"`, that the
+   * clock connector adds to every `NOW()` value it emits, so `NOW()`
+   * returns local time in that fixed timezone instead of UTC.
+   *
+   * The offset is baked into the pipeline's checkpointed state and cannot
+   * be changed when the pipeline resumes from a checkpoint: the value from
+   * the checkpoint stays in effect, and a differing new value is ignored
+   * with a warning in the pipeline log.
+   */
+  clock_timezone_offset?: string | null
   /**
    * Enable CPU profiler.
    *
@@ -5040,6 +5098,19 @@ export type RuntimeConfig = {
    */
   clock_resolution_usecs?: number | null
   /**
+   * Fixed timezone offset for the SQL `NOW()` clock.
+   *
+   * An ISO-8601 UTC offset, for example `"+05:30"` or `"-08:00"`, that the
+   * clock connector adds to every `NOW()` value it emits, so `NOW()`
+   * returns local time in that fixed timezone instead of UTC.
+   *
+   * The offset is baked into the pipeline's checkpointed state and cannot
+   * be changed when the pipeline resumes from a checkpoint: the value from
+   * the checkpoint stays in effect, and a differing new value is ignored
+   * with a warning in the pipeline log.
+   */
+  clock_timezone_offset?: string | null
+  /**
    * Enable CPU profiler.
    *
    * The default value is `true`.
@@ -5410,12 +5481,19 @@ export type ServiceStatus = {
 }
 
 export type SessionInfo = {
-  role: Role
-  tenant_id: TenantId
   /**
-   * Current user's tenant name
+   * The tenants this user may act in, from the membership table. Empty for
+   * principals that are not human logins (API keys, federated workloads,
+   * no-auth mode) and for platform owners without explicit memberships,
+   * who act in any tenant regardless.
    */
-  tenant_name: string
+  memberships: Array<UserMembership>
+  role?: Role | null
+  tenant_id?: TenantId | null
+  /**
+   * Acting tenant name; `null` exactly when `tenant_id` is.
+   */
+  tenant_name?: string | null
 }
 
 /**
@@ -5864,7 +5942,7 @@ export type TemporarySuspendError =
 export type TenantId = string
 
 /**
- * A tenant, as returned by the platform (owner-only) tenant list.
+ * A tenant, as returned by the owner-only tenant endpoints.
  */
 export type TenantInfo = {
   id: TenantId
@@ -5882,9 +5960,23 @@ export type TenantInfo = {
  */
 export type TenantMember = {
   /**
-   * Email, if the identity provider supplied one.
+   * The member's name, as the identity provider spells it; `null` until the
+   * provider has been asked.
+   */
+  display_name?: string | null
+  /**
+   * Email, if the identity provider supplied one or an administrator
+   * recorded one when pre-provisioning the membership.
    */
   email?: string | null
+  /**
+   * Whether the identity provider vouches for `email`. False until the
+   * provider has been asked, and for providers that say nothing either way.
+   * An email an administrator typed is never verified, so this is what
+   * separates an address the provider stands behind from a claim about one.
+   */
+  email_verified?: boolean
+  origin?: MembershipOrigin | null
   /**
    * OIDC issuer the user authenticates through.
    */
@@ -6087,6 +6179,19 @@ export type UserAndPassword = {
  * Identifier of a persisted user (the principal behind an OIDC `sub`).
  */
 export type UserId = string
+
+/**
+ * One tenant a user may act in, as surfaced to that user (e.g. in the
+ * session payload that drives the web console's tenant switcher).
+ */
+export type UserMembership = {
+  /**
+   * The tenant's name.
+   */
+  name: string
+  role: Role
+  tenant_id: TenantId
+}
 
 /**
  * Request body for the program validation endpoint.
@@ -8650,10 +8755,6 @@ export type CreateTenantErrors = {
    * Caller is not a platform owner
    */
   403: ErrorResponse
-  /**
-   * A tenant with that name already exists
-   */
-  409: ErrorResponse
   500: ErrorResponse
 }
 
@@ -8661,9 +8762,13 @@ export type CreateTenantError = CreateTenantErrors[keyof CreateTenantErrors]
 
 export type CreateTenantResponses = {
   /**
+   * Tenant with that name already exists
+   */
+  200: TenantInfo
+  /**
    * Tenant created
    */
-  201: NewTenantResponse
+  201: TenantInfo
 }
 
 export type CreateTenantResponse = CreateTenantResponses[keyof CreateTenantResponses]
@@ -8704,6 +8809,41 @@ export type DeleteTenantResponses = {
    */
   200: unknown
 }
+
+export type GetTenantData = {
+  body?: never
+  path: {
+    /**
+     * Tenant name or identifier (UUID)
+     */
+    tenant_id: string
+  }
+  query?: never
+  url: '/v0/tenants/{tenant_id}'
+}
+
+export type GetTenantErrors = {
+  /**
+   * Caller is not a platform owner
+   */
+  403: ErrorResponse
+  /**
+   * No tenant with that name or identifier
+   */
+  404: ErrorResponse
+  500: ErrorResponse
+}
+
+export type GetTenantError = GetTenantErrors[keyof GetTenantErrors]
+
+export type GetTenantResponses = {
+  /**
+   * Tenant retrieved
+   */
+  200: TenantInfo
+}
+
+export type GetTenantResponse = GetTenantResponses[keyof GetTenantResponses]
 
 export type PatchTenantData = {
   body: RenameTenantRequest

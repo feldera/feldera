@@ -15,8 +15,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Deserialize)]
-struct OidcDiscoveryDocument {
-    jwks_uri: String,
+pub(crate) struct OidcDiscoveryDocument {
+    pub jwks_uri: String,
+    /// Absent for providers that publish no UserInfo endpoint. Optional in the
+    /// discovery metadata (OpenID Connect Discovery 1.0 §3).
+    #[serde(default)]
+    pub userinfo_endpoint: Option<String>,
 }
 
 /// Timeout for OIDC discovery / JWKS HTTP requests.
@@ -89,23 +93,71 @@ pub(crate) fn oidc_http_client(
     }
 }
 
-/// Fetch OIDC discovery document and extract `jwks_uri`.
-pub(crate) async fn fetch_jwks_uri_from_discovery(
+/// The clients OIDC fetches use, built once per process.
+///
+/// [`oidc_http_client`] costs tens of milliseconds per call, because
+/// `use_rustls_tls()` loads and parses the platform's root certificate store
+/// each time. Building one per fetch put that on the authentication path twice
+/// per JWKS resolution. Only two clients differ, by whether the destination
+/// policy restricts DNS, so hold both. Reuse also keeps the connection pool,
+/// so a repeat fetch to the same issuer skips the TLS handshake.
+pub(crate) struct OidcClients {
+    /// Resolves any address: either the operator named this issuer, or the
+    /// installation permits internal ones.
+    unrestricted: reqwest::Client,
+    /// Drops every address outside [`is_public_ip`].
+    public_addrs_only: reqwest::Client,
+}
+
+impl OidcClients {
+    pub(crate) fn new(extra_roots: &[reqwest::Certificate]) -> Result<Self, reqwest::Error> {
+        Ok(Self {
+            unrestricted: oidc_http_client(OidcDestination::OperatorConfigured, extra_roots)?,
+            public_addrs_only: oidc_http_client(
+                OidcDestination::TenantRegistered(TenantIssuerPolicy::PublicHttpsOnly),
+                extra_roots,
+            )?,
+        })
+    }
+
+    pub(crate) fn for_destination(&self, destination: OidcDestination) -> &reqwest::Client {
+        match destination {
+            OidcDestination::TenantRegistered(TenantIssuerPolicy::PublicHttpsOnly) => {
+                &self.public_addrs_only
+            }
+            _ => &self.unrestricted,
+        }
+    }
+}
+
+/// Fetch an issuer's OIDC discovery document.
+pub(crate) async fn fetch_discovery_document(
     issuer: &str,
     destination: OidcDestination,
-    extra_roots: &[reqwest::Certificate],
-) -> Result<String, reqwest::Error> {
+    clients: &OidcClients,
+) -> Result<OidcDiscoveryDocument, reqwest::Error> {
     let discovery_url = format!(
         "{}/.well-known/openid-configuration",
         issuer.trim_end_matches('/')
     );
-    let discovery: OidcDiscoveryDocument = oidc_http_client(destination, extra_roots)?
+    clients
+        .for_destination(destination)
         .get(&discovery_url)
         .send()
         .await?
         .json()
-        .await?;
-    Ok(discovery.jwks_uri)
+        .await
+}
+
+/// Fetch OIDC discovery document and extract `jwks_uri`.
+pub(crate) async fn fetch_jwks_uri_from_discovery(
+    issuer: &str,
+    destination: OidcDestination,
+    clients: &OidcClients,
+) -> Result<String, reqwest::Error> {
+    Ok(fetch_discovery_document(issuer, destination, clients)
+        .await?
+        .jwks_uri)
 }
 
 /// Fetch and parse the RSA JWKS for a federated `issuer` (discovery then keys),
@@ -119,9 +171,9 @@ pub(crate) async fn fetch_jwks_uri_from_discovery(
 pub(crate) async fn fetch_issuer_jwks(
     issuer: &str,
     destination: OidcDestination,
-    extra_roots: &[reqwest::Certificate],
+    clients: &OidcClients,
 ) -> Result<HashMap<String, DecodingKey>, AuthError> {
-    let jwks_uri = fetch_jwks_uri_from_discovery(issuer, destination, extra_roots)
+    let jwks_uri = fetch_jwks_uri_from_discovery(issuer, destination, clients)
         .await
         .map_err(|e| AuthError::JwkShape(format!("OIDC discovery failed: {e}")))?;
     if let OidcDestination::TenantRegistered(policy) = destination {
@@ -131,9 +183,8 @@ pub(crate) async fn fetch_issuer_jwks(
             ))
         })?;
     }
-    let client = oidc_http_client(destination, extra_roots)
-        .map_err(|e| AuthError::JwkShape(format!("OIDC client build: {e}")))?;
-    let keys_json: Value = client
+    let keys_json: Value = clients
+        .for_destination(destination)
         .get(&jwks_uri)
         .send()
         .await
@@ -142,4 +193,60 @@ pub(crate) async fn fetch_issuer_jwks(
         .await
         .map_err(|e| AuthError::JwkShape(format!("JWKS parse failed: {e}")))?;
     parse_rsa_jwks(&keys_json)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::oidc::destination::TenantIssuerPolicy;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    /// Holding the clients must not lose the destination policy: the one a
+    /// tenant-registered issuer gets still refuses to resolve a loopback host,
+    /// and the operator-configured one still reaches it.
+    #[tokio::test]
+    async fn a_held_client_keeps_its_destination_policy() {
+        crate::ensure_default_crypto_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/probe"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        // The mock server binds an address; ask for it by name so the resolver,
+        // not the URL validator, is what decides.
+        let url = format!("http://localhost:{}/probe", server.address().port());
+        let clients = OidcClients::new(&[]).unwrap();
+
+        assert!(
+            clients
+                .for_destination(OidcDestination::OperatorConfigured)
+                .get(&url)
+                .send()
+                .await
+                .is_ok()
+        );
+        let restricted = clients
+            .for_destination(OidcDestination::TenantRegistered(
+                TenantIssuerPolicy::PublicHttpsOnly,
+            ))
+            .get(&url)
+            .send()
+            .await;
+        assert!(restricted.is_err(), "loopback must not resolve");
+
+        // An installation that permits internal issuers shares the unrestricted
+        // client, so it reaches the same address.
+        assert!(
+            clients
+                .for_destination(OidcDestination::TenantRegistered(
+                    TenantIssuerPolicy::AllowInternal
+                ))
+                .get(&url)
+                .send()
+                .await
+                .is_ok()
+        );
+    }
 }

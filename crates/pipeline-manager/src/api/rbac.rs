@@ -18,7 +18,7 @@ use actix_web::middleware::Next;
 use actix_web::{HttpMessage, HttpResponse, ResponseError};
 use std::collections::HashMap;
 use std::sync::OnceLock;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 /// Minimum role required to reach each `/v0` route. A `(method, path)` absent
 /// from this table is denied by the middleware.
@@ -99,6 +99,7 @@ static ROUTE_MIN_ROLE: &[(&str, &str, Role)] = &[
     ("DELETE", "/v0/tenant/users/{user_id}", Role::Admin), // delete_tenant_user
     ("GET", "/v0/tenants", Role::Owner), // list_tenants
     ("POST", "/v0/tenants", Role::Owner), // create_tenant
+    ("GET", "/v0/tenants/{tenant_id}", Role::Owner), // get_tenant
     ("PATCH", "/v0/tenants/{tenant_id}", Role::Owner), // patch_tenant
     ("DELETE", "/v0/tenants/{tenant_id}", Role::Owner), // delete_tenant
 ];
@@ -261,25 +262,12 @@ fn authorize(
 }
 
 /// Record who reached which route, in which tenant, at what role.
-///
-/// Privileged access is logged unconditionally: `admin` manages a tenant's
-/// members and trusts, and `owner` acts across tenants, including in tenants it
-/// is not a member of, so those are the requests an operator has to be able to
-/// account for after the fact. Read and write traffic is the data plane, one
-/// line per request, and stays at debug.
 fn audit(method: &Method, pattern: &str, principal: Option<&AuthenticatedPrincipal>) {
     let Some(p) = principal else { return };
-    if p.role >= Role::Admin {
-        info!(
-            "audit: user='{}' tenant={} role={} {} {}",
-            p.label, p.acting_tenant, p.role, method, pattern
-        );
-    } else {
-        debug!(
-            "audit: user='{}' tenant={} role={} {} {}",
-            p.label, p.acting_tenant, p.role, method, pattern
-        );
-    }
+    debug!(
+        "audit: user='{}' tenant={} role={} {} {}",
+        p.label, p.acting_tenant, p.role, method, pattern
+    );
 }
 
 /// Refuse any `/v0` request whose principal is below the role its route
@@ -500,6 +488,7 @@ mod test {
         // Platform administration is owner.
         expect("GET", "/v0/tenants", Role::Owner);
         expect("POST", "/v0/tenants", Role::Owner);
+        expect("GET", "/v0/tenants/{tenant_id}", Role::Owner);
     }
 
     /// End-to-end through a real actix pipeline: the middleware short-circuits

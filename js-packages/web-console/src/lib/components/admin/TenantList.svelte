@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { asyncReadable } from '@square/svelte-store'
+  import { asyncReadable, type Loadable } from '@square/svelte-store'
   import { goto, invalidateAll } from '$app/navigation'
   import { page } from '$app/state'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
@@ -12,12 +12,11 @@
     createTenant,
     deleteTenant,
     getAuthConfig,
-    getTenants,
     renameTenant,
     type Tenant
   } from '$lib/services/pipelineManager'
 
-  const tenants = asyncReadable<Tenant[]>([], getTenants, { reloadable: true })
+  const { tenants }: { tenants: Loadable<Tenant[]> } = $props()
 
   // A login resolves its tenant by name, so the name a new tenant is given is
   // the one the identity provider must assert for its users to land in it. The
@@ -35,7 +34,7 @@
 
   // Compare/select by tenant id (UUID): a name can be reassigned by a rename,
   // the id never changes, and the backend's Feldera-Tenant resolver accepts it.
-  const currentTenantId = $derived(page.data.feldera?.tenantId)
+  const currentTenantId = $derived(page.data.feldera!.tenantId)
 
   let newName = $state('')
   let creating = $state(false)

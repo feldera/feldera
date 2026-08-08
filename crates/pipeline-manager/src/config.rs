@@ -110,6 +110,11 @@ fn default_individual_tenant() -> bool {
     true
 }
 
+/// Default value for provision_on_login flag.
+fn default_provision_on_login() -> bool {
+    true
+}
+
 /// Default audience claim value for OIDC authentication.
 fn default_auth_audience() -> String {
     "feldera-api".to_string()
@@ -1060,6 +1065,20 @@ pub struct ApiServerConfig {
     #[serde(default = "default_first_user_role")]
     #[arg(long, default_value = "admin", value_parser = parse_first_user_role, env = "FELDERA_AUTH_FIRST_USER_ROLE")]
     pub first_user_role: Role,
+
+    /// Provision tenants and memberships at login according to the tenancy
+    /// strategy: the token's `tenants` claim, the issuer tenant, or the
+    /// per-`sub` personal tenant. Default: `true`.
+    ///
+    /// When `false`, a login creates no tenant and enrolls no one. Access
+    /// comes only from membership rows granted through the RBAC endpoints,
+    /// a user with no membership is denied, and `--default-role` and
+    /// `--first-user-role` do not apply. Requires a configured `--owners` or
+    /// `--owner-trusts`, because otherwise no principal could ever grant
+    /// access.
+    #[serde(default = "default_provision_on_login")]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = true, env = "FELDERA_AUTH_PROVISION_ON_LOGIN")]
+    pub provision_on_login: bool,
 }
 
 /// A trust relationship granting the platform-wide `owner` role, declared at
@@ -1135,6 +1154,27 @@ impl FromStr for OwnerTrusts {
 }
 
 impl ApiServerConfig {
+    /// Refuse a configuration that could never mint a membership: with
+    /// provisioning off and no configured owner, every login is denied and no
+    /// principal could ever create a tenant or grant access. A startup error
+    /// beats a silently bricked installation.
+    pub fn validate_authorization(&self) -> Result<(), String> {
+        if self.auth_provider != AuthProviderType::None
+            && !self.provision_on_login
+            && self.owners.is_empty()
+            && self.owner_trusts.0.is_empty()
+        {
+            return Err(
+                "provision-on-login is disabled but neither --owners nor --owner-trusts is \
+                 configured. With provisioning off, access comes only from membership rows, and \
+                 without an owner no principal could ever create one. Configure an owner or \
+                 re-enable --provision-on-login."
+                    .to_string(),
+            );
+        }
+        Ok(())
+    }
+
     /// Where a trust registered through the API may point.
     pub(crate) fn tenant_issuer_policy(&self) -> TenantIssuerPolicy {
         if self.allow_internal_tenant_trust_issuers {
@@ -1193,6 +1233,7 @@ impl ApiServerConfig {
             allow_internal_tenant_trust_issuers: false,
             default_role: Role::Read,
             first_user_role: Role::Admin,
+            provision_on_login: true,
         }
     }
 }
@@ -1525,5 +1566,22 @@ mod tests {
             ..CommonConfig::test_config()
         };
         assert!(std::panic::catch_unwind(|| config.https_config()).is_err());
+    }
+
+    /// Provisioning off without a configured owner is a bricked installation,
+    /// so startup refuses it. With authentication off the flag is inert.
+    #[test]
+    fn provisioning_off_requires_an_owner() {
+        let mut config = ApiServerConfig::test_config();
+        config.auth_provider = AuthProviderType::GenericOidc;
+        config.provision_on_login = false;
+        assert!(config.validate_authorization().is_err());
+
+        config.owners = vec!["ops@acme.test".to_string()];
+        assert!(config.validate_authorization().is_ok());
+
+        config.owners.clear();
+        config.auth_provider = AuthProviderType::None;
+        assert!(config.validate_authorization().is_ok());
     }
 }

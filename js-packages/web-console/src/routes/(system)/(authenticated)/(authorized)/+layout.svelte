@@ -32,6 +32,9 @@
 
   const { children, data }: { children: Snippet; data: LayoutData } = $props()
 
+  // This layout only ever mounts with an acting tenant resolved: the group's
+  // `+layout.ts` redirects to /select-tenant otherwise. So the pollers need no
+  // guard, and unmounting on the way out stops them.
   useRefreshPipelineList()
   useRefreshClusterHealth()
   usePipelineAction()
@@ -53,13 +56,12 @@
     closedIntervalAction(async () => {
       try {
         const { config } = await fetchConfigs()
-        const currentVersion = data.feldera?.version
-        const currentRevision = data.feldera?.revision
-        if (
-          currentVersion &&
-          currentRevision &&
-          (config.version !== currentVersion || config.revision !== currentRevision)
-        ) {
+        // `feldera` is set for the life of this layout (the group's gate proves
+        // it), but `config` is not: a session that loses its acting tenant
+        // mid-poll gets no `Configuration` back, and that is no version change.
+        const currentVersion = data.feldera!.version
+        const currentRevision = data.feldera!.revision
+        if (config && (config.version !== currentVersion || config.revision !== currentRevision)) {
           // Automatically refresh the page data to get the new backend version
           await invalidateAll()
 
@@ -196,19 +198,19 @@
     {/if}
   {/each}
   <!-- <Drawer width="w-[22rem]" bind:open={showDrawer.value} side="left">
-    <div class="flex h-full w-full flex-col gap-1">
-      <span class="mx-5 my-4 flex items-end justify-center">
-        <a href="{base}/">
-          {#if darkMode.value === 'dark'}
-            <FelderaModernLogoColorLight class="h-12"></FelderaModernLogoColorLight>
-          {:else}
-            <FelderaModernLogoColorDark class="h-12"></FelderaModernLogoColorDark>
-          {/if}
-        </a>
-      </span>
-      <PipelinesList bind:pipelines={pipelines.pipelines}></PipelinesList>
-    </div>
-  </Drawer> -->
+  <div class="flex h-full w-full flex-col gap-1">
+    <span class="mx-5 my-4 flex items-end justify-center">
+      <a href="{base}/">
+        {#if darkMode.value === 'dark'}
+          <FelderaModernLogoColorLight class="h-12"></FelderaModernLogoColorLight>
+        {:else}
+          <FelderaModernLogoColorDark class="h-12"></FelderaModernLogoColorDark>
+        {/if}
+      </a>
+    </span>
+    <PipelinesList bind:pipelines={pipelines.pipelines}></PipelinesList>
+  </div>
+</Drawer> -->
   {@render children()}
 
   <OverlayDrawer

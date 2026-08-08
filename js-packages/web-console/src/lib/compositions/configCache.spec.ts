@@ -1,7 +1,8 @@
 // Unit tests for the warm-cache machinery used by the root `+layout.ts`
 // boot-up flow: cached reads (hit/miss/corrupt), writes, the lazy-load
-// `fetchConfigs` orchestrator (success + failure), and `configChanged`
-// reconcile semantics that gate `invalidateAll()` after a warm-cache render.
+// `fetchConfigs` orchestrator (success, failure, unresolved-tenant session,
+// invalid-selection retry), and `configChanged` reconcile semantics that gate
+// `invalidateAll()` after a warm-cache render.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Configuration, SessionInfo } from '$lib/services/manager'
@@ -11,11 +12,25 @@ vi.mock('$lib/services/pipelineManager', () => ({
   getConfigSession: vi.fn()
 }))
 
+// The tenant re-check latch is real here (it gates the warm-cache read); only
+// its `invalidateAll()` side effect is stubbed.
+vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn() }))
+
+const selection = vi.hoisted(() => ({ current: undefined as string | undefined }))
+vi.mock('$lib/services/auth', () => ({
+  getSelectedTenant: vi.fn(() => selection.current),
+  setSelectedTenant: vi.fn((tenant?: string) => {
+    selection.current = tenant
+  })
+}))
+
+import { requestTenantRecheck, resetTenantRecheck } from '$lib/compositions/tenantAccess'
 import { getConfig, getConfigSession } from '$lib/services/pipelineManager'
 import {
   clearConfigCaches,
   configChanged,
   fetchConfigs,
+  getCachedConfigsForRender,
   getConfigFromCache,
   getSessionConfigFromCache,
   setConfigCache,
@@ -67,6 +82,8 @@ beforeEach(() => {
   vi.stubGlobal('localStorage', new MemoryStorage())
   mockedGetConfig.mockReset()
   mockedGetConfigSession.mockReset()
+  selection.current = undefined
+  resetTenantRecheck()
 })
 
 afterEach(() => {
@@ -110,6 +127,30 @@ describe('configCache primitives', () => {
     clearConfigCaches()
     expect(localStorage.getItem(CONFIG_KEY)).toBeNull()
     expect(localStorage.getItem(SESSION_KEY)).toBeNull()
+  })
+})
+
+describe('getCachedConfigsForRender', () => {
+  it('hands over both cached payloads on an ordinary warm start', () => {
+    setConfigCache(baseConfig)
+    setSessionConfigCache(sessionConfig)
+    expect(getCachedConfigsForRender()).toEqual({ config: baseConfig, sessionConfig })
+  })
+
+  it('withholds them while a tenant re-check is pending', () => {
+    setConfigCache(baseConfig)
+    setSessionConfigCache(sessionConfig)
+    requestTenantRecheck()
+    // The cache still names the tenant this session just lost, so a warm render
+    // from it would leave the app up with every request failing.
+    expect(getCachedConfigsForRender()).toEqual({})
+  })
+
+  it('hands them over again once access is regained', () => {
+    setConfigCache(baseConfig)
+    requestTenantRecheck()
+    resetTenantRecheck()
+    expect(getCachedConfigsForRender().config).toEqual(baseConfig)
   })
 })
 
@@ -157,6 +198,84 @@ describe('fetchConfigs', () => {
     await fetchConfigs()
 
     expect(getSessionConfigFromCache()).toBeUndefined()
+  })
+
+  // The session answering with `tenant_id: null` is the must-pick (or
+  // no-access) state: /config rejects alongside, which is expected rather than
+  // an error, and the caches must not keep presenting the previous tenant.
+  it('returns the unresolved-tenant session without a config and drops the caches', async () => {
+    setConfigCache(baseConfig)
+    setSessionConfigCache(sessionConfig)
+    const unresolvedSession = {
+      tenant_id: null,
+      tenant_name: null,
+      role: null,
+      memberships: [{ tenant_id: 't-1', name: 'acme', role: 'admin' }]
+    } as unknown as SessionInfo
+    mockedGetConfig.mockRejectedValueOnce(
+      new Error('ambiguous', { cause: { error_code: 'AmbiguousTenantMembership' } })
+    )
+    mockedGetConfigSession.mockResolvedValueOnce(unresolvedSession)
+
+    const result = await fetchConfigs()
+
+    expect(result.config).toBeUndefined()
+    expect(result.sessionConfig).toEqual(unresolvedSession)
+    expect(getConfigFromCache()).toBeUndefined()
+    expect(getSessionConfigFromCache()).toBeUndefined()
+  })
+
+  it('drops an invalid saved selection and retries once headerless', async () => {
+    selection.current = 'gone-tenant'
+    const notAMember = () =>
+      new Error('not a member', { cause: { error_code: 'NotATenantMember' } })
+    mockedGetConfig.mockRejectedValueOnce(notAMember()).mockResolvedValueOnce(baseConfig)
+    mockedGetConfigSession.mockRejectedValueOnce(notAMember()).mockResolvedValueOnce(sessionConfig)
+
+    const result = await fetchConfigs()
+
+    expect(selection.current).toBeUndefined()
+    expect(result.config).toEqual(baseConfig)
+    expect(mockedGetConfig).toHaveBeenCalledTimes(2)
+  })
+
+  // Owners hold no memberships, so a deleted acted-as tenant surfaces as
+  // UnknownTenantName rather than NotATenantMember; recovery is the same.
+  it('drops an invalid owner act-as selection on UnknownTenantName and retries once', async () => {
+    selection.current = 'deleted-tenant'
+    const unknownTenant = () =>
+      new Error('unknown tenant', { cause: { error_code: 'UnknownTenantName' } })
+    mockedGetConfig.mockRejectedValueOnce(unknownTenant()).mockResolvedValueOnce(baseConfig)
+    mockedGetConfigSession
+      .mockRejectedValueOnce(unknownTenant())
+      .mockResolvedValueOnce(sessionConfig)
+
+    const result = await fetchConfigs()
+
+    expect(selection.current).toBeUndefined()
+    expect(result.config).toEqual(baseConfig)
+    expect(mockedGetConfig).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries at most once on NotATenantMember', async () => {
+    selection.current = 'gone-tenant'
+    const notAMember = () =>
+      new Error('not a member', { cause: { error_code: 'NotATenantMember' } })
+    mockedGetConfig.mockRejectedValue(notAMember())
+    mockedGetConfigSession.mockRejectedValue(notAMember())
+
+    await expect(fetchConfigs()).rejects.toThrow('not a member')
+    expect(mockedGetConfig).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry NotATenantMember when no selection is saved', async () => {
+    const notAMember = () =>
+      new Error('not a member', { cause: { error_code: 'NotATenantMember' } })
+    mockedGetConfig.mockRejectedValueOnce(notAMember())
+    mockedGetConfigSession.mockRejectedValueOnce(notAMember())
+
+    await expect(fetchConfigs()).rejects.toThrow('not a member')
+    expect(mockedGetConfig).toHaveBeenCalledTimes(1)
   })
 })
 

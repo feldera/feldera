@@ -1,6 +1,6 @@
 // Configuration API to retrieve the current authentication configuration and list of demos
 use actix_web::{
-    HttpRequest, HttpResponse, get,
+    HttpMessage, HttpRequest, HttpResponse, get,
     web::{Data as WebData, ReqData},
 };
 use feldera_cloud1_client::license::DisplaySchedule;
@@ -8,10 +8,11 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::main::ServerState;
-use crate::auth::AuthenticatedPrincipal;
+use crate::auth::{AuthenticatedPrincipal, LoginIdentity, UnresolvedActingTenant};
 use crate::db::storage::Storage;
 use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
+use crate::db::types::user::UserMembership;
 use crate::error::ManagerError;
 use crate::license::{LicenseCheck, LicenseValidity};
 use crate::unstable_features;
@@ -221,14 +222,22 @@ pub(crate) async fn get_config_demos(
 
 #[derive(Serialize, ToSchema)]
 pub(crate) struct SessionInfo {
-    /// Current user's tenant ID
-    pub tenant_id: TenantId,
-    /// Current user's tenant name
-    pub tenant_name: String,
-    /// The caller's effective role in the acting tenant. The web console uses
-    /// this to gate the admin UI (no role claim lives in the JWT). A platform
-    /// owner reports `owner` here.
-    pub role: Role,
+    /// Acting tenant id. `null` when the login resolved no acting tenant: the
+    /// user belongs to several tenants, or none, and sent no `Feldera-Tenant`
+    /// header. Pick a tenant from `memberships` and repeat requests with the
+    /// header.
+    pub tenant_id: Option<TenantId>,
+    /// Acting tenant name; `null` exactly when `tenant_id` is.
+    pub tenant_name: Option<String>,
+    /// The caller's effective role in the acting tenant; `null` exactly when
+    /// `tenant_id` is. The web console uses this to gate the admin UI (no role
+    /// claim lives in the JWT). A platform owner reports `owner` here.
+    pub role: Option<Role>,
+    /// The tenants this user may act in, from the membership table. Empty for
+    /// principals that are not human logins (API keys, federated workloads,
+    /// no-auth mode) and for platform owners without explicit memberships,
+    /// who act in any tenant regardless.
+    pub memberships: Vec<UserMembership>,
 }
 
 impl SessionInfo {
@@ -236,12 +245,14 @@ impl SessionInfo {
         state: &ServerState,
         tenant_id: TenantId,
         role: Role,
+        memberships: Vec<UserMembership>,
     ) -> Result<Self, ManagerError> {
         let tenant_name = state.db.lock().await.get_tenant_name(tenant_id).await?;
         Ok(SessionInfo {
-            tenant_id,
-            tenant_name,
-            role,
+            tenant_id: Some(tenant_id),
+            tenant_name: Some(tenant_name),
+            role: Some(role),
+            memberships,
         })
     }
 }
@@ -249,6 +260,11 @@ impl SessionInfo {
 /// Get Session
 ///
 /// Retrieve login session information for your current user session.
+///
+/// This is the one route that answers a login without a resolved acting
+/// tenant: when the user belongs to several tenants (or none) and no
+/// `Feldera-Tenant` header selects one, the acting-tenant fields are `null`
+/// and `memberships` lists the tenants to pick from.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -268,8 +284,30 @@ pub(crate) async fn get_config_session(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     principal: ReqData<AuthenticatedPrincipal>,
+    req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let session_info = SessionInfo::gather(&state, *tenant_id, principal.role).await?;
+    let identity = req.extensions().get::<LoginIdentity>().cloned();
+    let memberships = match &identity {
+        Some(identity) => {
+            state
+                .db
+                .lock()
+                .await
+                .list_user_memberships(&identity.provider, &identity.subject)
+                .await?
+        }
+        None => vec![],
+    };
+    let session_info = if req.extensions().get::<UnresolvedActingTenant>().is_some() {
+        SessionInfo {
+            tenant_id: None,
+            tenant_name: None,
+            role: None,
+            memberships,
+        }
+    } else {
+        SessionInfo::gather(&state, *tenant_id, principal.role, memberships).await?
+    };
     Ok(HttpResponse::Ok().json(session_info))
 }
 

@@ -6,7 +6,8 @@ use uuid::Uuid;
 
 use crate::make_client;
 use feldera_rest_api::types::{
-    ClusterMonitorEventFieldSelector, CompilationProfile, PipelineMonitorEventFieldSelector,
+    ClusterMonitorEventFieldSelector, CompilationProfile, MemberRole,
+    PipelineMonitorEventFieldSelector,
 };
 
 /// Autocompletion for pipeline names by trying to fetch them from the server.
@@ -28,6 +29,7 @@ fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
         cli.auth,
         None,
         cli.timeout,
+        cli.tenant,
     ) else {
         return completions;
     };
@@ -162,6 +164,19 @@ pub struct Cli {
         help_heading = "Global Options"
     )]
     pub timeout: Option<u64>,
+    /// The tenant to act in, by name or id, sent as the `Feldera-Tenant`
+    /// header on every request.
+    ///
+    /// Needed when the credential may act in several tenants: a platform
+    /// owner, or a user who belongs to more than one tenant. An API key is
+    /// tenant-scoped and needs no selection.
+    #[arg(
+        long,
+        env = "FELDERA_TENANT",
+        global = true,
+        help_heading = "Global Options"
+    )]
+    pub tenant: Option<String>,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
@@ -254,6 +269,14 @@ pub enum Commands {
         #[command(subcommand)]
         action: TenantActions,
     },
+    /// Manage the members of the acting tenant and their roles.
+    ///
+    /// Acts in the tenant named by `--tenant`, or in the one your credential
+    /// resolves to without it.
+    Member {
+        #[command(subcommand)]
+        action: MemberActions,
+    },
     /// Cluster information and status.
     Cluster {
         #[command(subcommand)]
@@ -340,10 +363,95 @@ pub enum TrustRole {
     Admin,
 }
 
+/// The roles a tenant membership may carry. `owner` is platform-wide rather
+/// than a membership, so it is configured at deploy time and never assigned
+/// here, which is why this cannot be a total mapping from the API's role type.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum TenantMemberRole {
+    Read,
+    Write,
+    Admin,
+}
+
+impl From<TenantMemberRole> for MemberRole {
+    fn from(role: TenantMemberRole) -> Self {
+        match role {
+            TenantMemberRole::Read => MemberRole::Read,
+            TenantMemberRole::Write => MemberRole::Write,
+            TenantMemberRole::Admin => MemberRole::Admin,
+        }
+    }
+}
+
+/// Spelled as the API spells it, so printed output matches what the server
+/// stores and what `fda member list` reads back.
+impl Display for TenantMemberRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            TenantMemberRole::Read => "read",
+            TenantMemberRole::Write => "write",
+            TenantMemberRole::Admin => "admin",
+        })
+    }
+}
+
+#[derive(Subcommand)]
+pub enum MemberActions {
+    /// List the members of the acting tenant and their roles.
+    List,
+    /// Grant a user access to the acting tenant, by identity.
+    ///
+    /// Works before the user's first login: the membership authorizes as soon
+    /// as that identity authenticates through the platform's identity
+    /// provider. The role is capped at your own.
+    Add {
+        /// OIDC subject of the user, matching the `sub` claim their identity
+        /// provider issues.
+        subject: String,
+        /// Role to grant: `read`, `write` or `admin`.
+        #[arg(long)]
+        role: TenantMemberRole,
+        /// Email, shown in the member list. Optional.
+        #[arg(long)]
+        email: Option<String>,
+    },
+    /// Change a member's role in the acting tenant.
+    SetRole {
+        /// Identifier of the user, as shown by `fda member list`.
+        user_id: Uuid,
+        /// New role: `read`, `write` or `admin`.
+        role: TenantMemberRole,
+    },
+    /// Remove a member from the acting tenant.
+    ///
+    /// Whether this alone revokes access depends on the deployment: where a
+    /// login provisions memberships, the user is re-added at the default role
+    /// on their next login unless their identity provider stops resolving this
+    /// tenant for them.
+    #[clap(aliases = &["rm"])]
+    Remove {
+        /// Identifier of the user, as shown by `fda member list`.
+        user_id: Uuid,
+    },
+}
+
 #[derive(Subcommand)]
 pub enum TenantActions {
     /// List every tenant in the installation.
     List,
+    /// Retrieve a single tenant by name or identifier.
+    Get {
+        /// The tenant's name, or its identifier as shown by `fda tenant list`.
+        tenant: String,
+    },
+    /// Create a tenant, or return it if one with this name already exists.
+    ///
+    /// A login resolves its tenant by name, so a user whose identity provider
+    /// asserts this name lands in the tenant created here.
+    Create {
+        /// The name of the tenant.
+        name: String,
+    },
     /// Rename a tenant.
     ///
     /// A login resolves its tenant by name, so the new name decides which users
