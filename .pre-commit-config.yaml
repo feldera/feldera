@@ -46,6 +46,13 @@ repos:
         exclude: 'crates/pipeline-manager/migrations/.*|.*\.patch|.*\.svg|.*\.java'
   - repo: local
     hooks:
+      - id: validate-crypto-deps
+        name: Validate cryptography dependencies
+        description: Cryptography goes through AWS-LC; a second implementation corrupts the heap.
+        entry: scripts/validate-crypto-deps.sh
+        language: system
+        files: Cargo\.(toml|lock)$
+        pass_filenames: false
       - id: fix-rust-mod-naming
         name: Rust module naming
         entry: scripts/fix-rust-module-naming
