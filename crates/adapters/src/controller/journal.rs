@@ -40,7 +40,7 @@ impl Journal {
     }
 
     pub fn read(&self, step: Step) -> Result<Option<StepMetadata>, StepError> {
-        let path = self.path.child(format!("{step}.bin"));
+        let path = self.path.clone().join(format!("{step}.bin"));
         let data = match self.backend.read(&path) {
             Ok(data) => data,
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
@@ -63,7 +63,7 @@ impl Journal {
     }
 
     pub fn write(&self, record: &StepMetadata) -> Result<(), StepError> {
-        let path = self.path.child(format!("{}.bin", record.step));
+        let path = self.path.clone().join(format!("{}.bin", record.step));
         let mut data = FBuf::new();
         rmp_serde::encode::write(&mut data, record).map_err(|error| StepError::EncodeError {
             path: self.path.as_ref().into(),

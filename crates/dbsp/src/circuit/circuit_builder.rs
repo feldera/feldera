@@ -7385,7 +7385,7 @@ where
 
     /// Absolute path of the file holding this subcircuit's clock.
     fn clock_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
-        base.child(format!("clock-{persistent_id}.dat"))
+        base.clone().join(format!("clock-{persistent_id}.dat"))
     }
 }
 

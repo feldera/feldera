@@ -94,7 +94,8 @@ where
     /// - `persistent_id`: The persistent id that identifies the spine within
     ///   the circuit for a given checkpoint.
     fn checkpoint_file<P: AsRef<str>>(base: &StoragePath, persistent_id: P) -> StoragePath {
-        base.child(format!("transaction-z1-{}.dat", persistent_id.as_ref()))
+        base.clone()
+            .join(format!("transaction-z1-{}.dat", persistent_id.as_ref()))
     }
 }
 

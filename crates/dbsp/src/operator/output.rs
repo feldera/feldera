@@ -511,7 +511,7 @@ where
     }
 
     fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
-        base.child(format!("output-{}.dat", persistent_id))
+        base.clone().join(format!("output-{}.dat", persistent_id))
     }
 }
 
@@ -690,7 +690,8 @@ where
     }
 
     fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
-        base.child(format!("accumulate-output-{}.dat", persistent_id))
+        base.clone()
+            .join(format!("accumulate-output-{}.dat", persistent_id))
     }
 
     /// Merge `snapshot` into the cached accumulated output.

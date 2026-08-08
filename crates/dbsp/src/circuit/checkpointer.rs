@@ -295,7 +295,7 @@ impl Checkpointer {
         cp_dir: &StoragePath,
     ) -> Result<(), StorageError> {
         let deps: CheckpointDependencies =
-            match backend.read_json(&cp_dir.child(CHECKPOINT_DEPENDENCIES)) {
+            match backend.read_json(&cp_dir.clone().join(CHECKPOINT_DEPENDENCIES)) {
                 Ok(d) => d,
                 Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
                 Err(error) => return Err(error),
@@ -357,7 +357,7 @@ impl Checkpointer {
         // checkpoint. Explicitly commit it so the durability guarantee
         // does not depend on the implicit fsync inside `complete()`.
         self.backend
-            .write(&Self::checkpoint_dir(uuid).child("CHECKPOINT"), FBuf::new())
+            .write(&Self::checkpoint_dir(uuid).join("CHECKPOINT"), FBuf::new())
             .and_then(|reader| reader.commit())?;
 
         let mut md = CheckpointMetadata {
@@ -397,7 +397,7 @@ impl Checkpointer {
 
         self.backend
             .write_json(
-                &cp_dir.child(CHECKPOINT_DEPENDENCIES),
+                &cp_dir.clone().join(CHECKPOINT_DEPENDENCIES),
                 &CheckpointDependenciesWrite {
                     batches: &batches_vec,
                     state_files: &state_files,
