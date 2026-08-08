@@ -84,7 +84,7 @@ impl From<ObjectStoreError> for StorageError {
             ObjectStoreError::NotFound { .. } => ErrorKind::NotFound,
             ObjectStoreError::NotSupported { .. } => ErrorKind::Unsupported,
             ObjectStoreError::AlreadyExists { .. } => ErrorKind::AlreadyExists,
-            ObjectStoreError::NotImplemented => ErrorKind::Unsupported,
+            ObjectStoreError::NotImplemented { .. } => ErrorKind::Unsupported,
             ObjectStoreError::PermissionDenied { .. }
             | ObjectStoreError::Unauthenticated { .. } => ErrorKind::PermissionDenied,
             ObjectStoreError::InvalidPath { .. } => {

@@ -431,7 +431,7 @@ impl RuntimeInner {
 
             if let Some(init_checkpoint) = storage.init_checkpoint
                 && !backend
-                    .exists(&Checkpointer::checkpoint_dir(init_checkpoint).child("CHECKPOINT"))?
+                    .exists(&Checkpointer::checkpoint_dir(init_checkpoint).join("CHECKPOINT"))?
             {
                 return Err(DbspError::Storage(StorageError::CheckpointNotFound(
                     init_checkpoint,

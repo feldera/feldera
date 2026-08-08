@@ -158,7 +158,7 @@ where
 
     /// Return the absolute path of the file for a checkpointed Window.
     fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
-        base.child(format!("window-{}.dat", persistent_id))
+        base.clone().join(format!("window-{}.dat", persistent_id))
     }
 }
 

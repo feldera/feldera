@@ -539,7 +539,8 @@ impl StorageBackend for PosixBackend {
                 Ok(entry) => {
                     let entry = feldera_storage::DirEntry {
                         name: parent
-                            .child(StoragePathPart::from(entry.file_name().as_encoded_bytes())),
+                            .clone()
+                            .join(StoragePathPart::from(entry.file_name().as_encoded_bytes())),
                         file_type: get_file_type(&entry),
                     };
                     if let Err(e) = &entry.file_type

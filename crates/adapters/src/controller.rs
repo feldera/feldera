@@ -5542,7 +5542,7 @@ impl ControllerInit {
     ) -> Result<Self, ControllerError> {
         let checkpoint = Checkpoint::read(
             &*storage.backend,
-            &StoragePath::from(checkpoint_uuid.to_string()).child(STATE_FILE),
+            &StoragePath::from(checkpoint_uuid.to_string()).join(STATE_FILE),
         )?;
         Self::with_checkpoint_inner(layout, config, storage, checkpoint)
     }
@@ -9497,7 +9497,7 @@ impl CheckpointThread {
         // [Checkpoint::write] commits to stable storage.
         self.checkpoint.write(
             &*self.storage,
-            &StoragePath::from(uuid.to_string()).child(STATE_FILE),
+            &StoragePath::from(uuid.to_string()).join(STATE_FILE),
         )?;
         self.checkpoint
             .write(&*self.storage, &StoragePath::from(STATE_FILE))?;

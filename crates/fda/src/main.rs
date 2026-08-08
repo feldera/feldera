@@ -3695,6 +3695,11 @@ async fn cluster(format: OutputFormat, action: ClusterAction, client: Client) {
 }
 
 fn main() {
+    // reqwest is built without a rustls provider, so the process default decides
+    // which one it uses.
+    let _ = rustls::crypto::CryptoProvider::install_default(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    );
     init_logging("warn");
 
     tokio::runtime::Builder::new_multi_thread()

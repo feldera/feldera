@@ -1031,7 +1031,8 @@ where
     }
 
     fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
-        base.child(format!("rebalancing-exchange-{}.dat", persistent_id))
+        base.clone()
+            .join(format!("rebalancing-exchange-{}.dat", persistent_id))
     }
 
     async fn send(

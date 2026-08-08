@@ -1856,12 +1856,13 @@ where
     /// - `persistent_id`: The persistent id that identifies the spine within
     ///   the circuit for a given checkpoint.
     fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
-        base.child(format!("pspine-{}.dat", persistent_id))
+        base.clone().join(format!("pspine-{}.dat", persistent_id))
     }
 
     /// Return the absolute path of the file for this Spine's batchlist.
     fn batchlist_file(&self, base: &StoragePath, persistent_id: &str) -> StoragePath {
-        base.child(format!("pspine-batches-{}.dat", persistent_id))
+        base.clone()
+            .join(format!("pspine-batches-{}.dat", persistent_id))
     }
 }
 

@@ -229,7 +229,7 @@ impl dyn StorageBackend {
         // commit always writes it, and it captures the full list in one
         // place so a single read suffices. See `CheckpointDependencies`
         // for the accepted JSON forms.
-        let deps_path = checkpoint_dir.child(CHECKPOINT_DEPENDENCIES);
+        let deps_path = checkpoint_dir.clone().join(CHECKPOINT_DEPENDENCIES);
         match self.read_json::<CheckpointDependencies>(&deps_path) {
             Ok(deps) => {
                 return Ok(deps
