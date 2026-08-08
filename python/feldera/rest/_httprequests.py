@@ -20,6 +20,7 @@ from tenacity import (
     Retrying,
     retry_if_exception,
     stop_after_attempt,
+    stop_after_delay,
     wait_exponential,
 )
 
@@ -223,6 +224,9 @@ class HttpRequests:
         - Other retryable failures use exponential backoff with optional
           jitter; a server-supplied `Retry-After` header overrides it
           (capped at `max_backoff`).
+        - Retrying stops after `max_retries` retries, or, when
+          `retry_config.deadline_seconds` is set, once that wall-clock
+          budget is spent (the attempt count is then unbounded).
         - All other errors are raised immediately.
         """
         is_idempotent = http_method is requests.get
@@ -247,12 +251,19 @@ class HttpRequests:
         )
 
         cfg = self.config.retry_config
+        # A wall-clock deadline (when configured) replaces the attempt cap:
+        # transient outages last for a duration, not a number of requests.
+        stop = (
+            stop_after_delay(cfg.deadline_seconds)
+            if cfg.deadline_seconds is not None
+            else stop_after_attempt(cfg.max_retries + 1)
+        )
         retryer = Retrying(
             retry=retry_if_exception(
                 lambda exc: self._is_retryable(exc, is_idempotent)
             ),
             wait=self._custom_wait,
-            stop=stop_after_attempt(cfg.max_retries + 1),
+            stop=stop,
             reraise=True,
         )
 

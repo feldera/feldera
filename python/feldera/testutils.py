@@ -20,7 +20,7 @@ from feldera.enums import CompilationProfile
 from feldera.pipeline import Pipeline
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import Resources, RuntimeConfig
-from feldera.rest import FelderaClient
+from feldera.rest import FelderaClient, RetryConfig
 from feldera.rest._helpers import requests_verify_from_env
 
 logger = logging.getLogger(__name__)
@@ -190,6 +190,11 @@ class _LazyClient:
             # 401. Elsewhere the credential is fixed for the process.
             self._client = FelderaClient(
                 connection_timeout=10,
+                # Shared CI instances see infrastructure churn (node
+                # replacement, pipeline pod rescheduling) that outlasts the
+                # default attempt-based retry budget of ~14 seconds. Retry on
+                # a wall-clock budget sized to ride out a node replacement.
+                retry_config=RetryConfig(deadline_seconds=300.0),
                 api_key=(
                     feldera_bearer_token
                     if os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")
