@@ -12,16 +12,16 @@
   const {
     logs,
     search = emptySearchState,
-    onSearchShortcut,
-    onStickToBottomChange
+    onStickToBottomChange,
+    onMatchCountChange
   }: {
     logs: { rows: string[]; totalSkippedBytes: number; firstRowIndex: number }
     /** Current search state (see {@link SearchState}), advanced by the host. */
     search?: SearchState
-    /** Forwarded to {@link LogList}; invoked on Ctrl-F / Cmd-F inside the list. */
-    onSearchShortcut?: () => void
     /** Forwarded to {@link LogList}; fires when stick-to-bottom toggles. */
     onStickToBottomChange?: (stickToBottom: boolean) => void
+    /** Forwarded to {@link LogList}; reports the current search match count. */
+    onMatchCountChange?: (count: number) => void
   } = $props()
 
   const getCopyContent = (slice: CopySlice) =>
@@ -35,8 +35,8 @@
   {search}
   streaming
   {getCopyContent}
-  {onSearchShortcut}
   {onStickToBottomChange}
+  {onMatchCountChange}
   class="bg-white-dark rounded pl-2"
 >
   {#snippet header()}
