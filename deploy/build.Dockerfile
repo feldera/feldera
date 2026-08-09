@@ -9,19 +9,15 @@
 FROM ubuntu:24.04 AS ubuntu-base
 ENV DEBIAN_FRONTEND=noninteractive
 
-# These two environment variables are used to make openssl-sys pick
-# up libssl-dev and statically link it. Without it, our build defaults
-# to building a vendored version of OpenSSL.
 FROM ubuntu-base AS install-pkgs
-ENV OPENSSL_NO_VENDOR=1
-ENV OPENSSL_STATIC=1
 RUN apt-get update --fix-missing && apt-get install -y \
-    # pkg-config is required for cargo to find libssl
-    libssl-dev pkg-config \
+    # pkg-config is how rdkafka-sys locates librdkafka
+    pkg-config \
     cmake \
-    # Go is required to build aws-lc-fips-sys when rustls is built with FIPS
+    # Go builds AWS-LC, which librdkafka is linked against; see
+    # scripts/install-librdkafka.sh
     golang-go \
-    # rdkafka dependency needs libsasl2-dev and a CXX compiler
+    # librdkafka links these
     libsasl2-dev libzstd-dev zlib1g-dev build-essential \
     # zstd CLI: @actions/cache (runs-on/cache) auto-uses it for cache
     # compression when on PATH, else falls back to slow gzip. Big win for the
@@ -162,4 +158,18 @@ RUN  arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x8
     && chmod +x /home/ubuntu/.cargo/bin/sccache
 
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sections=zlib"
+
+# librdkafka, built against AWS-LC rather than the system OpenSSL. rdkafka is
+# built with `dynamic-linking`, so it consumes this rather than compiling its
+# own copy.
+#
+# Last in the file on purpose: it copies Cargo.lock, from which the script
+# reads the librdkafka version the crate expects, and that file changes often.
+# Keeping it here means a lockfile change rebuilds only this layer.
+USER root
+COPY scripts/install-librdkafka.sh /tmp/install-librdkafka.sh
+COPY Cargo.lock /tmp/Cargo.lock
+RUN CARGO_LOCK=/tmp/Cargo.lock PREFIX=/usr/local bash /tmp/install-librdkafka.sh \
+    && rm -f /tmp/install-librdkafka.sh /tmp/Cargo.lock
+USER ubuntu
 

@@ -1,20 +1,35 @@
+# librdkafka, built against AWS-LC rather than the system OpenSSL.
+#
+# This is a separate stage because building AWS-LC needs Go, cmake and perl,
+# and none of them belong in the shipped image. Only the installed library
+# crosses over.
+FROM ubuntu:24.04 AS librdkafka
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update --fix-missing && apt-get install -y \
+  git cmake build-essential perl pkg-config golang-go \
+  libsasl2-dev zlib1g-dev libzstd-dev
+COPY scripts/install-librdkafka.sh /tmp/install-librdkafka.sh
+# The script reads the librdkafka version from the lockfile, so the library and
+# the crate expecting it cannot drift apart. A stale image fails loudly at the
+# pkg-config probe rather than building against the wrong version.
+COPY Cargo.lock /tmp/Cargo.lock
+RUN CARGO_LOCK=/tmp/Cargo.lock PREFIX=/usr/local bash /tmp/install-librdkafka.sh
+
 # The base image contains tools to build the code given that
 # we need a Java and Rust compiler to run alongside the pipeline manager
 # as of now. This will change later.
 FROM ubuntu:24.04 AS base
 ENV DEBIAN_FRONTEND=noninteractive
 
-# These two environment variables are used to make openssl-sys pick
-# up libssl-dev and statically link it. Without it, our build defaults
-# to building a vendored version of OpenSSL.
 RUN apt update --fix-missing && apt -y dist-upgrade && apt install \
   # bindgen needs this (at least the dec crate uses bindgen)
   libclang-dev \
-  # pkg-config is required for cargo to find libssl
-  libssl-dev pkg-config \
+  # pkg-config is how rdkafka-sys locates the librdkafka copied in below
+  pkg-config \
   cmake \
-  # rdkafka dependency needs libsasl2-dev zlib and a CXX compiler
-  libsasl2-dev zlib1g-dev build-essential \
+  # librdkafka links these; it is built in the stage above, but pipelines are
+  # compiled in this image and the linker resolves them here
+  libsasl2-dev zlib1g-dev libzstd-dev build-essential \
   # To install rust
   curl  \
   # For running the SQL compiler
@@ -39,11 +54,25 @@ RUN update-ca-certificates
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
   locale-gen
 
+# librdkafka from the stage above. rdkafka-sys links it dynamically, so it has
+# to be here both to build pipelines and to run them.
+COPY --from=librdkafka /usr/local/lib/librdkafka* /usr/local/lib/
+COPY --from=librdkafka /usr/local/include/librdkafka /usr/local/include/librdkafka
+COPY --from=librdkafka /usr/local/lib/pkgconfig/rdkafka*.pc /usr/local/lib/pkgconfig/
+RUN ldconfig \
+  # A NEEDED entry for libssl or libcrypto means librdkafka found a system
+  # OpenSSL and preferred it over AWS-LC, which is the failure this whole
+  # arrangement exists to prevent and is invisible at run time.
+  && if readelf -d /usr/local/lib/librdkafka.so.1 | grep -qE 'Shared library: \[lib(ssl|crypto)\.so'; then \
+       echo "error: librdkafka links a shared OpenSSL" >&2; exit 1; \
+     fi \
+  # rdkafka-sys probes for librdkafka this way; failing here beats failing
+  # partway through a pipeline compilation.
+  && pkg-config --exists rdkafka
+
 USER ubuntu
 WORKDIR /home/ubuntu
 
-ENV OPENSSL_NO_VENDOR=1
-ENV OPENSSL_STATIC=1
 ENV LC_ALL=en_US.UTF-8
 ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US:en
