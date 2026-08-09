@@ -258,7 +258,10 @@ rand_chacha = "0.3.1"
 rand_distr = "0.4.3"
 rand_xoshiro = "0.6.0"
 range-set = "0.0.11"
-rdkafka = "0.39.0"
+# Its default `libz` feature only configures the vendored librdkafka build,
+# which `dynamic-linking` skips entirely; default-features has to be set here
+# because a workspace member cannot override it on an inherited dependency.
+rdkafka = { version = "0.39.0", default-features = false }
 redis = "0.28.2"
 refinery = { version = "0.9.2", default-features = false }
 regex = "1.10.2"
@@ -279,9 +282,6 @@ rstest = "0.15"
 # Make sure this is the same rustls version used by the `tonic` crate.
 # See the `ensure_default_crypto_provider` function.
 rustls = "0.23.12"
-# librdkafka links whatever openssl-sys resolves, so this is what puts Kafka
-# TLS inside the validated module.
-openssl-sys = { version = "0.9.116", default-features = false, features = ["aws-lc-fips"] }
 rustls-pemfile = "2.2.0"
 rustls-native-certs = "0.7.3"
 rustversion = "1.0"
