@@ -1,12 +1,11 @@
 # librdkafka, built against AWS-LC rather than the system OpenSSL.
 #
-# This is a separate stage because building AWS-LC needs Go, cmake and perl,
-# and none of them belong in the shipped image. Only the installed library
-# crosses over.
+# This is a separate stage because building AWS-LC needs Go and cmake, and
+# neither belongs in the shipped image. Only the installed library crosses over.
 FROM ubuntu:24.04 AS librdkafka
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update --fix-missing && apt-get install -y \
-  git cmake build-essential perl pkg-config golang-go \
+  git cmake build-essential pkg-config golang-go \
   libsasl2-dev zlib1g-dev libzstd-dev
 COPY scripts/install-librdkafka.sh /tmp/install-librdkafka.sh
 # The script reads the librdkafka version from the lockfile, so the library and
