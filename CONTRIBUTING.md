@@ -22,7 +22,7 @@ Our dependencies for building the project are:
   - libsasl2-dev
   - zlib1g-dev
   - libzstd-dev
-  - Go and perl, to build AWS-LC (see below)
+  - Go, to build AWS-LC (see below)
   - a Rust tool chain (install rustup and the default toolchain)
   - a Java Virtual Machine (at least Java 19)
   - maven

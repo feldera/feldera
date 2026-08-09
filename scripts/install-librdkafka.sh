@@ -48,7 +48,7 @@ fi
 
 echo "librdkafka v$librdkafka_version, AWS-LC $AWS_LC_REF, prefix $PREFIX"
 
-for tool in cmake git perl go make cc; do
+for tool in cmake git awk go make cc; do
     command -v "$tool" >/dev/null || { echo "error: $tool is required." >&2; exit 1; }
 done
 
@@ -93,8 +93,11 @@ cd "$work/librdkafka"
 # returned pointer. Fixed upstream in confluentinc/librdkafka#5552, unmerged;
 # drop this once a release carries it.
 if ! grep -q "openssl/hmac.h" src/rdkafka_ssl.c; then
-    perl -0pi -e 's{#include <openssl/x509\.h>}{#include <openssl/hmac.h>\n#include <openssl/x509.h>}' \
-        src/rdkafka_ssl.c
+    awk '/^#include <openssl\/x509\.h>$/ && !inserted {
+             print "#include <openssl/hmac.h>"; inserted = 1
+         }
+         { print }' src/rdkafka_ssl.c > src/rdkafka_ssl.c.patched
+    mv src/rdkafka_ssl.c.patched src/rdkafka_ssl.c
     grep -q "openssl/hmac.h" src/rdkafka_ssl.c || {
         echo "error: could not apply the hmac.h patch; check whether upstream restructured the includes." >&2
         exit 1

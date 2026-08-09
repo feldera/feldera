@@ -17,9 +17,6 @@ RUN apt-get update --fix-missing && apt-get install -y \
     # Go builds AWS-LC, which librdkafka is linked against; see
     # scripts/install-librdkafka.sh
     golang-go \
-    # perl applies a source patch in scripts/install-librdkafka.sh. Ubuntu
-    # ships it as an Essential package, so this only makes the need explicit.
-    perl \
     # Nothing in this repository links OpenSSL any more. It stays because the
     # cloud repository runs its Rust build in this same image, and its
     # cluster-control-plane crate uses the openssl crate directly.
