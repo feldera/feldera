@@ -97,7 +97,7 @@ aws-sdk-s3 = { version = "1.122.0", default-features = false, features = [
 ] }
 aws-types = "1.1.7"
 backoff = "0.4.0"
-aws-lc-rs = "1.16.2"
+aws-lc-rs = "1.18.0"
 rsa = { version = "0.9.10", features = ["std"] }
 rcgen = { version = "0.14.8", default-features = false, features = ["pem", "aws_lc_rs"] }
 tokio-postgres-rustls = { version = "0.14.0", default-features = false, features = ["aws-lc-rs"] }
