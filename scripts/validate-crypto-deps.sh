@@ -10,15 +10,18 @@
 #
 # Blocked:
 #   openssl      the crate that links a second implementation directly
+#   openssl-sys  the FFI layer beneath it. Kafka used to require it, because
+#                rdkafka's `ssl` feature depends on it and compiled a vendored
+#                librdkafka against whatever OpenSSL pkg-config found. rdkafka
+#                now uses `dynamic-linking` against the librdkafka that
+#                scripts/install-librdkafka.sh builds against AWS-LC, so
+#                nothing needs this crate.
 #   native-tls   how openssl usually arrives; on macOS and Windows it binds
 #                Security.framework and schannel instead, so checking for
 #                openssl alone would miss a second TLS stack on those platforms
 #   boring       BoringSSL wrapper, same symbol-collision class
 #
 # Allowed:
-#   openssl-sys  the FFI layer, but only when it resolves to an AWS-LC backend,
-#                which this script asserts; librdkafka links whatever it
-#                resolves, so that pin is what keeps Kafka TLS on AWS-LC
 #   aws-lc-sys   AWS-LC itself, symbol-prefixed by aws-lc-fips-sys/aws-lc-sys
 #
 # `ring` should also go: it is a second cryptographic implementation and is not
@@ -34,7 +37,7 @@ set -euo pipefail
 packages=$(cargo tree --target all --edges normal,build,dev --prefix none --format "{p}" 2>/dev/null |
     sed 's/ (\*)$//' | sort -u)
 
-blocked=$(echo "$packages" | grep -E "^(openssl|native-tls|boring|boring-sys) v" || true)
+blocked=$(echo "$packages" | grep -E "^(openssl|openssl-sys|native-tls|boring|boring-sys) v" || true)
 if [ -n "$blocked" ]; then
     echo "error: a second TLS or cryptography implementation is in the dependency tree:"
     echo "$blocked" | sed 's/^/  /'
@@ -47,25 +50,30 @@ if [ -n "$blocked" ]; then
     echo "then set default-features = false on that dependency and select its rustls"
     echo "feature instead. Note that a workspace member cannot override"
     echo "default-features on an inherited dependency; change it at the workspace root."
+    echo
+    echo 'openssl-sys specifically arrives through rdkafka. Kafka does not need it:'
+    echo 'keep rdkafka on "dynamic-linking" rather than "ssl", and build librdkafka'
+    echo 'with scripts/install-librdkafka.sh.'
     exit 1
 fi
 
-# openssl-sys is only safe while its backend is AWS-LC. Its aws-lc-fips and
-# aws-lc features add aws-lc-fips-sys or aws-lc-sys as a direct dependency;
-# without either it links the system OpenSSL, which is a second implementation
-# wearing the allowed name.
-if echo "$packages" | grep -qE "^openssl-sys v"; then
-    backend=$(cargo tree -p openssl-sys --depth 1 --target all --prefix none --format "{p}" 2>/dev/null |
-        grep -E "^aws-lc(-fips)?-sys v" || true)
-    if [ -z "$backend" ]; then
-        echo "error: openssl-sys is present but does not resolve to an AWS-LC backend."
-        echo
-        echo "It links the system OpenSSL, which reintroduces the implementation the"
-        echo "rest of this check exists to keep out. Restore its backend feature:"
-        echo
-        echo '  openssl-sys = { version = "...", default-features = false, features = ["aws-lc-fips"] }'
-        exit 1
-    fi
+# One AWS-LC, not two. aws-lc-sys and aws-lc-fips-sys are separate crates, so
+# cargo cannot unify them; a tree holding both compiles and links the whole
+# library twice. Adopting the FIPS module means moving aws-lc-rs to the fips
+# feature and building AWS-LC with -DFIPS=1 in scripts/install-librdkafka.sh at
+# the same time, so that librdkafka and the Rust side agree.
+backends=$(echo "$packages" | grep -E "^aws-lc(-fips)?-sys v" | awk '{print $1}' | sort -u)
+if [ "$(echo "$backends" | grep -c .)" -gt 1 ]; then
+    echo "error: two AWS-LC implementations are in the dependency tree:"
+    echo "$backends" | sed 's/^/  /'
+    echo
+    echo "Both are compiled and linked, so the binary carries the library twice."
+    echo "Their symbol prefixes differ, which is why nothing collides and the"
+    echo "waste stays invisible at run time. Make both ends agree:"
+    echo
+    echo "  cargo tree -i aws-lc-sys --target all"
+    echo "  cargo tree -i aws-lc-fips-sys --target all"
+    exit 1
 fi
 
 # Crates still known to pull ring. Shrink this list; do not extend it.
