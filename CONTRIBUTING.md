@@ -19,9 +19,10 @@ Our dependencies for building the project are:
 
   - C and C++ compiler toolchain (e.g., gcc, gcc++)
   - cmake
-  - libssl-dev
   - libsasl2-dev
   - zlib1g-dev
+  - libzstd-dev
+  - Go and perl, to build AWS-LC (see below)
   - a Rust tool chain (install rustup and the default toolchain)
   - a Java Virtual Machine (at least Java 19)
   - maven
@@ -31,6 +32,25 @@ Our dependencies for building the project are:
 
 Additional dependencies are automatically installed by the Rust,
 maven, Python, and TypeScript build tools.
+
+### librdkafka
+
+The Kafka connectors link librdkafka dynamically, so it has to be installed
+before the workspace will build:
+
+```
+./scripts/install-librdkafka.sh
+```
+
+The script builds librdkafka against AWS-LC, which is what keeps Kafka TLS on
+the same cryptographic implementation as the rest of the system. Distribution
+packages are built against OpenSSL and are usually older than the version the
+`rdkafka-sys` crate requires, so installing one of those is not equivalent. Run
+the script again after a `rdkafka` version bump; it reads the version it needs
+from `Cargo.lock`.
+
+Set `PREFIX` to install somewhere other than `/usr/local`, in which case
+`PKG_CONFIG_PATH` has to point at `$PREFIX/lib/pkgconfig`.
 
 ## Contribution Flow
 
