@@ -51,6 +51,22 @@ export const emptyPipelineMetrics = {
 
 export type PipelineMetrics = typeof emptyPipelineMetrics & { lastTimestamp?: number }
 
+/**
+ * Higher of two connector latencies, ignoring connectors without samples.
+ *
+ * A relation's row summarizes its connectors, and medians cannot be summed or
+ * averaged into another median. The slowest connector is reported instead.
+ */
+const slowestLatency = (
+  a: number | null | undefined,
+  b: number | null | undefined
+): number | undefined => {
+  if (typeof a !== 'number') {
+    return typeof b === 'number' ? b : undefined
+  }
+  return typeof b === 'number' ? Math.max(a, b) : a
+}
+
 const addZeroMetrics = (previous: PipelineMetrics) => ({
   ...previous,
   tables: new Map(),
@@ -111,7 +127,11 @@ export const accumulatePipelineMetrics =
                       num_transport_errors: acc.num_transport_errors + metrics.num_transport_errors,
                       num_parse_errors: acc.num_parse_errors + metrics.num_parse_errors,
                       end_of_input: acc.end_of_input && metrics.end_of_input,
-                      buffered_bytes: acc.buffered_bytes + metrics.buffered_bytes
+                      buffered_bytes: acc.buffered_bytes + metrics.buffered_bytes,
+                      processing_latency_p50_micros: slowestLatency(
+                        acc.processing_latency_p50_micros,
+                        metrics.processing_latency_p50_micros
+                      )
                     }
                   },
                   {
@@ -121,7 +141,8 @@ export const accumulatePipelineMetrics =
                     buffered_records: 0,
                     num_transport_errors: 0,
                     num_parse_errors: 0,
-                    end_of_input: true
+                    end_of_input: true,
+                    processing_latency_p50_micros: undefined
                   }
                 )
               }
@@ -254,41 +275,4 @@ export const calcPipelineThroughput = (metrics: TimeSeriesEntry[]) => {
     ? series.reduce((acc, cur) => cur.value[1] + acc, 0) / series.length
     : 0
   return { series, current, average, yMin, yMax }
-}
-
-/** Rounds a set of latency values up to a "nice" axis maximum, or 1000µs when empty. */
-const niceLatencyMax = (values: number[]) => {
-  const valueMax = values.length ? Math.max(...values) : 0
-  const yMaxStep = valueMax > 0 ? 10 ** Math.ceil(Math.log10(valueMax)) / 5 : 1
-  return valueMax !== 0 ? Math.ceil((valueMax * 1.25) / yMaxStep) * yMaxStep : 1000
-}
-
-/**
- * Latency time series for the performance graph, in microseconds.
- *
- * Produces four series - processing (ingest to circuit-processed) and
- * completion (ingest to all outputs pushed), each at p50 and p99 across
- * connectors. Samples whose field is absent (no connector had latency data that
- * second) are skipped, so a series can be shorter than `metrics` or empty.
- *
- * Two axis maxima are returned: `yMax` scaled to the p99 lines, and
- * `yMaxBaseline` scaled to the p50 lines only, so the axis can tighten when the
- * p99 lines are hidden.
- */
-export const calcPipelineLatency = (metrics: TimeSeriesEntry[]) => {
-  const pick = (key: 'pp50' | 'pp99' | 'cp50' | 'cp99') =>
-    metrics.flatMap((m) => (typeof m[key] === 'number' ? [tuple(m.t, m[key] as number)] : []))
-  const series = {
-    processingP50: pick('pp50'),
-    processingP99: pick('pp99'),
-    completionP50: pick('cp50'),
-    completionP99: pick('cp99')
-  }
-  const p99Values = [...series.processingP99, ...series.completionP99].map((p) => p[1])
-  const p50Values = [...series.processingP50, ...series.completionP50].map((p) => p[1])
-  const yMin = 0
-  const yMax = niceLatencyMax(p99Values)
-  const yMaxBaseline = niceLatencyMax(p50Values)
-  const hasData = p50Values.length > 0 || p99Values.length > 0
-  return { series, yMin, yMax, yMaxBaseline, hasData }
 }

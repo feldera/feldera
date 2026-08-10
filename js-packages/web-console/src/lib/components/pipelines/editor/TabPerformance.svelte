@@ -7,7 +7,6 @@
 <script lang="ts">
   import { SegmentedControl } from 'common-ui'
   import Dayjs from 'dayjs'
-  import PipelineLatencyGraph from '$lib/components/layout/pipelines/PipelineLatencyGraph.svelte'
   import PipelineMemoryGraph from '$lib/components/layout/pipelines/PipelineMemoryGraph.svelte'
   import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
   import PipelineThroughputGraph from '$lib/components/layout/pipelines/PipelineThroughputGraph.svelte'
@@ -327,8 +326,8 @@
                 {/if}
               </div>
             </div>
-            <div class="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <div class="bg-white-dark relative h-52 w-full rounded">
+            <div class="flex w-full flex-col gap-4 xl:flex-row">
+              <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
                 <PipelineThroughputGraph
                   {pipeline}
                   metrics={timeSeries}
@@ -336,15 +335,7 @@
                   keepMs={60 * 1000}
                 ></PipelineThroughputGraph>
               </div>
-              <div class="bg-white-dark relative h-52 w-full rounded">
-                <PipelineLatencyGraph
-                  {pipeline}
-                  metrics={timeSeries}
-                  refetchMs={1000}
-                  keepMs={60 * 1000}
-                ></PipelineLatencyGraph>
-              </div>
-              <div class="bg-white-dark relative h-52 w-full rounded">
+              <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
                 <PipelineMemoryGraph
                   {pipeline}
                   metrics={timeSeries}
@@ -353,7 +344,7 @@
                   memoryPressure={global.memory_pressure}
                 ></PipelineMemoryGraph>
               </div>
-              <div class="bg-white-dark relative h-52 w-full rounded">
+              <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
                 <PipelineStorageGraph
                   {pipeline}
                   metrics={timeSeries}
