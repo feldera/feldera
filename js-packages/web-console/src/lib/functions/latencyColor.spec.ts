@@ -39,10 +39,8 @@ describe('latencyColorScale', () => {
     expect(latencyColorScale([1_000, 1_100], 1)).toEqual({ min: 1_000, max: 1_100 })
   })
 
-  it('clamps a spread below 1 so the scale cannot invert', () => {
-    const scale = latencyColorScale([1_000, 1_100], 0.5)
-    expect(scale).toEqual({ min: 1_000, max: 1_100 })
-    expect(scale!.max).toBeGreaterThanOrEqual(scale!.min)
+  it('rejects a spread below 1, which would invert the scale', () => {
+    expect(() => latencyColorScale([1_000, 1_100], 0.5)).toThrow(/spread cannot be less than 1/)
   })
 
   it('defaults to a 500% spread', () => {

@@ -215,7 +215,7 @@ pub struct ExternalInputEndpointMetrics {
     pub num_parse_errors: u64,
     /// True if end-of-input has been signaled.
     pub end_of_input: bool,
-    /// Median processing latency (from ingesting a batch to finishing processing it) in microseconds.
+    /// 99th percentile processing latency (from ingesting a batch to finishing processing it) in microseconds.
     ///
     /// The time from ingesting a batch of records off the wire
     /// to the circuit finishing processing them,
@@ -231,7 +231,7 @@ pub struct ExternalInputEndpointMetrics {
     ///
     /// `None` until the endpoint records its first sample.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub processing_latency_p50_micros: Option<u64>,
+    pub processing_latency_p99_micros: Option<u64>,
 }
 
 /// Input endpoint status information.

@@ -102,13 +102,11 @@ function buildMetrics(
 
 async function renderComponent(
   metrics: { current: PipelineMetrics },
-  onConnectorSelect?: (...args: any[]) => void,
-  props?: { latencyColorSpread?: number }
+  onConnectorSelect?: (...args: any[]) => void
 ) {
   return render(MetricsTables, {
     metrics,
-    onConnectorSelect: onConnectorSelect ?? vi.fn(),
-    ...props
+    onConnectorSelect: onConnectorSelect ?? vi.fn()
   })
 }
 
@@ -836,13 +834,13 @@ describe('MetricsTables.svelte', () => {
     })
   })
 
-  describe('K. Latency p50 column', () => {
+  describe('K. Latency p99 column', () => {
     // Percentage of `--latency-slow` mixed into a latency cell's text color.
     // 0 means the fastest connector's plain color, 100 means fully error red.
     // The browser reserializes the inline style, so both "5%" and "5.00%" parse.
     const slowPercents = () =>
       page
-        .getByTestId('box-input-latency-p50')
+        .getByTestId('box-input-latency-p99')
         .elements()
         .map((cell) => {
           const style = cell.querySelector('span[style]')?.getAttribute('style') ?? ''
@@ -853,9 +851,9 @@ describe('MetricsTables.svelte', () => {
     it('places the column header between Buffered and Parse errors', async () => {
       await renderComponent(buildMetrics(makeStatus([], [makeInputStatus('orders')])))
       const html = page.getByTestId('box-input-tables').element().innerHTML
-      expect(html).toContain('Latency p50')
-      expect(html.indexOf('Latency p50')).toBeGreaterThan(html.indexOf('Buffered'))
-      expect(html.indexOf('Latency p50')).toBeLessThan(html.indexOf('Parse errors'))
+      expect(html).toContain('Latency p99')
+      expect(html.indexOf('Latency p99')).toBeGreaterThan(html.indexOf('Buffered'))
+      expect(html.indexOf('Latency p99')).toBeLessThan(html.indexOf('Parse errors'))
     })
 
     it('puts the help icon in the same hover group as the label', async () => {
@@ -865,7 +863,7 @@ describe('MetricsTables.svelte', () => {
       // Label and icon must share one element so either one triggers the tooltip.
       const group = icon.element().closest('span.cursor-help')
       expect(group).not.toBeNull()
-      expect(group!.textContent).toContain('Latency p50')
+      expect(group!.textContent).toContain('Latency p99')
     })
 
     it('formats the latency with an adaptive unit', async () => {
@@ -873,7 +871,7 @@ describe('MetricsTables.svelte', () => {
         [],
         [
           makeInputStatus('orders', {
-            metrics: makeInputMetrics({ processing_latency_p50_micros: 12_500 })
+            metrics: makeInputMetrics({ processing_latency_p99_micros: 12_500 })
           })
         ]
       )
@@ -883,7 +881,7 @@ describe('MetricsTables.svelte', () => {
 
     it('shows an em dash for a connector without latency samples', async () => {
       await renderComponent(buildMetrics(makeStatus([], [makeInputStatus('orders')])))
-      const cell = page.getByTestId('box-input-latency-p50').first()
+      const cell = page.getByTestId('box-input-latency-p99').first()
       await expect.element(cell).toHaveTextContent('—')
       // No color is applied when there is nothing to compare.
       expect(cell.element().querySelector('span[style]')).toBeNull()
@@ -895,11 +893,11 @@ describe('MetricsTables.svelte', () => {
         [
           makeInputStatus('fast', {
             endpoint_name: 'c-fast',
-            metrics: makeInputMetrics({ processing_latency_p50_micros: 1_000 })
+            metrics: makeInputMetrics({ processing_latency_p99_micros: 1_000 })
           }),
           makeInputStatus('slow', {
             endpoint_name: 'c-slow',
-            metrics: makeInputMetrics({ processing_latency_p50_micros: 9_000 })
+            metrics: makeInputMetrics({ processing_latency_p99_micros: 9_000 })
           })
         ]
       )
@@ -915,11 +913,11 @@ describe('MetricsTables.svelte', () => {
         [
           makeInputStatus('fast', {
             endpoint_name: 'c-fast',
-            metrics: makeInputMetrics({ processing_latency_p50_micros: 1_000 })
+            metrics: makeInputMetrics({ processing_latency_p99_micros: 1_000 })
           }),
           makeInputStatus('slow', {
             endpoint_name: 'c-slow',
-            metrics: makeInputMetrics({ processing_latency_p50_micros: 1_100 })
+            metrics: makeInputMetrics({ processing_latency_p99_micros: 1_100 })
           })
         ]
       )
@@ -930,43 +928,22 @@ describe('MetricsTables.svelte', () => {
       expect(slow).toBeLessThan(10)
     })
 
-    it('widens the scale when a larger spread is configured', async () => {
-      const status = makeStatus(
-        [],
-        [
-          makeInputStatus('fast', {
-            endpoint_name: 'c-fast',
-            metrics: makeInputMetrics({ processing_latency_p50_micros: 1_000 })
-          }),
-          makeInputStatus('slow', {
-            endpoint_name: 'c-slow',
-            metrics: makeInputMetrics({ processing_latency_p50_micros: 9_000 })
-          })
-        ]
-      )
-      // A 100x floor puts 9000µs only 8% up a scale that now tops out at 100ms.
-      await renderComponent(buildMetrics(status), undefined, { latencyColorSpread: 100 })
-      const [, slow] = slowPercents()
-      expect(slow).toBeGreaterThan(0)
-      expect(slow).toBeLessThan(10)
-    })
-
     it('reports the slowest connector on a collapsed relation row', async () => {
       const status = makeStatus(
         [],
         [
           makeInputStatus('orders', {
             endpoint_name: 'c1',
-            metrics: makeInputMetrics({ processing_latency_p50_micros: 2_000 })
+            metrics: makeInputMetrics({ processing_latency_p99_micros: 2_000 })
           }),
           makeInputStatus('orders', {
             endpoint_name: 'c2',
-            metrics: makeInputMetrics({ processing_latency_p50_micros: 8_000 })
+            metrics: makeInputMetrics({ processing_latency_p99_micros: 8_000 })
           })
         ]
       )
       await renderComponent(buildMetrics(status))
-      // The single row is the relation aggregate; it must not sum the medians.
+      // The single row is the relation aggregate; it must not sum the percentiles.
       await expect.element(page.getByText('8 ms')).toBeInTheDocument()
       expect(page.getByText('10 ms').elements()).toHaveLength(0)
     })
