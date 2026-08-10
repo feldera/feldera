@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -53,6 +54,13 @@ public class SimplifyConditionals implements IRTransform {
         this.containsIf.setOperatorContext(operator);
         this.findConstants.setOperatorContext(operator);
         this.replaceConstants.setOperatorContext(operator);
+    }
+
+    @Override
+    public void setCircuitContext(DBSPCircuit circuit) {
+        this.containsIf.setCircuitContext(circuit);
+        this.findConstants.setCircuitContext(circuit);
+        this.replaceConstants.setCircuitContext(circuit);
     }
 
     @Override

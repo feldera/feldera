@@ -166,7 +166,8 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.operatorContext = operatorContext;
     }
 
-    public void setCircuitContext(@Nullable DBSPCircuit circuit) {
+    @Override
+    public void setCircuitContext(DBSPCircuit circuit) {
         this.circuitContext = circuit;
     }
 

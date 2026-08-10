@@ -1,9 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
@@ -860,5 +863,43 @@ public class Regression3Tests extends SqlIoTest {
                 Assert.assertTrue(this.filterFound);
             }
         });
+    }
+
+    @Test
+    public void issue5940() {
+        // Without inlining CRT_DATE this generates a very inefficient implementation using JOIN
+        // With inlining this generates a Window operator
+        var ccs = this.getCCS("""
+                CREATE FUNCTION CRT_DATE(T TIMESTAMP) RETURNS DATE AS CAST(T AS DATE);
+                CREATE TABLE T(D DATE, X INT);
+                CREATE VIEW V AS SELECT * FROM T WHERE T.D < CRT_DATE(NOW())""");
+        var visitor = new CircuitVisitor(ccs.compiler) {
+            boolean windowFound = false;
+
+            @Override
+            public void postorder(DBSPStreamJoinOperator node) {
+                Assert.fail("JOIN should not be present");
+            }
+
+            @Override
+            public void postorder(DBSPWindowOperator node) {
+                this.windowFound = true;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertTrue(this.windowFound);
+                super.endVisit();
+            }
+        };
+        ccs.visit(visitor);
+
+        /// inline multiple nested functions
+        ccs = this.getCCS("""
+                CREATE FUNCTION CRT_DATE(T TIMESTAMP) RETURNS DATE AS CAST(T AS DATE);
+                CREATE FUNCTION YR(D DATE) RETURNS BIGINT AS EXTRACT(YEAR FROM D);
+                CREATE TABLE T(X BIGINT);
+                CREATE VIEW V AS SELECT * FROM T WHERE T.X < YR(CRT_DATE(NOW()));""");
+        ccs.visit(visitor);
     }
 }
