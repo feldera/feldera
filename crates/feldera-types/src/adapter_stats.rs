@@ -215,6 +215,23 @@ pub struct ExternalInputEndpointMetrics {
     pub num_parse_errors: u64,
     /// True if end-of-input has been signaled.
     pub end_of_input: bool,
+    /// Median processing latency (from ingesting a batch to finishing processing it) in microseconds.
+    ///
+    /// The time from ingesting a batch of records off the wire
+    /// to the circuit finishing processing them,
+    /// covering parsing, queuing, and the circuit step.
+    ///
+    /// Does not account for completion latency.
+    ///
+    /// Taken over the endpoint's sliding histogram, which holds the 10,000 most
+    /// recent samples spanning at most 10 minutes, whichever bound is reached
+    /// first. One sample is recorded per completed batch. An endpoint that stops
+    /// ingesting keeps reporting its last known latency instead of dropping to
+    /// `None`.
+    ///
+    /// `None` until the endpoint records its first sample.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processing_latency_p50_micros: Option<u64>,
 }
 
 /// Input endpoint status information.

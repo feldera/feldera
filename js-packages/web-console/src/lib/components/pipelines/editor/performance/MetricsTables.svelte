@@ -4,7 +4,12 @@
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { count } from '$lib/functions/common/array'
   import { humanSize } from '$lib/functions/common/string'
-  import { formatQty } from '$lib/functions/format'
+  import { formatDuration, formatQty } from '$lib/functions/format'
+  import {
+    defaultLatencyColorSpread,
+    latencyColor,
+    latencyColorScale
+  } from '$lib/functions/latencyColor'
   import type {
     AggregatedInputEndpointMetrics,
     AggregatedMetrics,
@@ -27,6 +32,17 @@
       filter: ConnectorErrorFilter
     ) => void
   } = $props()
+
+  // Calculated from individual connectors, so that a relation's color
+  // stays comparable to the connectors it summarizes.
+  const inputLatencyScale = $derived(
+    latencyColorScale(
+      [...metrics.current.tables.values()].flatMap((data) =>
+        data.connectors.map((connector) => connector.metrics.processing_latency_p50_micros)
+      ),
+      defaultLatencyColorSpread
+    )
+  )
 
   type HealthFilter = 'all' | 'unhealthy'
   let tableHealthFilter = $state<HealthFilter>('all')
@@ -352,6 +368,19 @@
     <th class="font-normal" rowspan="2">Transaction</th>
     <th class="pb-0! text-center! font-normal" colspan="2">Ingested</th>
     <th class="pb-0! text-center! font-normal" colspan="2">Buffered</th>
+    <th class="font-normal 2xl:text-nowrap" rowspan="2">
+      <span class="inline-flex cursor-help items-center gap-1">
+        Latency p50
+        <span
+          data-testid="box-icon-latency-help"
+          class="fd fd-circle-help text-[16px] leading-none text-surface-600-400"
+        ></span>
+      </span>
+      <Tooltip placement="top" class="max-w-sm text-wrap"
+        >Median time from ingesting a batch of records to the circuit finishing processing it, taken
+        over the last 10 minutes. Colored relative to the other connectors — red marks the slowest.</Tooltip
+      >
+    </th>
     <th class="font-normal 2xl:text-nowrap" rowspan="2">Parse errors</th>
     <th class="font-normal 2xl:text-nowrap" rowspan="2">Transport errors</th>
   </tr>
@@ -377,6 +406,15 @@
   >
   <td class="text-end font-dm-mono text-nowrap">{formatQty(m.buffered_records)}</td>
   <td class="text-end font-dm-mono text-nowrap">{humanSize(m.buffered_bytes)}</td>
+  <td class="text-end font-dm-mono text-nowrap" data-testid="box-input-latency-p50">
+    {#if typeof m.processing_latency_p50_micros === 'number'}
+      <span style:color={latencyColor(m.processing_latency_p50_micros, inputLatencyScale)}>
+        {formatDuration(m.processing_latency_p50_micros)}
+      </span>
+    {:else}
+      <span class="text-surface-500">—</span>
+    {/if}
+  </td>
   <td class="text-end font-dm-mono text-nowrap {m.num_parse_errors > 0 ? 'text-error-500' : ''}">
     {#if m.num_parse_errors > 0 && relation && connectorEndpointName}
       <button
@@ -579,7 +617,7 @@
   metricsCells: Snippet<[EndpointMetrics, boolean | undefined, string?, string?]>,
   testId: string
 )}
-  <div class="scrollbar w-full overflow-x-auto {maxWidth}" data-testid={testId}>
+  <div class="latency-colors scrollbar w-full overflow-x-auto {maxWidth}" data-testid={testId}>
     <table class="bg-white-dark table h-min rounded text-base">
       <thead>
         {@render columnHeaders()}
@@ -661,3 +699,19 @@
     'box-output-views'
   )}
 {/if}
+
+<style>
+  /* Endpoints of the latency column's color scale, consumed by `latencyColor()`
+     through the inherited custom-property cascade. Skeleton's dual-tone
+     `surface-950-50` variable cannot be used directly: its nested
+     `light-dark()` resolves to `transparent` inside `color-mix()`. So the two
+     tones are bound separately and switched on `.dark`, which the root layout
+     sets on the `html` element. */
+  .latency-colors {
+    --latency-fast: var(--color-surface-950);
+    --latency-slow: var(--color-error-500);
+  }
+  :global(.dark) .latency-colors {
+    --latency-fast: var(--color-surface-50);
+  }
+</style>

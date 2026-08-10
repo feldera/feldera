@@ -102,11 +102,13 @@ function buildMetrics(
 
 async function renderComponent(
   metrics: { current: PipelineMetrics },
-  onConnectorSelect?: (...args: any[]) => void
+  onConnectorSelect?: (...args: any[]) => void,
+  props?: { latencyColorSpread?: number }
 ) {
   return render(MetricsTables, {
     metrics,
-    onConnectorSelect: onConnectorSelect ?? vi.fn()
+    onConnectorSelect: onConnectorSelect ?? vi.fn(),
+    ...props
   })
 }
 
@@ -831,6 +833,142 @@ describe('MetricsTables.svelte', () => {
       await renderComponent(buildMetrics(status))
       const badge = page.getByText('2').elements()
       expect(badge.length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
+  describe('K. Latency p50 column', () => {
+    // Percentage of `--latency-slow` mixed into a latency cell's text color.
+    // 0 means the fastest connector's plain color, 100 means fully error red.
+    // The browser reserializes the inline style, so both "5%" and "5.00%" parse.
+    const slowPercents = () =>
+      page
+        .getByTestId('box-input-latency-p50')
+        .elements()
+        .map((cell) => {
+          const style = cell.querySelector('span[style]')?.getAttribute('style') ?? ''
+          const match = style.match(/--latency-slow\)\s*([\d.]+)%/)
+          return match ? Number(match[1]) : null
+        })
+
+    it('places the column header between Buffered and Parse errors', async () => {
+      await renderComponent(buildMetrics(makeStatus([], [makeInputStatus('orders')])))
+      const html = page.getByTestId('box-input-tables').element().innerHTML
+      expect(html).toContain('Latency p50')
+      expect(html.indexOf('Latency p50')).toBeGreaterThan(html.indexOf('Buffered'))
+      expect(html.indexOf('Latency p50')).toBeLessThan(html.indexOf('Parse errors'))
+    })
+
+    it('puts the help icon in the same hover group as the label', async () => {
+      await renderComponent(buildMetrics(makeStatus([], [makeInputStatus('orders')])))
+      const icon = page.getByTestId('box-icon-latency-help')
+      await expect.element(icon).toBeInTheDocument()
+      // Label and icon must share one element so either one triggers the tooltip.
+      const group = icon.element().closest('span.cursor-help')
+      expect(group).not.toBeNull()
+      expect(group!.textContent).toContain('Latency p50')
+    })
+
+    it('formats the latency with an adaptive unit', async () => {
+      const status = makeStatus(
+        [],
+        [
+          makeInputStatus('orders', {
+            metrics: makeInputMetrics({ processing_latency_p50_micros: 12_500 })
+          })
+        ]
+      )
+      await renderComponent(buildMetrics(status))
+      await expect.element(page.getByText('12.5 ms')).toBeInTheDocument()
+    })
+
+    it('shows an em dash for a connector without latency samples', async () => {
+      await renderComponent(buildMetrics(makeStatus([], [makeInputStatus('orders')])))
+      const cell = page.getByTestId('box-input-latency-p50').first()
+      await expect.element(cell).toHaveTextContent('—')
+      // No color is applied when there is nothing to compare.
+      expect(cell.element().querySelector('span[style]')).toBeNull()
+    })
+
+    it('leaves the fastest connector uncolored and saturates the slowest', async () => {
+      const status = makeStatus(
+        [],
+        [
+          makeInputStatus('fast', {
+            endpoint_name: 'c-fast',
+            metrics: makeInputMetrics({ processing_latency_p50_micros: 1_000 })
+          }),
+          makeInputStatus('slow', {
+            endpoint_name: 'c-slow',
+            metrics: makeInputMetrics({ processing_latency_p50_micros: 9_000 })
+          })
+        ]
+      )
+      await renderComponent(buildMetrics(status))
+      expect(slowPercents()).toEqual([0, 100])
+    })
+
+    it('keeps clustered connectors near the fast end via the spread floor', async () => {
+      // 1100µs is 10% above the fastest, so the default 3x floor keeps it at ~5%
+      // rather than painting it fully red for being the slowest of the two.
+      const status = makeStatus(
+        [],
+        [
+          makeInputStatus('fast', {
+            endpoint_name: 'c-fast',
+            metrics: makeInputMetrics({ processing_latency_p50_micros: 1_000 })
+          }),
+          makeInputStatus('slow', {
+            endpoint_name: 'c-slow',
+            metrics: makeInputMetrics({ processing_latency_p50_micros: 1_100 })
+          })
+        ]
+      )
+      await renderComponent(buildMetrics(status))
+      const [fast, slow] = slowPercents()
+      expect(fast).toBe(0)
+      expect(slow).toBeGreaterThan(0)
+      expect(slow).toBeLessThan(10)
+    })
+
+    it('widens the scale when a larger spread is configured', async () => {
+      const status = makeStatus(
+        [],
+        [
+          makeInputStatus('fast', {
+            endpoint_name: 'c-fast',
+            metrics: makeInputMetrics({ processing_latency_p50_micros: 1_000 })
+          }),
+          makeInputStatus('slow', {
+            endpoint_name: 'c-slow',
+            metrics: makeInputMetrics({ processing_latency_p50_micros: 9_000 })
+          })
+        ]
+      )
+      // A 100x floor puts 9000µs only 8% up a scale that now tops out at 100ms.
+      await renderComponent(buildMetrics(status), undefined, { latencyColorSpread: 100 })
+      const [, slow] = slowPercents()
+      expect(slow).toBeGreaterThan(0)
+      expect(slow).toBeLessThan(10)
+    })
+
+    it('reports the slowest connector on a collapsed relation row', async () => {
+      const status = makeStatus(
+        [],
+        [
+          makeInputStatus('orders', {
+            endpoint_name: 'c1',
+            metrics: makeInputMetrics({ processing_latency_p50_micros: 2_000 })
+          }),
+          makeInputStatus('orders', {
+            endpoint_name: 'c2',
+            metrics: makeInputMetrics({ processing_latency_p50_micros: 8_000 })
+          })
+        ]
+      )
+      await renderComponent(buildMetrics(status))
+      // The single row is the relation aggregate; it must not sum the medians.
+      await expect.element(page.getByText('8 ms')).toBeInTheDocument()
+      expect(page.getByText('10 ms').elements()).toHaveLength(0)
     })
   })
 })

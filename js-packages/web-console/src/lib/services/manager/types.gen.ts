@@ -2723,6 +2723,24 @@ export type InputEndpointMetrics = {
    */
   num_transport_errors: number
   /**
+   * Median processing latency (from ingesting a batch to finishing processing it) in microseconds.
+   *
+   * The time from ingesting a batch of records off the wire
+   * to the circuit finishing processing them,
+   * covering parsing, queuing, and the circuit step.
+   *
+   * Does not account for completion latency.
+   *
+   * Taken over the endpoint's sliding histogram, which holds the 10,000 most
+   * recent samples spanning at most 10 minutes, whichever bound is reached
+   * first. One sample is recorded per completed batch. An endpoint that stops
+   * ingesting keeps reporting its last known latency instead of dropping to
+   * `None`.
+   *
+   * `None` until the endpoint records its first sample.
+   */
+  processing_latency_p50_micros?: number | null
+  /**
    * Total bytes pushed to the endpoint since it was created.
    */
   total_bytes: number
@@ -5456,27 +5474,9 @@ export type S3TablesCatalogConfig = {
  */
 export type SampleStatistics = {
   /**
-   * Completion latency (ingest to all outputs pushed), microseconds:
-   * p50 across connectors.
-   */
-  cp50?: number | null
-  /**
-   * Completion latency, microseconds: p99 across connectors.
-   */
-  cp99?: number | null
-  /**
    * Memory usage in bytes.
    */
   m: number
-  /**
-   * Processing latency (ingest to circuit-processed), microseconds:
-   * p50 across connectors of each connector's median. Absent without samples.
-   */
-  pp50?: number | null
-  /**
-   * Processing latency, microseconds: p99 across connectors.
-   */
-  pp99?: number | null
   /**
    * Records processed.
    */

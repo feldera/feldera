@@ -11159,6 +11159,13 @@
             "description": "Number of transport errors.",
             "minimum": 0
           },
+          "processing_latency_p50_micros": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Median processing latency (from ingesting a batch to finishing processing it) in microseconds.\n\nThe time from ingesting a batch of records off the wire\nto the circuit finishing processing them,\ncovering parsing, queuing, and the circuit step.\n\nDoes not account for completion latency.\n\nTaken over the endpoint's sliding histogram, which holds the 10,000 most\nrecent samples spanning at most 10 minutes, whichever bound is reached\nfirst. One sample is recorded per completed batch. An endpoint that stops\ningesting keeps reporting its last known latency instead of dropping to\n`None`.\n\n`None` until the endpoint records its first sample.",
+            "nullable": true,
+            "minimum": 0
+          },
           "total_bytes": {
             "type": "integer",
             "format": "int64",
@@ -14795,38 +14802,10 @@
           "s"
         ],
         "properties": {
-          "cp50": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Completion latency (ingest to all outputs pushed), microseconds:\np50 across connectors.",
-            "nullable": true,
-            "minimum": 0
-          },
-          "cp99": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Completion latency, microseconds: p99 across connectors.",
-            "nullable": true,
-            "minimum": 0
-          },
           "m": {
             "type": "integer",
             "format": "int64",
             "description": "Memory usage in bytes.",
-            "minimum": 0
-          },
-          "pp50": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Processing latency (ingest to circuit-processed), microseconds:\np50 across connectors of each connector's median. Absent without samples.",
-            "nullable": true,
-            "minimum": 0
-          },
-          "pp99": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Processing latency, microseconds: p99 across connectors.",
-            "nullable": true,
             "minimum": 0
           },
           "r": {

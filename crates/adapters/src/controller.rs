@@ -6041,7 +6041,6 @@ impl StatisticsThread {
             };
 
             // Update time series..
-            let latency = controller_status.latency_percentiles();
             let sample = SampleStatistics {
                 time: Utc::now(),
                 total_processed_records: controller_status
@@ -6049,10 +6048,6 @@ impl StatisticsThread {
                     .num_total_processed_records(),
                 memory_bytes: process_rss_bytes().unwrap_or_default(),
                 storage_bytes,
-                processing_latency_p50_micros: latency.processing_p50,
-                processing_latency_p99_micros: latency.processing_p99,
-                completion_latency_p50_micros: latency.completion_p50,
-                completion_latency_p99_micros: latency.completion_p99,
             };
             let mut time_series = controller_status.time_series.lock().unwrap();
             if time_series.len() >= 60 {
