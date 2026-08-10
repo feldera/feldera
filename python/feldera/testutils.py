@@ -487,8 +487,9 @@ def build_pipeline(
         compilation_profile=CompilationProfile.OPTIMIZED,
         runtime_config=RuntimeConfig(
             # Covers node auto-provisioning: a pipeline that needs a fresh
-            # node shape waits for node boot plus image pull.
-            provisioning_timeout_secs=180,
+            # node shape waits for node boot plus image pull, and parallel
+            # test workers can request several fresh nodes at once.
+            provisioning_timeout_secs=300,
             resources=resources,
             workers=FELDERA_TEST_NUM_WORKERS,
             hosts=FELDERA_TEST_NUM_HOSTS,
