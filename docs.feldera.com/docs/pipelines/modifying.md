@@ -182,6 +182,12 @@ Concurrent bootstrapping proceeds in two phases:
 Concurrent bootstrapping is *mutually exclusive with `silent_bootstrap`**. Starting a
 pipeline with both `concurrent_bootstrap=true` and `silent_bootstrap=true` is rejected.
 
+Both phases report progress: the `concurrent_bootstrap_phase` and
+`concurrent_bootstrap_progress` fields returned by the
+[`/stats`](/api/get-pipeline-stats) endpoint count the operators computed so far, and
+the Web Console shows the same counts as a `Bootstrapping` progress bar in the
+pipeline's Runtime tab.
+
 ## Caveats and limitations
 
 ### Caveat 1: Feldera runtime upgrade can modify the pipeline

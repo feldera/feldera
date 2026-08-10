@@ -8,6 +8,10 @@ export const useIsMobile = () => {
   return new MediaQuery('not (min-width: 640px)')
 }
 
+export const useIsScreenSm = () => {
+  return new MediaQuery('min-width: 640px')
+}
+
 export const useIsScreenMd = () => {
   return new MediaQuery('min-width: 768px')
 }

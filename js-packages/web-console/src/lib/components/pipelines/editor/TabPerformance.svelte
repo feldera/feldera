@@ -28,7 +28,7 @@
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
   import CheckpointsIndicator from './performance/CheckpointsIndicator.svelte'
-  import TransactionStatus from './performance/TransactionStatus.svelte'
+  import CommitProgressIndicator from './performance/CommitProgressIndicator.svelte'
   import Drawer from '$lib/components/layout/Drawer.svelte'
   import WarningBanner from './WarningBanner.svelte'
   import { sleep } from '$lib/functions/common/promise'
@@ -360,7 +360,7 @@
               {checkpointStatus}
               onShowCheckpoints={() => (openDrawer = { kind: 'checkpoints' })}
             />
-            <TransactionStatus {metrics} class="w-full"></TransactionStatus>
+            <CommitProgressIndicator {metrics} class="w-full"></CommitProgressIndicator>
           </div>
           {#if metrics.current.views.size || metrics.current.tables.size}
             <div class="flex flex-wrap gap-4">
