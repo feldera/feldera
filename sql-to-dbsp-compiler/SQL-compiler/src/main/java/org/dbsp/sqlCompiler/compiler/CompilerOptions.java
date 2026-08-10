@@ -72,6 +72,11 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--unaryPlusNoop",
                 description = "Compile unary plus into a no-operation; similar to sqlite")
         public boolean unaryPlusNoop = false;
+        /** Rewrite CTE queries to use local views instead.
+         * Hidden: intended for testing and debugging. */
+        @Parameter(names = "--cteViews", hidden = true,
+                description = "Convert each top-level common table expression (WITH) in a view into a LOCAL VIEW")
+        public boolean cteViews = false;
 
         public boolean same(Language language) {
             // Only compare fields that matter.
@@ -84,7 +89,8 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Override
         public String toString() {
             return "Language{" +
-                    "\n\tgenerateInputForEveryTable=" + this.generateInputForEveryTable +
+                    "\n\tcteViews=" + this.cteViews +
+                    ",\n\tgenerateInputForEveryTable=" + this.generateInputForEveryTable +
                     ",\n\tignoreOrderBy=" + this.ignoreOrderBy +
                     ",\n\tincrementalize=" + this.incrementalize +
                     ",\n\tlenient=" + this.lenient +

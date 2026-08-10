@@ -101,6 +101,7 @@ import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlSetOption;
 import org.apache.calcite.sql.SqlTypeNameSpec;
 import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
+import org.apache.calcite.sql.SqlWithItem;
 import org.apache.calcite.sql.SqlWriter;
 import org.apache.calcite.sql.dialect.OracleSqlDialect;
 import org.apache.calcite.sql.fun.SqlDatetimeSubtractionOperator;
@@ -140,6 +141,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.ExtendedSqlParserPos;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -552,6 +554,14 @@ public class SqlToRelCompiler implements IWritesLogs {
         @Override
         public Void visit(SqlCall call) {
             SourcePositionRange position = new SourcePositionRange(call.getParserPosition());
+            if (call instanceof SqlWithItem item && item.recursive.booleanValue()) {
+                this.errorReporter.reportError(
+                        new SourcePositionRange(item.name.getParserPosition()),
+                        "Not supported",
+                        "RECURSIVE queries in WITH are not supported; " +
+                                "use DECLARE RECURSIVE VIEW instead. " +
+                                "See https://docs.feldera.com/sql/recursion");
+            }
             SqlOperator operator = call.getOperator();
             if (operator instanceof SqlFunction) {
                 for (SqlNode node : call.getOperandList()) {
@@ -2232,10 +2242,30 @@ public class SqlToRelCompiler implements IWritesLogs {
         return sw.toString();
     }
 
+    /** If the statement is a CREATE VIEW whose query has top-level
+     * common table expressions, convert each into a LOCAL VIEW.
+     * Returns null if the rewrite does not apply. */
+    @Nullable
+    public List<ParsedStatement> hoistCtes(ParsedStatement statement) {
+        return new CteToLocalViews(this).apply(statement);
+    }
+
     @Nullable
     public CreateViewStatement compileCreateView(
             ParsedStatement node, Map<ProgramIdentifier, SqlLateness> lateness,
             SourceFileContents sources) {
+        return this.compileCreateView(node, lateness, sources, false);
+    }
+
+    /** Compile a CREATE VIEW statement.
+     * @param lateness      Lateness declared for the view's columns.
+     * @param allowCteRetry If true and the optimized plan cannot be
+     *                      decorrelated, but the query has hoistable CTEs,
+     *                      throw {@link CteToLocalViews.Retry}. */
+    @Nullable
+    public CreateViewStatement compileCreateView(
+            ParsedStatement node, Map<ProgramIdentifier, SqlLateness> lateness,
+            SourceFileContents sources, boolean allowCteRetry) {
         CalciteObject object = CalciteObject.create(node);
         SqlCreateView cv = (SqlCreateView) node.statement();
         SqlNode query = cv.query;
@@ -2318,6 +2348,13 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         RelNode optimized = this.optimize(relRoot.rel, node.visible(), this.getRelBuilder());
         relRoot = relRoot.withRel(optimized);
+        // A correlate that survives the optimizer means the decorrelator has
+        // failed; converting the CTEs to local views often unblocks it.
+        // Thrown before this compiler's state records anything about the view.
+        if (allowCteRetry
+                && CteToLocalViews.canHoist(cv)
+                && CalciteToDBSPCompiler.hasUnimplementableCorrelate(optimized))
+            throw new CteToLocalViews.Retry();
         CreateViewStatement view = new CreateViewStatement(node,
                 viewName, columns, cv, relRoot, emitFinal, props);
         // From Calcite's point of view we treat this view just as another table.

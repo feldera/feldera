@@ -372,6 +372,42 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 "It looks like the compiler could not decorrelate this query.", 2555, node);
     }
 
+    /** True if {@link #visitCorrelate} can implement this correlate
+     * (an INNER unnest-shaped correlate compiled into a flat_map). */
+    public static boolean isImplementableCorrelate(LogicalCorrelate correlate) {
+        if (correlate.getJoinType() != JoinRelType.INNER)
+            return false;
+        RelNode right = correlate.getRight();
+        if (right instanceof Project project)
+            right = project.getInput();
+        else if (right instanceof Filter filter)
+            right = filter.getInput();
+        return right instanceof Uncollect uncollect
+                && uncollect.getInput() instanceof LogicalProject uncollectInput
+                && uncollectInput.getProjects().size() == 1;
+    }
+
+    /** True if the plan contains a correlate that the compiler cannot
+     * implement; such a correlate means that the decorrelator has failed. */
+    public static boolean hasUnimplementableCorrelate(RelNode plan) {
+        class Finder extends RelVisitor {
+            boolean found = false;
+
+            @Override
+            public void visit(RelNode node, int ordinal, @org.checkerframework.checker.nullness.qual.Nullable RelNode parent) {
+                if (node instanceof LogicalCorrelate correlate
+                        && !isImplementableCorrelate(correlate)) {
+                    this.found = true;
+                    return;
+                }
+                super.visit(node, ordinal, parent);
+            }
+        }
+        Finder finder = new Finder();
+        finder.go(plan);
+        return finder.found;
+    }
+
     void visitCorrelate(LogicalCorrelate correlate) {
         /*
          We decorrelate queries using Calcite's optimizer, which doesn't always work.
@@ -414,12 +450,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple type = this.convertType(
                 node.getPositionRange(), correlate.getRowType(), false).to(DBSPTypeTuple.class);
 
-        if (correlate.getJoinType() != JoinRelType.INNER)
-            throw new UnimplementedException("LEFT JOIN UNNEST");
+        if (!isImplementableCorrelate(correlate)) {
+            if (correlate.getJoinType() != JoinRelType.INNER)
+                throw new UnimplementedException("LEFT JOIN UNNEST");
+            throw this.decorrelateError(node);
+        }
         this.visit(correlate.getLeft(), 0, correlate);
         DBSPSimpleOperator left = this.getInputAs(correlate.getLeft(), true);
         DBSPTypeTuple leftElementType = left.getOutputZSetElementType().to(DBSPTypeTuple.class);
 
+        // The casts below are safe: isImplementableCorrelate checked the shape.
         RelNode correlateRight = correlate.getRight();
         Project rightProject = null;
         Filter rightFilter = null;
@@ -430,13 +470,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             rightFilter = (Filter) correlateRight;
             correlateRight = rightFilter.getInput();
         }
-        if (!(correlateRight instanceof Uncollect uncollect))
-            throw this.decorrelateError(node);
-        RelNode uncollectInput = uncollect.getInput();
-        if (!(uncollectInput instanceof LogicalProject project))
-            throw this.decorrelateError(node);
-        if (project.getProjects().size() != 1)
-            throw this.decorrelateError(node);
+        Uncollect uncollect = (Uncollect) correlateRight;
+        LogicalProject project = (LogicalProject) uncollect.getInput();
         RexNode projection = project.getProjects().get(0);
         DBSPVariablePath dataVar = new DBSPVariablePath(leftElementType.ref());
         ExpressionCompiler eComp = new ExpressionCompiler(correlate, dataVar, this.compiler);
