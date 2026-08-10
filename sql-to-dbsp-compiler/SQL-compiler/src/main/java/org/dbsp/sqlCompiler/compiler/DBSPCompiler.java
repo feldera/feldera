@@ -55,6 +55,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CteToLocalViews;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
@@ -587,6 +588,42 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         outputStream.close();
     }
 
+    /** Compile a CREATE VIEW statement.  The view's top-level common table
+     * expressions may be converted to LOCAL VIEWs.  The result contains
+     * one statement per converted CTE, followed by the view itself. */
+    List<RelStatement> compileCreateView(ParsedStatement node, Map<ProgramIdentifier, SqlLateness> lateness) {
+        @Nullable List<ParsedStatement> parts = null;
+        if (this.options.languageOptions.cteViews)
+            parts = this.sqlToRelCompiler.hoistCtes(node);
+        if (parts == null) {
+            try {
+                RelStatement fe = this.sqlToRelCompiler.compileCreateView(
+                        node, lateness, this.sources, /* retry */ true);
+                return fe == null ? Linq.list() : Linq.list(fe);
+            } catch (CteToLocalViews.Retry retry) {
+                Logger.INSTANCE.belowLevel(this, 1)
+                        .append("Could not decorrelate query; retrying with CTEs as local views")
+                        .newline();
+                parts = this.sqlToRelCompiler.hoistCtes(node);
+            }
+            if (parts == null) {
+                // The rewrite turned out not to apply; compile again without
+                // retry, so the real error surfaces.
+                RelStatement fe = this.sqlToRelCompiler.compileCreateView(
+                        node, lateness, this.sources, /* retry */ false);
+                return fe == null ? Linq.list() : Linq.list(fe);
+            }
+        }
+        List<RelStatement> result = new ArrayList<>();
+        ParsedStatement view = Utilities.last(parts);
+        for (ParsedStatement part: parts) {
+            // Lateness declarations apply to the original view only
+            Map<ProgramIdentifier, SqlLateness> lat = part == view ? lateness : new HashMap<>();
+            result.addAll(this.compileCreateView(part, lat));
+        }
+        return result;
+    }
+
     @Nullable DBSPCircuit runAllCompilerStages() {
         List<ParsedStatement> parsed = this.runParser();
         if (this.hasErrors())
@@ -694,32 +731,35 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 if (node.statement() instanceof SqlLateness)
                     continue;
 
-                RelStatement fe;
+                List<RelStatement> compiled;
                 if (node.statement() instanceof SqlCreateView cv) {
                     ProgramIdentifier viewName = ProgramIdentifier.fromSqlId(cv.name);
-                    Map<ProgramIdentifier, SqlLateness> late = this.viewLateness.getOrDefault(viewName, new HashMap<>());
-                    fe = this.sqlToRelCompiler.compileCreateView(node, late, this.sources);
+                    Map<ProgramIdentifier, SqlLateness> lateness = this.viewLateness.getOrDefault(viewName, new HashMap<>());
+                    compiled = this.compileCreateView(node, lateness);
                 } else {
-                    fe = this.sqlToRelCompiler.compile(node, this.sources);
+                    RelStatement single = this.sqlToRelCompiler.compile(node, this.sources);
+                    compiled = single == null
+                            // error during compilation
+                            ? Linq.list()
+                            : Linq.list(single);
                 }
-                if (fe == null)
-                    // error during compilation
-                    continue;
 
-                if (fe.is(CreateViewStatement.class)) {
-                    CreateViewStatement cv = fe.to(CreateViewStatement.class);
-                    Utilities.putNew(this.views, cv.getName(), cv);
-                } else if (fe.is(CreateTableStatement.class)) {
-                    CreateTableStatement ct = fe.to(CreateTableStatement.class);
-                    foreignKeys.addAll(ct.foreignKeys);
-                } else if (fe.is(CreateIndexStatement.class)) {
-                    CreateIndexStatement ct = fe.to(CreateIndexStatement.class);
-                    boolean success = this.validateCreateIndex(ct);
-                    if (!success)
-                        return null;
-                    Utilities.putNew(this.indexes, ct.getName(), ct);
+                for (RelStatement fe: compiled) {
+                    if (fe.is(CreateViewStatement.class)) {
+                        CreateViewStatement cv = fe.to(CreateViewStatement.class);
+                        Utilities.putNew(this.views, cv.getName(), cv);
+                    } else if (fe.is(CreateTableStatement.class)) {
+                        CreateTableStatement ct = fe.to(CreateTableStatement.class);
+                        foreignKeys.addAll(ct.foreignKeys);
+                    } else if (fe.is(CreateIndexStatement.class)) {
+                        CreateIndexStatement ct = fe.to(CreateIndexStatement.class);
+                        boolean success = this.validateCreateIndex(ct);
+                        if (!success)
+                            return null;
+                        Utilities.putNew(this.indexes, ct.getName(), ct);
+                    }
+                    this.relToDBSPCompiler.compile(fe);
                 }
-                this.relToDBSPCompiler.compile(fe);
             }
             this.setErrorContext(SourcePositionRange.INVALID);
 

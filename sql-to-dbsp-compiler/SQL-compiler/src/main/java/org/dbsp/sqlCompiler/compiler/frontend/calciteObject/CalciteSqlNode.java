@@ -19,8 +19,14 @@ public class CalciteSqlNode extends CalciteObject {
 
     @Override
     public String toString() {
-        return this.sqlNode.toSqlString(
-                SqlDialect.DatabaseProduct.POSTGRESQL.getDialect(), true)
+        return this.sqlNode.toSqlString(c -> c
+                .withDialect(SqlDialect.DatabaseProduct.POSTGRESQL.getDialect())
+                .withAlwaysUseParentheses(true)
+                .withSelectListItemsOnSeparateLines(false)
+                .withUpdateSetListNewline(false)
+                .withIndentation(0)
+                // Quote only identifiers that need it
+                .withQuoteAllIdentifiers(false))
                 .toString();
     }
 }
