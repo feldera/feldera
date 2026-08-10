@@ -75,6 +75,7 @@ public class CircuitOptimizer extends Passes {
         // Example dumping circuit to a png file
         // this.dump(3);
         // First part of optimizations may still synthesize some circuit components
+        this.add(new UDFInliner(compiler).getCircuitRewriter(false));
         // Runs before ImplementNow so temporal filters compare fields instead of
         // expensive computations, which makes them implementable as windows
         this.add(new DecomposeExpensiveFilters(compiler));

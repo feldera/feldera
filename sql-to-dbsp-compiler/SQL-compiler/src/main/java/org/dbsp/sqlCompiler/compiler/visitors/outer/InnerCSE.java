@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -56,6 +57,12 @@ public class InnerCSE implements IRTransform {
     @Override
     public String toString() {
         return "InnerCSE";
+    }
+
+    @Override
+    public void setCircuitContext(DBSPCircuit circuit) {
+        this.numbering.setCircuitContext(circuit);
+        this.cse.setCircuitContext(circuit);
     }
 
     @Override

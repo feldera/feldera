@@ -97,6 +97,9 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
             public void setOperatorContext(DBSPOperator operator) {}
 
             @Override
+            public void setCircuitContext(DBSPCircuit circuit) {}
+
+            @Override
             public IDBSPInnerNode apply(IDBSPInnerNode e) {
                 if (e.isExpression()) {
                     return e.to(DBSPExpression.class).ensureTree(compiler);

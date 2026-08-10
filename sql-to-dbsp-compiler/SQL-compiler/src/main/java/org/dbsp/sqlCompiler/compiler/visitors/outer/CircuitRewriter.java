@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
@@ -75,6 +76,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregator;
@@ -975,6 +977,13 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 toAdd = new DBSPDeclaration(item);
         }
         this.getUnderConstructionCircuit().addDeclaration(toAdd);
+    }
+
+    @Override
+    public Token startVisit(IDBSPOuterNode circuit) {
+        if (circuit.is(DBSPCircuit.class))
+            this.transform.setCircuitContext(circuit.to(DBSPCircuit.class));
+        return super.startVisit(circuit);
     }
 
     @Override
