@@ -1641,20 +1641,20 @@ impl InputEndpointMetrics {
             num_transport_errors: self.num_transport_errors.load(Ordering::Relaxed),
             num_parse_errors: self.num_parse_errors.load(Ordering::Relaxed),
             end_of_input: self.end_of_input.load(Ordering::Relaxed),
-            processing_latency_p50_micros: self.processing_latency_p50_micros(),
+            processing_latency_p99_micros: self.processing_latency_p99_micros(),
         }
     }
 
-    /// Median processing latency in microseconds over the sliding histogram's
-    /// window, or `None` if the endpoint has no samples. See
-    /// [`ExternalInputEndpointMetrics::processing_latency_p50_micros`] for what
+    /// 99th percentile processing latency in microseconds over the sliding
+    /// histogram's window, or `None` if the endpoint has no samples. See
+    /// [`ExternalInputEndpointMetrics::processing_latency_p99_micros`] for what
     /// the window covers.
-    fn processing_latency_p50_micros(&self) -> Option<u64> {
+    fn processing_latency_p99_micros(&self) -> Option<u64> {
         self.processing_latency_micros_histogram
             .lock()
             .ok()?
             .snapshot()
-            .quantile(0.5)
+            .quantile(0.99)
     }
 }
 
@@ -3045,27 +3045,65 @@ mod test {
     use super::InputEndpointMetrics;
 
     #[test]
-    fn latency_p50_absent_without_samples() {
+    fn latency_p99_absent_without_samples() {
         let metrics = InputEndpointMetrics::default();
-        assert_eq!(metrics.to_api_type().processing_latency_p50_micros, None);
+        assert_eq!(metrics.to_api_type().processing_latency_p99_micros, None);
     }
 
     #[test]
-    fn latency_p50_reports_median_bucket() {
+    fn latency_p99_reports_uniform_bucket() {
         let metrics = InputEndpointMetrics::default();
         {
             let mut histogram = metrics.processing_latency_micros_histogram.lock().unwrap();
-            // 60 fast samples against 40 slow ones puts the median in the fast band.
-            for _ in 0..60 {
+            for _ in 0..100 {
                 histogram.record(1_500u64);
-            }
-            for _ in 0..40 {
-                histogram.record(250_000u64);
             }
         }
         // Bucket [1000, 1999] holds 1_500, and `quantile` reports its lower bound.
         assert_eq!(
-            metrics.to_api_type().processing_latency_p50_micros,
+            metrics.to_api_type().processing_latency_p99_micros,
+            Some(1_000)
+        );
+    }
+
+    /// Guards against reporting the median, which hides the slow tail the
+    /// column exists to surface.
+    #[test]
+    fn latency_p99_reports_slow_tail_not_median() {
+        let metrics = InputEndpointMetrics::default();
+        {
+            let mut histogram = metrics.processing_latency_micros_histogram.lock().unwrap();
+            // 90 fast samples against 10 slow ones: the median sits in the fast
+            // band, rank 99 (ceil(0.99 * 100)) lands in the slow one.
+            for _ in 0..90 {
+                histogram.record(1_500u64);
+            }
+            for _ in 0..10 {
+                histogram.record(250_000u64);
+            }
+        }
+        // Bucket [200000, 299999] holds 250_000, and `quantile` reports its
+        // lower bound. A median would report 1_000 here.
+        assert_eq!(
+            metrics.to_api_type().processing_latency_p99_micros,
+            Some(200_000)
+        );
+    }
+
+    /// Documents the known limit of a percentile over few samples: one slow
+    /// batch in a hundred stays below rank 99.
+    #[test]
+    fn latency_p99_misses_lone_outlier() {
+        let metrics = InputEndpointMetrics::default();
+        {
+            let mut histogram = metrics.processing_latency_micros_histogram.lock().unwrap();
+            for _ in 0..99 {
+                histogram.record(1_500u64);
+            }
+            histogram.record(250_000u64);
+        }
+        assert_eq!(
+            metrics.to_api_type().processing_latency_p99_micros,
             Some(1_000)
         );
     }
@@ -3073,13 +3111,13 @@ mod test {
     /// Guards against reporting the completion histogram, which tracks a
     /// different span and would silently change the column's meaning.
     #[test]
-    fn latency_p50_ignores_completion_histogram() {
+    fn latency_p99_ignores_completion_histogram() {
         let metrics = InputEndpointMetrics::default();
         metrics
             .completion_latency_micros_histogram
             .lock()
             .unwrap()
             .record(750_000u64);
-        assert_eq!(metrics.to_api_type().processing_latency_p50_micros, None);
+        assert_eq!(metrics.to_api_type().processing_latency_p99_micros, None);
     }
 }

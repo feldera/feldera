@@ -54,8 +54,9 @@ export type PipelineMetrics = typeof emptyPipelineMetrics & { lastTimestamp?: nu
 /**
  * Higher of two connector latencies, ignoring connectors without samples.
  *
- * A relation's row summarizes its connectors, and medians cannot be summed or
- * averaged into another median. The slowest connector is reported instead.
+ * A relation's row summarizes its connectors, and percentiles cannot be summed
+ * or averaged into another percentile. The slowest connector is reported
+ * instead.
  */
 const slowestLatency = (
   a: number | null | undefined,
@@ -128,9 +129,9 @@ export const accumulatePipelineMetrics =
                       num_parse_errors: acc.num_parse_errors + metrics.num_parse_errors,
                       end_of_input: acc.end_of_input && metrics.end_of_input,
                       buffered_bytes: acc.buffered_bytes + metrics.buffered_bytes,
-                      processing_latency_p50_micros: slowestLatency(
-                        acc.processing_latency_p50_micros,
-                        metrics.processing_latency_p50_micros
+                      processing_latency_p99_micros: slowestLatency(
+                        acc.processing_latency_p99_micros,
+                        metrics.processing_latency_p99_micros
                       )
                     }
                   },
@@ -142,7 +143,7 @@ export const accumulatePipelineMetrics =
                     num_transport_errors: 0,
                     num_parse_errors: 0,
                     end_of_input: true,
-                    processing_latency_p50_micros: undefined
+                    processing_latency_p99_micros: undefined
                   }
                 )
               }

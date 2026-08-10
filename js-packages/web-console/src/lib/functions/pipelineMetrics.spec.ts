@@ -67,7 +67,7 @@ describe('accumulatePipelineMetrics latency aggregate', () => {
         num_transport_errors: 0,
         num_parse_errors: 0,
         end_of_input: false,
-        processing_latency_p50_micros: latency
+        processing_latency_p99_micros: latency
       },
       paused: false,
       barrier: false,
@@ -84,9 +84,9 @@ describe('accumulatePipelineMetrics latency aggregate', () => {
         inputs,
         outputs: []
       } as unknown as ControllerStatus
-    })!.tables.get(relation)!.aggregate.metrics.processing_latency_p50_micros
+    })!.tables.get(relation)!.aggregate.metrics.processing_latency_p99_micros
 
-  it('reports the slowest connector rather than the sum of medians', () => {
+  it('reports the slowest connector rather than the sum of percentiles', () => {
     const latency = aggregateLatency([
       inputStatus('orders', 'c1', 2_000),
       inputStatus('orders', 'c2', 8_000)

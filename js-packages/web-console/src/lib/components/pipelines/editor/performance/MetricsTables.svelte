@@ -38,7 +38,7 @@
   const inputLatencyScale = $derived(
     latencyColorScale(
       [...metrics.current.tables.values()].flatMap((data) =>
-        data.connectors.map((connector) => connector.metrics.processing_latency_p50_micros)
+        data.connectors.map((connector) => connector.metrics.processing_latency_p99_micros)
       ),
       defaultLatencyColorSpread
     )
@@ -370,15 +370,16 @@
     <th class="pb-0! text-center! font-normal" colspan="2">Buffered</th>
     <th class="font-normal 2xl:text-nowrap" rowspan="2">
       <span class="inline-flex cursor-help items-center gap-1">
-        Latency p50
+        Latency p99
         <span
           data-testid="box-icon-latency-help"
           class="fd fd-circle-help text-[16px] leading-none text-surface-600-400"
         ></span>
       </span>
       <Tooltip placement="top" class="max-w-sm text-wrap"
-        >Median time from ingesting a batch of records to the circuit finishing processing it, taken
-        over the last 10 minutes. Colored relative to the other connectors — red marks the slowest.</Tooltip
+        >99th percentile time from ingesting a batch of records to the circuit finishing processing
+        it, taken over the last 10 minutes. Colored relative to the other connectors — red marks the
+        slowest.</Tooltip
       >
     </th>
     <th class="font-normal 2xl:text-nowrap" rowspan="2">Parse errors</th>
@@ -406,10 +407,10 @@
   >
   <td class="text-end font-dm-mono text-nowrap">{formatQty(m.buffered_records)}</td>
   <td class="text-end font-dm-mono text-nowrap">{humanSize(m.buffered_bytes)}</td>
-  <td class="text-end font-dm-mono text-nowrap" data-testid="box-input-latency-p50">
-    {#if typeof m.processing_latency_p50_micros === 'number'}
-      <span style:color={latencyColor(m.processing_latency_p50_micros, inputLatencyScale)}>
-        {formatDuration(m.processing_latency_p50_micros)}
+  <td class="text-end font-dm-mono text-nowrap" data-testid="box-input-latency-p99">
+    {#if typeof m.processing_latency_p99_micros === 'number'}
+      <span style:color={latencyColor(m.processing_latency_p99_micros, inputLatencyScale)}>
+        {formatDuration(m.processing_latency_p99_micros)}
       </span>
     {:else}
       <span class="text-surface-500">—</span>

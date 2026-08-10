@@ -11159,10 +11159,10 @@
             "description": "Number of transport errors.",
             "minimum": 0
           },
-          "processing_latency_p50_micros": {
+          "processing_latency_p99_micros": {
             "type": "integer",
             "format": "int64",
-            "description": "Median processing latency (from ingesting a batch to finishing processing it) in microseconds.\n\nThe time from ingesting a batch of records off the wire\nto the circuit finishing processing them,\ncovering parsing, queuing, and the circuit step.\n\nDoes not account for completion latency.\n\nTaken over the endpoint's sliding histogram, which holds the 10,000 most\nrecent samples spanning at most 10 minutes, whichever bound is reached\nfirst. One sample is recorded per completed batch. An endpoint that stops\ningesting keeps reporting its last known latency instead of dropping to\n`None`.\n\n`None` until the endpoint records its first sample.",
+            "description": "99th percentile processing latency (from ingesting a batch to finishing processing it) in microseconds.\n\nThe time from ingesting a batch of records off the wire\nto the circuit finishing processing them,\ncovering parsing, queuing, and the circuit step.\n\nDoes not account for completion latency.\n\nTaken over the endpoint's sliding histogram, which holds the 10,000 most\nrecent samples spanning at most 10 minutes, whichever bound is reached\nfirst. One sample is recorded per completed batch. An endpoint that stops\ningesting keeps reporting its last known latency instead of dropping to\n`None`.\n\n`None` until the endpoint records its first sample.",
             "nullable": true,
             "minimum": 0
           },

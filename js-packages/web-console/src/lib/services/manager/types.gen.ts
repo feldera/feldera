@@ -2723,7 +2723,7 @@ export type InputEndpointMetrics = {
    */
   num_transport_errors: number
   /**
-   * Median processing latency (from ingesting a batch to finishing processing it) in microseconds.
+   * 99th percentile processing latency (from ingesting a batch to finishing processing it) in microseconds.
    *
    * The time from ingesting a batch of records off the wire
    * to the circuit finishing processing them,
@@ -2739,7 +2739,7 @@ export type InputEndpointMetrics = {
    *
    * `None` until the endpoint records its first sample.
    */
-  processing_latency_p50_micros?: number | null
+  processing_latency_p99_micros?: number | null
   /**
    * Total bytes pushed to the endpoint since it was created.
    */
