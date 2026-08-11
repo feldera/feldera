@@ -14,6 +14,8 @@ use feldera_types::serde_with_context::{
 use flate2::read::GzDecoder;
 use hex::ToHex;
 use md5::{Digest, Md5};
+use rkyv::ser::Serializer as RkyvSerializer;
+use rkyv::vec::ArchivedVec;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{Error as _, Visitor},
@@ -46,7 +48,6 @@ type CompactVec = SmallVec<[u8; THRESHOLD]>;
     Serialize,
     Deserialize,
     rkyv::Archive,
-    rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
 )]
@@ -54,6 +55,19 @@ type CompactVec = SmallVec<[u8; THRESHOLD]>;
 #[serde(transparent)]
 pub struct ByteArray {
     data: CompactVec,
+}
+
+// rkyv::Serialize is hand written rather than derived so that the payload is
+// copied in one bulk write. The derived impl delegates to SmallVec's, which
+// resolves the bytes element by element, one write call per byte, and measured
+// 47x slower on a 16 KiB value.
+impl<S: RkyvSerializer + ?Sized> rkyv::Serialize<S> for ByteArray {
+    fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        // SAFETY: a byte is trivially copyable, has no padding, and archives as
+        // itself, so the copy is exactly the payload.
+        let data = unsafe { ArchivedVec::serialize_copy_from_slice(&self.data, serializer)? };
+        Ok(ByteArrayResolver { data })
+    }
 }
 
 impl SizeOf for ByteArray {
@@ -200,6 +214,37 @@ mod test_binary_deserializer {
             serde_json::from_slice::<serde_json::Value>(&reencoded).unwrap(),
             serde_json::Value::String(encoded.to_string())
         );
+    }
+}
+
+#[cfg(test)]
+mod test_binary_rkyv {
+    use super::{ByteArray, THRESHOLD};
+
+    /// The archived form holds the payload verbatim. `Serialize` copies it in
+    /// bulk through an unsafe rkyv entry point, so pin the bytes themselves
+    /// rather than only the value a round trip recovers: a copy that drops or
+    /// shifts bytes can still deserialize equal when the bytes it mangles
+    /// happen to match rkyv's alignment padding.
+    #[test]
+    fn rkyv_archives_the_payload_verbatim() {
+        // Inline, exactly at the spill point, and heap allocated.
+        for length in [0, 1, THRESHOLD, THRESHOLD + 1, 4096] {
+            let payload: Vec<u8> = (0..length).map(|i| (i * 7 + 1) as u8).collect();
+            let array = ByteArray::new(&payload);
+
+            let serialized = dbsp::storage::file::to_bytes(&array).unwrap();
+            // SAFETY: the bytes come from serializing `array` just above.
+            let archived = unsafe { rkyv::archived_root::<ByteArray>(&serialized) };
+            assert_eq!(
+                archived.data.as_slice(),
+                payload.as_slice(),
+                "length {length}"
+            );
+
+            let restored: ByteArray = dbsp::trace::aligned_deserialize(&serialized[..]);
+            assert_eq!(restored, array, "length {length}");
+        }
     }
 }
 
