@@ -140,7 +140,10 @@ pub struct Fingerprint(u64);
 /// `Example`/`Default`/`Title`/`Format`/`ValueType`/`As`/`Deprecated` on one),
 /// so this is hand-written to advertise the `0..2**53` invariant.
 impl<'__s> utoipa::ToSchema<'__s> for Fingerprint {
-    fn schema() -> (&'__s str, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>) {
+    fn schema() -> (
+        &'__s str,
+        utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+    ) {
         (
             "Fingerprint",
             utoipa::openapi::ObjectBuilder::new()
@@ -435,7 +438,10 @@ mod tests {
     /// existing REST clients that expect a plain number keep working.
     #[test]
     fn fingerprint_serializes_as_plain_integer() {
-        assert_eq!(serde_json::to_string(&Fingerprint::new(123)).unwrap(), "123");
+        assert_eq!(
+            serde_json::to_string(&Fingerprint::new(123)).unwrap(),
+            "123"
+        );
     }
 
     #[cfg(feature = "testing")]
