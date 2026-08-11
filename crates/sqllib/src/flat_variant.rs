@@ -1111,7 +1111,12 @@ impl rkyv::Archive for FlatVariant {
 
 impl<S: ScratchSpace + RkyvSerializer + ?Sized> rkyv::Serialize<S> for FlatVariant {
     fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        ArchivedVec::serialize_from_slice(self.as_bytes(), serializer)
+        // SAFETY: a byte is trivially copyable, has no padding, and archives as
+        // itself, so the copy is exactly the encoding. The safe
+        // `serialize_from_slice` resolves a slice element by element, one
+        // `write` call per byte, which measured 60x slower on a 16 KiB document
+        // (`benches/flat_variant_serialize.rs`).
+        unsafe { ArchivedVec::serialize_copy_from_slice(self.as_bytes(), serializer) }
     }
 }
 
@@ -1594,6 +1599,21 @@ mod tests {
             let new = a2.index_string(&key);
             prop_assert_eq!(&Variant::from(&new), &old);
         }
+    }
+
+    /// The archived form is the encoding verbatim. `Serialize` copies the
+    /// document in bulk through an unsafe rkyv entry point, so pin the bytes
+    /// themselves rather than only the value a round trip recovers: a copy that
+    /// drops or shifts bytes can still deserialize equal when the bytes it
+    /// mangles happen to match rkyv's alignment padding.
+    #[test]
+    fn rkyv_archives_the_encoding_verbatim() {
+        let document: FlatVariant =
+            serde_json::from_str(r#"{"a":{"b":[1,2.5,"three",null,true]},"z":"tail"}"#).unwrap();
+        let bytes = dbsp::storage::file::to_bytes(&document).unwrap();
+        // SAFETY: the bytes come from serializing `document` just above.
+        let archived = unsafe { rkyv::archived_root::<FlatVariant>(&bytes) };
+        assert_eq!(archived.as_bytes(), document.as_bytes());
     }
 
     /// The MAP cast must treat a JSON null member exactly like the enum
