@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fmt::Display, time::Duration};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -119,13 +119,87 @@ pub struct CheckpointMetadata {
     /// An optional name for the checkpoint.
     pub identifier: Option<String>,
     /// Fingerprint of the circuit at the time of the checkpoint.
-    pub fingerprint: u64,
+    #[schema(inline)]
+    pub fingerprint: Fingerprint,
     /// Total size of the checkpoint files in bytes.
     pub size: Option<u64>,
     /// Total number of steps made.
     pub steps: Option<u64>,
     /// Total number of records processed.
     pub processed_records: Option<u64>,
+}
+
+/// Fingerprint for a checkpoint.
+///
+/// Fingerprints are intentionally limited to the range `0..2**53` to be in the
+/// safe integer range for JavaScript.
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Fingerprint(u64);
+
+/// The derive can't express `maximum` for a tuple struct (utoipa only allows
+/// `Example`/`Default`/`Title`/`Format`/`ValueType`/`As`/`Deprecated` on one),
+/// so this is hand-written to advertise the `0..2**53` invariant.
+impl<'__s> utoipa::ToSchema<'__s> for Fingerprint {
+    fn schema() -> (&'__s str, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>) {
+        (
+            "Fingerprint",
+            utoipa::openapi::ObjectBuilder::new()
+                .schema_type(utoipa::openapi::SchemaType::Integer)
+                .format(Some(utoipa::openapi::SchemaFormat::KnownFormat(
+                    utoipa::openapi::KnownFormat::Int64,
+                )))
+                .minimum(Some(0.0))
+                .maximum(Some(9007199254740991.0)) // 2**53 - 1
+                .description(Some(
+                    "Fingerprint of the circuit at the time of the checkpoint, \
+                     limited to 0..2**53 to stay within JavaScript's safe integer range.",
+                ))
+                .into(),
+        )
+    }
+}
+
+impl Display for Fingerprint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl From<u64> for Fingerprint {
+    fn from(value: u64) -> Self {
+        Self(value & ((1 << 53) - 1))
+    }
+}
+
+impl Fingerprint {
+    /// Returns a `Fingerprint` with the given value, masking off the high bits
+    /// to put it in in the correct range.
+    pub fn new(value: u64) -> Self {
+        value.into()
+    }
+
+    /// Returns the fingerprint's value, in the range `0..2**53`.
+    pub fn value(&self) -> u64 {
+        self.0
+    }
+}
+
+impl Serialize for Fingerprint {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Fingerprint {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(Self::new(u64::deserialize(deserializer)?))
+    }
 }
 
 /// Identifies a host within a multihost pipeline.
@@ -326,5 +400,69 @@ mod tests {
             .prefix(),
             "host42"
         );
+    }
+
+    /// Boundary values around the 2**53 cutoff must mask exactly at the
+    /// cutoff, not one-off.
+    #[test]
+    fn fingerprint_new_masks_high_bits() {
+        assert_eq!(Fingerprint::new(0).value(), 0);
+        assert_eq!(Fingerprint::new(42).value(), 42);
+        assert_eq!(Fingerprint::new((1 << 53) - 1).value(), (1 << 53) - 1);
+        assert_eq!(Fingerprint::new(1 << 53).value(), 0);
+        assert_eq!(Fingerprint::new(u64::MAX).value(), (1 << 53) - 1);
+    }
+
+    /// Reproduces issue #6841: a fingerprint above `i64::MAX`, as found in a
+    /// checkpoint written before this masking existed (or synced from an
+    /// older host), must still deserialize into the safe range so that
+    /// re-serializing it over the REST API stays parseable by an `i64`
+    /// client such as `fda`. Loading it through `serde` (not just
+    /// `Fingerprint::new`) is the point: that's the path a stored checkpoint
+    /// list actually takes on startup.
+    #[test]
+    fn fingerprint_deserialize_masks_out_of_range_value() {
+        let raw = "14128757731148314856"; // from the issue's repro, exceeds i64::MAX
+        let fp: Fingerprint = serde_json::from_str(raw).unwrap();
+        assert_eq!(fp.value(), 5469299714439400);
+        assert!(fp.value() <= i64::MAX as u64);
+
+        // Re-serializing must not resurrect the original out-of-range value.
+        assert_eq!(serde_json::to_string(&fp).unwrap(), "5469299714439400");
+    }
+
+    /// Fingerprint serializes as a bare integer, not `{"0": ...}`, so
+    /// existing REST clients that expect a plain number keep working.
+    #[test]
+    fn fingerprint_serializes_as_plain_integer() {
+        assert_eq!(serde_json::to_string(&Fingerprint::new(123)).unwrap(), "123");
+    }
+
+    #[cfg(feature = "testing")]
+    mod fingerprint_proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Every raw hash, however the high bits are set, must mask down
+            /// into the JS-safe range and keep its low 53 bits intact.
+            #[test]
+            fn new_stays_in_safe_range(raw in any::<u64>()) {
+                let fp = Fingerprint::new(raw);
+                prop_assert!(fp.value() < (1u64 << 53));
+                prop_assert_eq!(fp.value(), raw & ((1u64 << 53) - 1));
+            }
+
+            /// Values already inside the safe range round-trip through JSON
+            /// unchanged, which is what makes the masking a no-op for the
+            /// common case.
+            #[test]
+            fn json_round_trips_in_range(raw in 0..(1u64 << 53)) {
+                let fp = Fingerprint::new(raw);
+                let json = serde_json::to_string(&fp).unwrap();
+                let back: Fingerprint = serde_json::from_str(&json).unwrap();
+                prop_assert_eq!(back.value(), raw);
+            }
+        }
     }
 }

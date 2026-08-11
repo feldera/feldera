@@ -6,7 +6,7 @@ use crate::storage::file::SerializerInner;
 use crate::{Error, NumEntries, TypedBox};
 use enum_map::{Enum, EnumMap};
 use feldera_types::checkpoint::{
-    CheckpointDependencies, CheckpointDependenciesWrite, CheckpointMetadata,
+    CheckpointDependencies, CheckpointDependenciesWrite, CheckpointMetadata, Fingerprint,
 };
 use feldera_types::constants::{
     ACTIVATION_MARKER_FILE, CHECKPOINT_DEPENDENCIES, CHECKPOINT_FILE_NAME, DATAFUSION_TEMP_DIR,
@@ -64,7 +64,7 @@ impl Checkpointer {
     }
 
     /// Verifies that existing checkpoints have the specified fingerprint.
-    pub fn verify_fingerprint(&self, fingerprint: u64) -> Result<(), Error> {
+    pub fn verify_fingerprint(&self, fingerprint: Fingerprint) -> Result<(), Error> {
         if self
             .checkpoint_list
             .iter()
@@ -348,7 +348,7 @@ impl Checkpointer {
     pub(super) fn commit(
         &mut self,
         uuid: Uuid,
-        fingerprint: u64,
+        fingerprint: Fingerprint,
         identifier: Option<String>,
         steps: Option<u64>,
         processed_records: Option<u64>,
@@ -745,6 +745,7 @@ mod test {
     use std::sync::Arc;
 
     use feldera_storage::{DirEntry, StorageBackend, StoragePath};
+    use feldera_types::checkpoint::Fingerprint;
     use feldera_types::config::{FileBackendConfig, StorageCacheConfig};
     use feldera_types::constants::CHECKPOINT_FILE_NAME;
     use itertools::Itertools;
@@ -837,7 +838,7 @@ mod test {
         std::fs::write(&state_file, b"spine state").unwrap();
 
         checkpointer
-            .commit(uuid, 0, None, Some(0), Some(0))
+            .commit(uuid, Fingerprint::default(), None, Some(0), Some(0))
             .unwrap();
         drop(checkpointer);
 
@@ -922,7 +923,7 @@ mod test {
         .unwrap();
 
         checkpointer
-            .commit(uuid, 0, None, Some(0), Some(0))
+            .commit(uuid, Fingerprint::default(), None, Some(0), Some(0))
             .unwrap();
         drop(checkpointer);
 
@@ -985,7 +986,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         .unwrap();
 
         checkpointer
-            .commit(uuid, 0, None, Some(0), Some(0))
+            .commit(uuid, Fingerprint::default(), None, Some(0), Some(0))
             .unwrap();
         drop(checkpointer);
 
@@ -1023,7 +1024,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
             .map(|i| {
                 let uuid = uuid::Uuid::now_v7();
                 checkpointer
-                    .commit(uuid, 0, None, Some(i as u64), Some(0))
+                    .commit(uuid, Fingerprint::default(), None, Some(i as u64), Some(0))
                     .unwrap();
                 uuid
             })
@@ -1067,7 +1068,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         for i in 0..Checkpointer::MIN_CHECKPOINT_THRESHOLD + 1 {
             let uuid = uuid::Uuid::now_v7();
             checkpointer
-                .commit(uuid, 0, None, Some(i as u64), Some(0))
+                .commit(uuid, Fingerprint::default(), None, Some(i as u64), Some(0))
                 .unwrap();
             uuids.push(uuid);
         }
@@ -1105,7 +1106,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         let mut checkpointer = Checkpointer::new(make_backend()).unwrap();
         let uuid = uuid::Uuid::now_v7();
         checkpointer
-            .commit(uuid, 0, None, Some(0), Some(0))
+            .commit(uuid, Fingerprint::default(), None, Some(0), Some(0))
             .unwrap();
         drop(checkpointer);
 
@@ -1143,7 +1144,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         let mut checkpointer = Checkpointer::new(backend).unwrap();
 
         let uuid = uuid::Uuid::now_v7();
-        let result = checkpointer.commit(uuid, 0, None, Some(0), Some(0));
+        let result = checkpointer.commit(uuid, Fingerprint::default(), None, Some(0), Some(0));
         assert!(
             result.is_err(),
             "commit should fail when catalog write fails"
@@ -1218,7 +1219,13 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
 
             for i in 0..Checkpointer::MIN_CHECKPOINT_THRESHOLD {
                 self.checkpointer
-                    .commit(uuid::Uuid::now_v7(), 0, None, Some(i as u64), Some(0))
+                    .commit(
+                        uuid::Uuid::now_v7(),
+                        Fingerprint::default(),
+                        None,
+                        Some(i as u64),
+                        Some(0),
+                    )
                     .unwrap();
             }
 
@@ -1245,7 +1252,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
 
             let uuid = uuid::Uuid::now_v7();
             self.checkpointer
-                .commit(uuid, 0, None, Some(2), Some(0))
+                .commit(uuid, Fingerprint::default(), None, Some(2), Some(0))
                 .unwrap();
 
             TestState::<ExtraCheckpoints> {
@@ -1269,7 +1276,13 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
             self.precondition();
 
             self.checkpointer
-                .commit(uuid::Uuid::now_v7(), 0, None, Some(3), Some(0))
+                .commit(
+                    uuid::Uuid::now_v7(),
+                    Fingerprint::default(),
+                    None,
+                    Some(3),
+                    Some(0),
+                )
                 .unwrap();
 
             TestState::<ExtraCheckpoints> {

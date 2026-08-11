@@ -63,6 +63,7 @@ use dyn_clone::{DynClone, clone_box};
 use feldera_ir::{LirCircuit, LirNodeId};
 use feldera_samply::Span;
 use feldera_storage::{FileCommitter, StoragePath};
+use feldera_types::checkpoint::Fingerprint;
 use itertools::Itertools;
 use nix::{
     sys::time::TimeValLike,
@@ -7363,7 +7364,7 @@ where
             Ok(())
         });
 
-        (named > 0).then(|| format!("scope-{:016x}", fingerprint.finish()))
+        (named > 0).then(|| format!("scope-{:016x}", fingerprint.finish_raw()))
     }
 
     /// Absolute path of the file holding this subcircuit's clock.
@@ -8756,7 +8757,7 @@ impl CircuitHandle {
         Ok(())
     }
 
-    pub fn fingerprint(&self) -> u64 {
+    pub fn fingerprint(&self) -> Fingerprint {
         let mut fip = Fingerprinter::default();
         let _ = self.circuit.map_nodes_recursive(&mut |node: &dyn Node| {
             node.fingerprint(&mut fip);

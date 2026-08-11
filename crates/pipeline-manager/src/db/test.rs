@@ -41,7 +41,7 @@ use crate::oidc::destination::{TenantIssuerPolicy, validate_tenant_oidc_url};
 use crate::oidc::trust_name::validate_oidc_trust_name;
 use async_trait::async_trait;
 use chrono::{DateTime, TimeZone, Utc};
-use feldera_types::checkpoint::CheckpointMetadata;
+use feldera_types::checkpoint::{CheckpointMetadata, Fingerprint};
 use feldera_types::config::{
     DevTweaks, FtConfig, PipelineConfig, ProgramIr, ResourceConfig, RuntimeConfig,
 };
@@ -737,7 +737,7 @@ fn limited_optional_storage_status_details() -> impl Strategy<Value = Option<ser
             let checkpoints = vec![CheckpointMetadata {
                 uuid: Default::default(),
                 identifier: None,
-                fingerprint: 0,
+                fingerprint: Fingerprint::default(),
                 size: None,
                 steps: Some(v.1),
                 processed_records: None,
@@ -3434,7 +3434,7 @@ async fn pipeline_deployment() {
             checkpoints: vec![CheckpointMetadata {
                 uuid: Default::default(),
                 identifier: None,
-                fingerprint: 456,
+                fingerprint: Fingerprint::new(456),
                 size: None,
                 steps: None,
                 processed_records: None,
@@ -3475,7 +3475,7 @@ async fn pipeline_deployment() {
             checkpoints: vec![CheckpointMetadata {
                 uuid: Default::default(),
                 identifier: None,
-                fingerprint: 123,
+                fingerprint: Fingerprint::new(123),
                 size: None,
                 steps: None,
                 processed_records: None,

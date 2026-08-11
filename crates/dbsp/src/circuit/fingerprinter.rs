@@ -4,6 +4,8 @@
 //! `std::hash::DefaultHasher` is not used because it is not stable beyond the
 //! current rust release.
 
+use feldera_types::checkpoint::Fingerprint;
+
 pub struct Fingerprinter {
     // The fingerprint of the circuit.
     hash: u64,
@@ -29,7 +31,15 @@ impl Fingerprinter {
         self.hash
     }
 
-    pub fn finish(self) -> u64 {
+    /// Returns the raw fingerprint for the circuit.  DBSP uses this raw value
+    /// internally for persistent IDs.
+    pub fn finish_raw(self) -> u64 {
         self.hash
+    }
+
+    /// Returns the [Fingerprint] for the circuit, which is the type exposed
+    /// externally.
+    pub fn finish(self) -> Fingerprint {
+        self.finish_raw().into()
     }
 }

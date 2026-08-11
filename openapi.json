@@ -8476,7 +8476,8 @@
           "fingerprint": {
             "type": "integer",
             "format": "int64",
-            "description": "Fingerprint of the circuit at the time of the checkpoint.",
+            "description": "Fingerprint of the circuit at the time of the checkpoint, limited to 0..2**53 to stay within JavaScript's safe integer range.",
+            "maximum": 9007199254740991,
             "minimum": 0
           },
           "identifier": {

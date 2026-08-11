@@ -16,7 +16,7 @@ use crossbeam::channel::{Receiver, Select, Sender, TryRecvError, bounded};
 use feldera_buffer_cache::ThreadType;
 use feldera_ir::LirCircuit;
 use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
-use feldera_types::checkpoint::CheckpointMetadata;
+use feldera_types::checkpoint::{CheckpointMetadata, Fingerprint};
 use feldera_types::config::DevTweaks;
 use feldera_types::config::dev_tweaks::{BufferCacheAllocationStrategy, BufferCacheStrategy};
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
@@ -1371,7 +1371,7 @@ pub struct DBSPHandle {
     checkpointer: Option<Arc<Mutex<Checkpointer>>>,
 
     /// Circuit fingerprint.
-    fingerprint: u64,
+    fingerprint: Fingerprint,
 
     /// Information about operators that participate in bootstrapping the new parts of the circuit.
     bootstrap_info: Option<BootstrapInfo>,
@@ -1444,7 +1444,7 @@ impl DBSPHandle {
         runtime: RuntimeHandle,
         command_senders: Vec<Sender<Command>>,
         status_receivers: Vec<Receiver<Result<Response, DbspError>>>,
-        fingerprint: u64,
+        fingerprint: Fingerprint,
     ) -> Result<Self, DbspError> {
         // TODO: We allow the circuit to change between suspend and resume in Persistent mode;
         // we therefore only validate the fingerprint in ephemeral mode; however it can sometimes
@@ -2211,7 +2211,7 @@ impl DBSPHandle {
     }
 
     /// Fingerprint of this circuit.
-    pub fn fingerprint(&self) -> u64 {
+    pub fn fingerprint(&self) -> Fingerprint {
         self.fingerprint
     }
 
@@ -2680,7 +2680,7 @@ pub struct CheckpointCommitter {
     checkpointer: Arc<Mutex<Checkpointer>>,
     uuid: Uuid,
     readers: Vec<Vec<Arc<dyn FileCommitter>>>,
-    fingerprint: u64,
+    fingerprint: Fingerprint,
     name: Option<String>,
     steps: Option<u64>,
     processed_records: Option<u64>,
