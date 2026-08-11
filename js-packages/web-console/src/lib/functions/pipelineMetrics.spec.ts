@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ControllerStatus, InputEndpointStatus } from '$lib/services/manager'
 import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
+import { formatDuration } from './format'
 import {
   accumulatePipelineMetrics,
   multihostMemoryLimitMb,
@@ -106,5 +107,11 @@ describe('accumulatePipelineMetrics latency aggregate', () => {
 
   it('passes the latency of a single connector through unchanged', () => {
     expect(aggregateLatency([inputStatus('orders', 'c1', 4_200)])).toBe(4_200)
+  })
+
+  it('brands the aggregate as a duration', () => {
+    // Typechecks only while the aggregate carries its unit: `formatDuration`
+    // takes `Microseconds`, not a bare number.
+    expect(formatDuration(aggregateLatency([inputStatus('orders', 'c1', 2_000)]))).toBe('2 ms')
   })
 })

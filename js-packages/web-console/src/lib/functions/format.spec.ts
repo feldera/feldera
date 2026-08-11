@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { microseconds } from './common/duration'
 import { formatDuration, formatQty } from './format'
 
 describe('formatQty', () => {
@@ -53,30 +54,46 @@ describe('formatQty', () => {
 
 describe('formatDuration', () => {
   it('renders zero without a unit', () => {
-    expect(formatDuration(0)).toBe('0')
+    expect(formatDuration(microseconds(0))).toBe('0')
   })
 
   it('uses microseconds below 1ms', () => {
-    expect(formatDuration(340)).toBe('340 µs')
-    expect(formatDuration(999)).toBe('999 µs')
+    expect(formatDuration(microseconds(340))).toBe('340 µs')
+    expect(formatDuration(microseconds(999))).toBe('999 µs')
   })
 
   it('switches to milliseconds at 1000µs', () => {
-    expect(formatDuration(1_000)).toBe('1 ms')
-    expect(formatDuration(1_200)).toBe('1.2 ms')
-    expect(formatDuration(12_500)).toBe('12.5 ms')
-    expect(formatDuration(340_000)).toBe('340 ms')
+    expect(formatDuration(microseconds(1_000))).toBe('1 ms')
+    expect(formatDuration(microseconds(1_200))).toBe('1.2 ms')
+    expect(formatDuration(microseconds(12_500))).toBe('12.5 ms')
+    expect(formatDuration(microseconds(340_000))).toBe('340 ms')
   })
 
   it('switches to seconds at 1_000_000µs', () => {
-    expect(formatDuration(1_000_000)).toBe('1 s')
-    expect(formatDuration(2_100_000)).toBe('2.1 s')
-    expect(formatDuration(90_000_000)).toBe('90 s')
+    expect(formatDuration(microseconds(1_000_000))).toBe('1 s')
+    expect(formatDuration(microseconds(2_100_000))).toBe('2.1 s')
+    expect(formatDuration(microseconds(90_000_000))).toBe('90 s')
   })
 
   it('returns an em dash for non-finite input', () => {
     expect(formatDuration(undefined)).toBe('—')
     expect(formatDuration(null)).toBe('—')
-    expect(formatDuration(NaN)).toBe('—')
+    expect(formatDuration(microseconds(NaN))).toBe('—')
+  })
+
+  it('passes a missing latency through to the em dash', () => {
+    // `microseconds` keeps null and undefined, so callers brand a nullable
+    // field without unwrapping it first.
+    expect(formatDuration(microseconds(null))).toBe('—')
+    expect(formatDuration(microseconds(undefined))).toBe('—')
+  })
+
+  it('rejects an unbranded number', () => {
+    // @ts-expect-error - durations must be branded with `microseconds`
+    const formatted = formatDuration(1_200)
+    // The rejection is compile-time only, so the call still formats. The guard
+    // is the directive above: svelte-check fails on an unused @ts-expect-error,
+    // which is what a widened signature would produce.
+    expect(formatted).toBe('1.2 ms')
   })
 })

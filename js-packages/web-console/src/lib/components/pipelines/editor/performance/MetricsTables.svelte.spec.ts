@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
+import { microseconds } from '$lib/functions/common/duration'
 import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
 import { accumulatePipelineMetrics } from '$lib/functions/pipelineMetrics'
 import type {
@@ -871,7 +872,7 @@ describe('MetricsTables.svelte', () => {
         [],
         [
           makeInputStatus('orders', {
-            metrics: makeInputMetrics({ processing_latency_p99_micros: 12_500 })
+            metrics: makeInputMetrics({ processing_latency_p99_micros: microseconds(12_500) })
           })
         ]
       )
@@ -893,11 +894,11 @@ describe('MetricsTables.svelte', () => {
         [
           makeInputStatus('fast', {
             endpoint_name: 'c-fast',
-            metrics: makeInputMetrics({ processing_latency_p99_micros: 1_000 })
+            metrics: makeInputMetrics({ processing_latency_p99_micros: microseconds(1_000) })
           }),
           makeInputStatus('slow', {
             endpoint_name: 'c-slow',
-            metrics: makeInputMetrics({ processing_latency_p99_micros: 9_000 })
+            metrics: makeInputMetrics({ processing_latency_p99_micros: microseconds(9_000) })
           })
         ]
       )
@@ -913,11 +914,11 @@ describe('MetricsTables.svelte', () => {
         [
           makeInputStatus('fast', {
             endpoint_name: 'c-fast',
-            metrics: makeInputMetrics({ processing_latency_p99_micros: 1_000 })
+            metrics: makeInputMetrics({ processing_latency_p99_micros: microseconds(1_000) })
           }),
           makeInputStatus('slow', {
             endpoint_name: 'c-slow',
-            metrics: makeInputMetrics({ processing_latency_p99_micros: 1_100 })
+            metrics: makeInputMetrics({ processing_latency_p99_micros: microseconds(1_100) })
           })
         ]
       )
@@ -934,11 +935,11 @@ describe('MetricsTables.svelte', () => {
         [
           makeInputStatus('orders', {
             endpoint_name: 'c1',
-            metrics: makeInputMetrics({ processing_latency_p99_micros: 2_000 })
+            metrics: makeInputMetrics({ processing_latency_p99_micros: microseconds(2_000) })
           }),
           makeInputStatus('orders', {
             endpoint_name: 'c2',
-            metrics: makeInputMetrics({ processing_latency_p99_micros: 8_000 })
+            metrics: makeInputMetrics({ processing_latency_p99_micros: microseconds(8_000) })
           })
         ]
       )
