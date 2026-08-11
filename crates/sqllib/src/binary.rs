@@ -72,7 +72,17 @@ impl<S: RkyvSerializer + ?Sized> rkyv::Serialize<S> for ByteArray {
 
 impl SizeOf for ByteArray {
     fn size_of_children(&self, context: &mut size_of::Context) {
-        self.data.size_of_children(context);
+        // `SmallVec` has no `SizeOf` impl, so delegating to `self.data` resolved
+        // to the one for `[u8]`, which walks the bytes and reports none of the
+        // buffer holding them: a spilled payload counted as zero, whatever its
+        // size. An inline payload needs nothing added, being part of
+        // `size_of::<ByteArray>()` already; a spilled one is one allocation,
+        // counted here the way `Vec` counts its own.
+        if self.data.spilled() {
+            context
+                .add_vectorlike(self.data.len(), self.data.capacity(), size_of::<u8>())
+                .add_distinct_allocation();
+        }
     }
 }
 
@@ -214,6 +224,45 @@ mod test_binary_deserializer {
             serde_json::from_slice::<serde_json::Value>(&reencoded).unwrap(),
             serde_json::Value::String(encoded.to_string())
         );
+    }
+}
+
+#[cfg(test)]
+mod test_binary_size_of {
+    use super::{ByteArray, THRESHOLD};
+    use size_of::SizeOf;
+    use std::mem::size_of;
+
+    /// A spilled payload is nearly the whole footprint of a large VARBINARY
+    /// value, and the batch spill accounting reads footprints through `SizeOf`,
+    /// so it has to be counted.
+    #[test]
+    fn size_of_counts_a_spilled_payload() {
+        let inline = ByteArray::new(&[7u8; THRESHOLD]);
+        assert!(!inline.data.spilled());
+        assert_eq!(inline.size_of().total_bytes(), size_of::<ByteArray>());
+        assert_eq!(inline.size_of().distinct_allocations(), 0);
+
+        // The payload is counted, and it scales with the payload rather than
+        // landing on some fixed overhead.
+        for length in [THRESHOLD + 1, 4096, 1 << 20] {
+            let spilled = ByteArray::new(&vec![7u8; length]);
+            assert!(spilled.data.spilled(), "length {length}");
+            assert_eq!(
+                spilled.size_of().total_bytes(),
+                size_of::<ByteArray>() + spilled.data.capacity(),
+                "length {length}"
+            );
+            assert!(
+                spilled.size_of().total_bytes() >= size_of::<ByteArray>() + length,
+                "length {length}"
+            );
+            assert_eq!(
+                spilled.size_of().distinct_allocations(),
+                1,
+                "length {length}"
+            );
+        }
     }
 }
 
