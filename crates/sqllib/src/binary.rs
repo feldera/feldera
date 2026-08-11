@@ -57,10 +57,10 @@ pub struct ByteArray {
     data: CompactVec,
 }
 
-// rkyv::Serialize is hand written rather than derived so that the payload is
-// copied in one bulk write. The derived impl delegates to SmallVec's, which
-// resolves the bytes element by element, one write call per byte, and measured
-// 47x slower on a 16 KiB value.
+/// Hand written rather than derived so that the payload is copied in one bulk
+/// write. The derived impl delegates to `SmallVec`'s, which resolves the bytes
+/// element by element, one `write` call per byte, and measured 47x slower on a
+/// 16 KiB value.
 impl<S: RkyvSerializer + ?Sized> rkyv::Serialize<S> for ByteArray {
     fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
         // SAFETY: a byte is trivially copyable, has no padding, and archives as

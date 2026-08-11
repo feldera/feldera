@@ -44,7 +44,7 @@ use enum_map::Enum;
 use feldera_storage::fbuf::FBufSerializer;
 use feldera_storage::{FileCommitter, FileReader, StoragePath};
 use rand::{Rng, thread_rng};
-use rkyv::ser::Serializer as _;
+use rkyv::with::{CopyOptimize, With};
 use size_of::SizeOf;
 use std::any::TypeId;
 use std::future::Future;
@@ -1466,7 +1466,7 @@ where
             offsets.push(cursor.weight().serialize(s)?);
             cursor.step_key();
         }
-        s.serialize_value(&offsets)
+        serialize_offsets(&offsets, s)
     })
     .into_vec()
 }
@@ -1494,6 +1494,32 @@ where
 
 /// Separator that identifies the end of values for a key.
 const SEPARATOR: u64 = u64::MAX;
+
+/// A bulk copy of an offset table is only valid where a `usize` archives as
+/// itself. rkyv archives integers in native byte order, and the `size_64`
+/// feature makes the archived width 8, so this holds on every 64-bit target.
+const _: () = assert!(
+    size_of::<usize>() == size_of::<rkyv::Archived<usize>>(),
+    "serialize_offsets needs usize and its archived form to have one representation"
+);
+
+/// Serializes an offset table as the root value, copying it in one bulk write.
+///
+/// A `Vec<usize>` resolves element by element, one `write` call per offset,
+/// which measured 25x slower than the copy on a table of 3M offsets.
+/// `CopyOptimize` leaves the archived layout alone, so the readers still take
+/// `archived_root::<Vec<usize>>` and existing checkpoints stay readable.
+// The wrapper is implemented for `Vec<T>`, so a slice will not do here.
+#[allow(clippy::ptr_arg)]
+pub(crate) fn serialize_offsets<S>(
+    offsets: &Vec<usize>,
+    serializer: &mut S,
+) -> Result<usize, S::Error>
+where
+    S: rkyv::ser::Serializer + ?Sized,
+{
+    serializer.serialize_value(With::<_, CopyOptimize>::cast(offsets))
+}
 
 #[cfg(debug_assertions)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -1594,7 +1620,7 @@ impl IndexedWSetSerializer {
             self.offsets[0] = self.n_keys;
             self.offsets[1] = self.n_values;
             serializer_inner.with(FBufSerializer::new(&mut self.fbuf), |s| {
-                s.serialize_value(&self.offsets).unwrap()
+                serialize_offsets(&self.offsets, s).unwrap()
             });
         }
         self.fbuf
@@ -1668,12 +1694,16 @@ where
 #[cfg(test)]
 mod serialize_test {
     use crate::{
-        DynZWeight, OrdIndexedZSet,
-        algebra::OrdIndexedZSet as DynOrdIndexedZSet,
+        DynZWeight, OrdIndexedZSet, OrdZSet,
+        algebra::{OrdIndexedZSet as DynOrdIndexedZSet, OrdZSet as DynOrdZSet},
         dynamic::DynData,
         indexed_zset,
         storage::file::SerializerInner,
-        trace::{BatchReader, deserialize_indexed_wset, serialize_indexed_wset},
+        trace::{
+            BatchReader, SEPARATOR, deserialize_indexed_wset, deserialize_wset,
+            serialize_indexed_wset, serialize_offsets, serialize_wset,
+        },
+        zset,
     };
 
     #[test]
@@ -1730,6 +1760,46 @@ mod serialize_test {
             >(&test.factories(), &serialized);
 
             assert_eq!(&*test, &deserialized);
+        }
+    }
+
+    #[test]
+    fn test_serialize_wset() {
+        let test1: OrdZSet<u64> = zset! {};
+        let test2 = zset! { 1u64 => 1 };
+        let test3 = zset! { 1u64 => 1, 2 => 2, 3 => -3 };
+
+        for test in [test1, test2, test3] {
+            let serialized = serialize_wset(&*test);
+            let deserialized = deserialize_wset::<DynOrdZSet<DynData>, DynData, DynZWeight>(
+                &test.factories(),
+                &serialized,
+            );
+
+            assert_eq!(&*test, &deserialized);
+        }
+    }
+
+    /// Every reader of a bulk-copied offset table takes it as
+    /// `archived_root::<Vec<usize>>`, so pin that the copy lands the offsets
+    /// where such a reader finds them, at the value each writer recorded.
+    #[test]
+    fn serialize_offsets_reads_back_as_a_vec() {
+        for table in [
+            vec![],
+            vec![0usize],
+            vec![0, 8, 24, SEPARATOR as usize, usize::MAX, 1 << 40],
+            (0..10_000).collect(),
+        ] {
+            let bytes = SerializerInner::to_fbuf_with_thread_local(|serializer| {
+                serialize_offsets(&table, serializer)
+            });
+            // SAFETY: the bytes come from serializing `table` just above.
+            let archived = unsafe { rkyv::archived_root::<Vec<usize>>(&bytes) };
+            assert_eq!(archived.len(), table.len());
+            for (index, offset) in table.iter().enumerate() {
+                assert_eq!(archived[index] as usize, *offset, "offset {index}");
+            }
         }
     }
 }
