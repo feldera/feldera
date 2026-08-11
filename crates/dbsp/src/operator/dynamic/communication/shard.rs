@@ -6,7 +6,7 @@
 
 use feldera_storage::fbuf::{FBuf, FBufSerializer};
 use itertools::Itertools;
-use rkyv::{archived_root, ser::Serializer as _};
+use rkyv::archived_root;
 
 use crate::{
     Circuit, Runtime, Stream,
@@ -19,7 +19,8 @@ use crate::{
     operator::communication::{ExchangeActivity, Mailbox, new_exchange_operators},
     storage::file::SerializerInner,
     trace::{
-        Batch, BatchReader, Builder, IndexedWSetSerializer, deserialize_indexed_wset, merge_batches,
+        Batch, BatchReader, Builder, IndexedWSetSerializer, deserialize_indexed_wset,
+        merge_batches, serialize_offsets,
     },
 };
 
@@ -504,7 +505,7 @@ impl PairsSerializer {
     pub fn done(mut self, serializer: &mut SerializerInner) -> FBuf {
         serializer
             .with(FBufSerializer::new(&mut self.fbuf), |s| {
-                s.serialize_value(&self.offsets)
+                serialize_offsets(&self.offsets, s)
             })
             .unwrap();
         self.fbuf
