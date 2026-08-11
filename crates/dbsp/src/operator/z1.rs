@@ -28,6 +28,7 @@ use super::require_persistent_id;
 
 circuit_cache_key!(DelayedId<C, D>(StreamId => Stream<C, D>));
 circuit_cache_key!(NestedDelayedId<C, D>(StreamId => Stream<C, D>));
+use rkyv::with::CopyOptimize;
 
 /// Like [`FeedbackConnector`] but specialized for [`Z1`] feedback operator.
 ///
@@ -226,9 +227,13 @@ pub struct Z1<T> {
     values: T,
 }
 
+// The blob is a whole serialized state, so it is copied in bulk: `Vec<u8>`'s own
+// rkyv impl resolves it byte by byte, one write call each. `CopyOptimize` keeps
+// the archived layout, an `ArchivedVec<u8>`, so existing checkpoints still read.
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
 #[archive_attr(derive(rkyv::CheckBytes))]
 pub struct CommittedZ1 {
+    #[with(CopyOptimize)]
     values: Vec<u8>,
 }
 
@@ -649,6 +654,34 @@ mod test {
             Ok(Some(_)) => {}
             Ok(None) => panic!("check_archived_root accepted garbage as valid CommittedZ1"),
             Err(_) => panic!("check_archived_root panicked on garbage input"),
+        }
+    }
+
+    /// The same struct without `#[with(CopyOptimize)]`, as a layout reference.
+    #[derive(rkyv::Serialize, rkyv::Archive)]
+    struct PerElementZ1 {
+        values: Vec<u8>,
+    }
+
+    /// Copying the state blob in bulk must leave the archived bytes exactly as
+    /// the per-element path wrote them, or a checkpoint taken by an earlier
+    /// build would no longer restore.
+    #[test]
+    fn bulk_copy_keeps_the_committed_layout() {
+        for length in [0, 1, 4096] {
+            let values: Vec<u8> = (0..length).map(|i| (i * 13 + 5) as u8).collect();
+            let bulk = crate::storage::file::to_bytes(&CommittedZ1 {
+                values: values.clone(),
+            })
+            .unwrap();
+            let per_element = crate::storage::file::to_bytes(&PerElementZ1 {
+                values: values.clone(),
+            })
+            .unwrap();
+            assert_eq!(bulk.as_slice(), per_element.as_slice(), "length {length}");
+
+            let restored: CommittedZ1 = crate::trace::aligned_deserialize(&bulk[..]);
+            assert_eq!(restored.values, values, "length {length}");
         }
     }
 

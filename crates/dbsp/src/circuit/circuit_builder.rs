@@ -100,6 +100,7 @@ use super::dbsp_handle::Mode;
 /// Label name used to store operator's persistent id,
 /// i.e., id stable across circuit modifications.
 const LABEL_PERSISTENT_OPERATOR_ID: &str = "persistent_id";
+use rkyv::with::CopyOptimize;
 
 /// Value stored in the stream.
 struct StreamValue<D> {
@@ -7308,6 +7309,8 @@ where
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
 #[archive_attr(derive(rkyv::CheckBytes))]
 struct CommittedClock {
+    // Copied in bulk, like the larger state blobs; see `CommittedZ1`.
+    #[with(CopyOptimize)]
     time: Vec<u8>,
 }
 

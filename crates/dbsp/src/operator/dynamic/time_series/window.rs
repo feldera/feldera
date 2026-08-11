@@ -85,6 +85,11 @@ where
 }
 
 /// A window that is serialized to a file.
+//
+// The bounds stay on rkyv's per-element path, unlike the state blobs in
+// `CommittedZ1`: `CopyOptimize` applies to a `Vec` field, not through an
+// `Option` of a tuple, and a pair of serialized keys is too small to be worth
+// reshaping the struct for.
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
 #[archive_attr(derive(rkyv::CheckBytes))]
 struct CommittedWindow {

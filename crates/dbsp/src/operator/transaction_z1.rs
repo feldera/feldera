@@ -2,6 +2,7 @@ use std::{borrow::Cow, sync::Arc};
 
 use feldera_storage::{FileCommitter, StoragePath};
 use rkyv::bytecheck;
+use rkyv::with::CopyOptimize;
 use size_of::SizeOf;
 
 use crate::{
@@ -45,10 +46,15 @@ pub struct TransactionZ1<T> {
     new_value: T,
 }
 
+// The blob is a whole serialized state, so it is copied in bulk: `Vec<u8>`'s own
+// rkyv impl resolves it byte by byte, one write call each. `CopyOptimize` keeps
+// the archived layout, an `ArchivedVec<u8>`, so existing checkpoints still read.
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
 #[archive_attr(derive(rkyv::CheckBytes))]
 pub struct CommittedTransactionZ1 {
+    #[with(CopyOptimize)]
     old_value: Vec<u8>,
+    #[with(CopyOptimize)]
     new_value: Vec<u8>,
 }
 
