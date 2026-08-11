@@ -1,5 +1,6 @@
 import { format } from 'd3-format'
 import Dayjs from 'dayjs'
+import type { Microseconds } from '$lib/functions/common/duration'
 
 export const formatDateTime = (
   timestamp: Date | Dayjs.Dayjs | { ms: number },
@@ -36,15 +37,15 @@ export const formatQty = (v: number | null | undefined, rounded?: 'rounded') =>
 const trimZeros = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
 
 /**
- * Format a duration given in microseconds using an adaptive unit (µs / ms / s)
- * with roughly three significant figures. Zero is rendered bare, without a unit.
+ * Format a duration using an adaptive unit (µs / ms / s) with roughly three
+ * significant figures. Zero is rendered bare, without a unit.
  *
- *   formatDuration(0)         -> "0"
- *   formatDuration(340)       -> "340 µs"
- *   formatDuration(1_200)     -> "1.2 ms"
- *   formatDuration(2_100_000) -> "2.1 s"
+ *   formatDuration(microseconds(0))         -> "0"
+ *   formatDuration(microseconds(340))       -> "340 µs"
+ *   formatDuration(microseconds(1_200))     -> "1.2 ms"
+ *   formatDuration(microseconds(2_100_000)) -> "2.1 s"
  */
-export const formatDuration = (micros: number | null | undefined): string => {
+export const formatDuration = (micros: Microseconds | null | undefined): string => {
   if (typeof micros !== 'number' || !Number.isFinite(micros)) {
     return '—'
   }

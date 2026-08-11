@@ -1,5 +1,6 @@
 import { ServerDate } from '$lib/compositions/serverTime'
 import { groupBy } from '$lib/functions/common/array'
+import { type Microseconds, microseconds } from '$lib/functions/common/duration'
 import { nonNull } from '$lib/functions/common/function'
 import { discreteDerivative } from '$lib/functions/common/math'
 import { tuple } from '$lib/functions/common/tuple'
@@ -59,13 +60,13 @@ export type PipelineMetrics = typeof emptyPipelineMetrics & { lastTimestamp?: nu
  * instead.
  */
 const slowestLatency = (
-  a: number | null | undefined,
-  b: number | null | undefined
-): number | undefined => {
+  a: Microseconds | null | undefined,
+  b: Microseconds | null | undefined
+): Microseconds | undefined => {
   if (typeof a !== 'number') {
     return typeof b === 'number' ? b : undefined
   }
-  return typeof b === 'number' ? Math.max(a, b) : a
+  return typeof b === 'number' ? microseconds(Math.max(a, b)) : a
 }
 
 const addZeroMetrics = (previous: PipelineMetrics) => ({

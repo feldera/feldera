@@ -10,7 +10,7 @@
     "@fontsource/dm-mono": "5.2.7",
     "@fortawesome/fontawesome-free": "7.2.0",
     "@hey-api/client-fetch": "0.13.1",
-    "@hey-api/openapi-ts": "0.97.3",
+    "@hey-api/openapi-ts": "0.99.0",
     "@monaco-editor/loader": "1.7.0",
     "@playwright/test": "1.58.2",
     "@poppanator/sveltekit-svg": "6.0.1",

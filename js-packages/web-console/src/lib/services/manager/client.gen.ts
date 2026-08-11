@@ -2,7 +2,7 @@
 
 import { createClientConfig } from '$lib/compositions/setupHttpClient'
 
-import { type ClientOptions, type Config, createClient, createConfig } from './client'
+import { type Client, type ClientOptions, type Config, createClient, createConfig } from './client'
 import type { ClientOptions as ClientOptions2 } from './types.gen'
 
 /**
@@ -17,6 +17,6 @@ export type CreateClientConfig<T extends ClientOptions = ClientOptions2> = (
   override?: Config<ClientOptions & T>
 ) => Config<Required<ClientOptions> & T>
 
-export const client = createClient(
+export const client: Client = createClient(
   createClientConfig(createConfig<ClientOptions2>({ throwOnError: true }))
 )
