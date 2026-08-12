@@ -119,6 +119,8 @@ pub struct CheckpointMetadata {
     /// An optional name for the checkpoint.
     pub identifier: Option<String>,
     /// Fingerprint of the circuit at the time of the checkpoint.
+    // Uses the full 64-bit range.
+    #[schema(format = "uint64")]
     pub fingerprint: u64,
     /// Total size of the checkpoint files in bytes.
     pub size: Option<u64>,
