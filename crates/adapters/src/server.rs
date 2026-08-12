@@ -3465,6 +3465,7 @@ mod test_http_helpers {
     };
     use feldera_types::{
         completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
+        config::ProgramIr,
         runtime_status::{BootstrapPolicy, RuntimeStatus},
     };
     use futures::{Stream, StreamExt};
@@ -3530,7 +3531,7 @@ outputs:
             Uuid::now_v7(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[Some("v0")],
-            false,
+            None,
         )
         .await;
 
@@ -3859,30 +3860,54 @@ outputs:
             deployment_id,
             bootstrap_config,
             persistent_output_ids,
-            false,
+            None,
         )
         .await
         .0
+    }
+
+    /// A `program_ir` describing one input table and one view, the shape of the
+    /// test circuit. `view_persistent_id` identifies the view's state: giving
+    /// two restarts different ids makes `compute_pipeline_diff` report the view
+    /// as modified, exactly as a changed view definition does in a compiled
+    /// pipeline.
+    pub(super) fn test_program_ir(view_persistent_id: &str) -> ProgramIr {
+        ProgramIr {
+            mir: serde_json::from_value(serde_json::json!({
+                "0": {
+                    "operation": "source",
+                    "table": "test_input1",
+                    "persistent_id": "test_input1",
+                },
+                "1": {
+                    "operation": "sink",
+                    "view": "test_output1",
+                    "persistent_id": view_persistent_id,
+                },
+            }))
+            .unwrap(),
+            program_schema: serde_json::json!({ "inputs": [], "outputs": [] }),
+        }
     }
 
     /// Like [start_test_server_with_options], but also returns the
     /// [ServerState] so a test can reach the controller directly (e.g. to
     /// simulate an ungraceful crash via [crash_pipeline]).
     ///
-    /// When `with_program_ir` is set, a minimal (empty) `program_ir` is injected
-    /// into the pipeline config. The test circuit is a Rust closure with no
-    /// compiled program, so its checkpoint normally carries no program info,
-    /// which makes `compute_pipeline_diff` fail and forces the journal to be
-    /// discarded on restart (no replay). Injecting an identical empty
+    /// `program_ir` is injected into the pipeline config. The test circuit is a
+    /// Rust closure with no compiled program, so its checkpoint normally carries
+    /// no program info, which makes `compute_pipeline_diff` fail and forces the
+    /// journal to be discarded on restart (no replay). Injecting an identical
     /// `program_ir` makes the diff empty across a same-program restart, so the
     /// journal is replayed -- required to exercise the fault-tolerant replay
-    /// path in-process.
+    /// path in-process. Injecting IRs that differ makes the diff report the
+    /// change, as it does for a recompiled program.
     pub(super) async fn start_test_server_with_state(
         config_str: &str,
         deployment_id: Uuid,
         bootstrap_config: BootstrapConfig,
         persistent_output_ids: &'static [Option<&'static str>],
-        with_program_ir: bool,
+        program_ir: Option<ProgramIr>,
     ) -> (TestServer, WebData<ServerState>) {
         let mut config_file = NamedTempFile::new().unwrap();
         config_file.write_all(config_str.as_bytes()).unwrap();
@@ -3920,11 +3945,8 @@ outputs:
         };
 
         let mut config = parse_config(&args.config_file).unwrap();
-        if with_program_ir {
-            config.program_ir = Some(feldera_types::config::ProgramIr {
-                mir: std::collections::HashMap::new(),
-                program_schema: serde_json::json!({ "inputs": [], "outputs": [] }),
-            });
+        if let Some(program_ir) = program_ir {
+            config.program_ir = Some(program_ir);
         }
         let builder = ControllerBuilder::new(&config).unwrap();
         thread::spawn(move || {
@@ -4296,7 +4318,7 @@ mod test_http {
             adhoc_query_count, assert_no_file_output, batch_num_records, commit_transaction,
             crash_pipeline, pause_pipeline, send_input, send_input_no_wait, start_pipeline,
             start_test_server_with_options, start_test_server_with_state, start_transaction,
-            suspend_pipeline, test_batches, wait_for_file_output,
+            suspend_pipeline, test_batches, test_program_ir, wait_for_file_output,
         },
         test::{
             TestStruct, async_wait, generate_test_batches,
@@ -4824,7 +4846,7 @@ outputs:
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[Some("v0")],
-            true,
+            Some(test_program_ir("v0")),
         )
         .await;
         start_pipeline(&server).await;
@@ -4845,7 +4867,7 @@ outputs:
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[Some("v0")],
-            true,
+            Some(test_program_ir("v0")),
         )
         .await;
         start_pipeline(&server).await;
