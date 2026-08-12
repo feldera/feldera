@@ -6,6 +6,7 @@ from .helper import (
     gen_pipeline_name,
     post_json,
     api_url,
+    wait_for_pipeline_reachable,
 )
 from tests import TEST_CLIENT
 
@@ -78,6 +79,11 @@ def test_pipeline_error_dismissal(pipeline_name):
 
 
 def cause_error_and_wait_for_stopped(pipeline):
+    # `post_json` uses the no-retry `http_request` helper (other tests rely on
+    # that to see raw status codes), so absorb the post-start pod-reachability
+    # race before using it, rather than failing the test on infra flakiness.
+    wait_for_pipeline_reachable(pipeline.name)
+
     # This data causes the pipeline to panic
     response = post_json(
         api_url(

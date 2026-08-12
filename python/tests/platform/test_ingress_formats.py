@@ -14,6 +14,7 @@ from .helper import (
     create_pipeline,
     get,
     wait_for_condition,
+    wait_for_pipeline_reachable,
 )
 from tests import TEST_CLIENT
 
@@ -199,6 +200,7 @@ def test_json_ingress(pipeline_name):
     )
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     # Raw format (missing some fields)
     _ingress_and_wait_token(
@@ -366,6 +368,7 @@ def test_variant_column_json_and_csv(pipeline_name):
     )
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     # Subscribe to the csv change stream before ingesting.
     egress = http_request(
@@ -441,6 +444,7 @@ def test_map_column(pipeline_name):
     )
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     _ingress_and_wait_token(
         pipeline_name,
@@ -461,6 +465,7 @@ def test_parse_datetime(pipeline_name):
     sql = "CREATE TABLE t1(t TIME, ts TIMESTAMP, d DATE) WITH ('materialized'='true');"
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     _ingress_and_wait_token(
         pipeline_name,
@@ -485,6 +490,7 @@ def test_quoted_columns(pipeline_name):
     )
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
     _ingress_and_wait_token(
         pipeline_name,
         "T1",
@@ -506,6 +512,7 @@ def test_primary_keys(pipeline_name):
     sql = "CREATE TABLE t1(id bigint not null, s varchar not null, primary key(id)) "
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     # Insert two rows
     _ingress_and_wait_token(
@@ -557,6 +564,7 @@ def _test_case_sensitive_tables(pipeline_name: str, use_new_api: bool):
     )
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     stream_v1 = _change_stream_start(pipeline_name, '"V1"', use_new_api)
     stream_v1_lower = _change_stream_start(pipeline_name, '"v1"', use_new_api)
@@ -611,6 +619,7 @@ def test_duplicate_outputs(pipeline_name):
     )
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     stream = _change_stream_start(pipeline_name, "V1", False)
     reader = JsonLineReader(stream)
@@ -669,6 +678,7 @@ def test_upsert(pipeline_name):
     )
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     stream = _change_stream_start(pipeline_name, "T1", True)
     reader = JsonLineReader(stream)

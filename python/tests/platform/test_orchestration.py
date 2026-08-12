@@ -17,6 +17,7 @@ from .helper import (
     pipeline_stats,
     connector_paused,
     wait_for_condition,
+    wait_for_pipeline_reachable,
     get,
 )
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS
@@ -70,6 +71,7 @@ def test_pipeline_orchestration_basic(pipeline_name):
 
         create_pipeline(cur_pipeline_name, sql)
         start_pipeline_as_paused(cur_pipeline_name)
+        wait_for_pipeline_reachable(cur_pipeline_name)
 
         if FELDERA_TEST_NUM_HOSTS > 1:
             # The multihost coordinator can report that it is ready
@@ -117,6 +119,7 @@ def test_pipeline_orchestration_basic(pipeline_name):
 
         # Start pipeline
         resume_pipeline(cur_pipeline_name)
+        wait_for_pipeline_reachable(cur_pipeline_name)
         p_paused, c_paused, processed = _basic_orchestration_info(
             cur_pipeline_name, table_name, connector_name
         )
@@ -168,6 +171,7 @@ def test_pipeline_orchestration_errors(pipeline_name):
 
     create_pipeline(pipeline_name, sql)
     start_pipeline_as_paused(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     # ACCEPTED endpoints
     for endpoint in [
@@ -309,8 +313,10 @@ def test_pipeline_orchestration_scenarios(pipeline_name):
     def apply_step(step: str):
         if step == Step.START_PIPELINE:
             start_pipeline(pipeline_name)
+            wait_for_pipeline_reachable(pipeline_name)
         elif step == Step.START_PIPELINE_AS_PAUSED:
             start_pipeline_as_paused(pipeline_name)
+            wait_for_pipeline_reachable(pipeline_name)
         elif step == Step.PAUSE_PIPELINE:
             pause_pipeline(pipeline_name)
         elif step == Step.START_CONNECTOR_1:

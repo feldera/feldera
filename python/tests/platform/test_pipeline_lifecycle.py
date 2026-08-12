@@ -26,6 +26,7 @@ from .helper import (
     api_url,
     adhoc_query_json,
     post_no_body,
+    wait_for_pipeline_reachable,
 )
 from tests import enterprise_only
 from feldera.testutils import (
@@ -71,6 +72,7 @@ def test_deploy_pipeline(pipeline_name):
     create_pipeline(pipeline_name, sql)
 
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
     assert _ingress(pipeline_name, "t1", "1\n2\n3\n").status_code == HTTPStatus.OK
     assert _ingress(pipeline_name, "t1", "4\r\n5\r\n6").status_code == HTTPStatus.OK
 
@@ -79,6 +81,7 @@ def test_deploy_pipeline(pipeline_name):
     assert got == [{"c1": i} for i in range(1, 7)]
 
     resume_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
     got = adhoc_query_json(pipeline_name, "select * from t1 order by c1")
     assert got == [{"c1": i} for i in range(1, 7)]
 
@@ -98,6 +101,7 @@ def test_pipeline_panic(pipeline_name):
     create_pipeline(pipeline_name, sql)
 
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
     _ingress(pipeline_name, "t1", "1\n2\n3\n")
 
     err = _wait_for_stopped_with_error(pipeline_name)
@@ -310,6 +314,7 @@ def test_pipeline_clear(pipeline_name):
 
     # Start (becomes InUse)
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
     obj = get_pipeline(pipeline_name, "status").json()
     assert StorageStatus.from_str(obj.get("storage_status")) == StorageStatus.INUSE
 
@@ -861,6 +866,7 @@ def test_connector_stats_errors_count(pipeline_name):
         TEST_CLIENT, pipeline_name, "CREATE TABLE t1 (v1 INT);"
     ).create_or_replace()
     pipeline.start()
+    wait_for_pipeline_reachable(pipeline_name)
     assert _ingress(pipeline_name, "t1", "1\n2\n3\n").status_code == HTTPStatus.OK
     assert (
         _ingress(pipeline_name, "t1", "a\nb\nc\nd\n").status_code

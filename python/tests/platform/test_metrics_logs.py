@@ -15,6 +15,7 @@ from .helper import (
     clear_pipeline,
     gen_pipeline_name,
     wait_for_condition,
+    wait_for_pipeline_reachable,
 )
 
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS
@@ -57,6 +58,7 @@ def test_pipeline_metrics(pipeline_name):
     """
     create_pipeline(pipeline_name, "")
     start_pipeline_as_paused(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     # Default
     r_default = get(api_url(f"/pipelines/{pipeline_name}/metrics"))
@@ -104,6 +106,7 @@ def test_pipeline_stats(pipeline_name):
 
     create_pipeline(pipeline_name, sql)
     start_pipeline_as_paused(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     # Create output connector on v1 (egress)
     r_out = post_no_body(api_url(f"/pipelines/{pipeline_name}/egress/v1"), stream=True)
@@ -225,6 +228,7 @@ def test_pipeline_logs(pipeline_name):
 
     # Pause pipeline
     start_pipeline_as_paused(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
     assert (
         get(api_url(f"/pipelines/{pipeline_name}/logs"), stream=True).status_code
         == HTTPStatus.OK
@@ -232,6 +236,7 @@ def test_pipeline_logs(pipeline_name):
 
     # Start pipeline
     resume_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
     assert (
         get(api_url(f"/pipelines/{pipeline_name}/logs"), stream=True).status_code
         == HTTPStatus.OK
