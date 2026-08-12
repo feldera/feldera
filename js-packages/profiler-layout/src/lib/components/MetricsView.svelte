@@ -34,7 +34,7 @@
   import { buildGlobalMetrics, type GlobalMetrics } from '../functions/globalMetrics'
   import type { LookupCoordinator, SearchProgress } from '../functions/lookup'
   import { buildSearchTargets, matchTargets } from '../functions/metricsSearch'
-  import type { SearchDirection } from 'common-ui'
+  import { positiveMod, type SearchDirection } from 'common-ui'
 
   interface Props {
     mode: MetricsMode
@@ -146,7 +146,7 @@
       searchQuery = query
     }
     const n = ids.length
-    matchCursor = ((matchCursor % n) + n) % n
+    matchCursor = positiveMod(matchCursor, n)
     const el = containerEl.querySelector<HTMLElement>(`[data-block-id="${ids[matchCursor]}"]`)
     el?.scrollIntoView({ block: 'start', behavior: 'smooth' })
     return { current: matchCursor + 1, total: n }

@@ -114,7 +114,7 @@
   const issueSeverities = $derived(uniqueSeverities(triageResults.results))
   let nodeSearchQuery = $state('')
   let lookupQuery = $state('')
-  // The single source of truth for committed search results, shared by the counter, the match
+  // The single source of truth for submitted search results, shared by the counter, the match
   // highlight, and the nav buttons:
   //   - `null`         → no active search (nothing highlighted, nothing to navigate).
   //   - `{ total: 0 }` → searched, but the query matched nothing ("No results").
@@ -273,7 +273,7 @@
     lookupProgress = lookupQuery ? lookup.execute(currentTab, lookupQuery, direction) : null
   }
 
-  // Drop the active tab's committed results: run its search with an empty query to clear the
+  // Drop the active tab's submitted results: run its search with an empty query to clear the
   // highlight, then null the progress.
   function resetLookup() {
     lookup.execute(currentTab, '', 'next')
@@ -457,7 +457,7 @@
         : currentTab === 'Issues'
           ? 'Search issues'
           : 'Search metrics'}
-      title="Search within active tab (Enter / Shift+Enter to step matches, Ctrl/Cmd-F to toggle)"
+      title="Search within active tab (Enter / Shift+Enter to step matches, Esc to clear, Ctrl/Cmd-F to toggle)"
       results={lookupProgress}
       onnext={() => handleLookup('next')}
       onprevious={() => handleLookup('prev')}

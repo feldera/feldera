@@ -190,7 +190,7 @@ describe('MonitoringPanel — log-search wiring', () => {
     expect((next.element() as HTMLButtonElement).disabled).toBe(false)
     await expect.element(page.getByText(/\d+ of \d+/)).toBeInTheDocument()
 
-    // Type more — the committed results must be dropped as one: highlight gone, counter gone,
+    // Type more — the submitted results must be dropped as one: highlight gone, counter gone,
     // and nav disabled (single source of truth).
     await userEvent.keyboard('7')
     await expect.poll(() => CSS.highlights.has('feldera-log-list-search')).toBe(false)
