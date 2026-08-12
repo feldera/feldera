@@ -4471,6 +4471,69 @@ export type PostStopPipelineParameters = {
 }
 
 /**
+ * Batch processing configuration for the Postgres CDC connector.
+ *
+ * Controls how replication events are buffered into a batch before being
+ * flushed to Feldera. Mirrors the batch configuration of the underlying
+ * `etl` replication library; fields omitted from the configuration fall
+ * back to `etl`'s own defaults.
+ */
+export type PostgresCdcBatchConfig = {
+  /**
+   * Maximum preferred byte size for one batch per active stream. This is
+   * a ceiling, not a target: the runtime still chooses the smaller value
+   * between this limit and the memory-ratio budget computed from
+   * `memory_budget_ratio`.
+   *
+   * Default: 33554432 (32 MiB), the same as etl.
+   */
+  max_bytes?: number
+  /**
+   * Maximum time, in milliseconds, to wait before flushing a partially
+   * filled batch. This is the latency bound for batching: once the first
+   * event enters a batch, the batch is flushed when this timer elapses,
+   * even if `max_bytes` was not reached.
+   *
+   * Default: 10000 (10 seconds).
+   */
+  max_fill_ms?: number
+  /**
+   * Ratio of process memory reserved for incoming replication batch
+   * bytes, in the `(0.0, 1.0]` interval. The configured memory is divided
+   * by the number of active streams at runtime, so each stream gets only
+   * a per-stream share of the global memory budget.
+   *
+   * Default: 0.2.
+   */
+  memory_budget_ratio?: number
+}
+
+/**
+ * Memory-based backpressure configuration for the Postgres CDC connector.
+ *
+ * When the connector's memory usage rises above `activate_threshold`, it
+ * pauses reading further replication events until usage drops back below
+ * `resume_threshold`. Mirrors the memory backpressure configuration of the
+ * underlying `etl` replication library.
+ */
+export type PostgresCdcMemoryBackpressureConfig = {
+  /**
+   * Memory usage ratio above which backpressure is activated, in the
+   * `(0.0, 1.0]` interval.
+   *
+   * Default: 0.85.
+   */
+  activate_threshold?: number
+  /**
+   * Memory usage ratio below which backpressure is released, in the
+   * `[0.0, 1.0)` interval. Must be lower than `activate_threshold`.
+   *
+   * Default: 0.75.
+   */
+  resume_threshold?: number
+}
+
+/**
  * Postgres CDC input connector configuration.
  *
  * Uses logical replication to capture ongoing changes from a Postgres database.
@@ -4522,6 +4585,8 @@ export type PostgresCdcReaderConfig = {
    */
   verify_hostname?: boolean | null
 } & {
+  batch?: PostgresCdcBatchConfig
+  memory_backpressure?: PostgresCdcMemoryBackpressureConfig
   /**
    * Name of the pre-created Postgres publication to replicate from.
    */

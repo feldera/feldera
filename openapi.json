@@ -13874,6 +13874,49 @@
           }
         }
       },
+      "PostgresCdcBatchConfig": {
+        "type": "object",
+        "description": "Batch processing configuration for the Postgres CDC connector.\n\nControls how replication events are buffered into a batch before being\nflushed to Feldera. Mirrors the batch configuration of the underlying\n`etl` replication library; fields omitted from the configuration fall\nback to `etl`'s own defaults.",
+        "properties": {
+          "max_bytes": {
+            "type": "integer",
+            "description": "Maximum preferred byte size for one batch per active stream. This is\na ceiling, not a target: the runtime still chooses the smaller value\nbetween this limit and the memory-ratio budget computed from\n`memory_budget_ratio`.\n\nDefault: 33554432 (32 MiB), the same as etl.",
+            "default": 33554432,
+            "minimum": 0
+          },
+          "max_fill_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Maximum time, in milliseconds, to wait before flushing a partially\nfilled batch. This is the latency bound for batching: once the first\nevent enters a batch, the batch is flushed when this timer elapses,\neven if `max_bytes` was not reached.\n\nDefault: 10000 (10 seconds).",
+            "default": 10000,
+            "minimum": 0
+          },
+          "memory_budget_ratio": {
+            "type": "number",
+            "format": "float",
+            "description": "Ratio of process memory reserved for incoming replication batch\nbytes, in the `(0.0, 1.0]` interval. The configured memory is divided\nby the number of active streams at runtime, so each stream gets only\na per-stream share of the global memory budget.\n\nDefault: 0.2.",
+            "default": 0.2
+          }
+        }
+      },
+      "PostgresCdcMemoryBackpressureConfig": {
+        "type": "object",
+        "description": "Memory-based backpressure configuration for the Postgres CDC connector.\n\nWhen the connector's memory usage rises above `activate_threshold`, it\npauses reading further replication events until usage drops back below\n`resume_threshold`. Mirrors the memory backpressure configuration of the\nunderlying `etl` replication library.",
+        "properties": {
+          "activate_threshold": {
+            "type": "number",
+            "format": "float",
+            "description": "Memory usage ratio above which backpressure is activated, in the\n`(0.0, 1.0]` interval.\n\nDefault: 0.85.",
+            "default": 0.85
+          },
+          "resume_threshold": {
+            "type": "number",
+            "format": "float",
+            "description": "Memory usage ratio below which backpressure is released, in the\n`[0.0, 1.0)` interval. Must be lower than `activate_threshold`.\n\nDefault: 0.75.",
+            "default": 0.75
+          }
+        }
+      },
       "PostgresCdcReaderConfig": {
         "allOf": [
           {
@@ -13930,6 +13973,12 @@
               "source_table"
             ],
             "properties": {
+              "batch": {
+                "$ref": "#/components/schemas/PostgresCdcBatchConfig"
+              },
+              "memory_backpressure": {
+                "$ref": "#/components/schemas/PostgresCdcMemoryBackpressureConfig"
+              },
               "publication": {
                 "type": "string",
                 "description": "Name of the pre-created Postgres publication to replicate from."
