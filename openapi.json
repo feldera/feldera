@@ -8475,7 +8475,7 @@
         "properties": {
           "fingerprint": {
             "type": "integer",
-            "format": "int64",
+            "format": "uint64",
             "description": "Fingerprint of the circuit at the time of the checkpoint.",
             "minimum": 0
           },
