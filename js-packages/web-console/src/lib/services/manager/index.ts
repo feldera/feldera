@@ -510,6 +510,8 @@ export type {
   PostApiKeyErrors,
   PostApiKeyResponse,
   PostApiKeyResponses,
+  PostgresCdcBatchConfig,
+  PostgresCdcMemoryBackpressureConfig,
   PostgresCdcReaderConfig,
   PostgresReaderConfig,
   PostgresTlsConfig,

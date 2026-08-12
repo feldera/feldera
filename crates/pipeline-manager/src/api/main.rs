@@ -480,6 +480,8 @@ It contains the following fields:
         feldera_types::transport::iceberg::IcebergTransactionMode,
         feldera_types::transport::postgres::PostgresReaderConfig,
         feldera_types::transport::postgres::PostgresCdcReaderConfig,
+        feldera_types::transport::postgres::PostgresCdcBatchConfig,
+        feldera_types::transport::postgres::PostgresCdcMemoryBackpressureConfig,
         feldera_types::transport::postgres::PostgresWriterConfig,
         feldera_types::transport::postgres::PostgresWriteMode,
         feldera_types::transport::postgres::PostgresTlsConfig,
