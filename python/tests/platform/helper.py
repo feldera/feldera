@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 import unittest
 from http import HTTPStatus
 from typing import Any, Dict, Iterable
@@ -223,6 +224,56 @@ def pipeline_stats(pipeline: str):
     r = get(api_url(f"/pipelines/{pipeline}/stats"))
     assert r.status_code == HTTPStatus.OK, (r.status_code, r.text)
     return r.json()
+
+
+def wait_for_pipeline_reachable(pipeline_name: str, timeout_s: float = 30.0) -> None:
+    """
+    Poll the pipeline's `/stats` endpoint until it responds.
+
+    `start_pipeline()`/`resume_pipeline()`/`start_pipeline_as_paused()` (`wait=True`)
+    only wait for the control plane's deployment_status to report "running";
+    the pod itself can still be briefly unreachable through its k8s service
+    afterward. Call this before the *first* raw (no-retry) helper call that
+    talks to the pod directly -- ingress, egress, stats, metrics, logs,
+    checkpoint, clear, circuit profiles, etc. -- to absorb that startup race
+    instead of flaking on it.
+
+    Most tests don't need this call at all:
+
+    - Calls made through the `feldera.Pipeline`/`FelderaClient` SDK (e.g.
+      `pipeline.input_json`, `pipeline.query`) already retry transient 503s
+      themselves, so the race resolves on its own.
+    - Once any pod-facing call -- raw or SDK -- has already succeeded for a
+      given pipeline incarnation, the pod is proven reachable and later raw
+      calls in the same test don't need to wait again.
+
+    It's only the *first* raw pod-facing call after a start/resume, with
+    nothing preceding it to have already warmed the connection, that's
+    exposed to this race.
+
+    :raises RuntimeError: If an error other than transient unreachability is
+        returned.
+    :raises TimeoutError: If the pod is still unreachable after `timeout_s`.
+    """
+    deadline = time.monotonic() + timeout_s
+    while True:
+        response = get(api_url(f"/pipelines/{pipeline_name}/stats"))
+        if response.status_code == HTTPStatus.OK:
+            return
+        if (
+            response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+            and response.json().get("error_code") == "PipelineInteractionUnreachable"
+        ):
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"pipeline '{pipeline_name}' still unreachable after {timeout_s:.0f}s"
+                )
+            time.sleep(0.5)
+            continue
+        raise RuntimeError(
+            f"unexpected response waiting for pipeline '{pipeline_name}' to "
+            f"become reachable: {response.status_code} {response.text}"
+        )
 
 
 def connector_stats(pipeline: str, table: str, connector: str):

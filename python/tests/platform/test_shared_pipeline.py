@@ -21,7 +21,11 @@ from feldera.testutils import (
     FELDERA_TEST_NUM_WORKERS,
     FELDERA_TEST_NUM_HOSTS,
 )
-from .helper import wait_for_condition, wait_for_records
+from .helper import (
+    wait_for_condition,
+    wait_for_records,
+    wait_for_pipeline_reachable,
+)
 
 
 class TestPipeline(SharedTestPipeline):
@@ -998,6 +1002,7 @@ class TestPipeline(SharedTestPipeline):
     # is already compressed).
     def test_circuit_profile_streaming(self):
         self.pipeline.start()
+        wait_for_pipeline_reachable(self.pipeline.name)
 
         resp = http_request(
             "GET",
@@ -1032,6 +1037,7 @@ class TestPipeline(SharedTestPipeline):
     # is transparent (compressed and uncompressed responses yield the same data).
     def test_circuit_json_profile_streaming(self):
         self.pipeline.start()
+        wait_for_pipeline_reachable(self.pipeline.name)
 
         # Request with gzip — the pipeline compresses and the streaming
         # proxy passes the compressed bytes through.  `requests`

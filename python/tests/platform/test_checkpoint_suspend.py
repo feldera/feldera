@@ -20,6 +20,7 @@ from .helper import (
     wait_for_condition,
     gen_pipeline_name,
     patch_json,
+    wait_for_pipeline_reachable,
 )
 
 
@@ -76,6 +77,7 @@ def test_checkpoint_enterprise(pipeline_name):
     sql = "CREATE TABLE t1(x int) WITH ('materialized'='true');"
     create_pipeline(pipeline_name, sql)
     start_pipeline_as_paused(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     for _ in range(5):
         resp = post_no_body(api_url(f"/pipelines/{pipeline_name}/checkpoint"))
@@ -205,6 +207,7 @@ def test_suspend_enterprise(pipeline_name):
 
     # Start pipeline (all connectors remain paused)
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
     assert _max_rss_bytes_metric(pipeline_name) == before_max_rss_mb * 1_000_000
     assert connector_paused(pipeline_name, "t1", "c1")
     assert connector_paused(pipeline_name, "t1", "c2")
@@ -230,6 +233,7 @@ def test_suspend_enterprise(pipeline_name):
     )
     assert resp.status_code == HTTPStatus.OK, resp.text
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
     assert _max_rss_bytes_metric(pipeline_name) == after_max_rss_mb * 1_000_000
     # After resume: c1 running (EOI), c2,c3 still paused
     assert not connector_paused(pipeline_name, "t1", "c1")
@@ -249,6 +253,7 @@ def test_suspend_enterprise(pipeline_name):
     # Suspend/resume again
     stop_pipeline(pipeline_name, force=False)
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     # All connectors should now be running (EOI)
     assert not connector_paused(pipeline_name, "t1", "c1")

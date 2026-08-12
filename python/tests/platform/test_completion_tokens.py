@@ -16,6 +16,7 @@ from .helper import (
     gen_pipeline_name,
     adhoc_query_json,
     wait_for_condition,
+    wait_for_pipeline_reachable,
 )
 from tests import TEST_CLIENT
 
@@ -68,6 +69,7 @@ CREATE MATERIALIZED VIEW v1 AS SELECT * FROM t1;
 """
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     for i in range(0, 200):
         token = _ingress_with_token(
@@ -152,6 +154,7 @@ WITH (
     assert r.status_code == HTTPStatus.CREATED, r.text
     wait_for_program_success(pipeline_name, 1)
     start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
 
     # Ingest a number of rows; track expected counts
     for i in range(0, 50):
