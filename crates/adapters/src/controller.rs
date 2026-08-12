@@ -4516,6 +4516,32 @@ impl CircuitThread {
         let silent_bootstrap =
             self.silent_bootstrap && self.controller.status.bootstrap_in_progress();
 
+        // Whether the bootstrap still owes a re-emission to the endpoints whose
+        // relations it rebuilds. Until it arrives, those endpoints receive only
+        // empty batches: a concurrent bootstrap keeps the pre-existing views
+        // live and steps the primary circuit throughout the backfill. Reporting
+        // the pipeline's progress on those batches would claim output the
+        // endpoint never received, so `processed_records` is withheld from them
+        // until the step that carries the re-emission.
+        //
+        // A silent bootstrap owes nothing: it suppresses the re-emission, and
+        // discarding it is what progress means for those endpoints.
+        //
+        // The step that carries the re-emission is excluded. For a concurrent
+        // bootstrap that is the `Finalizing` step: cutover has installed the new
+        // views, and the transaction that commits during this phase drains
+        // their full contents. `self.bootstrapping` is the stop-the-world
+        // analogue, cleared earlier in `step` on the step that completes the
+        // bootstrap.
+        let bootstrap_owes_reemission = !silent_bootstrap
+            && (self.bootstrapping
+                || matches!(
+                    self.concurrent_phase,
+                    ConcurrentPhase::Backfill
+                        | ConcurrentPhase::AwaitingSync
+                        | ConcurrentPhase::Synchronize
+                ));
+
         let outputs = self.controller.outputs.read().unwrap();
         for (_stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
             let (mut delta_batch, num_delta_records) = if silent_bootstrap {
@@ -4531,6 +4557,17 @@ impl CircuitThread {
             for (i, endpoint_id) in endpoints.iter().enumerate() {
                 let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
                 let transaction = self.controller.get_transaction_number();
+
+                let owed_reemission = bootstrap_owes_reemission
+                    && self
+                        .controller
+                        .bootstrapped_output_endpoints
+                        .contains(&endpoint.endpoint_name);
+                let processed_records = if owed_reemission {
+                    None
+                } else {
+                    processed_records
+                };
 
                 // Silent bootstrap: send empty batch for progress tracking only.
                 if silent_bootstrap {

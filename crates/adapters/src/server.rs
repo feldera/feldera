@@ -3467,6 +3467,7 @@ mod test_http_helpers {
         completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
         config::ProgramIr,
         runtime_status::{BootstrapPolicy, RuntimeStatus},
+        transaction::ConcurrentBootstrapPhase,
     };
     use futures::{Stream, StreamExt};
     use std::{
@@ -4270,6 +4271,22 @@ outputs:
             .expect("test_output1 output endpoint")
     }
 
+    /// `(total_processed_input_records, transmitted_records, queued_records)` of
+    /// the `test_output1` endpoint, with the pipeline's concurrent-bootstrap
+    /// phase.
+    pub(super) async fn output_progress(
+        server: &TestServer,
+    ) -> (u64, u64, u64, ConcurrentBootstrapPhase) {
+        let stats = get_stats(server).await;
+        let metrics = output_metrics(&stats);
+        (
+            metrics.total_processed_input_records,
+            metrics.transmitted_records,
+            metrics.queued_records,
+            stats.global_metrics.concurrent_bootstrap_phase,
+        )
+    }
+
     /// After a silent-bootstrap restart, verify that backfilled records were
     /// processed but not written to the output file.
     ///
@@ -4316,9 +4333,10 @@ mod test_http {
         ensure_default_crypto_provider,
         server::test_http_helpers::{
             adhoc_query_count, assert_no_file_output, batch_num_records, commit_transaction,
-            crash_pipeline, pause_pipeline, send_input, send_input_no_wait, start_pipeline,
-            start_test_server_with_options, start_test_server_with_state, start_transaction,
-            suspend_pipeline, test_batches, test_program_ir, wait_for_file_output,
+            crash_pipeline, output_progress, pause_pipeline, send_input, send_input_no_wait,
+            start_pipeline, start_test_server_with_options, start_test_server_with_state,
+            start_transaction, suspend_pipeline, test_batches, test_program_ir,
+            wait_for_file_output,
         },
         test::{
             TestStruct, async_wait, generate_test_batches,
@@ -4334,7 +4352,10 @@ mod test_http {
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
     };
-    use std::{thread::sleep, time::Duration};
+    use std::{
+        thread::sleep,
+        time::{Duration, Instant},
+    };
     use tempfile::TempDir;
     use tokio::time::timeout;
     use uuid::Uuid;
@@ -4699,6 +4720,117 @@ outputs:
         let all = [first_batch.clone(), second_batch.clone()].concat();
         wait_for_file_output(&output_path, &all).await;
         suspend_pipeline(&server, Some(&storage_dir)).await;
+    }
+
+    /// `total_processed_input_records` must not reach the pipeline's record
+    /// count while the concurrent-bootstrap cutover still owes the endpoint the
+    /// re-emission of its view.
+    ///
+    /// The counter promises that the endpoint's output equals the circuit's
+    /// output after that many input records, so a reader waiting on it concludes
+    /// the sink is up to date. During a concurrent bootstrap the pre-existing
+    /// view stays live, and the empty batches those steps push to the endpoint
+    /// carry the pipeline's full record count -- which advances the counter
+    /// before the cutover re-emission reaches the transport.
+    #[actix_web::test]
+    async fn test_concurrent_bootstrap_output_progress_waits_for_cutover() {
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        let output_path = tempdir.path().join("output.csv");
+        std::fs::create_dir(&storage_dir).unwrap();
+
+        // A one-record replay chunk stretches the background backfill over many
+        // pumps, so the pre-cutover window spans several samples of the
+        // endpoint's counters.
+        let config_str = format!(
+            r#"
+name: test
+workers: 4
+storage_config:
+    path: "{}"
+storage: true
+clock_resolution_usecs:
+dev_tweaks:
+    splitter_chunk_size_records: 1
+inputs:
+outputs:
+    test_output1:
+        stream: test_output1
+        transport:
+            name: file_output
+            config:
+                path: "{}"
+        format:
+            name: csv
+            config: {{}}
+"#,
+            storage_dir.display(),
+            output_path.display()
+        );
+
+        let first_batch = test_batches(0, 2_000);
+        let ingested = batch_num_records(&first_batch);
+
+        let (server, _) = start_test_server_with_state(
+            &config_str,
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[Some("v0")],
+            Some(test_program_ir("v0")),
+        )
+        .await;
+        start_pipeline(&server).await;
+        send_input(&server, &first_batch).await;
+        wait_for_file_output(&output_path, &first_batch).await;
+        let (_, transmitted_before, _, _) = output_progress(&server).await;
+        assert_eq!(transmitted_before, ingested);
+        suspend_pipeline(&server, Some(&storage_dir)).await;
+        drop(server);
+
+        // Restart with a changed view and concurrent bootstrap, feeding no new
+        // input: every record the endpoint still owes is derived from the
+        // `ingested` records the pipeline processed before the restart.
+        let (server, _) = start_test_server_with_state(
+            &config_str,
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow).with_concurrent_bootstrap(true),
+            &[Some("v1")],
+            Some(test_program_ir("v1")),
+        )
+        .await;
+
+        // Sample until the endpoint reports the pipeline's full progress. That
+        // reading promises the re-emission has reached the transport, so the
+        // transmitted count must already include it. Every sample before it
+        // must report less than full progress: the endpoint transmits the
+        // re-emission and takes its new progress reading in one move, leaving no
+        // sample in between.
+        let expected_transmitted = 2 * ingested;
+        let mut trace = Vec::new();
+        let deadline = Instant::now() + Duration::from_secs(60);
+        loop {
+            let sample = output_progress(&server).await;
+            trace.push(sample);
+            let (processed, transmitted, _queued, _phase) = sample;
+            if processed >= ingested {
+                assert_eq!(
+                    transmitted, expected_transmitted,
+                    "the endpoint reported {processed} processed records with the cutover \
+                     re-emission still owed; trace = {trace:?}"
+                );
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the endpoint never caught up with the cutover re-emission; trace = {trace:?}"
+            );
+        }
+
+        // The re-emission is also on disk: the modified connector re-truncates
+        // the file, so it holds the new view's full contents.
+        wait_for_file_output(&output_path, &first_batch).await;
     }
 
     /// Regression test: after a concurrent-bootstrap cutover, an ad-hoc query of
