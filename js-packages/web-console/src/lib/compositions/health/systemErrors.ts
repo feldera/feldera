@@ -134,7 +134,8 @@ export const extractRustCompilerError = <Report>(
     }
   }
   return (stderr: string): SystemError<any, Report> => {
-    const warning = /^warning:/.test(stderr)
+    // The optional prefix matches a message emitted by a tool, e.g. `sccache: warning: ...`
+    const warning = /^(?:[\w-]+: )?warning:/.test(stderr)
     let err: SystemError<any, Report> | undefined
     err = matchFileError(stderr, warning, 'udf.toml', /\/Cargo\.toml:(\d+):(\d+)/, -10)
     if (err) {
@@ -172,7 +173,57 @@ export const extractRustCompilerError = <Report>(
   }
 }
 
-const ignoredRustErrors = ['warning: patch for the non root package will be ignored']
+const ignoredRustErrors = [
+  'warning: patch for the non root package will be ignored',
+  'error: could not compile',
+  'warning: build failed, waiting for other jobs to finish',
+  "error: process didn't exit successfully"
+]
+
+/**
+ * Cargo reports a failing subprocess as a message of its own, then echoes the
+ * subprocess stderr below a `--- stderr` marker:
+ *
+ * ```
+ * error: process didn't exit successfully: `sccache ... rustc -vV` (exit status: 2)
+ * --- stderr
+ * sccache: error: Timed out waiting for server startup.
+ * ```
+ *
+ * Turning the marker into a blank line separates the echoed messages from the
+ * cargo one, so cargo's own message can be dropped like any other unhelpful
+ * message without taking the subprocess diagnostics with it.
+ */
+const flattenStderr = (stderr: string) => stderr.replaceAll('\n--- stderr\n', '\n\n')
+
+/**
+ * Matches one Rust compiler message in a stderr stream, capturing it in group 1.
+ *
+ * - `/m` makes `^` match at the start of every line, `/g` yields every message
+ * - `^(?:[\w-]+: )?` an optional prefix naming the tool that emitted the message, e.g. `sccache: `
+ * - `warning:(?! \`)` a warning, excluding cargo summaries such as ``warning: `pipeline` (lib) generated 2 warnings``
+ * - `error(\[[\w]+\])?:` an error, with an optional diagnostic code, e.g. `error[E0433]:`
+ * - `([\s\S])+?` the message body, lazily extended across lines until a terminator matches
+ * - `\n(\n|(?=error|warning))` terminator: a blank line, or the first line of the next message
+ * - `\n?$(?![\s\S])` terminator: the end of stderr; `(?![\s\S])` pins `$` there,
+ *   because under `/m` it would otherwise match at every line break
+ *
+ * Examples of captured messages:
+ *
+ * ```
+ * sccache: error: Timed out waiting for server startup.
+ * ```
+ *
+ * ```
+ * error[E0433]: failed to resolve: use of undeclared crate or module `chrnoo`
+ *  --> /home/feldera/.feldera/compiler/rust-compilation/udf.rs:3:5
+ *   |
+ * 3 |     chrnoo::Utc::now();
+ *   |     ^^^^^^ use of undeclared crate or module `chrnoo`
+ * ```
+ */
+const rustCompilerErrorRegex =
+  /^((?:[\w-]+: )?(warning:(?! `)|error(\[[\w]+\])?:)([\s\S])+?)(\n(\n|(?=error|warning))|\n?$(?![\s\S]))/gm
 
 /**
  * @returns Errors associated with source files
@@ -208,9 +259,6 @@ export const extractProgramErrors =
       result.push.apply(
         result,
         ((stderr) => {
-          // $(?![\r\n]) - RegEx for the end of a string with multiline flag (/gm)
-          const rustCompilerErrorRegex =
-            /^((warning:(?! `)|error(\[[\w]+\])?:)([\s\S])+?)\n(\n|(?=error|warning))/gm
           const rustInternalCompilerError = extractInternalCompilationError(
             stderr,
             pipeline.name,
@@ -222,7 +270,9 @@ export const extractProgramErrors =
             // so we don't need to split it into errors
             return [rustInternalCompilerError]
           }
-          const rustStderrPart: string[] = Array.from(stderr.matchAll(rustCompilerErrorRegex))
+          const rustStderrPart: string[] = Array.from(
+            flattenStderr(stderr).matchAll(rustCompilerErrorRegex)
+          )
             .map((match) => match[1])
             .filter(
               (stderrPart) => !ignoredRustErrors.some((ignored) => stderrPart.startsWith(ignored))
