@@ -41,6 +41,7 @@
     emptySearchState,
     isFindShortcut,
     useShortcut,
+    positiveMod,
     type SearchDirection,
     type SearchState
   } from 'common-ui'
@@ -165,19 +166,21 @@
 
   const runtimeErrorsCount = $derived(connectorsWithErrorsCount + memoryPressureErrorCount)
 
-  // Log search lives here, with the toolbar that hosts the search bar. The committed search
-  // (what the list runs) advances only on submit, so typing doesn't search as-you-type. The
-  // log list reports its match count so the counter and nav buttons stay in sync.
+  // Log search lives here, with the toolbar that hosts the search bar. `logSearchInput` is the
+  // text in the box; `logSearch` is the submitted search query.
+  // The two diverge while the user types, because a query takes effect only when submitted,
+  // not as-you-type. The log list reports its match count so the counter
+  // and nav buttons stay in sync.
   let logSearchInput = $state('')
   let logSearch: SearchState = $state(emptySearchState)
   let logMatchCount = $state(0)
   let searchBar: ReturnType<typeof SearchBar> | undefined = $state()
-  // Single source of truth for the search bar: derived from the committed `logSearch`. No
-  // committed pattern → null (counter hidden, nav disabled, nothing highlighted).
+  // Single source of truth for the search bar, derived from the submitted `logSearch`. Nothing
+  // submitted - null (counter hidden, nav disabled, nothing highlighted).
   const searchResults = $derived.by(() => {
     if (!logSearch.pattern) return null
     const total = logMatchCount
-    const current = total > 0 ? (((logSearch.occurrenceIndex % total) + total) % total) + 1 : 0
+    const current = total > 0 ? positiveMod(logSearch.occurrenceIndex, total) + 1 : 0
     return { current, total }
   })
 
@@ -190,7 +193,7 @@
       direction
     )
   }
-  // Drop the committed search (highlight + counter). The search bar owns and clears the input
+  // Drop the submitted search (highlight + counter). The search bar owns and clears the input
   // text itself; this only resets what the log list is searching for.
   const resetLogSearch = () => {
     logSearch = emptySearchState

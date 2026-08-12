@@ -232,6 +232,24 @@ future we may allow searching by attributes as well.)
 
 ![Searching for nodes](search.png)
 
+Pressing `Ctrl-F` (`Cmd-F` on macOS) after clicking anywhere in the
+dataflow graph moves the keyboard focus to this search box.
+
+### Searching through metrics, issues and logs
+
+The bottom right has a search button (a magnifying glass) at
+its right end.  It searches the tab that is currently shown:
+
+| Tab     | What the search matches                                                                                             |
+|---------|---------------------------------------------------------------------------------------------------------------------|
+| Metrics | The title of a metrics block or a "top nodes" row, a metric label or identifier               |
+| Logs    | Any log line containing the text                                                                                     |
+| Issues  | Any issue row containing the text                       |
+
+Pressing `Ctrl-F` (`Cmd-F` on macOS) anywhere outside the graph opens
+this search box and selects its contents, so a second `Ctrl-F` starts a
+new query without deleting the old one.
+
 ### Cross-referencing with SQL
 
 Some, but not all, nodes of the dataflow graph can be directly linked

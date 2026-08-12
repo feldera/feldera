@@ -32,6 +32,7 @@ export {
   findOccurrence,
   isFindShortcut,
   searchPatternsEqual,
+  positiveMod,
   type LineMatcher,
   type MatchRange,
   type SearchDirection,

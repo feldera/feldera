@@ -25,7 +25,7 @@
   const { profileData, dataflowData, programCode, callbacks, class: className }: Props = $props()
 
   // DOM element references
-  let element: HTMLDivElement | undefined = $state()
+  let rootElement: HTMLDivElement | undefined = $state()
   let graphContainer: HTMLDivElement | undefined = $state()
   let navigatorContainer: HTMLDivElement | undefined = $state()
 
@@ -34,7 +34,7 @@
   let pointerOnGraph = $state(false)
   $effect(() => {
     const onPointerDown = (e: PointerEvent) => {
-      pointerOnGraph = !!element && element.contains(e.target as Node | null)
+      pointerOnGraph = !!rootElement && rootElement.contains(e.target as Node | null)
     }
     window.addEventListener('pointerdown', onPointerDown, { capture: true })
     return () => window.removeEventListener('pointerdown', onPointerDown, { capture: true })
@@ -135,7 +135,7 @@
   })
 </script>
 
-<div bind:this={element} class="visualizer-wrapper {className || ''}" data-testid="visualizer-diagram">
+<div bind:this={rootElement} class="visualizer-wrapper {className || ''}" data-testid="visualizer-diagram">
   <!-- Main graph visualization (full size) -->
   <div bind:this={graphContainer} class="visualizer-graph"></div>
 

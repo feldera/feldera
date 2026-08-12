@@ -4,7 +4,8 @@
     countOccurrences,
     emptySearchState,
     LogList,
-    type SearchState
+    type SearchState,
+    positiveMod
   } from 'common-ui'
   import type { LookupCoordinator } from '../functions/lookup'
 
@@ -36,7 +37,7 @@
       const pattern = query ? ({ kind: 'substring', query } as const) : null
       search = advanceSearch(search, pattern, direction)
       const total = countOccurrences(lines, pattern)
-      const current = total > 0 ? (((search.occurrenceIndex % total) + total) % total) + 1 : 0
+      const current = total > 0 ? positiveMod(search.occurrenceIndex, total) + 1 : 0
       return { current, total }
     })
   })

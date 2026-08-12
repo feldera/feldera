@@ -30,13 +30,27 @@ export const emptySearchState: SearchState = { pattern: null, occurrenceIndex: 0
  *  `prev` (Shift-Enter) steps backward. */
 export type SearchDirection = 'next' | 'prev'
 
+/**
+ * Euclidean modulo: `index` folded into `[0, length)`, from either end.
+ *
+ * JavaScript's `%` is a remainder, not a modulo — it keeps the sign of the dividend, so `-1 % 3`
+ * is `-1` rather than `2`. Callers can therefore step an index past either bound without a
+ * bounds check.
+ *
+ * `length` must be positive; `0` yields `NaN`.
+ */
+export function positiveMod(index: number, length: number): number {
+  return ((index % length) + length) % length
+}
+
 /** True for the browser "find in page" shortcut (Ctrl-F / Cmd-F, no other modifiers). */
 export function isFindShortcut(e: KeyboardEvent): boolean {
   return (e.key === 'f' || e.key === 'F') && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey
 }
 
 /**
- * The state for a committed in-view search.
+ * The state for a submitted in-view search: which match the cursor is on (counting from 1) and how many
+ * matches the query has.
  */
 export type SearchProgress = { current: number; total: number }
 
@@ -267,9 +281,7 @@ export function findOccurrence(
   if (matches.length === 0) {
     return -1
   }
-  const n = matches.length
-  const wrapped = ((occurrenceIndex % n) + n) % n
-  return matches[wrapped]
+  return matches[positiveMod(occurrenceIndex, matches.length)]
 }
 
 /**

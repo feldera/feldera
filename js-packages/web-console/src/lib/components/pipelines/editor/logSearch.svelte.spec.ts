@@ -15,7 +15,8 @@ import {
   findOccurrence,
   isFindShortcut,
   type SearchPattern,
-  searchPatternsEqual
+  searchPatternsEqual,
+  positiveMod
 } from 'common-ui'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -44,6 +45,29 @@ describe('searchPatternsEqual', () => {
     expect(searchPatternsEqual(re('x'), re('x', ''))).toBe(true) // undefined flags ≡ ''
     expect(searchPatternsEqual(re('x', 'i'), re('x'))).toBe(false)
     expect(searchPatternsEqual(re('x'), substr('x'))).toBe(false)
+  })
+})
+
+describe('positiveMod', () => {
+  it('leaves an in-range cursor alone', () => {
+    expect(positiveMod(0, 3)).toBe(0)
+    expect(positiveMod(2, 3)).toBe(2)
+  })
+
+  it('wraps forward past the last match', () => {
+    expect(positiveMod(3, 3)).toBe(0)
+    expect(positiveMod(7, 3)).toBe(1)
+  })
+
+  it('wraps backward before the first match (plain % would give a negative index)', () => {
+    expect(-1 % 3).toBe(-1) // the reason the Euclidean form is needed
+    expect(positiveMod(-1, 3)).toBe(2)
+    expect(positiveMod(-4, 3)).toBe(2)
+  })
+
+  it('collapses onto the only match for a single-match search', () => {
+    expect(positiveMod(-5, 1)).toBe(0)
+    expect(positiveMod(5, 1)).toBe(0)
   })
 })
 

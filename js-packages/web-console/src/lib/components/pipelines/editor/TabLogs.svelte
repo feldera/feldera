@@ -51,7 +51,7 @@
   }: {
     pipeline: { current: ExtendedPipeline }
     deleted?: boolean
-    /** Committed search state, owned by the monitoring panel (which hosts the search bar in
+    /** Submitted search state, owned by the monitoring panel (which hosts the search bar in
      *  its toolbar). */
     logSearch?: SearchState
     /** Reports the current match count so the panel can drive its search counter/nav buttons. */

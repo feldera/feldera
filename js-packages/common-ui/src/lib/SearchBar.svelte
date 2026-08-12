@@ -21,7 +21,7 @@
     value: string
     placeholder?: string
     title?: string
-    /** The single source of truth for the committed search — see {@link SearchProgress}.
+    /** The single source of truth for the submitted search — see {@link SearchProgress}.
      *  `null` (no active search) hides the counter and disables the nav buttons; the host must
      *  reset it to `null` on `onclear` so the counter, highlight, and buttons clear together. */
     results?: SearchProgress | null
@@ -38,7 +38,7 @@
     onnext: () => void
     /** Step back to the previous match — Shift-Enter or the up button. */
     onprevious: () => void
-    /** Drop the committed search (highlight + counter + nav). Called on Escape, on edit, and on
+    /** Drop the submitted search (highlight + counter + nav). Called on Escape, on edit, and on
      *  close; the host must reset its results to `null`. */
     onclear?: () => void
   }
@@ -104,7 +104,7 @@
     opener = null
   }
 
-  // Commit the current query and step to the next / previous match.
+  // Submit the current query and step to the next / previous match.
   function submit(direction: SearchDirection) {
     if (direction === 'prev') {
       onprevious()
