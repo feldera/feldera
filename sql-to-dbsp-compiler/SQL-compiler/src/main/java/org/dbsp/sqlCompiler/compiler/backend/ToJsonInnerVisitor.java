@@ -219,14 +219,14 @@ public class ToJsonInnerVisitor extends InnerVisitor {
 
     @Override
     public void postorder(DBSPFlatmap node) {
-        this.startArrayProperty("leftInputIndexes");
+        this.startArrayProperty("passthroughIndexes");
         int index = 0;
-        for (int i: node.leftInputIndexes) {
+        for (int i: node.passthroughIndexes) {
             this.propertyIndex(index);
             index++;
             this.stream.append(i);
         }
-        this.endArrayProperty("leftInputIndexes");
+        this.endArrayProperty("passthroughIndexes");
         this.property("shuffle");
         this.stream.append(node.shuffle.toString());
         super.postorder(node);

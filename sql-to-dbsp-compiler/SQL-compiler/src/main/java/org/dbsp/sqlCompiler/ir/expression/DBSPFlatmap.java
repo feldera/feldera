@@ -31,15 +31,15 @@ import java.util.stream.IntStream;
 /**
  * Represents an expression of the form
  * |data| { data.field0.map(|e| {
- *    Tup::new(data.field1, data.field2, ..., rightProj1(Tup1(e)), rightProj2(Tup1(e)), ... )
+ *    Tup::new(data.field1, data.field2, ..., postProcess1(Tup1(e)), postProcess2(Tup1(e)), ... )
  * } ) }
  * If 'withOrdinality' is true, the output also contains indexes (1-based) of the
  * elements in the collection, i.e.:
  * |data| { data.field0.enumerate().map(|e| {
- *   Tup::new(data.field1, data.field2, ..., rightProj1(e.1, cast(e.0+1)), rightProj2(e.1, cast(e.0+1)), ... )
+ *   Tup::new(data.field1, data.field2, ..., postProcess1(e.1, cast(e.0+1)), postProcess2(e.1, cast(e.0+1)), ... )
  * } ) }
  * (The last +1 is because in SQL indexes are 1-based)
- * If there is no rightProj, the above becomes:
+ * If there is no postProcess, the above becomes:
  * |data| { data.field0.enumerate().map(|e| {
  *  Tup::new(data.field1, data.field2, ..., e.1, cast(e.0+1))
  * } ) }
@@ -51,7 +51,7 @@ import java.util.stream.IntStream;
  * - field0 is a collection-typed field
  * - field1, field2, etc. are other fields that are being selected.
  * - e iterates over the elements of the data.field0 collection.
- * - rightProjN are functions applied to e
+ * - postProcess are functions applied to e
  * This represents a closure including another closure.
  * The type of this expression is FunctionType.
  * The argument type is the type of data.
@@ -66,16 +66,16 @@ public final class DBSPFlatmap extends DBSPExpression {
     /** Fields of 'data' emitted in the output.
      * We represent them explicitly, so we can optimize them
      * when combining with a subsequent projection. */
-    public final List<Integer> leftInputIndexes;
+    public final List<Integer> passthroughIndexes;
     /** A list of closure expressions that are applied to the unnest result
      * to produce some of the output fields (argument is either e, or (e, index)),
      * depending on ORDINALITY. */
     @Nullable
-    public final List<DBSPClosureExpression> rightProjections;
+    public final List<DBSPClosureExpression> postProcess;
     /** The type of the index field, if the operator is invoked WITH ORDINALITY.
      * In this case every element of the collection is output together with its index.
      * If the index is not needed, this field is null.  This field is emitted in the
-     * output last if there are no rightProjections. */
+     * output last if there are no postProces functions. */
     @Nullable
     public final DBSPType ordinalityIndexType;
     /** Shuffle to apply to elements in the produced tuple */
@@ -85,18 +85,18 @@ public final class DBSPFlatmap extends DBSPExpression {
     public DBSPFlatmap(CalciteObject node,
                        DBSPTypeTuple inputRowType,
                        DBSPClosureExpression collectionExpression,
-                       List<Integer> leftInputIndexes,
+                       List<Integer> passthroughIndexes,
                        @Nullable
-                       List<DBSPClosureExpression> rightProjections,
+                       List<DBSPClosureExpression> postProcess,
                        @Nullable DBSPType ordinalityIndexType,
                        Shuffle shuffle) {
-        super(node, computeFunctionType(inputRowType, collectionExpression, leftInputIndexes,
-                rightProjections, ordinalityIndexType, shuffle));
+        super(node, computeFunctionType(inputRowType, collectionExpression, passthroughIndexes,
+                postProcess, ordinalityIndexType, shuffle));
         this.inputRowType = inputRowType;
-        this.rightProjections = rightProjections;
+        this.postProcess = postProcess;
         this.collectionExpression = collectionExpression;
         this.collectionKind = collectionExpression.getResultType().code;
-        this.leftInputIndexes = leftInputIndexes;
+        this.passthroughIndexes = passthroughIndexes;
         Utilities.enforce(this.collectionKind == DBSPTypeCode.ARRAY ||
                 this.collectionKind == DBSPTypeCode.MAP);
         if (ordinalityIndexType != null && this.collectionKind == DBSPTypeCode.MAP) {
@@ -118,28 +118,28 @@ public final class DBSPFlatmap extends DBSPExpression {
 
     /** Create a new DBSPFlatmap which is identical to this one in all respects except the final shuffle */
     public DBSPFlatmap withShuffle(Shuffle shuffle) {
-        List<Integer> leftInputIndexes = new ArrayList<>();
+        List<Integer> passthroughIndexes = new ArrayList<>();
         Set<Integer> removeFromShuffle = new HashSet<>();
         int shuffleIndex;
 
-        // Remove the left input indexes which are not used by the output shuffle
-        for (shuffleIndex = 0; shuffleIndex < this.leftInputIndexes.size(); shuffleIndex++) {
-            int li = this.leftInputIndexes.get(shuffleIndex);
+        // Remove the left passthrough indexes which are not used by the output shuffle
+        for (shuffleIndex = 0; shuffleIndex < this.passthroughIndexes.size(); shuffleIndex++) {
+            int li = this.passthroughIndexes.get(shuffleIndex);
             if (shuffle.emitsIndex(li))
-                leftInputIndexes.add(li);
+                passthroughIndexes.add(li);
             else
                 removeFromShuffle.add(shuffleIndex);
         }
 
-        // Remove the right projections which are not used by the output shuffle
-        List<DBSPClosureExpression> rightProjections = null;
-        if (this.rightProjections != null) {
-            rightProjections = new ArrayList<>();
+        // Remove the postProcess functions which are not used by the output shuffle
+        List<DBSPClosureExpression> postProcess = null;
+        if (this.postProcess != null) {
+            postProcess = new ArrayList<>();
             for (int i = 0;
-                 shuffleIndex < this.leftInputIndexes.size() + this.rightProjections.size();
+                 shuffleIndex < this.passthroughIndexes.size() + this.postProcess.size();
                  shuffleIndex++, i++) {
                 if (shuffle.emitsIndex(shuffleIndex)) {
-                    rightProjections.add(this.rightProjections.get(i));
+                    postProcess.add(this.postProcess.get(i));
                 } else {
                     removeFromShuffle.add(shuffleIndex);
                 }
@@ -149,13 +149,13 @@ public final class DBSPFlatmap extends DBSPExpression {
         // Compute the new shuffle which does not use the removed input fields
         var shuffle1 = shuffle.compress(removeFromShuffle);
         return new DBSPFlatmap(this.getNode(), this.inputRowType, this.collectionExpression,
-                leftInputIndexes, rightProjections, this.ordinalityIndexType, shuffle1);
+                passthroughIndexes, postProcess, this.ordinalityIndexType, shuffle1);
     }
 
     /** Given the constructor arguments, compute the type of the Flatmap as a function */
     static DBSPTypeFunction computeFunctionType(
             DBSPTypeTuple inputRowType, DBSPClosureExpression collectionExpression,
-            List<Integer> leftInputIndexes, @Nullable List<DBSPClosureExpression> rightProjections,
+            List<Integer> passthroguhIndexes, @Nullable List<DBSPClosureExpression> postProcess,
             @Nullable DBSPType ordinalityIndexType, Shuffle shuffle) {
         // Follows the structure in LowerCircuitVisitor.rewriteFlatmap
         DBSPType iterable = collectionExpression.getResultType();
@@ -163,11 +163,11 @@ public final class DBSPFlatmap extends DBSPExpression {
         DBSPTypeTupleBase tuple = collectionElementType.as(DBSPTypeTupleBase.class);
 
         List<DBSPType> resultColumns = new ArrayList<>();
-        for (int i: leftInputIndexes)
+        for (int i: passthroguhIndexes)
             resultColumns.add(inputRowType.getFieldType(i));
 
-        if (rightProjections != null) {
-            for (var clo: rightProjections) {
+        if (postProcess != null) {
+            for (var clo: postProcess) {
                 resultColumns.add(clo.getResultType());
             }
         } else {
@@ -196,7 +196,7 @@ public final class DBSPFlatmap extends DBSPExpression {
     public DBSPExpression deepCopy() {
         return new DBSPFlatmap(this.getNode(),
                 this.inputRowType, this.collectionExpression,
-                this.leftInputIndexes, this.rightProjections,
+                this.passthroughIndexes, this.postProcess,
                 this.ordinalityIndexType, this.shuffle);
     }
 
@@ -206,10 +206,10 @@ public final class DBSPFlatmap extends DBSPExpression {
         if (otherExpression == null)
             return false;
         return context.equivalent(this.collectionExpression, otherExpression.collectionExpression) &&
-                Linq.same(this.leftInputIndexes, otherExpression.leftInputIndexes) &&
+                Linq.same(this.passthroughIndexes, otherExpression.passthroughIndexes) &&
                 this.shuffle.equals(otherExpression.shuffle) &&
                 this.type.sameType(other.getType()) &&
-                new EquivalenceContext().equivalent(this.rightProjections, otherExpression.rightProjections);
+                new EquivalenceContext().equivalent(this.postProcess, otherExpression.postProcess);
     }
 
     @Override
@@ -225,15 +225,15 @@ public final class DBSPFlatmap extends DBSPExpression {
             visitor.property("ordinalityIndexType");
             this.ordinalityIndexType.accept(visitor);
         }
-        if (this.rightProjections != null) {
-            visitor.startArrayProperty("rightProjections");
+        if (this.postProcess != null) {
+            visitor.startArrayProperty("postProcess");
             int index = 0;
-            for (DBSPClosureExpression proj: this.rightProjections) {
+            for (DBSPClosureExpression proj: this.postProcess) {
                 visitor.propertyIndex(index);
                 index++;
                 proj.accept(visitor);
             }
-            visitor.endArrayProperty("rightProjections");
+            visitor.endArrayProperty("postProcess");
         }
         visitor.property("type");
         this.type.accept(visitor);
@@ -254,8 +254,8 @@ public final class DBSPFlatmap extends DBSPExpression {
             return false;
         return this.inputRowType == o.inputRowType &&
                 this.collectionExpression == o.collectionExpression &&
-                Linq.same(this.leftInputIndexes, o.leftInputIndexes) &&
-                Linq.same(this.rightProjections, o.rightProjections) &&
+                Linq.same(this.passthroughIndexes, o.passthroughIndexes) &&
+                Linq.same(this.postProcess, o.postProcess) &&
                 this.ordinalityIndexType == o.ordinalityIndexType &&
                 this.shuffle == o.shuffle;
     }
@@ -279,14 +279,14 @@ public final class DBSPFlatmap extends DBSPExpression {
 
         DBSPType collectionElementType = this.getCollectionElementType();
         List<String> expressions = new ArrayList<>();
-        for (int index: this.leftInputIndexes) 
+        for (int index: this.passthroughIndexes)
             expressions.add("data." + index);
 
         DBSPTypeTupleBase collectionAsTuple = collectionElementType.as(DBSPTypeTupleBase.class);
         int eSize = collectionAsTuple != null ? collectionAsTuple.size() : 1;
         String e0plus1 = "e+1";
-        if (this.rightProjections != null) {
-            for (DBSPClosureExpression clo: this.rightProjections) {
+        if (this.postProcess != null) {
+            for (DBSPClosureExpression clo: this.postProcess) {
                 List<String> fields;
                 final String base;
                 if (this.ordinalityIndexType != null)
@@ -341,15 +341,15 @@ public final class DBSPFlatmap extends DBSPExpression {
     public static DBSPFlatmap fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPTypeTuple inputRowType = fromJsonInner(node, "inputRowType", decoder, DBSPTypeTuple.class);
         DBSPClosureExpression collectionExpression = fromJsonInner(node, "collectionExpression", decoder, DBSPClosureExpression.class);
-        List<Integer> leftInputIndexes = Linq.list(Linq.map(
-                        Utilities.getProperty(node, "leftInputIndexes").elements(),
+        List<Integer> passthroughIndexes = Linq.list(Linq.map(
+                        Utilities.getProperty(node, "passthroughIndexes").elements(),
                         JsonNode::asInt));
-        List<DBSPClosureExpression> rightProjections = null;
-        if (node.has("rightProjections"))
-            rightProjections = fromJsonInnerList(node, "rightProjections", decoder, DBSPClosureExpression.class);
+        List<DBSPClosureExpression> postProcess = null;
+        if (node.has("postProcess"))
+            postProcess = fromJsonInnerList(node, "postProcess", decoder, DBSPClosureExpression.class);
         DBSPType ordinalityIndexType = fromJsonInner(node, "ordinalityIndexType", decoder, DBSPType.class);
         Shuffle shuffle = Shuffle.fromJson(Utilities.getProperty(node, "shuffle"));
         return new DBSPFlatmap(CalciteObject.EMPTY, inputRowType,
-                collectionExpression, leftInputIndexes, rightProjections, ordinalityIndexType, shuffle);
+                collectionExpression, passthroughIndexes, postProcess, ordinalityIndexType, shuffle);
     }
 }
