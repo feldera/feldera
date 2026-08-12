@@ -16,21 +16,26 @@ jobs:
   adapter-tests:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'adapter-tests') }}
     name: Test Adapters
+    # The suite runs in 3 to 10 minutes. Without a bound, a test that blocks
+    # instead of failing holds a runner for the 6 hour default and stalls the
+    # merge queue behind it; the cancel-if-* sentinels cannot help, because a
+    # job that hangs never reports failure.
+    timeout-minutes: 30
     strategy:
       matrix:
         include:
-          - runner: [k8s-runners-amd64]
+          - runner: [gke-runners-amd64]
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-          - runner: [k8s-runners-arm64]
+          - runner: [gke-runners-arm64]
             arch: aarch64
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
     services:
       postgres:
-        image: postgres:15
+        image: debezium/postgres:15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
@@ -40,14 +45,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      redpanda:
-        image: ghcr.io/feldera/redpanda-ci:v24
-        options: >-
-          --health-cmd "rpk cluster health"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-          --cpuset-cpus 0-1
       redis:
         image: redis:7-alpine
         options: >-
@@ -55,12 +52,14 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      dynamodb:
+        image: amazon/dynamodb-local:latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Download Test Binaries
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/download-artifact-retry
         with:
           name: feldera-test-binaries-${{ matrix.target }}
           path: build
@@ -71,8 +70,19 @@ jobs:
       - name: Make binaries executable
         run: chmod +x ./build/*
 
+      # Not a service container: the image's redpanda.yaml advertises
+      # 127.0.0.1, so clients that bootstrap via the `redpanda` hostname get
+      # redirected to their own container. Rewriting the advertised address
+      # needs a command override, which GHA services don't support.
+      - name: Start Redpanda broker
+        run: |
+          docker run -d --name redpanda --network ${{ job.container.network }} \
+            --cpuset-cpus 0-1 --entrypoint sh ghcr.io/feldera/redpanda-ci:v24 -c '
+              sed "s/127.0.0.1/redpanda/" /etc/redpanda/redpanda.yaml > /tmp/redpanda.yaml
+              exec /opt/redpanda/bin/redpanda -c 2 --redpanda-cfg /tmp/redpanda.yaml'
+
       - name: Setup uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           version: "0.6.5"
 
@@ -81,6 +91,16 @@ jobs:
           uv venv
           uv pip install -r ../iceberg/src/test/requirements.ci.txt
         working-directory: crates/adapters
+
+      - name: Wait for Redpanda broker
+        run: |
+          for _ in $(seq 1 30); do
+            docker exec redpanda rpk cluster health 2>/dev/null | grep -q "Healthy:.*true" && exit 0
+            sleep 2
+          done
+          echo "redpanda did not become healthy" >&2
+          docker logs redpanda >&2
+          exit 1
 
       # Pubsub tests are only supported on x86_64, see below
       - name: Run adapters tests
@@ -92,10 +112,16 @@ jobs:
         shell: bash
         env:
           RUST_BACKTRACE: 1
-          RUST_TEST_THREADS: 16
-          REDIS_URL: redis://localhost:6379/0
-          POSTGRES_URL: postgres://postgres:password@localhost:5432
-          REDPANDA_BROKERS: 127.0.0.1
+          # Cap libtest parallelism at the runner core budget. Adapter tests
+          # share the pod with postgres/redpanda/redis sidecars; if those start
+          # starving we can lower CI_RUNNER_CORES or switch this to its own var.
+          RUST_TEST_THREADS: ${{ vars.CI_RUNNER_CORES || 20 }}
+          # Service containers live on the job's docker network under the
+          # dind runners and are addressed by service name, not localhost.
+          REDIS_URL: redis://redis:6379/0
+          DYNAMODB_ENDPOINT: http://dynamodb:8000
+          POSTGRES_URL: postgres://postgres:password@postgres:5432
+          REDPANDA_BROKERS: redpanda
           # This thing can't resolve `localhost` (?), needs to be an IP address
           PUBSUB_EMULATOR_HOST: 127.0.0.1:8681
           ICEBERG_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
@@ -106,10 +132,10 @@ jobs:
           POSTGRES_SSL_CA_PEM: ${{ secrets.ci_postgres_tls_crt }}
           POSTGRES_SSL_VERIFY_HOSTNAME: "false"
 
-      - name: Show Kubernetes node
+      # Detach redpanda before the runner tears down the job network.
+      - name: Stop Redpanda broker
         if: always()
-        run: |
-          echo "K8S node: ${K8S_NODE_NAME}"
+        run: docker rm -f redpanda
 
   # We can't run the pubsub tests on aarch64 because we don't have a
   # arm image for the pubsub emulator:
@@ -130,16 +156,11 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - name: Show Kubernetes node
-        if: always()
-        run: |
-          echo "K8S node: ${K8S_NODE_NAME}"
-
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Download Test Binaries
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/download-artifact-retry
         with:
           name: feldera-test-binaries-x86_64-unknown-linux-gnu
           path: build

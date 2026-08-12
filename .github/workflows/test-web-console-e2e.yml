@@ -6,8 +6,9 @@ on:
 
 jobs:
   web-console-integration-tests:
+    if: ${{ !contains(vars.CI_SKIP_JOBS, 'web-console-integration-tests') }}
     name: Web Console Integration Tests
-    runs-on: [k8s-runners-amd64]
+    runs-on: [gke-runners-amd64]
 
     container:
       image: mcr.microsoft.com/playwright:v1.58.2-noble
@@ -27,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Bun
         run: |
@@ -59,7 +60,3 @@ jobs:
           PLAYWRIGHT_API_ORIGIN: http://localhost:8080
           PLAYWRIGHT_APP_ORIGIN: http://localhost:8080
 
-      - name: Show Kubernetes node
-        if: always()
-        run: |
-          echo "K8S node: ${K8S_NODE_NAME}"

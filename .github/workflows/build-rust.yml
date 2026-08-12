@@ -8,73 +8,75 @@ env:
   CARGO_FEATURES_BASE: "fips,pubsub-emulator-test,iceberg-tests-fs,iceberg-tests-glue"
   FELDERA_PLATFORM_VERSION_SUFFIX: ${{ github.sha }}
   FELDERA_BUILD_ORIGIN: ci
-  RUSTC_WRAPPER: sccache
-  SCCACHE_CACHE_SIZE: ${{ vars.SCCACHE_CACHE_SIZE }}
-  SCCACHE_BUCKET: ${{ vars.SCCACHE_BUCKET }}
-  SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
-  SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
-  AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
-  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
+  # No sccache on this release branch: the branch sees a handful of one-off
+  # runs, not worth polluting the shared compile cache for.
+  # GCS HMAC credentials for the feldera-gcs-cache action (cargo registry).
+  AWS_ACCESS_KEY_ID: "${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}"
+  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}"
+  # Incremental compilation only adds overhead in one-shot CI builds.
+  CARGO_INCREMENTAL: 0
+  # Cap cargo parallelism at the k8s runner core budget so arm64 pods don't
+  # OOM from too many parallel linkers. Override via the CI_RUNNER_CORES repo
+  # variable; the fallback matches the current 20-core pod.
+  CARGO_BUILD_JOBS: ${{ vars.CI_RUNNER_CORES || 20 }}
 
 jobs:
   build-rust:
     name: Build Rust Binaries
+    # Backstop for the whole job (all steps): a stalled network call can hang
+    # silently for the GHA default of 360 minutes before the merge queue's
+    # check_response_timeout_minutes force-cancels it. Generous because the
+    # builds run without sccache, so every run compiles from scratch.
+    timeout-minutes: 180
 
     # We run this on two different architectures (x86_64 and aarch64)
     strategy:
       matrix:
         include:
-          - runner: [k8s-runners-amd64]
+          - runner: [gke-runners-amd64]
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-          - runner: [k8s-runners-arm64]
+          - runner: [gke-runners-arm64]
             arch: aarch64
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
 
     steps:
-      - name: Show Kubernetes node
-        if: always()
-        run: |
-          echo "K8S node: ${K8S_NODE_NAME}"
-
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Cache Cargo registry and index
-        uses: actions/cache@v5
+        uses: ./.github/actions/feldera-gcs-cache
         with:
+          # registry/src excluded — cargo regenerates it from registry/cache.
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-registry-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+            # Absolute paths: CARGO_HOME is /home/ubuntu/.cargo (feldera-dev image
+            # env), while ~ expands to the runner's HOME (/github/home in container
+            # jobs), so tilde paths would cache a directory cargo never writes.
+            /home/ubuntu/.cargo/registry/cache
+            /home/ubuntu/.cargo/registry/index
+            /home/ubuntu/.cargo/git/db
+          key: build-rust-cargo-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ matrix.target }}-
+            build-rust-cargo-${{ runner.os }}-${{ matrix.target }}-
 
-      # Thanks to rust cargo non-sense it's too hard to split this into test job
-      #
-      # limiting jobs with --test-threads 18: doc test call the linker for every test, on arm machines
-      # this can lead up to 128 parallel linkers being used OOM'ing the pod
-      # https://github.com/rust-lang/cargo/issues/10702
+      # Doc tests invoke the linker per test; cap concurrency at the runner
+      # core budget so arm64 pods don't OOM. See rust-lang/cargo#10702.
       - name: Run Rust doc tests
         if: matrix.arch == 'x86_64'
         run: |
           # Don't build the webconsole again for rust tests
           export WEBCONSOLE_BUILD_DIR="$(mktemp -d)"
           touch $WEBCONSOLE_BUILD_DIR/index.html
-          cargo test --locked --doc --workspace -- --test-threads 18
+          cargo test --locked --doc --workspace -- --test-threads ${{ vars.CI_RUNNER_CORES || 20 }}
 
       - name: Build Rust binaries
         run: |
           FEATURES="${{ env.CARGO_FEATURES_BASE }}"
           cargo build ${{ env.CARGO_FLAGS }} --features "$FEATURES" --target=${{ matrix.target }}
-
-      - name: Print sccache stats
-        run: |
-          sccache --show-stats
 
       # Get list of executables
       - name: Collect executables
@@ -117,21 +119,21 @@ jobs:
 
       # Upload test binaries as one artifact
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: feldera-test-binaries-${{ matrix.target }}
           path: build-artifacts
           retention-days: 7
 
       - name: Upload fda
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: fda-${{ matrix.target }}
           path: build-release-artifacts/fda
           retention-days: 7
 
       - name: Upload pipeline-manager
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: pipeline-manager-${{ matrix.target }}
           path: build-release-artifacts/pipeline-manager
@@ -153,32 +155,33 @@ jobs:
             fda_artifact: fda.exe
     runs-on: ${{ matrix.runner }}
 
-    # sccache is not available on these runners
-    env:
-      RUSTC_WRAPPER: ""
-
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
 
       - name: Cache Cargo registry and index
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
+          # registry/src excluded — cargo regenerates it from registry/cache.
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-registry-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+            # Absolute paths: CARGO_HOME is /home/ubuntu/.cargo (feldera-dev image
+            # env), while ~ expands to the runner's HOME (/github/home in container
+            # jobs), so tilde paths would cache a directory cargo never writes.
+            /home/ubuntu/.cargo/registry/cache
+            /home/ubuntu/.cargo/registry/index
+            /home/ubuntu/.cargo/git/db
+          key: build-rust-fda-native-cargo-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ matrix.target }}-
+            build-rust-fda-native-cargo-${{ runner.os }}-${{ matrix.target }}-
 
       - name: Build fda
         run: cargo build --release --locked -p fda --target=${{ matrix.target }}
 
       - name: Upload fda
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: fda-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/${{ matrix.fda_artifact }}

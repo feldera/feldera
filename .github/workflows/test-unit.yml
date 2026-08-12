@@ -6,6 +6,9 @@ on:
 
 env:
   RUST_BACKTRACE: 1
+  # Cap libtest parallelism in every Rust test binary at the runner core
+  # budget. Overridable via the CI_RUNNER_CORES repo variable.
+  RUST_TEST_THREADS: ${{ vars.CI_RUNNER_CORES || 20 }}
 
 permissions:
   actions: read
@@ -17,32 +20,36 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: [k8s-runners-amd64]
+          - runner: [gke-runners-amd64]
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-          - runner: [k8s-runners-arm64]
+          - runner: [gke-runners-arm64]
             arch: aarch64
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Download Test Binaries
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/download-artifact-retry
         with:
           name: feldera-test-binaries-${{ matrix.target }}
           path: build
+          run-id: ${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download Compiler Binaries
-        uses: actions/download-artifact@v8
+        uses: ./.github/actions/download-artifact-retry
         with:
           name: feldera-sql-compiler
           path: sql-build
+          run-id: ${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make binaries executable
@@ -144,7 +151,3 @@ jobs:
           done
         working-directory: crates/pipeline-manager
 
-      - name: Show Kubernetes node
-        if: always()
-        run: |
-          echo "K8S node: ${K8S_NODE_NAME}"

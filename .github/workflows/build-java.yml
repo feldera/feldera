@@ -4,32 +4,41 @@ on:
   workflow_call:
   workflow_dispatch:
 
+env:
+  # Pin Maven's local repo so it matches the cache path regardless of
+  # whatever HOME the GHA container runner sets — JVM's user.home reads
+  # /etc/passwd, not $HOME, and we don't want to rely on that match.
+  MAVEN_OPTS: -Dmaven.repo.local=/home/ubuntu/.m2/repository
+
 jobs:
   build-jar:
     name: Build Compiler
-    runs-on: [k8s-runners-amd64]
+    runs-on: [gke-runners-amd64]
     permissions:
-      id-token: write
       contents: read
+    env:
+      # GCS HMAC credentials — feldera-gcs-cache reads these to talk to the
+      # actions-cache bucket. Scoped to this job: ambient AWS_* credentials
+      # confuse configure-aws-credentials in upload-jar, which must
+      # authenticate purely via OIDC.
+      AWS_ACCESS_KEY_ID: "${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}"
+      AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}"
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
     steps:
-      - name: Show Kubernetes node
-        if: always()
-        run: |
-          echo "K8S node: ${K8S_NODE_NAME}"
-
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - uses: actions/cache@v5
+      - name: Cache JVM build dependencies
+        uses: ./.github/actions/feldera-gcs-cache
         with:
           path: |
             /home/ubuntu/.gradle
+            /home/ubuntu/.m2/repository
             ./sql-to-dbsp-compiler/calcite
-          key: sql2dbsp-java-cache-${{ runner.os }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env') }}
+          key: build-java-jvm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env', 'sql-to-dbsp-compiler/**/pom.xml') }}
           restore-keys: |
-            sql2dbsp-java-cache-${{ runner.os }}-
+            build-java-jvm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: gradle version
         run: |
@@ -52,14 +61,33 @@ jobs:
           cp ./sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar build-artifacts/
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: feldera-sql-compiler
           path: build-artifacts
           retention-days: 7
 
+  # S3 upload runs in a separate job so the OIDC session token never enters
+  # the build-jar environment, where it would poison the cache save phase
+  # of runs-on/cache (MinIO rejects requests carrying a stray AWS_SESSION_TOKEN).
+  upload-jar:
+    name: Upload JAR to S3
+    needs: build-jar
+    runs-on: [gke-runners-amd64]
+    permissions:
+      id-token: write
+      contents: read
+    container:
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: feldera-sql-compiler
+          path: build-artifacts
+
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v5.1.0
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
           role-to-assume: ${{ vars.SQL2DBSP_UPLOAD_ROLE }}
           role-session-name: gha-${{ github.run_id }}

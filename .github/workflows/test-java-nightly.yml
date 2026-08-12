@@ -3,6 +3,19 @@ name: Java SLT Nightly
 on:
   schedule:
     - cron: "30 11 * * *" # 11:30 AM UTC daily
+  workflow_dispatch:
+
+env:
+  # No sccache on this release branch: the branch sees a handful of one-off
+  # runs, not worth polluting the shared compile cache for.
+  # GCS HMAC credentials for the feldera-gcs-cache action.
+  AWS_ACCESS_KEY_ID: "${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}"
+  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}"
+  # Incremental compilation only adds overhead in one-shot CI builds.
+  CARGO_INCREMENTAL: 0
+  # Pin Maven's local repo so it matches the cache path regardless of the
+  # container runner's $HOME.
+  MAVEN_OPTS: -Dmaven.repo.local=/home/ubuntu/.m2/repository
 
 jobs:
   java-tests:
@@ -10,36 +23,46 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: [k8s-runners-amd64]
+          - runner: [gke-runners-amd64]
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-          - runner: [k8s-runners-arm64]
+          - runner: [gke-runners-arm64]
             arch: aarch64
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-13b176e3436b4c753c4cf8287caba6be847f6d1b
     steps:
-      - name: Show Kubernetes node
-        if: always()
-        run: |
-          echo "K8S node: ${K8S_NODE_NAME}"
-
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+      - name: Cache Cargo registry
+        uses: ./.github/actions/feldera-gcs-cache
+        with:
+          # Only the crate downloads, NOT target/ (see test-java.yml for why).
+          # registry/src is excluded, cargo regenerates it from registry/cache.
+          path: |
+            # Absolute paths: CARGO_HOME is /home/ubuntu/.cargo (feldera-dev image
+            # env), while ~ expands to the runner's HOME (/github/home in container
+            # jobs), so tilde paths would cache a directory cargo never writes.
+            /home/ubuntu/.cargo/registry/cache
+            /home/ubuntu/.cargo/registry/index
+            /home/ubuntu/.cargo/git/db
+          key: test-java-nightly-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            test-java-nightly-cargo-${{ runner.os }}-${{ runner.arch }}-
 
-      - uses: actions/cache@v5
+      - name: Cache JVM build dependencies
+        uses: ./.github/actions/feldera-gcs-cache
         with:
           path: |
             /home/ubuntu/.gradle
+            /home/ubuntu/.m2/repository
             ./sql-to-dbsp-compiler/calcite
-          key: sql2dbsp-java-cache2-${{ runner.os }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env') }}
+          key: test-java-nightly-jvm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env', 'sql-to-dbsp-compiler/**/pom.xml') }}
           restore-keys: |
-            sql2dbsp-java-cache2-${{ runner.os }}-
+            test-java-nightly-jvm-${{ runner.os }}-${{ runner.arch }}-
 
       # TODO: Avoid doing this twice and ideally download & reuse the JAR from build-java.yml workflow
       - name: Run build.sh
