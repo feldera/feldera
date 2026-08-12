@@ -168,6 +168,13 @@ pub const CIRCUIT_WAIT_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("circuit_wait_time_seconds"));
 pub const STEPS_COUNT: MetricId = MetricId(Cow::Borrowed("steps_count"));
 pub const CIRCUIT_RUNTIME_SECONDS: MetricId = MetricId(Cow::Borrowed("circuit_runtime_seconds"));
+
+/// CPU time the worker thread used while evaluating steps.
+pub const CIRCUIT_CPU_TIME_SECONDS: MetricId = MetricId(Cow::Borrowed("circuit_cpu_time_seconds"));
+
+/// Fraction of the circuit's step time spent on the CPU.
+pub const CIRCUIT_NONBLOCKING_PERCENT: MetricId =
+    MetricId(Cow::Borrowed("circuit_nonblocking_percent"));
 pub const CIRCUIT_IDLE_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("circuit_idle_time_seconds"));
 pub const CIRCUIT_RUNTIME_ELAPSED_SECONDS: MetricId =
@@ -180,7 +187,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 76] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 78] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -471,7 +478,7 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 76] = [
         name: CIRCUIT_WAIT_TIME_SECONDS,
         category: CircuitMetricCategory::Time,
         advanced: false,
-        description: "Time the circuit scheduler spent waiting for an operator to become ready.",
+        description: "Time during a step when the worker's async runtime had nothing to run, for example while waiting for other workers at an exchange or for background work to finish. Excludes time an operator blocks its thread without yielding, which shows up instead as a low 'circuit_nonblocking_percent'.",
     },
     CircuitMetric {
         name: STEPS_COUNT,
@@ -483,7 +490,19 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 76] = [
         name: CIRCUIT_RUNTIME_SECONDS,
         category: CircuitMetricCategory::Time,
         advanced: false,
-        description: "Total time spent evaluating the circuit, including operators runtime and circuit wait time ('circuit_wait_time_seconds').",
+        description: "Total time spent evaluating the circuit: operator runtime, circuit wait time ('circuit_wait_time_seconds'), and time blocked in the kernel or descheduled. See also 'circuit_cpu_time_seconds'.",
+    },
+    CircuitMetric {
+        name: CIRCUIT_CPU_TIME_SECONDS,
+        category: CircuitMetricCategory::Time,
+        advanced: false,
+        description: "CPU time the worker thread used while evaluating steps. Subtracting this and 'circuit_wait_time_seconds' from 'circuit_runtime_seconds' leaves the time the worker was blocked in the kernel or descheduled.",
+    },
+    CircuitMetric {
+        name: CIRCUIT_NONBLOCKING_PERCENT,
+        category: CircuitMetricCategory::Time,
+        advanced: true,
+        description: "Fraction of the circuit's step time spent on the CPU, as opposed to waiting for other workers, blocking in the kernel, or being descheduled.",
     },
     CircuitMetric {
         name: CIRCUIT_IDLE_TIME_SECONDS,

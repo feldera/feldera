@@ -6,11 +6,12 @@ use crate::{
         GlobalNodeId,
         circuit_builder::{CircuitBase, Node},
         metadata::{
-            BACKGROUND_CACHE_OCCUPANCY, CIRCUIT_IDLE_TIME_SECONDS, CIRCUIT_METRICS,
-            CIRCUIT_RUNTIME_ELAPSED_SECONDS, CIRCUIT_RUNTIME_SECONDS, CIRCUIT_WAIT_TIME_SECONDS,
-            CircuitMetric, FOREGROUND_CACHE_OCCUPANCY, INVOCATIONS_COUNT, MetaItem, MetricId,
-            MetricReading, OperatorMeta, RUNTIME_NONBLOCKING_PERCENT, RUNTIME_PERCENT,
-            RUNTIME_SECONDS, SPINE_STORAGE_SIZE_BYTES, STEPS_COUNT, USED_MEMORY_BYTES,
+            BACKGROUND_CACHE_OCCUPANCY, CIRCUIT_CPU_TIME_SECONDS, CIRCUIT_IDLE_TIME_SECONDS,
+            CIRCUIT_METRICS, CIRCUIT_NONBLOCKING_PERCENT, CIRCUIT_RUNTIME_ELAPSED_SECONDS,
+            CIRCUIT_RUNTIME_SECONDS, CIRCUIT_WAIT_TIME_SECONDS, CircuitMetric,
+            FOREGROUND_CACHE_OCCUPANCY, INVOCATIONS_COUNT, MetaItem, MetricId, MetricReading,
+            OperatorMeta, RUNTIME_NONBLOCKING_PERCENT, RUNTIME_PERCENT, RUNTIME_SECONDS,
+            SPINE_STORAGE_SIZE_BYTES, STEPS_COUNT, USED_MEMORY_BYTES,
         },
     },
     monitor::{TraceMonitor, visual_graph::Graph},
@@ -30,7 +31,7 @@ use std::{
 use zip::{ZipWriter, write::SimpleFileOptions};
 
 mod cpu;
-pub use cpu::CPUProfiler;
+pub use cpu::{CPUProfiler, RuntimeIdle};
 
 /// Rudimentary circuit profiler.
 ///
@@ -308,8 +309,13 @@ impl Profiler {
     }
 
     /// Enable CPU profiling.
-    pub fn enable_cpu_profiler(&self) {
-        self.cpu_profiler.attach(&self.circuit, "cpu_profiler");
+    ///
+    /// `runtime_idle` comes from the [`CircuitHandle`](crate::circuit::CircuitHandle)
+    /// whose runtime evaluates this circuit; it is the source of the circuit's
+    /// wait time.
+    pub fn enable_cpu_profiler(&self, runtime_idle: RuntimeIdle) {
+        self.cpu_profiler
+            .attach(&self.circuit, "cpu_profiler", runtime_idle);
     }
 
     pub fn profile(&self, runtime_elapsed: Duration) -> WorkerProfile {
@@ -387,6 +393,11 @@ impl Profiler {
                     CIRCUIT_WAIT_TIME_SECONDS => profile.wait_profile.real_time(),
                     STEPS_COUNT => profile.step_profile.invocations(),
                     CIRCUIT_RUNTIME_SECONDS => profile.step_profile.real_time(),
+                    CIRCUIT_CPU_TIME_SECONDS => profile.step_profile.cpu_time(),
+                    CIRCUIT_NONBLOCKING_PERCENT => MetaItem::Percent {
+                        numerator: profile.step_profile.cpu_time().as_micros() as u64,
+                        denominator: profile.step_profile.real_time().as_micros() as u64,
+                    },
                     CIRCUIT_IDLE_TIME_SECONDS => profile.idle_profile.real_time(),
                     CIRCUIT_RUNTIME_ELAPSED_SECONDS => runtime_elapsed,
                 ];

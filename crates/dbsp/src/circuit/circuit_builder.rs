@@ -22,6 +22,7 @@
 //! The API that this directly exposes runs the circuit in the context of the
 //! current thread.  To instead run the circuit in a collection of worker
 //! threads, use [`Runtime::init_circuit`].
+use crate::profile::RuntimeIdle;
 use crate::{
     Error as DbspError, Position, Runtime, RuntimeError,
     circuit::{
@@ -3217,13 +3218,23 @@ impl RootCircuit {
         // TODO: user LocalRuntime instead of Runtime + LocalSet when
         // tokio::LocalRuntime is stable.
         // Local tokio runtime that schedules operators on the current worker thread.
-        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .map_err(|e| {
+        //
+        // The park hooks measure the time this runtime has nothing to run, which
+        // is what the circuit's wait time reports. The runtime parks only while
+        // it is driving a step, so all of it belongs to some step; the profiler
+        // reads the accumulator at step boundaries to say which.
+        let runtime_idle = RuntimeIdle::new();
+        let tokio_runtime = {
+            let (park, unpark) = (runtime_idle.clone(), runtime_idle.clone());
+            let mut builder = tokio::runtime::Builder::new_current_thread();
+            builder.on_thread_park(move || park.park());
+            builder.on_thread_unpark(move || unpark.unpark());
+            builder.build().map_err(|e| {
                 DbspError::Scheduler(SchedulerError::TokioError {
                     error: e.to_string(),
                 })
-            })?;
+            })?
+        };
 
         let mut circuit = RootCircuit::new();
         // On failure, explicitly deallocate whatever the constructor built:
@@ -3286,6 +3297,7 @@ impl RootCircuit {
                 circuit,
                 executor,
                 tokio_runtime,
+                runtime_idle,
                 replay_info: None,
                 boundary_streams: None,
                 concurrent_bootstrap_info: None,
@@ -7619,6 +7631,10 @@ pub struct CircuitHandle {
     circuit: RootCircuit,
     executor: Box<dyn Executor<RootCircuit>>,
     tokio_runtime: TokioRuntime,
+
+    /// Time `tokio_runtime` spent parked, fed by its park hooks and read by the
+    /// CPU profiler at step boundaries.
+    runtime_idle: RuntimeIdle,
     replay_info: Option<BootstrapInfo>,
 
     /// The boundary streams of the replay prepared by
@@ -7735,6 +7751,14 @@ struct ConcurrentBootstrapInfo {
 }
 
 impl CircuitHandle {
+    /// Time this circuit's runtime has spent with nothing to run.
+    ///
+    /// Handed to the CPU profiler, which turns it into the circuit's wait time
+    /// per step.
+    pub fn runtime_idle(&self) -> RuntimeIdle {
+        self.runtime_idle.clone()
+    }
+
     /// Start and instantly commit a transaction, waiting for the commit to complete.
     pub fn transaction(&self) -> Result<(), DbspError> {
         self.tokio_runtime

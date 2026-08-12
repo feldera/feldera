@@ -824,7 +824,7 @@ impl Runtime {
                         }
                     }
                     Ok(Command::EnableProfiler) => {
-                        profiler.enable_cpu_profiler();
+                        profiler.enable_cpu_profiler(circuit.runtime_idle());
                         // Send response.
                         if status_sender.send(Ok(Response::Unit)).is_err() {
                             return;
