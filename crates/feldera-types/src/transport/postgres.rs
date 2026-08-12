@@ -67,6 +67,159 @@ impl PostgresTlsConfig {
     }
 }
 
+/// Batch processing configuration for the Postgres CDC connector.
+///
+/// Controls how replication events are buffered into a batch before being
+/// flushed to Feldera. Mirrors the batch configuration of the underlying
+/// `etl` replication library; fields omitted from the configuration fall
+/// back to `etl`'s own defaults.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, ToSchema)]
+pub struct PostgresCdcBatchConfig {
+    /// Maximum time, in milliseconds, to wait before flushing a partially
+    /// filled batch. This is the latency bound for batching: once the first
+    /// event enters a batch, the batch is flushed when this timer elapses,
+    /// even if `max_bytes` was not reached.
+    ///
+    /// Default: 10000 (10 seconds).
+    #[serde(default = "default_batch_max_fill_ms")]
+    #[schema(default = default_batch_max_fill_ms)]
+    pub max_fill_ms: u64,
+
+    /// Ratio of process memory reserved for incoming replication batch
+    /// bytes, in the `(0.0, 1.0]` interval. The configured memory is divided
+    /// by the number of active streams at runtime, so each stream gets only
+    /// a per-stream share of the global memory budget.
+    ///
+    /// Default: 0.2.
+    #[serde(default = "default_batch_memory_budget_ratio")]
+    #[schema(default = default_batch_memory_budget_ratio)]
+    pub memory_budget_ratio: f32,
+
+    /// Maximum preferred byte size for one batch per active stream. This is
+    /// a ceiling, not a target: the runtime still chooses the smaller value
+    /// between this limit and the memory-ratio budget computed from
+    /// `memory_budget_ratio`.
+    ///
+    /// Default: 8388608 (8 MiB).
+    #[serde(default = "default_batch_max_bytes")]
+    #[schema(default = default_batch_max_bytes)]
+    pub max_bytes: usize,
+}
+
+impl Default for PostgresCdcBatchConfig {
+    fn default() -> Self {
+        Self {
+            max_fill_ms: default_batch_max_fill_ms(),
+            memory_budget_ratio: default_batch_memory_budget_ratio(),
+            max_bytes: default_batch_max_bytes(),
+        }
+    }
+}
+
+// `f32` doesn't implement `Eq` because of NaN, so it can't be derived here.
+// `validate()` rejects NaN/out-of-range ratios, so equality is reflexive for
+// any value that passes validation; this lets `PostgresCdcReaderConfig` (and
+// its containing `TransportConfig` enum) keep deriving `Eq`.
+impl Eq for PostgresCdcBatchConfig {}
+
+impl PostgresCdcBatchConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if !(0.0..=1.0).contains(&self.memory_budget_ratio) || self.memory_budget_ratio == 0.0 {
+            return Err("batch.memory_budget_ratio must be in the (0.0, 1.0] interval".to_string());
+        }
+
+        if self.max_bytes == 0 {
+            return Err("batch.max_bytes must be greater than 0".to_string());
+        }
+
+        Ok(())
+    }
+}
+
+fn default_batch_max_fill_ms() -> u64 {
+    10_000
+}
+
+fn default_batch_memory_budget_ratio() -> f32 {
+    0.2
+}
+
+fn default_batch_max_bytes() -> usize {
+    8 * 1024 * 1024
+}
+
+/// Memory-based backpressure configuration for the Postgres CDC connector.
+///
+/// When the connector's memory usage rises above `activate_threshold`, it
+/// pauses reading further replication events until usage drops back below
+/// `resume_threshold`. Mirrors the memory backpressure configuration of the
+/// underlying `etl` replication library.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, ToSchema)]
+pub struct PostgresCdcMemoryBackpressureConfig {
+    /// Memory usage ratio above which backpressure is activated, in the
+    /// `(0.0, 1.0]` interval.
+    ///
+    /// Default: 0.85.
+    #[serde(default = "default_memory_backpressure_activate_threshold")]
+    #[schema(default = default_memory_backpressure_activate_threshold)]
+    pub activate_threshold: f32,
+
+    /// Memory usage ratio below which backpressure is released, in the
+    /// `[0.0, 1.0)` interval. Must be lower than `activate_threshold`.
+    ///
+    /// Default: 0.75.
+    #[serde(default = "default_memory_backpressure_resume_threshold")]
+    #[schema(default = default_memory_backpressure_resume_threshold)]
+    pub resume_threshold: f32,
+}
+
+impl Default for PostgresCdcMemoryBackpressureConfig {
+    fn default() -> Self {
+        Self {
+            activate_threshold: default_memory_backpressure_activate_threshold(),
+            resume_threshold: default_memory_backpressure_resume_threshold(),
+        }
+    }
+}
+
+// See the corresponding `impl Eq for PostgresCdcBatchConfig` above for why
+// this is sound despite the `f32` fields.
+impl Eq for PostgresCdcMemoryBackpressureConfig {}
+
+impl PostgresCdcMemoryBackpressureConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if !(0.0..=1.0).contains(&self.activate_threshold) || self.activate_threshold == 0.0 {
+            return Err(
+                "memory_backpressure.activate_threshold must be in the (0.0, 1.0] interval"
+                    .to_string(),
+            );
+        }
+
+        if !(0.0..=1.0).contains(&self.resume_threshold) || self.resume_threshold == 1.0 {
+            return Err(
+                "memory_backpressure.resume_threshold must be in the [0.0, 1.0) interval"
+                    .to_string(),
+            );
+        }
+
+        if self.resume_threshold >= self.activate_threshold {
+            return Err("memory_backpressure.resume_threshold must be lower than \
+                 memory_backpressure.activate_threshold"
+                .to_string());
+        }
+
+        Ok(())
+    }
+}
+
+fn default_memory_backpressure_activate_threshold() -> f32 {
+    0.85
+}
+
+fn default_memory_backpressure_resume_threshold() -> f32 {
+    0.75
+}
+
 /// Postgres CDC input connector configuration.
 ///
 /// Uses logical replication to capture ongoing changes from a Postgres database.
@@ -90,6 +243,21 @@ pub struct PostgresCdcReaderConfig {
     #[serde(flatten)]
     #[schema(inline)]
     pub tls: PostgresTlsConfig,
+
+    /// Batch processing configuration.
+    ///
+    /// Controls how replication events are buffered before being flushed to
+    /// Feldera. When omitted, uses the underlying `etl` library's defaults.
+    #[serde(default)]
+    pub batch: PostgresCdcBatchConfig,
+
+    /// Memory-based backpressure configuration.
+    ///
+    /// Controls when the connector pauses reading further replication
+    /// events to avoid exceeding available memory. When omitted, uses the
+    /// underlying `etl` library's defaults.
+    #[serde(default)]
+    pub memory_backpressure: PostgresCdcMemoryBackpressureConfig,
 }
 
 impl PostgresCdcReaderConfig {
@@ -101,6 +269,9 @@ impl PostgresCdcReaderConfig {
         if self.source_table.trim().is_empty() {
             return Err("source_table cannot be empty".to_string());
         }
+
+        self.batch.validate()?;
+        self.memory_backpressure.validate()?;
 
         if self.tls.ssl_client_pem.is_some()
             || self.tls.ssl_client_location.is_some()
@@ -311,6 +482,8 @@ mod tests {
             publication: "publication".to_string(),
             source_table: "public.table".to_string(),
             tls,
+            batch: PostgresCdcBatchConfig::default(),
+            memory_backpressure: PostgresCdcMemoryBackpressureConfig::default(),
         }
     }
 
@@ -361,5 +534,120 @@ mod tests {
 
         let err = config.validate().unwrap_err();
         assert!(err.contains("source_table cannot be empty"));
+    }
+
+    #[test]
+    fn postgres_cdc_config_deserializes_without_batch_or_memory_backpressure() {
+        let json = r#"{
+            "uri": "postgres://user:password@localhost:5432/database",
+            "publication": "publication",
+            "source_table": "public.table"
+        }"#;
+        let config: PostgresCdcReaderConfig = serde_json::from_str(json).unwrap();
+
+        assert_eq!(config.batch, PostgresCdcBatchConfig::default());
+        assert_eq!(
+            config.memory_backpressure,
+            PostgresCdcMemoryBackpressureConfig::default()
+        );
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn postgres_cdc_batch_config_deserializes_with_partial_fields() {
+        let json = r#"{"max_bytes": 4194304}"#;
+        let config: PostgresCdcBatchConfig = serde_json::from_str(json).unwrap();
+
+        assert_eq!(config.max_bytes, 4 * 1024 * 1024);
+        assert_eq!(config.max_fill_ms, default_batch_max_fill_ms());
+        assert_eq!(
+            config.memory_budget_ratio,
+            default_batch_memory_budget_ratio()
+        );
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn postgres_cdc_batch_config_rejects_zero_memory_budget_ratio() {
+        let config = PostgresCdcBatchConfig {
+            memory_budget_ratio: 0.0,
+            ..Default::default()
+        };
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("batch.memory_budget_ratio"));
+    }
+
+    #[test]
+    fn postgres_cdc_batch_config_rejects_out_of_range_memory_budget_ratio() {
+        let config = PostgresCdcBatchConfig {
+            memory_budget_ratio: 1.5,
+            ..Default::default()
+        };
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("batch.memory_budget_ratio"));
+    }
+
+    #[test]
+    fn postgres_cdc_batch_config_rejects_zero_max_bytes() {
+        let config = PostgresCdcBatchConfig {
+            max_bytes: 0,
+            ..Default::default()
+        };
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("batch.max_bytes"));
+    }
+
+    #[test]
+    fn postgres_cdc_memory_backpressure_config_rejects_zero_activate_threshold() {
+        let config = PostgresCdcMemoryBackpressureConfig {
+            activate_threshold: 0.0,
+            ..Default::default()
+        };
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("memory_backpressure.activate_threshold"));
+    }
+
+    #[test]
+    fn postgres_cdc_memory_backpressure_config_rejects_resume_threshold_of_one() {
+        let config = PostgresCdcMemoryBackpressureConfig {
+            resume_threshold: 1.0,
+            ..Default::default()
+        };
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("memory_backpressure.resume_threshold"));
+    }
+
+    #[test]
+    fn postgres_cdc_memory_backpressure_config_rejects_resume_gte_activate() {
+        let config = PostgresCdcMemoryBackpressureConfig {
+            activate_threshold: 0.5,
+            resume_threshold: 0.5,
+        };
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("must be lower than"));
+    }
+
+    #[test]
+    fn postgres_cdc_config_rejects_invalid_batch_config() {
+        let mut config = postgres_cdc_config(PostgresTlsConfig::default());
+        config.batch.max_bytes = 0;
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("batch.max_bytes"));
+    }
+
+    #[test]
+    fn postgres_cdc_config_rejects_invalid_memory_backpressure_config() {
+        let mut config = postgres_cdc_config(PostgresTlsConfig::default());
+        config.memory_backpressure.activate_threshold = 0.0;
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("memory_backpressure.activate_threshold"));
     }
 }
