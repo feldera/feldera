@@ -776,7 +776,7 @@ where
 {
     /// Transmute a stream of `D` into a stream of `D2`.
     ///
-    /// This is unsafe and dangerous for the same reasons [`std::mem:transmute`]
+    /// This is unsafe and dangerous for the same reasons [`std::mem::transmute`]
     /// is dangerous and should be used with care.
     ///
     /// # Safety
@@ -1592,14 +1592,14 @@ circuit_cache_key!(ReplaySource(StreamId => Box<dyn StreamMetadata>));
 
 /// Register `replay_stream` as a replay source for `stream`.
 ///
-/// Also attaches a [`Recorder`](crate::operator::dynamic::recorder::Recorder)
+/// Also attaches a [`Recorder`]
 /// to `stream`: every stream with a replay source can turn out to be a
 /// boundary stream of the bootstrapped region during concurrent
 /// bootstrapping, in which case the deltas applied to it while the bootstrap
 /// circuit replays the (frozen) integral must be recorded for the
 /// synchronization transaction.  The recorder is disabled (empty, no-op)
 /// until bootstrap orchestration enables it through the
-/// [`RecorderId`](crate::operator::dynamic::recorder::RecorderId) cache
+/// [`RecorderId`] cache
 /// entry.
 #[track_caller]
 pub(crate) fn register_replay_stream<C, B>(

@@ -528,7 +528,7 @@ where
 
     /// Returns the next [TreeNode] to read in the level below this one, or
     /// `None` if we've exhausted this level or there are none to read yet.
-    /// (Use [eof](Self::eof) to distinguish the meanings of `None`.)
+    /// (Use [`BulkRows::at_eof`] to distinguish the meanings of `None`.)
     fn child(&self) -> Result<Option<TreeNode>, Error> {
         self.blocks
             .front()
