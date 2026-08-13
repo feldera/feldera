@@ -69,15 +69,9 @@ jobs:
       # live docs site all have to keep tracking the newest version.
       - name: Determine whether this version is the newest
         id: newest
-        run: |
-          highest=$(git tag --list 'v*' | sed 's/^v//' | sort -V | tail -1)
-          if [ "$(printf '%s\n%s\n' "$highest" "$CURRENT_VERSION" | sort -V | tail -1)" = "$CURRENT_VERSION" ]; then
-            echo "is_newest=true" >> "$GITHUB_OUTPUT"
-            echo "v$CURRENT_VERSION is the newest version (highest existing tag: v$highest)"
-          else
-            echo "is_newest=false" >> "$GITHUB_OUTPUT"
-            echo "v$CURRENT_VERSION is a backport (highest existing tag: v$highest); floating pointers stay put"
-          fi
+        uses: ./.github/actions/is-newest-version
+        with:
+          version: ${{ env.CURRENT_VERSION }}
 
       - name: Download artifact
         id: download-artifact
