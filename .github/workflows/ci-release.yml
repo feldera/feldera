@@ -106,7 +106,10 @@ jobs:
           tag_name: v${{ env.CURRENT_VERSION }}
           draft: ${{ vars.RELEASE_DRY_RUN }}
           generate_release_notes: true
-          make_latest: true
+          # Backport release on an old version line: newer releases exist, so
+          # this must not become the repo's "latest" release (install scripts
+          # and the releases/latest URL resolve through that marker).
+          make_latest: false
           files: |
             pipeline-manager-aarch64-unknown-linux-gnu.zip
             pipeline-manager-x86_64-unknown-linux-gnu.zip
@@ -134,21 +137,8 @@ jobs:
           aws s3 cp "$JAR_FILE" "s3://${{ vars.SQL2DBSP_S3_BUCKET }}/$JAR_FILE" \
             --content-type application/java-archive
 
-      # Update docs.feldera.com
-      - name: Update docs.feldera.com
-        run: unzip feldera-docs.zip -d docs
-
-      - name: Deploy docs.feldera.com
-        if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
-        uses: JamesIves/github-pages-deploy-action@4ef313c6a410f0883308623d45510e4a11625465 # v4.7.5
-        with:
-          folder: docs
-          token: ${{ steps.app-token.outputs.token }}
-          branch: ${{ vars.DOCS_PUBLISH_BRANCH }}
-          git-config-name: feldera-ci
-          git-config-email: dev@feldera.com
-          repository-name: feldera/docs.feldera.com
-          commit-message: Update docs for v${{ env.CURRENT_VERSION }}
+      # docs.feldera.com deploy removed on this release branch: publishing
+      # would replace the live site with this old version's docs.
 
       # Publish Docker images
       - name: Login to GHCR
@@ -163,8 +153,9 @@ jobs:
         with:
           version: latest
 
-      - name: Tag docker image with version and latest
+      # Version tag only: moving :latest to a backport of an old version
+      # would downgrade every user who pulls the floating tag.
+      - name: Tag docker image with version
         if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
         run: |
           docker buildx imagetools create -t ${{ vars.FELDERA_IMAGE_NAME }}:${{ env.CURRENT_VERSION }} ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ env.SHA_TO_RELEASE }}
-          docker buildx imagetools create -t ${{ vars.FELDERA_IMAGE_NAME }}:latest ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ env.SHA_TO_RELEASE }}
