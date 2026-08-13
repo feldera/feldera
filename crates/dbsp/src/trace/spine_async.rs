@@ -87,7 +87,7 @@ mod index_set;
 mod list_merger;
 mod push_merger;
 mod snapshot;
-pub use snapshot::{BatchReaderWithSnapshot, FetchList, SpineSnapshot, WithSnapshot};
+pub use snapshot::{BatchReaderWithSnapshot, SpineSnapshot, WithSnapshot};
 
 use super::{BatchLocation, cursor::CursorFactory};
 

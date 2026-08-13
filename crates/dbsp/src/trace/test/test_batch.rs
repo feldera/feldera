@@ -22,7 +22,6 @@ use rand_chacha::ChaChaRng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
 use std::any::TypeId;
-use std::sync::Arc;
 use std::{
     collections::{BTreeMap, BTreeSet, btree_map::Entry},
     fmt::{self, Debug},
