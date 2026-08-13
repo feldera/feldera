@@ -64,6 +64,21 @@ jobs:
           ref: ${{ env.SHA_TO_RELEASE }}
           persist-credentials: false
 
+      # A backport release on an old version line must not move any floating
+      # pointer: the GitHub "latest" marker, the :latest docker tag, or the
+      # live docs site all have to keep tracking the newest version.
+      - name: Determine whether this version is the newest
+        id: newest
+        run: |
+          highest=$(git tag --list 'v*' | sed 's/^v//' | sort -V | tail -1)
+          if [ "$(printf '%s\n%s\n' "$highest" "$CURRENT_VERSION" | sort -V | tail -1)" = "$CURRENT_VERSION" ]; then
+            echo "is_newest=true" >> "$GITHUB_OUTPUT"
+            echo "v$CURRENT_VERSION is the newest version (highest existing tag: v$highest)"
+          else
+            echo "is_newest=false" >> "$GITHUB_OUTPUT"
+            echo "v$CURRENT_VERSION is a backport (highest existing tag: v$highest); floating pointers stay put"
+          fi
+
       - name: Download artifact
         id: download-artifact
         uses: dawidd6/action-download-artifact@ac66b43f0e6a346234dd65d4d0c8fbb31cb316e5 # ac66b43f0e6a346234dd65d4d0c8fbb31cb316e5
@@ -100,13 +115,15 @@ jobs:
           repositories: ${{ github.event.repository.name }}
 
       - name: Release on GitHub
-        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # 72f2c25fcb47643c292f7107632f7a47c1df5cd8
+        # The previously pinned commit predates the make_latest input and
+        # silently ignored it, so every release became "latest".
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           target_commitish: ${{ env.SHA_TO_RELEASE }}
           tag_name: v${{ env.CURRENT_VERSION }}
           draft: ${{ vars.RELEASE_DRY_RUN }}
           generate_release_notes: true
-          make_latest: true
+          make_latest: ${{ steps.newest.outputs.is_newest }}
           files: |
             pipeline-manager-aarch64-unknown-linux-gnu.zip
             pipeline-manager-x86_64-unknown-linux-gnu.zip
@@ -139,7 +156,9 @@ jobs:
         run: unzip feldera-docs.zip -d docs
 
       - name: Deploy docs.feldera.com
-        if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
+        # is_newest: publishing a backport's docs would replace the live site
+        # with an old version's documentation.
+        if: ${{ vars.RELEASE_DRY_RUN == 'false' && steps.newest.outputs.is_newest == 'true' }}
         uses: JamesIves/github-pages-deploy-action@4ef313c6a410f0883308623d45510e4a11625465 # v4.7.5
         with:
           folder: docs
@@ -163,8 +182,14 @@ jobs:
         with:
           version: latest
 
-      - name: Tag docker image with version and latest
+      - name: Tag docker image with version
         if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
         run: |
           docker buildx imagetools create -t ${{ vars.FELDERA_IMAGE_NAME }}:${{ env.CURRENT_VERSION }} ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ env.SHA_TO_RELEASE }}
+
+      - name: Tag docker image as latest
+        # is_newest: moving :latest to a backport would downgrade every user
+        # who pulls the floating tag.
+        if: ${{ vars.RELEASE_DRY_RUN == 'false' && steps.newest.outputs.is_newest == 'true' }}
+        run: |
           docker buildx imagetools create -t ${{ vars.FELDERA_IMAGE_NAME }}:latest ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ env.SHA_TO_RELEASE }}
