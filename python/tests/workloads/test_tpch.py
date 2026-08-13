@@ -137,8 +137,8 @@ def run_cli():
         s3_region = args.s3_region
     else:
         input_mode = "delta"
-        s3_path = "s3://batchtofeldera"
-        s3_region = "ap-southeast-2"
+        s3_path = "s3://feldera-demo-datasets/tpch/sf0.1"
+        s3_region = "us-west-1"
 
     mode = args.mode
 
@@ -1472,14 +1472,14 @@ class TestTPCH(unittest.TestCase):
         config = TPCHTestConfig(
             "transaction",
             "delta",
-            s3_path="s3://batchtofeldera",
-            s3_region="ap-southeast-2",
+            s3_path="s3://feldera-demo-datasets/tpch/sf0.1",
+            s3_region="us-west-1",
         )
         tpch_test(config)
 
     def test_tpch_stream(self):
         config = TPCHTestConfig(
-            "stream", "delta", s3_path="s3://batchtofeldera", s3_region="ap-southeast-2"
+            "stream", "delta", s3_path="s3://feldera-demo-datasets/tpch/sf0.1", s3_region="us-west-1"
         )
         tpch_test(config)
 

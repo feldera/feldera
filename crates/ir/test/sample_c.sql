@@ -47,9 +47,9 @@ CREATE TABLE LINEITEM (
     "transport": {
       "name": "delta_table_input",
       "config": {
-        "uri": "s3://batchtofeldera/lineitem",
+        "uri": "s3://feldera-demo-datasets/tpch/sf0.1/lineitem",
         "aws_skip_signature": "true",
-        "aws_region": "ap-southeast-2",
+        "aws_region": "us-west-1",
         "mode": "snapshot_and_follow"
       }
     }
@@ -72,9 +72,9 @@ CREATE TABLE ORDERS  (
     "transport": {
       "name": "delta_table_input",
       "config": {
-        "uri": "s3://batchtofeldera/orders",
+        "uri": "s3://feldera-demo-datasets/tpch/sf0.1/orders",
         "aws_skip_signature": "true",
-        "aws_region": "ap-southeast-2",
+        "aws_region": "us-west-1",
         "mode": "snapshot_and_follow"
       }
     }
@@ -97,9 +97,9 @@ CREATE TABLE PART (
     "transport": {
       "name": "delta_table_input",
       "config": {
-        "uri": "s3://batchtofeldera/part",
+        "uri": "s3://feldera-demo-datasets/tpch/sf0.1/part",
         "aws_skip_signature": "true",
-        "aws_region": "ap-southeast-2",
+        "aws_region": "us-west-1",
         "mode": "snapshot_and_follow"
       }
     }
@@ -121,9 +121,9 @@ CREATE TABLE CUSTOMER (
     "transport": {
       "name": "delta_table_input",
       "config": {
-        "uri": "s3://batchtofeldera/customer",
+        "uri": "s3://feldera-demo-datasets/tpch/sf0.1/customer",
         "aws_skip_signature": "true",
-        "aws_region": "ap-southeast-2",
+        "aws_region": "us-west-1",
         "mode": "snapshot_and_follow"
       }
     }
@@ -144,9 +144,9 @@ CREATE TABLE SUPPLIER (
     "transport": {
       "name": "delta_table_input",
       "config": {
-        "uri": "s3://batchtofeldera/supplier",
+        "uri": "s3://feldera-demo-datasets/tpch/sf0.1/supplier",
         "aws_skip_signature": "true",
-        "aws_region": "ap-southeast-2",
+        "aws_region": "us-west-1",
         "mode": "snapshot_and_follow"
       }
     }
@@ -165,9 +165,9 @@ CREATE TABLE PARTSUPP (
     "transport": {
       "name": "delta_table_input",
       "config": {
-        "uri": "s3://batchtofeldera/partsupp",
+        "uri": "s3://feldera-demo-datasets/tpch/sf0.1/partsupp",
         "aws_skip_signature": "true",
-        "aws_region": "ap-southeast-2",
+        "aws_region": "us-west-1",
         "mode": "snapshot_and_follow"
       }
     }
@@ -185,9 +185,9 @@ CREATE TABLE NATION  (
     "transport": {
       "name": "delta_table_input",
       "config": {
-        "uri": "s3://batchtofeldera/nation",
+        "uri": "s3://feldera-demo-datasets/tpch/sf0.1/nation",
         "aws_skip_signature": "true",
-        "aws_region": "ap-southeast-2",
+        "aws_region": "us-west-1",
         "mode": "snapshot_and_follow"
       }
     }
@@ -204,9 +204,9 @@ CREATE TABLE REGION  (
     "transport": {
       "name": "delta_table_input",
       "config": {
-        "uri": "s3://batchtofeldera/region",
+        "uri": "s3://feldera-demo-datasets/tpch/sf0.1/region",
         "aws_skip_signature": "true",
-        "aws_region": "ap-southeast-2",
+        "aws_region": "us-west-1",
         "mode": "snapshot_and_follow"
       }
     }
