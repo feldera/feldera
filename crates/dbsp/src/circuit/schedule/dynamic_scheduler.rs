@@ -8,9 +8,8 @@
 //! 3. Pick a highest priority node among nodes that satisfy the first two
 //!    conditions.
 //!
-//! Unlike [`StaticScheduler`](`crate::circuit::schedule::StaticScheduler`),
-//! the dynamic scheduler blocks when there are no runnable nodes instead of
-//! busy waiting.
+//! The scheduler blocks when there are no runnable nodes instead of busy
+//! waiting.
 //!
 //! # Design
 //!

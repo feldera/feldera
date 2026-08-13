@@ -311,7 +311,7 @@ where
         )
     }
 
-    /// Like [`group_transform`](`Self::group_transform`), but can output any
+    /// Like [`Self::dyn_group_transform`], but can output any
     /// indexed Z-set, not just [`OrdIndexedZSet`]
     fn dyn_group_transform_generic<OB>(
         &self,

@@ -198,7 +198,8 @@ impl Display for CompactionStatus {
     }
 }
 
-/// A group of batches with similar sizes (as determined by [size_from_level]).
+/// A group of batches with similar sizes (as determined by
+/// [`Spine::size_to_level`]).
 #[derive(Clone, SizeOf)]
 struct Slot<B>
 where
@@ -259,7 +260,7 @@ where
     B: Batch,
 {
     /// If this slot doesn't currently have an ongoing merge, and it does have
-    /// at least MERGE_COUNTS[level].start() loose batches, picks an upper limit
+    /// at least `MERGE_COUNTS[level].start()` loose batches, picks an upper limit
     /// of the loose batches and makes them into merging batches, and returns
     /// those batches. Otherwise, returns `None` without changing anything.
     ///

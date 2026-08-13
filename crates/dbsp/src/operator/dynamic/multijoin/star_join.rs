@@ -387,7 +387,7 @@ where
         }
     }
 
-    /// Initialize weight_times[current_index]
+    /// Initialize `weight_times[current_index]`
     fn init_weight_times(&mut self) {
         self.weight_times[self.current_index].0.clear();
         let (previous_weight, previous_time) = self.previous_weight_time();
@@ -412,8 +412,8 @@ where
         self.weight_times[self.current_index].1 = 0;
     }
 
-    /// Increment weight_times[current_index].1 by 1. If it reaches the end of the vector,
-    /// advance trace_cursors[current_index] to the next value.
+    /// Increment `weight_times[current_index].1` by 1. If it reaches the end of the
+    /// vector, advance `trace_cursors[current_index]` to the next value.
     fn advance_weight_times(&mut self) {
         if self.weight_times[self.current_index].1
             == self.weight_times[self.current_index].0.len() - 1
