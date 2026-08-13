@@ -351,6 +351,12 @@ where
     #[size_of(skip)]
     factories: B::Factories,
     name: Arc<String>,
+
+    /// Worker that owns this spine, fixed when it is constructed.
+    ///
+    /// It selects the background buffer cache and slab allocator that this
+    /// spine's merges use, and it is the worker they are reported under.
+    owner_worker: usize,
     #[size_of(skip)]
     key_filter: Option<Filter<B::Key>>,
     #[size_of(skip)]
@@ -368,10 +374,11 @@ impl<B> SharedState<B>
 where
     B: Batch,
 {
-    pub fn new(factories: &B::Factories, name: Arc<String>) -> Self {
+    pub fn new(factories: &B::Factories, name: Arc<String>, owner_worker: usize) -> Self {
         Self {
             factories: factories.clone(),
             name,
+            owner_worker,
             key_filter: None,
             value_filter: None,
             frontier: B::Time::minimum(),
@@ -489,6 +496,7 @@ where
             .report_merge(pre_len, post_len, cache_stats);
         let n_merged_batches = batches.len();
         let merge_name = self.name.clone();
+        let owner = self.owner_worker;
 
         if slot.compaction_status == CompactionStatus::InProgress {
             // We finished merging all batches in the slot as part of compaction.
@@ -524,11 +532,16 @@ where
             .with_category("Spine")
             .with_start(start)
             .with_tooltip(|| {
+                // The merge runs on a pooled merger thread whose
+                // `Runtime::worker_index()` is set from this same owner, so the
+                // owner is the only worker there is to report here.
                 format!(
-                    "{merge_name} in worker {} merged {n_merged_batches} batches ({pre_len} -> {post_len}) in {n_steps} steps using {:.1} ms real time and {:.1} ms CPU time; spine now holds {loose} loose of {total} batches",
-                    Runtime::worker_index(),
-                    elapsed.real.as_secs_f64() * 1000.0,
-                    elapsed.cpu.as_secs_f64() * 1000.0
+                    "{merge_name} on behalf of worker {owner} merged {n_merged_batches} batches \
+                     ({pre_len} -> {post_len} rows) in {n_steps} steps using {real_ms:.1} ms real \
+                     time and {cpu_ms:.1} ms CPU time; spine now holds {loose} loose of {total} \
+                     batches",
+                    real_ms = elapsed.real.as_secs_f64() * 1000.0,
+                    cpu_ms = elapsed.cpu.as_secs_f64() * 1000.0,
                 )
             })
             .record();
@@ -734,7 +747,7 @@ where
     ) -> Self {
         let idle = Arc::new(Condvar::new());
         let no_backpressure = Arc::new(Notify::new());
-        let state = Arc::new(Mutex::new(SharedState::new(factories, name)));
+        let state = Arc::new(Mutex::new(SharedState::new(factories, name, worker_index)));
 
         let max_level0_batch_size_records = max_level0_batch_size_records();
         assert!(
@@ -824,7 +837,7 @@ where
             name,
             start: start_time,
             initial_loose: initial_batches,
-            initial_total: initial_total,
+            initial_total,
         });
     }
 
@@ -855,12 +868,13 @@ where
     /// caller has finished awaiting.
     fn record_backpressure_wait(&self, wait: BackpressureWaitReport) {
         let elapsed = wait.start.elapsed();
-        let (final_loose, final_total) = {
+        let (final_loose, final_total, owner) = {
             let mut state = self.state.lock().unwrap();
             state.spine_stats.backpressure_wait += elapsed;
             (
                 state.batch_count().0,
                 state.slots.iter().map(Slot::n_batches).sum::<usize>(),
+                state.owner_worker,
             )
         };
         COMPACTION_STALL_TIME_NANOSECONDS.fetch_add(elapsed.as_nanos() as u64, Ordering::Relaxed);
@@ -869,12 +883,14 @@ where
             .with_start(wait.start)
             .with_tooltip(|| {
                 format!(
-                    "{} in worker {} waited {:.1} ms for merges: loose batches {} -> {final_loose}, total {} -> {final_total}",
-                    wait.name,
-                    Runtime::worker_index(),
-                    elapsed.as_secs_f64() * 1000.0,
-                    wait.initial_loose,
-                    wait.initial_total,
+                    "{name} owned by worker {owner} waited {wait_ms:.1} ms for merges on behalf of \
+                     worker {merging_worker}: loose batches {initial_loose} -> {final_loose}, \
+                     total {initial_total} -> {final_total}",
+                    name = wait.name,
+                    wait_ms = elapsed.as_secs_f64() * 1000.0,
+                    merging_worker = Runtime::worker_index(),
+                    initial_loose = wait.initial_loose,
+                    initial_total = wait.initial_total,
                 )
             })
             .record();
