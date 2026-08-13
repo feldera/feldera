@@ -390,9 +390,15 @@ where
                 .spines
                 .front()
                 .and_then(|entry| entry.spine.backpressure_waiter());
-            if let Some(waiter) = waiter {
+            if let Some((notified, report)) = waiter {
                 local_waiters.push(worker);
-                waiter.await;
+                notified.await;
+                // Report it, so the wait reaches
+                // `merge_backpressure_wait_time_seconds` and the profile rather
+                // than only showing up as time spent in this operator.
+                if let Some(entry) = rxq.lock().unwrap().spines.front() {
+                    entry.spine.record_backpressure_wait(report);
+                }
             }
         }
         if !local_waiters.is_empty() {
