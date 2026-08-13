@@ -101,7 +101,6 @@ where
                         let exchange_id: ExchangeId = runtime.sequence_next().try_into().unwrap();
                         let exchange = ShardedAccumulator::<B>::with_runtime(
                             &runtime,
-                            Runtime::worker_index(),
                             workers.clone(),
                             exchange_id,
                             factories,
@@ -177,7 +176,6 @@ where
 {
     fn with_runtime(
         runtime: &Runtime,
-        worker_index: usize,
         workers: Range<usize>,
         exchange_id: ExchangeId,
         factories: &B::Factories,
@@ -194,7 +192,6 @@ where
             .or_insert_with(|| {
                 ShardedAccumulator::new(
                     runtime,
-                    worker_index,
                     workers,
                     clients,
                     exchange_id,
@@ -210,7 +207,6 @@ where
     /// given `workers` (which is often all the workers in the runtime).
     fn new(
         runtime: &Runtime,
-        worker_index: usize,
         workers: Range<usize>,
         clients: Arc<ExchangeClients>,
         exchange_id: ExchangeId,
@@ -229,14 +225,8 @@ where
             clients,
             rxq: layout
                 .local_workers()
-                .map(|_| {
-                    Mutex::new(Rxq::new(
-                        runtime,
-                        worker_index,
-                        factories,
-                        npeers,
-                        name.get(),
-                    ))
+                .map(|receiver| {
+                    Mutex::new(Rxq::new(runtime, receiver, factories, npeers, name.get()))
                 })
                 .collect(),
             name,
