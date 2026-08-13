@@ -515,9 +515,9 @@ where
         }
 
         // Recorded here, rather than where the merge is accounted above, so the
-        // counts describe the spine as the merge leaves it. `loose` is what
-        // backpressure measures, and it is what grows when merging cannot keep
-        // up with the batches each step adds.
+        // batch counts describe the spine as the merge leaves it: `loose` is
+        // what backpressure measures, and it is what grows when merging cannot
+        // keep up with the batches each step adds.
         let loose = self.batch_count().0;
         let total: usize = self.slots.iter().map(Slot::n_batches).sum();
         Span::new(LEVEL_NAMES[level])
@@ -585,6 +585,44 @@ where
         slot.compaction_status = CompactionStatus::Requested;
         slot.notify.notify_one();
     }
+}
+
+/// Handed out by `backpressure_waiter` when the spine holds too many batches.
+///
+/// Awaiting `notify` blocks until merging catches up; `report` then describes
+/// the wait for the metric and the profile.
+struct BackpressureWait {
+    notify: OwnedNotified,
+    name: Arc<String>,
+    start: Instant,
+    initial_loose: usize,
+    initial_total: usize,
+}
+
+impl BackpressureWait {
+    /// Splits into the future to await and the description to report afterwards.
+    fn split(self) -> (OwnedNotified, BackpressureWaitReport) {
+        (
+            self.notify,
+            BackpressureWaitReport {
+                name: self.name,
+                start: self.start,
+                initial_loose: self.initial_loose,
+                initial_total: self.initial_total,
+            },
+        )
+    }
+}
+
+/// What [`BackpressureWait`] leaves behind once its future has been awaited.
+///
+/// Public because the sharded accumulator awaits the future and reports the
+/// wait; see [`Spine::backpressure_waiter`].
+pub struct BackpressureWaitReport {
+    name: Arc<String>,
+    start: Instant,
+    initial_loose: usize,
+    initial_total: usize,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -758,7 +796,7 @@ where
         // Do an initial check of the batch count.  If it's already dropped,
         // exit early, otherwise save the name and the initial number of
         // batches for later recording.
-        let (name, initial_batches);
+        let (name, initial_batches, initial_total);
         {
             let state = self.state.lock().unwrap();
             let batch_count = state.batch_count();
@@ -767,42 +805,79 @@ where
             }
             name = state.name.clone();
             initial_batches = batch_count.0;
+            initial_total = state.slots.iter().map(Slot::n_batches).sum();
         }
 
         // Wait for the batch count to drop below the threshold.
-        let final_batches = loop {
+        loop {
             let notify = self.no_backpressure.notified();
             {
-                let mut state = self.state.lock().unwrap();
-                let batch_count = state.batch_count();
-                if batch_count.should_relieve_backpressure() {
-                    state.spine_stats.backpressure_wait += start_time.elapsed();
-                    break batch_count.0;
+                let state = self.state.lock().unwrap();
+                if state.batch_count().should_relieve_backpressure() {
+                    break;
                 }
             }
             notify.await;
-        };
+        }
 
-        // Record the wait.
-        COMPACTION_STALL_TIME_NANOSECONDS
-            .fetch_add(start_time.elapsed().as_nanos() as u64, Ordering::Relaxed);
-        Span::new("backpressure-wait")
-            .with_category("Spine")
-            .with_start(start_time)
-            .with_tooltip(|| {
-                format!("{name} wait for drop from {initial_batches} to {final_batches} batches")
-            })
-            .record();
+        self.record_backpressure_wait(BackpressureWaitReport {
+            name,
+            start: start_time,
+            initial_loose: initial_batches,
+            initial_total: initial_total,
+        });
     }
 
-    fn backpressure_waiter(&self) -> Option<OwnedNotified> {
+    /// Returns something to await when the spine holds too many batches, or
+    /// `None` when it does not.
+    ///
+    /// Callers that await the result should report the wait through
+    /// [`Self::record_backpressure_wait`], so that it reaches
+    /// `merge_backpressure_wait_time_seconds` and the profile. Awaiting this
+    /// without reporting is how a wait becomes invisible.
+    fn backpressure_waiter(&self) -> Option<BackpressureWait> {
         let notify = self.no_backpressure.clone().notified_owned();
-        self.state
-            .lock()
-            .unwrap()
-            .batch_count()
-            .should_apply_backpressure()
-            .then_some(notify)
+        let state = self.state.lock().unwrap();
+        let batch_count = state.batch_count();
+        batch_count.should_apply_backpressure().then(|| {
+            let total: usize = state.slots.iter().map(Slot::n_batches).sum();
+            BackpressureWait {
+                notify,
+                name: state.name.clone(),
+                start: Instant::now(),
+                initial_loose: batch_count.0,
+                initial_total: total,
+            }
+        })
+    }
+
+    /// Accounts for a wait that [`Self::backpressure_waiter`] handed out and the
+    /// caller has finished awaiting.
+    fn record_backpressure_wait(&self, wait: BackpressureWaitReport) {
+        let elapsed = wait.start.elapsed();
+        let (final_loose, final_total) = {
+            let mut state = self.state.lock().unwrap();
+            state.spine_stats.backpressure_wait += elapsed;
+            (
+                state.batch_count().0,
+                state.slots.iter().map(Slot::n_batches).sum::<usize>(),
+            )
+        };
+        COMPACTION_STALL_TIME_NANOSECONDS.fetch_add(elapsed.as_nanos() as u64, Ordering::Relaxed);
+        Span::new("backpressure-wait")
+            .with_category("Spine")
+            .with_start(wait.start)
+            .with_tooltip(|| {
+                format!(
+                    "{} in worker {} waited {:.1} ms for merges: loose batches {} -> {final_loose}, total {} -> {final_total}",
+                    wait.name,
+                    Runtime::worker_index(),
+                    elapsed.as_secs_f64() * 1000.0,
+                    wait.initial_loose,
+                    wait.initial_total,
+                )
+            })
+            .record();
     }
 
     /// Adds `batches` to the shared merging state and wakes up the merger.
@@ -2353,8 +2428,17 @@ where
 
     /// Returns an object that can be used to wait for backpressure to be
     /// relieved.  Returns `None` if no backpressure is needed.
-    pub fn backpressure_waiter(&self) -> Option<OwnedNotified> {
-        self.merger.backpressure_waiter()
+    ///
+    /// Pass the report half to [`Self::record_backpressure_wait`] after
+    /// awaiting, so the wait shows up in
+    /// `merge_backpressure_wait_time_seconds` and in profiles.
+    pub fn backpressure_waiter(&self) -> Option<(OwnedNotified, BackpressureWaitReport)> {
+        self.merger.backpressure_waiter().map(|wait| wait.split())
+    }
+
+    /// Reports a wait obtained from [`Self::backpressure_waiter`].
+    pub fn record_backpressure_wait(&self, report: BackpressureWaitReport) {
+        self.merger.record_backpressure_wait(report)
     }
 }
 
