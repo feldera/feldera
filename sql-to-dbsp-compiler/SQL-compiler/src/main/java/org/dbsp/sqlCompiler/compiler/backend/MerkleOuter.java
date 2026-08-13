@@ -42,7 +42,7 @@ public class MerkleOuter extends CircuitVisitor {
      * same ids, so it reports the recursive views as modified and bootstraps them.
      *
      * <p>Bump this string whenever the runtime changes the way it stores that state. */
-    public static final String RECURSIVE_STATE_VERSION = "recursive-state-v1";
+    public static final String RECURSIVE_STATE_VERSION = "recursive-state-v2";
 
     public final Map<Long, HashString> operatorHash;
     public final boolean includeInputs;
