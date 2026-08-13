@@ -189,36 +189,59 @@ jobs:
       - name: Determine current version based on pipeline-manager
         run: |
           echo "CURRENT_VERSION=$(cargo metadata --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version')" >> $GITHUB_ENV
+      # A backport release (published from an old release branch) must not
+      # bump main's version: main is already versions ahead of it. Bump only
+      # when the published release is at least main's current version. A
+      # manual workflow_dispatch carries no release tag and always bumps.
+      - name: Check that the published release is not a backport
+        id: bump-check
+        env:
+          RELEASED_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          released="${RELEASED_TAG#v}"
+          if [ -n "$released" ] && [ "$(printf '%s\n%s\n' "$released" "$CURRENT_VERSION" | sort -V | head -1)" = "$released" ] && [ "$released" != "$CURRENT_VERSION" ]; then
+            echo "bump=false" >> "$GITHUB_OUTPUT"
+            echo "Release v$released is older than main's v$CURRENT_VERSION: skipping the version bump"
+          else
+            echo "bump=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Bump cargo versions
+        if: ${{ steps.bump-check.outputs.bump == 'true' }}
         run: |
           cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }}
           cargo run --release --locked --bin pipeline-manager -- --dump-openapi
       - name: Determine next version based on pipeline-manager
+        if: ${{ steps.bump-check.outputs.bump == 'true' }}
         run: |
           echo "NEXT_VERSION=$(cargo metadata --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version')" >> $GITHUB_ENV
       - name: Adjust python version
+        if: ${{ steps.bump-check.outputs.bump == 'true' }}
         working-directory: ./python
         run: |
           sed -i "s/version = \"${{ env.CURRENT_VERSION }}\"/version = \"${{ env.NEXT_VERSION }}\"/g" pyproject.toml
           uv sync
       - name: Adjust dbt-feldera version
+        if: ${{ steps.bump-check.outputs.bump == 'true' }}
         working-directory: ./python/dbt-feldera
         run: |
           sed -i "s/version = \"${{ env.CURRENT_VERSION }}\"/version = \"${{ env.NEXT_VERSION }}\"/g" pyproject.toml
           sed -i "s/version: '${{ env.CURRENT_VERSION }}'/version: '${{ env.NEXT_VERSION }}'/g" dbt/include/feldera/dbt_project.yml
       - name: Adjust felderize version
+        if: ${{ steps.bump-check.outputs.bump == 'true' }}
         working-directory: ./python/felderize
         run: |
           sed -i "s/version = \"${{ env.CURRENT_VERSION }}\"/version = \"${{ env.NEXT_VERSION }}\"/g" pyproject.toml
       - name: Adjust sql compiler version
+        if: ${{ steps.bump-check.outputs.bump == 'true' }}
         working-directory: ./sql-to-dbsp-compiler/SQL-compiler
         run: |
           sed -i "s|<project.version>${{ env.CURRENT_VERSION }}|<project.version>${{ env.NEXT_VERSION }}|g" pom.xml
       - name: List changes
+        if: ${{ steps.bump-check.outputs.bump == 'true' }}
         run: |
           git diff
       - uses: EndBug/add-and-commit@a94899bca583c204427a224a7af87c02f9b325d5 # a94899bca583c204427a224a7af87c02f9b325d5
-        if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
+        if: ${{ vars.RELEASE_DRY_RUN == 'false' && steps.bump-check.outputs.bump == 'true' }}
         with:
           message: "ci: Prepare for v${{ env.NEXT_VERSION }}"
           push: origin main
