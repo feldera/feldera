@@ -1562,6 +1562,15 @@ async fn call_compiler(
         command.env("AWS_PROFILE", aws_profile);
     }
 
+    // Preserve JEMALLOC_SYS_WITH_LG_PAGE if set. The precompiled artifacts
+    // carry a jemalloc configured for the build machine's page size; a host
+    // with larger pages (e.g. 64KiB aarch64 kernels) aborts every pipeline
+    // with "Unsupported system page size" unless this override rebuilds
+    // jemalloc for the host's page size.
+    if let Some(lg_page) = std::env::var_os("JEMALLOC_SYS_WITH_LG_PAGE") {
+        command.env("JEMALLOC_SYS_WITH_LG_PAGE", lg_page);
+    }
+
     for (key, value) in preserved_env_vars {
         command.env(key, value);
     }
