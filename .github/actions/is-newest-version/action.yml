@@ -24,7 +24,17 @@ runs:
       env:
         VERSION: ${{ inputs.version }}
       run: |
-        highest=$(git tag --list 'v*' | sed 's/^v//' | sort -V | tail -1)
+        # Strict X.Y.Z filter: a stray non-numeric tag (vnext) or a
+        # pre-release tag (v1.2.3-rc1) would otherwise outrank real versions
+        # under sort -V and silently flip a normal release to a backport.
+        highest=$(git tag --list 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -V | tail -1 || true)
+        # Fail closed: an empty tag list on a release repo means the checkout
+        # did not fetch tags. Guessing "newest" here would move every
+        # floating pointer onto whatever is being released.
+        if [ -z "$highest" ]; then
+          echo "::error::no vX.Y.Z tags visible; was the checkout made with fetch-tags?"
+          exit 1
+        fi
         if [ "$(printf '%s\n%s\n' "$highest" "$VERSION" | sort -V | tail -1)" = "$VERSION" ]; then
           echo "is_newest=true" >> "$GITHUB_OUTPUT"
           echo "v$VERSION is the newest version (highest existing tag: v$highest)"
