@@ -1864,8 +1864,8 @@ pub trait CircuitBase: 'static {
     /// since all of them maintain a shared global counter.
     fn allocate_stream_id(&self) -> StreamId;
 
-    /// Reference to the global counter shared by all circuits.
-    fn last_stream_id(&self) -> RefCell<StreamId>;
+    /// The global stream id counter, shared by every circuit in the pipeline.
+    fn last_stream_id(&self) -> Rc<RefCell<StreamId>>;
 
     /// Relative depth of `self` from the root circuit.
     ///
@@ -2942,7 +2942,9 @@ where
     circuit_event_handlers: CircuitEventHandlers,
     scheduler_event_handlers: SchedulerEventHandlers,
     store: RefCell<CircuitCache>,
-    last_stream_id: RefCell<StreamId>,
+    /// Shared with the parent and all child circuits, so that stream ids are
+    /// unique across the whole pipeline.
+    last_stream_id: Rc<RefCell<StreamId>>,
     metadata_exchange: MetadataExchange,
     balancer: Rc<Balancer>,
 }
@@ -2960,7 +2962,7 @@ where
         global_node_id: GlobalNodeId,
         circuit_event_handlers: CircuitEventHandlers,
         scheduler_event_handlers: SchedulerEventHandlers,
-        last_stream_id: RefCell<StreamId>,
+        last_stream_id: Rc<RefCell<StreamId>>,
     ) -> Self {
         let metadata_exchange = MetadataExchange::new();
 
@@ -3306,7 +3308,7 @@ impl RootCircuit {
                 GlobalNodeId::root(),
                 Rc::new(RefCell::new(HashMap::new())),
                 Rc::new(RefCell::new(HashMap::new())),
-                RefCell::new(StreamId::new(0)),
+                Rc::new(RefCell::new(StreamId::new(0))),
             )),
             time: Rc::new(RefCell::new(())),
         }
@@ -3659,7 +3661,7 @@ where
         *last_stream_id
     }
 
-    fn last_stream_id(&self) -> RefCell<StreamId> {
+    fn last_stream_id(&self) -> Rc<RefCell<StreamId>> {
         self.inner().last_stream_id.clone()
     }
 
@@ -8959,12 +8961,18 @@ mod tests {
     use super::ElapsedTime;
     use crate::{
         Circuit, Error as DbspError, RootCircuit,
-        circuit::schedule::{DynamicScheduler, Scheduler},
+        circuit::{
+            NodeId,
+            circuit_builder::{CircuitBase, StreamId},
+            schedule::{DynamicScheduler, Scheduler},
+        },
         monitor::TraceMonitor,
         operator::{Generator, Z1},
     };
     use anyhow::anyhow;
-    use std::{cell::RefCell, ops::Deref, rc::Rc, thread, time::Duration, vec::Vec};
+    use std::{
+        cell::RefCell, collections::HashMap, ops::Deref, rc::Rc, thread, time::Duration, vec::Vec,
+    };
 
     #[test]
     fn elapsed_time_record_returns_closure_result() {
@@ -9233,6 +9241,68 @@ mod tests {
         assert_eq!(monitor.count_regions_with_name(REGION), 2);
         assert_eq!(monitor.count_nodes_in_region(r1.as_ref().unwrap()), Some(1));
         assert_eq!(monitor.count_nodes_in_region(r2.as_ref().unwrap()), Some(1));
+    }
+
+    /// Every stream in a circuit must have an id of its own, including the
+    /// streams a nested circuit exports to its parent.
+    ///
+    /// Stream ids identify streams in `Edges`, so a reused id makes edge
+    /// bookkeeping ambiguous.  Deleting the replay edges of a bootstrap
+    /// (`CircuitHandle::complete_replay`) deletes edges by stream id, and used
+    /// to take the live edge carrying a recursive scope's output with them,
+    /// after which the scope's consumer ran ahead of the scope in every step
+    /// and read an empty stream.
+    #[test]
+    fn stream_ids_are_unique_across_nested_circuits() {
+        let circuit = RootCircuit::build(|circuit| {
+            let mut n: usize = 0;
+            let source = circuit.add_source(Generator::new(move || {
+                n += 1;
+                n
+            }));
+            let exported = circuit
+                .iterate_with_condition(|child| {
+                    let mut counter = 0;
+                    let countdown = source.delta0(child).apply_mut(move |parent_val| {
+                        if *parent_val > 0 {
+                            counter = *parent_val;
+                        };
+                        let res = counter;
+                        counter -= 1;
+                        res
+                    });
+                    let (z1_output, z1_feedback) = child.add_feedback_with_export(Z1::new(1));
+                    let mul = countdown.apply2(&z1_output.local, |n1: &usize, n2: &usize| n1 * n2);
+                    z1_feedback.connect(&mul);
+                    Ok((countdown.condition(|n| *n <= 1), z1_output.export))
+                })
+                .unwrap();
+
+            // Streams created in the parent after the scope.  The child handed
+            // out ids of its own, so these are where a reused id surfaces.
+            let mut stream = exported.apply(|n| *n);
+            for _ in 0..16 {
+                stream = stream.apply(|n| *n);
+            }
+            Ok(())
+        })
+        .unwrap()
+        .0;
+
+        let mut producer_of: HashMap<StreamId, NodeId> = HashMap::new();
+        for edge in circuit.circuit.edges().iter() {
+            if let Some(stream) = &edge.stream {
+                let producer: NodeId = *producer_of.entry(stream.stream_id()).or_insert(edge.from);
+                assert_eq!(
+                    producer,
+                    edge.from,
+                    "stream {} is produced by both {} and {}",
+                    stream.stream_id(),
+                    producer,
+                    edge.from
+                );
+            }
+        }
     }
 
     #[test]
