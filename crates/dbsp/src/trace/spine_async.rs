@@ -627,11 +627,11 @@ impl BackpressureWait {
     }
 }
 
-/// What [`BackpressureWait`] leaves behind once its future has been awaited.
+/// What a [`BackpressureWait`] leaves behind once its future has been awaited.
 ///
-/// Public because the sharded accumulator awaits the future and reports the
-/// wait; see [`Spine::backpressure_waiter`].
-pub struct BackpressureWaitReport {
+/// Reaches beyond this module because the sharded accumulator awaits the future
+/// and reports the wait; see [`Spine::backpressure_waiter`].
+pub(crate) struct BackpressureWaitReport {
     name: Arc<String>,
     start: Instant,
     initial_loose: usize,
@@ -2448,12 +2448,12 @@ where
     /// Pass the report half to [`Self::record_backpressure_wait`] after
     /// awaiting, so the wait shows up in
     /// `merge_backpressure_wait_time_seconds` and in profiles.
-    pub fn backpressure_waiter(&self) -> Option<(OwnedNotified, BackpressureWaitReport)> {
+    pub(crate) fn backpressure_waiter(&self) -> Option<(OwnedNotified, BackpressureWaitReport)> {
         self.merger.backpressure_waiter().map(|wait| wait.split())
     }
 
     /// Reports a wait obtained from [`Self::backpressure_waiter`].
-    pub fn record_backpressure_wait(&self, report: BackpressureWaitReport) {
+    pub(crate) fn record_backpressure_wait(&self, report: BackpressureWaitReport) {
         self.merger.record_backpressure_wait(report)
     }
 }

@@ -28,8 +28,8 @@ use std::{
 /// [`CPUProfiler`] samples this at step boundaries, which is what attributes the
 /// idle time to a step and leaves out parks that happen outside one.
 ///
-/// Timestamps are nanoseconds measured against [`RuntimeIdle::base`] rather than
-/// wall-clock time, so this shares a monotonic clock with the step's own
+/// Timestamps are nanoseconds measured against a fixed `base` instant rather
+/// than wall-clock time, so this shares a monotonic clock with the step's own
 /// duration and the two can be subtracted.
 #[derive(Clone, Debug)]
 pub struct RuntimeIdle {
