@@ -442,7 +442,7 @@
           "final": 10
         },
         "positions": [],
-        "persistent_id": "58795ce08f08d78c6cf97082e9dfcc5fce43825c44bc763377874648bf074d08"
+        "persistent_id": "71231f996af603d4d548e6aa4a7b1fe5ee9bfccf3fadadbb5a554d2c37824de5"
       }
     }, "s8": {
       "operation": "inspect",
@@ -456,7 +456,7 @@
       "positions": [
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
       ],
-      "persistent_id": "08b99a30ddf054bdadc7c1e3588e18db716ca20bdccad6761e24181bc61ccc63"
+      "persistent_id": "52e7d68b35ea322c8f02f0fe4fe0e06c8341278c3314cf8f08d20cbaac09b156"
     }, "s9": {
       "operation": "constant",
       "inputs": [],

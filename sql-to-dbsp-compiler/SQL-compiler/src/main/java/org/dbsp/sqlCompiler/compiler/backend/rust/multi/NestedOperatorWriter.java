@@ -115,6 +115,28 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
 
     /** Emit the code that gives the stream named {@code name} the persistent id of
      * {@code operator}. */
+    /** Name the stream that leaves the recursive circuit.
+     *
+     * <p>It must not be the operator's own id: that id already names the stream
+     * inside the scope, and the two are separate streams whose operators keep
+     * separate state.  Sharing it makes an inner trace and an outer one write
+     * the same file, and whichever restores second reads a batch that was
+     * written with the other's layout. */
+    private void setExportedPersistentId(DBSPOperator operator, String name) {
+        HashString hash = OperatorHash.getHash(operator, true);
+        if (hash == null) {
+            this.builder().append("let hash = None;").newline();
+        } else {
+            this.builder().append("let hash = Some(concat!(")
+                    .append(hash.toQuotedString())
+                    .append(", \".export\"));")
+                    .newline();
+        }
+        this.builder().append(name)
+                .append(".set_persistent_id(hash);")
+                .newline();
+    }
+
     private void setPersistentId(DBSPOperator operator, String name) {
         this.builder().append("let hash = ");
         HashString hash = OperatorHash.getHash(operator, true);
@@ -267,7 +289,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         for (int i = 0; i < operator.outputCount(); i++) {
             OutputPort port = operator.internalOutputs.get(i);
             if (port != null)
-                this.setPersistentId(port.operator, port.getName(false));
+                this.setExportedPersistentId(port.operator, port.getName(false));
         }
 
         this.builder().append("if let Some(region) = region { circuit.close_region(region.clone()) };").newline();

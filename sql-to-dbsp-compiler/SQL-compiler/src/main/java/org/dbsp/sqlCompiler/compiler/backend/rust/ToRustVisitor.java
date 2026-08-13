@@ -521,7 +521,7 @@ public class ToRustVisitor extends CircuitVisitor {
         for (int i = 0; i < operator.outputCount(); i++) {
             OutputPort port = operator.internalOutputs.get(i);
             if (port != null) {
-                this.computeHash(port.operator);
+                this.computeExportedHash(port.operator);
                 this.tagStream(port.operator.to(DBSPSimpleOperator.class));
             }
         }
@@ -619,6 +619,28 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.newline()
                 .append(operator.getNodeName(this.preferHash))
                 .append(".set_persistent_id(hash);");
+    }
+
+    /** Emit the id of a stream that leaves a recursive circuit.
+     *
+     * <p>It must not be the operator's own id: that id already names the stream
+     * inside the scope, and the two are separate streams whose operators keep
+     * separate state.  Sharing it makes an inner trace and an outer one write
+     * the same file, and whichever restores second reads a batch that was
+     * written with the other's layout. */
+    void computeExportedHash(DBSPOperator operator) {
+        if (this.preferHash)
+            return;
+        this.builder.append("let hash = ");
+        HashString hash = OperatorHash.getHash(operator, true);
+        if (hash == null) {
+            this.builder.append("None;").newline();
+        } else {
+            this.builder.append("Some(concat!(")
+                    .append(hash.toQuotedString())
+                    .append(", \".export\"));")
+                    .newline();
+        }
     }
 
     void computeHash(DBSPOperator operator) {
