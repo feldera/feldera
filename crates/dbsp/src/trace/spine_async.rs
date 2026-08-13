@@ -487,21 +487,8 @@ where
         let post_len = new_batch.len();
         self.spine_stats
             .report_merge(pre_len, post_len, cache_stats);
-        Span::new(LEVEL_NAMES[level])
-            .with_category("Spine")
-            .with_start(start)
-            .with_tooltip(|| {
-                format!(
-                    "{} in worker {} merged {} batches ({pre_len} -> {post_len}) in {} steps using {:.1} ms real time and {:.1} ms CPU time",
-                    &self.name,
-                    Runtime::worker_index(),
-                    batches.len(),
-                    n_steps,
-                    elapsed.real.as_secs_f64() * 1000.0,
-                    elapsed.cpu.as_secs_f64() * 1000.0
-                )
-            })
-            .record();
+        let n_merged_batches = batches.len();
+        let merge_name = self.name.clone();
 
         if slot.compaction_status == CompactionStatus::InProgress {
             // We finished merging all batches in the slot as part of compaction.
@@ -526,6 +513,25 @@ where
         } else if !new_batch.is_empty() {
             self.add_batch(new_batch, new_level);
         }
+
+        // Recorded here, rather than where the merge is accounted above, so the
+        // counts describe the spine as the merge leaves it. `loose` is what
+        // backpressure measures, and it is what grows when merging cannot keep
+        // up with the batches each step adds.
+        let loose = self.batch_count().0;
+        let total: usize = self.slots.iter().map(Slot::n_batches).sum();
+        Span::new(LEVEL_NAMES[level])
+            .with_category("Spine")
+            .with_start(start)
+            .with_tooltip(|| {
+                format!(
+                    "{merge_name} in worker {} merged {n_merged_batches} batches ({pre_len} -> {post_len}) in {n_steps} steps using {:.1} ms real time and {:.1} ms CPU time; spine now holds {loose} loose of {total} batches",
+                    Runtime::worker_index(),
+                    elapsed.real.as_secs_f64() * 1000.0,
+                    elapsed.cpu.as_secs_f64() * 1000.0
+                )
+            })
+            .record();
     }
 
     /// Returns a copy of the data that the caller can use to construct a
