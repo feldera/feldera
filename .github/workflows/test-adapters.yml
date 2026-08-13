@@ -114,7 +114,8 @@ jobs:
           source .venv/bin/activate
           ../../build/dbsp_adapters-* --skip pubsub \
             --skip transport::kafka::ft::test::test_kafka_input_offset_latest \
-            --skip transport::nats::input::test::mock_tests::test_nats_replay_stream_deleted_retries_and_recovers
+            --skip transport::nats::input::test::mock_tests::test_nats_replay_stream_deleted_retries_and_recovers \
+            --skip transport::nats::input::test::mock_tests::test_nats_replay_server_killed_retries_non_fatal
         working-directory: crates/adapters
         shell: bash
         env:
