@@ -109,8 +109,6 @@ jobs:
           repositories: ${{ github.event.repository.name }}
 
       - name: Release on GitHub
-        # The previously pinned v2.3.2 accepts make_latest but fails to apply
-        # it when publishing, so every release became "latest" regardless.
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           target_commitish: ${{ env.SHA_TO_RELEASE }}
