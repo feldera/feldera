@@ -279,7 +279,13 @@ class TstAccumulator:
                 runtime_config=RuntimeConfig(
                     workers=FELDERA_TEST_NUM_WORKERS,
                     hosts=FELDERA_TEST_NUM_HOSTS,
-                    provisioning_timeout_secs=180,
+                    # CI's ci-pipeline nodes come from GKE node auto-provisioning
+                    # (fresh spot VM per pod, no warm pool by design since pipeline
+                    # sizes vary per test), so a cold start alone can take several
+                    # minutes; under concurrent merge-queue load we've observed
+                    # pods still Pending past 9 minutes. 180s was too tight and
+                    # failed real merges (feldera#6650).
+                    provisioning_timeout_secs=600,
                     logging="debug",
                     # Honest request so k8s does not pack aggtest pipelines
                     # onto nodes without headroom and evict them mid-test.
