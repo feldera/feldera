@@ -228,8 +228,10 @@ mod test {
         DBData, OrdIndexedZSet, OrdZSet, RootCircuit, Runtime, Stream, ZWeight,
         algebra::DefaultSemigroup,
         circuit::CircuitConfig,
+        dynamic::{DowncastTrait, Erase},
         operator::{Fold, dynamic::join::test::generate_join_test_data},
-        utils::Tup2,
+        trace::BatchReaderFactories,
+        utils::{Tup2, Tup3},
     };
     use proptest::prelude::*;
 
@@ -396,39 +398,112 @@ mod test {
     ) where
         It: IntoIterator<Item = (OK, OV)> + 'static,
     {
-        let (mut dbsp, (left_handle, right_handle, output_handle, expected_output_handle)) =
-            Runtime::init_circuit(
-                CircuitConfig::from(4).with_splitter_chunk_size_records(2),
-                move |circuit| {
-                    let (left_input, left_handle) = circuit.add_input_indexed_zset::<K, V>();
-                    let (right_input, right_handle) =
-                        circuit.add_input_indexed_zset::<K, Option<V>>();
+        let (
+            mut dbsp,
+            (
+                left_handle,
+                right_handle,
+                output_handle,
+                expected_output_handle,
+                non_incremental_output_handle,
+            ),
+        ) = Runtime::init_circuit(
+            CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+            move |circuit| {
+                let (left_input, left_handle) = circuit.add_input_indexed_zset::<K, V>();
+                let (right_input, right_handle) = circuit.add_input_indexed_zset::<K, Option<V>>();
 
-                    let output_handle = if balanced {
-                        left_input
-                            .left_join_index_balanced_inner(&right_input, f.clone())
-                            .accumulate_output()
-                    } else {
-                        left_input
-                            .left_join_index(&right_input, f.clone())
-                            .accumulate_output()
-                    };
+                let output_handle = if balanced {
+                    left_input
+                        .left_join_index_balanced_inner(&right_input, f.clone())
+                        .accumulate_output()
+                } else {
+                    left_input
+                        .left_join_index(&right_input, f.clone())
+                        .accumulate_output()
+                };
 
-                    let f = f.clone();
+                let f = f.clone();
 
-                    let expected_output_handle = left_input
-                        .reference_left_join_index(&right_input, f.clone())
-                        .accumulate_output();
+                let expected_output_handle = left_input
+                    .reference_left_join_index(&right_input, f.clone())
+                    .accumulate_output();
 
-                    Ok((
-                        left_handle,
-                        right_handle,
-                        output_handle,
-                        expected_output_handle,
-                    ))
-                },
-            )
-            .unwrap();
+                let non_incremental_output_handle = circuit
+                    .non_incremental(&(left_input, right_input), move |_child, (left, right)| {
+                        let left = left.integrate();
+                        let right = right.integrate();
+                        let matched_f = f.clone();
+                        let unmatched_f = f.clone();
+
+                        let right_presence =
+                            right.stream_aggregate(<Fold<_, _, DefaultSemigroup<_>, _, _>>::new(
+                                1,
+                                |present: &mut i64, _v: &Option<V>, _w| *present = 1,
+                            ));
+
+                        let matched: Stream<_, OrdIndexedZSet<OK, OV>> = left
+                            .stream_join(&right, |k, v1, v2| {
+                                Tup3(k.clone(), v1.clone(), v2.clone())
+                            })
+                            .inner()
+                            .dyn_flat_map_generic(
+                                &BatchReaderFactories::new::<OK, OV, ZWeight>(),
+                                Box::new(move |item, cb| {
+                                    let Tup3(k, v1, v2) = unsafe { item.downcast() };
+                                    for (mut ok, mut ov) in matched_f(k, v1, v2) {
+                                        cb(ok.erase_mut(), ov.erase_mut());
+                                    }
+                                }),
+                            )
+                            .typed();
+                        let unmatched: Stream<_, OrdIndexedZSet<OK, OV>> = left
+                            .inner()
+                            .dyn_flat_map_generic(
+                                &BatchReaderFactories::new::<OK, OV, ZWeight>(),
+                                Box::new(move |(k, v), cb| {
+                                    let k = unsafe { k.downcast() };
+                                    let v = unsafe { v.downcast() };
+                                    for (mut ok, mut ov) in unmatched_f(k, v, &None) {
+                                        cb(ok.erase_mut(), ov.erase_mut());
+                                    }
+                                }),
+                            )
+                            .typed();
+                        let suppressed: Stream<_, OrdIndexedZSet<OK, OV>> = left
+                            .stream_join(&right_presence, |k, v, _present| {
+                                Tup2(k.clone(), v.clone())
+                            })
+                            .inner()
+                            .dyn_flat_map_generic(
+                                &BatchReaderFactories::new::<OK, OV, ZWeight>(),
+                                Box::new(move |item, cb| {
+                                    let Tup2(k, v) = unsafe { item.downcast() };
+                                    for (mut ok, mut ov) in f(k, v, &None) {
+                                        cb(ok.erase_mut(), ov.erase_mut());
+                                    }
+                                }),
+                            )
+                            .typed();
+
+                        Ok(matched
+                            .plus(&unmatched)
+                            .plus(&suppressed.neg())
+                            .differentiate())
+                    })
+                    .unwrap()
+                    .accumulate_output();
+
+                Ok((
+                    left_handle,
+                    right_handle,
+                    output_handle,
+                    expected_output_handle,
+                    non_incremental_output_handle,
+                ))
+            },
+        )
+        .unwrap();
 
         if transaction {
             dbsp.start_transaction().unwrap();
@@ -457,11 +532,13 @@ mod test {
                 dbsp.transaction().unwrap();
                 let output = output_handle.concat().consolidate();
                 let expected_output = expected_output_handle.concat().consolidate();
+                let non_incremental_output = non_incremental_output_handle.concat().consolidate();
                 // println!(
                 //     "output: {:?} expected_output: {:?}",
                 //     output, expected_output
                 // );
-                assert_eq!(output, expected_output)
+                assert_eq!(output, expected_output);
+                assert_eq!(output, non_incremental_output)
             } else {
                 dbsp.step().unwrap();
             }
@@ -471,7 +548,8 @@ mod test {
             dbsp.commit_transaction().unwrap();
             let output = output_handle.concat().consolidate();
 
-            assert_eq!(output, expected_output_handle.concat().consolidate())
+            assert_eq!(output, expected_output_handle.concat().consolidate());
+            assert_eq!(output, non_incremental_output_handle.concat().consolidate())
         }
     }
 
