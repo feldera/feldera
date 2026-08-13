@@ -429,12 +429,29 @@ mod test {
                     .reference_left_join_index(&right_input, f.clone())
                     .accumulate_output();
 
+                // Recompute the join from scratch as a batch computation over the
+                // integrals of both inputs, then differentiate the result back into a
+                // delta stream.  The join is expressed as
+                //
+                //     matched + unmatched - suppressed
+                //
+                // where `matched` holds the rows produced by the inner join,
+                // `unmatched` optimistically treats every left row as having no match,
+                // and `suppressed` withdraws that optimism for the left rows whose key
+                // does occur on the right.
+                //
+                // `right_presence` carries weight 1 for each key present on the right,
+                // whatever that key's own weights are, so a `suppressed` row weighs
+                // exactly as much as the `unmatched` row it cancels.  The cancellation
+                // is therefore exact for arbitrary signed weights, including keys that
+                // occur on the right only with negative weight.
                 let non_incremental_output_handle = circuit
                     .non_incremental(&(left_input, right_input), move |_child, (left, right)| {
                         let left = left.integrate();
                         let right = right.integrate();
                         let matched_f = f.clone();
                         let unmatched_f = f.clone();
+                        let suppressed_f = f;
 
                         let right_presence =
                             right.stream_aggregate(<Fold<_, _, DefaultSemigroup<_>, _, _>>::new(
@@ -479,17 +496,14 @@ mod test {
                                 &BatchReaderFactories::new::<OK, OV, ZWeight>(),
                                 Box::new(move |item, cb| {
                                     let Tup2(k, v) = unsafe { item.downcast() };
-                                    for (mut ok, mut ov) in f(k, v, &None) {
+                                    for (mut ok, mut ov) in suppressed_f(k, v, &None) {
                                         cb(ok.erase_mut(), ov.erase_mut());
                                     }
                                 }),
                             )
                             .typed();
 
-                        Ok(matched
-                            .plus(&unmatched)
-                            .plus(&suppressed.neg())
-                            .differentiate())
+                        Ok(matched.plus(&unmatched).minus(&suppressed).differentiate())
                     })
                     .unwrap()
                     .accumulate_output();
@@ -533,12 +547,14 @@ mod test {
                 let output = output_handle.concat().consolidate();
                 let expected_output = expected_output_handle.concat().consolidate();
                 let non_incremental_output = non_incremental_output_handle.concat().consolidate();
-                // println!(
-                //     "output: {:?} expected_output: {:?}",
-                //     output, expected_output
-                // );
-                assert_eq!(output, expected_output);
-                assert_eq!(output, non_incremental_output)
+                assert_eq!(
+                    output, expected_output,
+                    "incremental left join disagrees with the incremental reference"
+                );
+                assert_eq!(
+                    output, non_incremental_output,
+                    "incremental left join disagrees with the non-incremental batch oracle"
+                )
             } else {
                 dbsp.step().unwrap();
             }
@@ -548,8 +564,16 @@ mod test {
             dbsp.commit_transaction().unwrap();
             let output = output_handle.concat().consolidate();
 
-            assert_eq!(output, expected_output_handle.concat().consolidate());
-            assert_eq!(output, non_incremental_output_handle.concat().consolidate())
+            assert_eq!(
+                output,
+                expected_output_handle.concat().consolidate(),
+                "incremental left join disagrees with the incremental reference"
+            );
+            assert_eq!(
+                output,
+                non_incremental_output_handle.concat().consolidate(),
+                "incremental left join disagrees with the non-incremental batch oracle"
+            )
         }
     }
 
@@ -565,12 +589,12 @@ mod test {
         }
 
         #[test]
-        fn proptest_left_join_index_big_step(inputs in generate_join_test_data(10, 5, 1, 50)) {
+        fn proptest_left_join_index_big_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
             proptest_left_join_index(inputs.0, inputs.1, |k, v1, v2| vec![(*k, Tup2(*v1, *v2))], true, false);
         }
 
         #[test]
-        fn proptest_left_join_index_small_step(inputs in generate_join_test_data(10, 5, 1, 50)) {
+        fn proptest_left_join_index_small_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
             proptest_left_join_index(inputs.0, inputs.1, |k, v1, v2| vec![(*k, Tup2(*v1, *v2))], false, false);
         }
 
@@ -585,12 +609,12 @@ mod test {
         }
 
         #[test]
-        fn proptest_left_join_index_balanced_big_step(inputs in generate_join_test_data(10, 5, 1, 50)) {
+        fn proptest_left_join_index_balanced_big_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
             proptest_left_join_index(inputs.0, inputs.1, |k, v1, v2| vec![(*k, Tup2(*v1, *v2))], true, true);
         }
 
         #[test]
-        fn proptest_left_join_index_balanced_small_step(inputs in generate_join_test_data(10, 5, 1, 50)) {
+        fn proptest_left_join_index_balanced_small_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
             proptest_left_join_index(inputs.0, inputs.1, |k, v1, v2| vec![(*k, Tup2(*v1, *v2))], false, true);
         }
 
