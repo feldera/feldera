@@ -14,10 +14,11 @@ use crate::{
     flush_op,
     format::{Encoder, OutputConsumer},
     transport::OutputEndpoint,
-    util::IndexedOperationType,
+    util::{IndexedOperationType, truncate_ellipse},
 };
 use anyhow::{Context, Result as AnyResult, anyhow, bail};
 use feldera_adapterlib::catalog::SplitCursorBuilder;
+use feldera_adapterlib::format::MAX_RECORD_LEN_IN_ERRMSG;
 use feldera_adapterlib::transport::{AsyncErrorCallback, CommandHandler, OutputBatchType, Step};
 use feldera_types::{
     format::json::JsonFlavor,
@@ -221,7 +222,14 @@ impl PostgresWorker {
             .map_err(BackoffError::Permanent)?
             .execute(&stmt, &[&v])
             .map_err(|e| {
-                BackoffError::from(e).context(format!("while executing {name} statement: {v}"))
+                // Report only a prefix of the payload: it holds a whole batch of
+                // records, up to `max_buffer_size_bytes`, which is far too large
+                // to keep in the error list served by `/stats`.
+                BackoffError::from(e).context(format!(
+                    "while executing {name} statement for {num_records} record(s) ({} bytes), which start with: {}",
+                    v.len(),
+                    truncate_ellipse(v, MAX_RECORD_LEN_IN_ERRMSG, "...")
+                ))
             })?;
 
         // Report progress: these records have now been sent to postgres within
@@ -675,7 +683,15 @@ impl PostgresOutputEndpointCommandHandler {
 impl CommandHandler for PostgresOutputEndpointCommandHandler {
     fn command(&self, command: serde_json::Value) -> AnyResult<serde_json::Value> {
         let command = serde_json::from_value::<PostgresOutputEndpointCommand>(command.clone())
-            .map_err(|e| anyhow!("Postgres output connector failed to parse command '{command}' with the following error: {e}"))?;
+            .map_err(|e| {
+                let command = truncate_ellipse(
+                    &command.to_string(),
+                    MAX_RECORD_LEN_IN_ERRMSG,
+                    "...",
+                )
+                .into_owned();
+                anyhow!("Postgres output connector failed to parse command '{command}' with the following error: {e}")
+            })?;
 
         match command {
             PostgresOutputEndpointCommand::SetExtraColumns(extra_columns) => {
