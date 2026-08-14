@@ -67,8 +67,21 @@ struct PostgresWorker {
     key_schema: Relation,
     value_schema: Relation,
     controller: Weak<ControllerInner>,
+    /// Bytes written by statements in the current transaction.
+    ///
+    /// Counted only after `execute` succeeds, and reported to the endpoint only
+    /// if the transaction then commits cleanly, so that it measures what reached
+    /// the table rather than what the worker attempted.
     num_bytes: usize,
+    /// Rows written by statements in the current transaction, counted and
+    /// reported on the same terms as [`Self::num_bytes`].
     num_rows: usize,
+    /// Whether a statement in the current transaction has failed.
+    ///
+    /// Postgres aborts a transaction on any statement error and answers a
+    /// subsequent `COMMIT` with `ROLLBACK` rather than an error, so a commit
+    /// reporting success proves nothing on its own.
+    txn_poisoned: bool,
     /// Shared counter of records sent to postgres in the current batch.
     /// Updated atomically after each successful `execute()` call across all
     /// workers; reset to 0 by the endpoint at batch boundaries.
@@ -136,6 +149,7 @@ impl PostgresWorker {
             key_schema: key_schema.clone(),
             num_rows: 0,
             num_bytes: 0,
+            txn_poisoned: false,
             inserts: 0,
             upserts: 0,
             deletes: 0,
@@ -212,25 +226,34 @@ impl PostgresWorker {
             return Ok(());
         }
 
-        self.num_bytes += value.len();
-
         let v: &str = std::str::from_utf8(value.as_slice()).map_err(|e| {
             BackoffError::Permanent(anyhow!("record contains non utf-8 characters: {e}"))
         })?;
 
-        self.transaction()
+        let result = self
+            .transaction()
             .map_err(BackoffError::Permanent)?
-            .execute(&stmt, &[&v])
-            .map_err(|e| {
-                // Report only a prefix of the payload: it holds a whole batch of
-                // records, up to `max_buffer_size_bytes`, which is far too large
-                // to keep in the error list served by `/stats`.
-                BackoffError::from(e).context(format!(
-                    "while executing {name} statement for {num_records} record(s) ({} bytes), which start with: {}",
-                    v.len(),
-                    truncate_ellipse(v, MAX_RECORD_LEN_IN_ERRMSG, "...")
-                ))
-            })?;
+            .execute(&stmt, &[&v]);
+
+        if let Err(e) = result {
+            // Postgres has aborted the transaction, so nothing written in it so
+            // far will reach the table either.
+            self.txn_poisoned = true;
+
+            // Report only a prefix of the payload: it holds a whole batch of
+            // records, up to `max_buffer_size_bytes`, which is far too large
+            // to keep in the error list served by `/stats`.
+            return Err(BackoffError::from(e).context(format!(
+                "while executing {name} statement for {num_records} record(s) ({} bytes), which start with: {}",
+                v.len(),
+                truncate_ellipse(v, MAX_RECORD_LEN_IN_ERRMSG, "...")
+            )));
+        }
+
+        // Count what this statement wrote. The transaction still has to commit
+        // for any of it to survive, which `batch_end_inner` decides.
+        self.num_bytes += v.len();
+        self.num_rows += num_records;
 
         // Report progress: these records have now been sent to postgres within
         // the open transaction.  The endpoint resets the counter to 0 at batch
@@ -325,7 +348,12 @@ impl PostgresWorker {
             return Ok(());
         };
 
+        // Losing the connection rolled back the open transaction, so drop what
+        // it had written from the count. `batch_end_inner` fails for the rest of
+        // this batch, since there is no transaction left to commit.
         self.transaction = None;
+        self.num_bytes = 0;
+        self.num_rows = 0;
         self.client = connect(&self.config, &self.endpoint_name)?;
 
         self.prepared_statements = PreparedStatements::new(
@@ -404,6 +432,12 @@ These statements were successfully prepared before reconnecting. Does the table 
         let transaction: postgres::Transaction<'static> = unsafe { std::mem::transmute(txn) };
         self.transaction = Some(transaction);
 
+        // Start counting afresh: whatever the previous transaction wrote was
+        // either reported at its commit or lost with it.
+        self.num_bytes = 0;
+        self.num_rows = 0;
+        self.txn_poisoned = false;
+
         Ok(())
     }
 
@@ -417,6 +451,34 @@ These statements were successfully prepared before reconnecting. Does the table 
             .ok_or(BackoffError::Permanent(anyhow!(
                 "postgres: attempted to commit a transaction that hasn't been started"
             )))?;
+
+        // Roll back explicitly rather than committing: Postgres would answer the
+        // commit with `ROLLBACK` and no error, which would report the rows this
+        // transaction wrote as written when they were all discarded.
+        if self.txn_poisoned {
+            let rollback = match transaction.rollback() {
+                Ok(()) => String::new(),
+                Err(e) => format!(" Rolling the transaction back also failed: {e}."),
+            };
+            // Spell out that the rows PostgreSQL accepted are gone too. A reader
+            // who saw only the rejected statement would expect the rest of the
+            // rows to have landed.
+            let accepted = if self.num_rows > 0 {
+                format!(
+                    ": the {} row(s) PostgreSQL had already accepted were rolled back, \
+                     and the rest were dropped",
+                    self.num_rows
+                )
+            } else {
+                String::new()
+            };
+            return Err(BackoffError::Permanent(anyhow!(
+                "PostgreSQL rejected one of the statements writing to table {:?} and \
+                 aborted the transaction, so no rows were written{accepted}. The \
+                 rejected statement is reported as a separate error.{rollback}",
+                self.table,
+            )));
+        }
 
         transaction.commit()?;
 
@@ -488,8 +550,6 @@ These statements were successfully prepared before reconnecting. Does the table 
                         self.upsert(buf);
                     }
                 };
-
-                self.num_rows += 1;
             }
 
             cursor.step_key();
@@ -892,7 +952,15 @@ impl PostgresOutputEndpoint {
                 .map(|e| format!("{e:#}"))
                 .collect::<Vec<_>>()
                 .join("; ");
-            bail!("{} worker(s) failed: {msg}", errors.len());
+            // With one writer thread, which is the default, naming the count
+            // adds nothing to what the failure itself already says.
+            if errors.len() == 1 {
+                bail!("{msg}");
+            }
+            bail!(
+                "{} of the connector's writer threads failed: {msg}",
+                errors.len()
+            );
         }
 
         Ok(())
@@ -946,26 +1014,30 @@ impl OutputConsumer for PostgresOutputEndpoint {
         // the records have been committed; on failure the counter would
         // otherwise leak across batches.
         self.records_written.store(0, Ordering::Relaxed);
+
+        // Report what committed even when a worker failed. Each worker commits
+        // its own transaction, so a batch that failed in one worker still wrote
+        // the rows the others committed, and `broadcast_and_collect` accumulated
+        // only those. Taking the totals here, rather than on the success path
+        // alone, also keeps a failed batch from carrying them into the next one.
+        let elapsed = self.txn_start.elapsed();
+        let num_bytes = std::mem::take(&mut self.num_bytes);
+        let num_rows = std::mem::take(&mut self.num_rows);
+        let Some(controller) = self.controller.upgrade() else {
+            tracing::warn!("controller is shutting down: aborting");
+            return;
+        };
+        controller
+            .status
+            .output_buffer(self.endpoint_id, num_bytes, num_rows);
+
         match result {
             Ok(()) => {
-                let elapsed = self.txn_start.elapsed();
-                let num_bytes = std::mem::take(&mut self.num_bytes);
-                let num_rows = std::mem::take(&mut self.num_rows);
                 tracing::debug!(
                     "postgres: flushed {num_rows} rows and {num_bytes} bytes in {elapsed:?}",
                 );
-
-                if let Some(controller) = self.controller.upgrade() {
-                    controller
-                        .status
-                        .output_buffer(self.endpoint_id, num_bytes, num_rows);
-                };
             }
             Err(err) => {
-                let Some(controller) = self.controller.upgrade() else {
-                    tracing::warn!("controller is shutting down: aborting");
-                    return;
-                };
                 controller.output_transport_error(
                     self.endpoint_id,
                     &self.endpoint_name,
@@ -1030,7 +1102,15 @@ impl Encoder for PostgresOutputEndpoint {
                 .map(|e| format!("{e:#}"))
                 .collect::<Vec<_>>()
                 .join("; ");
-            bail!("{} worker(s) failed: {msg}", errors.len());
+            // With one writer thread, which is the default, naming the count
+            // adds nothing to what the failure itself already says.
+            if errors.len() == 1 {
+                bail!("{msg}");
+            }
+            bail!(
+                "{} of the connector's writer threads failed: {msg}",
+                errors.len()
+            );
         }
 
         Ok(())

@@ -1240,6 +1240,308 @@ fn test_pg_error_message_is_bounded() {
     );
 }
 
+/// Serializes `data` as the newline-delimited JSON the file input reads.
+fn write_records_to_temp_file(data: &[PostgresTestStruct]) -> NamedTempFile {
+    let mut temp_file = NamedTempFile::new().unwrap();
+    for datum in data {
+        let mut serializer = serde_json::Serializer::new(Vec::new());
+        datum
+            .serialize_with_context(&mut serializer, &SqlSerdeConfig::default())
+            .unwrap();
+        temp_file
+            .as_file_mut()
+            .write_all(&serializer.into_inner())
+            .unwrap();
+        temp_file.write_all(b"\n").unwrap();
+    }
+    temp_file
+}
+
+/// Pipeline that feeds the records in `path` to a postgres output connector
+/// writing to `table_name`.
+fn pg_output_test_config(path: &Path, url: &str, table_name: &str) -> PipelineConfig {
+    serde_json::from_value(json!({
+      "name": "test",
+      "workers": 4,
+      "inputs": {
+        "ins": {
+          "stream": "test_input1",
+          "transport": { "name": "file_input", "config": { "path": path } },
+          "format": { "name": "json", "config": { "update_format": "raw", "array": false } }
+        }
+      },
+      "outputs": {
+        "test_output1": {
+          "stream": "test_output1",
+          "transport": { "name": "postgres_output", "config": { "uri": url, "table": table_name } },
+          "index": "idx"
+        }
+      }
+    }))
+    .unwrap()
+}
+
+fn pg_transmitted_totals(controller: &Controller) -> (u64, u64) {
+    let status = controller.status();
+    let outputs = status.output_status();
+    let endpoint = outputs.values().next().expect("output endpoint");
+    (
+        endpoint
+            .metrics
+            .transmitted_records
+            .load(std::sync::atomic::Ordering::Relaxed),
+        endpoint
+            .metrics
+            .transmitted_bytes
+            .load(std::sync::atomic::Ordering::Relaxed),
+    )
+}
+
+fn pg_total_processed_input_records(controller: &Controller) -> u64 {
+    let status = controller.status();
+    let outputs = status.output_status();
+    let endpoint = outputs.values().next().expect("output endpoint");
+    endpoint
+        .metrics
+        .total_processed_input_records
+        .load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn pg_row_count(url: &str, table_name: &str) -> u64 {
+    let mut client = pg::pg_connect(url, &None);
+    let count: i64 = client
+        .query_one(&format!("SELECT count(*) FROM {table_name}"), &[])
+        .expect("failed to count rows")
+        .get(0);
+    count as u64
+}
+
+/// `transmitted_records` counts what Postgres committed, not what the connector
+/// buffered.
+///
+/// A failing statement aborts the whole transaction, and Postgres answers the
+/// following COMMIT with ROLLBACK instead of an error, so a commit that reports
+/// success proves nothing on its own. Counting rows as they were encoded
+/// therefore reported a batch as transmitted that the server had discarded.
+#[test]
+#[serial]
+fn test_pg_transmitted_records_excludes_rolled_back_rows() {
+    let table_name = unique_pg_name("test_pg_rollback_count");
+    let url = postgres_url();
+    let verify_url = url.clone();
+
+    let data: Vec<PostgresTestStruct> = (0..1000).map(|_| rand::random()).collect();
+    let temp_file = write_records_to_temp_file(&data);
+    let config = pg_output_test_config(temp_file.path(), &url, &table_name);
+
+    // `freshness_timestamp` is NOT NULL, has no DEFAULT, and is absent from the
+    // Feldera view, so every INSERT the connector issues aborts its transaction
+    // and the batch writes nothing.
+    let _table = PostgresTestStruct::create_table_with_extra_columns(
+        &table_name,
+        url,
+        true,
+        &None,
+        "freshness_timestamp TIMESTAMP NOT NULL",
+    );
+
+    let (controller, _err_receiver) = PostgresTestStruct::test_circuit(config);
+    controller.start();
+
+    // Wait until the connector has finished handling every record. This counter
+    // reports what the connector handled whether or not the write succeeded, so
+    // it advances even though nothing reaches the table, which keeps the
+    // assertions below from passing against counters that have yet to move.
+    wait(
+        || pg_total_processed_input_records(&controller) >= data.len() as u64,
+        60_000,
+    )
+    .expect("timeout: connector did not finish handling the input");
+
+    let (records, bytes) = pg_transmitted_totals(&controller);
+    let _ = controller.stop();
+
+    assert_eq!(
+        records, 0,
+        "reported {records} records as transmitted, but every transaction was rolled back"
+    );
+    assert_eq!(
+        bytes, 0,
+        "reported {bytes} bytes as transmitted, but every transaction was rolled back"
+    );
+    assert_eq!(
+        pg_row_count(&verify_url, &table_name),
+        0,
+        "the table should have rejected every row"
+    );
+}
+
+/// Records reported by the `... statement for N record(s)` context that the
+/// connector attaches to a failed statement.
+fn records_in_error(message: &str) -> Option<usize> {
+    message
+        .split(" statement for ")
+        .nth(1)?
+        .split(" record(s)")
+        .next()?
+        .parse()
+        .ok()
+}
+
+/// A transaction that fails partway discards the statements that already
+/// succeeded, so none of the batch counts as transmitted.
+///
+/// This is the case the commit guard exists for. Counting rows per successful
+/// statement is not enough on its own: the rows of the earlier statement would
+/// still be reported, because the failure aborts the transaction and the
+/// following COMMIT silently rolls them back.
+#[test]
+#[serial]
+fn test_pg_transmitted_records_excludes_rows_lost_to_a_later_failure() {
+    const RECORDS: usize = 3000;
+    const REJECTED: &str = "__reject__";
+
+    let table_name = unique_pg_name("test_pg_partial_rollback");
+    let url = postgres_url();
+    let verify_url = url.clone();
+
+    // Enough records to fill the connector's 1 MiB buffer more than once, so the
+    // batch becomes several statements. Keys ascend and the cursor walks them in
+    // order, which puts the rejected record in the last statement and leaves
+    // every statement before it valid.
+    let mut data: Vec<PostgresTestStruct> = (0..RECORDS).map(|_| rand::random()).collect();
+    for (i, datum) in data.iter_mut().enumerate() {
+        datum.bigint_ = i as i64;
+    }
+    data.last_mut().unwrap().varchar_ = REJECTED.to_string().into();
+
+    let temp_file = write_records_to_temp_file(&data);
+
+    let config = serde_json::from_value(json!({
+      "name": "test",
+      "workers": 4,
+      // Step once over the whole input, so it becomes a single transaction.
+      "min_batch_size_records": RECORDS,
+      "max_buffering_delay_usecs": 5000000,
+      "inputs": {
+        "ins": {
+          "stream": "test_input1",
+          "transport": { "name": "file_input", "config": { "path": temp_file.path(), "byte_size_buffer": 8388608 } },
+          "format": { "name": "json", "config": { "update_format": "raw", "array": false } }
+        }
+      },
+      "outputs": {
+        "test_output1": {
+          "stream": "test_output1",
+          "transport": { "name": "postgres_output", "config": { "uri": url, "table": &table_name } },
+          "index": "idx"
+        }
+      }
+    }))
+    .unwrap();
+
+    let _table = PostgresTestStruct::create_table_with_extra_columns(
+        &table_name,
+        url,
+        true,
+        &None,
+        &format!("CHECK (varchar_ <> '{REJECTED}')"),
+    );
+
+    let (controller, _err_receiver) = PostgresTestStruct::test_circuit(config);
+    controller.start();
+
+    wait(
+        || pg_total_processed_input_records(&controller) >= RECORDS as u64,
+        60_000,
+    )
+    .expect("timeout: connector did not finish handling the input");
+
+    let (records, bytes) = pg_transmitted_totals(&controller);
+    let errors = {
+        let status = controller.status();
+        let outputs = status.output_status();
+        outputs
+            .values()
+            .next()
+            .expect("output endpoint")
+            .transport_errors
+            .lock()
+            .unwrap()
+            .to_api_type()
+    };
+    let _ = controller.stop();
+
+    // Guard against the test going vacuous: the rejected record has to arrive in
+    // a statement that carries only part of the batch, so that an earlier
+    // statement succeeded and had rows to lose.
+    let failed_records = errors
+        .iter()
+        .filter_map(|e| records_in_error(&e.message))
+        .min()
+        .expect("no statement failure was reported");
+    assert!(
+        failed_records < RECORDS,
+        "the whole batch went out as one statement of {failed_records} records, so no earlier \
+         statement succeeded and this test would pass without the commit guard"
+    );
+
+    assert_eq!(
+        records, 0,
+        "reported {records} records as transmitted, but the transaction was rolled back"
+    );
+    assert_eq!(
+        bytes, 0,
+        "reported {bytes} bytes as transmitted, but the transaction was rolled back"
+    );
+    assert_eq!(
+        pg_row_count(&verify_url, &table_name),
+        0,
+        "the aborted transaction should have left the table empty"
+    );
+}
+
+/// The counter still reports every row of a batch that commits.
+#[test]
+#[serial]
+fn test_pg_transmitted_records_counts_committed_rows() {
+    let table_name = unique_pg_name("test_pg_commit_count");
+    let url = postgres_url();
+    let verify_url = url.clone();
+
+    let data: Vec<PostgresTestStruct> = (0..1000).map(|_| rand::random()).collect();
+    let temp_file = write_records_to_temp_file(&data);
+    let config = pg_output_test_config(temp_file.path(), &url, &table_name);
+
+    let _table = PostgresTestStruct::create_table(&table_name, url, true, &None);
+
+    let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
+    controller.start();
+
+    wait(
+        || pg_transmitted_totals(&controller).0 >= data.len() as u64 || !err_receiver.is_empty(),
+        60_000,
+    )
+    .expect("timeout: connector did not report the committed rows");
+
+    let (records, bytes) = pg_transmitted_totals(&controller);
+    let _ = controller.stop();
+
+    assert!(err_receiver.is_empty(), "connector reported an error");
+    assert_eq!(
+        records,
+        data.len() as u64,
+        "reported {records} of {} rows as transmitted",
+        data.len()
+    );
+    assert!(bytes > 0, "reported 0 bytes for {records} rows");
+    assert_eq!(
+        pg_row_count(&verify_url, &table_name),
+        records,
+        "the counter and the table disagree"
+    );
+}
+
 #[test]
 #[serial]
 fn test_pg_insert() {
