@@ -21,6 +21,7 @@ use tempfile::NamedTempFile;
 
 use crate::{
     Catalog, CircuitCatalog, Controller,
+    controller::MAX_CONNECTOR_ERROR_LEN,
     integrated::postgres::test::pg::PostgresTestStructCdc,
     test::{TestStruct, wait},
 };
@@ -1066,6 +1067,176 @@ fn test_pg_insert_omitted_default_column() {
             .get::<_, Option<chrono::NaiveDateTime>>("served_at")
             .is_some()),
         "served_at should be populated by its DEFAULT"
+    );
+}
+
+/// Bytes reported by the `while executing ... statement for N record(s) (M
+/// bytes)` context that the connector attaches to a failed statement.
+fn payload_bytes_in_error(message: &str) -> Option<usize> {
+    message
+        .split(" record(s) (")
+        .nth(1)?
+        .split(" bytes)")
+        .next()?
+        .parse()
+        .ok()
+}
+
+/// A statement Postgres rejects must not carry the whole batch into the error
+/// message.
+///
+/// The payload of one statement is as large as `max_buffer_size_bytes` (1 MiB by
+/// default) and an endpoint retains up to `MAX_CONNECTOR_ERRORS` messages per
+/// tag, so quoting the payload in full grew `/stats` and
+/// `/output_endpoints/{name}/stats` past the size limit the pipeline manager
+/// applies while proxying them, failing the whole request.
+#[test]
+#[serial]
+fn test_pg_error_message_is_bounded() {
+    let table_name = unique_pg_name("test_pg_errmsg");
+    let url = postgres_url();
+
+    // One record is about 590 bytes, so 10000 records fill the connector's
+    // default 1 MiB buffer several times over.
+    let data: Vec<PostgresTestStruct> = (0..10000).map(|_| rand::random()).collect();
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    for datum in data.iter() {
+        let mut serializer = serde_json::Serializer::new(Vec::new());
+        datum
+            .serialize_with_context(&mut serializer, &SqlSerdeConfig::default())
+            .unwrap();
+        temp_file
+            .as_file_mut()
+            .write_all(&serializer.into_inner())
+            .unwrap();
+        temp_file.write_all(b"\n").unwrap();
+    }
+
+    let config = serde_json::from_value(json!({
+      "name": "test",
+      "workers": 4,
+      // Step on large batches so that the connector fills its 1 MiB buffer,
+      // instead of flushing a handful of records at a time.
+      "min_batch_size_records": 5000,
+      "max_buffering_delay_usecs": 5000000,
+      "inputs": {
+        "ins": {
+          "stream": "test_input1",
+          "transport": { "name": "file_input", "config": { "path": temp_file.path(), "byte_size_buffer": 8388608 } },
+          "format": { "name": "json", "config": { "update_format": "raw", "array": false } }
+        }
+      },
+      "outputs": {
+        "test_output1": {
+          "stream": "test_output1",
+          "transport": { "name": "postgres_output", "config": { "uri": url, "table": &table_name } },
+          "index": "idx"
+        }
+      }
+    }))
+    .unwrap();
+
+    // `freshness_timestamp` is NOT NULL, has no DEFAULT, and is absent from the
+    // Feldera view, so every INSERT the connector issues violates the
+    // constraint.  This is the customer-reported failure.
+    let _table = PostgresTestStruct::create_table_with_extra_columns(
+        &table_name,
+        url,
+        true,
+        &None,
+        "freshness_timestamp TIMESTAMP NOT NULL",
+    );
+
+    let (controller, _err_receiver) = PostgresTestStruct::test_circuit(config);
+    controller.start();
+
+    wait(
+        || {
+            controller
+                .status()
+                .output_status()
+                .values()
+                .any(|endpoint| {
+                    endpoint
+                        .metrics
+                        .num_transport_errors
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                        > 0
+                })
+        },
+        60_000,
+    )
+    .expect("timeout: connector reported no transport error");
+
+    // Snapshot the errors and shut the pipeline down before asserting, so that a
+    // failing assertion does not race the table teardown.
+    let (errors, fatal_error) = {
+        let status = controller.status();
+        let outputs = status.output_status();
+        let endpoint = outputs.values().next().expect("output endpoint");
+        (
+            endpoint.transport_errors.lock().unwrap().to_api_type(),
+            endpoint.fatal_error(),
+        )
+    };
+    let _ = controller.stop();
+
+    assert!(!errors.is_empty(), "no transport error was recorded");
+
+    for error in &errors {
+        // The bound enforced by the status layer is a backstop; the connector is
+        // expected to quote no more than a prefix of the payload on its own.
+        // "bytes elided" means the backstop had to fire.
+        assert!(
+            !error.message.contains("bytes elided"),
+            "connector produced a {}-byte message that the status layer had to \
+             truncate: {}",
+            error.message.len(),
+            error.message
+        );
+        assert!(
+            error.message.len() <= MAX_CONNECTOR_ERROR_LEN,
+            "error message is {} bytes",
+            error.message.len()
+        );
+    }
+
+    // Truncating must keep the diagnosis, which Postgres reports at the end of
+    // the error chain: the SQLSTATE, the server's message, and the DETAIL
+    // naming the offending row.
+    let diagnosed = errors.iter().find(|e| e.message.contains("E23502"));
+    let diagnosed = diagnosed
+        .unwrap_or_else(|| panic!("no error reports the SQLSTATE: {errors:#?}"))
+        .message
+        .as_str();
+    assert!(
+        diagnosed.contains("violates not-null constraint"),
+        "error drops the server's message: {diagnosed}"
+    );
+    assert!(
+        diagnosed.contains("DETAIL: Failing row contains"),
+        "error drops the server's DETAIL: {diagnosed}"
+    );
+
+    // Guard against the test going vacuous: at least one failed statement has
+    // to have carried a payload far larger than the message describing it.
+    let largest_payload = errors
+        .iter()
+        .filter_map(|e| payload_bytes_in_error(&e.message))
+        .max()
+        .expect("no error reports its payload size");
+    assert!(
+        largest_payload > 64 * 1024,
+        "the connector never buffered a large batch (largest was {largest_payload} bytes), \
+         so this test would pass without truncation"
+    );
+
+    let fatal_error = fatal_error.expect("endpoint reported no fatal error");
+    assert!(
+        fatal_error.len() <= MAX_CONNECTOR_ERROR_LEN,
+        "fatal_error is {} bytes",
+        fatal_error.len()
     );
 }
 

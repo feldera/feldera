@@ -179,6 +179,10 @@ use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 pub use feldera_types::pipeline_diff::compute_pipeline_diff;
 use feldera_types::program_schema::{SqlIdentifier, canonical_identifier};
+// Connector tests assert that a connector's own error messages stay under the
+// bound the endpoint status enforces.
+#[cfg(test)]
+pub(crate) use stats::MAX_CONNECTOR_ERROR_LEN;
 pub use stats::{CompletionToken, ControllerStatus, ControllerStatusContext, InputEndpointStatus};
 
 /// Maximal number of concurrent API connections per circuit

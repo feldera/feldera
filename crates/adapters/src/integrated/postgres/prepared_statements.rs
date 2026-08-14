@@ -1,10 +1,17 @@
 use super::error::BackoffError;
+use crate::util::truncate_ellipse_middle;
 use feldera_types::{
     program_schema::Relation,
     transport::postgres::{PostgresWriteMode, PostgresWriterConfig},
 };
 use itertools::Itertools;
 use postgres::Statement;
+
+/// Maximum length of a generated query echoed back in an error message.
+///
+/// A query names every column of the target table, so a wide table yields a
+/// query too long to keep in the error list served by `/stats`.
+const MAX_QUERY_LEN_IN_ERRMSG: usize = 2048;
 
 #[derive(Debug, Default)]
 struct RawQueries {
@@ -158,7 +165,7 @@ impl PreparedStatements {
             .map_err(|e| {
                 BackoffError::from(e).context(format!(
                     "failed to prepare insert statement: `{}`: {err_msg}",
-                    &raw_queries.insert
+                    truncate_ellipse_middle(&raw_queries.insert, MAX_QUERY_LEN_IN_ERRMSG)
                 ))
             })?;
         let upsert = client
@@ -166,7 +173,7 @@ impl PreparedStatements {
             .map_err(|e| {
                 BackoffError::from(e).context(format!(
                     "failed to prepare update statement: `{}`: {err_msg}",
-                    &raw_queries.upsert
+                    truncate_ellipse_middle(&raw_queries.upsert, MAX_QUERY_LEN_IN_ERRMSG)
                 ))
             })?;
         let delete = client
@@ -174,7 +181,7 @@ impl PreparedStatements {
             .map_err(|e| {
                 BackoffError::from(e).context(format!(
                     "failed to prepare delete statement: `{}`: {err_msg}",
-                    raw_queries.delete
+                    truncate_ellipse_middle(&raw_queries.delete, MAX_QUERY_LEN_IN_ERRMSG)
                 ))
             })?;
 
