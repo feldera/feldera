@@ -38,6 +38,7 @@ use crate::{
         checkpoint::{CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics},
         journal::{InputChecksums, InputLog},
     },
+    util::truncate_ellipse_middle,
 };
 use anyhow::Error as AnyError;
 use anyhow::anyhow;
@@ -90,6 +91,19 @@ use utoipa::ToSchema;
 /// The number of the most recent errors stored for each endpoint as part of the endpoint status.
 /// There are separate counters for parse and transport errors and for every tag.
 pub(crate) const MAX_CONNECTOR_ERRORS: usize = 100;
+
+/// Maximum length of an error message stored as part of the endpoint status.
+///
+/// An endpoint reports up to `MAX_CONNECTOR_ERRORS` messages per tag, so without
+/// a per-message bound a connector that quotes its payload in an error message
+/// can grow `/stats` and `/output_endpoints/{name}/stats` past the size limit
+/// the pipeline manager applies while proxying the response, which turns the
+/// whole request into an error. A connector is expected to bound the data it
+/// quotes; this cap is the backstop for when it does not.
+///
+/// The bound is generous enough that a message describing a single record, its
+/// error chain and a backtrace survives intact.
+pub(crate) const MAX_CONNECTOR_ERROR_LEN: usize = 8 * 1024;
 
 /// Kind of input buffered by an endpoint.
 ///
@@ -2330,7 +2344,7 @@ impl InputEndpointStatus {
         if fatal {
             let mut fatal_error = self.fatal_error.lock().unwrap();
             if fatal_error.is_none() {
-                *fatal_error = Some(error.to_string());
+                *fatal_error = Some(bound_error_message(&error.to_string()));
             }
         }
     }
@@ -2634,6 +2648,16 @@ pub struct ProcessedRecords {
     pub total_processed_steps: Step,
 }
 
+/// Caps an error message at [`MAX_CONNECTOR_ERROR_LEN`] before it is stored in
+/// the endpoint status.
+///
+/// The middle is what gets dropped: a message built from an `anyhow` error chain
+/// leads with the outermost context and ends with the root cause, so keeping
+/// both ends preserves the diagnosis.
+pub(crate) fn bound_error_message(message: &str) -> String {
+    truncate_ellipse_middle(message, MAX_CONNECTOR_ERROR_LEN).into_owned()
+}
+
 /// Recent connector errors.
 ///
 /// Stores up to MAX_CONNECTOR_ERRORS most recent errors for each tag.
@@ -2664,7 +2688,7 @@ impl ConnectorErrorList {
             timestamp: Utc::now(),
             tag: tag.map(|tag| tag.to_string()),
             index,
-            message: error.to_string(),
+            message: bound_error_message(&error.to_string()),
         });
         if entry.len() > MAX_CONNECTOR_ERRORS {
             entry.pop_front();
@@ -2692,16 +2716,19 @@ impl ConnectorErrorList {
     /// `OutputEndpointStatus::encode_error` / `transport_error`). Do not
     /// renumber on restore.
     ///
-    /// The per-tag [`MAX_CONNECTOR_ERRORS`] bound is re-enforced so that
-    /// a malformed checkpoint cannot make a list grow unbounded. If the
-    /// input exceeds the bound for any tag, the excess oldest entries
-    /// are dropped and a warning is logged.
+    /// The per-tag [`MAX_CONNECTOR_ERRORS`] bound and the
+    /// [`MAX_CONNECTOR_ERROR_LEN`] message bound are both re-enforced so
+    /// that a malformed checkpoint, or one written by a build that lacked
+    /// either bound, cannot make a list grow unbounded. If the input
+    /// exceeds the count bound for any tag, the excess oldest entries are
+    /// dropped and a warning is logged.
     pub fn from_api_type(errors: Vec<ConnectorError>) -> Self {
         let mut list = Self::new();
         let mut dropped: usize = 0;
-        for error in errors {
+        for mut error in errors {
             let entry: &mut VecDeque<ConnectorError> =
                 list.errors.entry(error.tag.clone()).or_default();
+            error.message = bound_error_message(&error.message);
             entry.push_back(error);
             if entry.len() > MAX_CONNECTOR_ERRORS {
                 entry.pop_front();
@@ -3020,7 +3047,7 @@ impl OutputEndpointStatus {
         if fatal {
             let mut fatal_error = self.fatal_error.lock().unwrap();
             if fatal_error.is_none() {
-                *fatal_error = Some(error.to_string());
+                *fatal_error = Some(bound_error_message(&error.to_string()));
             }
         }
     }
@@ -3042,7 +3069,12 @@ impl OutputEndpointStatus {
 
 #[cfg(test)]
 mod test {
-    use super::InputEndpointMetrics;
+    use super::{
+        ConnectorError, ConnectorErrorList, InputEndpointMetrics, MAX_CONNECTOR_ERROR_LEN,
+        bound_error_message,
+    };
+    use anyhow::anyhow;
+    use chrono::Utc;
 
     #[test]
     fn latency_p99_absent_without_samples() {
@@ -3119,5 +3151,68 @@ mod test {
             .unwrap()
             .record(750_000u64);
         assert_eq!(metrics.to_api_type().processing_latency_p99_micros, None);
+    }
+
+    /// An error message the size of a Postgres output batch, shaped like the
+    /// `anyhow` chain the connector produces: context first, root cause last.
+    fn oversized_error() -> String {
+        format!(
+            "while executing insert statement: [{}]\n\nCaused by:\n    \
+             null value in column \"freshness_timestamp\" violates not-null constraint",
+            "{\"a\":1},".repeat(150_000)
+        )
+    }
+
+    #[test]
+    fn add_error_bounds_the_message() {
+        let error = oversized_error();
+        assert!(error.len() > 1024 * 1024, "test needs an oversized message");
+
+        let mut list = ConnectorErrorList::new();
+        list.add_error(Some("pg_exec"), anyhow!("{error}"), 1);
+
+        let stored = list.to_api_type();
+        assert_eq!(stored.len(), 1);
+        assert!(
+            stored[0].message.len() <= MAX_CONNECTOR_ERROR_LEN + 64,
+            "stored message is {} bytes",
+            stored[0].message.len()
+        );
+    }
+
+    /// Truncation must keep the root cause, which sits at the end of the chain.
+    #[test]
+    fn bounding_keeps_both_ends_of_the_message() {
+        let bounded = bound_error_message(&oversized_error());
+
+        assert!(bounded.starts_with("while executing insert statement:"));
+        assert!(bounded.ends_with("violates not-null constraint"));
+        assert!(bounded.contains("bytes elided"));
+    }
+
+    #[test]
+    fn bounding_leaves_a_normal_message_intact() {
+        let error = "postgres error: permanent: SqlState: Some(SqlState(E23502))";
+        assert_eq!(bound_error_message(error), error);
+    }
+
+    /// A checkpoint written before the bound existed must not reintroduce an
+    /// unbounded message on restore.
+    #[test]
+    fn from_api_type_bounds_restored_messages() {
+        let restored = ConnectorErrorList::from_api_type(vec![ConnectorError {
+            timestamp: Utc::now(),
+            index: 1,
+            tag: Some("pg_exec".to_string()),
+            message: oversized_error(),
+        }]);
+
+        let stored = restored.to_api_type();
+        assert_eq!(stored.len(), 1);
+        assert!(
+            stored[0].message.len() <= MAX_CONNECTOR_ERROR_LEN + 64,
+            "restored message is {} bytes",
+            stored[0].message.len()
+        );
     }
 }

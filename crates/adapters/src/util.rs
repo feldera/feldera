@@ -158,6 +158,28 @@ pub fn indexed_operation_type(
     })
 }
 
+/// Largest offset `<= index` that falls on a char boundary of `s`.
+fn floor_char_boundary(s: &str, index: usize) -> usize {
+    let mut index = index.min(s.len());
+    while index > 0 && !s.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+/// Smallest offset `>= index` that falls on a char boundary of `s`.
+fn ceil_char_boundary(s: &str, index: usize) -> usize {
+    let mut index = index.min(s.len());
+    while index < s.len() && !s.is_char_boundary(index) {
+        index += 1;
+    }
+    index
+}
+
+/// Truncates `s` to `len` bytes, appending `ellipse` if anything was dropped.
+///
+/// The cut lands on a char boundary, so the retained prefix never exceeds `len`
+/// bytes.
 pub(crate) fn truncate_ellipse<'a>(s: &'a str, len: usize, ellipse: &str) -> Cow<'a, str> {
     if s.len() <= len {
         return Cow::Borrowed(s);
@@ -165,8 +187,35 @@ pub(crate) fn truncate_ellipse<'a>(s: &'a str, len: usize, ellipse: &str) -> Cow
         return Cow::Borrowed("");
     }
 
-    let result = s.chars().take(len).chain(ellipse.chars()).collect();
+    let mut result = String::with_capacity(len + ellipse.len());
+    result.push_str(&s[..floor_char_boundary(s, len)]);
+    result.push_str(ellipse);
     Cow::Owned(result)
+}
+
+/// Truncates `s` to roughly `len` bytes by cutting out the middle, reporting how
+/// many bytes were dropped.
+///
+/// Use this instead of [`truncate_ellipse`] when the tail of the string carries
+/// as much information as the head. An `anyhow` error chain formatted with
+/// `{:?}` is the motivating case: it leads with the outermost context and ends
+/// with the root cause, so dropping the tail throws away the actual failure.
+pub(crate) fn truncate_ellipse_middle(s: &str, len: usize) -> Cow<'_, str> {
+    if s.len() <= len {
+        return Cow::Borrowed(s);
+    }
+
+    let head_len = len / 2;
+    let head_end = floor_char_boundary(s, head_len);
+    let tail_start = ceil_char_boundary(s, s.len() - (len - head_len));
+
+    format!(
+        "{}\n... [{} bytes elided] ...\n{}",
+        &s[..head_end],
+        tail_start - head_end,
+        &s[tail_start..]
+    )
+    .into()
 }
 
 pub(crate) fn missing_pipeline_identity_message(operation: &str) -> String {
@@ -587,7 +636,78 @@ mod test {
         time::Duration,
     };
 
-    use crate::util::{RateLimitCheckResult, TokenBucketRateLimiter};
+    use crate::util::{
+        RateLimitCheckResult, TokenBucketRateLimiter, truncate_ellipse, truncate_ellipse_middle,
+    };
+
+    // -------- Truncation tests -------- //
+
+    #[test]
+    fn truncate_ellipse_leaves_short_strings_alone() {
+        assert_eq!(truncate_ellipse("abc", 3, "..."), "abc");
+        assert_eq!(truncate_ellipse("abc", 4, "..."), "abc");
+        assert_eq!(truncate_ellipse("", 0, "..."), "");
+    }
+
+    #[test]
+    fn truncate_ellipse_bounds_the_prefix_in_bytes() {
+        assert_eq!(truncate_ellipse("abcdef", 3, "..."), "abc...");
+        assert_eq!(truncate_ellipse("abcdef", 0, "..."), "");
+
+        // A multi-byte string must be measured in bytes, not chars: 10 chars of
+        // 3 bytes each may not be reported as fitting in a 10-byte budget.
+        let s = "日".repeat(10);
+        let truncated = truncate_ellipse(&s, 10, "...");
+        assert_eq!(truncated, "日日日...");
+        assert!(truncated.len() - "...".len() <= 10);
+    }
+
+    #[test]
+    fn truncate_ellipse_middle_keeps_both_ends() {
+        let s = format!("head{}tail", "x".repeat(1000));
+        let truncated = truncate_ellipse_middle(&s, 100);
+
+        assert!(truncated.starts_with("head"), "{truncated}");
+        assert!(truncated.ends_with("tail"), "{truncated}");
+        assert!(truncated.contains("bytes elided"), "{truncated}");
+        // The retained text is bounded even though the marker adds to it.
+        assert!(truncated.len() < 100 + 64, "{}", truncated.len());
+    }
+
+    #[test]
+    fn truncate_ellipse_middle_leaves_short_strings_alone() {
+        assert_eq!(truncate_ellipse_middle("abcdef", 6), "abcdef");
+        assert_eq!(truncate_ellipse_middle("abcdef", 7), "abcdef");
+        assert!(!truncate_ellipse_middle("abcdef", 6).contains("elided"));
+    }
+
+    // Cutting in the middle of a multi-byte char would panic on a slice.
+    #[test]
+    fn truncate_ellipse_middle_respects_char_boundaries() {
+        let s = "日".repeat(100);
+        for len in 0..32 {
+            let truncated = truncate_ellipse_middle(&s, len);
+            assert!(truncated.contains("bytes elided"), "len={len}");
+        }
+    }
+
+    // The elided-byte count must add up: head + elided + tail == original.
+    #[test]
+    fn truncate_ellipse_middle_reports_the_elided_byte_count() {
+        let s = "abcdefghijklmnopqrstuvwxyz".repeat(10);
+        let truncated = truncate_ellipse_middle(&s, 40);
+
+        let elided: usize = truncated
+            .split("... [")
+            .nth(1)
+            .and_then(|s| s.split(" bytes elided] ...").next())
+            .expect("elision marker")
+            .parse()
+            .expect("elided byte count");
+        let retained =
+            truncated.len() - "\n... [ bytes elided] ...\n".len() - elided.to_string().len();
+        assert_eq!(retained + elided, s.len());
+    }
 
     // -------- Basic single-thread tests -------- //
 
