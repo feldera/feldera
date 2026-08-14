@@ -34,8 +34,9 @@ impl From<postgres::Error> for BackoffError {
     fn from(value: postgres::Error) -> Self {
         use postgres::error::SqlState;
 
-        if value.is_closed()
-            || value.code().is_some_and(|c| {
+        let code = value.code().cloned();
+        let temporary = value.is_closed()
+            || code.as_ref().is_some_and(|c| {
                 [
                     SqlState::CONNECTION_FAILURE,
                     SqlState::CONNECTION_DOES_NOT_EXIST,
@@ -46,14 +47,19 @@ impl From<postgres::Error> for BackoffError {
                 .contains(c)
             })
             // value.code() is none when connection is refused by the OS
-            || value.code().is_none()
-        {
-            Self::Temporary(anyhow!("failed to connect to postgres: {value}"))
+            || code.is_none();
+
+        // Keep the postgres error as the source instead of interpolating it:
+        // `Display for postgres::Error` reports only the kind ("db error"), and
+        // the server's message and DETAIL reach the report solely through the
+        // error chain, which `BackoffError::inner` formats in full.
+        if temporary {
+            Self::Temporary(anyhow::Error::new(value).context("failed to connect to postgres"))
         } else {
-            Self::Permanent(anyhow!(
-                "postgres error: permanent: SqlState: {:?}: {value}",
-                value.code()
-            ))
+            Self::Permanent(
+                anyhow::Error::new(value)
+                    .context(format!("postgres error: permanent: SqlState: {code:?}")),
+            )
         }
     }
 }
