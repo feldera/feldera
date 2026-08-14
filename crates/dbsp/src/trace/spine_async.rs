@@ -408,13 +408,20 @@ where
         self.slots[level].notify.notify_one();
     }
 
-    fn batch_count(&self) -> BatchCount {
-        BatchCount(
+    /// Number of batches waiting to be merged, which excludes the ones already
+    /// being merged. This is the count backpressure is based on.
+    fn count_loose_batches(&self) -> LooseBatchCount {
+        LooseBatchCount(
             self.slots
                 .iter()
                 .map(|s| s.loose_batches.len())
                 .sum::<usize>(),
         )
+    }
+
+    /// Number of batches in the spine, loose and merging alike.
+    fn count_all_batches(&self) -> usize {
+        self.slots.iter().map(Slot::n_batches).sum()
     }
 
     fn get_filters(&self) -> (Option<Filter<B::Key>>, Option<GroupFilter<B::Val>>) {
@@ -423,7 +430,7 @@ where
 
     /// Gets a copy of all of the batches (whether loose or being merged).
     fn get_batches(&self) -> Vec<Arc<B>> {
-        let mut batches = Vec::with_capacity(self.slots.iter().map(Slot::n_batches).sum());
+        let mut batches = Vec::with_capacity(self.count_all_batches());
         for slot in &self.slots {
             batches.extend(slot.all_batches().cloned());
         }
@@ -466,7 +473,7 @@ where
             .slots
             .iter()
             .all(|s| s.compaction_status == CompactionStatus::None);
-        let total_batches: usize = self.slots.iter().map(Slot::n_batches).sum();
+        let total_batches = self.count_all_batches();
         all_requests_processed && !self.is_merging() && total_batches <= 1
     }
 
@@ -527,8 +534,8 @@ where
         // batch counts describe the spine as the merge leaves it: `loose` is
         // what backpressure measures, and it is what grows when merging cannot
         // keep up with the batches each step adds.
-        let loose = self.batch_count().0;
-        let total: usize = self.slots.iter().map(Slot::n_batches).sum();
+        let loose = self.count_loose_batches().0;
+        let total = self.count_all_batches();
         Span::new(LEVEL_NAMES[level])
             .with_category("Spine")
             .with_start(start)
@@ -640,9 +647,9 @@ pub(crate) struct BackpressureWaitReport {
 }
 
 #[derive(Copy, Clone, Debug)]
-struct BatchCount(usize);
+struct LooseBatchCount(usize);
 
-impl BatchCount {
+impl LooseBatchCount {
     const HIGH_THRESHOLD: usize = 128;
 
     fn should_apply_backpressure(&self) -> bool {
@@ -813,21 +820,21 @@ where
         let (name, initial_batches, initial_total);
         {
             let state = self.state.lock().unwrap();
-            let batch_count = state.batch_count();
-            if batch_count.should_relieve_backpressure() {
+            let loose = state.count_loose_batches();
+            if loose.should_relieve_backpressure() {
                 return;
             }
             name = state.name.clone();
-            initial_batches = batch_count.0;
-            initial_total = state.slots.iter().map(Slot::n_batches).sum();
+            initial_batches = loose.0;
+            initial_total = state.count_all_batches();
         }
 
-        // Wait for the batch count to drop below the threshold.
+        // Wait for the loose batch count to drop below the threshold.
         loop {
             let notify = self.no_backpressure.notified();
             {
                 let state = self.state.lock().unwrap();
-                if state.batch_count().should_relieve_backpressure() {
+                if state.count_loose_batches().should_relieve_backpressure() {
                     break;
                 }
             }
@@ -852,14 +859,14 @@ where
     fn backpressure_waiter(&self) -> Option<BackpressureWait> {
         let notify = self.no_backpressure.clone().notified_owned();
         let state = self.state.lock().unwrap();
-        let batch_count = state.batch_count();
-        batch_count.should_apply_backpressure().then(|| {
-            let total: usize = state.slots.iter().map(Slot::n_batches).sum();
+        let loose = state.count_loose_batches();
+        loose.should_apply_backpressure().then(|| {
+            let total = state.count_all_batches();
             BackpressureWait {
                 notify,
                 name: state.name.clone(),
                 start: Instant::now(),
-                initial_loose: batch_count.0,
+                initial_loose: loose.0,
                 initial_total: total,
             }
         })
@@ -873,8 +880,8 @@ where
             let mut state = self.state.lock().unwrap();
             state.spine_stats.backpressure_wait += elapsed;
             (
-                state.batch_count().0,
-                state.slots.iter().map(Slot::n_batches).sum::<usize>(),
+                state.count_loose_batches().0,
+                state.count_all_batches(),
                 state.owner_worker,
             )
         };
@@ -1322,7 +1329,7 @@ where
                                 self.no_backpressure.notify_waiters();
                                 break;
                             }
-                            if state.batch_count().should_relieve_backpressure() {
+                            if state.count_loose_batches().should_relieve_backpressure() {
                                 self.no_backpressure.notify_waiters();
                             }
                         }
@@ -2126,7 +2133,7 @@ where
             if self
                 .merger
                 .add_batch(batch, false)
-                .batch_count()
+                .count_loose_batches()
                 .should_apply_backpressure()
             {
                 self.merger.backpressure_wait().await;
@@ -2149,7 +2156,7 @@ where
             self.dirty = true;
             self.merger
                 .add_batch(batch, false)
-                .batch_count()
+                .count_loose_batches()
                 .should_apply_backpressure()
         } else {
             false
