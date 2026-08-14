@@ -1258,9 +1258,19 @@ fn write_records_to_temp_file(data: &[PostgresTestStruct]) -> NamedTempFile {
 }
 
 /// Pipeline that feeds the records in `path` to a postgres output connector
-/// writing to `table_name`.
-fn pg_output_test_config(path: &Path, url: &str, table_name: &str) -> PipelineConfig {
-    serde_json::from_value(json!({
+/// writing to `table_name` through `threads` connections.
+///
+/// `min_batch_size_records`, when set, makes the pipeline step once over that
+/// many records so a test can act on one large batch, and has the file input
+/// read the whole file at once to match.
+fn pg_output_test_config(
+    path: &Path,
+    url: &str,
+    table_name: &str,
+    threads: usize,
+    min_batch_size_records: Option<usize>,
+) -> PipelineConfig {
+    let mut config = json!({
       "name": "test",
       "workers": 4,
       "inputs": {
@@ -1273,12 +1283,19 @@ fn pg_output_test_config(path: &Path, url: &str, table_name: &str) -> PipelineCo
       "outputs": {
         "test_output1": {
           "stream": "test_output1",
-          "transport": { "name": "postgres_output", "config": { "uri": url, "table": table_name } },
+          "transport": { "name": "postgres_output", "config": { "uri": url, "table": table_name, "threads": threads } },
           "index": "idx"
         }
       }
-    }))
-    .unwrap()
+    });
+
+    if let Some(records) = min_batch_size_records {
+        config["min_batch_size_records"] = json!(records);
+        config["max_buffering_delay_usecs"] = json!(5_000_000);
+        config["inputs"]["ins"]["transport"]["config"]["byte_size_buffer"] = json!(8_388_608);
+    }
+
+    serde_json::from_value(config).unwrap()
 }
 
 fn pg_transmitted_totals(controller: &Controller) -> (u64, u64) {
@@ -1332,7 +1349,7 @@ fn test_pg_transmitted_records_excludes_rolled_back_rows() {
 
     let data: Vec<PostgresTestStruct> = (0..1000).map(|_| rand::random()).collect();
     let temp_file = write_records_to_temp_file(&data);
-    let config = pg_output_test_config(temp_file.path(), &url, &table_name);
+    let config = pg_output_test_config(temp_file.path(), &url, &table_name, 1, None);
 
     // `freshness_timestamp` is NOT NULL, has no DEFAULT, and is absent from the
     // Feldera view, so every INSERT the connector issues aborts its transaction
@@ -1501,37 +1518,74 @@ fn test_pg_transmitted_records_excludes_rows_lost_to_a_later_failure() {
     );
 }
 
-/// Terminates connector backends that are inside a batch transaction, `rounds`
-/// times, and reports how many rounds landed a kill.
+/// Selects the connector backends that are inside a batch transaction.
 ///
 /// Requiring an open transaction whose latest query is a connector statement
 /// keeps this off the connection while it prepares its statements, and widens
 /// the window to the whole batch: Postgres keeps reporting the last query while
 /// the backend sits idle in the transaction.
+const BATCH_BACKENDS: &str = "SELECT pid FROM pg_stat_activity \
+     WHERE pid <> pg_backend_pid() AND datname = current_database() \
+       AND xact_start IS NOT NULL \
+       AND query ILIKE '%jsonb_populate_recordset%'";
+
+/// Polls until a connector backend is inside a batch transaction.
+fn wait_for_batch_transaction(client: &mut postgres::Client) -> bool {
+    for _ in 0..40_000 {
+        let found: i64 = client
+            .query_one(
+                &format!("SELECT count(*) FROM ({BATCH_BACKENDS}) backends"),
+                &[],
+            )
+            .map(|row| row.get(0))
+            .unwrap_or(0);
+        if found > 0 {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_micros(200));
+    }
+    false
+}
+
+/// Terminates every connector backend that is inside a batch transaction.
+///
+/// Finding and terminating are one statement on purpose. The window is a matter
+/// of milliseconds, so checking first and terminating in a second round trip
+/// leaves a gap the batch can commit in.
+fn terminate_batch_backends(client: &mut postgres::Client) -> bool {
+    let terminated: i64 = client
+        .query_one(
+            &format!(
+                "SELECT count(*) FROM \
+                 (SELECT pg_terminate_backend(pid) FROM ({BATCH_BACKENDS}) backends) terminated"
+            ),
+            &[],
+        )
+        .map(|row| row.get(0))
+        .unwrap_or(0);
+    terminated > 0
+}
+
+/// Polls for up to eight seconds until it terminates a connector backend inside
+/// a batch transaction.
+fn poll_and_terminate_batch_backends(client: &mut postgres::Client) -> bool {
+    for _ in 0..40_000 {
+        if terminate_batch_backends(client) {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_micros(200));
+    }
+    false
+}
+
+/// Drops the connector's connections mid-batch, `rounds` times, and reports how
+/// many rounds landed.
 fn terminate_connector_backends(url: &str, rounds: usize) -> usize {
     let mut client = pg::pg_connect(url, &None);
     let mut landed = 0;
 
     for _ in 0..rounds {
-        let mut caught = false;
-        for _ in 0..40_000 {
-            let terminated: i64 = client
-                .query_one(
-                    "SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity \
-                     WHERE pid <> pg_backend_pid() AND datname = current_database() \
-                       AND xact_start IS NOT NULL \
-                       AND query ILIKE '%jsonb_populate_recordset%') terminated",
-                    &[],
-                )
-                .map(|row| row.get(0))
-                .unwrap_or(0);
-            if terminated > 0 {
-                caught = true;
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_micros(200));
-        }
-        if !caught {
+        if !poll_and_terminate_batch_backends(&mut client) {
             break;
         }
         landed += 1;
@@ -1572,28 +1626,7 @@ fn pg_reconnect_test(name: &str, threads: usize, kills: usize) {
     }
     let temp_file = write_records_to_temp_file(&data);
 
-    let config: PipelineConfig = serde_json::from_value(json!({
-      "name": "test",
-      "workers": 4,
-      // Step once over the whole input, so it becomes a single transaction.
-      "min_batch_size_records": records,
-      "max_buffering_delay_usecs": 5000000,
-      "inputs": {
-        "ins": {
-          "stream": "test_input1",
-          "transport": { "name": "file_input", "config": { "path": temp_file.path(), "byte_size_buffer": 8388608 } },
-          "format": { "name": "json", "config": { "update_format": "raw", "array": false } }
-        }
-      },
-      "outputs": {
-        "test_output1": {
-          "stream": "test_output1",
-          "transport": { "name": "postgres_output", "config": { "uri": url, "table": &table_name, "threads": threads } },
-          "index": "idx"
-        }
-      }
-    }))
-    .unwrap();
+    let config = pg_output_test_config(temp_file.path(), &url, &table_name, threads, Some(records));
 
     let _table = PostgresTestStruct::create_table(&table_name, url, true, &None);
 
@@ -1666,6 +1699,167 @@ fn test_pg_reconnect_survives_repeated_drops() {
     pg_reconnect_test("test_pg_reconnect_repeat", 1, 3);
 }
 
+/// Makes the connector's database refuse new connections, and lets them through
+/// again when dropped.
+///
+/// `ALTER DATABASE ... ALLOW_CONNECTIONS false` turns away even a superuser, so
+/// it stands in for a server that is restarting or under maintenance. Restoring
+/// on drop matters: leaving the database closed would fail every later test.
+struct RefusedConnections {
+    admin: postgres::Client,
+    database: String,
+    refusing: bool,
+}
+
+impl RefusedConnections {
+    /// Opens the connection this needs up front, so that starting to refuse is a
+    /// single statement once the moment arrives.
+    fn prepare(url: &str) -> Self {
+        let database: String = pg::pg_connect(url, &None)
+            .query_one("SELECT current_database()", &[])
+            .expect("failed to read the database name")
+            .get(0);
+
+        // ALTER DATABASE cannot run from a session connected to that database.
+        let admin = pg::pg_connect(&Self::other_database_url(url), &None);
+
+        Self {
+            admin,
+            database,
+            refusing: false,
+        }
+    }
+
+    fn refuse(&mut self) {
+        let refuse = Self::allow_connections(&self.database, false);
+        self.admin
+            .execute(&refuse, &[])
+            .expect("failed to make the database refuse connections");
+        self.refusing = true;
+    }
+
+    fn other_database_url(url: &str) -> String {
+        match url::Url::parse(url) {
+            Ok(mut parsed) => {
+                parsed.set_path("/template1");
+                parsed.to_string()
+            }
+            Err(_) => format!("{url}/template1"),
+        }
+    }
+
+    fn allow_connections(database: &str, allow: bool) -> String {
+        format!(r#"ALTER DATABASE "{database}" WITH ALLOW_CONNECTIONS {allow}"#)
+    }
+}
+
+impl Drop for RefusedConnections {
+    fn drop(&mut self) {
+        if !self.refusing {
+            return;
+        }
+        let restore = Self::allow_connections(&self.database, true);
+        self.admin
+            .execute(&restore, &[])
+            .expect("failed to let connections through again");
+    }
+}
+
+/// A database that refuses the reconnect must be waited out, not given up on.
+///
+/// This is the one path that dropping a backend does not reach: there the
+/// reconnect succeeds on the first try, so `retry_connecting_with_backoff` never
+/// enters its error branch. Refusing connections for a few seconds forces that
+/// branch, and the batch still has to arrive once they are let through.
+#[test]
+#[serial]
+fn test_pg_reconnect_waits_out_a_refusing_database() {
+    const RECORDS: usize = 3000;
+
+    let table_name = unique_pg_name("test_pg_refused");
+    let url = postgres_url();
+    let verify_url = url.clone();
+
+    let mut data: Vec<PostgresTestStruct> = (0..RECORDS).map(|_| rand::random()).collect();
+    for (i, datum) in data.iter_mut().enumerate() {
+        datum.bigint_ = i as i64;
+    }
+    let temp_file = write_records_to_temp_file(&data);
+    let config = pg_output_test_config(temp_file.path(), &url, &table_name, 1, Some(RECORDS));
+
+    let _table = PostgresTestStruct::create_table(&table_name, url, true, &None);
+    let (controller, _err_receiver) = PostgresTestStruct::test_circuit(config);
+
+    let injector_url = verify_url.clone();
+    let injector = std::thread::spawn(move || {
+        // Every connection this thread needs has to exist before the database
+        // starts turning connections away.
+        let mut watcher = pg::pg_connect(&injector_url, &None);
+        let mut refused = RefusedConnections::prepare(&injector_url);
+
+        if !wait_for_batch_transaction(&mut watcher) {
+            return false;
+        }
+        refused.refuse();
+        let terminated = poll_and_terminate_batch_backends(&mut watcher);
+
+        // Outlast the first backoff steps, one and two seconds, so that more
+        // than one reconnect fails.
+        std::thread::sleep(std::time::Duration::from_secs(4));
+        drop(refused);
+
+        terminated
+    });
+
+    controller.start();
+    let injected = injector.join().expect("injector thread panicked");
+
+    wait(
+        || pg_total_processed_input_records(&controller) >= RECORDS as u64,
+        180_000,
+    )
+    .expect("timeout: connector did not finish handling the input");
+
+    let (records, _bytes) = pg_transmitted_totals(&controller);
+    let (errors, fatal_error) = {
+        let status = controller.status();
+        let outputs = status.output_status();
+        let endpoint = outputs.values().next().expect("output endpoint");
+        (
+            endpoint.transport_errors.lock().unwrap().to_api_type(),
+            endpoint.fatal_error(),
+        )
+    };
+    let _ = controller.stop();
+
+    assert!(
+        injected,
+        "never dropped the connector's connection while the database was refusing them, \
+         so this test proves nothing"
+    );
+    // Only `retry_connecting_with_backoff` reports under this tag, so its error
+    // branch ran, which is the whole point of refusing the connections.
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.tag.as_deref() == Some("pg_conn_retry")),
+        "no reconnect attempt failed, so the retry loop was never exercised: {errors:#?}"
+    );
+    assert_eq!(
+        pg_row_count(&verify_url, &table_name),
+        RECORDS as u64,
+        "rows were lost while the database refused connections"
+    );
+    assert_eq!(
+        records, RECORDS as u64,
+        "reported {records} of {RECORDS} rows as transmitted"
+    );
+    assert_eq!(
+        fatal_error, None,
+        "the connector recovered, yet the endpoint is marked as fatally failed"
+    );
+}
+
 /// The counter still reports every row of a batch that commits.
 #[test]
 #[serial]
@@ -1676,7 +1870,7 @@ fn test_pg_transmitted_records_counts_committed_rows() {
 
     let data: Vec<PostgresTestStruct> = (0..1000).map(|_| rand::random()).collect();
     let temp_file = write_records_to_temp_file(&data);
-    let config = pg_output_test_config(temp_file.path(), &url, &table_name);
+    let config = pg_output_test_config(temp_file.path(), &url, &table_name, 1, None);
 
     let _table = PostgresTestStruct::create_table(&table_name, url, true, &None);
 

@@ -69,6 +69,27 @@ struct PendingBatch {
     extra_columns: BTreeMap<String, Option<serde_json::Value>>,
 }
 
+/// What has become of the transaction a worker is writing its batch into.
+///
+/// Postgres aborts a transaction on any statement error and answers a subsequent
+/// `COMMIT` with `ROLLBACK` rather than an error, so a commit reporting success
+/// proves nothing on its own: only this tells the worker whether the rows it
+/// counted reached the table.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TransactionState {
+    /// Every statement has succeeded, so the transaction can commit.
+    Open,
+    /// The connection dropped, taking the transaction and every row it held.
+    ///
+    /// The batch is written again from [`PostgresWorker::pending_batch`] rather
+    /// than resumed, since the payloads that carried those rows were drained
+    /// from the buffers as they flushed.
+    Lost,
+    /// Postgres rejected a statement and aborted the transaction. Writing the
+    /// batch again would hit the same rejection, so the rows are dropped.
+    Rejected,
+}
+
 /// A single postgres worker that owns a connection and runs on a dedicated thread.
 struct PostgresWorker {
     worker_idx: usize,
@@ -98,19 +119,9 @@ struct PostgresWorker {
     /// Rows written by statements in the current transaction, counted and
     /// reported on the same terms as [`Self::num_bytes`].
     num_rows: usize,
-    /// Whether a statement in the current transaction has failed.
-    ///
-    /// Postgres aborts a transaction on any statement error and answers a
-    /// subsequent `COMMIT` with `ROLLBACK` rather than an error, so a commit
-    /// reporting success proves nothing on its own.
-    txn_poisoned: bool,
-    /// Whether the connection dropped while writing the current batch, which
-    /// rolled the transaction back and lost every row it held.
-    ///
-    /// The batch is written again from [`Self::pending_batch`] rather than
-    /// resuming, since the payloads that carried those rows were drained from
-    /// the buffers as they flushed.
-    needs_replay: bool,
+    /// What has become of [`Self::transaction`], which decides whether the batch
+    /// commits, is written again, or is dropped.
+    transaction_state: TransactionState,
     /// The batch being written, kept for as long as it may need writing again.
     pending_batch: Option<PendingBatch>,
     /// Shared counter of records sent to postgres in the current batch.
@@ -142,7 +153,8 @@ fn connect(config: &PostgresWriterConfig, endpoint_name: &str) -> Result<Client,
             pgcnf.connect(NoTls)
         }
         Err(e) => return Err(BackoffError::Permanent(e)),
-    }?;
+    }
+    .map_err(BackoffError::connecting)?;
 
     Ok(client)
 }
@@ -180,8 +192,7 @@ impl PostgresWorker {
             key_schema: key_schema.clone(),
             num_rows: 0,
             num_bytes: 0,
-            txn_poisoned: false,
-            needs_replay: false,
+            transaction_state: TransactionState::Open,
             pending_batch: None,
             inserts: 0,
             upserts: 0,
@@ -221,7 +232,7 @@ impl PostgresWorker {
     ) {
         // Nothing more can reach the table through this transaction, so pushing
         // the rest of the batch at it only produces more failures to report.
-        if self.needs_replay || self.txn_poisoned {
+        if self.transaction_state != TransactionState::Open {
             return;
         }
 
@@ -229,13 +240,9 @@ impl PostgresWorker {
             return;
         };
 
-        // Retrying the statement here cannot work: a retryable failure means the
-        // connection is gone, and recovering takes a new transaction and a fresh
-        // encode, which `write_batch` drives.
+        // Retrying the statement here cannot work: recovering takes a new
+        // transaction and a fresh encode, which `write_batch` drives.
         let recoverable = e.should_retry();
-        if recoverable {
-            self.needs_replay = true;
-        }
 
         let Some(controller) = self.controller.upgrade() else {
             tracing::warn!("controller is shutting down: aborting");
@@ -275,18 +282,24 @@ impl PostgresWorker {
             .execute(&stmt, &[&v]);
 
         if let Err(e) = result {
-            // Postgres has aborted the transaction, so nothing written in it so
-            // far will reach the table either.
-            self.txn_poisoned = true;
-
             // Report only a prefix of the payload: it holds a whole batch of
             // records, up to `max_buffer_size_bytes`, which is far too large
             // to keep in the error list served by `/stats`.
-            return Err(BackoffError::from(e).context(format!(
+            let error = BackoffError::from(e).context(format!(
                 "while executing {name} statement for {num_records} record(s) ({} bytes), which start with: {}",
                 v.len(),
                 truncate_ellipse(v, MAX_RECORD_LEN_IN_ERRMSG, "...")
-            )));
+            ));
+
+            // Either way the transaction is gone, along with everything it held.
+            // Whether it can be written again is what separates the two.
+            self.transaction_state = if error.should_retry() {
+                TransactionState::Lost
+            } else {
+                TransactionState::Rejected
+            };
+
+            return Err(error);
         }
 
         // Count what this statement wrote. The transaction still has to commit
@@ -480,8 +493,7 @@ These statements were successfully prepared before reconnecting. Does the table 
         // either reported at its commit or lost with it.
         self.num_bytes = 0;
         self.num_rows = 0;
-        self.txn_poisoned = false;
-        self.needs_replay = false;
+        self.transaction_state = TransactionState::Open;
 
         Ok(())
     }
@@ -492,11 +504,7 @@ These statements were successfully prepared before reconnecting. Does the table 
 
         // Do not try to commit a transaction the server has already discarded:
         // report a retryable failure so that the batch is written again.
-        //
-        // A lost connection also poisons the transaction, so this is checked
-        // first: it is the case that can be recovered by writing the batch
-        // again, whereas a statement Postgres rejected cannot be.
-        if self.needs_replay {
+        if self.transaction_state == TransactionState::Lost {
             self.transaction = None;
             self.num_bytes = 0;
             self.num_rows = 0;
@@ -517,7 +525,7 @@ These statements were successfully prepared before reconnecting. Does the table 
         // Roll back explicitly rather than committing: Postgres would answer the
         // commit with `ROLLBACK` and no error, which would report the rows this
         // transaction wrote as written when they were all discarded.
-        if self.txn_poisoned {
+        if self.transaction_state == TransactionState::Rejected {
             let rollback = match transaction.rollback() {
                 Ok(()) => String::new(),
                 Err(e) => format!(" Rolling the transaction back also failed: {e}."),
@@ -615,7 +623,7 @@ These statements were successfully prepared before reconnecting. Does the table 
     /// Open a fresh transaction and encode the retained batch into it again.
     fn restart_batch(&mut self) -> Result<(), BackoffError> {
         // The buffers may hold a partly built payload from the failed attempt.
-        // `batch_start_inner` resets the counts and the failure flags.
+        // `batch_start_inner` resets the counts and the transaction state.
         self.insert_buf.clear();
         self.upsert_buf.clear();
         self.delete_buf.clear();
