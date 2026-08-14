@@ -1616,6 +1616,15 @@ fn pg_reconnect_test(name: &str, threads: usize, kills: usize) {
     .expect("timeout: connector did not finish handling the input");
 
     let (transmitted, _bytes) = pg_transmitted_totals(&controller);
+    let fatal_error = {
+        let status = controller.status();
+        let outputs = status.output_status();
+        outputs
+            .values()
+            .next()
+            .expect("output endpoint")
+            .fatal_error()
+    };
     let _ = controller.stop();
 
     assert_eq!(
@@ -1630,6 +1639,12 @@ fn pg_reconnect_test(name: &str, threads: usize, kills: usize) {
     assert_eq!(
         transmitted, records as u64,
         "reported {transmitted} of {records} rows as transmitted"
+    );
+    // `fatal_error` never clears, so recording one for a drop the connector
+    // recovered from would leave the endpoint marked failed for good.
+    assert_eq!(
+        fatal_error, None,
+        "the connector recovered, yet the endpoint is marked as fatally failed"
     );
 }
 
