@@ -8,4 +8,5 @@ pub(crate) mod storage;
 pub mod storage_postgres;
 #[cfg(test)]
 pub(crate) mod test;
+pub(crate) mod transaction;
 pub mod types;
