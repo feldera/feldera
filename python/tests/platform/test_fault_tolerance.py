@@ -79,6 +79,12 @@ _CYCLES = 15
 # test pins 2 rather than using FELDERA_TEST_NUM_WORKERS.
 _WORKERS = 2
 
+# Waits for Running must ride out a restart that reschedules the pipeline pod
+# onto another node, where the storage-volume reattach alone can take minutes
+# under Kubernetes attach/detach contention. The determinism assertion runs on
+# every poll, so the long timeout adds headroom without weakening the check.
+_RUNNING_TIMEOUT_S = 300.0
+
 
 def _create_ft_pipeline(name: str, workers: int):
     """Create a single-host fault-tolerant pipeline (mirrors helper.create_pipeline
@@ -116,7 +122,7 @@ def test_ft_input_replay_determinism(pipeline_name):
         wait_for_condition(
             f"running before crash (cycle {cycle})",
             lambda: _deployment(pipeline_name)[0] == "Running",
-            timeout_s=90.0,
+            timeout_s=_RUNNING_TIMEOUT_S,
             poll_interval_s=0.5,
         )
         # Let datagen feed a partial, not-yet-checkpointed step into the log.
@@ -138,6 +144,6 @@ def test_ft_input_replay_determinism(pipeline_name):
         wait_for_condition(
             f"recovered to Running after crash (cycle {cycle})",
             recovered,
-            timeout_s=90.0,
+            timeout_s=_RUNNING_TIMEOUT_S,
             poll_interval_s=0.5,
         )
