@@ -128,6 +128,28 @@ def storage_cfg(
     }
 
 
+def build_runtime_config(*args, **kwargs):
+    """Build a `RuntimeConfig`, with h2 frame-level tracing on by default.
+
+    This test has twice hung in CI waiting for /completion_status or
+    /checkpoint_status to report done on a multihost pipeline that
+    had, per /stats, already finished (feldera/cloud#1897 is the same
+    shape). h2 frame-level tracing on both the pipeline (h2 0.3.x via
+    actix-http) and the coordinator (h2 0.4.x via reqwest/hyper)
+    should show whether a stream's send capacity/window update is
+    being lost.
+
+    The additional logging can be removed once the hang is understood
+    and fixed.
+
+    """
+    kwargs.setdefault(
+        "logging",
+        "object_store=warn,buoyant_kernel=warn,info,h2=trace,actix_http::h2=trace",
+    )
+    return RuntimeConfig(*args, **kwargs)
+
+
 class TestCheckpointSync(SharedTestPipeline):
     def _wait_for_standby_checkpoint_pull(self, pipeline, timeout_s: float = 120):
         end = time.monotonic() + timeout_s
@@ -153,7 +175,7 @@ class TestCheckpointSync(SharedTestPipeline):
             retention_min_age=retention_min_age,
         )
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
@@ -349,7 +371,7 @@ class TestCheckpointSync(SharedTestPipeline):
             strict=strict,
         )
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
@@ -529,7 +551,7 @@ class TestCheckpointSync(SharedTestPipeline):
         shared_storage = Storage(config=storage_cfg(owner.name))
 
         owner.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -543,7 +565,7 @@ class TestCheckpointSync(SharedTestPipeline):
         owner.sync_checkpoint(wait=True)
 
         intruder.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -587,7 +609,7 @@ class TestCheckpointSync(SharedTestPipeline):
         system_name = f"pipeline-{pipeline_id}"
         bucket_name = f"{old_name}-{pipeline_id}"
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
@@ -711,7 +733,7 @@ class TestCheckpointSync(SharedTestPipeline):
             auth_err=True,
         )
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
@@ -758,7 +780,7 @@ class TestCheckpointSync(SharedTestPipeline):
         storage_config = storage_cfg(self.pipeline.name, retention_min_age=1)
         ft = FaultToleranceModel.AtLeastOnce
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -784,7 +806,7 @@ class TestCheckpointSync(SharedTestPipeline):
         standby = self.new_pipeline_with_suffix("standby")
         pull_interval = 1
         standby.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -868,7 +890,7 @@ class TestCheckpointSync(SharedTestPipeline):
 
         storage_config = storage_cfg(self.pipeline.name, retention_min_count=2)
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -907,7 +929,7 @@ class TestCheckpointSync(SharedTestPipeline):
             retention_min_count=2,
         )
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -942,7 +964,7 @@ class TestCheckpointSync(SharedTestPipeline):
         # Step 1: push a checkpoint to the source pipeline's bucket (becomes read_bucket).
         source = self.new_pipeline_with_suffix("source")
         source.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -974,7 +996,7 @@ class TestCheckpointSync(SharedTestPipeline):
             pull_interval=2,
         )
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1035,7 +1057,7 @@ class TestCheckpointSync(SharedTestPipeline):
         # Step 1: push a checkpoint to the source pipeline (becomes read_bucket).
         source = self.new_pipeline_with_suffix("source")
         source.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1055,7 +1077,7 @@ class TestCheckpointSync(SharedTestPipeline):
         # Step 2: push a checkpoint to the main pipeline's own bucket.
         storage_config = storage_cfg(self.pipeline.name)
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1080,7 +1102,7 @@ class TestCheckpointSync(SharedTestPipeline):
             read_bucket=source_bucket,
         )
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1111,7 +1133,7 @@ class TestCheckpointSync(SharedTestPipeline):
         # Step 1: create the source pipeline (becomes read_bucket for standby).
         source = self.new_pipeline_with_suffix("source")
         source.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1132,7 +1154,7 @@ class TestCheckpointSync(SharedTestPipeline):
         # its own bucket during the test.
         storage_config = storage_cfg(self.pipeline.name)
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1144,7 +1166,7 @@ class TestCheckpointSync(SharedTestPipeline):
         # Step 3: start the standby pipeline with empty bucket, read_bucket=source.
         standby = self.new_pipeline_with_suffix("standby")
         standby.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1224,7 +1246,7 @@ class TestCheckpointSync(SharedTestPipeline):
 
         storage_config = storage_cfg(self.pipeline.name, retention_min_count=2)
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1268,7 +1290,7 @@ class TestCheckpointSync(SharedTestPipeline):
             retention_min_count=2,
         )
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1295,7 +1317,7 @@ class TestCheckpointSync(SharedTestPipeline):
         # Step 1: source pipeline creates a checkpoint (will become read_bucket).
         source = self.new_pipeline_with_suffix("source")
         source.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1317,7 +1339,7 @@ class TestCheckpointSync(SharedTestPipeline):
         # is read_bucket.
         storage_config = storage_cfg(self.pipeline.name)
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1348,7 +1370,7 @@ class TestCheckpointSync(SharedTestPipeline):
             read_bucket=source_bucket,
         )
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1380,7 +1402,7 @@ class TestCheckpointSync(SharedTestPipeline):
         # Step 1: source pipeline creates a checkpoint (will become read_bucket).
         source = self.new_pipeline_with_suffix("source")
         source.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1402,7 +1424,7 @@ class TestCheckpointSync(SharedTestPipeline):
         # with a different UUID.
         storage_config = storage_cfg(self.pipeline.name, retention_min_count=2)
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1437,7 +1459,7 @@ class TestCheckpointSync(SharedTestPipeline):
             retention_min_count=2,
         )
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1468,7 +1490,7 @@ class TestCheckpointSync(SharedTestPipeline):
             retention_min_count=2,
         )
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
@@ -1520,7 +1542,7 @@ class TestCheckpointSync(SharedTestPipeline):
             strict=True,
         )
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1540,7 +1562,7 @@ class TestCheckpointSync(SharedTestPipeline):
         # Step 1: source pipeline creates a checkpoint (will become read_bucket).
         source = self.new_pipeline_with_suffix("source")
         source.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1560,7 +1582,7 @@ class TestCheckpointSync(SharedTestPipeline):
         # Step 2: main pipeline creates and syncs its own checkpoint.
         storage_config = storage_cfg(self.pipeline.name)
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
@@ -1591,7 +1613,7 @@ class TestCheckpointSync(SharedTestPipeline):
             read_bucket=source_bucket,
         )
         self.pipeline.set_runtime_config(
-            RuntimeConfig(
+            build_runtime_config(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=ft,
