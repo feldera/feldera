@@ -1860,6 +1860,67 @@ fn test_pg_reconnect_waits_out_a_refusing_database() {
     );
 }
 
+/// The pipeline must be able to stop while postgres is unreachable.
+///
+/// A worker waiting out a database it cannot reach sits in a backoff loop, and
+/// the endpoint's drop joins that thread, so anything that keeps the loop from
+/// noticing the shutdown hangs the pipeline rather than merely stalling its
+/// output. Holding a strong reference to the controller across the loop did
+/// exactly that, since it kept alive the very thing the loop was watching for.
+#[test]
+#[serial]
+fn test_pg_stops_while_the_database_is_unreachable() {
+    const RECORDS: usize = 3000;
+    const STOP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+    let table_name = unique_pg_name("test_pg_stop_unreachable");
+    let url = postgres_url();
+    let verify_url = url.clone();
+
+    let mut data: Vec<PostgresTestStruct> = (0..RECORDS).map(|_| rand::random()).collect();
+    for (i, datum) in data.iter_mut().enumerate() {
+        datum.bigint_ = i as i64;
+    }
+    let temp_file = write_records_to_temp_file(&data);
+    let config = pg_output_test_config(temp_file.path(), &url, &table_name, 1, Some(RECORDS));
+
+    let _table = PostgresTestStruct::create_table(&table_name, url, true, &None);
+    let (controller, _err_receiver) = PostgresTestStruct::test_circuit(config);
+
+    // Both connections have to exist before the database starts turning them
+    // away. `refused` lets connections through again when it drops, including
+    // while this test unwinds, which releases the worker either way.
+    let mut watcher = pg::pg_connect(&verify_url, &None);
+    let mut refused = RefusedConnections::prepare(&verify_url);
+
+    controller.start();
+    assert!(
+        wait_for_batch_transaction(&mut watcher),
+        "never caught the connector inside its batch transaction"
+    );
+    refused.refuse();
+    assert!(
+        poll_and_terminate_batch_backends(&mut watcher),
+        "never dropped the connector's connection"
+    );
+
+    // Let the worker settle into the backoff loop before asking it to stop.
+    std::thread::sleep(std::time::Duration::from_secs(3));
+
+    let (stopped_sender, stopped) = crossbeam::channel::bounded(1);
+    std::thread::spawn(move || {
+        let _ = controller.stop();
+        let _ = stopped_sender.send(());
+    });
+
+    // Wait with a deadline rather than blocking: a regression here would
+    // otherwise hang the whole test run instead of failing this one test.
+    assert!(
+        stopped.recv_timeout(STOP_TIMEOUT).is_ok(),
+        "the pipeline did not stop within {STOP_TIMEOUT:?} while postgres was unreachable"
+    );
+}
+
 /// The counter still reports every row of a batch that commits.
 #[test]
 #[serial]
