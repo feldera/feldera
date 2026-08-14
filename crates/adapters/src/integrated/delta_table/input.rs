@@ -2418,7 +2418,7 @@ impl DeltaTableInputEndpointInner {
     }
 
     /// Evaluate delete filter expression against a batch of updates; returns a vector of polarities.
-    async fn eval_delete_filter(
+    fn eval_delete_filter(
         delete_filter: &dyn PhysicalExpr,
         batch: &RecordBatch,
     ) -> AnyResult<Vec<bool>> {
@@ -2709,18 +2709,25 @@ impl DeltaTableInputEndpointInner {
                         let mut input_stream = input_stream.fork();
 
                         async move {
-                            let (parsed_buffer, errors) = Self::parse_record_batch(
-                                batch,
-                                polarity,
-                                &cdc_delete_filter,
-                                input_stream.as_mut(),
-                            )
-                            .await;
-                            let staged_buffer = parsed_buffer.map(|buffer| {
-                                let len = buffer.len();
-                                StagedInputBuffer::new(input_stream.stage(vec![buffer]), len)
-                            });
-                            (staged_buffer, errors, timestamp)
+                            // Parsing is CPU-bound and holds no lock across an await point, so run
+                            // it on tokio's blocking pool instead of a reactor thread; otherwise a
+                            // single large batch monopolizes a worker thread and delays unrelated
+                            // async work (e.g. polling the network stream) queued on it.
+                            tokio::task::spawn_blocking(move || {
+                                let (parsed_buffer, errors) = Self::parse_record_batch(
+                                    batch,
+                                    polarity,
+                                    &cdc_delete_filter,
+                                    input_stream.as_mut(),
+                                );
+                                let staged_buffer = parsed_buffer.map(|buffer| {
+                                    let len = buffer.len();
+                                    StagedInputBuffer::new(input_stream.stage(vec![buffer]), len)
+                                });
+                                (staged_buffer, errors, timestamp)
+                            })
+                            .await
+                            .expect("parse_record_batch task panicked")
                         }
                     })
                 })
@@ -2786,7 +2793,7 @@ impl DeltaTableInputEndpointInner {
         Ok(total_records)
     }
 
-    async fn parse_record_batch(
+    fn parse_record_batch(
         batch: RecordBatch,
         polarity: bool,
         cdc_delete_filter: &Option<Arc<dyn PhysicalExpr>>,
@@ -2795,7 +2802,7 @@ impl DeltaTableInputEndpointInner {
         let result = if polarity {
             if let Some(delete_filter_expr) = cdc_delete_filter {
                 let polarities =
-                    match Self::eval_delete_filter(delete_filter_expr.as_ref(), &batch).await {
+                    match Self::eval_delete_filter(delete_filter_expr.as_ref(), &batch) {
                         Ok(polarities) => polarities,
                         Err(e) => {
                             return (
