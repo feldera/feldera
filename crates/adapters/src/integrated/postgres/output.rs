@@ -522,11 +522,19 @@ These statements were successfully prepared before reconnecting. Does the table 
             return Ok(());
         }
 
+        // Roll back and release anything a previous batch left open before
+        // borrowing the client again. The transmute below hides that borrow from
+        // the compiler, so it is on this function to keep two of them from
+        // overlapping.
+        self.transaction = None;
+
         let txn = self.client.transaction()?;
 
         // SAFETY: The transaction borrows `self.client`. Both live on this
-        // worker's dedicated thread and never move. The transaction is committed
-        // or rolled back in `batch_end_inner` before the next batch.
+        // worker's dedicated thread and never move. The borrow ends before the
+        // next one begins: `batch_end_inner` commits or rolls the transaction
+        // back, and the line above releases it on the paths that do not reach
+        // `batch_end_inner`.
         let transaction: postgres::Transaction<'static> = unsafe { std::mem::transmute(txn) };
         self.transaction = Some(transaction);
 
@@ -687,7 +695,15 @@ These statements were successfully prepared before reconnecting. Does the table 
 
         // Encoding fails only on serialization, which will fail the same way
         // however many times the batch is written again.
-        result.map_err(BackoffError::Permanent)
+        if let Err(e) = result {
+            // This ends the batch, and no one downstream commits or rolls back
+            // the transaction just opened, so release it here rather than leave
+            // the session idle in a transaction until the next batch starts.
+            self.transaction = None;
+            return Err(BackoffError::Permanent(e));
+        }
+
+        Ok(())
     }
 
     /// Encode records from the cursor into postgres within the current transaction.
@@ -878,6 +894,15 @@ impl PostgresWorker {
                     // Release the batch, and with it the worker's reference to
                     // the data the controller handed it.
                     self.pending_batch = None;
+
+                    // The next batch borrows the client again behind a
+                    // transmute, so no transaction may outlive this one. Every
+                    // test that writes a batch checks this.
+                    debug_assert!(
+                        self.transaction.is_none(),
+                        "worker-thread-{} finished a batch with its transaction still open",
+                        self.worker_idx
+                    );
                 }
                 WorkerCommand::Broadcast(BroadcastCommand::Shutdown) => break,
             }
