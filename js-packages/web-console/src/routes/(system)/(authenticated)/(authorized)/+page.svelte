@@ -57,6 +57,24 @@
   const drawer = useAdaptiveDrawer('right')
 
   const demos = useDemos()
+
+  // The page is the only thing that scrolls. The sections below the pipelines pin
+  // as one group over the bottom of the table, which leaves the table a 70%
+  // window to scroll through and puts the top of the group on screen from the
+  // start. The group is measured, so sections can be added to it freely.
+  const pinnedGroupShare = 0.15
+  let scrollAreaHeight = $state(0)
+  let pinnedGroupHeight = $state(0)
+  // Sticking the group's bottom edge that far below the screen edge leaves
+  // exactly the peek showing. Sticky releases the group on its own once the table
+  // above has been scrolled through, and the rest of it scrolls into view.
+  const pinnedGroupStickyBottom = $derived.by(() => {
+    if (!scrollAreaHeight || !pinnedGroupHeight) {
+      return undefined
+    }
+    const peek = Math.min(pinnedGroupHeight, scrollAreaHeight * pinnedGroupShare)
+    return `${Math.round(peek - pinnedGroupHeight)}px`
+  })
 </script>
 
 <AppHeader>
@@ -78,7 +96,11 @@
     {/if}
   {/snippet}
 </AppHeader>
-<div class="scrollbar flex h-full flex-col justify-between overflow-y-auto">
+<div
+  class="scrollbar flex h-full flex-col justify-between overflow-y-auto"
+  bind:clientHeight={scrollAreaHeight}
+  data-testid="box-home-scroll-area"
+>
   <div class="@container">
     <div class="flex flex-col gap-8 pb-2 md:pb-8" style="width: max-content; min-width: 100%;">
       {#if !welcomed.value}
@@ -122,7 +144,7 @@
           </div>
         </div>
       {/if}
-      <div class="flex flex-col">
+      <div class="flex flex-col" data-testid="box-pipelines-section">
         {#snippet header()}
           <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
             <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
@@ -167,57 +189,70 @@
           </div>
         {/if}
       </div>
-      {#if demos.current.length}
-        <div class="sticky left-0 max-w-[100cqi] px-2 md:px-8">
-          <InlineDropdown bind:open={showSuggestedDemos.value}>
-            {#snippet header(open, toggle)}
-              <div
-                class="flex w-fit cursor-pointer items-center gap-2 py-2"
-                onclick={(e) => {
-                  // Prevent clicks on "View all" trigger the dropdown.
-                  // Swallowing them with stopPropagation here
-                  // lets them reach `document`, where they get
-                  // intercepted and handled by the SvelteKit's router.
-                  if ((e.target as HTMLElement).closest('a')) {
-                    return
-                  }
-                  toggle()
-                }}
-                role="presentation"
-              >
+      <!-- Every section in here pins as one group over the tail of the pipelines
+           table until the table has been scrolled through: the peek is what is
+           left of the screen below the table's 70%, and the page background makes
+           the group hide the rows behind it. The table keeps flowing at full
+           height, so the page stays the single thing that scrolls. Add sections
+           to this group to have them pinned along with the rest. -->
+      <div
+        class="bg-white-dark sticky left-0 z-10 flex max-w-[100cqi] flex-col gap-8"
+        style:bottom={pinnedGroupStickyBottom}
+        bind:offsetHeight={pinnedGroupHeight}
+        data-testid="box-pinned-sections"
+      >
+        {#if demos.current.length}
+          <div class="px-2 md:px-8">
+            <InlineDropdown bind:open={showSuggestedDemos.value}>
+              {#snippet header(open, toggle)}
                 <div
-                  class={'fd fd-chevron-down text-[20px] transition-transform ' +
-                    (open ? 'rotate-180' : '')}
-                ></div>
+                  class="flex w-fit cursor-pointer items-center gap-2 py-2"
+                  onclick={(e) => {
+                    // Prevent clicks on "View all" trigger the dropdown.
+                    // Swallowing them with stopPropagation here
+                    // lets them reach `document`, where they get
+                    // intercepted and handled by the SvelteKit's router.
+                    if ((e.target as HTMLElement).closest('a')) {
+                      return
+                    }
+                    toggle()
+                  }}
+                  role="presentation"
+                >
+                  <div
+                    class={'fd fd-chevron-down text-[20px] transition-transform ' +
+                      (open ? 'rotate-180' : '')}
+                  ></div>
 
-                <div class="flex flex-nowrap items-center gap-4">
-                  <div class="text-xl font-semibold">Explore use cases and tutorials</div>
-                  <a class="whitespace-nowrap text-primary-500" href={resolve('/demos/')}
-                    >View all</a
-                  >
+                  <div class="flex flex-nowrap items-center gap-4">
+                    <div class="text-xl font-semibold">Explore use cases and tutorials</div>
+                    <a class="whitespace-nowrap text-primary-500" href={resolve('/demos/')}
+                      >View all</a
+                    >
+                  </div>
                 </div>
-              </div>
-            {/snippet}
-            {#snippet content()}
-              <div
-                transition:slide={{ duration: 150 }}
-                class="grid grid-cols-1 gap-x-6 gap-y-5 py-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
-              >
-                {#each demos.current.slice(0, maxShownDemos) as demo}
-                  <DemoTile {demo} placement="home"></DemoTile>
-                {/each}
-                <div class="flex flex-col card p-4">
-                  <div class="text-sm text-surface-500"></div>
-                  <a class="text-left text-primary-500" href={resolve('/demos/')}>
-                    <span class="py-2">Discover More Examples and Tutorials</span>
-                    <!-- <span class="fd fd-arrow-right inline-block w-2 text-[20px]"></span> -->
-                  </a>
+              {/snippet}
+              {#snippet content()}
+                <div
+                  transition:slide={{ duration: 150 }}
+                  class="grid grid-cols-1 gap-x-6 gap-y-5 py-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
+                >
+                  {#each demos.current.slice(0, maxShownDemos) as demo}
+                    <DemoTile {demo} placement="home"></DemoTile>
+                  {/each}
+                  <div class="flex flex-col card p-4">
+                    <div class="text-sm text-surface-500"></div>
+                    <a class="text-left text-primary-500" href={resolve('/demos/')}>
+                      <span class="py-2">Discover More Examples and Tutorials</span>
+                      <!-- <span class="fd fd-arrow-right inline-block w-2 text-[20px]"></span> -->
+                    </a>
+                  </div>
                 </div>
-              </div>
-            {/snippet}
-          </InlineDropdown>
-        </div>
-      {/if}
+              {/snippet}
+            </InlineDropdown>
+          </div>
+        {/if}
+      </div>
     </div>
   </div>
   <div class="sticky left-0"><Footer></Footer></div>
