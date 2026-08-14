@@ -4381,6 +4381,24 @@ async fn lock_timeout_ms(client: &impl GenericClient) -> i64 {
         .get(0)
 }
 
+/// A failed statement has to report what the server said. `tokio_postgres`
+/// displays the category the failure falls into and leaves the message itself to
+/// the error it wraps, so a report of the outermost error alone is useless for
+/// diagnosis.
+#[tokio::test]
+async fn postgres_error_reports_what_the_server_said() {
+    let handle = test_setup().await;
+    let mut client = handle.db.pool.get().await.unwrap();
+    let txn = transaction::begin(&mut client).await.unwrap();
+
+    let error: DBError = txn.batch_execute("SELECT 1/0").await.unwrap_err().into();
+    let reported = error.to_string();
+    assert!(
+        reported.contains("division by zero"),
+        "the server's message is missing from {reported:?}"
+    );
+}
+
 /// The lock timeout has to be carried by each transaction rather than by the
 /// connection: a pooler in between rejects the connection option that would
 /// carry it, and a session-level setting does not follow the client to the

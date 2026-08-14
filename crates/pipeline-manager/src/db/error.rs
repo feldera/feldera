@@ -9,6 +9,7 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::user::InvalidMembershipOrigin;
 use crate::db::types::utils::ValidationError;
 use crate::db::types::version::Version;
+use crate::error::source_error;
 use actix_web::{HttpResponse, ResponseError, body::BoxBody, http::StatusCode};
 use deadpool_postgres::PoolError;
 use feldera_types::error::DetailedError;
@@ -343,6 +344,27 @@ impl DBError {
     }
 }
 
+/// Renders `error` with the innermost error that caused it.
+///
+/// The half of a Postgres failure that identifies it sits in that innermost
+/// error: `tokio_postgres::Error` displays the category the failure falls into
+/// ("db error", "error connecting to server") and leaves what the server said to
+/// its source. Reporting the outer error alone therefore says that something went
+/// wrong and nothing about what.
+///
+/// Only those two ends of the chain are needed, as every wrapper in between
+/// displays its own source: refinery names the migration and then quotes the
+/// error it got, and the pool error quotes the connection error it got.
+fn message_with_cause(error: &dyn StdError) -> String {
+    let message = error.to_string();
+    let cause = source_error(error).to_string();
+    if message.ends_with(&cause) {
+        message
+    } else {
+        format!("{message}: {cause}")
+    }
+}
+
 fn serialize_pg_error<S>(
     error: &PgError,
     backtrace: &Backtrace,
@@ -352,7 +374,7 @@ where
     S: Serializer,
 {
     let mut ser = serializer.serialize_struct("PgError", 2)?;
-    ser.serialize_field("error", &error.to_string())?;
+    ser.serialize_field("error", &message_with_cause(error))?;
     ser.serialize_field("backtrace", &backtrace.to_string())?;
     ser.end()
 }
@@ -366,7 +388,7 @@ where
     S: Serializer,
 {
     let mut ser = serializer.serialize_struct("PgPoolError", 2)?;
-    ser.serialize_field("error", &error.to_string())?;
+    ser.serialize_field("error", &message_with_cause(error))?;
     ser.serialize_field("backtrace", &backtrace.to_string())?;
     ser.end()
 }
@@ -380,7 +402,7 @@ where
     S: Serializer,
 {
     let mut ser = serializer.serialize_struct("RefineryError", 2)?;
-    ser.serialize_field("error", &error.to_string())?;
+    ser.serialize_field("error", &message_with_cause(error))?;
     ser.serialize_field("backtrace", &backtrace.to_string())?;
     ser.end()
 }
@@ -513,13 +535,25 @@ impl Display for DBError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DBError::PostgresError { error, .. } => {
-                write!(f, "Unexpected Postgres error: '{error}'")
+                write!(
+                    f,
+                    "Unexpected Postgres error: '{}'",
+                    message_with_cause(&**error)
+                )
             }
             DBError::PostgresPoolError { error, .. } => {
-                write!(f, "Postgres connection pool error: '{error}'")
+                write!(
+                    f,
+                    "Postgres connection pool error: '{}'",
+                    message_with_cause(&**error)
+                )
             }
             DBError::PostgresMigrationError { error, .. } => {
-                write!(f, "DB schema migration error: '{error}'")
+                write!(
+                    f,
+                    "DB schema migration error: '{}'",
+                    message_with_cause(&**error)
+                )
             }
             #[cfg(feature = "postgresql_embedded")]
             DBError::PgEmbedError { error, .. } => {
@@ -1296,8 +1330,74 @@ impl From<DBError> for ErrorResponse {
 
 #[cfg(test)]
 mod test {
-    use crate::db::error::DBError;
+    use crate::db::error::{DBError, message_with_cause};
     use crate::error::ManagerError;
+    use std::error::Error as StdError;
+    use std::fmt;
+
+    /// Error with a `Display` and a source, both of which the test dictates.
+    #[derive(Debug)]
+    struct Layer {
+        message: String,
+        cause: Option<Box<Layer>>,
+    }
+
+    impl Layer {
+        fn new(message: &str, cause: Option<Layer>) -> Self {
+            Self {
+                message: message.to_string(),
+                cause: cause.map(Box::new),
+            }
+        }
+    }
+
+    impl fmt::Display for Layer {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str(&self.message)
+        }
+    }
+
+    impl StdError for Layer {
+        fn source(&self) -> Option<&(dyn StdError + 'static)> {
+            self.cause.as_deref().map(|cause| cause as &dyn StdError)
+        }
+    }
+
+    #[test]
+    fn the_innermost_cause_is_reported() {
+        // The shape a refused connection arrives in: each wrapper displays the
+        // error it got, except the innermost one, which nobody displays.
+        let innermost = Layer::new("FATAL: unsupported startup parameter", None);
+        let middle = Layer::new("db error", Some(innermost));
+        let outer = Layer::new(
+            "Error occurred while creating a new object: db error",
+            Some(middle),
+        );
+        assert_eq!(
+            message_with_cause(&outer),
+            "Error occurred while creating a new object: db error: \
+             FATAL: unsupported startup parameter"
+        );
+    }
+
+    #[test]
+    fn a_cause_already_displayed_is_reported_once() {
+        // A wrapper whose innermost cause is the error it already displays.
+        let cause = Layer::new("db error", None);
+        let outer = Layer::new(
+            "Error occurred while creating a new object: db error",
+            Some(cause),
+        );
+        assert_eq!(
+            message_with_cause(&outer),
+            "Error occurred while creating a new object: db error"
+        );
+    }
+
+    #[test]
+    fn an_error_without_causes_is_unchanged() {
+        assert_eq!(message_with_cause(&Layer::new("alone", None)), "alone");
+    }
 
     #[test]
     fn invalid_bootstrap_error_serialization() {
