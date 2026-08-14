@@ -17,9 +17,9 @@ const PIPELINE_NAME = `test-support-bundle-${Date.now()}`
  * `beforeAll` does the expensive shared setup once: create + compile + start the
  * pipeline, then download its support bundle to disk so the upload-path test can
  * reuse it. Each test then opens the profile viewer through a different entry
- * point — a fresh remote download, or the saved bundle re-uploaded into a new
- * tab via the BroadcastChannel + postMessage handoff — and asserts the loaded
- * viewer renders its core panels (logs, per-node metrics).
+ * point — a fresh remote download, or the saved bundle re-opened from disk into a
+ * new tab — and asserts the loaded viewer renders its core panels (logs,
+ * per-node metrics).
  *
  * Serial: the tests share the pipeline created in `beforeAll`, and there's no
  * value in running the upload path once the remote path has already proven the
@@ -75,6 +75,15 @@ test.describe('Profile viewer', () => {
   })
 
   test('re-uploaded bundle opens a working viewer', async ({ page, context }) => {
+    // Playwright cannot drive the operating system's file picker, so hide the
+    // File System Access API from the page. The controls then take the file-input
+    // fallback — the same path Firefox and Safari take, and the only one an
+    // automated test can exercise. It ends in the bundle history too, so this
+    // covers the viewer reading a bundle back out of IndexedDB; the handle path
+    // is covered by the browser tests instead.
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'showOpenFilePicker', { value: undefined })
+    })
     await openSupportBundleControls(page)
     await page.getByTestId('input-upload-support-bundle').setInputFiles(bundlePath)
 
@@ -122,7 +131,7 @@ async function withProfileViewer(context: BrowserContext, trigger: () => Promise
 
 /**
  * Switch to the Logs tab and confirm at least one log line rendered — the signal
- * that `logText` was extracted from the bundle (remote fetch or cross-tab handoff).
+ * that `logText` was extracted from the bundle, however it arrived.
  */
 async function assertLogsPanelPopulates(viewer: Page) {
   // The Logs tab label appears once the bundle finishes loading and the

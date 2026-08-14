@@ -1,7 +1,7 @@
 /**
  * Home page scroll layout. The page is the only scroll container: the pipelines
  * table flows at full height and the sections below it pin as one group over the
- * table's tail, so the table reads as a 70% window that the page scroll walks
+ * table's tail, so the table reads as a window that the page scroll walks
  * through while the top of the group waits at the bottom of the screen.
  *
  * Every assertion compares measured geometry, so the numbers hold whatever the
@@ -103,12 +103,11 @@ vi.mock('$lib/compositions/useDemos.svelte', () => ({
 }))
 
 // Imported AFTER vi.mock so the mocks take effect.
-import HomePage from './+page.svelte'
+import HomePage, { pinnedPixelsAfterPipelineTable } from './+page.svelte'
 
 const SCROLL_AREA_HEIGHT = 800
-// The share of the screen the pinned section takes; the table window gets the rest.
-const NEXT_SECTION_SHARE = 0.3
-const PEEK = SCROLL_AREA_HEIGHT * NEXT_SECTION_SHARE
+// What the pinned group shows at rest; the table's window gets the rest of the screen.
+const PEEK = pinnedPixelsAfterPipelineTable
 const ALL_PIPELINES = list.names
 
 /** Mounts the page in a container of known size and returns the scroll geometry. */
@@ -123,8 +122,8 @@ const renderHome = async ({ width = 1200 }: { width?: number } = {}) => {
   const scrollArea = container.querySelector<HTMLElement>('[data-testid=box-home-scroll-area]')!
   const pipelines = container.querySelector<HTMLElement>('[data-testid=box-pipelines-section]')!
   const pinnedGroup = container.querySelector<HTMLElement>('[data-testid=box-pinned-sections]')!
-  // The pin offset is derived from the measured scroll area, so it settles a
-  // frame after the container is sized.
+  // The pin offset is derived from the measured group, so it settles a frame
+  // after the container is sized and the group laid out.
   await expect.poll(() => scrollArea.clientHeight).toBe(SCROLL_AREA_HEIGHT)
   await new Promise((settled) => requestAnimationFrame(() => requestAnimationFrame(settled)))
   return { container, scrollArea, pipelines, pinnedGroup }
@@ -160,7 +159,7 @@ describe('/ (home) scroll layout', () => {
     expect(getComputedStyle(pipelines).overflowY).toBe('visible')
   })
 
-  it('leaves the table a 70% window with the section group pinned below it', async () => {
+  it('leaves the table a window with the section group pinned below it', async () => {
     const { scrollArea, pinnedGroup } = await renderHome()
 
     const visible = scrollArea.getBoundingClientRect()
@@ -207,6 +206,20 @@ describe('/ (home) scroll layout', () => {
     expect(pipelines.getBoundingClientRect().bottom).toBeLessThanOrEqual(released.top + 1)
   })
 
+  it('starts the section titles at the same x', async () => {
+    const { container } = await renderHome()
+
+    // Both titles lead with an icon of the same size at the same gap, so their
+    // text begins at the same offset. The icons measure nothing here — this
+    // browser loads no icon font — which is exactly why the gap and the icon's
+    // place in the row are what this compares.
+    const titleLeft = (text: string) =>
+      [...container.querySelectorAll<HTMLElement>('span,div')]
+        .find((el) => !el.children.length && el.textContent?.trim() === text)!
+        .getBoundingClientRect().left
+    expect(titleLeft('Pipeline profiles')).toBeCloseTo(titleLeft('Your pipelines'), 0)
+  })
+
   it('does not pin the group when the pipelines fit on screen', async () => {
     list.names = ALL_PIPELINES.slice(0, 3)
     const { scrollArea, pipelines, pinnedGroup } = await renderHome()
@@ -223,8 +236,8 @@ describe('/ (home) scroll layout', () => {
     const offsetBefore = pinnedGroup.style.bottom
 
     // Stands in for a section added at the top of the group: the peek has to keep
-    // its share of the screen and show this section, pushing the demos below the
-    // screen edge instead of growing the peek.
+    // its height and show this section, pushing the demos below the screen edge
+    // instead of growing the peek.
     const added = document.createElement('div')
     added.style.height = '300px'
     added.textContent = 'ADDED SECTION'

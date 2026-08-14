@@ -1,74 +1,58 @@
 <script lang="ts">
-  // Shared dropdown body for the support-bundle menus: a download button, the
-  // "collect new data" toggle, a divider, and an upload button (with its own
-  // hidden file input). Callers wrap this in their own Popup + outer container
-  // so the trigger and outer styling stay caller-specific.
-  //
-  // The hidden file input is rendered here on purpose: when this menu lives
-  // inside a Popup's content snippet, the input ends up inside the popup's
-  // `contentNode`, and the synthetic click that `fileInput.click()` dispatches
-  // is treated as an inside-popup click — so the popup doesn't auto-close on
-  // upload (see `Popup.svelte`'s window-level capture handler).
+  // Shared dropdown body for the support-bundle menus: an optional download
+  // button with the "collect new data" toggle, and the entry that opens a bundle
+  // from disk. Callers wrap this in their own Popup + outer container so the
+  // trigger and outer styling stay caller-specific, and they do the picking
+  // themselves — what a picked bundle is for differs from caller to caller, and
+  // the hidden file input the fallback needs has to live outside this menu so a
+  // closing popup cannot take it away mid-pick.
 
   type Props = {
-    collectNewData: boolean
-    onDownload: () => void
-    onFilePicked: (file: File) => void
+    collectNewData?: boolean
+    /** When omitted, the menu offers no download and no "collect new data" toggle. */
+    onDownload?: () => void
+    /** Opens a bundle from disk: the file picker, or a file input as a fallback. */
+    onPickBundle: () => void
     disabled?: boolean
     downloadLabel?: string
-    uploadLabel?: string
+    pickLabel?: string
   }
 
   let {
-    collectNewData = $bindable(),
+    collectNewData = $bindable(false),
     onDownload,
-    onFilePicked,
+    onPickBundle,
     disabled = false,
     downloadLabel = 'Download support bundle',
-    uploadLabel = 'Upload support bundle'
+    pickLabel = 'Open support bundle'
   }: Props = $props()
-
-  let fileInput: HTMLInputElement | null = $state(null)
 </script>
 
-<input
-  type="file"
-  accept=".zip"
-  bind:this={fileInput}
-  onchange={(e) => {
-    const file = (e.currentTarget as HTMLInputElement).files?.[0]
-    if (file) {
-      ;(e.currentTarget as HTMLInputElement).value = ''
-      onFilePicked(file)
-    }
-  }}
-  class="hidden"
-  data-testid="input-upload-support-bundle"
-/>
+{#if onDownload}
+  <button
+    class="px-4 py-2 text-left hover:preset-tonal-surface"
+    onclick={onDownload}
+    {disabled}
+    data-testid="btn-download-support-bundle"
+  >
+    {downloadLabel}
+  </button>
+
+  <label
+    class="flex cursor-pointer items-center justify-between gap-3 px-4 py-2 hover:preset-tonal-surface"
+  >
+    <span>Collect new data</span>
+    <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
+  </label>
+
+  <div class="hr"></div>
+{/if}
 
 <button
   class="px-4 py-2 text-left hover:preset-tonal-surface"
-  onclick={onDownload}
-  {disabled}
-  data-testid="btn-download-support-bundle"
->
-  {downloadLabel}
-</button>
-
-<label
-  class="flex cursor-pointer items-center justify-between gap-3 px-4 py-2 hover:preset-tonal-surface"
->
-  <span>Collect new data</span>
-  <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
-</label>
-
-<div class="hr"></div>
-
-<button
-  class="px-4 py-2 text-left hover:preset-tonal-surface"
-  onclick={() => fileInput?.click()}
+  onclick={onPickBundle}
   {disabled}
   data-testid="btn-upload-support-bundle"
 >
-  {uploadLabel}
+  {pickLabel}
 </button>

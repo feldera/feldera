@@ -1,3 +1,12 @@
+<script lang="ts" module>
+  /**
+   * How much of the pinned group of trailing sections shows, in px, while the
+   * pipelines table is being scrolled; the table's window gets the rest of the
+   * screen. Exported so the layout test asserts against the same number.
+   */
+  export const pinnedPixelsAfterPipelineTable = 108
+</script>
+
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { slide } from 'svelte/transition'
@@ -14,6 +23,7 @@
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import DemoTile from '$lib/components/other/DemoTile.svelte'
+  import PipelineProfiles from '$lib/components/other/PipelineProfiles.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import PipelineTable from '$lib/components/pipelines/Table.svelte'
   import AvailableActions from '$lib/components/pipelines/table/AvailableActions.svelte'
@@ -59,21 +69,22 @@
   const demos = useDemos()
 
   // The page is the only thing that scrolls. The sections below the pipelines pin
-  // as one group over the bottom of the table, which leaves the table a 70%
-  // window to scroll through and puts the top of the group on screen from the
-  // start. The group is measured, so sections can be added to it freely.
-  const pinnedGroupShare = 0.15
-  let scrollAreaHeight = $state(0)
+  // as one group over the bottom of the table, which leaves the table the rest of
+  // the screen as a window to scroll through and puts the top of the group on
+  // screen from the start. The group is measured, so sections can be added to it
+  // freely.
   let pinnedGroupHeight = $state(0)
   // Sticking the group's bottom edge that far below the screen edge leaves
   // exactly the peek showing. Sticky releases the group on its own once the table
   // above has been scrolled through, and the rest of it scrolls into view.
   const pinnedGroupStickyBottom = $derived.by(() => {
-    if (!scrollAreaHeight || !pinnedGroupHeight) {
+    if (!pinnedGroupHeight) {
       return undefined
     }
-    const peek = Math.min(pinnedGroupHeight, scrollAreaHeight * pinnedGroupShare)
-    return `${Math.round(peek - pinnedGroupHeight)}px`
+    // A group shorter than the peek shows whole, rather than hanging below the
+    // screen edge.
+    const peek = Math.min(pinnedGroupHeight, pinnedPixelsAfterPipelineTable)
+    return `${peek - pinnedGroupHeight}px`
   })
 </script>
 
@@ -98,7 +109,6 @@
 </AppHeader>
 <div
   class="scrollbar flex h-full flex-col justify-between overflow-y-auto"
-  bind:clientHeight={scrollAreaHeight}
   data-testid="box-home-scroll-area"
 >
   <div class="@container">
@@ -190,23 +200,26 @@
         {/if}
       </div>
       <!-- Every section in here pins as one group over the tail of the pipelines
-           table until the table has been scrolled through: the peek is what is
-           left of the screen below the table's 70%, and the page background makes
-           the group hide the rows behind it. The table keeps flowing at full
-           height, so the page stays the single thing that scrolls. Add sections
-           to this group to have them pinned along with the rest. -->
+           table until the table has been scrolled through: the peek is
+           `pinnedPixelsAfterPipelineTable` tall, and the page background makes the
+           group hide the rows behind it. The table keeps flowing at full height,
+           so the page stays the single thing that scrolls. Add sections to this
+           group to have them pinned along with the rest. -->
       <div
         class="bg-white-dark sticky left-0 z-10 flex max-w-[100cqi] flex-col gap-8"
         style:bottom={pinnedGroupStickyBottom}
         bind:offsetHeight={pinnedGroupHeight}
         data-testid="box-pinned-sections"
       >
+        <div class="px-2 md:px-8">
+          <PipelineProfiles></PipelineProfiles>
+        </div>
         {#if demos.current.length}
           <div class="px-2 md:px-8">
             <InlineDropdown bind:open={showSuggestedDemos.value}>
               {#snippet header(open, toggle)}
                 <div
-                  class="flex w-fit cursor-pointer items-center gap-2 py-2"
+                  class="flex w-fit cursor-pointer items-center gap-4 py-2"
                   onclick={(e) => {
                     // Prevent clicks on "View all" trigger the dropdown.
                     // Swallowing them with stopPropagation here
@@ -220,7 +233,7 @@
                   role="presentation"
                 >
                   <div
-                    class={'fd fd-chevron-down text-[20px] transition-transform ' +
+                    class={'fd fd-chevron-down text-xl transition-transform ' +
                       (open ? 'rotate-180' : '')}
                   ></div>
 
