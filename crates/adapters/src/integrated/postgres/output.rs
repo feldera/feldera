@@ -232,7 +232,8 @@ impl PostgresWorker {
         // Retrying the statement here cannot work: a retryable failure means the
         // connection is gone, and recovering takes a new transaction and a fresh
         // encode, which `write_batch` drives.
-        if e.should_retry() {
+        let recoverable = e.should_retry();
+        if recoverable {
             self.needs_replay = true;
         }
 
@@ -243,7 +244,7 @@ impl PostgresWorker {
         controller.output_transport_error(
             self.endpoint_id,
             &self.endpoint_name,
-            true,
+            !recoverable,
             e.inner(),
             Some("pg_exec"),
         );
@@ -433,11 +434,16 @@ These statements were successfully prepared before reconnecting. Does the table 
             match self.retry_connecting() {
                 Ok(_) => return,
                 Err(e) => {
+                    // Only a failure that ends the loop leaves the endpoint
+                    // unable to reach postgres. Reporting one it is about to
+                    // retry as fatal stamps `fatal_error`, which never clears,
+                    // so a blip the connector recovers from in a second would
+                    // mark the endpoint failed for the life of the pipeline.
                     let retry = e.should_retry();
                     controller.output_transport_error(
                         self.endpoint_id,
                         &self.endpoint_name,
-                        true,
+                        !retry,
                         e.inner(),
                         Some("pg_conn_retry"),
                     );
