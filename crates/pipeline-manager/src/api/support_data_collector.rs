@@ -7,6 +7,7 @@ use crate::db::operations::pipeline::{
     cleanup_old_support_data_collections, store_support_data_collection,
 };
 use crate::db::storage::Storage;
+use crate::db::transaction;
 use crate::db::types::combined_status::CombinedStatus;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::tenant::TenantId;
@@ -1324,7 +1325,7 @@ impl SupportDataCollector {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Get a client from the pool and create a transaction
         let mut client = self.state.db.lock().await.pool.get().await?;
-        let txn = client.transaction().await?;
+        let txn = transaction::begin(&mut client).await?;
 
         store_support_data_collection(&txn, pipeline_id, tenant_id, support_bundle).await?;
 
@@ -1338,7 +1339,7 @@ impl SupportDataCollector {
         pipeline_id: PipelineId,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut client = self.state.db.lock().await.pool.get().await?;
-        let txn = client.transaction().await?;
+        let txn = transaction::begin(&mut client).await?;
         let r =
             cleanup_old_support_data_collections(&txn, pipeline_id, self.retention_count as i64)
                 .await?;
@@ -1716,7 +1717,7 @@ mod tests {
 
         // Verify support bundle data was stored
         let mut client = db.lock().await.pool.get().await.unwrap();
-        let txn = client.transaction().await.unwrap();
+        let txn = transaction::begin(&mut client).await.unwrap();
         let bundles =
             crate::db::operations::pipeline::get_support_bundle_data(&txn, pipeline_id, 10)
                 .await
@@ -1764,7 +1765,7 @@ mod tests {
 
         // Verify support bundle data was deleted (due to CASCADE)
         let mut client = db.lock().await.pool.get().await.unwrap();
-        let txn = client.transaction().await.unwrap();
+        let txn = transaction::begin(&mut client).await.unwrap();
         let bundles =
             crate::db::operations::pipeline::get_support_bundle_data(&txn, pipeline_id, 10)
                 .await
@@ -1913,7 +1914,7 @@ mod tests {
 
         // Verify we have 5 collections initially
         let mut client = db.lock().await.pool.get().await.unwrap();
-        let txn = client.transaction().await.unwrap();
+        let txn = transaction::begin(&mut client).await.unwrap();
         let bundles =
             crate::db::operations::pipeline::get_support_bundle_data(&txn, pipeline_id, 10)
                 .await
@@ -1929,7 +1930,7 @@ mod tests {
 
         // Verify only 3 collections remain (retention_count)
         let mut client = db.lock().await.pool.get().await.unwrap();
-        let txn = client.transaction().await.unwrap();
+        let txn = transaction::begin(&mut client).await.unwrap();
         let bundles = crate::db::operations::pipeline::get_support_bundle_data(
             &txn,
             pipeline_id,

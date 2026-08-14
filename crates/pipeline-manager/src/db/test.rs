@@ -5,6 +5,8 @@ use crate::db::error::DBError::InvalidResourcesStatusNotRemain;
 use crate::db::operations::pipeline::get_pipeline_by_id_for_monitoring;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::{StoragePostgres, is_pipeline_assigned_to_worker};
+use crate::db::transaction;
+use crate::db::transaction::LOCK_TIMEOUT;
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId};
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
@@ -41,6 +43,7 @@ use crate::oidc::destination::{TenantIssuerPolicy, validate_tenant_oidc_url};
 use crate::oidc::trust_name::validate_oidc_trust_name;
 use async_trait::async_trait;
 use chrono::{DateTime, TimeZone, Utc};
+use deadpool_postgres::GenericClient;
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::config::{
     DevTweaks, FtConfig, PipelineConfig, ProgramIr, ResourceConfig, RuntimeConfig,
@@ -4365,6 +4368,55 @@ async fn pipeline_client_metadata_update_while_running() {
     assert_eq!(unchanged.refresh_version, before.refresh_version);
 }
 
+/// Reads the lock timeout that applies to `client`, in milliseconds. Zero is
+/// the Postgres default and means a statement waits for a lock indefinitely.
+async fn lock_timeout_ms(client: &impl GenericClient) -> i64 {
+    client
+        .query_one(
+            "SELECT setting::bigint FROM pg_settings WHERE name = 'lock_timeout'",
+            &[],
+        )
+        .await
+        .unwrap()
+        .get(0)
+}
+
+/// The lock timeout has to be carried by each transaction rather than by the
+/// connection: a pooler in between rejects the connection option that would
+/// carry it, and a session-level setting does not follow the client to the
+/// server connection its next transaction lands on.
+#[tokio::test]
+async fn transaction_lock_timeout_is_transaction_local() {
+    let handle = test_setup().await;
+    let mut client = handle.db.pool.get().await.unwrap();
+    let expected_ms = LOCK_TIMEOUT.as_millis() as i64;
+
+    // The session holds no timeout of its own: the test server leaves the
+    // parameter at the Postgres default of waiting indefinitely.
+    assert_eq!(
+        lock_timeout_ms(&client).await,
+        0,
+        "the connection carries the lock timeout instead of leaving it to each transaction"
+    );
+
+    let txn = transaction::begin(&mut client).await.unwrap();
+    assert_eq!(lock_timeout_ms(&txn).await, expected_ms);
+    txn.commit().await.unwrap();
+
+    assert_eq!(
+        lock_timeout_ms(&client).await,
+        0,
+        "the lock timeout outlived its transaction, so it can leak to whichever \
+         client uses this connection next"
+    );
+
+    // Read-only transactions are bounded as well: reading a row still waits for
+    // any conflicting lock a schema change holds.
+    let txn = transaction::begin_read_only(&mut client).await.unwrap();
+    assert_eq!(lock_timeout_ms(&txn).await, expected_ms);
+    txn.commit().await.unwrap();
+}
+
 #[tokio::test]
 async fn pipeline_concurrent_access_stall() {
     let handle = test_setup().await;
@@ -4397,8 +4449,8 @@ async fn pipeline_concurrent_access_stall() {
 
     // Non-conflicting
     for (row_lock1, row_lock2) in [(false, false), (true, false), (false, true)] {
-        let txn1 = client1.transaction().await.unwrap();
-        let txn2 = client2.transaction().await.unwrap();
+        let txn1 = transaction::begin(&mut client1).await.unwrap();
+        let txn2 = transaction::begin(&mut client2).await.unwrap();
         get_pipeline_by_id_for_monitoring(&txn1, tenant_id, pipeline.id, row_lock1)
             .await
             .unwrap();
@@ -4409,17 +4461,15 @@ async fn pipeline_concurrent_access_stall() {
         txn2.commit().await.unwrap();
     }
 
-    // Conflicting
-    let txn1 = client1.transaction().await.unwrap();
-    let txn2 = client2.transaction().await.unwrap();
+    // Conflicting. Both transactions are started the way the manager starts
+    // them, which is what bounds the wait for the row lock: the test would hang
+    // here if that bound were lost. It consequently runs for the duration of
+    // the timeout.
+    let txn1 = transaction::begin(&mut client1).await.unwrap();
+    let txn2 = transaction::begin(&mut client2).await.unwrap();
     get_pipeline_by_id_for_monitoring(&txn1, tenant_id, pipeline.id, true)
         .await
         .unwrap();
-    // The lock timeout has been set globally via an option. As such, the below is not needed.
-    // This test does take some time as a consequence (the actual timeout used: 10 seconds).
-    // However, this is an important check to make sure that when the system is deployed,
-    // the lock timeout is enforced.
-    // txn2.execute("SET LOCAL lock_timeout = 10000", &[]).await.unwrap();
     let ts_start = Instant::now();
     let error = get_pipeline_by_id_for_monitoring(&txn2, tenant_id, pipeline.id, true)
         .await
@@ -4430,7 +4480,10 @@ async fn pipeline_concurrent_access_stall() {
         DBError::LockTookTooLong
     );
     let elapsed = ts_start.elapsed();
-    assert!(elapsed >= Duration::from_millis(8000) && elapsed <= Duration::from_millis(30000));
+    assert!(
+        elapsed >= LOCK_TIMEOUT.mul_f64(0.8) && elapsed <= LOCK_TIMEOUT * 3,
+        "waited {elapsed:?} for the row lock, which is not around the {LOCK_TIMEOUT:?} timeout"
+    );
     txn1.commit().await.unwrap();
     txn2.commit().await.unwrap();
 }
@@ -4489,13 +4542,13 @@ async fn pipeline_concurrent_access_deadlock() {
     // - T2 tries to lock pipeline 1 -> waits or deadlock
     let mut client1 = handle.db.pool.get().await.unwrap();
     let mut client2 = handle.db.pool.get().await.unwrap();
-    let txn2 = client2.transaction().await.unwrap();
+    let txn2 = transaction::begin(&mut client2).await.unwrap();
     get_pipeline_by_id_for_monitoring(&txn2, tenant_id, pipeline2.id, true)
         .await
         .unwrap();
     let (tx, rx) = oneshot::channel::<()>();
     let join_handle = spawn(async move {
-        let txn1 = client1.transaction().await.unwrap();
+        let txn1 = transaction::begin(&mut client1).await.unwrap();
         get_pipeline_by_id_for_monitoring(&txn1, tenant_id, pipeline1.id, true)
             .await
             .unwrap();
