@@ -6,7 +6,7 @@ use std::{io::Write, str::FromStr, sync::Weak, time::Duration};
 use super::{
     error::BackoffError, prepared_statements::PreparedStatements, tls::make_tls_connector,
 };
-use crate::{ControllerError, util::indexed_operation_type};
+use crate::{ControllerError, PipelineState, util::indexed_operation_type};
 use crate::{
     buffer_op,
     catalog::{RecordFormat, SerBatchReader, SerCursor},
@@ -434,12 +434,12 @@ These statements were successfully prepared before reconnecting. Does the table 
         let backoff = 1000;
         let mut n_retries = 1;
 
-        let Some(controller) = self.controller.upgrade() else {
-            tracing::warn!("controller is shutting down: aborting");
-            return;
-        };
-
         loop {
+            if self.shutting_down() {
+                tracing::warn!("controller is shutting down: aborting");
+                return;
+            }
+
             tracing::info!(
                 "worker-thread-{} retrying to connect to postgres",
                 self.worker_idx
@@ -453,24 +453,65 @@ These statements were successfully prepared before reconnecting. Does the table 
                     // so a blip the connector recovers from in a second would
                     // mark the endpoint failed for the life of the pipeline.
                     let retry = e.should_retry();
-                    controller.output_transport_error(
-                        self.endpoint_id,
-                        &self.endpoint_name,
-                        !retry,
-                        e.inner(),
-                        Some("pg_conn_retry"),
-                    );
+                    if let Some(controller) = self.controller.upgrade() {
+                        controller.output_transport_error(
+                            self.endpoint_id,
+                            &self.endpoint_name,
+                            !retry,
+                            e.inner(),
+                            Some("pg_conn_retry"),
+                        );
+                    }
                     if !retry {
                         return;
                     }
                 }
             }
 
-            std::thread::sleep(
+            if !self.backoff_unless_shutdown(
                 Duration::from_millis(backoff * n_retries).min(Duration::from_secs(60)),
-            );
+            ) {
+                tracing::warn!("controller is shutting down: aborting");
+                return;
+            }
             n_retries += 1;
         }
+    }
+
+    /// Whether the pipeline has been asked to stop.
+    ///
+    /// Waiting for the controller to be dropped would never work here: the
+    /// endpoint's drop joins this thread, and the endpoint itself is what the
+    /// output thread is blocked on, so the controller stays alive precisely
+    /// because this thread has not finished. `Terminated`, which
+    /// `ControllerInner::stop` sets before it touches anything else, is the
+    /// signal that does arrive.
+    fn shutting_down(&self) -> bool {
+        match self.controller.upgrade() {
+            None => true,
+            Some(controller) => controller.status.state() == PipelineState::Terminated,
+        }
+    }
+
+    /// Waits `duration` before the next connection attempt, giving up as soon as
+    /// the pipeline is asked to stop. Returns whether the wait ran to completion.
+    ///
+    /// The wait reaches a minute, and the endpoint's drop waits on this thread,
+    /// so sleeping through it in one piece would delay every pipeline shutdown
+    /// that happens while postgres is unreachable.
+    fn backoff_unless_shutdown(&self, duration: Duration) -> bool {
+        const SLICE: Duration = Duration::from_millis(100);
+
+        let mut remaining = duration;
+        while !remaining.is_zero() {
+            if self.shutting_down() {
+                return false;
+            }
+            let slice = remaining.min(SLICE);
+            std::thread::sleep(slice);
+            remaining -= slice;
+        }
+        true
     }
 
     fn batch_start_inner(&mut self) -> Result<(), BackoffError> {
