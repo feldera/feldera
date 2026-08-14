@@ -1501,6 +1501,156 @@ fn test_pg_transmitted_records_excludes_rows_lost_to_a_later_failure() {
     );
 }
 
+/// Terminates connector backends that are inside a batch transaction, `rounds`
+/// times, and reports how many rounds landed a kill.
+///
+/// Requiring an open transaction whose latest query is a connector statement
+/// keeps this off the connection while it prepares its statements, and widens
+/// the window to the whole batch: Postgres keeps reporting the last query while
+/// the backend sits idle in the transaction.
+fn terminate_connector_backends(url: &str, rounds: usize) -> usize {
+    let mut client = pg::pg_connect(url, &None);
+    let mut landed = 0;
+
+    for _ in 0..rounds {
+        let mut caught = false;
+        for _ in 0..40_000 {
+            let terminated: i64 = client
+                .query_one(
+                    "SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity \
+                     WHERE pid <> pg_backend_pid() AND datname = current_database() \
+                       AND xact_start IS NOT NULL \
+                       AND query ILIKE '%jsonb_populate_recordset%') terminated",
+                    &[],
+                )
+                .map(|row| row.get(0))
+                .unwrap_or(0);
+            if terminated > 0 {
+                caught = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_micros(200));
+        }
+        if !caught {
+            break;
+        }
+        landed += 1;
+    }
+
+    landed
+}
+
+/// Losing the connection in the middle of a batch must not lose the batch.
+///
+/// Reconnecting is not enough on its own: the dropped connection rolled its
+/// transaction back, and the payloads that carried those rows were drained from
+/// the buffers as they flushed, so the batch has to be encoded again from the
+/// batch the worker retained.
+///
+/// `threads` covers the connector writing through one connection and through
+/// several, which partition the batch. `kills` covers the connection dropping
+/// again while the batch is being rewritten.
+fn pg_reconnect_test(name: &str, threads: usize, kills: usize) {
+    // Enough records per connection to fill the connector's 1 MiB buffer more
+    // than once, so that statements have already written rows into the
+    // transaction by the time the connection drops.
+    //
+    // Scale with `threads`, because the batch is split between them. Sizing the
+    // whole batch instead leaves each connection with less than a bufferful, so
+    // it writes its partition in a single statement and commits, rather than
+    // sitting inside its transaction between statements, which shrinks the
+    // window a fault has to land in.
+    let records = 3000 * threads;
+
+    let table_name = unique_pg_name(name);
+    let url = postgres_url();
+    let verify_url = url.clone();
+
+    let mut data: Vec<PostgresTestStruct> = (0..records).map(|_| rand::random()).collect();
+    for (i, datum) in data.iter_mut().enumerate() {
+        datum.bigint_ = i as i64;
+    }
+    let temp_file = write_records_to_temp_file(&data);
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+      "name": "test",
+      "workers": 4,
+      // Step once over the whole input, so it becomes a single transaction.
+      "min_batch_size_records": records,
+      "max_buffering_delay_usecs": 5000000,
+      "inputs": {
+        "ins": {
+          "stream": "test_input1",
+          "transport": { "name": "file_input", "config": { "path": temp_file.path(), "byte_size_buffer": 8388608 } },
+          "format": { "name": "json", "config": { "update_format": "raw", "array": false } }
+        }
+      },
+      "outputs": {
+        "test_output1": {
+          "stream": "test_output1",
+          "transport": { "name": "postgres_output", "config": { "uri": url, "table": &table_name, "threads": threads } },
+          "index": "idx"
+        }
+      }
+    }))
+    .unwrap();
+
+    let _table = PostgresTestStruct::create_table(&table_name, url, true, &None);
+
+    // Build the pipeline before arming the killer: the connector connects and
+    // prepares its statements while the controller is being constructed.
+    let (controller, _err_receiver) = PostgresTestStruct::test_circuit(config);
+
+    let killer_url = verify_url.clone();
+    let killer = std::thread::spawn(move || terminate_connector_backends(&killer_url, kills));
+
+    controller.start();
+    let landed = killer.join().expect("killer thread panicked");
+
+    // The endpoint reports the batch as handled whether or not it wrote it, so
+    // this settles the test in both outcomes.
+    wait(
+        || pg_total_processed_input_records(&controller) >= records as u64,
+        120_000,
+    )
+    .expect("timeout: connector did not finish handling the input");
+
+    let (transmitted, _bytes) = pg_transmitted_totals(&controller);
+    let _ = controller.stop();
+
+    assert_eq!(
+        landed, kills,
+        "landed {landed} of {kills} connection drops, so this test proves less than it should"
+    );
+    assert_eq!(
+        pg_row_count(&verify_url, &table_name),
+        records as u64,
+        "rows were lost when the connection dropped"
+    );
+    assert_eq!(
+        transmitted, records as u64,
+        "reported {transmitted} of {records} rows as transmitted"
+    );
+}
+
+#[test]
+#[serial]
+fn test_pg_reconnect_does_not_lose_the_batch() {
+    pg_reconnect_test("test_pg_reconnect", 1, 1);
+}
+
+#[test]
+#[serial]
+fn test_pg_reconnect_does_not_lose_the_batch_multi_thread() {
+    pg_reconnect_test("test_pg_reconnect_mt", 3, 1);
+}
+
+#[test]
+#[serial]
+fn test_pg_reconnect_survives_repeated_drops() {
+    pg_reconnect_test("test_pg_reconnect_repeat", 1, 3);
+}
+
 /// The counter still reports every row of a batch that commits.
 #[test]
 #[serial]
