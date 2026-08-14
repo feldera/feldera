@@ -47,6 +47,28 @@ enum WorkerResult {
     Err(anyhow::Error),
 }
 
+/// Maximum number of times a worker writes one batch.
+///
+/// This bounds repeated failures once a connection has come back; waiting for
+/// postgres to return happens inside each attempt, in
+/// [`PostgresWorker::retry_connecting_with_backoff`], and is not bounded.
+const MAX_BATCH_WRITE_ATTEMPTS: usize = 10;
+
+/// The partition of a batch assigned to a worker, retained until the batch
+/// commits so that the worker can write it again.
+///
+/// [`SplitCursorBuilder`] holds the batch and hands out a fresh cursor per
+/// call, and the controller keeps the batch alive across
+/// `batch_start`/`encode`/`batch_end` regardless, so retaining this costs a
+/// reference count rather than a copy of the data.
+struct PendingBatch {
+    cursor: SplitCursorBuilder,
+    /// The extra column values captured when the batch was first encoded.
+    /// Writing it again reuses them, so a rewrite produces the same rows even if
+    /// the configured values have changed since.
+    extra_columns: BTreeMap<String, Option<serde_json::Value>>,
+}
+
 /// A single postgres worker that owns a connection and runs on a dedicated thread.
 struct PostgresWorker {
     worker_idx: usize,
@@ -82,6 +104,15 @@ struct PostgresWorker {
     /// subsequent `COMMIT` with `ROLLBACK` rather than an error, so a commit
     /// reporting success proves nothing on its own.
     txn_poisoned: bool,
+    /// Whether the connection dropped while writing the current batch, which
+    /// rolled the transaction back and lost every row it held.
+    ///
+    /// The batch is written again from [`Self::pending_batch`] rather than
+    /// resuming, since the payloads that carried those rows were drained from
+    /// the buffers as they flushed.
+    needs_replay: bool,
+    /// The batch being written, kept for as long as it may need writing again.
+    pending_batch: Option<PendingBatch>,
     /// Shared counter of records sent to postgres in the current batch.
     /// Updated atomically after each successful `execute()` call across all
     /// workers; reset to 0 by the endpoint at batch boundaries.
@@ -150,6 +181,8 @@ impl PostgresWorker {
             num_rows: 0,
             num_bytes: 0,
             txn_poisoned: false,
+            needs_replay: false,
+            pending_batch: None,
             inserts: 0,
             upserts: 0,
             deletes: 0,
@@ -186,29 +219,34 @@ impl PostgresWorker {
         name: &str,
         num_records: usize,
     ) {
-        loop {
-            match self.exec_statement_inner(stmt.clone(), &mut value, name, num_records) {
-                Ok(_) => return,
-                Err(e) => {
-                    let retry = e.should_retry();
-                    let Some(controller) = self.controller.upgrade() else {
-                        tracing::warn!("controller is shutting down: aborting");
-                        return;
-                    };
-                    controller.output_transport_error(
-                        self.endpoint_id,
-                        &self.endpoint_name,
-                        true,
-                        e.inner(),
-                        Some("pg_exec"),
-                    );
-                    if !retry {
-                        return;
-                    }
-                    self.retry_connecting_with_backoff();
-                }
-            }
+        // Nothing more can reach the table through this transaction, so pushing
+        // the rest of the batch at it only produces more failures to report.
+        if self.needs_replay || self.txn_poisoned {
+            return;
         }
+
+        let Err(e) = self.exec_statement_inner(stmt, &mut value, name, num_records) else {
+            return;
+        };
+
+        // Retrying the statement here cannot work: a retryable failure means the
+        // connection is gone, and recovering takes a new transaction and a fresh
+        // encode, which `write_batch` drives.
+        if e.should_retry() {
+            self.needs_replay = true;
+        }
+
+        let Some(controller) = self.controller.upgrade() else {
+            tracing::warn!("controller is shutting down: aborting");
+            return;
+        };
+        controller.output_transport_error(
+            self.endpoint_id,
+            &self.endpoint_name,
+            true,
+            e.inner(),
+            Some("pg_exec"),
+        );
     }
 
     fn exec_statement_inner(
@@ -437,6 +475,7 @@ These statements were successfully prepared before reconnecting. Does the table 
         self.num_bytes = 0;
         self.num_rows = 0;
         self.txn_poisoned = false;
+        self.needs_replay = false;
 
         Ok(())
     }
@@ -444,6 +483,23 @@ These statements were successfully prepared before reconnecting. Does the table 
     /// Flush remaining buffers, commit the transaction, and return (bytes, rows) written.
     fn batch_end_inner(&mut self) -> Result<(usize, usize), BackoffError> {
         self.flush();
+
+        // Do not try to commit a transaction the server has already discarded:
+        // report a retryable failure so that the batch is written again.
+        //
+        // A lost connection also poisons the transaction, so this is checked
+        // first: it is the case that can be recovered by writing the batch
+        // again, whereas a statement Postgres rejected cannot be.
+        if self.needs_replay {
+            self.transaction = None;
+            self.num_bytes = 0;
+            self.num_rows = 0;
+            return Err(BackoffError::Temporary(anyhow!(
+                "the connection to PostgreSQL dropped before the rows for table {:?} \
+                 could be committed",
+                self.table
+            )));
+        }
 
         let transaction = self
             .transaction
@@ -486,6 +542,97 @@ These statements were successfully prepared before reconnecting. Does the table 
         let num_rows = std::mem::take(&mut self.num_rows);
 
         Ok((num_bytes, num_rows))
+    }
+
+    /// Write the current batch, and write it again from the start if the
+    /// connection drops partway.
+    ///
+    /// Losing the connection rolls the transaction back, so the rows it held are
+    /// gone and the payloads that carried them have been drained from the
+    /// buffers. Writing the batch again from [`Self::pending_batch`] is what
+    /// keeps it from being lost, and is safe precisely because the rollback
+    /// returned the table to its pre-batch state.
+    ///
+    /// A failure that is not retryable ends the batch: rewriting it would hit
+    /// the same error, so the caller reports it instead.
+    ///
+    /// One case stays ambiguous. When the commit itself fails on a lost
+    /// connection, whether the server applied it is unknowable, and this writes
+    /// the batch again. In `materialized` mode that is harmless, since an insert
+    /// resolves conflicts and updates and deletes are idempotent. In `cdc` mode
+    /// the target is append-only, so a batch that did commit gains a duplicate
+    /// set of rows. Duplicates are the lesser evil for an event log, and this
+    /// connector does not claim to be fault tolerant either way.
+    fn write_batch(&mut self) -> AnyResult<(usize, usize)> {
+        let mut last_error = None;
+
+        for attempt in 0..MAX_BATCH_WRITE_ATTEMPTS {
+            if attempt > 0 {
+                self.retry_connecting_with_backoff();
+
+                // The connection can drop again while restarting, which is just
+                // another attempt rather than the end of the batch.
+                match self.restart_batch() {
+                    Ok(()) => (),
+                    Err(e) if e.should_retry() => {
+                        last_error = Some(e.inner());
+                        continue;
+                    }
+                    Err(e) => return Err(e.inner()),
+                }
+            }
+
+            match self.batch_end_inner() {
+                Ok(totals) => return Ok(totals),
+                Err(e) if e.should_retry() => {
+                    let error = e.inner();
+                    tracing::error!(
+                        "postgres: worker-thread-{} lost its connection while writing a batch \
+                         (attempt {} of {MAX_BATCH_WRITE_ATTEMPTS}), writing it again: {error}",
+                        self.worker_idx,
+                        attempt + 1,
+                    );
+                    last_error = Some(error);
+                }
+                Err(e) => return Err(e.inner()),
+            }
+        }
+
+        Err(anyhow!(
+            "gave up writing to table {:?} after {MAX_BATCH_WRITE_ATTEMPTS} attempts, so \
+             these rows were dropped; the last failure was: {}",
+            self.table,
+            last_error.expect("the loop records a failure before it gives up")
+        ))
+    }
+
+    /// Open a fresh transaction and encode the retained batch into it again.
+    fn restart_batch(&mut self) -> Result<(), BackoffError> {
+        // The buffers may hold a partly built payload from the failed attempt.
+        // `batch_start_inner` resets the counts and the failure flags.
+        self.insert_buf.clear();
+        self.upsert_buf.clear();
+        self.delete_buf.clear();
+        self.inserts = 0;
+        self.upserts = 0;
+        self.deletes = 0;
+
+        self.batch_start_inner()?;
+
+        // A worker that was handed no partition of this batch has nothing to
+        // write again; its transaction is simply empty.
+        let Some(pending) = self.pending_batch.take() else {
+            return Ok(());
+        };
+        let result = {
+            let mut cursor = pending.cursor.build();
+            self.encode_cursor(&mut cursor, pending.extra_columns.clone())
+        };
+        self.pending_batch = Some(pending);
+
+        // Encoding fails only on serialization, which will fail the same way
+        // however many times the batch is written again.
+        result.map_err(BackoffError::Permanent)
     }
 
     /// Encode records from the cursor into postgres within the current transaction.
@@ -646,43 +793,37 @@ impl PostgresWorker {
                     }
                 },
                 WorkerCommand::Encode(cursor_builder) => {
-                    let mut cursor = cursor_builder.build();
                     let extra_columns = self.extra_columns.read().clone();
-                    match self.encode_cursor(&mut cursor, extra_columns) {
-                        Ok(()) => {
-                            let _ = result_tx.send(WorkerResult::Ok {
-                                num_bytes: 0,
-                                num_rows: 0,
-                            });
-                        }
-                        Err(e) => {
-                            let _ = result_tx.send(WorkerResult::Err(e));
-                        }
-                    }
+                    let result = {
+                        let mut cursor = cursor_builder.build();
+                        self.encode_cursor(&mut cursor, extra_columns.clone())
+                    };
+                    // Hold on to the batch: if the connection drops before the
+                    // transaction commits, `write_batch` encodes it again.
+                    self.pending_batch = Some(PendingBatch {
+                        cursor: cursor_builder,
+                        extra_columns,
+                    });
+                    let _ = match result {
+                        Ok(()) => result_tx.send(WorkerResult::Ok {
+                            num_bytes: 0,
+                            num_rows: 0,
+                        }),
+                        Err(e) => result_tx.send(WorkerResult::Err(e)),
+                    };
                 }
-                WorkerCommand::Broadcast(BroadcastCommand::BatchEnd) => loop {
-                    match self.batch_end_inner() {
-                        Ok((num_bytes, num_rows)) => {
-                            let _ = result_tx.send(WorkerResult::Ok {
-                                num_bytes,
-                                num_rows,
-                            });
-                            break;
-                        }
-                        Err(e) => {
-                            if e.should_retry() {
-                                tracing::error!(
-                                    "error when trying to commit transaction, retrying with backoff: {}",
-                                    e.inner()
-                                );
-                                self.retry_connecting_with_backoff();
-                                continue;
-                            }
-                            let _ = result_tx.send(WorkerResult::Err(e.inner()));
-                            break;
-                        }
-                    }
-                },
+                WorkerCommand::Broadcast(BroadcastCommand::BatchEnd) => {
+                    let _ = match self.write_batch() {
+                        Ok((num_bytes, num_rows)) => result_tx.send(WorkerResult::Ok {
+                            num_bytes,
+                            num_rows,
+                        }),
+                        Err(e) => result_tx.send(WorkerResult::Err(e)),
+                    };
+                    // Release the batch, and with it the worker's reference to
+                    // the data the controller handed it.
+                    self.pending_batch = None;
+                }
                 WorkerCommand::Broadcast(BroadcastCommand::Shutdown) => break,
             }
         }
