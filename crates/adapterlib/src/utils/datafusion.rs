@@ -4,7 +4,7 @@ use arrow::array::Array;
 use datafusion::common::ScalarValue;
 use datafusion::common::arrow::array::{AsArray, RecordBatch};
 use datafusion::execution::SessionStateBuilder;
-use datafusion::execution::memory_pool::FairSpillPool;
+use datafusion::execution::memory_pool::{FairSpillPool, MemoryLimit};
 use datafusion::execution::runtime_env::{RuntimeEnv, RuntimeEnvBuilder};
 use datafusion::logical_expr::sqlparser::parser::ParserError;
 use datafusion::prelude::{SQLOptions, SessionConfig, SessionContext};
@@ -22,30 +22,104 @@ use std::io::Error as IoError;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{info, warn};
 
-/// In-memory sort threshold; above this, sorts spill to disk. 64 MiB.
+/// Below this much buffered data, a sort partition concatenates its batches
+/// and sorts them in place instead of sorting each batch and merging. 64 MiB.
 ///
 /// Powers of two align with page sizes (4 KiB / 2 MiB) the allocator
 /// hands back, so a `1 << 26` budget matches what the OS actually
 /// reserves rather than a round decimal value the OS rounds up anyway.
 const SORT_IN_PLACE_THRESHOLD_BYTES: usize = 1 << 26;
 
-/// Memory withheld from the sort phase for the merge phase to use. 64 MiB.
+/// Ceiling on the merge headroom reserved for spill-to-disk sorting per sort partition. 64 MiB.
 ///
-/// Reserved per partition: a sort with N partitions pre-allocates
-/// `N * SORT_SPILL_RESERVATION_BYTES` from the pool.
-/// If the pool can't satisfy that, the query fails immediately
-/// with `Resources exhausted`. `create_runtime_env` emits a startup warning
-/// when the configured pool is below `workers * SORT_SPILL_RESERVATION_BYTES`.
+/// Normally, we reserve a fraction (SORT_RESERVATION_POOL_DIVISOR) of the
+/// datafusion memory pool divided by the number of partitions. Very large values
+/// can waste memory, because datafusion will grab the entire reservation even
+/// when sorting a few entries. Very large reservations are also unnecessary.
+/// This constant bounds the reservation.
 ///
 /// Note: DataFusion 52.x emits noisy `WARN datafusion_physical_plan::spill:
 /// Record batch memory usage ... exceeds the expected limit ... by more
 /// than the allowed tolerance` lines during spilled sorts. The overage is
 /// typically a handful of bytes over a 4 KB tolerance -- upstream
 /// accounting drift, tracked at
-/// <https://github.com/apache/datafusion/issues/17340> Not a query failure
-const SORT_SPILL_RESERVATION_BYTES: usize = 1 << 26;
+/// <https://github.com/apache/datafusion/issues/17340> Not a query failure.
+const MAX_SORT_SPILL_RESERVATION_BYTES: usize = 1 << 26;
+
+/// A fraction of the datafusion memory pool used for spill sorting.
+const SORT_RESERVATION_POOL_DIVISOR: usize = 4;
+
+/// Merge headroom to reserve per sort partition for spill-to-disk merge sorting, in bytes.
+///
+/// DataFusion pre-books this much for *every* partition of *every* sort, on
+/// the partition's first batch and before it compares a single row
+/// (`ExternalSorter::reserve_memory_for_merge`).
+///
+/// We derive it as a fraction of the pool size `pool / SORT_RESERVATION_POOL_DIVISOR`
+/// leaving the rest for data.
+fn sort_spill_reservation_bytes(pool_bytes: Option<usize>, partitions: usize) -> usize {
+    let Some(pool_bytes) = pool_bytes else {
+        return MAX_SORT_SPILL_RESERVATION_BYTES;
+    };
+    (pool_bytes / SORT_RESERVATION_POOL_DIVISOR / partitions.max(1))
+        .min(MAX_SORT_SPILL_RESERVATION_BYTES)
+}
+
+/// Per-partition merge headroom below which sorting partitions in parallel
+/// is not worth its risk. DataFusion's own default
+/// `sort_spill_reservation_bytes`, and just above the point where parallel
+/// sorts were measured to start failing.
+const MIN_PARALLEL_SORT_RESERVATION_BYTES: usize = 10 * 1024 * 1024;
+
+/// Whether the pool can fund a merge sort.
+///
+/// True if the reservation prescribed by `sort_spill_reservation_bytes` is
+/// `>= MIN_PARALLEL_SORT_RESERVATION_BYTES`.
+fn parallel_sort_fits_pool(pool_bytes: Option<usize>, partitions: usize) -> bool {
+    // One partition has nothing to coalesce, and an unbounded pool has
+    // nothing to run out of.
+    if partitions <= 1 || pool_bytes.is_none() {
+        return true;
+    }
+    sort_spill_reservation_bytes(pool_bytes, partitions) >= MIN_PARALLEL_SORT_RESERVATION_BYTES
+}
+
+/// Size of the pool the sorts will actually charge, or `None` when no memory
+/// budget is configured and the pool is unbounded.
+///
+/// Read from the [`RuntimeEnv`] rather than re-derived from the pipeline
+/// config so the number stays right for a caller that built its own env.
+fn pool_bytes(runtime_env: &RuntimeEnv) -> Option<usize> {
+    match runtime_env.memory_pool.memory_limit() {
+        MemoryLimit::Finite(bytes) => Some(bytes),
+        MemoryLimit::Infinite | MemoryLimit::Unknown => None,
+    }
+}
+
+/// Upper bound on the sort partitions a query in this session can run
+/// concurrently, and so on the number of merge reservations it books.
+///
+/// `target_partitions` bounds every scan DataFusion plans itself, which is
+/// all a connector session runs. Only the ad-hoc engine escapes it, and it
+/// passes its own `partition_floor`; see [`adhoc_partition_floor`].
+fn sort_partitions(target_partitions: usize, partition_floor: usize) -> usize {
+    target_partitions.max(partition_floor).max(1)
+}
+
+/// Sort partitions the ad-hoc engine can open regardless of
+/// `target_partitions`.
+///
+/// `AdHocQueryExecution` reports one partition per reader in the snapshot,
+/// and the snapshot holds one batch per *local* DBSP worker
+/// (`OutputHandle::take_from_all` walks the local mailboxes). `workers`
+/// counts the workers on every host, while the memory pool is per host, so
+/// the local share is what a sort here actually runs.
+fn adhoc_partition_floor(pipeline_config: &PipelineConfig) -> usize {
+    let workers = pipeline_config.global.workers as usize;
+    workers.div_ceil(pipeline_config.global.hosts.max(1))
+}
 
 /// Build the shared datafusion [`RuntimeEnv`] for a pipeline.
 ///
@@ -59,7 +133,6 @@ pub fn create_runtime_env(
     if let Some(datafusion_memory_mb) = pipeline_config.global.resolved_datafusion_memory_mb() {
         let memory_bytes_max = datafusion_memory_mb * 1_000_000;
         builder = builder.with_memory_pool(Arc::new(FairSpillPool::new(memory_bytes_max as usize)));
-        warn_if_pool_too_small_for_adhoc_sort(pipeline_config, datafusion_memory_mb);
     }
     if let Some(storage) = &pipeline_config.storage_config {
         let path = PathBuf::from(storage.path.clone()).join(DATAFUSION_TEMP_DIR);
@@ -81,55 +154,6 @@ pub fn create_runtime_env(
             IoError::other(error.to_string()),
         )
     })
-}
-
-/// Minimum DataFusion pool size, in MB, that can satisfy the ad-hoc
-/// engine's per-partition sort reservation given `workers`.
-///
-/// Ad-hoc sessions set `target_partitions = workers`
-/// (see [`create_session_context`]), so an `ORDER BY` (or any other
-/// sort-based operator) reserves `workers * SORT_SPILL_RESERVATION_BYTES`
-/// from the pool *before* sorting any rows. The reservation is in
-/// binary MiB (`1 << 26`); the pool is sized from the user-facing
-/// `datafusion_memory_mb` (decimal MB). Compare in bytes, then
-/// ceil-divide to MB so the warning's threshold is never lower than
-/// the actual byte requirement.
-fn min_pool_mb_for_adhoc_sort(workers: u64) -> u64 {
-    let needed_bytes = (SORT_SPILL_RESERVATION_BYTES as u64).saturating_mul(workers);
-    needed_bytes.div_ceil(1_000_000)
-}
-
-/// Warn at startup when the DataFusion pool is too small to satisfy the
-/// per-partition sort reservation for the ad-hoc query engine.
-///
-/// If the pool can't satisfy that, the query fails on the first reservation
-/// attempt with `Resources exhausted`. Surface this as a single startup
-/// warning so the failure mode isn't silent. Connector sessions can override
-/// `target_partitions`; their reservation budget is not checked here.
-fn warn_if_pool_too_small_for_adhoc_sort(pipeline_config: &PipelineConfig, pool_mb: u64) {
-    let workers = pipeline_config.global.workers as u64;
-    // Degenerate configs (tests / synthetic) report `workers == 0`; nothing
-    // useful to say in that case and the message would print "0 MB".
-    if workers == 0 {
-        return;
-    }
-    let min_pool_mb = min_pool_mb_for_adhoc_sort(workers);
-    // `<=` not `<`: at exact equality every partition's reservation sums to
-    // the full pool with zero headroom. FairSpillPool's internal accounting
-    // takes a few bytes of overhead, so the last partition's reservation
-    // fails by a fraction of a MB. Empirically: pool=256 / workers=4
-    // fails; 257 succeeds.
-    if pool_mb <= min_pool_mb {
-        let per_worker_mb = min_pool_mb_for_adhoc_sort(1);
-        warn!(
-            "DataFusion memory pool is {pool_mb} MB; sort-heavy ad-hoc \
-             queries (ORDER BY, EXCEPT, hash joins) need at least \
-             {min_pool_mb} MB ({workers} workers x {per_worker_mb} MB \
-             reservation per worker). Such queries may fail at first \
-             allocation with 'Resources exhausted'. Increase \
-             'datafusion_memory_mb' or reduce 'workers'."
-        );
-    }
 }
 
 /// Remove leftovers from a previous process inside the scratch directory.
@@ -186,20 +210,46 @@ fn clean_stale_scratch_entries(scratch_dir: &Path) {
     }
 }
 
-/// `SessionContext` bound to the shared [`RuntimeEnv`], configured with the
-/// pipeline's worker count and feldera's sort-spill thresholds.
+/// `SessionContext` for the ad-hoc query engine, bound to the shared
+/// [`RuntimeEnv`] and configured with feldera's sort-spill thresholds.
+///
+/// Budgets sorts for one partition per local DBSP worker, since that is what
+/// the ad-hoc scan opens whatever `target_partitions` says.
 pub fn create_session_context(
     pipeline_config: &PipelineConfig,
     runtime_env: Arc<RuntimeEnv>,
 ) -> SessionContext {
-    create_session_context_with(pipeline_config, runtime_env, |cfg| cfg)
+    let floor = adhoc_partition_floor(pipeline_config);
+    create_session_context_inner(pipeline_config, runtime_env, floor, |cfg| cfg)
 }
 
-/// Like [`create_session_context`], with a hook to override individual
+/// `SessionContext` for a connector, with a hook to override individual
 /// datafusion settings (e.g. parquet decoding) before the context is built.
+///
+/// Sorts are budgeted for `target_partitions`, which bounds every scan
+/// DataFusion plans. Unlike [`create_session_context`] there is no worker
+/// floor: a connector session queries external tables, never the ad-hoc
+/// snapshot, so the DBSP worker count does not bound its parallelism.
+///
+/// The hook may raise or lower `target_partitions`. `sort_spill_reservation_bytes`
+/// and `repartition_sorts` are derived from whatever partition count the hook
+/// settles on and applied afterwards, so a hook that sets either of those two
+/// options does not take effect.
 pub fn create_session_context_with<F>(
     pipeline_config: &PipelineConfig,
     runtime_env: Arc<RuntimeEnv>,
+    customize_config: F,
+) -> SessionContext
+where
+    F: FnOnce(SessionConfig) -> SessionConfig,
+{
+    create_session_context_inner(pipeline_config, runtime_env, 0, customize_config)
+}
+
+fn create_session_context_inner<F>(
+    pipeline_config: &PipelineConfig,
+    runtime_env: Arc<RuntimeEnv>,
+    partition_floor: usize,
     customize_config: F,
 ) -> SessionContext
 where
@@ -212,12 +262,31 @@ where
     let session_config = SessionConfig::new()
         .with_target_partitions(workers as usize)
         .with_sort_in_place_threshold_bytes(SORT_IN_PLACE_THRESHOLD_BYTES)
-        .with_sort_spill_reservation_bytes(SORT_SPILL_RESERVATION_BYTES)
         .set(
             "datafusion.execution.planning_concurrency",
             &ScalarValue::UInt64(Some(workers)),
         );
     let session_config = customize_config(session_config);
+
+    let partitions = sort_partitions(session_config.target_partitions(), partition_floor);
+    let pool_bytes = pool_bytes(&runtime_env);
+    let repartition_sorts = parallel_sort_fits_pool(pool_bytes, partitions);
+    if !repartition_sorts {
+        info!(
+            "DataFusion memory pool is {} MB across {partitions} sort partitions, too little to \
+             sort them in parallel; sorts will coalesce their input first. This is slower but \
+             lets a sort use the whole pool. Increase 'datafusion_memory_mb' or reduce 'workers' \
+             to sort in parallel again.",
+            pool_bytes.unwrap_or(0) / 1_000_000,
+        );
+    }
+    // The reservation stays sized for `partitions` even when the `repartition_sorts`
+    // flag is off. This flag does not govern sorts that arrive already
+    // partitioned (window functions, sort-merge joins), so a plan
+    // can still open one sorter per partition.
+    let session_config = session_config
+        .with_sort_spill_reservation_bytes(sort_spill_reservation_bytes(pool_bytes, partitions))
+        .with_repartition_sorts(repartition_sorts);
 
     let mut state = SessionStateBuilder::new()
         .with_config(session_config)
@@ -790,19 +859,268 @@ mod tests {
         );
     }
 
-    /// Pins the boundary that drives the `warn_if_pool_too_small_for_adhoc_sort`
-    /// log line. If `SORT_SPILL_RESERVATION_BYTES` changes, the warning
-    /// threshold changes with it
+    /// Every partition books its merge headroom before reading a row, so the
+    /// aggregate has to fit the pool whatever the partition count is. This is
+    /// the property a fixed 64 MiB violated: 8 partitions booked 537 MB
+    /// against the 483 MB pool of a 9 GiB pipeline.
     #[test]
-    fn min_pool_mb_for_adhoc_sort_matches_reservation_times_workers() {
-        use super::min_pool_mb_for_adhoc_sort;
-        // SORT_SPILL_RESERVATION_BYTES is 64 MiB = 67_108_864 B; the
-        // resolved pool size is reported in decimal MB, so each worker's
-        // requirement ceil-divides to 68 MB.
-        assert_eq!(min_pool_mb_for_adhoc_sort(0), 0);
-        assert_eq!(min_pool_mb_for_adhoc_sort(1), 68);
-        assert_eq!(min_pool_mb_for_adhoc_sort(2), 135);
-        assert_eq!(min_pool_mb_for_adhoc_sort(8), 537);
+    fn sort_reservation_fits_the_pool() {
+        use super::{
+            MAX_SORT_SPILL_RESERVATION_BYTES, SORT_RESERVATION_POOL_DIVISOR,
+            sort_spill_reservation_bytes,
+        };
+
+        let mut failures = Vec::new();
+        for pool_mb in [12u64, 25, 100, 256, 483, 800, 2_000] {
+            for partitions in [1usize, 2, 4, 8, 16, 32, 64, 128] {
+                let pool = (pool_mb * 1_000_000) as usize;
+                let aggregate = sort_spill_reservation_bytes(Some(pool), partitions) * partitions;
+                let budget = pool / SORT_RESERVATION_POOL_DIVISOR;
+                if aggregate > budget {
+                    failures.push(format!(
+                        "pool={pool_mb} MB partitions={partitions}: {aggregate} B booked \
+                         exceeds the {budget} B budget"
+                    ));
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+
+        // Exact values, so an implementation that simply hands out nothing
+        // cannot satisfy the inequality above.
+        assert_eq!(
+            sort_spill_reservation_bytes(Some(483_000_000), 8),
+            483_000_000 / 4 / 8,
+        );
+        // A small pool shared by many partitions thins the reservation rather
+        // than clamping it up; clamping up is what would reintroduce
+        // `partitions * floor > pool`.
+        assert_eq!(sort_spill_reservation_bytes(Some(12_000_000), 64), 46_875);
+        // Degenerate partition counts must not divide by zero.
+        assert_eq!(sort_spill_reservation_bytes(Some(12_000_000), 0), 3_000_000);
+        // A pool that can fund the ceiling gets it, and an unbounded pool has
+        // nothing to divide.
+        assert_eq!(
+            sort_spill_reservation_bytes(Some(4_000_000_000), 8),
+            MAX_SORT_SPILL_RESERVATION_BYTES,
+        );
+        assert_eq!(
+            sort_spill_reservation_bytes(None, 64),
+            MAX_SORT_SPILL_RESERVATION_BYTES,
+        );
+    }
+
+    /// The partition count a session budgets for has to be the one its
+    /// queries actually run, which differs between the two kinds of session.
+    /// Both settings derived from it are checked here, since both are wrong
+    /// together when the count is.
+    #[test]
+    fn sessions_budget_for_the_partitions_they_run() {
+        use super::create_session_context_with;
+
+        /// `hosts` and `io_workers` are the two knobs that separate the
+        /// partition count from `workers`; `connector` picks the session kind.
+        struct Case {
+            name: &'static str,
+            connector: bool,
+            workers: u16,
+            hosts: usize,
+            io_workers: Option<u64>,
+            pool_mb: u64,
+            /// `target_partitions`, which bounds a connector's scans.
+            target_partitions: usize,
+            /// Partitions the session budgets sorts for.
+            sort_partitions: usize,
+            repartition_sorts: bool,
+        }
+
+        let cases = [
+            // The reported failure: `io_workers` unset, so `target_partitions`
+            // already equals the worker count and 483 MB funds 8 sorters.
+            Case {
+                name: "adhoc, defaults",
+                connector: false,
+                workers: 8,
+                hosts: 1,
+                io_workers: None,
+                pool_mb: 483,
+                target_partitions: 8,
+                sort_partitions: 8,
+                repartition_sorts: true,
+            },
+            // The ad-hoc scan opens one partition per worker whatever
+            // `target_partitions` says, so a lower `io_workers` must not
+            // shrink the budget.
+            Case {
+                name: "adhoc, io_workers below workers",
+                connector: false,
+                workers: 16,
+                hosts: 1,
+                io_workers: Some(2),
+                pool_mb: 480,
+                target_partitions: 2,
+                sort_partitions: 16,
+                repartition_sorts: false,
+            },
+            // A higher `io_workers` raises what DataFusion may repartition to.
+            Case {
+                name: "adhoc, io_workers above workers",
+                connector: false,
+                workers: 4,
+                hosts: 1,
+                io_workers: Some(12),
+                pool_mb: 480,
+                target_partitions: 12,
+                sort_partitions: 12,
+                repartition_sorts: false,
+            },
+            // `workers` counts every host while the pool and the snapshot are
+            // per host, so a host budgets for its own share. Budgeting for all
+            // 32 would coalesce a sort this pool funds.
+            Case {
+                name: "adhoc, four hosts",
+                connector: false,
+                workers: 32,
+                hosts: 4,
+                io_workers: Some(4),
+                pool_mb: 480,
+                target_partitions: 4,
+                sort_partitions: 8,
+                repartition_sorts: true,
+            },
+            // A connector queries external tables, never the ad-hoc snapshot,
+            // so nothing there opens a partition per worker.
+            Case {
+                name: "connector, io_workers below workers",
+                connector: true,
+                workers: 16,
+                hosts: 1,
+                io_workers: Some(2),
+                pool_mb: 480,
+                target_partitions: 2,
+                sort_partitions: 2,
+                repartition_sorts: true,
+            },
+        ];
+
+        for case in cases {
+            let storage = TempStorage::new(&format!("feldera-df-session-{}", case.name));
+            let cfg = pipeline_config(
+                RuntimeConfig {
+                    workers: case.workers,
+                    hosts: case.hosts,
+                    io_workers: case.io_workers,
+                    datafusion_memory_mb: Some(case.pool_mb),
+                    max_rss_mb: Some(64_000),
+                    ..Default::default()
+                },
+                Some(storage.path()),
+            );
+            let env = create_runtime_env(&cfg).unwrap();
+            let ctx = if case.connector {
+                create_session_context_with(&cfg, env, |c| c)
+            } else {
+                create_session_context(&cfg, env)
+            };
+
+            let config = ctx.copied_config();
+            let name = case.name;
+            assert_eq!(
+                config.target_partitions(),
+                case.target_partitions,
+                "{name}: target_partitions",
+            );
+            // The expected partition count is stated, not re-derived from the
+            // production helper: deriving it would move expectation and actual
+            // together and the assertion could never fail.
+            assert_eq!(
+                config.options().execution.sort_spill_reservation_bytes,
+                case.pool_mb as usize * 1_000_000 / 4 / case.sort_partitions,
+                "{name}: reservation must divide by {} partitions",
+                case.sort_partitions,
+            );
+            assert_eq!(
+                config.repartition_sorts(),
+                case.repartition_sorts,
+                "{name}: repartition_sorts",
+            );
+        }
+    }
+
+    /// End to end through a real plan: an `ORDER BY` over one row per worker,
+    /// on a pool smaller than a single fixed 64 MiB reservation. Catches a
+    /// reservation that is computed but never reaches the session, which the
+    /// unit tests above cannot see.
+    #[test]
+    fn order_by_succeeds_on_a_pool_smaller_than_the_old_reservation() {
+        use arrow::array::Int64Array;
+        use arrow::datatypes::{DataType, Field as ArrowField, Schema};
+        use datafusion::common::arrow::array::RecordBatch;
+        use datafusion::datasource::MemTable;
+        use std::sync::Arc;
+
+        const WORKERS: usize = 8;
+        let storage = TempStorage::new("feldera-datafusion-order-by-small-pool-test");
+        let cfg = pipeline_config(
+            RuntimeConfig {
+                workers: WORKERS as u16,
+                // Below one 64 MiB reservation, so the first partition used
+                // to fail before comparing a row.
+                datafusion_memory_mb: Some(12),
+                max_rss_mb: Some(16_000),
+                ..Default::default()
+            },
+            Some(storage.path()),
+        );
+        let ctx = create_session_context(&cfg, create_runtime_env(&cfg).unwrap());
+
+        // One partition per DBSP worker, mirroring `AdHocQueryExecution`.
+        let schema = Arc::new(Schema::new(vec![ArrowField::new(
+            "cnt",
+            DataType::Int64,
+            false,
+        )]));
+        let partitions: Vec<Vec<RecordBatch>> = (0..WORKERS)
+            .map(|worker| {
+                vec![
+                    RecordBatch::try_new(
+                        schema.clone(),
+                        vec![Arc::new(Int64Array::from(vec![worker as i64]))],
+                    )
+                    .unwrap(),
+                ]
+            })
+            .collect();
+        ctx.register_table(
+            "q1",
+            Arc::new(MemTable::try_new(schema, partitions).unwrap()),
+        )
+        .unwrap();
+
+        let batches = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(super::execute_query_collect(
+                &ctx,
+                "select * from q1 order by cnt desc",
+            ))
+            .unwrap();
+        // Assert the ordering, not just the row count: a plan that dropped
+        // the sort would return the same rows.
+        let sorted: Vec<i64> = batches
+            .iter()
+            .flat_map(|batch| {
+                batch
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .expect("cnt column is Int64")
+                    .values()
+                    .to_vec()
+            })
+            .collect();
+        assert_eq!(sorted, (0..WORKERS as i64).rev().collect::<Vec<_>>());
     }
 
     /// Make sure random shapes for `filter`, `cdc_delete_filter`, and `cdc_order_by`

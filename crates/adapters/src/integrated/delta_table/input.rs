@@ -122,9 +122,11 @@ fn format_datafusion_error(
         format!(
             "{base}\n\
              DataFusion memory pool is exhausted. Current datafusion memory pool limit: {current_pool_limit}. \
-             Consider setting or increasing 'datafusion_memory_mb' in the pipeline runtime config. \
-             If raising the budget is not an option, reduce 'io_workers' / 'workers' or \
-             set the env var 'DELTA_DF_TARGET_PARTITIONS=1' to lower per-scan parallelism.\n"
+             The query needs more memory than the pool holds; consider setting or increasing \
+             'datafusion_memory_mb' in the pipeline runtime config. If raising the budget is not \
+             an option, reduce 'io_workers' / 'workers' or set the env var \
+             'DELTA_DF_TARGET_PARTITIONS=1' to scan fewer files at a time, which lowers how much \
+             of the scan is held in memory at once.\n"
         )
     } else {
         base

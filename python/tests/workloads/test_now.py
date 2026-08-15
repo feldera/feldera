@@ -5,12 +5,9 @@ from feldera.enums import PipelineStatus
 from feldera.pipeline import Pipeline
 from feldera.runtime_config import Resources
 from feldera.testutils import (
-    FELDERA_TEST_NUM_HOSTS,
-    FELDERA_TEST_NUM_WORKERS,
     ViewSpec,
     build_pipeline,
     log,
-    min_datafusion_memory_mb,
     validate_outputs,
     unique_pipeline_name,
 )
@@ -99,14 +96,9 @@ class TestNow(unittest.TestCase):
             ),
         ]
 
-        # 12288 MB covers this test's data volume (>2GB ad-hoc query storage,
-        # peaks above 5GB memory on arm64); take the max with the per-worker
-        # sort-reservation floor (see min_datafusion_memory_mb) so a future
-        # bump to FELDERA_TEST_NUM_WORKERS can't undersize it.
-        datafusion_memory_mb = max(
-            min_datafusion_memory_mb(FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS),
-            12288,
-        )
+        # 12288 MB covers this test's data volume (>2GB ad-hoc query
+        # storage, peaks above 5GB memory on arm64).
+        datafusion_memory_mb = 12288
         pipeline = build_pipeline(
             unique_pipeline_name("now-test"),
             tables,
