@@ -17,10 +17,6 @@ RUN apt-get update --fix-missing && apt-get install -y \
     # Go builds AWS-LC, which librdkafka is linked against; see
     # scripts/install-librdkafka.sh
     golang-go \
-    # Nothing in this repository links OpenSSL any more. It stays because the
-    # cloud repository runs its Rust build in this same image, and its
-    # cluster-control-plane crate uses the openssl crate directly.
-    libssl-dev \
     # librdkafka links these
     libsasl2-dev libzstd-dev zlib1g-dev build-essential \
     # zstd CLI: @actions/cache (runs-on/cache) auto-uses it for cache

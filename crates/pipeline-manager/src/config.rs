@@ -709,7 +709,8 @@ pub struct DatabaseConfig {
 
     /// Create a TLS connector by loading a certificate from the path specified argument.
     ///
-    /// If the argument is not set, tries to connect without TLS.
+    /// If the argument is not set, the connector still negotiates TLS when the
+    /// server offers it and verifies the server against the system trust roots.
     #[arg(long, env = "FELDERA_DB_TLS_CERT_PATH")]
     pub db_tls_certificate_path: Option<String>,
 
