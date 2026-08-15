@@ -866,10 +866,10 @@ pub struct RuntimeConfig {
     /// Pipelines that don't run heavy ad-hoc / Delta / Iceberg workloads
     /// can leave this unset.
     ///
-    /// Sort/aggregate-heavy ad-hoc queries (especially at high `workers`
-    /// counts) should set this explicitly. An under-sized pool surfaces as
-    /// `ResourcesExhausted` on the failing query — the pipeline keeps
-    /// running and only that query fails.
+    /// Set this explicitly for ad-hoc queries, or Delta / Iceberg scans,
+    /// over data too large for the default share. A pool that cannot hold
+    /// the query surfaces as `ResourcesExhausted` on that query alone; the
+    /// pipeline keeps running.
     ///
     /// No pool limit applied if no overall budget is configured.
     ///
