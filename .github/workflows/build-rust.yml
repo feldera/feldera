@@ -46,7 +46,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-5b0f47e211e90fda97d699da24f40ac480c516a3
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-e9e4499d6414ba10311bd7ef7cd20816e1d9f5c7
 
     steps:
       - name: Checkout repository
