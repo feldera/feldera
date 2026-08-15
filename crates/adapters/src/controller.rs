@@ -4609,6 +4609,30 @@ impl CircuitThread {
                 // delivered its initial snapshot. Deliver the snapshot and
                 // skip the normal delta path.
                 if endpoint.control.is_snapshot_pending() {
+                    // A snapshot reflects the state as of the last committed
+                    // transaction, so an endpoint that receives one is up to
+                    // date with the pipeline's own count even mid-transaction,
+                    // where the delta path has no figure to report. An endpoint
+                    // still owed a re-emission is the exception: it gets the
+                    // pre-cutover snapshot, so its counter has to keep waiting.
+                    let processed_records = if owed_reemission {
+                        None
+                    } else {
+                        processed_records.or_else(|| {
+                            Some(ProcessedRecords {
+                                total_processed_input_records: self
+                                    .controller
+                                    .status
+                                    .num_total_processed_records(),
+                                total_processed_steps: self
+                                    .controller
+                                    .status
+                                    .global_metrics
+                                    .total_completed_steps(),
+                            })
+                        })
+                    };
+
                     self.controller.enqueue_latest_snapshot(
                         *endpoint_id,
                         &endpoint.stream_name,
@@ -7941,6 +7965,11 @@ impl ControllerInner {
     /// endpoint's batch queue. Returns `true` if a snapshot was found and
     /// enqueued, `false` if no cached snapshot exists yet (e.g., the pipeline
     /// hasn't completed its first step).
+    ///
+    /// `processed_records` means the same here as everywhere else on the batch
+    /// queue: `None` leaves the endpoint's progress counter alone. The caller
+    /// decides what to report; it is the one that knows whether the endpoint is
+    /// still owed output.
     #[allow(clippy::too_many_arguments)]
     fn enqueue_latest_snapshot(
         &self,
@@ -7969,10 +7998,6 @@ impl ControllerInner {
             return false;
         };
 
-        let processed_records = processed_records.or(Some(ProcessedRecords {
-            total_processed_input_records: self.status.num_total_processed_records(),
-            total_processed_steps: self.status.global_metrics.total_completed_steps(),
-        }));
         let step = step.unwrap_or_else(|| {
             processed_records
                 .as_ref()

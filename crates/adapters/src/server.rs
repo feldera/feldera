@@ -4732,8 +4732,12 @@ outputs:
     /// view stays live, and the empty batches those steps push to the endpoint
     /// carry the pipeline's full record count -- which advances the counter
     /// before the cutover re-emission reaches the transport.
-    #[actix_web::test]
-    async fn test_concurrent_bootstrap_output_progress_waits_for_cutover() {
+    ///
+    /// `send_snapshot` picks the path the endpoint takes to that same promise:
+    /// the ordinary delta path, or `enqueue_latest_snapshot`, which hands the
+    /// endpoint the pre-cutover snapshot of a view the bootstrap has yet to
+    /// rebuild.
+    async fn concurrent_bootstrap_output_progress_case(send_snapshot: bool) {
         ensure_default_crypto_provider();
 
         let tempdir = TempDir::new().unwrap();
@@ -4758,6 +4762,7 @@ inputs:
 outputs:
     test_output1:
         stream: test_output1
+        send_snapshot: {}
         transport:
             name: file_output
             config:
@@ -4767,6 +4772,7 @@ outputs:
             config: {{}}
 "#,
             storage_dir.display(),
+            send_snapshot,
             output_path.display()
         );
 
@@ -4831,6 +4837,18 @@ outputs:
         // The re-emission is also on disk: the modified connector re-truncates
         // the file, so it holds the new view's full contents.
         wait_for_file_output(&output_path, &first_batch).await;
+    }
+
+    #[actix_web::test]
+    async fn test_concurrent_bootstrap_output_progress_waits_for_cutover() {
+        concurrent_bootstrap_output_progress_case(false).await;
+    }
+
+    /// The `send_snapshot` variant: `enqueue_latest_snapshot` must not report
+    /// progress the endpoint has not earned either.
+    #[actix_web::test]
+    async fn test_concurrent_bootstrap_snapshot_progress_waits_for_cutover() {
+        concurrent_bootstrap_output_progress_case(true).await;
     }
 
     /// Regression test: after a concurrent-bootstrap cutover, an ad-hoc query of
