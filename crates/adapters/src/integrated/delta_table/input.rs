@@ -2013,6 +2013,10 @@ impl DeltaTableInputEndpointInner {
                             }
                             DeltaTableTransactionMode::Catchup => {
                                 if self.catchup_target().is_none() {
+                                    // A catchup window batches every commit up to the table's latest version into a transaction, so open
+                                    // it only while the connector is running; otherwise it can latch the table version from before it was paused.
+                                    wait_running(&mut receiver).await;
+
                                     let target =
                                         match self.catchup_target_version(Arc::clone(&table)).await
                                         {
