@@ -364,7 +364,7 @@ async fn run_catchup_lag_experiment(
     );
     input_config.insert(
         "transaction_mode".into(),
-        serde_json::to_value(transaction_mode).unwrap(),
+        serde_json::to_value(transaction_mode.clone()).unwrap(),
     );
     input_config.insert("filter".into(), "bigint % 2 = 0".into());
     if let Some(end_version) = end_version {
@@ -482,6 +482,14 @@ async fn run_catchup_lag_experiment(
              (completed version: {:?}, table version: {version_after_burst})",
             pipeline_completed_version(&pipeline),
         );
+
+        if transaction_mode == DeltaTableTransactionMode::Catchup {
+            assert_eq!(
+                delta_catchup_target_version(&pipeline),
+                None,
+                "round {round}: no catchup window may be open while the endpoint is paused"
+            );
+        }
 
         let inject_read_failure = inject_read_failure_before_resume_round == Some(round);
         #[cfg(unix)]
