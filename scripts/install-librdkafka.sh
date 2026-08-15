@@ -18,7 +18,10 @@
 set -euo pipefail
 
 PREFIX="${PREFIX:-/usr/local}"
-AWS_LC_REF="${AWS_LC_REF:-v1.68.0}"
+# Keep in step with the aws-lc-sys version in Cargo.lock: aws-lc-sys 0.44.0
+# vendors AWS-LC 5.5.0 (its include/openssl/base.h names the release), so the
+# librdkafka in the process carries the same AWS-LC as the Rust side.
+AWS_LC_REF="${AWS_LC_REF:-v5.5.0}"
 # Switching to the FIPS-validated module means building AWS-LC with -DFIPS=1
 # and moving aws-lc-rs to aws-lc-fips-sys in the same change. Doing one without
 # the other leaves two AWS-LC copies in the binary; validate-crypto-deps.sh
@@ -153,11 +156,19 @@ for candidate in "$PREFIX/lib/librdkafka.so.1" "$PREFIX/lib/librdkafka.1.dylib";
         break
     fi
 done
-if [ -n "$shared" ] && command -v readelf >/dev/null; then
-    if readelf -d "$shared" | grep -qE 'Shared library: \[lib(ssl|crypto)\.so'; then
-        echo "error: librdkafka links a shared OpenSSL:" >&2
-        readelf -d "$shared" | grep -E 'Shared library: \[lib(ssl|crypto)' >&2
-        exit 1
+if [ -n "$shared" ]; then
+    if command -v readelf >/dev/null; then
+        if readelf -d "$shared" | grep -qE 'Shared library: \[lib(ssl|crypto)\.so'; then
+            echo "error: librdkafka links a shared OpenSSL:" >&2
+            readelf -d "$shared" | grep -E 'Shared library: \[lib(ssl|crypto)' >&2
+            exit 1
+        fi
+    elif command -v otool >/dev/null; then
+        if otool -L "$shared" | grep -qE 'lib(ssl|crypto)[.0-9]*\.dylib'; then
+            echo "error: librdkafka links a shared OpenSSL:" >&2
+            otool -L "$shared" | grep -E 'lib(ssl|crypto)' >&2
+            exit 1
+        fi
     fi
 fi
 
