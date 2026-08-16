@@ -65,6 +65,7 @@ use feldera_ir::{LirCircuit, LirNodeId};
 use feldera_samply::Span;
 use feldera_storage::{FileCommitter, StoragePath};
 use itertools::Itertools;
+#[cfg(unix)]
 use nix::{
     sys::time::TimeValLike,
     time::{ClockId, clock_gettime},
@@ -97,9 +98,6 @@ use tracing::debug;
 use typedmap::{TypedMap, TypedMapKey};
 
 use super::dbsp_handle::Mode;
-
-/// Label name used to store operator's persistent id,
-/// i.e., id stable across circuit modifications.
 const LABEL_PERSISTENT_OPERATOR_ID: &str = "persistent_id";
 use rkyv::with::CopyOptimize;
 
@@ -8947,24 +8945,71 @@ impl<T> Timed<T> {
 pub struct ThreadCpuTime(pub Duration);
 
 impl ThreadCpuTime {
-    /// Returns the current time elapsed running the current thread.
+    /// Returns the current thread's cumulative CPU time.
     pub fn now() -> Self {
-        let nanos = clock_gettime(ClockId::CLOCK_THREAD_CPUTIME_ID)
-            .unwrap()
-            .num_nanoseconds();
-        Self(Duration::from_nanos(nanos.max(0).cast_unsigned()))
+        Self(current_thread_cpu_time())
     }
 
-    /// Returns the time elapsed running the current thread since this
-    /// `ThreadCpuTime`.
+    /// Returns the CPU time elapsed on the current thread since this
+    /// `ThreadCpuTime` was recorded.
     ///
     /// This only makes sense if this `ThreadCpuTime` was for the currently
     /// running thread.
     ///
     /// Returns zero if the current time is earlier than self.
     pub fn elapsed(&self) -> Duration {
-        Self::now().0.saturating_sub(self.0)
+        current_thread_cpu_time().saturating_sub(self.0)
     }
+}
+
+#[cfg(unix)]
+/// Returns the current thread's cumulative CPU time from `CLOCK_THREAD_CPUTIME_ID`.
+fn current_thread_cpu_time() -> Duration {
+    let nanos = clock_gettime(ClockId::CLOCK_THREAD_CPUTIME_ID)
+        .unwrap()
+        .num_nanoseconds();
+    Duration::from_nanos(nanos.max(0).cast_unsigned())
+}
+
+#[cfg(windows)]
+/// Returns the current thread's cumulative kernel and user CPU time.
+fn current_thread_cpu_time() -> Duration {
+    use windows_sys::Win32::{
+        Foundation::FILETIME,
+        System::Threading::{GetCurrentThread, GetThreadTimes},
+    };
+
+    let mut creation = FILETIME::default();
+    let mut exit = FILETIME::default();
+    let mut kernel = FILETIME::default();
+    let mut user = FILETIME::default();
+    // SAFETY: `GetCurrentThread` returns a valid pseudo-handle, and all four
+    // initialized FILETIME values remain valid mutable output buffers for the call.
+    let result = unsafe {
+        GetThreadTimes(
+            GetCurrentThread(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
+    };
+    if result == 0 {
+        // it is very unlikely this will fail, since GetCurrentThread() always returns a 
+        // valid pseudo-handle with proper permissions
+        panic!("GetThreadTimes failed: {}", std::io::Error::last_os_error());
+    }
+
+    let filetime_to_ticks =
+        |time: FILETIME| (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime);
+    let ticks = filetime_to_ticks(kernel).saturating_add(filetime_to_ticks(user));
+    Duration::new(ticks / 10_000_000, ((ticks % 10_000_000) * 100) as u32)
+}
+
+#[cfg(not(any(unix, windows)))]
+/// Returns zero when the platform has no supported thread CPU clock.
+fn current_thread_cpu_time() -> Duration {
+    Duration::ZERO
 }
 
 impl<T> Future for Timed<T>
@@ -9026,6 +9071,15 @@ mod tests {
 
         assert!(elapsed.real >= Duration::from_millis(45));
         assert!(elapsed.cpu < elapsed.real / 4);
+    }
+
+    #[test]
+    fn thread_cpu_time_is_monotonic() {
+        use crate::circuit::ThreadCpuTime;
+
+        let start = ThreadCpuTime::now();
+        std::hint::black_box((0..100_000u64).fold(0u64, |sum, value| sum.wrapping_add(value)));
+        assert!(ThreadCpuTime::now().0 >= start.0);
     }
 
     #[test]

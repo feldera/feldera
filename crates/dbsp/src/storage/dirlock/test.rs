@@ -1,6 +1,10 @@
 use super::LockedDirectory;
+#[cfg(windows)]
+use super::lock_id;
 use crate::storage::backend::StorageError::{self};
 use std::{fs, path::Path, process};
+#[cfg(windows)]
+use std::fs::File;
 
 fn cant_relock(path: &Path) {
     let StorageError::StorageLocked(pid, dir) = LockedDirectory::new(path).unwrap_err() else {
@@ -62,4 +66,18 @@ fn test_multiple_locks() {
 
     drop(_c);
     drop(_a);
+}
+
+#[cfg(windows)]
+#[test]
+fn lock_id_is_shared_by_hard_links() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let original_path = temp_dir.path().join("original");
+    let hard_link_path = temp_dir.path().join("hard-link");
+    fs::write(&original_path, []).unwrap();
+    fs::hard_link(&original_path, &hard_link_path).unwrap();
+
+    let original = File::open(&original_path).unwrap();
+    let hard_link = File::open(&hard_link_path).unwrap();
+    assert_eq!(lock_id(&original).unwrap(), lock_id(&hard_link).unwrap());
 }

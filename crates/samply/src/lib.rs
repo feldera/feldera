@@ -52,6 +52,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(not(unix))]
+use std::sync::OnceLock;
 #[cfg(target_os = "macos")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -62,7 +64,7 @@ use flate2::{
 };
 use itertools::Itertools;
 use memory_stats::memory_stats;
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos")))]
 use nix::time::{ClockId, clock_gettime};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -108,13 +110,17 @@ struct Timestamp(
     /// Monotonic time in nanoseconds.
     ///
     /// On macOS this is [`mach_absolute_time`] converted to nanoseconds via
-    /// [`mach_timebase_info`].  On other Unix platforms this is
-    /// `CLOCK_MONOTONIC`.
+    /// [`mach_timebase_info`]. On other Unix platforms this is
+    /// `CLOCK_MONOTONIC`. On Windows and other non-Unix platforms this is time
+    /// elapsed since the first timestamp requested by this process.
     ///
     /// [`mach_absolute_time`]: https://developer.apple.com/documentation/kernel/1462446-mach_absolute_time
     /// [`mach_timebase_info`]: https://developer.apple.com/documentation/kernel/1462447-mach_timebase_info
     i64,
 );
+
+#[cfg(not(unix))]
+static TIMESTAMP_ORIGIN: OnceLock<Instant> = OnceLock::new();
 
 #[cfg(target_os = "macos")]
 fn mach_absolute_time_nanos() -> i64 {
@@ -144,10 +150,20 @@ impl Timestamp {
             Self(mach_absolute_time_nanos())
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(all(unix, not(target_os = "macos")))]
         {
             let now = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
             Self(now.tv_sec() as i64 * 1_000_000_000 + now.tv_nsec() as i64)
+        }
+
+        #[cfg(not(unix))]
+        {
+            Self(
+                TIMESTAMP_ORIGIN
+                    .get_or_init(Instant::now)
+                    .elapsed()
+                    .as_nanos() as i64,
+            )
         }
     }
 
@@ -172,20 +188,51 @@ fn unix_epoch_nanos() -> i64 {
 
 impl From<Instant> for Timestamp {
     fn from(value: Instant) -> Self {
-        // SAFETY: On Unix, `Instant` is implemented using CLOCK_MONOTONIC,
-        // which is the clock that we need to use for the profiler, but the Rust
-        // standard library provides no way to get the value out.  We don't want
-        // to make assumptions about the layout of [Instant], and in fact it is
-        // not defined as libc's struct timespec but different and
-        // Rust-specific.  If we just transmute then we get the wrong value.  It
-        // seems rather safer to assume that the all-bytes-zeros `Instant` is
-        // the origin, and it works OK for now at least.
-        //
-        // The completely safe alternative would be to make Timestamp public and
-        // force clients to always get both a Timestamp and an Instant if they
-        // need both, which is wasteful.
-        let zero = unsafe { std::mem::zeroed::<Instant>() };
-        Self((value - zero).as_nanos() as i64)
+        #[cfg(not(unix))]
+        {
+            let origin = *TIMESTAMP_ORIGIN.get_or_init(Instant::now);
+            let nanos = match value.checked_duration_since(origin) {
+                Some(duration) => duration.as_nanos() as i64,
+                None => -(origin.duration_since(value).as_nanos() as i64),
+            };
+            return Self(nanos);
+        }
+
+        #[cfg(unix)]
+        {
+            // SAFETY: On Unix, `Instant` is implemented using CLOCK_MONOTONIC,
+            // which is the clock that we need to use for the profiler, but the Rust
+            // standard library provides no way to get the value out.  We don't want
+            // to make assumptions about the layout of [Instant], and in fact it is
+            // not defined as libc's struct timespec but different and
+            // Rust-specific.  If we just transmute then we get the wrong value.  It
+            // seems rather safer to assume that the all-bytes-zeros `Instant` is
+            // the origin, and it works OK for now at least.
+            //
+            // The completely safe alternative would be to make Timestamp public and
+            // force clients to always get both a Timestamp and an Instant if they
+            // need both, which is wasteful.
+            let zero = unsafe { std::mem::zeroed::<Instant>() };
+            Self((value - zero).as_nanos() as i64)
+        }
+    }
+}
+
+#[cfg(test)]
+mod timestamp_tests {
+    use super::Timestamp;
+    use std::time::Instant;
+
+    #[cfg(not(unix))]
+    #[test]
+    fn instant_conversion_uses_the_timestamp_clock() {
+        let before = Timestamp::now();
+        let instant = Instant::now();
+        let converted = Timestamp::from(instant);
+        let after = Timestamp::now();
+
+        assert!(before <= converted);
+        assert!(converted <= after);
     }
 }
 
@@ -713,7 +760,7 @@ impl Capture {
                 tooltip,
             };
             markers
-                .entry(nix::unistd::getpid().as_raw() as usize)
+                .entry(std::process::id() as usize)
                 .or_default()
                 .1
                 .0

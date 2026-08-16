@@ -3,11 +3,16 @@
 //! Makes sure we don't accidentally run multiple instances of the program
 //! using the same data directory.
 
+#[cfg(unix)]
 use libc::{c_int, c_short};
 use std::collections::HashSet;
-use std::fs::{self, File};
+#[cfg(unix)]
+use std::fs;
+use std::fs::File;
 use std::io::{Error as IoError, ErrorKind};
+#[cfg(unix)]
 use std::os::fd::AsRawFd;
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process;
@@ -31,7 +36,11 @@ mod test;
 /// Linux has its own "open file description locks", introduced in Linux 3.15,
 /// that are non-POSIX, which avoid this problem. Maybe we should use those
 /// instead, if portability and backward compatibility are not paramount.
-static LOCKS: LazyLock<Mutex<HashSet<(u64, u64)>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+#[cfg(unix)]
+type LockId = (u64, u64);
+#[cfg(windows)]
+type LockId = (u32, u64);
+static LOCKS: LazyLock<Mutex<HashSet<LockId>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
 
 /// An instance of a PID file.
 #[derive(Debug)]
@@ -48,15 +57,16 @@ pub struct LockedDirectory {
 
     /// Device and inode of the file, so that we can remove ourselves from
     /// [LOCKS] when we're dropped.
-    dev_ino: (u64, u64),
+    lock_id: LockId,
 }
 
 impl Drop for LockedDirectory {
     fn drop(&mut self) {
-        assert!(LOCKS.lock().unwrap().remove(&self.dev_ino));
+        assert!(LOCKS.lock().unwrap().remove(&self.lock_id));
     }
 }
 
+#[cfg(unix)]
 fn fcntl_lock(file: &File, cmd: c_int) -> Result<libc::flock, IoError> {
     let mut flock = libc::flock {
         l_type: libc::F_WRLCK as c_short,
@@ -71,10 +81,12 @@ fn fcntl_lock(file: &File, cmd: c_int) -> Result<libc::flock, IoError> {
     }
 }
 
+#[cfg(unix)]
 fn write_lock(file: &File) -> Result<(), IoError> {
     fcntl_lock(file, libc::F_SETLK).map(|_| ())
 }
 
+#[cfg(unix)]
 fn get_lock(file: &File) -> Result<Option<u32>, IoError> {
     // workaround: the size / type of `libc::F_UNLCK` can be different in
     // different platforms. Resulting in the follow up pattern matching to fail.
@@ -89,6 +101,64 @@ fn get_lock(file: &File) -> Result<Option<u32>, IoError> {
         F_UNLCK => None,
         _ => Some(flock.l_pid as u32),
     })
+}
+
+#[cfg(windows)]
+/// Attempts to acquire an exclusive nonblocking lock over the entire file.
+fn write_lock(file: &File) -> Result<(), IoError> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::{
+        Storage::FileSystem::{LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx},
+        System::IO::OVERLAPPED,
+    };
+
+    let mut overlapped = OVERLAPPED::default();
+    // SAFETY: `file` owns a valid handle and `overlapped` remains valid for
+    // this synchronous whole-file lock request.
+    let result = unsafe {
+        LockFileEx(
+            file.as_raw_handle(),
+            LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+            0,
+            u32::MAX,
+            u32::MAX,
+            &mut overlapped,
+        )
+    };
+    if result == 0 {
+        Err(IoError::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+/// Windows does not expose the PID owning a conflicting file lock.
+fn get_lock(_file: &File) -> Result<Option<u32>, IoError> {
+    Ok(None)
+}
+
+#[cfg(windows)]
+/// Returns a stable identity for `file` from its volume serial number and file index.
+fn lock_id(file: &File) -> Result<LockId, IoError> {
+    use std::{mem::MaybeUninit, os::windows::io::AsRawHandle};
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+    };
+
+    let mut info = MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+    // SAFETY: `file` owns a valid handle and `info` provides writable storage
+    // for GetFileInformationByHandle's output.
+    let result = unsafe { GetFileInformationByHandle(file.as_raw_handle(), info.as_mut_ptr()) };
+    if result == 0 {
+        return Err(IoError::last_os_error());
+    }
+    // SAFETY: GetFileInformationByHandle returned success, initializing `info`.
+    let info = unsafe { info.assume_init() };
+    Ok((
+        info.dwVolumeSerialNumber,
+        (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+    ))
 }
 
 impl LockedDirectory {
@@ -116,6 +186,7 @@ impl LockedDirectory {
         loop {
             // Did we already lock it?
             let mut locks = LOCKS.lock().unwrap();
+            #[cfg(unix)]
             match fs::metadata(&pid_file) {
                 Ok(metadata) => {
                     let dev_ino = (metadata.dev(), metadata.ino());
@@ -140,10 +211,20 @@ impl LockedDirectory {
                 .truncate(false)
                 .open(&pid_file)
                 .map_err(|e| StorageError::stdio(e.kind(), "create", pid_file.display()))?;
+            #[cfg(unix)]
             let metadata = file
                 .metadata()
                 .map_err(|e| StorageError::stdio(e.kind(), "fstat", pid_file.display()))?;
-            let dev_ino = (metadata.dev(), metadata.ino());
+            #[cfg(unix)]
+            let lock_id = (metadata.dev(), metadata.ino());
+            #[cfg(windows)]
+            let lock_id = lock_id(&file)
+                .map_err(|e| StorageError::stdio(e.kind(), "fstat", pid_file.display()))?;
+
+            #[cfg(windows)]
+            if locks.contains(&lock_id) {
+                return Err(StorageError::StorageLocked(process::id(), base));
+            }
 
             match write_lock(&file) {
                 Err(error)
@@ -186,11 +267,11 @@ impl LockedDirectory {
                             start.elapsed().as_secs_f64()
                         );
                     }
-                    locks.insert(dev_ino);
+                    locks.insert(lock_id);
                     return Ok(Self {
                         base,
                         _file: file,
-                        dev_ino,
+                        lock_id,
                     });
                 }
             };
