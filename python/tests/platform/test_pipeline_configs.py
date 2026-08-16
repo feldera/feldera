@@ -5,10 +5,8 @@ from feldera.rest.errors import FelderaAPIError
 from tests import TEST_CLIENT
 from .helper import (
     API_PREFIX,
-    cleanup_pipeline,
     gen_pipeline_name,
     patch_json,
-    post_json,
     put_json,
 )
 
@@ -93,20 +91,6 @@ def test_pipeline_runtime_config(pipeline_name):
         # Rust test checks error_code == InvalidRuntimeConfig
         assert err.get("error_code") == "InvalidRuntimeConfig", err
 
-    # Patching original (create with explicit rich config)
-    pipeline_name_2 = pipeline_name + "-2"
-    cleanup_pipeline(pipeline_name_2)
-    original_body = {
-        "name": pipeline_name_2,
-        "program_code": "-- patch original",
-        "program_config": {
-            "profile": "unoptimized",
-            "cache": False,
-        },
-    }
-    resp_orig = post_json(f"{API_PREFIX}/pipelines", original_body)
-    assert resp_orig.status_code in (HTTPStatus.CREATED, HTTPStatus.OK), resp_orig.text
-
     # Patch modifying some nested fields
     patch_body = {
         "runtime_config": {
@@ -177,14 +161,14 @@ def test_pipeline_program_config(pipeline_name):
         "name": pipeline_name,
         "program_code": "sql-2",
         "program_config": {
-            "profile": "unoptimized",
+            "profile": "dev",
             "cache": False,
         },
     }
     resp = put_json(_pipeline_url(pipeline_name), original_body)
     assert resp.status_code in (HTTPStatus.CREATED, HTTPStatus.OK), resp.text
     pc_original = resp.json()["program_config"]
-    assert pc_original.get("profile") == "unoptimized"
+    assert pc_original.get("profile") == "dev"
     assert not pc_original.get("cache")
 
     # Patch no changes
