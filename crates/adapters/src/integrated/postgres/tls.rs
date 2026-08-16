@@ -166,11 +166,8 @@ pub(crate) fn make_tls_connector(
     Ok(Some(MakeRustlsConnect::new(config)))
 }
 
-/// Verifies the certificate chain but tolerates a name mismatch, preserving
-/// the semantics `verify_hostname: false` had with the openssl connector.
-///
-/// Duplicated from pipeline-manager's `SkipHostnameVerification`; the crates
-/// share no common home for it.
+/// Verifies the certificate chain but tolerates a name mismatch,
+/// the semantics for the `verify_hostname: false` setting.
 #[derive(Debug)]
 struct SkipHostnameVerification(Arc<WebPkiServerVerifier>);
 

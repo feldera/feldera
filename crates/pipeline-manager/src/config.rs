@@ -788,7 +788,7 @@ impl DatabaseConfig {
                 })?;
             }
         } else {
-            // Mirrors openssl's set_default_verify_paths: use the system trust store.
+            // use the system trust store.
             let native =
                 rustls_native_certs::load_native_certs().map_err(|e| DBError::TlsConnection {
                     hint: "Unable to load the system TLS trust store".to_string(),
