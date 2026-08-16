@@ -1139,7 +1139,7 @@ fn test_pg_error_message_is_bounded() {
 
     // `freshness_timestamp` is NOT NULL, has no DEFAULT, and is absent from the
     // Feldera view, so every INSERT the connector issues violates the
-    // constraint.  This is the customer-reported failure.
+    // constraint.
     let _table = PostgresTestStruct::create_table_with_extra_columns(
         &table_name,
         url,
@@ -1185,9 +1185,6 @@ fn test_pg_error_message_is_bounded() {
     assert!(!errors.is_empty(), "no transport error was recorded");
 
     for error in &errors {
-        // The bound enforced by the status layer is a backstop; the connector is
-        // expected to quote no more than a prefix of the payload on its own.
-        // "bytes elided" means the backstop had to fire.
         assert!(
             !error.message.contains("bytes elided"),
             "connector produced a {}-byte message that the status layer had to \
@@ -1219,7 +1216,7 @@ fn test_pg_error_message_is_bounded() {
         "error drops the server's DETAIL: {diagnosed}"
     );
 
-    // Guard against the test going vacuous: at least one failed statement has
+    // At least one failed statement has
     // to have carried a payload far larger than the message describing it.
     let largest_payload = errors
         .iter()
@@ -1240,7 +1237,7 @@ fn test_pg_error_message_is_bounded() {
     );
 }
 
-/// Serializes `data` as the newline-delimited JSON the file input reads.
+/// Serializes `data` as the newline-delimited JSON into a temp file the file input reads.
 fn write_records_to_temp_file(data: &[PostgresTestStruct]) -> NamedTempFile {
     let mut temp_file = NamedTempFile::new().unwrap();
     for datum in data {
@@ -1260,9 +1257,8 @@ fn write_records_to_temp_file(data: &[PostgresTestStruct]) -> NamedTempFile {
 /// Pipeline that feeds the records in `path` to a postgres output connector
 /// writing to `table_name` through `threads` connections.
 ///
-/// `min_batch_size_records`, when set, makes the pipeline step once over that
-/// many records so a test can act on one large batch, and has the file input
-/// read the whole file at once to match.
+/// `min_batch_size_records`, when set, makes the pipeline ingest that
+/// many records in one large batch.
 fn pg_output_test_config(
     path: &Path,
     url: &str,
@@ -1338,8 +1334,7 @@ fn pg_row_count(url: &str, table_name: &str) -> u64 {
 ///
 /// A failing statement aborts the whole transaction, and Postgres answers the
 /// following COMMIT with ROLLBACK instead of an error, so a commit that reports
-/// success proves nothing on its own. Counting rows as they were encoded
-/// therefore reported a batch as transmitted that the server had discarded.
+/// success proves nothing on its own.
 #[test]
 #[serial]
 fn test_pg_transmitted_records_excludes_rolled_back_rows() {
@@ -1365,7 +1360,7 @@ fn test_pg_transmitted_records_excludes_rolled_back_rows() {
     let (controller, _err_receiver) = PostgresTestStruct::test_circuit(config);
     controller.start();
 
-    // Wait until the connector has finished handling every record. This counter
+    // Wait until the connector has finished handling every record. `total_processed_input_records`
     // reports what the connector handled whether or not the write succeeded, so
     // it advances even though nothing reaches the table, which keeps the
     // assertions below from passing against counters that have yet to move.
@@ -1407,11 +1402,6 @@ fn records_in_error(message: &str) -> Option<usize> {
 
 /// A transaction that fails partway discards the statements that already
 /// succeeded, so none of the batch counts as transmitted.
-///
-/// This is the case the commit guard exists for. Counting rows per successful
-/// statement is not enough on its own: the rows of the earlier statement would
-/// still be reported, because the failure aborts the transaction and the
-/// following COMMIT silently rolls them back.
 #[test]
 #[serial]
 fn test_pg_transmitted_records_excludes_rows_lost_to_a_later_failure() {
@@ -1423,7 +1413,7 @@ fn test_pg_transmitted_records_excludes_rows_lost_to_a_later_failure() {
     let verify_url = url.clone();
 
     // Enough records to fill the connector's 1 MiB buffer more than once, so the
-    // batch becomes several statements. Keys ascend and the cursor walks them in
+    // batch issues several statements to postgres. Keys ascend and the cursor walks them in
     // order, which puts the rejected record in the last statement and leaves
     // every statement before it valid.
     let mut data: Vec<PostgresTestStruct> = (0..RECORDS).map(|_| rand::random()).collect();
@@ -1518,18 +1508,38 @@ fn test_pg_transmitted_records_excludes_rows_lost_to_a_later_failure() {
     );
 }
 
-/// Selects the connector backends that are inside a batch transaction.
+/// Selects the connector's backends that are inside a batch transaction, which
+/// is where the tests below inject their faults.
 ///
-/// Requiring an open transaction whose latest query is a connector statement
-/// keeps this off the connection while it prepares its statements, and widens
-/// the window to the whole batch: Postgres keeps reporting the last query while
-/// the backend sits idle in the transaction.
+/// Postgres serves each connection from a process of its own, a backend, lists
+/// one row per backend in `pg_stat_activity`, and terminates one on
+/// `pg_terminate_backend(pid)`. That is the whole mechanism: a thread of the
+/// test connects as an ordinary client and terminates the connector's backends,
+/// which the connector sees as its connection dropping, taking with it the
+/// transaction it was writing the batch into. The backends to terminate are the
+/// ones connected to this database (`datname`), inside a transaction
+/// (`xact_start`), whose latest statement is one of the connector's writes,
+/// which all call `jsonb_populate_recordset`; `pg_backend_pid` excludes the
+/// injecting thread's own backend. The connector prepares those same statements
+/// when it connects, so `query` alone would also match a backend that has yet to
+/// write anything; `xact_start` is what excludes it, preparation running outside
+/// a transaction.
+///
+/// The window these tests wait for is the span in which terminating a backend
+/// lands mid-batch: from the connector's first write statement until its
+/// transaction ends. It covers the whole batch rather than the instant a
+/// statement is running, because Postgres keeps reporting the last statement in
+/// `query` while the backend sits idle inside its transaction. Terminating a
+/// backend before the window opens costs the connector no more than an idle
+/// connection; terminating one after the window closes finds the batch already
+/// committed. Neither exercises the reconnect path under test.
 const BATCH_BACKENDS: &str = "SELECT pid FROM pg_stat_activity \
      WHERE pid <> pg_backend_pid() AND datname = current_database() \
        AND xact_start IS NOT NULL \
        AND query ILIKE '%jsonb_populate_recordset%'";
 
-/// Polls until a connector backend is inside a batch transaction.
+/// Polls for up to eight seconds until the window is open, that is, until a
+/// connector backend is inside a batch transaction.
 fn wait_for_batch_transaction(client: &mut postgres::Client) -> bool {
     for _ in 0..40_000 {
         let found: i64 = client
@@ -1547,7 +1557,8 @@ fn wait_for_batch_transaction(client: &mut postgres::Client) -> bool {
     false
 }
 
-/// Terminates every connector backend that is inside a batch transaction.
+/// Terminates every connector backend that is inside a batch transaction, and
+/// reports whether it found one to terminate.
 ///
 /// Finding and terminating are one statement on purpose. The window is a matter
 /// of milliseconds, so checking first and terminating in a second round trip
@@ -1578,8 +1589,12 @@ fn poll_and_terminate_batch_backends(client: &mut postgres::Client) -> bool {
     false
 }
 
-/// Drops the connector's connections mid-batch, `rounds` times, and reports how
-/// many rounds landed.
+/// Drops the connector's connections mid-batch, `rounds` times over, and reports
+/// how many rounds landed.
+///
+/// A round lands when it terminates a backend inside the window. A round that
+/// misses ends the loop; the caller asserts on the count, so a test whose fault
+/// never landed fails instead of passing.
 fn terminate_connector_backends(url: &str, rounds: usize) -> usize {
     let mut client = pg::pg_connect(url, &None);
     let mut landed = 0;
@@ -1599,21 +1614,21 @@ fn terminate_connector_backends(url: &str, rounds: usize) -> usize {
 /// Reconnecting is not enough on its own: the dropped connection rolled its
 /// transaction back, and the payloads that carried those rows were drained from
 /// the buffers as they flushed, so the batch has to be encoded again from the
-/// batch the worker retained.
+/// cursor the worker retained.
 ///
-/// `threads` covers the connector writing through one connection and through
-/// several, which partition the batch. `kills` covers the connection dropping
-/// again while the batch is being rewritten.
+/// `threads` is the number of connections the connector writes through, each
+/// with a transaction and a partition of the batch of its own. `kills` is how
+/// many connection drops to inject, one round after another: any drop past the
+/// first lands while the connector is writing the batch again.
 fn pg_reconnect_test(name: &str, threads: usize, kills: usize) {
     // Enough records per connection to fill the connector's 1 MiB buffer more
     // than once, so that statements have already written rows into the
     // transaction by the time the connection drops.
     //
-    // Scale with `threads`, because the batch is split between them. Sizing the
-    // whole batch instead leaves each connection with less than a bufferful, so
-    // it writes its partition in a single statement and commits, rather than
-    // sitting inside its transaction between statements, which shrinks the
-    // window a fault has to land in.
+    // Scale with `threads`, because the batch is split between them: sizing the
+    // whole batch instead left each connection with less than a bufferful, so it
+    // wrote its partition in a single statement and committed. That shrank the
+    // window from 79ms to 15ms, narrow enough to miss on CI.
     let records = 3000 * threads;
 
     let table_name = unique_pg_name(name);
@@ -1634,13 +1649,15 @@ fn pg_reconnect_test(name: &str, threads: usize, kills: usize) {
     // prepares its statements while the controller is being constructed.
     let (controller, _err_receiver) = PostgresTestStruct::test_circuit(config);
 
+    // The killer is the fault injector: a thread that terminates the connector's
+    // backends over SQL from a connection of its own, as `BATCH_BACKENDS` describes.
     let killer_url = verify_url.clone();
     let killer = std::thread::spawn(move || terminate_connector_backends(&killer_url, kills));
 
     controller.start();
     let landed = killer.join().expect("killer thread panicked");
 
-    // The endpoint reports the batch as handled whether or not it wrote it, so
+    // The endpoint reports the batch as processed whether or not it wrote it, so
     // this settles the test in both outcomes.
     wait(
         || pg_total_processed_input_records(&controller) >= records as u64,
@@ -1673,8 +1690,7 @@ fn pg_reconnect_test(name: &str, threads: usize, kills: usize) {
         transmitted, records as u64,
         "reported {transmitted} of {records} rows as transmitted"
     );
-    // `fatal_error` never clears, so recording one for a drop the connector
-    // recovered from would leave the endpoint marked failed for good.
+
     assert_eq!(
         fatal_error, None,
         "the connector recovered, yet the endpoint is marked as fatally failed"
@@ -1703,8 +1719,7 @@ fn test_pg_reconnect_survives_repeated_drops() {
 /// again when dropped.
 ///
 /// `ALTER DATABASE ... ALLOW_CONNECTIONS false` turns away even a superuser, so
-/// it stands in for a server that is restarting or under maintenance. Restoring
-/// on drop matters: leaving the database closed would fail every later test.
+/// it stands in for a server that is restarting or under maintenance.
 struct RefusedConnections {
     admin: postgres::Client,
     database: String,
@@ -1753,6 +1768,7 @@ impl RefusedConnections {
     }
 }
 
+/// Restoring on drop matters: leaving the database closed would fail every later test.
 impl Drop for RefusedConnections {
     fn drop(&mut self) {
         if !self.refusing {
@@ -1767,8 +1783,8 @@ impl Drop for RefusedConnections {
 
 /// A database that refuses the reconnect must be waited out, not given up on.
 ///
-/// This is the one path that dropping a backend does not reach: there the
-/// reconnect succeeds on the first try, so `retry_connecting_with_backoff` never
+/// This is the one path in the connector that dropping a backend does not reach:
+/// there the reconnect succeeds on the first try, so `retry_connecting_with_backoff` never
 /// enters its error branch. Refusing connections for a few seconds forces that
 /// branch, and the batch still has to arrive once they are let through.
 #[test]
@@ -1838,7 +1854,7 @@ fn test_pg_reconnect_waits_out_a_refusing_database() {
          so this test proves nothing"
     );
     // Only `retry_connecting_with_backoff` reports under this tag, so its error
-    // branch ran, which is the whole point of refusing the connections.
+    // branch ran.
     assert!(
         errors
             .iter()
@@ -1865,8 +1881,7 @@ fn test_pg_reconnect_waits_out_a_refusing_database() {
 /// A worker waiting out a database it cannot reach sits in a backoff loop, and
 /// the endpoint's drop joins that thread, so anything that keeps the loop from
 /// noticing the shutdown hangs the pipeline rather than merely stalling its
-/// output. Holding a strong reference to the controller across the loop did
-/// exactly that, since it kept alive the very thing the loop was watching for.
+/// output.
 #[test]
 #[serial]
 fn test_pg_stops_while_the_database_is_unreachable() {
@@ -1921,7 +1936,7 @@ fn test_pg_stops_while_the_database_is_unreachable() {
     );
 }
 
-/// The counter still reports every row of a batch that commits.
+/// The `transmitted_records` counter still reports every row of a batch that commits.
 #[test]
 #[serial]
 fn test_pg_transmitted_records_counts_committed_rows() {

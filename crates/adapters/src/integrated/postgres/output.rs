@@ -81,12 +81,10 @@ enum TransactionState {
     Open,
     /// The connection dropped, taking the transaction and every row it held.
     ///
-    /// The batch is written again from [`PostgresWorker::pending_batch`] rather
-    /// than resumed, since the payloads that carried those rows were drained
-    /// from the buffers as they flushed.
+    /// Any rows written as part of this transaction are lost and must be written again.
     Lost,
     /// Postgres rejected a statement and aborted the transaction. Writing the
-    /// batch again would hit the same rejection, so the rows are dropped.
+    /// batch again would hit the same rejection.
     Rejected,
 }
 
@@ -119,7 +117,13 @@ struct PostgresWorker {
     /// Rows written by statements in the current transaction, counted and
     /// reported on the same terms as [`Self::num_bytes`].
     num_rows: usize,
-    /// What has become of [`Self::transaction`], which decides whether the batch
+    /// Rows encoded for the current batch, counted as they are buffered rather
+    /// than as statements succeed, so that a failed batch can report how many
+    /// rows never reached the table. Unlike [`Self::num_rows`], this count
+    /// covers the rows whose statements never ran because an earlier failure had
+    /// already aborted the transaction.
+    batch_rows: usize,
+    /// What has become of [`Self::transaction`], which decides whether the `pending_batch`
     /// commits, is written again, or is dropped.
     transaction_state: TransactionState,
     /// The batch being written, kept for as long as it may need writing again.
@@ -192,6 +196,7 @@ impl PostgresWorker {
             key_schema: key_schema.clone(),
             num_rows: 0,
             num_bytes: 0,
+            batch_rows: 0,
             transaction_state: TransactionState::Open,
             pending_batch: None,
             inserts: 0,
@@ -232,6 +237,7 @@ impl PostgresWorker {
     ) {
         // Nothing more can reach the table through this transaction, so pushing
         // the rest of the batch at it only produces more failures to report.
+        // The whole transaction will eventually be retried.
         if self.transaction_state != TransactionState::Open {
             return;
         }
@@ -291,8 +297,7 @@ impl PostgresWorker {
                 truncate_ellipse(v, MAX_RECORD_LEN_IN_ERRMSG, "...")
             ));
 
-            // Either way the transaction is gone, along with everything it held.
-            // Whether it can be written again is what separates the two.
+            // Transaction state is decided by whether the error is retry-able.
             self.transaction_state = if error.should_retry() {
                 TransactionState::Lost
             } else {
@@ -448,10 +453,7 @@ These statements were successfully prepared before reconnecting. Does the table 
                 Ok(_) => return,
                 Err(e) => {
                     // Only a failure that ends the loop leaves the endpoint
-                    // unable to reach postgres. Reporting one it is about to
-                    // retry as fatal stamps `fatal_error`, which never clears,
-                    // so a blip the connector recovers from in a second would
-                    // mark the endpoint failed for the life of the pipeline.
+                    // unable to reach postgres.
                     let retry = e.should_retry();
                     if let Some(controller) = self.controller.upgrade() {
                         controller.output_transport_error(
@@ -479,13 +481,6 @@ These statements were successfully prepared before reconnecting. Does the table 
     }
 
     /// Whether the pipeline has been asked to stop.
-    ///
-    /// Waiting for the controller to be dropped would never work here: the
-    /// endpoint's drop joins this thread, and the endpoint itself is what the
-    /// output thread is blocked on, so the controller stays alive precisely
-    /// because this thread has not finished. `Terminated`, which
-    /// `ControllerInner::stop` sets before it touches anything else, is the
-    /// signal that does arrive.
     fn shutting_down(&self) -> bool {
         match self.controller.upgrade() {
             None => true,
@@ -495,10 +490,6 @@ These statements were successfully prepared before reconnecting. Does the table 
 
     /// Waits `duration` before the next connection attempt, giving up as soon as
     /// the pipeline is asked to stop. Returns whether the wait ran to completion.
-    ///
-    /// The wait reaches a minute, and the endpoint's drop waits on this thread,
-    /// so sleeping through it in one piece would delay every pipeline shutdown
-    /// that happens while postgres is unreachable.
     fn backoff_unless_shutdown(&self, duration: Duration) -> bool {
         const SLICE: Duration = Duration::from_millis(100);
 
@@ -539,9 +530,11 @@ These statements were successfully prepared before reconnecting. Does the table 
         self.transaction = Some(transaction);
 
         // Start counting afresh: whatever the previous transaction wrote was
-        // either reported at its commit or lost with it.
+        // either reported at its commit or lost with it. Writing a batch again
+        // encodes it from the start, so its rows are counted from the start too.
         self.num_bytes = 0;
         self.num_rows = 0;
+        self.batch_rows = 0;
         self.transaction_state = TransactionState::Open;
 
         Ok(())
@@ -579,23 +572,13 @@ These statements were successfully prepared before reconnecting. Does the table 
                 Ok(()) => String::new(),
                 Err(e) => format!(" Rolling the transaction back also failed: {e}."),
             };
-            // Spell out that the rows PostgreSQL accepted are gone too. A reader
-            // who saw only the rejected statement would expect the rest of the
-            // rows to have landed.
-            let accepted = if self.num_rows > 0 {
-                format!(
-                    ": the {} row(s) PostgreSQL had already accepted were rolled back, \
-                     and the rest were dropped",
-                    self.num_rows
-                )
-            } else {
-                String::new()
-            };
             return Err(BackoffError::Permanent(anyhow!(
                 "PostgreSQL rejected one of the statements writing to table {:?} and \
-                 aborted the transaction, so no rows were written{accepted}. The \
-                 rejected statement is reported as a separate error.{rollback}",
+                 aborted the transaction, so {} row(s) from the current batch were \
+                 dropped. The rejected statement is reported as a separate \
+                 error.{rollback}",
                 self.table,
+                self.batch_rows,
             )));
         }
 
@@ -768,6 +751,9 @@ These statements were successfully prepared before reconnecting. Does the table 
                         self.upsert(buf);
                     }
                 };
+
+                // One row buffered, counted whether or not its statement runs.
+                self.batch_rows += 1;
             }
 
             cursor.step_key();
