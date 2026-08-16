@@ -1,7 +1,12 @@
 use anyhow::{Context, Result as AnyResult};
 use feldera_types::transport::postgres::PostgresTlsConfig;
-use rustls::pki_types::CertificateDer;
-use rustls::{ClientConfig, RootCertStore};
+use rustls::client::WebPkiServerVerifier;
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{
+    CertificateError, ClientConfig, DigitallySignedStruct, RootCertStore, SignatureScheme,
+};
+use std::sync::Arc;
 use tokio_postgres_rustls::MakeRustlsConnect;
 
 /// Resolves the configured certificate-authority certificate(s) to PEM text.
@@ -115,7 +120,23 @@ pub(crate) fn make_tls_connector(
             .context("failed to add CA certificate to the trust store")?;
     }
 
-    let builder = ClientConfig::builder().with_root_certificates(roots);
+    // `verify_hostname: false` keeps its openssl-connector semantics: the
+    // chain is verified against the CA, but the server name need not appear
+    // in the certificate.
+    let builder = if tls.verify_hostname == Some(false) {
+        tracing::warn!(
+            "postgres: TLS hostname verification is disabled in endpoint '{endpoint_name}'; \
+             the server certificate is still verified against the configured CA."
+        );
+        let verifier = WebPkiServerVerifier::builder(Arc::new(roots))
+            .build()
+            .context("failed to build the TLS certificate verifier")?;
+        ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(SkipHostnameVerification(verifier)))
+    } else {
+        ClientConfig::builder().with_root_certificates(roots)
+    };
 
     // A client certificate needs its key, and the chain file extends it.
     let config = match (resolve_client_cert_pem(tls)?, resolve_client_key_pem(tls)?) {
@@ -142,15 +163,59 @@ pub(crate) fn make_tls_connector(
         (None, None) => builder.with_no_client_auth(),
     };
 
-    if Some(false) == tls.verify_hostname {
-        tracing::warn!(
-            "postgres: ssl: `verify_hostname` is not supported by the rustls connector in \
-             endpoint '{endpoint_name}'; the server hostname is still verified against its \
-             certificate."
-        );
+    Ok(Some(MakeRustlsConnect::new(config)))
+}
+
+/// Verifies the certificate chain but tolerates a name mismatch, preserving
+/// the semantics `verify_hostname: false` had with the openssl connector.
+///
+/// Duplicated from pipeline-manager's `SkipHostnameVerification`; the crates
+/// share no common home for it.
+#[derive(Debug)]
+struct SkipHostnameVerification(Arc<WebPkiServerVerifier>);
+
+impl ServerCertVerifier for SkipHostnameVerification {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp_response: &[u8],
+        now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        match self
+            .0
+            .verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
+        {
+            Err(rustls::Error::InvalidCertificate(CertificateError::NotValidForName))
+            | Err(rustls::Error::InvalidCertificate(CertificateError::NotValidForNameContext {
+                ..
+            })) => Ok(ServerCertVerified::assertion()),
+            other => other,
+        }
     }
 
-    Ok(Some(MakeRustlsConnect::new(config)))
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.0.verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.0.verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.0.supported_verify_schemes()
+    }
 }
 
 /// Extracts the trusted root certificates from [`PostgresTlsConfig`]
@@ -266,5 +331,80 @@ mod tests {
         .unwrap();
         assert!(tls.enabled);
         assert!(tls.trusted_root_certs.contains("BEGIN CERTIFICATE"));
+    }
+
+    /// CA plus a leaf certificate whose only SAN is `san`.
+    fn ca_and_leaf(san: &str) -> (String, CertificateDer<'static>) {
+        let mut ca_params = rcgen::CertificateParams::default();
+        ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        let ca_key = rcgen::KeyPair::generate().unwrap();
+        let ca_pem = ca_params.clone().self_signed(&ca_key).unwrap().pem();
+
+        let mut leaf_params = rcgen::CertificateParams::default();
+        leaf_params.subject_alt_names = vec![rcgen::SanType::DnsName(san.try_into().unwrap())];
+        let leaf_key = rcgen::KeyPair::generate().unwrap();
+        let issuer = rcgen::Issuer::new(ca_params, ca_key);
+        let leaf = leaf_params.signed_by(&leaf_key, &issuer).unwrap();
+        (ca_pem, leaf.der().clone())
+    }
+
+    fn webpki_verifier(ca_pem: &str) -> Arc<WebPkiServerVerifier> {
+        // The binary installs the process-level provider at startup; tests
+        // must do it themselves.
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+        let mut roots = RootCertStore::empty();
+        for cert in parse_certs(ca_pem, "CA certificate").unwrap() {
+            roots.add(cert).unwrap();
+        }
+        WebPkiServerVerifier::builder(Arc::new(roots))
+            .build()
+            .unwrap()
+    }
+
+    fn verify(
+        verifier: &dyn ServerCertVerifier,
+        leaf: &CertificateDer<'static>,
+        host: &str,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        verifier.verify_server_cert(
+            leaf,
+            &[],
+            &ServerName::try_from(host.to_string()).unwrap(),
+            &[],
+            UnixTime::now(),
+        )
+    }
+
+    /// `verify_hostname: false` semantics: a name mismatch passes, but only a
+    /// name mismatch.
+    #[test]
+    fn test_skip_hostname_tolerates_name_mismatch_only() {
+        let (ca_pem, leaf) = ca_and_leaf("server.example");
+        let inner = webpki_verifier(&ca_pem);
+
+        assert!(matches!(
+            verify(inner.as_ref(), &leaf, "other.example"),
+            Err(rustls::Error::InvalidCertificate(
+                CertificateError::NotValidForName | CertificateError::NotValidForNameContext { .. }
+            ))
+        ));
+
+        let skip = SkipHostnameVerification(inner);
+        assert!(verify(&skip, &leaf, "other.example").is_ok());
+        assert!(verify(&skip, &leaf, "server.example").is_ok());
+    }
+
+    /// The chain is still verified: a certificate from an untrusted CA fails
+    /// even with hostname verification disabled.
+    #[test]
+    fn test_skip_hostname_rejects_untrusted_ca() {
+        let (trusted_ca_pem, _) = ca_and_leaf("server.example");
+        let (_, other_leaf) = ca_and_leaf("server.example");
+
+        let skip = SkipHostnameVerification(webpki_verifier(&trusted_ca_pem));
+        assert!(matches!(
+            verify(&skip, &other_leaf, "server.example"),
+            Err(rustls::Error::InvalidCertificate(_))
+        ));
     }
 }

@@ -58,6 +58,10 @@ pub struct PostgresTlsConfig {
     pub ssl_certificate_chain_location: Option<String>,
 
     /// True to enable hostname verification when using TLS. True by default.
+    ///
+    /// When false, the certificate chain is still verified against the
+    /// trusted CA; only the requirement that the server name appears in the
+    /// certificate is lifted.
     pub verify_hostname: Option<bool>,
 }
 
