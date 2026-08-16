@@ -12,18 +12,12 @@
 # or not at all. Ubuntu's package is far older than the version rdkafka-sys
 # requires, which is why this builds from source rather than calling apt.
 #
-# The librdkafka version is derived from the lockfile, so it cannot drift from
-# what the crate expects: rdkafka-sys names its vendored version in its own,
-# as `4.10.0+2.12.1`.
+# The librdkafka and AWS-LC versions are derived from the lockfile, so neither
+# can drift from what the crates expect: rdkafka-sys names its vendored version
+# in its own, as `4.10.0+2.12.1`, and aws-lc-sys vendors one AWS-LC release.
 set -euo pipefail
 
 PREFIX="${PREFIX:-/usr/local}"
-# The commit behind the AWS-LC v5.5.0 tag. Sources are fetched by commit OID
-# rather than by tag, so a retargeted upstream ref cannot change what gets
-# built. Keep in step with the aws-lc-sys version in Cargo.lock: aws-lc-sys
-# 0.44.0 vendors AWS-LC 5.5.0 (its include/openssl/base.h names the release),
-# so the librdkafka in the process carries the same AWS-LC as the Rust side.
-AWS_LC_COMMIT="${AWS_LC_COMMIT:-991e67ff4cf04df4dd89e407f8b920c6936cb56a}"
 # Switching to the FIPS-validated module means building AWS-LC with -DFIPS=1
 # and moving aws-lc-rs to aws-lc-fips-sys in the same change. Doing one without
 # the other leaves two AWS-LC copies in the binary; validate-crypto-deps.sh
@@ -67,7 +61,32 @@ if [ -z "$librdkafka_commit" ]; then
     esac
 fi
 
-echo "librdkafka v$librdkafka_version ($librdkafka_commit), AWS-LC $AWS_LC_COMMIT, prefix $PREFIX"
+# Checked-in source identity per aws-lc-sys version: the commit behind the
+# AWS-LC release tag that crate vendors (its include/openssl/base.h names the
+# release), so the librdkafka in the process carries the same AWS-LC as the
+# Rust side. Fetching by commit OID rather than by tag means a retargeted
+# upstream ref cannot change what gets built. An aws-lc-sys bump in the
+# lockfile fails here until the new release is reviewed and its commit added.
+aws_lc_commit="${AWS_LC_COMMIT:-}"
+if [ -z "$aws_lc_commit" ]; then
+    aws_lc_sys_version=""
+    if [ -f "$lockfile" ]; then
+        aws_lc_sys_version=$(grep -A1 'name = "aws-lc-sys"' "$lockfile" |
+            grep '^version' | sed 's/version = //; s/"//g')
+    fi
+    case "$aws_lc_sys_version" in
+        # AWS-LC v5.5.0
+        0.44.0) aws_lc_commit="991e67ff4cf04df4dd89e407f8b920c6936cb56a" ;;
+        *)
+            echo "error: no pinned AWS-LC commit for aws-lc-sys ${aws_lc_sys_version:-<none in $lockfile>}." >&2
+            echo "Review the AWS-LC release that aws-lc-sys vendors and add its" >&2
+            echo "commit OID to this script, or set AWS_LC_COMMIT explicitly." >&2
+            exit 1
+            ;;
+    esac
+fi
+
+echo "librdkafka v$librdkafka_version ($librdkafka_commit), AWS-LC $aws_lc_commit, prefix $PREFIX"
 
 for tool in cmake git awk go make cc; do
     command -v "$tool" >/dev/null || { echo "error: $tool is required." >&2; exit 1; }
@@ -96,7 +115,7 @@ fetch_pinned() {
 # AWS-LC. BUILD_LIBSSL is off by default and librdkafka links libssl, so the
 # default build is not enough. The symbol prefix stays: aws-lc-rs links its own
 # copy into the same binary, and the prefix is what keeps the two apart.
-fetch_pinned https://github.com/aws/aws-lc.git "$AWS_LC_COMMIT" "$work/aws-lc"
+fetch_pinned https://github.com/aws/aws-lc.git "$aws_lc_commit" "$work/aws-lc"
 cmake -S "$work/aws-lc" -B "$work/aws-lc-build" \
     -DCMAKE_BUILD_TYPE=Release \
     "-DCMAKE_C_FLAGS=-fPIC -w" \
@@ -141,8 +160,7 @@ if ! grep -q "openssl/hmac.h" src/rdkafka_ssl.c; then
 fi
 
 # These flags mirror the cargo features rdkafka-sys used to build with, so the
-# connectors keep the same capabilities. Losing one here is silent: a codec or
-# an authentication mechanism simply stops being offered.
+# connectors keep the same capabilities.
 CPPFLAGS="-I$aws_lc_include" \
 CFLAGS="-Werror=implicit-function-declaration" \
 LDFLAGS="-L$aws_lc_lib" \
