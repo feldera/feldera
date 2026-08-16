@@ -111,7 +111,9 @@ utoipa = { workspace = true, features = ["actix_extras", "chrono", "uuid"] }
 #
 # - `reqwest` has an HTTPS-only mode.
 awc = { workspace = true, features = ["rustls-0_23", "rustls-0_23-native-roots"] }
-reqwest = { workspace = true, features = ["json"] }
+# `stream` backs the `bytes_stream` calls in sql_compiler and local_runner;
+# declare it here rather than inherit it from another crate's feature union.
+reqwest = { workspace = true, features = ["json", "stream"] }
 cached = { workspace = true }
 crossbeam = { workspace = true }
 rustls = { workspace = true }
