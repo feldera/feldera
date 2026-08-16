@@ -18,10 +18,12 @@
 set -euo pipefail
 
 PREFIX="${PREFIX:-/usr/local}"
-# Keep in step with the aws-lc-sys version in Cargo.lock: aws-lc-sys 0.44.0
-# vendors AWS-LC 5.5.0 (its include/openssl/base.h names the release), so the
-# librdkafka in the process carries the same AWS-LC as the Rust side.
-AWS_LC_REF="${AWS_LC_REF:-v5.5.0}"
+# The commit behind the AWS-LC v5.5.0 tag. Sources are fetched by commit OID
+# rather than by tag, so a retargeted upstream ref cannot change what gets
+# built. Keep in step with the aws-lc-sys version in Cargo.lock: aws-lc-sys
+# 0.44.0 vendors AWS-LC 5.5.0 (its include/openssl/base.h names the release),
+# so the librdkafka in the process carries the same AWS-LC as the Rust side.
+AWS_LC_COMMIT="${AWS_LC_COMMIT:-991e67ff4cf04df4dd89e407f8b920c6936cb56a}"
 # Switching to the FIPS-validated module means building AWS-LC with -DFIPS=1
 # and moving aws-lc-rs to aws-lc-fips-sys in the same change. Doing one without
 # the other leaves two AWS-LC copies in the binary; validate-crypto-deps.sh
@@ -49,7 +51,23 @@ if [ -z "$librdkafka_version" ]; then
     exit 1
 fi
 
-echo "librdkafka v$librdkafka_version, AWS-LC $AWS_LC_REF, prefix $PREFIX"
+# Checked-in source identity per librdkafka version. A version bump in
+# rdkafka-sys fails here until the new upstream tag is reviewed and its
+# commit added.
+librdkafka_commit="${LIBRDKAFKA_COMMIT:-}"
+if [ -z "$librdkafka_commit" ]; then
+    case "$librdkafka_version" in
+        2.12.1) librdkafka_commit="e1db7eaa517f0a6438bc846a9c49ede73b9ea211" ;;
+        *)
+            echo "error: no pinned commit for librdkafka v$librdkafka_version." >&2
+            echo "Review the upstream tag and add its commit OID to this script," >&2
+            echo "or set LIBRDKAFKA_COMMIT explicitly." >&2
+            exit 1
+            ;;
+    esac
+fi
+
+echo "librdkafka v$librdkafka_version ($librdkafka_commit), AWS-LC $AWS_LC_COMMIT, prefix $PREFIX"
 
 for tool in cmake git awk go make cc; do
     command -v "$tool" >/dev/null || { echo "error: $tool is required." >&2; exit 1; }
@@ -59,10 +77,26 @@ jobs="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
+# Fetches `commit` from `url` into `dest` and fails closed on any mismatch,
+# so nothing from an upstream tree runs unless it is exactly the pinned OID.
+fetch_pinned() {
+    url="$1"
+    commit="$2"
+    dest="$3"
+    git init -q "$dest"
+    git -C "$dest" fetch -q --depth 1 "$url" "$commit"
+    git -C "$dest" checkout -q --detach FETCH_HEAD
+    resolved=$(git -C "$dest" rev-parse HEAD)
+    if [ "$resolved" != "$commit" ]; then
+        echo "error: $url delivered $resolved, expected $commit." >&2
+        exit 1
+    fi
+}
+
 # AWS-LC. BUILD_LIBSSL is off by default and librdkafka links libssl, so the
 # default build is not enough. The symbol prefix stays: aws-lc-rs links its own
 # copy into the same binary, and the prefix is what keeps the two apart.
-git clone --depth 1 --branch "$AWS_LC_REF" https://github.com/aws/aws-lc.git "$work/aws-lc" -q
+fetch_pinned https://github.com/aws/aws-lc.git "$AWS_LC_COMMIT" "$work/aws-lc"
 cmake -S "$work/aws-lc" -B "$work/aws-lc-build" \
     -DCMAKE_BUILD_TYPE=Release \
     "-DCMAKE_C_FLAGS=-fPIC -w" \
@@ -86,8 +120,7 @@ for lib in libcrypto.a libssl.a; do
 done
 
 # librdkafka.
-git clone --depth 1 --branch "v$librdkafka_version" \
-    https://github.com/confluentinc/librdkafka.git "$work/librdkafka" -q
+fetch_pinned https://github.com/confluentinc/librdkafka.git "$librdkafka_commit" "$work/librdkafka"
 cd "$work/librdkafka"
 
 # rdkafka_ssl.c calls HMAC() without including <openssl/hmac.h>. OpenSSL
