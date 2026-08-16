@@ -21,13 +21,11 @@ FROM ubuntu:24.04 AS base
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt update --fix-missing && apt -y dist-upgrade && apt install \
-  # bindgen needs this (at least the dec crate uses bindgen)
-  libclang-dev \
   # pkg-config is how rdkafka-sys locates the librdkafka copied in below
   pkg-config \
-  cmake \
   # librdkafka links these; it is built in the stage above, but pipelines are
-  # compiled in this image and the linker resolves them here
+  # compiled in this image and the linker resolves them here. aws-lc-sys
+  # compiles through its cc builder, so neither cmake nor libclang is needed.
   libsasl2-dev zlib1g-dev libzstd-dev build-essential \
   # To install rust
   curl  \

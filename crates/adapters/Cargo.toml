@@ -163,7 +163,6 @@ deltalake = { workspace = true, features = [
 ], optional = true }
 deltalake-catalog-unity = { workspace = true, features = ["aws", "azure", "gcp"], optional = true}
 apache-avro = { workspace = true, optional = true }
-# default-features off drops native_tls, which pulls the OpenSSL crate.
 schema_registry_converter = { workspace = true, features = [
     "avro",
     "blocking",
