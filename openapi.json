@@ -13360,7 +13360,7 @@
               },
               "verify_hostname": {
                 "type": "boolean",
-                "description": "True to enable hostname verification when using TLS. True by default.",
+                "description": "True to enable hostname verification when using TLS. True by default.\n\nWhen false, the certificate chain is still verified against the\ntrusted CA; only the requirement that the server name appears in the\ncertificate is lifted.",
                 "nullable": true
               }
             }
@@ -13433,7 +13433,7 @@
               },
               "verify_hostname": {
                 "type": "boolean",
-                "description": "True to enable hostname verification when using TLS. True by default.",
+                "description": "True to enable hostname verification when using TLS. True by default.\n\nWhen false, the certificate chain is still verified against the\ntrusted CA; only the requirement that the server name appears in the\ncertificate is lifted.",
                 "nullable": true
               }
             }
@@ -13499,7 +13499,7 @@
           },
           "verify_hostname": {
             "type": "boolean",
-            "description": "True to enable hostname verification when using TLS. True by default.",
+            "description": "True to enable hostname verification when using TLS. True by default.\n\nWhen false, the certificate chain is still verified against the\ntrusted CA; only the requirement that the server name appears in the\ncertificate is lifted.",
             "nullable": true
           }
         }
@@ -13555,7 +13555,7 @@
               },
               "verify_hostname": {
                 "type": "boolean",
-                "description": "True to enable hostname verification when using TLS. True by default.",
+                "description": "True to enable hostname verification when using TLS. True by default.\n\nWhen false, the certificate chain is still verified against the\ntrusted CA; only the requirement that the server name appears in the\ncertificate is lifted.",
                 "nullable": true
               }
             }
