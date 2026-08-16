@@ -106,13 +106,13 @@
 ## Principles, Implementation, and engineering
 
 * Why incremental aggregates are difficult -- part 1
-  https://www.feldera.com/blog/why-incremental-aggregates-are-difficult---part-1
+  https://www.feldera.com/blog/why-incremental-aggregates-are-difficult-part-1
 
 * Nobody ever got fired for using a struct
   https://www.feldera.com/blog/nobody-ever-got-fired-for-using-a-struct
 
 * Introducing Feldera's Visual Profiler
-  https://www.feldera.com/blog/introducing-feldera's-visual-profiler
+  https://www.feldera.com/blog/introducing-feldera-s-visual-profiler
 
 * Constant folding in Calcite
   https://www.feldera.com/blog/constant-folding-in-calcite
@@ -154,7 +154,7 @@
   https://www.feldera.com/blog/incremental-database-computations
 
 * Indexed Z-sets
-  https://www.feldera.com/blog/Indexed-Zsets
+  https://www.feldera.com/blog/indexed-zsets
 
 * Database computations on Z-sets
   https://www.feldera.com/blog/database-computations-on-z-sets
@@ -172,4 +172,4 @@
   https://www.feldera.com/blog/z-sets-representing-database-changes
 
 * Computing with changes
-  https://www.feldera.com/blog/Changes
+  https://www.feldera.com/blog/changes
