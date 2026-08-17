@@ -15,42 +15,9 @@ Our team develops and tests using Linux and MacOS. Windows Subsystem for Linux w
 The Feldera container images and CI workflows use Linux. You can see our setup in
 our [Dockerfile](deploy/Dockerfile).
 
-Our dependencies for building the project are:
-
-  - C and C++ compiler toolchain (e.g., gcc, gcc++)
-  - cmake
-  - libsasl2-dev
-  - zlib1g-dev
-  - libzstd-dev
-  - Go, to build AWS-LC (see below)
-  - a Rust tool chain (install rustup and the default toolchain)
-  - a Java Virtual Machine (at least Java 19)
-  - maven
-  - graphviz
-  - Python 3.10
-  - Bun (https://bun.sh/docs/installation)
-
-Additional dependencies are automatically installed by the Rust,
-maven, Python, and TypeScript build tools.
-
-### librdkafka
-
-The Kafka connectors link librdkafka dynamically, so it has to be installed
-before the workspace will build:
-
-```
-./scripts/install-librdkafka.sh
-```
-
-The script builds librdkafka against AWS-LC, which is what keeps Kafka TLS on
-the same cryptographic implementation as the rest of the system. Distribution
-packages are built against OpenSSL and are usually older than the version the
-`rdkafka-sys` crate requires, so installing one of those is not equivalent. Run
-the script again after a `rdkafka` version bump; it reads the version it needs
-from `Cargo.lock`.
-
-Set `PREFIX` to install somewhere other than `/usr/local`, in which case
-`PKG_CONFIG_PATH` has to point at `$PREFIX/lib/pkgconfig`.
+See [Running Feldera from sources](README.md#️-running-feldera-from-sources) in the README
+for the list of build dependencies and how to install them, including librdkafka, which the
+Kafka connectors link dynamically and which the workspace will not build without.
 
 ## Contribution Flow
 
@@ -168,20 +135,8 @@ When opening a new issue, try to roughly follow the commit message format conven
 
 ## Building Feldera from sources
 
-Feldera is implemented in Rust and uses Rust's `cargo` build system. The SQL
-to DBSP compiler is implemented in Java and uses `maven` as its build system.
-
-You can build the rust sources by runnning the following at the top level of this tree.
-
-```
-cargo build
-```
-
-To build the SQL to DBSP compiler, run the following from `sql-to-dbsp-compiler`:
-
-```
-./build.sh
-```
+See [Running Feldera from sources](README.md#️-running-feldera-from-sources) in the README
+for build dependencies and steps.
 
 If you want to develop Feldera without installing the required toolchains
 locally, you can use Github Codespaces; from
