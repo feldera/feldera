@@ -144,6 +144,11 @@ jobs:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'adapter-tests-pubsub') }}
     name: Test Adapters (PubSub only)
     runs-on: ubuntu-latest-amd64
+    # The test binaries link librdkafka dynamically and the dev image carries
+    # it. Pulled from ghcr.io directly: this runner lacks the GCP registry
+    # identity the gke runners use for the ghcr-remote mirror.
+    container:
+      image: ghcr.io/feldera/feldera-dev:sha-e9e4499d6414ba10311bd7ef7cd20816e1d9f5c7
     services:
       pubsub:
         image: ghcr.io/feldera/gcloud-pubsub-emulator:e852273e07
@@ -177,4 +182,6 @@ jobs:
         working-directory: crates/adapters
         env:
           RUST_BACKTRACE: 1
-          PUBSUB_EMULATOR_HOST: 127.0.0.1:8681
+          # The job container and the emulator share the job's docker
+          # network, so the emulator is addressed by service name.
+          PUBSUB_EMULATOR_HOST: pubsub:8681
