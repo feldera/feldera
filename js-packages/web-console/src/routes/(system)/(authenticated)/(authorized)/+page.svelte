@@ -1,12 +1,3 @@
-<script lang="ts" module>
-  /**
-   * How much of the pinned group of trailing sections shows, in px, while the
-   * pipelines table is being scrolled; the table's window gets the rest of the
-   * screen. Exported so the layout test asserts against the same number.
-   */
-  export const pinnedPixelsAfterPipelineTable = 44
-</script>
-
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { slide } from 'svelte/transition'
@@ -21,6 +12,7 @@
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import Footer from '$lib/components/layout/Footer.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
+  import PinnedSections from '$lib/components/layout/PinnedSections.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import DemoTile from '$lib/components/other/DemoTile.svelte'
   import OpenSupportBundleButton from '$lib/components/other/OpenSupportBundleButton.svelte'
@@ -67,24 +59,6 @@
   const drawer = useAdaptiveDrawer('right')
 
   const demos = useDemos()
-
-  // The page is the only scroll container. The sections below the pipelines pin as
-  // one group over the bottom of the table: the table gets the rest of the screen
-  // as a window to scroll through, and the top of the group is on screen from the
-  // start. The group's height is measured, so sections can be added freely.
-  let pinnedGroupHeight = $state(0)
-  // Sticking the group's bottom edge that far below the screen edge leaves exactly
-  // the peek showing. Sticky releases the group once the table above has been
-  // scrolled through, and the rest of the group scrolls into view.
-  const pinnedGroupStickyBottom = $derived.by(() => {
-    if (!pinnedGroupHeight) {
-      return undefined
-    }
-    // A group shorter than the peek shows whole, without hanging below the screen
-    // edge.
-    const peek = Math.min(pinnedGroupHeight, pinnedPixelsAfterPipelineTable)
-    return `${peek - pinnedGroupHeight}px`
-  })
 </script>
 
 <AppHeader>
@@ -199,18 +173,10 @@
           </div>
         {/if}
       </div>
-      <!-- Every section in here pins as one group over the tail of the pipelines
-           table until the table has been scrolled through: the peek is
-           `pinnedPixelsAfterPipelineTable` tall, and the page background hides the
-           rows behind the group. The table flows at full height, so the page
-           remains the single scroll container. Sections added here pin along with
-           the rest. -->
-      <div
-        class="bg-white-dark sticky left-0 z-10 flex max-w-[100cqi] flex-col gap-8"
-        style:bottom={pinnedGroupStickyBottom}
-        bind:offsetHeight={pinnedGroupHeight}
-        data-testid="box-pinned-sections"
-      >
+      <!-- Sections added in here pin over the tail of the pipelines table until the
+           table has been scrolled through, and each brings itself into view when it
+           is clicked. -->
+      <PinnedSections class="max-w-[100cqi] gap-8">
         {#if demos.current.length}
           <div class="px-2 md:px-8">
             <InlineDropdown bind:open={showSuggestedDemos.value}>
@@ -262,7 +228,7 @@
             </InlineDropdown>
           </div>
         {/if}
-      </div>
+      </PinnedSections>
     </div>
   </div>
   <div class="sticky left-0"><Footer></Footer></div>

@@ -107,12 +107,25 @@ vi.mock('$lib/compositions/useDemos.svelte', () => ({
 }))
 
 // Imported AFTER vi.mock so the mocks take effect.
-import HomePage, { pinnedPixelsAfterPipelineTable } from './+page.svelte'
+import { pinnedSectionsPeekPixels } from '$lib/components/layout/PinnedSections.svelte'
+import HomePage from './+page.svelte'
 
 const SCROLL_AREA_HEIGHT = 800
 // What the pinned group shows at rest; the table's window gets the rest of the screen.
-const PEEK = pinnedPixelsAfterPipelineTable
+const PEEK = pinnedSectionsPeekPixels
 const ALL_PIPELINES = list.names
+
+/** The wrapper around the demos, which is the pinned group's own section. */
+const demosSection = (container: HTMLElement) =>
+  [...container.querySelectorAll<HTMLElement>('[data-testid=box-pinned-sections] > div')].find(
+    (section) => section.textContent?.includes('Explore use cases and tutorials')
+  )!
+
+/** The demos' collapse toggle, which a click reaches only once the section is up. */
+const demosHeader = (section: HTMLElement) =>
+  section.querySelector<HTMLElement>('[role=presentation]')!
+
+const click = (element: HTMLElement) => element.click()
 
 /** Mounts the page in a container of known size and returns the scroll geometry. */
 const renderHome = async ({ width = 1200 }: { width?: number } = {}) => {
@@ -236,6 +249,63 @@ describe('/ (home) scroll layout', () => {
     expect(added.getBoundingClientRect().top).toBeCloseTo(visible.bottom - PEEK, 0)
     const demos = pinnedGroup.lastElementChild!.getBoundingClientRect()
     expect(demos.top).toBeGreaterThanOrEqual(visible.bottom - 1)
+  })
+
+  it('brings the demos section up when its peek is clicked', async () => {
+    const { container, scrollArea } = await renderHome()
+    const section = demosSection(container)
+    const visible = scrollArea.getBoundingClientRect()
+
+    click(demosHeader(section))
+
+    // The section is taller than half the screen, so it comes up as far as it takes
+    // to show all of it and no further.
+    await expect
+      .poll(() => Math.round(section.getBoundingClientRect().bottom))
+      .toBe(Math.round(visible.bottom))
+    const top = section.getBoundingClientRect().top - visible.top
+    expect(top).toBeGreaterThan(0)
+    expect(top).toBeLessThanOrEqual(SCROLL_AREA_HEIGHT / 2)
+    // The click went to the section, not to the collapse toggle under the pointer:
+    // the demos are still on show.
+    expect(section.textContent).toContain('Demo 0')
+  })
+
+  it('stops the top of a short section at the middle of the screen', async () => {
+    const { container, scrollArea, pinnedGroup } = await renderHome()
+    const section = demosSection(container)
+    const offsetBefore = pinnedGroup.style.bottom
+    // Short enough to fit below the middle, with room left underneath to scroll
+    // through: at the very end of the page there would be nothing to scroll into.
+    section.style.height = '200px'
+    const below = document.createElement('div')
+    below.style.height = '400px'
+    pinnedGroup.after(below)
+    await expect.poll(() => pinnedGroup.style.bottom).not.toBe(offsetBefore)
+
+    click(demosHeader(section))
+
+    const visible = scrollArea.getBoundingClientRect()
+    await expect
+      .poll(() => Math.round(section.getBoundingClientRect().top - visible.top))
+      .toBe(SCROLL_AREA_HEIGHT / 2)
+  })
+
+  it('lets a click through once the section is in view', async () => {
+    const { container, scrollArea } = await renderHome()
+    const section = demosSection(container)
+    const visible = scrollArea.getBoundingClientRect()
+
+    click(demosHeader(section))
+    await expect
+      .poll(() => section.getBoundingClientRect().bottom)
+      .toBeLessThanOrEqual(visible.bottom + 1)
+
+    // Nothing stands between the pointer and the section's own controls any more:
+    // this click collapses the demos.
+    click(demosHeader(section))
+
+    await expect.poll(() => section.textContent).not.toContain('Demo 0')
   })
 })
 
