@@ -70,9 +70,9 @@
 
   let collectNewData = $state(collect)
   let fileInput: HTMLInputElement | null = $state(null)
-  // Set when the URL names a bundle in the history: the file handle is known,
-  // but reading it may still need the user to re-grant access — browsers drop
-  // those grants between sessions.
+  // Set when the URL names a bundle in the history: where to read the file is
+  // known, but reading it may need the user to grant access, since browsers drop
+  // file grants between sessions.
   let pendingBundle: StoredSupportBundle | null = $state(null)
 
   const withLoadGuard = createLoadGuard({
@@ -138,20 +138,20 @@
     withLoadGuard(async () => {
       if (source === 'upload') {
         if (storedBundleId) {
-          // The bundle is in the history: read it here, which is what makes this
-          // tab reloadable.
+          // The bundle is in the history: reading it here is what makes this tab
+          // reloadable.
           const { bundle, needsPermission } = await resolveStoredBundle(storedBundleId)
           pendingBundle = bundle
           if (needsPermission) {
-            // Re-granting read access to a file needs a click, so the empty
-            // state offers one instead of asking here.
+            // Granting read access to a file needs a click, so the empty state
+            // offers one.
             return
           }
           await loadStoredBundle(bundle)
           return
         }
-        // No history entry: the tab that picked the bundle hands the bytes over,
-        // the last resort for an archive too big to keep a copy of.
+        // No history entry: the tab that picked the bundle hands the bytes over.
+        // The last resort, for an archive too big to keep a copy of.
         const buffer = await receiveUploadedBundle(channel)
         await processZipBundle(
           new Uint8Array(buffer),
@@ -204,9 +204,8 @@
   }
 
   /**
-   * Loads a bundle the user picked in this tab. Once it is in the history the URL
-   * is rewritten to name it, so reloading this tab reopens the same bundle
-   * instead of coming up empty.
+   * Loads a bundle the user picked in this tab. A bundle in the history is named in
+   * the URL, so reloading this tab reopens it.
    */
   async function handlePickedBundle(bundle: PickedBundle) {
     getProfileData = null
@@ -418,10 +417,10 @@
       {/if}
       {#if pendingBundle}
         {@const stored = pendingBundle}
-        <!-- Reached by opening this URL directly — after a browser restart, say —
-             when the browser has forgotten the file grant. Coming from the home
-             page there is nothing to confirm here: the grant was given there, so
-             the profile is already loading. -->
+        <!-- Shown when the browser holds no grant for the file, which is the case
+             for this URL opened directly (after a browser restart, say). Coming
+             from the home page the grant is given there, so the profile is
+             already loading and there is nothing to confirm. -->
         <SupportBundleConfirm
           name={stored.name}
           confirmLabel="Open from disk"

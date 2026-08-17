@@ -6,18 +6,19 @@
    *   - `mode="menu"` (the pipeline editor's split button): the trigger opens a
    *     dropdown offering the download, the "collect new data" toggle and the
    *     entry that picks a bundle.
-   *   - `mode="pick"` (the home page's button): the trigger picks a bundle
-   *     straight away, and the dropdown holds nothing but the confirmation.
+   *   - `mode="pick"` (the "Open support bundle" dialog's button): the trigger
+   *     picks a bundle straight away, and the dropdown holds the confirmation
+   *     alone.
    *
-   * Confirming is a second click by design: `window.open` counts as a popup
+   * Confirming takes a second click by design: `window.open` counts as a popup
    * unless it runs synchronously inside a click handler, and picking a file is
-   * asynchronous. So picking only shows the confirmation, and the click on it
-   * opens the tab.
+   * asynchronous. So picking shows the confirmation, and the click on it opens the
+   * tab.
    *
-   * A picked bundle is remembered in the bundle history, so the viewer tab can
-   * read it again — including after a reload. Browsers without the File System
-   * Access API fall back to the hidden file input below, whose file the history
-   * keeps a copy of; only a bundle too big to copy is handed over as bytes, once.
+   * A picked bundle goes into the bundle history, so the viewer tab can read it
+   * again, including after a reload. Browsers without the File System Access API
+   * fall back to the hidden file input below, whose file the history copies; only
+   * a bundle too big to copy is handed over as bytes, once.
    */
   import { slide } from 'svelte/transition'
   import Popup from '$lib/components/common/Popup.svelte'
@@ -35,6 +36,16 @@
     mode?: 'menu' | 'pick'
     /** Which edge of the trigger the dropdown hangs from. */
     align?: 'left' | 'right'
+    /**
+     * Which way the dropdown opens. Use `'up'` for a trigger near the bottom edge
+     * of its container, where a downward dropdown would hang off.
+     */
+    drop?: 'down' | 'up'
+    /**
+     * Runs once the viewer tab is open, so a caller the tab makes redundant (a
+     * dialog, say) can close itself.
+     */
+    onOpened?: () => void
     /** Menu mode only; when omitted the menu offers no download. */
     onDownload?: () => void
     collectNewData?: boolean
@@ -49,6 +60,8 @@
     trigger,
     mode = 'menu',
     align = 'right',
+    drop = 'down',
+    onOpened,
     onDownload,
     collectNewData = $bindable(false),
     downloadLabel,
@@ -91,7 +104,7 @@
     }
   }
 
-  /** Drops the pick: back to the menu where there is one, otherwise away. */
+  /** Drops the pick: back to the menu in menu mode, otherwise closes the dropdown. */
   function dismissPicked() {
     picked = null
     if (mode === 'pick') {
@@ -114,6 +127,7 @@
       // The viewer reads the bundle out of the history itself, so nothing has to
       // be handed over and its tab survives a reload.
       openStoredBundleTab(bundle.bundleId)
+      onOpened?.()
       return
     }
 
@@ -124,6 +138,9 @@
       reportError('Opening support bundle viewer')(e)
       return
     }
+    // The transfer below outlives this component if `onOpened` unmounts it: the
+    // handoff is a plain closure over the opened window, not component state.
+    onOpened?.()
     ;(async () => {
       try {
         const bytes = await bundle.read()
@@ -169,10 +186,10 @@
 {#snippet dropdown(close: () => void)}
   <div
     transition:slide={{ duration: 100 }}
-    class="bg-white-dark absolute top-10 z-30 flex min-w-[220px] flex-col overflow-hidden rounded shadow-md {align ===
+    class="bg-white-dark absolute z-30 flex min-w-[220px] flex-col overflow-hidden rounded shadow-md {align ===
     'right'
       ? 'right-0'
-      : 'left-0'}"
+      : 'left-0'} {drop === 'up' ? 'bottom-10' : 'top-10'}"
     data-testid="box-support-bundle-menu"
   >
     {#if mode === 'pick'}

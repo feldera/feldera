@@ -30,9 +30,9 @@ import {
  *
  * The methods sit on the prototype on purpose: IndexedDB stores a handle with
  * structured clone, which copies own properties only, so a fake carrying own
- * function properties would be rejected with a DataCloneError. A fake read back
- * out of the database therefore has the data and none of the methods - exactly
- * like a real handle loses nothing, but a fake does.
+ * function properties is rejected with a DataCloneError. A fake read back out of
+ * the database therefore carries the data and none of the methods, where a real
+ * handle keeps both.
  */
 const fakeHandle = (name: string, contents = 'bundle contents') =>
   Object.create(
@@ -124,7 +124,7 @@ describe('supportBundleHistory', () => {
       const bundles = await listSupportBundles()
       expect(bundles).toHaveLength(maxRememberedBundles)
       expect(bundles.at(0)?.name).toBe(`bundle-${maxRememberedBundles}.zip`)
-      // The very first bundle is the one that fell off the end.
+      // The very first bundle is the one that falls off the end.
       expect(bundles.map((b) => b.name)).not.toContain('bundle-0.zip')
     })
   })
@@ -164,9 +164,9 @@ describe('supportBundleHistory', () => {
 
       const { bundle, needsPermission } = await resolveStoredBundle(id)
 
-      // A stored fake carries no permission API, which is the case
-      // `queryBundleReadPermission` answers with 'granted'; a real handle whose
-      // grant has lapsed comes back as 'prompt' and is covered there.
+      // A stored fake carries no permission API, the case
+      // `queryBundleReadPermission` answers with 'granted'. A real handle whose
+      // grant has lapsed answers 'prompt'.
       expect(bundle.name).toBe('pipeline-a.zip')
       expect(needsPermission).toBe(false)
     })

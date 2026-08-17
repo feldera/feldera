@@ -12,8 +12,8 @@
     wrapperClass?: string
     /**
      * Whether the content is showing. Bind it when something other than the
-     * trigger's click opens the popup; leaving it alone keeps the popup's own
-     * toggle in charge. Clicking away closes it either way.
+     * trigger's click opens the popup; when unbound, the popup's own state is in
+     * charge. Clicking away closes it either way.
      */
     open?: boolean
   } = $props()

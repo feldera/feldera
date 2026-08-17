@@ -1,14 +1,17 @@
 /**
- * Home page scroll layout. The page is the only scroll container: the pipelines
- * table flows at full height and the sections below it pin as one group over the
- * table's tail, so the table reads as a window that the page scroll walks
- * through while the top of the group waits at the bottom of the screen.
+ * Home page scroll layout, and the order of the header's controls.
+ *
+ * The page is the only scroll container: the pipelines table flows at full
+ * height and the sections below it pin as one group over the table's tail, so
+ * the table reads as a window that the page scroll walks through while the top
+ * of the group waits at the bottom of the screen.
  *
  * Every assertion compares measured geometry, so the numbers hold whatever the
  * browser's scrollbar metrics are.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 import type { Demo, PipelineThumb } from '$lib/services/pipelineManager'
 
@@ -33,7 +36,7 @@ const thumb = (name: string): PipelineThumb =>
   }) as unknown as PipelineThumb
 
 // `list.names` is what the mocked composition serves; a test sets it before
-// rendering to choose how tall the table wants to be.
+// rendering to control how tall the table is.
 const { list, demos } = vi.hoisted(() => ({
   // Enough rows that the table overflows any window the fixture can give it.
   list: { names: Array.from({ length: 40 }, (_, i) => `pipeline-${i}`) },
@@ -56,7 +59,8 @@ vi.mock('$app/state', () => ({
         edition: 'Enterprise',
         changelog: 'https://example.com/changelog',
         unstableFeatures: [],
-        permissions: ['read', 'write']
+        // Real `Permission` values, so the RBAC-gated header controls render.
+        permissions: ['read:pipeline', 'write:pipeline']
       },
       auth: {
         logout: vi.fn(),
@@ -112,8 +116,8 @@ const ALL_PIPELINES = list.names
 
 /** Mounts the page in a container of known size and returns the scroll geometry. */
 const renderHome = async ({ width = 1200 }: { width?: number } = {}) => {
-  // The welcome banner is a one-time greeting that takes the top of the page;
-  // dismissing it is the state the page spends its life in.
+  // The welcome banner is a one-time greeting at the top of the page; dismissed is
+  // the state the page spends its life in.
   localStorage.setItem('home/welcomed', 'true')
   const { container } = render(HomePage)
   container.style.width = `${width}px`
@@ -127,12 +131,6 @@ const renderHome = async ({ width = 1200 }: { width?: number } = {}) => {
   await expect.poll(() => scrollArea.clientHeight).toBe(SCROLL_AREA_HEIGHT)
   await new Promise((settled) => requestAnimationFrame(() => requestAnimationFrame(settled)))
   return { container, scrollArea, pipelines, pinnedGroup }
-}
-
-/** Scrolls the page as a wheel gesture over the table would. */
-const scrollPageTo = (scrollArea: HTMLElement, top: number) => {
-  scrollArea.scrollTop = top
-  return scrollArea.scrollTop
 }
 
 describe('/ (home) scroll layout', () => {
@@ -197,27 +195,13 @@ describe('/ (home) scroll layout', () => {
     scrollArea.scrollTop = scrollArea.scrollHeight
     const visible = scrollArea.getBoundingClientRect()
     const released = pinnedGroup.getBoundingClientRect()
-    // It has moved up out of the pinned position and no longer hangs off the
-    // bottom of the screen, so its tail is reachable.
+    // The group has moved up out of the pinned position and clears the bottom of
+    // the screen, so its tail is reachable.
     expect(released.top).toBeLessThan(pinnedTop)
     expect(released.bottom).toBeLessThanOrEqual(visible.bottom + 1)
-    // The table is clear of it: every row the peek covered on the way down has
-    // been scrolled through by now.
+    // The table is clear of the group: every row the peek covered has been
+    // scrolled through.
     expect(pipelines.getBoundingClientRect().bottom).toBeLessThanOrEqual(released.top + 1)
-  })
-
-  it('starts the section titles at the same x', async () => {
-    const { container } = await renderHome()
-
-    // Both titles lead with an icon of the same size at the same gap, so their
-    // text begins at the same offset. The icons measure nothing here — this
-    // browser loads no icon font — which is exactly why the gap and the icon's
-    // place in the row are what this compares.
-    const titleLeft = (text: string) =>
-      [...container.querySelectorAll<HTMLElement>('span,div')]
-        .find((el) => !el.children.length && el.textContent?.trim() === text)!
-        .getBoundingClientRect().left
-    expect(titleLeft('Pipeline profiles')).toBeCloseTo(titleLeft('Your pipelines'), 0)
   })
 
   it('does not pin the group when the pipelines fit on screen', async () => {
@@ -225,7 +209,7 @@ describe('/ (home) scroll layout', () => {
     const { scrollArea, pipelines, pinnedGroup } = await renderHome()
 
     // Three rows leave the group room above the pin line, so it keeps its place in
-    // the flow — `gap-8` below the table — instead of floating over the gap.
+    // the flow, `gap-8` below the table, without floating over the gap.
     const gap = pinnedGroup.getBoundingClientRect().top - pipelines.getBoundingClientRect().bottom
     expect(gap).toBeCloseTo(32, 0)
     expect(scrollArea.scrollTop).toBe(0)
@@ -235,9 +219,8 @@ describe('/ (home) scroll layout', () => {
     const { scrollArea, pinnedGroup } = await renderHome()
     const offsetBefore = pinnedGroup.style.bottom
 
-    // Stands in for a section added at the top of the group: the peek has to keep
-    // its height and show this section, pushing the demos below the screen edge
-    // instead of growing the peek.
+    // Stands in for a section added at the top of the group: the peek keeps its
+    // height and shows this section, which pushes the demos below the screen edge.
     const added = document.createElement('div')
     added.style.height = '300px'
     added.textContent = 'ADDED SECTION'
@@ -253,5 +236,33 @@ describe('/ (home) scroll layout', () => {
     expect(added.getBoundingClientRect().top).toBeCloseTo(visible.bottom - PEEK, 0)
     const demos = pinnedGroup.lastElementChild!.getBoundingClientRect()
     expect(demos.top).toBeGreaterThanOrEqual(visible.bottom - 1)
+  })
+})
+
+describe('/ (home) header', () => {
+  // Below 1280px the header collapses into a single drawer button, and the test
+  // iframe is narrower than that by default, so these tests widen it and put it
+  // back for whatever runs next.
+  const narrow = { width: window.innerWidth, height: window.innerHeight }
+  beforeEach(() => page.viewport(1400, 900))
+  afterEach(() => page.viewport(narrow.width, narrow.height))
+
+  it('offers the support bundle dialog between the community menu and New Pipeline', async () => {
+    const { container } = await renderHome()
+
+    // The button is a direct child of the header row, which distinguishes the
+    // header's New Pipeline button from the table's copy.
+    const bundles = container.querySelector<HTMLElement>('[data-testid=btn-open-support-bundle]')!
+    const header = bundles.parentElement!
+    const labelled = (text: string) =>
+      [...header.querySelectorAll<HTMLElement>('button')]
+        .find((button) => button.textContent?.includes(text))!
+        .getBoundingClientRect()
+    expect(labelled('Community').right).toBeLessThanOrEqual(
+      bundles.getBoundingClientRect().left + 1
+    )
+    expect(bundles.getBoundingClientRect().right).toBeLessThanOrEqual(
+      labelled('New Pipeline').left + 1
+    )
   })
 })

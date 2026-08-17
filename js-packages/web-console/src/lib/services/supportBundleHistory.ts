@@ -10,11 +10,11 @@
  *   Chromium (picker)           handle          a few hundred B   a re-grant
  *   Firefox, Safari (input)     file            the whole archive nothing
  *
- * A handle is the better deal wherever it exists: it costs nothing whatever the
- * size of the archive behind it. Browsers with no File System Access API (Firefox
- * and Safari as of 2026) only ever hand out a `File`, which cannot be re-opened
- * from its path, so the archive itself is cached in the database. Everything
- * specific to those copies lives in `supportBundleCache.ts`.
+ * A handle is preferred wherever it exists: it costs the same few hundred bytes
+ * whatever the size of the archive behind it. Browsers with no File System Access
+ * API (Firefox, Safari) only hand out a `File`, which cannot be re-opened from its
+ * path, so the database caches the archive itself. Everything specific to those
+ * copies lives in `supportBundleCache.ts`.
  *
  * Either way the entry is re-readable from any tab of this origin, which is how
  * the profile viewer opens a bundle the home page linked to.
@@ -44,9 +44,9 @@ export type LinkedSupportBundle = SupportBundleFacts & { handle: FileSystemFileH
 export type CachedSupportBundle = SupportBundleFacts & { file: File }
 
 /**
- * A remembered bundle. The two ways of holding on to a file are alternatives
- * rather than optional fields, so reading one starts by deciding which kind of
- * entry is in hand: `isLinkedBundle` here, `isCachedBundle` in the cache module.
+ * A remembered bundle. The two ways of holding a file are alternatives, not
+ * optional fields, so reading an entry starts with deciding which kind it is:
+ * `isLinkedBundle` here, `isCachedBundle` in the cache module.
  */
 export type StoredSupportBundle = LinkedSupportBundle | CachedSupportBundle
 
@@ -60,10 +60,10 @@ export const isLinkedBundle = (
 /** Read/write access to a single file, as `navigator.permissions` reports it. */
 export type BundlePermissionState = 'granted' | 'denied' | 'prompt'
 
-// The parts of the File System Access API that TypeScript 5.9's lib.dom.d.ts
-// does not declare yet, narrowed to what we call. All three are optional: a
-// browser may ship the handles without the permission methods, and none of them
-// exists at all outside Chromium.
+// The parts of the File System Access API that TypeScript 5.9's lib.dom.d.ts does
+// not declare, narrowed to what we call. All three are optional: a browser may
+// ship the handles without the permission methods, and outside Chromium none of
+// them exists.
 type FileHandleWithPermissions = FileSystemFileHandle & {
   queryPermission?: (descriptor: { mode: 'read' }) => Promise<BundlePermissionState>
   requestPermission?: (descriptor: { mode: 'read' }) => Promise<BundlePermissionState>
@@ -76,9 +76,9 @@ type WindowWithFilePicker = Window & {
 }
 
 /**
- * Whether a bundle can be picked as a handle. False in browsers that have no
- * file picker - callers fall back to a plain file input, and the history caches a
- * copy of the archive instead of a reference to it.
+ * Whether a bundle can be picked as a handle. False in browsers with no file
+ * picker, where callers fall back to a plain file input and the history caches a
+ * copy of the archive.
  *
  * A feature check, so the answer is settled before anything is rendered.
  */
@@ -178,9 +178,9 @@ export const getSupportBundle = async (id: number): Promise<StoredSupportBundle 
 /**
  * Same file as `handle`, if it is already in the history.
  *
- * `isSameEntry` is the only reliable identity test - two handles for one file
- * are separate objects, and a name matches across directories. Handles stored
- * by a browser that does not implement it fall back to the name.
+ * `isSameEntry` is the only reliable identity test: two handles for one file are
+ * separate objects, and a name matches across directories. Handles from a browser
+ * that does not implement it fall back to a name match.
  */
 const findSameEntry = async (
   handle: FileSystemFileHandle
@@ -229,9 +229,9 @@ export const putSupportBundle = async (
   id: number | undefined,
   entry: NewSupportBundle
 ): Promise<StoredSupportBundle> => {
-  // A known id updates that entry in place. Leaving the property out altogether,
-  // rather than setting it to undefined, is what lets IndexedDB's key generator
-  // assign a new one.
+  // A known id updates that entry in place. Omitting the property, rather than
+  // setting it to undefined, is what lets IndexedDB's key generator assign a new
+  // one.
   const record = id === undefined ? entry : { ...entry, id }
   const key = await withStore('readwrite', (store) =>
     promisify(store.put(record) as IDBRequest<IDBValidKey>)
@@ -297,8 +297,8 @@ export const queryBundleReadPermission = async (
  * Asks the user to re-grant read access to a bundle, and reports whether the
  * bundle can be read afterwards.
  *
- * MUST be called from a user-gesture handler - browsers reject a permission
- * request that no click can be attributed to.
+ * MUST be called from a user-gesture handler: browsers reject a permission request
+ * that no click can be attributed to.
  */
 export const requestBundleReadPermission = async (
   bundle: StoredSupportBundle
@@ -314,9 +314,9 @@ export const requestBundleReadPermission = async (
 }
 
 /**
- * Looks up a remembered bundle and reports whether reading it still needs the
- * user to re-grant access. Throws when the history no longer holds the entry —
- * a stale link, or a history that has been cleared since.
+ * Looks up a remembered bundle and reports whether reading it needs the user to
+ * grant access. Throws when the history holds no such entry: a stale link, or a
+ * cleared history.
  */
 export const resolveStoredBundle = async (
   id: number | undefined

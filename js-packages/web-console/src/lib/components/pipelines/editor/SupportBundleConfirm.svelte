@@ -1,16 +1,14 @@
 <script lang="ts">
   /**
-   * A chosen support bundle and the one button that opens it.
+   * A chosen support bundle and the button that opens it.
    *
-   * Every place a bundle needs a second click shows this: the dropdown on the
+   * Shown wherever opening a bundle needs a second click: the dropdowns on the
    * home page and in the pipeline editor after a file is picked, the home page's
-   * rows once the browser has re-granted access, and the profile viewer's own
-   * empty state when it was opened by URL alone. Sharing it keeps the wording and
-   * the contract identical — the click on this button, and nothing before it,
-   * opens the profile.
+   * rows once the browser has re-granted access, and the profile viewer's empty
+   * state when the tab was opened by URL alone.
    *
-   * `variant` is the only difference: `popup` sits in a dropdown under whatever
-   * was clicked, `page` stands on its own in the middle of an empty page.
+   * `variant` places it: `popup` in a dropdown under whatever was clicked, `page`
+   * in the middle of an empty page.
    */
   type Props = {
     name: string

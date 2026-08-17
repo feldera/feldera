@@ -1,9 +1,9 @@
 /**
  * The pipeline editor's support-bundle dropdown. It shares `SupportBundlePopup`
- * with the home page, so these tests pin down the menu shape only the editor has
+ * with the home page, so these tests cover the menu shape specific to the editor
  * plus the two ways a bundle reaches the viewer from here: the file picker, whose
  * handle the history keeps, and the file input, whose file the history copies.
- * Either way the bundle turns up on the home page afterwards.
+ * Either way the bundle turns up on the home page.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -174,7 +174,7 @@ describe('DownloadSupportBundle.svelte', () => {
     click(find(container, 'btn-confirm-view-profile'))
 
     // The history holds a copy of the archive, so the viewer reads it from there
-    // instead of being handed the bytes.
+    // and no bytes are handed over.
     expect(openStoredBundleTab).toHaveBeenCalledWith(id)
     expect(openUploadBundleTab).not.toHaveBeenCalled()
     expect(sendBundle).not.toHaveBeenCalled()

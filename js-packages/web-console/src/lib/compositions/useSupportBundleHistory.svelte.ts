@@ -10,11 +10,11 @@ import {
 } from '$lib/services/supportBundleHistory'
 
 /**
- * A remembered bundle plus whether reading it still needs the user's blessing.
+ * A remembered bundle plus whether reading it needs the user's permission.
  *
  * The permission is queried when the list is read, not when a bundle is opened:
- * asking the browser for it takes a click, and a caller only knows whether it has
- * to ask for one if it already knows the answer.
+ * requesting it takes a click, so a caller has to know the answer before it can
+ * decide whether to ask for one.
  */
 export type SupportBundleEntry = StoredSupportBundle & { needsPermission: boolean }
 
@@ -73,7 +73,7 @@ export const useSupportBundleHistory = () => {
     /**
      * Records a bundle that came from a file input, by keeping a copy of it.
      * Returns null when there is no room for the copy, or when the storage quota
-     * refuses it - the bundle still opens, it just leaves no history entry.
+     * refuses it. The bundle still opens; it just leaves no history entry.
      */
     async rememberFile(file: File) {
       try {
@@ -86,7 +86,7 @@ export const useSupportBundleHistory = () => {
       }
     },
     /**
-     * Asks the browser to let this bundle be read again, which it forgets between
+     * Asks for read access to this bundle again; browsers drop file grants between
      * sessions. MUST be called from a user-gesture handler.
      */
     async grantAccess(bundle: StoredSupportBundle) {
@@ -96,7 +96,7 @@ export const useSupportBundleHistory = () => {
       }
       return granted
     },
-    /** Moves a bundle to the front of the history, after the user opened it. */
+    /** Moves a bundle to the front of the history, as the most recently opened. */
     async touch(id: number) {
       try {
         await touchSupportBundle(id)

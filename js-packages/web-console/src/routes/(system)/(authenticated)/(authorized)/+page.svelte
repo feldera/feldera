@@ -4,7 +4,7 @@
    * pipelines table is being scrolled; the table's window gets the rest of the
    * screen. Exported so the layout test asserts against the same number.
    */
-  export const pinnedPixelsAfterPipelineTable = 108
+  export const pinnedPixelsAfterPipelineTable = 44
 </script>
 
 <script lang="ts">
@@ -23,7 +23,7 @@
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import DemoTile from '$lib/components/other/DemoTile.svelte'
-  import PipelineProfiles from '$lib/components/other/PipelineProfiles.svelte'
+  import OpenSupportBundleButton from '$lib/components/other/OpenSupportBundleButton.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import PipelineTable from '$lib/components/pipelines/Table.svelte'
   import AvailableActions from '$lib/components/pipelines/table/AvailableActions.svelte'
@@ -68,21 +68,20 @@
 
   const demos = useDemos()
 
-  // The page is the only thing that scrolls. The sections below the pipelines pin
-  // as one group over the bottom of the table, which leaves the table the rest of
-  // the screen as a window to scroll through and puts the top of the group on
-  // screen from the start. The group is measured, so sections can be added to it
-  // freely.
+  // The page is the only scroll container. The sections below the pipelines pin as
+  // one group over the bottom of the table: the table gets the rest of the screen
+  // as a window to scroll through, and the top of the group is on screen from the
+  // start. The group's height is measured, so sections can be added freely.
   let pinnedGroupHeight = $state(0)
-  // Sticking the group's bottom edge that far below the screen edge leaves
-  // exactly the peek showing. Sticky releases the group on its own once the table
-  // above has been scrolled through, and the rest of it scrolls into view.
+  // Sticking the group's bottom edge that far below the screen edge leaves exactly
+  // the peek showing. Sticky releases the group once the table above has been
+  // scrolled through, and the rest of the group scrolls into view.
   const pinnedGroupStickyBottom = $derived.by(() => {
     if (!pinnedGroupHeight) {
       return undefined
     }
-    // A group shorter than the peek shows whole, rather than hanging below the
-    // screen edge.
+    // A group shorter than the peek shows whole, without hanging below the screen
+    // edge.
     const peek = Math.min(pinnedGroupHeight, pinnedPixelsAfterPipelineTable)
     return `${peek - pinnedGroupHeight}px`
   })
@@ -99,6 +98,7 @@
       </button>
     {:else}
       <NavigationExtras></NavigationExtras>
+      <OpenSupportBundleButton></OpenSupportBundleButton>
       <div class="relative">
         <CreatePipelineButton inputClass="max-w-64" btnClass="preset-filled-surface-50-950"
         ></CreatePipelineButton>
@@ -201,19 +201,16 @@
       </div>
       <!-- Every section in here pins as one group over the tail of the pipelines
            table until the table has been scrolled through: the peek is
-           `pinnedPixelsAfterPipelineTable` tall, and the page background makes the
-           group hide the rows behind it. The table keeps flowing at full height,
-           so the page stays the single thing that scrolls. Add sections to this
-           group to have them pinned along with the rest. -->
+           `pinnedPixelsAfterPipelineTable` tall, and the page background hides the
+           rows behind the group. The table flows at full height, so the page
+           remains the single scroll container. Sections added here pin along with
+           the rest. -->
       <div
         class="bg-white-dark sticky left-0 z-10 flex max-w-[100cqi] flex-col gap-8"
         style:bottom={pinnedGroupStickyBottom}
         bind:offsetHeight={pinnedGroupHeight}
         data-testid="box-pinned-sections"
       >
-        <div class="px-2 md:px-8">
-          <PipelineProfiles></PipelineProfiles>
-        </div>
         {#if demos.current.length}
           <div class="px-2 md:px-8">
             <InlineDropdown bind:open={showSuggestedDemos.value}>

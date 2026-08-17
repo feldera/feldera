@@ -2,7 +2,7 @@
  * The cached half of the support bundle history: whole archives kept in
  * IndexedDB for browsers that hand out no file handles. Runs in the browser
  * project because a real IndexedDB and a real structured clone are what decide
- * whether a `File` can be stored at all.
+ * whether a `File` can be stored.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,9 +12,9 @@ const { listSupportBundles } = vi.hoisted(() => ({
   listSupportBundles: vi.fn<() => Promise<StoredSupportBundle[]>>()
 }))
 
-// The history module runs for real - the database, the writes and the count limit
+// The history module runs for real: the database, the writes and the count limit
 // are all genuine. Only the listing is a spy, so one test can report archive sizes
-// that no test could actually write.
+// too large to write here.
 vi.mock('./supportBundleHistory', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./supportBundleHistory')>()),
   listSupportBundles
@@ -68,7 +68,7 @@ describe('supportBundleCache', () => {
   describe('when the cache is needed', () => {
     it('follows the absence of the file picker', () => {
       // The answer is a feature check, so the interface can rely on it from the
-      // first render rather than waiting to find out.
+      // first render.
       vi.stubGlobal('showOpenFilePicker', vi.fn())
       expect(isBundleCacheRequired()).toBe(false)
 
@@ -81,8 +81,8 @@ describe('supportBundleCache', () => {
 
   describe('caching a file the input handed over', () => {
     it('keeps a copy of a file that comes with no handle', async () => {
-      // The whole point for Firefox and Safari: a `File` cannot be reopened from
-      // its path, so the archive itself has to survive in the database.
+      // Why the cache exists for Firefox and Safari: a `File` cannot be reopened
+      // from its path, so the archive itself has to survive in the database.
       const stored = await rememberSupportBundleFile(new File(['PK-not-really'], 'from-input.zip'))
 
       expect(stored?.name).toBe('from-input.zip')
@@ -189,8 +189,8 @@ describe('supportBundleCache', () => {
 
   describe('read permission', () => {
     it('asks nobody about a cached copy', async () => {
-      // The copy belongs to this origin: there is no file grant to lapse, which
-      // is what gives browsers with no picker a history that keeps working.
+      // The copy belongs to this origin: there is no file grant to lapse, which is
+      // what gives browsers with no picker a working history.
       const stored = await rememberSupportBundleFile(new File(['zip'], 'copied.zip'))
 
       expect(await queryBundleReadPermission(stored!)).toBe('granted')
