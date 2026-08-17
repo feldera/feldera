@@ -90,7 +90,12 @@ pub(crate) fn make_client(
     timeout: Option<u64>,
     tenant: Option<String>,
 ) -> Result<Client, Box<dyn std::error::Error>> {
-    let mut client_builder = reqwest::ClientBuilder::new().danger_accept_invalid_certs(insecure);
+    // reqwest-websocket needs HTTP/1.1. Over TLS, ALPN would otherwise
+    // negotiate h2 and the websocket upgrade in `handle_adhoc_query` fails
+    // with "the server responded with a different http version".
+    let mut client_builder = reqwest::ClientBuilder::new()
+        .http1_only()
+        .danger_accept_invalid_certs(insecure);
 
     if let Some(timeout) = timeout {
         client_builder = client_builder.timeout(Duration::from_secs(timeout));
