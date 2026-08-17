@@ -1508,8 +1508,9 @@ fn test_pg_transmitted_records_excludes_rows_lost_to_a_later_failure() {
     );
 }
 
-/// Selects the connector's backends that are inside a batch transaction, which
-/// is where the tests below inject their faults.
+/// Selects the backends that the connector under test is writing a batch
+/// through, which is where the tests below inject their faults. Callers bind
+/// `$1` to the pattern from [`statements_on`].
 ///
 /// Postgres serves each connection from a process of its own, a backend, lists
 /// one row per backend in `pg_stat_activity`, and terminates one on
@@ -1519,11 +1520,19 @@ fn test_pg_transmitted_records_excludes_rows_lost_to_a_later_failure() {
 /// transaction it was writing the batch into. The backends to terminate are the
 /// ones connected to this database (`datname`), inside a transaction
 /// (`xact_start`), whose latest statement is one of the connector's writes,
-/// which all call `jsonb_populate_recordset`; `pg_backend_pid` excludes the
-/// injecting thread's own backend. The connector prepares those same statements
-/// when it connects, so `query` alone would also match a backend that has yet to
-/// write anything; `xact_start` is what excludes it, preparation running outside
-/// a transaction.
+/// which all call `jsonb_populate_recordset` on the table under test;
+/// `pg_backend_pid` excludes the injecting thread's own backend.
+///
+/// Matching the table keeps the fault inside the test that injects it. These
+/// tests share one database, so a predicate that named only the connector's
+/// statements would match another test's connector just as readily: that fails
+/// a test which asked for no fault, and counts here as a fault this test landed,
+/// which is worse, since the count is how these tests know their fault arrived.
+///
+/// `xact_start` narrows the match to a backend with a statement in flight or a
+/// transaction open. It does not tell writing a statement apart from preparing
+/// one: preparing puts the statement's text through the parser, which reports it
+/// in `query` under a transaction of its own.
 ///
 /// The window these tests wait for is the span in which terminating a backend
 /// lands mid-batch: from the connector's first write statement until its
@@ -1531,21 +1540,31 @@ fn test_pg_transmitted_records_excludes_rows_lost_to_a_later_failure() {
 /// statement is running, because Postgres keeps reporting the last statement in
 /// `query` while the backend sits idle inside its transaction. Terminating a
 /// backend before the window opens costs the connector no more than an idle
-/// connection; terminating one after the window closes finds the batch already
-/// committed. Neither exercises the reconnect path under test.
+/// connection, or statements it prepares again; terminating one after the window
+/// closes finds the batch already committed. Neither exercises the reconnect
+/// path under test.
 const BATCH_BACKENDS: &str = "SELECT pid FROM pg_stat_activity \
      WHERE pid <> pg_backend_pid() AND datname = current_database() \
        AND xact_start IS NOT NULL \
-       AND query ILIKE '%jsonb_populate_recordset%'";
+       AND query ILIKE '%jsonb_populate_recordset%' \
+       AND query LIKE $1";
+
+/// The pattern that matches the statements the connector writes to `table`,
+/// whose name it quotes in every one of them.
+fn statements_on(table: &str) -> String {
+    format!("%\"{table}\"%")
+}
 
 /// Polls for up to eight seconds until the window is open, that is, until a
-/// connector backend is inside a batch transaction.
-fn wait_for_batch_transaction(client: &mut postgres::Client) -> bool {
+/// backend of the connector writing to `table` is inside a batch transaction.
+fn wait_for_batch_transaction(client: &mut postgres::Client, table: &str) -> bool {
+    let statements = statements_on(table);
+
     for _ in 0..40_000 {
         let found: i64 = client
             .query_one(
                 &format!("SELECT count(*) FROM ({BATCH_BACKENDS}) backends"),
-                &[],
+                &[&statements],
             )
             .map(|row| row.get(0))
             .unwrap_or(0);
@@ -1557,31 +1576,31 @@ fn wait_for_batch_transaction(client: &mut postgres::Client) -> bool {
     false
 }
 
-/// Terminates every connector backend that is inside a batch transaction, and
-/// reports whether it found one to terminate.
+/// Terminates every backend that the connector under test has inside a batch
+/// transaction, and reports whether it found one to terminate.
 ///
 /// Finding and terminating are one statement on purpose. The window is a matter
 /// of milliseconds, so checking first and terminating in a second round trip
 /// leaves a gap the batch can commit in.
-fn terminate_batch_backends(client: &mut postgres::Client) -> bool {
+fn terminate_batch_backends(client: &mut postgres::Client, table: &str) -> bool {
     let terminated: i64 = client
         .query_one(
             &format!(
                 "SELECT count(*) FROM \
                  (SELECT pg_terminate_backend(pid) FROM ({BATCH_BACKENDS}) backends) terminated"
             ),
-            &[],
+            &[&statements_on(table)],
         )
         .map(|row| row.get(0))
         .unwrap_or(0);
     terminated > 0
 }
 
-/// Polls for up to eight seconds until it terminates a connector backend inside
-/// a batch transaction.
-fn poll_and_terminate_batch_backends(client: &mut postgres::Client) -> bool {
+/// Polls for up to eight seconds until it terminates a backend of the connector
+/// writing to `table` inside a batch transaction.
+fn poll_and_terminate_batch_backends(client: &mut postgres::Client, table: &str) -> bool {
     for _ in 0..40_000 {
-        if terminate_batch_backends(client) {
+        if terminate_batch_backends(client, table) {
             return true;
         }
         std::thread::sleep(std::time::Duration::from_micros(200));
@@ -1595,12 +1614,12 @@ fn poll_and_terminate_batch_backends(client: &mut postgres::Client) -> bool {
 /// A round lands when it terminates a backend inside the window. A round that
 /// misses ends the loop; the caller asserts on the count, so a test whose fault
 /// never landed fails instead of passing.
-fn terminate_connector_backends(url: &str, rounds: usize) -> usize {
+fn terminate_connector_backends(url: &str, table: &str, rounds: usize) -> usize {
     let mut client = pg::pg_connect(url, &None);
     let mut landed = 0;
 
     for _ in 0..rounds {
-        if !poll_and_terminate_batch_backends(&mut client) {
+        if !poll_and_terminate_batch_backends(&mut client, table) {
             break;
         }
         landed += 1;
@@ -1652,7 +1671,9 @@ fn pg_reconnect_test(name: &str, threads: usize, kills: usize) {
     // The killer is the fault injector: a thread that terminates the connector's
     // backends over SQL from a connection of its own, as `BATCH_BACKENDS` describes.
     let killer_url = verify_url.clone();
-    let killer = std::thread::spawn(move || terminate_connector_backends(&killer_url, kills));
+    let killer_table = table_name.clone();
+    let killer =
+        std::thread::spawn(move || terminate_connector_backends(&killer_url, &killer_table, kills));
 
     controller.start();
     let landed = killer.join().expect("killer thread panicked");
@@ -1720,6 +1741,11 @@ fn test_pg_reconnect_survives_repeated_drops() {
 ///
 /// `ALTER DATABASE ... ALLOW_CONNECTIONS false` turns away even a superuser, so
 /// it stands in for a server that is restarting or under maintenance.
+///
+/// It turns away every connection to the database, not only the connector's,
+/// and the tests here share one database. So a test that closes the database
+/// fails any test that happens to be connecting, which is why every test that
+/// reaches postgres is `#[serial]`.
 struct RefusedConnections {
     admin: postgres::Client,
     database: String,
@@ -1807,17 +1833,18 @@ fn test_pg_reconnect_waits_out_a_refusing_database() {
     let (controller, _err_receiver) = PostgresTestStruct::test_circuit(config);
 
     let injector_url = verify_url.clone();
+    let injector_table = table_name.clone();
     let injector = std::thread::spawn(move || {
         // Every connection this thread needs has to exist before the database
         // starts turning connections away.
         let mut watcher = pg::pg_connect(&injector_url, &None);
         let mut refused = RefusedConnections::prepare(&injector_url);
 
-        if !wait_for_batch_transaction(&mut watcher) {
+        if !wait_for_batch_transaction(&mut watcher, &injector_table) {
             return false;
         }
         refused.refuse();
-        let terminated = poll_and_terminate_batch_backends(&mut watcher);
+        let terminated = poll_and_terminate_batch_backends(&mut watcher, &injector_table);
 
         // Outlast the first backoff steps, one and two seconds, so that more
         // than one reconnect fails.
@@ -1910,12 +1937,12 @@ fn test_pg_stops_while_the_database_is_unreachable() {
 
     controller.start();
     assert!(
-        wait_for_batch_transaction(&mut watcher),
+        wait_for_batch_transaction(&mut watcher, &table_name),
         "never caught the connector inside its batch transaction"
     );
     refused.refuse();
     assert!(
-        poll_and_terminate_batch_backends(&mut watcher),
+        poll_and_terminate_batch_backends(&mut watcher, &table_name),
         "never dropped the connector's connection"
     );
 
@@ -2982,12 +3009,14 @@ fn pg_simple(url: String, tls: Option<PostgresTlsConfig>) {
 }
 
 #[test]
+#[serial]
 fn test_pg_simple() {
     pg_simple(postgres_url(), None);
 }
 
 /// Same as `test_pg_simple` but over a TLS connection.
 #[test]
+#[serial]
 fn test_pg_simple_tls() {
     let (url, tls) = postgres_ssl_config();
     pg_simple(url, Some(tls));
