@@ -1,4 +1,7 @@
-use std::{collections::HashMap, fmt::Debug, io, net::TcpStream, thread::sleep, time::Duration};
+use std::{
+    collections::HashMap, fmt::Debug, io, net::TcpStream, net::ToSocketAddrs, thread::sleep,
+    time::Duration,
+};
 
 use crate::test::{
     TestStruct, init_test_logger, mock_input_pipeline, wait_for_output_ordered,
@@ -23,8 +26,14 @@ use tracing::info;
 static EMULATOR_PROJECT_ID: &str = "feldera-test";
 
 fn probe_port(address: &str) -> bool {
-    let connection_result =
-        TcpStream::connect_timeout(&address.parse().unwrap(), Duration::from_secs(1));
+    // The emulator address may be a hostname, e.g. a docker service name in
+    // CI, so resolve rather than parse an IP literal.
+    let resolved = address
+        .to_socket_addrs()
+        .unwrap_or_else(|e| panic!("cannot resolve emulator address {address}: {e}"))
+        .next()
+        .unwrap_or_else(|| panic!("emulator address {address} resolved to nothing"));
+    let connection_result = TcpStream::connect_timeout(&resolved, Duration::from_secs(1));
 
     match connection_result {
         Ok(_) => true, // Port is open
