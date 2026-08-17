@@ -10,7 +10,7 @@
     "license": {
       "name": "MIT OR Apache-2.0"
     },
-    "version": "0.334.0"
+    "version": "0.335.0"
   },
   "paths": {
     "/config/authentication": {
