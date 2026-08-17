@@ -122,7 +122,8 @@ jobs:
           DYNAMODB_ENDPOINT: http://dynamodb:8000
           POSTGRES_URL: postgres://postgres:password@postgres:5432
           REDPANDA_BROKERS: redpanda
-          # This thing can't resolve `localhost` (?), needs to be an IP address
+          # No pubsub emulator runs in this job; the probe sees
+          # connection-refused here and the pubsub tests skip.
           PUBSUB_EMULATOR_HOST: 127.0.0.1:8681
           ICEBERG_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
           ICEBERG_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
