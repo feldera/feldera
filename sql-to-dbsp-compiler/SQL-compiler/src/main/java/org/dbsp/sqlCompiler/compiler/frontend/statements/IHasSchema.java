@@ -35,7 +35,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
-/** An interface implemented by objects which have a name and a schema */
+/** An interface implemented by objects which have a name and a schema.
+ * This is mutated by the compiler! */
 public interface IHasSchema extends IHasCalciteObject, ICastable {
     /** The name of this object */
     ProgramIdentifier getName();

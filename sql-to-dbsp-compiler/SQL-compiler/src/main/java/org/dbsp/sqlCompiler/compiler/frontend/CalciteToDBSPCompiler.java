@@ -3355,7 +3355,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         // Skip unused columns is also set to TRUE if any connector sets it as true
         Properties properties = create.getProperties();
+        Long expectedSize = null;
         if (properties != null) {
+            String size = properties.getPropertyValue(CreateTableStatement.EXPECTED_SIZE);
+            if (size != null) {
+                expectedSize = Long.parseLong(size);
+            }
             String connectors = properties.getPropertyValue(CreateTableStatement.CONNECTORS);
             if (connectors != null) {
                 try {
@@ -3394,7 +3399,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
 
         TableMetadata tableMeta = new TableMetadata(
-                tableName, metadata, create.foreignKeys, materialized, appendOnly, skipUnusedColumns);
+                tableName, metadata, create.foreignKeys, expectedSize, materialized, appendOnly, skipUnusedColumns);
         DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                 new RelAnd(), identifier, TypeCompiler.makeZSet(rowType), originalRowType,
                 tableMeta, tableName, def.getStatement());
@@ -3412,7 +3417,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         CalciteObject identifier = CalciteObject.EMPTY;
         List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
         TableMetadata tableMeta = new TableMetadata(
-                tableName, metadata, new ArrayList<>(), false, false, null);
+                tableName, metadata, new ArrayList<>(), null, false, false, null);
         DBSPViewDeclarationOperator result = new DBSPViewDeclarationOperator(
                 create.getCalciteObject(), identifier, TypeCompiler.makeZSet(rowType), originalRowType,
                 tableMeta, tableName);

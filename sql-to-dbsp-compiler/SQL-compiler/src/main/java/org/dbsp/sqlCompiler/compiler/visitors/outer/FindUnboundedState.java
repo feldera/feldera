@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
@@ -18,6 +19,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
@@ -31,11 +33,14 @@ import org.dbsp.sqlCompiler.circuit.operator.INonLinearAggregate;
 import org.dbsp.sqlCompiler.circuit.operator.IStateful;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRanges;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.util.Logger;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /** Find operators whose state may grow without bound.
@@ -156,6 +161,14 @@ public class FindUnboundedState extends Passes {
             if (node.is(IInputOperator.class) &&
                     node.to(IInputOperator.class).getTableName().equals(DBSPCompiler.NOW_TABLE_NAME))
                 return true;
+            // An aggregate over an empty key always has bounded output
+            if (node.is(IAggregate.class)) {
+                var tuple = node.inputs.get(0).getOutputIndexedZSetType().keyType.to(DBSPBaseTupleExpression.class);
+                if (tuple.size() == 0) {
+                    return true;
+                }
+            }
+
             return propagatesBounded(node) && FindUnboundedState.this.allInputsBounded(node);
         }
 
@@ -176,6 +189,14 @@ public class FindUnboundedState extends Passes {
             OutputPort port = parent.to(DBSPNestedOperator.class).outputForDeclaration(node);
             if (port != null && FindUnboundedState.this.isBounded(port))
                 FindUnboundedState.this.bounded.add(node.outputPort());
+        }
+
+        @Override
+        public void postorder(DBSPSourceTableOperator node) {
+            if (node.metadata.expectedSize != null)
+                FindUnboundedState.this.bounded.add(node.outputPort());
+            else
+                super.postorder(node);
         }
 
         @Override
@@ -247,6 +268,8 @@ public class FindUnboundedState extends Passes {
                 sources += "\n";
             Logger.INSTANCE.belowLevel(FindUnboundedState.class, 1)
                     .append("Potentially unbounded memory in operator ")
+                    .append(Objects.requireNonNull(CompactName.getCompactName(operator)))
+                    .append(" ")
                     .append(operator.getClass().getSimpleName())
                     .newline()
                     .append(sources);
