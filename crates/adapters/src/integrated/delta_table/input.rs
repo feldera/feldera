@@ -2771,7 +2771,11 @@ impl DeltaTableInputEndpointInner {
 
                     return Err(format_datafusion_error(
                         &self.datafusion,
-                        &format!("error retrieving batch {num_batches}"),
+                        &format!(
+                            "error retrieving batch {num_batches} ({total_records} record(s) \
+                             from {num_batches} earlier batch(es) already queued for this \
+                             connector and will be re-read and duplicated if this is retried)"
+                        ),
                         &e,
                     ));
                 }
