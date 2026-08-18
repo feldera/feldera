@@ -110,6 +110,13 @@ RUN arch=`dpkg --print-architecture`; \
     && rm tflint_linux_$arch.zip
 RUN curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.74.0
 
+# dnscontrol deploys DNS in the infrastructure repo
+RUN arch=`dpkg --print-architecture`; \
+    curl -LO https://github.com/StackExchange/dnscontrol/releases/download/v4.46.0/dnscontrol_4.46.0_linux_$arch.tar.gz \
+    && tar -xzf dnscontrol_4.46.0_linux_$arch.tar.gz dnscontrol \
+    && mv dnscontrol /usr/local/bin/ \
+    && rm dnscontrol_4.46.0_linux_$arch.tar.gz
+
 FROM install-pkgs AS base
 
 # Modify ubuntu user UID/GID to 1001 and create docker group with GID 123
