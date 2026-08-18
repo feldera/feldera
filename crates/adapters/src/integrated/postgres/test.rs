@@ -1611,6 +1611,37 @@ fn poll_and_terminate_batch_backends(client: &mut postgres::Client, table: &str)
     false
 }
 
+/// Delays every INSERT statement on `table` by `delay`, so a connector's batch
+/// stays inside the [`BATCH_BACKENDS`] window for at least that long.
+///
+/// Without this, a batch that Postgres executes quickly can commit before a
+/// test's `refuse()` call and its first terminate poll land, so a test that
+/// only gets one shot at the window (unlike [`terminate_connector_backends`],
+/// which tolerates a miss by giving up on further rounds) needs the window
+/// held open long enough to guarantee it lands.
+fn widen_batch_window(client: &mut postgres::Client, table: &str, delay: std::time::Duration) {
+    let delay_secs = delay.as_secs_f64();
+    client
+        .execute(
+            &format!(
+                "CREATE OR REPLACE FUNCTION feldera_test_delay_insert() RETURNS trigger AS $$ \
+                 BEGIN PERFORM pg_sleep({delay_secs}); RETURN NULL; END; $$ LANGUAGE plpgsql"
+            ),
+            &[],
+        )
+        .expect("failed to create the batch-delay trigger function");
+    client
+        .execute(
+            &format!(
+                "CREATE TRIGGER feldera_test_delay_insert_trigger \
+                 BEFORE INSERT ON {table} FOR EACH STATEMENT \
+                 EXECUTE FUNCTION feldera_test_delay_insert()"
+            ),
+            &[],
+        )
+        .expect("failed to attach the batch-delay trigger");
+}
+
 /// Drops the connector's connections mid-batch, `rounds` times over, and reports
 /// how many rounds landed.
 ///
@@ -1937,6 +1968,7 @@ fn test_pg_stops_while_the_database_is_unreachable() {
     // while this test unwinds, which releases the worker either way.
     let mut watcher = pg::pg_connect(&verify_url, &None);
     let mut refused = RefusedConnections::prepare(&verify_url);
+    widen_batch_window(&mut watcher, &table_name, std::time::Duration::from_secs(1));
 
     controller.start();
     assert!(
