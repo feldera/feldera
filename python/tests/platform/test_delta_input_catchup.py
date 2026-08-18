@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timezone
-from http import HTTPStatus
 
 import pyarrow as pa
 import pytest
@@ -21,7 +20,6 @@ from feldera import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
 from tests import TEST_CLIENT, enterprise_only
-from tests.platform.helper import api_url, get
 from tests.utils import DeltaTestLocation, wait_for_condition
 
 TABLE = "t"
@@ -115,10 +113,9 @@ def _build_sql(loc: DeltaTestLocation, *, mode: str, paused: bool = False) -> st
 
 
 def _delta_metric(pipeline_name: str, metric_name: str) -> float:
-    response = get(api_url(f"/pipelines/{pipeline_name}/metrics?format=prometheus"))
-    assert response.status_code == HTTPStatus.OK, response.text
+    scrape = TEST_CLIENT.get_pipeline_metrics(pipeline_name)
     pattern = rf'^{re.escape(metric_name)}\{{[^}}]*endpoint="{re.escape(ENDPOINT)}"[^}}]*\}}\s+(\S+)'
-    for line in response.text.splitlines():
+    for line in scrape.splitlines():
         match = re.match(pattern, line)
         if match:
             return float(match.group(1))

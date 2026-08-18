@@ -490,6 +490,20 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         return resp
 
+    def get_pipeline_metrics(self, name: str, format: str = "prometheus"):
+        """
+        Get the pipeline circuit metrics
+
+        :param name: The name of the pipeline
+        :param format: The metrics format, "prometheus" (default) or "json".
+        :return: Prometheus exposition text as `str`, or a `dict` for "json".
+        """
+
+        return self.http.get(
+            path=f"/pipelines/{name}/metrics",
+            params={"format": format},
+        )
+
     def get_pipeline_logs(self, pipeline_name: str) -> Generator[str, None, None]:
         """
         Get the pipeline logs
