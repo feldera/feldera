@@ -34,7 +34,6 @@ import re
 import uuid as uuidlib
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
-from http import HTTPStatus
 
 import pytest
 
@@ -43,7 +42,6 @@ from feldera.enums import FaultToleranceModel
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
 from tests import TEST_CLIENT, enterprise_only
-from tests.platform.helper import api_url, get
 from tests.utils import IcebergTestLocation, wait_for_condition
 
 TABLE = "t"
@@ -309,10 +307,9 @@ def _build_pipeline(name: str, sql: str, *, fault_tolerant: bool = False):
 
 
 def _metric(pipeline_name: str, metric_name: str) -> float:
-    response = get(api_url(f"/pipelines/{pipeline_name}/metrics?format=prometheus"))
-    assert response.status_code == HTTPStatus.OK, response.text
+    scrape = TEST_CLIENT.get_pipeline_metrics(pipeline_name)
     pattern = rf'^{re.escape(metric_name)}\{{[^}}]*endpoint="{re.escape(ENDPOINT)}"[^}}]*\}}\s+(\S+)'
-    for line in response.text.splitlines():
+    for line in scrape.splitlines():
         match = re.match(pattern, line)
         if match:
             return float(match.group(1))

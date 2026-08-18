@@ -114,6 +114,15 @@ class Pipeline:
 
         return PipelineStatistics.from_dict(self.client.get_pipeline_stats(self.name))
 
+    def metrics(self, format: str = "prometheus"):
+        """Gets the pipeline circuit metrics.
+
+        :param format: The metrics format, "prometheus" (default) or "json".
+        :return: Prometheus exposition text as `str`, or a `dict` for "json".
+        """
+
+        return self.client.get_pipeline_metrics(self.name, format=format)
+
     def logs(self) -> Generator[str, None, None]:
         """Gets the pipeline logs."""
 
