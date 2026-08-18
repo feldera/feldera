@@ -1323,6 +1323,23 @@ fn pg_total_processed_input_records(controller: &Controller) -> u64 {
         .load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// How many failures the reconnect loop has reported.
+///
+/// Only `retry_connecting_with_backoff` reports under this tag, so a non-zero
+/// count means a worker lost its connection and is waiting out a database it
+/// cannot reach. That is a state the tests below can wait for, unlike the
+/// sleeps they used to spend guessing at it.
+fn pg_conn_retry_failures(controller: &Controller) -> usize {
+    let status = controller.status();
+    let outputs = status.output_status();
+    let endpoint = outputs.values().next().expect("output endpoint");
+    let errors = endpoint.transport_errors.lock().unwrap().to_api_type();
+    errors
+        .iter()
+        .filter(|e| e.tag.as_deref() == Some("pg_conn_retry"))
+        .count()
+}
+
 fn pg_row_count(url: &str, table_name: &str) -> u64 {
     let mut client = pg::pg_connect(url, &None);
     let count: i64 = client
@@ -1537,15 +1554,19 @@ fn test_pg_transmitted_records_excludes_rows_lost_to_a_later_failure() {
 /// one: preparing puts the statement's text through the parser, which reports it
 /// in `query` under a transaction of its own.
 ///
-/// The window these tests wait for is the span in which terminating a backend
-/// lands mid-batch: from the connector's first write statement until its
-/// transaction ends. It covers the whole batch rather than the instant a
-/// statement is running, because Postgres keeps reporting the last statement in
-/// `query` while the backend sits idle inside its transaction. Terminating a
-/// backend before the window opens costs the connector no more than an idle
-/// connection, or statements it prepares again; terminating one after the window
-/// closes finds the batch already committed. Neither exercises the reconnect
-/// path under test.
+/// The window in which terminating a backend lands mid-batch runs from the
+/// connector's first write statement until its transaction ends. It covers the
+/// whole batch rather than the instant a statement is running, because Postgres
+/// keeps reporting the last statement in `query` while the backend sits idle
+/// inside its transaction. Terminating a backend before the window opens costs
+/// the connector no more than an idle connection, or statements it prepares
+/// again; terminating one after the window closes finds the batch already
+/// committed. Neither exercises the reconnect path under test.
+///
+/// The window is measured in milliseconds, so every caller arms its terminate
+/// loop before the batch starts and lets that loop do the finding. Watching for
+/// the window and acting on what it saw takes a second round trip, which the
+/// batch can commit inside of.
 const BATCH_BACKENDS: &str = "SELECT pid FROM pg_stat_activity \
      WHERE pid <> pg_backend_pid() AND datname = current_database() \
        AND xact_start IS NOT NULL \
@@ -1556,27 +1577,6 @@ const BATCH_BACKENDS: &str = "SELECT pid FROM pg_stat_activity \
 /// whose name it quotes in every one of them.
 fn statements_on(table: &str) -> String {
     format!("%\"{table}\"%")
-}
-
-/// Polls for up to eight seconds until the window is open, that is, until a
-/// backend of the connector writing to `table` is inside a batch transaction.
-fn wait_for_batch_transaction(client: &mut postgres::Client, table: &str) -> bool {
-    let statements = statements_on(table);
-
-    for _ in 0..40_000 {
-        let found: i64 = client
-            .query_one(
-                &format!("SELECT count(*) FROM ({BATCH_BACKENDS}) backends"),
-                &[&statements],
-            )
-            .map(|row| row.get(0))
-            .unwrap_or(0);
-        if found > 0 {
-            return true;
-        }
-        std::thread::sleep(std::time::Duration::from_micros(200));
-    }
-    false
 }
 
 /// Terminates every backend that the connector under test has inside a batch
@@ -1835,30 +1835,31 @@ fn test_pg_reconnect_waits_out_a_refusing_database() {
     let _table = PostgresTestStruct::create_table(&table_name, url, true, &None);
     let (controller, _err_receiver) = PostgresTestStruct::test_circuit(config);
 
-    let injector_url = verify_url.clone();
-    let injector_table = table_name.clone();
-    let injector = std::thread::spawn(move || {
-        // Every connection this thread needs has to exist before the database
-        // starts turning connections away.
-        let mut watcher = pg::pg_connect(&injector_url, &None);
-        let mut refused = RefusedConnections::prepare(&injector_url);
+    // Every connection the test needs has to exist before the database starts
+    // turning connections away.
+    let mut watcher = pg::pg_connect(&verify_url, &None);
+    let mut refused = RefusedConnections::prepare(&verify_url);
 
-        if !wait_for_batch_transaction(&mut watcher, &injector_table) {
-            return false;
-        }
-        refused.refuse();
-        let terminated = poll_and_terminate_batch_backends(&mut watcher, &injector_table);
-
-        // Outlast the first backoff steps, one and two seconds, so that more
-        // than one reconnect fails.
-        std::thread::sleep(std::time::Duration::from_secs(4));
-        drop(refused);
-
-        terminated
-    });
-
+    // Close the database before the batch starts rather than once it is under
+    // way. The connector connected and prepared while the controller was built,
+    // and closing the database leaves an established connection alone, so this
+    // costs it nothing until it has to reconnect. What it buys is that the drop
+    // below no longer has to land in the stretch between the batch opening and
+    // `refuse()` returning, which is a matter of milliseconds.
+    refused.refuse();
     controller.start();
-    let injected = injector.join().expect("injector thread panicked");
+    assert!(
+        poll_and_terminate_batch_backends(&mut watcher, &table_name),
+        "never dropped the connector's connection while the database was refusing them, \
+         so this test proves nothing"
+    );
+
+    // Hold the refusal until the loop has failed twice, so that it outlasts the
+    // first backoff steps of one and two seconds instead of assuming they fit
+    // in a sleep.
+    wait(|| pg_conn_retry_failures(&controller) >= 2, 60_000)
+        .expect("the reconnect loop did not fail twice, so it was never exercised");
+    drop(refused);
 
     wait(
         || pg_total_processed_input_records(&controller) >= RECORDS as u64,
@@ -1867,30 +1868,17 @@ fn test_pg_reconnect_waits_out_a_refusing_database() {
     .expect("timeout: connector did not finish handling the input");
 
     let (records, _bytes) = pg_transmitted_totals(&controller);
-    let (errors, fatal_error) = {
+    let fatal_error = {
         let status = controller.status();
         let outputs = status.output_status();
-        let endpoint = outputs.values().next().expect("output endpoint");
-        (
-            endpoint.transport_errors.lock().unwrap().to_api_type(),
-            endpoint.fatal_error(),
-        )
+        outputs
+            .values()
+            .next()
+            .expect("output endpoint")
+            .fatal_error()
     };
     let _ = controller.stop();
 
-    assert!(
-        injected,
-        "never dropped the connector's connection while the database was refusing them, \
-         so this test proves nothing"
-    );
-    // Only `retry_connecting_with_backoff` reports under this tag, so its error
-    // branch ran.
-    assert!(
-        errors
-            .iter()
-            .any(|e| e.tag.as_deref() == Some("pg_conn_retry")),
-        "no reconnect attempt failed, so the retry loop was never exercised: {errors:#?}"
-    );
     assert_eq!(
         pg_row_count(&verify_url, &table_name),
         RECORDS as u64,
@@ -1938,19 +1926,19 @@ fn test_pg_stops_while_the_database_is_unreachable() {
     let mut watcher = pg::pg_connect(&verify_url, &None);
     let mut refused = RefusedConnections::prepare(&verify_url);
 
-    controller.start();
-    assert!(
-        wait_for_batch_transaction(&mut watcher, &table_name),
-        "never caught the connector inside its batch transaction"
-    );
+    // Close the database before the batch starts, as
+    // `test_pg_reconnect_waits_out_a_refusing_database` explains.
     refused.refuse();
+    controller.start();
     assert!(
         poll_and_terminate_batch_backends(&mut watcher, &table_name),
         "never dropped the connector's connection"
     );
 
-    // Let the worker settle into the backoff loop before asking it to stop.
-    std::thread::sleep(std::time::Duration::from_secs(3));
+    // The worker is in the backoff loop once a reconnect of its own has failed,
+    // which is the state to ask for a stop from.
+    wait(|| pg_conn_retry_failures(&controller) >= 1, 60_000)
+        .expect("the worker never entered the reconnect backoff loop");
 
     let (stopped_sender, stopped) = crossbeam::channel::bounded(1);
     std::thread::spawn(move || {
