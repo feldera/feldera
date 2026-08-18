@@ -22,3 +22,7 @@ zip = { workspace = true }
 utoipa = { workspace = true }
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
+
+[package.metadata.cargo-machete]
+# proptest-derive generated code references proptest.
+ignored = ["proptest"]

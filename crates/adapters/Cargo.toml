@@ -72,7 +72,7 @@ iceberg-tests-s3tables = []
 iceberg-tests-follow = []
 fips = ["rustls/fips", "aws-lc-rs/fips"]
 bench-mode = []
-with-postgres-cdc = ["etl", "etl-config", "etl-postgres"]
+with-postgres-cdc = ["etl"]
 # jemalloc heap-profiling endpoint (/heap_profile). Linux-only dep; on other
 # targets the feature is a no-op.
 with-heap-profiling = ["dep:jemalloc_pprof"]
@@ -161,7 +161,10 @@ deltalake = { workspace = true, features = [
     "azure",
     "unity-experimental",
 ], optional = true }
-deltalake-catalog-unity = { workspace = true, features = ["aws", "azure", "gcp"], optional = true}
+# No code here calls it; deltalake re-exports the crate. The direct declaration
+# enables its aws/azure/gcp features, which provide cloud credentials for the
+# unity catalog.
+deltalake-catalog-unity = { workspace = true, features = ["aws", "azure", "gcp"], optional = true }
 apache-avro = { workspace = true, optional = true }
 schema_registry_converter = { workspace = true, features = [
     "avro",
@@ -173,7 +176,6 @@ rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1",
     "tokio-pg",
 ] }
 url = { workspace = true }
-ordered-float = { workspace = true }
 atomic = { workspace = true }
 once_cell = { workspace = true }
 dbsp_nexmark = { workspace = true, features = [], optional = true }
@@ -205,9 +207,6 @@ redis = { workspace = true, features = ["r2d2"], optional = true }
 r2d2 = { workspace = true, optional = true }
 async-channel = { workspace = true }
 threadpool = { workspace = true }
-bytemuck = { workspace = true }
-num-derive = { workspace = true }
-num-traits = { workspace = true } # Used by num-derive derive macro, which cargo-machete can't see
 postgres = { workspace = true }
 dyn-clone = { workspace = true }
 cpu-time = "1.0.0"
@@ -217,7 +216,6 @@ tokio-postgres-rustls = { workspace = true }
 rustls-pemfile = { workspace = true }
 base64 = { workspace = true }
 aws-msk-iam-sasl-signer = "1.0.1"
-aws-credential-types = "1.2.3"
 # No code here calls it; the AWS SDK pulls it transitively. The declaration
 # floors the version at 1.4.5, where SigV4a signing stopped using ring. A
 # lockfile regenerated during a rebase resolved it back below that twice; a
@@ -230,22 +228,15 @@ itertools = { workspace = true }
 metrics-process = { version = "2.4.0", default-features = false }
 rustls = { workspace = true }
 serde_json_path_to_error = { workspace = true }
-smallstr = { workspace = true }
 dashmap = { workspace = true }
-thread-id = { workspace = true }
 parking_lot = { workspace = true }
-backoff = { workspace = true }
-zip = { workspace = true }
 smallvec = { workspace = true }
 delta_kernel = { workspace = true }
 roaring = { workspace = true, optional = true }
-flate2 = { workspace = true }
 etl = { workspace = true, optional = true }
-etl-config = { workspace = true, optional = true }
-etl-postgres = { workspace = true, optional = true }
 
 [package.metadata.cargo-machete]
-ignored = ["num-traits", "aws-sigv4"]
+ignored = ["aws-sigv4", "deltalake-catalog-unity"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Optional so the SQL test fixture (sql-to-dbsp-compiler/temp), which builds

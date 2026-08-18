@@ -24,7 +24,6 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 governor = { workspace = true }
 fake = { workspace = true, features = ["http"] }
-rmpv = { workspace = true, features = ["with-serde"] }
 serde = { workspace = true, features = ["derive"] }
 async-channel = { workspace = true }
 range-set = { workspace = true }
