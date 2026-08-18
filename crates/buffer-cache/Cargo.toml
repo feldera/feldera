@@ -11,7 +11,6 @@ publish = true
 description = "Weighted in-memory buffer caches with LRU and S3-FIFO eviction"
 
 [dependencies]
-crossbeam-utils = { workspace = true }
 enum-map = { workspace = true }
 feldera-types = { workspace = true }
 quick_cache = { workspace = true }

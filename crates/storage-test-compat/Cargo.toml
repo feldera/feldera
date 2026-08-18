@@ -24,3 +24,7 @@ feldera-types = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
+
+[package.metadata.cargo-machete]
+# The feldera-macros declare_tuple expansion references these.
+ignored = ["serde", "size-of", "rkyv", "derive_more"]

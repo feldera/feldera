@@ -16,7 +16,7 @@ edition = "2024"
 dbsp = ["serde", "rkyv", "size_of", "dep:dbsp", "dep:feldera-types"]
 serde = ["dep:serde"]
 rkyv = ["dep:rkyv"]
-validation = ["rkyv", "dep:bytecheck", "rkyv/validation"]
+validation = ["rkyv", "rkyv/validation"]
 size_of = ["dep:size-of"]
 
 [dependencies]
@@ -26,11 +26,9 @@ smallstr = { workspace = true }
 smallvec = { workspace = true }
 size-of = { workspace = true, optional = true }
 rkyv = { workspace = true, features = ["size_64"], optional = true }
-bytecheck = { version = "0.6.12", optional = true }
 dbsp = { workspace = true, optional = true }
 feldera-types = { workspace = true, optional = true }
 rand = { workspace = true, features = ["small_rng"] }
-rand_distr = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

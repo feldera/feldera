@@ -1856,17 +1856,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "backoff"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b62ddb9cb1ec0a098ad4bbf9344d0713fa193ae1a80af55febcff2627b6a00c1"
-dependencies = [
- "getrandom 0.2.16",
- "instant",
- "rand 0.8.6",
-]
-
-[[package]]
 name = "backon"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4109,7 +4098,6 @@ dependencies = [
  "feldera-size-of",
  "feldera-storage",
  "feldera-types",
- "flate2",
  "futures",
  "futures-util",
  "hashbrown 0.14.5",
@@ -4149,16 +4137,13 @@ dependencies = [
  "seq-macro",
  "serde",
  "serde_json",
- "serde_json_path_to_error",
  "smallvec",
  "snap",
- "static_assertions",
  "tar",
  "tarpc",
  "tempfile",
  "textwrap",
  "thiserror 2.0.18",
- "thread-id",
  "time",
  "tokio",
  "tokio-util",
@@ -4192,19 +4177,16 @@ dependencies = [
  "atomic",
  "awc",
  "aws-config",
- "aws-credential-types",
  "aws-lc-rs",
  "aws-msk-iam-sasl-signer",
  "aws-sdk-dynamodb",
  "aws-sdk-s3",
  "aws-sigv4",
  "aws-types",
- "backoff",
  "backtrace",
  "base64 0.22.1",
  "bstr",
  "buoyant_kernel",
- "bytemuck",
  "bytes",
  "bytestring",
  "chrono",
@@ -4227,8 +4209,6 @@ dependencies = [
  "enum-map",
  "erased-serde 0.3.31",
  "etl",
- "etl-config",
- "etl-postgres",
  "feldera-adapterlib",
  "feldera-datagen",
  "feldera-iceberg",
@@ -4241,7 +4221,6 @@ dependencies = [
  "feldera-storage",
  "feldera-types",
  "feldera_rust_decimal",
- "flate2",
  "form_urlencoded",
  "futures",
  "futures-timer",
@@ -4261,10 +4240,7 @@ dependencies = [
  "nix 0.29.0",
  "nonzero_ext",
  "num-bigint",
- "num-derive",
- "num-traits",
  "once_cell",
- "ordered-float 4.6.0",
  "parking_lot 0.12.4",
  "parquet",
  "postgres",
@@ -4296,11 +4272,9 @@ dependencies = [
  "serde_yaml",
  "serial_test",
  "sha2 0.10.9",
- "smallstr",
  "smallvec",
  "tempfile",
  "test_bin",
- "thread-id",
  "threadpool",
  "tokio",
  "tokio-postgres 0.7.18",
@@ -4314,7 +4288,6 @@ dependencies = [
  "uuid",
  "vergen-gitcl",
  "xxhash-rust",
- "zip",
 ]
 
 [[package]]
@@ -4343,7 +4316,6 @@ dependencies = [
  "serde",
  "serde_with",
  "time",
- "tracing",
  "tracing-log",
  "tracing-subscriber",
 ]
@@ -5381,11 +5353,8 @@ dependencies = [
  "rmpv",
  "serde",
  "serde_arrow",
- "serde_dynamo",
  "serde_json",
  "serde_json_path_to_error",
- "serde_yaml",
- "thiserror 2.0.18",
  "tokio",
  "tracing",
  "xxhash-rust",
@@ -5395,7 +5364,6 @@ dependencies = [
 name = "feldera-buffer-cache"
 version = "0.336.0"
 dependencies = [
- "crossbeam-utils",
  "enum-map",
  "feldera-types",
  "proptest",
@@ -5437,7 +5405,6 @@ dependencies = [
  "rand 0.8.6",
  "rand_distr",
  "range-set",
- "rmpv",
  "serde",
  "serde_json",
  "tokio",
@@ -5449,7 +5416,6 @@ dependencies = [
 name = "feldera-fxp"
 version = "0.336.0"
 dependencies = [
- "bytecheck",
  "dbsp",
  "feldera-size-of",
  "feldera-types",
@@ -5457,7 +5423,6 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "rand 0.8.6",
- "rand_distr",
  "rkyv",
  "serde",
  "serde_json",
@@ -5517,11 +5482,8 @@ dependencies = [
 name = "feldera-observability"
 version = "0.336.0"
 dependencies = [
- "actix-http",
- "awc",
  "chrono",
  "colored",
- "reqwest 0.12.24",
  "serde_json",
  "sysinfo 0.38.4",
  "tracing",
@@ -5558,7 +5520,6 @@ dependencies = [
  "feldera-size-of",
  "flate2",
  "itertools 0.14.0",
- "libc",
  "mach2 0.6.0",
  "memory-stats",
  "nix 0.29.0",
