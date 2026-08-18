@@ -36,7 +36,7 @@ use deltalake::kernel::{
 };
 use deltalake::logstore::{self, IORuntime};
 use deltalake::table::builder::ensure_table_uri;
-use deltalake::{DeltaTable, DeltaTableBuilder, Path, datafusion};
+use deltalake::{DeltaTable, DeltaTableBuilder, DeltaTableError, Path, datafusion};
 use feldera_adapterlib::format::{ParseError, StagedInputBuffer};
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::transport::{InputQueueEntry, Resume, Watermark, parse_resume_info};
@@ -129,6 +129,26 @@ fn format_datafusion_error(
     } else {
         base
     }
+}
+
+/// Whether a `table_builder.load()` failure is transient and worth retrying.
+///
+/// There is no strongly-typed way to identify these across the transitive
+/// dependencies involved, so this checks substrings in a debug-formatted
+/// representation of the error:
+///
+/// - "timeout": the load can get stuck forever in S3 authentication for some
+///   configurations (see <https://github.com/delta-io/delta-rs/issues/3768>),
+///   surfacing as a timeout on our end.
+///
+/// - "No files in log segment": S3-interop layers (observed against GCS)
+///   occasionally answer the delta kernel's version-scoped `start-after`
+///   listing of `_delta_log` with zero files even though the commits are
+///   actually present -- a real but wrong response to that one request, not
+///   a genuinely missing or corrupted table.
+fn is_retryable_delta_load_error(e: &DeltaTableError) -> bool {
+    let debug = format!("{:?}", e);
+    debug.to_ascii_lowercase().contains("timeout") || debug.contains("No files in log segment")
 }
 
 /// A deletion vector is only in effect when it flags at least one row.
@@ -2180,14 +2200,7 @@ impl DeltaTableInputEndpointInner {
                 match tokio::time::timeout(operation_timeout, table_builder.load()).await {
                     Ok(Ok(table)) => break table,
                     Ok(Err(e)) => {
-                        // Timeout errors can originate from multiple transitive dependencies. There is no easy
-                        // way to identify them in a strongly-typed fashion. Instead, we check for the "timeout"
-                        // substring in a formatter representation of the error.
-                        //
-                        // Debug-format `e` as the timeout error is often found toward the end of the error chain.
-                        let is_timeout = format!("{:?}", e).to_lowercase().contains("timeout");
-
-                        if is_timeout && retry_count < MAX_RETRIES {
+                        if is_retryable_delta_load_error(&e) && retry_count < MAX_RETRIES {
                             retry_count += 1;
                             let backoff_ms = min(1000 * (1 << (retry_count - 1)), 10_000);
                             warn!(
