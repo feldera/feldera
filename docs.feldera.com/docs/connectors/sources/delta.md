@@ -150,7 +150,7 @@ along with the following configuration options
     </TabItem>
 </Tabs>
 
-A typical connector config includes `unity_client_id`, `unity_client_secret`,  and `unity_host` options.
+A typical connector config includes `unity_client_id`, `unity_client_secret`,  and `databricks_host` options.
 You may need to configure additional object store-specific properties,
 e.g., you may need to configure `aws_region` when opening a Delta table in S3.
 
@@ -472,7 +472,7 @@ Read table snapshot via Unity catalog.
   "mode": "snapshot",
   "unity_client_id": "<CLIENT_ID>",
   "unity_client_secret": "<CLIENT_SECRET>",
-  "unity_host": "https://dbc-XXX-XXX.cloud.databricks.com",
+  "databricks_host": "https://dbc-XXX-XXX.cloud.databricks.com",
   "aws_region": "us-west-1"
 }
 ```
