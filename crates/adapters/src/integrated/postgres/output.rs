@@ -134,6 +134,13 @@ struct PostgresWorker {
     records_written: Arc<AtomicU64>,
 }
 
+/// Ends any open transaction while the client it borrows is still there.
+///
+/// `transaction` borrows `client` behind the transmute in `batch_start_inner`,
+/// which hides the borrow from the compiler, and struct fields drop in
+/// declaration order, `client` first. So this is not the tidying it looks like:
+/// without it, dropping a worker that still holds a transaction would leave
+/// `Transaction::drop` rolling back over a client that is already gone.
 impl Drop for PostgresWorker {
     fn drop(&mut self) {
         self.transaction = None;
