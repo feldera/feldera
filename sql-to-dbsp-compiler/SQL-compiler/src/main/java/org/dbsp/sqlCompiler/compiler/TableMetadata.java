@@ -24,6 +24,8 @@ public class TableMetadata implements IJson {
     final List<ProgramIdentifier> columnNames;
     final List<ForeignKey> foreignKeys;
     public final boolean materialized;
+    @Nullable
+    public final Long expectedSize;
     /** null if not defined */
     @Nullable
     public final Boolean skipUnusedColumns;
@@ -38,10 +40,11 @@ public class TableMetadata implements IJson {
     }
 
     public TableMetadata(ProgramIdentifier tableName,
-                         List<InputColumnMetadata> columns, List<ForeignKey> foreignKeys,
+                         List<InputColumnMetadata> columns, List<ForeignKey> foreignKeys, @Nullable Long expectedSize,
                          boolean materialized, boolean streaming, @Nullable Boolean skipUnusedColumns) {
         this.tableName = tableName;
         this.columnMetadata = new LinkedHashMap<>();
+        this.expectedSize = expectedSize;
         this.materialized = materialized;
         this.foreignKeys = foreignKeys;
         this.changes = streaming ? TableChanges.AppendOnly : TableChanges.Unrestricted;
@@ -105,6 +108,9 @@ public class TableMetadata implements IJson {
         // Do not emit if not defined
         if (this.skipUnusedColumns != null)
             stream.label(CreateTableStatement.SKIP_UNUSED_COLUMNS).append(this.skipUnusedColumns);
+        // Do not emit if not defined
+        if (this.expectedSize != null)
+            stream.label(CreateTableStatement.EXPECTED_SIZE).append(this.expectedSize);
         stream.label("foreignKeys");
         stream.beginArray();
         for (ForeignKey key: this.foreignKeys)
@@ -133,8 +139,11 @@ public class TableMetadata implements IJson {
         JsonNode cm = Utilities.getProperty(node, "columnMetadata");
         List<InputColumnMetadata> columnMetadata =
                 Linq.list(Linq.map(cm.elements(), e -> InputColumnMetadata.fromJson(e, decoder)));
+        Long expectedSize = null;
+        if (node.has(CreateTableStatement.EXPECTED_SIZE))
+            expectedSize = Utilities.getLongProperty(node, CreateTableStatement.EXPECTED_SIZE);
         return new TableMetadata(
-                tableName, columnMetadata, foreignKeys, materialized,
+                tableName, columnMetadata, foreignKeys, expectedSize, materialized,
                 changes == TableChanges.AppendOnly, skipUnusedColumns);
     }
 }
