@@ -46,11 +46,17 @@ impl BackoffError {
         }
     }
 
+    /// Flattens the error and everything it is chained to into one message.
+    ///
+    /// `{:#}` walks the chain, so the server's message and its DETAIL survive,
+    /// which is the whole reason the postgres error is chained rather than
+    /// interpolated. `{:?}` walks it too, but also prints the backtrace anyhow
+    /// captured, which runs to kilobytes whenever `RUST_BACKTRACE` is set and
+    /// leaves no room under the cap the endpoint status applies.
     pub fn inner(self) -> anyhow::Error {
         match self {
             BackoffError::Permanent(error) | BackoffError::Temporary(error) => {
-                // include the context info
-                anyhow!("{error:?}")
+                anyhow!("{error:#}")
             }
         }
     }
