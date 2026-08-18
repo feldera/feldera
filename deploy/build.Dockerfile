@@ -55,7 +55,7 @@ RUN apt-get update --fix-missing && apt-get install -y \
     nats-server
 
 # Install trufflehog
-RUN curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin v3.90.1
+RUN curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin v3.97.0
 
 # Install docker cli tool
 RUN  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
@@ -73,16 +73,42 @@ RUN apt-get update --fix-missing && apt-get install -y nodejs
 
 # Install helm cli tool
 RUN curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 && chmod +x get_helm.sh \
-    && ./get_helm.sh --version v3.17.1 \
+    && ./get_helm.sh --version v3.21.4 \
     && rm ./get_helm.sh
 
-# Install kubectl
-RUN curl -LO "https://dl.k8s.io/release/v1.33.0/bin/linux/$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')/kubectl" \
+# Install kubectl. Stay within one minor version of the EKS clusters (1.34),
+# per the kubectl version-skew policy.
+RUN curl -LO "https://dl.k8s.io/release/v1.34.10/bin/linux/$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')/kubectl" \
     && chmod +x kubectl \
     && mv kubectl /usr/local/bin/
 
 # Install k3d
-RUN curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=v5.6.3 bash
+RUN curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=v5.9.0 bash
+
+# Install the GitHub CLI
+RUN arch=`dpkg --print-architecture`; \
+    curl -LO https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_$arch.tar.gz \
+    && tar -xzf gh_2.97.0_linux_$arch.tar.gz \
+    && mv gh_2.97.0_linux_$arch/bin/gh /usr/local/bin/ \
+    && rm -rf gh_2.97.0_linux_$arch gh_2.97.0_linux_$arch.tar.gz
+
+# Install actionlint (GitHub Actions workflow linter)
+RUN arch=`dpkg --print-architecture`; \
+    curl -LO https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_$arch.tar.gz \
+    && tar -xzf actionlint_1.7.12_linux_$arch.tar.gz actionlint \
+    && mv actionlint /usr/local/bin/ \
+    && rm actionlint_1.7.12_linux_$arch.tar.gz
+
+# terraform, tflint, and trivy for pre-commit hooks
+RUN arch=`dpkg --print-architecture`; \
+    curl -LO https://releases.hashicorp.com/terraform/1.15.8/terraform_1.15.8_linux_$arch.zip \
+    && unzip terraform_1.15.8_linux_$arch.zip terraform -d /usr/local/bin/ \
+    && rm terraform_1.15.8_linux_$arch.zip
+RUN arch=`dpkg --print-architecture`; \
+    curl -LO https://github.com/terraform-linters/tflint/releases/download/v0.64.0/tflint_linux_$arch.zip \
+    && unzip tflint_linux_$arch.zip -d /usr/local/bin/ \
+    && rm tflint_linux_$arch.zip
+RUN curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.74.0
 
 FROM install-pkgs AS base
 
@@ -127,15 +153,15 @@ ENV PATH="/home/ubuntu/.local/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.cargo/bin:
 ENV RUSTUP_HOME=/home/ubuntu/.rustup
 ENV CARGO_HOME=/home/ubuntu/.cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile default --default-toolchain 1.93.1
-RUN cargo install --locked cargo-machete@0.7.0 cargo-edit@0.13.1 just@1.40.0
+RUN cargo install --locked cargo-machete@0.9.2 cargo-edit@0.13.13 just@1.58.0
 
 # Install uv
-RUN curl -LsSf https://astral.sh/uv/0.11.3/install.sh | sh
+RUN curl -LsSf https://astral.sh/uv/0.12.5/install.sh | sh
 RUN uv python install 3.10
 RUN uv tool install pre-commit --with pre-commit-uv --force-reinstall
 
 # Install Bun.js
-RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.3"
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.14"
 
 # Install gradle, the version needs to match the version that calcite uses which avoid reinstalling this every time we run build.sh
 RUN cd /home/ubuntu \
@@ -145,16 +171,16 @@ RUN cd /home/ubuntu \
 
 # The download URL for mold uses x86_64/aarch64 whereas dpkg --print-architecture says amd64/arm64
 RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86_64/g"`; \
-    cd /home/ubuntu && curl -LO https://github.com/rui314/mold/releases/download/v2.40.1/mold-2.40.1-$arch-linux.tar.gz \
-    && tar -xzvf mold-2.40.1-$arch-linux.tar.gz \
-    && mv mold-2.40.1-$arch-linux /home/ubuntu/mold \
-    && rm mold-2.40.1-$arch-linux.tar.gz
+    cd /home/ubuntu && curl -LO https://github.com/rui314/mold/releases/download/v2.42.0/mold-2.42.0-$arch-linux.tar.gz \
+    && tar -xzvf mold-2.42.0-$arch-linux.tar.gz \
+    && mv mold-2.42.0-$arch-linux /home/ubuntu/mold \
+    && rm mold-2.42.0-$arch-linux.tar.gz
 
 # Install sccache
 RUN  arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86_64/g"`; \
-    cd /home/ubuntu && curl -LO https://github.com/mozilla/sccache/releases/download/v0.15.0/sccache-v0.15.0-$arch-unknown-linux-musl.tar.gz \
-    && tar zxvf sccache-v0.15.0-$arch-unknown-linux-musl.tar.gz \
-    && cp sccache-v0.15.0-$arch-unknown-linux-musl/sccache /home/ubuntu/.cargo/bin \
+    cd /home/ubuntu && curl -LO https://github.com/mozilla/sccache/releases/download/v0.17.0/sccache-v0.17.0-$arch-unknown-linux-musl.tar.gz \
+    && tar zxvf sccache-v0.17.0-$arch-unknown-linux-musl.tar.gz \
+    && cp sccache-v0.17.0-$arch-unknown-linux-musl/sccache /home/ubuntu/.cargo/bin \
     && chmod +x /home/ubuntu/.cargo/bin/sccache
 
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sections=zlib"
@@ -172,4 +198,3 @@ COPY Cargo.lock /tmp/Cargo.lock
 RUN CARGO_LOCK=/tmp/Cargo.lock PREFIX=/usr/local bash /tmp/install-librdkafka.sh \
     && rm -f /tmp/install-librdkafka.sh /tmp/Cargo.lock
 USER ubuntu
-
