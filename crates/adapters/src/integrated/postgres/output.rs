@@ -835,15 +835,33 @@ impl PostgresWorker {
                             });
                             break;
                         }
+                        // A pipeline that is stopping has no use for a
+                        // transaction, and `retry_connecting_with_backoff`
+                        // declines to reconnect once it is, so retrying would
+                        // spin. Answer the endpoint, which is waiting for a
+                        // reply, and go back to the command queue for the
+                        // shutdown that is already in it.
+                        Err(e) if e.should_retry() && !self.shutting_down() => {
+                            tracing::error!(
+                                "error when trying to start transaction, retrying with backoff: {}",
+                                e.inner()
+                            );
+                            self.retry_connecting_with_backoff();
+                        }
+                        Err(e) if self.shutting_down() => {
+                            tracing::warn!(
+                                "controller is shutting down: abandoning the transaction that \
+                                 worker-thread-{} could not start: {}",
+                                self.worker_idx,
+                                e.inner()
+                            );
+                            let _ = result_tx.send(WorkerResult::Ok {
+                                num_bytes: 0,
+                                num_rows: 0,
+                            });
+                            break;
+                        }
                         Err(e) => {
-                            if e.should_retry() {
-                                tracing::error!(
-                                    "error when trying to start transaction, retrying with backoff: {}",
-                                    e.inner()
-                                );
-                                self.retry_connecting_with_backoff();
-                                continue;
-                            }
                             let _ = result_tx.send(WorkerResult::Err(e.inner()));
                             break;
                         }
@@ -1903,6 +1921,55 @@ mod tests {
         }
 
         // Tests
+
+        /// A worker that cannot open a transaction while the pipeline is
+        /// stopping must answer the endpoint instead of retrying.
+        ///
+        /// It used to retry either way. `retry_connecting_with_backoff` returns
+        /// at once once the pipeline is stopping, so the retry loop spun on a
+        /// core, never went back to the command queue where the shutdown was
+        /// waiting, and never answered `batch_start`. The endpoint's `Drop`
+        /// joins its workers, so the pipeline hung rather than stopped.
+        ///
+        /// `Weak::new()` stands in for a controller that is gone, one of the two
+        /// states `shutting_down` reports.
+        #[test]
+        #[serial_test::serial]
+        fn batch_start_gives_up_while_the_pipeline_is_stopping() {
+            let mut client = pg_client();
+            setup_table(&mut client);
+
+            let mut endpoint = make_endpoint(1);
+
+            // The worker connected while the endpoint was built. Drop that
+            // connection so the transaction it opens next fails. These tests are
+            // serial, so the only other backends on this database are its own.
+            let terminated: i64 = client
+                .query_one(
+                    "SELECT count(*) FROM (SELECT pg_terminate_backend(pid) \
+                     FROM pg_stat_activity WHERE pid <> pg_backend_pid() \
+                     AND datname = current_database()) t",
+                    &[],
+                )
+                .expect("failed to terminate the worker's backend")
+                .get(0);
+            assert!(terminated > 0, "found no backend to terminate");
+
+            // On a thread of its own, so that a regression fails this test
+            // rather than hanging the whole run.
+            let (returned_tx, returned) = crossbeam::channel::bounded(1);
+            std::thread::spawn(move || {
+                endpoint.consumer().batch_start(0, OutputBatchType::Delta);
+                let _ = returned_tx.send(());
+            });
+
+            assert!(
+                returned
+                    .recv_timeout(std::time::Duration::from_secs(20))
+                    .is_ok(),
+                "batch_start never returned after the worker lost its connection"
+            );
+        }
 
         fn insert_test(threads: usize) {
             let mut client = pg_client();
