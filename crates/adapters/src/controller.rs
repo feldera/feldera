@@ -179,9 +179,8 @@ use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 pub use feldera_types::pipeline_diff::compute_pipeline_diff;
 use feldera_types::program_schema::{SqlIdentifier, canonical_identifier};
-// Connector tests assert that a connector's own error messages stay under the
-// bound the endpoint status enforces.
-#[cfg(test)]
+// Connectors size the payloads they embed in error messages against the bound
+// the endpoint status enforces, and their tests assert they stay under it.
 pub(crate) use stats::MAX_CONNECTOR_ERROR_LEN;
 pub use stats::{CompletionToken, ControllerStatus, ControllerStatusContext, InputEndpointStatus};
 
