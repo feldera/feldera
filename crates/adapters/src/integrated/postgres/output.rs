@@ -847,14 +847,8 @@ impl PostgresWorker {
                         // declines to reconnect once it is, so retrying would
                         // spin. Answer the endpoint, which is waiting for a
                         // reply, and go back to the command queue for the
-                        // shutdown that is already in it.
-                        Err(e) if e.should_retry() && !self.shutting_down() => {
-                            tracing::error!(
-                                "error when trying to start transaction, retrying with backoff: {}",
-                                e.inner()
-                            );
-                            self.retry_connecting_with_backoff();
-                        }
+                        // shutdown already in it. This arm comes first because
+                        // the one below would otherwise take these errors.
                         Err(e) if self.shutting_down() => {
                             tracing::warn!(
                                 "controller is shutting down: abandoning the transaction that \
@@ -867,6 +861,13 @@ impl PostgresWorker {
                                 num_rows: 0,
                             });
                             break;
+                        }
+                        Err(e) if e.should_retry() => {
+                            tracing::error!(
+                                "error when trying to start transaction, retrying with backoff: {}",
+                                e.inner()
+                            );
+                            self.retry_connecting_with_backoff();
                         }
                         Err(e) => {
                             let _ = result_tx.send(WorkerResult::Err(e.inner()));
