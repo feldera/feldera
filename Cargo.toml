@@ -193,6 +193,7 @@ hashbrown = "0.14.2"
 hdrhist = "0.5"
 hex = "0.4.3"
 home = "=0.5.9"
+http = "1.3.1"
 # TODO: Use iceberg v0.10.0 when released
 iceberg = { git = "https://github.com/feldera/iceberg-rust.git", rev = "28c4800f198686f306bd80d11d03f232670feec3" }
 iceberg-catalog-glue = { git = "https://github.com/feldera/iceberg-rust.git", rev = "28c4800f198686f306bd80d11d03f232670feec3" }
@@ -245,8 +246,9 @@ postgresql_embedded = { version = "0.20.0", default-features = false, features =
 pprof = "0.15.0"
 pretty_assertions = "1.4.0"
 prettyplease = "0.2.22"
-progenitor = "0.7.0"
-progenitor-client = "0.9"
+proc-macro2 = "1.0"
+progenitor = "0.11.2"
+progenitor-client = "0.11.2"
 proptest = "1.5.0"
 proptest-derive = "0.5.0"
 proptest-state-machine = "0.3.0"

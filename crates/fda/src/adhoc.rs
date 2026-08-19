@@ -10,6 +10,7 @@ use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs};
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use log::{debug, error, trace};
+use progenitor_client::ClientInfo;
 use reqwest_websocket::{CloseCode, Message, RequestBuilderExt};
 
 use crate::UPGRADE_NOTICE;
@@ -137,7 +138,7 @@ pub(crate) async fn handle_adhoc_query(
         .send()
         .await
         .map_err(handle_ws_errors_fatal(
-            client.baseurl().clone(),
+            client.baseurl().to_string(),
             "Failed to connect to pipeline",
             1,
         ))
@@ -146,7 +147,7 @@ pub(crate) async fn handle_adhoc_query(
         .into_websocket()
         .await
         .map_err(handle_ws_errors_fatal(
-            client.baseurl().clone(),
+            client.baseurl().to_string(),
             "Failed to connect to pipeline",
             1,
         ))
@@ -193,7 +194,7 @@ pub(crate) async fn handle_adhoc_query(
         .send(Message::Text(serde_json::to_string(&query_args).unwrap()))
         .await
         .map_err(handle_ws_errors_fatal(
-            client.baseurl().clone(),
+            client.baseurl().to_string(),
             "Failed to send SQL query arguments to pipeline",
             1,
         ))

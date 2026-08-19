@@ -11,6 +11,7 @@ use feldera_types::transport::clock::ClockAdvanceRequest;
 use futures_util::StreamExt;
 use json_to_table::json_to_table;
 use log::{debug, error, info, trace, warn};
+use progenitor_client::ClientInfo;
 use reqwest::StatusCode;
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use serde_json::json;
@@ -76,20 +77,52 @@ fn make_auth_headers(auth: &Option<String>) -> Result<HeaderMap, InvalidHeaderVa
     Ok(headers)
 }
 
-/// Create a client with the given host, auth, and timeout.  If `insecure` is
-/// true, then the client won't verify TLS certificates.  If `tls_cert` is
-/// provided, its contents are parsed as one or more PEM-encoded certificates
-/// and each is added to the set of trusted roots for HTTPS connections.
-/// `tenant` becomes the `Feldera-Tenant` header on every request.
-pub(crate) fn make_client(
-    host: String,
-    insecure: bool,
-    tls_cert: Option<std::path::PathBuf>,
-    auth: Option<String>,
-    auth_token_command: Option<String>,
-    timeout: Option<u64>,
-    tenant: Option<String>,
-) -> Result<Client, Box<dyn std::error::Error>> {
+/// Connection settings for [`make_client`], straight from the global CLI
+/// flags of the same names.
+pub(crate) struct ClientOpts {
+    pub host: String,
+    /// Accept invalid TLS certificates.
+    pub insecure: bool,
+    /// Extra PEM-encoded root certificates to trust for HTTPS.
+    pub tls_cert: Option<std::path::PathBuf>,
+    /// Static API key.
+    pub auth: Option<String>,
+    /// Shell command that prints a bearer token; overrides `auth`.
+    pub auth_token_command: Option<String>,
+    pub timeout_secs: Option<u64>,
+    /// Sent as the `Feldera-Tenant` header on every request.
+    pub tenant: Option<String>,
+    /// How often a transiently failed request is resent.
+    pub retries: u32,
+}
+
+impl ClientOpts {
+    fn from_cli(cli: &Cli) -> Self {
+        Self {
+            host: cli.host.clone(),
+            insecure: cli.insecure,
+            tls_cert: cli.tls_cert.clone(),
+            auth: cli.auth.clone(),
+            auth_token_command: cli.auth_token_command.clone(),
+            timeout_secs: cli.timeout,
+            tenant: cli.tenant.clone(),
+            retries: cli.retries,
+        }
+    }
+}
+
+/// Create a client from the connection settings in `opts`.
+pub(crate) fn make_client(opts: ClientOpts) -> Result<Client, Box<dyn std::error::Error>> {
+    let ClientOpts {
+        host,
+        insecure,
+        tls_cert,
+        auth,
+        auth_token_command,
+        timeout_secs,
+        tenant,
+        retries,
+    } = opts;
     // reqwest-websocket needs HTTP/1.1. Over TLS, ALPN would otherwise
     // negotiate h2 and the websocket upgrade in `handle_adhoc_query` fails
     // with "the server responded with a different http version".
@@ -97,7 +130,7 @@ pub(crate) fn make_client(
         .http1_only()
         .danger_accept_invalid_certs(insecure);
 
-    if let Some(timeout) = timeout {
+    if let Some(timeout) = timeout_secs {
         client_builder = client_builder.timeout(Duration::from_secs(timeout));
     }
 
@@ -151,7 +184,11 @@ pub(crate) fn make_client(
     client_builder = client_builder.default_headers(headers);
 
     let client = client_builder.build()?;
-    Ok(Client::new_with_client(host.as_str(), client))
+    let retry_policy = RetryPolicy {
+        max_retries: retries,
+        ..RetryPolicy::default()
+    };
+    Ok(Client::new_with_client(host.as_str(), client, retry_policy))
 }
 
 /// Execute the user-supplied auth-token command through the platform's shell and
@@ -239,7 +276,7 @@ impl CacheDisabler {
             .send()
             .await
             .map_err(handle_errors_fatal(
-                self.client.baseurl().clone(),
+                self.client.baseurl().to_string(),
                 format!("Failed to set compilation cache to {flag}").leak(),
                 1,
             ))
@@ -356,15 +393,8 @@ fn handle_errors_fatal(
                     }
                 }
             }
-            Error::PreHookError(e) => {
-                eprintln!("{}: ", msg);
-                error!("Unable to execute authentication pre-hook ({})", e);
-                error!("{}", UPGRADE_NOTICE);
-            }
-            Error::PostHookError(e) => {
-                eprintln!("{}: ", msg);
-                eprint!("ERROR: Unable to execute authentication post-hook ({})", e);
-                eprintln!("{}", UPGRADE_NOTICE);
+            Error::Custom(e) => {
+                eprintln!("{}: {}", msg, e);
             }
         };
         std::process::exit(exit_code);
@@ -388,7 +418,7 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to create API key",
                     1,
                 ))
@@ -422,7 +452,7 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to delete API key",
                     1,
                 ))
@@ -436,7 +466,7 @@ async fn api_key_commands(format: OutputFormat, action: ApiKeyActions, client: C
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to list API keys",
                     1,
                 ))
@@ -502,7 +532,7 @@ async fn oidc_trust_commands(format: OutputFormat, action: OidcTrustActions, cli
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to create OIDC trust relationship",
                     1,
                 ))
@@ -535,7 +565,7 @@ async fn oidc_trust_commands(format: OutputFormat, action: OidcTrustActions, cli
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to delete OIDC trust relationship",
                     1,
                 ))
@@ -549,7 +579,7 @@ async fn oidc_trust_commands(format: OutputFormat, action: OidcTrustActions, cli
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to list OIDC trust relationships",
                     1,
                 ))
@@ -604,7 +634,7 @@ async fn member_commands(format: OutputFormat, action: MemberActions, client: Cl
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to list tenant members",
                     1,
                 ))
@@ -672,7 +702,7 @@ async fn member_commands(format: OutputFormat, action: MemberActions, client: Cl
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to add tenant member",
                     1,
                 ))
@@ -691,7 +721,7 @@ async fn member_commands(format: OutputFormat, action: MemberActions, client: Cl
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to set member role",
                     1,
                 ))
@@ -706,7 +736,7 @@ async fn member_commands(format: OutputFormat, action: MemberActions, client: Cl
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to remove tenant member",
                     1,
                 ))
@@ -725,7 +755,7 @@ async fn tenant_commands(format: OutputFormat, action: TenantActions, client: Cl
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to list tenants",
                     1,
                 ))
@@ -770,7 +800,7 @@ async fn tenant_commands(format: OutputFormat, action: TenantActions, client: Cl
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to retrieve tenant",
                     1,
                 ))
@@ -815,7 +845,7 @@ async fn tenant_commands(format: OutputFormat, action: TenantActions, client: Cl
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to create tenant",
                     1,
                 ))
@@ -863,7 +893,7 @@ async fn tenant_commands(format: OutputFormat, action: TenantActions, client: Cl
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to rename tenant",
                     1,
                 ))
@@ -886,7 +916,7 @@ async fn tenant_commands(format: OutputFormat, action: TenantActions, client: Cl
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to delete tenant",
                     1,
                 ))
@@ -903,7 +933,7 @@ async fn pipelines(format: OutputFormat, client: Client) {
         .send()
         .await
         .map_err(handle_errors_fatal(
-            client.baseurl().clone(),
+            client.baseurl().to_string(),
             "Failed to list pipelines",
             1,
         ))
@@ -1092,7 +1122,7 @@ async fn validate_program(
         .send()
         .await
         .map_err(handle_errors_fatal(
-            client.baseurl().clone(),
+            client.baseurl().to_string(),
             "Failed to validate program",
             1,
         ))
@@ -1128,7 +1158,7 @@ async fn wait_for_status_one_of(
             .send()
             .await
             .map_err(handle_errors_fatal(
-                client.baseurl().clone(),
+                client.baseurl().to_string(),
                 "Failed to get program config",
                 1,
             ))
@@ -1139,8 +1169,7 @@ async fn wait_for_status_one_of(
         if print_every_30_seconds.elapsed().as_secs() > 30 {
             info!(
                 "{} (current status: {})",
-                waiting_text,
-                pc.deployment_status.to_string()
+                waiting_text, pc.deployment_status
             );
             print_every_30_seconds = Instant::now();
         }
@@ -1183,7 +1212,7 @@ async fn wait_for_storage_status(
             .send()
             .await
             .map_err(handle_errors_fatal(
-                client.baseurl().clone(),
+                client.baseurl().to_string(),
                 "Failed to get program config",
                 1,
             ))
@@ -1207,7 +1236,7 @@ async fn wait_for_checkpoint(client: &Client, name: String, seq_number: u64, wai
             .send()
             .await
             .map_err(handle_errors_fatal(
-                client.baseurl().clone(),
+                client.baseurl().to_string(),
                 "Failed to get pipeline checkpoint status",
                 1,
             ))
@@ -1250,7 +1279,7 @@ async fn get_pipeline_tags(client: &Client, name: &str) -> Vec<String> {
         .send()
         .await
         .map_err(handle_errors_fatal(
-            client.baseurl().clone(),
+            client.baseurl().to_string(),
             "Failed to get pipeline tags",
             1,
         ))
@@ -1270,7 +1299,7 @@ async fn get_known_tags(client: &Client) -> Vec<String> {
         .send()
         .await
         .map_err(handle_errors_fatal(
-            client.baseurl().clone(),
+            client.baseurl().to_string(),
             "Failed to list pipeline tags",
             1,
         ))
@@ -1299,7 +1328,7 @@ async fn set_pipeline_tags(client: &Client, name: &str, tags: Vec<String>) -> Ve
         .send()
         .await
         .map_err(handle_errors_fatal(
-            client.baseurl().clone(),
+            client.baseurl().to_string(),
             "Failed to update pipeline tags",
             1,
         ))
@@ -1380,7 +1409,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     .send()
                     .await
                     .map_err(handle_errors_fatal(
-                        client.baseurl().clone(),
+                        client.baseurl().to_string(),
                         "Failed to create pipeline",
                         1,
                     ))
@@ -1417,7 +1446,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get source pipeline",
                     1,
                 ))
@@ -1461,7 +1490,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to copy pipeline",
                     1,
                 ))
@@ -1518,7 +1547,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get program config",
                     1,
                 ))
@@ -1557,7 +1586,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     .send()
                     .await
                     .map_err(handle_errors_fatal(
-                        client.baseurl().clone(),
+                        client.baseurl().to_string(),
                         "Failed to recompile pipeline",
                         1,
                     ))
@@ -1577,7 +1606,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     .send()
                     .await
                     .map_err(handle_errors_fatal(
-                        client.baseurl().clone(),
+                        client.baseurl().to_string(),
                         "Failed to get program config",
                         1,
                     ))
@@ -1601,7 +1630,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     .send()
                     .await
                     .map_err(handle_errors_fatal(
-                        client.baseurl().clone(),
+                        client.baseurl().to_string(),
                         "Failed to dismiss pipeline deployment error",
                         1,
                     ))
@@ -1620,7 +1649,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to start pipeline",
                     1,
                 ))
@@ -1648,7 +1677,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         .send()
                         .await
                         .map_err(handle_errors_fatal(
-                            client.baseurl().clone(),
+                            client.baseurl().to_string(),
                             "Failed to get pipeline status",
                             1,
                         ))
@@ -1691,7 +1720,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to initiate pipeline checkpoint",
                     1,
                 ))
@@ -1725,7 +1754,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to approve pipeline changes",
                     1,
                 ))
@@ -1740,7 +1769,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to pause pipeline",
                     1,
                 ))
@@ -1765,7 +1794,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to resume pipeline",
                     1,
                 ))
@@ -1801,7 +1830,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get pipeline status",
                     1,
                 ))
@@ -1814,7 +1843,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to stop pipeline",
                     1,
                 ))
@@ -1859,7 +1888,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to stop pipeline",
                     1,
                 ))
@@ -1885,7 +1914,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to clear pipeline",
                     1,
                 ))
@@ -1911,7 +1940,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get pipeline stats",
                     1,
                 ))
@@ -1958,7 +1987,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get pipeline metrics",
                     1,
                 ))
@@ -2044,7 +2073,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to delete the pipeline",
                     1,
                 ))
@@ -2059,7 +2088,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get pipeline status",
                     1,
                 ))
@@ -2101,7 +2130,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get pipeline config",
                     1,
                 ))
@@ -2132,7 +2161,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get pipeline config",
                     1,
                 ))
@@ -2164,7 +2193,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to set runtime config",
                     1,
                 ))
@@ -2212,7 +2241,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to update pipeline runtime",
                     1,
                 ))
@@ -2248,7 +2277,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to obtain heap profile",
                     1,
                 ))
@@ -2310,7 +2339,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to obtain circuit profile",
                     1,
                 ))
@@ -2409,7 +2438,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to obtain support bundle",
                     1,
                 ))
@@ -2497,7 +2526,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get completion status",
                     1,
                 ))
@@ -2532,7 +2561,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get completion status",
                     1,
                 ))
@@ -2566,7 +2595,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to start transaction",
                     1,
                 ))
@@ -2611,7 +2640,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get pipeline stats",
                     1,
                 ))
@@ -2645,7 +2674,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to commit transaction",
                     1,
                 ))
@@ -2660,7 +2689,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         .send()
                         .await
                         .map_err(handle_errors_fatal(
-                            client.baseurl().clone(),
+                            client.baseurl().to_string(),
                             "Failed to get pipeline stats",
                             1,
                         ))
@@ -2713,7 +2742,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to compute pipeline diff",
                     1,
                 ))
@@ -2731,7 +2760,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to initiate rebalancing",
                     1,
                 ))
@@ -2746,7 +2775,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to advance clock",
                     1,
                 ))
@@ -2780,7 +2809,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to initiate compaction",
                     1,
                 ))
@@ -2795,7 +2824,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to dismiss pipeline deployment error",
                     1,
                 ))
@@ -2811,7 +2840,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Unable to retrieve pipeline events",
                     1,
                 ))
@@ -2950,7 +2979,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Unable to retrieve pipeline event",
                     1,
                 ))
@@ -3077,7 +3106,7 @@ async fn connector(
         .send()
         .await
         .map_err(handle_errors_fatal(
-            client.baseurl().clone(),
+            client.baseurl().to_string(),
             "Failed to get pipeline config",
             1,
         ))
@@ -3118,7 +3147,7 @@ async fn connector(
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to start table connector",
                     1,
                 ))
@@ -3141,7 +3170,7 @@ async fn connector(
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to pause table connector",
                     1,
                 ))
@@ -3157,7 +3186,7 @@ async fn connector(
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get table connector stats",
                     1,
                 ))
@@ -3195,7 +3224,7 @@ async fn connector(
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get view connector stats",
                     1,
                 ))
@@ -3321,7 +3350,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get program",
                     1,
                 ))
@@ -3359,7 +3388,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get program config",
                     1,
                 ))
@@ -3411,7 +3440,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to set program config",
                     1,
                 ))
@@ -3443,7 +3472,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get program status",
                     1,
                 ))
@@ -3478,7 +3507,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Failed to get program compilation errors",
                     1,
                 ))
@@ -3538,7 +3567,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                     .send()
                     .await
                     .map_err(handle_errors_fatal(
-                        client.baseurl().clone(),
+                        client.baseurl().to_string(),
                         "Failed to set program code",
                         1,
                     ))
@@ -3576,7 +3605,7 @@ async fn cluster(format: OutputFormat, action: ClusterAction, client: Client) {
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Unable to retrieve cluster events",
                     1,
                 ))
@@ -3632,7 +3661,7 @@ async fn cluster(format: OutputFormat, action: ClusterAction, client: Client) {
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     "Unable to retrieve cluster event",
                     1,
                 ))
@@ -3723,21 +3752,14 @@ fn main() {
                 cli.host = cli.host.trim_end_matches('/').to_string();
             }
 
-            let client = || {
-                make_client(
-                    cli.host,
-                    cli.insecure,
-                    cli.tls_cert,
-                    cli.auth,
-                    cli.auth_token_command,
-                    cli.timeout,
-                    cli.tenant,
-                )
-                .map_err(|e| {
-                    eprintln!("Failed to create HTTP client: {}", e);
-                    std::process::exit(1);
-                })
-                .unwrap()
+            let client_opts = ClientOpts::from_cli(&cli);
+            let client = move || {
+                make_client(client_opts)
+                    .map_err(|e| {
+                        eprintln!("Failed to create HTTP client: {}", e);
+                        std::process::exit(1);
+                    })
+                    .unwrap()
             };
 
             match cli.command {
@@ -3778,7 +3800,7 @@ fn init_logging(default_level: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_program_errors, make_client, run_auth_token_command};
+    use super::{ClientOpts, format_program_errors, make_client, run_auth_token_command};
     use feldera_rest_api::types::{
         ProgramError, RustCompilationInfo, SqlCompilationInfo, SqlCompilerMessage,
     };
@@ -3800,19 +3822,25 @@ EwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIQDN\n\
 aC3Oy4iVrYGOq9v6uP9iblE=\n\
 -----END CERTIFICATE-----\n";
 
+    /// Options for a client that only exercises the TLS-certificate path.
+    fn tls_test_opts(tls_cert: std::path::PathBuf) -> ClientOpts {
+        ClientOpts {
+            host: "https://example.invalid".to_string(),
+            insecure: false,
+            tls_cert: Some(tls_cert),
+            auth: None,
+            auth_token_command: None,
+            timeout_secs: None,
+            tenant: None,
+            retries: 0,
+        }
+    }
+
     #[test]
     fn make_client_tls_cert_missing_file_returns_error() {
         let missing = std::path::PathBuf::from("/definitely/not/a/real/path-fda-test.pem");
-        let err = make_client(
-            "https://example.invalid".to_string(),
-            false,
-            Some(missing),
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect_err("non-existent cert path must produce an error");
+        let err = make_client(tls_test_opts(missing))
+            .expect_err("non-existent cert path must produce an error");
         let msg = err.to_string();
         assert!(
             msg.contains("Failed to read TLS certificate file"),
@@ -3825,16 +3853,8 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
         let mut file = tempfile::NamedTempFile::new().expect("create temp file");
         file.write_all(b"this is not a PEM certificate")
             .expect("write temp file");
-        let err = make_client(
-            "https://example.invalid".to_string(),
-            false,
-            Some(file.path().to_path_buf()),
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect_err("garbage cert contents must produce an error");
+        let err = make_client(tls_test_opts(file.path().to_path_buf()))
+            .expect_err("garbage cert contents must produce an error");
         let msg = err.to_string();
         // Either we fail the PEM parse or we parse to an empty bundle; both are
         // acceptable error paths.
@@ -3853,15 +3873,7 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
         // The synthetic PEM above is syntactically valid for
         // `Certificate::from_pem_bundle`; we only care that the code path
         // wires the cert into the builder without surfacing an error.
-        let result = make_client(
-            "https://example.invalid".to_string(),
-            false,
-            Some(file.path().to_path_buf()),
-            None,
-            None,
-            None,
-            None,
-        );
+        let result = make_client(tls_test_opts(file.path().to_path_buf()));
         // Some rustls backends reject the synthetic cert at build time; accept
         // either a successful build or a cert-validation error, but never the
         // file-read / empty-bundle errors that would indicate our logic is

@@ -22,15 +22,16 @@ fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     // press. Static API keys are cheap, so pass those through; token-command
     // users simply get no pipeline-name completion (a failed/anonymous list
     // returns nothing rather than panicking).
-    let Ok(client) = make_client(
-        cli.host,
-        cli.insecure,
-        cli.tls_cert,
-        cli.auth,
-        None,
-        cli.timeout,
-        cli.tenant,
-    ) else {
+    let Ok(client) = make_client(crate::ClientOpts {
+        host: cli.host,
+        insecure: cli.insecure,
+        tls_cert: cli.tls_cert,
+        auth: cli.auth,
+        auth_token_command: None,
+        timeout_secs: cli.timeout,
+        tenant: cli.tenant,
+        retries: cli.retries,
+    }) else {
         return completions;
     };
 
@@ -164,6 +165,21 @@ pub struct Cli {
         help_heading = "Global Options"
     )]
     pub timeout: Option<u64>,
+    /// How many times to retry requests that fail transiently (connection
+    /// failures, timeouts, HTTP 408/429/502/503/504) before giving up.
+    ///
+    /// Waits between attempts start at 2 seconds and double per retry.
+    /// Requests that are unsafe to repeat (e.g. `ingest`, whose first attempt
+    /// may already have been applied) retry only when the request provably
+    /// never reached its target. Set to 0 to disable retrying.
+    #[arg(
+        long,
+        env = "FELDERA_RETRIES",
+        global = true,
+        help_heading = "Global Options",
+        default_value_t = 3
+    )]
+    pub retries: u32,
     /// The tenant to act in, by name or id, sent as the `Feldera-Tenant`
     /// header on every request.
     ///
