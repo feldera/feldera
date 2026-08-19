@@ -57,6 +57,9 @@ pub struct KafkaInputConfig {
     /// The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).
     pub region: Option<String>,
 
+    /// Identity provider used to mint SASL/OAUTHBEARER tokens.
+    pub oauth_provider: Option<KafkaOauthProvider>,
+
     /// The list of Kafka partitions to read from.
     ///
     /// Only the specified partitions will be consumed. If this field is not set,
@@ -191,6 +194,7 @@ impl KafkaInputConfig {
             poller_threads: None,
             start_from: KafkaStartFromConfig::default(),
             region: None,
+            oauth_provider: None,
             partitions: None,
             resume_earliest_if_data_expires: false,
             include_headers: None,
@@ -431,6 +435,30 @@ pub enum KafkaLogLevel {
     Debug,
 }
 
+/// Identity provider used to mint SASL/OAUTHBEARER tokens for the Kafka
+/// broker.
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum KafkaOauthProvider {
+    /// Mint an AWS Signature V4 token to authenticate to AWS Managed
+    /// Streaming for Kafka (MSK).
+    ///
+    /// This is the default provider, for backward compatibility.  `region` must
+    /// be set, either directly or via the `AWS_REGION` environment variable.
+    #[default]
+    Aws,
+
+    /// Mint a Google OAuth2 access token to authenticate to GCP Managed
+    /// Service for Apache Kafka.
+    ///
+    /// The token is obtained from Application Default Credentials: a
+    /// service account key or user credentials file (as set up by, e.g.,
+    /// `gcloud auth application-default login`), or, failing that, the
+    /// GKE metadata server (which supplies credentials automatically when
+    /// Workload Identity is configured).
+    Gcp,
+}
+
 /// On startup, the endpoint waits to join the consumer group.
 /// This constant defines the default wait timeout.
 pub const fn default_group_join_timeout_secs() -> u32 {
@@ -645,6 +673,10 @@ pub struct KafkaOutputConfig {
 
     /// The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).
     pub region: Option<String>,
+
+    /// Identity provider used to mint SASL/OAUTHBEARER tokens.  See
+    /// [`KafkaOauthProvider`].
+    pub oauth_provider: Option<KafkaOauthProvider>,
 }
 
 /// Fault tolerance configuration for Kafka output connector.
@@ -724,7 +756,7 @@ mod compat {
 
     use serde::Deserialize;
 
-    use crate::transport::kafka::{KafkaLogLevel, KafkaStartFromConfig};
+    use crate::transport::kafka::{KafkaLogLevel, KafkaOauthProvider, KafkaStartFromConfig};
 
     #[derive(Deserialize)]
     pub struct KafkaInputConfigCompat {
@@ -765,6 +797,9 @@ mod compat {
 
         /// The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).
         region: Option<String>,
+
+        /// Identity provider used to mint SASL/OAUTHBEARER tokens.
+        oauth_provider: Option<KafkaOauthProvider>,
 
         /// The Kafka partitions to read from.
         partitions: Option<Vec<i32>>,
@@ -859,6 +894,7 @@ mod compat {
                 poller_threads: compat.poller_threads,
                 start_from,
                 region: compat.region,
+                oauth_provider: compat.oauth_provider,
                 partitions: compat.partitions,
                 resume_earliest_if_data_expires: compat.resume_earliest_if_data_expires,
                 include_headers: compat.include_headers,
@@ -870,6 +906,41 @@ mod compat {
                 header_filter: compat.header_filter,
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod oauth_provider_tests {
+    use super::{KafkaInputConfig, KafkaOauthProvider};
+
+    #[test]
+    fn oauth_provider_is_optional() {
+        let config: KafkaInputConfig =
+            serde_json::from_str(r#"{"topic": "t", "bootstrap.servers": "localhost:9092"}"#)
+                .unwrap();
+        assert_eq!(config.oauth_provider, None);
+    }
+
+    #[test]
+    fn oauth_provider_gcp_round_trips() {
+        let config: KafkaInputConfig = serde_json::from_str(
+            r#"{"topic": "t", "bootstrap.servers": "localhost:9092", "oauth_provider": "gcp"}"#,
+        )
+        .unwrap();
+        assert_eq!(config.oauth_provider, Some(KafkaOauthProvider::Gcp));
+    }
+
+    #[test]
+    fn legacy_region_only_config_still_deserializes() {
+        // Configs written before `oauth_provider` existed set only `region`;
+        // they must still deserialize, with `oauth_provider` defaulting to
+        // `None` (interpreted as AWS by the adapter, for backward compatibility).
+        let config: KafkaInputConfig = serde_json::from_str(
+            r#"{"topic": "t", "bootstrap.servers": "localhost:9092", "region": "us-east-1"}"#,
+        )
+        .unwrap();
+        assert_eq!(config.region, Some("us-east-1".to_string()));
+        assert_eq!(config.oauth_provider, None);
     }
 }
 

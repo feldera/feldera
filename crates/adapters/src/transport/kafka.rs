@@ -1,7 +1,10 @@
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use aws_msk_iam_sasl_signer::generate_auth_token;
 use dbsp::circuit::tokio::TOKIO;
-use feldera_types::transport::kafka::{KafkaHeader, KafkaLogLevel};
+use feldera_types::transport::kafka::{KafkaHeader, KafkaLogLevel, KafkaOauthProvider};
+use google_cloud_auth::project::{
+    Config as GcpAuthConfig, create_token_source_from_project, project as gcp_project,
+};
 use parquet::data_type::AsBytes;
 use rdkafka::Statistics;
 use rdkafka::client::OAuthToken;
@@ -16,7 +19,7 @@ use rdkafka::{
 use sha2::Digest;
 use size_of::HumanBytes;
 use std::cmp::min;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::io::Write;
 use std::path::PathBuf;
@@ -301,66 +304,118 @@ fn is_oauthbearer(config: &BTreeMap<String, String>) -> bool {
         .is_some_and(|s| s.eq_ignore_ascii_case("OAUTHBEARER"))
 }
 
-fn validate_aws_msk_region(
-    kafka_options: &BTreeMap<String, String>,
-    region: Option<String>,
-) -> AnyResult<Option<String>> {
-    if is_oauthbearer(kafka_options) {
-        // Try to load the region from the environment, but if it isn't set,
-        // load it from the configuration.
-        // If both are none, return an error.
-        let region = TOKIO.block_on(async {
-                aws_config::load_from_env()
-                    .await
-                    .region()
-                    .and_then(|r| {
-                        let s = r.to_string();
-                        if s.trim().is_empty() {
-                            None
-                        } else {
-                            Some(s)
-                        }
-
-                    })
-            })
-            .or(region)
-            .ok_or(
-                anyhow!(
-            "sasl.mechanism is set to OAUTHBEARER, which only supports AWS MSK for now, but no region set. Consider setting the environment variable `AWS_REGION` or `region` field in Kafka connector configuration."
-        ))?;
-
-        if region.trim().is_empty() {
-            bail!("region is empty, region must be set to connect to AWS MSK");
-        }
-
-        return Ok(Some(region));
-    }
-
-    Ok(None)
+/// Which identity provider mints SASL/OAUTHBEARER tokens for a Kafka client,
+/// together with any provider-specific parameters resolved up front from the
+/// connector configuration.
+enum OauthbearerAuth {
+    /// No OAUTHBEARER configuration.
+    None,
+    /// Mint an AWS Signature V4 token for AWS MSK.
+    AwsMsk {
+        /// Region to mint for.
+        region: String,
+    },
+    /// Mint a Google OAuth2 access token for GCP Managed Service for Apache
+    /// Kafka, from Application Default Credentials.
+    Gcp,
 }
 
-fn generate_oauthbearer_token(
-    config: &HashMap<String, String>,
-) -> Result<OAuthToken, Box<dyn Error>> {
-    if let Some(region) = config.get("region").cloned() {
-        let (token, expiration_time_ms) = {
-            TOKIO.block_on(async {
-                generate_auth_token(aws_types::region::Region::new(region)).await
-            })
-        }?;
-
-        return Ok(OAuthToken {
-            token,
-            principal_name: "".to_string(),
-            lifetime_ms: expiration_time_ms,
-        });
+/// Resolves which OAUTHBEARER identity provider a Kafka client should use,
+/// and validates that its required parameters are present.
+fn resolve_oauthbearer_auth(
+    kafka_options: &BTreeMap<String, String>,
+    oauth_provider: Option<KafkaOauthProvider>,
+    region: Option<String>,
+) -> AnyResult<OauthbearerAuth> {
+    if !is_oauthbearer(kafka_options) {
+        return Ok(OauthbearerAuth::None);
     }
 
+    match oauth_provider.unwrap_or_default() {
+        KafkaOauthProvider::Gcp => Ok(OauthbearerAuth::Gcp),
+        KafkaOauthProvider::Aws => {
+            // Try to load the region from the environment, but if it isn't set,
+            // load it from the configuration.
+            // If both are none, return an error.
+            let region = TOKIO
+                .block_on(async {
+                    aws_config::load_from_env().await.region().and_then(|r| {
+                        let s = r.to_string();
+                        if s.trim().is_empty() { None } else { Some(s) }
+                    })
+                })
+                .or(region)
+                .ok_or(anyhow!(
+                    "sasl.mechanism is set to OAUTHBEARER, but no AWS region is set and no other \
+                     `oauth_provider` is configured. Consider setting the environment variable \
+                     `AWS_REGION` or the `region` field to authenticate to AWS MSK, or setting \
+                     `oauth_provider` to `gcp` to authenticate to GCP Managed Service for Apache \
+                     Kafka using Application Default Credentials."
+                ))?;
+
+            if region.trim().is_empty() {
+                bail!("region is empty, region must be set to connect to AWS MSK");
+            }
+
+            Ok(OauthbearerAuth::AwsMsk { region })
+        }
+    }
+}
+
+/// OAuth2 scope requested when minting a Google OAuth2 access token for GCP
+/// Managed Service for Apache Kafka.
+const GCP_OAUTH_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform";
+
+/// Fetches a Google OAuth2 access token from Application Default
+/// Credentials: a service account key or user credentials file (e.g. as set
+/// up by `gcloud auth application-default login`), or, failing that, the GKE
+/// metadata server (which supplies credentials automatically under Workload
+/// Identity).
+async fn fetch_gcp_oauthbearer_token() -> AnyResult<OAuthToken> {
+    let project = gcp_project()
+        .await
+        .map_err(|e| anyhow!("failed to resolve Google Application Default Credentials: {e}"))?;
+    let config = GcpAuthConfig::default().with_scopes(&[GCP_OAUTH_SCOPE]);
+    let token_source = create_token_source_from_project(&project, config)
+        .await
+        .map_err(|e| anyhow!("failed to create Google OAuth2 token source: {e}"))?;
+    let token = token_source
+        .token()
+        .await
+        .map_err(|e| anyhow!("failed to obtain Google OAuth2 access token: {e}"))?;
+    let lifetime_ms = token
+        .expiry
+        .ok_or_else(|| anyhow!("Google OAuth2 access token response is missing an expiry time"))?
+        .unix_timestamp()
+        * 1000;
+
     Ok(OAuthToken {
-        token: "".to_string(),
+        token: token.access_token,
         principal_name: "".to_string(),
-        lifetime_ms: i64::MAX,
+        lifetime_ms,
     })
+}
+
+fn generate_oauthbearer_token(auth: &OauthbearerAuth) -> Result<OAuthToken, Box<dyn Error>> {
+    match auth {
+        OauthbearerAuth::None => Ok(OAuthToken {
+            token: "".to_string(),
+            principal_name: "".to_string(),
+            lifetime_ms: i64::MAX,
+        }),
+        OauthbearerAuth::AwsMsk { region } => {
+            let (token, expiration_time_ms) = TOKIO.block_on(async {
+                generate_auth_token(aws_types::region::Region::new(region.clone())).await
+            })?;
+
+            Ok(OAuthToken {
+                token,
+                principal_name: "".to_string(),
+                lifetime_ms: expiration_time_ms,
+            })
+        }
+        OauthbearerAuth::Gcp => Ok(TOKIO.block_on(fetch_gcp_oauthbearer_token())?),
+    }
 }
 
 /// Tracks and reports memory use for a consumer or producer.
@@ -431,5 +486,82 @@ impl MemoryUseReporter {
             _ => return,
         }
         self.peak = Some((Instant::now(), memory));
+    }
+}
+
+#[cfg(test)]
+mod oauthbearer_tests {
+    use super::{KafkaOauthProvider, OauthbearerAuth, resolve_oauthbearer_auth};
+    use std::collections::BTreeMap;
+
+    fn oauthbearer_options() -> BTreeMap<String, String> {
+        BTreeMap::from([("sasl.mechanism".to_string(), "OAUTHBEARER".to_string())])
+    }
+
+    /// Isolates the AWS region lookup from the environment: clears
+    /// `AWS_REGION` and points the profile-file variables at paths that
+    /// don't exist, so a developer's or CI machine's `~/.aws/config` can't
+    /// make these tests flaky.
+    fn clear_aws_region_env() {
+        unsafe {
+            std::env::remove_var("AWS_REGION");
+            std::env::remove_var("AWS_DEFAULT_REGION");
+            std::env::remove_var("AWS_PROFILE");
+            std::env::set_var("AWS_CONFIG_FILE", "/nonexistent-feldera-test-aws-config");
+            std::env::set_var(
+                "AWS_SHARED_CREDENTIALS_FILE",
+                "/nonexistent-feldera-test-aws-credentials",
+            );
+        }
+    }
+
+    #[test]
+    fn non_oauthbearer_mechanism_is_ignored() {
+        let options = BTreeMap::from([("sasl.mechanism".to_string(), "PLAIN".to_string())]);
+        let auth = resolve_oauthbearer_auth(&options, Some(KafkaOauthProvider::Aws), None).unwrap();
+        assert!(matches!(auth, OauthbearerAuth::None));
+    }
+
+    #[test]
+    fn gcp_provider_does_not_require_a_region() {
+        let auth =
+            resolve_oauthbearer_auth(&oauthbearer_options(), Some(KafkaOauthProvider::Gcp), None)
+                .unwrap();
+        assert!(matches!(auth, OauthbearerAuth::Gcp));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn aws_provider_uses_the_configured_region_when_no_env_var_is_set() {
+        clear_aws_region_env();
+
+        let auth = resolve_oauthbearer_auth(
+            &oauthbearer_options(),
+            Some(KafkaOauthProvider::Aws),
+            Some("us-east-1".to_string()),
+        )
+        .unwrap();
+        assert!(matches!(auth, OauthbearerAuth::AwsMsk { region } if region == "us-east-1"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn missing_provider_defaults_to_aws_for_backward_compatibility() {
+        clear_aws_region_env();
+
+        let auth =
+            resolve_oauthbearer_auth(&oauthbearer_options(), None, Some("eu-west-1".to_string()))
+                .unwrap();
+        assert!(matches!(auth, OauthbearerAuth::AwsMsk { region } if region == "eu-west-1"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn aws_provider_without_a_region_is_an_error() {
+        clear_aws_region_env();
+
+        let result =
+            resolve_oauthbearer_auth(&oauthbearer_options(), Some(KafkaOauthProvider::Aws), None);
+        assert!(result.is_err());
     }
 }

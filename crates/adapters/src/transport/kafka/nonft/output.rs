@@ -1,6 +1,6 @@
 use crate::transport::kafka::{
-    DeferredLogging, MemoryUseReporter, PemToLocation, build_headers, generate_oauthbearer_token,
-    kafka_send, rdkafka_loglevel_from, validate_aws_msk_region,
+    DeferredLogging, MemoryUseReporter, OauthbearerAuth, PemToLocation, build_headers,
+    generate_oauthbearer_token, kafka_send, rdkafka_loglevel_from, resolve_oauthbearer_auth,
 };
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
@@ -14,7 +14,6 @@ use rdkafka::{
     producer::{BaseRecord, DeliveryResult, Producer, ProducerContext, ThreadedProducer},
     types::RDKafkaErrorCode,
 };
-use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Mutex;
 use std::{sync::RwLock, time::Duration};
@@ -36,7 +35,7 @@ struct KafkaOutputContext {
 
     deferred_logging: DeferredLogging,
 
-    oauthbearer_config: HashMap<String, String>,
+    oauthbearer_config: OauthbearerAuth,
 
     memory_use_reporter: Mutex<MemoryUseReporter>,
 
@@ -45,12 +44,11 @@ struct KafkaOutputContext {
 
 impl KafkaOutputContext {
     fn new(kafka_config: &KafkaOutputConfig) -> AnyResult<Self> {
-        let mut oauthbearer_config = HashMap::new();
-        if let Some(region) =
-            validate_aws_msk_region(&kafka_config.kafka_options, kafka_config.region.clone())?
-        {
-            oauthbearer_config.insert("region".to_owned(), region);
-        };
+        let oauthbearer_config = resolve_oauthbearer_auth(
+            &kafka_config.kafka_options,
+            kafka_config.oauth_provider,
+            kafka_config.region.clone(),
+        )?;
 
         Ok(Self {
             oauthbearer_config,

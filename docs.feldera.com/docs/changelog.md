@@ -14,6 +14,15 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - The Kafka connector's `sasl.mechanism = OAUTHBEARER` authentication can now
+          target GCP Managed Service for Apache Kafka, in addition to AWS MSK. Set the
+          new `oauth_provider` field to `gcp` to mint tokens from Google Application
+          Default Credentials, including the GKE metadata server under Workload
+          Identity. See
+          [Kafka input connector](/connectors/sources/kafka#how-to-write-connector-config) (#6886).
+
+        ## v0.334.0
+
         - Breaking change (SQL): `=`, `<>` and `!=` are no longer allowed between
           `ROW` values, so some programs that used to compile are now rejected.
           The previous implementation of these operations did not follow the

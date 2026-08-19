@@ -284,6 +284,47 @@ CREATE TABLE input (
 );
 ```
 
+Example of reading data from GCP Managed Service for Apache Kafka with OAUTHBEARER.
+
+:::important
+- `sasl.mechanism` must be set to `OAUTHBEARER`.
+- `security.protocol` must be set to `SASL_SSL`.
+- `oauth_provider` must be set to `gcp`.
+- Google credentials are resolved from Application Default Credentials: a service account key or user
+  credentials file (e.g., as set up by `gcloud auth application-default login`), or, on GKE with Workload
+  Identity configured, the metadata server.
+
+Other protocols and mechanisms aren't supported.
+:::
+
+```sql
+CREATE TABLE input (
+   ... -- columns omitted
+) WITH (
+   'connectors' = '[
+    {
+      "transport": {
+          "name": "kafka_input",
+          "config": {
+              "bootstrap.servers": "bootstrap.<CLUSTER>.<REGION>.managedkafka.<PROJECT>.cloud.goog:9092",
+              "sasl.mechanism": "OAUTHBEARER",
+              "security.protocol": "SASL_SSL",
+              "oauth_provider": "gcp",
+              "topic": "<TOPIC>"
+          }
+      },
+      "format": {
+          "name": "json",
+          "config": {
+              "update_format": "insert_delete",
+              "array": false
+          }
+      }
+   }
+   ]'
+);
+```
+
 ## <a name="metadata"></a>Accessing Kafka metadata
 
 Kafka messages include several metadata attributes in addition to the payload. These can be extracted by the Kafka connector and accessed from SQL:

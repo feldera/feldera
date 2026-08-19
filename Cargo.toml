@@ -185,6 +185,10 @@ futures-util = "0.3.30"
 geo = "0.26.0"
 google-cloud-gax = { package="gcloud-gax", version="1.3.2" }
 google-cloud-googleapis = { package="gcloud-googleapis", version="1.3.0" }
+# rustls-tls + jwt-aws-lc-rs match the TLS/crypto backend choice made for
+# google-cloud-pubsub below, keeping this off native-tls/OpenSSL and on the
+# aws-lc-rs backend that the `fips` feature relies on.
+google-cloud-auth = { package = "gcloud-auth", version = "1.2.0", default-features = false, features = ["rustls-tls", "jwt-aws-lc-rs"] }
 # rustls-tls rather than the default default-tls, which pulls native-tls and
 # with it the OpenSSL crate.
 google-cloud-pubsub = { package = "gcloud-pubsub", version = "1.6.0", default-features = false, features = ["auth", "rustls-tls", "jwt-aws-lc-rs"] }
