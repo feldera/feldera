@@ -152,6 +152,12 @@ def build_runtime_config(*args, **kwargs):
 
 class TestCheckpointSync(SharedTestPipeline):
     def _wait_for_standby_checkpoint_pull(self, pipeline, timeout_s: float = 120):
+        """Block until the standby pipeline reports its first checkpoint pull.
+
+        A pipeline in standby has no controller yet, so neither /metrics nor
+        /checkpoints can report pull progress; the log line is the only signal.
+        The pipeline logs it again on every pull, so an evicted line recurs.
+        """
         end = time.monotonic() + timeout_s
         for log in pipeline.logs():
             if "checkpoint pulled successfully" in log:
@@ -160,6 +166,9 @@ class TestCheckpointSync(SharedTestPipeline):
                 raise TimeoutError(
                     f"{pipeline.name} timed out waiting to pull checkpoint"
                 )
+        raise RuntimeError(
+            f"{pipeline.name} log stream ended before it pulled a checkpoint"
+        )
 
     def _configure_and_start(
         self,
@@ -1207,15 +1216,11 @@ class TestCheckpointSync(SharedTestPipeline):
         # checkpoint by now.
         try:
             assert standby.status() == PipelineStatus.STANDBY
+            # activate() blocks until the manager reports RUNNING. Do not wait
+            # on the "pipeline activated" log line instead: it is logged once,
+            # and the manager's bounded log buffer evicts it under trace noise.
             standby.activate(timeout_s=(pull_interval * extra_ckpts) + 60)
-
-            start = time.monotonic()
-            end = start + 120
-            for log in standby.logs():
-                if "activated" in log:
-                    break
-                if time.monotonic() > end:
-                    raise TimeoutError("Timed out waiting for standby to activate")
+            assert standby.status() == PipelineStatus.RUNNING
 
             got = list(standby.query("SELECT * FROM v0"))
             print(
