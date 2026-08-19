@@ -10,7 +10,7 @@ use crate::{ControllerError, PipelineState, util::indexed_operation_type};
 use crate::{
     buffer_op,
     catalog::{RecordFormat, SerBatchReader, SerCursor},
-    controller::{ControllerInner, EndpointId},
+    controller::{ControllerInner, EndpointId, MAX_CONNECTOR_ERROR_LEN},
     flush_op,
     format::{Encoder, OutputConsumer},
     transport::OutputEndpoint,
@@ -297,11 +297,19 @@ impl PostgresWorker {
         if let Err(e) = result {
             // Report only a prefix of the payload: it holds a whole batch of
             // records, up to `max_buffer_size_bytes`, which is far too large
-            // to keep in the error list served by `/stats`.
-            let error = BackoffError::from(e).context(format!(
+            // to keep in the error list served by `/stats`. The postgres error
+            // below the context embeds the failing row, so a fixed prefix
+            // bound can push the whole message past MAX_CONNECTOR_ERROR_LEN;
+            // give the prefix only the room the error chain leaves over.
+            const ERRMSG_HEADROOM_BYTES: usize = 512;
+            let error = BackoffError::from(e);
+            let payload_prefix_budget = MAX_CONNECTOR_ERROR_LEN
+                .saturating_sub(error.message_len() + ERRMSG_HEADROOM_BYTES)
+                .min(MAX_RECORD_LEN_IN_ERRMSG);
+            let error = error.context(format!(
                 "while executing {name} statement for {num_records} record(s) ({} bytes), which start with: {}",
                 v.len(),
-                truncate_ellipse(v, MAX_RECORD_LEN_IN_ERRMSG, "...")
+                truncate_ellipse(v, payload_prefix_budget, "...")
             ));
 
             // Transaction state is decided by whether the error is retry-able.

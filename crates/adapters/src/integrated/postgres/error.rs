@@ -61,6 +61,16 @@ impl BackoffError {
         }
     }
 
+    /// Byte length of the formatted error chain, so a caller embedding a
+    /// payload in its context can size it to what [`Self::inner`] leaves over.
+    pub fn message_len(&self) -> usize {
+        match self {
+            BackoffError::Permanent(error) | BackoffError::Temporary(error) => {
+                format!("{error:?}").len()
+            }
+        }
+    }
+
     pub fn context(self, context: String) -> Self {
         match self {
             BackoffError::Temporary(error) => BackoffError::Temporary(error.context(context)),
