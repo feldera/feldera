@@ -11367,6 +11367,14 @@
             ],
             "nullable": true
           },
+          "oauth_provider": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KafkaOauthProvider"
+              }
+            ],
+            "nullable": true
+          },
           "partitions": {
             "type": "array",
             "items": {
@@ -11459,6 +11467,14 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/KafkaLogLevel"
+              }
+            ],
+            "nullable": true
+          },
+          "oauth_provider": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KafkaOauthProvider"
               }
             ],
             "nullable": true
