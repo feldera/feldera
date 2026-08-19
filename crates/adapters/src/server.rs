@@ -60,7 +60,8 @@ use feldera_types::adapter_stats::{
 };
 use feldera_types::checkpoint::{
     CheckpointFailure, CheckpointPullStatus, CheckpointResponse, CheckpointStatus,
-    CheckpointSyncFailure, CheckpointSyncResponse, CheckpointSyncStatus, HostInfo,
+    CheckpointStatusQuery, CheckpointSyncFailure, CheckpointSyncResponse, CheckpointSyncStatus,
+    HostInfo,
 };
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
@@ -2252,6 +2253,7 @@ async fn checkpoint_sync(state: WebData<ServerState>) -> Result<HttpResponse, Pi
         }));
     };
 
+    let incarnation_uuid = state.incarnation_uuid;
     spawn(async move {
         let result = controller.async_sync_checkpoint(last_checkpoint).await;
         state
@@ -2261,7 +2263,10 @@ async fn checkpoint_sync(state: WebData<ServerState>) -> Result<HttpResponse, Pi
             .completed(last_checkpoint, result);
     });
 
-    Ok(HttpResponse::Accepted().json(CheckpointSyncResponse::new(last_checkpoint)))
+    Ok(HttpResponse::Accepted().json(CheckpointSyncResponse::new(
+        last_checkpoint,
+        incarnation_uuid,
+    )))
 }
 
 /// Request body for `POST /coordination/checkpoint/push`.
@@ -2293,6 +2298,7 @@ async fn coordination_checkpoint_push(
         }));
     }
 
+    let incarnation_uuid = state.incarnation_uuid;
     spawn(async move {
         let result = controller.async_sync_checkpoint(uuid).await;
         state
@@ -2302,7 +2308,25 @@ async fn coordination_checkpoint_push(
             .completed(uuid, result);
     });
 
-    Ok(HttpResponse::Accepted().json(CheckpointSyncResponse::new(uuid)))
+    Ok(HttpResponse::Accepted().json(CheckpointSyncResponse::new(uuid, incarnation_uuid)))
+}
+
+/// Checks a client-supplied incarnation UUID (from `CheckpointStatusQuery`).
+///
+/// `requested` is `None` for old clients that don't supply an UUID.
+fn check_incarnation_uuid(
+    state: &ServerState,
+    requested: Option<Uuid>,
+) -> Result<(), PipelineError> {
+    if let Some(requested) = requested
+        && requested != state.incarnation_uuid
+    {
+        return Err(PipelineError::IncarnationUuidMismatch {
+            requested,
+            expected: state.incarnation_uuid,
+        });
+    }
+    Ok(())
 }
 
 /// Initiates a checkpoint and returns its sequence number.  The caller may poll
@@ -2311,6 +2335,7 @@ async fn coordination_checkpoint_push(
 async fn checkpoint(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     let controller = state.controller()?;
     let seq = state.checkpoint_state.lock().unwrap().next_seq();
+    let incarnation_uuid = state.incarnation_uuid;
     spawn(async move {
         let result = controller.async_checkpoint().await;
         state
@@ -2319,13 +2344,17 @@ async fn checkpoint(state: WebData<ServerState>) -> Result<HttpResponse, Pipelin
             .unwrap()
             .completed(seq, result.map(|c| c.circuit));
     });
-    Ok(HttpResponse::Ok().json(CheckpointResponse::new(seq)))
+    Ok(HttpResponse::Ok().json(CheckpointResponse::new(seq, incarnation_uuid)))
 }
 
 #[get("/checkpoint_status")]
-async fn checkpoint_status(state: WebData<ServerState>) -> impl Responder {
+async fn checkpoint_status(
+    state: WebData<ServerState>,
+    params: web::Query<CheckpointStatusQuery>,
+) -> Result<HttpResponse, PipelineError> {
+    check_incarnation_uuid(&state, params.incarnation_uuid)?;
     let status = state.checkpoint_state.lock().unwrap().status.clone();
-    HttpResponse::Ok().json(status)
+    Ok(HttpResponse::Ok().json(status))
 }
 
 #[get("/checkpoints")]
@@ -2358,7 +2387,10 @@ async fn remote_checkpoints(state: WebData<ServerState>) -> Result<HttpResponse,
 #[get("/checkpoint/sync_status")]
 async fn sync_checkpoint_status(
     state: WebData<ServerState>,
+    params: web::Query<CheckpointStatusQuery>,
 ) -> Result<HttpResponse, PipelineError> {
+    check_incarnation_uuid(&state, params.incarnation_uuid)?;
+
     let mut sync_state = state.sync_checkpoint_state.lock().unwrap();
 
     let controller = state.controller()?;
@@ -4329,8 +4361,10 @@ mod test_http {
             http::{TestHttpReceiver, TestHttpSender},
         },
     };
+    use actix_web::http::StatusCode;
     use feldera_types::{
         adapter_stats::TransactionStatus,
+        checkpoint::{CheckpointResponse, CheckpointStatus},
         completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
         runtime_status::{BootstrapConfig, BootstrapPolicy},
     };
@@ -5012,6 +5046,120 @@ outputs:
             count, 10,
             "ad-hoc query observed a stale snapshot after fault-tolerant replay"
         );
+
+        suspend_pipeline(&server, Some(&storage_dir)).await;
+    }
+
+    /// Reproduces feldera/cloud#1927: a checkpoint that spans a pipeline
+    /// process restart must not be mistaken for one still in progress.
+    /// `success: None` looks identical whether a process is still working
+    /// on the checkpoint or has simply never heard of it; `/checkpoint`
+    /// hands back an `incarnation_uuid` alongside the sequence number so
+    /// `/checkpoint_status` can tell the two apart.
+    #[actix_web::test]
+    async fn test_checkpoint_status_detects_restart() {
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        std::fs::create_dir(&storage_dir).unwrap();
+
+        let config_str = format!(
+            r#"
+name: test
+workers: 1
+storage_config:
+    path: "{}"
+storage: true
+fault_tolerance: latest_checkpoint
+clock_resolution_usecs:
+inputs:
+outputs:
+"#,
+            storage_dir.display()
+        );
+
+        let (server, state) = start_test_server_with_state(
+            &config_str,
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[Some("v0")],
+            Some(test_program_ir("v0")),
+        )
+        .await;
+        start_pipeline(&server).await;
+
+        let resp = server
+            .post("/checkpoint")
+            .send()
+            .await
+            .unwrap()
+            .json::<CheckpointResponse>()
+            .await
+            .unwrap();
+        let seq = resp.checkpoint_sequence_number;
+        let stale_incarnation_uuid = resp
+            .incarnation_uuid
+            .expect("a current-version server always stamps a real incarnation on /checkpoint");
+
+        // Wait for the checkpoint to actually complete before crashing, so
+        // the crash below can't race the in-flight checkpoint write.
+        let start = Instant::now();
+        loop {
+            let status = server
+                .get("/checkpoint_status")
+                .send()
+                .await
+                .unwrap()
+                .json::<CheckpointStatus>()
+                .await
+                .unwrap();
+            if status.success == Some(seq) {
+                break;
+            }
+            assert!(start.elapsed() < Duration::from_secs(20));
+            sleep(Duration::from_millis(50));
+        }
+
+        // Simulate the pipeline process dying and a new one starting in its
+        // place, e.g. a pod eviction -- the new process gets a fresh
+        // incarnation UUID.
+        crash_pipeline(&state, &storage_dir).await;
+        drop(server);
+
+        let (server, _state) = start_test_server_with_state(
+            &config_str,
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[Some("v0")],
+            Some(test_program_ir("v0")),
+        )
+        .await;
+        start_pipeline(&server).await;
+
+        // A status check carrying the OLD incarnation UUID must be
+        // rejected outright, not answered with an ambiguous status that
+        // reads identically to "still in progress".
+        let resp = server
+            .get(format!(
+                "/checkpoint_status?incarnation_uuid={stale_incarnation_uuid}"
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        // Omitting the incarnation UUID preserves the old, ambiguous but
+        // backward-compatible behavior for clients that don't send it.
+        let status = server
+            .get("/checkpoint_status")
+            .send()
+            .await
+            .unwrap()
+            .json::<CheckpointStatus>()
+            .await
+            .unwrap();
+        assert_eq!(status.success, None);
 
         suspend_pipeline(&server, Some(&storage_dir)).await;
     }

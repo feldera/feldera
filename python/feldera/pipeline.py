@@ -1005,7 +1005,14 @@ metrics"""
 
     def checkpoint(self, wait: bool = False, timeout_s: Optional[float] = None) -> int:
         """
-        Checkpoints this pipeline.
+        Checkpoints this pipeline, returning just the checkpoint sequence
+        number.
+
+        This is for backward compatibility: `checkpoint_response` is a
+        better choice for a caller that plans to check the checkpoint's
+        status itself later (e.g. after this call returns with
+        `wait=False`), since it also returns the `incarnation_uuid` needed
+        for that later check to detect a pipeline restart in between.
 
         :param wait: If true, will block until the checkpoint completes.
         :param timeout_s: The maximum time (in seconds) to wait for the
@@ -1016,10 +1023,36 @@ metrics"""
         :raises FelderaAPIError: If enterprise features are not enabled.
         """
 
-        seq = self.client.checkpoint_pipeline(self.name)
+        return int(
+            self.checkpoint_response(wait=wait, timeout_s=timeout_s)[
+                "checkpoint_sequence_number"
+            ]
+        )
+
+    def checkpoint_response(
+        self, wait: bool = False, timeout_s: Optional[float] = None
+    ) -> dict:
+        """
+        Checkpoints this pipeline, returning the full response.
+
+        :param wait: If true, will block until the checkpoint completes.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            checkpoint to complete (defaults to `None` = no timeout is enforced).
+
+        :return: dict with `checkpoint_sequence_number` and
+            `incarnation_uuid`; pass the latter to `checkpoint_status` to
+            detect a pipeline restart between this call and a later status
+            check.
+
+        :raises FelderaAPIError: If enterprise features are not enabled.
+        """
+
+        resp = self.client.checkpoint_pipeline_response(self.name)
+        seq = int(resp["checkpoint_sequence_number"])
+        incarnation_uuid = resp.get("incarnation_uuid")
 
         if not wait:
-            return seq
+            return resp
 
         start = time.time()
 
@@ -1030,21 +1063,39 @@ metrics"""
                     f"""timeout ({timeout_s}s) reached while waiting for \
 pipeline '{self.name}' to make checkpoint '{seq}'"""
                 )
-            status = self.checkpoint_status(seq)
+            try:
+                status = self.checkpoint_status(seq, incarnation_uuid)
+            except FelderaAPIError as e:
+                if e.error_code == "IncarnationUuidMismatch":
+                    # The pipeline restarted since the checkpoint was
+                    # requested; that request is gone, so start over. Sleep
+                    # first so a crash-looping pipeline doesn't turn this
+                    # into a tight retry loop.
+                    time.sleep(0.1)
+                    resp = self.client.checkpoint_pipeline_response(self.name)
+                    seq = int(resp["checkpoint_sequence_number"])
+                    incarnation_uuid = resp.get("incarnation_uuid")
+                    continue
+                raise
             if status == CheckpointStatus.InProgress:
                 time.sleep(0.1)
                 continue
 
-            return seq
+            return resp
 
-    def checkpoint_status(self, seq: int) -> CheckpointStatus:
+    def checkpoint_status(
+        self, seq: int, incarnation_uuid: Optional[str] = None
+    ) -> CheckpointStatus:
         """
         Checks the status of the given checkpoint.
 
         :param seq: The checkpoint sequence number.
+        :param incarnation_uuid: The `incarnation_uuid` returned alongside
+            `seq` by `checkpoint`, if known, to allow pipeline restarts
+            to be clearly reported as `IncarnationUuidMismatch`.
         """
 
-        resp = self.client.checkpoint_pipeline_status(self.name)
+        resp = self.client.checkpoint_pipeline_status(self.name, incarnation_uuid)
         success = resp.get("success")
         if seq == success:
             return CheckpointStatus.Success
@@ -1065,7 +1116,14 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
         self, wait: bool = False, timeout_s: Optional[float] = None
     ) -> str:
         """
-        Syncs this checkpoint to object store.
+        Syncs this checkpoint to object store, returning just the
+        checkpoint uuid.
+
+        This is for backward compatibility: `sync_checkpoint_response` is
+        a better choice for a caller that plans to check the sync's status
+        itself later (e.g. after this call returns with `wait=False`),
+        since it also returns the `incarnation_uuid` needed for that later
+        check to detect a pipeline restart in between.
 
         :param wait: If true, will block until the checkpoint sync operation
             completes.
@@ -1076,10 +1134,35 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
         :raises RuntimeError: If syncing the checkpoint fails.
         """
 
-        uuid = self.client.sync_checkpoint(self.name)
+        return self.sync_checkpoint_response(wait=wait, timeout_s=timeout_s)[
+            "checkpoint_uuid"
+        ]
+
+    def sync_checkpoint_response(
+        self, wait: bool = False, timeout_s: Optional[float] = None
+    ) -> dict:
+        """
+        Syncs this checkpoint to object store, returning the full response.
+
+        :param wait: If true, will block until the checkpoint sync operation
+            completes.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            checkpoint to complete syncing.
+
+        :return: dict with `checkpoint_uuid` and `incarnation_uuid`; pass
+            the latter to `sync_checkpoint_status` to detect a pipeline
+            restart between this call and a later status check.
+
+        :raises FelderaAPIError: If no checkpoints have been made.
+        :raises RuntimeError: If syncing the checkpoint fails.
+        """
+
+        resp = self.client.sync_checkpoint_response(self.name)
+        uuid = resp["checkpoint_uuid"]
+        incarnation_uuid = resp.get("incarnation_uuid")
 
         if not wait:
-            return uuid
+            return resp
 
         start = time.time()
 
@@ -1090,7 +1173,20 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
                     f"""timeout ({timeout_s}s) reached while waiting for \
 pipeline '{self.name}' to sync checkpoint '{uuid}'"""
                 )
-            status = self.sync_checkpoint_status(uuid)
+            try:
+                status = self.sync_checkpoint_status(uuid, incarnation_uuid)
+            except FelderaAPIError as e:
+                if e.error_code == "IncarnationUuidMismatch":
+                    # The pipeline restarted since the sync was requested;
+                    # that request is gone, so start over. Sleep first so a
+                    # crash-looping pipeline doesn't turn this into a tight
+                    # retry loop.
+                    time.sleep(0.1)
+                    resp = self.client.sync_checkpoint_response(self.name)
+                    uuid = resp["checkpoint_uuid"]
+                    incarnation_uuid = resp.get("incarnation_uuid")
+                    continue
+                raise
             if status == CheckpointStatus.Failure:
                 raise RuntimeError(
                     f"failed to sync checkpoint '{uuid}': ", status.get_error()
@@ -1102,7 +1198,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
             break
 
-        return uuid
+        return resp
 
     def remote_checkpoints(self) -> list[dict]:
         """
@@ -1116,7 +1212,9 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         """
         return self.client.get_remote_checkpoints(self.name)
 
-    def sync_checkpoint_status(self, uuid: str) -> CheckpointStatus:
+    def sync_checkpoint_status(
+        self, uuid: str, incarnation_uuid: Optional[str] = None
+    ) -> CheckpointStatus:
         """
         Checks the status of the given checkpoint sync operation.
         If the checkpoint is currently being synchronized, returns
@@ -1126,9 +1224,12 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         checked.
 
         :param uuid: The checkpoint uuid.
+        :param incarnation_uuid: The `incarnation_uuid` returned alongside
+            `uuid` by `sync_checkpoint`, if known, to allow pipeline restarts
+            to be clearly reported as `IncarnationUuidMismatch`.
         """
 
-        resp = self.client.sync_checkpoint_status(self.name)
+        resp = self.client.sync_checkpoint_status(self.name, incarnation_uuid)
         success = resp.get("success")
         periodic = resp.get("periodic")
 
