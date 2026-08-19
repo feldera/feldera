@@ -155,8 +155,9 @@
       if (idx < 0) {
         return
       }
-      // Drop stick-to-bottom so a streaming log doesn't scroll away from the match the user
-      // jumped to. They regain auto-scroll by scrolling back to the bottom themselves.
+      // Drop stick-to-bottom so a streaming log doesn't scroll away from the match
+      // we programmatically scrolled (jumped) to.
+      // Releasing stick-to-bottom before the jump also cancels any auto-scroll already in flight.
       reverseScroll.stickToBottom = false
       virtualizer?.scrollToIndex(idx, { align: 'center' })
       let attempts = 0
