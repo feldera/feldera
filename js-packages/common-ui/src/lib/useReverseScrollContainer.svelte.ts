@@ -34,16 +34,35 @@ export const useReverseScrollContainer = (
     })
   }
 
+  // Scrolling to the bottom is not finished in one go: it is executed in two animation frames
+  // (see `scrollToBottom` below). This counter is how a scheduled scroll learns that it is no
+  // longer wanted. It goes up whenever a caller sets `stickToBottom` to false, which means the
+  // scroll was set programmatically. A waiting scroll remembers the count it was scheduled with,
+  // and does nothing if that count has changed by the time it runs.
+  let unstickCount = 0
+
+  // Run `scroll` on the next animation frame, unless the caller moves the view away in between.
+  const queueScrollPass = (scroll: () => void) => {
+    const unstickCountWhenQueued = unstickCount
+    requestAnimationFrame(() => {
+      if (unstickCountWhenQueued === unstickCount) {
+        scroll()
+      }
+    })
+  }
+
+  // Scroll down twice, one frame apart. Rows are measured only once they are on the page, so the
+  // first scroll usually brings more of them into view and pushes the real bottom further down.
   const scrollToBottom = () => {
     scrollToBottomImpl()
-    requestAnimationFrame(scrollToBottomImpl)
+    queueScrollPass(scrollToBottomImpl)
   }
 
   let lastSize: number = 0
 
   const onResize = (change: 'expanded' | 'contracted') => {
     if (stickToBottom) {
-      requestAnimationFrame(scrollToBottom)
+      queueScrollPass(scrollToBottom)
     }
   }
 
@@ -143,6 +162,11 @@ export const useReverseScrollContainer = (
       return debouncedStickToBottom.current
     },
     set stickToBottom(value: boolean) {
+      if (!value) {
+        // The caller is taking the view somewhere else, so drop any scroll to the bottom that is
+        // still waiting for its animation frame. See `unstickCount` above.
+        unstickCount++
+      }
       stickToBottom = value
     }
   }
