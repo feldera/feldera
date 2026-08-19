@@ -5,6 +5,7 @@ use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
 use feldera_rest_api::types::*;
 use feldera_rest_api::*;
+use feldera_types::checkpoint::CheckpointResponse;
 use feldera_types::config::{FtModel, RuntimeConfig, StorageOptions};
 use feldera_types::error::ErrorResponse;
 use feldera_types::transport::clock::ClockAdvanceRequest;
@@ -1226,31 +1227,66 @@ async fn wait_for_storage_status(
     }
 }
 
-async fn wait_for_checkpoint(client: &Client, name: String, seq_number: u64, waiting_text: &str) {
+/// Waits for `checkpoint` to complete, returning the checkpoint that actually
+/// completed. That is not necessarily the one passed in: if the pipeline
+/// restarts while we wait, the original request dies with it and this
+/// triggers a fresh checkpoint, which gets its own sequence number.
+async fn wait_for_checkpoint(
+    client: &Client,
+    name: String,
+    mut checkpoint: CheckpointResponse,
+    waiting_text: &str,
+) -> CheckpointResponse {
     let mut print_every_30_seconds = Instant::now();
     let mut is_waiting_for_checkpoint = true;
     while is_waiting_for_checkpoint {
-        let cs = client
-            .get_checkpoint_status()
-            .pipeline_name(name.clone())
-            .send()
-            .await
-            .map_err(handle_errors_fatal(
-                client.baseurl().to_string(),
-                "Failed to get pipeline checkpoint status",
-                1,
-            ))
-            .unwrap();
+        let mut request = client.get_checkpoint_status().pipeline_name(name.clone());
+        if let Some(uuid) = checkpoint.incarnation_uuid {
+            request = request.incarnation_uuid(uuid);
+        }
+        let cs = match request.send().await {
+            Ok(cs) => cs,
+            Err(Error::ErrorResponse(e)) if e.error_code == "IncarnationUuidMismatch" => {
+                // The pipeline restarted since the checkpoint was requested;
+                // that request is gone, so start over. Sleep first so a
+                // crash-looping pipeline doesn't turn this into a tight
+                // retry loop.
+                sleep(Duration::from_millis(100)).await;
+                checkpoint = client
+                    .checkpoint_pipeline()
+                    .pipeline_name(name.clone())
+                    .send()
+                    .await
+                    .map_err(handle_errors_fatal(
+                        client.baseurl().to_string(),
+                        "Failed to initiate pipeline checkpoint",
+                        1,
+                    ))
+                    .unwrap()
+                    .into_inner();
+                continue;
+            }
+            Err(err) => Err(err)
+                .map_err(handle_errors_fatal(
+                    client.baseurl().to_string(),
+                    "Failed to get pipeline checkpoint status",
+                    1,
+                ))
+                .unwrap(),
+        };
         debug!("Checkpoint status {:?}", cs);
 
-        is_waiting_for_checkpoint = cs.success.map(|c| c < seq_number).unwrap_or(true);
+        is_waiting_for_checkpoint = cs
+            .success
+            .map(|c| c < checkpoint.checkpoint_sequence_number)
+            .unwrap_or(true);
         if !is_waiting_for_checkpoint {
             // We have a checkpoint at least as recent as the requested sequence number
             break;
         }
 
         if let Some(failure) = &cs.failure {
-            if failure.sequence_number < seq_number {
+            if failure.sequence_number < checkpoint.checkpoint_sequence_number {
                 continue;
             }
             eprintln!(
@@ -1269,6 +1305,7 @@ async fn wait_for_checkpoint(client: &Client, name: String, seq_number: u64, wai
 
         sleep(Duration::from_millis(500)).await;
     }
+    checkpoint
 }
 
 /// Fetch a pipeline's current tags.
@@ -1726,18 +1763,19 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 ))
                 .unwrap();
             trace!("{:#?}", response);
-            let checkpoint_sequence_number = response.into_inner().checkpoint_sequence_number;
             if !no_wait {
-                wait_for_checkpoint(
+                // Report the checkpoint that completed, which differs from the
+                // one requested above if the pipeline restarted while waiting.
+                let completed = wait_for_checkpoint(
                     &client,
                     name.clone(),
-                    checkpoint_sequence_number,
+                    response.into_inner(),
                     "Taking a checkpoint...",
                 )
                 .await;
                 println!(
                     "Pipeline checkpoint (#{}) taken successfully.",
-                    checkpoint_sequence_number
+                    completed.checkpoint_sequence_number
                 );
             }
         }

@@ -269,11 +269,18 @@ A sync operation can be triggered by making a `POST` request to:
 curl -X POST 'http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync'
 ```
 
-This initiates the sync and returns the UUID of the checkpoint being synced:
+This initiates the sync and returns the UUID of the checkpoint being synced,
+along with the UUID of the pipeline process that accepted the request:
 
 ```json
-{ "checkpoint_uuid": "019779b4-8760-75f2-bdf0-71b825e63610" }
+{
+    "checkpoint_uuid": "019779b4-8760-75f2-bdf0-71b825e63610",
+    "incarnation_uuid": "019779b4-8760-75f2-bdf0-71b825e63611"
+}
 ```
+
+Pass `incarnation_uuid` to `sync_status` while waiting for the sync, as described
+under [detecting a pipeline restart](#detecting-a-pipeline-restart).
 
 ## Checking sync status
 
@@ -346,6 +353,48 @@ curl 'http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status'
     "periodic": "019779c1-8317-7a71-bd78-7b971f4a3c43"
 }
 ```
+
+### Detecting a pipeline restart
+
+If a pipeline restarts while a sync is in flight (e.g. because its pod
+was evicted), the request dies with it.  The client can detect this by
+passing the `incarnation_uuid` returned by `POST /checkpoint/sync`
+back to `sync_status`:
+
+```bash
+curl 'http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status?incarnation_uuid=019779b4-8760-75f2-bdf0-71b825e63611'
+```
+
+If the pipeline has restarted since the sync was requested, the incarnation
+no longer matches and the request fails with HTTP 400 and error code
+`IncarnationUuidMismatch` instead of returning an ambiguous status:
+
+```json
+{
+    "message": "Incarnation UUID mismatch (019779b4-8760-75f2-bdf0-71b825e63611 in request, expected 019779c1-8317-7a71-bd78-7b971f4a3c99)",
+    "error_code": "IncarnationUuidMismatch",
+    "details": {
+        "requested": "019779b4-8760-75f2-bdf0-71b825e63611",
+        "expected": "019779c1-8317-7a71-bd78-7b971f4a3c99"
+    }
+}
+```
+
+Trigger a new sync in response; the old one no longer exists. The parameter
+is optional, so a client that omits it keeps the previous behavior and cannot
+tell a restart apart from a sync in progress.
+
+The same parameter and error apply to `POST /checkpoint` and
+`GET /checkpoint_status`, which track local checkpoints the same way.
+
+`Pipeline.sync_checkpoint(wait=True)` in the Python SDK does this for you: it
+detects the restart and retries with a fresh sync. `Pipeline.checkpoint(wait=True)`
+and `fda pipeline checkpoint` do the same for local checkpoints.
+
+To poll status yourself instead, use `sync_checkpoint_response()`, or
+`checkpoint_response()` for a local checkpoint. Only these return the
+`incarnation_uuid` that the later status check needs; `sync_checkpoint()` and
+`checkpoint()` return just the UUID or sequence number.
 
 ## Multihost pipelines
 

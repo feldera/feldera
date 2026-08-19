@@ -1203,12 +1203,19 @@ pub(crate) async fn checkpoint_pipeline(
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("incarnation_uuid" = Option<Uuid>, Query, description = "Incarnation UUID returned by the `POST checkpoint` request this status check is for. If given and it does not match the pipeline's current incarnation, the pipeline process has restarted since the checkpoint was requested and the response is a 400 error rather than a status."),
     ),
     responses(
         (status = OK
          , description = "Checkpoint status retrieved successfully"
          , content_type = "application/json"
          , body = CheckpointStatus),
+        (status = BAD_REQUEST
+            , description = "The given `incarnation_uuid` does not match the pipeline's \
+                              current incarnation (error code `IncarnationUuidMismatch`): \
+                              the pipeline process has restarted since the checkpoint was \
+                              requested"
+            , body = ErrorResponse),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
@@ -1265,12 +1272,18 @@ pub(crate) async fn get_checkpoint_status(
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("incarnation_uuid" = Option<Uuid>, Query, description = "Incarnation UUID returned by the `POST checkpoint/sync` request this status check is for. If given and it does not match the pipeline's current incarnation, the pipeline process has restarted since the sync was requested and the response is a 400 error rather than a status."),
     ),
     responses(
         (status = OK
          , description = "Checkpoint sync status retrieved successfully"
          , content_type = "application/json"
          , body = CheckpointSyncStatus),
+        (status = BAD_REQUEST
+            , description = "The given `incarnation_uuid` does not match the pipeline's \
+                              current incarnation (error code `IncarnationUuidMismatch`): \
+                              the pipeline process has restarted since the sync was requested"
+            , body = ErrorResponse),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse

@@ -63,12 +63,18 @@ pub struct CheckpointFailure {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, ToSchema)]
 pub struct CheckpointResponse {
     pub checkpoint_sequence_number: u64,
+
+    /// Pass back to `/checkpoint_status` to detect pipeline restarts.
+    ///
+    /// Only `None` if sent by an older pipeline.
+    pub incarnation_uuid: Option<Uuid>,
 }
 
 impl CheckpointResponse {
-    pub fn new(checkpoint_sequence_number: u64) -> Self {
+    pub fn new(checkpoint_sequence_number: u64, incarnation_uuid: Uuid) -> Self {
         Self {
             checkpoint_sequence_number,
+            incarnation_uuid: Some(incarnation_uuid),
         }
     }
 }
@@ -77,12 +83,29 @@ impl CheckpointResponse {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, ToSchema)]
 pub struct CheckpointSyncResponse {
     pub checkpoint_uuid: Uuid,
+
+    /// Pass back to `/checkpoint/sync_status` to detect pipeline restarts.
+    ///
+    /// Only `None` if sent by an older pipeline.
+    pub incarnation_uuid: Option<Uuid>,
 }
 
 impl CheckpointSyncResponse {
-    pub fn new(checkpoint_uuid: Uuid) -> Self {
-        Self { checkpoint_uuid }
+    pub fn new(checkpoint_uuid: Uuid, incarnation_uuid: Uuid) -> Self {
+        Self {
+            checkpoint_uuid,
+            incarnation_uuid: Some(incarnation_uuid),
+        }
     }
+}
+
+/// Query parameters for `/checkpoint_status` and `/checkpoint/sync_status`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CheckpointStatusQuery {
+    /// Pass the value from the initial response, to detect pipeline restarts.
+    ///
+    /// Optional to allow older clients to continue working.
+    pub incarnation_uuid: Option<Uuid>,
 }
 
 /// Checkpoint status returned by the `/checkpoint/sync_status` endpoint.
@@ -254,6 +277,23 @@ pub enum CheckpointPullStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A newer client's `CheckpointResponse`/`CheckpointSyncResponse` must
+    /// still parse a response from an older pipeline that predates the
+    /// `incarnation_uuid` field, yielding `None` rather than a
+    /// deserialization error.
+    #[test]
+    fn deserialize_response_missing_incarnation_uuid() {
+        let resp: CheckpointResponse =
+            serde_json::from_str(r#"{"checkpoint_sequence_number": 3}"#).unwrap();
+        assert_eq!(resp.checkpoint_sequence_number, 3);
+        assert_eq!(resp.incarnation_uuid, None);
+
+        let sync_resp: CheckpointSyncResponse =
+            serde_json::from_str(r#"{"checkpoint_uuid": "00000000-0000-0000-0000-000000000001"}"#)
+                .unwrap();
+        assert_eq!(sync_resp.incarnation_uuid, None);
+    }
 
     /// Legacy bare-array dependencies.json from older checkpoints must still
     /// parse, yielding an empty state-file list (no manifest verification).
