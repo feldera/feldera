@@ -72,6 +72,7 @@ fn fast_policy(max_retries: u32) -> RetryPolicy {
         max_retries,
         initial_backoff: Duration::from_millis(10),
         max_backoff: Duration::from_millis(40),
+        ..RetryPolicy::default()
     }
 }
 
@@ -146,29 +147,61 @@ async fn get_retries_dropped_connection() {
     assert_eq!(requests.load(Ordering::SeqCst), 2);
 }
 
-/// A `Retry-After` header overrides the computed backoff: with a large
-/// configured backoff and `Retry-After: 0`, the retry happens immediately.
+/// A `Retry-After` header on a retryable response keeps the retry flow
+/// intact. The wait-selection arithmetic itself is unit-tested in
+/// `retry::tests::next_wait_selection` — no timing assertions here.
 #[tokio::test]
-async fn retry_after_header_overrides_backoff() {
+async fn retry_after_header_is_accepted() {
     let (baseurl, requests) = mock_server(vec![
         http_response_with("503 Service Unavailable", "Retry-After: 0\r\n", "{}"),
         http_response("200 OK", "[]"),
     ])
     .await;
-    let slow_policy = RetryPolicy {
-        max_retries: 3,
-        initial_backoff: Duration::from_secs(30),
-        max_backoff: Duration::from_secs(60),
-    };
-    let started = std::time::Instant::now();
-    let response = client(&baseurl, slow_policy).list_api_keys().send().await;
+    let response = client(&baseurl, fast_policy(3))
+        .list_api_keys()
+        .send()
+        .await;
     assert!(response.is_ok(), "{response:?}");
     assert_eq!(requests.load(Ordering::SeqCst), 2);
-    assert!(
-        started.elapsed() < Duration::from_secs(5),
-        "Retry-After: 0 was ignored; waited {:?}",
-        started.elapsed()
-    );
+}
+
+/// A 502 makes the client probe `/v0/cluster_healthz` before retrying: the
+/// probe shows up as the middle request. Which wait the probe outcome picks
+/// is unit-tested in `retry::tests::next_wait_selection`.
+#[tokio::test]
+async fn spurious_502_probes_cluster_health_then_retries() {
+    let (baseurl, requests) = mock_server(vec![
+        http_response("502 Bad Gateway", "{}"),
+        http_response("200 OK", "{}"), // health probe: healthy
+        http_response("200 OK", "[]"),
+    ])
+    .await;
+    let response = client(&baseurl, fast_policy(3))
+        .list_api_keys()
+        .send()
+        .await;
+    assert!(response.is_ok(), "{response:?}");
+    assert_eq!(requests.load(Ordering::SeqCst), 3);
+}
+
+/// An unhealthy probe answer (non-200) still leads to a retry that succeeds.
+/// The probe answers 400, which no retry would survive if it reached the
+/// operation itself, so this fails if the probe request goes missing.
+#[tokio::test]
+async fn unhealthy_502_probe_still_retries() {
+    let (baseurl, requests) = mock_server(vec![
+        http_response("502 Bad Gateway", "{}"),
+        http_response("400 Bad Request", "{}"), // health probe: unhealthy
+        http_response("200 OK", "[]"),
+    ])
+    .await;
+    let policy = RetryPolicy {
+        unhealthy_backoff: Duration::from_millis(10),
+        ..fast_policy(3)
+    };
+    let response = client(&baseurl, policy).list_api_keys().send().await;
+    assert!(response.is_ok(), "{response:?}");
+    assert_eq!(requests.load(Ordering::SeqCst), 3);
 }
 
 /// A non-idempotent POST must not repeat a 503 that may already have been

@@ -5,7 +5,8 @@
 //! which resends requests that failed for reasons known to be transient:
 //! transport failures and the HTTP statuses in [`RETRYABLE_STATUSES`]. Waits
 //! between attempts grow exponentially; a `Retry-After` header overrides the
-//! computed wait.
+//! computed wait, and a 502 waits based on a cluster-health probe (see
+//! [`cluster_is_healthy`]).
 //!
 //! Repeating a request is only safe when the first attempt provably caused no
 //! server-side effect, or when the operation yields the same state however
@@ -30,6 +31,11 @@ pub struct RetryPolicy {
     pub initial_backoff: Duration,
     /// Upper bound on the wait between attempts.
     pub max_backoff: Duration,
+    /// Flat wait between 502 retries while the cluster reports unhealthy on
+    /// `/v0/cluster_healthz`: the cluster is likely upgrading or restarting,
+    /// so a flat pause beats an exponential ramp. Not capped by
+    /// `max_backoff`.
+    pub unhealthy_backoff: Duration,
 }
 
 impl Default for RetryPolicy {
@@ -38,6 +44,7 @@ impl Default for RetryPolicy {
             max_retries: 3,
             initial_backoff: Duration::from_secs(2),
             max_backoff: Duration::from_secs(60),
+            unhealthy_backoff: Duration::from_secs(90),
         }
     }
 }
@@ -141,6 +148,41 @@ fn retry_after(headers: &HeaderMap) -> Option<Duration> {
     Some(Duration::from_secs(secs))
 }
 
+/// How long the `/v0/cluster_healthz` probe may take before the cluster
+/// counts as unhealthy.
+const HEALTH_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Probe `/v0/cluster_healthz` to tell a spurious 502 (retry immediately)
+/// from an unhealthy cluster, e.g. one whose upgrade is in progress (flat
+/// long wait). The endpoint answers 200 only when every service is healthy;
+/// any other status or a probe failure counts as unhealthy.
+async fn cluster_is_healthy(client: &reqwest::Client, baseurl: &str) -> bool {
+    let url = format!("{}/v0/cluster_healthz", baseurl.trim_end_matches('/'));
+    match client.get(url).timeout(HEALTH_PROBE_TIMEOUT).send().await {
+        Ok(response) => response.status().is_success(),
+        Err(_) => false,
+    }
+}
+
+/// Pick the wait before the next retry:
+/// a `Retry-After` value from the server wins (capped at `max_backoff`);
+/// a 502 from a healthy cluster was spurious, so retry immediately;
+/// a 502 from an unhealthy cluster (e.g. an upgrade in progress) waits the
+/// flat `unhealthy_backoff`; everything else backs off exponentially.
+fn next_wait(
+    policy: &RetryPolicy,
+    retry_index: u32,
+    server_wait: Option<Duration>,
+    cluster_healthy_after_502: Option<bool>,
+) -> Duration {
+    match (server_wait, cluster_healthy_after_502) {
+        (Some(server_wait), _) => server_wait.min(policy.max_backoff),
+        (None, Some(true)) => Duration::ZERO,
+        (None, Some(false)) => policy.unhealthy_backoff,
+        (None, None) => policy.backoff(retry_index),
+    }
+}
+
 enum Verdict {
     Return(Response),
     Retry {
@@ -148,6 +190,7 @@ enum Verdict {
         /// Wait requested by the server via `Retry-After`; overrides the
         /// computed backoff (still capped at `max_backoff`).
         server_wait: Option<Duration>,
+        status: StatusCode,
     },
 }
 
@@ -163,6 +206,7 @@ async fn judge_response(response: Response, idempotent: bool) -> reqwest::Result
         return Ok(Verdict::Retry {
             reason: "transient HTTP status",
             server_wait,
+            status,
         });
     }
     if status != StatusCode::SERVICE_UNAVAILABLE {
@@ -174,6 +218,7 @@ async fn judge_response(response: Response, idempotent: bool) -> reqwest::Result
         Ok(Verdict::Retry {
             reason: "pipeline unreachable, request never sent",
             server_wait,
+            status,
         })
     } else {
         Ok(Verdict::Return(rebuild_response(status, headers, body)))
@@ -186,6 +231,7 @@ async fn judge_response(response: Response, idempotent: bool) -> reqwest::Result
 pub(crate) async fn execute_with_retry(
     client: &reqwest::Client,
     policy: &RetryPolicy,
+    baseurl: &str,
     mut request: Request,
     operation_id: &str,
 ) -> reqwest::Result<Response> {
@@ -218,13 +264,14 @@ pub(crate) async fn execute_with_retry(
             return outcome;
         };
 
-        let (reason, detail, server_wait) = match outcome {
+        let (reason, detail, server_wait, retried_status) = match outcome {
             Ok(response) => match judge_response(response, idempotent).await? {
                 Verdict::Return(response) => return Ok(response),
                 Verdict::Retry {
                     reason,
                     server_wait,
-                } => (reason, String::new(), server_wait),
+                    status,
+                } => (reason, String::new(), server_wait, Some(status)),
             },
             Err(error) => {
                 // Idempotent operations repeat on any transport failure
@@ -234,14 +281,21 @@ pub(crate) async fn execute_with_retry(
                 if !(idempotent || error.is_connect()) {
                     return Err(error);
                 }
-                ("transport error", format!(": {error}"), None)
+                ("transport error", format!(": {error}"), None, None)
             }
         };
 
         request = retry_request;
-        let wait = server_wait
-            .unwrap_or_else(|| policy.backoff(retry_index))
-            .min(policy.max_backoff);
+        // A 502 comes from in front of the api-server; probe cluster health
+        // to pick the right wait (see `next_wait`). Skipped when the server
+        // already prescribed a wait via `Retry-After`.
+        let cluster_healthy_after_502 =
+            if server_wait.is_none() && retried_status == Some(StatusCode::BAD_GATEWAY) {
+                Some(cluster_is_healthy(client, baseurl).await)
+            } else {
+                None
+            };
+        let wait = next_wait(policy, retry_index, server_wait, cluster_healthy_after_502);
         retry_index += 1;
         log::debug!(
             "{operation_id}: {reason}{detail} - retrying in {}s (attempt {} of {})",
@@ -264,6 +318,7 @@ mod tests {
             max_retries: 5,
             initial_backoff: Duration::from_secs(2),
             max_backoff: Duration::from_secs(6),
+            ..RetryPolicy::default()
         };
         assert_eq!(policy.backoff(0), Duration::from_secs(2));
         assert_eq!(policy.backoff(1), Duration::from_secs(4));
@@ -281,6 +336,35 @@ mod tests {
         assert!(!is_idempotent(&Method::POST, "clock_advance"));
         assert!(!is_idempotent(&Method::POST, "http_input"));
         assert!(!is_idempotent(&Method::PATCH, "patch_something_new"));
+    }
+
+    /// Wait selection: `Retry-After` wins (capped), a 502 waits per cluster
+    /// health, everything else backs off exponentially.
+    #[test]
+    fn next_wait_selection() {
+        let policy = RetryPolicy {
+            max_retries: 3,
+            initial_backoff: Duration::from_secs(2),
+            max_backoff: Duration::from_secs(60),
+            unhealthy_backoff: Duration::from_secs(90),
+        };
+        // Server-prescribed wait wins, capped at max_backoff.
+        assert_eq!(
+            next_wait(&policy, 0, Some(Duration::from_secs(7)), None),
+            Duration::from_secs(7)
+        );
+        assert_eq!(
+            next_wait(&policy, 0, Some(Duration::from_secs(600)), None),
+            Duration::from_secs(60)
+        );
+        // 502 with healthy cluster: immediate; unhealthy: flat, uncapped.
+        assert_eq!(next_wait(&policy, 0, None, Some(true)), Duration::ZERO);
+        assert_eq!(
+            next_wait(&policy, 0, None, Some(false)),
+            Duration::from_secs(90)
+        );
+        // Otherwise exponential.
+        assert_eq!(next_wait(&policy, 1, None, None), Duration::from_secs(4));
     }
 
     /// Only the seconds form of `Retry-After` yields a wait.
