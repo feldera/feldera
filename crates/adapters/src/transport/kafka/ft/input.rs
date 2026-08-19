@@ -1,7 +1,9 @@
 use crate::transport::InputCommandReceiver;
 use crate::transport::kafka::MemoryUseReporter;
 use crate::transport::kafka::ft::count_partitions_in_topic;
-use crate::transport::kafka::{generate_oauthbearer_token, validate_aws_msk_region};
+use crate::transport::kafka::{
+    OauthbearerAuth, generate_oauthbearer_token, resolve_oauthbearer_auth,
+};
 use crate::{InputBuffer, Parser};
 use crate::{
     InputConsumer, TransportInputEndpoint,
@@ -42,7 +44,7 @@ use serde::{Deserialize, Serialize};
 use smallvec::{SmallVec, smallvec};
 #[cfg(test)]
 use std::collections::BTreeSet;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::error::Error;
 use std::hash::Hasher;
 use std::ops::Range;
@@ -98,7 +100,7 @@ struct KafkaFtInputContext {
 
     deferred_logging: DeferredLogging,
 
-    oauthbearer_config: HashMap<String, String>,
+    oauthbearer_config: OauthbearerAuth,
 
     memory_use_reporter: Mutex<MemoryUseReporter>,
 
@@ -107,12 +109,11 @@ struct KafkaFtInputContext {
 
 impl KafkaFtInputContext {
     fn new(kafka_config: &KafkaInputConfig) -> AnyResult<Self> {
-        let mut oauthbearer_config = HashMap::new();
-        if let Some(region) =
-            validate_aws_msk_region(&kafka_config.kafka_options, kafka_config.region.clone())?
-        {
-            oauthbearer_config.insert("region".to_owned(), region);
-        };
+        let oauthbearer_config = resolve_oauthbearer_auth(
+            &kafka_config.kafka_options,
+            kafka_config.oauth_provider,
+            kafka_config.region.clone(),
+        )?;
 
         Ok(Self {
             endpoint: Mutex::new(Weak::new()),

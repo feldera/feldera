@@ -65,6 +65,13 @@ import TabItem from '@theme/TabItem';
           `string` requires. See
           [VARIANT](/connectors/sinks/delta#variant).
 
+        - The Kafka connector's `sasl.mechanism = OAUTHBEARER` authentication can now
+          target GCP Managed Service for Apache Kafka, in addition to AWS MSK. Set the
+          new `oauth_provider` field to `gcp` to mint tokens from Google Application
+          Default Credentials, including the GKE metadata server under Workload
+          Identity. See
+          [Kafka input connector](/connectors/sources/kafka#how-to-write-connector-config) (#6886).
+
         ## v0.337.0
 
         - Breaking change (SQL): comparing a `UUID` with a character or binary value
