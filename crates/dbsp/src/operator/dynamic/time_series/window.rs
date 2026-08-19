@@ -531,7 +531,10 @@ mod test {
         dynamic::{DowncastTrait, DynData, Erase},
         indexed_zset,
         operator::dynamic::trace::TraceBound,
-        typed_batch::{IndexedZSetReader, OrdIndexedZSet, SpineSnapshot, TypedBox},
+        trace::Trace as _,
+        typed_batch::{
+            BatchReader as _, IndexedZSetReader, OrdIndexedZSet, SpineSnapshot, TypedBox,
+        },
         utils::{Tup2, Tup3},
     };
     use anyhow::Error as AnyError;
@@ -879,9 +882,9 @@ mod test {
         }
     }
 
-    // It's hard to make this test reliable with async background compactor threads.
+    /// `window` bounds the trace of its input, so the trace retains only keys
+    /// that the window can still admit.
     #[test]
-    #[ignore]
     fn bounded_memory() {
         let (mut dbsp, input_handle) = Runtime::init_circuit(8, |circuit| {
             let (input, input_handle) = circuit.add_input_indexed_zset::<i64, i64>();
@@ -895,17 +898,26 @@ mod test {
                         )
                     });
 
+            // The effective bound is the minimum of all bounds on the trace, so `i64::MAX`
+            // leaves the window's own bound in charge and this probe observes the same
+            // trace the window GCs.
             let bound = TraceBound::new();
             bound.set(Box::new(i64::MAX).erase_box());
 
             input.window((true, false), &bounds);
 
             input
-                .integrate_trace_with_bound(bound, TraceBound::new())
+                .accumulate_integrate_trace_with_bound(bound, TraceBound::new())
                 .apply(|trace| {
-                    let trace_size = trace.size_of().total_bytes();
+                    // Background merges enforce the bound lazily, so measure a fork merged
+                    // to completion: that is the trace with GC fully applied.
+                    let mut merged = trace.inner().fork();
+                    merged.complete_merges();
+
+                    // The window spans 1000 keys, which is under 8KB per worker.
+                    let trace_size = merged.size_of().total_bytes();
                     assert!(
-                        trace_size < 70000,
+                        trace_size < 16000,
                         "trace_size {trace_size} is larger than expected"
                     );
                 });
