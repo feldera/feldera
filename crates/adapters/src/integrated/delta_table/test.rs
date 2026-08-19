@@ -3461,18 +3461,22 @@ async fn delta_table_cdc_s3_test_suspend() {
     let object_store_config = [
         (
             "aws_access_key_id".to_string(),
-            std::env::var("DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID").unwrap(),
+            std::env::var("DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID")
+                .unwrap()
+                .into(),
         ),
         (
             "aws_secret_access_key".to_string(),
-            std::env::var("DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
+            std::env::var("DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY")
+                .unwrap()
+                .into(),
         ),
         // AWS region must be specified (see https://github.com/delta-io/delta-rs/issues/1095).
-        ("aws_region".to_string(), "us-east-2".to_string()),
-        ("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string()),
+        ("aws_region".to_string(), "us-east-2".into()),
+        ("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".into()),
     ]
     .into_iter()
-    .collect::<HashMap<_, _>>();
+    .collect::<HashMap<String, Value>>();
 
     let input_table_uri = format!("s3://feldera-delta-table-test/{input_uuid}/");
 
