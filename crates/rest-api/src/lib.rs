@@ -19,7 +19,14 @@ impl ClientHooks<RetryPolicy> for Client {
         request: reqwest::Request,
         info: &OperationInfo,
     ) -> reqwest::Result<reqwest::Response> {
-        retry::execute_with_retry(self.client(), self.inner(), request, info.operation_id).await
+        retry::execute_with_retry(
+            self.client(),
+            self.inner(),
+            self.baseurl(),
+            request,
+            info.operation_id,
+        )
+        .await
     }
 }
 

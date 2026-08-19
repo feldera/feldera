@@ -168,7 +168,9 @@ pub struct Cli {
     /// How many times to retry requests that fail transiently (connection
     /// failures, timeouts, HTTP 408/429/502/503/504) before giving up.
     ///
-    /// Waits between attempts start at 2 seconds and double per retry.
+    /// Waits between attempts start at 2 seconds and double per retry. On a
+    /// 502 the client probes cluster health to decide between an immediate
+    /// retry and a longer wait (e.g. while an upgrade is in progress).
     /// Requests that are unsafe to repeat (e.g. `ingest`, whose first attempt
     /// may already have been applied) retry only when the request provably
     /// never reached its target. Set to 0 to disable retrying.
