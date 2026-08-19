@@ -11,10 +11,10 @@
 //! property, which is why [`validate_key_types`] is an allowlist rather than a check for
 //! nesting.
 
+use anyhow::{Result as AnyResult, anyhow, bail};
 use arrow::array::{ArrayRef, RecordBatch};
 use arrow::datatypes::{DataType as ArrowDataType, Schema as ArrowSchema};
 use arrow::row::{RowConverter, Rows, SortField};
-use anyhow::{Result as AnyResult, anyhow, bail};
 use feldera_types::program_schema::{ColumnType, Relation, SqlType};
 
 /// Reject key types whose round trip through parquet does not preserve Feldera's notion
@@ -367,6 +367,9 @@ mod test {
         let rel = relation(vec![scalar("id", SqlType::BigInt)]);
         let schema = ArrowSchema::new(vec![ArrowField::new("other", DataType::Int64, true)]);
         let err = KeyEncoder::new(&rel, &schema).unwrap_err().to_string();
-        assert!(err.contains("not present in the target Delta table"), "{err}");
+        assert!(
+            err.contains("not present in the target Delta table"),
+            "{err}"
+        );
     }
 }

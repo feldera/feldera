@@ -300,16 +300,9 @@ mod test {
         chunk.sort();
 
         let mut tombstones = Tombstones::new();
-        let metrics = locate(
-            &chunk,
-            &candidates,
-            &table,
-            &encoder,
-            4,
-            &mut tombstones,
-        )
-        .await
-        .unwrap();
+        let metrics = locate(&chunk, &candidates, &table, &encoder, 4, &mut tombstones)
+            .await
+            .unwrap();
 
         assert_eq!(metrics.rows_located, 2);
         assert_eq!(metrics.keys_not_found, 1);

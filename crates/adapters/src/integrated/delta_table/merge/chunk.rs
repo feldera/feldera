@@ -132,7 +132,8 @@ impl LookupChunk {
     /// Requires [`Self::sort`].
     pub fn lower_bound(&self, key: &[u8]) -> usize {
         debug_assert!(self.sorted, "sort() before querying the chunk");
-        self.order.partition_point(|i| self.key_at(*i as usize) < key)
+        self.order
+            .partition_point(|i| self.key_at(*i as usize) < key)
     }
 
     /// Whether `key` is present. Requires [`Self::sort`].

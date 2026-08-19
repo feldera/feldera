@@ -732,7 +732,10 @@ mod log_retention_tests {
         assert_eq!(config.update_mode, DeltaTableUpdateMode::Cdc);
         assert!(!config.is_merge());
         assert_eq!(config.lookup_chunk_bytes, default_lookup_chunk_bytes());
-        assert_eq!(config.max_concurrent_probes, default_max_concurrent_probes());
+        assert_eq!(
+            config.max_concurrent_probes,
+            default_max_concurrent_probes()
+        );
     }
 
     #[test]
