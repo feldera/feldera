@@ -132,6 +132,8 @@ When running multiple compiler replicas, sccache allows them to share compiled a
 | `parallelCompilation.sccache.s3.endpoint` | *(unset)* | Custom S3-compatible server endpoint (e.g., `minio.svc.cluster.local:9000`). Omit for AWS S3. |
 | `parallelCompilation.sccache.s3.existingSecret` | *(unset)* | Name of a Kubernetes secret with `access_key_id` and `secret_access_key` keys. Omit if using IRSA. |
 | `parallelCompilation.sccache.s3.serverSideEncryption` | *(unset)* | Enable server-side encryption with S3-managed keys (SSE-S3). |
+| `parallelCompilation.sccache.s3.serverSideEncryptionAwsKms` | *(unset)* | Enable SSE-KMS with the AWS-managed key (`aws/s3`). Requires sccache 0.17 or newer. |
+| `parallelCompilation.sccache.s3.serverSideEncryptionKmsKeyId` | *(unset)* | Enable SSE-KMS with a customer-managed KMS key, given as its ARN. Takes precedence over the two settings above. Requires sccache 0.17 or newer, and `kms:GenerateDataKey` plus `kms:Decrypt` on the key. |
 
 ---
 
