@@ -22,6 +22,14 @@ reqwest = { workspace = true, features = ["json", "stream"] }
 feldera-types = { workspace = true }
 progenitor-client = { workspace = true }
 rustversion.workspace = true
+bytes = { workspace = true }
+http = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
+
+[dev-dependencies]
+rustls = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
 
 [build-dependencies]
 prettyplease = { workspace = true }

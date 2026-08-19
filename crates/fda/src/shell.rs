@@ -3,6 +3,7 @@ use directories::ProjectDirs;
 use feldera_rest_api::Client;
 use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
+use progenitor_client::ClientInfo;
 use progenitor_client::Error;
 use reqwest::StatusCode;
 use rustyline::error::ReadlineError;
@@ -48,8 +49,8 @@ pub async fn shell(format: OutputFormat, name: String, client: Client) {
         .send()
         .await
         .map_err(handle_errors_fatal(
-            client.baseurl().clone(),
-            format!("Failed to connect to {}", client.baseurl().clone()).leak(),
+            client.baseurl().to_string(),
+            format!("Failed to connect to {}", client.baseurl()).leak(),
             1,
         ))
         .unwrap()
@@ -289,13 +290,8 @@ async fn handle_sql_response_error(err: Error<ErrorResponse>) {
                 eprintln!("{}", UPGRADE_NOTICE);
             }
         }
-        Error::PreHookError(e) => {
-            eprint!("ERROR: Unable to execute authentication pre-hook ({})", e);
-            eprintln!("{}", UPGRADE_NOTICE);
-        }
-        Error::PostHookError(e) => {
-            eprint!("ERROR: Unable to execute authentication post-hook ({})", e);
-            eprintln!("{}", UPGRADE_NOTICE);
+        Error::Custom(e) => {
+            eprintln!("ERROR: {}", e);
         }
     };
 }

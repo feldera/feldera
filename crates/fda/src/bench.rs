@@ -10,6 +10,7 @@ use tokio::time::{Duration, Instant, sleep};
 
 use crate::cli::{BenchmarkArgs, OutputFormat, PipelineAction};
 use crate::handle_errors_fatal;
+use progenitor_client::ClientInfo;
 
 pub fn human_readable_bytes(n: i64) -> String {
     const DELIMITER: f64 = 1024_f64;
@@ -489,7 +490,7 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
         Ok(p) => p,
         Err(_) => {
             let _ = handle_errors_fatal(
-                client.baseurl().clone(),
+                client.baseurl().to_string(),
                 "Failed to get pipeline status",
                 1,
             );

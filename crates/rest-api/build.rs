@@ -214,6 +214,10 @@ fn type_replacement() -> Vec<(&'static str, &'static str)> {
             "feldera_types::transport::nats::NatsInputConfig",
         ),
         (
+            "StartFromCheckpoint",
+            "feldera_types::config::StartFromCheckpoint",
+        ),
+        (
             "ClockAdvanceRequest",
             "feldera_types::transport::clock::ClockAdvanceRequest",
         ),
@@ -230,6 +234,7 @@ fn main() {
     let spec = serde_json::from_reader(&openapi[..]).unwrap();
     let mut settings = GenerationSettings::new();
     settings.with_interface(InterfaceStyle::Builder);
+    settings.with_inner_type("crate::RetryPolicy".parse().unwrap());
     for (from, to) in type_replacement() {
         let impls = vec![];
         settings.with_replacement(from, to, impls.into_iter());

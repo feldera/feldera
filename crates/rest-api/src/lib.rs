@@ -1,6 +1,27 @@
-#![allow(clippy::all, unused)]
+mod generated {
+    #![allow(clippy::all, unused)]
+    include!(concat!(env!("OUT_DIR"), "/codegen.rs"));
+}
+pub use generated::*;
 
-include!(concat!(env!("OUT_DIR"), "/codegen.rs"));
+mod retry;
+pub use retry::RetryPolicy;
+
+// ClientInfo is already in scope through the generated code's public
+// re-export; importing it again here would shadow that re-export.
+use progenitor_client::{ClientHooks, OperationInfo};
+
+/// Route every request through the retry layer. Overrides the no-op default
+/// on `&Client` via auto-ref specialization (see `progenitor_client::ClientHooks`).
+impl ClientHooks<RetryPolicy> for Client {
+    async fn exec(
+        &self,
+        request: reqwest::Request,
+        info: &OperationInfo,
+    ) -> reqwest::Result<reqwest::Response> {
+        retry::execute_with_retry(self.client(), self.inner(), request, info.operation_id).await
+    }
+}
 
 #[cfg(test)]
 mod tests {

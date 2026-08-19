@@ -1,3 +1,4 @@
+use progenitor_client::ClientInfo;
 use std::{
     collections::BTreeMap,
     fmt::Write,
@@ -402,7 +403,7 @@ async fn unbundle_support_bundle(
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
+                    client.baseurl().to_string(),
                     format!("Unable to create pipeline {pipeline_name}").leak(),
                     1,
                 ))
