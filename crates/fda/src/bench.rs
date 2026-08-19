@@ -1,25 +1,15 @@
-use chrono::{DateTime, Utc};
 use feldera_rest_api::Client;
-use feldera_rest_api::types::{CompilationProfile, Configuration, ProgramConfig};
-use feldera_types::error::ErrorResponse;
+use feldera_rest_api::types::CompilationProfile;
 use log::{error, info, warn};
-use progenitor_client::Error as ProgenitorError;
-use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::{cmp, collections::HashMap, error::Error};
+use std::cmp;
 use tabled::builder::Builder;
 use tabled::settings::Style;
 use tokio::time::{Duration, Instant, sleep};
 
-mod api;
-use crate::bench::api::types::JsonUpdateStartPoint;
+use crate::cli::{BenchmarkArgs, OutputFormat, PipelineAction};
 use crate::handle_errors_fatal;
-use crate::{
-    bench::api::types::{Adapter, GitHash, JsonNewRun, JsonReportSettings, NameId, ResourceId},
-    cli::{BenchmarkArgs, OutputFormat, PipelineAction},
-};
-use api::Client as BenchClient;
 
 pub fn human_readable_bytes(n: i64) -> String {
     const DELIMITER: f64 = 1024_f64;
@@ -498,8 +488,11 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
     {
         Ok(p) => p,
         Err(_) => {
-            let _ =
-                handle_errors_fatal(client.baseurl().clone(), "Failed to get pipeline status", 1);
+            let _ = handle_errors_fatal(
+                client.baseurl().clone(),
+                "Failed to get pipeline status",
+                1,
+            );
             unreachable!()
         }
     };
@@ -578,11 +571,9 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
         false
     };
 
-    let start_time: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
     // Collect metrics over time
     println!("Collecting metrics...");
     let metrics = collect_metrics(&client, &pipeline_name, args.duration, need_commit).await;
-    let end_time: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
 
     // Stop the pipeline after collecting metrics
     let _ = Box::pin(crate::pipeline(
@@ -598,160 +589,4 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
 
     let bmf_benchmark = transform_to_bmf(&client, pipeline_name, format, metrics).await;
     println!("{}", bmf_benchmark.format(format));
-
-    if args.upload {
-        let feldera_instance_config = get_config(&client)
-            .await
-            .map_err(handle_errors_fatal(
-                client.baseurl().clone(),
-                "Unable to fetch config of feldera instance",
-                1,
-            ))
-            .unwrap();
-        let feldera_testbed = Url::parse(client.baseurl())
-            .ok()
-            .and_then(|url| url.host_str().map(|s| s.to_string()))
-            .unwrap_or_else(|| client.baseurl().to_string());
-
-        upload_result(
-            args,
-            feldera_testbed,
-            feldera_instance_config,
-            pipeline.program_config.clone(),
-            bmf_benchmark,
-            start_time,
-            end_time,
-        )
-        .await
-        .unwrap_or_else(|e| {
-            error!("Failed to upload benchmark result: {}", e);
-            std::process::exit(1);
-        });
-    }
-}
-
-async fn get_config(client: &Client) -> Result<Configuration, ProgenitorError<ErrorResponse>> {
-    let config = client.get_config().send().await?;
-    let config_map = config.into_inner();
-    Ok(config_map)
-}
-
-async fn upload_result(
-    args: BenchmarkArgs,
-    feldera_testbed: String,
-    feldera_instance_config: Configuration,
-    program_config: Option<ProgramConfig>,
-    benchmark_data: Benchmark,
-    start_time: DateTime<Utc>,
-    end_time: DateTime<Utc>,
-) -> Result<(), Box<dyn Error>> {
-    let mut headers = reqwest::header::HeaderMap::new();
-    if let Some(token) = &args.benchmark_token {
-        let authorization_header = format!("Bearer {}", token);
-        headers.insert(
-            reqwest::header::AUTHORIZATION,
-            authorization_header.parse().unwrap(),
-        );
-    } else {
-        warn!("No benchmark token provided, trying to upload without one.");
-    }
-
-    let client_with_benchmark_auth = reqwest::ClientBuilder::new()
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(15))
-        .default_headers(headers)
-        .build()
-        .unwrap();
-    let client = BenchClient::new_with_client(&args.benchmark_host, client_with_benchmark_auth);
-
-    let mut run_context: HashMap<String, String> = HashMap::new();
-    // Augment from `feldera_instance_config`, if available:
-    run_context.insert(
-        "bencher.dev/v0/repo/name".to_string(),
-        format!("feldera {}", feldera_instance_config.edition),
-    );
-    run_context.insert(
-        "bencher.dev/v0/branch/hash".to_string(),
-        feldera_instance_config.revision.clone(),
-    );
-    run_context.insert(
-        "bencher.dev/v0/branch/ref/name".to_string(),
-        args.branch.clone(),
-    );
-    match feldera_instance_config.edition.as_str() {
-        "Open source" => {
-            run_context.insert(
-                "bencher.dev/v0/repo/hash".to_string(),
-                "de8879fbda0c9e9392e3b94064c683a1b4bae216".to_string(),
-            );
-        }
-        "Enterprise" => {
-            run_context.insert(
-                "bencher.dev/v0/repo/hash".to_string(),
-                "751db38ff821d73bcc67c836af421d76d4d42bdd".to_string(),
-            );
-        }
-        _ => {
-            warn!(
-                "Unknown edition '{}', not setting repo hash",
-                feldera_instance_config.edition
-            );
-        }
-    }
-
-    // TODO: augment with more context, e.g.:
-    //"bencher.dev/v0/testbed/os": "macOS",
-    //"bencher.dev/v0/branch/ref": "refs/heads/benchmarks",
-    //"bencher.dev/v0/testbed/fingerprint": "rkn4va8erzzh3",
-
-    let git_hash: Option<GitHash> = match (
-        program_config.and_then(|pc| pc.runtime_version.clone()),
-        feldera_instance_config.runtime_revision,
-    ) {
-        (Some(r), _) => Some(GitHash(r)),
-        (None, r) if !r.is_empty() => Some(GitHash(r.clone())),
-        _ => None,
-    };
-    let project = ResourceId(args.project);
-    let testbed = NameId(feldera_testbed);
-    let result = benchmark_data.format(OutputFormat::Json);
-    let settings: JsonReportSettings = JsonReportSettings::builder()
-        .adapter(Adapter::Json)
-        .try_into()?;
-    let branch = NameId(args.branch);
-
-    let json_start_point = args.start_point.map(|st| {
-        JsonUpdateStartPoint::builder()
-            .branch(NameId(st))
-            .clone_thresholds(args.start_point_clone_thresholds)
-            .hash(args.start_point_hash.map(GitHash))
-            .max_versions(args.start_point_max_versions)
-            .reset(args.start_point_reset)
-            .try_into()
-            .expect("Unable to build JsonUpdateStartPoint")
-    });
-    let thresholds = None;
-
-    let run: JsonNewRun = JsonNewRun::builder()
-        .branch(branch)
-        .project(project)
-        .context(Some(run_context.into()))
-        .start_time(start_time)
-        .end_time(end_time)
-        .hash(git_hash)
-        .results(vec![result])
-        .settings(settings)
-        .start_point(json_start_point)
-        .testbed(testbed)
-        .thresholds(thresholds)
-        .try_into()?;
-
-    let r = client.run_post().body(run).send().await?;
-    if r.status().is_success() {
-        info!("Benchmark result uploaded successfully.");
-    } else {
-        warn!("Failed to upload benchmark result: {}", r.status());
-    }
-
-    Ok(())
 }
