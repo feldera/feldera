@@ -12,6 +12,7 @@ export {
     NodeAndMetric,
     shadeOfRed
 } from './profiler.js';
+export { type DiagramTheme, type DiagramPalette, DIAGRAM_PALETTES } from './diagramTheme.js';
 export { HierarchicalTable, HierarchicalTableRow, HierarchicalTableCellValue } from "./hierarchical-table.js";
 export {
     measurementCategory,
@@ -25,5 +26,5 @@ export {
     BooleanValue,
     type JsonProfiles
 } from './profile.js';
-export { type Dataflow, type SourcePositionRange } from './dataflow.js';
+export { type Dataflow, SourcePositionRange } from './dataflow.js';
 export { type Option } from './util.js';

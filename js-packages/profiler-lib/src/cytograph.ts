@@ -1,17 +1,24 @@
 // A cytograph is a graph representation suitable for the cytoscape graph layout and rendering tool
 
-import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeDefinition, type NodeSingular, type StylesheetJson } from 'cytoscape';
+import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeCollection, type NodeDefinition, type NodeSingular } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
 import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
 import { CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, type NodeId } from './profile.js';
 import { CircuitSelection } from './selection.js';
 import elk from 'cytoscape-elk';
 import { Sources } from './dataflow.js';
-import { Point, Size } from "./planar.js";
-import { ViewNavigator } from './navigator.js';
 import { ZSet } from "./zset.js";
 import { MetadataSelection } from './metadataSelection.js';
 import { type NodeAttributes, type TooltipCell, type ProfilerCallbacks } from './profiler.js';
+import { buildGraphStyle, type DiagramTheme, labelWidth } from './diagramTheme.js';
+import { installNodeShadows, SELECTED_NODE_CLASS } from './nodeShadow.js';
+import { installNodeText } from './nodeText.js';
+import { nodeChips } from './chips.js';
+import { elkNodeLayoutOptions, regionMinWidth } from './regionSize.js';
+import { installChipButtons, refreshChips } from './chipButtons.js';
+import type { DiagramPlugin } from './diagramPlugin.js';
+import { Viewport } from './viewport.js';
+import { FrozenLayout } from './frozenLayout.js';
 
 /** A measurement together with a normalized [0, 100] percentile for color scaling. The original
  * `PropertyValue` is preserved so consumers can format on demand (via `.toString()`) or compute
@@ -88,7 +95,9 @@ class GraphNode {
         readonly expanded: boolean,
         readonly parent: Option<string>,
         // Source position information
-        readonly sources: string) {
+        readonly sources: string,
+        // Number of primitive operators inside this node; 0 for a primitive operator itself
+        readonly leafCount: number = 0) {
     }
 
     asString(): string {
@@ -107,11 +116,11 @@ class GraphNode {
     }
 
     /** Returns a data structure understood by cytoscape for a node. */
-    getDefinition(): NodeDefinition {
-        // Add a small SQL prefix for nodes with source positions
-        // TODO: To improve the design we can use https://github.com/kaluginserg/cytoscape-node-html-label
-        // to implement the badge that indicates that a node has the source position available
-        const label = `${this.hasSourcePosition ? "◆ " : ""}${this.id} ${this.label}`;
+    getDefinition(theme: DiagramTheme): NodeDefinition {
+        // `nodeText.ts` draws this as two runs, which is why the operator name is carried on its own as
+        // well. The label is only ever measured, and measured here rather than by cytoscape, since the
+        // node also has to hold the counter chip beside its text.
+        const label = this.label === '' ? this.id : `${this.id} ${this.label}`;
 
         let result = {
             // These data attributes can be used in cytoscape.StylesheetJson to conditionally style the nodes.
@@ -119,8 +128,20 @@ class GraphNode {
             "data": {
                 "id": this.id,
                 "label": label,
+                "text_width": labelWidth(label),
+                // Floor under the width of the region this node becomes while expanded, so its name
+                // fits the band along the top edge (`regionSize.ts`). Only a composite can be a region;
+                // an operator carries no floor.
+                "min_width": this.hasChildren ? regionMinWidth(label, this.leafCount) : 0,
+                "operator": this.label,
                 "sources": this.sources,
-                "has_source": this.hasSourcePosition
+                "has_source": this.hasSourcePosition,
+                "has_children": this.hasChildren,
+                // What the counter chip reports, and what `chipButtons.ts` needs to size the pill it
+                // hit-tests.
+                "leaf_count": this.leafCount,
+                // Corner chips; the stylesheet maps this to `background-image`.
+                "chips": nodeChips(this.hasSourcePosition, this.leafCount, theme)
             }
         };
         let data = result["data"] as any;
@@ -213,9 +234,9 @@ export class Cytograph {
     }
 
     /** Used to convert nodes and edges to a representation understood by cytoscape. */
-    getGraphElements(): ElementsDefinition {
+    getGraphElements(theme: DiagramTheme): ElementsDefinition {
         return {
-            "nodes": this.nodes.map(n => n.getDefinition()),
+            "nodes": this.nodes.map(n => n.getDefinition(theme)),
             "edges": this.edges.map(e => e.getDefinition())
         }
     }
@@ -281,6 +302,25 @@ export class Cytograph {
         return result;
     }
 
+    /** The node drawn in place of `nodeId`: the outermost region around it that is collapsed, or the
+     *  node itself when every region around it is expanded. Walking from the outside in is what lets a
+     *  region inside an expanded one be collapsed on its own, since collapsing an outer region hides the
+     *  inner ones whatever state they are in. */
+    static drawnNode(profile: CircuitProfile, selection: CircuitSelection, nodeId: NodeId): NodeId {
+        let regions: Array<NodeId> = [];
+        let parent = profile.parents.get(nodeId);
+        while (parent.isSome()) {
+            regions.unshift(parent.unwrap());
+            parent = profile.parents.get(parent.unwrap());
+        }
+        for (const region of regions) {
+            if (!selection.regionsExpanded.contains(region)) {
+                return region;
+            }
+        }
+        return nodeId;
+    }
+
     // Create a Cytograph from a CircuitProfile filtered by the specified selection.
     static fromProfile(profile: CircuitProfile, selection: CircuitSelection): Cytograph {
         let g = this.createUnderlyingGraph(profile);
@@ -290,25 +330,23 @@ export class Cytograph {
 
         let visibleParents = new Set<NodeId>();
         for (let [nodeId, node] of profile.simpleNodes.entries()) {
-            // Find out whether we display this node or only its parent.
-            // If the parent is expanded, we display this node.
-            let topParent = profile.getTopParent(nodeId);
-            const expand = selection.regionsExpanded.contains(topParent);
-            if (nodeId !== topParent && !expand) {
-                let set = result.nodeChildren.get(topParent);
+            // Find out whether we display this node or the innermost region that hides it.
+            const drawn = Cytograph.drawnNode(profile, selection, nodeId);
+            if (drawn !== nodeId) {
+                let set = result.nodeChildren.get(drawn);
                 if (set.isSome())
                     set.unwrap().add(nodeId);
                 else {
-                    result.nodeChildren.set(topParent, new Set(nodeId));
+                    result.nodeChildren.set(drawn, new Set([nodeId]));
                 }
             }
 
             let hasChildren = false;
-            if (!expand && nodeId !== topParent) {
-                if (inserted.has(topParent))
-                    // Another child has inserted this parent
+            if (drawn !== nodeId) {
+                if (inserted.has(drawn))
+                    // Another child has inserted this region
                     continue;
-                nodeId = topParent;
+                nodeId = drawn;
                 hasChildren = true;
                 node = profile.complexNodes.get(nodeId).unwrap();
                 // Note: above we switched the nodeId/node that we are processing.
@@ -316,8 +354,13 @@ export class Cytograph {
 
             let parent = profile.parents.get(node.id);
             if (parent.isSome()) {
-                const p = parent.unwrap();
-                visibleParents.add(p);
+                // Every region around the drawn node is drawn too, expanded: cytoscape needs each
+                // `parent` it is given to be a node on the graph, up to the outermost one.
+                let ancestor = parent;
+                while (ancestor.isSome()) {
+                    visibleParents.add(ancestor.unwrap());
+                    ancestor = profile.parents.get(ancestor.unwrap());
+                }
             }
             let src = sources.toString(node.sourcePositions);
             let operation = node instanceof ComplexNode
@@ -327,7 +370,10 @@ export class Cytograph {
             if (operation === CircuitProfile.Z1_TRACE_OUTPUT)
                 // These nodes were modified in the profile.fixZ1Nodes() function.
                 operation = CircuitProfile.Z1_TRACE;
-            let graphNode = new GraphNode(nodeId, node.persistentId, operation, hasChildren, expand && hasChildren, parent, src);
+            const leafCount = node instanceof ComplexNode ? node.leafCount : 0;
+            // Never expanded: a region is only drawn here when it is collapsed, and the expanded ones
+            // are added by the loop below.
+            let graphNode = new GraphNode(nodeId, node.persistentId, operation, hasChildren, false, parent, src, leafCount);
             result.addNode(graphNode);
             inserted.set(nodeId, graphNode);
         }
@@ -339,7 +385,7 @@ export class Cytograph {
                 visibleParents.has(nodeId)) {
                 let positions = complex.sourcePositions;
                 let src = sources.toString(positions);
-                let node = new GraphNode(nodeId, complex.persistentId, complex.operation, true, true, parent, src);
+                let node = new GraphNode(nodeId, complex.persistentId, complex.operation, true, true, parent, src, complex.leafCount);
                 result.addNode(node);
             }
         }
@@ -353,18 +399,14 @@ export class Cytograph {
             let target = edge.target;
             let originalEdge = result.createEdge(source, target, edge.back);
 
-            let sourceParent = profile.getTopParent(source);
-            let targetParent = profile.getTopParent(target);
-            let expandSource = selection.regionsExpanded.contains(sourceParent);
-            let expandTarget = selection.regionsExpanded.contains(targetParent);
             if (profile.complexNodes.has(target))
                 // Do not add edges to complex nodes.
                 continue;
 
-            if (!expandSource)
-                source = sourceParent;
-            if (!expandTarget)
-                target = targetParent;
+            // An edge to or from a node that is not drawn lands on the region drawn in its place.
+            source = Cytograph.drawnNode(profile, selection, source);
+            target = Cytograph.drawnNode(profile, selection, target);
+            const targetCollapsed = target !== edge.target;
 
             let sourceNode = inserted.get(source).expect(`Node ${source} not found in visible map`);
             let targetNode = inserted.get(target).expect(`Node ${target} not found in visible map`);
@@ -376,7 +418,7 @@ export class Cytograph {
 
             // Detect whether an edge represents the same channel as a previous edge
             // (only suppressed if the edge goes to a complex node)
-            if (!expandTarget) {
+            if (targetCollapsed) {
                 let pair = edge.source.toString() + "," + targetNode.id.toString();
                 if (insertedEdges.has(pair)) {
                     continue;
@@ -419,121 +461,21 @@ class GraphDiff {
 export class CytographRendering {
     currentGraph: Cytograph | null;
     readonly cy: cytoscape.Core;
-    readonly navigator: ViewNavigator;
     /**
      * If true do not remove the node information from the screen on mouse leave
      */
     stickyInformation: boolean;
-    // Last node that triggered a recomputation of the layout
-    lastNode: Option<NodeId>;
     // Current node that has tooltip displayed (for refreshing on metadata changes)
     private currentTooltipNode: NodeId | null = null;
+    /** Where the view is; also the one plugin this class asks things of directly. */
+    private readonly viewport: Viewport;
+    /** Everything that reacts to the diagram's lifecycle rather than driving it, in call order: the
+     *  view settles before the picture held over the layout comes down. */
+    private readonly plugins: Array<DiagramPlugin>;
     // True between `initiateLayout` and its matching `layoutComplete`. Used so `dispose()`
     // can fire a final `onRenderingChange(false)` if the layout was still in flight when the
     // visualizer is torn down — otherwise a consumer's progress bar would stick on screen.
     private renderingInFlight = false;
-
-    readonly graph_style: StylesheetJson = [
-        {
-            // How to display nodes
-            selector: 'node',
-            css: {
-                'shape': 'rectangle',
-                'content': 'data(label)',
-                'text-valign': 'center',
-                'text-halign': 'center',
-                "font-size": "12px",
-                'height': '14px',
-                'line-color': "black",
-                'border-color': 'black',
-                'border-width': '1px',
-                'border-style': 'solid',
-                'padding': '2px',
-                'width': 'label',
-            }
-        },
-        {
-            // How to color nodes based on the 'value' attribute
-            selector: 'node[value]',
-            css: {
-                'background-color': "mapData(value, 0, 100, white, red)",
-            }
-        },
-        {
-            // how to display "invisible" node, only used for the root node
-            selector: 'node[invisible]',
-            style: {
-                'display': 'none'
-            }
-        },
-        {
-            // How to display "hidden" nodes; currently unused
-            selector: 'node[hidden]',
-            style: {
-                'border-style': 'dotted',
-                'border-color': 'black',
-                'border-width': '1px',
-                'width': 'label',
-            }
-        },
-        {
-            // How to display nodes which have children
-            selector: 'node[?has_children]',
-            style: {
-                'shape': 'round-rectangle',
-            }
-        },
-        {
-            // How to color nodes that have children.
-            selector: 'node[depth]:parent',
-            style: {
-                'label': '',
-                'text-opacity': 0,
-                'text-events': 'no',
-                'background-color': 'mapData(depth, 0, 5, #f5f5f5, #d0d0d0)',
-            }
-        },
-        {
-            // How to display nodes which have children
-            selector: ':parent',
-            css: {
-                'text-valign': 'top',
-                'text-halign': 'center',
-                'shape': 'round-rectangle',
-                'corner-radius': "10",
-                'padding': "10"
-            }
-        },
-        {
-            // How to style edges
-            selector: 'edge',
-            css: {
-                'curve-style': 'bezier',
-                'target-arrow-shape': 'triangle',
-                'line-color': 'black',
-                'target-arrow-color': 'black',
-                'width': 2
-            }
-        },
-        {
-            // How to display forward edges that are highlighted
-            selector: 'edge.highlight-backward',
-            style: {
-                'line-color': 'blue',
-                'target-arrow-color': 'blue',
-                'width': 3
-            }
-        },
-        {
-            // How to display backward edges that are highlighted
-            selector: 'edge.highlight-forward',
-            style: {
-                'line-color': 'red',
-                'target-arrow-color': 'red',
-                'width': 3
-            }
-        },
-    ];
 
     constructor(
         graphContainer: HTMLElement,
@@ -545,11 +487,11 @@ export class CytographRendering {
         private metadataSelection: MetadataSelection,
         private message: (msg: string) => void,
         private clearMessage: () => void,
-        private onTooltipContextChanged: () => void) {
+        private onTooltipContextChanged: () => void,
+        private theme: DiagramTheme = 'light') {
         cytoscape.use(elk);
         cytoscape.use(dblclick);
 
-        this.navigator = new ViewNavigator(navigatorContainer);
         this.currentGraph = null;
         this.stickyInformation = false;
         // Start with an empty graph
@@ -557,10 +499,36 @@ export class CytographRendering {
             container: graphContainer,
             elements: [],
         });
-        // double-clicking on the navigator will adjust the graph to fit
-        this.navigator.setOnDoubleClick(() => this.cy.fit());
-        this.cy.style(this.graph_style);
-        this.lastNode = Option.none();
+        installNodeShadows(this.cy, () => this.theme);
+        installNodeText(this.cy, () => this.theme);
+        this.cy.style(buildGraphStyle(this.theme));
+        this.viewport = new Viewport(
+            this.cy,
+            navigatorContainer,
+            () => this.currentGraph?.nodes.find((node) => node.getId() !== this.rootNodeId)?.getId(),
+            this.theme);
+        this.plugins = [this.viewport, new FrozenLayout(this.cy)];
+    }
+
+    /** Redraw the diagram with a different palette. Restyling never moves a node, so this
+     *  costs a restyle and a repaint, not a layout. */
+    setTheme(theme: DiagramTheme) {
+        if (theme === this.theme) {
+            return;
+        }
+        this.theme = theme;
+        this.cy.style(buildGraphStyle(theme));
+        for (const plugin of this.plugins) {
+            plugin.themeChanged?.(theme);
+        }
+        // Chip images carry the palette inside them, so they are the one piece of per-node data
+        // that a theme change has to rewrite. The graph diff keys nodes by id alone, so this
+        // cannot ride along on the next `updateGraph`.
+        this.cy.startBatch();
+        for (const node of this.cy.nodes().toArray()) {
+            refreshChips(node, theme);
+        }
+        this.cy.endBatch();
     }
 
     /** Metric chosen by the user to drive the color of the nodes. */
@@ -570,7 +538,7 @@ export class CytographRendering {
 
     /** Center the view on this node after the next layout completes. */
     centerOnNextLayout(node: Option<NodeId>) {
-        this.lastNode = node;
+        this.viewport.centerOnNextLayout(node);
     }
 
     /** Search a node by ID, return 'true' if found. */
@@ -580,14 +548,18 @@ export class CytographRendering {
         if (!el.nonempty()) {
             return false;
         }
-        this.center(Option.some(value));
+        this.viewport.center(value);
+        this.markSelected(el.nodes());
         return true;
     }
 
     // Layout to use for the first graph rendering
     readonly initialLayout = {
         animate: false,
-        fit: true,
+        nodeLayoutOptions: elkNodeLayoutOptions,
+        // The view is placed on the first node at `FOCUS_ZOOM` instead, so a profile opens at the same
+        // zoom a search moves to rather than at whatever fits a whole circuit on screen.
+        fit: false,
         nodeDimensionsIncludeLabels: true,
         name: 'elk',
         elk: {
@@ -602,6 +574,7 @@ export class CytographRendering {
     // Layout to use for subsequent renderings
     readonly layoutOptions = {
         animate: false,
+        nodeLayoutOptions: elkNodeLayoutOptions,
         fit: false,
         nodeDimensionsIncludeLabels: true,
         name: 'elk',
@@ -616,12 +589,14 @@ export class CytographRendering {
 
     /** The graph has changed; adjust the display; this completes asynchronously */
     updateGraph(newGraph: Cytograph) {
+        for (const plugin of this.plugins) {
+            plugin.graphWillChange?.();
+        }
         this.cy.startBatch();
-        this.cy.container()!.style.visibility = "hidden";
         if (this.currentGraph === null) {
             // This is the first graph displayed.
             this.currentGraph = newGraph;
-            this.cy.add(newGraph.getGraphElements());
+            this.cy.add(newGraph.getGraphElements(this.theme));
             this.cy.endBatch();
             return this.initiateLayout(this.initialLayout);
         } else {
@@ -629,34 +604,9 @@ export class CytographRendering {
             let graphDiff = newGraph.diff(this.currentGraph);
             this.currentGraph = newGraph;
             this.applyDiff(this.cy, graphDiff);
-            this.cy.nodes().forEach(n => {
-                const depth = n.ancestors().filter(n => n.isNode()).length;
-                n.data('depth', depth);
-            });
             this.cy.endBatch();
             return this.initiateLayout(this.layoutOptions);
         }
-    }
-
-    /** Center the visualization around the node with the specified id. */
-    center(node: Option<NodeId>): void {
-        if (!node.isSome()) {
-            return;
-        }
-
-        const el = this.cy.getElementById(node.unwrap());
-        let size = el.renderedHeight();
-        let desiredSize = 15;
-        // We determine the minimum size of found node by its height, because it is tied to font size
-        if (size < desiredSize) {
-            let zoom = this.cy.zoom();
-            let targetZoom = zoom * desiredSize / size;
-            this.cy.zoom({
-                level: targetZoom,
-                position: el.position()
-            });
-        }
-        this.cy.center(el);
     }
 
     topNodes(profile: CircuitProfile, metric: string): Array<NodeAndMetric> {
@@ -838,7 +788,7 @@ export class CytographRendering {
 
         // Now add then to the graph in the right order
         for (const node of toInsert) {
-            cy.add(node.getDefinition());
+            cy.add(node.getDefinition(this.theme));
         }
 
         for (const [edge, weight] of diff.edges.entries()) {
@@ -863,25 +813,29 @@ export class CytographRendering {
     }
 
     setEvents(callbacks: {
-        onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined
+        onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined,
+        onShowSource?: ((node: NodeId) => void) | undefined
     }) {
         document.addEventListener('keyup', (e) => this.keyup(e));
+        // Called here rather than in the constructor because this is where the chips' actions arrive;
+        // `setEvents` runs once per instance.
+        installChipButtons(this.cy, () => this.theme, {
+            // A code chip press is also a click on the node it belongs to: report on that node, then
+            // show its source. The counter is a toggle instead, and `toggleComposite` clears the
+            // report, the graph being about to change under it.
+            onSource: (id) => {
+                this.reportOn(id);
+                callbacks.onShowSource?.(id);
+            },
+            onToggle: (id) => this.toggleComposite(id, callbacks.onNodeDoubleClick)
+        });
         this.cy
             //.on('render', () => console.log("rendering"))
             //.on('layoutstart', () => console.log("start layout"))
             .on('layoutstop', () => this.layoutComplete())
-            .on('mouseover', 'node', event => this.displayEventTargetAttributes(event, false))
+            .on('mouseover', 'node', event => this.hoverNode(event))
             .on('mouseout', 'node', event => this.mouseOut(event))
-            .on('zoom pan resize', () => this.updateNavigator(this.navigator))
-            .on('click', 'node', (e) => {
-                // Hide previous node information if any
-                this.hideNodeInformation();
-                // Fires before the attrs payload so consumers can switch view state without
-                // inferring it from data (distinguishes a click from a programmatic refresh).
-                this.callbacks.onNodeClick?.(e.target.id());
-                // Display current node
-                this.displayEventTargetAttributes(e, true);
-            })
+            .on('click', 'node', (e) => this.reportOn(e.target.id()))
             .on('dblclick', 'node', (e) => {
                 let node = e.target as NodeSingular;
                 let id = e.target.id();
@@ -893,53 +847,48 @@ export class CytographRendering {
                 }
 
                 // Group node - toggle expand/collapse and dispatch dedicated double click
-                this.hideNodeInformation();
-                this.setStickyNodeInformation(false);
-                this.lastNode = Option.some(id);
-                callbacks.onNodeDoubleClick?.(id, 'group');
+                this.toggleComposite(id, callbacks.onNodeDoubleClick);
             });
+    }
+
+    /** Report on a node: what a click on it, or a press of its code chip, comes down to. */
+    private reportOn(id: NodeId) {
+        // Whatever was reported before goes first, so nothing of it survives into this node's report.
+        this.hideNodeInformation();
+        // Fires before the attributes, so a consumer can tell a click from a programmatic refresh.
+        this.callbacks.onNodeClick?.(id);
+        // A click is deliberate, so what it reports stays on screen, and an expanded region reports as
+        // readily as an operator. A hover does neither, see `hoverNode`.
+        this.setStickyNodeInformation(true);
+        this.displayNodeAttributes(this.getRenderedNode(id));
+    }
+
+    /** Expand or collapse a composite: what a double click on it, or a press of its counter chip,
+     *  comes down to. */
+    private toggleComposite(
+        id: NodeId,
+        onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined
+    ) {
+        this.hideNodeInformation();
+        this.setStickyNodeInformation(false);
+        // Not centered on afterwards: the layout that follows keeps the viewport (`layoutOptions.fit`
+        // is false), so what the user was looking at stays where it was. The view pans to the node only
+        // if that layout leaves it off screen.
+        for (const plugin of this.plugins) {
+            plugin.compositeToggled?.(id);
+        }
+        onNodeDoubleClick?.(id, 'group');
     }
 
     layoutComplete() {
         this.clearMessage();
         this.renderingInFlight = false;
         this.callbacks.onRenderingChange?.(false);
-        this.cy.container()!.style.visibility = "visible";
-        this.updateNavigator(this.navigator);
-        if (this.lastNode.isSome()) {
-            this.center(this.lastNode);
-            this.lastNode = Option.none();
+        // In order: the viewport settles zoom and pan, then the picture held over the layout comes down
+        // onto the finished one.
+        for (const plugin of this.plugins) {
+            plugin.layoutSettled?.();
         }
-        // Set minimum/maximum zoom levels
-        // Do not allow to zoom in more than 1.5; this should be enough to make any node visible
-        this.cy.maxZoom(1.5);
-        const rect = this.cy.container()?.getBoundingClientRect();
-        if (rect !== undefined) {
-            const bb = this.cy.elements().boundingBox();
-            let maxRatio = Math.min(rect.height / bb.h, rect.width / bb.w);
-            // Do not allow zoom out more than required to fit the entire graph
-            this.cy.minZoom(maxRatio);
-        }
-    }
-
-    // The user has panned/zoomed => tell the navigator about it.
-    updateNavigator(navigator: ViewNavigator) {
-        if (this.cy === null) {
-            return;
-        }
-        const container = this.cy.container();
-        if (container === null) {
-            return;
-        }
-
-        let rect = container.getBoundingClientRect();
-        const zoom = this.cy.zoom();
-        const pan = this.cy.pan();
-        const bb = this.cy.elements().boundingBox();
-        navigator.setViewParameters(
-            new Size(rect.width, rect.height),
-            new Point(pan.x, pan.y),
-            new Size(bb.w * zoom, bb.h * zoom));
     }
 
     getActualEdgeId(e: Edge<NodeId>): string {
@@ -980,22 +929,63 @@ export class CytographRendering {
         return result;
     }
 
-    // Called when someones hovers over a node.
-    // If the previous display is sticky, do nothing.
-    // Currently it displays
-    // (1) the attributes of the node,
-    // (2) it highlights the edges reaching the node,
-    // (3) it displays the source position of the node.
-    displayEventTargetAttributes(event: EventObject, isSticky: boolean) {
-        let node: NodeSingular = event.target;
-        if (node.data("expanded") === true || (this.stickyInformation && !isSticky)) {
+    /** Report on the node the pointer moved onto: its attributes, the edges that reach it, and its
+     *  source position. The report goes away once the pointer leaves.
+     *
+     *  Two things a hover leaves alone. An expanded region covers everything it holds, so following the
+     *  pointer into one would report the region on the way to whatever the user was heading for. And a
+     *  report asked for by a click stays until it is dismissed; only its mark and edge coloring are the
+     *  pointer's to take over, and only when the report holds none of its own. */
+    private hoverNode(event: EventObject) {
+        const node: NodeSingular = event.target;
+        if (node.isParent()) {
             return;
         }
-
-        // Keep the information after mouse out
-        this.setStickyNodeInformation(isSticky);
-
+        if (this.stickyInformation) {
+            if (!this.reportHoldsTheMark()) {
+                this.traceSelection(node);
+            }
+            return;
+        }
         this.displayNodeAttributes(node);
+    }
+
+    /** Whether the report on screen holds the diagram's mark and edge trace. When it does not they are
+     *  the pointer's: a click on an expanded region reports without either (`traceSelection`), and so
+     *  does a report whose node a graph update has removed. */
+    private reportHoldsTheMark(): boolean {
+        if (this.currentTooltipNode === null) {
+            return false;
+        }
+        const reported = this.getRenderedNode(this.currentTooltipNode);
+        return Boolean(reported.inside()) && !reported.isParent();
+    }
+
+    /** Mark `node` as the one the diagram reports on, whether reached by click, hover or search. At most
+     *  one node is marked, and `nodeShadow.ts` paints the mark as an accent glow in place of the node's
+     *  ambient shadow. */
+    markSelected(node: NodeSingular | NodeCollection | null) {
+        this.cy.nodes(`.${SELECTED_NODE_CLASS}`).removeClass(SELECTED_NODE_CLASS);
+        node?.addClass(SELECTED_NODE_CLASS);
+    }
+
+    /** Mark the node whose metrics are on display and color the edges reaching it. An expanded region
+     *  gets neither: it stands in for every node inside it, so the trace would color every edge in the
+     *  region, and a region casts no shadow for the mark to take the place of (`nodeShadow.ts`). */
+    private traceSelection(node: NodeSingular) {
+        this.clearTrace();
+        if (node.isParent()) {
+            return;
+        }
+        this.markSelected(node);
+        this.reachableFrom(node.id(), true).addClass('highlight-forward');
+        this.reachableFrom(node.id(), false).addClass('highlight-backward');
+    }
+
+    /** Take the mark and the edge coloring off the diagram, leaving what is reported where it is. */
+    private clearTrace() {
+        this.markSelected(null);
+        this.cy.edges().removeClass('highlight-forward highlight-backward');
     }
 
     displayNodeAttributes(node: NodeSingular) {
@@ -1009,12 +999,7 @@ export class CytographRendering {
         // Track the current tooltip node for refreshing on metadata changes
         this.currentTooltipNode = nodeId;
         this.onTooltipContextChanged()
-
-        // highlight edges
-        let reachable = this.reachableFrom(nodeId, true);
-        reachable.addClass('highlight-forward');
-        reachable = this.reachableFrom(nodeId, false);
-        reachable.addClass('highlight-backward');
+        this.traceSelection(node);
 
         // Build structured tooltip data
         let visible = false;
@@ -1096,16 +1081,20 @@ export class CytographRendering {
     mouseOut(_event: EventObject) {
         if (!this.stickyInformation) {
             this.hideNodeInformation();
+            return;
+        }
+        // What the pointer marked and traced goes with the pointer; the report itself was asked for,
+        // and stays.
+        if (!this.reportHoldsTheMark()) {
+            this.clearTrace();
         }
     }
 
     hideNodeInformation() {
         this.currentTooltipNode = null;
+        this.clearTrace();
         this.onTooltipContextChanged()
         this.callbacks.displayNodeAttributes(Option.none(), false);
-        let reachable = this.cy.edges();
-        reachable.removeClass('highlight-forward');
-        reachable.removeClass('highlight-backward');
     }
 
     /**
@@ -1118,6 +1107,9 @@ export class CytographRendering {
         if (this.renderingInFlight) {
             this.renderingInFlight = false;
             this.callbacks.onRenderingChange?.(false);
+        }
+        for (const plugin of this.plugins) {
+            plugin.dispose?.();
         }
 
         // Destroy the Cytoscape instance

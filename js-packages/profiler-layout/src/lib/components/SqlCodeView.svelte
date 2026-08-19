@@ -57,7 +57,9 @@
     }
     setSelections(
       editor,
-      highlightRanges.map((r) => ({ start: r.start, end: r.end }))
+      // `endExclusive`, not `end`: the compiler names the last character of the range, Monaco wants
+      // the caret position after it. Selecting `end` verbatim leaves that character unhighlighted.
+      highlightRanges.map((r) => ({ start: r.start, end: r.endExclusive }))
     )
   })
 </script>

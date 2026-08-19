@@ -2,6 +2,7 @@
   import {
     CircuitProfile,
     type Dataflow,
+    type DiagramTheme,
     type JsonProfiles,
     type ProfilerCallbacks,
     Visualizer,
@@ -18,11 +19,20 @@
     programCode: string[] | undefined
     /** Callbacks from ProfilerLayout */
     callbacks: ProfilerCallbacks
+    /** Palette the diagram is drawn with; follows the application theme */
+    theme?: DiagramTheme
     /** Optional class for styling the container */
     class?: string
   }
 
-  const { profileData, dataflowData, programCode, callbacks, class: className }: Props = $props()
+  const {
+    profileData,
+    dataflowData,
+    programCode,
+    callbacks,
+    theme = 'light',
+    class: className
+  }: Props = $props()
 
   // DOM element references
   let rootElement: HTMLDivElement | undefined = $state()
@@ -81,7 +91,8 @@
         const config: VisualizerConfig = {
           graphContainer: graphContainer!,
           navigatorContainer: navigatorContainer!,
-          callbacks
+          callbacks,
+          theme
         }
 
         // Create and render visualizer
@@ -95,6 +106,13 @@
         console.error('Failed to initialize visualizer:', e)
       }
     })
+  })
+
+  // Applied outside the init effect above: that effect disposes and rebuilds the Visualizer,
+  // so tracking `theme` there would reparse the profile and re-run the ELK layout on every
+  // theme toggle. `setTheme` only restyles what is already on screen.
+  $effect(() => {
+    instance?.visualizer.setTheme(theme)
   })
 
   // Public methods that proxy to visualizer-lib
@@ -135,7 +153,12 @@
   })
 </script>
 
-<div bind:this={rootElement} class="visualizer-wrapper {className || ''}" data-testid="visualizer-diagram">
+<div
+  bind:this={rootElement}
+  class="visualizer-wrapper {className || ''}"
+  data-diagram-theme={theme}
+  data-testid="visualizer-diagram"
+>
   <!-- Main graph visualization (full size) -->
   <div bind:this={graphContainer} class="visualizer-graph"></div>
 
@@ -175,5 +198,10 @@
     height: 108px;
     background-color: rgba(255, 255, 255, 0.95);
     padding: 2px;
+  }
+
+  /* The minimap sits on top of the graph, so it needs its own ground in either palette. */
+  .visualizer-wrapper[data-diagram-theme='dark'] .visualizer-navigator {
+    background-color: rgba(34, 38, 43, 0.95);
   }
 </style>

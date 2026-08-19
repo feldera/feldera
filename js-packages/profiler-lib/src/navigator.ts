@@ -1,3 +1,4 @@
+import { DIAGRAM_PALETTES, type DiagramTheme } from "./diagramTheme.js";
 import { Point, Rectangle, Size } from "./planar.js";
 
 /** Displays zoom/pan information in a rectangular page */
@@ -22,7 +23,7 @@ export class ViewNavigator {
     visualized: HTMLDivElement;
 
     // Build a navigator as a child of the specified parent element.
-    constructor(parent: HTMLElement) {
+    constructor(parent: HTMLElement, theme: DiagramTheme = 'light') {
         this.root = document.createElement("div");
         this.root.id = "navigator";
         this.root.style.position = "relative";
@@ -33,8 +34,16 @@ export class ViewNavigator {
         parent.innerHTML = "";
         parent.appendChild(this.root);
 
-        this.screen = this.createRectangle("black");
-        this.visualized = this.createRectangle("darkgrey");
+        const palette = DIAGRAM_PALETTES[theme];
+        this.screen = this.createRectangle(palette.navigatorViewport);
+        this.visualized = this.createRectangle(palette.navigatorGraph);
+    }
+
+    /** Recolor the rectangles for a different palette. */
+    setTheme(theme: DiagramTheme) {
+        const palette = DIAGRAM_PALETTES[theme];
+        this.screen.style.borderColor = palette.navigatorViewport;
+        this.visualized.style.borderColor = palette.navigatorGraph;
     }
 
     setOnDoubleClick(handler: () => void) {
