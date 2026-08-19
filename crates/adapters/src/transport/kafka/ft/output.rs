@@ -1,6 +1,6 @@
 use crate::transport::kafka::{
-    MemoryUseReporter, build_headers, generate_oauthbearer_token, kafka_send,
-    validate_aws_msk_region,
+    MemoryUseReporter, OauthbearerAuth, build_headers, generate_oauthbearer_token, kafka_send,
+    resolve_oauthbearer_auth,
 };
 use crate::{AsyncErrorCallback, OutputEndpoint, transport::kafka::DeferredLogging};
 use anyhow::{Context, Error as AnyError, Result as AnyResult, anyhow, bail};
@@ -19,7 +19,6 @@ use rdkafka::{
     types::RDKafkaErrorCode,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Mutex;
 use std::{cmp::max, sync::RwLock, time::Duration};
@@ -364,7 +363,7 @@ struct DataProducerContext {
 
     deferred_logging: DeferredLogging,
 
-    oauthbearer_config: HashMap<String, String>,
+    oauthbearer_config: OauthbearerAuth,
 
     memory_use_reporter: Mutex<MemoryUseReporter>,
 
@@ -373,12 +372,11 @@ struct DataProducerContext {
 
 impl DataProducerContext {
     fn new(kafka_config: &KafkaOutputConfig) -> AnyResult<Self> {
-        let mut oauthbearer_config = HashMap::new();
-        if let Some(region) =
-            validate_aws_msk_region(&kafka_config.kafka_options, kafka_config.region.clone())?
-        {
-            oauthbearer_config.insert("region".to_owned(), region);
-        };
+        let oauthbearer_config = resolve_oauthbearer_auth(
+            &kafka_config.kafka_options,
+            kafka_config.oauth_provider,
+            kafka_config.region.clone(),
+        )?;
 
         Ok(Self {
             async_error_callback: RwLock::new(None),
@@ -444,7 +442,7 @@ where
 {
     error_cb: F,
     deferred_logging: DeferredLogging,
-    oauthbearer_config: HashMap<String, String>,
+    oauthbearer_config: OauthbearerAuth,
     memory_use_reporter: Mutex<MemoryUseReporter>,
     topic: String,
 }
@@ -454,12 +452,11 @@ where
     F: Fn(AnyError) + Send + Sync,
 {
     fn new(error_cb: F, kafka_config: &KafkaOutputConfig) -> AnyResult<Self> {
-        let mut oauthbearer_config = HashMap::new();
-        if let Some(region) =
-            validate_aws_msk_region(&kafka_config.kafka_options, kafka_config.region.clone())?
-        {
-            oauthbearer_config.insert("region".to_owned(), region);
-        };
+        let oauthbearer_config = resolve_oauthbearer_auth(
+            &kafka_config.kafka_options,
+            kafka_config.oauth_provider,
+            kafka_config.region.clone(),
+        )?;
 
         Ok(Self {
             error_cb,
