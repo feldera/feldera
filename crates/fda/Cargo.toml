@@ -2,7 +2,7 @@
 name = "fda"
 description = "A CLI tool for interacting with Feldera"
 readme = "README.md"
-include = ["bench_openapi.json", "/src", "build.rs", "COPYRIGHT", "README.md"]
+include = ["/src", "COPYRIGHT", "README.md"]
 publish = true
 edition = "2024"
 version = { workspace = true }
@@ -44,11 +44,4 @@ chrono = { workspace = true, features = ["serde"] }
 anyhow = { workspace = true }
 ordered-float.workspace = true
 itertools.workspace = true
-rustversion.workspace = true
 zip.workspace = true
-
-[build-dependencies]
-prettyplease = { workspace = true }
-progenitor = { workspace = true }
-serde_json = { workspace = true }
-syn = { workspace = true }
