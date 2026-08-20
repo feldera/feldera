@@ -373,7 +373,7 @@
           "Platform"
         ],
         "summary": "Check Cluster Health",
-        "description": "Required role: `read` or higher.\n\nDetermine the latest cluster health via the latest cluster monitor event.\nEach service's `unchanged_since` reports the approximate time it last transitioned\nbetween healthy and unhealthy, bounded by event retention (at most 72h / 1000 events).",
+        "description": "Required role: `read` or higher.\n\nDetermine the latest cluster health via the latest cluster monitor event.\nEach service's `unchanged_since` reports the approximate time it last transitioned\nbetween healthy and unhealthy, bounded by event retention.",
         "operationId": "get_cluster_health",
         "responses": {
           "200": {
@@ -14855,7 +14855,7 @@
           "unchanged_since": {
             "type": "string",
             "format": "date-time",
-            "description": "Approximate time the service last transitioned between healthy and unhealthy:\nthe timestamp of the oldest retained consecutive cluster monitor event with the\nsame `healthy` conclusion. Bounded by event retention (at most 72h / 1000 events)."
+            "description": "Approximate time the service last transitioned between healthy and unhealthy:\nthe timestamp of the oldest retained consecutive cluster monitor event with the\nsame `healthy` conclusion. Bounded by event retention."
           }
         }
       },
