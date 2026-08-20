@@ -1,17 +1,17 @@
-// Harness for the pixel-level diagram tests. profiler-lib paints a node's shadow and its text
+// Harness for the pixel-level diagram tests. profiler-lib paints the selection glow and a node's text
 // straight onto the cytoscape canvas, through renderer hooks that only exist in a browser, and its
 // own suite is headless - so the claims that can only be made about pixels are made here, over a
 // really mounted diagram.
 
 import type { NodeAttributes, Option, ProfilerCallbacks } from 'profiler-lib'
 import { render } from 'vitest-browser-svelte'
-import ProfilerDiagram from '../components/ProfilerDiagram.svelte'
+import ThemedDiagram from './ThemedDiagram.svelte'
 
 const simple = (id: string, label: string) => ({ Simple: { id, label } })
 const cluster = (id: string, label: string, nodes: unknown[]) => ({ Cluster: { id, label, nodes } })
 
 /** Two operators, no edges and no source positions, so the space around each node is empty and a
- *  sampled pixel there can only be the node's own shadow. */
+ *  sampled pixel there can only be the node's own glow. */
 export const OPERATORS = {
   metrics: [],
   worker_profiles: [{ metadata: {} }],
@@ -150,9 +150,9 @@ export const colorDistance = (a: Rgba, b: Rgba): number =>
 export const settle = () => new Promise((resolve) => setTimeout(resolve, 150))
 
 /** Mount the diagram over `profile`, wait for its layout, and hand back the cytoscape instance with
- *  a pixel probe over its canvases. Zoomed in afterwards, since both a canvas shadow and a 12px label
- *  are a handful of device pixels at the zoom a profile opens at - pass `keepOpeningView` to leave the
- *  view exactly as the diagram placed it, which is what the view's own tests are about. */
+ *  a pixel probe over its canvases. Zoomed in afterwards, since both the glow and a 12px label are a
+ *  handful of device pixels at the zoom a profile opens at - pass `keepOpeningView` to leave the view
+ *  exactly as the diagram placed it, which is what the view's own tests are about. */
 export async function mountDiagram(
   theme: 'light' | 'dark',
   profile: unknown = OPERATORS,
@@ -199,16 +199,18 @@ export async function mountDiagram(
     }
   } as unknown as ProfilerCallbacks
 
-  const rendered = render(ProfilerDiagram, {
-    target: wrapper,
-    props: {
-      profileData: profile as never,
-      dataflowData: dataflow as never,
-      programCode: undefined,
-      callbacks,
-      theme
-    }
-  })
+  const props = {
+    profileData: profile as never,
+    dataflowData: dataflow as never,
+    programCode: undefined,
+    callbacks,
+    theme
+  }
+  const rendered = render(ThemedDiagram, { target: wrapper, props })
+  const component = rendered.component as unknown as {
+    search(query: string): void
+    setTheme(theme: 'light' | 'dark'): void
+  }
   await layout
   await settle()
 
@@ -296,6 +298,103 @@ export async function mountDiagram(
     return pixelAt(x, y + node.renderedOuterHeight() * 0.35)
   }
 
+  /** The minimap: its frame, the canvas holding the picture of the circuit, the outline of the viewport
+   *  over it, and readers for the pixels of the picture. Every point below is in the map's own CSS
+   *  pixels; the picture is painted in device pixels and scaled on the way in. */
+  const minimap = () => {
+    const root = wrapper.querySelector('#navigator') as HTMLDivElement
+    const canvas = root.querySelector('canvas') as HTMLCanvasElement
+    const context = canvas.getContext('2d')!
+    // The canvas is the map. Measured from its rect, since `clientWidth` rounds off the fractional size
+    // the circuit's shape gives it.
+    const rect = canvas.getBoundingClientRect()
+    // Per axis: the canvas holds a whole number of device pixels either way, so a map a fraction of a
+    // pixel wide is scaled by a hair more in x than in y.
+    const scale = { x: canvas.width / rect.width, y: canvas.height / rect.height }
+    return {
+      root,
+      canvas,
+      view: root.querySelector('#navigator-viewport') as HTMLDivElement,
+      /** Size of the map, in its own pixels. */
+      size: { w: rect.width, h: rect.height },
+      /** The pixel at a point on the map. */
+      ink: (x: number, y: number): Rgba => {
+        const data = context.getImageData(Math.round(x * scale.x), Math.round(y * scale.y), 1, 1).data
+        return { r: data[0]!, g: data[1]!, b: data[2]!, a: data[3]! / 255 }
+      },
+      /** How many pixels of the picture are painted in `color`, counting only the ones solid enough to
+       *  see. A canvas keeps its colors multiplied by the alpha, so a faint pixel comes back off its own
+       *  color and towards black - and a mark half a pixel wide would otherwise be read as any dark
+       *  color asked for. */
+      painted: (color: Rgba, tolerance = 12, minAlpha = 0.5): number => {
+        const { data } = context.getImageData(0, 0, canvas.width, canvas.height)
+        let count = 0
+        for (let i = 0; i < data.length; i += 4) {
+          const pixel = { r: data[i]!, g: data[i + 1]!, b: data[i + 2]!, a: data[i + 3]! / 255 }
+          if (pixel.a >= minAlpha && colorDistance(pixel, color) <= tolerance) {
+            count++
+          }
+        }
+        return count
+      },
+      /** How much of the picture is painted: the count, and the box it covers. */
+      inked: () => {
+        const { data } = context.getImageData(0, 0, canvas.width, canvas.height)
+        let count = 0
+        const box = { x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity }
+        for (let i = 3; i < data.length; i += 4) {
+          if (data[i]! === 0) {
+            continue
+          }
+          count++
+          const pixel = (i - 3) / 4
+          const x = (pixel % canvas.width) / scale.x
+          const y = Math.floor(pixel / canvas.width) / scale.y
+          box.x1 = Math.min(box.x1, x)
+          box.y1 = Math.min(box.y1, y)
+          box.x2 = Math.max(box.x2, x)
+          box.y2 = Math.max(box.y2, y)
+        }
+        return { count, ...box }
+      },
+      /** Where a model point lands on the map. */
+      at: (model: { x: number, y: number }) => {
+        const graph = cy.elements().boundingBox()
+        const mapped = rect.width / graph.w
+        return { x: (model.x - graph.x1) * mapped, y: (model.y - graph.y1) * mapped }
+      },
+      /** Press the map at a point of its own, then drag to each point after that. A pointer event
+       *  carries whole pixels, so a point is aimed at to the pixel and no closer. */
+      drag: async (...points: Array<{ x: number, y: number }>) => {
+        const event = (type: string, point: { x: number, y: number }, target: EventTarget) =>
+          target.dispatchEvent(
+            new PointerEvent(type, {
+              clientX: Math.round(rect.left + point.x),
+              clientY: Math.round(rect.top + point.y),
+              bubbles: true,
+              button: 0,
+              buttons: 1
+            })
+          )
+        const [first, ...rest] = points
+        event('pointerdown', first!, root)
+        for (const point of rest) {
+          event('pointermove', point, window)
+        }
+        event('pointerup', points[points.length - 1]!, window)
+        await settle()
+      }
+    }
+  }
+
+  /** Switch the palette, the way the application does. The diagram restyles what is on screen, so
+   *  nothing moves. */
+  const setTheme = async (next: 'light' | 'dark') => {
+    document.documentElement.dataset.theme = next
+    component.setTheme(next)
+    await settle()
+  }
+
   /** Expand or collapse a composite, the way a double click on it does. */
   const toggle = async (id: string) => {
     cy.$id(id).emit('dblclick')
@@ -338,9 +437,11 @@ export async function mountDiagram(
     inkColumns,
     nodeFill,
     toggle,
+    setTheme,
+    minimap,
     pointer,
     press,
-    diagram: rendered.component as { search(query: string): void },
+    diagram: component,
     cleanup: () => wrapper.remove()
   }
 }

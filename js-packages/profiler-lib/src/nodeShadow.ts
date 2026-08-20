@@ -1,15 +1,14 @@
-// Node shadows: the ambient shadow that lifts every non-expanded node off the canvas, and the
-// accent glow marking the selected one.
+// The accent glow marking the node whose metrics are on display. Nothing else is painted around a
+// node: an operator is told from the canvas by its own border.
 //
 // Cytoscape has no shadow style property. Its closest offer, `underlay`, is a hard-edged filled shape,
-// which reads as a second border rather than as a shadow. So shadows are painted with the canvas' own
+// which reads as a second border rather than as a glow. So the glow is painted with the canvas' own
 // shadow support, by wrapping the one renderer entry point that draws beneath a node body:
 // `drawNodeUnderlay`. That hook runs with the context already in graph coordinates, beneath the node body
-// and its chips, and outside the cached element texture, so a shadow reaching past the node's bounding
+// and its chips, and outside the cached element texture, so a glow reaching past the node's bounding
 // box is not clipped.
 
 import type { Core, NodeSingular } from 'cytoscape';
-import { DIAGRAM_PALETTES, type DiagramTheme, NO_SHADOW } from './diagramTheme.js';
 
 /** Marks the node whose metrics are on display, whether it was clicked, hovered or searched for.
  *  Named apart from cytoscape's own `:selected` state, which the diagram does not use. */
@@ -25,22 +24,9 @@ export interface NodeShadow {
     offsetY: number;
 }
 
-/** Ambient shadow: cast down and to the right, as if the diagram were lit from the top left. The palette
- *  decides its color, and whether there is one at all - `NO_SHADOW` becomes `null` here, and nothing
- *  painted. */
-const AMBIENT_CAST = { blur: 3, offsetX: 1.5, offsetY: 2 };
-const ambient = (theme: DiagramTheme): NodeShadow | null => {
-    const color = DIAGRAM_PALETTES[theme].shadow;
-    return color === NO_SHADOW ? null : { color, ...AMBIENT_CAST };
-};
-export const AMBIENT_SHADOW: Record<DiagramTheme, NodeShadow | null> = {
-    light: ambient('light'),
-    dark: ambient('dark')
-};
-
 /** Accent glow on the selected node: secondary-500 of the Feldera theme, `oklch(81.09% 0.14 69.14deg)`
- *  converted to sRGB. Centered rather than cast, so it reads as the node being lit rather than as a
- *  heavier shadow, and wider than the ambient one. The same color in either palette. */
+ *  converted to sRGB. Centered rather than cast, so it reads as the node being lit. The same color in
+ *  either palette. */
 export const SELECTION_GLOW: NodeShadow = {
     color: 'rgba(251, 175, 81, 1)',
     blur: 20,
@@ -48,20 +34,13 @@ export const SELECTION_GLOW: NodeShadow = {
     offsetY: 0
 };
 
-/** The shadow a node casts, or `null` when it casts none: an expanded region in any palette, and every
- *  node of a palette that declines the ambient shadow. The accent glow is not the palette's to
- *  decline. */
-export function nodeShadow(node: NodeSingular, theme: DiagramTheme): NodeShadow | null {
-    // An expanded region holds nodes that cast their own shadows, and one on the region too would
-    // double up along every inner edge. Collapsed it has no children, and casts a shadow like any
-    // other node.
-    if (node.isParent()) {
-        return null;
-    }
-    return node.hasClass(SELECTED_NODE_CLASS) ? SELECTION_GLOW : AMBIENT_SHADOW[theme];
+/** The glow around `node`, or `null` for every node but the marked one. An expanded region never
+ *  glows: the glow would run along the inside of its border and read as a border of its own. */
+export function nodeShadow(node: NodeSingular): NodeShadow | null {
+    return !node.isParent() && node.hasClass(SELECTED_NODE_CLASS) ? SELECTION_GLOW : null;
 }
 
-/** How far a shadow reaches past the shape casting it, in graph units. */
+/** How far the glow reaches past the node it surrounds, in graph units. */
 export const shadowReach = (s: NodeShadow): number =>
     s.blur + Math.max(Math.abs(s.offsetX), Math.abs(s.offsetY));
 
@@ -69,7 +48,7 @@ export const shadowReach = (s: NodeShadow): number =>
  *  enough that no node's shape can be dragged back into view by its own extent. */
 const OFF_CANVAS = 1e6;
 
-/** Paint the shadow of `node`, and nothing else. `context` is in graph coordinates, `pos` is the
+/** Paint the glow around `node`, and nothing else. `context` is in graph coordinates, `pos` is the
  *  node's center and `w`/`h` its body box - the same values cytoscape draws the body with. */
 function paintShadow(
     context: CanvasRenderingContext2D,
@@ -110,16 +89,15 @@ type DrawNodeUnderlay = (
     h?: number
 ) => void;
 
-/** Start painting node shadows on `cy`. Call once per instance, after construction. `theme` is read
- *  on every frame, so switching the palette needs no more than the repaint it already does. */
-export function installNodeShadows(cy: Core, theme: () => DiagramTheme): void {
+/** Start painting the selection glow on `cy`. Call once per instance, after construction. */
+export function installNodeShadows(cy: Core): void {
     // `renderer()` and its draw methods are not part of cytoscape's documented API. Only the first two
     // arguments are read and the rest passed straight through, so a renderer that adds or reorders
     // arguments still works.
     const renderer = (cy as unknown as { renderer(): Record<string, unknown> }).renderer();
     const original = renderer['drawNodeUnderlay'] as DrawNodeUnderlay | undefined;
     if (typeof original !== 'function') {
-        // A headless instance has no canvas renderer, and so nothing to draw shadows on.
+        // A headless instance has no canvas renderer, and so nothing to draw the glow on.
         return;
     }
     renderer['drawNodeUnderlay'] = function (
@@ -128,7 +106,7 @@ export function installNodeShadows(cy: Core, theme: () => DiagramTheme): void {
         node: NodeSingular,
         ...rest: [({ x: number, y: number } | undefined)?, (number | undefined)?, (number | undefined)?]
     ): void {
-        const shadow = node.visible() ? nodeShadow(node, theme()) : null;
+        const shadow = node.visible() ? nodeShadow(node) : null;
         if (shadow !== null) {
             const [pos, w, h] = rest;
             // The body box cytoscape draws, which is the node's own size plus its padding. The

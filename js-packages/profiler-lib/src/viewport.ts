@@ -10,7 +10,6 @@ import type { Core, NodeSingular, Position } from 'cytoscape';
 import type { DiagramPlugin } from './diagramPlugin.js';
 import { NODE_INNER_HEIGHT, type DiagramTheme } from './diagramTheme.js';
 import { ViewNavigator } from './navigator.js';
-import { Point, Size } from './planar.js';
 import type { NodeId } from './profile.js';
 import { Option } from './util.js';
 
@@ -43,6 +42,7 @@ export class Viewport implements DiagramPlugin {
     ) {
         this.navigator = new ViewNavigator(navigatorContainer, theme);
         this.navigator.setOnDoubleClick(() => this.cy.fit());
+        this.navigator.setOnMoveTo((point) => this.panTo(point));
         this.cy.on('zoom pan resize', () => this.syncNavigator());
     }
 
@@ -78,6 +78,8 @@ export class Viewport implements DiagramPlugin {
     }
 
     layoutSettled(): void {
+        // Where the minimap's picture is taken: every node has just landed where it belongs.
+        this.navigator.showGraph(this.cy);
         this.syncNavigator();
         // Before any centering below, so that every zoom set here is clamped by them.
         this.clampZoom();
@@ -144,33 +146,26 @@ export class Viewport implements DiagramPlugin {
      *  works off the element's bounding box - that box reaches above a node to cover its code chip, so
      *  centering by it leaves the node itself half a chip off center. */
     private centerOn(el: { position(): Position }): void {
+        this.panTo(el.position());
+    }
+
+    /** Pan so that this model point is the center of the view. */
+    private panTo(point: Position): void {
         const zoom = this.cy.zoom();
-        const position = el.position();
         this.cy.pan({
-            x: this.cy.width() / 2 - position.x * zoom,
-            y: this.cy.height() / 2 - position.y * zoom
+            x: this.cy.width() / 2 - point.x * zoom,
+            y: this.cy.height() / 2 - point.y * zoom
         });
     }
 
-    /** Tell the navigator where the view now is. */
+    /** Tell the minimap where the view is. Runs on every pan and zoom, so it only moves an outline. */
     private syncNavigator(): void {
         // Cytoscape's resize observer is debounced, so a `resize` fired on the way out arrives after
         // the instance has been destroyed - and a destroyed instance has no renderer left to answer
-        // `boundingBox()`.
+        // `extent()`.
         if (this.cy.destroyed()) {
             return;
         }
-        const container = this.cy.container();
-        if (container === null) {
-            return;
-        }
-        const rect = container.getBoundingClientRect();
-        const zoom = this.cy.zoom();
-        const pan = this.cy.pan();
-        const bb = this.cy.elements().boundingBox();
-        this.navigator.setViewParameters(
-            new Size(rect.width, rect.height),
-            new Point(pan.x, pan.y),
-            new Size(bb.w * zoom, bb.h * zoom));
+        this.navigator.showView(this.cy.extent());
     }
 }

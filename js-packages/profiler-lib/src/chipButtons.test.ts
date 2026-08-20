@@ -9,8 +9,9 @@ import { describe, expect, it, vi } from 'vitest'
 import {
     badgePillWidth,
     BADGE_CANVAS_WIDTH,
-    CHIP_HEIGHT,
+    BADGE_HEIGHT,
     CHIP_INSET,
+    CODE_CHIP_HEIGHT,
     CHIP_NONE,
     CODE_CHIP_WIDTH,
     nodeChips
@@ -114,7 +115,7 @@ describe('chipBox', () => {
         const box = chipBox(node, 'code')!
         const { right, top } = body(node)
         expect(box.y2).toBeCloseTo(top, 5)
-        expect(box.y2 - box.y1).toBeCloseTo(CHIP_HEIGHT, 5)
+        expect(box.y2 - box.y1).toBeCloseTo(CODE_CHIP_HEIGHT, 5)
         expect(box.x2).toBeCloseTo(right - CHIP_INSET, 5)
         expect(box.x2 - box.x1).toBeCloseTo(CODE_CHIP_WIDTH, 5)
     })
@@ -125,7 +126,7 @@ describe('chipBox', () => {
         const code = chipBox(node, 'code')!
         const { right, top } = body(node)
         expect(counter.y1).toBeCloseTo(top + CHIP_INSET, 5)
-        expect(counter.y2 - counter.y1).toBeCloseTo(CHIP_HEIGHT, 5)
+        expect(counter.y2 - counter.y1).toBeCloseTo(BADGE_HEIGHT, 5)
         expect(counter.x2).toBeCloseTo(right - CHIP_INSET, 5)
         // Stacked, with the gap the inset is: the two never touch.
         expect(counter.y1 - code.y2).toBeCloseTo(CHIP_INSET, 5)

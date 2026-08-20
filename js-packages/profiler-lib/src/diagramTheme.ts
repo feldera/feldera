@@ -21,7 +21,7 @@ export const NODE_INNER_HEIGHT = NODE_OUTER_HEIGHT - 2 * NODE_PADDING_X - NODE_B
  *  to fit the chip and the gap around it, which cannot be read from `chips.ts` here: the two modules
  *  import each other, so cross-reads only work inside a function body. `diagramTheme.test.ts` pins the
  *  relation instead. */
-const BADGE_ROW_HEIGHT = 20;
+const BADGE_ROW_HEIGHT = 24;
 export const COMPOSITE_OUTER_HEIGHT = NODE_OUTER_HEIGHT + BADGE_ROW_HEIGHT;
 const COMPOSITE_INNER_HEIGHT = NODE_INNER_HEIGHT + BADGE_ROW_HEIGHT;
 
@@ -70,9 +70,8 @@ export function labelWidth(text: string): number {
     return Math.ceil(labelContext.measureText(text).width);
 }
 
-/** A palette's `shadow` when its nodes cast none, as in the dark palette, where a node is told from
- *  the canvas by its border alone. `nodeShadow.ts` then paints nothing at all. */
-export const NO_SHADOW = 'none';
+/** Draw order among edges: a traced (colored) edge renders over any plain one. */
+const TRACED_EDGE_Z_INDEX = 1;
 
 /** Heat above which a node's text switches to `textOnHeat`: past here the fill is a deep red that
  *  dark text sinks into. */
@@ -105,12 +104,11 @@ export interface DiagramPalette {
     chipFill: string;
     chipBorder: string;
     chipInk: string;
-    /** Shadow every non-expanded node casts, or `NO_SHADOW`. Painted on the canvas rather than by
-     *  cytoscape, so the color carries its own alpha. */
-    shadow: string;
-    /** Minimap rectangles: the viewport and the whole graph. */
+    /** Minimap: the viewport outline, the frame, and the ink the circuit is drawn in. The ink is a gray,
+     *  so the outline shows over it. */
     navigatorViewport: string;
     navigatorGraph: string;
+    navigatorInk: string;
 }
 
 export const DIAGRAM_PALETTES: Record<DiagramTheme, DiagramPalette> = {
@@ -130,9 +128,9 @@ export const DIAGRAM_PALETTES: Record<DiagramTheme, DiagramPalette> = {
         chipFill: '#ffffff',
         chipBorder: '#c7ccd4',
         chipInk: '#2f353c',
-        shadow: 'rgba(225, 227, 230, 1)',
         navigatorViewport: '#000000',
         navigatorGraph: '#a9a9a9',
+        navigatorInk: '#585858',
     },
     dark: {
         text: '#e8eaed',
@@ -152,9 +150,9 @@ export const DIAGRAM_PALETTES: Record<DiagramTheme, DiagramPalette> = {
         chipFill: '#2c3137',
         chipBorder: '#454b52',
         chipInk: '#e8eaed',
-        shadow: NO_SHADOW,
         navigatorViewport: '#e8eaed',
         navigatorGraph: '#8b929b',
+        navigatorInk: '#8b929b',
     },
 };
 
@@ -270,7 +268,8 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
             style: {
                 'line-color': p.edgeBackward,
                 'target-arrow-color': p.edgeBackward,
-                'width': 3
+                'width': 3,
+                'z-index': TRACED_EDGE_Z_INDEX
             }
         },
         {
@@ -278,7 +277,8 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
             style: {
                 'line-color': p.edgeForward,
                 'target-arrow-color': p.edgeForward,
-                'width': 3
+                'width': 3,
+                'z-index': TRACED_EDGE_Z_INDEX
             }
         },
     ];

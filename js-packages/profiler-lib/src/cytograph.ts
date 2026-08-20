@@ -499,7 +499,7 @@ export class CytographRendering {
             container: graphContainer,
             elements: [],
         });
-        installNodeShadows(this.cy, () => this.theme);
+        installNodeShadows(this.cy);
         installNodeText(this.cy, () => this.theme);
         this.cy.style(buildGraphStyle(this.theme));
         this.viewport = new Viewport(

@@ -5,12 +5,16 @@
 
 import { describe, expect, it, vi } from 'vitest'
 
-// The navigator builds DOM in its constructor, and this is about geometry, not the minimap.
+// The minimap builds DOM in its constructor, and this is about geometry, not about what it draws. What it
+// is asked to do is recorded all the same: how often the picture is redrawn is this file's decision.
+const minimap = vi.hoisted(() => [] as string[])
 vi.mock('./navigator.js', () => ({
     ViewNavigator: class {
         setOnDoubleClick() { }
+        setOnMoveTo() { }
         setTheme() { }
-        setViewParameters() { }
+        showGraph() { minimap.push('showGraph') }
+        showView() { minimap.push('showView') }
     }
 }))
 
@@ -29,6 +33,7 @@ const VIEW = { x1: 0, y1: 0, x2: 100, y2: 100 }
 function cyStub(boxes: Record<string, Box>) {
     const pan = { x: 0, y: 0 }
     let zoom = 1
+    const handlers: Array<{ events: string, run: () => void }> = []
     const node = (box: Box) => ({
         nonempty: () => true,
         position: () => ({ x: box.x, y: box.y }),
@@ -48,8 +53,8 @@ function cyStub(boxes: Record<string, Box>) {
         },
         width: () => 100,
         height: () => 100,
-        // No container, so the minimap sync and the fit-the-graph zoom floor both bow out - neither has
-        // anything to say about where a node lands.
+        // No container, so the fit-the-graph zoom floor bows out - it has nothing to say about where
+        // a node lands.
         container: () => null,
         extent: () => VIEW,
         elements: () => ({ boundingBox: () => ({ w: 0, h: 0 }) }),
@@ -57,8 +62,16 @@ function cyStub(boxes: Record<string, Box>) {
         destroyed: () => false,
         maxZoom: () => { },
         minZoom: () => { },
-        on: () => { },
-        fit: () => { }
+        on: (events: string, run: () => void) => handlers.push({ events, run }),
+        fit: () => { },
+        /** Not cytoscape's `emit`: the stub's own way of raising an event the viewport subscribed to. */
+        fire: (event: string) => {
+            for (const handler of handlers) {
+                if (handler.events.split(' ').includes(event)) {
+                    handler.run()
+                }
+            }
+        }
     }
 }
 
@@ -162,5 +175,21 @@ describe('the first layout', () => {
         const placed = { ...cy.pan() }
         viewport.layoutSettled()
         expect(cy.pan()).toEqual(placed)
+    })
+})
+
+describe('the minimap', () => {
+    it('redraws its picture once a layout has settled, and never while the view moves', () => {
+        // The picture costs a pass over every element, so it is taken where the elements have just
+        // stopped moving. A pan or a zoom only moves the outline over it.
+        minimap.length = 0
+        const { cy } = viewportOver({ n0: { x: 300, y: 300, w: 60, h: 20 } })
+        expect(minimap.filter((call) => call === 'showGraph')).toHaveLength(1)
+
+        for (const event of ['pan', 'zoom', 'resize', 'pan']) {
+            cy.fire(event)
+        }
+        expect(minimap.filter((call) => call === 'showGraph')).toHaveLength(1)
+        expect(minimap.filter((call) => call === 'showView')).toHaveLength(5)
     })
 })

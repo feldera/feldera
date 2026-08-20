@@ -224,7 +224,7 @@ describe('a click on an expanded region', () => {
 
   it('marks nothing and colors no edge, which an operator does', async () => {
     // A region stands in for every node inside it, so tracing it would color every edge in it, and
-    // there is nothing for the mark to draw on - a region casts no shadow, glow included.
+    // there is nothing for the mark to draw on - a region never glows.
     const { cy, press, cleanup } = await mount(true)
     const point = regionPoint(cy, 'region')
     await press(point.x, point.y)

@@ -1,6 +1,6 @@
 import cytoscape from 'cytoscape'
 import { describe, expect, it } from 'vitest'
-import { CHIP_HEIGHT, CHIP_INSET } from './chips.js'
+import { BADGE_HEIGHT, CHIP_INSET } from './chips.js'
 import {
     COMPOSITE_OUTER_HEIGHT,
     DIAGRAM_PALETTES,
@@ -109,7 +109,7 @@ describe('textCenter', () => {
         const fromTop = center.y - (position.y - height / 2)
         expect(fromTop).toBeLessThan(NODE_OUTER_HEIGHT)
         // On the line its counter chip sits on, so the name and the count read as one row.
-        expect(fromTop).toBe(CHIP_INSET + CHIP_HEIGHT / 2)
+        expect(fromTop).toBe(CHIP_INSET + BADGE_HEIGHT / 2)
     })
 })
 

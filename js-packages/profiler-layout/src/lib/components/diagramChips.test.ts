@@ -14,7 +14,7 @@ import { COMPOSITE, mountDiagram, type Rgba, settle } from '../test-support/moun
 const WHITE: Rgba = { r: 255, g: 255, b: 255, a: 1 }
 
 /** A rendered point inside the counter chip, which sits just inside the node's top right corner:
- *  16 graph px tall from a pixel below the top edge, and a pill's width in from the right one. */
+ *  20 graph px tall from a pixel below the top edge, and a pill's width in from the right one. */
 // biome-ignore lint/suspicious/noExplicitAny: the cytoscape instance the harness hands back
 const counterPoint = (cy: any, id: string) => {
   const node = cy.$id(id)
@@ -22,7 +22,7 @@ const counterPoint = (cy: any, id: string) => {
   const zoom = cy.zoom()
   return {
     x: x + node.renderedOuterWidth() / 2 - 6 * zoom,
-    y: y - node.renderedOuterHeight() / 2 + 8 * zoom
+    y: y - node.renderedOuterHeight() / 2 + 10 * zoom
   }
 }
 
@@ -40,6 +40,24 @@ const counterInk = (
 ) => inkColumns('region', 0.2, WHITE, 0.25, 2).filter((c) => c.distance > 30)
 
 describe('chip buttons', () => {
+  it('draws the network icon beside the count', async () => {
+    // The icon is an SVG group scaled down inside the chip image, so only a real render says it came
+    // out as strokes on the pill rather than as nothing at all.
+    const { cy, inkColumns, toggle, cleanup } = await mountDiagram('light', COMPOSITE)
+    // Collapsed, so the counter chip has a row of the node to itself.
+    await toggle('region')
+    cy.center(cy.$id('region'))
+    await settle()
+
+    // The pill's own border stands out from the node fill as well, so only the darker glyph ink counts.
+    const ink = inkColumns('region', 0.2, WHITE, 0.25, 2).filter((c) => c.distance > 300)
+    expect(ink.length).toBeGreaterThan(2)
+    const span = (Math.max(...ink.map((c) => c.x)) - Math.min(...ink.map((c) => c.x))) / cy.zoom()
+    // A single digit is some 7 graph px wide, and the icon and the gap after it are 14 more.
+    expect(span).toBeGreaterThan(15)
+    cleanup()
+  })
+
   it('points the cursor at the chip and nowhere else', async () => {
     const { cy, container, pointer, cleanup } = await mountDiagram('light', COMPOSITE)
     const region = cy.$id('region')

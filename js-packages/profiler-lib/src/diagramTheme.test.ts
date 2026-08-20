@@ -4,7 +4,15 @@
 
 import cytoscape from 'cytoscape'
 import { describe, expect, it } from 'vitest'
-import { badgePillWidth, CHIP_FONT_SIZE, CHIP_HEIGHT, CHIP_INSET, formatLeafCount, nodeChips } from './chips.js'
+import {
+    badgePillWidth,
+    BADGE_HEIGHT,
+    CHIP_FONT_SIZE,
+    CHIP_INSET,
+    CODE_CHIP_HEIGHT,
+    formatLeafCount,
+    nodeChips
+} from './chips.js'
 import {
     buildGraphStyle,
     DIAGRAM_PALETTES,
@@ -107,7 +115,7 @@ describe('chip styling', () => {
         const top = node.position().y - node.outerHeight() / 2
         const bottom = node.position().y + node.outerHeight() / 2
         const box = node.boundingBox()
-        expect(top - box.y1).toBeGreaterThanOrEqual(CHIP_HEIGHT)
+        expect(top - box.y1).toBeGreaterThanOrEqual(CODE_CHIP_HEIGHT)
         // Cytoscape pads every bounding box by a pixel of its own against antialiasing.
         expect(box.y2 - bottom).toBeLessThanOrEqual(1)
     })
@@ -120,11 +128,11 @@ describe('chip styling', () => {
             const [code, counter] = cy.$id(id).style('background-offset-y').split(' ')
                 .map((offset) => Number.parseFloat(offset!))
             // The code chip hangs its whole height above the edge, so its bottom rests on it.
-            expect(code, id).toBe(-CHIP_HEIGHT)
+            expect(code, id).toBe(-CODE_CHIP_HEIGHT)
             // The counter starts just below that same edge, inside the node.
             expect(counter, id).toBe(CHIP_INSET)
             // Which leaves exactly the gap between the two that the inset is.
-            expect(counter! - (code! + CHIP_HEIGHT), id).toBe(CHIP_INSET)
+            expect(counter! - (code! + CODE_CHIP_HEIGHT), id).toBe(CHIP_INSET)
         }
     })
 
@@ -165,6 +173,20 @@ describe('draw order', () => {
         expect(cy.edges()).toHaveLength(2)
         expect(lastEdge).toBeLessThan(firstNode)
     })
+
+    it('draws a traced edge over the plain ones, and still under every node', () => {
+        // A gray edge crossing a colored one would otherwise cut it in two, and the trace is what the
+        // eye is following. `e` is the older of the two edges, so it only comes last by its own doing.
+        const cy = graph('light')
+        for (const highlight of ['highlight-forward', 'highlight-backward']) {
+            cy.$id('e').addClass(highlight)
+            expect(cy.edges().sortByZIndex().map((edge) => edge.id()), highlight)
+                .toEqual(['inner', 'e'])
+            const order = cy.elements().sortByZIndex().map((ele) => ele.isEdge())
+            expect(order.lastIndexOf(true), highlight).toBeLessThan(order.indexOf(false))
+            cy.$id('e').removeClass(highlight)
+        }
+    })
 })
 
 describe('chip geometry', () => {
@@ -195,7 +217,7 @@ describe('node geometry', () => {
         // Tall enough for the chip and the gap around it. The stylesheet cannot read chip geometry,
         // the two modules importing each other, so this is where the two are held together.
         expect(COMPOSITE_OUTER_HEIGHT - NODE_OUTER_HEIGHT)
-            .toBeGreaterThanOrEqual(CHIP_HEIGHT + 2 * CHIP_INSET)
+            .toBeGreaterThanOrEqual(BADGE_HEIGHT + 2 * CHIP_INSET)
         // An expanded region ignores `height` and sizes itself to its children instead.
         expect(cy.$id('region').outerHeight()).not.toBe(COMPOSITE_OUTER_HEIGHT)
     })

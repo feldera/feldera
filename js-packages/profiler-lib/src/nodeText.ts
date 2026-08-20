@@ -9,7 +9,7 @@
 // the context in graph coordinates.
 
 import type { Core, NodeSingular } from 'cytoscape';
-import { CHIP_HEIGHT, CHIP_INSET } from './chips.js';
+import { BADGE_HEIGHT, CHIP_INSET } from './chips.js';
 import {
     DIAGRAM_PALETTES,
     type DiagramTheme,
@@ -66,7 +66,7 @@ export function textCenter(
     isRegion: boolean
 ): { x: number, y: number } {
     if (isRegion) {
-        return { x: position.x, y: position.y - outerHeight / 2 + CHIP_INSET + CHIP_HEIGHT / 2 };
+        return { x: position.x, y: position.y - outerHeight / 2 + CHIP_INSET + BADGE_HEIGHT / 2 };
     }
     return { x: position.x, y: position.y + (outerHeight - NODE_OUTER_HEIGHT) / 2 };
 }
