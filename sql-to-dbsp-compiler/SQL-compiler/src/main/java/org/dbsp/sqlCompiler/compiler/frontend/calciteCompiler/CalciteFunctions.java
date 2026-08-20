@@ -775,7 +775,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                         SqlLibraryOperatorTableFactory.INSTANCE.getOperatorTable(SqlLibrary.STANDARD),
                         operator -> operator.getName().startsWith("JSON_")),
                 new SqlToRelCompiler.CaseInsensitiveOperatorTable(
-                        SqlOperatorTables.spatialInstance().getOperatorList()),
+                        SpatialOperatorTable.instance().getOperatorList()),
                 new SqlToRelCompiler.CaseInsensitiveOperatorTable(operators));
     }
 }
