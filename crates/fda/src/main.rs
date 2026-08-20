@@ -3741,6 +3741,7 @@ async fn cluster(format: OutputFormat, action: ClusterAction, client: Client) {
             };
             match format {
                 OutputFormat::Text => {
+                    let now = Utc::now();
                     let mut rows = vec![];
                     rows.push([
                         "service".to_string(),
@@ -3760,12 +3761,12 @@ async fn cluster(format: OutputFormat, action: ClusterAction, client: Client) {
                             format!(
                                 "{} ({:.0}s ago)",
                                 status.unchanged_since,
-                                (Utc::now() - status.unchanged_since).as_seconds_f64()
+                                (now - status.unchanged_since).as_seconds_f64()
                             ),
                             format!(
                                 "{} ({:.0}s ago)",
                                 status.checked_at,
-                                (Utc::now() - status.checked_at).as_seconds_f64()
+                                (now - status.checked_at).as_seconds_f64()
                             ),
                             status.message.clone(),
                         ]);
@@ -3788,7 +3789,8 @@ async fn cluster(format: OutputFormat, action: ClusterAction, client: Client) {
                 }
             }
             if !health.all_healthy {
-                std::process::exit(1);
+                // Exit 1 means the health could not be retrieved; 2 means unhealthy.
+                std::process::exit(2);
             }
         }
         ClusterAction::Config => {

@@ -510,7 +510,8 @@ pub enum ClusterAction {
 
     /// Check the health of the cluster services.
     ///
-    /// Exits with code 0 if all services are healthy, and 1 otherwise.
+    /// Exits with code 0 if all services are healthy, 1 if the health cannot be
+    /// retrieved, and 2 if any service is unhealthy.
     Health,
 
     /// Retrieve the platform configuration (edition, version, license, build information).
