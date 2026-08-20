@@ -507,6 +507,14 @@ pub enum ClusterAction {
         #[arg(default_value = "status")]
         selector: ClusterMonitorEventFieldSelector,
     },
+
+    /// Check the health of the cluster services.
+    ///
+    /// Exits with code 0 if all services are healthy, and 1 otherwise.
+    Health,
+
+    /// Retrieve the platform configuration (edition, version, license, build information).
+    Config,
 }
 
 #[derive(Subcommand)]
