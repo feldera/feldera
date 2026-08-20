@@ -1,21 +1,26 @@
 use super::{OutputEndpointControl, stats::BufferedInput};
 use crate::{
-    Controller, PipelineConfig,
+    Controller, InputConsumer, InputEndpoint, PipelineConfig, TransportInputEndpoint,
     controller::{ControllerStatusContext, TransactionInfo},
     preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
     test::{
         DEFAULT_TIMEOUT_MS, TestStruct, generate_test_batch, init_test_logger, test_circuit, wait,
     },
-    transport::{input_transport_config_to_endpoint, set_barrier},
+    transport::{
+        InputQueue, InputReader, InputReaderCommand, input_transport_config_to_endpoint,
+        set_barrier,
+    },
 };
 use anyhow::anyhow;
+use chrono::Utc;
 use crossbeam::sync::Parker;
 use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
-use feldera_adapterlib::format::BufferSize;
+use feldera_adapterlib::format::{BufferSize, Parser};
 use feldera_types::{
-    config::{InputEndpointConfig, OutputEndpointConfig},
+    config::{FtModel, InputEndpointConfig, OutputEndpointConfig},
     constants::STATE_FILE,
     memory_pressure::MemoryPressure,
+    program_schema::Relation,
 };
 use serde_json::json;
 use std::{
@@ -27,7 +32,7 @@ use std::{
     iter::repeat_n,
     ops::Range,
     path::{Path, PathBuf},
-    sync::{atomic::Ordering, mpsc},
+    sync::{Arc, Mutex, atomic::Ordering, mpsc},
     thread::sleep,
     time::Duration,
 };
@@ -1041,6 +1046,182 @@ fn fault_tolerance_mismatch_unregisters_the_endpoint() {
         "the rejected endpoint stayed registered"
     );
     assert!(controller.status().input_status().is_empty());
+
+    controller.stop().unwrap();
+}
+
+/// An input endpoint that hands its input to the circuit when the test says so,
+/// rather than in reply to a `Queue` command.
+///
+/// The controller collects an endpoint's input in two steps: the endpoint
+/// reports it with [`InputConsumer::extended`], which parks the result in the
+/// endpoint's status entry, and the circuit thread then picks the result up and
+/// counts the records as processed.  Releasing the input outside a `Queue`
+/// command puts the endpoint between those two steps for as long as the test
+/// needs, which is the window that a removed endpoint has to lose input in.
+#[derive(Clone)]
+struct ManualInputEndpoint {
+    details: Arc<Mutex<Option<ManualInputEndpointDetails>>>,
+}
+
+struct ManualInputEndpointDetails {
+    parser: Box<dyn Parser>,
+    queue: InputQueue,
+}
+
+impl ManualInputEndpoint {
+    fn new() -> Self {
+        Self {
+            details: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Parses `data` and queues it, reporting the records as buffered.
+    fn push(&self, data: &str) {
+        let mut guard = self.details.lock().unwrap();
+        let details = guard.as_mut().unwrap();
+        let parsed = details.parser.parse(data.as_bytes(), None);
+        details.queue.push(parsed, Utc::now());
+    }
+
+    /// Flushes the queued records to the circuit and reports them to the
+    /// controller.
+    fn release(&self) {
+        self.details.lock().unwrap().as_ref().unwrap().queue.queue();
+    }
+}
+
+impl InputEndpoint for ManualInputEndpoint {
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        None
+    }
+}
+
+impl TransportInputEndpoint for ManualInputEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        _schema: Relation,
+        _resume_info: Option<serde_json::Value>,
+    ) -> anyhow::Result<Box<dyn InputReader>> {
+        *self.details.lock().unwrap() = Some(ManualInputEndpointDetails {
+            parser,
+            queue: InputQueue::new(consumer),
+        });
+        Ok(Box::new(self.clone()))
+    }
+}
+
+impl InputReader for ManualInputEndpoint {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
+    fn request(&self, command: InputReaderCommand) {
+        match command {
+            // Report no input: the test releases it with
+            // `ManualInputEndpoint::release`.
+            InputReaderCommand::Queue { .. } => self
+                .details
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .queue
+                .consumer
+                .extended(BufferSize::empty(), None, Vec::new()),
+            InputReaderCommand::Extend
+            | InputReaderCommand::Pause
+            | InputReaderCommand::Disconnect => (),
+            InputReaderCommand::Replay { .. } => {
+                unreachable!("this endpoint is not fault tolerant")
+            }
+        }
+    }
+
+    fn is_closed(&self) -> bool {
+        false
+    }
+}
+
+/// Removing an input endpoint must not take the count of the input it already
+/// handed to the circuit with it.
+///
+/// The endpoint reports its input with `extended`, which stores the result in
+/// the endpoint's status entry for the circuit thread to count as processed.
+/// A `disconnect_input` removes the endpoint, losing this count.  The records
+/// reach the circuit either way, so losing their count would leave
+/// `total_processed_records` permanently below `total_input_records`.
+#[test]
+fn removed_input_endpoint_input_is_still_counted() {
+    init_test_logger();
+
+    // Buffer enough that the trigger runs no step on its own: the test decides
+    // when the circuit sees the input.
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "min_batch_size_records": 1_000_000,
+        "max_buffering_delay_usecs": 1_000_000_000,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    let endpoint = ManualInputEndpoint::new();
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": {
+            "name": "file_input",
+            "config": { "path": "unused" }
+        },
+        "format": { "name": "csv" }
+    }))
+    .unwrap();
+    let endpoint_id = controller
+        .add_input_endpoint("manual", endpoint_config, Box::new(endpoint.clone()), None)
+        .unwrap();
+
+    // The endpoint hands three records to the circuit and is removed before the
+    // circuit thread collects the result.
+    endpoint.push("1,true,,foo\n2,true,,foo\n3,true,,foo\n");
+    endpoint.release();
+    let status = controller.status();
+    assert_eq!(status.num_total_input_records(), 3);
+    assert_eq!(status.num_buffered_input_records(), 0);
+    assert_eq!(
+        status.num_total_processed_records(),
+        0,
+        "the test needs the result to still be uncollected here"
+    );
+
+    controller.disconnect_input(&endpoint_id);
+    wait(|| controller.pipeline_complete(), 10_000)
+        .expect("the input of a removed endpoint was never counted as processed");
+    assert_eq!(controller.status().num_total_processed_records(), 3);
+
+    // Same again, except that the endpoint reports the input only after it has
+    // been removed, which is the window an endpoint that replies on its own
+    // thread has between `remove_input` and losing its reader.
+    endpoint.push("4,true,,foo\n5,true,,foo\n6,true,,foo\n");
+    endpoint.release();
+    wait(|| controller.pipeline_complete(), 10_000)
+        .expect("input reported after the endpoint was removed was never counted as processed");
+    assert_eq!(controller.status().num_total_processed_records(), 6);
 
     controller.stop().unwrap();
 }

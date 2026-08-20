@@ -546,6 +546,20 @@ pub struct ControllerStatus {
 
     /// Output endpoint configs and metrics.
     outputs: OutputsStatus,
+
+    /// Input that reached the circuit but has no endpoint left to report it.
+    ///
+    /// An endpoint hands records to the circuit with [`Self::extended`], which
+    /// parks their size in the endpoint's own status entry for the circuit
+    /// thread to pick up and count as processed. Removing the endpoint takes
+    /// that entry with it, and an endpoint can be removed at any point: an ad
+    /// hoc `INSERT` disconnects its endpoint as soon as the queue drains. The
+    /// records are in the circuit either way, so their size is stashed here
+    /// instead and credited by the next step. Otherwise
+    /// `total_processed_records` would stay permanently below
+    /// `total_input_records`, and a client waiting for the pipeline to catch up
+    /// with an ad hoc write would wait forever.
+    orphaned_input: Mutex<BufferSize>,
 }
 
 /// Context needed by [`ControllerStatus::to_api_type`] to build the public
@@ -587,6 +601,7 @@ impl ControllerStatus {
             checkpoint_notifier,
             inputs: RwLock::new(BTreeMap::new()),
             outputs: RwLock::new(BTreeMap::new()),
+            orphaned_input: Mutex::new(BufferSize::empty()),
         }
     }
 
@@ -718,8 +733,39 @@ impl ControllerStatus {
         }
     }
 
-    pub fn remove_input(&self, endpoint_id: &EndpointId) -> Option<InputEndpointStatus> {
-        self.inputs.write().remove(endpoint_id)
+    pub fn remove_input(
+        &self,
+        endpoint_id: &EndpointId,
+        circuit_thread_unparker: &Unparker,
+    ) -> Option<InputEndpointStatus> {
+        let endpoint = self.inputs.write().remove(endpoint_id)?;
+
+        // The endpoint may have handed records to the circuit that the circuit
+        // thread has not counted yet. That result dies with the endpoint, so
+        // keep its size and request the step that credits it; see
+        // `orphaned_input`.
+        if let Some(results) = endpoint.progress.lock().unwrap().take() {
+            self.orphan_input(results.amt, circuit_thread_unparker);
+        }
+
+        Some(endpoint)
+    }
+
+    /// Stashes input that the circuit received from an endpoint that is no
+    /// longer registered, and requests the step that credits it; see
+    /// [`Self::orphaned_input`].
+    fn orphan_input(&self, amt: BufferSize, circuit_thread_unparker: &Unparker) {
+        if amt.is_empty() {
+            return;
+        }
+        *self.orphaned_input.lock().unwrap() += amt;
+        self.request_step(circuit_thread_unparker);
+    }
+
+    /// Takes the input stashed by [`Self::orphan_input`], for the caller to
+    /// count as processed by the step it is about to run.
+    pub(super) fn take_orphaned_input(&self) -> BufferSize {
+        std::mem::take(&mut *self.orphaned_input.lock().unwrap())
     }
 
     pub fn remove_output(&self, endpoint_id: &EndpointId) {
@@ -1216,11 +1262,12 @@ impl ControllerStatus {
         endpoint_id: EndpointId,
         step_results: StepResults,
         watermarks: Vec<Watermark>,
+        circuit_thread_unparker: &Unparker,
         backpressure_thread_unparker: &Unparker,
     ) {
         let inputs = self.input_status();
-        self.global_metrics
-            .consume_buffered_inputs(step_results.amt);
+        let amt = step_results.amt;
+        self.global_metrics.consume_buffered_inputs(amt);
 
         let mut finished = false;
 
@@ -1233,7 +1280,11 @@ impl ControllerStatus {
                 self.global_metrics.total_completed_steps(),
             );
             finished = endpoint_stats.finished();
-        };
+        } else {
+            // The endpoint was removed before it reported this input: the step
+            // that would have counted these records has already moved on.
+            self.orphan_input(amt, circuit_thread_unparker);
+        }
 
         drop(inputs);
 
