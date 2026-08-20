@@ -242,7 +242,6 @@ public class CalciteOptimizer implements IWritesLogs {
                 ReduceExpressionsRule.JOIN_REDUCE_EXPRESSIONS,
                 ReduceExpressionsRule.WINDOW_REDUCE_EXPRESSIONS,
                 ReduceExpressionsRule.CALC_REDUCE_EXPRESSIONS,
-                CoreRules.CALC_REDUCE_DECIMALS,
                 ValuesReduceRule.FILTER_VALUES_MERGE,
                 ValuesReduceRule.PROJECT_FILTER_VALUES_MERGE,
                 ValuesReduceRule.PROJECT_VALUES_MERGE,

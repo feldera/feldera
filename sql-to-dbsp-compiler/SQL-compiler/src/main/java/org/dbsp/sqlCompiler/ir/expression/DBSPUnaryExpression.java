@@ -82,7 +82,6 @@ public final class DBSPUnaryExpression extends DBSPExpression {
                 this.opcode == DBSPOpcode.INTEGER_TO_SHORT_INTERVAL ||
                 this.opcode == DBSPOpcode.LONG_INTERVAL_TO_INTEGER ||
                 this.opcode == DBSPOpcode.INTEGER_TO_LONG_INTERVAL ||
-                this.opcode == DBSPOpcode.REINTERPRET ||
                 this.opcode == DBSPOpcode.INTEGER_TO_UUID ||
                 this.opcode == DBSPOpcode.UUID_TO_INTEGER ||
                 this.opcode == DBSPOpcode.BINARY_TO_U64 ||

@@ -46,7 +46,7 @@ public class MultiCrateTests extends BaseSQLTests {
         setupCargoLock();
         String jsonFile = PROJECT_DIRECTORY + "/x.json";
         CompilerMessages messages = CompilerMain.execute(
-                "-i", "--alltables", "-q", "--ignoreOrder", "--crates", "x",
+                "-i", "--alltables", "-q", "--ignoreOrder", "--crates", "x", "--testing",
                 "-o", BaseSQLTests.RUST_MULTI_DIRECTORY, file, "--dataflow", jsonFile);
         if (messages.errorCount() > 0) {
             messages.print();

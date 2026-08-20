@@ -332,7 +332,6 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     """, false),
             new Func(SqlStdOperatorTable.OVER, "OVER", SqlLibrary.STANDARD, "grammar#window-aggregates",
                     "runtime_aggtest/illarg_tests/test_grammar_tbl_fn.py", false),
-            new Func(SqlStdOperatorTable.REINTERPRET, "", SqlLibrary.STANDARD, "", FunctionDocumentation.NO_FILE, false),
 
             // Functions
             new Func(SqlStdOperatorTable.SUBSTRING, "SUBSTRING", SqlLibrary.STANDARD, "string#substring,binary#substring",
