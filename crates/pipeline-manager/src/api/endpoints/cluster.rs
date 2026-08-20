@@ -252,7 +252,7 @@ pub struct ServiceStatus {
     pub message: String,
     /// Approximate time the service last transitioned between healthy and unhealthy:
     /// the timestamp of the oldest retained consecutive cluster monitor event with the
-    /// same `healthy` conclusion. Bounded by event retention (at most 72h / 1000 events).
+    /// same `healthy` conclusion. Bounded by event retention.
     pub unchanged_since: DateTime<Utc>,
     /// Timestamp of the most recent cluster monitor event.
     pub checked_at: DateTime<Utc>,
@@ -300,7 +300,7 @@ fn service_unchanged_since(
 ///
 /// Determine the latest cluster health via the latest cluster monitor event.
 /// Each service's `unchanged_since` reports the approximate time it last transitioned
-/// between healthy and unhealthy, bounded by event retention (at most 72h / 1000 events).
+/// between healthy and unhealthy, bounded by event retention.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
