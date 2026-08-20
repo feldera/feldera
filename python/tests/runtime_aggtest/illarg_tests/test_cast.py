@@ -184,9 +184,10 @@ class illarg_cast_binary_legal(TstView):
 
 class illarg_cast_binary_legal1(TstView):
     def __init__(self):
-        self.data = [{"to_uuid": "1f8b0800-0000-0000-00ff-4b4bcd49492d"}]
+        # BINARY to UUID requires exactly 16 bytes, so round-trip a UUID column
+        self.data = [{"to_uuid": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c"}]
         self.sql = """CREATE MATERIALIZED VIEW cast_binary_legal1 AS SELECT
-                      CAST(bin AS UUID) AS to_uuid
+                      CAST(CAST(uuidd AS BINARY(16)) AS UUID) AS to_uuid
                       FROM illegal_tbl
                       WHERE id = 1;"""
 
@@ -436,6 +437,15 @@ class illarg_cast_varchar_illegal(TstView):
                       FROM illegal_tbl
                       WHERE id = 0;"""
         self.expected_error = "Cast cannot be used to convert VARCHAR to VARCHAR ARRAY"
+
+
+class illarg_cast_binary_illegal(TstView):
+    def __init__(self):
+        self.sql = """CREATE MATERIALIZED VIEW cast_binary_illegal AS SELECT
+                      CAST(bin AS UUID) AS to_uuid
+                      FROM illegal_tbl
+                      WHERE id = 1;"""
+        self.expected_error = "Need exactly 16 bytes in BINARY value to create an UUID"
 
 
 class illarg_cast_map_illegal(TstView):

@@ -1,6 +1,6 @@
 //! Uuid operations
 
-use crate::error::{SqlResult, convert_error};
+use crate::error::{SqlResult, SqlRuntimeError};
 use dbsp::NumEntries;
 use feldera_macros::IsNone;
 use feldera_types::serde_with_context::{
@@ -158,11 +158,66 @@ impl Uuid {
         self.value.as_bytes()
     }
 
-    /// Parse a string into a Uuid
+    /// Parse a string into a Uuid.
+    ///
+    /// A UUID is written as 32 hexadecimal digits, optionally wrapped in braces.
+    /// Hyphens may separate groups of four digits, so all of the following denote
+    /// the same value:
+    ///
+    /// ```text
+    /// 123e4567-e89b-12d3-a456-426655440000
+    /// 123E4567-E89B-12D3-A456-426655440000
+    /// 123e4567e89b12d3a456426655440000
+    /// {123e4567-e89b-12d3-a456-426655440000}
+    /// 123e-4567-e89b-12d3-a456-4266-5544-0000
+    /// ```
+    ///
+    /// Blanks are never trimmed, and the `urn:uuid:` prefix is not accepted.
     #[doc(hidden)]
     pub fn try_from_ref(value: &str) -> SqlResult<Self> {
-        let uuid = convert_error(uuid::Uuid::parse_str(value))?;
-        Ok(Self { value: uuid })
+        match Self::parse(value) {
+            Some(value) => Ok(Self { value }),
+            // Quoted, so that leading and trailing blanks are visible
+            None => Err(SqlRuntimeError::from_string(format!(
+                "Invalid UUID string '{value}'"
+            ))),
+        }
+    }
+
+    /// Grammar shared with the SQL compiler, which parses UUID literals in Java.
+    fn parse(value: &str) -> Option<uuid::Uuid> {
+        let bytes = value.as_bytes();
+        let body = match (bytes.first(), bytes.last()) {
+            (Some(b'{'), Some(b'}')) if bytes.len() > 1 => &bytes[1..bytes.len() - 1],
+            _ => bytes,
+        };
+
+        let mut digits = [0u8; 32];
+        let mut count = 0;
+        let mut previous = 0u8;
+        for &c in body {
+            if c == b'-' {
+                // A hyphen separates groups, so it must follow a complete group
+                // of four digits and cannot be the last character
+                if count == 0 || count % 4 != 0 || count == 32 || previous == b'-' {
+                    return None;
+                }
+            } else if c.is_ascii_hexdigit() && count < 32 {
+                digits[count] = c;
+                count += 1;
+            } else {
+                return None;
+            }
+            previous = c;
+        }
+        if count != 32 {
+            return None;
+        }
+
+        let digits = std::str::from_utf8(&digits).ok()?;
+        Some(uuid::Uuid::from_u128(
+            u128::from_str_radix(digits, 16).ok()?,
+        ))
     }
 }
 
@@ -180,4 +235,58 @@ pub fn uuid_to_u128_(u: Uuid) -> u128 {
 #[doc(hidden)]
 pub fn u128_to_uuid_(n: u128) -> Uuid {
     Uuid::from_bytes(n.to_be_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Uuid;
+
+    const EXPECTED: u128 = 0x123e4567_e89b_12d3_a456_426655440000;
+
+    fn parsed(value: &str) -> Uuid {
+        Uuid::try_from_ref(value).unwrap_or_else(|e| panic!("{value:?}: {e}"))
+    }
+
+    #[test]
+    fn accepted_spellings() {
+        // Every spelling accepted by the SQL compiler denotes the same value
+        for value in [
+            "123e4567-e89b-12d3-a456-426655440000",
+            "123E4567-E89B-12D3-A456-426655440000",
+            "123e4567e89b12d3a456426655440000",
+            "{123e4567-e89b-12d3-a456-426655440000}",
+            "{123e4567e89b12d3a456426655440000}",
+            "123e-4567-e89b-12d3-a456-4266-5544-0000",
+            "123e4567-e89b12d3-a4564266-55440000",
+            "123e-4567e89b-12d3a456426655440000",
+        ] {
+            assert_eq!(super::uuid_to_u128_(parsed(value)), EXPECTED, "{value:?}");
+        }
+    }
+
+    #[test]
+    fn rejected_spellings() {
+        for value in [
+            "",
+            "   ",
+            "1-2-3-4-5",                             // a group is not four digits wide
+            "123e456-7e89b-12d3-a456-426655440000",  // as above, though 36 characters long
+            "123e4567--e89b-12d3-a456-426655440000", // empty group
+            "-123e4567e89b12d3a456426655440000",     // leading hyphen
+            "123e4567e89b12d3a456426655440000-",     // trailing hyphen
+            "{123e4567-e89b-12d3-a456-426655440000", // unbalanced brace
+            "123e4567-e89b-12d3-a456-42665544000",   // 31 digits
+            "123e4567-e89b-12d3-a456-4266554400000", // 33 digits
+            " 123e4567-e89b-12d3-a456-426655440000", // blanks are not trimmed
+            "123e4567-e89b-12d3-a456-426655440000 ",
+            "urn:uuid:123e4567-e89b-12d3-a456-426655440000", // URN form is not accepted
+            "123e4567-e89b-12d3-a456-42665544000g",          // not a hexadecimal digit
+            "{}",
+        ] {
+            let error = Uuid::try_from_ref(value)
+                .err()
+                .unwrap_or_else(|| panic!("{value:?} should be rejected"));
+            assert_eq!(error.to_string(), format!("Invalid UUID string '{value}'"));
+        }
+    }
 }

@@ -329,7 +329,7 @@ class illarg_union_all_illegal(TstView):
                       UNION ALL
                       SELECT CAST('hello ' AS UUID)
                       FROM illegal_tbl"""
-        self.expected_error = "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `h` at 1"
+        self.expected_error = "Invalid UUID string 'hello '"
 
 
 # INTERSECT
