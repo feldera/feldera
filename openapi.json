@@ -373,7 +373,7 @@
           "Platform"
         ],
         "summary": "Check Cluster Health",
-        "description": "Required role: `read` or higher.\n\nDetermine the latest cluster health via the latest cluster monitor event.",
+        "description": "Required role: `read` or higher.\n\nDetermine the latest cluster health via the latest cluster monitor event.\nEach service's `unchanged_since` reports the approximate time it last transitioned\nbetween healthy and unhealthy, bounded by event retention (at most 72h / 1000 events).",
         "operationId": "get_cluster_health",
         "responses": {
           "200": {
@@ -10936,6 +10936,7 @@
       },
       "HealthStatus": {
         "type": "object",
+        "description": "Health of the cluster as a whole and of each of its services.",
         "required": [
           "all_healthy",
           "api",
@@ -10944,7 +10945,8 @@
         ],
         "properties": {
           "all_healthy": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether every service is healthy."
           },
           "api": {
             "$ref": "#/components/schemas/ServiceStatus"
@@ -14829,6 +14831,7 @@
       },
       "ServiceStatus": {
         "type": "object",
+        "description": "Health of a single service derived from the retained cluster monitor events.",
         "required": [
           "healthy",
           "message",
@@ -14838,17 +14841,21 @@
         "properties": {
           "checked_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "Timestamp of the most recent cluster monitor event."
           },
           "healthy": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether the service passed its most recent health check."
           },
           "message": {
-            "type": "string"
+            "type": "string",
+            "description": "Human-readable report from the most recent health check."
           },
           "unchanged_since": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "Approximate time the service last transitioned between healthy and unhealthy:\nthe timestamp of the oldest retained consecutive cluster monitor event with the\nsame `healthy` conclusion. Bounded by event retention (at most 72h / 1000 events)."
           }
         }
       },
